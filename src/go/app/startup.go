@@ -22,90 +22,14 @@ func (Startup) Name() string {
 }
 
 func (this *Startup) Configure(exp *types.Experiment) error {
-	startupDir := exp.Spec.BaseDir() + "/startup"
-
-	for _, node := range exp.Spec.Topology().Nodes() {
-		// if type is router, skip it and continue
-		if node.Type() == "Router" {
-			continue
-		}
-
-		var keep []ifaces.NodeInjection
-
-		// delete any exisitng interface injections
-		for _, inject := range node.Injections() {
-			if inject.Dst() == "interfaces" || inject.Dst() == "startup.ps1" {
-				continue
-			}
-
-			keep = append(keep, inject)
-		}
-
-		node.SetInjections(keep)
-
-		// loop through nodes
-		if node.Hardware().OSType() == "linux" || node.Hardware().OSType() == "rhel" || node.Hardware().OSType() == "centos" {
-			// if vm is centos or rhel, need a separate file per interface
-			if node.Hardware().OSType() == "rhel" || node.Hardware().OSType() == "centos" {
-				for idx := range node.Network().Interfaces() {
-					node.AddInject(
-						fmt.Sprintf("%s/interfaces-%s-eth%d", startupDir, node.General().Hostname(), idx),
-						fmt.Sprintf("/etc/sysconfig/network-scripts/ifcfg-eth%d", idx),
-						"", "",
-					)
-				}
-			} else if node.Hardware().OSType() == "linux" {
-				var (
-					hostnameFile = startupDir + "/" + node.General().Hostname() + "-hostname.sh"
-					timezoneFile = startupDir + "/" + node.General().Hostname() + "-timezone.sh"
-					ifaceFile    = startupDir + "/" + node.General().Hostname() + "-interfaces"
-				)
-
-				node.AddInject(
-					hostnameFile,
-					"/etc/phenix/startup/1_hostname-start.sh",
-					"0755", "",
-				)
-
-				node.AddInject(
-					timezoneFile,
-					"/etc/phenix/startup/2_timezone-start.sh",
-					"0755", "",
-				)
-
-				node.AddInject(
-					ifaceFile,
-					"/etc/network/interfaces",
-					"", "",
-				)
-			}
-		} else if node.Hardware().OSType() == "windows" {
-			var (
-				startupFile = startupDir + "/" + node.General().Hostname() + "-startup.ps1"
-				schedFile   = startupDir + "/startup-scheduler.cmd"
-			)
-
-			node.AddInject(
-				startupFile,
-				"startup.ps1",
-				"0755", "",
-			)
-
-			node.AddInject(
-				schedFile,
-				"ProgramData/Microsoft/Windows/Start Menu/Programs/StartUp/startup_scheduler.cmd",
-				"0755", "",
-			)
-		}
-	}
-
 	return nil
 }
 
 func (this Startup) PreStart(exp *types.Experiment) error {
-	// note in the mako file that there does not appear to be timezone or hostname for rhel and centos
-	startupDir := exp.Spec.BaseDir() + "/startup"
-	imageDir := common.PhenixBase + "/images/"
+	var (
+		startupDir = exp.Spec.BaseDir() + "/startup"
+		imageDir   = common.PhenixBase + "/images/"
+	)
 
 	if err := os.MkdirAll(startupDir, 0755); err != nil {
 		return fmt.Errorf("creating experiment startup directory path: %w", err)
@@ -130,22 +54,46 @@ func (this Startup) PreStart(exp *types.Experiment) error {
 			continue
 		}
 
-		// it appears linux, rhel, and centos share the same interfaces template
-		if node.Hardware().OSType() == "rhel" || node.Hardware().OSType() == "centos" {
-			for idx := range node.Network().Interfaces() {
-				ifaceFile := fmt.Sprintf("%s/interfaces-%s-eth%d", startupDir, node.General().Hostname(), idx)
+		var keep []ifaces.NodeInjection
 
-				if err := tmpl.CreateFileFromTemplate("linux_interfaces.tmpl", node, ifaceFile); err != nil {
-					return fmt.Errorf("generating linux interfaces config: %w", err)
-				}
+		// delete any exisitng interface injections
+		for _, inject := range node.Injections() {
+			if inject.Dst() == "interfaces" || inject.Dst() == "startup.ps1" {
+				continue
 			}
-		} else if node.Hardware().OSType() == "linux" {
+
+			keep = append(keep, inject)
+		}
+
+		node.SetInjections(keep)
+
+		switch node.Hardware().OSType() {
+		case "linux":
 			var (
 				hostnameFile = startupDir + "/" + node.General().Hostname() + "-hostname.sh"
 				timezoneFile = startupDir + "/" + node.General().Hostname() + "-timezone.sh"
 				ifaceFile    = startupDir + "/" + node.General().Hostname() + "-interfaces"
-				timeZone     = "Etc/UTC"
 			)
+
+			node.AddInject(
+				hostnameFile,
+				"/etc/phenix/startup/1_hostname-start.sh",
+				"0755", "",
+			)
+
+			node.AddInject(
+				timezoneFile,
+				"/etc/phenix/startup/2_timezone-start.sh",
+				"0755", "",
+			)
+
+			node.AddInject(
+				ifaceFile,
+				"/etc/network/interfaces",
+				"", "",
+			)
+
+			timeZone := "Etc/UTC"
 
 			if err := tmpl.CreateFileFromTemplate("linux_hostname.tmpl", node.General().Hostname(), hostnameFile); err != nil {
 				return fmt.Errorf("generating linux hostname config: %w", err)
@@ -158,7 +106,38 @@ func (this Startup) PreStart(exp *types.Experiment) error {
 			if err := tmpl.CreateFileFromTemplate("linux_interfaces.tmpl", node, ifaceFile); err != nil {
 				return fmt.Errorf("generating linux interfaces config: %w", err)
 			}
-		} else if node.Hardware().OSType() == "windows" {
+		case "rhel", "centos":
+			for idx := range node.Network().Interfaces() {
+				ifaceFile := fmt.Sprintf("%s/interfaces-%s-eth%d", startupDir, node.General().Hostname(), idx)
+
+				node.AddInject(
+					ifaceFile,
+					fmt.Sprintf("/etc/sysconfig/network-scripts/ifcfg-eth%d", idx),
+					"", "",
+				)
+
+				if err := tmpl.CreateFileFromTemplate("linux_interfaces.tmpl", node, ifaceFile); err != nil {
+					return fmt.Errorf("generating linux interfaces config: %w", err)
+				}
+			}
+		case "windows":
+			var (
+				startupFile = startupDir + "/" + node.General().Hostname() + "-startup.ps1"
+				schedFile   = startupDir + "/startup-scheduler.cmd"
+			)
+
+			node.AddInject(
+				startupFile,
+				"startup.ps1",
+				"0755", "",
+			)
+
+			node.AddInject(
+				schedFile,
+				"ProgramData/Microsoft/Windows/Start Menu/Programs/StartUp/startup_scheduler.cmd",
+				"0755", "",
+			)
+
 			// Temporary struct to send to the Windows Startup template.
 			data := struct {
 				Node     ifaces.NodeSpec
@@ -180,8 +159,6 @@ func (this Startup) PreStart(exp *types.Experiment) error {
 					}
 				}
 			}
-
-			startupFile := startupDir + "/" + node.General().Hostname() + "-startup.ps1"
 
 			if err := tmpl.CreateFileFromTemplate("windows_startup.tmpl", data, startupFile); err != nil {
 				return fmt.Errorf("generating windows startup config: %w", err)
