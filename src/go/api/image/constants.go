@@ -30,14 +30,11 @@ echo "\nBuilt with phenix image on $(date)\n\n" >> /etc/motd
 `
 
 const POSTBUILD_PHENIX_BASE = `
-mkdir -p /etc/phenix/startup
-mkdir -p /etc/systemd/system/multi-user.target.wants
-mkdir -p /usr/local/bin
 cat > /etc/systemd/system/miniccc.service <<EOF
 [Unit]
 Description=miniccc
 [Service]
-ExecStart=/usr/local/bin/miniccc -v=false -serial /dev/virtio-ports/cc -logfile /var/log/miniccc.log
+ExecStart=/opt/minimega/bin/miniccc -v=false -serial /dev/virtio-ports/cc -logfile /var/log/miniccc.log
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -54,39 +51,34 @@ Type=oneshot
 [Install]
 WantedBy=multi-user.target
 EOF
+mkdir -p /etc/systemd/system/multi-user.target.wants
 ln -s /etc/systemd/system/miniccc.service /etc/systemd/system/multi-user.target.wants/miniccc.service
 ln -s /etc/systemd/system/phenix.service /etc/systemd/system/multi-user.target.wants/phenix.service
+mkdir -p /usr/local/bin
 cat > /usr/local/bin/phenix-start.sh <<EOF
 #!/bin/bash
 for file in /etc/phenix/startup/*; do
-	echo $file
-	bash $file
+	echo \$file
+	bash \$file
 done
 EOF
 chmod +x /usr/local/bin/phenix-start.sh
+mkdir -p /etc/phenix/startup
 `
 
 const POSTBUILD_PROTONUKE = `
-mkdir -p /etc/systemd/system/multi-user.target.wants
-mkdir -p /usr/local/bin
-cat > /usr/local/bin/wup <<EOF
-#!/bin/bash
-# [w]ait [u]ntil [p]resent
-[ -n "$1" ] && \
-	until ip link show ${1} &> /dev/null; do sleep 1; done
-exit $?
-EOF
-chmod +x /usr/local/bin/wup
 cat > /etc/systemd/system/protonuke.service <<EOF
 [Unit]
 Description=protonuke
+After=network-online.target
+Wants=network-online.target
 [Service]
 EnvironmentFile=/etc/default/protonuke
-ExecStartPre=/usr/local/bin/wup ens1
-ExecStart=/usr/local/bin/protonuke $PROTONUKE_ARGS
+ExecStart=/opt/minimega/bin/protonuke \$PROTONUKE_ARGS
 [Install]
 WantedBy=multi-user.target
 EOF
+mkdir -p /etc/systemd/system/multi-user.target.wants
 ln -s /etc/systemd/system/protonuke.service /etc/systemd/system/multi-user.target.wants/protonuke.service
 `
 

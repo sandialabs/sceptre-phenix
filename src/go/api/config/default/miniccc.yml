@@ -6,7 +6,7 @@ spec:
   compress: false
   deb_append: ' --components=main,restricted,universe,multiverse'
   format: qcow2
-  include_miniccc: /usr/local/bin/miniccc
+  include_miniccc: true
   mirror: http://us.archive.ubuntu.com/ubuntu/
   overlays: null
   packages:
@@ -56,14 +56,11 @@ spec:
       EOF
       echo "\nBuilt with phenix image on $(date)\n\n" >> /etc/motd
     POSTBUILD_PHENIX_BASE: |
-      mkdir -p /etc/phenix/startup
-      mkdir -p /etc/systemd/system/multi-user.target.wants
-      mkdir -p /usr/local/bin
       cat > /etc/systemd/system/miniccc.service <<EOF
       [Unit]
       Description=miniccc
       [Service]
-      ExecStart=/usr/local/bin/miniccc -v=false -serial /dev/virtio-ports/cc -logfile /var/log/miniccc.log
+      ExecStart=/opt/minimega/bin/miniccc -v=false -serial /dev/virtio-ports/cc -logfile /var/log/miniccc.log
       [Install]
       WantedBy=multi-user.target
       EOF
@@ -80,15 +77,18 @@ spec:
       [Install]
       WantedBy=multi-user.target
       EOF
+      mkdir -p /etc/systemd/system/multi-user.target.wants
       ln -s /etc/systemd/system/miniccc.service /etc/systemd/system/multi-user.target.wants/miniccc.service
       ln -s /etc/systemd/system/phenix.service /etc/systemd/system/multi-user.target.wants/phenix.service
+      mkdir -p /usr/local/bin
       cat > /usr/local/bin/phenix-start.sh <<EOF
       #!/bin/bash
       for file in /etc/phenix/startup/*; do
-        echo $file
-        bash $file
+        echo \$file
+        bash \$file
       done
       EOF
       chmod +x /usr/local/bin/phenix-start.sh
+      mkdir -p /etc/phenix/startup
   size: 5G
   variant: minbase

@@ -9,8 +9,8 @@ x-common: &common
 x-minimega-bin-volume:
   &minimega-bin-volume
   type: bind
-  source: ./minimega-bin
-  target: /usr/local/share/minimega/bin
+  source: ./minimega-overlays
+  target: /usr/local/share/minimega/overlays
 services:
   phenix:
     build:

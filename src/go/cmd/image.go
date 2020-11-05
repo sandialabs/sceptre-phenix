@@ -120,8 +120,8 @@ func newImageCreateCmd() *cobra.Command {
 			img.Compress = MustGetBool(cmd.Flags(), "compress")
 			img.Ramdisk = MustGetBool(cmd.Flags(), "ramdisk")
 			img.DebAppend = MustGetString(cmd.Flags(), "debootstrap-append")
-			img.IncludeMiniccc = MustGetString(cmd.Flags(), "include-miniccc")
-			img.IncludeProtonuke = MustGetString(cmd.Flags(), "include-protonuke")
+			img.IncludeMiniccc = MustGetBool(cmd.Flags(), "include-miniccc")
+			img.IncludeProtonuke = MustGetBool(cmd.Flags(), "include-protonuke")
 
 			if overlays := MustGetString(cmd.Flags(), "overlays"); overlays != "" {
 				img.Overlays = strings.Split(overlays, ",")
@@ -162,8 +162,8 @@ func newImageCreateCmd() *cobra.Command {
 	cmd.Flags().StringP("packages", "P", "", "List of packages to include in addition to those provided by variant (separated by comma)")
 	cmd.Flags().StringP("scripts", "T", "", "List of scripts to include in addition to the defaults (include full path; separated by comma)")
 	cmd.Flags().StringP("debootstrap-append", "d", "", `Additional arguments to debootstrap "(default: --components=main,restricted,universe,multiverse)"`)
-	cmd.Flags().String("include-miniccc", "", `Include the miniccc executable in the directory provided`)
-	cmd.Flags().String("include-protonuke", "", `Include the protonuke executable in the directory provided`)
+	cmd.Flags().Bool("include-miniccc", false, `Include the miniccc executable at /opt/minimega/bin in the image`)
+	cmd.Flags().Bool("include-protonuke", false, `Include the protonuke executable at /opt/minimega/bin in the image`)
 
 	return cmd
 }

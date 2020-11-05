@@ -41,8 +41,11 @@ RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.0/vmdb2 -P bin/
 
 FROM ubuntu:20.04
 
+ENV TZ=Etc/UTC
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 RUN apt update \
-  && apt install -y cpio locales nano vim vmdb2 \
+  && apt install -y cpio git locales nano python3-pip vim vmdb2 \
   && locale-gen en_US.UTF-8 \
   && apt clean \
   && rm -rf /var/lib/apt/lists/* \
@@ -53,5 +56,7 @@ ENV LC_ALL en_US.UTF-8
 
 COPY --from=gobuilder /phenix/bin/phenix /usr/local/bin/phenix
 COPY --from=gobuilder /phenix/bin/vmdb2  /usr/bin/vmdb2
+
+RUN python3 -m pip install "git+https://github.com/activeshadow/phenix-apps.git@master#egg=phenix-apps&subdirectory=src/python"
 
 CMD ["phenix", "help"]
