@@ -54,19 +54,6 @@ func (this Startup) PreStart(exp *types.Experiment) error {
 			continue
 		}
 
-		var keep []ifaces.NodeInjection
-
-		// delete any exisitng interface injections
-		for _, inject := range node.Injections() {
-			if inject.Dst() == "interfaces" || inject.Dst() == "startup.ps1" {
-				continue
-			}
-
-			keep = append(keep, inject)
-		}
-
-		node.SetInjections(keep)
-
 		switch node.Hardware().OSType() {
 		case "linux":
 			var (
@@ -107,6 +94,33 @@ func (this Startup) PreStart(exp *types.Experiment) error {
 				return fmt.Errorf("generating linux interfaces config: %w", err)
 			}
 		case "rhel", "centos":
+			var (
+				hostnameFile = startupDir + "/" + node.General().Hostname() + "-hostname.sh"
+				timezoneFile = startupDir + "/" + node.General().Hostname() + "-timezone.sh"
+			)
+
+			node.AddInject(
+				hostnameFile,
+				"/etc/phenix/startup/1_hostname-start.sh",
+				"0755", "",
+			)
+
+			node.AddInject(
+				timezoneFile,
+				"/etc/phenix/startup/2_timezone-start.sh",
+				"0755", "",
+			)
+
+			timeZone := "Etc/UTC"
+
+			if err := tmpl.CreateFileFromTemplate("linux_hostname.tmpl", node.General().Hostname(), hostnameFile); err != nil {
+				return fmt.Errorf("generating linux hostname config: %w", err)
+			}
+
+			if err := tmpl.CreateFileFromTemplate("linux_timezone.tmpl", timeZone, timezoneFile); err != nil {
+				return fmt.Errorf("generating linux timezone config: %w", err)
+			}
+
 			for idx := range node.Network().Interfaces() {
 				ifaceFile := fmt.Sprintf("%s/interfaces-%s-eth%d", startupDir, node.General().Hostname(), idx)
 
