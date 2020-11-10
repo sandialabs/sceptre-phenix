@@ -24,9 +24,6 @@ steps:
   - cache-rootfs: root
     unless: rootfs_unpacked
   {{- end }}
-  {{- if .Ramdisk  }}
-  - ramdisk: root
-  {{- end }}
   {{- if .Overlays }}
   - overlay: root
     paths:
