@@ -564,25 +564,27 @@ func (Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
 	return cluster, nil
 }
 
-func (Minimega) IsHeadnode(node string) bool {
+func (Minimega) Headnode() string {
 	// Get headnode details
 	hosts, _ := processNamespaceHosts("minimega")
 
 	if len(hosts) == 0 {
-		return false // ???
+		return "" // ???
 	}
 
 	headnode := hosts[0].Name
 
 	// Trim host name suffixes (like -minimega, or -phenix) potentially added to
 	// Docker containers by Docker Compose config.
-	headnode = common.TrimHostnameSuffixes(headnode)
+	return common.TrimHostnameSuffixes(headnode)
+}
 
+func (this Minimega) IsHeadnode(node string) bool {
 	// Trim node name suffixes (like -minimega, or -phenix) potentially added to
 	// Docker containers by Docker Compose config.
 	node = common.TrimHostnameSuffixes(node)
 
-	return node == headnode
+	return node == this.Headnode()
 }
 
 func (Minimega) GetVLANs(opts ...Option) (map[string]int, error) {

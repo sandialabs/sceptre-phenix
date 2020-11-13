@@ -3,10 +3,10 @@ package v1
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"phenix/internal/common"
+	"phenix/internal/mm"
 	ifaces "phenix/types/interfaces"
 	v2 "phenix/types/version/v2"
 	"phenix/util"
@@ -216,9 +216,7 @@ func (this *ExperimentSpec) ScheduleNode(node, host string) error {
 }
 
 func (this ExperimentSpec) SnapshotName(node string) string {
-	hostname, _ := os.Hostname()
-
-	return fmt.Sprintf("%s_%s_%s_snapshot", hostname, this.ExperimentNameF, node)
+	return fmt.Sprintf("%s_%s_%s_snapshot", mm.Headnode(), this.ExperimentNameF, node)
 }
 
 type ExperimentStatus struct {

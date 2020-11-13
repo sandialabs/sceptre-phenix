@@ -76,6 +76,10 @@ func GetClusterHosts(schedOnly bool) (Hosts, error) {
 	return DefaultMM.GetClusterHosts(schedOnly)
 }
 
+func Headnode() string {
+	return DefaultMM.Headnode()
+}
+
 func IsHeadnode(node string) bool {
 	return DefaultMM.IsHeadnode(node)
 }

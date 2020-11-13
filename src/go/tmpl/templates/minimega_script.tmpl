@@ -38,7 +38,7 @@ vm config schedule {{ index $.Schedules .General.Hostname }}
 vm config vcpus {{ .Hardware.VCPU }}
 vm config cpu {{ .Hardware.CPU }}
 vm config memory {{ .Hardware.Memory }}
-vm config snapshot {{ .General.Snapshot }}
+vm config snapshot {{ derefBool .General.Snapshot }}
         {{- if .General.Snapshot }}
 vm config disk {{ .Hardware.DiskConfig ($.SnapshotName .General.Hostname) }},writeback
         {{- else }}

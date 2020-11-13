@@ -258,6 +258,12 @@ func Delete(name string) error {
 			if err := delete(&c); err != nil {
 				return err
 			}
+
+			for _, hook := range hooks[c.Kind] {
+				if err := hook("delete", &c); err != nil {
+					// TODO: what to do w/ error?
+				}
+			}
 		}
 
 		return nil
@@ -268,7 +274,17 @@ func Delete(name string) error {
 		return fmt.Errorf("getting config '%s': %w", name, err)
 	}
 
-	return delete(c)
+	if err := delete(c); err != nil {
+		return err
+	}
+
+	for _, hook := range hooks[c.Kind] {
+		if err := hook("delete", c); err != nil {
+			// TODO: what to do w/ error?
+		}
+	}
+
+	return nil
 }
 
 func delete(c *store.Config) error {

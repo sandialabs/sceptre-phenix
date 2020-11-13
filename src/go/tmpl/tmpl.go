@@ -20,6 +20,10 @@ func GenerateFromTemplate(name string, data interface{}, w io.Writer) error {
 			return a + b
 		},
 		"derefBool": func(b *bool) bool {
+			if b == nil {
+				return false
+			}
+
 			return *b
 		},
 	}
