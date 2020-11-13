@@ -170,6 +170,51 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 			return fmt.Errorf("decoding scenario from config: %w", err)
 		}
 
+		// This will look for `fromScenario` keys in the provided scenario and, if
+		// present, replace the config from the specified scenario.
+		for _, app := range scenario.Apps() {
+			if app.FromScenario() != "" {
+				fromScenarioC, _ := store.NewConfig("scenario/" + app.FromScenario())
+
+				if err := store.Get(fromScenarioC); err != nil {
+					return fmt.Errorf("scenario %s doesn't exist", app.FromScenario())
+				}
+
+				topo, ok := scenarioC.Metadata.Annotations["topology"]
+				if !ok {
+					return fmt.Errorf("topology annotation missing from scenario %s", app.FromScenario())
+				}
+
+				if topo != o.topology {
+					return fmt.Errorf("experiment/scenario topology mismatch")
+				}
+
+				// This will upgrade the scenario to the latest known version if needed.
+				fromScenario, err := types.DecodeScenarioFromConfig(*fromScenarioC)
+				if err != nil {
+					return fmt.Errorf("decoding scenario %s from config: %w", app.FromScenario(), err)
+				}
+
+				var found bool
+
+				for _, fromApp := range fromScenario.Apps() {
+					if fromApp.Name() == app.Name() {
+						app.SetAssetDir(fromApp.AssetDir())
+						app.SetMetadata(fromApp.Metadata())
+						app.SetHosts(fromApp.Hosts())
+
+						found = true
+						break
+					}
+				}
+
+				if !found {
+					return fmt.Errorf("no app named %s in scenario %s", app.Name(), app.FromScenario())
+				}
+
+			}
+		}
+
 		meta.Annotations["scenario"] = o.scenario
 		specMap["scenario"] = scenario
 	}

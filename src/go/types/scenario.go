@@ -18,10 +18,10 @@ func init() {
 	spec = new(v2.ScenarioSpec)
 	_ = spec.(ifaces.ScenarioSpec)
 
-	spec = v2.ScenarioApp{}
+	spec = new(v2.ScenarioApp)
 	_ = spec.(ifaces.ScenarioApp)
 
-	spec = v2.ScenarioAppHost{}
+	spec = new(v2.ScenarioAppHost)
 	_ = spec.(ifaces.ScenarioAppHost)
 }
 
@@ -84,7 +84,7 @@ func (scenario) Upgrade(version string, spec map[string]interface{}, md store.Co
 		}
 
 		for _, exp := range V1.AppsF.ExperimentF {
-			app := v2.ScenarioApp{
+			app := &v2.ScenarioApp{
 				NameF:     exp.NameF,
 				AssetDirF: exp.AssetDirF,
 				MetadataF: exp.MetadataF,
@@ -94,16 +94,16 @@ func (scenario) Upgrade(version string, spec map[string]interface{}, md store.Co
 		}
 
 		for _, host := range V1.AppsF.HostF {
-			hosts := make([]v2.ScenarioAppHost, len(host.HostsF))
+			hosts := make([]*v2.ScenarioAppHost, len(host.HostsF))
 
 			for i, h1 := range host.HostsF {
-				hosts[i] = v2.ScenarioAppHost{
+				hosts[i] = &v2.ScenarioAppHost{
 					HostnameF: h1.HostnameF,
 					MetadataF: h1.MetadataF,
 				}
 			}
 
-			app := v2.ScenarioApp{
+			app := &v2.ScenarioApp{
 				NameF:     host.NameF,
 				AssetDirF: host.AssetDirF,
 				HostsF:    hosts,
