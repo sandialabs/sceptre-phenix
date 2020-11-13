@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"phenix/internal/common"
+	"phenix/internal/mm"
 	"phenix/scheduler"
 	"phenix/types"
 	"phenix/util/shell"
@@ -72,6 +73,13 @@ func (this UserApp) shellOut(action Action, exp *types.Experiment) error {
 	if !shell.CommandExists(cmdName) {
 		return fmt.Errorf("external user app %s does not exist in your path: %w", cmdName, ErrUserAppNotFound)
 	}
+
+	cluster, err := mm.GetClusterHosts(true)
+	if err != nil {
+		return fmt.Errorf("getting cluster hosts: %w", err)
+	}
+
+	exp.Hosts = cluster
 
 	data, err := json.Marshal(exp)
 	if err != nil {

@@ -3,6 +3,7 @@ package types
 import (
 	"fmt"
 
+	"phenix/internal/mm"
 	"phenix/store"
 	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
@@ -14,6 +15,9 @@ type Experiment struct {
 	Metadata store.ConfigMetadata    `json:"metadata" yaml:"metadata"` // experiment configuration metadata
 	Spec     ifaces.ExperimentSpec   `json:"spec" yaml:"spec"`         // reference to latest versioned experiment spec
 	Status   ifaces.ExperimentStatus `json:"status" yaml:"status"`     // reference to latest versioned experiment status
+
+	// used for user apps
+	Hosts mm.Hosts `json:"hosts,omitempty" yaml:"hosts,omitempty"` // cluster host details
 }
 
 func NewExperiment(md store.ConfigMetadata) *Experiment {
