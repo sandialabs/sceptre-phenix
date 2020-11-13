@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"strings"
 	"time"
 
@@ -19,10 +20,13 @@ import (
 	"phenix/types/version"
 
 	"github.com/activeshadow/structs"
+	"github.com/hashicorp/go-multierror"
 )
 
 func init() {
 	config.RegisterConfigHook("Experiment", func(action string, c *store.Config) error {
+		var errors error
+
 		if action == "delete" {
 			exp, err := types.DecodeExperimentFromConfig(*c)
 			if err != nil {
@@ -32,11 +36,15 @@ func init() {
 			// Delete any snapshot files created by this headnode for this experiment
 			// after deleting the experiment.
 			if err := deleteSnapshots(exp); err != nil {
-				return fmt.Errorf("deleting experiment snapshots: %w", err)
+				errors = multierror.Append(errors, fmt.Errorf("deleting experiment snapshots: %w", err))
+			}
+
+			if err := os.RemoveAll(exp.Spec.BaseDir()); err != nil {
+				errors = multierror.Append(errors, fmt.Errorf("deleting experiment base directory: %w", err))
 			}
 		}
 
-		return nil
+		return errors
 	})
 }
 
@@ -475,13 +483,19 @@ func Delete(name string) error {
 		return fmt.Errorf("decoding experiment from config: %w", err)
 	}
 
+	var errors error
+
 	// Delete any snapshot files created by this headnode for this experiment
 	// after deleting the experiment.
 	if err := deleteSnapshots(exp); err != nil {
-		return fmt.Errorf("deleting experiment snapshots: %w", err)
+		errors = multierror.Append(errors, fmt.Errorf("deleting experiment snapshots: %w", err))
 	}
 
-	return nil
+	if err := os.RemoveAll(exp.Spec.BaseDir()); err != nil {
+		errors = multierror.Append(errors, fmt.Errorf("deleting experiment base directory: %w", err))
+	}
+
+	return errors
 }
 
 func Files(name string) ([]string, error) {

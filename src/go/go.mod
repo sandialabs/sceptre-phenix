@@ -18,6 +18,7 @@ require (
 	github.com/google/go-cmp v0.5.1 // indirect
 	github.com/gorilla/mux v1.7.4
 	github.com/gorilla/websocket v1.4.2
+	github.com/hashicorp/go-multierror v1.0.0
 	github.com/hpcloud/tail v1.0.0
 	github.com/mitchellh/mapstructure v1.2.2
 	github.com/olekukonko/tablewriter v0.0.4
