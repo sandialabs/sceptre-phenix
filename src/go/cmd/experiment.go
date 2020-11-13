@@ -415,7 +415,7 @@ func newExperimentRestartCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "restart <experiment name>",
-		Short: "Start an experiment",
+		Short: "Restart an experiment",
 		Long:  desc,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -471,6 +471,64 @@ func newExperimentRestartCmd() *cobra.Command {
 	return cmd
 }
 
+func newExperimentReconfigureCmd() *cobra.Command {
+	desc := `Reconfigure an experiment
+
+  Used to rerun the 'configure' stage of all the apps (both default and user)
+  for the given experiment (as long as it's not running). Using 'all' instead
+  of a specific experiment name will reconfigure all non-running
+  experiments.`
+
+	cmd := &cobra.Command{
+		Use:   "reconfigure <experiment name>",
+		Short: "Reconfigure an experiment",
+		Long:  desc,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var (
+				name        = args[0]
+				experiments []types.Experiment
+			)
+
+			if name == "all" {
+				var err error
+
+				experiments, err = experiment.List()
+				if err != nil {
+					err := util.HumanizeError(err, "Unable to reconfigure all experiments")
+					return err.Humanized()
+				}
+			} else {
+				exp, err := experiment.Get(name)
+				if err != nil {
+					err := util.HumanizeError(err, "Unable to reconfigure the "+name+" experiment")
+					return err.Humanized()
+				}
+
+				experiments = []types.Experiment{*exp}
+			}
+
+			for _, exp := range experiments {
+				if exp.Running() {
+					fmt.Printf("Not reconfiguring running experiment %s\n", exp.Metadata.Name)
+					continue
+				}
+
+				if err := experiment.Reconfigure(exp.Metadata.Name); err != nil {
+					err := util.HumanizeError(err, "Unable to reconfigure the "+exp.Metadata.Name+" experiment")
+					return err.Humanized()
+				}
+
+				fmt.Printf("The %s experiment was reconfigured\n", exp.Metadata.Name)
+			}
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
 func init() {
 	experimentCmd := newExperimentCmd()
 
@@ -483,6 +541,7 @@ func init() {
 	experimentCmd.AddCommand(newExperimentStartCmd())
 	experimentCmd.AddCommand(newExperimentStopCmd())
 	experimentCmd.AddCommand(newExperimentRestartCmd())
+	experimentCmd.AddCommand(newExperimentReconfigureCmd())
 
 	rootCmd.AddCommand(experimentCmd)
 }

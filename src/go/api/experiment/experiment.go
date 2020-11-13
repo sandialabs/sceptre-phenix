@@ -399,6 +399,32 @@ func Save(opts ...SaveOption) error {
 	return nil
 }
 
+// Reconfigure executes the 'configure' stage for all apps the given experiment
+// is configured to use. It returns any errors encountered while reconfiguring
+// the experiment.
+func Reconfigure(name string) error {
+	c, _ := store.NewConfig("experiment/" + name)
+
+	if err := store.Get(c); err != nil {
+		return fmt.Errorf("getting experiment %s from store: %w", name, err)
+	}
+
+	exp, err := types.DecodeExperimentFromConfig(*c)
+	if err != nil {
+		return fmt.Errorf("decoding experiment from config: %w", err)
+	}
+
+	if exp.Running() {
+		return fmt.Errorf("experiment is running")
+	}
+
+	if err := app.ApplyApps(app.ACTIONCONFIG, exp); err != nil {
+		return fmt.Errorf("configuring apps for experiment: %w", err)
+	}
+
+	return nil
+}
+
 func Delete(name string) error {
 	if Running(name) {
 		return fmt.Errorf("cannot delete a running experiment")
