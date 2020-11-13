@@ -134,6 +134,14 @@ func (this UserApp) shellOut(action Action, exp *types.Experiment) error {
 		return fmt.Errorf("user app %s command %s failed: %w", this.options.Name, cmdName, err)
 	}
 
+	// If we make it to this point, then the user app exited with a 0 exit code.
+	// If the user app didn't make any modifications, then we don't require it to
+	// output an experiment config. So, if there's nothing on STDOUT then just
+	// return immediately without error.
+	if len(stdOut) == 0 {
+		return nil
+	}
+
 	result := types.NewExperiment(exp.Metadata)
 
 	if err := json.Unmarshal(stdOut, &result); err != nil {
