@@ -438,7 +438,30 @@ func (Minimega) StartVMCapture(opts ...Option) error {
 		}
 	}
 
-	cmd := mmcli.NewNamespacedCommand(o.ns)
+	if filepath.IsAbs(o.captureFile) {
+		return fmt.Errorf("path for capture file should not be absolute")
+	}
+
+	host, err := GetVMHost(opts...)
+	if err != nil {
+		return fmt.Errorf("unable to determine what host the VM is scheduled on: %w", err)
+	}
+
+	var cmdPrefix string
+
+	if !IsHeadnode(host) {
+		cmdPrefix = "mesh send " + host
+	}
+
+	dir := common.PhenixBase + "/images/" + filepath.Dir(o.captureFile)
+	cmd := mmcli.NewCommand()
+	cmd.Command = fmt.Sprintf("%s shell mkdir -p %s", cmdPrefix, dir)
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("ensuring experiment files directory exists: %w", err)
+	}
+
+	cmd = mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = fmt.Sprintf("capture pcap vm %s %d %s", o.vm, o.captureIface, o.captureFile)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {

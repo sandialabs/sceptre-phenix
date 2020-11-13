@@ -508,9 +508,19 @@ func File(name, fileName string) ([]byte, error) {
 		return nil, fmt.Errorf("getting list of experiment files: %w", err)
 	}
 
+	for _, c := range mm.GetExperimentCaptures(mm.NS(name)) {
+		if strings.Contains(c.Filepath, fileName) {
+			return nil, mm.ErrCaptureExists
+		}
+	}
+
 	for _, f := range files {
 		if fileName == f {
-			path := fmt.Sprintf("%s/%s/files/%s", common.PhenixBase, name, f)
+			headnode, _ := os.Hostname()
+
+			file.CopyFile(headnode, fmt.Sprintf("/%s/files/%s", name, f), nil)
+
+			path := fmt.Sprintf("%s/images/%s/files/%s", common.PhenixBase, name, f)
 
 			data, err := ioutil.ReadFile(path)
 			if err != nil {

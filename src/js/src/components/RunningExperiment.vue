@@ -1293,7 +1293,7 @@
                         + this.$route.params.id 
                         + '/vms/' 
                         + vm.name 
-                        + '/captures', { "interface": iface, "filename": time } 
+                        + '/captures', { "interface": iface, "filename": vm.name + "_" + time } 
                       ).then(
                         response => {
                           if ( response.status == 204 ) {
