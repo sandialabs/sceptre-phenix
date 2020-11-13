@@ -22,7 +22,7 @@ func (Vyatta) Name() string {
 func (Vyatta) Configure(exp *types.Experiment) error {
 	// loop through nodes
 	for _, node := range exp.Spec.Topology().Nodes() {
-		if !strings.EqualFold(node.Type(), "router") {
+		if !strings.EqualFold(node.Type(), "router") && !strings.EqualFold(node.Type(), "firewall") {
 			continue
 		}
 
@@ -56,7 +56,7 @@ func (Vyatta) PreStart(exp *types.Experiment) error {
 
 	// loop through nodes
 	for _, node := range exp.Spec.Topology().Nodes() {
-		if !strings.EqualFold(node.Type(), "router") {
+		if !strings.EqualFold(node.Type(), "router") && !strings.EqualFold(node.Type(), "firewall") {
 			continue
 		}
 
