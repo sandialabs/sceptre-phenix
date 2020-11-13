@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"phenix/api/config"
@@ -186,8 +187,8 @@ func newConfigCreateCmd() *cobra.Command {
 	desc := `Create a configuration(s)
 
   This subcommand is used to create one or more configurations from JSON or
-  YAML file(s).
-	`
+  YAML file(s). A directory path can also be given, and all JSON and YAML
+  files in the given directory will be parsed.`
 
 	cmd := &cobra.Command{
 		Use:   "create </path/to/filename> ...",
@@ -201,13 +202,49 @@ func newConfigCreateCmd() *cobra.Command {
 			skip := MustGetBool(cmd.Flags(), "skip-validation")
 
 			for _, f := range args {
-				c, err := config.Create(f, !skip)
+				var configs []string
+
+				err := filepath.Walk(f, func(path string, info os.FileInfo, err error) error {
+					if err != nil {
+						return err
+					}
+
+					// Don't recursively process subdirectories.
+					if info.IsDir() {
+						return nil
+					}
+
+					extensions := []string{"*.json", "*.yaml", "*.yml"}
+
+					for _, ext := range extensions {
+						match, err := filepath.Match(ext, filepath.Base(path))
+						if err != nil {
+							return err
+						}
+
+						if match {
+							configs = append(configs, path)
+							break
+						}
+					}
+
+					return nil
+				})
+
 				if err != nil {
 					err := util.HumanizeError(err, "Unable to create configuration from "+f)
 					return err.Humanized()
 				}
 
-				fmt.Printf("The %s/%s configuration was created\n", c.Kind, c.Metadata.Name)
+				for _, f := range configs {
+					c, err := config.Create(f, !skip)
+					if err != nil {
+						err := util.HumanizeError(err, "Unable to create configuration from "+f)
+						return err.Humanized()
+					}
+
+					fmt.Printf("The %s/%s configuration was created\n", c.Kind, c.Metadata.Name)
+				}
 			}
 
 			return nil
