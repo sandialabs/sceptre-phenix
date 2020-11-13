@@ -152,7 +152,7 @@ func ApplyApps(action Action, exp *types.Experiment) error {
 		}
 	}
 
-	if exp.Spec.Scenario != nil {
+	if exp.Spec.Scenario() != nil {
 		for _, app := range exp.Spec.Scenario().Apps() {
 			// Don't apply default apps again if configured via the Scenario.
 			if _, ok := defaultApps[app.Name()]; ok {
@@ -197,6 +197,11 @@ func ApplyApps(action Action, exp *types.Experiment) error {
 				return fmt.Errorf("applying experiment app %s for action %s: %w", a.Name(), action, err)
 			}
 		}
+	}
+
+	if action == ACTIONCONFIG || action == ACTIONPRESTART {
+		// just in case one of the apps added some nodes to the topology...
+		exp.Spec.SetDefaults()
 	}
 
 	return nil
