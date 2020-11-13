@@ -13,6 +13,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"phenix/api/cluster"
@@ -1947,8 +1948,21 @@ func GetScenarios(w http.ResponseWriter, r *http.Request) {
 	allowed := make(map[string]*structpb.ListValue)
 
 	for _, s := range scenarios {
-		// We only care about scenarios pertaining to the given topology.
-		if t := s.Metadata.Annotations["topology"]; t != topo {
+		var (
+			// A scenario can be associated with more than one topology.
+			topos = strings.Split(s.Metadata.Annotations["topology"], ",")
+			found bool
+		)
+
+		for _, t := range topos {
+			// We only care about scenarios pertaining to the given topology.
+			if t == topo {
+				found = true
+				break
+			}
+		}
+
+		if !found {
 			continue
 		}
 

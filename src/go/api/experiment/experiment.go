@@ -160,7 +160,16 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 			return fmt.Errorf("topology annotation missing from scenario")
 		}
 
-		if topo != o.topology {
+		var found bool
+
+		for _, t := range strings.Split(topo, ",") {
+			if t == o.topology {
+				found = true
+				break
+			}
+		}
+
+		if !found {
 			return fmt.Errorf("experiment/scenario topology mismatch")
 		}
 
