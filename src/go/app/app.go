@@ -71,7 +71,6 @@ func GetApp(name string) App {
 	app, ok := apps[name]
 	if !ok {
 		app = apps["user-shell"]
-		app.Init(Name(name))
 	}
 
 	return app
@@ -120,11 +119,14 @@ type App interface {
 // ApplyApps applies all the default phenix apps and any configured user apps to
 // the given experiment for the given lifecycle phase. It returns any errors
 // encountered while applying the apps.
-func ApplyApps(action Action, exp *types.Experiment) error {
-	var err error
+func ApplyApps(exp *types.Experiment, opts ...Option) error {
+	var (
+		options = NewOptions(opts...)
+		err     error
+	)
 
 	for _, a := range DefaultApps() {
-		switch action {
+		switch options.Stage {
 		case ACTIONCONFIG:
 			err = a.Configure(exp)
 		case ACTIONPRESTART:
@@ -145,10 +147,10 @@ func ApplyApps(action Action, exp *types.Experiment) error {
 			printer = color.New(color.FgRed)
 		}
 
-		printer.Printf("[%s] '%s' default app (%s)\n", status, a.Name(), action)
+		printer.Printf("[%s] '%s' default app (%s)\n", status, a.Name(), options.Stage)
 
 		if err != nil {
-			return fmt.Errorf("applying default app %s for action %s: %w", a.Name(), action, err)
+			return fmt.Errorf("applying default app %s for action %s: %w", a.Name(), options.Stage, err)
 		}
 	}
 
@@ -160,8 +162,9 @@ func ApplyApps(action Action, exp *types.Experiment) error {
 			}
 
 			a := GetApp(app.Name())
+			a.Init(Name(app.Name()), DryRun(options.DryRun))
 
-			switch action {
+			switch options.Stage {
 			case ACTIONCONFIG:
 				err = a.Configure(exp)
 			case ACTIONPRESTART:
@@ -187,19 +190,19 @@ func ApplyApps(action Action, exp *types.Experiment) error {
 				}
 			}
 
-			printer.Printf("[%s] '%s' experiment app (%s)\n", status, a.Name(), action)
+			printer.Printf("[%s] '%s' experiment app (%s)\n", status, a.Name(), options.Stage)
 
 			if err != nil {
 				if errors.Is(err, ErrUserAppNotFound) {
 					continue
 				}
 
-				return fmt.Errorf("applying experiment app %s for action %s: %w", a.Name(), action, err)
+				return fmt.Errorf("applying experiment app %s for action %s: %w", a.Name(), options.Stage, err)
 			}
 		}
 	}
 
-	if action == ACTIONCONFIG || action == ACTIONPRESTART {
+	if options.Stage == ACTIONCONFIG || options.Stage == ACTIONPRESTART {
 		// just in case one of the apps added some nodes to the topology...
 		exp.Spec.SetDefaults()
 	}

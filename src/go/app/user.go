@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"phenix/internal/common"
@@ -104,6 +105,7 @@ func (this UserApp) shellOut(action Action, exp *types.Experiment) error {
 			"PHENIX_DIR="+common.PhenixBase,
 			"PHENIX_LOG_LEVEL="+util.GetEnv("PHENIX_LOG_LEVEL", "DEBUG"),
 			"PHENIX_LOG_FILE="+util.GetEnv("PHENIX_LOG_FILE", logFile),
+			"PHENIX_DRYRUN="+strconv.FormatBool(this.options.DryRun),
 		),
 	}
 

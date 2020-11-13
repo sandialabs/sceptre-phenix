@@ -248,7 +248,7 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 		return fmt.Errorf("verifying experiment scenario: %w", err)
 	}
 
-	if err := app.ApplyApps(app.ACTIONCONFIG, exp); err != nil {
+	if err := app.ApplyApps(exp, app.Stage(app.ACTIONCONFIG)); err != nil {
 		return fmt.Errorf("applying apps to experiment: %w", err)
 	}
 
@@ -329,7 +329,7 @@ func Start(opts ...StartOption) error {
 		exp.Spec.VLANs().SetMax(o.vlanMax)
 	}
 
-	if err := app.ApplyApps(app.ACTIONPRESTART, exp); err != nil {
+	if err := app.ApplyApps(exp, app.Stage(app.ACTIONPRESTART), app.DryRun(o.dryrun)); err != nil {
 		return fmt.Errorf("applying apps to experiment: %w", err)
 	}
 
@@ -384,7 +384,7 @@ func Start(opts ...StartOption) error {
 		exp.Status.SetStartTime(time.Now().Format(time.RFC3339))
 	}
 
-	if err := app.ApplyApps(app.ACTIONPOSTSTART, exp); err != nil {
+	if err := app.ApplyApps(exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
 		return fmt.Errorf("applying apps to experiment: %w", err)
 	}
 
@@ -418,7 +418,7 @@ func Stop(name string) error {
 
 	dryrun := strings.HasSuffix(exp.Status.StartTime(), "-DRYRUN")
 
-	if err := app.ApplyApps(app.ACTIONCLEANUP, exp); err != nil {
+	if err := app.ApplyApps(exp, app.Stage(app.ACTIONCLEANUP)); err != nil {
 		return fmt.Errorf("applying apps to experiment: %w", err)
 	}
 
@@ -510,7 +510,7 @@ func Reconfigure(name string) error {
 		return fmt.Errorf("experiment is running")
 	}
 
-	if err := app.ApplyApps(app.ACTIONCONFIG, exp); err != nil {
+	if err := app.ApplyApps(exp, app.Stage(app.ACTIONCONFIG)); err != nil {
 		return fmt.Errorf("configuring apps for experiment: %w", err)
 	}
 
