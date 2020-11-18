@@ -37,6 +37,8 @@ var rootCmd = &cobra.Command{
 			errOut   = viper.GetBool("log.error-stderr")
 		)
 
+		common.LogFile = errFile
+
 		if err := store.Init(store.Endpoint(endpoint)); err != nil {
 			return fmt.Errorf("initializing storage: %w", err)
 		}

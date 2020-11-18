@@ -5,8 +5,11 @@ import (
 )
 
 var (
-	PhenixBase       = "/phenix"
-	MinimegaBase     = "/tmp/minimega"
+	PhenixBase   = "/phenix"
+	MinimegaBase = "/tmp/minimega"
+
+	LogFile = "/var/log/phenix"
+
 	HostnameSuffixes string
 )
 
