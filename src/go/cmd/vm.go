@@ -338,11 +338,11 @@ func newVMCaptureCmd() *cobra.Command {
 	}
 
 	start := &cobra.Command{
-		Use:   "start <experiment name> <vm name> <iface index> </path/to/out file>",
-		Short: "Start a packet capture",
+		Use:   "start <experiment name> <vm name> <iface index> <output file>",
+		Short: "Start a packet capture, using given output file as name of capture file",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 4 {
-				return fmt.Errorf("Must provide an experiment name, VM name, iface index, and /path/to/out file")
+				return fmt.Errorf("Must provide an experiment name, VM name, iface index, and output file")
 			}
 
 			var (
