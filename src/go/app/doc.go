@@ -7,7 +7,7 @@ Default Apps
   * serial.go:  configures a Serial interface on a VM image
   * startup.go: configures minimega startup injections based on OS type
   * user.go:    used to shell out with JSON payload to custom user apps
-  * vyatta.go:  used to customize a vyatta router image, including setting
+  * vrouter.go: used to customize a virtual router image, including setting
                 interfaces, ACL rules, IPSec VPN settings, etc
 
 Custom User Apps

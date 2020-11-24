@@ -10,8 +10,8 @@ import (
 	v1 "phenix/types/version/v1"
 )
 
-func TestVyattaApp(t *testing.T) {
-	baseDir, err := ioutil.TempDir("", "vyatta-app-test")
+func TestVrouterApp(t *testing.T) {
+	baseDir, err := ioutil.TempDir("", "vrouter-app-test")
 	if err != nil {
 		t.Log(err)
 		t.FailNow()
@@ -52,7 +52,7 @@ func TestVyattaApp(t *testing.T) {
 	expected := [][]v1.Injection{
 		{
 			{
-				Src: fmt.Sprintf("%s/vyatta/router.boot", baseDir),
+				Src: fmt.Sprintf("%s/vrouter/router.boot", baseDir),
 				Dst: "/opt/vyatta/etc/config/config.boot",
 			},
 		},
@@ -69,7 +69,7 @@ func TestVyattaApp(t *testing.T) {
 
 	exp := &types.Experiment{Spec: spec}
 
-	app := GetApp("vyatta")
+	app := GetApp("vrouter")
 
 	if err := app.Configure(exp); err != nil {
 		t.Log(err)

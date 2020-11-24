@@ -1,5 +1,6 @@
 {{ $ntpAddr := index . "ntp-addr" }}
 {{ $node := index . "node" }}
+{{ $ipsec := index . "ipsec" }}
 
 interfaces {
 {{ range $idx, $iface := $node.Network.Interfaces }}
@@ -115,7 +116,60 @@ protocols {
     }
 }
 
-{{/* TODO: need to add Ipsec VPN content */}}
+vpn {
+    {{ if $ipsec }}
+    ipsec {
+        esp-group ESP-1W {
+            compression disable
+            lifetime 1800
+            mode tunnel
+            pfs enable
+            proposal 1 {
+                encryption aes256
+                hash sha1
+            }
+        }
+        ike-group IKE-1W {
+            lifetime 3600
+            proposal 1 {
+                encryption aes256
+                hash sha1
+            }
+        }
+        ipsec-interfaces {
+            {{ range $key := $ipsec.Interfaces }}
+            interface {{ $key }}
+            {{ end }}
+        }
+        site-to-site {
+            {{ range $site := $ipsec.Sites }}
+            peer {{ $site.Peer }} {
+                authentication {
+                    mode pre-shared-secret
+                    pre-shared-secret {{ $site.PresharedKey }}
+                }
+                connection-type initiate
+                default-esp-group ESP-1W
+                ike-group IKE-1W
+                local-address {{ $site.Local }}
+                {{ range $idx, $tunnel := $site.Tunnels }}
+                tunnel {{ $idx }} {
+                    allow-nat-networks disable
+                    allow-public-networks disable
+                    local {
+                        prefix {{ $tunnel.Local }}
+                    }
+                    remote {
+                        prefix {{ $tunnel.Remote }}
+                    }
+                }
+                {{ end }}
+            }
+            {{ end }}
+        }
+    }
+    {{ end }}
+}
 
 system {
     host-name {{ $node.RouterName }}

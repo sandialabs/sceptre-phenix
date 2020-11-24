@@ -15,7 +15,7 @@ func init() {
 	apps["serial"] = new(Serial)
 	apps["startup"] = new(Startup)
 	apps["user-shell"] = new(UserApp)
-	apps["vyatta"] = new(Vyatta)
+	apps["vrouter"] = new(Vrouter)
 }
 
 // Action represents the different experiment lifecycle hooks.
@@ -32,10 +32,10 @@ var (
 	apps = make(map[string]App)
 
 	defaultApps = map[string]struct{}{
-		"ntp":     struct{}{},
-		"serial":  struct{}{},
-		"startup": struct{}{},
-		"vyatta":  struct{}{},
+		"ntp":     {},
+		"serial":  {},
+		"startup": {},
+		"vrouter": {},
 	}
 )
 

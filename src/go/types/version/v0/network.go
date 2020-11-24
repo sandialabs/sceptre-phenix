@@ -9,10 +9,10 @@ import (
 )
 
 type Network struct {
-	InterfacesF []Interface `json:"interfaces" yaml:"interfaces" structs:"interfaces" mapstructure:"interfaces"`
-	RoutesF     []Route     `json:"routes" yaml:"routes" structs:"routes" mapstructure:"routes"`
-	OSPFF       *OSPF       `json:"ospf" yaml:"ospf" structs:"ospf" mapstructure:"ospf"`
-	RulesetsF   []Ruleset   `json:"rulesets" yaml:"rulesets" structs:"rulesets" mapstructure:"rulesets"`
+	InterfacesF []*Interface `json:"interfaces" yaml:"interfaces" structs:"interfaces" mapstructure:"interfaces"`
+	RoutesF     []Route      `json:"routes" yaml:"routes" structs:"routes" mapstructure:"routes"`
+	OSPFF       *OSPF        `json:"ospf" yaml:"ospf" structs:"ospf" mapstructure:"ospf"`
+	RulesetsF   []*Ruleset   `json:"rulesets" yaml:"rulesets" structs:"rulesets" mapstructure:"rulesets"`
 }
 
 func (this Network) Interfaces() []ifaces.NodeNetworkInterface {
@@ -47,6 +47,20 @@ func (this Network) Rulesets() []ifaces.NodeNetworkRuleset {
 	}
 
 	return sets
+}
+
+func (this *Network) SetRulesets(rules []ifaces.NodeNetworkRuleset) {
+	sets := make([]*Ruleset, len(rules))
+
+	for i, r := range rules {
+		sets[i] = r.(*Ruleset)
+	}
+
+	this.RulesetsF = sets
+}
+
+func (this *Network) AddRuleset(rule ifaces.NodeNetworkRuleset) {
+	this.RulesetsF = append(this.RulesetsF, rule.(*Ruleset))
 }
 
 type Interface struct {
@@ -130,6 +144,14 @@ func (this Interface) RulesetIn() string {
 
 func (this Interface) RulesetOut() string {
 	return this.RulesetOutF
+}
+
+func (this *Interface) SetRulesetIn(rule string) {
+	this.RulesetInF = rule
+}
+
+func (this *Interface) SetRulesetOut(rule string) {
+	this.RulesetOutF = rule
 }
 
 type Route struct {

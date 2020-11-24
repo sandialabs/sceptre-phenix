@@ -54,6 +54,9 @@ type NodeNetwork interface {
 	Routes() []NodeNetworkRoute
 	OSPF() NodeNetworkOSPF
 	Rulesets() []NodeNetworkRuleset
+
+	SetRulesets([]NodeNetworkRuleset)
+	AddRuleset(NodeNetworkRuleset)
 }
 
 type NodeNetworkInterface interface {
@@ -73,6 +76,9 @@ type NodeNetworkInterface interface {
 	Gateway() string
 	RulesetIn() string
 	RulesetOut() string
+
+	SetRulesetIn(string)
+	SetRulesetOut(string)
 }
 
 type NodeNetworkRoute interface {
