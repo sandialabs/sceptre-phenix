@@ -238,6 +238,10 @@ func (this ExperimentStatus) VLANs() map[string]int {
 	return this.VLANsF
 }
 
+func (this ExperimentStatus) Schedules() map[string]string {
+	return this.SchedulesF
+}
+
 func (this *ExperimentStatus) SetStartTime(t string) {
 	this.StartTimeF = t
 }

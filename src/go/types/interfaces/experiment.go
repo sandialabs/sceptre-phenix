@@ -34,6 +34,7 @@ type ExperimentStatus interface {
 	StartTime() string
 	AppStatus() map[string]interface{}
 	VLANs() map[string]int
+	Schedules() map[string]string
 
 	SetStartTime(string)
 	SetAppStatus(string, interface{})
