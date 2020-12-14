@@ -38,6 +38,12 @@ RUN VER=${PHENIX_VERSION} COMMIT=${PHENIX_COMMIT} make bin/phenix
 RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.0/vmdb2 -P bin/ \
   && chmod +x bin/vmdb2
 
+RUN git clone --branch master https://github.com/activeshadow/phenix-apps.git /phenix-apps
+
+WORKDIR /phenix-apps/src/go
+
+RUN go install ./...
+
 
 FROM ubuntu:20.04
 
@@ -54,8 +60,9 @@ RUN apt update \
 ENV LANG   en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
 
-COPY --from=gobuilder /phenix/bin/phenix /usr/local/bin/phenix
-COPY --from=gobuilder /phenix/bin/vmdb2  /usr/bin/vmdb2
+COPY --from=gobuilder /phenix/bin/phenix   /usr/local/bin/phenix
+COPY --from=gobuilder /phenix/bin/vmdb2    /usr/bin/vmdb2
+COPY --from=gobuilder /go/bin/phenix-app-* /usr/local/bin
 
 RUN python3 -m pip install "git+https://github.com/activeshadow/phenix-apps.git@master#egg=phenix-apps&subdirectory=src/python"
 
