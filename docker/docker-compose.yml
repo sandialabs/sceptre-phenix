@@ -15,8 +15,8 @@ services:
   phenix:
     build:
       context: ../
+      dockerfile: docker/Dockerfile
       args:
-        PHENIX_VERSION: container
         PHENIX_WEB_AUTH: disabled
     command:
     - phenix

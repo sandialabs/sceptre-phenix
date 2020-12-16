@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# $DOCKER_TAG, $SOURCE_COMMIT, and $IMAGE_NAME are set by the build process on
+# Docker Hub when the image is automatically built.
+
+docker build --build-arg PHENIX_VERSION=$DOCKER_TAG --build-arg PHENIX_COMMIT=$SOURCE_COMMIT -f Dockerfile -t $IMAGE_NAME ..

@@ -31,8 +31,9 @@ RUN if [ -n "${INSTALL_CERT}" ]; then \
     -O /usr/local/share/ca-certificates/custom.crt \
     && update-ca-certificates; fi
 
-ARG PHENIX_VERSION=
-ARG PHENIX_COMMIT=
+ARG PHENIX_VERSION
+ARG PHENIX_COMMIT
+
 RUN VER=${PHENIX_VERSION} COMMIT=${PHENIX_COMMIT} make bin/phenix
 
 RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.0/vmdb2 -P bin/ \

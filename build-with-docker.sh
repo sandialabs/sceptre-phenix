@@ -56,7 +56,7 @@ output=$(
     --build-arg PHENIX_WEB_AUTH=$auth   \
     --build-arg PHENIX_VERSION=$version \
     --build-arg PHENIX_COMMIT=$commit   \
-    -f Dockerfile . 2>&1
+    -f docker/Dockerfile . 2>&1
 )
 
 if (( $? )); then
