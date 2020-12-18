@@ -14,9 +14,12 @@ type NodeSpec interface {
 	Hardware() NodeHardware
 	Network() NodeNetwork
 	Injections() []NodeInjection
+	Advanced() map[string]string
 
 	AddInject(string, string, string, string)
 	SetInjections([]NodeInjection)
+	SetAdvanced(map[string]string)
+	AddAdvanced(string, string)
 }
 
 type NodeGeneral interface {

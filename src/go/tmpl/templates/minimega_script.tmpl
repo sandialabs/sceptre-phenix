@@ -48,6 +48,9 @@ vm config disk {{ .Hardware.DiskConfig "" }}
 vm config qemu-append -vga qxl
         {{- end }}
 vm config net {{ .Network.InterfaceConfig }}
+        {{- range $config, $value := .Advanced }}
+vm config {{ $config }} {{ $value }}
+        {{- end }}
 vm launch {{ .General.VMType }} {{ .General.Hostname }}
     {{- end }}
 {{- end }}

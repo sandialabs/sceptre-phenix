@@ -427,6 +427,9 @@ components:
                 type: string
                 title: Injected file permissions (UNIX style)
                 example: 0664
+        advanced:
+          type: object
+          title: Advanced options for minimega vm config
     iface:
       type: object
       required:
