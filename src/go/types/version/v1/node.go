@@ -288,7 +288,9 @@ func (this Hardware) DiskConfig(snapshot string) string {
 			config = append(config, d.IfaceF)
 		}
 
-		if d.CacheModeF != "" {
+		if d.CacheModeF == "" {
+			config = append(config, "writeback")
+		} else {
 			config = append(config, d.CacheModeF)
 		}
 
