@@ -35,7 +35,7 @@ func InitFatalLogWriter(path string, stderr bool) error {
 	}
 
 	if writers != nil {
-		logger = log.New(io.MultiWriter(writers...), "phenix", log.LstdFlags)
+		logger = log.New(io.MultiWriter(writers...), "phenix ", log.LstdFlags)
 	}
 
 	return nil
