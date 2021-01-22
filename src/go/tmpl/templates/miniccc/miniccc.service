@@ -1,0 +1,8 @@
+[Unit]
+Description=miniccc Agent
+
+[Service]
+ExecStart=/usr/local/bin/miniccc -serial /dev/virtio-ports/cc
+
+[Install]
+WantedBy=multi-user.target

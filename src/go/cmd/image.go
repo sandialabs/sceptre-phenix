@@ -441,6 +441,55 @@ func newImageUpdateCmd() *cobra.Command {
 	return cmd
 }
 
+func newImageInjectMinicccCmd() *cobra.Command {
+	desc := `Inject the miniccc agent into a disk image
+
+	Used to add the miniccc agent and relevant boot scripts into an existing
+	disk image. The disk operating system is guessed based on the provided
+	agent's extension. When specifying the path to the disk to modify, the
+	partition to inject into can optionally be included at the end of the path
+	using a colon (for example, /phenix/images/foo.qc2:2). If not specified,
+	partition 1 will be assumed.
+	
+	In a Windows disk image, the miniccc agent and the PowerShell script to run
+	the miniccc agent will be injected into C:\miniccc, and a scheduler command
+	will be placed into the Windows StartUp directory.
+	
+	In a Linux disk image, the miniccc agent will be injected into
+	/usr/local/bin and the service file and symlinks will be injected into the
+	appropriate locations, depending on which init system is being used. For
+	systemd, they will be injected into /etc/systemd/system, and for sysinitv
+	they will be injected into /etc/init.d and /etc/rc5.d.`
+
+	cmd := &cobra.Command{
+		Use:   "inject-miniccc <path to miniccc> <path to disk>",
+		Short: "Inject the miniccc agent into a disk image",
+		Long:  desc,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) < 2 {
+				return fmt.Errorf("The path to miniccc and the disk is required")
+			}
+
+			var (
+				agent = args[0]
+				disk  = args[1]
+				init  = MustGetString(cmd.Flags(), "init-system")
+			)
+
+			if err := image.InjectMiniccc(agent, disk, init); err != nil {
+				err := util.HumanizeError(err, "Unable to inject miniccc into the "+disk+" image")
+				return err.Humanized()
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().String("init-system", "systemd", "Linux init system to generate boot scripts for (systemd, sysinitv)")
+
+	return cmd
+}
+
 func init() {
 	imageCmd := newImageCmd()
 
@@ -452,6 +501,7 @@ func init() {
 	imageCmd.AddCommand(newImageAppendCmd())
 	imageCmd.AddCommand(newImageRemoveCmd())
 	imageCmd.AddCommand(newImageUpdateCmd())
+	imageCmd.AddCommand(newImageInjectMinicccCmd())
 
 	rootCmd.AddCommand(imageCmd)
 }

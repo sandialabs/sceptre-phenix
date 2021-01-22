@@ -10,8 +10,10 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
 
+	"phenix/internal/mm/mmcli"
 	"phenix/store"
 	"phenix/tmpl"
 	"phenix/types"
@@ -508,6 +510,78 @@ func Remove(name string, overlays, packages, scripts []string) error {
 	return nil
 }
 
+func InjectMiniccc(agent, disk, svc string) error {
+	// Assume partition 1 if no partition is specified.
+	if parts := strings.Split(disk, ":"); len(parts) == 1 {
+		disk = disk + ":1"
+	}
+
+	tmp, err := ioutil.TempDir("", "")
+	if err != nil {
+		return fmt.Errorf("creating temp directory: %w", err)
+	}
+
+	defer os.RemoveAll(tmp)
+
+	var injects []string
+
+	if path.Ext(agent) == ".exe" { // assume Windows
+		if err := tmpl.RestoreAsset(tmp, "miniccc/miniccc-scheduler.cmd"); err != nil {
+			return fmt.Errorf("restoring miniccc scheduler for Windows: %w", err)
+		}
+
+		injects = []string{
+			tmp + `/miniccc/miniccc-scheduler.cmd:"/ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/miniccc-scheduler.cmd"`,
+			agent + ":/minimega/miniccc.exe",
+		}
+	} else { // assume Linux
+		if err := os.MkdirAll(tmp+"/miniccc/symlinks", 0755); err != nil {
+			return fmt.Errorf("creating symlinks directory path: %w", err)
+		}
+
+		switch svc {
+		case "systemd":
+			if err := tmpl.RestoreAsset(tmp, "miniccc/miniccc.service"); err != nil {
+				return fmt.Errorf("restoring miniccc systemd service for Linux: %w", err)
+			}
+
+			if err := os.Symlink("../miniccc.service", tmp+"/miniccc/symlinks/miniccc.service"); err != nil {
+				return fmt.Errorf("generating systemd service link for Linux: %w", err)
+			}
+
+			injects = []string{
+				tmp + "/miniccc/miniccc.service:/etc/systemd/system/miniccc.service",
+				tmp + "/miniccc/symlinks/miniccc.service:/etc/systemd/system/multi-user.target.wants/miniccc.service",
+				agent + ":/usr/local/bin/miniccc",
+			}
+		case "sysinitv":
+			if err := tmpl.RestoreAsset(tmp, "miniccc/miniccc.init"); err != nil {
+				return fmt.Errorf("restoring miniccc sysinitv service for Linux: %w", err)
+			}
+
+			os.Chmod(tmp+"/miniccc/miniccc.init", 0755)
+
+			if err := os.Symlink("../init.d/miniccc", tmp+"/miniccc/symlinks/S99-miniccc"); err != nil {
+				return fmt.Errorf("generating sysinitv service link for Linux: %w", err)
+			}
+
+			injects = []string{
+				tmp + "/miniccc/miniccc.init:/etc/init.d/miniccc",
+				tmp + "/miniccc/symlinks/S99-miniccc:/etc/rc5.d/S99-miniccc",
+				agent + ":/usr/local/bin/miniccc",
+			}
+		default:
+			return fmt.Errorf("unknown service %s specified", svc)
+		}
+	}
+
+	if err := inject(disk, injects...); err != nil {
+		return fmt.Errorf("injecting miniccc files into disk: %w", err)
+	}
+
+	return nil
+}
+
 func addScriptToImage(img *v1.Image, name, script string) error {
 	if script == "" {
 		u, err := url.Parse(name)
@@ -554,6 +628,19 @@ func addScriptToImage(img *v1.Image, name, script string) error {
 
 	img.Scripts[name] = script
 	img.ScriptOrder = append(img.ScriptOrder, name)
+
+	return nil
+}
+
+func inject(disk string, injects ...string) error {
+	files := strings.Join(injects, " ")
+
+	cmd := mmcli.NewCommand()
+	cmd.Command = fmt.Sprintf("disk inject %s files %s", disk, files)
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("injecting files into disk %s: %w", disk, err)
+	}
 
 	return nil
 }
