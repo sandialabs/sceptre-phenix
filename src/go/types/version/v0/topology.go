@@ -50,6 +50,39 @@ func (this TopologySpec) FindNodesWithLabels(labels ...string) []ifaces.NodeSpec
 	return nodes
 }
 
+func (this *TopologySpec) AddNode(typ, hostname string) ifaces.NodeSpec {
+	n := &Node{
+		TypeF: typ,
+		GeneralF: &General{
+			HostnameF: hostname,
+		},
+	}
+
+	this.NodesF = append(this.NodesF, n)
+
+	return n
+}
+
+func (this *TopologySpec) RemoveNode(hostname string) {
+	idx := -1
+
+	for i, node := range this.NodesF {
+		if node.GeneralF.HostnameF == hostname {
+			idx = i
+			break
+		}
+	}
+
+	if idx != -1 {
+		this.NodesF = append(this.NodesF[:idx], this.NodesF[idx+1:]...)
+	}
+}
+
+func (this *TopologySpec) Init() error {
+	this.SetDefaults()
+	return nil
+}
+
 func (this *TopologySpec) SetDefaults() {
 	for _, n := range this.NodesF {
 		n.SetDefaults()

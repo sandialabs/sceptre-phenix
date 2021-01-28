@@ -3,11 +3,14 @@ package shell
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 )
 
 type shell struct{}
@@ -64,7 +67,30 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, o.env...)
 
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return nil, nil, fmt.Errorf("starting command: %w", err)
+	}
+
+	done := make(chan struct{})
+
+	go func() {
+		select {
+		case <-done:
+			return
+		case <-ctx.Done():
+			cmd.Process.Signal(syscall.SIGTERM)
+
+			select {
+			case <-done:
+				return
+			case <-time.After(10 * time.Second):
+				cmd.Process.Kill()
+			}
+		}
+	}()
+
+	err := cmd.Wait()
+	close(done)
 
 	return stdOut.Bytes(), stdErr.Bytes(), err
 }

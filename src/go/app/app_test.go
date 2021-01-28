@@ -4,14 +4,14 @@ import (
 	"os"
 	"testing"
 
-	v1 "phenix/types/version/v1"
+	ifaces "phenix/types/interfaces"
 )
 
 // Helper test function(s) for app package.
 
-func checkConfigureExpected(t *testing.T, nodes []*v1.Node, expected [][]v1.Injection) {
+func checkConfigureExpected(t *testing.T, nodes []ifaces.NodeSpec, expected [][]ifaces.NodeInjection) {
 	for i, node := range nodes {
-		inj := node.Injections
+		inj := node.Injections()
 		exp := expected[i]
 
 		if len(inj) != len(exp) {
@@ -20,24 +20,24 @@ func checkConfigureExpected(t *testing.T, nodes []*v1.Node, expected [][]v1.Inje
 		}
 
 		for j, k := range inj {
-			if k.Src != exp[j].Src {
-				t.Logf("expected src for injection %d on node %d to be %s, got %s", j, i, exp[j].Src, k.Src)
+			if k.Src() != exp[j].Src() {
+				t.Logf("expected src for injection %d on node %d to be %s, got %s", j, i, exp[j].Src(), k.Src())
 				t.FailNow()
 			}
 
-			if k.Dst != exp[j].Dst {
-				t.Logf("expected dst for injection %d on node %d to be %s, got %s", j, i, exp[j].Dst, k.Dst)
+			if k.Dst() != exp[j].Dst() {
+				t.Logf("expected dst for injection %d on node %d to be %s, got %s", j, i, exp[j].Dst(), k.Dst())
 				t.FailNow()
 			}
 		}
 	}
 }
 
-func checkStartExpected(t *testing.T, nodes []*v1.Node, expected [][]v1.Injection) {
+func checkStartExpected(t *testing.T, nodes []ifaces.NodeSpec, expected [][]ifaces.NodeInjection) {
 	for _, inj := range expected {
 		for _, i := range inj {
-			if _, err := os.Stat(i.Src); err != nil {
-				t.Logf("expected injection src %s to be on disk, but it's not", i.Src)
+			if _, err := os.Stat(i.Src()); err != nil {
+				t.Logf("expected injection src %s to be on disk, but it's not", i.Src())
 				t.FailNow()
 			}
 		}

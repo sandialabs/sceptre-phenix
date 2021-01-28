@@ -1,12 +1,14 @@
 package mm
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"phenix/internal/common"
@@ -14,9 +16,15 @@ import (
 )
 
 var (
-	ErrCaptureExists = fmt.Errorf("capture already exists")
-	ErrNoCaptures    = fmt.Errorf("no captures exist")
+	ErrCaptureExists     = fmt.Errorf("capture already exists")
+	ErrNoCaptures        = fmt.Errorf("no captures exist")
+	ErrC2ClientNotActive = fmt.Errorf("C2 client not active for VM")
 )
+
+// Mutex to protect minimega cc filter setting when configuring cc commands from
+// different Goroutines. This is at the package level to protect across multiple
+// instances of the Minimega struct.
+var ccMu sync.Mutex
 
 type Minimega struct{}
 
@@ -120,7 +128,9 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 
 		vm.Host = row["host"]
 		vm.Name = row["name"]
+
 		vm.Running = row["state"] == "RUNNING"
+		vm.State = row["state"]
 
 		s := row["vlan"]
 		s = strings.TrimPrefix(s, "[")
@@ -632,6 +642,124 @@ func (Minimega) GetVLANs(opts ...Option) (map[string]int, error) {
 	}
 
 	return vlans, nil
+}
+
+func (Minimega) IsC2ClientActive(opts ...C2Option) error {
+	o := NewC2Options(opts...)
+
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = "vm info"
+	cmd.Columns = []string{"cc_active"}
+	cmd.Filters = []string{"name=" + o.vm}
+
+	rows := mmcli.RunTabular(cmd)
+
+	if len(rows) == 0 {
+		return fmt.Errorf("no VMs returned for host %s", o.vm)
+	}
+
+	if rows[0]["cc_active"] != "true" {
+		return ErrC2ClientNotActive
+	}
+
+	return nil
+}
+
+func (this Minimega) ExecC2Command(opts ...C2Option) (string, error) {
+	ccMu.Lock()
+	defer ccMu.Unlock()
+
+	if err := this.IsC2ClientActive(opts...); err != nil {
+		return "", fmt.Errorf("cannot execute command: %w", err)
+	}
+
+	o := NewC2Options(opts...)
+
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = fmt.Sprintf("cc filter name=%s", o.vm)
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return "", fmt.Errorf("setting host filter to %s: %w", o.vm, err)
+	}
+
+	cmd.Command = fmt.Sprintf("cc exec %s", o.command)
+
+	data, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
+	if err != nil {
+		return "", fmt.Errorf("executing command %s: %w", o.command, err)
+	}
+
+	// This will the the ID for the cc exec command
+	return fmt.Sprintf("%v", data), nil
+}
+
+func (Minimega) WaitForC2Response(ctx context.Context, opts ...C2Option) (string, error) {
+	o := NewC2Options(opts...)
+
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = "cc commands"
+	cmd.Columns = []string{"id", "responses"}
+	cmd.Filters = []string{"id=" + o.commandID}
+
+	// Multiple rows will come back for each command ID, one row per cluster host.
+	// Because the `ExecC2Command` sets the filter to a specific VM, only one of
+	// the rows will have a response since a VM can only run on a single cluster
+	// host.
+
+	err := func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(o.timeout):
+				return fmt.Errorf("timeout waiting for response for command %s", o.commandID)
+			default:
+				rows := mmcli.RunTabular(cmd)
+
+				if len(rows) == 0 {
+					return fmt.Errorf("no commands returned for ID %s", o.commandID)
+				}
+
+				if rid := rows[0]["id"]; rid != o.commandID {
+					return fmt.Errorf("wrong command returned: %s", rid)
+				}
+
+				for _, row := range rows {
+					if row["responses"] != "0" {
+						return nil
+					}
+				}
+
+				time.Sleep(1 * time.Second)
+			}
+		}
+	}()
+
+	if err != nil {
+		return "", err
+	}
+
+	cmd.Command = fmt.Sprintf("cc response %s raw", o.commandID)
+
+	resp, err := mmcli.SingleResponse(mmcli.Run(cmd))
+	if err != nil {
+		return "", fmt.Errorf("getting response for command %s: %w", o.commandID, err)
+	}
+
+	return resp, nil
+}
+
+func (Minimega) ClearC2Responses(opts ...C2Option) error {
+	o := NewC2Options(opts...)
+
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = "clear cc responses"
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("clearing C2 responses for namespace %s: %w", o.ns, err)
+	}
+
+	return nil
 }
 
 func flush(ns string) error {

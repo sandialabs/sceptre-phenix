@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	v1 "phenix/types/version/v1"
 )
 
@@ -21,33 +22,51 @@ func TestStartupApp(t *testing.T) {
 
 	nodes := []*v1.Node{
 		{
-			Type: "Router",
+			TypeF: "Router",
+			HardwareF: &v1.Hardware{
+				OSTypeF: "linux",
+				DrivesF: []*v1.Drive{
+					{
+						ImageF: "foobar",
+					},
+				},
+			},
 		},
 		{
-			Type: "VirtualMachine",
-			General: v1.General{
-				Hostname: "centos-linux",
+			TypeF: "VirtualMachine",
+			GeneralF: &v1.General{
+				HostnameF: "centos-linux",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_CentOS,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "centos",
+				DrivesF: []*v1.Drive{
+					{
+						ImageF: "foobar",
+					},
+				},
 			},
-			Network: v1.Network{
-				Interfaces: []v1.Interface{
+			NetworkF: &v1.Network{
+				InterfacesF: []*v1.Interface{
 					{}, // empty interface for testing
 					{}, // empty interface for testing
 				},
 			},
 		},
 		{
-			Type: "VirtualMachine",
-			General: v1.General{
-				Hostname: "rhel-linux",
+			TypeF: "VirtualMachine",
+			GeneralF: &v1.General{
+				HostnameF: "rhel-linux",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_RHEL,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "rhel",
+				DrivesF: []*v1.Drive{
+					{
+						ImageF: "foobar",
+					},
+				},
 			},
-			Network: v1.Network{
-				Interfaces: []v1.Interface{
+			NetworkF: &v1.Network{
+				InterfacesF: []*v1.Interface{
 					{}, // empty interface for testing
 					{}, // empty interface for testing
 					{}, // empty interface for testing
@@ -55,91 +74,112 @@ func TestStartupApp(t *testing.T) {
 			},
 		},
 		{
-			Type: "VirtualMachine",
-			General: v1.General{
-				Hostname: "linux",
+			TypeF: "VirtualMachine",
+			GeneralF: &v1.General{
+				HostnameF: "linux",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_Linux,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "linux",
+				DrivesF: []*v1.Drive{
+					{
+						ImageF: "foobar",
+					},
+				},
 			},
-			Injections: []*v1.Injection{
+		},
+		{
+			TypeF: "VirtualMachine",
+			GeneralF: &v1.General{
+				HostnameF: "windows",
+			},
+			HardwareF: &v1.Hardware{
+				OSTypeF: "windows",
+				DrivesF: []*v1.Drive{
+					{
+						ImageF: "foobar",
+					},
+				},
+			},
+			InjectionsF: []*v1.Injection{
 				{
-					Dst: "interfaces",
-				},
-			},
-		},
-		{
-			Type: "VirtualMachine",
-			General: v1.General{
-				Hostname: "windows",
-			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_Windows,
-			},
-			Injections: []*v1.Injection{
-				{
-					Dst: "startup.ps1",
+					DstF: "startup.ps1",
 				},
 			},
 		},
 	}
 
-	expected := [][]v1.Injection{
+	expected := [][]ifaces.NodeInjection{
 		nil, // router
 		{ // centos-linux
-			{
-				Src: fmt.Sprintf("%s/startup/interfaces-centos-linux-eth0", baseDir),
-				Dst: "/etc/sysconfig/network-scripts/ifcfg-eth0",
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/startup/centos-linux-hostname.sh", baseDir),
+				DstF: "/etc/phenix/startup/1_hostname-start.sh",
 			},
-			{
-				Src: fmt.Sprintf("%s/startup/interfaces-centos-linux-eth1", baseDir),
-				Dst: "/etc/sysconfig/network-scripts/ifcfg-eth1",
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/startup/centos-linux-timezone.sh", baseDir),
+				DstF: "/etc/phenix/startup/2_timezone-start.sh",
+			},
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/startup/interfaces-centos-linux-eth0", baseDir),
+				DstF: "/etc/sysconfig/network-scripts/ifcfg-eth0",
+			},
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/startup/interfaces-centos-linux-eth1", baseDir),
+				DstF: "/etc/sysconfig/network-scripts/ifcfg-eth1",
 			},
 		},
 		{ // rhel-linux
-			{
-				Src: fmt.Sprintf("%s/startup/interfaces-rhel-linux-eth0", baseDir),
-				Dst: "/etc/sysconfig/network-scripts/ifcfg-eth0",
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/startup/rhel-linux-hostname.sh", baseDir),
+				DstF: "/etc/phenix/startup/1_hostname-start.sh",
 			},
-			{
-				Src: fmt.Sprintf("%s/startup/interfaces-rhel-linux-eth1", baseDir),
-				Dst: "/etc/sysconfig/network-scripts/ifcfg-eth1",
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/startup/rhel-linux-timezone.sh", baseDir),
+				DstF: "/etc/phenix/startup/2_timezone-start.sh",
 			},
-			{
-				Src: fmt.Sprintf("%s/startup/interfaces-rhel-linux-eth2", baseDir),
-				Dst: "/etc/sysconfig/network-scripts/ifcfg-eth2",
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/startup/interfaces-rhel-linux-eth0", baseDir),
+				DstF: "/etc/sysconfig/network-scripts/ifcfg-eth0",
+			},
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/startup/interfaces-rhel-linux-eth1", baseDir),
+				DstF: "/etc/sysconfig/network-scripts/ifcfg-eth1",
+			},
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/startup/interfaces-rhel-linux-eth2", baseDir),
+				DstF: "/etc/sysconfig/network-scripts/ifcfg-eth2",
 			},
 		},
 		{ // linux
-			{
-				Src: fmt.Sprintf("%s/startup/linux-hostname.sh", baseDir),
-				Dst: "/etc/phenix/startup/1_hostname-start.sh",
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/startup/linux-hostname.sh", baseDir),
+				DstF: "/etc/phenix/startup/1_hostname-start.sh",
 			},
-			{
-				Src: fmt.Sprintf("%s/startup/linux-timezone.sh", baseDir),
-				Dst: "/etc/phenix/startup/2_timezone-start.sh",
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/startup/linux-timezone.sh", baseDir),
+				DstF: "/etc/phenix/startup/2_timezone-start.sh",
 			},
-			{
-				Src: fmt.Sprintf("%s/startup/linux-interfaces", baseDir),
-				Dst: "/etc/network/interfaces",
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/startup/linux-interfaces", baseDir),
+				DstF: "/etc/network/interfaces",
 			},
 		},
 		{ // windows
-			{
-				Src: fmt.Sprintf("%s/startup/windows-startup.ps1", baseDir),
-				Dst: "startup.ps1",
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/startup/windows-startup.ps1", baseDir),
+				DstF: "startup.ps1",
 			},
-			{
-				Src: fmt.Sprintf("%s/startup/startup-scheduler.cmd", baseDir),
-				Dst: "ProgramData/Microsoft/Windows/Start Menu/Programs/StartUp/startup_scheduler.cmd",
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/startup/startup-scheduler.cmd", baseDir),
+				DstF: "ProgramData/Microsoft/Windows/Start Menu/Programs/StartUp/startup_scheduler.cmd",
 			},
 		},
 	}
 
 	spec := &v1.ExperimentSpec{
-		BaseDir: baseDir,
-		Topology: &v1.TopologySpec{
-			Nodes: nodes,
+		BaseDirF: baseDir,
+		TopologyF: &v1.TopologySpec{
+			NodesF: nodes,
 		},
 	}
 
@@ -147,17 +187,17 @@ func TestStartupApp(t *testing.T) {
 
 	app := GetApp("startup")
 
-	if err := app.Configure(exp); err != nil {
+	if err := app.PreStart(exp); err != nil {
 		t.Log(err)
 		t.FailNow()
 	}
 
-	checkConfigureExpected(t, nodes, expected)
+	checkConfigureExpected(t, spec.Topology().Nodes(), expected)
 
 	if err := app.PreStart(exp); err != nil {
 		t.Log(err)
 		t.FailNow()
 	}
 
-	checkStartExpected(t, nodes, expected)
+	checkStartExpected(t, spec.Topology().Nodes(), expected)
 }

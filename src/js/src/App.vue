@@ -51,7 +51,7 @@ login and returns a user to Experiments component if successful.
       this.wsConnect();
 
       this.unwatch = this.$store.watch(
-        (_, getters) => getters.auth,
+        ( _, getters ) => getters.auth,
         () => {
           console.log(auth);
 
@@ -64,16 +64,16 @@ login and returns a user to Experiments component if successful.
 
     methods: {
       wsConnect () {
-        if (this.$store.getters.auth) {
+        if ( this.$store.getters.auth ) {
           console.log('client authenticated -- initializing websocket');
 
           let path = '/api/v1/ws';
 
-          if (this.$store.getters.token) {
+          if ( this.$store.getters.token ) {
             path += '?token=' + this.$store.getters.token;
           }
 
-          this.$connect('//' + location.host + path);
+          this.$connect( '//' + location.host + path );
         }
       }
     }
@@ -90,7 +90,7 @@ clue what this stuff does.
 <style lang="scss">
   html {
     background-repeat: no-repeat;
-    background-image: url("assets/phenix.png");
+    background-image: url( "assets/phenix.png" );
     background-size: background;
   }
 
@@ -193,7 +193,7 @@ clue what this stuff does.
   }
   
   .close:before, .close:after {
-    transform: rotate(-45deg);
+    transform: rotate( -45deg );
     content: "";
     position: absolute;
     top: 50%;
@@ -208,11 +208,11 @@ clue what this stuff does.
   }
   
   .close:after {
-    transform: rotate(-135deg);
+    transform: rotate( -135deg );
   }
   
   .close:hover:before, .close:hover:after {
-    transform: rotate(0deg);
+    transform: rotate( 0deg );
   }
 
   // Import Bulma's core
@@ -224,20 +224,20 @@ clue what this stuff does.
   $button-text-color: whitesmoke;
 
   $light: #686868;
-  $light-invert: findColorInvert($light);
+  $light-invert: findColorInvert( $light );
 
   $progress-text-color: black;
 
   $colors: (
-    "light": ($light, $light-invert),
-    "dark": ($dark, $dark-invert),
-    "white": ($white, $black),
-    "black": ($black, $white),
-    "primary": ($primary, $primary-invert),
-    "info": ($info, $info-invert),
-    "success": ($success, $success-invert),
-    "warning": ($warning, $warning-invert),
-    "danger": ($danger, $danger-invert)
+    "light": ( $light, $light-invert ),
+    "dark": ( $dark, $dark-invert ),
+    "white": ( $white, $black ),
+    "black": ( $black, $white ),
+    "primary": ( $primary, $primary-invert ),
+    "info": ( $info, $info-invert ),
+    "success": ( $success, $success-invert ),
+    "warning": ( $warning, $warning-invert ),
+    "danger": ( $danger, $danger-invert )
   );
   
   // Import Bulma and Buefy styles

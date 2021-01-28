@@ -26,15 +26,15 @@ available for experiments, the number of VMs, and host uptime.
           </b-table-column>
           <b-table-column field="load" label="Load" width="250" centered>
             <span class="tag" :class="decorator(props.row.load[0], props.row.cpus)">
-              {{ props.row.load[0] }}
+              {{ props.row.load[ 0 ] }}
             </span>
             --
             <span class="tag" :class="decorator(props.row.load[1], props.row.cpus)">
-              {{ props.row.load[1] }}
+              {{ props.row.load[ 1 ] }}
             </span>
             --
             <span class="tag" :class="decorator(props.row.load[2], props.row.cpus)">
-              {{ props.row.load[2] }}
+              {{ props.row.load[ 2 ] }}
             </span>
           </b-table-column>
           <b-table-column field="mem_used" label="RAM Used" width="100" centered>
@@ -93,10 +93,9 @@ available for experiments, the number of VMs, and host uptime.
               }
             );
           }, response => {
-            console.log('Getting the hosts failed with ' + response + ' response.');
             this.isWaiting = false;
             this.$buefy.toast.open({
-              message: 'Getting the hosts failed.',
+              message: 'Getting the hosts failed with ' + response + ' response.',
               type: 'is-danger',
               duration: 4000
             });
@@ -107,7 +106,7 @@ available for experiments, the number of VMs, and host uptime.
       periodicUpdateHosts () {
         this.update = setInterval( () => {
           this.updateHosts();
-        }, 10000)
+        }, 10000 )
       },
 
       decorator ( sum, len ) {
@@ -122,7 +121,7 @@ available for experiments, the number of VMs, and host uptime.
       },
 
       hostName ( host ) {
-        if (host.headnode) {
+        if ( host.headnode ) {
           return host.name + ' (headnode)';
         }
 

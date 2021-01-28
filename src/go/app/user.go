@@ -38,39 +38,47 @@ func (this UserApp) Name() string {
 	return this.options.Name
 }
 
-func (this UserApp) Configure(exp *types.Experiment) error {
-	if err := this.shellOut(ACTIONCONFIG, exp); err != nil {
+func (this UserApp) Configure(ctx context.Context, exp *types.Experiment) error {
+	if err := this.shellOut(ctx, ACTIONCONFIG, exp); err != nil {
 		return fmt.Errorf("running user app: %w", err)
 	}
 
 	return nil
 }
 
-func (this UserApp) PreStart(exp *types.Experiment) error {
-	if err := this.shellOut(ACTIONPRESTART, exp); err != nil {
+func (this UserApp) PreStart(ctx context.Context, exp *types.Experiment) error {
+	if err := this.shellOut(ctx, ACTIONPRESTART, exp); err != nil {
 		return fmt.Errorf("running user app: %w", err)
 	}
 
 	return nil
 }
 
-func (this UserApp) PostStart(exp *types.Experiment) error {
-	if err := this.shellOut(ACTIONPOSTSTART, exp); err != nil {
+func (this UserApp) PostStart(ctx context.Context, exp *types.Experiment) error {
+	if err := this.shellOut(ctx, ACTIONPOSTSTART, exp); err != nil {
 		return fmt.Errorf("running user app: %w", err)
 	}
 
 	return nil
 }
 
-func (this UserApp) Cleanup(exp *types.Experiment) error {
-	if err := this.shellOut(ACTIONCLEANUP, exp); err != nil {
+func (this UserApp) Running(ctx context.Context, exp *types.Experiment) error {
+	if err := this.shellOut(ctx, ACTIONRUNNING, exp); err != nil {
 		return fmt.Errorf("running user app: %w", err)
 	}
 
 	return nil
 }
 
-func (this UserApp) shellOut(action Action, exp *types.Experiment) error {
+func (this UserApp) Cleanup(ctx context.Context, exp *types.Experiment) error {
+	if err := this.shellOut(ctx, ACTIONCLEANUP, exp); err != nil {
+		return fmt.Errorf("running user app: %w", err)
+	}
+
+	return nil
+}
+
+func (this UserApp) shellOut(ctx context.Context, action Action, exp *types.Experiment) error {
 	cmdName := "phenix-app-" + this.options.Name
 
 	if !shell.CommandExists(cmdName) {
@@ -109,7 +117,7 @@ func (this UserApp) shellOut(action Action, exp *types.Experiment) error {
 		),
 	}
 
-	stdOut, stdErr, err := shell.ExecCommand(context.Background(), opts...)
+	stdOut, stdErr, err := shell.ExecCommand(ctx, opts...)
 	if err != nil {
 		var exitErr *exec.ExitError
 
@@ -124,7 +132,7 @@ func (this UserApp) shellOut(action Action, exp *types.Experiment) error {
 					return fmt.Errorf("scheduling experiment with %s: %w", sched, err)
 				}
 
-				return this.shellOut(action, exp)
+				return this.shellOut(ctx, action, exp)
 			}
 		}
 
@@ -151,7 +159,13 @@ func (this UserApp) shellOut(action Action, exp *types.Experiment) error {
 	switch action {
 	case ACTIONCONFIG, ACTIONPRESTART:
 		exp.SetSpec(result.Spec)
-	case ACTIONPOSTSTART, ACTIONCLEANUP:
+	case ACTIONPOSTSTART, ACTIONRUNNING:
+		if metadata, ok := result.Status.AppStatus()[this.options.Name]; ok {
+			exp.Status.SetAppStatus(this.options.Name, metadata)
+		}
+	case ACTIONCLEANUP:
+		exp.SetSpec(result.Spec)
+
 		if metadata, ok := result.Status.AppStatus()[this.options.Name]; ok {
 			exp.Status.SetAppStatus(this.options.Name, metadata)
 		}

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	v1 "phenix/types/version/v1"
 )
 
@@ -22,46 +23,46 @@ func TestSerialApp(t *testing.T) {
 	// minimal spec for testing serial app
 	nodes := []*v1.Node{
 		{
-			General: v1.General{
-				Hostname: "linux-serial-node",
+			GeneralF: &v1.General{
+				HostnameF: "linux-serial-node",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_Linux,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "linux",
 			},
-			Network: v1.Network{
-				Interfaces: []v1.Interface{
+			NetworkF: &v1.Network{
+				InterfacesF: []*v1.Interface{
 					{
-						Type: "serial",
+						TypeF: "serial",
 					},
 				},
 			},
 		},
 		{
-			General: v1.General{
-				Hostname: "linux-node",
+			GeneralF: &v1.General{
+				HostnameF: "linux-node",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_Linux,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "linux",
 			},
-			Network: v1.Network{
-				Interfaces: []v1.Interface{
+			NetworkF: &v1.Network{
+				InterfacesF: []*v1.Interface{
 					{
-						Type: "ethernet",
+						TypeF: "ethernet",
 					},
 				},
 			},
 		},
 		{
-			General: v1.General{
-				Hostname: "windows-serial-node",
+			GeneralF: &v1.General{
+				HostnameF: "windows-serial-node",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_Windows,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "windows",
 			},
-			Network: v1.Network{
-				Interfaces: []v1.Interface{
+			NetworkF: &v1.Network{
+				InterfacesF: []*v1.Interface{
 					{
-						Type: "serial",
+						TypeF: "serial",
 					},
 				},
 			},
@@ -69,19 +70,19 @@ func TestSerialApp(t *testing.T) {
 	}
 
 	// first slice of 2D slice represents topology node
-	expected := [][]v1.Injection{
+	expected := [][]ifaces.NodeInjection{
 		{
-			{
-				Src: fmt.Sprintf("%s/startup/linux-serial-node-serial.bash", baseDir),
-				Dst: "/etc/phenix/serial-startup.bash",
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/startup/linux-serial-node-serial.bash", baseDir),
+				DstF: "/etc/phenix/serial-startup.bash",
 			},
-			{
-				Src: baseDir + "/startup/serial-startup.service",
-				Dst: "/etc/systemd/system/serial-startup.service",
+			&v1.Injection{
+				SrcF: baseDir + "/startup/serial-startup.service",
+				DstF: "/etc/systemd/system/serial-startup.service",
 			},
-			{
-				Src: baseDir + "/startup/symlinks/serial-startup.service",
-				Dst: "/etc/systemd/system/multi-user.target.wants/serial-startup.service",
+			&v1.Injection{
+				SrcF: baseDir + "/startup/symlinks/serial-startup.service",
+				DstF: "/etc/systemd/system/multi-user.target.wants/serial-startup.service",
 			},
 		},
 		nil,
@@ -89,9 +90,9 @@ func TestSerialApp(t *testing.T) {
 	}
 
 	spec := &v1.ExperimentSpec{
-		BaseDir: baseDir,
-		Topology: &v1.TopologySpec{
-			Nodes: nodes,
+		BaseDirF: baseDir,
+		TopologyF: &v1.TopologySpec{
+			NodesF: nodes,
 		},
 	}
 
@@ -104,12 +105,12 @@ func TestSerialApp(t *testing.T) {
 		t.FailNow()
 	}
 
-	checkConfigureExpected(t, nodes, expected)
+	checkConfigureExpected(t, spec.Topology().Nodes(), expected)
 
 	if err := app.PreStart(exp); err != nil {
 		t.Log(err)
 		t.FailNow()
 	}
 
-	checkStartExpected(t, nodes, expected)
+	checkStartExpected(t, spec.Topology().Nodes(), expected)
 }

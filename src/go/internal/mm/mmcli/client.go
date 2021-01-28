@@ -66,31 +66,76 @@ func ErrorResponse(responses chan *miniclient.Response) error {
 }
 
 // SingleReponse is used when only a single response (or error) is expected to
-// be returned from a call to minimega.
+// be returned from a call to minimega. It returns the first non-error response
+// and the last error encountered (if no non-error responses were encountered).
 func SingleResponse(responses chan *miniclient.Response) (string, error) {
 	var (
-		resp string
+		resp *string
 		err  error
 	)
 
 	for response := range responses {
-		if resp != "" || err != nil {
-			// We got our first response (or error), so just drain the responses
-			// channel.
+		// If we've encountered a non-error response (even if it's empty), then
+		// continue on to drain the responses channel.
+		if resp != nil {
 			continue
 		}
 
-		r := response.Resp[0]
+		for _, r := range response.Resp {
+			if r.Error != "" {
+				err = errors.New(r.Error)
+				continue
+			}
 
-		if r.Error != "" {
-			err = errors.New(r.Error)
-			continue
+			resp = &r.Response
+
+			// Clear any error previously encountered and break out of this inner
+			// for-loop since we've encountered a non-error response (even if it's
+			// empty).
+			err = nil
+
+			break
 		}
-
-		resp = r.Response
 	}
 
-	return resp, err
+	return *resp, err
+}
+
+// SingleDataReponse is used when only a single response (or error) is expected
+// to be returned from a call to minimega, and the response just includes user
+// data. It returns the first non-error data response and the last error
+// encountered (if no non-error responses were encountered).
+func SingleDataResponse(responses chan *miniclient.Response) (interface{}, error) {
+	var (
+		data interface{}
+		err  error
+	)
+
+	for response := range responses {
+		// If we've encountered a non-error response (even if it's empty), then
+		// continue on to drain the responses channel.
+		if data != nil {
+			continue
+		}
+
+		for _, r := range response.Resp {
+			if r.Error != "" {
+				err = errors.New(r.Error)
+				continue
+			}
+
+			data = r.Data
+
+			// Clear any error previously encountered and break out of this inner
+			// for-loop since we've encountered a non-error response (even if it's
+			// empty).
+			err = nil
+
+			break
+		}
+	}
+
+	return data, err
 }
 
 // Run dials the minimega Unix socket and runs the given command, automatically

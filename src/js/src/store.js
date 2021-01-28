@@ -1,7 +1,5 @@
 import Vue        from 'vue'
 import Vuex       from 'vuex'
-// import { Toast }  from 'buefy/dist/components/toast'
-
 import router     from './router'
 
 Vue.use( Vuex )
@@ -12,7 +10,6 @@ export default new Vuex.Store({
     token:    null,
     role:     null,
     auth:     null
-//     logs:     []
   },
 
   mutations: {
@@ -21,7 +18,6 @@ export default new Vuex.Store({
       state.token    = user.token;
       state.role     = user.role;
       state.auth     = true;
-//       state.logs     = [];
 
       if ( remember ) {
         localStorage.setItem( 'user',  state.username );
@@ -52,14 +48,6 @@ export default new Vuex.Store({
       }
       router.replace( '/signin' );
     }
-    
-//     'INIT_LOGS' ( state, { logs } ) {
-//       state.logs.push(...logs);
-//     },
-// 
-//     'LOG' ( state, { log } ) {
-//       state.logs.push( log );
-//     }
   },
   
   getters: {
@@ -78,9 +66,5 @@ export default new Vuex.Store({
     auth: state => {
       return state.auth;
     }
-
-//     logs: state => {
-//       return state.logs;
-//     }
   }
 });

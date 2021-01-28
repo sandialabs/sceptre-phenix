@@ -26,6 +26,9 @@ are only available to Global Administrator or Global Viewer.
           <router-link v-if="auth && globalAdmin()" 
                        to="/log" 
                        class="navbar-item">Log</router-link>
+          <!-- <router-link v-if="auth && experimentUser()"
+                       to="/example"
+                       class="navbar-item">Example</router-link> -->
         </div>
       </div>
       <div class="navbar-end">

@@ -17,19 +17,19 @@ this will only show a list of VMs that a user can view.
     //  component based on whether or not an experiment is running; 
     //  or, if the user is a VM Viewer role.
     components: {
-      running: () => import('./RunningExperiment.vue'),
-      stopped: () => import('./StoppedExperiment.vue'),
-      vmtiles: () => import('./VMtiles.vue')
+      running: () => import( './RunningExperiment.vue' ),
+      stopped: () => import( './StoppedExperiment.vue' ),
+      vmtiles: () => import( './VMtiles.vue' )
     },
 
-    async beforeRouteEnter (to, _, next) {
+    async beforeRouteEnter ( to, _, next ) {
       try {
         let resp = await Vue.http.get( 'experiments/' + to.params.id );
         let state = await resp.json();
 
-        next(vm => vm.running = state.running);
-      } catch (err) {
-        console.log(err);
+        next( vm => vm.running = state.running );
+      } catch ( err ) {
+        console.log( err );
 
         Vue.toast.open({
           message: 'Getting the ' + to.params.id + ' experiment failed.',
@@ -48,11 +48,11 @@ this will only show a list of VMs that a user can view.
     //  a running or stopped experiment component.
     computed: {
       component: function () {
-        if (this.running == null) {
+        if ( this.running == null ) {
           return
         }
 
-        if (this.running == true) {
+        if ( this.running == true ) {
           if ( this.$store.getters.role === "VM Viewer" ) {
             return 'vmtiles';
           }

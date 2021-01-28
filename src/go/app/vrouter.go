@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"os"
@@ -46,11 +47,30 @@ func (Vrouter) Name() string {
 	return "vrouter"
 }
 
-func (Vrouter) Configure(exp *types.Experiment) error {
+func (this Vrouter) Configure(ctx context.Context, exp *types.Experiment) error {
+	// Check to see if a scenario exists for this experiment and if it contains
+	// a "vrouter" app. If so, update the topology with the app's ACL configs.
+	for _, app := range exp.Apps() {
+		if app.Name() == "vrouter" {
+			for _, host := range app.Hosts() {
+				node := exp.Spec.Topology().FindNodeByName(host.Hostname())
+
+				if node == nil {
+					// TODO: handle this better? Like warn the user perhaps?
+					continue
+				}
+
+				if err := this.processACL(host.Metadata(), node.Network()); err != nil {
+					return fmt.Errorf("processing ACL metadata for host %s: %w", host.Hostname(), err)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
-func (this *Vrouter) PreStart(exp *types.Experiment) error {
+func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error {
 	var (
 		ntpServers = exp.Spec.Topology().FindNodesWithLabels("ntp-server")
 		ntpAddr    string
@@ -93,16 +113,12 @@ func (this *Vrouter) PreStart(exp *types.Experiment) error {
 		}
 
 		// Check to see if a scenario exists for this experiment and if it contains
-		// a "vrouter" app. If so, see if this node has a metadata entry in the
-		// scenario app configuration.
+		// a "vrouter" app. If so, see if this node has an ipsec metadata entry in
+		// the scenario app configuration.
 		for _, app := range exp.Apps() {
 			if app.Name() == "vrouter" {
 				for _, host := range app.Hosts() {
 					if host.Hostname() == node.General().Hostname() {
-						if err := this.processACL(host.Metadata(), node.Network()); err != nil {
-							return fmt.Errorf("processing ACL metadata for host %s: %w", host.Hostname(), err)
-						}
-
 						ipsec, err := this.processIPSec(host.Metadata(), node.Network().Interfaces())
 						if err != nil {
 							return fmt.Errorf("processing IPSec metadata for host %s: %w", host.Hostname(), err)
@@ -128,15 +144,19 @@ func (this *Vrouter) PreStart(exp *types.Experiment) error {
 	return nil
 }
 
-func (Vrouter) PostStart(exp *types.Experiment) error {
+func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (Vrouter) Cleanup(exp *types.Experiment) error {
+func (Vrouter) Running(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (this *Vrouter) processACL(md map[string]interface{}, network ifaces.NodeNetwork) error {
+func (Vrouter) Cleanup(ctx context.Context, exp *types.Experiment) error {
+	return nil
+}
+
+func (Vrouter) processACL(md map[string]interface{}, network ifaces.NodeNetwork) error {
 	if _, ok := md["acl"]; !ok {
 		return nil
 	}

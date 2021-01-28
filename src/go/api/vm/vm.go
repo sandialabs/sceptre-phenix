@@ -71,7 +71,11 @@ func List(expName string) ([]mm.VM, error) {
 			Disk:       node.Hardware().Drives()[0].Image(),
 			Interfaces: make(map[string]string),
 			DoNotBoot:  *node.General().DoNotBoot(),
-			OSType:     string(node.Hardware().OSType()),
+			OSType:     node.Type(),
+		}
+
+		if node.Type() == "VirtualMachine" {
+			vm.OSType = string(node.Hardware().OSType())
 		}
 
 		for _, iface := range node.Network().Interfaces() {
@@ -89,6 +93,7 @@ func List(expName string) ([]mm.VM, error) {
 			vm.CPUs = details.CPUs
 			vm.RAM = details.RAM
 			vm.Disk = details.Disk
+			vm.State = details.State
 
 			// Reset slice of IPv4 addresses so we can be sure to align them correctly
 			// with minimega networks below.

@@ -1,5 +1,7 @@
 package mm
 
+import "context"
+
 func ReadScriptFromFile(filename string) error {
 	return DefaultMM.ReadScriptFromFile(filename)
 }
@@ -86,4 +88,20 @@ func IsHeadnode(node string) bool {
 
 func GetVLANs(opts ...Option) (map[string]int, error) {
 	return DefaultMM.GetVLANs(opts...)
+}
+
+func IsC2ClientActive(opts ...C2Option) error {
+	return DefaultMM.IsC2ClientActive(opts...)
+}
+
+func ExecC2Command(opts ...C2Option) (string, error) {
+	return DefaultMM.ExecC2Command(opts...)
+}
+
+func WaitForC2Response(ctx context.Context, opts ...C2Option) (string, error) {
+	return DefaultMM.WaitForC2Response(ctx, opts...)
+}
+
+func ClearC2Responses(opts ...C2Option) error {
+	return DefaultMM.ClearC2Responses(opts...)
 }

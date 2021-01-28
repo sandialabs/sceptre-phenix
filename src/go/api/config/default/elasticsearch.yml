@@ -1,0 +1,163 @@
+apiVersion: phenix.sandia.gov/v1
+kind: Image
+metadata:
+  name: elasticsearch 
+spec:
+  compress: false
+  deb_append: ' --components=main,restricted,universe,multiverse'
+  format: qcow2
+  include_miniccc: true
+  mirror: http://us.archive.ubuntu.com/ubuntu/
+  overlays: null
+  packages:
+  - initramfs-tools
+  - net-tools
+  - isc-dhcp-client
+  - openssh-server
+  - init
+  - iputils-ping
+  - vim
+  - less
+  - netbase
+  - curl
+  - ifupdown
+  - dbus
+  - linux-image-generic
+  - linux-headers-generic
+  - python3-cffi-backend # fixes python3-cryptography install issue on focal
+  - xserver-xorg-video-qxl
+  - xserver-xorg-video-vesa
+  - xubuntu-desktop
+  - firefox
+  - tcpdump
+  ramdisk: false
+  release: focal
+  script_order:
+  - POSTBUILD_APT_CLEANUP
+  - POSTBUILD_NO_ROOT_PASSWD
+  - POSTBUILD_PHENIX_HOSTNAME
+  - POSTBUILD_PHENIX_BASE
+  - /phenix/vmdb/scripts/elasticsearch.sh
+  scripts:
+    POSTBUILD_APT_CLEANUP: |
+      apt clean || apt-get clean || echo "unable to clean apt cache"
+    POSTBUILD_NO_ROOT_PASSWD: |
+      sed -i 's/nullok_secure/nullok/' /etc/pam.d/common-auth
+      sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+      sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+      sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+      sed -i 's/PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+      passwd -d root
+    POSTBUILD_PHENIX_HOSTNAME: |
+      echo "phenix" > /etc/hostname
+      sed -i 's/127.0.1.1 .*/127.0.1.1 phenix/' /etc/hosts
+      cat > /etc/motd <<EOF
+
+      ██████╗ ██╗  ██╗███████╗███╗  ██╗██╗██╗  ██╗
+      ██╔══██╗██║  ██║██╔════╝████╗ ██║██║╚██╗██╔╝
+      ██████╔╝███████║█████╗  ██╔██╗██║██║ ╚███╔╝
+      ██╔═══╝ ██╔══██║██╔══╝  ██║╚████║██║ ██╔██╗
+      ██║     ██║  ██║███████╗██║ ╚███║██║██╔╝╚██╗
+      ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚══╝╚═╝╚═╝  ╚═╝
+
+      EOF
+      echo "\nBuilt with phenix image on $(date)\n\n" >> /etc/motd
+    POSTBUILD_PHENIX_BASE: |
+      cat > /etc/systemd/system/miniccc.service <<EOF
+      [Unit]
+      Description=miniccc
+      [Service]
+      ExecStart=/opt/minimega/bin/miniccc -v=false -serial /dev/virtio-ports/cc -logfile /var/log/miniccc.log
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+      cat > /etc/systemd/system/phenix.service <<EOF
+      [Unit]
+      Description=phenix startup service
+      After=network.target systemd-hostnamed.service
+      [Service]
+      Environment=LD_LIBRARY_PATH=/usr/local/lib
+      ExecStart=/usr/local/bin/phenix-start.sh
+      RemainAfterExit=true
+      StandardOutput=journal
+      Type=oneshot
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+      mkdir -p /etc/systemd/system/multi-user.target.wants
+      ln -s /etc/systemd/system/miniccc.service /etc/systemd/system/multi-user.target.wants/miniccc.service
+      ln -s /etc/systemd/system/phenix.service /etc/systemd/system/multi-user.target.wants/phenix.service
+      mkdir -p /usr/local/bin
+      cat > /usr/local/bin/phenix-start.sh <<EOF
+      #!/bin/bash
+      for file in /etc/phenix/startup/*; do
+        echo \$file
+        bash \$file
+      done
+      EOF
+      chmod +x /usr/local/bin/phenix-start.sh
+      mkdir -p /etc/phenix/startup
+    /phenix/vmdb/scripts/elasticsearch.sh: |
+      curl -k -L -O https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-oss-7.9.3-amd64.deb
+      curl -k -L -O https://artifacts.elastic.co/downloads/kibana/kibana-oss-7.9.3-amd64.deb
+      apt install ./elasticsearch-oss-7.9.3-amd64.deb
+      apt install ./kibana-oss-7.9.3-amd64.deb
+      rm ./elasticsearch-oss-7.9.3-amd64.deb
+      rm ./kibana-oss-7.9.3-amd64.deb
+      sed -i -e 's/ \-\-quiet//g' /usr/lib/systemd/system/elasticsearch.service
+      ln -s /usr/lib/systemd/system/elasticsearch.service /etc/systemd/system/multi-user.target.wants/elasticsearch.service
+      ln -s /etc/systemd/system/kibana.service /etc/systemd/system/multi-user.target.wants/kibana.service
+      cat > /root/.profile <<EOF
+      # ~/.profile: executed by Bourne-compatible login shells.
+      if [ "\$BASH" ]; then
+        if [ -f ~/.bashrc ]; then
+          . ~/.bashrc
+        fi
+      fi
+      tty -s && mesg n || true
+      EOF
+      cat > /etc/lightdm/lightdm.conf <<EOF
+      [Seat:*]
+      autologin-guest=false
+      autologin-user=root
+      autologin-user-timeout=0
+      EOF
+      mkdir -p /root/.config/autostart
+      cat > /root/.config/autostart/Kibana.desktop <<EOF
+      [Desktop Entry]
+      Encoding=UTF-8
+      Version=1.0
+      Type=Application
+      Name=Kibana
+      Comment=Kibana Browser
+      # HACK: The "Path" option isn't honored on autostart
+      # (see https://gitlab.xfce.org/xfce/xfce4-session/-/issues/9).
+      Exec=firefox http://localhost:5601
+      OnlyShowIn=XFCE;
+      StartupNotify=false
+      Terminal=false
+      Hidden=false
+      EOF
+      mkdir -p /usr/local/bin
+      cat > /usr/local/bin/query-flows.sh <<EOF
+      #!/bin/bash
+      curl -H "Content-Type: application/json" http://localhost:9200/packetbeat-\*/_search -d '\
+        {
+          "_source": [
+            "source.ip",
+            "source.bytes",
+            "destination.ip",
+            "destination.bytes"
+          ],
+          "query": {
+            "query_string": {
+              "query": "type:flow AND network.type:ipv4"
+            }
+          },
+          "size": 10000
+        }
+      ' 2> /dev/null
+      EOF
+      chmod +x /usr/local/bin/query-flows.sh
+  size: 25G
+  variant: minbase

@@ -66,6 +66,10 @@
             </b-dropdown-item>
           </b-dropdown>
         </b-tooltip>
+        &nbsp;
+        <router-link v-if="adminUser()" class="button is-light" :to="{ name: 'soh', params: { id: this.$route.params.id }}">
+          <b-icon icon="heartbeat"></b-icon>
+        </router-link>
       </p>  
     </b-field>
     <div style="margin-top: -4em;">
@@ -258,7 +262,7 @@
         var data = [];
         
         for ( let i in vms ) {
-          let vm = vms[i];
+          let vm = vms[ i ];
           if ( vm.name.match( name_re ) ) {
             data.push( vm );
           }
@@ -311,7 +315,7 @@
       },
 
       handler ( event ) {
-        event.data.split(/\r?\n/).forEach( m => {
+        event.data.split( /\r?\n/ ).forEach( m => {
           let msg = JSON.parse( m );
           this.handle( msg );
         });
@@ -330,8 +334,8 @@
 
             for ( let i = 0; i < msg.result.schedule.length; i++ ) {
               for ( let j = 0; i < vms.length; j++ ) {
-                if ( vms[j].name == msg.result.schedule[i].vm ) {
-                  vms[j].host = msg.result.schedule[i].host;
+                if ( vms[ j ].name == msg.result.schedule[ i ].vm ) {
+                  vms[ j ].host = msg.result.schedule[ i ].host;
                   break;
                 }
               }
@@ -358,7 +362,7 @@
 
             for ( let i = 0; i < vms.length; i++ ) {
               if ( vms[i].name == msg.result.name ) {
-                vms[i] = msg.result;
+                vms[ i ] = msg.result;
 
                 break;
               }
@@ -403,8 +407,8 @@
                   this.isWaiting = true;
                 } else {
                   for ( let i = 0; i < state.hosts.length; i++ ) {
-                    if ( state.hosts[i].schedulable ) {
-                      this.hosts.push( state.hosts[i].name );
+                    if ( state.hosts[ i ].schedulable ) {
+                      this.hosts.push( state.hosts[ i ].name );
                     }
                   }
                   
@@ -432,7 +436,7 @@
                   this.isWaiting = true;
                 } else {
                   for ( let i = 0; i < state.disks.length; i++ ) {
-                    this.disks.push( state.disks[i] );
+                    this.disks.push( state.disks[ i ] );
                   }
                   
                   this.isWaiting = false;
@@ -456,7 +460,7 @@
             response.json().then(
               state => {
                 for ( let i = 0; i < state.files.length; i++ ){
-                  this.files.push( state.files[i] );
+                  this.files.push( state.files[ i ] );
                 }
                 
                 this.isWaiting = false;
@@ -490,7 +494,7 @@
               response => { 
                 console.log('the ' + this.$route.params.id + ' experiment was started.');
                         
-                this.$router.replace('/experiments/');
+                this.$router.replace( '/experiments/' );
               }, response => {
                 this.$buefy.toast.open({
                   message: 'Starting experiment ' + this.$route.params.id + ' failed with ' + response.status + ' status.',
@@ -525,8 +529,8 @@
                 let vms = this.experiment.vms;
                 
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == response.body.name ) {
-                    vms[i] = response.body;
+                  if ( vms[ i ].name == response.body.name ) {
+                    vms[ i ] = response.body;
                     break;
                   }
                 }
@@ -569,7 +573,7 @@
           onConfirm: () => {
             this.isWaiting = true;
             
-            let update = { "host": ''};
+            let update = { "host": '' };
 
             this.$http.patch(
               'experiments/' + this.$route.params.id + '/vms/' + name, update
@@ -578,8 +582,8 @@
                 let vms = this.experiment.vms;
                 
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == response.body.name ) {
-                    vms[i] = response.body;
+                  if ( vms[ i ].name == response.body.name ) {
+                    vms[ i ] = response.body;
                     break;
                   }
                 }
@@ -627,8 +631,8 @@
                 let vms = this.experiment.vms;
                 
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == response.body.name ) {
-                    vms[i] = response.body;
+                  if ( vms[ i ].name == response.body.name ) {
+                    vms[ i ] = response.body;
                     break;
                   }
                 }
@@ -680,8 +684,8 @@
                 let vms = this.experiment.vms;
                 
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == response.body.name ) {
-                    vms[i] = response.body;
+                  if ( vms[ i ].name == response.body.name ) {
+                    vms[ i ] = response.body;
                     break;
                   }
                 }
@@ -733,8 +737,8 @@
                 let vms = this.experiment.vms;
                 
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == response.body.name ) {
-                    vms[i] = response.body;
+                  if ( vms[ i ].name == response.body.name ) {
+                    vms[ i ] = response.body;
                     break;
                   }
                 }
@@ -787,8 +791,8 @@
                   let vms = this.experiment.vms;
                 
                   for ( let i = 0; i < vms.length; i++ ) {
-                    if ( vms[i].name == response.body.name ) {
-                      vms[i] = response.body;
+                    if ( vms[ i ].name == response.body.name ) {
+                      vms[ i ] = response.body;
                       break;
                     }
                   }
@@ -832,8 +836,8 @@
                   let vms = this.experiment.vms;
                 
                   for ( let i = 0; i < vms.length; i++ ) {
-                    if ( vms[i].name == response.body.name ) {
-                      vms[i] = response.body;
+                    if ( vms[ i ].name == response.body.name ) {
+                      vms[ i ] = response.body;
                       break;
                     }
                   }
@@ -882,8 +886,8 @@
                 let vms = this.experiment.vms;
                 
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == response.body.name ) {
-                    vms[i] = response.body;
+                  if ( vms[ i ].name == response.body.name ) {
+                    vms[ i ] = response.body;
                     break;
                   }
                 }

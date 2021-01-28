@@ -138,7 +138,7 @@ side will pass.
         var data = [];
         
         for ( let i in vms ) {
-          let vm = vms[i];
+          let vm = vms[ i ];
           let name = vm.name;
           
           if ( !this.exp ) {
@@ -205,7 +205,7 @@ side will pass.
       periodicUpdateVms () {
         this.update = setInterval( () => {
           this.updateVms();
-        }, 30000)
+        }, 30000 )
       },
       
       vmFullName ( vm ) {

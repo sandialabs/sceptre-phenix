@@ -4,65 +4,65 @@ import v1 "phenix/types/version/v1"
 
 var nodes = []*v1.Node{
 	{
-		General: v1.General{
-			Hostname: "foo",
+		GeneralF: &v1.General{
+			HostnameF: "foo",
 		},
-		Hardware: v1.Hardware{
-			VCPU:   2,
-			Memory: 2048,
+		HardwareF: &v1.Hardware{
+			VCPUF:   2,
+			MemoryF: 2048,
 		},
-		Network: v1.Network{
-			Interfaces: []v1.Interface{
+		NetworkF: &v1.Network{
+			InterfacesF: []*v1.Interface{
 				{
-					VLAN: "hello",
+					VLANF: "hello",
 				},
 			},
 		},
 	},
 	{
-		General: v1.General{
-			Hostname: "bar",
+		GeneralF: &v1.General{
+			HostnameF: "bar",
 		},
-		Hardware: v1.Hardware{
-			VCPU:   1,
-			Memory: 2048,
+		HardwareF: &v1.Hardware{
+			VCPUF:   1,
+			MemoryF: 2048,
 		},
-		Network: v1.Network{
-			Interfaces: []v1.Interface{
+		NetworkF: &v1.Network{
+			InterfacesF: []*v1.Interface{
 				{
-					VLAN: "world",
+					VLANF: "world",
 				},
 			},
 		},
 	},
 	{
-		General: v1.General{
-			Hostname: "sucka",
+		GeneralF: &v1.General{
+			HostnameF: "sucka",
 		},
-		Hardware: v1.Hardware{
-			VCPU:   4,
-			Memory: 8192,
+		HardwareF: &v1.Hardware{
+			VCPUF:   4,
+			MemoryF: 8192,
 		},
-		Network: v1.Network{
-			Interfaces: []v1.Interface{
+		NetworkF: &v1.Network{
+			InterfacesF: []*v1.Interface{
 				{
-					VLAN: "hello",
+					VLANF: "hello",
 				},
 			},
 		},
 	},
 	{
-		General: v1.General{
-			Hostname: "fish",
+		GeneralF: &v1.General{
+			HostnameF: "fish",
 		},
-		Hardware: v1.Hardware{
-			VCPU:   1,
-			Memory: 512,
+		HardwareF: &v1.Hardware{
+			VCPUF:   1,
+			MemoryF: 512,
 		},
-		Network: v1.Network{
-			Interfaces: []v1.Interface{
+		NetworkF: &v1.Network{
+			InterfacesF: []*v1.Interface{
 				{
-					VLAN: "world",
+					VLANF: "world",
 				},
 			},
 		},

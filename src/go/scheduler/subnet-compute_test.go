@@ -11,10 +11,10 @@ import (
 
 func TestSubnetComputeSchedulerNoCommits(t *testing.T) {
 	spec := &v1.ExperimentSpec{
-		Topology: &v1.TopologySpec{
-			Nodes: nodes,
+		TopologyF: &v1.TopologySpec{
+			NodesF: nodes,
 		},
-		Schedules: v1.Schedule{},
+		SchedulesF: make(map[string]string),
 	}
 
 	hosts := mm.Hosts(
@@ -51,7 +51,7 @@ func TestSubnetComputeSchedulerNoCommits(t *testing.T) {
 	defer ctrl.Finish()
 
 	m := mm.NewMockMM(ctrl)
-	m.EXPECT().GetClusterHosts().Return(hosts, nil)
+	m.EXPECT().GetClusterHosts(true).Return(hosts, nil)
 
 	mm.DefaultMM = m
 
@@ -60,21 +60,21 @@ func TestSubnetComputeSchedulerNoCommits(t *testing.T) {
 		t.FailNow()
 	}
 
-	expected := v1.Schedule{
+	expected := map[string]string{
 		"foo":   "compute0",
 		"bar":   "compute1",
 		"sucka": "compute0",
 		"fish":  "compute1",
 	}
 
-	if len(spec.Schedules) != len(expected) {
-		t.Logf("expected %d VMs to be scheduled, got %d", len(expected), len(spec.Schedules))
+	if len(spec.SchedulesF) != len(expected) {
+		t.Logf("expected %d VMs to be scheduled, got %d", len(expected), len(spec.SchedulesF))
 		t.FailNow()
 	}
 
 	for vm, host := range expected {
-		if spec.Schedules[vm] != host {
-			t.Logf("expected %s -> %s, got %s -> %s", vm, host, vm, spec.Schedules[vm])
+		if spec.SchedulesF[vm] != host {
+			t.Logf("expected %s -> %s, got %s -> %s", vm, host, vm, spec.SchedulesF[vm])
 			t.FailNow()
 		}
 	}
@@ -82,10 +82,10 @@ func TestSubnetComputeSchedulerNoCommits(t *testing.T) {
 
 func TestSubnetComputeSchedulerSomePrescheduled(t *testing.T) {
 	spec := &v1.ExperimentSpec{
-		Topology: &v1.TopologySpec{
-			Nodes: nodes,
+		TopologyF: &v1.TopologySpec{
+			NodesF: nodes,
 		},
-		Schedules: v1.Schedule{
+		SchedulesF: map[string]string{
 			"bar": "compute4",
 		},
 	}
@@ -124,7 +124,7 @@ func TestSubnetComputeSchedulerSomePrescheduled(t *testing.T) {
 	defer ctrl.Finish()
 
 	m := mm.NewMockMM(ctrl)
-	m.EXPECT().GetClusterHosts().Return(hosts, nil)
+	m.EXPECT().GetClusterHosts(true).Return(hosts, nil)
 
 	mm.DefaultMM = m
 
@@ -133,21 +133,21 @@ func TestSubnetComputeSchedulerSomePrescheduled(t *testing.T) {
 		t.FailNow()
 	}
 
-	expected := v1.Schedule{
+	expected := map[string]string{
 		"foo":   "compute0",
 		"bar":   "compute4",
 		"sucka": "compute0",
 		"fish":  "compute4",
 	}
 
-	if len(spec.Schedules) != len(expected) {
-		t.Logf("expected %d VMs to be scheduled, got %d", len(expected), len(spec.Schedules))
+	if len(spec.SchedulesF) != len(expected) {
+		t.Logf("expected %d VMs to be scheduled, got %d", len(expected), len(spec.SchedulesF))
 		t.FailNow()
 	}
 
 	for vm, host := range expected {
-		if spec.Schedules[vm] != host {
-			t.Logf("expected %s -> %s, got %s -> %s", vm, host, vm, spec.Schedules[vm])
+		if spec.SchedulesF[vm] != host {
+			t.Logf("expected %s -> %s, got %s -> %s", vm, host, vm, spec.SchedulesF[vm])
 			t.FailNow()
 		}
 	}

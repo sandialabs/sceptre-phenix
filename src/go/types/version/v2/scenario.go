@@ -23,11 +23,12 @@ func (this *ScenarioSpec) Apps() []ifaces.ScenarioApp {
 }
 
 type ScenarioApp struct {
-	NameF         string                 `json:"name" yaml:"name" structs:"name" mapstructure:"name"`
-	FromScenarioF string                 `json:"fromScenario,omitempty" yaml:"fromScenario,omitempty" structs:"fromScenario" mapstructure:"fromScenario"`
-	AssetDirF     string                 `json:"assetDir,omitempty" yaml:"assetDir,omitempty" structs:"assetDir" mapstructure:"assetDir"`
-	MetadataF     map[string]interface{} `json:"metadata,omitempty" yaml:"metadata,omitempty" structs:"metadata" mapstructure:"metadata"`
-	HostsF        []*ScenarioAppHost     `json:"hosts,omitempty" yaml:"hosts,omitempty" structs:"hosts" mapstructure:"hosts"`
+	NameF            string                 `json:"name" yaml:"name" structs:"name" mapstructure:"name"`
+	FromScenarioF    string                 `json:"fromScenario,omitempty" yaml:"fromScenario,omitempty" structs:"fromScenario" mapstructure:"fromScenario"`
+	AssetDirF        string                 `json:"assetDir,omitempty" yaml:"assetDir,omitempty" structs:"assetDir" mapstructure:"assetDir"`
+	MetadataF        map[string]interface{} `json:"metadata,omitempty" yaml:"metadata,omitempty" structs:"metadata" mapstructure:"metadata"`
+	HostsF           []*ScenarioAppHost     `json:"hosts,omitempty" yaml:"hosts,omitempty" structs:"hosts" mapstructure:"hosts"`
+	RunPeriodicallyF string                 `json:"runPeriodically,omitempty" yaml:"runPeriodically,omitempty" structs:"runPeriodically" mapstructure:"runPeriodically"`
 }
 
 func (this ScenarioApp) Name() string {
@@ -56,6 +57,10 @@ func (this ScenarioApp) Hosts() []ifaces.ScenarioAppHost {
 	return hosts
 }
 
+func (this ScenarioApp) RunPeriodically() string {
+	return this.RunPeriodicallyF
+}
+
 func (this *ScenarioApp) SetAssetDir(dir string) {
 	this.AssetDirF = dir
 }
@@ -72,6 +77,10 @@ func (this *ScenarioApp) SetHosts(hosts []ifaces.ScenarioAppHost) {
 	}
 
 	this.HostsF = h
+}
+
+func (this *ScenarioApp) SetRunPeriodically(d string) {
+	this.RunPeriodicallyF = d
 }
 
 type ScenarioAppHost struct {

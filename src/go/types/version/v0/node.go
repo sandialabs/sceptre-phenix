@@ -52,15 +52,6 @@ func (Node) Advanced() map[string]string {
 	return nil
 }
 
-func (this *Node) AddInject(src, dst, perms, desc string) {
-	this.InjectionsF = append(this.InjectionsF, &Injection{
-		SrcF:         src,
-		DstF:         dst,
-		PermissionsF: perms,
-		DescriptionF: desc,
-	})
-}
-
 func (this *Node) SetInjections(injections []ifaces.NodeInjection) {
 	injects := make([]*Injection, len(injections))
 
@@ -69,6 +60,61 @@ func (this *Node) SetInjections(injections []ifaces.NodeInjection) {
 	}
 
 	this.InjectionsF = injects
+}
+
+func (this *Node) AddLabel(k, v string) {
+	this.LabelsF[k] = v
+}
+
+func (this *Node) AddHardware(os string, vcpu, memory int) ifaces.NodeHardware {
+	h := &Hardware{
+		OSTypeF: os,
+		VCPUF:   vcpu,
+		MemoryF: memory,
+	}
+
+	this.HardwareF = h
+
+	return h
+}
+
+func (this *Node) AddNetworkInterface(typ, name, vlan string) ifaces.NodeNetworkInterface {
+	i := &Interface{
+		TypeF: typ,
+		NameF: name,
+		VLANF: vlan,
+	}
+
+	if this.NetworkF == nil {
+		this.NetworkF = new(Network)
+	}
+
+	this.NetworkF.InterfacesF = append(this.NetworkF.InterfacesF, i)
+
+	return i
+}
+
+func (this *Node) AddNetworkRoute(dest, next string, cost int) {
+	r := Route{
+		DestinationF: dest,
+		NextF:        next,
+		CostF:        &cost,
+	}
+
+	if this.NetworkF == nil {
+		this.NetworkF = new(Network)
+	}
+
+	this.NetworkF.RoutesF = append(this.NetworkF.RoutesF, r)
+}
+
+func (this *Node) AddInject(src, dst, perms, desc string) {
+	this.InjectionsF = append(this.InjectionsF, &Injection{
+		SrcF:         src,
+		DstF:         dst,
+		PermissionsF: perms,
+		DescriptionF: desc,
+	})
 }
 
 func (Node) SetAdvanced(map[string]string) {}
@@ -146,6 +192,17 @@ func (this *Hardware) SetVCPU(v int) {
 
 func (this *Hardware) SetMemory(m int) {
 	this.MemoryF = m
+}
+
+func (this *Hardware) AddDrive(disk string, part int) ifaces.NodeDrive {
+	d := &Drive{
+		ImageF:           disk,
+		InjectPartitionF: &part,
+	}
+
+	this.DrivesF = append(this.DrivesF, d)
+
+	return d
 }
 
 type Drive struct {

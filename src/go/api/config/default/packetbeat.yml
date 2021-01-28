@@ -1,0 +1,119 @@
+apiVersion: phenix.sandia.gov/v1
+kind: Image
+metadata:
+  name: packetbeat
+spec:
+  compress: false
+  deb_append: ' --components=main,restricted,universe,multiverse'
+  format: qcow2
+  include_miniccc: true
+  mirror: http://us.archive.ubuntu.com/ubuntu/
+  overlays: null
+  packages:
+  - initramfs-tools
+  - net-tools
+  - isc-dhcp-client
+  - openssh-server
+  - init
+  - iputils-ping
+  - vim
+  - less
+  - netbase
+  - curl
+  - ifupdown
+  - dbus
+  - linux-image-generic
+  - linux-headers-generic
+  - tcpdump
+  ramdisk: false
+  release: focal
+  script_order:
+  - POSTBUILD_APT_CLEANUP
+  - POSTBUILD_NO_ROOT_PASSWD
+  - POSTBUILD_PHENIX_HOSTNAME
+  - POSTBUILD_PHENIX_BASE
+  - /phenix/vmdb/scripts/packetbeat.sh
+  scripts:
+    POSTBUILD_APT_CLEANUP: |
+      apt clean || apt-get clean || echo "unable to clean apt cache"
+    POSTBUILD_NO_ROOT_PASSWD: |
+      sed -i 's/nullok_secure/nullok/' /etc/pam.d/common-auth
+      sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+      sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+      sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+      sed -i 's/PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+      passwd -d root
+    POSTBUILD_PHENIX_HOSTNAME: |
+      echo "phenix" > /etc/hostname
+      sed -i 's/127.0.1.1 .*/127.0.1.1 phenix/' /etc/hosts
+      cat > /etc/motd <<EOF
+
+      ██████╗ ██╗  ██╗███████╗███╗  ██╗██╗██╗  ██╗
+      ██╔══██╗██║  ██║██╔════╝████╗ ██║██║╚██╗██╔╝
+      ██████╔╝███████║█████╗  ██╔██╗██║██║ ╚███╔╝
+      ██╔═══╝ ██╔══██║██╔══╝  ██║╚████║██║ ██╔██╗
+      ██║     ██║  ██║███████╗██║ ╚███║██║██╔╝╚██╗
+      ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚══╝╚═╝╚═╝  ╚═╝
+
+      EOF
+      echo "\nBuilt with phenix image on $(date)\n\n" >> /etc/motd
+    POSTBUILD_PHENIX_BASE: |
+      cat > /etc/systemd/system/miniccc.service <<EOF
+      [Unit]
+      Description=miniccc
+      [Service]
+      ExecStart=/opt/minimega/bin/miniccc -v=false -serial /dev/virtio-ports/cc -logfile /var/log/miniccc.log
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+      cat > /etc/systemd/system/phenix.service <<EOF
+      [Unit]
+      Description=phenix startup service
+      After=network.target systemd-hostnamed.service
+      [Service]
+      Environment=LD_LIBRARY_PATH=/usr/local/lib
+      ExecStart=/usr/local/bin/phenix-start.sh
+      RemainAfterExit=true
+      StandardOutput=journal
+      Type=oneshot
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+      mkdir -p /etc/systemd/system/multi-user.target.wants
+      ln -s /etc/systemd/system/miniccc.service /etc/systemd/system/multi-user.target.wants/miniccc.service
+      ln -s /etc/systemd/system/phenix.service /etc/systemd/system/multi-user.target.wants/phenix.service
+      mkdir -p /usr/local/bin
+      cat > /usr/local/bin/phenix-start.sh <<EOF
+      #!/bin/bash
+      for file in /etc/phenix/startup/*; do
+        echo \$file
+        bash \$file
+      done
+      EOF
+      chmod +x /usr/local/bin/phenix-start.sh
+      mkdir -p /etc/phenix/startup
+    /phenix/vmdb/scripts/packetbeat.sh: |
+      apt install libpcap0.8
+      curl -k -L -O https://artifacts.elastic.co/downloads/beats/packetbeat/packetbeat-oss-7.9.3-amd64.deb
+      apt install ./packetbeat-oss-7.9.3-amd64.deb
+      rm ./packetbeat-oss-7.9.3-amd64.deb
+      cat > /lib/systemd/system/packetbeat.service <<EOF
+      [Unit]
+      Description=Packetbeat analyzes network traffic and sends the data to Elasticsearch.
+      Documentation=https://www.elastic.co/products/beats/packetbeat
+      Wants=network-online.target
+      After=network-online.target
+      [Service]
+      Environment="BEAT_LOG_OPTS="
+      Environment="BEAT_CONFIG_OPTS=-c /etc/packetbeat/packetbeat.yml"
+      Environment="BEAT_PATH_OPTS=--path.home /usr/share/packetbeat --path.config /etc/packetbeat --path.data /var/lib/packetbeat --path.logs /var/log/packetbeat"
+      ExecStart=/usr/share/packetbeat/bin/packetbeat --environment systemd \$BEAT_LOG_OPTS \$BEAT_CONFIG_OPTS \$BEAT_PATH_OPTS
+      Restart=always
+      RestartSec=15
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+      ln -s /lib/systemd/system/packetbeat.service /etc/systemd/system/multi-user.target.wants/packetbeat.service
+  size: 5G
+  variant: minbase
+

@@ -154,6 +154,7 @@ type startOptions struct {
 	dryrun  bool
 	vlanMin int
 	vlanMax int
+	errChan chan error
 }
 
 func newStartOptions(opts ...StartOption) startOptions {
@@ -187,5 +188,11 @@ func StartWithVLANMin(m int) StartOption {
 func StartWithVLANMax(m int) StartOption {
 	return func(o *startOptions) {
 		o.vlanMax = m
+	}
+}
+
+func StartWithErrorChannel(c chan error) StartOption {
+	return func(o *startOptions) {
+		o.errChan = c
 	}
 }

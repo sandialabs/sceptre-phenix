@@ -4,18 +4,17 @@ import (
 	"testing"
 
 	"phenix/store"
-	"phenix/types"
 
 	"github.com/golang/mock/gomock"
 )
 
 func TestListError(t *testing.T) {
-	configs := types.Configs(
-		[]types.Config{
+	configs := store.Configs(
+		[]store.Config{
 			{
 				Version: "phenix.sandia.gov/v1",
 				Kind:    "Experiment",
-				Metadata: types.ConfigMetadata{
+				Metadata: store.ConfigMetadata{
 					Name: "test-experiment",
 				},
 			},
@@ -31,7 +30,6 @@ func TestListError(t *testing.T) {
 	store.DefaultStore = m
 
 	_, err := List("blech")
-	t.Log(err)
 	if err == nil {
 		t.Log("expected error")
 		t.FailNow()

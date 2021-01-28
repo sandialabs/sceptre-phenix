@@ -146,6 +146,62 @@ func (this Interface) RulesetOut() string {
 	return this.RulesetOutF
 }
 
+func (this *Interface) SetName(name string) {
+	this.NameF = name
+}
+
+func (this *Interface) SetType(typ string) {
+	this.TypeF = typ
+}
+
+func (this *Interface) SetProto(proto string) {
+	this.ProtoF = proto
+}
+
+func (this *Interface) SetUDPPort(port int) {
+	this.UDPPortF = port
+}
+
+func (this *Interface) SetBaudRate(rate int) {
+	this.BaudRateF = rate
+}
+
+func (this *Interface) SetDevice(dev string) {
+	this.DeviceF = dev
+}
+
+func (this *Interface) SetVLAN(vlan string) {
+	this.VLANF = vlan
+}
+
+func (this *Interface) SetBridge(br string) {
+	this.BridgeF = br
+}
+
+func (this *Interface) SetAutostart(auto bool) {
+	this.AutostartF = auto
+}
+
+func (this *Interface) SetMAC(mac string) {
+	this.MACF = mac
+}
+
+func (this *Interface) SetMTU(mtu int) {
+	this.MTUF = mtu
+}
+
+func (this *Interface) SetAddress(addr string) {
+	this.AddressF = addr
+}
+
+func (this *Interface) SetMask(mask int) {
+	this.MaskF = mask
+}
+
+func (this *Interface) SetGateway(gw string) {
+	this.GatewayF = gw
+}
+
 func (this *Interface) SetRulesetIn(rule string) {
 	this.RulesetInF = rule
 }
@@ -234,10 +290,10 @@ func (this AreaNetwork) Network() string {
 }
 
 type Ruleset struct {
-	NameF        string `json:"name" yaml:"name" structs:"name" mapstructure:"name"`
-	DescriptionF string `json:"description" yaml:"description" structs:"description" mapstructure:"description"`
-	DefaultF     string `json:"default" yaml:"default" structs:"default" mapstructure:"default"`
-	RulesF       []Rule `json:"rules" yaml:"rules" structs:"rules" mapstructure:"rules"`
+	NameF        string  `json:"name" yaml:"name" structs:"name" mapstructure:"name"`
+	DescriptionF string  `json:"description" yaml:"description" structs:"description" mapstructure:"description"`
+	DefaultF     string  `json:"default" yaml:"default" structs:"default" mapstructure:"default"`
+	RulesF       []*Rule `json:"rules" yaml:"rules" structs:"rules" mapstructure:"rules"`
 }
 
 func (this Ruleset) Name() string {
@@ -260,6 +316,45 @@ func (this Ruleset) Rules() []ifaces.NodeNetworkRulesetRule {
 	}
 
 	return rules
+}
+
+func (this *Ruleset) UnshiftRule() ifaces.NodeNetworkRulesetRule {
+	min := -1
+
+	for _, rule := range this.RulesF {
+		if min == -1 || rule.IDF < min {
+			min = rule.IDF
+		}
+	}
+
+	if min == 0 {
+		return nil
+	}
+
+	r := &Rule{IDF: min - 10}
+
+	if r.IDF < 1 {
+		r.IDF = 1
+	}
+
+	this.RulesF = append([]*Rule{r}, this.RulesF...)
+
+	return r
+}
+
+func (this *Ruleset) RemoveRule(id int) {
+	idx := -1
+
+	for i, rule := range this.RulesF {
+		if rule.IDF == id {
+			idx = i
+			break
+		}
+	}
+
+	if idx != -1 {
+		this.RulesF = append(this.RulesF[:idx], this.RulesF[idx+1:]...)
+	}
 }
 
 type Rule struct {
@@ -293,6 +388,26 @@ func (this Rule) Source() ifaces.NodeNetworkRulesetRuleAddrPort {
 
 func (this Rule) Destination() ifaces.NodeNetworkRulesetRuleAddrPort {
 	return this.DestinationF
+}
+
+func (this *Rule) SetDescription(d string) {
+	this.DescriptionF = d
+}
+
+func (this *Rule) SetAction(a string) {
+	this.ActionF = a
+}
+
+func (this *Rule) SetProtocol(p string) {
+	this.ProtocolF = p
+}
+
+func (this *Rule) SetSource(a string, p int) {
+	this.SourceF = &AddrPort{AddressF: a, PortF: p}
+}
+
+func (this *Rule) SetDestination(a string, p int) {
+	this.DestinationF = &AddrPort{AddressF: a, PortF: p}
 }
 
 type AddrPort struct {

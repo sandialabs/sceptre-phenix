@@ -18,16 +18,40 @@ import (
 	"phenix/tmpl"
 	"phenix/types"
 	"phenix/types/version"
+	v1 "phenix/types/version/v1"
 
 	"github.com/activeshadow/structs"
 	"github.com/hashicorp/go-multierror"
+	"github.com/mitchellh/mapstructure"
 )
 
 func init() {
-	config.RegisterConfigHook("Experiment", func(action string, c *store.Config) error {
-		var errors error
+	config.RegisterConfigHook("Experiment", func(stage string, c *store.Config) error {
+		switch stage {
+		case "create":
+			exp, err := types.DecodeExperimentFromConfig(*c)
+			if err != nil {
+				return fmt.Errorf("decoding experiment from config: %w", err)
+			}
 
-		if action == "delete" {
+			exp.Spec.Init()
+
+			if err := exp.Spec.VerifyScenario(context.TODO()); err != nil {
+				return fmt.Errorf("verifying experiment scenario: %w", err)
+			}
+
+			if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCONFIG)); err != nil {
+				return fmt.Errorf("applying apps to experiment: %w", err)
+			}
+
+			c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
+
+			if err := types.ValidateConfigSpec(*c); err != nil {
+				return fmt.Errorf("validating experiment config: %w", err)
+			}
+		case "delete":
+			var errors error
+
 			exp, err := types.DecodeExperimentFromConfig(*c)
 			if err != nil {
 				return fmt.Errorf("decoding experiment from config: %w", err)
@@ -42,9 +66,11 @@ func init() {
 			if err := os.RemoveAll(exp.Spec.BaseDir()); err != nil {
 				errors = multierror.Append(errors, fmt.Errorf("deleting experiment base directory: %w", err))
 			}
+
+			return errors
 		}
 
-		return errors
+		return nil
 	})
 }
 
@@ -242,13 +268,13 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 
 	exp.Spec.SetVLANRange(o.vlanMin, o.vlanMax, false)
 
-	exp.Spec.SetDefaults()
+	exp.Spec.Init()
 
 	if err := exp.Spec.VerifyScenario(ctx); err != nil {
 		return fmt.Errorf("verifying experiment scenario: %w", err)
 	}
 
-	if err := app.ApplyApps(exp, app.Stage(app.ACTIONCONFIG)); err != nil {
+	if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCONFIG)); err != nil {
 		return fmt.Errorf("applying apps to experiment: %w", err)
 	}
 
@@ -301,7 +327,7 @@ func Schedule(opts ...ScheduleOption) error {
 
 // Start starts the experiment with the given name. It returns any errors
 // encountered while starting the experiment.
-func Start(opts ...StartOption) error {
+func Start(ctx context.Context, opts ...StartOption) error {
 	o := newStartOptions(opts...)
 
 	c, _ := store.NewConfig("experiment/" + o.name)
@@ -329,7 +355,7 @@ func Start(opts ...StartOption) error {
 		exp.Spec.VLANs().SetMax(o.vlanMax)
 	}
 
-	if err := app.ApplyApps(exp, app.Stage(app.ACTIONPRESTART), app.DryRun(o.dryrun)); err != nil {
+	if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPRESTART), app.DryRun(o.dryrun)); err != nil {
 		return fmt.Errorf("applying apps to experiment: %w", err)
 	}
 
@@ -372,6 +398,7 @@ func Start(opts ...StartOption) error {
 
 		vlans, err := mm.GetVLANs(mm.NS(exp.Spec.ExperimentName()))
 		if err != nil {
+			mm.ClearNamespace(exp.Spec.ExperimentName())
 			return fmt.Errorf("processing experiment VLANs: %w", err)
 		}
 
@@ -384,15 +411,44 @@ func Start(opts ...StartOption) error {
 		exp.Status.SetStartTime(time.Now().Format(time.RFC3339))
 	}
 
-	if err := app.ApplyApps(exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
-		return fmt.Errorf("applying apps to experiment: %w", err)
-	}
+	if o.errChan == nil {
+		if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
+			mm.ClearNamespace(exp.Spec.ExperimentName())
+			return fmt.Errorf("applying apps to experiment: %w", err)
+		}
 
-	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
-	c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
+		c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
+		c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
 
-	if err := store.Update(c); err != nil {
-		return fmt.Errorf("updating experiment config: %w", err)
+		if err := store.Update(c); err != nil {
+			mm.ClearNamespace(exp.Spec.ExperimentName())
+			return fmt.Errorf("updating experiment config: %w", err)
+		}
+	} else {
+		go func() {
+			if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
+				mm.ClearNamespace(exp.Spec.ExperimentName())
+				o.errChan <- fmt.Errorf("applying apps to experiment: %w", err)
+			}
+
+			c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
+			c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
+
+			if err := store.Update(c); err != nil {
+				mm.ClearNamespace(exp.Spec.ExperimentName())
+				o.errChan <- fmt.Errorf("updating experiment config: %w", err)
+			}
+
+			close(o.errChan)
+		}()
+
+		c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
+		c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
+
+		if err := store.Update(c); err != nil {
+			mm.ClearNamespace(exp.Spec.ExperimentName())
+			return fmt.Errorf("updating experiment config: %w", err)
+		}
 	}
 
 	return nil
@@ -418,7 +474,7 @@ func Stop(name string) error {
 
 	dryrun := strings.HasSuffix(exp.Status.StartTime(), "-DRYRUN")
 
-	if err := app.ApplyApps(exp, app.Stage(app.ACTIONCLEANUP)); err != nil {
+	if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCLEANUP)); err != nil {
 		return fmt.Errorf("applying apps to experiment: %w", err)
 	}
 
@@ -438,6 +494,22 @@ func Stop(name string) error {
 	}
 
 	return nil
+}
+
+func Status(name string) (*v1.ExperimentStatus, error) {
+	c, _ := store.NewConfig("experiment/" + name)
+
+	if err := store.Get(c); err != nil {
+		return nil, fmt.Errorf("unable to get experiment status from store: %w", err)
+	}
+
+	var status v1.ExperimentStatus
+
+	if err := mapstructure.Decode(c.Status, &status); err != nil {
+		return nil, fmt.Errorf("unable to decode experiment status: %w", err)
+	}
+
+	return &status, nil
 }
 
 func Running(name string) bool {
@@ -510,7 +582,39 @@ func Reconfigure(name string) error {
 		return fmt.Errorf("experiment is running")
 	}
 
-	if err := app.ApplyApps(exp, app.Stage(app.ACTIONCONFIG)); err != nil {
+	if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCONFIG)); err != nil {
+		return fmt.Errorf("configuring apps for experiment: %w", err)
+	}
+
+	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
+
+	if err := store.Update(c); err != nil {
+		return fmt.Errorf("updating experiment config: %w", err)
+	}
+
+	return nil
+}
+
+// TriggerRunning executes the 'running' stage for the given apps in the given
+// experiment. If no apps are passed, then all experiment apps will have their
+// 'running' stage triggered.
+func TriggerRunning(ctx context.Context, name string, apps ...string) error {
+	c, _ := store.NewConfig("experiment/" + name)
+
+	if err := store.Get(c); err != nil {
+		return fmt.Errorf("getting experiment %s from store: %w", name, err)
+	}
+
+	exp, err := types.DecodeExperimentFromConfig(*c)
+	if err != nil {
+		return fmt.Errorf("decoding experiment from config: %w", err)
+	}
+
+	if !exp.Running() {
+		return fmt.Errorf("experiment is not running")
+	}
+
+	if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONRUNNING), app.FilterApp(apps...)); err != nil {
 		return fmt.Errorf("configuring apps for experiment: %w", err)
 	}
 

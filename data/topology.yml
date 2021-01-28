@@ -12,11 +12,6 @@ spec:
       os_type: linux
       drives:
       - image: miniccc.qc2
-    injections:
-      - src: foo/bar/sucka.fish
-        dst: /data/sucka.fish
-      - src: /foo/bar/sucka/fish.sh
-        dst: /data/fish.sh
     network:
       interfaces:
       - name: IF0
@@ -43,10 +38,10 @@ spec:
     network:
       interfaces:
       - name: IF0
-        vlan: corp
-        address: 192.168.10.2
+        vlan: dmz
+        address: 10.0.0.1
         mask: 24
-        gateway: 192.168.10.254
+        gateway: 10.0.0.254
         proto: static
         type: ethernet
       - name: IF1
@@ -105,6 +100,13 @@ spec:
         mask: 24
         proto: static
         type: ethernet
+        ruleset_out: test
+      - name: IF0
+        vlan: dmz
+        address: 10.0.0.254
+        mask: 24
+        proto: static
+        type: ethernet
         ruleset_in: test
       - name: IF1
         vlan: MGMT
@@ -120,5 +122,4 @@ spec:
           action: accept
           protocol: all
           source:
-            address: 1.1.1.1
-            port: 53
+            address: 10.0.0.0/24

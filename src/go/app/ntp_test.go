@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	v1 "phenix/types/version/v1"
 )
 
@@ -21,46 +22,46 @@ func TestNTPAppRouter(t *testing.T) {
 
 	nodes := []*v1.Node{
 		{
-			Type: "Router",
-			Labels: v1.Labels{
+			TypeF: "Router",
+			LabelsF: map[string]string{
 				"ntp-server": "true",
 			},
-			General: v1.General{
-				Hostname: "router",
+			GeneralF: &v1.General{
+				HostnameF: "router",
 			},
 		},
 		{
-			Type: "VirtualMachine",
-			Labels: v1.Labels{
+			TypeF: "VirtualMachine",
+			LabelsF: map[string]string{
 				"ntp-server": "true",
 			},
-			General: v1.General{
-				Hostname: "linux",
+			GeneralF: &v1.General{
+				HostnameF: "linux",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_Linux,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "linux",
 			},
 		},
 		{
-			Type: "VirtualMachine",
-			Labels: v1.Labels{
+			TypeF: "VirtualMachine",
+			LabelsF: map[string]string{
 				"ntp-server": "true",
 			},
-			General: v1.General{
-				Hostname: "win",
+			GeneralF: &v1.General{
+				HostnameF: "win",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_Windows,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "windows",
 			},
 		},
 	}
 
 	// only first node w/ ntp-server tag should be configured
-	expected := [][]v1.Injection{
+	expected := [][]ifaces.NodeInjection{
 		{
-			{
-				Src: fmt.Sprintf("%s/ntp/router_ntp", baseDir),
-				Dst: "/opt/vyatta/etc/ntp.conf",
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/ntp/router_ntp", baseDir),
+				DstF: "/opt/vyatta/etc/ntp.conf",
 			},
 		},
 		nil,
@@ -68,9 +69,9 @@ func TestNTPAppRouter(t *testing.T) {
 	}
 
 	spec := &v1.ExperimentSpec{
-		BaseDir: baseDir,
-		Topology: &v1.TopologySpec{
-			Nodes: nodes,
+		BaseDirF: baseDir,
+		TopologyF: &v1.TopologySpec{
+			NodesF: nodes,
 		},
 	}
 
@@ -83,14 +84,14 @@ func TestNTPAppRouter(t *testing.T) {
 		t.FailNow()
 	}
 
-	checkConfigureExpected(t, nodes, expected)
+	checkConfigureExpected(t, spec.Topology().Nodes(), expected)
 
 	if err := app.PreStart(exp); err != nil {
 		t.Log(err)
 		t.FailNow()
 	}
 
-	checkStartExpected(t, nodes, expected)
+	checkStartExpected(t, spec.Topology().Nodes(), expected)
 }
 
 func TestNTPAppLinux(t *testing.T) {
@@ -104,46 +105,46 @@ func TestNTPAppLinux(t *testing.T) {
 
 	nodes := []*v1.Node{
 		{
-			Type: "VirtualMachine",
-			Labels: v1.Labels{
+			TypeF: "VirtualMachine",
+			LabelsF: map[string]string{
 				"ntp-server": "true",
 			},
-			General: v1.General{
-				Hostname: "linux",
+			GeneralF: &v1.General{
+				HostnameF: "linux",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_Linux,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "linux",
 			},
 		},
 		{
-			Type: "VirtualMachine",
-			Labels: v1.Labels{
+			TypeF: "VirtualMachine",
+			LabelsF: map[string]string{
 				"ntp-server": "true",
 			},
-			General: v1.General{
-				Hostname: "win",
+			GeneralF: &v1.General{
+				HostnameF: "win",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_Windows,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "windows",
 			},
 		},
 		{
-			Type: "Router",
-			Labels: v1.Labels{
+			TypeF: "Router",
+			LabelsF: map[string]string{
 				"ntp-server": "true",
 			},
-			General: v1.General{
-				Hostname: "router",
+			GeneralF: &v1.General{
+				HostnameF: "router",
 			},
 		},
 	}
 
 	// only first node w/ ntp-server tag should be configured
-	expected := [][]v1.Injection{
+	expected := [][]ifaces.NodeInjection{
 		{
-			{
-				Src: fmt.Sprintf("%s/ntp/linux_ntp", baseDir),
-				Dst: "/etc/ntp.conf",
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/ntp/linux_ntp", baseDir),
+				DstF: "/etc/ntp.conf",
 			},
 		},
 		nil,
@@ -151,9 +152,9 @@ func TestNTPAppLinux(t *testing.T) {
 	}
 
 	spec := &v1.ExperimentSpec{
-		BaseDir: baseDir,
-		Topology: &v1.TopologySpec{
-			Nodes: nodes,
+		BaseDirF: baseDir,
+		TopologyF: &v1.TopologySpec{
+			NodesF: nodes,
 		},
 	}
 
@@ -166,14 +167,14 @@ func TestNTPAppLinux(t *testing.T) {
 		t.FailNow()
 	}
 
-	checkConfigureExpected(t, nodes, expected)
+	checkConfigureExpected(t, spec.Topology().Nodes(), expected)
 
 	if err := app.PreStart(exp); err != nil {
 		t.Log(err)
 		t.FailNow()
 	}
 
-	checkStartExpected(t, nodes, expected)
+	checkStartExpected(t, spec.Topology().Nodes(), expected)
 }
 
 func TestNTPAppWindows(t *testing.T) {
@@ -187,46 +188,46 @@ func TestNTPAppWindows(t *testing.T) {
 
 	nodes := []*v1.Node{
 		{
-			Type: "VirtualMachine",
-			Labels: v1.Labels{
+			TypeF: "VirtualMachine",
+			LabelsF: map[string]string{
 				"ntp-server": "true",
 			},
-			General: v1.General{
-				Hostname: "win",
+			GeneralF: &v1.General{
+				HostnameF: "win",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_Windows,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "windows",
 			},
 		},
 		{
-			Type: "VirtualMachine",
-			Labels: v1.Labels{
+			TypeF: "VirtualMachine",
+			LabelsF: map[string]string{
 				"ntp-server": "true",
 			},
-			General: v1.General{
-				Hostname: "linux",
+			GeneralF: &v1.General{
+				HostnameF: "linux",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_Linux,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "linux",
 			},
 		},
 		{
-			Type: "Router",
-			Labels: v1.Labels{
+			TypeF: "Router",
+			LabelsF: map[string]string{
 				"ntp-server": "true",
 			},
-			General: v1.General{
-				Hostname: "router",
+			GeneralF: &v1.General{
+				HostnameF: "router",
 			},
 		},
 	}
 
 	// only first node w/ ntp-server tag should be configured
-	expected := [][]v1.Injection{
+	expected := [][]ifaces.NodeInjection{
 		{
-			{
-				Src: fmt.Sprintf("%s/ntp/win_ntp", baseDir),
-				Dst: "ntp.ps1",
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/ntp/win_ntp", baseDir),
+				DstF: "ntp.ps1",
 			},
 		},
 		nil,
@@ -234,9 +235,9 @@ func TestNTPAppWindows(t *testing.T) {
 	}
 
 	spec := &v1.ExperimentSpec{
-		BaseDir: baseDir,
-		Topology: &v1.TopologySpec{
-			Nodes: nodes,
+		BaseDirF: baseDir,
+		TopologyF: &v1.TopologySpec{
+			NodesF: nodes,
 		},
 	}
 
@@ -249,14 +250,14 @@ func TestNTPAppWindows(t *testing.T) {
 		t.FailNow()
 	}
 
-	checkConfigureExpected(t, nodes, expected)
+	checkConfigureExpected(t, spec.Topology().Nodes(), expected)
 
 	if err := app.PreStart(exp); err != nil {
 		t.Log(err)
 		t.FailNow()
 	}
 
-	checkStartExpected(t, nodes, expected)
+	checkStartExpected(t, spec.Topology().Nodes(), expected)
 }
 
 func TestNTPAppNone(t *testing.T) {
@@ -270,38 +271,38 @@ func TestNTPAppNone(t *testing.T) {
 
 	nodes := []*v1.Node{
 		{
-			Type: "Router",
-			General: v1.General{
-				Hostname: "router",
+			TypeF: "Router",
+			GeneralF: &v1.General{
+				HostnameF: "router",
 			},
 		},
 		{
-			Type: "VirtualMachine",
-			General: v1.General{
-				Hostname: "linux",
+			TypeF: "VirtualMachine",
+			GeneralF: &v1.General{
+				HostnameF: "linux",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_Linux,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "linux",
 			},
 		},
 		{
-			Type: "VirtualMachine",
-			General: v1.General{
-				Hostname: "win",
+			TypeF: "VirtualMachine",
+			GeneralF: &v1.General{
+				HostnameF: "win",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_Windows,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "windows",
 			},
 		},
 	}
 
 	// no ntp-server labels present
-	expected := [][]v1.Injection{nil, nil, nil}
+	expected := [][]ifaces.NodeInjection{nil, nil, nil}
 
 	spec := &v1.ExperimentSpec{
-		BaseDir: baseDir,
-		Topology: &v1.TopologySpec{
-			Nodes: nodes,
+		BaseDirF: baseDir,
+		TopologyF: &v1.TopologySpec{
+			NodesF: nodes,
 		},
 	}
 
@@ -314,12 +315,12 @@ func TestNTPAppNone(t *testing.T) {
 		t.FailNow()
 	}
 
-	checkConfigureExpected(t, nodes, expected)
+	checkConfigureExpected(t, spec.Topology().Nodes(), expected)
 
 	if err := app.PreStart(exp); err != nil {
 		t.Log(err)
 		t.FailNow()
 	}
 
-	checkStartExpected(t, nodes, expected)
+	checkStartExpected(t, spec.Topology().Nodes(), expected)
 }

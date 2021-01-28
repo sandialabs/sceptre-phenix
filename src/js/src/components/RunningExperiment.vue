@@ -222,6 +222,10 @@
       &nbsp; &nbsp;
       <p class="control">
         <b-button v-if="adminUser()" class="button is-danger" slot="trigger" icon-right="stop" @click="stop"></b-button>
+        &nbsp;
+        <router-link v-if="adminUser()" class="button is-light" :to="{ name: 'soh', params: { id: this.$route.params.id }}">
+          <b-icon icon="heartbeat"></b-icon>
+        </router-link>
       </p>
     </b-field>
     <div style="margin-top: -4em;">
@@ -408,7 +412,7 @@
 
     computed: {
       filteredData () {
-        return this.search.vms.filter(vm => {
+        return this.search.vms.filter( vm => {
           return vm.toLowerCase().indexOf( this.search.filter.toLowerCase() ) >= 0
         })
       },
@@ -422,7 +426,7 @@
       },
 
       validate () {
-        var regexp = /^[a-zA-Z0-9-_]*$/;
+        var regexp = /^[ a-zA-Z0-9-_ ]*$/;
     
         if ( !regexp.test( this.diskImageModal.name ) ) {
           this.diskImageModal.nameErrType = 'is-danger';
@@ -450,7 +454,7 @@
       },
 
       searchVMs( term ) {
-        if (term === null) {
+        if ( term === null ) {
           term = '';
         }
 
@@ -487,7 +491,7 @@
           }
         };
 
-        this.$socket.send(JSON.stringify(msg));
+        this.$socket.send( JSON.stringify( msg ) );
       },
 
       onPageChange ( page ) {
@@ -502,7 +506,7 @@
       },
 
       handler ( event ) {
-        event.data.split(/\r?\n/).forEach( m => {
+        event.data.split( /\r?\n/ ).forEach( m => {
           let msg = JSON.parse( m );
           this.handle( msg );
         });
@@ -535,8 +539,8 @@
             switch ( msg.resource.action ) {
               case 'update': {
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == msg.result.name ) {
-                    vms[i] = msg.result;
+                  if ( vms[ i ].name == msg.result.name ) {
+                    vms[ i ] = msg.result;
 
                     break;
                   }
@@ -547,7 +551,7 @@
 
               case 'delete': {
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == vm[ 1 ] ) {
+                  if ( vms[ i ].name == vm[ 1 ] ) {
                     vms.splice( i, 1 );
 
                     break;
@@ -598,9 +602,9 @@
 
               case 'commit': {
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == vm[ 1 ] ) {
-                    vms[i].redeploying = false;
-                    vms[i] = msg.result.vm;
+                  if ( vms[ i ].name == vm[ 1 ] ) {
+                    vms[ i ].redeploying = false;
+                    vms[ i ] = msg.result.vm;
 
                       let disk = msg.result.disk;
                   
@@ -619,9 +623,9 @@
 
               case 'committing': {
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == vm[ 1 ] ) {
-                    vms[i].redeploying = true;
-                    vms[i].percent = 0;
+                  if ( vms[ i ].name == vm[ 1 ] ) {
+                    vms[ i ].redeploying = true;
+                    vms[ i ].percent = 0;
 
                     let disk = msg.result.disk;
                 
@@ -644,8 +648,8 @@
                 let percent = ( msg.result.percent * 100 ).toFixed( 0 );
 
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == vm[ 1 ] ) {
-                    vms[i].percent = percent;
+                  if ( vms[ i ].name == vm[ 1 ] ) {
+                    vms[ i ].percent = percent;
 
                     this.experiment.vms = [ ... vms ];
 
@@ -667,8 +671,8 @@
             switch ( msg.resource.action ) {
               case 'update': {
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == vm[ 1 ] ) {
-                    vms[i].screenshot = msg.result.screenshot;
+                  if ( vms[ i ].name == vm[ 1 ] ) {
+                    vms[ i ].screenshot = msg.result.screenshot;
                     break;
                   }
                 }
@@ -689,12 +693,12 @@
             switch ( msg.resource.action ) {
               case 'start': {
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == vm[ 1 ] ) {
-                    if ( vms[i].captures == null ) {
-                      vms[i].captures = [];
+                  if ( vms[ i ].name == vm[ 1 ] ) {
+                    if ( vms[ i ].captures == null ) {
+                      vms[ i ].captures = [];
                     }
 
-                    vms[i].captures.push ({ 
+                    vms[ i ].captures.push ({ 
                       "vm": vm[ 1 ], 
                       "interface": msg.result.interface, 
                       "filename": msg.result.filename 
@@ -716,8 +720,8 @@
 
               case 'stop': {
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == vm[ 1 ] ) {
-                    vms[i].captures = null;
+                  if ( vms[ i ].name == vm[ 1 ] ) {
+                    vms[ i ].captures = null;
 
                     break;
                   }
@@ -742,8 +746,8 @@
             switch ( msg.resource.action ) {
               case 'create': {
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == vm[ 1 ] ) {
-                    vms[i].redeploying = false;
+                  if ( vms[ i ].name == vm[ 1 ] ) {
+                    vms[ i ].redeploying = false;
                 
                     this.$buefy.toast.open({
                       message: 'The snapshot for the ' + vm[ 1 ] + ' VM was successfully created.',
@@ -760,9 +764,9 @@
 
               case 'creating': {
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == vm[ 1 ] ) {
-                    vms[i].redeploying = true;
-                    vms[i].percent = 0;
+                  if ( vms[ i ].name == vm[ 1 ] ) {
+                    vms[ i ].redeploying = true;
+                    vms[ i ].percent = 0;
                 
                     this.$buefy.toast.open({
                       message: 'A snapshot for the ' + vm[ 1 ] + ' VM is being created.',
@@ -781,8 +785,8 @@
                 let percent = ( msg.result.percent * 100 ).toFixed( 0 );
 
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == vm[ 1 ] ) {
-                    vms[i].percent = percent;
+                  if ( vms[ i ].name == vm[ 1 ] ) {
+                    vms[ i ].percent = percent;
 
                     this.experiment.vms = [ ... vms ];
 
@@ -795,8 +799,8 @@
 
               case 'restore': {
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == vm[ 1 ] ) {
-                    vms[i].redeploying = false;
+                  if ( vms[ i ].name == vm[ 1 ] ) {
+                    vms[ i ].redeploying = false;
               
                     this.$buefy.toast.open({
                       message: 'The ' + vm[ 1 ] + ' VM was successfully reverted to a previous snapshot.',
@@ -813,9 +817,9 @@
 
               case 'restoring': {
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == vm[ 1 ] ) {
-                    vms[i].redeploying = true;
-                    vms[i].percent = 0;
+                  if ( vms[ i ].name == vm[ 1 ] ) {
+                    vms[ i ].redeploying = true;
+                    vms[ i ].percent = 0;
                 
                     this.$buefy.toast.open({
                       message: 'A snapshot for the ' + vm[ 1 ] + ' VM is being restored.',
@@ -838,7 +842,7 @@
     
       async updateExperiment () {
         try {
-          let resp = await this.$http.get('experiments/' + this.$route.params.id);
+          let resp = await this.$http.get( 'experiments/' + this.$route.params.id );
           let state = await resp.json();
 
           this.experiment  = state;
@@ -868,7 +872,7 @@
                   this.isWaiting = true;
                 } else {
                   for ( let i = 0; i < state.disks.length; i++ ) {
-                    this.disks.push( state.disks[i] );
+                    this.disks.push( state.disks[ i ] );
                   }
                   
                   this.isWaiting = false;
@@ -895,7 +899,7 @@
             response.json().then(
               state => {
                 for ( let i = 0; i < state.files.length; i++ ){
-                  this.files.push( state.files[i] );
+                  this.files.push( state.files[ i ] );
                 }
 
                 this.isWaiting = false;
@@ -1120,7 +1124,7 @@
                   let vms = this.experiment.vms;
 
                   for ( let i = 0; i < vms.length; i++ ) {
-                    if ( vms[i].name == name ) {
+                    if ( vms[ i ].name == name ) {
                       vms.splice( i, 1 );
                       break;
                     }
@@ -1191,7 +1195,7 @@
       tapDecorator ( captures, iface ) {
         if ( captures ) {
           for ( let i = 0; i < captures.length; i++ ) {
-            if ( captures[i].interface === iface ) {
+            if ( captures[ i ].interface === iface ) {
               return 'is-success'
             }
           }
@@ -1220,7 +1224,7 @@
 
                 if ( captures ) {
                   for ( let i = 0; i < captures.length; i++ ) {
-                    if ( captures[i].interface === iface ) {
+                    if ( captures[ i ].interface === iface ) {
                       capturing = true;
                       break;
                     }
@@ -1246,8 +1250,8 @@
                             let vms = this.experiment.vms;
 
                             for ( let i = 0; i < vms.length; i++ ) {
-                              if ( vms[i].name == response.body.name ) {
-                                vms[i] = response.body;
+                              if ( vms[ i ].name == response.body.name ) {
+                                vms[ i ] = response.body;
                                 break;
                               }
                             }
@@ -1300,8 +1304,8 @@
                             let vms = this.experiment.vms;
 
                             for ( let i = 0; i < vms.length; i++ ) {
-                              if ( vms[i].name == response.body.name ) {
-                                vms[i] = response.body;
+                              if ( vms[ i ].name == response.body.name ) {
+                                vms[ i ] = response.body;
                                 break;
                               }
                             }
@@ -1346,8 +1350,8 @@
                 let vms = this.experiment.vms;
 
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == response.body.name ) {
-                    vms[i] = response.body;
+                  if ( vms[ i ].name == response.body.name ) {
+                    vms[ i ] = response.body;
                     break;
                   }
                 }
@@ -1389,8 +1393,8 @@
                 let vms = this.experiment.vms;
 
                 for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[i].name == response.body.name ) {
-                    vms[i] = response.body;
+                  if ( vms[ i ].name == response.body.name ) {
+                    vms[ i ] = response.body;
                     break;
                   }
                 }
@@ -1426,14 +1430,14 @@
       },
     
       redeployVm ( name, cpus, ram, disk, inject ) {
-        const body = { "cpus": parseInt(cpus), "ram": parseInt(ram), "disk": disk }
+        const body = { "cpus": parseInt( cpus ), "ram": parseInt( ram ), "disk": disk }
         let url = 'experiments/' + this.$route.params.id + '/vms/' + name + '/redeploy'
 
         if ( inject ) {
           url += '?replicate-injects=true'
         }
 
-        this.$http.post(url, body).then(null, response => {
+        this.$http.post( url, body ).then( null, response => {
             this.$buefy.toast.open({
               message: 'Redeploying the ' + name + ' VM failed with ' + response.status + ' status.',
               type: 'is-danger',
@@ -1467,8 +1471,8 @@
                   let vms = this.experiment.vms;
 
                   for ( let i = 0; i < vms.length; i++ ) {
-                    if ( vms[i].name == response.body.name ) {
-                      vms[i] = response.body;
+                    if ( vms[ i ].name == response.body.name ) {
+                      vms[ i ] = response.body;
                       break;
                     }
                   }
@@ -1514,8 +1518,8 @@
                   let vms = this.experiment.vms;
 
                   for ( let i = 0; i < vms.length; i++ ) {
-                    if ( vms[i].name == response.body.name ) {
-                      vms[i] = response.body;
+                    if ( vms[ i ].name == response.body.name ) {
+                      vms[ i ] = response.body;
                       break;
                     }
                   }

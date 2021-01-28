@@ -3,6 +3,7 @@ package web
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -14,12 +15,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"phenix/api/cluster"
 	"phenix/api/config"
 	"phenix/api/experiment"
 	"phenix/api/scenario"
+	"phenix/api/soh"
 	"phenix/api/vm"
 	"phenix/app"
 	"phenix/internal/mm"
@@ -44,6 +47,10 @@ import (
 var (
 	marshaler   = protojson.MarshalOptions{EmitUnpopulated: true}
 	unmarshaler = protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
+
+	// Track context cancelers and wait groups for periodically running apps.
+	cancelers = make(map[string][]context.CancelFunc)
+	waiters   = make(map[string]*sync.WaitGroup)
 )
 
 // GET /experiments
@@ -370,8 +377,25 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) {
 	status := make(chan result)
 
 	go func() {
-		if err := experiment.Start(experiment.StartWithName(name)); err != nil {
+		// We don't want to use the HTTP request's context here.
+		ctx, cancel := context.WithCancel(context.Background())
+
+		// TODO: use experiment.StartWithErrorChannel option if we don't want to
+		// wait for apps with long-running PostStart stages (like SoH) to finish
+		// before returning to the UI.
+		ch := make(chan error)
+
+		if err := experiment.Start(ctx, experiment.StartWithName(name), experiment.StartWithErrorChannel(ch)); err != nil {
+			cancel() // avoid leakage
 			status <- result{nil, err}
+		} else {
+			cancelers[name] = append(cancelers[name], cancel)
+
+			go func() {
+				for err := range ch {
+					log.Warn("delayed error starting experiment %s: %v", name, err)
+				}
+			}()
 		}
 
 		exp, err := experiment.Get(name)
@@ -394,6 +418,18 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) {
 				log.Error("starting experiment %s - %v", name, s.err)
 				http.Error(w, s.err.Error(), http.StatusBadRequest)
 				return
+			}
+
+			// We don't want to use the HTTP request's context here.
+			ctx, cancel := context.WithCancel(context.Background())
+			var wg sync.WaitGroup
+
+			if err := app.PeriodicallyRunApps(ctx, &wg, s.exp); err != nil {
+				cancel() // avoid leakage
+				fmt.Printf("Error scheduling experiment apps to run periodically: %v\n", err)
+			} else {
+				cancelers[name] = append(cancelers[name], cancel)
+				waiters[name] = &wg
 			}
 
 			vms, err := vm.List(name)
@@ -477,6 +513,19 @@ func StopExperiment(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
+	if cancels, ok := cancelers[name]; ok {
+		for _, cancel := range cancels {
+			cancel()
+		}
+
+		if wg, ok := waiters[name]; ok {
+			wg.Wait()
+		}
+	}
+
+	delete(cancelers, name)
+	delete(waiters, name)
+
 	if err := experiment.Stop(name); err != nil {
 		broker.Broadcast(
 			broker.NewRequestPolicy("experiments/stop", "update", name),
@@ -513,6 +562,64 @@ func StopExperiment(w http.ResponseWriter, r *http.Request) {
 	)
 
 	w.Write(body)
+}
+
+// POST /experiments/{name}/trigger[?apps=<foo,bar,baz>]
+func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
+	log.Debug("TriggerExperimentApps HTTP handler called")
+
+	var (
+		ctx  = r.Context()
+		role = ctx.Value("role").(rbac.Role)
+		vars = mux.Vars(r)
+		name = vars["name"]
+
+		query      = r.URL.Query()
+		appsFilter = query.Get("apps")
+	)
+
+	if !role.Allowed("experiments/trigger", "create", name) {
+		log.Warn("triggering experiment %s apps not allowed for %s", name, ctx.Value("user").(string))
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	broker.Broadcast(
+		broker.NewRequestPolicy("experiments/trigger", "create", name),
+		broker.NewResource("experiment", name, "triggering"),
+		nil,
+	)
+
+	go func() {
+		apps := strings.Split(appsFilter, ",")
+
+		// We don't want to use the HTTP request's context here.
+		ctx, cancel := context.WithCancel(context.Background())
+
+		if err := experiment.TriggerRunning(ctx, name, apps...); err != nil {
+			cancel() // avoid leakage
+
+			broker.Broadcast(
+				broker.NewRequestPolicy("experiments/trigger", "create", name),
+				broker.NewResource("experiment", name, "errorTriggering"),
+				nil,
+			)
+
+			log.Error("triggering experiment %s apps - %v", name, err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		cancelers[name] = append(cancelers[name], cancel)
+
+		broker.Broadcast(
+			broker.NewRequestPolicy("experiments/trigger", "create", name),
+			broker.NewResource("experiment", name, "trigger"),
+			nil,
+		)
+	}()
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // GET /experiments/{name}/schedule
@@ -733,6 +840,46 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Disposition", "attachment; filename="+file)
 	http.ServeContent(w, r, "", time.Now(), bytes.NewReader(contents))
+}
+
+// GET /experiments/{exp}/soh[?statusFilter=<status filter>]
+func GetExperimentSoH(w http.ResponseWriter, r *http.Request) {
+	log.Debug("GetExperimentSoH HTTP handler called")
+
+	var (
+		ctx  = r.Context()
+		role = ctx.Value("role").(rbac.Role)
+		vars = mux.Vars(r)
+		exp  = vars["name"]
+
+		query        = r.URL.Query()
+		statusFilter = query.Get("statusFilter")
+	)
+
+	if !role.Allowed("vms", "list") {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	state, err := soh.Get(exp, statusFilter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	hosts, flows, err := soh.GetFlows(exp)
+	if err == nil {
+		state.Hosts = hosts
+		state.HostFlows = flows
+	}
+
+	marshalled, err := json.Marshal(state)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(marshalled)
 }
 
 // GET /experiments/{exp}/vms
@@ -2314,7 +2461,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	body, err = marshaler.Marshal(resp)
 	if err != nil {
-		log.Error("marshaling user %s: %v", user.Username, err)
+		log.Error("marshaling user %s: %v", user.Username(), err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -2359,7 +2506,7 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 
 	body, err := marshaler.Marshal(resp)
 	if err != nil {
-		log.Error("marshaling user %s: %v", user.Username, err)
+		log.Error("marshaling user %s: %v", user.Username(), err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

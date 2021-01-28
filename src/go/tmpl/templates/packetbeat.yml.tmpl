@@ -1,0 +1,90 @@
+#============================== Network device ================================
+
+# Select the network interface to sniff the data. On Linux, you can use the
+# "any" keyword to sniff on all connected interfaces.
+packetbeat.interfaces.device: eth1
+packetbeat.interfaces.type: pcap
+
+#================================== Flows =====================================
+
+# Set `enabled: false` or comment out all options to disable flows reporting.
+packetbeat.flows:
+  enabled: true
+
+  # Set network flow timeout. Flow is killed if no packet is received before being
+  # timed out.
+  timeout: 30s
+
+  # Configure reporting period. If set to -1, only killed flows will be reported
+  period: 10s
+
+#================================ General =====================================
+
+# The name of the shipper that publishes the network data. It can be used to group
+# all the transactions sent by a single shipper in the web interface.
+name: {{ .Hostname }}
+
+
+#============================== Dashboards =====================================
+# These settings control loading the sample dashboards to the Kibana index. Loading
+# the dashboards is disabled by default and can be enabled either by setting the
+# options here or by using the `setup` command.
+setup.dashboards.enabled: true
+
+# The URL from where to download the dashboards archive. By default this URL
+# has a value which is computed based on the Beat name and version. For released
+# versions, this URL points to the dashboard archive on the artifacts.elastic.co
+# website.
+setup.dashboards.directory: ${path.home}/kibana
+
+# Always use the Kibana API for loading the dashboards instead of autodetecting
+# how to install the dashboards by first querying Elasticsearch.
+setup.dashboards.always_kibana: true
+
+# If true and Kibana is not reachable at the time when dashboards are loaded,
+# it will retry to reconnect to Kibana instead of exiting with an error.
+setup.dashboards.retry.enabled: true
+
+# Duration interval between Kibana connection retries.
+setup.dashboards.retry.interval: 5s
+
+# Maximum number of retries before exiting with an error, 0 for unlimited retrying.
+setup.dashboards.retry.maximum: 100
+
+
+#============================== Kibana =====================================
+
+# Starting with Beats version 6.0.0, the dashboards are loaded via the Kibana API.
+# This requires a Kibana endpoint configuration.
+setup.kibana:
+  # Kibana Host
+  # Scheme and port can be left out and will be set to the default (http and 5601)
+  # In case you specify and additional path, the scheme is required: http://localhost:5601/path
+  # IPv6 addresses should always be defined as: https://[2001:db8::1]:5601
+  host: http://{{ .ElasticServer }}:5601
+
+#================================ Outputs =====================================
+
+# Configure what output to use when sending the data collected by the beat.
+
+#-------------------------- Elasticsearch output ------------------------------
+output.elasticsearch:
+  # Array of hosts to connect to.
+  hosts:
+  - {{ .ElasticServer }}:9200
+
+  # Protocol - either `http` (default) or `https`.
+  protocol: http
+
+#================================== Logging ===================================
+
+# Uncomment these lines to implement logging to file. Logging level options are
+# debug, info, warning, or error.
+
+#logging.level: debug
+#logging.to_files: true
+#logging.files:
+#  path: /var/log/packetbeat
+#  name: packetbeat
+#  keepfiles: 5
+#  permissions: 0644

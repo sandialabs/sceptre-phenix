@@ -3,8 +3,10 @@ package vm
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
+	"phenix/api/experiment"
 	"phenix/internal/mm"
 )
 
@@ -71,6 +73,23 @@ func StopCaptures(expName, vmName string) error {
 
 	if vmName == "" {
 		return fmt.Errorf("no VM name provided")
+	}
+
+	captures := mm.GetVMCaptures(mm.NS(expName), mm.VMName(vmName))
+
+	if captures == nil {
+		return fmt.Errorf("VM %s in experiment %s: %w", vmName, expName, ErrNoCaptures)
+	}
+
+	exp, err := experiment.Get(expName)
+	if err != nil {
+		return fmt.Errorf("getting experiment %s: %w", expName, err)
+	}
+
+	dir := fmt.Sprintf("%s/captures", exp.Spec.BaseDir())
+
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("creating files directory for experiment %s: %w", expName, err)
 	}
 
 	if err := mm.StopVMCapture(mm.NS(expName), mm.VMName(vmName)); err != nil {

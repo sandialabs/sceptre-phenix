@@ -1,5 +1,7 @@
 package mm
 
+import "context"
+
 var DefaultMM MM = new(Minimega)
 
 type MM interface {
@@ -30,4 +32,9 @@ type MM interface {
 	Headnode() string
 	IsHeadnode(string) bool
 	GetVLANs(...Option) (map[string]int, error)
+
+	IsC2ClientActive(...C2Option) error
+	ExecC2Command(...C2Option) (string, error)
+	WaitForC2Response(context.Context, ...C2Option) (string, error)
+	ClearC2Responses(...C2Option) error
 }

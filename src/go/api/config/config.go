@@ -28,11 +28,11 @@ func RegisterConfigHook(kind string, hook ConfigHook) {
 }
 
 func Init() error {
-	for _, name := range AssetNames() {
+	for _, file := range AssetNames() {
 		var c store.Config
 
-		if err := yaml.Unmarshal(MustAsset(name), &c); err != nil {
-			return fmt.Errorf("unmarshaling default config %s: %w", name, err)
+		if err := yaml.Unmarshal(MustAsset(file), &c); err != nil {
+			return fmt.Errorf("unmarshaling default config %s: %w", file, err)
 		}
 
 		name := strings.ToLower(c.Kind) + "/" + c.Metadata.Name
@@ -44,7 +44,7 @@ func Init() error {
 		}
 
 		if err := store.Create(&c); err != nil {
-			return fmt.Errorf("storing default config %s: %w", name, err)
+			return fmt.Errorf("storing default config %s: %w", file, err)
 		}
 	}
 

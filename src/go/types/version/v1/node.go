@@ -53,6 +53,66 @@ func (this Node) Advanced() map[string]string {
 	return this.AdvancedF
 }
 
+func (this *Node) SetInjections(injections []ifaces.NodeInjection) {
+	injects := make([]*Injection, len(injections))
+
+	for i, j := range injections {
+		injects[i] = j.(*Injection)
+	}
+
+	this.InjectionsF = injects
+}
+
+func (this *Node) AddLabel(k, v string) {
+	if this.LabelsF == nil {
+		this.LabelsF = make(map[string]string)
+	}
+
+	this.LabelsF[k] = v
+}
+
+func (this *Node) AddHardware(os string, vcpu, memory int) ifaces.NodeHardware {
+	h := &Hardware{
+		OSTypeF: os,
+		VCPUF:   vcpu,
+		MemoryF: memory,
+	}
+
+	this.HardwareF = h
+
+	return h
+}
+
+func (this *Node) AddNetworkInterface(typ, name, vlan string) ifaces.NodeNetworkInterface {
+	i := &Interface{
+		TypeF: typ,
+		NameF: name,
+		VLANF: vlan,
+	}
+
+	if this.NetworkF == nil {
+		this.NetworkF = new(Network)
+	}
+
+	this.NetworkF.InterfacesF = append(this.NetworkF.InterfacesF, i)
+
+	return i
+}
+
+func (this *Node) AddNetworkRoute(dest, next string, cost int) {
+	r := Route{
+		DestinationF: dest,
+		NextF:        next,
+		CostF:        &cost,
+	}
+
+	if this.NetworkF == nil {
+		this.NetworkF = new(Network)
+	}
+
+	this.NetworkF.RoutesF = append(this.NetworkF.RoutesF, r)
+}
+
 func (this *Node) AddInject(src, dst, perms, desc string) {
 	var exists bool
 
@@ -75,16 +135,6 @@ func (this *Node) AddInject(src, dst, perms, desc string) {
 			DescriptionF: desc,
 		})
 	}
-}
-
-func (this *Node) SetInjections(injections []ifaces.NodeInjection) {
-	injects := make([]*Injection, len(injections))
-
-	for i, j := range injections {
-		injects[i] = j.(*Injection)
-	}
-
-	this.InjectionsF = injects
 }
 
 func (this *Node) SetAdvanced(adv map[string]string) {
@@ -155,7 +205,11 @@ func (this Hardware) OSType() string {
 	return this.OSTypeF
 }
 
-func (this Hardware) Drives() []ifaces.NodeDrive {
+func (this *Hardware) Drives() []ifaces.NodeDrive {
+	if this == nil {
+		return nil
+	}
+
 	drives := make([]ifaces.NodeDrive, len(this.DrivesF))
 
 	for i, d := range this.DrivesF {
@@ -171,6 +225,17 @@ func (this *Hardware) SetVCPU(v int) {
 
 func (this *Hardware) SetMemory(m int) {
 	this.MemoryF = m
+}
+
+func (this *Hardware) AddDrive(disk string, part int) ifaces.NodeDrive {
+	d := &Drive{
+		ImageF:           disk,
+		InjectPartitionF: &part,
+	}
+
+	this.DrivesF = append(this.DrivesF, d)
+
+	return d
 }
 
 type Drive struct {

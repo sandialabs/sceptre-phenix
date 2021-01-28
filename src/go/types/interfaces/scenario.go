@@ -10,10 +10,12 @@ type ScenarioApp interface {
 	AssetDir() string
 	Metadata() map[string]interface{}
 	Hosts() []ScenarioAppHost
+	RunPeriodically() string
 
 	SetAssetDir(string)
 	SetMetadata(map[string]interface{})
 	SetHosts([]ScenarioAppHost)
+	SetRunPeriodically(string)
 }
 
 type ScenarioAppHost interface {

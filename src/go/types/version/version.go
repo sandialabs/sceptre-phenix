@@ -19,6 +19,7 @@ var StoredVersion = map[string]string{
 	"Image":      "v1",
 	"User":       "v1",
 	"Role":       "v1",
+	"Node":       "v1",
 	"Ruleset":    "v1",
 }
 
@@ -59,6 +60,13 @@ func GetVersionedSpecForKind(kind, version string) (interface{}, error) {
 		switch version {
 		case "v1":
 			return new(v1.ExperimentSpec), nil
+		default:
+			return nil, fmt.Errorf("unknown version %s for %s", version, kind)
+		}
+	case "Node":
+		switch version {
+		case "v1":
+			return new(v1.Node), nil
 		default:
 			return nil, fmt.Errorf("unknown version %s for %s", version, kind)
 		}

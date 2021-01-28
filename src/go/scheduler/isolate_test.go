@@ -10,15 +10,15 @@ import (
 )
 
 func TestIsolateSchedulerManual(t *testing.T) {
-	sched := v1.Schedule{
+	sched := map[string]string{
 		"foo": "compute0",
 	}
 
 	spec := &v1.ExperimentSpec{
-		Topology: &v1.TopologySpec{
-			Nodes: nodes,
+		TopologyF: &v1.TopologySpec{
+			NodesF: nodes,
 		},
-		Schedules: sched,
+		SchedulesF: sched,
 	}
 
 	hosts := mm.Hosts(
@@ -40,7 +40,7 @@ func TestIsolateSchedulerManual(t *testing.T) {
 	defer ctrl.Finish()
 
 	m := mm.NewMockMM(ctrl)
-	m.EXPECT().GetClusterHosts().Return(hosts, nil)
+	m.EXPECT().GetClusterHosts(true).Return(hosts, nil)
 
 	mm.DefaultMM = m
 
@@ -49,7 +49,7 @@ func TestIsolateSchedulerManual(t *testing.T) {
 		t.FailNow()
 	}
 
-	for vm, host := range spec.Schedules {
+	for vm, host := range spec.SchedulesF {
 		if host != "compute0" {
 			t.Logf("expected %s -> compute0, got %s -> %s", vm, vm, host)
 			t.FailNow()
@@ -59,10 +59,10 @@ func TestIsolateSchedulerManual(t *testing.T) {
 
 func TestIsolateSchedulerFits(t *testing.T) {
 	spec := &v1.ExperimentSpec{
-		Topology: &v1.TopologySpec{
-			Nodes: nodes,
+		TopologyF: &v1.TopologySpec{
+			NodesF: nodes,
 		},
-		Schedules: v1.Schedule{},
+		SchedulesF: make(map[string]string),
 	}
 
 	hosts := mm.Hosts(
@@ -84,7 +84,7 @@ func TestIsolateSchedulerFits(t *testing.T) {
 	defer ctrl.Finish()
 
 	m := mm.NewMockMM(ctrl)
-	m.EXPECT().GetClusterHosts().Return(hosts, nil)
+	m.EXPECT().GetClusterHosts(true).Return(hosts, nil)
 
 	mm.DefaultMM = m
 
@@ -93,7 +93,7 @@ func TestIsolateSchedulerFits(t *testing.T) {
 		t.FailNow()
 	}
 
-	for vm, host := range spec.Schedules {
+	for vm, host := range spec.SchedulesF {
 		if host != "compute2" {
 			t.Logf("expected %s -> compute2, got %s -> %s", vm, vm, host)
 			t.FailNow()
@@ -103,10 +103,10 @@ func TestIsolateSchedulerFits(t *testing.T) {
 
 func TestIsolateSchedulerUnoccupied(t *testing.T) {
 	spec := &v1.ExperimentSpec{
-		Topology: &v1.TopologySpec{
-			Nodes: nodes,
+		TopologyF: &v1.TopologySpec{
+			NodesF: nodes,
 		},
-		Schedules: v1.Schedule{},
+		SchedulesF: make(map[string]string),
 	}
 
 	hosts := mm.Hosts(
@@ -129,7 +129,7 @@ func TestIsolateSchedulerUnoccupied(t *testing.T) {
 	defer ctrl.Finish()
 
 	m := mm.NewMockMM(ctrl)
-	m.EXPECT().GetClusterHosts().Return(hosts, nil)
+	m.EXPECT().GetClusterHosts(true).Return(hosts, nil)
 
 	mm.DefaultMM = m
 
@@ -138,7 +138,7 @@ func TestIsolateSchedulerUnoccupied(t *testing.T) {
 		t.FailNow()
 	}
 
-	for vm, host := range spec.Schedules {
+	for vm, host := range spec.SchedulesF {
 		if host != "compute2" {
 			t.Logf("expected %s -> compute2, got %s -> %s", vm, vm, host)
 			t.FailNow()
@@ -148,10 +148,10 @@ func TestIsolateSchedulerUnoccupied(t *testing.T) {
 
 func TestIsolateSchedulerAllOccupied(t *testing.T) {
 	spec := &v1.ExperimentSpec{
-		Topology: &v1.TopologySpec{
-			Nodes: nodes,
+		TopologyF: &v1.TopologySpec{
+			NodesF: nodes,
 		},
-		Schedules: v1.Schedule{},
+		SchedulesF: make(map[string]string),
 	}
 
 	hosts := mm.Hosts(
@@ -175,7 +175,7 @@ func TestIsolateSchedulerAllOccupied(t *testing.T) {
 	defer ctrl.Finish()
 
 	m := mm.NewMockMM(ctrl)
-	m.EXPECT().GetClusterHosts().Return(hosts, nil)
+	m.EXPECT().GetClusterHosts(true).Return(hosts, nil)
 
 	mm.DefaultMM = m
 

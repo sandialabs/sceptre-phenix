@@ -8,6 +8,7 @@ import (
 	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
 
+	"github.com/activeshadow/structs"
 	"github.com/mitchellh/mapstructure"
 )
 
@@ -26,11 +27,36 @@ func NewExperiment(md store.ConfigMetadata) *Experiment {
 	spec, _ := version.GetVersionedSpecForKind("Experiment", ver)
 	status, _ := version.GetVersionedStatusForKind("Experiment", ver)
 
+	spec.(ifaces.ExperimentSpec).Init()
+	status.(ifaces.ExperimentStatus).Init()
+
 	return &Experiment{
 		Metadata: md,
 		Spec:     spec.(ifaces.ExperimentSpec),
 		Status:   status.(ifaces.ExperimentStatus),
 	}
+}
+
+func (this Experiment) WriteToStore(statusOnly bool) error {
+	name := this.Metadata.Name
+
+	c, _ := store.NewConfig("experiment/" + name)
+
+	if err := store.Get(c); err != nil {
+		return fmt.Errorf("getting experiment %s from store: %w", name, err)
+	}
+
+	if !statusOnly {
+		c.Spec = structs.MapDefaultCase(this.Spec, structs.CASESNAKE)
+	}
+
+	c.Status = structs.MapDefaultCase(this.Status, structs.CASESNAKE)
+
+	if err := store.Update(c); err != nil {
+		return fmt.Errorf("saving experiment config: %w", err)
+	}
+
+	return nil
 }
 
 func (this *Experiment) SetSpec(spec ifaces.ExperimentSpec) {

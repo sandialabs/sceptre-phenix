@@ -86,19 +86,19 @@
 
     async created () {
       try {
-        let resp = await this.$http.get('logs');
+        let resp = await this.$http.get( 'logs' );
         let state = await resp.json();
 
         // Note that sometimes this function gets called more
         // than once, and sometimes `state` ends up being
         // null, perhaps due to multipart responses?
         if ( state ) {
-          this.logs.push(...state.logs);
+          this.logs.push( ...state.logs );
         }
 
         this.$options.sockets.onmessage = this.handler;
-      } catch (resp) {
-        if (resp.status == 501) {
+      } catch ( resp ) {
+        if ( resp.status == 501)  {
           this.disabled = true
         } else {
           this.$buefy.toast.open({
@@ -115,40 +115,40 @@
         let logs = this.logs;
         let filters = { 'sources': [], 'levels': [] };
 
-        let tokens = this.searchLog.split(' ');
+        let tokens = this.searchLog.split( ' ' );
 
         for ( let i = tokens.length - 1; i >= 0; i-- ) {
-          let token = tokens[i];
+          let token = tokens[ i ];
 
-          if ( token.includes(':') ) {
-            let filter = token.split(':');
+          if ( token.includes( ':' ) ) {
+            let filter = token.split( ':' );
 
-            switch ( filter[0].toLowerCase() ) {
+            switch ( filter[ 0 ].toLowerCase() ) {
               case 'source': {
-                filters['sources'] = filters['sources'].concat(filter[1].split(',').map( f => f.toLowerCase() ));
+                filters[ 'sources' ] = filters[ 'sources' ].concat( filter[ 1 ].split( ',' ).map( f => f.toLowerCase() ) );
 
                 break;
               }
 
               case 'level': {
-                filters['levels'] = filters['levels'].concat(filter[1].split(',').map( f => f.toLowerCase() ));
+                filters[ 'levels' ] = filters[ 'levels' ].concat( filter[ 1 ].split( ',' ).map( f => f.toLowerCase() ) );
 
                 break;
               }
             }
 
-            tokens.splice(i, 1);
+            tokens.splice( i, 1 );
           }
         }
         
-        let log_re = new RegExp( tokens.join(' '), 'i' );
+        let log_re = new RegExp( tokens.join( ' ' ), 'i' );
         let data = [];
         
         for ( let i in logs ) {
-          let log = logs[i];
+          let log = logs[ i ];
 
-          if ( filters['sources'].length == 0 || filters['sources'].includes(log.source.toLowerCase()) ) {
-            if ( filters['levels'].length == 0 || filters['levels'].includes(log.level.toLowerCase()) ) {
+          if ( filters[ 'sources' ].length == 0 || filters[ 'sources' ].includes( log.source.toLowerCase() ) ) {
+            if ( filters[ 'levels' ].length == 0 || filters[ 'levels' ].includes( log.level.toLowerCase() ) ) {
               if ( log.log.match( log_re ) ) {
                 data.push( log );
               }
@@ -178,8 +178,8 @@
 
     methods: {
       handler ( event ) {
-        console.log(this.logs.length);
-        event.data.split(/\r?\n/).forEach( m => {
+        console.log( this.logs.length );
+        event.data.split( /\r?\n/ ).forEach( m => {
           let msg = JSON.parse( m );
           this.handle( msg );
         });
@@ -187,7 +187,6 @@
     
       handle ( msg ) {      
         if ( msg.resource.type == 'log' ) {
-//           this.$store.commit( 'LOG', { "log": msg.result } );
           this.logs.push( msg.result );
         }
       },

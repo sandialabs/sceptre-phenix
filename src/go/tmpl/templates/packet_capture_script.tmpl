@@ -1,0 +1,54 @@
+## ELASTIC SERVER ##
+
+{{- range .Exp.Topology.FindNodesWithLabels "soh-elastic-server" }}
+## VM: {{ .General.Hostname }} ##
+{{ $firstDrive := index .Hardware.Drives 0 }}
+disk snapshot {{ $firstDrive.Image }} {{ $.Exp.SnapshotName .General.Hostname }} 
+{{- if gt (len .Injections) 0 }}
+disk inject {{ $.Exp.SnapshotName .General.Hostname }}:{{ $firstDrive.GetInjectPartition }} files {{ .FileInjects $.Exp.BaseDir }}
+{{- end }}
+clear vm config
+{{- if ne (index $.Exp.Schedules .General.Hostname) "" }}
+vm config schedule {{ index $.Exp.Schedules .General.Hostname }}
+{{- end }}
+vm config vcpus {{ .Hardware.VCPU }}
+vm config cpu {{ .Hardware.CPU }}
+vm config memory {{ .Hardware.Memory }}
+vm config snapshot true
+vm config disk {{ .Hardware.DiskConfig ($.Exp.SnapshotName .General.Hostname) }}
+vm config qemu-append -vga qxl
+vm config net {{ .Network.InterfaceConfig }}
+vm launch {{ .General.VMType }} {{ .General.Hostname }}
+{{- end }}
+
+## CAPTURE/MONITOR VMS ##
+
+{{- range .Exp.Topology.FindNodesWithLabels "soh-monitor-node" }}
+## VM: {{ .General.Hostname }} ##
+        {{ $firstDrive := index .Hardware.Drives 0 }}
+disk snapshot {{ $firstDrive.Image }} {{ $.Exp.SnapshotName .General.Hostname }} 
+        {{- if gt (len .Injections) 0 }}
+disk inject {{ $.Exp.SnapshotName .General.Hostname }}:{{ $firstDrive.GetInjectPartition }} files {{ .FileInjects $.Exp.BaseDir }}
+        {{- end }}
+clear vm config
+        {{- if ne (index $.Exp.Schedules .General.Hostname) "" }}
+vm config schedule {{ index $.Exp.Schedules .General.Hostname }}
+        {{- end }}
+vm config vcpus {{ .Hardware.VCPU }}
+vm config cpu {{ .Hardware.CPU }}
+vm config memory {{ .Hardware.Memory }}
+vm config snapshot true
+vm config disk {{ .Hardware.DiskConfig ($.Exp.SnapshotName .General.Hostname) }}
+vm config qemu-append -vga qxl
+vm config net {{ .Network.InterfaceConfig }}
+vm launch {{ .General.VMType }} {{ .General.Hostname }}
+{{- end }}
+
+vm launch
+vm start all
+
+{{- range $key, $value := .Mon }}
+        {{- range $value }}
+tap mirror {{ . }} {{ $key }} 1
+        {{- end }}
+{{- end }}

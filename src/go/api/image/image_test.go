@@ -32,8 +32,6 @@ func TestImageTemplate(t *testing.T) {
 		t.FailNow()
 	}
 
-	t.Log(buf.String())
-
 	if !strings.Contains(buf.String(), `options: "--include wireshark`) {
 		t.Log("missing packages in options")
 		t.FailNow()

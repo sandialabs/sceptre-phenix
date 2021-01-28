@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	v1 "phenix/types/version/v1"
 )
 
@@ -21,39 +22,39 @@ func TestVrouterApp(t *testing.T) {
 
 	nodes := []*v1.Node{
 		{
-			Type: "Router",
-			General: v1.General{
-				Hostname: "router",
+			TypeF: "Router",
+			GeneralF: &v1.General{
+				HostnameF: "router",
 			},
 		},
 		{
-			Type: "VirtualMachine",
-			Labels: v1.Labels{
+			TypeF: "VirtualMachine",
+			LabelsF: map[string]string{
 				"ntp-server": "true",
 			},
-			General: v1.General{
-				Hostname: "linux",
+			GeneralF: &v1.General{
+				HostnameF: "linux",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_Linux,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "linux",
 			},
 		},
 		{
-			Type: "VirtualMachine",
-			General: v1.General{
-				Hostname: "win",
+			TypeF: "VirtualMachine",
+			GeneralF: &v1.General{
+				HostnameF: "win",
 			},
-			Hardware: v1.Hardware{
-				OSType: v1.OSType_Windows,
+			HardwareF: &v1.Hardware{
+				OSTypeF: "windows",
 			},
 		},
 	}
 
-	expected := [][]v1.Injection{
+	expected := [][]ifaces.NodeInjection{
 		{
-			{
-				Src: fmt.Sprintf("%s/vrouter/router.boot", baseDir),
-				Dst: "/opt/vyatta/etc/config/config.boot",
+			&v1.Injection{
+				SrcF: fmt.Sprintf("%s/vrouter/router.boot", baseDir),
+				DstF: "/opt/vyatta/etc/config/config.boot",
 			},
 		},
 		nil,
@@ -61,9 +62,9 @@ func TestVrouterApp(t *testing.T) {
 	}
 
 	spec := &v1.ExperimentSpec{
-		BaseDir: baseDir,
-		Topology: &v1.TopologySpec{
-			Nodes: nodes,
+		BaseDirF: baseDir,
+		TopologyF: &v1.TopologySpec{
+			NodesF: nodes,
 		},
 	}
 
@@ -76,12 +77,12 @@ func TestVrouterApp(t *testing.T) {
 		t.FailNow()
 	}
 
-	checkConfigureExpected(t, nodes, expected)
+	checkConfigureExpected(t, spec.Topology().Nodes(), expected)
 
 	if err := app.PreStart(exp); err != nil {
 		t.Log(err)
 		t.FailNow()
 	}
 
-	checkStartExpected(t, nodes, expected)
+	checkStartExpected(t, spec.Topology().Nodes(), expected)
 }

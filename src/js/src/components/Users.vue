@@ -160,7 +160,7 @@
 
     methods: {
       handler ( event ) {
-        event.data.split(/\r?\n/).forEach( m => {
+        event.data.split( /\r?\n/ ).forEach( m => {
           let msg = JSON.parse( m );
           this.handle( msg );
         });
@@ -193,11 +193,11 @@
 
           case 'update': {
             for ( let i = 0; i < users.length; i++ ) {
-              if ( users[i].username == msg.resource.name ) {
+              if ( users[ i ].username == msg.resource.name ) {
                 let user = msg.result;
 
                 user.resource_names = user.resource_names.join( ' ' );
-                users[i] = user;
+                users[ i ] = user;
 
                 break;
               }
@@ -215,7 +215,7 @@
 
           case 'delete': {
             for ( let i = 0; i < users.length; i++ ) {
-              if ( users[i].username == msg.resource.name ) {
+              if ( users[ i ].username == msg.resource.name ) {
                 users.splice( i, 1 );
                 break;
               }
@@ -264,7 +264,7 @@
 
       createUser () {
         for ( let i = 0; i < this.users.length; i++ ) {
-          if ( this.users[i].username == this.user.username ) {
+          if ( this.users[ i ].username == this.user.username ) {
             this.userExists = true;
             return;
           }
@@ -343,7 +343,7 @@
         }
 
         if ( this.user.resource_names ) {
-          this.user.resource_names = this.user.resource_names.split(' ');
+          this.user.resource_names = this.user.resource_names.split( ' ' );
         }
 
         this.isWaiting = true;
@@ -372,13 +372,13 @@
 
       editUser ( username ) {
         for ( let i = 0; i < this.users.length; i++ ) {
-          if ( this.users[i].username == username ) {
-            this.user = this.users[i];
+          if ( this.users[ i ].username == username ) {
+            this.user = this.users[ i ];
             break;
           }
         }
 
-        this.user.resource_names = _.uniq(this.user.resource_names).join(' ');
+        this.user.resource_names = _.uniq( this.user.resource_names ).join( ' ' );
 
         this.isEditActive = true;
       },
@@ -402,7 +402,7 @@
         
         let user = this.user;
 
-        user.resource_names = user.resource_names.split(' ');
+        user.resource_names = user.resource_names.split( ' ' );
         
         this.isEditActive = false;
         this.isWaiting = true;
@@ -414,8 +414,8 @@
             let users = this.users;
                   
             for ( let i = 0; i < users.length; i++ ) {
-              if ( users[i].username == user.username ) {
-                users[i] = user;
+              if ( users[ i ].username == user.username ) {
+                users[ i ] = user;
                 break;
               }
             }
@@ -464,7 +464,7 @@
                 let users = this.users;
                   
                 for ( let i = 0; i < users.length; i++ ) {
-                  if ( users[i].username == username ) {
+                  if ( users[ i ].username == username ) {
                     users.splice( i, 1 );
                     break;
                   }

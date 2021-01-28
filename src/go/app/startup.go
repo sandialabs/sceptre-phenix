@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,11 +22,11 @@ func (Startup) Name() string {
 	return "startup"
 }
 
-func (this *Startup) Configure(exp *types.Experiment) error {
+func (this *Startup) Configure(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (this Startup) PreStart(exp *types.Experiment) error {
+func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 	var (
 		startupDir = exp.Spec.BaseDir() + "/startup"
 		imageDir   = common.PhenixBase + "/images/"
@@ -187,10 +188,14 @@ func (this Startup) PreStart(exp *types.Experiment) error {
 	return nil
 }
 
-func (Startup) PostStart(exp *types.Experiment) error {
+func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (Startup) Cleanup(exp *types.Experiment) error {
+func (Startup) Running(ctx context.Context, exp *types.Experiment) error {
+	return nil
+}
+
+func (Startup) Cleanup(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }

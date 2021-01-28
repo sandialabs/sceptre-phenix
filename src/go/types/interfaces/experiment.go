@@ -3,6 +3,8 @@ package ifaces
 import "context"
 
 type VLANSpec interface {
+	Init() error
+
 	Aliases() map[string]int
 	Min() int
 	Max() int
@@ -13,6 +15,8 @@ type VLANSpec interface {
 }
 
 type ExperimentSpec interface {
+	Init() error
+
 	ExperimentName() string
 	BaseDir() string
 	Topology() TopologySpec
@@ -21,7 +25,6 @@ type ExperimentSpec interface {
 	Schedules() map[string]string
 	RunLocal() bool
 
-	SetDefaults()
 	SetVLANAlias(string, int, bool) error
 	SetVLANRange(int, int, bool) error
 	SetSchedule(map[string]string)
@@ -31,13 +34,21 @@ type ExperimentSpec interface {
 }
 
 type ExperimentStatus interface {
+	Init() error
+
 	StartTime() string
 	AppStatus() map[string]interface{}
+	AppFrequency() map[string]string
+	AppRunning() map[string]bool
 	VLANs() map[string]int
 	Schedules() map[string]string
 
 	SetStartTime(string)
 	SetAppStatus(string, interface{})
+	SetAppFrequency(string, string)
+	SetAppRunning(string, bool)
 	SetVLANs(map[string]int)
 	SetSchedule(map[string]string)
+
+	ResetAppStatus()
 }

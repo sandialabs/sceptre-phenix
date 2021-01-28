@@ -5,6 +5,11 @@ type TopologySpec interface {
 
 	FindNodeByName(string) NodeSpec
 	FindNodesWithLabels(...string) []NodeSpec
+
+	AddNode(string, string) NodeSpec
+	RemoveNode(string)
+
+	Init() error
 }
 
 type NodeSpec interface {
@@ -16,8 +21,14 @@ type NodeSpec interface {
 	Injections() []NodeInjection
 	Advanced() map[string]string
 
-	AddInject(string, string, string, string)
 	SetInjections([]NodeInjection)
+
+	AddLabel(string, string)
+	AddHardware(string, int, int) NodeHardware
+	AddNetworkInterface(string, string, string) NodeNetworkInterface
+	AddNetworkRoute(string, string, int)
+	AddInject(string, string, string, string)
+
 	SetAdvanced(map[string]string)
 	AddAdvanced(string, string)
 }
@@ -41,6 +52,8 @@ type NodeHardware interface {
 
 	SetVCPU(int)
 	SetMemory(int)
+
+	AddDrive(string, int) NodeDrive
 }
 
 type NodeDrive interface {
@@ -80,6 +93,20 @@ type NodeNetworkInterface interface {
 	RulesetIn() string
 	RulesetOut() string
 
+	SetName(string)
+	SetType(string)
+	SetProto(string)
+	SetUDPPort(int)
+	SetBaudRate(int)
+	SetDevice(string)
+	SetVLAN(string)
+	SetBridge(string)
+	SetAutostart(bool)
+	SetMAC(string)
+	SetMTU(int)
+	SetAddress(string)
+	SetMask(int)
+	SetGateway(string)
 	SetRulesetIn(string)
 	SetRulesetOut(string)
 }
@@ -112,6 +139,9 @@ type NodeNetworkRuleset interface {
 	Description() string
 	Default() string
 	Rules() []NodeNetworkRulesetRule
+
+	UnshiftRule() NodeNetworkRulesetRule
+	RemoveRule(int)
 }
 
 type NodeNetworkRulesetRule interface {
@@ -121,6 +151,12 @@ type NodeNetworkRulesetRule interface {
 	Protocol() string
 	Source() NodeNetworkRulesetRuleAddrPort
 	Destination() NodeNetworkRulesetRuleAddrPort
+
+	SetDescription(string)
+	SetAction(string)
+	SetProtocol(string)
+	SetSource(string, int)
+	SetDestination(string, int)
 }
 
 type NodeNetworkRulesetRuleAddrPort interface {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"phenix/api/config"
 	"phenix/api/experiment"
@@ -14,6 +15,7 @@ import (
 	"phenix/types"
 	"phenix/util"
 	"phenix/util/printer"
+	"phenix/util/sigterm"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -282,7 +284,13 @@ func newExperimentStartCmd() *cobra.Command {
 
   Used to start a stopped experiment, using 'all' instead of a specific 
   experiment name will include all stopped experiments; dry-run will do 
-  everything but call out to minimega.`
+	everything but call out to minimega.
+	
+	NOTE: passing the --honor-run-periodically flag will prevent the CLI from
+	returning. If Ctrl+c is pressed, the experiment will continue to run but
+	the running stage will no longer continue to be triggered for any apps
+	configured (via the scenario) to have their running stage triggered
+	periodically.`
 
 	cmd := &cobra.Command{
 		Use:   "start <experiment name>",
@@ -293,7 +301,11 @@ func newExperimentStartCmd() *cobra.Command {
 			var (
 				name        = args[0]
 				dryrun      = MustGetBool(cmd.Flags(), "dry-run")
+				periodic    = MustGetBool(cmd.Flags(), "honor-run-periodically")
 				experiments []types.Experiment
+
+				ctx = sigterm.CancelContext(context.Background())
+				wg  sync.WaitGroup
 			)
 
 			if name == "all" {
@@ -327,7 +339,7 @@ func newExperimentStartCmd() *cobra.Command {
 					experiment.StartWithVLANMax(MustGetInt(cmd.Flags(), "vlan-max")),
 				}
 
-				if err := experiment.Start(opts...); err != nil {
+				if err := experiment.Start(ctx, opts...); err != nil {
 					err := util.HumanizeError(err, "Unable to start the "+exp.Metadata.Name+" experiment")
 					return err.Humanized()
 				}
@@ -337,13 +349,28 @@ func newExperimentStartCmd() *cobra.Command {
 				} else {
 					fmt.Printf("The %s experiment was started\n", exp.Metadata.Name)
 				}
+
+				if periodic {
+					fmt.Println("honor-run-periodically flag was passed")
+
+					if err := app.PeriodicallyRunApps(ctx, &wg, &exp); err != nil {
+						fmt.Printf("Error scheduling experiment apps to run periodically: %v\n", err)
+					}
+				}
 			}
+
+			// If --honor-run-periodically was not passed, then this will return
+			// immediately so no harm no foul. Otherwise, it will wait until all
+			// Goroutines that are periodically running apps exit, which will be
+			// triggered by the context being canceled via an OS signal.
+			wg.Wait()
 
 			return nil
 		},
 	}
 
-	cmd.Flags().BoolP("dry-run", "", false, "Do everything but actually call out to minimega")
+	cmd.Flags().Bool("dry-run", false, "Do everything but actually call out to minimega")
+	cmd.Flags().Bool("honor-run-periodically", false, "Periodically trigger running stage in apps if configured in scenario")
 	cmd.Flags().Int("vlan-min", 0, "VLAN pool minimum")
 	cmd.Flags().Int("vlan-max", 0, "VLAN pool maximum")
 
@@ -423,6 +450,8 @@ func newExperimentRestartCmd() *cobra.Command {
 				name        = args[0]
 				dryrun      = MustGetBool(cmd.Flags(), "dry-run")
 				experiments []types.Experiment
+
+				ctx = sigterm.CancelContext(context.Background())
 			)
 
 			if name == "all" {
@@ -454,7 +483,7 @@ func newExperimentRestartCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				if err := experiment.Start(experiment.StartWithName(exp.Metadata.Name), experiment.StartWithDryRun(dryrun)); err != nil {
+				if err := experiment.Start(ctx, experiment.StartWithName(exp.Metadata.Name), experiment.StartWithDryRun(dryrun)); err != nil {
 					err := util.HumanizeError(err, "Unable to start the "+exp.Metadata.Name+" experiment")
 					return err.Humanized()
 				}
@@ -529,6 +558,67 @@ func newExperimentReconfigureCmd() *cobra.Command {
 	return cmd
 }
 
+func newExperimentTriggerRunningCmd() *cobra.Command {
+	desc := `Trigger an app's "running" stage in an experiment
+
+	Used to manually trigger the "running" stage of an app (or apps) for the
+	given experiment on demand. Using 'all' instead of a specific experiment
+	name will trigger the "running" stage of the given app(s) for all running
+	experiments. Providing no apps will cause all apps for the experiment(s) to
+	be run.`
+
+	cmd := &cobra.Command{
+		Use:   "trigger-running <experiment name> [<app name> ...]",
+		Short: "Trigger running stage for app(s) in experiment",
+		Long:  desc,
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var (
+				name        = args[0]
+				experiments []types.Experiment
+
+				ctx = sigterm.CancelContext(context.Background())
+			)
+
+			if name == "all" {
+				var err error
+
+				experiments, err = experiment.List()
+				if err != nil {
+					err := util.HumanizeError(err, "Unable to trigger running stage for apps in all experiments")
+					return err.Humanized()
+				}
+			} else {
+				exp, err := experiment.Get(name)
+				if err != nil {
+					err := util.HumanizeError(err, "Unable to trigger the running stage for apps in the "+name+" experiment")
+					return err.Humanized()
+				}
+
+				experiments = []types.Experiment{*exp}
+			}
+
+			for _, exp := range experiments {
+				if !exp.Running() {
+					fmt.Printf("Not triggering the running stage for apps in the stopped experiment %s\n", exp.Metadata.Name)
+					continue
+				}
+
+				if err := experiment.TriggerRunning(ctx, exp.Metadata.Name, args[1:]...); err != nil {
+					err := util.HumanizeError(err, "Unable to trigger the running stage for apps in the "+exp.Metadata.Name+" experiment")
+					return err.Humanized()
+				}
+
+				fmt.Printf("Apps in the %s experiment had their running stage triggered\n", exp.Metadata.Name)
+			}
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
 func init() {
 	experimentCmd := newExperimentCmd()
 
@@ -542,6 +632,7 @@ func init() {
 	experimentCmd.AddCommand(newExperimentStopCmd())
 	experimentCmd.AddCommand(newExperimentRestartCmd())
 	experimentCmd.AddCommand(newExperimentReconfigureCmd())
+	experimentCmd.AddCommand(newExperimentTriggerRunningCmd())
 
 	rootCmd.AddCommand(experimentCmd)
 }

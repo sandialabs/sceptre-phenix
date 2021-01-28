@@ -33,7 +33,7 @@
             </b-select>
           <br>
           <b-taglist>
-            <b-tag v-for="( a, index ) in createModal.scenarios[createModal.scenario]" 
+            <b-tag v-for="( a, index ) in createModal.scenarios[ createModal.scenario ]" 
                   :key="index" 
                   type="is-light">
               {{ a }}  
@@ -162,6 +162,11 @@
                 <b-icon icon="trash"></b-icon>
               </button>
             </b-table-column>
+            <b-table-column v-if="globalUser()" label="SoH" width="50" centered>
+              <router-link :disabled="updating( props.row.status )" class="button is-light is-small" :to="{ name: 'soh', params: { id: props.row.name }}">
+                <b-icon icon="heartbeat"></b-icon>
+              </router-link>
+            </b-table-column>
           </template>
         </b-table>
         <br>
@@ -195,7 +200,7 @@
         var data = [];
         
         for ( let i in experiments ) {
-          let exp = experiments[i];
+          let exp = experiments[ i ];
           if ( exp.name.match( name_re ) ) {
             exp.start_time = exp.start_time == '' ? 'N/A' : exp.start_time;
             data.push( exp );
@@ -285,7 +290,7 @@
     
     methods: { 
       handler ( event ) {
-        event.data.split(/\r?\n/).forEach( m => {
+        event.data.split( /\r?\n/ ).forEach( m => {
           let msg = JSON.parse( m );
           this.handle( msg );
         });
@@ -317,7 +322,7 @@
 
           case 'delete': {
             for ( let i = 0; i < exp.length; i++ ) {
-              if ( exp[i].name == msg.resource.name ) {
+              if ( exp[ i ].name == msg.resource.name ) {
                 exp.splice( i, 1 );
 
                 break;
@@ -337,9 +342,9 @@
 
           case 'start': {
             for ( let i = 0; i < exp.length; i++ ) {
-              if ( exp[i].name == msg.resource.name ) {
-                exp[i] = msg.result;
-                exp[i].status = 'started';
+              if ( exp[ i ].name == msg.resource.name ) {
+                exp[ i ] = msg.result;
+                exp[ i ].status = 'started';
 
                 break;
               }
@@ -358,9 +363,9 @@
 
           case 'stop': {
             for ( let i = 0; i < exp.length; i++ ) {
-              if ( exp[i].name == msg.resource.name ) {
-                exp[i] = msg.result;
-                exp[i].status = 'stopped';
+              if ( exp[ i ].name == msg.resource.name ) {
+                exp[ i ] = msg.result;
+                exp[ i ].status = 'stopped';
 
                 break;
               }
@@ -380,9 +385,9 @@
           case 'starting': // fallthru to `stopping`
           case 'stopping': {
             for ( let i = 0; i < exp.length; i++ ) {
-              if ( exp[i].name == msg.resource.name ) {
-                exp[i].status = msg.resource.action;
-                exp[i].percent = 0;
+              if ( exp[ i ].name == msg.resource.name ) {
+                exp[ i ].status = msg.resource.action;
+                exp[ i ].percent = 0;
 
                 break;
               }
@@ -402,8 +407,8 @@
             let percent = ( msg.result.percent * 100 ).toFixed( 0 );
             
             for ( let i = 0; i < exp.length; i++ ) {
-              if ( exp[i].name == msg.resource.name ) {
-                exp[i].percent = parseInt( percent );
+              if ( exp[ i ].name == msg.resource.name ) {
+                exp[ i ].percent = parseInt( percent );
                 break;
               }
             }
@@ -580,7 +585,7 @@
                     let exp = this.experiments;
                 
                     for ( let i = 0; i < exp.length; i++ ) {
-                      if ( exp[i].name == name ) {
+                      if ( exp[ i ].name == name ) {
                         exp.splice( i, 1 );
                         break;
                       }
@@ -666,7 +671,7 @@
         this.$http.get( 'topologies/' + topo + '/scenarios' ).then(
           response => {
             response.json().then( state => {
-              if ( state.scenarios != null && Object.keys(state.scenarios).length != 0 ) {
+              if ( state.scenarios != null && Object.keys( state.scenarios ).length != 0 ) {
                 this.createModal.scenarios = state.scenarios;
                 this.createModal.showScenarios = true;
               }

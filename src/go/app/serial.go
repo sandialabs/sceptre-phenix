@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -20,7 +21,7 @@ func (Serial) Name() string {
 	return "serial"
 }
 
-func (Serial) Configure(exp *types.Experiment) error {
+func (Serial) Configure(ctx context.Context, exp *types.Experiment) error {
 	// loop through nodes
 	for _, node := range exp.Spec.Topology().Nodes() {
 		// We only care about configuring serial interfaces on Linux VMs.
@@ -62,7 +63,7 @@ func (Serial) Configure(exp *types.Experiment) error {
 	return nil
 }
 
-func (Serial) PreStart(exp *types.Experiment) error {
+func (Serial) PreStart(ctx context.Context, exp *types.Experiment) error {
 	// loop through nodes
 	for _, node := range exp.Spec.Topology().Nodes() {
 		// We only care about configuring serial interfaces on Linux VMs.
@@ -115,10 +116,14 @@ func (Serial) PreStart(exp *types.Experiment) error {
 	return nil
 }
 
-func (Serial) PostStart(exp *types.Experiment) error {
+func (Serial) PostStart(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (Serial) Cleanup(exp *types.Experiment) error {
+func (Serial) Running(ctx context.Context, exp *types.Experiment) error {
+	return nil
+}
+
+func (Serial) Cleanup(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }

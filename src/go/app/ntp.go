@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -19,7 +20,7 @@ func (NTP) Name() string {
 	return "ntp"
 }
 
-func (this *NTP) Configure(exp *types.Experiment) error {
+func (this *NTP) Configure(ctx context.Context, exp *types.Experiment) error {
 	ntpServers := exp.Spec.Topology().FindNodesWithLabels("ntp-server")
 
 	if len(ntpServers) != 0 {
@@ -45,7 +46,7 @@ func (this *NTP) Configure(exp *types.Experiment) error {
 	return nil
 }
 
-func (this NTP) PreStart(exp *types.Experiment) error {
+func (this NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
 	ntpServers := exp.Spec.Topology().FindNodesWithLabels("ntp-server")
 
 	if len(ntpServers) != 0 {
@@ -82,10 +83,14 @@ func (this NTP) PreStart(exp *types.Experiment) error {
 	return nil
 }
 
-func (NTP) PostStart(exp *types.Experiment) error {
+func (NTP) PostStart(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (NTP) Cleanup(exp *types.Experiment) error {
+func (NTP) Running(ctx context.Context, exp *types.Experiment) error {
+	return nil
+}
+
+func (NTP) Cleanup(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }

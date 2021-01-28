@@ -7,7 +7,7 @@ import SignIn           from './components/SignIn.vue'
 import Users            from './components/Users.vue'
 import Log              from './components/Log.vue'
 import VMtiles          from './components/VMtiles.vue'
-
+import StateOfHealth    from './components/StateOfHealth.vue'
 import store            from './store'
 
 Vue.use(Router)
@@ -16,22 +16,23 @@ const router = new Router({
   mode: 'history',
   base: process.env.BASE_URL,
   routes: [
-    { path: '/',                name: 'home',             redirect: '/experiments' },
-    { path: '/experiments',     name: 'experiments',      component: Experiments },
-    { path: '/experiment/:id',  name: 'experiment',       component: Experiment },
-    { path: '/vmtiles',         name: 'vmtiles',          component: VMtiles },
-    { path: '/hosts',           name: 'hosts',            component: Hosts },
-    { path: '/users',           name: 'users',            component: Users },
-    { path: '/log',             name: 'log',              component: Log },
-    { path: '/signin',          name: 'signin',           component: SignIn },
-    { path: '*',                                          redirect: '/signin' }
+    { path: '/',                  name: 'home',             redirect: '/experiments' },
+    { path: '/experiments',       name: 'experiments',      component: Experiments },
+    { path: '/experiment/:id',    name: 'experiment',       component: Experiment },
+    { path: '/vmtiles',           name: 'vmtiles',          component: VMtiles },
+    { path: '/hosts',             name: 'hosts',            component: Hosts },
+    { path: '/users',             name: 'users',            component: Users },
+    { path: '/log',               name: 'log',              component: Log },
+    { path: '/signin',            name: 'signin',           component: SignIn },
+    { path: '/stateofhealth/:id', name: 'soh',              component: StateOfHealth },
+    { path: '*',                  redirect: '/signin' }
   ]
 })
 
-router.beforeEach((to, from, next) => {
-  if (process.env.VUE_APP_AUTH === 'disabled') {
-    if (!store.getters.auth) {
-      store.commit( 'LOGIN', { 'user': { 'role': 'Global Admin' }, 'remember': false })
+router.beforeEach( ( to, from, next ) => {
+  if ( process.env.VUE_APP_AUTH === 'disabled' ) {
+    if ( !store.getters.auth ) {
+      store.commit( 'LOGIN', { 'user': { 'role': 'Global Admin' }, 'remember': false } )
     }
 
     next()
@@ -40,15 +41,15 @@ router.beforeEach((to, from, next) => {
 
   let pub = ['/signup', '/signin']
 
-  if (pub.includes(to.path)) {
+  if ( pub.includes( to.path ) ) {
     next()
     return
   }
 
-  if (store.state.auth) {
+  if ( store.state.auth ) {
     next()
   } else {
-    next('/signin')
+    next( '/signin' )
   }
 })
 
