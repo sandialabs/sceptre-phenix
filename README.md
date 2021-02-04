@@ -4,13 +4,13 @@ Welcome to `phenix`!
 
 ## Building
 
-To build locally, you will need Golang v1.14, Node v14.2, Yarn 1.22, and Protoc 3.14 installed. Once
-installed (if not already), simply run `make bin/phenix`.
+To build locally, you will need Golang v1.14, Node v14.2, Yarn 1.22, and Protoc
+3.14 installed. Once installed (if not already), simply run `make bin/phenix`.
 
-If you don't want to install Golang and/or Node locally, you can also use
-Docker to build phenix (assuming you have Docker installed). Simply run
-`./build-with-docker.sh` and once built, the phenix binary will be available
-at `bin/phenix`. See `./build-with-docker.sh -h` for usage details.
+If you don't want to install Golang and/or Node locally, you can also use Docker
+to build phenix (assuming you have Docker installed). Simply run
+`./docker-build.sh` and once built, the phenix binary will be available at
+`bin/phenix`. See `./docker-build.sh -h` for usage details.
 
 A Docker image is also hosted on Docker Hub and can be pulled via:
 
@@ -18,9 +18,9 @@ A Docker image is also hosted on Docker Hub and can be pulled via:
 $> docker pull activeshadow/phenix
 ```
 
-Right now there's only a single `latest` tag used for the image on Docker
-Hub, and the image is updated automatically each time a commit is pushed to
-the `phenix` branch.
+Right now there's only a single `latest` tag used for the image on Docker Hub,
+and the image is updated automatically each time a commit is pushed to the
+`phenix` branch.
 
 > **NOTE**: currently the `latest` image available on Docker Hub defaults to
 > having UI authentication disabled. If you want to enable authentication,
@@ -29,5 +29,5 @@ the `phenix` branch.
 
 ## Using
 
-Please see the documentation at https://activeshadow.github.io/minimega for
-phenix usage documentation.
+Please see the documentation at https://phenix.sceptre.dev for phenix usage
+documentation.
