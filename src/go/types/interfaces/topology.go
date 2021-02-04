@@ -20,6 +20,7 @@ type NodeSpec interface {
 	Network() NodeNetwork
 	Injections() []NodeInjection
 	Advanced() map[string]string
+	Overrides() map[string]string
 
 	SetInjections([]NodeInjection)
 
@@ -31,6 +32,7 @@ type NodeSpec interface {
 
 	SetAdvanced(map[string]string)
 	AddAdvanced(string, string)
+	AddOverride(string, string)
 }
 
 type NodeGeneral interface {

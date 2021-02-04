@@ -17,6 +17,7 @@ type Node struct {
 	NetworkF    *Network          `json:"network" yaml:"network" structs:"network" mapstructure:"network"`
 	InjectionsF []*Injection      `json:"injections" yaml:"injections" structs:"injections" mapstructure:"injections"`
 	AdvancedF   map[string]string `json:"advanced" yaml:"advanced" structs:"advanced" mapstructure:"advanced"`
+	OverridesF  map[string]string `json:"overrides" yaml:"overrides" structs:"overrides" mapstructure:"overrides"`
 }
 
 func (this Node) Labels() map[string]string {
@@ -51,6 +52,10 @@ func (this Node) Injections() []ifaces.NodeInjection {
 
 func (this Node) Advanced() map[string]string {
 	return this.AdvancedF
+}
+
+func (this Node) Overrides() map[string]string {
+	return this.OverridesF
 }
 
 func (this *Node) SetInjections(injections []ifaces.NodeInjection) {
@@ -147,6 +152,14 @@ func (this *Node) AddAdvanced(config, value string) {
 	}
 
 	this.AdvancedF[config] = value
+}
+
+func (this *Node) AddOverride(match, replace string) {
+	if this.OverridesF == nil {
+		this.OverridesF = make(map[string]string)
+	}
+
+	this.OverridesF[match] = replace
 }
 
 type General struct {
@@ -321,6 +334,10 @@ func (this *Node) SetDefaults() {
 
 	if this.AdvancedF == nil {
 		this.AdvancedF = make(map[string]string)
+	}
+
+	if this.OverridesF == nil {
+		this.OverridesF = make(map[string]string)
 	}
 
 	this.NetworkF.SetDefaults()

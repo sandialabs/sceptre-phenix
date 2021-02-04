@@ -51,6 +51,9 @@ vm config net {{ .Network.InterfaceConfig }}
         {{- range $config, $value := .Advanced }}
 vm config {{ $config }} {{ $value }}
         {{- end }}
+        {{- range $match, $replacement := .Overrides }}
+vm config qemu-override "{{ $match }}" "{{ $replacement }}"
+        {{- end }}
 vm launch {{ .General.VMType }} {{ .General.Hostname }}
     {{- end }}
 {{- end }}
