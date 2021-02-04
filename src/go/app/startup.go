@@ -56,11 +56,11 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 		}
 
 		switch node.Hardware().OSType() {
-		case "linux":
+		case "linux", "rhel", "centos":
 			var (
 				hostnameFile = startupDir + "/" + node.General().Hostname() + "-hostname.sh"
 				timezoneFile = startupDir + "/" + node.General().Hostname() + "-timezone.sh"
-				ifaceFile    = startupDir + "/" + node.General().Hostname() + "-interfaces"
+				ifaceFile    = startupDir + "/" + node.General().Hostname() + "-interfaces.sh"
 			)
 
 			node.AddInject(
@@ -77,63 +77,22 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 			node.AddInject(
 				ifaceFile,
-				"/etc/network/interfaces",
-				"", "",
+				"/etc/phenix/startup/3_interfaces-start.sh",
+				"0755", "",
 			)
 
 			timeZone := "Etc/UTC"
 
 			if err := tmpl.CreateFileFromTemplate("linux_hostname.tmpl", node.General().Hostname(), hostnameFile); err != nil {
-				return fmt.Errorf("generating linux hostname config: %w", err)
+				return fmt.Errorf("generating linux hostname script: %w", err)
 			}
 
 			if err := tmpl.CreateFileFromTemplate("linux_timezone.tmpl", timeZone, timezoneFile); err != nil {
-				return fmt.Errorf("generating linux timezone config: %w", err)
+				return fmt.Errorf("generating linux timezone script: %w", err)
 			}
 
 			if err := tmpl.CreateFileFromTemplate("linux_interfaces.tmpl", node, ifaceFile); err != nil {
-				return fmt.Errorf("generating linux interfaces config: %w", err)
-			}
-		case "rhel", "centos":
-			var (
-				hostnameFile = startupDir + "/" + node.General().Hostname() + "-hostname.sh"
-				timezoneFile = startupDir + "/" + node.General().Hostname() + "-timezone.sh"
-			)
-
-			node.AddInject(
-				hostnameFile,
-				"/etc/phenix/startup/1_hostname-start.sh",
-				"0755", "",
-			)
-
-			node.AddInject(
-				timezoneFile,
-				"/etc/phenix/startup/2_timezone-start.sh",
-				"0755", "",
-			)
-
-			timeZone := "Etc/UTC"
-
-			if err := tmpl.CreateFileFromTemplate("linux_hostname.tmpl", node.General().Hostname(), hostnameFile); err != nil {
-				return fmt.Errorf("generating linux hostname config: %w", err)
-			}
-
-			if err := tmpl.CreateFileFromTemplate("linux_timezone.tmpl", timeZone, timezoneFile); err != nil {
-				return fmt.Errorf("generating linux timezone config: %w", err)
-			}
-
-			for idx := range node.Network().Interfaces() {
-				ifaceFile := fmt.Sprintf("%s/interfaces-%s-eth%d", startupDir, node.General().Hostname(), idx)
-
-				node.AddInject(
-					ifaceFile,
-					fmt.Sprintf("/etc/sysconfig/network-scripts/ifcfg-eth%d", idx),
-					"", "",
-				)
-
-				if err := tmpl.CreateFileFromTemplate("linux_interfaces.tmpl", node, ifaceFile); err != nil {
-					return fmt.Errorf("generating linux interfaces config: %w", err)
-				}
+				return fmt.Errorf("generating linux interfaces script: %w", err)
 			}
 		case "windows":
 			var (
@@ -176,7 +135,7 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 			}
 
 			if err := tmpl.CreateFileFromTemplate("windows_startup.tmpl", data, startupFile); err != nil {
-				return fmt.Errorf("generating windows startup config: %w", err)
+				return fmt.Errorf("generating windows startup script: %w", err)
 			}
 
 			if err := tmpl.RestoreAsset(startupDir, "startup-scheduler.cmd"); err != nil {

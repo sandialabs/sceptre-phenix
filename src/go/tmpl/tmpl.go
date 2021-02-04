@@ -3,6 +3,7 @@ package tmpl
 import (
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"text/template"
@@ -25,6 +26,14 @@ func GenerateFromTemplate(name string, data interface{}, w io.Writer) error {
 			}
 
 			return *b
+		},
+		"cidrToMask": func(a string) string {
+			_, ipv4Net, _ := net.ParseCIDR(a)
+
+			// CIDR to four byte mask
+			mask := ipv4Net.Mask
+
+			return fmt.Sprintf("%d.%d.%d.%d", mask[0], mask[1], mask[2], mask[3])
 		},
 	}
 
