@@ -25,7 +25,7 @@ and the image is updated automatically each time a commit is pushed to the
 > **NOTE**: currently the `latest` image available on Docker Hub defaults to
 > having UI authentication disabled. If you want to enable authentication,
 > you'll need to build the image yourself, setting the `PHENIX_WEB_AUTH=enabled`
-> Docker build argument. See issue #29 for additional details.
+> Docker build argument. See issue #4 for additional details.
 
 ## Using
 
