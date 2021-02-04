@@ -392,7 +392,9 @@ func (this Hardware) DiskConfig(snapshot string) string {
 		}
 
 		if d.CacheModeF == "" {
-			config = append(config, "writeback")
+			if snapshot != "" {
+				config = append(config, "writeback")
+			}
 		} else {
 			config = append(config, d.CacheModeF)
 		}
