@@ -308,7 +308,7 @@
 
       bootDecorator ( dnb ) {
         if ( dnb ) {
-          return '';
+          return 'dnb';
         } else {
           return 'boot';
         }
@@ -381,7 +381,7 @@
       },
       
       updateExperiment () {
-        this.$http.get( 'experiments/' + this.$route.params.id ).then(
+        this.$http.get( 'experiments/' + this.$route.params.id + '?show_dnb=true').then(
           response => {
             response.json().then( state => {
               this.experiment = state;
@@ -958,6 +958,10 @@
   
   svg.fa-bolt.boot {
     color: #c46200;
+  }
+
+  svg.fa-bolt.dnb {
+    color: #ffffff;
   }
 
   div.autocomplete >>> a.dropdown-item {

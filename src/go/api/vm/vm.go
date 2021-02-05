@@ -157,6 +157,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 			RAM:        node.Hardware().Memory(),
 			Disk:       node.Hardware().Drives()[0].Image(),
 			Interfaces: make(map[string]string),
+			DoNotBoot:  *node.General().DoNotBoot(),
 			OSType:     string(node.Hardware().OSType()),
 			Metadata:   make(map[string]interface{}),
 		}
