@@ -455,6 +455,8 @@
       },
       
       updateFiles () {
+        this.files = [];
+
         this.$http.get( 'experiments/' + this.$route.params.id + '/files' ).then(
           response => {
             response.json().then(
