@@ -517,7 +517,13 @@ func InjectMiniccc(agent, disk, svc string) error {
 		disk = disk + ":1"
 	}
 
-	tmp, err := ioutil.TempDir("", "")
+	tmp := os.TempDir() + "/phenix"
+
+	if err := os.MkdirAll(tmp, 0755); err != nil {
+		return fmt.Errorf("creating temp phenix base directory: %w", err)
+	}
+
+	tmp, err := ioutil.TempDir(tmp, "")
 	if err != nil {
 		return fmt.Errorf("creating temp directory: %w", err)
 	}

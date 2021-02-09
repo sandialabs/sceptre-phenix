@@ -52,7 +52,7 @@ ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 RUN apt update \
-  && apt install -y cpio git locales nano python3-pip vim vmdb2 \
+  && apt install -y cpio git locales nano python3-pip systemd-container vim vmdb2 \
   && locale-gen en_US.UTF-8 \
   && apt clean \
   && rm -rf /var/lib/apt/lists/* \
@@ -66,5 +66,7 @@ COPY --from=gobuilder /phenix/bin/vmdb2    /usr/bin/vmdb2
 COPY --from=gobuilder /go/bin/phenix-app-* /usr/local/bin
 
 RUN python3 -m pip install "git+https://github.com/activeshadow/phenix-apps.git@master#egg=phenix-apps&subdirectory=src/python"
+
+RUN echo "root:t00r" | chpasswd
 
 CMD ["phenix", "help"]
