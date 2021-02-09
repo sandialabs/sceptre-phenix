@@ -50,6 +50,10 @@ func GetVMHost(opts ...Option) (string, error) {
 	return DefaultMM.GetVMHost(opts...)
 }
 
+func GetVMState(opts ...Option) (string, error) {
+	return DefaultMM.GetVMState(opts...)
+}
+
 func ConnectVMInterface(opts ...Option) error {
 	return DefaultMM.ConnectVMInterface(opts...)
 }

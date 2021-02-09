@@ -3,27 +3,30 @@ import VueResource   from 'vue-resource'
 import Buefy         from 'buefy'
 import VueNativeSock from 'vue-native-websocket'
 
-import _ from 'lodash'
 
-import 'font-awesome/css/font-awesome.min.css'
+import '@fortawesome/fontawesome-free/css/all.css'
+import '@fortawesome/fontawesome-free/js/all.js'
+
+import _ from 'lodash'
 
 import App    from './App.vue'
 import router from './router'
 import store  from './store'
 
-import { faBolt, faFileDownload } from '@fortawesome/free-solid-svg-icons'
+import { fas } from '@fortawesome/free-solid-svg-icons'
 import { library } from '@fortawesome/fontawesome-svg-core'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 
-library.add( faBolt )
-library.add( faFileDownload )
+library.add(fas)
 
 Vue.component( 'font-awesome-icon', FontAwesomeIcon )
 
 Vue.config.productionTip = false
 
 Vue.use( Buefy, {
+  defaultIconComponent:'font-awesome-icon',
 	defaultIconPack: 'fa'
+
 })
 
 Vue.use( VueResource )

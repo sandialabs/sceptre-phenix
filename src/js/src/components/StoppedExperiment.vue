@@ -121,7 +121,7 @@
                         </b-select>
                         <p class='control'>
                           <button class='button' 
-                                  @click="unassignHost( props.row.name )">
+                                  @click="unassignHost( props.row.name, props.row.host )">
                             <b-icon icon="window-close"></b-icon>
                           </button>
                         </p>
@@ -133,7 +133,7 @@
                   </template>
                 </b-table-column>
                 <b-table-column field="ipv4" label="IPv4">
-                  <div v-for="ip in props.row.ipv4">
+                  <div v-for="(ip,index) in props.row.ipv4" :key="index">
                     {{ ip }}
                   </div>
                 </b-table-column>
@@ -494,9 +494,8 @@
               'experiments/' + this.$route.params.id + '/start'
             ).then(
               response => { 
-                console.log('the ' + this.$route.params.id + ' experiment was started.');
-                        
-                this.$router.replace( '/experiments/' );
+                console.log('the ' + this.$route.params.id + ' experiment was started.'); 
+                this.$router.replace('/experiments/');                
               }, response => {
                 this.$buefy.toast.open({
                   message: 'Starting experiment ' + this.$route.params.id + ' failed with ' + response.status + ' status.',
@@ -564,7 +563,7 @@
         })
       },
 
-      unassignHost ( name ) {
+      unassignHost ( name,host ) {
         this.$buefy.dialog.confirm({
           title: 'Unassign a Host',
           message: 'This will cancel the host assignment for ' + name + ' VM.',

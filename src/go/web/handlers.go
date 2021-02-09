@@ -1272,6 +1272,184 @@ func StopVM(w http.ResponseWriter, r *http.Request) {
 	w.Write(body)
 }
 
+// GET /experiments/{exp}/vms/{name}/restart
+func RestartVM(w http.ResponseWriter, r *http.Request) {
+	log.Debug("RestartVM HTTP handler called")
+
+	var (
+		ctx      = r.Context()
+		role     = ctx.Value("role").(rbac.Role)
+		vars     = mux.Vars(r)
+		exp      = vars["exp"]
+		name     = vars["name"]
+		fullName = exp + "_" + name
+	)
+
+	if !role.Allowed("vms/restart", "update", fullName) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}	
+	
+	if err := lockVMForStarting(exp, name); err != nil {
+		log.Warn(err.Error())
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+
+	defer unlockVM(exp, name)
+
+	broker.Broadcast(
+		broker.NewRequestPolicy("vms/restart", "update", fullName),
+		broker.NewResource("experiment/vm", name, "restarting"),
+		nil,
+	)
+
+	if err := vm.Restart(exp,name); err != nil {	
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	
+
+	v, err := vm.Get(exp, name)
+	if err != nil {		
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	
+	screenshot, err := util.GetScreenshot(exp, name, "215")
+	if err != nil {
+		log.Error("getting screenshot - %v", err)
+	} else {
+		v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+	}
+	
+	body, err := marshaler.Marshal(util.VMToProtobuf(exp, *v))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	broker.Broadcast(
+		broker.NewRequestPolicy("vms/restart", "update", fullName),
+		broker.NewResource("experiment/vm", exp+"/"+name, "update"),
+		body,
+	)
+
+	w.Write(body)
+}
+
+// GET /experiments/{exp}/vms/{name}/shutdown
+func ShutdownVM(w http.ResponseWriter, r *http.Request) {
+	log.Debug("ShutdownVM HTTP handler called")
+
+	var (
+		ctx      = r.Context()
+		role     = ctx.Value("role").(rbac.Role)
+		vars     = mux.Vars(r)
+		exp      = vars["exp"]
+		name     = vars["name"]
+		fullName = exp + "_" + name
+	)
+
+	if !role.Allowed("vms/shutdown", "update", fullName) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}	
+	
+	
+	if err := lockVMForStopping(exp, name); err != nil {
+		log.Warn(err.Error())
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+
+	defer unlockVM(exp, name)
+
+	
+	if err := vm.Shutdown(exp,name); err != nil {	
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	
+
+	v, err := vm.Get(exp, name)
+	if err != nil {		
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	
+	v.Running = false
+
+	body, err := marshaler.Marshal(util.VMToProtobuf(exp, *v))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	broker.Broadcast(
+		broker.NewRequestPolicy("vms/shutdown", "update", fullName),
+		broker.NewResource("experiment/vm", exp+"/"+name, "shutdown"),
+		body,
+	)
+
+	w.Write(body)
+}
+
+// GET /experiments/{exp}/vms/{name}/reset
+func ResetVM(w http.ResponseWriter, r *http.Request) {
+	log.Debug("ResetVM HTTP handler called")
+
+	var (
+		ctx      = r.Context()
+		role     = ctx.Value("role").(rbac.Role)
+		vars     = mux.Vars(r)
+		exp      = vars["exp"]
+		name     = vars["name"]
+		fullName = exp + "_" + name
+	)
+
+	if !role.Allowed("vms/reset", "update", fullName) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}	
+	
+	
+	if err := lockVMForStopping(exp, name); err != nil {
+		log.Warn(err.Error())
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+
+	defer unlockVM(exp, name)
+
+	
+	if err := vm.ResetDiskState(exp,name); err != nil {	
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	
+
+	v, err := vm.Get(exp, name)
+	if err != nil {		
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	
+	body, err := marshaler.Marshal(util.VMToProtobuf(exp, *v))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	broker.Broadcast(
+		broker.NewRequestPolicy("vms/reset", "update", fullName),
+		broker.NewResource("experiment/vm", exp+"/"+name, "reset"),
+		body,
+	)
+
+	w.Write(body)
+}
+
 // POST /experiments/{exp}/vms/{name}/redeploy
 func RedeployVM(w http.ResponseWriter, r *http.Request) {
 	log.Debug("RedeployVM HTTP handler called")
@@ -1306,7 +1484,7 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v.Redeploying = true
+	v.Busy = true
 
 	body, _ := marshaler.Marshal(util.VMToProtobuf(exp, *v))
 	if err != nil {
@@ -1360,7 +1538,7 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 			redeployed <- err
 		}
 
-		v.Redeploying = false
+		v.Busy = false
 	}()
 
 	// HACK: mandatory sleep time to make it seem like a redeploy is

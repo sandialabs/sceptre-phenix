@@ -19,6 +19,7 @@ type MM interface {
 	RedeployVM(...Option) error
 	KillVM(...Option) error
 	GetVMHost(...Option) (string, error)
+	GetVMState(...Option) (string, error)
 
 	ConnectVMInterface(...Option) error
 	DisconnectVMInterface(...Option) error

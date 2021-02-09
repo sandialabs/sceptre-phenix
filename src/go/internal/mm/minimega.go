@@ -413,6 +413,25 @@ func (Minimega) GetVMHost(opts ...Option) (string, error) {
 	return status[0]["host"], nil
 }
 
+func (Minimega) GetVMState(opts ...Option) (string, error) {
+	o := NewOptions(opts...)
+
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = "vm info summary"
+	cmd.Columns = []string{"state"}
+	cmd.Filters = []string{"name=" + o.vm}
+
+	status := mmcli.RunTabular(cmd)
+
+	if len(status) == 0 {
+		return "", fmt.Errorf("VM %s not found", o.vm)
+	}
+
+	return status[0]["state"], nil
+}
+
+
+
 func (Minimega) ConnectVMInterface(opts ...Option) error {
 	o := NewOptions(opts...)
 

@@ -1,5 +1,6 @@
 .devcontainer
 .vscode
+*.bdb
 
 bin
 

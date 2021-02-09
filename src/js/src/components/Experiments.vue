@@ -48,7 +48,7 @@
           </b-field>
         </section>
         <footer class="modal-card-foot buttons is-right">
-          <button class="button is-light" :disabled="!validate" @click="create">Create Experiment</button>
+          <button class="button is-light" :disabled="!validate()" @click="create">Create Experiment</button>
         </footer>
       </div>
     </b-modal>
@@ -124,14 +124,16 @@
                   <b-progress size="is-medium" type="is-warning" show-value :value=props.row.percent format="percent"></b-progress>
                 </section>
               </template>
-              <template v-else-if="adminUser()">
-                <span class="tag is-medium" :class="decorator( props.row.status )">
-                  <div class="field">
-                    <div class="field" @click="( props.row.running ) ? stop( props.row.name, props.row.status ) : start( props.row.name, props.row.status )">
-                      {{ props.row.status }}
-                    </div>
-                  </div>
-                </span>
+              <template v-else-if="adminUser()">                
+                  <b-tooltip :label="getExpControlLabel(props.row.name,props.row.status)" type="is-dark">
+                   <span class="tag is-medium" :class="decorator( props.row.status )">
+                      <div class="field">
+                        <div class="field" @click="( props.row.running ) ? stop( props.row.name, props.row.status ) : start( props.row.name, props.row.status )">
+                          {{ props.row.status }}
+                        </div>
+                      </div>
+                    </span>
+                  </b-tooltip>                
               </template>
               <template v-else>
                 <span class="tag is-medium" :class="decorator( props.row.status )">
@@ -230,62 +232,8 @@
         } else {
           return true;
         }
-      },
+      }      
       
-      validate () {
-        if ( !this.createModal.name ) {
-          return false;
-        }
-
-        for ( let i = 0; i < this.experiments.length; i++ ) {
-          if ( this.experiments[i].name == this.createModal.name ) {
-            this.createModal.nameErrType = 'is-danger';
-            this.createModal.nameErrMsg  = 'experiment with this name already exists';
-            return false
-          }
-        }
-
-        if ( /\s/.test( this.createModal.name ) ) {
-          this.createModal.nameErrType = 'is-danger';
-          this.createModal.nameErrMsg  = 'experiment names cannot have a space';
-          return false
-        } else if ( /[A-Z]/.test( this.createModal.name ) ) {
-          this.createModal.nameErrType = 'is-danger';
-          this.createModal.nameErrMsg  = 'experiment names cannot have an upper case letter';
-        } else if ( this.createModal.name == "create" ) {
-          this.createModal.nameErrType = 'is-danger';
-          this.createModal.nameErrMsg  = 'experiment names cannot be create!';
-        } else {
-          this.createModal.nameErrType = null;
-          this.createModal.nameErrMsg  = null;
-        }
-
-        if ( !this.createModal.topology ) {
-          return false;
-        }
-
-        if ( this.createModal.vlan_max < this.createModal.vlan_min ) {
-          return false;
-        }
-
-        if ( this.createModal.vlan_min < 0 ) {
-          return false;
-        }
-
-        if ( this.createModal.vlan_min > 4094 ) {
-          return false;
-        }
-
-        if ( this.createModal.vlan_max < 0 ) {
-          return false;
-        }
-
-        if ( this.createModal.vlan_max > 4094 ) {
-          return false;
-        }
-
-        return true;
-      }
     },
     
     methods: { 
@@ -293,8 +241,9 @@
         event.data.split( /\r?\n/ ).forEach( m => {
           let msg = JSON.parse( m );
           this.handle( msg );
-        });
+        })
       },
+        
       
       handle ( msg ) {     
         // We only care about publishes pertaining to an experiment resource.
@@ -467,11 +416,7 @@
       experimentUser () {
         return [ 'Global Admin', 'Experiment Admin', 'Experiment User' ].includes( this.$store.getters.role );
       },
-
-      update: function ( value ) {
-        this.isMenuActive = true;
-      },
-
+      
       updating: function( status ) {
         return status === "starting" || status === "stopping";
       },
@@ -700,6 +645,66 @@
           vlan_min: null,
           vlan_max: null
         }
+      },
+      
+      validate () {
+        if ( !this.createModal.name ) {
+          return false;
+        }
+
+        for ( let i = 0; i < this.experiments.length; i++ ) {
+          if ( this.experiments[i].name == this.createModal.name ) {
+            this.createModal.nameErrType = 'is-danger';
+            this.createModal.nameErrMsg  = 'experiment with this name already exists';
+            return false
+          }
+        }
+
+        if ( /\s/.test( this.createModal.name ) ) {
+          this.createModal.nameErrType = 'is-danger';
+          this.createModal.nameErrMsg  = 'experiment names cannot have a space';
+          return false
+        } else if ( /[A-Z]/.test( this.createModal.name ) ) {
+          this.createModal.nameErrType = 'is-danger';
+          this.createModal.nameErrMsg  = 'experiment names cannot have an upper case letter';
+        } else if ( this.createModal.name == "create" ) {
+          this.createModal.nameErrType = 'is-danger';
+          this.createModal.nameErrMsg  = 'experiment names cannot be create!';
+        } else {
+          this.createModal.nameErrType = null;
+          this.createModal.nameErrMsg  = null;
+        }
+
+        if ( !this.createModal.topology ) {
+          return false;
+        }
+
+        if ( this.createModal.vlan_max < this.createModal.vlan_min ) {
+          return false;
+        }
+
+        if ( this.createModal.vlan_min < 0 ) {
+          return false;
+        }
+
+        if ( this.createModal.vlan_min > 4094 ) {
+          return false;
+        }
+
+        if ( this.createModal.vlan_max < 0 ) {
+          return false;
+        }
+
+        if ( this.createModal.vlan_max > 4094 ) {
+          return false;
+        }
+
+        return true;
+      },
+      
+      getExpControlLabel(expName,expStatus) {
+        return expStatus.toUpperCase() == "STARTED" ? "Stop experiment " + expName : "Start experiment " + expName;
+        
       }
     },
     

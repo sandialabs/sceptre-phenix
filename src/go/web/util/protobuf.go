@@ -96,8 +96,9 @@ func VMToProtobuf(exp string, vm mm.VM) *proto.VM {
 		DoNotBoot:   vm.DoNotBoot,
 		Screenshot:  vm.Screenshot,
 		Running:     vm.Running,
-		Redeploying: vm.Redeploying,
+		Busy: 		 vm.Busy,
 		Experiment:  exp,
+		State:		 vm.State,
 	}
 }
 
