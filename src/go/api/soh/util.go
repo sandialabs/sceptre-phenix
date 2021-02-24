@@ -158,7 +158,7 @@ func (this *SOH) buildPacketBeatNode(exp *types.Experiment, target ifaces.NodeSp
 		startupDir   = exp.Spec.BaseDir() + "/startup"
 		hostnameFile = startupDir + "/" + name + "-hostname.sh"
 		timezoneFile = startupDir + "/" + name + "-timezone.sh"
-		ifaceFile    = startupDir + "/" + name + "-interfaces"
+		ifaceFile    = startupDir + "/" + name + "-interfaces.sh"
 
 		packetBeatConfigFile = fmt.Sprintf("%s/%s-packetbeat.yml", startupDir, name)
 
@@ -225,7 +225,7 @@ func (this *SOH) buildPacketBeatNode(exp *types.Experiment, target ifaces.NodeSp
 			},
 			{
 				"src": ifaceFile,
-				"dst": "/etc/network/interfaces",
+				"dst": "/etc/phenix/startup/3_interfaces-start.sh",
 			},
 			{
 				"src": packetBeatConfigFile,
@@ -925,7 +925,7 @@ func pingTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeS
 }
 
 func procTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, proc string) {
-	exec := fmt.Sprintf("pgrep %s", proc)
+	exec := fmt.Sprintf("pgrep -f %s", proc)
 
 	if node.Hardware().OSType() == "windows" {
 		exec = fmt.Sprintf(`powershell -command "Get-Process %s -ErrorAction SilentlyContinue"`, proc)

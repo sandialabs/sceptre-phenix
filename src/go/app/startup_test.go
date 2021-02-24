@@ -160,7 +160,7 @@ func TestStartupApp(t *testing.T) {
 				DstF: "/etc/phenix/startup/2_timezone-start.sh",
 			},
 			&v1.Injection{
-				SrcF: fmt.Sprintf("%s/startup/linux-interfaces", baseDir),
+				SrcF: fmt.Sprintf("%s/startup/linux-interfaces.sh", baseDir),
 				DstF: "/etc/network/interfaces",
 			},
 		},

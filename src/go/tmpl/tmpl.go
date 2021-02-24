@@ -28,7 +28,10 @@ func GenerateFromTemplate(name string, data interface{}, w io.Writer) error {
 			return *b
 		},
 		"cidrToMask": func(a string) string {
-			_, ipv4Net, _ := net.ParseCIDR(a)
+			_, ipv4Net, err := net.ParseCIDR(a)
+			if err != nil {
+				return "0.0.0.0"
+			}
 
 			// CIDR to four byte mask
 			mask := ipv4Net.Mask
