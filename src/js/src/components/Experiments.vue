@@ -23,7 +23,7 @@
                            and they are optional" 
                            type="is-light is-right" 
                            multilined>
-            <b-field v-if="createModal.showScenarios" label="Scenarios"></b-field>
+            <b-field v-if="createModal.showScenarios" label="Experiment Scenario"></b-field>
             <b-icon v-if="createModal.showScenarios" icon="question-circle" style="color:#383838"></b-icon>
           </b-tooltip>
             <b-select v-if="createModal.showScenarios" v-model="createModal.scenario" expanded placeholder="None">
