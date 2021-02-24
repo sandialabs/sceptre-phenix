@@ -59,7 +59,7 @@ available for experiments, the number of VMs, and host uptime.
     <br>
     <b-field v-if="paginationNeeded" grouped position="is-right">
       <div class="control is-flex">
-        <b-switch v-model="table.isPaginated" size="is-small" type="is-light">Pagenate</b-switch>
+        <b-switch v-model="table.isPaginated" size="is-small" type="is-light">Paginate</b-switch>
       </div>
     </b-field>
     <b-loading :is-full-page="true" :active.sync="isWaiting" :can-cancel="false"></b-loading>
