@@ -474,13 +474,15 @@ func Stop(name string) error {
 
 	dryrun := strings.HasSuffix(exp.Status.StartTime(), "-DRYRUN")
 
-	if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCLEANUP)); err != nil {
-		return fmt.Errorf("applying apps to experiment: %w", err)
+	var errors error
+
+	if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCLEANUP), app.DryRun(dryrun)); err != nil {
+		errors = multierror.Append(errors, fmt.Errorf("applying apps to experiment: %w", err))
 	}
 
 	if !dryrun {
 		if err := mm.ClearNamespace(exp.Spec.ExperimentName()); err != nil {
-			return fmt.Errorf("killing experiment VMs: %w", err)
+			errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
 		}
 	}
 
@@ -490,10 +492,10 @@ func Stop(name string) error {
 	c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
 
 	if err := store.Update(c); err != nil {
-		return fmt.Errorf("updating experiment config: %w", err)
+		errors = multierror.Append(errors, fmt.Errorf("updating experiment config: %w", err))
 	}
 
-	return nil
+	return errors
 }
 
 func Status(name string) (*v1.ExperimentStatus, error) {

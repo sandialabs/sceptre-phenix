@@ -419,7 +419,7 @@ func newExperimentStopCmd() *cobra.Command {
 				}
 
 				if err := experiment.Stop(exp.Metadata.Name); err != nil {
-					err := util.HumanizeError(err, "Unable to stop the "+exp.Metadata.Name+" experiment")
+					err := util.HumanizeError(err, "Problem encountered while stopping the "+exp.Metadata.Name+" experiment")
 					return err.Humanized()
 				}
 

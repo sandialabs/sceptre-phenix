@@ -157,7 +157,7 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 		err     error
 	)
 
-	if options.Stage == ACTIONPOSTSTART || options.Stage == ACTIONCLEANUP {
+	if options.Stage == ACTIONPOSTSTART {
 		// Reset status.apps for experiment. Note that this will get rid of any app
 		// status from previous experiment deployments.
 		exp.Status.ResetAppStatus()
