@@ -73,20 +73,20 @@ func newImageListCmd() *cobra.Command {
 func newImageCreateCmd() *cobra.Command {
 	desc := `Create a disk image configuration
 
-  Used to create a virtual disk image configuration from which to build 
+  Used to create a virtual disk image configuration from which to build
 	an image.
-	
+
 	When specifying the --size option, the following units can be used:
-	
+
 	M - Megabytes
 	G - Gigabytes
-	
+
 	When specifying the --include-miniccc or --include-protonuke options,
 	the directory to install the miniccc and/or protonuke executable into
 	should be provided. For example:
-	
+
 	--include-miniccc=/usr/local/bin
-	
+
 	When building the image, the build subcommand will look for the miniccc
 	and/or protonuke executable in /usr/local/share/minimega/bin on the host
 	building the image.`
@@ -170,8 +170,8 @@ func newImageCreateCmd() *cobra.Command {
 
 func newImageCreateFromCmd() *cobra.Command {
 	desc := `Create image configuration from existing one
-	
-  Used to create a new virtual disk image configuration from an existing one; 
+
+  Used to create a new virtual disk image configuration from an existing one;
   if options are used they will be added to the exisiting configuration.`
 
 	cmd := &cobra.Command{
@@ -223,8 +223,8 @@ func newImageCreateFromCmd() *cobra.Command {
 
 func newImageBuildCmd() *cobra.Command {
 	desc := `Build a virtual disk image
-	
-  Used to build a new virtual disk using an exisitng configuration; vmdb2 must 
+
+  Used to build a new virtual disk using an exisitng configuration; vmdb2 must
   be in path.`
 
 	example := `
@@ -332,8 +332,8 @@ func newImageDeleteCmd() *cobra.Command {
 
 func newImageAppendCmd() *cobra.Command {
 	desc := `Append to an image configuration
-	
-  Used to add scripts, packages, and/or overlays to an existing virtual disk 
+
+  Used to add scripts, packages, and/or overlays to an existing virtual disk
   image configuration.`
 
 	cmd := &cobra.Command{
@@ -347,10 +347,22 @@ func newImageAppendCmd() *cobra.Command {
 
 			var (
 				name     = args[0]
-				overlays = strings.Split(MustGetString(cmd.Flags(), "overlays"), ",")
-				packages = strings.Split(MustGetString(cmd.Flags(), "packages"), ",")
-				scripts  = strings.Split(MustGetString(cmd.Flags(), "scripts"), ",")
+				overlays []string
+				packages []string
+				scripts  []string
 			)
+
+			if opt := MustGetString(cmd.Flags(), "overlays"); opt != "" {
+				overlays = strings.Split(opt, ",")
+			}
+
+			if opt := MustGetString(cmd.Flags(), "packages"); opt != "" {
+				packages = strings.Split(opt, ",")
+			}
+
+			if opt := MustGetString(cmd.Flags(), "scripts"); opt != "" {
+				scripts = strings.Split(opt, ",")
+			}
 
 			if err := image.Append(name, overlays, packages, scripts); err != nil {
 				err := util.HumanizeError(err, "Unable to append to the "+name+" image")
@@ -372,8 +384,8 @@ func newImageAppendCmd() *cobra.Command {
 
 func newImageRemoveCmd() *cobra.Command {
 	desc := `Remove from an image configuration
-	
-  Used to remove scripts, packages, and/or overlays to an existing virtual disk 
+
+  Used to remove scripts, packages, and/or overlays to an existing virtual disk
   image configuration`
 
 	cmd := &cobra.Command{
@@ -412,8 +424,8 @@ func newImageRemoveCmd() *cobra.Command {
 
 func newImageUpdateCmd() *cobra.Command {
 	desc := `Update a script on an image configuration
-	
-  Used to update scripts, packages, and/or overlays to an existing virtual disk 
+
+  Used to update scripts, packages, and/or overlays to an existing virtual disk
   image configuration`
 
 	cmd := &cobra.Command{
@@ -450,11 +462,11 @@ func newImageInjectMinicccCmd() *cobra.Command {
 	partition to inject into can optionally be included at the end of the path
 	using a colon (for example, /phenix/images/foo.qc2:2). If not specified,
 	partition 1 will be assumed.
-	
+
 	In a Windows disk image, the miniccc agent and the PowerShell script to run
 	the miniccc agent will be injected into C:\miniccc, and a scheduler command
 	will be placed into the Windows StartUp directory.
-	
+
 	In a Linux disk image, the miniccc agent will be injected into
 	/usr/local/bin and the service file and symlinks will be injected into the
 	appropriate locations, depending on which init system is being used. For
