@@ -108,7 +108,7 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 			node.AddInject(
 				schedFile,
-				"ProgramData/Microsoft/Windows/Start Menu/Programs/StartUp/startup_scheduler.cmd",
+				"ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/startup_scheduler.cmd",
 				"0755", "",
 			)
 
