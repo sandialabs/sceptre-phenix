@@ -47,7 +47,7 @@ var (
 // Based on the variant value, specific constants will be included during the
 // create sub-command. The values are passed from the `constants.go` file. An
 // error will be returned if the variant value is not valid (acceptable values
-// are `minbase`, `mingui`, `kali`, or `brash`).
+// are `minbase` or `mingui`).
 func SetDefaults(img *v1.Image) error {
 	if img.Size == "" {
 		img.Size = "5G"
@@ -77,46 +77,34 @@ func SetDefaults(img *v1.Image) error {
 		}
 	}
 
+	img.Scripts = make(map[string]string)
+
+	img.Packages = append(img.Packages, PACKAGES_DEFAULT...)
+
 	switch img.Variant {
 	case "minbase":
 		if img.Release == "kali" || img.Release == "kali-rolling" {
-			img.Packages = append(img.Packages, PACKAGES_DEFAULT...)
 			img.Packages = append(img.Packages, PACKAGES_KALI...)
 		} else {
-			img.Packages = append(img.Packages, PACKAGES_DEFAULT...)
 			img.Packages = append(img.Packages, PACKAGES_BIONIC...)
 		}
 	case "mingui":
+		img.Packages = append(img.Packages, PACKAGES_MINGUI...)
 		if img.Release == "kali" || img.Release == "kali-rolling" {
-			img.Packages = append(img.Packages, PACKAGES_DEFAULT...)
 			img.Packages = append(img.Packages, PACKAGES_KALI...)
-			img.Packages = append(img.Packages, PACKAGES_MINGUI...)
 			img.Packages = append(img.Packages, PACKAGES_MINGUI_KALI...)
 		} else {
-			img.Packages = append(img.Packages, PACKAGES_DEFAULT...)
 			img.Packages = append(img.Packages, PACKAGES_BIONIC...)
-			img.Packages = append(img.Packages, PACKAGES_MINGUI...)
 			if img.Release == "xenial" {
 				img.Packages = append(img.Packages, "qupzilla")
 			} else {
 				img.Packages = append(img.Packages, "falkon")
 			}
-		}
-	case "brash":
-		if img.Release == "kali" || img.Release == "kali-rolling" {
-			img.Packages = append(img.Packages, PACKAGES_DEFAULT...)
-			img.Packages = append(img.Packages, PACKAGES_KALI...)
-			img.Packages = append(img.Packages, PACKAGES_BRASH...)
-		} else {
-			img.Packages = append(img.Packages, PACKAGES_DEFAULT...)
-			img.Packages = append(img.Packages, PACKAGES_BIONIC...)
-			img.Packages = append(img.Packages, PACKAGES_BRASH...)
+			addScriptToImage(img, "POSTBUILD_GUI", POSTBUILD_GUI)
 		}
 	default:
 		return fmt.Errorf("variant %s is not implemented", img.Variant)
 	}
-
-	img.Scripts = make(map[string]string)
 
 	addScriptToImage(img, "POSTBUILD_APT_CLEANUP", POSTBUILD_APT_CLEANUP)
 
@@ -124,7 +112,7 @@ func SetDefaults(img *v1.Image) error {
 	case "minbase", "mingui":
 		addScriptToImage(img, "POSTBUILD_NO_ROOT_PASSWD", POSTBUILD_NO_ROOT_PASSWD)
 		addScriptToImage(img, "POSTBUILD_PHENIX_HOSTNAME", POSTBUILD_PHENIX_HOSTNAME)
-	case "brash":
+		addScriptToImage(img, "POSTBUILD_PHENIX_BASE", POSTBUILD_PHENIX_BASE)
 	default:
 		return fmt.Errorf("variant %s is not implemented", img.Variant)
 	}

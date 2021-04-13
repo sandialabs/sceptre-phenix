@@ -10,13 +10,12 @@ import (
 
 func TestImageTemplate(t *testing.T) {
 	img := v1.Image{
-		Variant:     "brash",
+		Variant:     "minbase",
 		Release:     "bionic",
 		Format:      "qcow2",
 		Size:        "10G",
 		Mirror:      "http://us.archive.ubuntu.com",
 		Packages:    []string{"wireshark"},
-		Overlays:    []string{"bennu_overlay"},
 		VerboseLogs: true,
 	}
 

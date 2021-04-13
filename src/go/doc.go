@@ -72,7 +72,7 @@ Example
   namespace foobar
   ns queueing true
 
-  disk snapshot bennu.qc2 0b02f5d75d22_foobar_turbine-01_snapshot
+  disk snapshot foo.qc2 0b02f5d75d22_foobar_turbine-01_snapshot
   clear vm config
   vm config vcpus 1
   vm config cpu Broadwell
@@ -83,7 +83,7 @@ Example
   vm config net ot MGMT
   vm launch kvm turbine-01
 
-  disk snapshot bennu.qc2 0b02f5d75d22_foobar_turbine-02_snapshot
+  disk snapshot foo.qc2 0b02f5d75d22_foobar_turbine-02_snapshot
   clear vm config
   vm config vcpus 1
   vm config cpu Broadwell

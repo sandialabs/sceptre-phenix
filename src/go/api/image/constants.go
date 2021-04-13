@@ -66,6 +66,11 @@ chmod +x /usr/local/bin/phenix-start.sh
 mkdir -p /etc/phenix/startup
 `
 
+const POSTBUILD_GUI = `
+update-alternatives --set x-terminal-emulator /usr/bin/xfce4-terminal.wrapper
+echo "#!/bin/bash\nstartx" > /root/.profile
+`
+
 const POSTBUILD_PROTONUKE = `
 cat > /etc/systemd/system/protonuke.service <<EOF
 [Unit]
@@ -127,17 +132,8 @@ var PACKAGES_MINGUI = []string{
 
 var PACKAGES_MINGUI_KALI = []string{
 	"ca-certificates-java",
-	"openjdk-8-jre-headless",
+	"openjdk-11-jre-headless",
 	"kali-desktop-xfce",
-}
-
-var PACKAGES_BRASH = []string{
-	"vsftpd",
-	"socat",
-	"telnet",
-	"ftp",
-	"pv",
-	"python3",
 }
 
 var PACKAGES_COMPONENTS = []string{

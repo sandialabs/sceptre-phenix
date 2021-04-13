@@ -21,7 +21,7 @@ spec:
     hardware:
       os_type: linux
       drives:
-      - image: bennu.qc2
+      - image: foo.qc2
     network:
       interfaces:
       - name: IF0
