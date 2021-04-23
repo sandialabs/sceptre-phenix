@@ -123,6 +123,68 @@ func newVMResumeCmd() *cobra.Command {
 	return cmd
 }
 
+func newVMRestartCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "restart <experiment name> <vm name>",
+		Short: "Restart a running, paused, or powered off VM",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 2 {
+				return fmt.Errorf("Must provide an experiment and VM name")
+			}
+
+			var (
+				expName = args[0]
+				vmName  = args[1]
+			)
+
+			if err := vm.Restart(expName, vmName); err != nil {
+				err := util.HumanizeError(err, "Unable to restart the "+vmName+" VM")
+				return err.Humanized()
+			}
+
+			fmt.Printf("The %s VM in the %s experiment was restarted\n", vmName, expName)
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+func newVMResetDiskCmd() *cobra.Command {
+	desc := `Resets the disk state to the initial pre-boot disk state for a running or powered off VM
+	
+  Used to reset the disk state for the first disk for a running or powered off virtual machine for a specific 
+  experiment.  The VM's snapshot flag must be set to true in order to use this command.`
+
+	cmd := &cobra.Command{
+		Use:   "reset-disk <experiment name> <vm name>",
+		Short: "Resets the disk state for a running or powered off VM",
+		Long:  desc,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 2 {
+				return fmt.Errorf("Must provide an experiment and VM name")
+			}
+
+			var (
+				expName = args[0]
+				vmName  = args[1]
+			)
+
+			if err := vm.ResetDiskState(expName, vmName); err != nil {
+				err := util.HumanizeError(err, "Unable to reset disk for "+vmName+" VM")
+				return err.Humanized()
+			}
+
+			fmt.Printf("The %s VM's disk in the %s experiment was reset\n", vmName, expName)
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
 func newVMRedeployCmd() *cobra.Command {
 	var (
 		cpu  int
@@ -184,6 +246,40 @@ func newVMRedeployCmd() *cobra.Command {
 	cmd.Flags().StringP("disk", "d", "", "VM backing disk image")
 	cmd.Flags().BoolP("replicate-injects", "r", false, "Recreate disk snapshot and VM injections")
 	cmd.Flags().IntVarP(&part, "partition", "p", 1, "Partition of disk to inject files into (only used if disk option is specified)")
+
+	return cmd
+}
+
+func newVMShutdownCmd() *cobra.Command {
+	desc := `Shuts down or powers off a running or paused VM
+	
+  Used to shutdown or power off a running or paused virtual machine for a specific 
+  experiment.  The shutdown is not graceful and is equivalent to pulling the power cord`
+
+	cmd := &cobra.Command{
+		Use:   "shutdown <experiment name> <vm name>",
+		Short: "Shutdown a running or paused VM",
+		Long:  desc,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 2 {
+				return fmt.Errorf("Must provide an experiment and VM name")
+			}
+
+			var (
+				expName = args[0]
+				vmName  = args[1]
+			)
+
+			if err := vm.Shutdown(expName, vmName); err != nil {
+				err := util.HumanizeError(err, "Unable to shutdown the "+vmName+" VM")
+				return err.Humanized()
+			}
+
+			fmt.Printf("The %s VM in the %s experiment was shutdown\n", vmName, expName)
+
+			return nil
+		},
+	}
 
 	return cmd
 }
@@ -445,7 +541,10 @@ func init() {
 	vmCmd.AddCommand(newVMInfoCmd())
 	vmCmd.AddCommand(newVMPauseCmd())
 	vmCmd.AddCommand(newVMResumeCmd())
+	vmCmd.AddCommand(newVMRestartCmd())
+	vmCmd.AddCommand(newVMResetDiskCmd())
 	vmCmd.AddCommand(newVMRedeployCmd())
+	vmCmd.AddCommand(newVMShutdownCmd())
 	vmCmd.AddCommand(newVMKillCmd())
 	vmCmd.AddCommand(newVMSetCmd())
 	vmCmd.AddCommand(newVMNetCmd())
