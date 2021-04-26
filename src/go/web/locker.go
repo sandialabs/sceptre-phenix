@@ -130,3 +130,13 @@ func lockVMForCommitting(exp, name string) error {
 
 	return nil
 }
+
+func lockVMForMemorySnapshotting(exp, name string) error {
+	key := fmt.Sprintf("vm|%s/%s", exp, name)
+
+	if status := cache.Lock(key, cache.StatusSnapshotting, 5*time.Minute); status != "" {
+		return fmt.Errorf("VM %s is locked with status %s", name, status)
+	}
+
+	return nil
+}

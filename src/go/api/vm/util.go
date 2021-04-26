@@ -172,3 +172,8 @@ func (this cancelableReader) Read(p []byte) (int, error) {
 		return this.r.Read(p)
 	}
 }
+
+func getTimestamp() string {
+
+	return time.Now().Format("20060102_1500")
+}

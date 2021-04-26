@@ -397,6 +397,48 @@ func newVMCaptureCmd() *cobra.Command {
 	return cmd
 }
 
+func newVMMemorySnapshotCmd() *cobra.Command {
+	desc := `Create an ELF memory snapshot of the VM
+	
+  Used to create an ELF memory snapshot for a running virtual machine
+  that is compatible with memory forensic toolkits Volatility and Google's Rekall.`
+
+	cmd := &cobra.Command{
+		Use:   "memory-snapshot <experiment name> <vm name> <snapshot file path>",
+		Short: "Create an ELF memory snapshot of a VM",
+		Long:  desc,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 3 {
+				return fmt.Errorf("Must provide an experiment name, VM name, and snapshot file path")
+			}
+
+			var (
+				expName  = args[0]
+				vmName   = args[1]
+				snapshot = args[2]
+			)
+
+			cb := func(s string) {}
+			if res, err := vm.MemorySnapshot(expName, vmName, snapshot, cb); err != nil {
+				if res != "failed" {
+					err := util.HumanizeError(err, "Unable to create a memory snapshot for the "+vmName+" VM")
+					return err.Humanized()
+				} else {
+					err := util.HumanizeError(err, "Failed to create a memory snapshot for the "+vmName+" VM")
+					return err.Humanized()
+				}
+			}
+
+			fmt.Printf("Memory snapshot was created for the %s VM in the %s experiment\n", vmName, expName)
+
+			return nil
+
+		},
+	}
+
+	return cmd
+}
+
 func init() {
 	vmCmd := newVMCmd()
 
@@ -408,6 +450,7 @@ func init() {
 	vmCmd.AddCommand(newVMSetCmd())
 	vmCmd.AddCommand(newVMNetCmd())
 	vmCmd.AddCommand(newVMCaptureCmd())
+	vmCmd.AddCommand(newVMMemorySnapshotCmd())
 
 	rootCmd.AddCommand(vmCmd)
 }

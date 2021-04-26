@@ -1060,3 +1060,133 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 	return out, nil
 
 }
+
+func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error) {
+
+	_, err := Get(expName, vmName)
+	if err != nil {
+		return "", fmt.Errorf("getting VM details: %w", err)
+	}
+
+	if out == "" {
+		out = fmt.Sprintf("%s_%s.elf", vmName, getTimestamp())
+	}
+
+	// Make all output files have a .elf extension
+	if filepath.Ext(out) != ".elf" {
+		if filepath.Ext(out) != "" {
+			out = strings.TrimSuffix(out, filepath.Ext(out))
+		}
+		out += ".elf"
+	}
+
+	// Get compute node VM is running on.
+
+	cmd := mmcli.NewNamespacedCommand(expName)
+	cmd.Command = "vm info"
+	cmd.Columns = []string{"host", "name", "id", "state"}
+	cmd.Filters = []string{"name=" + vmName}
+
+	status := mmcli.RunTabular(cmd)
+
+	if len(status) == 0 {
+		return "", fmt.Errorf("VM not found")
+	}
+
+	// If only the filename was specified,
+	// save in the experiment files directory so that the file
+	// appears in the Web GUI's files tab
+	if !filepath.IsAbs(out) {
+		out = fmt.Sprintf("%s/images/%s/files/%s", common.PhenixBase, expName, out)
+	}
+
+	// Make sure that the memory snapshot directory exists
+	var cmdPrefix string
+	if !mm.IsHeadnode(status[0]["host"]) {
+		cmdPrefix = "mesh send " + status[0]["host"]
+	}
+
+	cmd.Columns = nil
+	cmd.Filters = nil
+	cmd.Command = fmt.Sprintf("%s shell mkdir -p %s", cmdPrefix, filepath.Dir(out))
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return "", fmt.Errorf("ensuring experiment files directory exists: %w", err)
+	}
+	// ***** BEGIN: MEMORY SNAPSHOT VM *****
+
+	qmp := fmt.Sprintf(`{ "execute": "dump-guest-memory", "arguments": { "protocol": "file:%s", "paging": false, "format": "elf" , "detach": true} }`, out)
+	cmd.Command = fmt.Sprintf("vm qmp %s '%s'", vmName, qmp)
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return "", fmt.Errorf("starting memory snapshot for VM %s: ERROR: %w", vmName, err)
+
+	}
+
+	qmp = fmt.Sprintf(`{ "execute": "query-dump" }`)
+	cmd.Command = fmt.Sprintf("vm qmp %s '%s'", vmName, qmp)
+
+	var (
+		v        mm.BlockDumpResponse
+		res      string
+		progress string
+	)
+
+	for {
+		// sleep before querying the vm to to prevent errors from start delays
+		time.Sleep(1 * time.Second)
+		res, err = mmcli.SingleResponse(mmcli.Run(cmd))
+		if err != nil {
+			if cb != nil {
+				cb("failed")
+			}
+			return "", fmt.Errorf("getting memory snapshot status for VM %s: %w", vmName, err)
+		}
+
+		json.Unmarshal([]byte(res), &v)
+
+		if len(v.Return.Status) == 0 {
+			if cb != nil {
+				cb("failed")
+			}
+			return "", fmt.Errorf("no status available for %s: %s", vmName, v)
+
+		}
+
+		if v.Return.Status == "failed" {
+			if cb != nil {
+				cb("failed")
+			}
+			return "failed", fmt.Errorf("failed to create memory snapshot for %s: %s", vmName, v)
+
+		}
+
+		progress = fmt.Sprintf("%v", float64(v.Return.Completed)/float64(v.Return.Total))
+
+		cb(progress)
+
+		if v.Return.Status == "completed" {
+			cb("completed")
+			break
+		}
+
+	}
+
+	// Copy the ELF memory dump to the headnode if the VM was not
+	// hosted on the headnode
+	if !mm.IsHeadnode(status[0]["host"]) {
+
+		// File path should be relative to the minimega files directory
+		memoryDumpPath := fmt.Sprintf("%s/files/%s", expName, filepath.Base(out))
+
+		cmd.Command = fmt.Sprintf(`file get %s`, memoryDumpPath)
+
+		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+			return "", fmt.Errorf("pulling ELF memory snapshot to headnode: %w", err)
+		}
+
+	}
+
+	return out, nil
+
+}

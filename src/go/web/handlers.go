@@ -2129,6 +2129,131 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 	w.Write(body)
 }
 
+// POST /experiments/{exp}/vms/{name}/memorySnapshot
+func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
+	log.Debug("CreateVMMemorySnapshot HTTP handler called")
+
+	var (
+		ctx      = r.Context()
+		role     = ctx.Value("role").(rbac.Role)
+		vars     = mux.Vars(r)
+		exp      = vars["exp"]
+		name     = vars["name"]
+		fullName = exp + "_" + name
+	)
+
+	if !role.Allowed("vms/memorySnapshot", "create", fullName) {
+		log.Warn("Capturing memory snapshot of VM %s in experiment %s not allowed for %s", name, exp, ctx.Value("user").(string))
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Error("reading request body - %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var filename string
+
+	// If user provided body to this request, expect it to specify the
+	// filename to use for capturing a memory snapshot.
+	if len(body) != 0 {
+		var req proto.MemorySnapshotRequest
+		err = unmarshaler.Unmarshal(body, &req)
+		if err != nil {
+			log.Error("unmarshaling request body - %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if req.Filename == "" {
+			log.Error("missing filename for memory snapshot")
+			http.Error(w, "missing 'filename' key", http.StatusBadRequest)
+			return
+		}
+
+		filename = req.Filename
+	}
+
+	if err := lockVMForMemorySnapshotting(exp, name); err != nil {
+		log.Warn(err.Error())
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+
+	defer unlockVM(exp, name)
+
+	if filename == "" {
+
+		http.Error(w, "must provide new disk name for memory snapshot", http.StatusBadRequest)
+		return
+	}
+
+	payload := &proto.MemorySnapshotResponse{Disk: filename}
+	body, _ = marshaler.Marshal(payload)
+
+	broker.Broadcast(
+		broker.NewRequestPolicy("vms/memorySnapshot", "create", fullName),
+		broker.NewResource("experiment/vm/memorySnapshot", exp+"/"+name, "committing"),
+		body,
+	)
+
+	status := make(chan string)
+
+	go func() {
+
+		defer close(status)
+
+		for {
+			s := <-status
+			if s == "failed" || s == "completed" {
+				return
+			}
+
+			progress, err := strconv.ParseFloat(s, 64)
+			if err == nil {
+				status := map[string]interface{}{
+					"percent": progress,
+				}
+
+				log.Info("%s_%s memory snapshot percent complete: %v", exp, name, progress)
+
+				marshalled, _ := json.Marshal(status)
+
+				broker.Broadcast(
+					broker.NewRequestPolicy("vms/memorySnapshot", "create", fullName),
+					broker.NewResource("experiment/vm/memorySnapshot", exp+"/"+name, "progress"),
+					marshalled,
+				)
+			}
+		}
+	}()
+
+	cb := func(s string) { status <- s }
+
+	if filename, err = vm.MemorySnapshot(exp, name, filename, cb); err != nil {
+		broker.Broadcast(
+			broker.NewRequestPolicy("vms/memorySnapshot", "create", fullName),
+			broker.NewResource("experiment/vm/memorySnapshot", exp+"/"+name, "errorCommitting"),
+			nil,
+		)
+
+		log.Error("memory snapshot for VM %s in experiment %s - %v", name, exp, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	broker.Broadcast(
+		broker.NewRequestPolicy("vms/memorySnapshot", "create", fmt.Sprintf("%s_%s", exp, name)),
+		broker.NewResource("experiment/vm/memorySnapshot", exp+"/"+name, "commit"),
+		nil,
+	)
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // GET /vms
 func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 	log.Debug("GetAllVMs HTTP handler called")

@@ -71,3 +71,12 @@ message VMInterface {
   uint32 index = 1;
   string vlan = 2;
 }
+
+message MemorySnapshotRequest {
+	string filename = 1;
+}
+
+message MemorySnapshotResponse {
+	string disk = 1;
+	VM vm = 2;
+}
