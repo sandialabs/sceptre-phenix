@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"regexp"
 	"sync"
 	"time"
 
@@ -157,10 +156,10 @@ func (this *Client) read() {
 			// TODO
 		}
 
-		// If `filter` was not provided client-side, `regex` will be an
-		// empty string and the call to `regexp.MatchString` below will
-		// always be true.
-		regex, _ := payload["filter"].(string)
+		// A Boolean expression tree is built and the fields that
+		// should be searched are determined based on the search string
+		clientFilter, _ := payload["filter"].(string)
+		filterTree := mm.BuildTree(clientFilter)
 
 		// If `show_dnb` was not provided client-side, `showDNB` will be false,
 		// which is the default we want.
@@ -175,9 +174,18 @@ func (this *Client) read() {
 				continue
 			}
 
-			// If there's an error, `matched` will be false.
-			if matched, _ := regexp.MatchString(regex, vm.Name); !matched {
-				continue
+			// If the filter supplied could not be
+			// parsed, do not add the VM
+			if len(clientFilter) > 0 {
+				if filterTree == nil {
+					continue
+				} else {
+					// If the search string could be parsed,
+					// determine if the VM should be included
+					if !filterTree.Evaluate(&vm) {
+						continue
+					}
+				}
 			}
 
 			if this.role.Allowed("vms", "list", fmt.Sprintf("%s_%s", expName, vm.Name)) {

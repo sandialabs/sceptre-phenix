@@ -198,22 +198,23 @@ func (this VMs) Paginate(page, size int) VMs {
 }
 
 type VM struct {
-	ID          int       `json:"id"`
-	Name        string    `json:"name"`
-	Experiment  string    `json:"experiment"`
-	Host        string    `json:"host"`
-	IPv4        []string  `json:"ipv4"`
-	CPUs        int       `json:"cpus"`
-	RAM         int       `json:"ram"`
-	Disk        string    `json:"disk"`
-	DoNotBoot   bool      `json:"dnb"`
-	Networks    []string  `json:"networks"`
-	Taps        []string  `json:"taps"`
-	Captures    []Capture `json:"captures"`
-	Running     bool      `json:"running"`
-	Busy		bool      `json:"busy"`
-	Uptime      float64   `json:"uptime"`
-	Screenshot  string    `json:"screenshot,omitempty"`
+	ID         int       `json:"id"`
+	Name       string    `json:"name"`
+	Experiment string    `json:"experiment"`
+	Host       string    `json:"host"`
+	IPv4       []string  `json:"ipv4"`
+	CPUs       int       `json:"cpus"`
+	RAM        int       `json:"ram"`
+	Disk       string    `json:"disk"`
+	DoNotBoot  bool      `json:"dnb"`
+	Networks   []string  `json:"networks"`
+	Taps       []string  `json:"taps"`
+	Captures   []Capture `json:"captures"`
+	Running    bool      `json:"running"`
+	Busy       bool      `json:"busy"`
+	Uptime     float64   `json:"uptime"`
+	Screenshot string    `json:"screenshot,omitempty"`
+	Tags       []string  `json:"tags"`
 
 	// Used internally to track network <--> IP relationship, since
 	// network ordering from minimega may not be the same as network

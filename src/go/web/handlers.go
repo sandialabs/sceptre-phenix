@@ -222,17 +222,18 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) {
 	log.Debug("GetExperiment HTTP handler called")
 
 	var (
-		ctx     = r.Context()
-		role    = ctx.Value("role").(rbac.Role)
-		vars    = mux.Vars(r)
-		name    = vars["name"]
-		query   = r.URL.Query()
-		size    = query.Get("screenshot")
-		sortCol = query.Get("sortCol")
-		sortDir = query.Get("sortDir")
-		pageNum = query.Get("pageNum")
-		perPage = query.Get("perPage")
-		showDNB = query.Get("show_dnb") != ""
+		ctx          = r.Context()
+		role         = ctx.Value("role").(rbac.Role)
+		vars         = mux.Vars(r)
+		name         = vars["name"]
+		query        = r.URL.Query()
+		size         = query.Get("screenshot")
+		sortCol      = query.Get("sortCol")
+		sortDir      = query.Get("sortDir")
+		pageNum      = query.Get("pageNum")
+		perPage      = query.Get("perPage")
+		showDNB      = query.Get("show_dnb") != ""
+		clientFilter = query.Get("filter")
 	)
 
 	if !role.Allowed("experiments", "get", name) {
@@ -258,9 +259,27 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) {
 	status := isExperimentLocked(name)
 	allowed := mm.VMs{}
 
+	// Build a Boolean expression tree and determine
+	// the fields that should be searched
+	filterTree := mm.BuildTree(clientFilter)
+
 	for _, vm := range vms {
 		if vm.DoNotBoot && !showDNB {
 			continue
+		}
+
+		// If the filter supplied could not be
+		// parsed, do not add the VM
+		if len(clientFilter) > 0 {
+			if filterTree == nil {
+				continue
+			} else {
+				// If the search string could be parsed,
+				// determine if the VM should be included
+				if !filterTree.Evaluate(&vm) {
+					continue
+				}
+			}
 		}
 
 		if role.Allowed("vms", "list", fmt.Sprintf("%s_%s", name, vm.Name)) {
@@ -1288,8 +1307,8 @@ func RestartVM(w http.ResponseWriter, r *http.Request) {
 	if !role.Allowed("vms/restart", "update", fullName) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
-	}	
-	
+	}
+
 	if err := lockVMForStarting(exp, name); err != nil {
 		log.Warn(err.Error())
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -1304,25 +1323,24 @@ func RestartVM(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
-	if err := vm.Restart(exp,name); err != nil {	
+	if err := vm.Restart(exp, name); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
 
 	v, err := vm.Get(exp, name)
-	if err != nil {		
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
+
 	screenshot, err := util.GetScreenshot(exp, name, "215")
 	if err != nil {
 		log.Error("getting screenshot - %v", err)
 	} else {
 		v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
 	}
-	
+
 	body, err := marshaler.Marshal(util.VMToProtobuf(exp, *v))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1354,9 +1372,8 @@ func ShutdownVM(w http.ResponseWriter, r *http.Request) {
 	if !role.Allowed("vms/shutdown", "update", fullName) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
-	}	
-	
-	
+	}
+
 	if err := lockVMForStopping(exp, name); err != nil {
 		log.Warn(err.Error())
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -1365,19 +1382,17 @@ func ShutdownVM(w http.ResponseWriter, r *http.Request) {
 
 	defer unlockVM(exp, name)
 
-	
-	if err := vm.Shutdown(exp,name); err != nil {	
+	if err := vm.Shutdown(exp, name); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
 
 	v, err := vm.Get(exp, name)
-	if err != nil {		
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
+
 	v.Running = false
 
 	body, err := marshaler.Marshal(util.VMToProtobuf(exp, *v))
@@ -1411,9 +1426,8 @@ func ResetVM(w http.ResponseWriter, r *http.Request) {
 	if !role.Allowed("vms/reset", "update", fullName) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
-	}	
-	
-	
+	}
+
 	if err := lockVMForStopping(exp, name); err != nil {
 		log.Warn(err.Error())
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -1422,19 +1436,17 @@ func ResetVM(w http.ResponseWriter, r *http.Request) {
 
 	defer unlockVM(exp, name)
 
-	
-	if err := vm.ResetDiskState(exp,name); err != nil {	
+	if err := vm.ResetDiskState(exp, name); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
 
 	v, err := vm.Get(exp, name)
-	if err != nil {		
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
+
 	body, err := marshaler.Marshal(util.VMToProtobuf(exp, *v))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

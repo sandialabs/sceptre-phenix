@@ -115,7 +115,7 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "vm info"
-	cmd.Columns = []string{"host", "name", "state", "uptime", "vlan", "tap", "memory", "vcpus", "disks"}
+	cmd.Columns = []string{"host", "name", "state", "uptime", "vlan", "tap", "memory", "vcpus", "disks", "tags"}
 
 	if o.vm != "" {
 		cmd.Filters = []string{"name=" + o.vm}
@@ -150,10 +150,19 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 			vm.Taps = strings.Split(s, ", ")
 		}
 
+		s = row["tags"]
+		s = strings.TrimPrefix(s, "{")
+		s = strings.TrimSuffix(s, "}")
+		s = strings.TrimSpace(s)
+
+		if s != "" {
+			vm.Tags = strings.Split(s, ",")
+		}
+
 		// Make sure the VM name is set prior to calling `GetVMCaptures`, as the VM
 		// name is not always set when calling `GetVMInfo`.
 		vm.Captures = this.GetVMCaptures(NS(o.ns), VMName(vm.Name))
-		
+
 		uptime, err := time.ParseDuration(row["uptime"])
 		if err == nil {
 			vm.Uptime = uptime.Seconds()
@@ -429,8 +438,6 @@ func (Minimega) GetVMState(opts ...Option) (string, error) {
 
 	return status[0]["state"], nil
 }
-
-
 
 func (Minimega) ConnectVMInterface(opts ...Option) error {
 	o := NewOptions(opts...)

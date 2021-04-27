@@ -367,8 +367,8 @@
             v-model="search.filter"
             placeholder="Find a VM"
             icon="search"
-            :data="filteredData"
-            @input="searchVMs"
+            :data="searchHistory"
+            @typing="searchVMs"
             @select="option => searchVMs(option)">
             <template slot="empty">No results found</template>
           </b-autocomplete>
@@ -648,13 +648,13 @@
         return [ 'Experiment Viewer' ].includes( this.$store.getters.role );
       },
 
-      searchVMs( term ) {
+      searchVMs: _.debounce(function ( term ) {
         if ( term == null ) {
-			term = '';
+			    term = '';
         }
         this.search.filter = term;
         this.updateTable();
-      },
+      },250 ),
 
       switchPagination( enabled ) {
         this.table.isPaginated = enabled;
@@ -718,6 +718,14 @@
 
             if ( this.search.filter ) {
               this.table.total  = msg.result.total;
+              // Only add successful searches to the search history
+              if (this.table.total > 0) {
+                if (this.searchHistory > this.searchHistoryLength) {
+                  this.searchHistory.pop()
+                }
+                this.searchHistory.push(this.search.filter.trim())
+                this.searchHistory = this.getUniqueItems(this.searchHistory)
+              }
             } else {
               this.table.total  = this.experiment.vm_count;
             }
@@ -2249,6 +2257,29 @@
             type:'is-dark',
             confirmText: 'Ok'
           }) 
+      },
+
+      getUniqueItems(inputArray){
+
+        let arrayHash = {};
+        
+        for(let i = 0; i<inputArray.length;i++)
+        {
+          // Skip really short items
+          if (inputArray[i].length < 4){
+            continue
+          }
+
+          if(arrayHash[inputArray[i]] === undefined )
+          {
+            arrayHash[inputArray[i]] = true;
+          
+          }
+        
+        }
+        
+        return Object.keys(arrayHash).sort();
+
       }
     },
     
@@ -2297,7 +2328,7 @@
            name:  null, filename: null, dateTime: null, 
            nameErrType: null, nameErrMsg: null
           */
-        },
+        },        
         experiment: [],
         files: [],
         disks: [],
@@ -2320,7 +2351,8 @@
           createMemorySnapshot:9,
           recordScreenshots:10
         },
-        
+        searchHistory: [],
+        searchHistoryLength:10        
       }
     }
   }

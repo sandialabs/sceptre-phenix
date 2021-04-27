@@ -41,12 +41,13 @@
         v-model="searchName"
         placeholder="Find a VM"
         icon="search"
-        :data="filteredData"
-        @select="option => filtered = option">
+        :data="searchHistory"
+        @typing="searchVMs"
+        @select="option => searchVMs(option)">   
           <template slot="empty">No results found</template>
       </b-autocomplete>
       <p class='control'>
-        <button class='button' style="color:#686868" @click="searchName = ''">
+         <button class='button' style="color:#686868" @click="searchVMs('')">
           <b-icon icon="window-close"></b-icon>
         </button>
       </p>
@@ -268,11 +269,15 @@
           }
         }
         
-        return data;
+        return vms;
       },
 
       filteredData () {
-        let names = this.vms.map( vm => { return vm.name; } );
+        if (this.experiment.length == 0) {
+          return []
+        }
+        
+        let names = this.experiment.vms.map( vm => { return vm.name; } );
         
         return names.filter(
           option => {
@@ -285,8 +290,8 @@
       },
 
       paginationNeeded () {
-        if ( this.vms.length <= 10 ) {
-          return false;
+        if ( this.table.total <= this.table.perPage ) {
+          return  false;
         }
 
         return true;
@@ -305,6 +310,14 @@
       experimentViewer () {
         return [ 'Experiment Viewer' ].includes( this.$store.getters.role );
       },
+
+      searchVMs: _.debounce(function(  term ) {
+        if (term === null) {
+          term  = '';
+        }
+        this.searchName = term;
+        this.updateExperiment();
+      },250),
 
       bootDecorator ( dnb ) {
         if ( dnb ) {
@@ -381,10 +394,22 @@
       },
       
       updateExperiment () {
-        this.$http.get( 'experiments/' + this.$route.params.id + '?show_dnb=true').then(
+        let params = '?show_dnb=true&filter=' + this.searchName
+        this.$http.get( 'experiments/' + this.$route.params.id + params).then(
           response => {
             response.json().then( state => {
               this.experiment = state;
+              this.table.total  = state.vm_count;  
+
+              // Only add successful searches to the search history
+              if (this.table.total > 0) {
+                if (this.searchHistory > this.searchHistoryLength) {
+                  this.searchHistory.pop()
+                }
+                this.searchHistory.push(this.searchName.trim())
+                this.searchHistory = this.getUniqueItems(this.searchHistory)
+              }
+
               this.isWaiting = false;
             });
           }, response => {
@@ -914,6 +939,32 @@
             )
           }
         })
+      },
+
+      getUniqueItems(inputArray){
+
+        let arrayHash = {};
+        
+        for(let i = 0; i<inputArray.length;i++)
+        {
+          // Skip really short items
+          if (inputArray[i].length < 4){
+            if (!inputArray[i].includes('dnb')){
+              continue
+            }
+            
+          }
+
+          if(arrayHash[inputArray[i]] === undefined )
+          {
+            arrayHash[inputArray[i]] = true;
+          
+          }
+        
+        }
+        
+        return Object.keys(arrayHash).sort();
+
       }
     },
 
@@ -944,7 +995,9 @@
         filtered: null,
         algorithm: null,
         dnb: false,
-        isWaiting: true
+        isWaiting: true,
+        searchHistory: [],
+        searchHistoryLength:10 
       }
     }
   }

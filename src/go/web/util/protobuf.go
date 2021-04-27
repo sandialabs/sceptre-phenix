@@ -1,12 +1,13 @@
 package util
 
 import (
+	"sort"
+
 	"phenix/internal/mm"
 	"phenix/types"
 	"phenix/web/cache"
 	"phenix/web/proto"
 	"phenix/web/rbac"
-	"sort"
 )
 
 func ExperimentToProtobuf(exp types.Experiment, status cache.Status, vms []mm.VM) *proto.Experiment {
@@ -83,22 +84,23 @@ func ExperimentToProtobuf(exp types.Experiment, status cache.Status, vms []mm.VM
 
 func VMToProtobuf(exp string, vm mm.VM) *proto.VM {
 	return &proto.VM{
-		Name:        vm.Name,
-		Host:        vm.Host,
-		Ipv4:        vm.IPv4,
-		Cpus:        uint32(vm.CPUs),
-		Ram:         uint32(vm.RAM),
-		Disk:        vm.Disk,
-		Uptime:      vm.Uptime,
-		Networks:    vm.Networks,
-		Taps:        vm.Taps,
-		Captures:    CapturesToProtobuf(vm.Captures),
-		DoNotBoot:   vm.DoNotBoot,
-		Screenshot:  vm.Screenshot,
-		Running:     vm.Running,
-		Busy: 		 vm.Busy,
-		Experiment:  exp,
-		State:		 vm.State,
+		Name:       vm.Name,
+		Host:       vm.Host,
+		Ipv4:       vm.IPv4,
+		Cpus:       uint32(vm.CPUs),
+		Ram:        uint32(vm.RAM),
+		Disk:       vm.Disk,
+		Uptime:     vm.Uptime,
+		Networks:   vm.Networks,
+		Taps:       vm.Taps,
+		Captures:   CapturesToProtobuf(vm.Captures),
+		DoNotBoot:  vm.DoNotBoot,
+		Screenshot: vm.Screenshot,
+		Running:    vm.Running,
+		Busy:       vm.Busy,
+		Experiment: exp,
+		State:      vm.State,
+		Tags:       vm.Tags,
 	}
 }
 
