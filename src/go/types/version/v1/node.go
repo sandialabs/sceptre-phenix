@@ -119,6 +119,10 @@ func (this *Node) AddNetworkRoute(dest, next string, cost int) {
 }
 
 func (this *Node) AddInject(src, dst, perms, desc string) {
+	if _, ok := this.LabelsF["disable-injects"]; ok {
+		return
+	}
+
 	var exists bool
 
 	for _, inject := range this.InjectionsF {
