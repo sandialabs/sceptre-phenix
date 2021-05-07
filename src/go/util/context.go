@@ -1,16 +1,46 @@
 package util
 
-import "context"
+import (
+	"context"
 
-type warningsKey struct{}
+	"github.com/gofrs/uuid"
+)
 
-func AddWarnings(ctx context.Context, warns ...error) context.Context {
-	warnings, _ := ctx.Value(warningsKey{}).([]error)
-	warnings = append(warnings, warns...)
-	return context.WithValue(ctx, warningsKey{}, warnings)
+type warningsUUID struct{}
+
+var warnings = make(map[string][]error)
+
+func WarningContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	uuid := uuid.Must(uuid.NewV4()).String()
+	return context.WithValue(ctx, warningsUUID{}, uuid)
+}
+
+func AddWarnings(ctx context.Context, warns ...error) {
+	uuid, ok := ctx.Value(warningsUUID{}).(string)
+
+	if ok {
+		warnings[uuid] = append(warnings[uuid], warns...)
+	}
+}
+
+func ClearWarnings(ctx context.Context) {
+	uuid, ok := ctx.Value(warningsUUID{}).(string)
+
+	if ok {
+		delete(warnings, uuid)
+	}
 }
 
 func Warnings(ctx context.Context) []error {
-	warns, _ := ctx.Value(warningsKey{}).([]error)
-	return warns
+	uuid, ok := ctx.Value(warningsUUID{}).(string)
+
+	if ok {
+		return warnings[uuid]
+	}
+
+	return nil
 }

@@ -197,8 +197,6 @@ func (this ExperimentSpec) VerifyScenario(ctx context.Context) error {
 		return nil
 	}
 
-	var warnings []error
-
 	hosts := make(map[string]struct{})
 
 	for _, node := range this.TopologyF.NodesF {
@@ -208,13 +206,9 @@ func (this ExperimentSpec) VerifyScenario(ctx context.Context) error {
 	for _, app := range this.ScenarioF.AppsF {
 		for _, host := range app.HostsF {
 			if _, ok := hosts[host.HostnameF]; !ok {
-				warnings = append(warnings, fmt.Errorf("host %s in app %s not in topology", host.HostnameF, app.NameF))
+				util.AddWarnings(ctx, fmt.Errorf("host %s in app %s not in topology", host.HostnameF, app.NameF))
 			}
 		}
-	}
-
-	if len(warnings) > 0 {
-		util.AddWarnings(ctx, warnings...)
 	}
 
 	return nil

@@ -159,7 +159,7 @@ func newExperimentCreateCmd() *cobra.Command {
 				experiment.CreateWithVLANMax(MustGetInt(cmd.Flags(), "vlan-max")),
 			}
 
-			ctx := context.Background()
+			ctx := util.WarningContext(nil)
 
 			if err := experiment.Create(ctx, opts...); err != nil {
 				err := util.HumanizeError(err, "Unable to create the "+args[0]+" experiment")
@@ -304,7 +304,7 @@ func newExperimentStartCmd() *cobra.Command {
 				periodic    = MustGetBool(cmd.Flags(), "honor-run-periodically")
 				experiments []types.Experiment
 
-				ctx = sigterm.CancelContext(context.Background())
+				ctx = util.WarningContext(sigterm.CancelContext(nil))
 				wg  sync.WaitGroup
 			)
 
@@ -337,11 +337,20 @@ func newExperimentStartCmd() *cobra.Command {
 					experiment.StartWithDryRun(dryrun),
 					experiment.StartWithVLANMin(MustGetInt(cmd.Flags(), "vlan-min")),
 					experiment.StartWithVLANMax(MustGetInt(cmd.Flags(), "vlan-max")),
+					experiment.StartWithMMErrorsAsWarnings(MustGetBool(cmd.Flags(), "treat-mm-errors-as-warnings")),
 				}
 
 				if err := experiment.Start(ctx, opts...); err != nil {
 					err := util.HumanizeError(err, "Unable to start the "+exp.Metadata.Name+" experiment")
 					return err.Humanized()
+				}
+
+				if warns := util.Warnings(ctx); warns != nil {
+					printer := color.New(color.FgYellow)
+
+					for _, warn := range warns {
+						printer.Printf("[WARNING] %v\n", warn)
+					}
 				}
 
 				if dryrun {
@@ -371,6 +380,7 @@ func newExperimentStartCmd() *cobra.Command {
 
 	cmd.Flags().Bool("dry-run", false, "Do everything but actually call out to minimega")
 	cmd.Flags().Bool("honor-run-periodically", false, "Periodically trigger running stage in apps if configured in scenario")
+	cmd.Flags().Bool("treat-mm-errors-as-warnings", false, "Treat errors from minimega as warnings instead of failing")
 	cmd.Flags().Int("vlan-min", 0, "VLAN pool minimum")
 	cmd.Flags().Int("vlan-max", 0, "VLAN pool maximum")
 

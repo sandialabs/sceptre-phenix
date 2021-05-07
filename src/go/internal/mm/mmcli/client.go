@@ -11,6 +11,7 @@ import (
 
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/activeshadow/libminimega/miniclient"
+	"github.com/hashicorp/go-multierror"
 )
 
 var (
@@ -44,25 +45,20 @@ func wrapErr(err error) chan *miniclient.Response {
 }
 
 // ErrorResponse is used when only concerned with errors returned from a call to
-// minimega. The first error encountered will be returned.
+// minimega. A *multierror.Error will be returned containing a full list of all
+// the errors encountered.
 func ErrorResponse(responses chan *miniclient.Response) error {
-	var err error
+	var errs error
 
 	for response := range responses {
-		if err != nil {
-			// We got our first error, so just drain the responses channel.
-			continue
-		}
-
 		for _, resp := range response.Resp {
 			if resp.Error != "" {
-				err = errors.New(resp.Error)
-				break
+				errs = multierror.Append(errs, errors.New(resp.Error))
 			}
 		}
 	}
 
-	return err
+	return errs
 }
 
 // SingleReponse is used when only a single response (or error) is expected to

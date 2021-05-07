@@ -10,6 +10,10 @@ import (
 // CancelContext returns a context that wraps the given context with a cancel
 // function that's called when a SIGTERM or SIGINT is trapped.
 func CancelContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	ctxWithCancel, cancel := context.WithCancel(ctx)
 
 	go func() {

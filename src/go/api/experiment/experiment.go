@@ -19,6 +19,7 @@ import (
 	"phenix/types"
 	"phenix/types/version"
 	v1 "phenix/types/version/v1"
+	"phenix/util"
 
 	"github.com/activeshadow/structs"
 	"github.com/hashicorp/go-multierror"
@@ -379,13 +380,29 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		}
 
 		if err := mm.ReadScriptFromFile(filename); err != nil {
-			mm.ClearNamespace(exp.Spec.ExperimentName())
-			return fmt.Errorf("reading minimega script: %w", err)
+			if !o.mmErrAsWarn {
+				mm.ClearNamespace(exp.Spec.ExperimentName())
+				return fmt.Errorf("reading minimega script: %w", err)
+			}
+
+			if merr, ok := err.(*multierror.Error); ok {
+				util.AddWarnings(ctx, merr.Errors...)
+			} else {
+				util.AddWarnings(ctx, err)
+			}
 		}
 
 		if err := mm.LaunchVMs(exp.Spec.ExperimentName()); err != nil {
-			mm.ClearNamespace(exp.Spec.ExperimentName())
-			return fmt.Errorf("launching experiment VMs: %w", err)
+			if !o.mmErrAsWarn {
+				mm.ClearNamespace(exp.Spec.ExperimentName())
+				return fmt.Errorf("launching experiment VMs: %w", err)
+			}
+
+			if merr, ok := err.(*multierror.Error); ok {
+				util.AddWarnings(ctx, merr.Errors...)
+			} else {
+				util.AddWarnings(ctx, err)
+			}
 		}
 
 		schedule := make(map[string]string)
