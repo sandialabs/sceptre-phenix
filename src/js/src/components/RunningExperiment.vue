@@ -417,7 +417,7 @@
                <b-table-column  field="multiselect" label="">              
                  <template v-slot:header="{ column }">
                    <b-tooltip label="Select/Unselect All" type="is-dark">
-                   <b-checkbox @input="selectAllVMs" v-model="checkAll" type="is-info"/>  
+                   <b-checkbox @input="selectAllVMs" v-model="checkAll" type="is-info"/>
                    </b-tooltip>
                  </template>
                 <template v-if="!props.row.busy">
@@ -2208,6 +2208,14 @@
           return
           
         }
+
+        
+        // If the select all checkbox is not checked, then unselect everything        
+        if(!this.checkAll) {
+          this.unSelectAllVMs();
+          return
+        }
+        
         
         //Add all visible items
         this.vmSelectedArray=[]
@@ -2220,12 +2228,7 @@
         
       unSelectAllVMs(){
         
-        //directly accessing the checkbox should not 
-        //be needed in order to have the "checked" state
-        //update correctly.  Tried v-model.lazy to update on
-        //change events but still did not work.  Will revisit
-        //in the future as time allows
-        this.$refs["checkAll"].checked = false;
+        this.checkAll = false;
         this.vmSelectedArray=[]
         this.showModifyStateBar = false;
         
