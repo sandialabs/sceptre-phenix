@@ -76,16 +76,16 @@
     <div style="margin-top: -4em;">
       <b-tabs @change="updateFiles">
         <b-tab-item label="Table">
-          <b-table
-            :key="table.key"
-            :data="vms"
+          <b-table            
+            :data="experiment.vms"
             :paginated="table.isPaginated && paginationNeeded"
             :per-page="table.perPage"
             :current-page.sync="table.currentPage"
             :pagination-simple="table.isPaginationSimple"
             :pagination-size="table.paginationSize"
             :default-sort-direction="table.defaultSortDirection"
-            default-sort="name">
+            default-sort="name"                     
+            ref="vmTable">
               <template slot="empty">
                 <section class="section">
                   <div class="content has-text-white has-text-centered">
@@ -94,6 +94,18 @@
                 </section>
               </template>
               <template slot-scope="props">
+                <b-table-column  field="multiselect" label="">              
+                  <template v-slot:header="{ column }">
+                    <b-tooltip label="Select/Unselect All" type="is-dark">
+                    <b-checkbox @input="selectAllVMs" v-model="checkAll" type="is-info"/>
+                    </b-tooltip>
+                  </template>
+                  <template>
+                    <div>
+                      <b-checkbox v-model="selectedRows" :native-value=props.row.name type="is-info"/>
+                    </div>
+                  </template>                  
+                </b-table-column>
                 <b-table-column field="name" label="VM" sortable>
                   <template v-if="adminUser()">
                     <b-tooltip label="get info on the vm" type="is-dark">
@@ -190,7 +202,23 @@
                   </template>
                 </b-table-column>
                 <b-table-column v-if="experimentUser()" label="Boot" centered>
-                  <b-tooltip label="control whether or not VM boots" type="is-dark">
+                  <template v-slot:header = "{ column }">                  
+                      {{ column.label }}   
+                      <div></div>                       
+                      <div class="level" style="padding: 0px;" centered>                    
+                        <b-tooltip label="Set to Boot" type="is-dark" :active="visibleItems()"> 
+                          <div v-if="visibleItems()" @click="setBoot(false)">                  
+                            <b-icon icon="bolt" style="color: #c46200;" size="is-small"></b-icon>  	
+                          </div>  
+                        </b-tooltip>                        
+                        <b-tooltip label="Set to Do Not Boot" type="is-dark" :active="visibleItems()">             
+                          <div v-if="visibleItems()" @click="setBoot(true)">                  
+                            <b-icon icon="bolt" style="color: #ffffff;" size="is-small"></b-icon>  	
+                          </div>  
+                        </b-tooltip>                   
+                      </div>
+                  </template>
+                  <b-tooltip :label="getBootLabel(props.row.name,props.row.dnb)" type="is-dark">
                     <div @click="updateDnb(props.row.name, !props.row.dnb)">
                       <font-awesome-icon :class="bootDecorator(props.row.dnb)" icon="bolt" />
                     </div>
@@ -370,7 +398,7 @@
             if ( msg.resource.action != 'update' ) {
               return;
             }
-
+            
             let vms = this.experiment.vms;
 
             for ( let i = 0; i < vms.length; i++ ) {
@@ -965,7 +993,149 @@
         
         return Object.keys(arrayHash).sort();
 
+      },
+
+      getBootLabel(vmName,dnb) {
+        return dnb ? "Boot " + vmName : "Do Not Boot " + vmName;
+        
+      },
+
+      visibleItems() {        
+        return this.$refs["vmTable"].visibleData.length > 0
+      },
+      selectAllVMs  () {            
+        
+        var visibleItems = this.$refs["vmTable"].visibleData
+        //If there are no visible items, there is nothing to select
+        if(visibleItems.length == 0)
+        {
+          return 
+        }    
+        
+        //If everything is selected, the unselect everything
+        else if(this.selectedRows.length == visibleItems.length)
+        {
+          this.unSelectAllVMs();
+          return
+          
+        }
+
+        
+        // If the select all checkbox is not checked, then unselect everything        
+        if(!this.checkAll) {
+          this.unSelectAllVMs();
+          return
+        }
+        
+        
+        //Add all visible items
+        this.selectedRows=[]
+        
+        for(var i=0; i<visibleItems.length; i++){
+            this.selectedRows.push(visibleItems[i].name)
+        }  
+                
+      },
+        
+      unSelectAllVMs(){
+        
+        this.checkAll = false;
+        this.selectedRows=[]        
+        
+      },
+
+      setBoot(dnb){
+        let vms = []
+        let successMessage = "";
+        let failedMessage = "";
+
+        //Determine the list of VMs to apply the boot request to
+        if (this.selectedRows.length == 0 && this.searchName.length > 0){
+            
+            let visibleItems = this.$refs["vmTable"].visibleData
+            
+            for(let i = 0; i<visibleItems.length;i++){
+              vms.push(visibleItems[i].name)
+            }
+        }
+        else{
+          for(let i = 0; i<this.selectedRows.length;i++){
+              vms.push(this.selectedRows[i])
+            }
+        }
+
+        if (vms.length == 0){
+            return
+        }
+
+        if (dnb){
+          successMessage = " to not boot when the experiment starts";
+          failedMessage = ' VM to not boot when experiment starts failed with '
+        }
+        else {
+          successMessage = " to boot when the experiment starts";
+          failedMessage = ' VM to boot when experiment starts failed with ' 
+        }
+        this.$buefy.dialog.confirm({
+            title:"Set Boot",
+            message:"This will set " + vms.join(", ") + successMessage ,
+            cancelText:"Cancel",
+            confirmText:"Ok",
+            type:"is-success",
+            onConfirm: () => {
+              
+              let update = { "dnb": dnb };
+              
+              vms.forEach((vmName) => {
+                  this.$http.patch(
+                    'experiments/' + this.$route.params.id + '/vms/' + vmName, update
+                    ).then(
+                    response  => {
+                      let vms = this.experiment.vms;                  
+                
+                      for ( let i = 0; i < vms.length; i++ ) {
+                        if ( vms[i].name == response.body.name ) {
+                          vms[i] = response.body;
+                          break;
+                       } 
+                      }   
+              
+                    this.experiment.vms = [ ...vms ];              
+                    this.isWaiting = false;    
+                        
+                  
+                    },  response => {
+                      
+                      this.$buefy.toast.open({
+                      message: 'Setting the ' 
+                             + vmName 
+                             + failedMessage
+                             + response.status 
+                             + ' status.',
+                      type: 'is-danger',
+                      duration: 4000
+                    });
+                  
+                  this.isWaiting = false;
+                }
+                )                  
+                this.sleep(200);        
+              }   
+              )
+            }
+          })
+          //clear the selection
+          this.unSelectAllVMs()
+           
+      },
+
+      sleep(msDuration){
+        let endTime = Date.now() + msDuration;
+        while(Date.now() < endTime){
+        }
       }
+      
+  
     },
 
     data () {
@@ -997,7 +1167,9 @@
         dnb: false,
         isWaiting: true,
         searchHistory: [],
-        searchHistoryLength:10 
+        searchHistoryLength:10,
+        checkAll:false,
+        selectedRows: []
       }
     }
   }
