@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1220,5 +1221,224 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 	}
 
 	return out, nil
+
+}
+
+// CaptureSubnet starts packet captures for all the VMs that
+// have an interface in the specified subnet.  The vmList argument
+// is optional and defines the list of VMs to search.
+func CaptureSubnet(expName, subnet string, vmList []string) ([]mm.Capture, error) {
+
+	// Make sure the experiment is running
+	exp, err := experiment.Get(expName)
+	if err != nil {
+		return nil, fmt.Errorf("getting experiment %s: %w", expName, err)
+	}
+
+	if !exp.Running() {
+		return nil, fmt.Errorf("packet captures can only be started for a running experiment")
+	}
+
+	vms, err := List(expName)
+
+	if err != nil {
+		return nil, fmt.Errorf("Getting vm list for %s failed", expName)
+	}
+
+	_, refNet, err := net.ParseCIDR(subnet)
+
+	if err != nil {
+		return nil, fmt.Errorf("Unable to parse %s", subnet)
+	}
+
+	// Use empty struct for code consistency and
+	// slight memory savings
+	var vmTable map[string]struct{}
+	var matchedVMs []string
+
+	// An optional list of VMs can be provided
+	// to restrict the search scope
+	if len(vmList) > 0 {
+		// Put vms in a table for quick lookup
+		vmTable = make(map[string]struct{})
+
+		for _, vmName := range vmList {
+
+			if _, ok := vmTable[vmName]; !ok {
+				vmTable[vmName] = struct{}{}
+			}
+		}
+	}
+
+	// Find the interfaces that are in the
+	// specified subnet
+	for _, vm := range vms {
+
+		// Make sure the VM is running
+		state, err := mm.GetVMState(mm.NS(expName), mm.VMName(vm.Name))
+
+		if err != nil {
+			continue
+		}
+
+		if state != "RUNNING" {
+			continue
+		}
+
+		// Skip vms not in the list
+		if vmTable != nil {
+			if _, ok := vmTable[vm.Name]; !ok {
+				continue
+			}
+		}
+
+		for iface, network := range vm.IPv4 {
+			address := net.ParseIP(network)
+
+			if address == nil {
+				continue
+			}
+
+			if refNet.Contains(address) {
+				timeStamp := getTimestamp()
+
+				filename := fmt.Sprintf("%s_%d_%s.pcap", vm.Name, iface, timeStamp)
+				if StartCapture(expName, vm.Name, iface, filename) == nil {
+					matchedVMs = append(matchedVMs, vm.Name)
+				}
+
+			}
+
+		}
+
+	}
+
+	// Get all the captures for all the VMs
+	var allVMCaptures []mm.Capture
+	for _, vmName := range matchedVMs {
+
+		vmCaptures := mm.GetVMCaptures(mm.NS(expName), mm.VMName(vmName))
+
+		allVMCaptures = append(allVMCaptures, vmCaptures...)
+	}
+
+	return allVMCaptures, nil
+
+}
+
+// StopCaptureSubnet will stop all captures for any VM
+// that has an interface in the specified subnet. Unfortunately
+// due to a limitation in the minimega capture cli, a capture for
+// just the interface that is found in the specified subnet can not
+// be stopped.  The subnet argument is optional.  If the subnet
+// argument is not specified, then all captures for all VMs will be stopped.
+func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error) {
+
+	// Make sure the experiment is running
+	exp, err := experiment.Get(expName)
+	if err != nil {
+		return nil, fmt.Errorf("getting experiment %s: %w", expName, err)
+	}
+
+	if !exp.Running() {
+		return nil, fmt.Errorf("packet captures can only be stopped for a running experiment")
+	}
+
+	vms, err := List(expName)
+
+	if err != nil {
+		return nil, fmt.Errorf("Getting vm list for %s failed", expName)
+	}
+
+	_, refNet, err := net.ParseCIDR(subnet)
+
+	if err != nil {
+		refNet = nil
+	}
+
+	// Use empty struct for code consistency and
+	// slight memory savings
+	var vmTable map[string]struct{}
+	var matchedVMs []string
+
+	// An optional list of VMs can be provided
+	// to restrict the search scope
+	if len(vmList) > 0 {
+		// Put vms in a table for quick lookup
+		vmTable = make(map[string]struct{})
+
+		for _, vmName := range vmList {
+
+			if _, ok := vmTable[vmName]; !ok {
+				vmTable[vmName] = struct{}{}
+			}
+		}
+	}
+
+	// Find the interfaces that are in the
+	// specified subnet
+	for _, vm := range vms {
+
+		// Skip vms with no current captures
+		if len(vm.Captures) == 0 {
+			continue
+		}
+
+		// Make sure the VM is running
+		state, err := mm.GetVMState(mm.NS(expName), mm.VMName(vm.Name))
+
+		if err != nil {
+			continue
+		}
+
+		if state != "RUNNING" {
+			continue
+		}
+
+		// Skip vms not in the list
+		if vmTable != nil {
+			if _, ok := vmTable[vm.Name]; !ok {
+				continue
+			}
+		}
+
+		// if no subnet was specified, then stop
+		// all the captures for this VM
+		if len(subnet) == 0 {
+			if StopCaptures(expName, vm.Name) == nil {
+				matchedVMs = append(matchedVMs, vm.Name)
+			}
+			continue
+		}
+
+		if refNet == nil {
+			continue
+		}
+
+		for _, network := range vm.IPv4 {
+			address := net.ParseIP(network)
+
+			if address == nil {
+				continue
+			}
+
+			if refNet.Contains(address) {
+
+				if StopCaptures(expName, vm.Name) == nil {
+					matchedVMs = append(matchedVMs, vm.Name)
+
+					// Avoid trying to stop captures for
+					// the same vm since all the captures
+					// for a VM should be stopped
+					break
+				}
+
+			}
+
+		}
+
+	}
+
+	return matchedVMs, nil
 
 }

@@ -231,3 +231,14 @@ func PrintTableOfVLANRanges(writer io.Writer, info map[string][2]int) {
 
 	table.Render()
 }
+
+func PrintTableOfSubnetCaptures(writer io.Writer, captures []mm.Capture) {
+	table := tablewriter.NewWriter(writer)
+	table.SetHeader([]string{"Name", "Interface Index", "File Path"})
+
+	for _, capture := range captures {
+		table.Append([]string{capture.VM, strconv.Itoa(capture.Interface), capture.Filepath})
+	}
+
+	table.Render()
+}

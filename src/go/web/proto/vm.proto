@@ -85,3 +85,12 @@ message MemorySnapshotResponse {
 	string disk = 1;
 	VM vm = 2;
 }
+
+message CaptureSubnetRequest {
+  string subnet = 1;
+  repeated string vms = 2;
+}
+
+message VMNameList {
+  repeated string vms = 1;
+}

@@ -552,6 +552,25 @@
                 {{ props.row.host }}
               </b-table-column>   
               <b-table-column field="ipv4"  label="IPv4" width="150">
+                <template v-slot:header= "{ column }"> 
+                  <div class="level">  
+                    <div class="level-item"> 
+                      {{ column.label }}             
+                      &nbsp;       
+                      <b-tooltip label="Start Subnet Packet Capture" type="is-dark" :active="isSubnetPresent()"> 
+                          <button :disabled="!isSubnetPresent() || displayedVMsCapturing()" class="button is-light is-small" @click="captureSubnet()" style="width: .1em;">                  
+                          <b-icon icon="play-circle" ></b-icon>  	
+                          </button>  
+                      </b-tooltip>  
+                      &nbsp;&nbsp;   
+                      <b-tooltip label="Stop Subnet Packet Capture" type="is-dark" :active="((isSubnetPresent() || capturesSearched()) && displayedVMsCapturing())">             
+                        <button  :disabled="!((isSubnetPresent() || capturesSearched()) && displayedVMsCapturing())" class="button is-light is-small" @click="stopCaptureSubnet()" style="width: .1em;">  
+                          <b-icon icon="stop-circle" ></b-icon>  	  	
+                        </button> 
+                      </b-tooltip>                   
+                    </div>  
+                  </div>
+                </template>
                <template  v-if="experimentUser() && props.row.running && !props.row.busy"> 
                 <b-tooltip :label="updateCaptureLabel(props.row)" type="is-dark">
                 <div class="field">
@@ -2289,7 +2308,7 @@
         }
       },
       
-      redeploy  ( vm ) {
+      redeploy ( vm ) {
         if (! Array.isArray(vm)) {
           vm  = [vm];
         }
@@ -2312,14 +2331,14 @@
         this.redeployModal.active = true;
       },
       
-      closeModal(modalName) {      
-        this.$refs[modalName].cancel('x')
+      closeModal (modalName) {      
+        this.$refs[modalName].cancel('x');
       },
       
-      redeployVm  (vms) {
+      redeployVm (vms) {
         let body = "";
         let url = "";
-	let name = "";
+	      let name = "";
         vms.forEach((vm,_) => {
           body = { "cpus": parseInt(vm.cpus), "ram": parseInt(vm.ram), "disk": vm.disk }
           url = 'experiments/' + this.$route.params.id + '/vms/' + vm.name + '/redeploy'
@@ -2438,6 +2457,163 @@
         this.vlanModal.active = false;
       },
 
+      captureSubnet () {
+        let subnets = this.extractAllSubnets(this.search.filter)
+        if (subnets == null){
+          return
+        }
+        if (subnets.length > 1) {
+          this.$buefy.dialog.alert({
+            title: 'Multiple Subnets Detected',
+            message: 'Subnet packet captures can be started for only one subnet',
+            type:'is-dark',
+            confirmText: 'Ok'
+            }) 
+          return
+        }
+
+        let vms = this.vmSelectedArray
+        //Determine the list of VMs to apply the capture request to
+        if (vms.length == 0){
+          vms = []
+          let visibleItems = this.$refs["vmTable"].visibleData
+          
+          for(let i = 0; i<visibleItems.length;i++){
+            vms.push(visibleItems[i].name)
+          }
+        }
+
+        if (vms.length == 0){
+          return
+        }
+
+        this.$buefy.dialog.confirm({
+          title:"Start Subnet Packet Captures",
+          message:"This will start all packet captures for " + vms.join(", "),
+          cancelText:"Cancel",
+          confirmText:"Ok",
+          type:"is-success",
+          onConfirm: () => {
+            let url = 'experiments/' + this.$route.params.id + '/captureSubnet';
+            let body = { "subnet": subnets[0], "vms":vms };
+            
+            this.$http.post(url,body).then(
+              response  => {
+                let vmMap = {}
+                for(let i = 0;i<response.body.captures.length;i++)
+                {
+                    if(vmMap[response.body.captures[i].vm] === undefined){
+                      vmMap[response.body.captures[i].vm] = []
+                      vmMap[response.body.captures[i].vm].push(response.body.captures[i])
+                    }
+                    else { 
+                        vmMap[response.body.captures[i].vm].push(response.body.captures[i])
+                    }
+                }
+              
+              let vms = this.experiment.vms;
+              for ( let i = 0; i < vms.length; i++ ) {
+                if  ( vmMap[vms[i].name] !== undefined ) {
+                  vms[i].captures = vmMap[vms[i].name]
+                  
+                }
+              } 
+              this.experiment.vms = [ ...vms ];
+              this.isWaiting = false;
+                  
+            
+              },  response => {
+                this.$buefy.toast.open({
+                  message: 'Unable to start capturing subnet ' + subnets[0] + ' ' + response.status + ' status.',
+                  type: 'is-danger',
+                  duration: 4000
+                });
+                this.isWaiting = false;
+              } 
+            );
+          }
+        })
+      },
+
+      stopCaptureSubnet () {
+        let subnets = this.extractAllSubnets(this.search.filter)
+        if (subnets == null){
+          if (!this.capturesSearched()){
+            return
+          }
+          subnets = [];
+          
+        }
+        if (subnets.length > 1) {
+          this.$buefy.dialog.alert({
+            title: 'Multiple Subnets Detected',
+            message: 'Subnet packet captures can only be stopped for only one subnet',
+            type:'is-dark',
+            confirmText: 'Ok'
+            }) 
+          return
+        }
+
+        let vms = this.vmSelectedArray
+        //Determine the list of VMs to apply the capture request to
+        if (vms.length == 0){
+          vms = []
+          let visibleItems = this.$refs["vmTable"].visibleData
+          
+          for(let i = 0; i<visibleItems.length;i++){
+            vms.push(visibleItems[i].name)
+          }
+        }
+
+        if (vms.length == 0){
+          return
+        }
+
+        this.$buefy.dialog.confirm({
+          title:"Stop Subnet Packet Captures",
+          message:"This will stop all packet captures for " + vms.join(", "),
+          cancelText:"Cancel",
+          confirmText:"Ok",
+          type:"is-danger",
+          onConfirm: () => {
+        
+            let url = 'experiments/' + this.$route.params.id + '/stopCaptureSubnet';
+            let body = {"subnet":subnets.length > 0 ? subnets[0] : "", "vms":vms };                  
+            this.$http.post(url,body).then(
+              response  => {
+                
+                let vmMap = {}
+                for(let i = 0;i<response.body.vms.length;i++)
+                {
+                    if(vmMap[response.body.vms[i]] === undefined){
+                      vmMap[response.body.vms[i]] = true
+                      
+                    } 
+                }
+              
+              let vms = this.experiment.vms;
+              for ( let i = 0; i < vms.length; i++ ) {
+                if  ( vmMap[vms[i].name] !== undefined ) {
+                  vms[i].captures = []
+                  
+                }
+              } 
+              this.experiment.vms = [ ...vms ];
+              this.isWaiting = false;
+                  
+            
+              },  response => {
+                this.$buefy.toast.open({
+                  message: 'Unable to stop subnet capture for ' + subnets[0] + ' ' + response.status + ' status.',
+                  type: 'is-danger',
+                  duration: 4000
+                });
+                this.isWaiting = false;
+              } 
+            );
+          }
+        })
+      },
       
       resetExpModal ()  {        
         this.expModal = {
@@ -2448,7 +2624,7 @@
         this.showModifyStateBar = false;
       },
     
-      resetRedeployModal  () {       
+      resetRedeployModal () {       
         this.redeployModal = {
           active: false,
           vm: [],
@@ -2457,14 +2633,14 @@
         
       },
     
-      resetDiskImageModal ()  {        
+      resetDiskImageModal () {        
         this.diskImageModal = {
           active: false,
           vm: []
         }
       },
 
-      resetMemorySnapshotModal ()  {        
+      resetMemorySnapshotModal () {        
         this.memorySnapshotModal = {
           active: false,
           vm: []
@@ -2501,80 +2677,73 @@
         this.appsModal.active = false;
       },
       
-      validate  (modalVMQueue) {  
-              
+      validate (modalVMQueue) {  
         var regexp = /^[a-zA-Z0-9-_]+$/;
         for ( let i = 0; i < modalVMQueue.vm.length; i++ ) {
             if ( !regexp.test( modalVMQueue.vm[i].filename ) ) {
               modalVMQueue.vm[i].nameErrType = 'is-danger';
-              modalVMQueue.vm[i].nameErrMsg   = 'image names can only contain alphanumeric, dash, and underscore; we will add the file extension';             
+              modalVMQueue.vm[i].nameErrMsg  = 'image names can only contain alphanumeric, dash, and underscore; we will add the file extension';             
               return  false;
             }
 
             modalVMQueue.vm[i].nameErrType = '';
-            modalVMQueue.vm[i].nameErrMsg = '';
+            modalVMQueue.vm[i].nameErrMsg  = '';
         }
 
         return true;
       },
 
-      processMultiVmAction  (action) { 
+      processMultiVmAction (action) { 
         switch(action) {
-              case  this.vmActions.start:
-                this.startVm(this.vmSelectedArray);
-                break;
-              case  this.vmActions.pause:
-                this.pauseVm(this.vmSelectedArray);
-                break;
-              case  this.vmActions.kill:
-                this.killVm(this.vmSelectedArray);
-                break;
-              case  this.vmActions.redeploy:
-                this.redeploy(this.vmSelectedArray);
-                break;
-              case  this.vmActions.createBacking:
-                this.diskImage(this.vmSelectedArray);
-                break;
-              case  this.vmActions.createMemorySnapshot:
-                this.queueMemorySnapshotVMs(this.vmSelectedArray);
-                break;
-              case  this.vmActions.captureSnapshot:
-                this.captureSnapshot(this.vmSelectedArray);
-                break;
-              case  this.vmActions.restart:
-                this.restartVm(this.vmSelectedArray);
-                break;
-              case  this.vmActions.shutdown:
-                this.shutdownVm(this.vmSelectedArray);
-                break;
-              case  this.vmActions.resetState:
-                this.resetVmState(this.vmSelectedArray);
-                break;
-              default:
-                this.notImplemented();
-        
+          case this.vmActions.start:
+            this.startVm(this.vmSelectedArray);
+            break;
+          case this.vmActions.pause:
+            this.pauseVm(this.vmSelectedArray);
+            break;
+          case this.vmActions.kill:
+            this.killVm(this.vmSelectedArray);
+            break;
+          case this.vmActions.redeploy:
+            this.redeploy(this.vmSelectedArray);
+            break;
+          case this.vmActions.createBacking:
+            this.diskImage(this.vmSelectedArray);
+            break;
+          case this.vmActions.createMemorySnapshot:
+            this.queueMemorySnapshotVMs(this.vmSelectedArray);
+            break;
+          case this.vmActions.captureSnapshot:
+            this.captureSnapshot(this.vmSelectedArray);
+            break;
+          case this.vmActions.restart:
+            this.restartVm(this.vmSelectedArray);
+            break;
+          case this.vmActions.shutdown:
+            this.shutdownVm(this.vmSelectedArray);
+            break;
+          case this.vmActions.resetState:
+            this.resetVmState(this.vmSelectedArray);
+            break;
+          default:
+            this.notImplemented();
         }
         
         this.unSelectAllVMs();
       },
   
-      selectAllVMs  () {            
-        
+      selectAllVMs () {            
         var visibleItems = this.$refs["vmTable"].visibleData
         //If there are no visible items, there is nothing to select
-        if(visibleItems.length == 0)
-        {
+        if(visibleItems.length == 0) {
           return 
         }    
         
         //If everything is selected, the unselect everything
-        else if(this.vmSelectedArray.length == visibleItems.length)
-        {
+        else if(this.vmSelectedArray.length == visibleItems.length) {
           this.unSelectAllVMs();
           return
-          
         }
-
         
         // If the select all checkbox is not checked, then unselect everything        
         if(!this.checkAll) {
@@ -2582,70 +2751,56 @@
           return
         }
         
-        
         //Add all visible items
         this.vmSelectedArray=[]
         
         for(var i=0; i<visibleItems.length; i++){
             this.vmSelectedArray.push(visibleItems[i].name)
         }  
-                
       },
         
-      unSelectAllVMs(){
-        
+      unSelectAllVMs () {
         this.checkAll = false;
         this.vmSelectedArray=[]
         this.showModifyStateBar = false;
-        
       },
-  
       
-      updateCaptureLabel(vm) {       
-        
+      updateCaptureLabel (vm) {       
         return vm.captures.length == 0 ? "start packet capture" : "stop packet capture"        
-        
       },
       
-      notImplemented(){
-        
+      notImplemented () {
        this.$buefy.dialog.alert({
-            title: 'Not Implemented',
-            message: 'This function has not yet been implemented',
-            type:'is-dark',
-            confirmText: 'Ok'
-          }) 
+          title: 'Not Implemented',
+          message: 'This function has not yet been implemented',
+          type:'is-dark',
+          confirmText: 'Ok'
+        }) 
       },
 
-      getUniqueItems(inputArray){
-
+      getUniqueItems (inputArray) {
         let arrayHash = {};
         
-        for(let i = 0; i<inputArray.length;i++)
-        {
+        for( let i = 0; i < inputArray.length; i++ ) {
           // Skip really short items
-          if (inputArray[i].length < 4){
+          if (inputArray[i].length < 4) {
             continue
           }
 
-          if(arrayHash[inputArray[i]] === undefined )
-          {
+          if( arrayHash[inputArray[i]] === undefined ) {
             arrayHash[inputArray[i]] = true;
-          
           }
-        
         }
         
         return Object.keys(arrayHash).sort();
-
       },
 
       formatFileSize(fileSize){
-        if(fileSize < Math.pow(10,3)){
+        if(fileSize < Math.pow(10,3)) {
           return fileSize.toFixed(2) + ' B'
-        } else if(fileSize >= Math.pow(10,3) && fileSize < Math.pow(10,6)){
+        } else if(fileSize >= Math.pow(10,3) && fileSize < Math.pow(10,6)) {
           return (fileSize/Math.pow(10,3)).toFixed(2) + ' KB'
-        } else if (fileSize >= Math.pow(10,6) && fileSize < Math.pow(10,9)){
+        } else if (fileSize >= Math.pow(10,6) && fileSize < Math.pow(10,9)) {
           return (fileSize/Math.pow(10,6)).toFixed(2) + ' MB'
         } else if (fileSize >= Math.pow(10,9)) {
           return (fileSize/Math.pow(10,9)).toFixed(2) + ' GB'
@@ -2658,6 +2813,32 @@
 
       getDiskToolTip(fullPath) {       
         return this.disks.indexOf(fullPath) == -1 ? "menu for assigning vm(s) disk" : fullPath
+      },
+
+      isSubnetPresent () { 
+        return /(?:\d{1,3}[.]){3}\d{1,3}[/]\d{1,2}/.test(this.search.filter)
+      },
+
+      extractAllSubnets (searchTerm) {
+        return searchTerm.match(/(?:\d{1,3}[.]){3}\d{1,3}[/]\d{1,2}/g)
+      },
+
+      capturesSearched () {
+        let tmp = this.search.filter.toLowerCase()      
+        return tmp.indexOf("capturing") != -1 && tmp.indexOf("not capturing") == -1
+      },
+
+      displayedVMsCapturing () {
+        // Determine if any displayed VMs are currently capturing
+        let visibleItems = this.$refs["vmTable"].visibleData
+            
+        for( let i = 0; i<visibleItems.length;i++ ) {
+          if ( visibleItems[i].captures.length > 0 ) {           
+            return true;
+          }
+        }
+        
+        return false  
       }
     },
     

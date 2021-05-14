@@ -130,6 +130,8 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/experiments/{name}/schedule", GetExperimentSchedule).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/schedule", ScheduleExperiment).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/captures", GetExperimentCaptures).Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/captureSubnet", StartCaptureSubnet).Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/stopCaptureSubnet", StopCaptureSubnet).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/files", GetExperimentFiles).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/files/{filename}", GetExperimentFile).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(scorch.GetComponentOutput)).Methods("GET", "OPTIONS")

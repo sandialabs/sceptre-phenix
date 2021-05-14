@@ -3,9 +3,11 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 
 	"phenix/api/vm"
+	"phenix/internal/mm"
 	"phenix/util"
 	"phenix/util/printer"
 
@@ -421,21 +423,21 @@ func newVMNetCmd() *cobra.Command {
 func newVMCaptureCmd() *cobra.Command {
 	desc := `Modify network packet captures for a VM
 	
-  Used to modify the network packet captures for a virtual machine in a running 
+  Used to modify the network packet captures for virtual machines in a running 
   experiment; see command help for start and stop for additional arguments.`
 
 	cmd := &cobra.Command{
 		Use:   "capture",
-		Short: "Modify network packet captures for a VM",
+		Short: "Modify network packet captures for one or more VMs",
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
 	}
 
-	start := &cobra.Command{
+	startVMCapture := &cobra.Command{
 		Use:   "start <experiment name> <vm name> <iface index> <output file>",
-		Short: "Start a packet capture, using given output file as name of capture file",
+		Short: "Start a packet capture for a VM specifying the interface index and using given output file as name of capture file",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 4 {
 				return fmt.Errorf("Must provide an experiment name, VM name, iface index, and output file")
@@ -463,9 +465,69 @@ func newVMCaptureCmd() *cobra.Command {
 		},
 	}
 
-	stop := &cobra.Command{
+	startSubnetCaptures := &cobra.Command{
+		Use:   "start-subnet <experiment name> <subnet>",
+		Short: "Start packet captures for the specified subnet",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) < 2 {
+				return fmt.Errorf("Must provide an experiment name and subnet")
+			}
+
+			var (
+				expName = args[0]
+				subnet  = args[1]
+				filter  = MustGetString(cmd.Flags(), "filter")
+				vmList  = []string{}
+			)
+
+			ipv4Re := regexp.MustCompile(`(?:\d{1,3}[.]){3}\d{1,3}(?:\/\d{1,2})?`)
+
+			if !ipv4Re.MatchString(subnet) {
+				return fmt.Errorf("An invalid ipv4 subnet was detected: %v", subnet)
+			}
+
+			// Apply the optional filter to restrict the
+			// VMs searched
+			if len(filter) > 0 {
+				filterTree := mm.BuildTree(filter)
+
+				vms, err := vm.List(expName)
+
+				if err != nil {
+					err := util.HumanizeError(err, "Unable to retrieve a list of VMs for "+expName+" ")
+					return err.Humanized()
+				}
+
+				for _, vm := range vms {
+					if filterTree == nil {
+						continue
+					} else {
+						if !filterTree.Evaluate(&vm) {
+							continue
+						}
+						vmList = append(vmList, vm.Name)
+					}
+				}
+			}
+
+			vms, err := vm.CaptureSubnet(expName, subnet, vmList)
+
+			if err != nil {
+				err := util.HumanizeError(err, "Unable to start the packet capture(s) for "+subnet+" ")
+				return err.Humanized()
+			}
+
+			fmt.Printf("The packet capture(s) for subnet %s were started\n\n", subnet)
+
+			printer.PrintTableOfSubnetCaptures(os.Stdout, vms)
+
+			return nil
+		},
+	}
+
+	stopVMCaptures := &cobra.Command{
 		Use:   "stop <experiment name> <vm name>",
-		Short: "Stop all packet captures",
+		Short: "Stop all packet captures for the specified VM",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 2 {
 				return fmt.Errorf("Must provide an experiment and VM name")
@@ -487,8 +549,93 @@ func newVMCaptureCmd() *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(start)
-	cmd.AddCommand(stop)
+	stopSubnetCaptures := &cobra.Command{
+		Use:   "stop-subnet <experiment name> <subnet>",
+		Short: "Stop all packet captures for the specified subnet",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) < 2 {
+				return fmt.Errorf("Must provide an experiment name and subnet")
+			}
+
+			var (
+				expName = args[0]
+				subnet  = args[1]
+				filter  = MustGetString(cmd.Flags(), "filter")
+				vmList  = []string{}
+			)
+
+			ipv4Re := regexp.MustCompile(`(?:\d{1,3}[.]){3}\d{1,3}(?:\/\d{1,2})?`)
+
+			if !ipv4Re.MatchString(subnet) {
+				return fmt.Errorf("An invalid subnet was detected: %v", subnet)
+			}
+
+			// Apply the optional filter to restrict the
+			// VMs searched
+			if len(filter) > 0 {
+				filterTree := mm.BuildTree(filter)
+
+				vms, err := vm.List(expName)
+
+				if err != nil {
+					err := util.HumanizeError(err, "Unable to retrieve a list of VMs for "+expName+" ")
+					return err.Humanized()
+				}
+
+				for _, vm := range vms {
+					if filterTree == nil {
+						continue
+					} else {
+						if !filterTree.Evaluate(&vm) {
+							continue
+						}
+						vmList = append(vmList, vm.Name)
+					}
+				}
+			}
+
+			if _, err := vm.StopCaptureSubnet(expName, subnet, vmList); err != nil {
+				err := util.HumanizeError(err, "Unable to stop the packet capture(s) on the "+subnet+" ")
+				return err.Humanized()
+			}
+
+			fmt.Printf("The packet capture(s) for the subnet %s were stopped\n", subnet)
+
+			return nil
+		},
+	}
+
+	stopAllCaptures := &cobra.Command{
+		Use:   "stop-all <experiment name>",
+		Short: "Stop all packet captures for the specified experiment",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return fmt.Errorf("Must provide an experiment name")
+			}
+
+			var (
+				expName = args[0]
+			)
+
+			if _, err := vm.StopCaptureSubnet(expName, "", []string{}); err != nil {
+				err := util.HumanizeError(err, "Unable to stop the packet capture(s) for "+expName+" ")
+				return err.Humanized()
+			}
+
+			fmt.Printf("All packet captures for experiment %s were stopped\n", expName)
+
+			return nil
+		},
+	}
+
+	cmd.AddCommand(startVMCapture)
+	cmd.AddCommand(startSubnetCaptures)
+	cmd.AddCommand(stopVMCaptures)
+	cmd.AddCommand(stopSubnetCaptures)
+	cmd.AddCommand(stopAllCaptures)
+
+	startSubnetCaptures.Flags().StringP("filter", "f", "", "Filter to restrict the list of VMs")
+	stopSubnetCaptures.Flags().StringP("filter", "f", "", "Filter to restrict the list of VMs")
 
 	return cmd
 }

@@ -1921,6 +1921,109 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// POST /experiments/{exp}/captureSubnet
+func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
+	log.Debug("StartCaptureSubnet HTTP handler called")
+
+	var (
+		ctx  = r.Context()
+		role = ctx.Value("role").(rbac.Role)
+		vars = mux.Vars(r)
+		exp  = vars["exp"]
+	)
+
+	if !role.Allowed("exp/captureSubnet", "create", fmt.Sprintf("%s", exp)) {
+		log.Warn("starting subnet capture for experiment %s is not allowed for %s", exp, ctx.Value("user").(string))
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Error("reading request body - %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var req proto.CaptureSubnetRequest
+	err = unmarshaler.Unmarshal(body, &req)
+	if err != nil {
+		log.Error("unmarshaling request body - %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	log.Info("Exp:%v Subnet:%v VMS:%v", exp, req.Subnet, req.Vms)
+	vmCaptures, err := vm.CaptureSubnet(exp, req.Subnet, req.Vms)
+
+	if err != nil {
+		log.Error("Unable to start packet subnet capture - %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	body, err = marshaler.Marshal(&proto.CaptureList{Captures: util.CapturesToProtobuf(vmCaptures)})
+	if err != nil {
+		log.Error("Unable to marshal vm capture list %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(body)
+}
+
+// POST /experiments/{exp}/stopCaptureSubnet
+func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
+	log.Debug("StartCaptureSubnet HTTP handler called")
+
+	var (
+		ctx  = r.Context()
+		role = ctx.Value("role").(rbac.Role)
+		vars = mux.Vars(r)
+		exp  = vars["exp"]
+	)
+
+	if !role.Allowed("exp/captureSubnet", "create", fmt.Sprintf("%s", exp)) {
+		log.Warn("starting subnet capture for experiment %s is not allowed for %s", exp, ctx.Value("user").(string))
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Error("reading request body - %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var req proto.CaptureSubnetRequest
+	err = unmarshaler.Unmarshal(body, &req)
+	if err != nil {
+		log.Error("unmarshaling request body - %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	log.Info("Exp:%v Subnet:%v VMS:%v", exp, req.Subnet, req.Vms)
+
+	if err != nil {
+		log.Error("Unable to stop packet subnet capture - %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	vms, err := vm.StopCaptureSubnet(exp, req.Subnet, req.Vms)
+
+	body, err = marshaler.Marshal(&proto.VMNameList{Vms: vms})
+	if err != nil {
+		log.Error("Unable to marshal vm capture list %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(body)
+}
+
 // GET /experiments/{exp}/vms/{name}/snapshots
 func GetVMSnapshots(w http.ResponseWriter, r *http.Request) {
 	log.Debug("GetVMSnapshots HTTP handler called")
