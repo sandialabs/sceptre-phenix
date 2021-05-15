@@ -76,7 +76,8 @@
     <div style="margin-top: -4em;">
       <b-tabs @change="updateFiles">
         <b-tab-item label="Table">
-          <b-table            
+          <b-table     
+            :key="table.key"       
             :data="experiment.vms"
             :paginated="table.isPaginated && paginationNeeded"
             :per-page="table.perPage"
