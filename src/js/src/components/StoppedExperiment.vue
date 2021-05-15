@@ -583,7 +583,7 @@
           },
           onCancel: () => {
             // force table to be rerendered so selected value resets
-            this.tableKey += 1;
+            this.table.key += 1;
           }
         })
       },
@@ -685,7 +685,7 @@
           },
           onCancel: () => {
             // force table to be rerendered so selected value resets
-            this.tableKey += 1;
+            this.table.key += 1;
           }
         })
       },
@@ -738,7 +738,7 @@
           },
           onCancel: () => {
             // force table to be rerendered so selected value resets
-            this.tableKey += 1;
+            this.table.key += 1;
           }
         })
       },
@@ -791,7 +791,7 @@
           },
           onCancel: () => {
             // force table to be rerendered so selected value resets
-            this.tableKey += 1;
+            this.table.key += 1;
           }
         })
       },
