@@ -206,19 +206,19 @@
                 </b-table-column>
                 <b-table-column field="disk" label="Disk">
                   <template v-if="adminUser()">
-                    <b-tooltip label="menu for assigning vm(s) disk" type="is-dark">
-                      <b-select :value="props.row.disk" @input="( value ) => assignDisk( props.row.name, value )">
+                    <b-tooltip :label="getDiskToolTip(props.row.disk)" type="is-dark">
+                      <b-select :value="props.row.disk" expanded @input="( value ) => assignDisk( props.row.name, value )">
                         <option
                           v-for="( d, index ) in disks"
                           :key="index"
                           :value="d">
-                            {{ d }}
+                            {{ getBaseName(d) }}
                         </option>
                       </b-select>
                     </b-tooltip>
                   </template>
                   <template v-else>
-                    {{ props.row.disk }}
+                    {{ getBaseName(props.row.disk) }}
                   </template>
                 </b-table-column>
                 <b-table-column v-if="experimentUser()" label="Boot" centered>
@@ -555,6 +555,9 @@
                   if ( state.hosts[ i ].schedulable ) {
                     this.hosts.push( state.hosts[ i ].name );
                   }
+
+                  this.hosts.sort()
+                  this.isWaiting = false;
                 }
               }
             );
@@ -569,12 +572,19 @@
       },
       
       updateDisks () {
-        this.$http.get( 'disks' ).then(
+        this.$http.get( 'disks' + '?expName=' + this.$route.params.id ).then(
           response => {
             response.json().then(
               state => {
-                for ( let i = 0; i < state.disks.length; i++ ) {
-                  this.disks.push( state.disks[ i ] );
+                if ( state.disks.length == 0 ) {
+                  this.isWaiting = true;
+                } else {
+                  for ( let i = 0; i < state.disks.length; i++ ) {
+                    this.disks.push( state.disks[ i ] );
+                  }
+
+                  this.disks.sort()
+                  this.isWaiting = false;
                 }
               }
             );
@@ -1093,16 +1103,15 @@
 
       },
       
-      getBootLabel(vmName,dnb) {
+      getBootLabel (vmName,dnb) {
         return dnb ? "Boot " + vmName : "Do Not Boot " + vmName;
-        
       },
 
-      visibleItems() {        
+      visibleItems () {        
         return this.$refs["vmTable"].visibleData.length > 0
       },
       
-      selectAllVMs  () {            
+      selectAllVMs () {            
         
         var visibleItems = this.$refs["vmTable"].visibleData
         //If there are no visible items, there is nothing to select
@@ -1227,6 +1236,14 @@
         } else if (fileSize >= Math.pow(10,9)) {
           return (fileSize/Math.pow(10,9)).toFixed(2) + ' GB'
         }
+      },
+
+      getBaseName (diskName) { 
+        return diskName.substring( diskName.lastIndexOf("/") + 1 );
+      },
+
+      getDiskToolTip (fullPath) {       
+        return this.disks.indexOf(fullPath) == -1 ? "menu for assigning vm(s) disk" : fullPath
       }
     },
 

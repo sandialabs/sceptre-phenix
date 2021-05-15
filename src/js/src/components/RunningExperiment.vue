@@ -185,13 +185,13 @@
                  </b-tooltip>
                 <br><br>
                 Disk:
-                <b-tooltip label="menu for assigning disk" type="is-dark">
+                <b-tooltip :label="getDiskToolTip(vmI.disk)" type="is-dark">
                   <b-select :value="vmI.disk" @input="( value ) =>  vmI.disk = value">
                     <option
                       v-for="(  d, index ) in disks"
                       :key="index"
                       :value="d">
-                        {{ d }}
+                        {{ getBaseName(d) }}
                     </option>
                   </b-select>
                 </b-tooltip>
@@ -1336,7 +1336,7 @@
           },  response => {
             console.log('Getting the disks failed with ' + response.status);
             this.isWaiting = false;
-            this.$toast.open({
+            this.$buefy.toast.open({
               message:  'Getting the disks failed.',
               type: 'is-danger',
               duration: 4000
@@ -2291,7 +2291,7 @@
         }
         this.updateDisks();
         let vms = this.experiment.vms;
-        vm.forEach((arg,_) => {
+        vm.forEach((arg,_) => {         
           for ( let i = 0; i < vms.length; i++ ) {
             if ( vms[i].name == arg ) {
               this.redeployModal.vm.push({
@@ -2646,6 +2646,14 @@
         } else if (fileSize >= Math.pow(10,9)) {
           return (fileSize/Math.pow(10,9)).toFixed(2) + ' GB'
         }
+      },
+
+      getBaseName(diskName) { 
+        return diskName.substring(diskName.lastIndexOf("/")+1);       
+      },
+
+      getDiskToolTip(fullPath) {       
+        return this.disks.indexOf(fullPath) == -1 ? "menu for assigning vm(s) disk" : fullPath
       }
     },
     

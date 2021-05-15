@@ -6,8 +6,10 @@ import (
 	"strconv"
 	"strings"
 
+	"phenix/api/experiment"
 	"phenix/internal/mm"
 	"phenix/internal/mm/mmcli"
+	"phenix/util"
 )
 
 type ImageKind int
@@ -34,7 +36,7 @@ type ClusterFiles interface {
 	// Assumes container filesystems have `_rootfs.tgz` suffix.
 	// Alternatively, we could force the use of subdirectories w/ known names
 	// (such as `base-images` and `container-fs`).
-	GetImages(kind ImageKind) ([]ImageDetails, error)
+	GetImages(expName string, kind ImageKind) ([]ImageDetails, error)
 
 	GetExperimentFileNames(exp string) ([]string, error)
 
@@ -53,8 +55,8 @@ type ClusterFiles interface {
 	DeleteFile(path string) error
 }
 
-func GetImages(kind ImageKind) ([]ImageDetails, error) {
-	return DefaultClusterFiles.GetImages(kind)
+func GetImages(expName string, kind ImageKind) ([]ImageDetails, error) {
+	return DefaultClusterFiles.GetImages(expName, kind)
 }
 
 func GetExperimentFileNames(exp string) ([]string, error) {
@@ -79,47 +81,20 @@ func DeleteFile(path string) error {
 
 type MMClusterFiles struct{}
 
-func (MMClusterFiles) GetImages(kind ImageKind) ([]ImageDetails, error) {
+func (MMClusterFiles) GetImages(expName string, kind ImageKind) ([]ImageDetails, error) {
 	// Using a map here to weed out duplicates.
 	details := make(map[string]ImageDetails)
 
-	// First get file listings from mesh, then from headnode.
-	commands := []string{"mesh send all file list", "file list"}
+	// Add all the files relative to the minimega files directory
+	if err := getAllFiles("", expName, details); err != nil {
+		return nil, err
+	}
 
-	// First, get file listings from cluster nodes.
-
-	cmd := mmcli.NewCommand()
-
-	for _, command := range commands {
-		cmd.Command = command
-
-		for _, row := range mmcli.RunTabular(cmd) {
-			// Only looking in the base directory for now.
-			if row["dir"] != "" {
-				continue
-			}
-
-			image := ImageDetails{
-				Name:     row["name"],
-				FullPath: "/" + row["name"],
-			}
-
-			if strings.HasSuffix(image.Name, ".qc2") || strings.HasSuffix(image.Name, ".qcow2") {
-				image.Kind = VM_IMAGE
-			} else if strings.HasSuffix(image.Name, "_rootfs.tgz") {
-				image.Kind = CONTAINER_IMAGE
-			} else {
-				continue
-			}
-
-			var err error
-
-			image.Size, err = strconv.Atoi(row["size"])
-			if err != nil {
-				return nil, fmt.Errorf("getting size of file: %w", err)
-			}
-
-			details[image.Name] = image
+	// Add all files defined in the experiment topology
+	// if an experiment name was given
+	if len(expName) > 0 {
+		if err := getTopologyFiles(expName, details); err != nil {
+			return nil, err
 		}
 	}
 
@@ -286,4 +261,144 @@ func (MMClusterFiles) DeleteFile(path string) error {
 	}
 
 	return nil
+}
+
+// Get all image files relative to the minimega files directory
+func getAllFiles(path, expName string, details map[string]ImageDetails) error {
+
+	expNames, err := getExperimentNames()
+
+	if err != nil {
+		return err
+	}
+
+	// First get file listings from mesh, then from headnode.
+	commands := []string{"mesh send all file list " + path, "file list " + path}
+
+	// First, get file listings from cluster nodes.
+	cmd := mmcli.NewCommand()
+
+	for _, command := range commands {
+		cmd.Command = command
+
+		for _, row := range mmcli.RunTabular(cmd) {
+
+			// Enumerate files for any sudirectories found
+			if row["dir"] != "" {
+				// Only explore experiment subdirectories relevant to the experiment
+				if _, ok := expNames[row["name"]]; ok {
+
+					// Make sure the experiment exists
+					if _, ok := expNames[expName]; !ok {
+						continue
+					}
+
+					if !strings.Contains(row["name"], expName) {
+						continue
+					}
+				}
+
+				getAllFiles(row["name"], expName, details)
+			}
+
+			baseName := filepath.Base(row["name"])
+			// Avoid adding the same image twice
+			if _, ok := details[baseName]; ok {
+				continue
+			}
+
+			image := ImageDetails{
+				Name:     baseName,
+				FullPath: util.GetMMFullPath(row["name"]),
+			}
+
+			if strings.HasSuffix(image.Name, ".qc2") || strings.HasSuffix(image.Name, ".qcow2") {
+				image.Kind = VM_IMAGE
+			} else if strings.HasSuffix(image.Name, "_rootfs.tgz") {
+				image.Kind = CONTAINER_IMAGE
+			} else if strings.HasSuffix(image.Name, ".hdd") {
+				image.Kind = VM_IMAGE
+			} else {
+				continue
+			}
+
+			var err error
+
+			image.Size, err = strconv.Atoi(row["size"])
+			if err != nil {
+				return fmt.Errorf("getting size of file: %w", err)
+			}
+
+			details[image.Name] = image
+		}
+	}
+
+	return nil
+
+}
+
+// Retrieves all the unique image names defined in the topology
+func getTopologyFiles(expName string, details map[string]ImageDetails) error {
+
+	// Retrieve the experiment
+	exp, err := experiment.Get(expName)
+	if err != nil {
+		return fmt.Errorf("unable to retrieve %v", expName)
+	}
+
+	for _, node := range exp.Spec.Topology().Nodes() {
+		for _, drive := range node.Hardware().Drives() {
+
+			cmd := mmcli.NewCommand()
+			cmd.Command = "file list " + drive.Image()
+
+			for _, row := range mmcli.RunTabular(cmd) {
+
+				if row["dir"] != "" {
+					continue
+				}
+
+				baseName := filepath.Base(row["name"])
+				// Avoid adding the same image twice
+				if _, ok := details[baseName]; ok {
+					continue
+				}
+
+				image := ImageDetails{
+					Name:     baseName,
+					FullPath: util.GetMMFullPath(drive.Image()),
+					Kind:     VM_IMAGE,
+				}
+
+				var err error
+
+				image.Size, err = strconv.Atoi(row["size"])
+				if err != nil {
+					return fmt.Errorf("getting size of file: %w", err)
+				}
+
+				details[image.Name] = image
+
+			}
+
+		}
+	}
+
+	return nil
+}
+
+func getExperimentNames() (map[string]struct{}, error) {
+
+	experiments, err := experiment.List()
+	if err != nil {
+		return nil, err
+	}
+
+	expNames := make(map[string]struct{})
+
+	for _, exp := range experiments {
+		expNames[exp.Spec.ExperimentName()] = struct{}{}
+	}
+
+	return expNames, nil
 }

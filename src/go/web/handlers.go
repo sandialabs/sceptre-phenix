@@ -2526,8 +2526,10 @@ func GetDisks(w http.ResponseWriter, r *http.Request) {
 	log.Debug("GetDisks HTTP handler called")
 
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		ctx     = r.Context()
+		role    = ctx.Value("role").(rbac.Role)
+		query   = r.URL.Query()
+		expName = query.Get("expName")
 	)
 
 	if !role.Allowed("disks", "list") {
@@ -2535,7 +2537,7 @@ func GetDisks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	disks, err := cluster.GetImages(cluster.VM_IMAGE)
+	disks, err := cluster.GetImages(expName, cluster.VM_IMAGE)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -2544,7 +2546,7 @@ func GetDisks(w http.ResponseWriter, r *http.Request) {
 	allowed := []string{}
 	for _, disk := range disks {
 		if role.Allowed("disks", "list", disk.Name) {
-			allowed = append(allowed, disk.Name)
+			allowed = append(allowed, disk.FullPath)
 		}
 	}
 

@@ -18,6 +18,7 @@ import (
 	"phenix/internal/file"
 	"phenix/internal/mm"
 	"phenix/internal/mm/mmcli"
+	"phenix/util"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -68,7 +69,7 @@ func List(expName string) ([]mm.VM, error) {
 			Experiment: exp.Spec.ExperimentName(),
 			CPUs:       node.Hardware().VCPU(),
 			RAM:        node.Hardware().Memory(),
-			Disk:       node.Hardware().Drives()[0].Image(),
+			Disk:       util.GetMMFullPath(node.Hardware().Drives()[0].Image()),
 			Interfaces: make(map[string]string),
 			DoNotBoot:  *node.General().DoNotBoot(),
 			OSType:     node.Type(),
@@ -165,7 +166,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 			Experiment:  exp.Spec.ExperimentName(),
 			CPUs:        node.Hardware().VCPU(),
 			RAM:         node.Hardware().Memory(),
-			Disk:        node.Hardware().Drives()[0].Image(),
+			Disk:        util.GetMMFullPath(node.Hardware().Drives()[0].Image()),
 			Interfaces:  make(map[string]string),
 			DoNotBoot:   *node.General().DoNotBoot(),
 			OSType:      string(node.Hardware().OSType()),
