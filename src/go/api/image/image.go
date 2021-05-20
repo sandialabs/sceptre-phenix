@@ -18,6 +18,7 @@ import (
 	"phenix/tmpl"
 	"phenix/types"
 	v1 "phenix/types/version/v1"
+	"phenix/util"
 	"phenix/util/shell"
 
 	"github.com/activeshadow/structs"
@@ -240,14 +241,6 @@ func Build(ctx context.Context, name string, verbosity int, cache bool, dryrun b
 		img.Release = "kali-rolling"
 	}
 
-	if img.IncludeMiniccc {
-		img.Overlays = append(img.Overlays, "/usr/local/share/minimega/overlays/miniccc")
-	}
-
-	if img.IncludeProtonuke {
-		img.Overlays = append(img.Overlays, "/usr/local/share/minimega/overlays/protonuke")
-	}
-
 	filename := output + "/" + name + ".vmdb"
 
 	if err := tmpl.CreateFileFromTemplate("vmdb.tmpl", img, filename); err != nil {
@@ -300,6 +293,14 @@ func Build(ctx context.Context, name string, verbosity int, cache bool, dryrun b
 
 		if err := cmd.Wait(); err != nil {
 			return fmt.Errorf("building image with vmdb2: %w", err)
+		}
+
+		if img.IncludeMiniccc {
+			util.AddWarnings(ctx, fmt.Errorf("inject_miniccc setting is DEPRECATED - use 'image inject-miniexe' subcommand after image is built"))
+		}
+
+		if img.IncludeProtonuke {
+			util.AddWarnings(ctx, fmt.Errorf("inject_protonuke setting is DEPRECATED - use 'image inject-miniexe' subcommand after image is built"))
 		}
 	}
 
@@ -499,7 +500,7 @@ func Remove(name string, overlays, packages, scripts []string) error {
 	return nil
 }
 
-func InjectMiniccc(agent, disk, svc string) error {
+func InjectMiniExe(exe, disk, svc string) error {
 	// Assume partition 1 if no partition is specified.
 	if parts := strings.Split(disk, ":"); len(parts) == 1 {
 		disk = disk + ":1"
@@ -520,58 +521,93 @@ func InjectMiniccc(agent, disk, svc string) error {
 
 	var injects []string
 
-	if path.Ext(agent) == ".exe" { // assume Windows
-		if err := tmpl.RestoreAsset(tmp, "miniccc/miniccc-scheduler.cmd"); err != nil {
-			return fmt.Errorf("restoring miniccc scheduler for Windows: %w", err)
+	if path.Ext(exe) == ".exe" { // assume Windows
+		// /opt/minimega/bin/miniccc.exe --> miniccc
+		base := strings.TrimSuffix(path.Base(exe), path.Ext(exe))
+
+		if base != "miniccc" && base != "protonuke" {
+			return fmt.Errorf("only miniccc.exe and protonuke.exe are supported for Windows")
 		}
 
-		injects = []string{
-			tmp + `/miniccc/miniccc-scheduler.cmd:"/ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/miniccc-scheduler.cmd"`,
-			agent + ":/minimega/miniccc.exe",
+		// We're not creating a default Windows Startup file for protonuke to start
+		// it as a service at boot since its command line arguments are dynamic.
+		// Users or apps wishing to leverage protonuke on Windows hosts need to
+		// inject their own Windows Startup file or use miniccc to start protonuke.
+
+		switch base {
+		case "miniccc":
+			if err := tmpl.RestoreAsset(tmp, fmt.Sprintf("%s/%s-scheduler.cmd", base, base)); err != nil {
+				return fmt.Errorf("restoring %s scheduler for Windows: %w", base, err)
+			}
+
+			injects = []string{
+				tmp + fmt.Sprintf(`/%s/%s-scheduler.cmd:"/ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/%s-scheduler.cmd"`, base, base, base),
+				exe + fmt.Sprintf(":/minimega/%s.exe", base),
+			}
+		case "protonuke":
+			injects = []string{
+				exe + fmt.Sprintf(":/minimega/%s.exe", base),
+			}
 		}
-	} else { // assume Linux
-		if err := os.MkdirAll(tmp+"/miniccc/symlinks", 0755); err != nil {
+	} else {
+		// /opt/minimega/bin/miniccc --> miniccc
+		base := path.Base(exe)
+
+		if base != "miniccc" && base != "protonuke" && base != "minirouter" {
+			return fmt.Errorf("only miniccc, protonuke, and minirouter are supported for Linux")
+		}
+
+		if err := os.MkdirAll(tmp+fmt.Sprintf("/%s/symlinks", base), 0755); err != nil {
 			return fmt.Errorf("creating symlinks directory path: %w", err)
 		}
 
 		switch svc {
 		case "systemd":
-			if err := tmpl.RestoreAsset(tmp, "miniccc/miniccc.service"); err != nil {
-				return fmt.Errorf("restoring miniccc systemd service for Linux: %w", err)
+			if err := tmpl.RestoreAsset(tmp, fmt.Sprintf("%s/%s.service", base, base)); err != nil {
+				return fmt.Errorf("restoring %s systemd service for Linux: %w", base, err)
 			}
 
-			if err := os.Symlink("../miniccc.service", tmp+"/miniccc/symlinks/miniccc.service"); err != nil {
+			if err := os.Symlink(fmt.Sprintf("../%s.service", base), tmp+fmt.Sprintf("/%s/symlinks/%s.service", base, base)); err != nil {
 				return fmt.Errorf("generating systemd service link for Linux: %w", err)
 			}
 
 			injects = []string{
-				tmp + "/miniccc/miniccc.service:/etc/systemd/system/miniccc.service",
-				tmp + "/miniccc/symlinks/miniccc.service:/etc/systemd/system/multi-user.target.wants/miniccc.service",
-				agent + ":/usr/local/bin/miniccc",
+				tmp + fmt.Sprintf("/%s/%s.service:/etc/systemd/system/%s.service", base, base, base),
+				tmp + fmt.Sprintf("/%s/symlinks/%s.service:/etc/systemd/system/multi-user.target.wants/%s.service", base, base, base),
+				exe + fmt.Sprintf(":/usr/local/bin/%s", base),
 			}
 		case "sysinitv":
-			if err := tmpl.RestoreAsset(tmp, "miniccc/miniccc.init"); err != nil {
-				return fmt.Errorf("restoring miniccc sysinitv service for Linux: %w", err)
+			if err := tmpl.RestoreAsset(tmp, fmt.Sprintf("%s/%s.init", base, base)); err != nil {
+				return fmt.Errorf("restoring %s sysinitv service for Linux: %w", base, err)
 			}
 
-			os.Chmod(tmp+"/miniccc/miniccc.init", 0755)
+			os.Chmod(tmp+fmt.Sprintf("/%s/%s.init", base, base), 0755)
 
-			if err := os.Symlink("../init.d/miniccc", tmp+"/miniccc/symlinks/S99-miniccc"); err != nil {
+			if err := os.Symlink(fmt.Sprintf("../init.d/%s", base), tmp+fmt.Sprintf("/%s/symlinks/S99-%s", base, base)); err != nil {
 				return fmt.Errorf("generating sysinitv service link for Linux: %w", err)
 			}
 
 			injects = []string{
-				tmp + "/miniccc/miniccc.init:/etc/init.d/miniccc",
-				tmp + "/miniccc/symlinks/S99-miniccc:/etc/rc5.d/S99-miniccc",
-				agent + ":/usr/local/bin/miniccc",
+				tmp + fmt.Sprintf("/%s/%s.init:/etc/init.d/%s", base, base, base),
+				tmp + fmt.Sprintf("/%s/symlinks/S99-%s:/etc/rc5.d/S99-%s", base, base, base),
+				exe + fmt.Sprintf(":/usr/local/bin/%s", base),
 			}
 		default:
 			return fmt.Errorf("unknown service %s specified", svc)
 		}
+
+		// Ensure miniccc is injected if minirouter was just injected, since
+		// minirouter depends on miniccc. These injection activities are idempotent,
+		// so injecting miniccc if it was already injected shouldn't hurt anything.
+		if base == "minirouter" {
+			if err := InjectMiniExe(path.Dir(exe)+"/miniccc", disk, svc); err != nil {
+				return fmt.Errorf("error injecting minirouter dependency miniccc: %w", err)
+			}
+		}
 	}
 
 	if err := inject(disk, injects...); err != nil {
-		return fmt.Errorf("injecting miniccc files into disk: %w", err)
+		return fmt.Errorf("injecting files into disk: %w", err)
 	}
 
 	return nil

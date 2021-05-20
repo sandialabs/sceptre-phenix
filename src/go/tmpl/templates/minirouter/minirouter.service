@@ -1,0 +1,8 @@
+[Unit]
+Description=minirouter Agent
+
+[Service]
+ExecStart=/usr/local/bin/minirouter -miniccc /usr/local/bin/miniccc
+
+[Install]
+WantedBy=multi-user.target
