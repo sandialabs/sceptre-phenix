@@ -78,14 +78,19 @@
         <b-tab-item label="Table">
           <b-table
             :key="table.key"
-            :data="vms"
+            :data="experiment.vms"
             :paginated="table.isPaginated && paginationNeeded"
+            backend-pagination
+            :total="table.total"
             :per-page="table.perPage"
             :current-page.sync="table.currentPage"
+            @page-change="onPageChange"
             :pagination-simple="table.isPaginationSimple"
             :pagination-size="table.paginationSize"
+            backend-sorting
             :default-sort-direction="table.defaultSortDirection"
-            default-sort="name">
+            default-sort="name"
+            @sort="onSort">
               <template slot="empty">
                 <section class="section">
                   <div class="content has-text-white has-text-centered">
@@ -327,6 +332,17 @@
         }
       },
 
+      onPageChange  ( page ) {
+        this.table.currentPage = page;
+        this.updateExperiment();
+      },
+
+      onSort  ( column, order ) {
+        this.table.sortColumn = column;
+        this.table.defaultSortDirection = order;
+        this.updateExperiment();
+      },
+
       handler ( event ) {
         event.data.split( /\r?\n/ ).forEach( m => {
           let msg = JSON.parse( m );
@@ -395,6 +411,10 @@
       
       updateExperiment () {
         let params = '?show_dnb=true&filter=' + this.searchName
+        params = params + '&sortCol=' + this.table.sortColumn
+        params = params + '&sortDir=' + this.table.defaultSortDirection
+        params = params + '&pageNum=' + this.table.currentPage
+        params = params + '&perPage=' + this.table.perPage
         this.$http.get( 'experiments/' + this.$route.params.id + params).then(
           response => {
             response.json().then( state => {
@@ -973,9 +993,11 @@
         table: {
           key: 0,
           isPaginated: true,
-          perPage: 10,
-          currentPage: 1,
           isPaginationSimple: true,
+          currentPage: 1,
+          perPage: 10,          
+          total:  0,
+          sortColumn: 'name',          
           paginationSize: 'is-small',
           defaultSortDirection: 'asc'
         },
