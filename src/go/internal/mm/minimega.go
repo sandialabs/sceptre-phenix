@@ -687,17 +687,13 @@ func (Minimega) IsC2ClientActive(opts ...C2Option) error {
 	}
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
-	cmd.Command = "vm info"
-	cmd.Columns = []string{"cc_active"}
-	cmd.Filters = []string{"name=" + o.vm}
+	cmd.Command = "cc client"
+	cmd.Columns = []string{"hostname"}
+	cmd.Filters = []string{"hostname=" + o.vm}
 
 	rows := mmcli.RunTabular(cmd)
 
 	if len(rows) == 0 {
-		return fmt.Errorf("no VMs returned for host %s", o.vm)
-	}
-
-	if rows[0]["cc_active"] != "true" {
 		return ErrC2ClientNotActive
 	}
 
