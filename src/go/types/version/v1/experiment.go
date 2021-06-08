@@ -324,4 +324,7 @@ func (this *ExperimentStatus) SetSchedule(s map[string]string) {
 
 func (this *ExperimentStatus) ResetAppStatus() {
 	this.AppsF = make(map[string]interface{})
+
+	this.FrequencyF = nil
+	this.RunningF = nil
 }
