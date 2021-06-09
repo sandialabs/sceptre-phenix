@@ -538,6 +538,13 @@ func (Minimega) GetExperimentCaptures(opts ...Option) []Capture {
 	var captures []Capture
 
 	for _, row := range mmcli.RunTabular(cmd) {
+		// `interface` column will be empty if the capture is bridge-wide
+		if row["interface"] == "" {
+			// currently phenix doesn't provide the option to create bridge-wide
+			// captures, so if one exists (via manual creation) we just ignore it
+			continue
+		}
+
 		// `interface` column will be in the form of <vm_name>:<iface_idx>
 		iface := strings.Split(row["interface"], ":")
 
