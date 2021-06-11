@@ -602,10 +602,10 @@ func (this *SOH) waitForCPULoad(ctx context.Context, ns string) {
 			defer wg.Done()
 
 			node := this.nodes[host]
-			exec := fmt.Sprintf("cat /proc/loadavg")
+			exec := `cat /proc/loadavg`
 
-			if node.Hardware().OSType() == "windows" {
-				exec = fmt.Sprintf(`powershell -command "Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select Average"`)
+			if strings.EqualFold(node.Hardware().OSType(), "windows") {
+				exec = `powershell -command "Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select -ExpandProperty Average"`
 			}
 
 			opts := []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2Command(exec)}
@@ -624,21 +624,29 @@ func (this *SOH) waitForCPULoad(ctx context.Context, ns string) {
 				return
 			}
 
-			// TODO: handle Windows response format
-
-			parts := strings.Fields(resp)
-
-			if len(parts) != 5 {
-				wg.AddError(fmt.Errorf("invalid response for command '%s': %s", exec, resp), map[string]interface{}{"host": host})
-				return
-			}
-
 			state, ok := this.status[host]
 			if !ok {
 				state = HostState{Hostname: host}
 			}
 
-			state.CPULoad = parts[0]
+			if strings.EqualFold(node.Hardware().OSType(), "windows") {
+				if resp == "" {
+					wg.AddError(fmt.Errorf("no response for command '%s'", exec), map[string]interface{}{"host": host})
+					return
+				}
+
+				state.CPULoad = resp
+			} else {
+				parts := strings.Fields(resp)
+
+				if len(parts) != 5 {
+					wg.AddError(fmt.Errorf("invalid response for command '%s': %s", exec, resp), map[string]interface{}{"host": host})
+					return
+				}
+
+				state.CPULoad = parts[0]
+			}
+
 			this.status[host] = state
 		}(host)
 	}
@@ -740,7 +748,7 @@ func isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns string, nod
 	// be up (pingable). This is all done via nested commands streamed to the C2
 	// processor within `expected` functions.
 	ipExpected := func(resp string) error {
-		switch node.Hardware().OSType() {
+		switch strings.ToLower(node.Hardware().OSType()) {
 		case "linux", "rhel", "centos":
 			cidr := fmt.Sprintf("%s/%d", iface.Address(), iface.Mask())
 
@@ -771,7 +779,7 @@ func isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns string, nod
 			// The IP address is now set, so schedule a C2 command for determining if
 			// the default gateway is set.
 			gwExpected := func(resp string) error {
-				switch node.Hardware().OSType() {
+				switch strings.ToLower(node.Hardware().OSType()) {
 				case "linux", "rhel", "centos":
 					expected := fmt.Sprintf("default via %s", gateway)
 
@@ -803,7 +811,7 @@ func isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns string, nod
 				// The default gateway is now set, so schedule a C2 command for
 				// determining if the default gateway is up (pingable).
 				gwPingExpected := func(resp string) error {
-					switch node.Hardware().OSType() {
+					switch strings.ToLower(node.Hardware().OSType()) {
 					case "linux", "rhel", "centos":
 						// If `resp` contains `0 received`, the default gateway isn't up
 						// (pingable) yet, so keep retrying the C2 command.
@@ -834,7 +842,7 @@ func isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns string, nod
 
 				exec := fmt.Sprintf("ping -c 1 %s", gateway)
 
-				if node.Hardware().OSType() == "windows" {
+				if strings.EqualFold(node.Hardware().OSType(), "windows") {
 					exec = fmt.Sprintf("ping -n 1 %s", gateway)
 				}
 
@@ -852,7 +860,7 @@ func isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns string, nod
 
 			exec := "ip route"
 
-			if node.Hardware().OSType() == "windows" {
+			if strings.EqualFold(node.Hardware().OSType(), "windows") {
 				exec = "route print"
 			}
 
@@ -871,7 +879,7 @@ func isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns string, nod
 
 	exec := "ip addr"
 
-	if node.Hardware().OSType() == "windows" {
+	if strings.EqualFold(node.Hardware().OSType(), "windows") {
 		exec = "ipconfig /all"
 	}
 
@@ -888,7 +896,7 @@ func isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns string, nod
 func pingTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, target string) {
 	exec := fmt.Sprintf("ping -c 1 %s", target)
 
-	if node.Hardware().OSType() == "windows" {
+	if strings.EqualFold(node.Hardware().OSType(), "windows") {
 		exec = fmt.Sprintf("ping -n 1 %s", target)
 	}
 
@@ -899,7 +907,7 @@ func pingTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeS
 		Options: []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2Command(exec)},
 		Meta:    map[string]interface{}{"host": host, "target": target},
 		Expected: func(resp string) error {
-			switch node.Hardware().OSType() {
+			switch strings.ToLower(node.Hardware().OSType()) {
 			case "linux", "rhel", "centos":
 				// If `resp` contains `0 received`, the default gateway isn't up
 				// (pingable) yet, so keep retrying the C2 command.
@@ -927,7 +935,7 @@ func pingTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeS
 func procTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, proc string) {
 	exec := fmt.Sprintf("pgrep -f %s", proc)
 
-	if node.Hardware().OSType() == "windows" {
+	if strings.EqualFold(node.Hardware().OSType(), "windows") {
 		exec = fmt.Sprintf(`powershell -command "Get-Process %s -ErrorAction SilentlyContinue"`, proc)
 	}
 
@@ -958,7 +966,7 @@ func procTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeS
 func portTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, port string) {
 	exec := fmt.Sprintf("ss -lntu state all 'sport = %s'", port)
 
-	if node.Hardware().OSType() == "windows" {
+	if strings.EqualFold(node.Hardware().OSType(), "windows") {
 		exec = fmt.Sprintf(`powershell -command "netstat -an | select-string -pattern 'listening' | select-string -pattern '%s'"`, port)
 	}
 
@@ -972,7 +980,7 @@ func portTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeS
 		Expected: func(resp string) error {
 			lineCount := 1
 
-			if node.Hardware().OSType() == "windows" {
+			if strings.EqualFold(node.Hardware().OSType(), "windows") {
 				lineCount = 0
 			}
 
