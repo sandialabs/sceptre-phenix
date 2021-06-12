@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"phenix/internal/common"
+	"phenix/internal/mm"
 	"phenix/tmpl"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
@@ -148,6 +150,28 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 }
 
 func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
+	for _, node := range exp.Spec.Topology().Nodes() {
+		if strings.EqualFold(node.Hardware().OSType(), "windows") {
+			// Windows 10 doesn't automatically run scripts in the startup folder
+			if ver, ok := node.GetAnnotation("windows-version"); ok && ver == "10" {
+				fmt.Printf("creating C2 command to run Windows startup script for %s\n", node.General().Hostname())
+
+				id, err := mm.ExecC2Command(
+					mm.C2NS(exp.Metadata.Name),
+					mm.C2VM(node.General().Hostname()),
+					mm.C2SkipActiveClientCheck(true),
+					mm.C2Command(`powershell.exe -noprofile -executionpolicy bypass -file /startup.ps1`),
+				)
+
+				if err != nil {
+					return fmt.Errorf("execute C2 command to run Windows startup script: %w", err)
+				}
+
+				fmt.Printf("C2 command ID: %s\n", id)
+			}
+		}
+	}
+
 	return nil
 }
 

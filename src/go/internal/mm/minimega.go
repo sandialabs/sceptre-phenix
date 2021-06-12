@@ -682,6 +682,10 @@ func (Minimega) GetVLANs(opts ...Option) (map[string]int, error) {
 func (Minimega) IsC2ClientActive(opts ...C2Option) error {
 	o := NewC2Options(opts...)
 
+	if o.skipActiveClientCheck {
+		return nil
+	}
+
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "vm info"
 	cmd.Columns = []string{"cc_active"}
@@ -721,10 +725,10 @@ func (this Minimega) ExecC2Command(opts ...C2Option) (string, error) {
 
 	data, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
 	if err != nil {
-		return "", fmt.Errorf("executing command %s: %w", o.command, err)
+		return "", fmt.Errorf("executing command '%s' on vm %s: %w", o.command, o.vm, err)
 	}
 
-	// This will the the ID for the cc exec command
+	// This will be the ID for the cc exec command
 	return fmt.Sprintf("%v", data), nil
 }
 

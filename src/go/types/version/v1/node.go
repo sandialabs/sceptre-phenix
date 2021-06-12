@@ -10,14 +10,19 @@ import (
 )
 
 type Node struct {
-	LabelsF     map[string]string `json:"labels" yaml:"labels" structs:"labels" mapstructure:"labels"`
-	TypeF       string            `json:"type" yaml:"type" structs:"type" mapstructure:"type"`
-	GeneralF    *General          `json:"general" yaml:"general" structs:"general" mapstructure:"general"`
-	HardwareF   *Hardware         `json:"hardware" yaml:"hardware" structs:"hardware" mapstructure:"hardware"`
-	NetworkF    *Network          `json:"network" yaml:"network" structs:"network" mapstructure:"network"`
-	InjectionsF []*Injection      `json:"injections" yaml:"injections" structs:"injections" mapstructure:"injections"`
-	AdvancedF   map[string]string `json:"advanced" yaml:"advanced" structs:"advanced" mapstructure:"advanced"`
-	OverridesF  map[string]string `json:"overrides" yaml:"overrides" structs:"overrides" mapstructure:"overrides"`
+	AnnotationsF map[string]string `json:"annotations" yaml:"annotations" structs:"annotations" mapstructure:"annotations"`
+	LabelsF      map[string]string `json:"labels" yaml:"labels" structs:"labels" mapstructure:"labels"`
+	TypeF        string            `json:"type" yaml:"type" structs:"type" mapstructure:"type"`
+	GeneralF     *General          `json:"general" yaml:"general" structs:"general" mapstructure:"general"`
+	HardwareF    *Hardware         `json:"hardware" yaml:"hardware" structs:"hardware" mapstructure:"hardware"`
+	NetworkF     *Network          `json:"network" yaml:"network" structs:"network" mapstructure:"network"`
+	InjectionsF  []*Injection      `json:"injections" yaml:"injections" structs:"injections" mapstructure:"injections"`
+	AdvancedF    map[string]string `json:"advanced" yaml:"advanced" structs:"advanced" mapstructure:"advanced"`
+	OverridesF   map[string]string `json:"overrides" yaml:"overrides" structs:"overrides" mapstructure:"overrides"`
+}
+
+func (this Node) Annotations() map[string]string {
+	return this.AnnotationsF
 }
 
 func (this Node) Labels() map[string]string {
@@ -164,6 +169,20 @@ func (this *Node) AddOverride(match, replace string) {
 	}
 
 	this.OverridesF[match] = replace
+}
+
+func (this Node) GetAnnotation(a string) (string, bool) {
+	if this.AnnotationsF == nil {
+		return "", false
+	}
+
+	for k := range this.AnnotationsF {
+		if k == a {
+			return this.AnnotationsF[k], true
+		}
+	}
+
+	return "", false
 }
 
 type General struct {

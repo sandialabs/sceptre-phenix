@@ -123,6 +123,8 @@ type c2Options struct {
 	commandID string
 
 	timeout time.Duration
+
+	skipActiveClientCheck bool
 }
 
 func NewC2Options(opts ...C2Option) c2Options {
@@ -165,5 +167,11 @@ func C2CommandID(i string) C2Option {
 func C2Timeout(d time.Duration) C2Option {
 	return func(o *c2Options) {
 		o.timeout = d
+	}
+}
+
+func C2SkipActiveClientCheck(s bool) C2Option {
+	return func(o *c2Options) {
+		o.skipActiveClientCheck = s
 	}
 }
