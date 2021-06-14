@@ -25,11 +25,14 @@ WORKDIR /phenix
 
 COPY --from=jsbuilder /phenix/src/js /phenix/src/js
 
-ARG INSTALL_CERT=
-RUN if [ -n "${INSTALL_CERT}" ]; then \
-  wget ${INSTALL_CERT} -e use_proxy=no \
-    -O /usr/local/share/ca-certificates/custom.crt \
-    && update-ca-certificates; fi
+ARG INSTALL_CERTS=
+RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
+  IFS=',' read -r -a arr <<< $INSTALL_CERTS; \
+  for i in ${!arr[@]}; do \
+    wget ${arr[$i]} -e use_proxy=no \
+      -O /usr/local/share/ca-certificates/custom$i.crt; \
+  done && \
+  update-ca-certificates; fi"]
 
 ARG PHENIX_VERSION
 ARG PHENIX_COMMIT
@@ -65,7 +68,7 @@ COPY --from=gobuilder /phenix/bin/phenix   /usr/local/bin/phenix
 COPY --from=gobuilder /phenix/bin/vmdb2    /usr/bin/vmdb2
 COPY --from=gobuilder /go/bin/phenix-app-* /usr/local/bin
 
-RUN python3 -m pip install "git+https://github.com/sandia-minimega/phenix-apps.git@main#egg=phenix-apps&subdirectory=src/python"
+RUN python3 -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org "git+https://github.com/sandia-minimega/phenix-apps.git@main#egg=phenix-apps&subdirectory=src/python"
 
 RUN wget -O kali.deb http://http.kali.org/kali/pool/main/k/kali-archive-keyring/kali-archive-keyring_2020.2_all.deb \
 	&& dpkg -i kali.deb && rm kali.deb
