@@ -149,6 +149,7 @@ components:
               - Haswell
               - core2duo
               - pentium3
+              - host
               - ""
               default: Broadwell
               example: Broadwell
