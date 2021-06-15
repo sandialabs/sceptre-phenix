@@ -106,3 +106,7 @@ web/proto/vm.pb.go: web/proto/*.proto bin/protoc-gen-go
 bin/phenix: $(GOSOURCES) generate-bindata generate-protobuf
 	mkdir -p bin
 	CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-X 'phenix/version.Version=$(VERSION)' -s -w" -trimpath -o bin/phenix main.go
+
+bin/phenix-debug: $(GOSOURCES) generate-bindata generate-protobuf
+	mkdir -p bin
+	CGO_ENABLED=0 GOOS=linux go build -gcflags "all=-N -l" -trimpath -o bin/phenix-debug main.go

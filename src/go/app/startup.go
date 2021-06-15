@@ -154,7 +154,7 @@ func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 		if strings.EqualFold(node.Hardware().OSType(), "windows") {
 			// Windows 10 doesn't automatically run scripts in the startup folder
 			if ver, ok := node.GetAnnotation("windows-version"); ok && ver == "10" {
-				id, err := mm.ExecC2Command(
+				_, err := mm.ExecC2Command(
 					mm.C2NS(exp.Metadata.Name),
 					mm.C2VM(node.General().Hostname()),
 					mm.C2SkipActiveClientCheck(true),
