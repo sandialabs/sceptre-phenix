@@ -48,6 +48,12 @@ func (this *Network) OSPF() ifaces.NodeNetworkOSPF {
 		return nil
 	}
 
+	// fun times... https://glucn.medium.com/golang-an-interface-holding-a-nil-value-is-not-nil-bb151f472cc7
+	// probably other places we need to do this too... :shrug:
+	if this.OSPFF == nil {
+		return nil
+	}
+
 	return this.OSPFF
 }
 

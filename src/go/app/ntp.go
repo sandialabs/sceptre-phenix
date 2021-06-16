@@ -34,8 +34,12 @@ func (this *NTP) Configure(ctx context.Context, exp *types.Experiment) error {
 			return fmt.Errorf("creating experiment ntp directory path: %w", err)
 		}
 
-		if node.Type() == "Router" {
-			node.AddInject(ntpFile, "/opt/vyatta/etc/ntp.conf", "", "")
+		if strings.EqualFold(node.Type(), "router") {
+			if strings.EqualFold(node.Hardware().OSType(), "minirouter") {
+				node.AddInject(ntpFile, "/etc/ntp.conf", "", "")
+			} else {
+				node.AddInject(ntpFile, "/opt/vyatta/etc/ntp.conf", "", "")
+			}
 		} else if node.Hardware().OSType() == "linux" {
 			node.AddInject(ntpFile, "/etc/ntp.conf", "", "")
 		} else if node.Hardware().OSType() == "windows" {

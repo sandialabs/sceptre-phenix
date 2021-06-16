@@ -171,6 +171,7 @@ components:
               - linux
               - rhel
               - centos
+              - minirouter
               default: linux
               example: windows
             drives:
