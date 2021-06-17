@@ -300,6 +300,8 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) {
 		allowed.SortBy(sortCol, sortDir == "asc")
 	}
 
+	totalBeforePaging := len(allowed)
+
 	if pageNum != "" && perPage != "" {
 		n, _ := strconv.Atoi(pageNum)
 		s, _ := strconv.Atoi(perPage)
@@ -307,7 +309,10 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) {
 		allowed = allowed.Paginate(n, s)
 	}
 
-	body, err := marshaler.Marshal(util.ExperimentToProtobuf(*exp, status, allowed))
+	experiment := util.ExperimentToProtobuf(*exp, status, allowed)
+	experiment.VmCount = uint32(totalBeforePaging)
+	body, err := marshaler.Marshal(experiment)
+
 	if err != nil {
 		log.Error("marshaling experiment %s - %v", name, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

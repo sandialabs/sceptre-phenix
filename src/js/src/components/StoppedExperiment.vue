@@ -206,7 +206,7 @@
           <br>
           <b-field v-if="paginationNeeded" grouped position="is-right">
             <div class="control is-flex">
-              <b-switch v-model="table.isPaginated" size="is-small" type="is-light">Paginate</b-switch>
+              <b-switch v-model="table.isPaginated" @input="updateExperiment()" size="is-small" type="is-light">Paginate</b-switch>
             </div>
           </b-field>
         </b-tab-item>
@@ -410,16 +410,19 @@
       },
       
       updateExperiment () {
+
+        let pageSize = this.table.isPaginated ? this.table.perPage : this.table.total
+
         let params = '?show_dnb=true&filter=' + this.searchName
         params = params + '&sortCol=' + this.table.sortColumn
         params = params + '&sortDir=' + this.table.defaultSortDirection
         params = params + '&pageNum=' + this.table.currentPage
-        params = params + '&perPage=' + this.table.perPage
+        params = params + '&perPage=' + pageSize
         this.$http.get( 'experiments/' + this.$route.params.id + params).then(
           response => {
             response.json().then( state => {
               this.experiment = state;
-              this.table.total  = state.vm_count;  
+              this.table.total  = state.vm_count;               
 
               // Only add successful searches to the search history
               if (this.table.total > 0) {
