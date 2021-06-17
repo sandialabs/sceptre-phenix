@@ -12,11 +12,11 @@ import (
 )
 
 var (
-	dateRe                     = regexp.MustCompile(`[<>=][ ]?\d{4}[-](?:[^\n]+)?`)
-	sizeRe                     = regexp.MustCompile(`[<>=][ ]?\d+[ ]?(?:kb|mb|gb)?`)
+	dateRe                     = regexp.MustCompile(`[<>=]{1,2}[ ]?\d{4}[-]\d{2}(?:[\d-]+(?:[ ][\d:]+)?)?`)
+	sizeRe                     = regexp.MustCompile(`[<>=]{1,2}[ ]?\d+(?:[ ]?(?:b|kb|mb|gb))?`)
 	categoryRe                 = regexp.MustCompile(`^(?:packet|elf|vm)`)
 	comparisonOps              = regexp.MustCompile(`[<>=]{1,2}`)
-	fileSizeSpec               = regexp.MustCompile(`(?:kb|mb|gb)`)
+	fileSizeSpec               = regexp.MustCompile(`(?:b|kb|mb|gb)`)
 	boolOps                    = regexp.MustCompile(`^(?:and|or|not)$`)
 	groups                     = regexp.MustCompile(`(?:[(][^ ])|(?:[^ ][)])`)
 	keywordEscape              = regexp.MustCompile(`['"]([^'"]+)['"]`)
@@ -74,6 +74,8 @@ func BuildTree(searchFilter string) *ExpressionTree {
 		return nil
 	}
 
+	searchFilter = strings.Trim(searchFilter, " ")
+
 	// Adjust any parentheses so that they are
 	// space delimited
 	if groups.MatchString(searchFilter) {
@@ -86,14 +88,26 @@ func BuildTree(searchFilter string) *ExpressionTree {
 	// Add any placeholder spaces
 
 	// The date string will be a special case as we
-	// to replace the 1st space and the 2nd space with
+	// replace the 1st space and the 2nd space with
 	// different placeholders
 	if dateRe.MatchString(searchString) {
-		original := dateRe.FindAllStringSubmatch(searchString, -1)[0][0]
+		matches := dateRe.FindAllStringSubmatch(searchString, -1)
 
-		replacement := strings.Replace(original, " ", spaceReplacement, 1)
-		replacement = strings.ReplaceAll(replacement, " ", "_")
-		searchString = strings.ReplaceAll(searchString, original, replacement)
+		for _, match := range matches {
+
+			var replacement string
+			if strings.Count(match[0], " ") > 1 {
+				replacement = strings.Replace(match[0], " ", spaceReplacement, 1)
+				replacement = strings.ReplaceAll(replacement, " ", "_")
+			} else if strings.Count(match[0], " ") == 1 && strings.Count(match[0], "-") == 2 {
+				replacement = strings.ReplaceAll(match[0], " ", "_")
+			} else {
+				replacement = strings.Replace(match[0], " ", spaceReplacement, 1)
+			}
+
+			searchString = strings.ReplaceAll(searchString, match[0], replacement)
+
+		}
 
 	}
 
@@ -488,9 +502,11 @@ func addPlaceholderSpaces(searchString string, pattern *regexp.Regexp) string {
 
 	// Replace spaces with the replacement string
 	if pattern.MatchString(searchString) {
-		extracted := pattern.FindAllStringSubmatch(searchString, -1)[0][0]
-		replacement := strings.ReplaceAll(extracted, " ", spaceReplacement)
-		return strings.ReplaceAll(searchString, extracted, replacement)
+		extracted := pattern.FindAllStringSubmatch(searchString, -1)
+		for _, match := range extracted {
+			replacement := strings.ReplaceAll(match[0], " ", spaceReplacement)
+			searchString = strings.ReplaceAll(searchString, match[0], replacement)
+		}
 
 	}
 
