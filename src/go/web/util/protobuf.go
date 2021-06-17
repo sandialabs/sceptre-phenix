@@ -3,6 +3,7 @@ package util
 import (
 	"sort"
 
+	"phenix/internal/file"
 	"phenix/internal/mm"
 	"phenix/types"
 	"phenix/web/cache"
@@ -173,4 +174,20 @@ func UserToProtobuf(u rbac.User) *proto.User {
 	}
 
 	return user
+}
+
+func ExperimentFileListToProtobuf(experimentFiles []file.ExperimentFile) *proto.ExperimentFileList {
+	var protoExperimentFiles []*proto.ExperimentFile
+
+	for _, experimentFile := range experimentFiles {
+		protoExperimentFiles = append(protoExperimentFiles,
+			&proto.ExperimentFile{
+				Name:     experimentFile.Name,
+				Date:     experimentFile.Date,
+				Size:     uint32(experimentFile.Size),
+				Category: experimentFile.Category,
+			})
+	}
+
+	return &proto.ExperimentFileList{Files: protoExperimentFiles}
 }
