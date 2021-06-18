@@ -538,6 +538,13 @@ func (Minimega) GetExperimentCaptures(opts ...Option) []Capture {
 	var captures []Capture
 
 	for _, row := range mmcli.RunTabular(cmd) {
+		// `interface` column will be empty if the capture is bridge-wide
+		if row["interface"] == "" {
+			// currently phenix doesn't provide the option to create bridge-wide
+			// captures, so if one exists (via manual creation) we just ignore it
+			continue
+		}
+
 		// `interface` column will be in the form of <vm_name>:<iface_idx>
 		iface := strings.Split(row["interface"], ":")
 
@@ -675,18 +682,18 @@ func (Minimega) GetVLANs(opts ...Option) (map[string]int, error) {
 func (Minimega) IsC2ClientActive(opts ...C2Option) error {
 	o := NewC2Options(opts...)
 
+	if o.skipActiveClientCheck {
+		return nil
+	}
+
 	cmd := mmcli.NewNamespacedCommand(o.ns)
-	cmd.Command = "vm info"
-	cmd.Columns = []string{"cc_active"}
-	cmd.Filters = []string{"name=" + o.vm}
+	cmd.Command = "cc client"
+	cmd.Columns = []string{"hostname"}
+	cmd.Filters = []string{"hostname=" + o.vm}
 
 	rows := mmcli.RunTabular(cmd)
 
 	if len(rows) == 0 {
-		return fmt.Errorf("no VMs returned for host %s", o.vm)
-	}
-
-	if rows[0]["cc_active"] != "true" {
 		return ErrC2ClientNotActive
 	}
 
@@ -714,10 +721,10 @@ func (this Minimega) ExecC2Command(opts ...C2Option) (string, error) {
 
 	data, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
 	if err != nil {
-		return "", fmt.Errorf("executing command %s: %w", o.command, err)
+		return "", fmt.Errorf("executing command '%s' on vm %s: %w", o.command, o.vm, err)
 	}
 
-	// This will the the ID for the cc exec command
+	// This will be the ID for the cc exec command
 	return fmt.Sprintf("%v", data), nil
 }
 

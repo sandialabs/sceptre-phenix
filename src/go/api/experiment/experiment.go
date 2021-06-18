@@ -675,12 +675,13 @@ func Delete(name string) error {
 	return errors
 }
 
-func Files(name string) ([]string, error) {
-	return file.GetExperimentFileNames(name)
+func Files(name, filter string) (file.ExperimentFiles, error) {
+
+	return file.GetExperimentFileNames(name, filter)
 }
 
 func File(name, fileName string) ([]byte, error) {
-	files, err := file.GetExperimentFileNames(name)
+	files, err := file.GetExperimentFileNames(name, "")
 	if err != nil {
 		return nil, fmt.Errorf("getting list of experiment files: %w", err)
 	}
@@ -692,12 +693,12 @@ func File(name, fileName string) ([]byte, error) {
 	}
 
 	for _, f := range files {
-		if fileName == f {
+		if fileName == f.Name {
 			headnode, _ := os.Hostname()
 
-			file.CopyFile(headnode, fmt.Sprintf("/%s/files/%s", name, f), nil)
+			file.CopyFile(headnode, fmt.Sprintf("/%s/files/%s", name, f.Name), nil)
 
-			path := fmt.Sprintf("%s/images/%s/files/%s", common.PhenixBase, name, f)
+			path := fmt.Sprintf("%s/images/%s/files/%s", common.PhenixBase, name, f.Name)
 
 			data, err := ioutil.ReadFile(path)
 			if err != nil {

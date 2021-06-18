@@ -1,0 +1,107 @@
+apiVersion: phenix.sandia.gov/v1
+kind: Image
+metadata:
+  name: minirouter
+spec:
+  compress: false
+  deb_append: ' --components=main,restricted,universe,multiverse'
+  format: qcow2
+  include_miniccc: true
+  mirror: http://us.archive.ubuntu.com/ubuntu/
+  overlays: null
+  packages:
+  - bird
+  - curl
+  - dbus
+  - dnsmasq
+  - dnsutils
+  - ethtool
+  - ifupdown
+  - init
+  - initramfs-tools
+  - iptables
+  - iputils-ping
+  - isc-dhcp-client
+  - less
+  - linux-headers-generic
+  - linux-image-generic
+  - net-tools
+  - netbase
+  - netcat-openbsd
+  - openssh-server
+  - tcpdump
+  - telnet
+  - traceroute
+  - wget
+  - vim
+  ramdisk: false
+  release: focal
+  script_order:
+  - POSTBUILD_APT_CLEANUP
+  - POSTBUILD_NO_ROOT_PASSWD
+  - POSTBUILD_DISABLE_SERVICES
+  - POSTBUILD_ENABLE_IPFORWARDING
+  - POSTBUILD_PHENIX_HOSTNAME
+  - POSTBUILD_PHENIX_BASE
+  scripts:
+    POSTBUILD_APT_CLEANUP: |
+      apt clean || apt-get clean || echo "unable to clean apt cache"
+    POSTBUILD_NO_ROOT_PASSWD: |
+      sed -i 's/nullok_secure/nullok/' /etc/pam.d/common-auth
+      sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+      sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+      sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+      sed -i 's/PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+      passwd -d root
+    POSTBUILD_DISABLE_SERVICES: |
+      rm /etc/systemd/system/multi-user.target.wants/systemd-resolved.service
+      rm /etc/systemd/system/multi-user.target.wants/dnsmasq.service
+      rm /etc/systemd/system/multi-user.target.wants/bird.service
+      rm /etc/systemd/system/multi-user.target.wants/bird6.service
+    POSTBUILD_ENABLE_IPFORWARDING: |
+      cat > /etc/sysctl.d/local.conf <<EOF
+      net.ipv4.ip_forward = 1
+      net.ipv6.conf.all.forwarding = 1
+      EOF
+    POSTBUILD_PHENIX_HOSTNAME: |
+      echo "phenix" > /etc/hostname
+      sed -i 's/127.0.1.1 .*/127.0.1.1 phenix/' /etc/hosts
+      cat > /etc/motd <<EOF
+
+      ██████╗ ██╗  ██╗███████╗███╗  ██╗██╗██╗  ██╗
+      ██╔══██╗██║  ██║██╔════╝████╗ ██║██║╚██╗██╔╝
+      ██████╔╝███████║█████╗  ██╔██╗██║██║ ╚███╔╝
+      ██╔═══╝ ██╔══██║██╔══╝  ██║╚████║██║ ██╔██╗
+      ██║     ██║  ██║███████╗██║ ╚███║██║██╔╝╚██╗
+      ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚══╝╚═╝╚═╝  ╚═╝
+
+      EOF
+      echo "\nBuilt with love using phenix image on $(date)\n\n" >> /etc/motd
+    POSTBUILD_PHENIX_BASE: |
+      cat > /etc/systemd/system/phenix.service <<EOF
+      [Unit]
+      Description=phenix startup service
+      After=network.target systemd-hostnamed.service
+      [Service]
+      Environment=LD_LIBRARY_PATH=/usr/local/lib
+      ExecStart=/usr/local/bin/phenix-start.sh
+      RemainAfterExit=true
+      StandardOutput=journal
+      Type=oneshot
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+      mkdir -p /etc/systemd/system/multi-user.target.wants
+      ln -s /etc/systemd/system/phenix.service /etc/systemd/system/multi-user.target.wants/phenix.service
+      mkdir -p /usr/local/bin
+      cat > /usr/local/bin/phenix-start.sh <<EOF
+      #!/bin/bash
+      for file in /etc/phenix/startup/*; do
+        echo \$file
+        bash \$file
+      done
+      EOF
+      chmod +x /usr/local/bin/phenix-start.sh
+      mkdir -p /etc/phenix/startup
+  size: 5G
+  variant: minbase
