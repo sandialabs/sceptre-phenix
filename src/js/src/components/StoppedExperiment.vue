@@ -78,14 +78,19 @@
         <b-tab-item label="Table">
           <b-table
             :key="table.key"
-            :data="vms"
+            :data="experiment.vms"
             :paginated="table.isPaginated && paginationNeeded"
+            backend-pagination
+            :total="table.total"
             :per-page="table.perPage"
             :current-page.sync="table.currentPage"
+            @page-change="onPageChange"
             :pagination-simple="table.isPaginationSimple"
             :pagination-size="table.paginationSize"
+            backend-sorting
             :default-sort-direction="table.defaultSortDirection"
-            default-sort="name">
+            default-sort="name"
+            @sort="onSort">
               <template slot="empty">
                 <section class="section">
                   <div class="content has-text-white has-text-centered">
@@ -201,7 +206,7 @@
           <br>
           <b-field v-if="paginationNeeded" grouped position="is-right">
             <div class="control is-flex">
-              <b-switch v-model="table.isPaginated" size="is-small" type="is-light">Paginate</b-switch>
+              <b-switch v-model="table.isPaginated" @input="updateExperiment()" size="is-small" type="is-light">Paginate</b-switch>
             </div>
           </b-field>
         </b-tab-item>
@@ -316,6 +321,7 @@
 
         return true;
       },
+      
       filesPaginationNeeded () {
         if ( this.filesTable.total <= this.filesTable.perPage ) {
           return  false;
@@ -360,10 +366,23 @@
         }
       },
 
+
+      onPageChange  ( page ) {
+        this.table.currentPage = page;
+        this.updateExperiment();
+      },
+
+      onSort  ( column, order ) {
+        this.table.sortColumn = column;
+        this.table.defaultSortDirection = order;
+        this.updateExperiment();
+      },
+
       onFilesPageChange  ( page ) {
         this.filesTable.currentPage = page;
         this.updateFiles();
       },
+      
       onFilesSort  ( column, order ) {
         this.filesTable.sortColumn = column;
         this.filesTable.defaultSortDirection = order;
@@ -437,12 +456,19 @@
       },
       
       updateExperiment () {
+
+        let pageSize = this.table.isPaginated ? this.table.perPage : this.table.total
+
         let params = '?show_dnb=true&filter=' + this.searchName
+        params = params + '&sortCol=' + this.table.sortColumn
+        params = params + '&sortDir=' + this.table.defaultSortDirection
+        params = params + '&pageNum=' + this.table.currentPage
+        params = params + '&perPage=' + pageSize
         this.$http.get( 'experiments/' + this.$route.params.id + params).then(
           response => {
             response.json().then( state => {
               this.experiment = state;
-              this.table.total  = state.vm_count;  
+              this.table.total  = state.vm_count;               
 
               // Only add successful searches to the search history
               if (this.table.total > 0) {
@@ -1065,9 +1091,11 @@
         table: {
           key: 0,
           isPaginated: true,
-          perPage: 10,
-          currentPage: 1,
           isPaginationSimple: true,
+          currentPage: 1,
+          perPage: 10,          
+          total:  0,
+          sortColumn: 'name',          
           paginationSize: 'is-small',
           defaultSortDirection: 'asc'
         },
