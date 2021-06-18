@@ -67,6 +67,11 @@ message UpdateVMRequest {
   }
 }
 
+message UpdateVMRequestList {
+  repeated UpdateVMRequest vms = 1;
+  uint32 total = 2;
+}
+
 message VMInterface {
   uint32 index = 1;
   string vlan = 2;

@@ -1102,6 +1102,94 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 	w.Write(body)
 }
 
+// PATCH /experiments/{exp}/vms
+func UpdateVMs(w http.ResponseWriter, r *http.Request) {
+	log.Debug("UpdateVMs HTTP handler called")
+	var (
+		ctx  = r.Context()
+		role = ctx.Value("role").(rbac.Role)
+		vars = mux.Vars(r)
+		exp  = vars["exp"]
+	)
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var req proto.UpdateVMRequestList
+	if err := unmarshaler.Unmarshal(body, &req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	resp := &proto.VMList{Total: req.Total}
+	resp.Vms = make([]*proto.VM, int(req.Total))
+
+	for index, vmRequest := range req.Vms {
+
+		// Skip any vms that are not allowed to be updated
+		if !role.Allowed("vms", "patch", fmt.Sprintf("%s_%s", exp, vmRequest.Name)) {
+			log.Error("%s_%s is forbidden", exp, vmRequest.Name)
+			continue
+		}
+
+		opts := []vm.UpdateOption{
+			vm.UpdateExperiment(exp),
+			vm.UpdateVM(vmRequest.Name),
+			vm.UpdateWithCPU(int(vmRequest.Cpus)),
+			vm.UpdateWithMem(int(vmRequest.Ram)),
+			vm.UpdateWithDisk(vmRequest.Disk),
+		}
+
+		if vmRequest.Interface != nil {
+			opts = append(opts, vm.UpdateWithInterface(int(vmRequest.Interface.Index), vmRequest.Interface.Vlan))
+		}
+
+		switch vmRequest.Boot.(type) {
+		case *proto.UpdateVMRequest_DoNotBoot:
+			opts = append(opts, vm.UpdateWithDNB(vmRequest.GetDoNotBoot()))
+		}
+
+		switch vmRequest.ClusterHost.(type) {
+		case *proto.UpdateVMRequest_Host:
+			opts = append(opts, vm.UpdateWithHost(vmRequest.GetHost()))
+		}
+
+		if err := vm.Update(opts...); err != nil {
+			log.Error("updating VM: %v", err)
+			http.Error(w, "unable to update VM", http.StatusInternalServerError)
+			return
+		}
+
+		vm, err := vm.Get(exp, vmRequest.Name)
+		if err != nil {
+			http.Error(w, "unable to get VM", http.StatusInternalServerError)
+			return
+		}
+
+		if vm.Running {
+			screenshot, err := util.GetScreenshot(exp, vmRequest.Name, "215")
+			if err != nil {
+				log.Error("getting screenshot: %v", err)
+			} else {
+				vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+			}
+		}
+
+		resp.Vms[index] = util.VMToProtobuf(exp, *vm)
+	}
+
+	body, err = marshaler.Marshal(resp)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(body)
+}
+
 // DELETE /experiments/{exp}/vms/{name}
 func DeleteVM(w http.ResponseWriter, r *http.Request) {
 	log.Debug("DeleteVM HTTP handler called")

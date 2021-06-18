@@ -1047,6 +1047,7 @@
 
       setBoot(dnb){
         let vms = []
+        let attemptMessage = "";
         let successMessage = "";
         let failedMessage = "";
 
@@ -1070,72 +1071,75 @@
         }
 
         if (dnb){
-          successMessage = " to not boot when the experiment starts";
-          failedMessage = ' VM to not boot when experiment starts failed with '
+          attemptMessage = " to not boot when the experiment starts"
+          successMessage = " The selected VMs were set to not boot "
+          failedMessage = " The selected VMs were unable to be set to not boot "
         }
         else {
-          successMessage = " to boot when the experiment starts";
-          failedMessage = ' VM to boot when experiment starts failed with ' 
+          attemptMessage = " to boot when the experiment starts"
+          successMessage = " The selected VMs were set to boot "
+          failedMessage = " The selected VMs were unable to be set to boot " 
         }
+
         this.$buefy.dialog.confirm({
             title:"Set Boot",
-            message:"This will set " + vms.join(", ") + successMessage ,
+            message:"This will set " + vms.join(", ") + attemptMessage ,
             cancelText:"Cancel",
             confirmText:"Ok",
             type:"is-success",
             onConfirm: () => {
               
-              let update = { "dnb": dnb };
+                let requestList = [];
+
+                vms.forEach((vmName) => {
+                  let update = {"name":vmName, "dnb": dnb };
+                  requestList.push(update)
+                })
               
-              vms.forEach((vmName) => {
-                  this.$http.patch(
-                    'experiments/' + this.$route.params.id + '/vms/' + vmName, update
-                    ).then(
-                    response  => {
-                      let vms = this.experiment.vms;                  
-                
-                      for ( let i = 0; i < vms.length; i++ ) {
-                        if ( vms[i].name == response.body.name ) {
-                          vms[i] = response.body;
+                this.$http.patch(
+                  'experiments/' + this.$route.params.id + '/vms', {"vms":requestList,"total":requestList.length}
+                  ).then(
+                  response  => {
+                    let vms = this.experiment.vms;                  
+              
+                    for ( let i = 0; i < response.body.vms.length; i++ ) {
+                      for (let j=0; j<vms.length;j++){
+                        if ( response.body.vms[i].name == vms[j].name ) {
+                          vms[j] = response.body.vms[i];
                           break;
-                       } 
-                      }   
-              
-                    this.experiment.vms = [ ...vms ];              
-                    this.isWaiting = false;    
-                        
+                        } 
+                      }                      
+                    }   
+            
+                  this.experiment.vms = [ ...vms ];              
+                  this.isWaiting = false; 
                   
-                    },  response => {
+                  
+                   this.$buefy.toast.open({
+                    message: successMessage,
+                    type: 'is-success',
+                    duration: 4000
+                  });
                       
-                      this.$buefy.toast.open({
-                      message: 'Setting the ' 
-                             + vmName 
-                             + failedMessage
-                             + response.status 
-                             + ' status.',
-                      type: 'is-danger',
-                      duration: 4000
-                    });
-                  
-                  this.isWaiting = false;
-                }
-                )                  
-                this.sleep(200);        
-              }   
-              )
+                
+                  },  response => {
+                    
+                    this.$buefy.toast.open({
+                    message: failedMessage,
+                    type: 'is-danger',
+                    duration: 4000
+                  });
+                
+                this.isWaiting = false;
+              }
+              )                  
+                
             }
           })
           //clear the selection
           this.unSelectAllVMs()
            
-      },
-
-      sleep(msDuration){
-        let endTime = Date.now() + msDuration;
-        while(Date.now() < endTime){
-        }
-      }
-      
+      }     
   
     },
 

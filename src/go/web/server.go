@@ -95,6 +95,7 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/experiments/{name}/files/{filename}", GetExperimentFile).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/soh", GetExperimentSoH).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms", GetVMs).Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms", UpdateVMs).Methods("PATCH", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}", GetVM).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}", UpdateVM).Methods("PATCH", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}", DeleteVM).Methods("DELETE", "OPTIONS")
