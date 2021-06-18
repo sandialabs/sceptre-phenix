@@ -149,6 +149,7 @@ components:
               - Haswell
               - core2duo
               - pentium3
+              - host
               - ""
               default: Broadwell
               example: Broadwell
@@ -170,6 +171,7 @@ components:
               - linux
               - rhel
               - centos
+              - minirouter
               default: linux
               example: windows
             drives:

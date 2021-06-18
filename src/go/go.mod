@@ -1,6 +1,6 @@
 module phenix
 
-go 1.14
+go 1.16
 
 require (
 	github.com/activeshadow/libminimega v0.0.0-20190412123224-5384445d4b63

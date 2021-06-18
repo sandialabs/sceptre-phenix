@@ -4,14 +4,17 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"net"
 	"os"
 	"strings"
 	"time"
 
+	"phenix/internal/mm/mmcli"
 	"phenix/tmpl"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
+	"phenix/util"
 
 	"github.com/mitchellh/mapstructure"
 )
@@ -92,9 +95,15 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 			continue
 		}
 
-		// os_type of `linux` is for legacy support
-		if !strings.EqualFold(node.Hardware().OSType(), "vyatta") && !strings.EqualFold(node.Hardware().OSType(), "linux") {
-			fmt.Printf("  === OS Type %s for Node Type %s unsupported ===", node.Hardware().OSType(), node.Type())
+		// We ignore os_type `minirouter` here since its config is handled entirely
+		// in the post-start stage. We also don't log if `minirouter` since it is
+		// supported, just not here. Including os_type `linux` is for legacy
+		// support.
+		if !util.StringSliceContains([]string{"vyatta", "vyos", "linux"}, strings.ToLower(node.Hardware().OSType())) {
+			if strings.ToLower(node.Hardware().OSType()) != "minirouter" {
+				fmt.Printf("  === OS Type %s for Node Type %s unsupported ===", node.Hardware().OSType(), node.Type())
+			}
+
 			continue
 		}
 
@@ -145,6 +154,113 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 }
 
 func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
+	for _, node := range exp.Spec.Topology().Nodes() {
+		if !strings.EqualFold(node.Type(), "router") && !strings.EqualFold(node.Type(), "firewall") {
+			continue
+		}
+
+		if !strings.EqualFold(node.Hardware().OSType(), "minirouter") {
+			continue
+		}
+
+		var (
+			commit bool
+			cmd    = mmcli.NewNamespacedCommand(exp.Metadata.Name)
+		)
+
+		for idx, iface := range node.Network().Interfaces() {
+			switch strings.ToLower(iface.Proto()) {
+			case "static":
+				// We only want to set a default route if OSPF isn't being used.
+				if iface.Gateway() != "" {
+					cmd.Command = fmt.Sprintf("router %s gw %s", node.General().Hostname(), iface.Gateway())
+					if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+						return fmt.Errorf("configuring default gateway for router %s: %w", node.General().Hostname(), err)
+					}
+
+					commit = true
+				}
+
+				// We need to set the IP address for both static and OSPF interfaces, so we fallthrough here.
+				fallthrough
+			case "ospf":
+				cmd.Command = fmt.Sprintf("router %s interface %d %s/%d", node.General().Hostname(), idx, iface.Address(), iface.Mask())
+				if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+					return fmt.Errorf("configuring interface for router %s: %w", node.General().Hostname(), err)
+				}
+
+				commit = true
+			case "dhcp":
+				cmd.Command = fmt.Sprintf("router %s interface %d dhcp", node.General().Hostname(), idx)
+				if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+					return fmt.Errorf("configuring interface for router %s: %w", node.General().Hostname(), err)
+				}
+
+				commit = true
+			}
+		}
+
+		for _, route := range node.Network().Routes() {
+			cmd.Command = fmt.Sprintf("router %s route static %s %s", node.General().Hostname(), route.Destination(), route.Next())
+			if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+				return fmt.Errorf("configuring static route for router %s: %w", node.General().Hostname(), err)
+			}
+
+			commit = true
+		}
+
+		if node.Network().OSPF() != nil {
+			cmd.Command = fmt.Sprintf("router %s rid %s", node.General().Hostname(), node.Network().OSPF().RouterID())
+			if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+				return fmt.Errorf("configuring router ID for router %s: %w", node.General().Hostname(), err)
+			}
+
+			commit = true
+
+			for _, area := range node.Network().OSPF().Areas() {
+				for idx, iface := range node.Network().Interfaces() {
+					if !strings.EqualFold(iface.Proto(), "ospf") {
+						continue
+					}
+
+					ip := net.ParseIP(iface.Address())
+					if ip == nil {
+						continue
+					}
+
+					for _, network := range area.AreaNetworks() {
+						_, ipnet, err := net.ParseCIDR(network.Network())
+						if err != nil {
+							continue
+						}
+
+						if ipnet.Contains(ip) {
+							var aid int // assume area ID of 0 if not provided
+
+							if area.AreaID() != nil {
+								aid = *area.AreaID()
+							}
+
+							cmd.Command = fmt.Sprintf("router %s route ospf %d %d", node.General().Hostname(), aid, idx)
+							if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+								return fmt.Errorf("configuring OSPF area network for router %s: %w", node.General().Hostname(), err)
+							}
+
+							commit = true
+						}
+					}
+				}
+			}
+		}
+
+		if commit {
+			cmd.Command = fmt.Sprintf("router %s commit", node.General().Hostname())
+			if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+				return fmt.Errorf("committing config for router %s: %w", node.General().Hostname(), err)
+			}
+		}
+	}
+
 	return nil
 }
 

@@ -39,7 +39,7 @@
     <b-field v-if="experimentUser() || experimentViewer()" position="is-right">
       <b-autocomplete
         v-model="searchName"
-        placeholder="Find a VM"
+        :placeholder="searchPlaceholder"
         icon="search"
         :data="searchHistory"
         @typing="searchVMs"
@@ -74,19 +74,23 @@
       </p>  
     </b-field>
     <div style="margin-top: -4em;">
-      <b-tabs @change="updateFiles">
-        <b-tab-item label="Table">
-          <b-table     
-            :key="table.key"       
+      <b-tabs @input="tabsSwitched()" v-model="activeTab">
+        <b-tab-item label="Table">          
+          <b-table
+            :key="table.key"
             :data="experiment.vms"
             :paginated="table.isPaginated && paginationNeeded"
+            backend-pagination
+            :total="table.total"
             :per-page="table.perPage"
             :current-page.sync="table.currentPage"
+            @page-change="onPageChange"
             :pagination-simple="table.isPaginationSimple"
             :pagination-size="table.paginationSize"
+            backend-sorting
             :default-sort-direction="table.defaultSortDirection"
-            default-sort="name"                     
-            ref="vmTable">
+            default-sort="name"
+            @sort="onSort">
               <template slot="empty">
                 <section class="section">
                   <div class="content has-text-white has-text-centered">
@@ -230,37 +234,57 @@
           <br>
           <b-field v-if="paginationNeeded" grouped position="is-right">
             <div class="control is-flex">
-              <b-switch v-model="table.isPaginated" size="is-small" type="is-light">Paginate</b-switch>
+              <b-switch v-model="table.isPaginated" @input="updateExperiment()" size="is-small" type="is-light">Paginate</b-switch>
             </div>
           </b-field>
         </b-tab-item>
         <b-tab-item label="Files">
-          <template v-if="files && !files.length">
-            <section class="hero is-light is-bold is-large">
-              <div class="hero-body">
-                <div class="container" style="text-align: center">
-                  <h1 class="title">
-                    There are no files available.
-                  </h1>
-                </div>
-              </div>
-            </section>
-          </template>
-          <template v-else>
-            <ul class="fa-ul" style="list-style:none">
-              <li v-for="( f, index ) in files" :key="index">
-                <font-awesome-icon class="fa-li" icon="file-download" />
-                <a :href="'/api/v1/experiments/'
+          <b-table            
+            :data="files"
+            :paginated="filesTable.isPaginated  && filesPaginationNeeded"
+            backend-pagination
+            :total="filesTable.total"
+            :per-page="filesTable.perPage"
+            :current-page.sync="filesTable.currentPage"  
+            @page-change="onFilesPageChange"   
+            :pagination-simple="filesTable.isPaginationSimple"
+            :pagination-size="filesTable.paginationSize"  
+            backend-sorting
+            :default-sort-direction="filesTable.defaultSortDirection"
+            default-sort="date"
+            @sort="onFilesSort">
+            <template slot="empty">
+                <section class="section">
+                  <div class="content has-text-white has-text-centered">
+                    No Files Are Available!
+                  </div>
+                </section>
+            </template>
+            <template slot-scope="props">
+                <b-table-column field="name" label="Name" sortable centered>                  
+                          {{ props.row.name }}                      
+                </b-table-column>
+                <b-table-column field="date" label="Date" sortable centered>                  
+                          {{ props.row.date }}                      
+                </b-table-column>
+                <b-table-column field="size" label="Size" sortable centered>                  
+                          {{ props.row.size }}                      
+                </b-table-column>
+                 <b-table-column field="category" label="Category" sortable centered>                  
+                          {{ props.row.category }}                      
+                </b-table-column>
+                <b-table-column field="download" label="Download" centered>   
+                        <a :href="'/api/v1/experiments/'
                           + experiment.name 
                           + '/files/' 
-                          + f 
+                          + props.row.name
                           + '?token=' 
-                          + $store.state.token" target="_blank">
-                  {{ f }}
-                </a>
-              </li>
-            </ul>
-          </template>
+                          + $store.state.token" target="_blank"> 
+                          <b-icon icon="file-download" size="is-small"></b-icon>                       
+                          </a>                      
+                </b-table-column>
+            </template>
+          </b-table>
         </b-tab-item>
       </b-tabs>
     </div>
@@ -324,6 +348,14 @@
         }
 
         return true;
+      },
+      
+      filesPaginationNeeded () {
+        if ( this.filesTable.total <= this.filesTable.perPage ) {
+          return  false;
+        }
+
+        return true;
       }
     },
 
@@ -345,7 +377,13 @@
           term  = '';
         }
         this.searchName = term;
-        this.updateExperiment();
+        if (this.activeTab == 0){
+          this.updateExperiment();
+          return
+        }
+        
+        this.updateFiles()
+        
       },250),
 
       bootDecorator ( dnb ) {
@@ -355,6 +393,29 @@
           return 'boot';
         }
       },
+
+
+      onPageChange  ( page ) {
+        this.table.currentPage = page;
+        this.updateExperiment();
+      },
+
+      onSort  ( column, order ) {
+        this.table.sortColumn = column;
+        this.table.defaultSortDirection = order;
+        this.updateExperiment();
+      },
+
+      onFilesPageChange  ( page ) {
+        this.filesTable.currentPage = page;
+        this.updateFiles();
+      },
+      
+      onFilesSort  ( column, order ) {
+        this.filesTable.sortColumn = column;
+        this.filesTable.defaultSortDirection = order;
+        this.updateFiles();
+      }, 
 
       handler ( event ) {
         event.data.split( /\r?\n/ ).forEach( m => {
@@ -423,12 +484,19 @@
       },
       
       updateExperiment () {
+
+        let pageSize = this.table.isPaginated ? this.table.perPage : this.table.total
+
         let params = '?show_dnb=true&filter=' + this.searchName
+        params = params + '&sortCol=' + this.table.sortColumn
+        params = params + '&sortDir=' + this.table.defaultSortDirection
+        params = params + '&pageNum=' + this.table.currentPage
+        params = params + '&perPage=' + pageSize
         this.$http.get( 'experiments/' + this.$route.params.id + params).then(
           response => {
             response.json().then( state => {
               this.experiment = state;
-              this.table.total  = state.vm_count;  
+              this.table.total  = state.vm_count;               
 
               // Only add successful searches to the search history
               if (this.table.total > 0) {
@@ -508,16 +576,53 @@
         );
       },
       
-      updateFiles () {
-        this.files = [];
+      tabsSwitched() {
 
-        this.$http.get( 'experiments/' + this.$route.params.id + '/files' ).then(
+        // Clear search history and 
+        // search filter when switching tabs
+        this.searchHistory = []
+        this.searchName = ""
+
+        
+        if (this.activeTab == 0){
+          this.searchPlaceholder = "Find a VM"         
+          this.updateExperiment()          
+        }
+        else {
+          this.searchPlaceholder = "Find a File" 
+          this.updateFiles()         
+        }
+
+      },
+
+      updateFiles () {               
+
+        let params = '?filter=' + this.searchName
+        params = params + '&sortCol=' + this.filesTable.sortColumn
+        params = params + '&sortDir=' + this.filesTable.defaultSortDirection
+        params = params + '&pageNum=' + this.filesTable.currentPage
+        params = params + '&perPage=' + this.filesTable.perPage
+
+        this.$http.get( 'experiments/' + this.$route.params.id + '/files' + params ).then(
           response => {
             response.json().then(
-              state => {
-                for ( let i = 0; i < state.files.length; i++ ){
-                  this.files.push( state.files[ i ] );
+              state => {                             
+                this.files = state.files
+                this.filesTable.total = state.total
+
+                // Format the file sizes
+                for(let i = 0; i<this.files.length;i++){
+                  this.files[i].size = this.formatFileSize(this.files[i].size)
                 }
+
+                // Only add successful searches to the search history
+                if (this.files.length > 0) {
+                if (this.searchHistory > this.searchHistoryLength) {
+                  this.searchHistory.pop()
+                }
+                this.searchHistory.push(this.searchName.trim())
+                this.searchHistory = this.getUniqueItems(this.searchHistory)
+              }
                 
                 this.isWaiting = false;
               }
@@ -612,7 +717,7 @@
           },
           onCancel: () => {
             // force table to be rerendered so selected value resets
-            this.tableKey += 1;
+            this.table.key += 1;
           }
         })
       },
@@ -714,7 +819,7 @@
           },
           onCancel: () => {
             // force table to be rerendered so selected value resets
-            this.tableKey += 1;
+            this.table.key += 1;
           }
         })
       },
@@ -767,7 +872,7 @@
           },
           onCancel: () => {
             // force table to be rerendered so selected value resets
-            this.tableKey += 1;
+            this.table.key += 1;
           }
         })
       },
@@ -820,7 +925,7 @@
           },
           onCancel: () => {
             // force table to be rerendered so selected value resets
-            this.tableKey += 1;
+            this.table.key += 1;
           }
         })
       },
@@ -995,7 +1100,7 @@
         return Object.keys(arrayHash).sort();
 
       },
-
+      
       getBootLabel(vmName,dnb) {
         return dnb ? "Boot " + vmName : "Do Not Boot " + vmName;
         
@@ -1004,6 +1109,7 @@
       visibleItems() {        
         return this.$refs["vmTable"].visibleData.length > 0
       },
+      
       selectAllVMs  () {            
         
         var visibleItems = this.$refs["vmTable"].visibleData
@@ -1139,8 +1245,19 @@
           //clear the selection
           this.unSelectAllVMs()
            
-      }     
-  
+      }, 
+      
+      formatFileSize(fileSize){
+        if(fileSize < Math.pow(10,3)){
+          return fileSize.toFixed(2) + ' B'
+        } else if(fileSize >= Math.pow(10,3) && fileSize < Math.pow(10,6)){
+          return (fileSize/Math.pow(10,3)).toFixed(2) + ' KB'
+        } else if (fileSize >= Math.pow(10,6) && fileSize < Math.pow(10,9)){
+          return (fileSize/Math.pow(10,6)).toFixed(2) + ' MB'
+        } else if (fileSize >= Math.pow(10,9)) {
+          return (fileSize/Math.pow(10,9)).toFixed(2) + ' GB'
+        }
+      }
     },
 
     data () {
@@ -1148,11 +1265,23 @@
         table: {
           key: 0,
           isPaginated: true,
-          perPage: 10,
-          currentPage: 1,
           isPaginationSimple: true,
+          currentPage: 1,
+          perPage: 10,          
+          total:  0,
+          sortColumn: 'name',          
           paginationSize: 'is-small',
           defaultSortDirection: 'asc'
+        },
+        filesTable: {          
+          isPaginated: true,
+          isPaginationSimple: true,
+          currentPage: 1,
+          perPage: 10,          
+          total:  0,
+          sortColumn: 'date',          
+          paginationSize: 'is-small',
+          defaultSortDirection: 'desc'
         },
         expModal: {
           active: false,
@@ -1171,10 +1300,12 @@
         algorithm: null,
         dnb: false,
         isWaiting: true,
-        searchHistory: [],
+        searchHistory: [],        
         searchHistoryLength:10,
         checkAll:false,
-        selectedRows: []
+        selectedRows: [],
+        searchPlaceholder:"Find a VM",
+        activeTab:0
       }
     }
   }

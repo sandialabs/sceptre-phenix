@@ -300,6 +300,8 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) {
 		allowed.SortBy(sortCol, sortDir == "asc")
 	}
 
+	totalBeforePaging := len(allowed)
+
 	if pageNum != "" && perPage != "" {
 		n, _ := strconv.Atoi(pageNum)
 		s, _ := strconv.Atoi(perPage)
@@ -307,7 +309,10 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) {
 		allowed = allowed.Paginate(n, s)
 	}
 
-	body, err := marshaler.Marshal(util.ExperimentToProtobuf(*exp, status, allowed))
+	experiment := util.ExperimentToProtobuf(*exp, status, allowed)
+	experiment.VmCount = uint32(totalBeforePaging)
+	body, err := marshaler.Marshal(experiment)
+
 	if err != nil {
 		log.Error("marshaling experiment %s - %v", name, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -798,10 +803,16 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
 	log.Debug("GetExperimentFiles HTTP handler called")
 
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
-		vars = mux.Vars(r)
-		name = vars["name"]
+		ctx          = r.Context()
+		role         = ctx.Value("role").(rbac.Role)
+		vars         = mux.Vars(r)
+		name         = vars["name"]
+		query        = r.URL.Query()
+		sortCol      = query.Get("sortCol")
+		sortDir      = query.Get("sortDir")
+		pageNum      = query.Get("pageNum")
+		perPage      = query.Get("perPage")
+		clientFilter = query.Get("filter")
 	)
 
 	if !role.Allowed("experiments/files", "list", name) {
@@ -810,14 +821,30 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	files, err := experiment.Files(name)
+	files, err := experiment.Files(name, clientFilter)
 	if err != nil {
 		log.Error("getting list of files for experiment %s - %v", name, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	body, err := marshaler.Marshal(&proto.FileList{Files: files})
+	experimentFilesTotal := len(files)
+
+	if sortCol != "" && sortDir != "" {
+		files.SortBy(sortCol, sortDir == "asc")
+	}
+
+	if pageNum != "" && perPage != "" {
+		n, _ := strconv.Atoi(pageNum)
+		s, _ := strconv.Atoi(perPage)
+
+		files = files.Paginate(n, s)
+	}
+
+	experimentFileList := util.ExperimentFileListToProtobuf(files)
+	experimentFileList.Total = uint32(experimentFilesTotal)
+
+	body, err := marshaler.Marshal(experimentFileList)
 	if err != nil {
 		log.Error("marshaling file list for experiment %s - %v", name, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

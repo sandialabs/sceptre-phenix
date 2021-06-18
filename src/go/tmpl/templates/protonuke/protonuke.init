@@ -1,0 +1,81 @@
+#!/bin/sh
+
+### BEGIN INIT INFO
+# Provides: protonuke startup
+# Required-Start:	$syslog $local_fs 
+# Required-Stop:	$syslog $local_fs 
+# Default-Start:	5
+# Default-Stop:		0 1 6
+# Short-Description: protonuke Agent
+### END INIT INFO
+
+. /lib/lsb/init-functions
+
+PROG=protonuke
+PIDFILE=/var/run/$PROG.pid
+DESC="protonuke Agent"
+
+start() {
+	log_daemon_msg "Starting $DESC" "$PROG"
+
+	if [ -f /etc/default/protonuke ]; then
+		. /etc/default/protonuke
+	else
+		log_daemon_msg "Failed to start $PROG - missing /etc/default/protonuke file"
+		log_end_msg 1
+		exit 1
+	fi
+
+	start_daemon -p $PIDFILE /usr/local/bin/$PROG $PROTONUKE_ARGS
+
+	if [ $? -ne 0 ]; then
+		log_end_msg 1
+		exit 1
+	fi
+
+	if [ $? -eq 0 ]; then
+		log_end_msg 0
+	fi
+
+	exit 0
+}
+
+stop() {
+	log_daemon_msg "Stopping $DESC" "$PROG"
+	killproc -p $PIDFILE
+
+	if [ $? -ne 0 ]; then
+		log_end_msg 1
+		exit 1
+	fi
+
+	if [ $? -eq 0 ]; then
+		log_end_msg 0
+	fi
+
+	exit 0
+}
+
+force_reload() {
+	stop
+	start
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		stop
+		;;
+	force-reload)
+		force_reload
+		;;
+	restart)
+		stop
+		start
+		;;
+	*)
+		echo "$Usage: $prog {start|stop|force-reload|restart}"
+		exit 2
+esac
