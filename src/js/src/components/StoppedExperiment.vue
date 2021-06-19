@@ -75,7 +75,7 @@
     </b-field>
     <div style="margin-top: -4em;">
       <b-tabs @input="tabsSwitched()" v-model="activeTab">
-        <b-tab-item label="Table">
+        <b-tab-item label="Table">          
           <b-table
             :key="table.key"
             :data="experiment.vms"
@@ -99,6 +99,18 @@
                 </section>
               </template>
               <template slot-scope="props">
+                <b-table-column  field="multiselect" label="">              
+                  <template v-slot:header="{ column }">
+                    <b-tooltip label="Select/Unselect All" type="is-dark">
+                    <b-checkbox @input="selectAllVMs" v-model="checkAll" type="is-info"/>
+                    </b-tooltip>
+                  </template>
+                  <template>
+                    <div>
+                      <b-checkbox v-model="selectedRows" :native-value=props.row.name type="is-info"/>
+                    </div>
+                  </template>                  
+                </b-table-column>
                 <b-table-column field="name" label="VM" sortable>
                   <template v-if="adminUser()">
                     <b-tooltip label="get info on the vm" type="is-dark">
@@ -195,7 +207,23 @@
                   </template>
                 </b-table-column>
                 <b-table-column v-if="experimentUser()" label="Boot" centered>
-                  <b-tooltip label="control whether or not VM boots" type="is-dark">
+                  <template v-slot:header = "{ column }">                  
+                      {{ column.label }}   
+                      <div></div>                       
+                      <div class="level" style="padding: 0px;" centered>                    
+                        <b-tooltip label="Set to Boot" type="is-dark" :active="visibleItems()"> 
+                          <div v-if="visibleItems()" @click="setBoot(false)">                  
+                            <b-icon icon="bolt" style="color: #c46200;" size="is-small"></b-icon>  	
+                          </div>  
+                        </b-tooltip>                        
+                        <b-tooltip label="Set to Do Not Boot" type="is-dark" :active="visibleItems()">             
+                          <div v-if="visibleItems()" @click="setBoot(true)">                  
+                            <b-icon icon="bolt" style="color: #ffffff;" size="is-small"></b-icon>  	
+                          </div>  
+                        </b-tooltip>                   
+                      </div>
+                  </template>
+                  <b-tooltip :label="getBootLabel(props.row.name,props.row.dnb)" type="is-dark">
                     <div @click="updateDnb(props.row.name, !props.row.dnb)">
                       <font-awesome-icon :class="bootDecorator(props.row.dnb)" icon="bolt" />
                     </div>
@@ -432,7 +460,7 @@
             if ( msg.resource.action != 'update' ) {
               return;
             }
-
+            
             let vms = this.experiment.vms;
 
             for ( let i = 0; i < vms.length; i++ ) {
@@ -1073,6 +1101,152 @@
 
       },
       
+      getBootLabel(vmName,dnb) {
+        return dnb ? "Boot " + vmName : "Do Not Boot " + vmName;
+        
+      },
+
+      visibleItems() {        
+        return this.$refs["vmTable"].visibleData.length > 0
+      },
+      
+      selectAllVMs  () {            
+        
+        var visibleItems = this.$refs["vmTable"].visibleData
+        //If there are no visible items, there is nothing to select
+        if(visibleItems.length == 0)
+        {
+          return 
+        }    
+        
+        //If everything is selected, the unselect everything
+        else if(this.selectedRows.length == visibleItems.length)
+        {
+          this.unSelectAllVMs();
+          return
+          
+        }
+
+        
+        // If the select all checkbox is not checked, then unselect everything        
+        if(!this.checkAll) {
+          this.unSelectAllVMs();
+          return
+        }
+        
+        
+        //Add all visible items
+        this.selectedRows=[]
+        
+        for(var i=0; i<visibleItems.length; i++){
+            this.selectedRows.push(visibleItems[i].name)
+        }  
+                
+      },
+        
+      unSelectAllVMs(){
+        
+        this.checkAll = false;
+        this.selectedRows=[]        
+        
+      },
+
+      setBoot(dnb){
+        let vms = []
+        let attemptMessage = "";
+        let successMessage = "";
+        let failedMessage = "";
+
+        //Determine the list of VMs to apply the boot request to
+        if (this.selectedRows.length == 0 && this.searchName.length > 0){
+            
+            let visibleItems = this.$refs["vmTable"].visibleData
+            
+            for(let i = 0; i<visibleItems.length;i++){
+              vms.push(visibleItems[i].name)
+            }
+        }
+        else{
+          for(let i = 0; i<this.selectedRows.length;i++){
+              vms.push(this.selectedRows[i])
+            }
+        }
+
+        if (vms.length == 0){
+            return
+        }
+
+        if (dnb){
+          attemptMessage = " to not boot when the experiment starts"
+          successMessage = " The selected VMs were set to not boot "
+          failedMessage = " The selected VMs were unable to be set to not boot "
+        }
+        else {
+          attemptMessage = " to boot when the experiment starts"
+          successMessage = " The selected VMs were set to boot "
+          failedMessage = " The selected VMs were unable to be set to boot " 
+        }
+
+        this.$buefy.dialog.confirm({
+            title:"Set Boot",
+            message:"This will set " + vms.join(", ") + attemptMessage ,
+            cancelText:"Cancel",
+            confirmText:"Ok",
+            type:"is-success",
+            onConfirm: () => {
+              
+                let requestList = [];
+
+                vms.forEach((vmName) => {
+                  let update = {"name":vmName, "dnb": dnb };
+                  requestList.push(update)
+                })
+              
+                this.$http.patch(
+                  'experiments/' + this.$route.params.id + '/vms', {"vms":requestList,"total":requestList.length}
+                  ).then(
+                  response  => {
+                    let vms = this.experiment.vms;                  
+              
+                    for ( let i = 0; i < response.body.vms.length; i++ ) {
+                      for (let j=0; j<vms.length;j++){
+                        if ( response.body.vms[i].name == vms[j].name ) {
+                          vms[j] = response.body.vms[i];
+                          break;
+                        } 
+                      }                      
+                    }   
+            
+                  this.experiment.vms = [ ...vms ];              
+                  this.isWaiting = false; 
+                  
+                  
+                   this.$buefy.toast.open({
+                    message: successMessage,
+                    type: 'is-success',
+                    duration: 4000
+                  });
+                      
+                
+                  },  response => {
+                    
+                    this.$buefy.toast.open({
+                    message: failedMessage,
+                    type: 'is-danger',
+                    duration: 4000
+                  });
+                
+                this.isWaiting = false;
+              }
+              )                  
+                
+            }
+          })
+          //clear the selection
+          this.unSelectAllVMs()
+           
+      }, 
+      
       formatFileSize(fileSize){
         if(fileSize < Math.pow(10,3)){
           return fileSize.toFixed(2) + ' B'
@@ -1128,6 +1302,8 @@
         isWaiting: true,
         searchHistory: [],        
         searchHistoryLength:10,
+        checkAll:false,
+        selectedRows: [],
         searchPlaceholder:"Find a VM",
         activeTab:0
       }
