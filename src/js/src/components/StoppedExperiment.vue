@@ -90,7 +90,8 @@
             backend-sorting
             :default-sort-direction="table.defaultSortDirection"
             default-sort="name"
-            @sort="onSort">
+            @sort="onSort"
+            ref="vmTable">
               <template slot="empty">
                 <section class="section">
                   <div class="content has-text-white has-text-centered">
