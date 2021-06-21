@@ -345,7 +345,7 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
 						wg.AddError(skipHost, map[string]interface{}{"host": host, "target": targetIP})
 					} else {
 						printer.Printf("  Pinging %s (%s) from host %s\n", targetHost, targetIP, host)
-						pingTest(ctx, wg, ns, this.nodes[host], targetIP)
+						this.pingTest(ctx, wg, ns, this.nodes[host], targetIP)
 					}
 
 					break
@@ -388,7 +388,7 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
 						wg.AddError(skipHost, map[string]interface{}{"host": host, "target": targetIP})
 					} else {
 						printer.Printf("  Pinging %s from host %s\n", targetIP, host)
-						pingTest(ctx, wg, ns, this.nodes[host], targetIP)
+						this.pingTest(ctx, wg, ns, this.nodes[host], targetIP)
 					}
 				}
 			}
@@ -448,7 +448,7 @@ func (this *SOH) waitForProcTest(ctx context.Context, ns string) {
 
 		for _, proc := range processes {
 			printer.Printf("  Checking for process %s on host %s\n", proc, host)
-			procTest(ctx, wg, ns, this.nodes[host], proc)
+			this.procTest(ctx, wg, ns, this.nodes[host], proc)
 		}
 	}
 
@@ -470,7 +470,7 @@ func (this *SOH) waitForProcTest(ctx context.Context, ns string) {
 
 				for _, proc := range profile.Processes {
 					printer.Printf("  Checking for process %s on host %s\n", proc, host.Hostname())
-					procTest(ctx, wg, ns, this.nodes[host.Hostname()], proc)
+					this.procTest(ctx, wg, ns, this.nodes[host.Hostname()], proc)
 				}
 			}
 		}
@@ -525,7 +525,7 @@ func (this *SOH) waitForPortTest(ctx context.Context, ns string) {
 
 		for _, port := range listeners {
 			printer.Printf("  Checking for listener %s on host %s\n", port, host)
-			portTest(ctx, wg, ns, this.nodes[host], port)
+			this.portTest(ctx, wg, ns, this.nodes[host], port)
 		}
 	}
 
@@ -547,7 +547,7 @@ func (this *SOH) waitForPortTest(ctx context.Context, ns string) {
 
 				for _, port := range profile.Listeners {
 					printer.Printf("  Checking for listener %s on host %s\n", port, host.Hostname())
-					portTest(ctx, wg, ns, this.nodes[host.Hostname()], port)
+					this.portTest(ctx, wg, ns, this.nodes[host.Hostname()], port)
 				}
 			}
 		}
@@ -678,66 +678,7 @@ func (this *SOH) waitForCPULoad(ctx context.Context, ns string) {
 	}
 }
 
-func injectICMPAllowRules(nodes []ifaces.NodeSpec) error {
-	for _, node := range nodes {
-		// This only adds ICMP allow rules if one or more rulesets already exist. If
-		// no rulesets exist then ICMP should already be allowed.
-		// TODO: right now, we simply add a rule to allow ICMP to/from anywhere
-		// without checking the default rule or seeing if an ICMP rule already
-		// exists. May want to improve on this if it causes issues.
-		for _, ruleset := range node.Network().Rulesets() {
-			var present bool
-
-			for _, rule := range ruleset.Rules() {
-				if strings.HasPrefix(rule.Description(), "[SOH ICMP ALL]") {
-					present = true
-					break
-				}
-			}
-
-			if present {
-				continue
-			}
-
-			rule := ruleset.UnshiftRule()
-
-			if rule == nil {
-				return fmt.Errorf("unable to prepend rule to %s - no ID available", node.General().Hostname())
-			}
-
-			rule.SetDescription("[SOH ICMP ALL] Allow all ICMP for SoH reachability")
-			rule.SetAction("accept")
-			rule.SetProtocol("icmp")
-			rule.SetSource("0.0.0.0/0", 0)
-			rule.SetDestination("0.0.0.0/0", 0)
-		}
-	}
-
-	return nil
-}
-
-func removeICMPAllowRules(nodes []ifaces.NodeSpec) error {
-	for _, node := range nodes {
-		for _, ruleset := range node.Network().Rulesets() {
-			var rule ifaces.NodeNetworkRulesetRule
-
-			for _, r := range ruleset.Rules() {
-				if strings.HasPrefix(r.Description(), "[SOH ICMP ALL]") {
-					rule = r
-					break
-				}
-			}
-
-			if rule != nil {
-				ruleset.RemoveRule(rule.ID())
-			}
-		}
-	}
-
-	return nil
-}
-
-func isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, iface ifaces.NodeNetworkInterface) {
+func (this SOH) isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, iface ifaces.NodeNetworkInterface) {
 	retryUntil := time.Now().Add(5 * time.Minute)
 
 	host := node.General().Hostname()
@@ -846,12 +787,10 @@ func isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns string, nod
 					exec = fmt.Sprintf("ping -n 1 %s", gateway)
 				}
 
-				cmd := &mm.C2ParallelCommand{
-					Wait:     wg,
-					Options:  []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2Command(exec)},
-					Meta:     map[string]interface{}{"host": host},
-					Expected: gwPingExpected,
-				}
+				cmd := this.newParallelCommand(ns, host, exec)
+				cmd.Wait = wg
+				cmd.Meta = map[string]interface{}{"host": host}
+				cmd.Expected = gwPingExpected
 
 				mm.ScheduleC2ParallelCommand(ctx, cmd)
 
@@ -864,12 +803,10 @@ func isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns string, nod
 				exec = "route print"
 			}
 
-			cmd := &mm.C2ParallelCommand{
-				Wait:     wg,
-				Options:  []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2Command(exec)},
-				Meta:     map[string]interface{}{"host": host},
-				Expected: gwExpected,
-			}
+			cmd := this.newParallelCommand(ns, host, exec)
+			cmd.Wait = wg
+			cmd.Meta = map[string]interface{}{"host": host}
+			cmd.Expected = gwExpected
 
 			mm.ScheduleC2ParallelCommand(ctx, cmd)
 		}
@@ -883,123 +820,186 @@ func isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns string, nod
 		exec = "ipconfig /all"
 	}
 
-	cmd := &mm.C2ParallelCommand{
-		Wait:     wg,
-		Options:  []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2Command(exec)},
-		Meta:     map[string]interface{}{"host": host},
-		Expected: ipExpected,
-	}
+	cmd := this.newParallelCommand(ns, host, exec)
+	cmd.Wait = wg
+	cmd.Meta = map[string]interface{}{"host": host}
+	cmd.Expected = ipExpected
 
 	mm.ScheduleC2ParallelCommand(ctx, cmd)
 }
 
-func pingTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, target string) {
+func (this SOH) pingTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, target string) {
 	exec := fmt.Sprintf("ping -c 1 %s", target)
 
 	if strings.EqualFold(node.Hardware().OSType(), "windows") {
 		exec = fmt.Sprintf("ping -n 1 %s", target)
 	}
 
+	expected := func(resp string) error {
+		switch strings.ToLower(node.Hardware().OSType()) {
+		case "linux", "rhel", "centos":
+			// If `resp` contains `0 received`, the default gateway isn't up
+			// (pingable) yet, so keep retrying the C2 command.
+			if strings.Contains(resp, "0 received") {
+				return fmt.Errorf("no successful pings")
+			}
+		case "windows":
+			// If `resp` contains `Destination host unreachable`, the
+			// default gateway isn't up (pingable) yet, so keep retrying the C2
+			// command.
+			if strings.Contains(resp, "Destination host unreachable") {
+				return fmt.Errorf("no successful pings")
+			}
+		default:
+			return fmt.Errorf("unknown OS type %s waiting for gateway to be up", node.Hardware().OSType())
+		}
+
+		return nil
+	}
+
 	host := node.General().Hostname()
 
-	cmd := &mm.C2ParallelCommand{
-		Wait:    wg,
-		Options: []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2Command(exec)},
-		Meta:    map[string]interface{}{"host": host, "target": target},
-		Expected: func(resp string) error {
-			switch strings.ToLower(node.Hardware().OSType()) {
-			case "linux", "rhel", "centos":
-				// If `resp` contains `0 received`, the default gateway isn't up
-				// (pingable) yet, so keep retrying the C2 command.
-				if strings.Contains(resp, "0 received") {
-					return fmt.Errorf("no successful pings")
-				}
-			case "windows":
-				// If `resp` contains `Destination host unreachable`, the
-				// default gateway isn't up (pingable) yet, so keep retrying the C2
-				// command.
-				if strings.Contains(resp, "Destination host unreachable") {
-					return fmt.Errorf("no successful pings")
-				}
-			default:
-				return fmt.Errorf("unknown OS type %s waiting for gateway to be up", node.Hardware().OSType())
-			}
-
-			return nil
-		},
-	}
+	cmd := this.newParallelCommand(ns, host, exec)
+	cmd.Wait = wg
+	cmd.Meta = map[string]interface{}{"host": host, "target": target}
+	cmd.Expected = expected
 
 	mm.ScheduleC2ParallelCommand(ctx, cmd)
 }
 
-func procTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, proc string) {
+func (this SOH) procTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, proc string) {
 	exec := fmt.Sprintf("pgrep -f %s", proc)
 
 	if strings.EqualFold(node.Hardware().OSType(), "windows") {
 		exec = fmt.Sprintf(`powershell -command "Get-Process %s -ErrorAction SilentlyContinue"`, proc)
 	}
 
-	host := node.General().Hostname()
 	retries := 5
-
-	cmd := &mm.C2ParallelCommand{
-		Wait:    wg,
-		Options: []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2Command(exec)},
-		Meta:    map[string]interface{}{"host": host, "proc": proc},
-		Expected: func(resp string) error {
-			if resp == "" {
-				if retries > 0 {
-					retries--
-					return mm.C2RetryError{Delay: 5 * time.Second}
-				}
-
-				return fmt.Errorf("process not running")
+	expected := func(resp string) error {
+		if resp == "" {
+			if retries > 0 {
+				retries--
+				return mm.C2RetryError{Delay: 5 * time.Second}
 			}
 
-			return nil
-		},
+			return fmt.Errorf("process not running")
+		}
+
+		return nil
 	}
+
+	host := node.General().Hostname()
+
+	cmd := this.newParallelCommand(ns, host, exec)
+	cmd.Wait = wg
+	cmd.Meta = map[string]interface{}{"host": host, "proc": proc}
+	cmd.Expected = expected
 
 	mm.ScheduleC2ParallelCommand(ctx, cmd)
 }
 
-func portTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, port string) {
+func (this SOH) portTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, port string) {
 	exec := fmt.Sprintf("ss -lntu state all 'sport = %s'", port)
 
 	if strings.EqualFold(node.Hardware().OSType(), "windows") {
 		exec = fmt.Sprintf(`powershell -command "netstat -an | select-string -pattern 'listening' | select-string -pattern '%s'"`, port)
 	}
 
-	host := node.General().Hostname()
 	retries := 5
+	expected := func(resp string) error {
+		lineCount := 1
 
-	cmd := &mm.C2ParallelCommand{
-		Wait:    wg,
-		Options: []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2Command(exec)},
-		Meta:    map[string]interface{}{"host": host, "port": port},
-		Expected: func(resp string) error {
-			lineCount := 1
+		if strings.EqualFold(node.Hardware().OSType(), "windows") {
+			lineCount = 0
+		}
 
-			if strings.EqualFold(node.Hardware().OSType(), "windows") {
-				lineCount = 0
+		lines := trim(resp)
+
+		if len(lines) <= lineCount {
+			if retries > 0 {
+				retries--
+				return mm.C2RetryError{Delay: 5 * time.Second}
 			}
 
-			lines := trim(resp)
+			return fmt.Errorf("not listening on port")
+		}
 
-			if len(lines) <= lineCount {
-				if retries > 0 {
-					retries--
-					return mm.C2RetryError{Delay: 5 * time.Second}
-				}
-
-				return fmt.Errorf("not listening on port")
-			}
-
-			return nil
-		},
+		return nil
 	}
 
+	host := node.General().Hostname()
+
+	cmd := this.newParallelCommand(ns, host, exec)
+	cmd.Wait = wg
+	cmd.Meta = map[string]interface{}{"host": host, "port": port}
+	cmd.Expected = expected
+
 	mm.ScheduleC2ParallelCommand(ctx, cmd)
+}
+
+func (this SOH) newParallelCommand(ns, host, exec string) *mm.C2ParallelCommand {
+	return &mm.C2ParallelCommand{
+		Options: []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2Command(exec), mm.C2Timeout(this.md.c2Timeout)},
+	}
+}
+
+func injectICMPAllowRules(nodes []ifaces.NodeSpec) error {
+	for _, node := range nodes {
+		// This only adds ICMP allow rules if one or more rulesets already exist. If
+		// no rulesets exist then ICMP should already be allowed.
+		// TODO: right now, we simply add a rule to allow ICMP to/from anywhere
+		// without checking the default rule or seeing if an ICMP rule already
+		// exists. May want to improve on this if it causes issues.
+		for _, ruleset := range node.Network().Rulesets() {
+			var present bool
+
+			for _, rule := range ruleset.Rules() {
+				if strings.HasPrefix(rule.Description(), "[SOH ICMP ALL]") {
+					present = true
+					break
+				}
+			}
+
+			if present {
+				continue
+			}
+
+			rule := ruleset.UnshiftRule()
+
+			if rule == nil {
+				return fmt.Errorf("unable to prepend rule to %s - no ID available", node.General().Hostname())
+			}
+
+			rule.SetDescription("[SOH ICMP ALL] Allow all ICMP for SoH reachability")
+			rule.SetAction("accept")
+			rule.SetProtocol("icmp")
+			rule.SetSource("0.0.0.0/0", 0)
+			rule.SetDestination("0.0.0.0/0", 0)
+		}
+	}
+
+	return nil
+}
+
+func removeICMPAllowRules(nodes []ifaces.NodeSpec) error {
+	for _, node := range nodes {
+		for _, ruleset := range node.Network().Rulesets() {
+			var rule ifaces.NodeNetworkRulesetRule
+
+			for _, r := range ruleset.Rules() {
+				if strings.HasPrefix(r.Description(), "[SOH ICMP ALL]") {
+					rule = r
+					break
+				}
+			}
+
+			if rule != nil {
+				ruleset.RemoveRule(rule.ID())
+			}
+		}
+	}
+
+	return nil
 }
 
 func skip(node ifaces.NodeSpec, toSkip []string) bool {

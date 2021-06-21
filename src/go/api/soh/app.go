@@ -137,7 +137,7 @@ func (this *SOH) PostStart(ctx context.Context, exp *types.Experiment) error {
 
 	if err := this.runChecks(ctx, exp, true); err != nil {
 		if this.md.ExitOnError {
-			return err
+			return fmt.Errorf("running initial SoH checks: %w", err)
 		}
 
 		fmt.Printf("Error running initial SoH checks: %v\n", err)
@@ -214,7 +214,7 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment, initial b
 
 				printer.Printf("  Waiting for IP %s on host %s to be set...\n", cidr, host)
 
-				isNetworkingConfigured(ctx, wg, ns, node, iface)
+				this.isNetworkingConfigured(ctx, wg, ns, node, iface)
 			}
 		}
 	}
@@ -277,6 +277,10 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment, initial b
 	}
 
 	exp.Status.SetAppStatus("soh", appStatus)
+
+	if len(wg.Errors) > 0 {
+		return fmt.Errorf("errors encountered in state of health app")
+	}
 
 	return nil
 }

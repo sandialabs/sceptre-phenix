@@ -68,9 +68,11 @@ func ScheduleC2ParallelCommand(ctx context.Context, cmd *C2ParallelCommand) {
 			id string
 		)
 
+		timeout := time.After(o.timeout)
+
 		for {
 			select {
-			case <-time.After(o.timeout):
+			case <-timeout:
 				cmd.Wait.AddError(fmt.Errorf("timeout waiting for C2 to be active: %w", ErrC2ClientNotActive), cmd.Meta)
 				return
 			default:
