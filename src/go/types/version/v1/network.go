@@ -405,10 +405,20 @@ func (this Rule) Protocol() string {
 }
 
 func (this Rule) Source() ifaces.NodeNetworkRulesetRuleAddrPort {
+	// fun times... https://glucn.medium.com/golang-an-interface-holding-a-nil-value-is-not-nil-bb151f472cc7
+	if this.SourceF == nil {
+		return nil
+	}
+
 	return this.SourceF
 }
 
 func (this Rule) Destination() ifaces.NodeNetworkRulesetRuleAddrPort {
+	// fun times... https://glucn.medium.com/golang-an-interface-holding-a-nil-value-is-not-nil-bb151f472cc7
+	if this.DestinationF == nil {
+		return nil
+	}
+
 	return this.DestinationF
 }
 

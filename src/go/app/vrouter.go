@@ -163,6 +163,10 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 			continue
 		}
 
+		if *node.General().DoNotBoot() {
+			continue
+		}
+
 		var (
 			commit bool
 			cmd    = mmcli.NewNamespacedCommand(exp.Metadata.Name)
@@ -248,6 +252,48 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 
 							commit = true
 						}
+					}
+				}
+			}
+		}
+
+		for idx, iface := range node.Network().Interfaces() {
+			if name := iface.RulesetIn(); name != "" {
+				for _, ruleset := range node.Network().Rulesets() {
+					if ruleset.Name() == name {
+						if err := addChainRules(cmd, node.General().Hostname(), ruleset); err != nil {
+							return fmt.Errorf("processing ruleset rules: %w", err)
+						}
+
+						cmd.Command = fmt.Sprintf("router %s fw chain %s apply in %d", node.General().Hostname(), ruleset.Name(), idx)
+
+						if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+							return fmt.Errorf("applying firewall chain to interface for router %s: %w", node.General().Hostname(), err)
+						}
+
+						commit = true
+
+						break
+					}
+				}
+			}
+
+			if name := iface.RulesetOut(); name != "" {
+				for _, ruleset := range node.Network().Rulesets() {
+					if ruleset.Name() == name {
+						if err := addChainRules(cmd, node.General().Hostname(), ruleset); err != nil {
+							return fmt.Errorf("processing ruleset rules: %w", err)
+						}
+
+						cmd.Command = fmt.Sprintf("router %s fw chain %s apply out %d", node.General().Hostname(), ruleset.Name(), idx)
+
+						if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+							return fmt.Errorf("applying firewall chain to interface for router %s: %w", node.General().Hostname(), err)
+						}
+
+						commit = true
+
+						break
 					}
 				}
 			}
@@ -429,6 +475,42 @@ func (this *Vrouter) processIPSec(md map[string]interface{}, nets []ifaces.NodeN
 	}
 
 	return &ipsec, nil
+}
+
+func addChainRules(cmd *mmcli.Command, node string, ruleset ifaces.NodeNetworkRuleset) error {
+	for _, rule := range ruleset.Rules() {
+		dst := rule.Destination().Address()
+
+		if port := rule.Destination().Port(); port != 0 {
+			dst = fmt.Sprintf("%s:%d", dst, port)
+		}
+
+		proto := rule.Protocol()
+
+		if rule.Source() != nil {
+			src := rule.Source().Address()
+
+			if port := rule.Source().Port(); port != 0 {
+				src = fmt.Sprintf("%s:%d", src, port)
+			}
+
+			cmd.Command = fmt.Sprintf("router %s fw chain %s action %s %s %s %s", node, ruleset.Name(), rule.Action(), src, dst, proto)
+		} else {
+			cmd.Command = fmt.Sprintf("router %s fw chain %s action %s %s %s", node, ruleset.Name(), rule.Action(), dst, proto)
+		}
+
+		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+			return fmt.Errorf("adding firewall rule for router %s: %w", node, err)
+		}
+
+		cmd.Command = fmt.Sprintf("router %s fw chain %s default action %s", node, ruleset.Name(), ruleset.Default())
+
+		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+			return fmt.Errorf("setting default firewall chain action for router %s: %w", node, err)
+		}
+	}
+
+	return nil
 }
 
 func generateSecret(n int) string {
