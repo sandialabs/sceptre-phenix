@@ -93,7 +93,7 @@
       <div style="margin-top: -1em;">
         <b-table
           :data="filteredExperiments"
-          :paginated="table.isPaginated && paginationNeeded"
+          :paginated="table.isPaginated"
           :per-page="table.perPage"
           :current-page.sync="table.currentPage"
           :pagination-simple="table.isPaginationSimple"
@@ -174,7 +174,7 @@
         <br>
         <b-field v-if="paginationNeeded" grouped position="is-right">
           <div class="control is-flex">
-            <b-switch v-model="table.isPaginated" size="is-small" type="is-light">Paginate</b-switch>
+            <b-switch v-model="table.isPaginated" size="is-small" type="is-light" @input="changePaginate()">Paginate</b-switch>
           </div>
         </b-field>
       </div>
@@ -226,14 +226,19 @@
       },
 
       paginationNeeded () {
-        var experiments = this.experiments;
-        if ( experiments.length <= 10 ) {
+        var user = localStorage.getItem( 'user' );
+
+        if ( localStorage.getItem( user + '.lastPaginate' ) ) {
+          this.table.isPaginated = localStorage.getItem( user + '.lastPaginate' )  == 'true';
+        }
+
+        if ( this.experiments.length <= 10 ) {
+          this.table.isPaginated = false;
           return false;
         } else {
           return true;
         }
-      }      
-      
+      }
     },
     
     methods: { 
@@ -415,6 +420,11 @@
       
       experimentUser () {
         return [ 'Global Admin', 'Experiment Admin', 'Experiment User' ].includes( this.$store.getters.role );
+      },
+
+      changePaginate () {
+        var user = localStorage.getItem( 'user' );
+        localStorage.setItem( user + '.lastPaginate', this.table.isPaginated );
       },
       
       updating: function( status ) {
@@ -723,7 +733,7 @@
     data () {
       return {
         table: {
-          isPaginated: true,
+          isPaginated: false,
           perPage: 10,
           currentPage: 1,
           isPaginationSimple: true,

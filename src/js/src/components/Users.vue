@@ -87,7 +87,7 @@
       <div>
         <b-table
           :data="users"
-          :paginated="table.isPaginated && paginationNeeded"
+          :paginated="table.isPaginated"
           :per-page="table.perPage"
           :current-page.sync="table.currentPage"
           :pagination-simple="table.isPaginationSimple"
@@ -125,9 +125,10 @@
             </b-table-column>
           </template>
         </b-table>
+        <br>
         <b-field v-if="paginationNeeded" grouped position="is-right">
           <div class="control is-flex">
-            <b-switch v-model="table.isPaginated" size="is-small" type="is-light">Paginate</b-switch>
+            <b-switch v-model="table.isPaginated" size="is-small" type="is-light" @input="changePaginate()">Paginate</b-switch>
           </div>
         </b-field>
       </div>
@@ -150,7 +151,14 @@
 
     computed: {
       paginationNeeded () {
+        var user = localStorage.getItem( 'user' );
+
+        if ( localStorage.getItem( user + '.lastPaginate' ) ) {
+          this.table.isPaginated = localStorage.getItem( user + '.lastPaginate' )  == 'true';
+        }
+
         if ( this.users.length <= 10 ) {
+          this.table.isPaginated = false;
           return false;
         } else {
           return true;
@@ -260,6 +268,11 @@
       
       experimentUser () {
         return [ 'Global Admin', 'Experiment Admin', 'Experiment User' ].includes( this.$store.getters.role );
+      },
+
+      changePaginate () {
+        var user = localStorage.getItem( 'user' );
+        localStorage.setItem( user + '.lastPaginate', this.table.isPaginated );
       },
 
       createUser () {
@@ -494,7 +507,7 @@
       return {
         table: {
           striped: true,
-          isPaginated: true,
+          isPaginated: false,
           isPaginationSimple: true,
           paginationSize: 'is-small',
           defaultSortDirection: 'asc',

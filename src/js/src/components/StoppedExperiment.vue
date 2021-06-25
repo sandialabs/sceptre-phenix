@@ -79,7 +79,7 @@
           <b-table
             :key="table.key"
             :data="experiment.vms"
-            :paginated="table.isPaginated && paginationNeeded"
+            :paginated="table.isPaginated"
             backend-pagination
             :total="table.total"
             :per-page="table.perPage"
@@ -235,7 +235,7 @@
           <br>
           <b-field v-if="paginationNeeded" grouped position="is-right">
             <div class="control is-flex">
-              <b-switch v-model="table.isPaginated" @input="updateExperiment()" size="is-small" type="is-light">Paginate</b-switch>
+              <b-switch v-model="table.isPaginated" @input="updateExperiment(); changePaginate();" size="is-small" type="is-light">Paginate</b-switch>
             </div>
           </b-field>
         </b-tab-item>
@@ -286,6 +286,12 @@
                 </b-table-column>
             </template>
           </b-table>
+          <br>
+          <b-field v-if="filesPaginationNeeded" grouped position="is-right">
+            <div class="control is-flex">
+              <b-switch v-model="filesTable.isPaginated" @input="updateFiles(); changeFilesPaginate();" size="is-small" type="is-light">Paginate</b-switch>
+            </div>
+          </b-field>
         </b-tab-item>
       </b-tabs>
     </div>
@@ -344,19 +350,31 @@
       },
 
       paginationNeeded () {
-        if ( this.table.total <= this.table.perPage ) {
-          return  false;
+        var user = localStorage.getItem( 'user' );
+
+        if ( localStorage.getItem( user + '.lastPaginate' ) ) {
+          this.table.isPaginated = localStorage.getItem( user + '.lastPaginate' )  == 'true';
         }
 
-        return true;
+        if ( this.table.total <= this.table.perPage ) {
+          return false;
+        } else {
+          return true;
+        }
       },
       
       filesPaginationNeeded () {
-        if ( this.filesTable.total <= this.filesTable.perPage ) {
-          return  false;
+        var user = localStorage.getItem( 'user' );
+
+        if ( localStorage.getItem( user + '.lastPaginate' ) ) {
+          this.filesTable.isPaginated = localStorage.getItem( user + '.lastPaginate' )  == 'true';
         }
 
-        return true;
+        if ( this.filesTable.total <= this.filesTable.perPage ) {
+          return false;
+        } else {
+          return true;
+        }
       }
     },
 
@@ -395,6 +413,15 @@
         }
       },
 
+      changePaginate () {
+        var user = localStorage.getItem( 'user' );
+        localStorage.setItem( user + '.lastPaginate', this.table.isPaginated );
+      },
+
+      changeFilesPaginate () {
+        var user = localStorage.getItem( 'user' );
+        localStorage.setItem( user + '.lastPaginate', this.filesTable.isPaginated );
+      },
 
       onPageChange  ( page ) {
         this.table.currentPage = page;
@@ -485,14 +512,15 @@
       },
       
       updateExperiment () {
-
-        let pageSize = this.table.isPaginated ? this.table.perPage : this.table.total
-
         let params = '?show_dnb=true&filter=' + this.searchName
         params = params + '&sortCol=' + this.table.sortColumn
         params = params + '&sortDir=' + this.table.defaultSortDirection
-        params = params + '&pageNum=' + this.table.currentPage
-        params = params + '&perPage=' + pageSize
+
+        if ( this.table.isPaginated ) {
+          params = params + '&pageNum=' + this.table.currentPage
+          params = params + '&perPage=' + this.table.perPage
+        }
+
         this.$http.get( 'experiments/' + this.$route.params.id + params).then(
           response => {
             response.json().then( state => {
@@ -601,8 +629,11 @@
         let params = '?filter=' + this.searchName
         params = params + '&sortCol=' + this.filesTable.sortColumn
         params = params + '&sortDir=' + this.filesTable.defaultSortDirection
-        params = params + '&pageNum=' + this.filesTable.currentPage
-        params = params + '&perPage=' + this.filesTable.perPage
+
+        if ( this.table.isPaginated ) {
+          params = params + '&pageNum=' + this.table.currentPage
+          params = params + '&perPage=' + this.table.perPage
+        }
 
         this.$http.get( 'experiments/' + this.$route.params.id + '/files' + params ).then(
           response => {
@@ -1265,7 +1296,7 @@
       return {
         table: {
           key: 0,
-          isPaginated: true,
+          isPaginated: false,
           isPaginationSimple: true,
           currentPage: 1,
           perPage: 10,          
@@ -1275,7 +1306,7 @@
           defaultSortDirection: 'asc'
         },
         filesTable: {          
-          isPaginated: true,
+          isPaginated: false,
           isPaginationSimple: true,
           currentPage: 1,
           perPage: 10,          

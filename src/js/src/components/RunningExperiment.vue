@@ -426,7 +426,7 @@
         <b-tab-item label="Table">
           <b-table
             :data="experiment.vms"
-            :paginated="table.isPaginated && paginationNeeded"
+            :paginated="table.isPaginated"
             backend-pagination
             :total="table.total"
             :per-page="table.perPage"
@@ -582,16 +582,16 @@
             </template>
           </b-table>
           <br>
-          <b-field  v-if="paginationNeeded" grouped position="is-right">
+          <b-field v-if="paginationNeeded" grouped position="is-right">
             <div class="control is-flex">
-              <b-switch v-model="table.isPaginated" @input="switchPagination" size="is-small" type="is-light">Paginate</b-switch>
+              <b-switch v-model="table.isPaginated" @input="updateExperiment(); changePaginate();" size="is-small" type="is-light">Paginate</b-switch>
             </div>
           </b-field>
         </b-tab-item>
         <b-tab-item label="Files">
           <b-table            
             :data="files"
-            :paginated="filesTable.isPaginated  && filesPaginationNeeded"
+            :paginated="filesTable.isPaginated"
             backend-pagination
             :total="filesTable.total"
             :per-page="filesTable.perPage"
@@ -635,6 +635,12 @@
                 </b-table-column>
             </template>            
           </b-table>
+          <br>
+          <b-field v-if="filesPaginationNeeded" grouped position="is-right">
+            <div class="control is-flex">
+              <b-switch v-model="filesTable.isPaginated" @input="updateFiles(); changeFilesPaginate();" size="is-small" type="is-light">Paginate</b-switch>
+            </div>
+          </b-field>
         </b-tab-item>
       </b-tabs>
     </div>
@@ -660,20 +666,32 @@
         })
       },
 
-      paginationNeeded  () {
-        if ( this.table.total <= this.table.perPage ) {
-          return  false;
+      paginationNeeded () {
+        var user = localStorage.getItem( 'user' );
+
+        if ( localStorage.getItem( user + '.lastPaginate' ) ) {
+          this.table.isPaginated = localStorage.getItem( user + '.lastPaginate' )  == 'true';
         }
 
-        return true;
+        if ( this.table.total <= this.table.perPage ) {
+          return false;
+        } else {
+          return true;
+        }
       },
 
       filesPaginationNeeded () {
-        if ( this.filesTable.total <= this.filesTable.perPage ) {
-          return  false;
+        var user = localStorage.getItem( 'user' );
+
+        if ( localStorage.getItem( user + '.lastPaginate' ) ) {
+          this.filesTable.isPaginated = localStorage.getItem( user + '.lastPaginate' )  == 'true';
         }
 
-        return true;
+        if ( this.filesTable.total <= this.filesTable.perPage ) {
+          return false;
+        } else {
+          return true;
+        }
       },
     
 
@@ -707,6 +725,16 @@
 
       experimentViewer  () {
         return [ 'Experiment Viewer' ].includes( this.$store.getters.role );
+      },
+
+      changePaginate () {
+        var user = localStorage.getItem( 'user' );
+        localStorage.setItem( user + '.lastPaginate', this.table.isPaginated );
+      },
+
+      changeFilesPaginate () {
+        var user = localStorage.getItem( 'user' );
+        localStorage.setItem( user + '.lastPaginate', this.filesTable.isPaginated );
       },
 
       searchVMs: _.debounce(function ( term ) {
@@ -1290,8 +1318,11 @@
         let params = '?filter=' + this.search.filter
         params = params + '&sortCol=' + this.filesTable.sortColumn
         params = params + '&sortDir=' + this.filesTable.defaultSortDirection
-        params = params + '&pageNum=' + this.filesTable.currentPage
-        params = params + '&perPage=' + this.filesTable.perPage
+
+        if ( this.table.isPaginated ) {
+          params = params + '&pageNum=' + this.table.currentPage
+          params = params + '&perPage=' + this.table.perPage
+        }
 
         this.$http.get( 'experiments/' + this.$route.params.id + '/files' + params ).then(
           response => {
@@ -2543,7 +2574,7 @@
           filter: ''
         },
         table: {
-          isPaginated:  true,
+          isPaginated:  false,
           isPaginationSimple: true,
           currentPage:  1,
           perPage:  10,
@@ -2553,7 +2584,7 @@
           paginationSize: 'is-small'
         },
         filesTable: {          
-          isPaginated: true,
+          isPaginated: false,
           isPaginationSimple: true,
           currentPage: 1,
           perPage: 10,          

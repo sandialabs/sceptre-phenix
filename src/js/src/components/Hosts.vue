@@ -10,7 +10,7 @@ available for experiments, the number of VMs, and host uptime.
     <hr>
     <b-table
       :data="hosts"
-      :paginated="table.isPaginated && paginationNeeded"
+      :paginated="table.isPaginated"
       :per-page="table.perPage"
       :current-page.sync="table.currentPage"
       :pagination-simple="table.isPaginationSimple"
@@ -59,7 +59,7 @@ available for experiments, the number of VMs, and host uptime.
     <br>
     <b-field v-if="paginationNeeded" grouped position="is-right">
       <div class="control is-flex">
-        <b-switch v-model="table.isPaginated" size="is-small" type="is-light">Paginate</b-switch>
+        <b-switch v-model="table.isPaginated" size="is-small" type="is-light" @input="changePaginate()">Paginate</b-switch>
       </div>
     </b-field>
     <b-loading :is-full-page="true" :active.sync="isWaiting" :can-cancel="false"></b-loading>
@@ -109,6 +109,11 @@ available for experiments, the number of VMs, and host uptime.
         }, 10000 )
       },
 
+      changePaginate () {
+        var user = localStorage.getItem( 'user' );
+        localStorage.setItem( user + '.lastPaginate', this.table.isPaginated );
+      },
+
       decorator ( sum, len ) {
         let actual = sum / len;
         if ( actual < .65 ) {
@@ -131,7 +136,14 @@ available for experiments, the number of VMs, and host uptime.
     
     computed: {
       paginationNeeded () {
+        var user = localStorage.getItem( 'user' );
+
+        if ( localStorage.getItem( user + '.lastPaginate' ) ) {
+          this.table.isPaginated = localStorage.getItem( user + '.lastPaginate' )  == 'true';
+        }
+
         if ( this.hosts.length <= 10 ) {
+          this.table.isPaginated = false;
           return false;
         } else {
           return true;
@@ -142,7 +154,7 @@ available for experiments, the number of VMs, and host uptime.
     data () {
       return {
         table: {
-          isPaginated: true,
+          isPaginated: false,
           perPage: 10,
           currentPage: 1,
           isPaginationSimple: true,
