@@ -79,9 +79,9 @@ func List(expName string) ([]mm.VM, error) {
 		}
 
 		for _, iface := range node.Network().Interfaces() {
-			vm.IPv4 = append(vm.IPv4, iface.Address())
+			vm.IPv4 = append(vm.IPv4, iface.Address()) // empty for DHCP
 			vm.Networks = append(vm.Networks, iface.VLAN())
-			vm.Interfaces[iface.VLAN()] = iface.Address()
+			vm.Interfaces[iface.VLAN()] = iface.Address() // empty for DHCP
 		}
 
 		if details, ok := running[vm.Name]; ok {
@@ -90,6 +90,7 @@ func List(expName string) ([]mm.VM, error) {
 			vm.Running = details.Running
 			vm.Networks = details.Networks
 			vm.Taps = details.Taps
+			vm.IPv4 = details.IPv4
 			vm.Captures = details.Captures
 			vm.Tags = details.Tags
 			vm.Uptime = details.Uptime
@@ -97,9 +98,10 @@ func List(expName string) ([]mm.VM, error) {
 			vm.RAM = details.RAM
 			vm.Disk = details.Disk
 
-			// Reset slice of IPv4 addresses so we can be sure to align them correctly
-			// with minimega networks below.
-			vm.IPv4 = make([]string, len(details.Networks))
+			// `vm.IPv4` could be nil/empty if minimega isn't reporting any IPs for it
+			if len(vm.IPv4) == 0 {
+				vm.IPv4 = make([]string, len(details.Networks))
+			}
 
 			// Since we get the IP from the experiment config, but the network name
 			// from minimega (to preserve iface to network ordering), make sure the
@@ -107,6 +109,12 @@ func List(expName string) ([]mm.VM, error) {
 			// map here, but then the iface to network ordering that minimega ensures
 			// would be lost.
 			for idx, nw := range details.Networks {
+				// If it's set here, we got it from minimega, which is the source of truth
+				// for running experiments.
+				if vm.IPv4[idx] != "" {
+					continue
+				}
+
 				// At this point, `nw` will look something like `EXP_1 (101)`. In the
 				// experiment config, we just have `EXP_1` so we need to use that
 				// portion from minimega as the `Interfaces` map key.
@@ -165,9 +173,9 @@ func Get(expName, vmName string) (*mm.VM, error) {
 		}
 
 		for _, iface := range node.Network().Interfaces() {
-			vm.IPv4 = append(vm.IPv4, iface.Address())
+			vm.IPv4 = append(vm.IPv4, iface.Address()) // empty for DHCP
 			vm.Networks = append(vm.Networks, iface.VLAN())
-			vm.Interfaces[iface.VLAN()] = iface.Address()
+			vm.Interfaces[iface.VLAN()] = iface.Address() // empty for DHCP
 		}
 
 		for _, app := range exp.Apps() {
@@ -199,6 +207,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 	vm.Running = details[0].Running
 	vm.Networks = details[0].Networks
 	vm.Taps = details[0].Taps
+	vm.IPv4 = details[0].IPv4
 	vm.Captures = details[0].Captures
 	vm.Tags = details[0].Tags
 	vm.Uptime = details[0].Uptime
@@ -206,15 +215,22 @@ func Get(expName, vmName string) (*mm.VM, error) {
 	vm.RAM = details[0].RAM
 	vm.Disk = details[0].Disk
 
-	// Reset slice of IPv4 addresses so we can be sure to align them correctly
-	// with minimega networks below.
-	vm.IPv4 = make([]string, len(details[0].Networks))
+	// `vm.IPv4` could be nil/empty if minimega isn't reporting any IPs for it
+	if len(vm.IPv4) == 0 {
+		vm.IPv4 = make([]string, len(details[0].Networks))
+	}
 
 	// Since we get the IP from the experiment config, but the network name from
 	// minimega (to preserve iface to network ordering), make sure the ordering of
 	// IPs matches the odering of networks. We could just use a map here, but then
 	// the iface to network ordering that minimega ensures would be lost.
 	for idx, nw := range details[0].Networks {
+		// If it's set here, we got it from minimega, which is the source of truth
+		// for running experiments.
+		if vm.IPv4[idx] != "" {
+			continue
+		}
+
 		// At this point, `nw` will look something like `EXP_1 (101)`. In the exp,
 		// we just have `EXP_1` so we need to use that portion from minimega as the
 		// `Interfaces` map key.

@@ -199,7 +199,7 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment, initial b
 		// mapping the first time C2 is proven to not be working.
 		this.c2Hosts[host] = struct{}{}
 
-		for _, iface := range node.Network().Interfaces() {
+		for idx, iface := range node.Network().Interfaces() {
 			if strings.EqualFold(iface.VLAN(), "MGMT") {
 				continue
 			}
@@ -209,6 +209,60 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment, initial b
 			}
 
 			this.reachabilityHosts[host] = struct{}{}
+
+			if iface.Proto() == "dhcp" {
+				wg.Add(1)
+
+				go func(idx int, iface ifaces.NodeNetworkInterface) { // using an anonymous function here so we can break out of the inner select statement
+					defer wg.Done()
+
+					printer.Printf("  Waiting for DHCP address on %s\n", host)
+
+					timer := time.After(this.md.c2Timeout)
+
+					for {
+						select {
+						case <-ctx.Done():
+							return
+						case <-timer:
+							wg.AddError(fmt.Errorf("time expired waiting for DHCP details from minimega"), map[string]interface{}{"host": host})
+							return
+						default:
+							vms := mm.GetVMInfo(mm.NS(ns), mm.VMName(host))
+
+							if vms == nil {
+								wg.AddError(fmt.Errorf("unable to get DHCP details from minimega"), map[string]interface{}{"host": host})
+								return
+							} else {
+								addrs := vms[0].IPv4
+
+								if addrs == nil || addrs[idx] == "" {
+									time.Sleep(1 * time.Second)
+									continue
+								}
+
+								this.addrHosts[addrs[idx]] = host
+								this.vlans[iface.VLAN()] = append(this.vlans[iface.VLAN()], addrs[idx])
+
+								ips, ok := this.hostIPs[host]
+								if !ok {
+									ips = make(map[string]string)
+								}
+
+								ips[iface.Name()] = addrs[idx]
+								this.hostIPs[host] = ips
+
+								return
+							}
+						}
+					}
+				}(idx, iface)
+
+				// No need to do any of the following stuff if this interface is
+				// configured using DHCP.
+				continue
+			}
+
 			this.addrHosts[iface.Address()] = host
 			this.vlans[iface.VLAN()] = append(this.vlans[iface.VLAN()], iface.Address())
 

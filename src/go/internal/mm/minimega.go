@@ -115,7 +115,7 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "vm info"
-	cmd.Columns = []string{"host", "name", "state", "uptime", "vlan", "tap", "memory", "vcpus", "disks", "tags"}
+	cmd.Columns = []string{"host", "name", "state", "uptime", "vlan", "tap", "ip", "memory", "vcpus", "disks", "tags"}
 
 	if o.vm != "" {
 		cmd.Filters = []string{"name=" + o.vm}
@@ -135,7 +135,6 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 		s := row["vlan"]
 		s = strings.TrimPrefix(s, "[")
 		s = strings.TrimSuffix(s, "]")
-		s = strings.TrimSpace(s)
 
 		if s != "" {
 			vm.Networks = strings.Split(s, ", ")
@@ -144,16 +143,22 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 		s = row["tap"]
 		s = strings.TrimPrefix(s, "[")
 		s = strings.TrimSuffix(s, "]")
-		s = strings.TrimSpace(s)
 
 		if s != "" {
 			vm.Taps = strings.Split(s, ", ")
 		}
 
+		s = row["ip"]
+		s = strings.TrimPrefix(s, "[")
+		s = strings.TrimSuffix(s, "]")
+
+		if s != "" {
+			vm.IPv4 = strings.Split(s, ", ")
+		}
+
 		s = row["tags"]
 		s = strings.TrimPrefix(s, "{")
 		s = strings.TrimSuffix(s, "}")
-		s = strings.TrimSpace(s)
 
 		if s != "" {
 			vm.Tags = strings.Split(s, ",")
