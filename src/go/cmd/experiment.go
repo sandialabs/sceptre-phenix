@@ -14,10 +14,10 @@ import (
 	"phenix/scheduler"
 	"phenix/types"
 	"phenix/util"
+	"phenix/util/notes"
 	"phenix/util/printer"
 	"phenix/util/sigterm"
 
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -159,20 +159,14 @@ func newExperimentCreateCmd() *cobra.Command {
 				experiment.CreateWithVLANMax(MustGetInt(cmd.Flags(), "vlan-max")),
 			}
 
-			ctx := util.WarningContext(nil)
+			ctx := notes.Context(nil)
 
 			if err := experiment.Create(ctx, opts...); err != nil {
 				err := util.HumanizeError(err, "Unable to create the "+args[0]+" experiment")
 				return err.Humanized()
 			}
 
-			if warns := util.Warnings(ctx); warns != nil {
-				printer := color.New(color.FgYellow)
-
-				for _, warn := range warns {
-					printer.Printf("[WARNING] %v\n", warn)
-				}
-			}
+			notes.PrettyPrint(ctx)
 
 			fmt.Printf("The %s experiment was created\n", args[0])
 
@@ -304,7 +298,7 @@ func newExperimentStartCmd() *cobra.Command {
 				periodic    = MustGetBool(cmd.Flags(), "honor-run-periodically")
 				experiments []types.Experiment
 
-				ctx = util.WarningContext(sigterm.CancelContext(nil))
+				ctx = notes.Context(sigterm.CancelContext(nil))
 				wg  sync.WaitGroup
 			)
 
@@ -345,13 +339,7 @@ func newExperimentStartCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				if warns := util.Warnings(ctx); warns != nil {
-					printer := color.New(color.FgYellow)
-
-					for _, warn := range warns {
-						printer.Printf("[WARNING] %v\n", warn)
-					}
-				}
+				notes.PrettyPrint(ctx)
 
 				if dryrun {
 					fmt.Printf("The %s experiment was started in a dry-run\n", exp.Metadata.Name)

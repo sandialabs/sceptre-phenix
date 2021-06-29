@@ -28,6 +28,7 @@ import (
 	"phenix/internal/mm"
 	"phenix/types"
 	putil "phenix/util"
+	"phenix/util/notes"
 	"phenix/web/broker"
 	"phenix/web/cache"
 	"phenix/web/proto"
@@ -185,7 +186,7 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if warns := putil.Warnings(ctx); warns != nil {
+	if warns := notes.Warnings(ctx); warns != nil {
 		for _, warn := range warns {
 			log.Warn("%v", warn)
 		}
@@ -403,18 +404,16 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		// We don't want to use the HTTP request's context here.
 		ctx, cancel := context.WithCancel(context.Background())
+		cancelers[name] = append(cancelers[name], cancel)
 
-		// TODO: use experiment.StartWithErrorChannel option if we don't want to
-		// wait for apps with long-running PostStart stages (like SoH) to finish
-		// before returning to the UI.
 		ch := make(chan error)
 
 		if err := experiment.Start(ctx, experiment.StartWithName(name), experiment.StartWithErrorChannel(ch)); err != nil {
 			cancel() // avoid leakage
+			delete(cancelers, name)
+
 			status <- result{nil, err}
 		} else {
-			cancelers[name] = append(cancelers[name], cancel)
-
 			go func() {
 				for err := range ch {
 					log.Warn("delayed error starting experiment %s: %v", name, err)
@@ -446,14 +445,17 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) {
 
 			// We don't want to use the HTTP request's context here.
 			ctx, cancel := context.WithCancel(context.Background())
+			cancelers[name] = append(cancelers[name], cancel)
+
 			var wg sync.WaitGroup
+			waiters[name] = &wg
 
 			if err := app.PeriodicallyRunApps(ctx, &wg, s.exp); err != nil {
 				cancel() // avoid leakage
+				delete(cancelers, name)
+				delete(waiters, name)
+
 				fmt.Printf("Error scheduling experiment apps to run periodically: %v\n", err)
-			} else {
-				cancelers[name] = append(cancelers[name], cancel)
-				waiters[name] = &wg
 			}
 
 			vms, err := vm.List(name)
@@ -610,7 +612,7 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
 
 	broker.Broadcast(
 		broker.NewRequestPolicy("experiments/trigger", "create", name),
-		broker.NewResource("experiment", name, "triggering"),
+		broker.NewResource("experiment/apps", name, "triggering"),
 		nil,
 	)
 
@@ -619,27 +621,28 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
 
 		// We don't want to use the HTTP request's context here.
 		ctx, cancel := context.WithCancel(context.Background())
+		cancelers[name] = append(cancelers[name], cancel)
 
 		if err := experiment.TriggerRunning(ctx, name, apps...); err != nil {
 			cancel() // avoid leakage
+			delete(cancelers, name)
+
+			humanized := putil.HumanizeError(err, "Unable to trigger running stage for apps in %s experiment", name)
 
 			broker.Broadcast(
 				broker.NewRequestPolicy("experiments/trigger", "create", name),
-				broker.NewResource("experiment", name, "errorTriggering"),
-				nil,
+				broker.NewResource("experiment/apps", name, "errorTriggering"),
+				[]byte(humanized.Humanize()),
 			)
 
 			log.Error("triggering experiment %s apps - %v", name, err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		cancelers[name] = append(cancelers[name], cancel)
-
 		broker.Broadcast(
 			broker.NewRequestPolicy("experiments/trigger", "create", name),
-			broker.NewResource("experiment", name, "trigger"),
-			nil,
+			broker.NewResource("experiment/apps", name, "trigger"),
+			notes.ToJSON(ctx),
 		)
 	}()
 

@@ -9,7 +9,7 @@ import (
 	"phenix/internal/mm"
 	ifaces "phenix/types/interfaces"
 	v2 "phenix/types/version/v2"
-	"phenix/util"
+	"phenix/util/notes"
 )
 
 type VLANSpec struct {
@@ -206,7 +206,7 @@ func (this ExperimentSpec) VerifyScenario(ctx context.Context) error {
 	for _, app := range this.ScenarioF.AppsF {
 		for _, host := range app.HostsF {
 			if _, ok := hosts[host.HostnameF]; !ok {
-				util.AddWarnings(ctx, fmt.Errorf("host %s in app %s not in topology", host.HostnameF, app.NameF))
+				notes.AddWarnings(ctx, fmt.Errorf("host %s in app %s not in topology", host.HostnameF, app.NameF))
 			}
 		}
 	}

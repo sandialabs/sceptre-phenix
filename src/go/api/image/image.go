@@ -18,7 +18,7 @@ import (
 	"phenix/tmpl"
 	"phenix/types"
 	v1 "phenix/types/version/v1"
-	"phenix/util"
+	"phenix/util/notes"
 	"phenix/util/shell"
 
 	"github.com/activeshadow/structs"
@@ -296,11 +296,11 @@ func Build(ctx context.Context, name string, verbosity int, cache bool, dryrun b
 		}
 
 		if img.IncludeMiniccc {
-			util.AddWarnings(ctx, fmt.Errorf("inject_miniccc setting is DEPRECATED - use 'image inject-miniexe' subcommand after image is built"))
+			notes.AddWarnings(ctx, fmt.Errorf("inject_miniccc setting is DEPRECATED - use 'image inject-miniexe' subcommand after image is built"))
 		}
 
 		if img.IncludeProtonuke {
-			util.AddWarnings(ctx, fmt.Errorf("inject_protonuke setting is DEPRECATED - use 'image inject-miniexe' subcommand after image is built"))
+			notes.AddWarnings(ctx, fmt.Errorf("inject_protonuke setting is DEPRECATED - use 'image inject-miniexe' subcommand after image is built"))
 		}
 	}
 

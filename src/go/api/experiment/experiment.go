@@ -19,7 +19,7 @@ import (
 	"phenix/types"
 	"phenix/types/version"
 	v1 "phenix/types/version/v1"
-	"phenix/util"
+	"phenix/util/notes"
 
 	"github.com/activeshadow/structs"
 	"github.com/hashicorp/go-multierror"
@@ -386,9 +386,9 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			}
 
 			if merr, ok := err.(*multierror.Error); ok {
-				util.AddWarnings(ctx, merr.Errors...)
+				notes.AddWarnings(ctx, merr.Errors...)
 			} else {
-				util.AddWarnings(ctx, err)
+				notes.AddWarnings(ctx, err)
 			}
 		}
 
@@ -399,9 +399,9 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			}
 
 			if merr, ok := err.(*multierror.Error); ok {
-				util.AddWarnings(ctx, merr.Errors...)
+				notes.AddWarnings(ctx, merr.Errors...)
 			} else {
-				util.AddWarnings(ctx, err)
+				notes.AddWarnings(ctx, err)
 			}
 		}
 

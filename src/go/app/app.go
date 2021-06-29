@@ -9,6 +9,7 @@ import (
 
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
+	"phenix/util/notes"
 	"phenix/util/pubsub"
 	"phenix/util/shell"
 
@@ -232,14 +233,14 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				// Check to make sure this app isn't already running via an automatic
 				// periodic execution.
 				if running := exp.Status.AppRunning()[app.Name()]; running {
-					color.New(color.FgBlue).Printf("[✓] app %s is currently already executing its running stage -- skipping\n", app.Name())
+					notes.AddInfo(ctx, fmt.Sprintf("app %s is currently already executing its running stage -- skipping", app.Name()))
 					continue
 				}
 
 				exp.Status.SetAppRunning(app.Name(), true)
 
 				if err := exp.WriteToStore(true); err != nil {
-					color.New(color.FgRed).Printf("[✗] error updating store with experiment (%s): %v\n", exp.Metadata.Name, err)
+					notes.AddErrors(ctx, fmt.Errorf("error updating store with experiment (%s): %v", exp.Metadata.Name, err))
 				}
 
 				err = a.Running(ctx, exp)
@@ -247,7 +248,7 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				exp.Status.SetAppRunning(app.Name(), false)
 
 				if err := exp.WriteToStore(true); err != nil {
-					color.New(color.FgRed).Printf("[✗] error updating store with experiment (%s): %v\n", exp.Metadata.Name, err)
+					notes.AddErrors(ctx, fmt.Errorf("error updating store with experiment (%s): %v", exp.Metadata.Name, err))
 				}
 			case ACTIONCLEANUP:
 				err = a.Cleanup(ctx, exp)

@@ -9,9 +9,9 @@ import (
 	"phenix/api/image"
 	v1 "phenix/types/version/v1"
 	"phenix/util"
+	"phenix/util/notes"
 	"phenix/util/printer"
 
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -272,20 +272,14 @@ func newImageBuildCmd() *cobra.Command {
 				verbosity = verbosity | image.V_VVVERBOSE
 			}
 
-			ctx := util.WarningContext(nil)
+			ctx := notes.Context(nil)
 
 			if err := image.Build(ctx, name, verbosity, cache, dryrun, output); err != nil {
 				err := util.HumanizeError(err, "Unable to build the "+name+" image")
 				return err.Humanized()
 			}
 
-			if warns := util.Warnings(ctx); warns != nil {
-				printer := color.New(color.FgYellow)
-
-				for _, warn := range warns {
-					printer.Printf("[WARNING] %v\n", warn)
-				}
-			}
+			notes.PrettyPrint(ctx)
 
 			fmt.Printf("The %s image was successfully built\n", name)
 

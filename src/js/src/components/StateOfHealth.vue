@@ -461,14 +461,17 @@ export default {
         this.isWaiting = false;
       }
 
-      // check if there are any SoH messages; set messages
-      // true if so and break
+      // Check if there are any SoH messages; if so, set messages = true and
+      // break. This is used to determine whether or not the `SoH Messages` tab
+      // should be displayed.
+      /*
       for ( let i = 0; i < this.nodes.length; i++ ) {
         if ( this.nodes[i].soh != null ) {
           this.messages = true;
           break;
         } 
       }
+      */
     },
 
     updateNodeImage( node ) {

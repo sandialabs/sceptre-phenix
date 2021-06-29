@@ -63,7 +63,7 @@ type HumanizedError struct {
 	uuid      string
 }
 
-func HumanizeError(err error, desc string) *HumanizedError {
+func HumanizeError(err error, desc string, a ...interface{}) *HumanizedError {
 	var h *HumanizedError
 
 	if errors.As(err, &h) {
@@ -72,7 +72,7 @@ func HumanizeError(err error, desc string) *HumanizedError {
 
 	return &HumanizedError{
 		cause:     err,
-		humanized: desc,
+		humanized: fmt.Sprintf(desc, a...),
 		uuid:      LogErrorGetID(err),
 	}
 }

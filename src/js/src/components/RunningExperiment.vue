@@ -284,6 +284,31 @@
         </footer>
       </div>
     </b-modal>
+    <b-modal :active.sync="appsModal.active" :on-cancel="resetAppsModal" has-modal-card>
+      <div class="modal-card" style="width:25em">
+        <header class="modal-card-head">
+          <p class="modal-card-title">phēnix Apps</p>
+        </header>
+        <section class="modal-card-body">
+          <div v-if="appsModal.triggerable.length">
+            <b-checkbox v-for="( a, index ) in appsModal.triggerable" :key="index" :native-value="a" v-model="appsModal.apps" type="is-light" style="color:#202020">
+              {{ a }}
+            </b-checkbox>
+          </div>
+          <div v-else>
+            <span style="color:#202020">This experiment doesn't include any triggerable apps.</span>
+          </div>
+        </section>
+        <footer class="modal-card-foot buttons is-right">
+          <div v-if="adminUser()">
+            <b-tooltip label="start selected apps" type="is-light is-left">
+              <b-button v-if="appsModal.apps.length > 0" class="button is-success" @click="startApps(appsModal.apps)">Trigger Apps</b-button>
+              <b-button v-else disabled class="button is-success">Trigger Apps</b-button>
+            </b-tooltip>
+          </div>
+        </footer>
+      </div>
+    </b-modal>
     <hr>
     <div class="level is-vcentered">
       <div  class="level-item">
@@ -292,10 +317,10 @@
       <div  class="level-item" v-if="experiment.scenario">
         <span style="font-weight: bold;">Scenario: {{ experiment.scenario }}</span>&nbsp;
       </div>
-      <div  class="level-item" v-if="experiment.scenario">
+      <div  class="level-item" v-if="experiment.scenario" @click="getApps()">
         <span style="font-weight: bold;">Apps:</span>&nbsp;
         <b-taglist>
-          <b-tag  v-for="( a, index ) in experiment.apps" :key="index" type="is-light">
+          <b-tag v-for="( a, index ) in experiment.apps" :key="index" type="is-light">
             {{ a }}  
           </b-tag>
         </b-taglist>
@@ -812,11 +837,38 @@
     
       handle  ( msg ) {
         switch ( msg.resource.type ) {
+          case 'experiment/' + this.$route.params.id: {
+            switch ( msg.resource.action ) {
+              case 'errorTriggering': {
+                this.$buefy.toast.open({
+                  message: 'Triggering phēnix Apps ' + this.apps + ' failed.',
+                  type: 'is-danger',
+                  duration: 4000
+                });
+
+                this.apps = null;
+
+                break;
+              }
+
+              case 'trigger': {
+                this.$buefy.toast.open({
+                  message: 'phēnix Apps ' + this.apps + ' have been triggered.',
+                  type: 'is-success',
+                  duration: 4000
+                });
+
+                this.apps = null;
+
+                break;
+              }
+            }
+          }
+
           case  'experiment/vms': {
             if ( msg.resource.action != 'list' ) {
               return;
             }
-
             
             this.experiment.vms = [ ...msg.result.vms ];
 
@@ -1241,7 +1293,7 @@
           }
         }
       },
-    
+
       async updateExperiment  () {
         try {
           let resp  = await this.$http.get('experiments/' + this.$route.params.id);
@@ -2414,6 +2466,36 @@
           vm: []
         }
       },
+
+      getApps () {
+        let defaultApps = ['ntp', 'serial', 'startup', 'vrouter'];
+
+        this.appsModal.triggerable = this.experiment.apps.filter(a => !defaultApps.includes(a));
+        this.appsModal.active = true;
+      },
+
+      startApps ( apps ) {
+        apps = apps.join();
+        this.apps = apps;
+
+        this.$http.post( 'experiments/' + this.$route.params.id + '/trigger' + '?apps=' + apps )
+        .then( response => {
+          console.log('triggering ' + apps);
+        }, response => {
+          this.$buefy.toast.open({
+            message: 'Triggering the Apps ' + apps + ' failed with ' + response.status + ' status.',
+            type: 'is-danger',
+            duration: 4000
+          });
+        });
+
+        this.resetAppsModal();
+      },
+
+      resetAppsModal () {
+        this.appsModal.apps = [];
+        this.appsModal.active = false;
+      },
       
       validate  (modalVMQueue) {  
               
@@ -2631,6 +2713,12 @@
            nameErrType: null, nameErrMsg: null
           */
         },
+        appsModal: {
+          active: false,
+          triggerable: [],
+          apps: []
+        },
+        apps: null,
         experiment: [],
         files: [],
         disks: [],
