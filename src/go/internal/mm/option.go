@@ -122,6 +122,8 @@ type c2Options struct {
 	command   string
 	commandID string
 
+	testConn string
+
 	timeout time.Duration
 
 	skipActiveClientCheck bool
@@ -161,6 +163,12 @@ func C2Command(c string) C2Option {
 func C2CommandID(i string) C2Option {
 	return func(o *c2Options) {
 		o.commandID = i
+	}
+}
+
+func C2TestConn(t string) C2Option {
+	return func(o *c2Options) {
+		o.testConn = t
 	}
 }
 

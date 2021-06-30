@@ -717,7 +717,11 @@ func (this Minimega) ExecC2Command(opts ...C2Option) (string, error) {
 		return "", fmt.Errorf("setting host filter to %s: %w", o.vm, err)
 	}
 
-	cmd.Command = fmt.Sprintf("cc exec %s", o.command)
+	if o.testConn != "" {
+		cmd.Command = fmt.Sprintf("cc test-conn %s", o.testConn)
+	} else {
+		cmd.Command = fmt.Sprintf("cc exec %s", o.command)
+	}
 
 	data, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
 	if err != nil {

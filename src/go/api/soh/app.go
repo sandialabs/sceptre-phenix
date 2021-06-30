@@ -41,6 +41,8 @@ type SOH struct {
 	vlans map[string][]string
 	// Track hosts that failed network config test
 	failedNetwork map[string]struct{}
+	// Track host per-interface IPs (can't use node spec for this due to possible use of DHCP)
+	hostIPs map[string]map[string]string
 
 	// Track app status for Experiment Config status
 	status map[string]HostState
@@ -62,6 +64,7 @@ func newSOH() *SOH {
 		addrHosts:         make(map[string]string),
 		vlans:             make(map[string][]string),
 		failedNetwork:     make(map[string]struct{}),
+		hostIPs:           make(map[string]map[string]string),
 		status:            make(map[string]HostState),
 		packetCapture:     make(map[string]interface{}),
 	}
@@ -208,6 +211,14 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment, initial b
 			this.reachabilityHosts[host] = struct{}{}
 			this.addrHosts[iface.Address()] = host
 			this.vlans[iface.VLAN()] = append(this.vlans[iface.VLAN()], iface.Address())
+
+			ips, ok := this.hostIPs[host]
+			if !ok {
+				ips = make(map[string]string)
+			}
+
+			ips[iface.Name()] = iface.Address()
+			this.hostIPs[host] = ips
 
 			if !this.md.SkipNetworkConfig {
 				cidr := fmt.Sprintf("%s/%d", iface.Address(), iface.Mask())

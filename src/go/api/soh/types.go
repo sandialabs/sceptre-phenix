@@ -92,17 +92,27 @@ type elasticServer struct {
 	VLAN      string `mapstructure:"vlan"`
 }
 
+type customReachability struct {
+	Src    string        `mapstructure:"src"`
+	Dst    string        `mapstructure:"dst"`
+	Proto  string        `mapstructure:"proto"`
+	Port   int           `mapstructure:"port"`
+	Wait   time.Duration `mapstructure:"wait"`
+	Packet string        `mapstructure:"udpPacketBase64"`
+}
+
 type sohMetadata struct {
-	AppProfileKey     string              `mapstructure:"appMetadataProfileKey"`
-	C2Timeout         string              `mapstructure:"c2Timeout"`
-	ExitOnError       bool                `mapstructure:"exitOnError"`
-	HostListeners     map[string][]string `mapstructure:"hostListeners"`
-	HostProcesses     map[string][]string `mapstructure:"hostProcesses"`
-	InjectICMPAllow   bool                `mapstructure:"injectICMPAllow"`
-	PacketCapture     packetCapture       `mapstructure:"packetCapture"`
-	Reachability      string              `mapstructure:"testReachability"`
-	SkipNetworkConfig bool                `mapstructure:"skipInitialNetworkConfigTests"`
-	SkipHosts         []string            `mapstructure:"skipHosts"`
+	AppProfileKey      string               `mapstructure:"appMetadataProfileKey"`
+	C2Timeout          string               `mapstructure:"c2Timeout"`
+	ExitOnError        bool                 `mapstructure:"exitOnError"`
+	HostListeners      map[string][]string  `mapstructure:"hostListeners"`
+	HostProcesses      map[string][]string  `mapstructure:"hostProcesses"`
+	InjectICMPAllow    bool                 `mapstructure:"injectICMPAllow"`
+	PacketCapture      packetCapture        `mapstructure:"packetCapture"`
+	Reachability       string               `mapstructure:"testReachability"`
+	CustomReachability []customReachability `mapstructure:"testCustomReachability"`
+	SkipNetworkConfig  bool                 `mapstructure:"skipInitialNetworkConfigTests"`
+	SkipHosts          []string             `mapstructure:"skipHosts"`
 
 	// set after parsing
 	c2Timeout time.Duration

@@ -295,9 +295,22 @@ func (this *SOH) decodeMetadata(exp *types.Experiment) error {
 }
 
 func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
-	if strings.EqualFold(this.md.Reachability, "off") {
+	var (
+		icmpDisabled   bool
+		customDisabled bool
+	)
+
+	if icmpDisabled = strings.EqualFold(this.md.Reachability, "off"); icmpDisabled {
 		printer := color.New(color.FgYellow)
-		printer.Println("  Reachability test is disabled")
+		printer.Println("  ICMP reachability test is disabled")
+	}
+
+	if customDisabled = len(this.md.CustomReachability) == 0; customDisabled {
+		printer := color.New(color.FgYellow)
+		printer.Println("  No custom reachability tests configured")
+	}
+
+	if icmpDisabled && customDisabled {
 		return
 	}
 
@@ -308,7 +321,6 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
 	wg := new(mm.ErrGroup)
 
 	for host := range this.reachabilityHosts {
-
 		// Assume we're not skipping this host by default.
 		var skipHost error
 
@@ -395,6 +407,31 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
 		}
 	}
 
+	for _, reach := range this.md.CustomReachability {
+		host := reach.Src
+
+		if _, ok := this.c2Hosts[host]; !ok {
+			// This host is known to not have C2 active, so don't test from it.
+			wg.AddError(fmt.Errorf("C2 not active on host"), map[string]interface{}{"host": host, "target": reach.Dst})
+			continue
+		}
+
+		if _, ok := this.failedNetwork[host]; ok {
+			// This host failed the network config test, so don't test from it.
+			wg.AddError(fmt.Errorf("networking not configured on host"), map[string]interface{}{"host": host, "target": reach.Dst})
+			continue
+		}
+
+		target := reach.Dst
+
+		if fields := strings.Split(reach.Dst, "|"); len(fields) > 1 {
+			target = this.hostIPs[fields[0]][fields[1]]
+		}
+
+		printer.Printf("  Connecting to %s://%s:%d from host %s\n", reach.Proto, target, reach.Port, host)
+		connTest(ctx, wg, ns, host, target, reach.Proto, reach.Port, reach.Wait, reach.Packet)
+	}
+
 	notifier := periodicallyNotify("waiting for reachability tests to complete...", 5*time.Second)
 
 	// Wait for hosts to test reachability to other hosts.
@@ -430,7 +467,16 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
 		state.Reachability = append(state.Reachability, r)
 		this.status[host] = state
 
-		printer.Printf("  [✗] failed to ping %s (%s) from %s\n", hostname, target, host)
+		if _, ok := err.Meta["port"]; ok {
+			var (
+				port  = err.Meta["port"].(int)
+				proto = err.Meta["proto"].(string)
+			)
+
+			printer.Printf("  [✗] failed to connect to %s://%s:%d from %s\n", proto, target, port, host)
+		} else {
+			printer.Printf("  [✗] failed to ping %s (%s) from %s\n", hostname, target, host)
+		}
 	}
 }
 
@@ -863,6 +909,35 @@ func (this SOH) pingTest(ctx context.Context, wg *mm.ErrGroup, ns string, node i
 	cmd.Wait = wg
 	cmd.Meta = map[string]interface{}{"host": host, "target": target}
 	cmd.Expected = expected
+
+	mm.ScheduleC2ParallelCommand(ctx, cmd)
+}
+
+func connTest(ctx context.Context, wg *mm.ErrGroup, ns, src, dst, proto string, port int, wait time.Duration, packet string) {
+	test := fmt.Sprintf("%s %s %d wait", proto, dst, port)
+
+	if wait == 0 {
+		test = fmt.Sprintf("%s %v", test, 5*time.Second)
+	} else {
+		test = fmt.Sprintf("%s %v", test, wait)
+	}
+
+	if proto == "udp" && packet != "" {
+		test = fmt.Sprintf("%s %s", test, packet)
+	}
+
+	cmd := &mm.C2ParallelCommand{
+		Wait:    wg,
+		Options: []mm.C2Option{mm.C2NS(ns), mm.C2VM(src), mm.C2TestConn(test)},
+		Meta:    map[string]interface{}{"host": src, "target": dst, "port": port, "proto": proto},
+		Expected: func(resp string) error {
+			if strings.Contains(resp, "fail") {
+				return fmt.Errorf("failed to connect to %s://%s:%d", proto, dst, port)
+			}
+
+			return nil
+		},
+	}
 
 	mm.ScheduleC2ParallelCommand(ctx, cmd)
 }
