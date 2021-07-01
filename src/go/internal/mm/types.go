@@ -227,6 +227,9 @@ type VM struct {
 
 	// Used internally to track state of VM in minimega.
 	State string `json:"-"`
+
+	// Used internally to check for active CC agent.
+	UUID string `json:"-"`
 }
 
 type Captures struct {

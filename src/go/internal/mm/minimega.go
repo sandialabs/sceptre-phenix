@@ -1,6 +1,7 @@
 package mm
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -25,6 +26,9 @@ var (
 // different Goroutines. This is at the package level to protect across multiple
 // instances of the Minimega struct.
 var ccMu sync.Mutex
+
+// Regular express to use for matching C2 response headers.
+var responseRegex = regexp.MustCompile(`(\d*)\/(.*)\/(stdout|stderr):`)
 
 type Minimega struct{}
 
@@ -115,7 +119,7 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "vm info"
-	cmd.Columns = []string{"host", "name", "state", "uptime", "vlan", "tap", "ip", "memory", "vcpus", "disks", "tags"}
+	cmd.Columns = []string{"uuid", "host", "name", "state", "uptime", "vlan", "tap", "ip", "memory", "vcpus", "disks", "tags"}
 
 	if o.vm != "" {
 		cmd.Filters = []string{"name=" + o.vm}
@@ -126,6 +130,7 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 	for _, row := range mmcli.RunTabular(cmd) {
 		var vm VM
 
+		vm.UUID = row["uuid"]
 		vm.Host = row["host"]
 		vm.Name = row["name"]
 
@@ -691,18 +696,38 @@ func (Minimega) IsC2ClientActive(opts ...C2Option) error {
 		return nil
 	}
 
-	cmd := mmcli.NewNamespacedCommand(o.ns)
-	cmd.Command = "cc client"
-	cmd.Columns = []string{"hostname"}
-	cmd.Filters = []string{"hostname=" + o.vm}
-
-	rows := mmcli.RunTabular(cmd)
-
-	if len(rows) == 0 {
-		return ErrC2ClientNotActive
+	vms := GetVMInfo(NS(o.ns), VMName(o.vm))
+	if len(vms) == 0 {
+		return fmt.Errorf("VM %s does not exist", o.vm)
 	}
 
-	return nil
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = "cc client"
+
+	// We use the UUID of the VM instead of the name since `cc clients` returns
+	// the actual hostname of the VM as reported by the miniccc agent, which may
+	// not always match the name minimega uses to track the VM.
+	cmd.Columns = []string{"uuid"}
+	cmd.Filters = []string{"uuid=" + vms[0].UUID}
+
+	after := time.After(o.timeout)
+
+	for {
+		select {
+		case <-o.ctx.Done():
+			return o.ctx.Err()
+		case <-after:
+			return ErrC2ClientNotActive
+		default:
+			rows := mmcli.RunTabular(cmd)
+
+			if len(rows) != 0 {
+				return nil
+			}
+
+			time.Sleep(2 * time.Second)
+		}
+	}
 }
 
 func (this Minimega) ExecC2Command(opts ...C2Option) (string, error) {
@@ -724,73 +749,136 @@ func (this Minimega) ExecC2Command(opts ...C2Option) (string, error) {
 
 	if o.testConn != "" {
 		cmd.Command = fmt.Sprintf("cc test-conn %s", o.testConn)
-	} else {
-		cmd.Command = fmt.Sprintf("cc exec %s", o.command)
-	}
 
-	data, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
-	if err != nil {
-		return "", fmt.Errorf("executing command '%s' on vm %s: %w", o.command, o.vm, err)
-	}
+		data, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
+		if err != nil {
+			return "", fmt.Errorf("calling '%s' for vm %s: %w", cmd.Command, o.vm, err)
+		}
 
-	// This will be the ID for the cc exec command
-	return fmt.Sprintf("%v", data), nil
-}
+		id := fmt.Sprintf("%v", data)
 
-func (Minimega) WaitForC2Response(ctx context.Context, opts ...C2Option) (string, error) {
-	o := NewC2Options(opts...)
-
-	cmd := mmcli.NewNamespacedCommand(o.ns)
-	cmd.Command = "cc commands"
-	cmd.Columns = []string{"id", "responses"}
-	cmd.Filters = []string{"id=" + o.commandID}
-
-	// Multiple rows will come back for each command ID, one row per cluster host.
-	// Because the `ExecC2Command` sets the filter to a specific VM, only one of
-	// the rows will have a response since a VM can only run on a single cluster
-	// host.
-
-	err := func() error {
-		for {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(o.timeout):
-				return fmt.Errorf("timeout waiting for response for command %s", o.commandID)
-			default:
-				rows := mmcli.RunTabular(cmd)
-
-				if len(rows) == 0 {
-					return fmt.Errorf("no commands returned for ID %s", o.commandID)
-				}
-
-				if rid := rows[0]["id"]; rid != o.commandID {
-					return fmt.Errorf("wrong command returned: %s", rid)
-				}
-
-				for _, row := range rows {
-					if row["responses"] != "0" {
-						return nil
-					}
-				}
-
-				time.Sleep(1 * time.Second)
+		if o.wait {
+			if err := waitForResponse(o.ctx, o.ns, id, o.timeout); err != nil {
+				return "", fmt.Errorf("waiting for response: %w", err)
 			}
 		}
-	}()
 
-	if err != nil {
-		return "", err
+		return id, nil
 	}
 
-	cmd.Command = fmt.Sprintf("cc response %s raw", o.commandID)
+	if o.sendFile != "" {
+		cmd.Command = fmt.Sprintf("cc send %s", o.sendFile)
+
+		data, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
+		if err != nil {
+			return "", fmt.Errorf("sending file '%s' to vm %s: %w", o.sendFile, o.vm, err)
+		}
+
+		id := fmt.Sprintf("%v", data)
+
+		// Special case: if both the `sendFile` and `command` options are set, then
+		// send the file first, wait for it to be sent (no matter what), then
+		// execute the command.
+		if o.command != "" || o.wait {
+			if err := waitForResponse(o.ctx, o.ns, id, o.timeout); err != nil {
+				return "", fmt.Errorf("waiting for response: %w", err)
+			}
+		}
+
+		if o.command == "" {
+			return id, nil
+		}
+	}
+
+	if o.command != "" {
+		cmd.Command = fmt.Sprintf("cc exec %s", o.command)
+
+		data, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
+		if err != nil {
+			return "", fmt.Errorf("calling '%s' for vm %s: %w", cmd.Command, o.vm, err)
+		}
+
+		id := fmt.Sprintf("%v", data)
+
+		if o.wait {
+			if err := waitForResponse(o.ctx, o.ns, id, o.timeout); err != nil {
+				return "", fmt.Errorf("waiting for response: %w", err)
+			}
+		}
+
+		// This will be the ID for the cc exec command
+		return id, nil
+	}
+
+	return "", fmt.Errorf("no options to execute were provided")
+}
+
+func (Minimega) GetC2Response(opts ...C2Option) (string, error) {
+	o := NewC2Options(opts...)
+
+	if o.responseType == "" {
+		return getResponse(o.ns, o.commandID)
+	}
+
+	if o.vm == "" {
+		return "", fmt.Errorf("must provide VM when getting typed response")
+	}
+
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = fmt.Sprintf("cc response %s", o.commandID)
 
 	resp, err := mmcli.SingleResponse(mmcli.Run(cmd))
 	if err != nil {
 		return "", fmt.Errorf("getting response for command %s: %w", o.commandID, err)
 	}
 
-	return resp, nil
+	vms := GetVMInfo(NS(o.ns), VMName(o.vm))
+	if len(vms) == 0 {
+		return "", fmt.Errorf("VM %s does not exist", o.vm)
+	}
+
+	var (
+		scanner = bufio.NewScanner(strings.NewReader(resp))
+		uuid    = vms[0].UUID
+	)
+
+	var output []string
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if match := responseRegex.FindStringSubmatch(line); match != nil {
+			if len(output) > 0 {
+				return strings.Join(output, "\n"), nil
+			}
+
+			if match[3] == string(o.responseType) && match[2] == uuid {
+				output = []string{}
+			}
+
+			continue
+		}
+
+		if output != nil {
+			output = append(output, line)
+		}
+	}
+
+	if len(output) > 0 {
+		return strings.Join(output, "\n"), nil
+	}
+
+	return "", nil
+}
+
+func (Minimega) WaitForC2Response(opts ...C2Option) (string, error) {
+	o := NewC2Options(opts...)
+
+	if err := waitForResponse(o.ctx, o.ns, o.commandID, o.timeout); err != nil {
+		return "", err
+	}
+
+	return getResponse(o.ns, o.commandID)
 }
 
 func (Minimega) ClearC2Responses(opts ...C2Option) error {
@@ -804,6 +892,59 @@ func (Minimega) ClearC2Responses(opts ...C2Option) error {
 	}
 
 	return nil
+}
+
+func waitForResponse(ctx context.Context, ns, id string, timeout time.Duration) error {
+	cmd := mmcli.NewNamespacedCommand(ns)
+	cmd.Command = "cc commands"
+	cmd.Columns = []string{"id", "responses"}
+	cmd.Filters = []string{"id=" + id}
+
+	// Multiple rows will come back for each command ID, one row per cluster host.
+	// Because the `ExecC2Command` sets the filter to a specific VM, only one of
+	// the rows will have a response since a VM can only run on a single cluster
+	// host.
+
+	after := time.After(timeout)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-after:
+			return fmt.Errorf("timeout waiting for response for command %s", id)
+		default:
+			rows := mmcli.RunTabular(cmd)
+
+			if len(rows) == 0 {
+				return fmt.Errorf("no commands returned for ID %s", id)
+			}
+
+			if rid := rows[0]["id"]; rid != id {
+				return fmt.Errorf("wrong command returned: %s", rid)
+			}
+
+			for _, row := range rows {
+				if row["responses"] != "0" {
+					return nil
+				}
+			}
+
+			time.Sleep(1 * time.Second)
+		}
+	}
+}
+
+func getResponse(ns, id string) (string, error) {
+	cmd := mmcli.NewNamespacedCommand(ns)
+	cmd.Command = fmt.Sprintf("cc response %s raw", id)
+
+	resp, err := mmcli.SingleResponse(mmcli.Run(cmd))
+	if err != nil {
+		return "", fmt.Errorf("getting response for command %s: %w", id, err)
+	}
+
+	return resp, nil
 }
 
 func flush(ns string) error {

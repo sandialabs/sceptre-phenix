@@ -58,12 +58,19 @@ type Listener struct {
 	Error     string `json:"error" mapstructure:"error" structs:"error"`
 }
 
+type CustomTest struct {
+	Test      string `json:"test" mapstructure:"test" structs:"test"`
+	Timestamp string `json:"timestamp" mapstructure:"timestamp" structs:"timestamp"`
+	Error     string `json:"error" mapstructure:"error" structs:"error"`
+}
+
 type HostState struct {
 	Hostname     string         `json:"hostname" mapstructure:"hostname" structs:"hostname"`
 	CPULoad      string         `json:"cpuLoad" mapstructure:"cpuLoad" structs:"cpuLoad"`
 	Reachability []Reachability `json:"reachability,omitempty" mapstructure:"reachability,omitempty" structs:"reachability,omitempty"`
 	Processes    []Process      `json:"processes,omitempty" mapstructure:"processes,omitempty" structs:"processes,omitempty"`
 	Listeners    []Listener     `json:"listeners,omitempty" mapstructure:"listeners,omitempty" structs:"listeners,omitempty"`
+	CustomTests  []CustomTest   `json:"customTest,omitempty" mapstructure:"customTest,omitempty" structs:"customTest,omitempty"`
 }
 
 type flowsStruct struct {
@@ -101,18 +108,27 @@ type customReachability struct {
 	Packet string        `mapstructure:"udpPacketBase64"`
 }
 
+type customHostTest struct {
+	Name       string `mapstructure:"name"`
+	TestScript string `mapstructure:"testScript"`
+	Executor   string `mapstructure:"executor"`
+	TestStdout string `mapstructure:"testStdout"`
+	TestStderr string `mapstructure:"testStderr"`
+}
+
 type sohMetadata struct {
-	AppProfileKey      string               `mapstructure:"appMetadataProfileKey"`
-	C2Timeout          string               `mapstructure:"c2Timeout"`
-	ExitOnError        bool                 `mapstructure:"exitOnError"`
-	HostListeners      map[string][]string  `mapstructure:"hostListeners"`
-	HostProcesses      map[string][]string  `mapstructure:"hostProcesses"`
-	InjectICMPAllow    bool                 `mapstructure:"injectICMPAllow"`
-	PacketCapture      packetCapture        `mapstructure:"packetCapture"`
-	Reachability       string               `mapstructure:"testReachability"`
-	CustomReachability []customReachability `mapstructure:"testCustomReachability"`
-	SkipNetworkConfig  bool                 `mapstructure:"skipInitialNetworkConfigTests"`
-	SkipHosts          []string             `mapstructure:"skipHosts"`
+	AppProfileKey      string                      `mapstructure:"appMetadataProfileKey"`
+	C2Timeout          string                      `mapstructure:"c2Timeout"`
+	ExitOnError        bool                        `mapstructure:"exitOnError"`
+	HostListeners      map[string][]string         `mapstructure:"hostListeners"`
+	HostProcesses      map[string][]string         `mapstructure:"hostProcesses"`
+	CustomHostTests    map[string][]customHostTest `mapstructure:"hostCustomTests"`
+	InjectICMPAllow    bool                        `mapstructure:"injectICMPAllow"`
+	PacketCapture      packetCapture               `mapstructure:"packetCapture"`
+	Reachability       string                      `mapstructure:"testReachability"`
+	CustomReachability []customReachability        `mapstructure:"testCustomReachability"`
+	SkipNetworkConfig  bool                        `mapstructure:"skipInitialNetworkConfigTests"`
+	SkipHosts          []string                    `mapstructure:"skipHosts"`
 
 	// set after parsing
 	c2Timeout time.Duration
@@ -156,10 +172,11 @@ func (this *sohMetadata) init() error {
 }
 
 type sohProfile struct {
-	C2Timeout string   `mapstructure:"c2Timeout"`
-	Processes []string `mapstructure:"processes"`
-	Listeners []string `mapstructure:"listeners"`
-	Captures  []string `mapstructure:"captureInterfaces"`
+	C2Timeout   string           `mapstructure:"c2Timeout"`
+	Processes   []string         `mapstructure:"processes"`
+	Listeners   []string         `mapstructure:"listeners"`
+	CustomTests []customHostTest `mapstructure:"customTests"`
+	Captures    []string         `mapstructure:"captureInterfaces"`
 
 	// set after parsing
 	c2Timeout time.Duration

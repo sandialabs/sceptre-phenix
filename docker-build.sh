@@ -61,7 +61,7 @@ RUN groupadd --gid $USER_UID $USERNAME \
 
 RUN apt update && apt install -y curl gnupg2 make protobuf-compiler wget xz-utils
 
-ENV GOLANG_VERSION 1.14.6
+ENV GOLANG_VERSION 1.16.5
 
 RUN wget -O go.tgz https://golang.org/dl/go\${GOLANG_VERSION}.linux-amd64.tar.gz \
   && tar -C /usr/local -xzf go.tgz && rm go.tgz

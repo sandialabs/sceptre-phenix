@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	"phenix/internal/common"
 	"phenix/internal/mm"
 	"phenix/tmpl"
 	"phenix/types"
@@ -634,6 +636,83 @@ func (this *SOH) waitForPortTest(ctx context.Context, ns string) {
 	}
 }
 
+func (this *SOH) waitForCustomTest(ctx context.Context, ns string) {
+	wg := new(mm.ErrGroup)
+	printer := color.New(color.FgBlue)
+
+	for host, tests := range this.md.CustomHostTests {
+		// If the host isn't in the C2 hosts map, then don't operate on it since it
+		// was likely skipped for a reason.
+		if _, ok := this.c2Hosts[host]; !ok {
+			printer.Printf("  Skipping host %s per config\n", host)
+			continue
+		}
+
+		for _, test := range tests {
+			printer.Printf("  Running custom test %s on host %s\n", test.Name, host)
+			customTest(ctx, wg, ns, this.nodes[host], test)
+		}
+	}
+
+	// Check to see if any of the apps have hosts with metadata that include an SoH profile.
+	for _, app := range this.apps {
+		for _, host := range app.Hosts() {
+			if ms, ok := host.Metadata()[this.md.AppProfileKey]; ok {
+				if _, ok := this.c2Hosts[host.Hostname()]; !ok {
+					printer.Printf("  Skipping host %s per config\n", host.Hostname())
+					continue
+				}
+
+				var profile sohProfile
+
+				if err := mapstructure.Decode(ms, &profile); err != nil {
+					printer.Printf("incorrect SoH profile for host %s in app %s", host.Hostname(), app.Name())
+					continue
+				}
+
+				for _, test := range profile.CustomTests {
+					printer.Printf("  Running custom test %s on host %s\n", test.Name, host.Hostname())
+					customTest(ctx, wg, ns, this.nodes[host.Hostname()], test)
+				}
+			}
+		}
+	}
+
+	notifier := periodicallyNotify("waiting for custom tests to complete...", 5*time.Second)
+
+	wg.Wait()
+	close(notifier)
+
+	printer = color.New(color.FgRed)
+
+	for _, err := range wg.Errors {
+		var (
+			host = err.Meta["host"].(string)
+			test = err.Meta["test"].(string)
+		)
+
+		if errors.Is(err, mm.ErrC2ClientNotActive) {
+			delete(this.c2Hosts, host)
+		}
+
+		t := CustomTest{
+			Test:      test,
+			Timestamp: time.Now().Format(time.RFC3339),
+			Error:     err.Error(),
+		}
+
+		state, ok := this.status[host]
+		if !ok {
+			state = HostState{Hostname: host}
+		}
+
+		state.CustomTests = append(state.CustomTests, t)
+		this.status[host] = state
+
+		printer.Printf("  [✗] test %s failed on host %s\n", test, host)
+	}
+}
+
 func (this *SOH) waitForCPULoad(ctx context.Context, ns string) {
 	printer := color.New(color.FgBlue)
 	printer.Println("  Querying nodes for CPU load")
@@ -662,9 +741,9 @@ func (this *SOH) waitForCPULoad(ctx context.Context, ns string) {
 				return
 			}
 
-			opts = []mm.C2Option{mm.C2NS(ns), mm.C2CommandID(id)}
+			opts = []mm.C2Option{mm.C2NS(ns), mm.C2Context(ctx), mm.C2CommandID(id)}
 
-			resp, err := mm.WaitForC2Response(ctx, opts...)
+			resp, err := mm.WaitForC2Response(opts...)
 			if err != nil {
 				wg.AddError(fmt.Errorf("getting response for command '%s': %w", exec, err), map[string]interface{}{"host": host})
 				return
@@ -1075,6 +1154,69 @@ func removeICMPAllowRules(nodes []ifaces.NodeSpec) error {
 	}
 
 	return nil
+}
+
+func customTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, test customHostTest) {
+	host := node.General().Hostname()
+	meta := map[string]interface{}{"host": host, "test": test.Name}
+
+	if test.TestScript == "" {
+		wg.AddError(fmt.Errorf("no test script provided"), meta)
+		return
+	}
+
+	if test.TestStdout == "" && test.TestStderr == "" {
+		wg.AddError(fmt.Errorf("no expected test script output provided"), meta)
+		return
+	}
+
+	script := fmt.Sprintf("%s-%s", host, test.Name)
+	path := fmt.Sprintf("%s/images/%s/%s", common.PhenixBase, ns, script)
+
+	if err := os.WriteFile(path, []byte(test.TestScript), 0600); err != nil {
+		wg.AddError(fmt.Errorf("unable to write test script to file: %v", err), meta)
+		return
+	}
+
+	executor := test.Executor
+	if executor == "" {
+		switch strings.ToLower(node.Hardware().OSType()) {
+		case "windows":
+			executor = "powershell -NoProfile -ExecutionPolicy bypass -File"
+		default:
+			executor = "bash"
+		}
+	}
+
+	exec := fmt.Sprintf("%s /tmp/miniccc/files/%s", executor, script)
+
+	cmd := &mm.C2ParallelCommand{
+		Wait:    wg,
+		Options: []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2SendFile(script), mm.C2Command(exec)},
+		Meta:    meta,
+	}
+
+	if test.TestStdout != "" {
+		cmd.ExpectedStdout = func(resp string) error {
+			if strings.Contains(resp, test.TestStdout) {
+				return nil
+			}
+
+			return fmt.Errorf("script STDOUT did not contain test output")
+		}
+	}
+
+	if test.TestStderr != "" {
+		cmd.ExpectedStderr = func(resp string) error {
+			if strings.Contains(resp, test.TestStderr) {
+				return nil
+			}
+
+			return fmt.Errorf("script STDERR did not contain test output")
+		}
+	}
+
+	mm.ScheduleC2ParallelCommand(ctx, cmd)
 }
 
 func skip(node ifaces.NodeSpec, toSkip []string) bool {

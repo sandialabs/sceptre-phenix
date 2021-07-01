@@ -51,10 +51,12 @@ func (C2RetryError) Error() string {
 }
 
 type C2ParallelCommand struct {
-	Wait     *ErrGroup
-	Options  []C2Option
-	Meta     map[string]interface{}
-	Expected func(string) error
+	Wait           *ErrGroup
+	Options        []C2Option
+	Meta           map[string]interface{}
+	Expected       func(string) error
+	ExpectedStdout func(string) error
+	ExpectedStderr func(string) error
 }
 
 func ScheduleC2ParallelCommand(ctx context.Context, cmd *C2ParallelCommand) {
@@ -63,54 +65,74 @@ func ScheduleC2ParallelCommand(ctx context.Context, cmd *C2ParallelCommand) {
 	go func() {
 		defer cmd.Wait.Done()
 
-		var (
-			o  = NewC2Options(cmd.Options...)
-			id string
-		)
+		opts := append(cmd.Options, C2Context(ctx), C2Wait())
 
-		timeout := time.After(o.timeout)
-
-		for {
-			select {
-			case <-timeout:
-				cmd.Wait.AddError(fmt.Errorf("timeout waiting for C2 to be active: %w", ErrC2ClientNotActive), cmd.Meta)
-				return
-			default:
-				var err error
-
-				id, err = ExecC2Command(cmd.Options...)
-				if err != nil {
-					if errors.Is(err, ErrC2ClientNotActive) {
-						time.Sleep(5 * time.Second)
-						continue
-					}
-
-					cmd.Wait.AddError(fmt.Errorf("executing command '%s': %w", o.command, err), cmd.Meta)
-					return
-				}
-			}
-
-			if id != "" {
-				break
-			}
-		}
-
-		opts := []C2Option{C2NS(o.ns), C2CommandID(id)}
-
-		resp, err := WaitForC2Response(ctx, opts...)
+		id, err := ExecC2Command(opts...)
 		if err != nil {
-			cmd.Wait.AddError(fmt.Errorf("getting response for command '%s': %w", o.command, err), cmd.Meta)
+			cmd.Wait.AddError(fmt.Errorf("executing C2 command: %w", err), cmd.Meta)
 			return
 		}
 
-		if err := cmd.Expected(resp); err != nil {
-			var retry C2RetryError
+		opts = append(cmd.Options, C2CommandID(id))
 
-			if errors.As(err, &retry) {
-				time.Sleep(retry.Delay)
-				ScheduleC2ParallelCommand(ctx, cmd)
-			} else {
-				cmd.Wait.AddError(err, cmd.Meta)
+		if cmd.Expected != nil {
+			resp, err := GetC2Response(opts...)
+			if err != nil {
+				cmd.Wait.AddError(fmt.Errorf("getting response for C2 command: %w", err), cmd.Meta)
+				return
+			}
+
+			if err := cmd.Expected(resp); err != nil {
+				var retry C2RetryError
+
+				if errors.As(err, &retry) {
+					time.Sleep(retry.Delay)
+					ScheduleC2ParallelCommand(ctx, cmd)
+				} else {
+					cmd.Wait.AddError(err, cmd.Meta)
+				}
+			}
+		}
+
+		if cmd.ExpectedStdout != nil {
+			opts = append(opts, C2ResponseTypeStdout())
+
+			resp, err := GetC2Response(opts...)
+			if err != nil {
+				cmd.Wait.AddError(fmt.Errorf("getting STDOUT response for C2 command: %w", err), cmd.Meta)
+				return
+			}
+
+			if err := cmd.ExpectedStdout(resp); err != nil {
+				var retry C2RetryError
+
+				if errors.As(err, &retry) {
+					time.Sleep(retry.Delay)
+					ScheduleC2ParallelCommand(ctx, cmd)
+				} else {
+					cmd.Wait.AddError(err, cmd.Meta)
+				}
+			}
+		}
+
+		if cmd.ExpectedStderr != nil {
+			opts = append(opts, C2ResponseTypeStderr())
+
+			resp, err := GetC2Response(opts...)
+			if err != nil {
+				cmd.Wait.AddError(fmt.Errorf("getting STDERR response for C2 command: %w", err), cmd.Meta)
+				return
+			}
+
+			if err := cmd.ExpectedStderr(resp); err != nil {
+				var retry C2RetryError
+
+				if errors.As(err, &retry) {
+					time.Sleep(retry.Delay)
+					ScheduleC2ParallelCommand(ctx, cmd)
+				} else {
+					cmd.Wait.AddError(err, cmd.Meta)
+				}
 			}
 		}
 	}()

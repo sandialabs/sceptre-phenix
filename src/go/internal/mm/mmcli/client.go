@@ -94,6 +94,10 @@ func SingleResponse(responses chan *miniclient.Response) (string, error) {
 		}
 	}
 
+	if resp == nil {
+		return "", err
+	}
+
 	return *resp, err
 }
 

@@ -13,7 +13,7 @@ RUN npm install \
   && npm run build
 
 
-FROM golang:1.14 AS gobuilder
+FROM golang:1.16.5 AS gobuilder
 
 RUN apt update \
   && apt install -y protobuf-compiler xz-utils

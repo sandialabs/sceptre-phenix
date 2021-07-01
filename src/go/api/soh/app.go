@@ -317,6 +317,7 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment, initial b
 	this.waitForReachabilityTest(ctx, ns)
 	this.waitForProcTest(ctx, ns)
 	this.waitForPortTest(ctx, ns)
+	this.waitForCustomTest(ctx, ns)
 	this.waitForCPULoad(ctx, ns)
 
 	if !initial {
@@ -381,9 +382,9 @@ func (this *SOH) getFlows(ctx context.Context, exp *types.Experiment) {
 		}
 	}
 
-	opts := []mm.C2Option{mm.C2NS(exp.Metadata.Name), mm.C2CommandID(id)}
+	opts := []mm.C2Option{mm.C2NS(exp.Metadata.Name), mm.C2Context(ctx), mm.C2CommandID(id)}
 
-	resp, err := mm.WaitForC2Response(ctx, opts...)
+	resp, err := mm.WaitForC2Response(opts...)
 	if err != nil {
 		fmt.Printf("error getting response for command 'query-flows.sh': %v\n", err)
 		return

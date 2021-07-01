@@ -1,7 +1,5 @@
 package mm
 
-import "context"
-
 var DefaultMM MM = new(Minimega)
 
 type MM interface {
@@ -36,6 +34,7 @@ type MM interface {
 
 	IsC2ClientActive(...C2Option) error
 	ExecC2Command(...C2Option) (string, error)
-	WaitForC2Response(context.Context, ...C2Option) (string, error)
+	GetC2Response(...C2Option) (string, error)
+	WaitForC2Response(...C2Option) (string, error)
 	ClearC2Responses(...C2Option) error
 }

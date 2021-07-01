@@ -1,7 +1,5 @@
 package mm
 
-import "context"
-
 func ReadScriptFromFile(filename string) error {
 	return DefaultMM.ReadScriptFromFile(filename)
 }
@@ -102,8 +100,12 @@ func ExecC2Command(opts ...C2Option) (string, error) {
 	return DefaultMM.ExecC2Command(opts...)
 }
 
-func WaitForC2Response(ctx context.Context, opts ...C2Option) (string, error) {
-	return DefaultMM.WaitForC2Response(ctx, opts...)
+func GetC2Response(opts ...C2Option) (string, error) {
+	return DefaultMM.GetC2Response(opts...)
+}
+
+func WaitForC2Response(opts ...C2Option) (string, error) {
+	return DefaultMM.WaitForC2Response(opts...)
 }
 
 func ClearC2Responses(opts ...C2Option) error {
