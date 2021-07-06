@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -97,14 +96,6 @@ func (this UserApp) shellOut(ctx context.Context, action Action, exp *types.Expe
 		return fmt.Errorf("marshaling experiment to JSON: %w", err)
 	}
 
-	var logFile string
-
-	if dir := filepath.Dir(common.LogFile); dir == "/var/log/phenix" {
-		logFile = dir + "/phenix-apps.log"
-	} else {
-		logFile = dir + "/.phenix-apps.log"
-	}
-
 	opts := []shell.Option{
 		shell.Command(cmdName),
 		shell.Args(string(action)),
@@ -112,7 +103,7 @@ func (this UserApp) shellOut(ctx context.Context, action Action, exp *types.Expe
 		shell.Env(
 			"PHENIX_DIR="+common.PhenixBase,
 			"PHENIX_LOG_LEVEL="+util.GetEnv("PHENIX_LOG_LEVEL", "DEBUG"),
-			"PHENIX_LOG_FILE="+util.GetEnv("PHENIX_LOG_FILE", logFile),
+			"PHENIX_LOG_FILE="+util.GetEnv("PHENIX_LOG_FILE", common.LogFile),
 			"PHENIX_DRYRUN="+strconv.FormatBool(this.options.DryRun),
 		),
 	}

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"phenix/internal/common"
 	"phenix/util"
 	"phenix/web"
 
@@ -39,6 +40,7 @@ func newUiCmd() *cobra.Command {
 				}
 
 				log.AddLogger("file", logfile, level, false)
+				common.LogFile = path
 			}
 
 			opts := []web.ServerOption{

@@ -2650,6 +2650,7 @@ func GetLogs(w http.ResponseWriter, r *http.Request) {
 	type LogLine struct {
 		Source    string `json:"source"`
 		Timestamp string `json:"timestamp"`
+		Epoch     int64  `json:"epoch"`
 		Level     string `json:"level"`
 		Log       string `json:"log"`
 
@@ -2724,7 +2725,7 @@ func GetLogs(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 
-					if time.Now().Sub(ts) > since {
+					if time.Since(ts) > since {
 						continue
 					}
 
@@ -2735,6 +2736,7 @@ func GetLogs(w http.ResponseWriter, r *http.Request) {
 					body = &LogLine{
 						Source:    name,
 						Timestamp: parts[1],
+						Epoch:     ts.Unix(),
 						Level:     parts[2],
 						Log:       parts[3],
 

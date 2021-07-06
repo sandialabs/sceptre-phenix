@@ -8,7 +8,8 @@ var (
 	PhenixBase   = "/phenix"
 	MinimegaBase = "/tmp/minimega"
 
-	LogFile = "/var/log/phenix"
+	LogFile   = "/var/log/phenix/phenix.log"
+	ErrorFile = "/var/log/phenix/error.log"
 
 	HostnameSuffixes string
 )

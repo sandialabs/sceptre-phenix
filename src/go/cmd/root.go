@@ -37,18 +37,18 @@ var rootCmd = &cobra.Command{
 			errOut   = viper.GetBool("log.error-stderr")
 		)
 
-		common.LogFile = errFile
+		common.ErrorFile = errFile
 
 		if err := store.Init(store.Endpoint(endpoint)); err != nil {
 			return fmt.Errorf("initializing storage: %w", err)
 		}
 
 		if err := util.InitFatalLogWriter(errFile, errOut); err != nil {
-			return fmt.Errorf("Unable to initialize fatal log writer: %w", err)
+			return fmt.Errorf("unable to initialize fatal log writer: %w", err)
 		}
 
 		if err := config.Init(); err != nil {
-			return fmt.Errorf("Unable to initialize default configs: %w", err)
+			return fmt.Errorf("unable to initialize default configs: %w", err)
 		}
 
 		return nil
@@ -84,11 +84,15 @@ func init() {
 		os.MkdirAll("/etc/phenix", 0755)
 		os.MkdirAll("/var/log/phenix", 0755)
 
-		rootCmd.PersistentFlags().StringVar(&storeEndpoint, "store.endpoint", fmt.Sprintf("bolt:///etc/phenix/store.bdb"), "endpoint for storage service")
+		rootCmd.PersistentFlags().StringVar(&storeEndpoint, "store.endpoint", "bolt:///etc/phenix/store.bdb", "endpoint for storage service")
 		rootCmd.PersistentFlags().StringVar(&errFile, "log.error-file", "/var/log/phenix/error.log", "log fatal errors to file")
+
+		common.LogFile = "/var/log/phenix/phenix.log"
 	} else {
 		rootCmd.PersistentFlags().StringVar(&storeEndpoint, "store.endpoint", fmt.Sprintf("bolt://%s/.phenix.bdb", home), "endpoint for storage service")
 		rootCmd.PersistentFlags().StringVar(&errFile, "log.error-file", fmt.Sprintf("%s/.phenix.err", home), "log fatal errors to file")
+
+		common.LogFile = fmt.Sprintf("%s/.phenix.log", home)
 	}
 
 	viper.BindPFlags(rootCmd.PersistentFlags())

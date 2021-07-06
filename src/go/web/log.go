@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"regexp"
+	"time"
 
 	"phenix/web/broker"
 
@@ -74,9 +75,15 @@ func PublishLogs(ctx context.Context, phenix, minimega string) {
 			switch l.kind {
 			case LOG_PHENIX:
 				if len(parts) == 4 {
+					ts, err := time.ParseInLocation("2006/01/02 15:04:05", parts[1], time.Local)
+					if err != nil {
+						continue
+					}
+
 					phenixBody = map[string]interface{}{
 						"source":    "gophenix",
 						"timestamp": parts[1],
+						"epoch":     ts.Unix(),
 						"level":     parts[2],
 						"log":       parts[3],
 					}
@@ -95,9 +102,15 @@ func PublishLogs(ctx context.Context, phenix, minimega string) {
 				)
 			case LOG_MINIMEGA:
 				if len(parts) == 4 {
+					ts, err := time.ParseInLocation("2006/01/02 15:04:05", parts[1], time.Local)
+					if err != nil {
+						continue
+					}
+
 					mmBody = map[string]interface{}{
 						"source":    "minimega",
 						"timestamp": parts[1],
+						"epoch":     ts.Unix(),
 						"level":     parts[2],
 						"log":       parts[3],
 					}

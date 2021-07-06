@@ -25,6 +25,15 @@
     <template v-else>
       <hr>
       <b-field position="is-right">
+        <b-tooltip label="change duration of log reporting" type="is-light">
+          <b-select :value="this.duration" @input="( value ) => assignDuration( value )">
+            <option value="1m">1 min</option>
+            <option value="5m">5 min</option>
+            <option value="10m">10 min</option>
+            <option value="15m">15 min</option>
+          </b-select>
+        </b-tooltip>
+        &nbsp; &nbsp;
         <b-autocomplete v-model="searchLog"
                         placeholder="Search a log"
                         icon="search"
@@ -41,37 +50,9 @@
         </p>
       </b-field>
       <div>
-        <b-table
-          :data="filteredLogs"
-          :paginated="table.isPaginated && paginationNeeded"
-          :per-page="table.perPage"
-          :current-page.sync="table.currentPage"
-          :pagination-simple="table.isPaginationSimple"
-          :pagination-size="table.paginationSize"
-          :default-sort-direction="table.defaultSortDirection"
-          default-sort="timestamp">
-          <template slot-scope="props">
-            <b-table-column field="timestamp" label="Timestamp" width="200" sortable>
-              {{ props.row.timestamp }}
-            </b-table-column>
-            <b-table-column field="source" label="Source" sortable centered>
-              {{ props.row.source }}
-            </b-table-column>            
-            <b-table-column field="level" label="Level" centered>
-              <span class="tag" :class="decorator( props.row.level )">
-                {{ props.row.level }}
-              </span>
-            </b-table-column>
-            <b-table-column field="log" label="Log">
-              {{ props.row.log }}
-            </b-table-column>
-          </template>
-        </b-table>
-        <b-field v-if="paginationNeeded" grouped position="is-right">
-          <div class="control is-flex">
-            <b-switch v-model="table.isPaginated" size="is-small" type="is-light">Paginate</b-switch>
-          </div>
-        </b-field>
+        <div class="control">
+          <textarea class="textarea" style="font-family:'Courier New'" readonly rows="40">{{ this.filteredLogs }}</textarea>
+        </div>
       </div>
     </template>
   </div>
@@ -84,25 +65,16 @@
       this.logs = [];
     },
 
-    async created () {
+    created () {
       try {
-        let resp = await this.$http.get( 'logs' );
-        let state = await resp.json();
-
-        // Note that sometimes this function gets called more
-        // than once, and sometimes `state` ends up being
-        // null, perhaps due to multipart responses?
-        if ( state ) {
-          this.logs.push( ...state.logs );
-        }
-
+        this.getLogs();
         this.$options.sockets.onmessage = this.handler;
       } catch ( resp ) {
         if ( resp.status == 501)  {
           this.disabled = true
         } else {
           this.$buefy.toast.open({
-            message: 'Getting the past hour of logs failed with ' + resp.status + ' status.',
+            message: 'Getting logs for the past ' + this.duration + ' failed with ' + resp.status + ' status.',
             type: 'is-danger',
             duration: 4000
           });
@@ -113,6 +85,19 @@
     computed: {
       filteredLogs: function() {
         let logs = this.logs;
+        let dur = this.getSeconds(this.duration);
+        let now = Date.now() / 1000;
+
+        let windowed = [];
+
+        for ( let i in logs ) {
+          let log = logs[ i ];
+
+          if ( log.epoch >= (now - dur) ) {
+            windowed.push(log);
+          }
+        }
+
         let filters = { 'sources': [], 'levels': [] };
 
         let tokens = this.searchLog.split( ' ' );
@@ -144,8 +129,8 @@
         let log_re = new RegExp( tokens.join( ' ' ), 'i' );
         let data = [];
         
-        for ( let i in logs ) {
-          let log = logs[ i ];
+        for ( let i in windowed ) {
+          let log = windowed[ i ];
 
           if ( filters[ 'sources' ].length == 0 || filters[ 'sources' ].includes( log.source.toLowerCase() ) ) {
             if ( filters[ 'levels' ].length == 0 || filters[ 'levels' ].includes( log.level.toLowerCase() ) ) {
@@ -156,7 +141,14 @@
           }
         }
 
-        return data;
+        let logString = '';
+
+        for ( let i in data ) {
+          let entry = data[ i ];
+          logString += entry.timestamp + ' ' + entry.source + ' ' + entry.level + ' ' + entry.log + '\n';
+        }
+
+        return logString;
       },
       
       filteredData () {
@@ -177,18 +169,35 @@
     },
 
     methods: {
+      async getLogs () {
+        let resp = await this.$http.get( 'logs?since=' + this.duration );
+        let state = await resp.json();
+
+        // Note that sometimes this function gets called more
+        // than once, and sometimes `state` ends up being
+        // null, perhaps due to multipart responses?
+        if ( state ) {
+          this.logs.push( ...state.logs );
+        }
+      },
+
       handler ( event ) {
-        console.log( this.logs.length );
         event.data.split( /\r?\n/ ).forEach( m => {
           let msg = JSON.parse( m );
           this.handle( msg );
         });
       },
     
-      handle ( msg ) {      
+      handle ( msg ) {     
         if ( msg.resource.type == 'log' ) {
           this.logs.push( msg.result );
         }
+      },
+
+      assignDuration ( value ) {
+        this.duration = value;
+
+        this.getLogs();
       },
     
       decorator ( severity ) {
@@ -204,9 +213,26 @@
         } else {
           return 'is-primary';
         }
+      },
+
+      getSeconds ( str ) {
+        let seconds = 0;
+        let months = str.match(/(\d+)\s*M/);
+        let days = str.match(/(\d+)\s*D/);
+        let hours = str.match(/(\d+)\s*h/);
+        let minutes = str.match(/(\d+)\s*m/);
+        let secs = str.match(/(\d+)\s*s/);
+
+        if (months) { seconds += parseInt(months[1])*86400*30; }
+        if (days) { seconds += parseInt(days[1])*86400; }
+        if (hours) { seconds += parseInt(hours[1])*3600; }
+        if (minutes) { seconds += parseInt(minutes[1])*60; }
+        if (secs) { seconds += parseInt(secs[1]); }
+
+        return seconds;
       }
     },
-
+    
     data () {
       return {
         table: {
@@ -220,7 +246,8 @@
         },
         disabled: false,
         logs: [],
-        searchLog: ''
+        searchLog: '',
+        duration: '5m'
       }
     }
   }
@@ -229,5 +256,11 @@
 <style scoped>
   div.autocomplete >>> a.dropdown-item {
     color: #383838 !important;
+  }
+
+  .textarea {
+    background-color: #383838;
+    color: whitesmoke;
+    font-weight: 600;
   }
 </style>
