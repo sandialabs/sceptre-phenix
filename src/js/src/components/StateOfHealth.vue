@@ -651,7 +651,13 @@ export default {
         .on( 'click', this.clicked )
         .call( this.drag( simulation ) );
 
-      node.append( "title" ).text( d => d.label );
+      const label = g.selectAll( "text" )
+        .data( nodes )
+        .join( "text" )
+          .text( d => d.label )
+          .style( "text-anchor", "start" )
+          .style( "fill", "whitesmoke" )
+          .style( "font-size", "6px" );
 
       simulation.on( "tick", () => {
         link
@@ -662,7 +668,11 @@ export default {
 
         node
           .attr( "cx", d => d.x )
-          .attr( "cy", d => d.y) ;
+          .attr( "cy", d => d.y );
+
+        label
+          .attr( "x", d => d.x + 4 )
+          .attr( "y", d => d.y + 8 );
       });
     },
 
@@ -672,7 +682,7 @@ export default {
       }
 
       let circle = d3.select( e.target );
-
+      
       circle
         .transition()
         .attr( "r", 15 )
