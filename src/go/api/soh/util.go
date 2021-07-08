@@ -434,11 +434,11 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
 		connTest(ctx, wg, ns, host, target, reach.Proto, reach.Port, reach.Wait, reach.Packet)
 	}
 
-	notifier := periodicallyNotify("waiting for reachability tests to complete...", 5*time.Second)
+	cancel := periodicallyNotify(ctx, "waiting for reachability tests to complete...", 5*time.Second)
 
 	// Wait for hosts to test reachability to other hosts.
 	wg.Wait()
-	close(notifier)
+	cancel()
 
 	printer = color.New(color.FgRed)
 
@@ -524,10 +524,10 @@ func (this *SOH) waitForProcTest(ctx context.Context, ns string) {
 		}
 	}
 
-	notifier := periodicallyNotify("waiting for process tests to complete...", 5*time.Second)
+	cancel := periodicallyNotify(ctx, "waiting for process tests to complete...", 5*time.Second)
 
 	wg.Wait()
-	close(notifier)
+	cancel()
 
 	printer = color.New(color.FgRed)
 
@@ -601,10 +601,10 @@ func (this *SOH) waitForPortTest(ctx context.Context, ns string) {
 		}
 	}
 
-	notifier := periodicallyNotify("waiting for listener tests to complete...", 5*time.Second)
+	cancel := periodicallyNotify(ctx, "waiting for listener tests to complete...", 5*time.Second)
 
 	wg.Wait()
-	close(notifier)
+	cancel()
 
 	printer = color.New(color.FgRed)
 
@@ -678,10 +678,10 @@ func (this *SOH) waitForCustomTest(ctx context.Context, ns string) {
 		}
 	}
 
-	notifier := periodicallyNotify("waiting for custom tests to complete...", 5*time.Second)
+	cancel := periodicallyNotify(ctx, "waiting for custom tests to complete...", 5*time.Second)
 
 	wg.Wait()
-	close(notifier)
+	cancel()
 
 	printer = color.New(color.FgRed)
 
@@ -776,11 +776,11 @@ func (this *SOH) waitForCPULoad(ctx context.Context, ns string) {
 		}(host)
 	}
 
-	notifier := periodicallyNotify("waiting for CPU load details...", 5*time.Second)
+	cancel := periodicallyNotify(ctx, "waiting for CPU load details...", 5*time.Second)
 
 	// Wait for CPU load requests to complete.
 	wg.Wait()
-	close(notifier)
+	cancel()
 
 	printer = color.New(color.FgRed)
 
@@ -1252,16 +1252,16 @@ func trim(str string) []string {
 	return trimmed
 }
 
-func periodicallyNotify(msg string, d time.Duration) chan struct{} {
+func periodicallyNotify(ctx context.Context, msg string, d time.Duration) context.CancelFunc {
 	var (
-		done   = make(chan struct{})
-		ticker = time.NewTicker(d)
+		cctx, cancel = context.WithCancel(ctx)
+		ticker       = time.NewTicker(d)
 	)
 
 	go func() {
 		for {
 			select {
-			case <-done:
+			case <-cctx.Done():
 				ticker.Stop()
 				return
 			case t := <-ticker.C:
@@ -1271,7 +1271,7 @@ func periodicallyNotify(msg string, d time.Duration) chan struct{} {
 		}
 	}()
 
-	return done
+	return cancel
 }
 
 func nextIP(ip net.IP) net.IP {

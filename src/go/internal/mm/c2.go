@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"phenix/util"
 	"sync"
 	"time"
 )
@@ -86,7 +87,10 @@ func ScheduleC2ParallelCommand(ctx context.Context, cmd *C2ParallelCommand) {
 				var retry C2RetryError
 
 				if errors.As(err, &retry) {
-					time.Sleep(retry.Delay)
+					if err := util.SleepContext(ctx, retry.Delay); err != nil {
+						return
+					}
+
 					ScheduleC2ParallelCommand(ctx, cmd)
 				} else {
 					cmd.Wait.AddError(err, cmd.Meta)
@@ -107,7 +111,10 @@ func ScheduleC2ParallelCommand(ctx context.Context, cmd *C2ParallelCommand) {
 				var retry C2RetryError
 
 				if errors.As(err, &retry) {
-					time.Sleep(retry.Delay)
+					if err := util.SleepContext(ctx, retry.Delay); err != nil {
+						return
+					}
+
 					ScheduleC2ParallelCommand(ctx, cmd)
 				} else {
 					cmd.Wait.AddError(err, cmd.Meta)
@@ -128,7 +135,10 @@ func ScheduleC2ParallelCommand(ctx context.Context, cmd *C2ParallelCommand) {
 				var retry C2RetryError
 
 				if errors.As(err, &retry) {
-					time.Sleep(retry.Delay)
+					if err := util.SleepContext(ctx, retry.Delay); err != nil {
+						return
+					}
+
 					ScheduleC2ParallelCommand(ctx, cmd)
 				} else {
 					cmd.Wait.AddError(err, cmd.Meta)

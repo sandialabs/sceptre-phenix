@@ -289,12 +289,16 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment, initial b
 		printer.Println("  Skipping initial network configuration tests per config")
 	}
 
-	notifier := periodicallyNotify("waiting for initial network configurations to be validated...", 5*time.Second)
+	cancel := periodicallyNotify(ctx, "waiting for initial network configurations to be validated...", 5*time.Second)
 
 	// Wait for IP address / gateway configuration to be set for each VM, as well
 	// as wait for each gateway to be reachable.
 	wg.Wait()
-	close(notifier)
+	cancel()
+
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 
 	printer = color.New(color.FgRed)
 
@@ -315,13 +319,41 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment, initial b
 	// *** RUN ACTUAL STATE OF HEALTH CHECKS *** //
 
 	this.waitForReachabilityTest(ctx, ns)
+
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	this.waitForProcTest(ctx, ns)
+
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	this.waitForPortTest(ctx, ns)
+
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	this.waitForCustomTest(ctx, ns)
+
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	this.waitForCPULoad(ctx, ns)
+
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 
 	if !initial {
 		this.getFlows(ctx, exp)
+
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 	}
 
 	// *** WRITE RESULTS TO EXPERIMENT STATUS *** //

@@ -164,6 +164,10 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 	}
 
 	for _, a := range DefaultApps() {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
 		switch options.Stage {
 		case ACTIONCONFIG:
 			err = a.Configure(ctx, exp)
@@ -196,6 +200,10 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 
 	if exp.Spec.Scenario() != nil {
 		for _, app := range exp.Spec.Scenario().Apps() {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+
 			// Don't apply default apps again if configured via the Scenario.
 			if _, ok := defaultApps[app.Name()]; ok {
 				continue
