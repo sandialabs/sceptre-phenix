@@ -372,47 +372,61 @@ func Shutdown(expName, vmName string) error {
 	}
 
 	state, err := mm.GetVMState(mm.NS(expName), mm.VMName(vmName))
-
 	if err != nil {
-		return fmt.Errorf("Retrieving state for VM %s in experiment %s: %w", vmName, expName, err)
+		return fmt.Errorf("retrieving state for VM %s in experiment %s: %w", vmName, expName, err)
 	}
 
 	//No need to power off a VM that has already been powered down
 	if state == "QUIT" {
 		return nil
-
 	}
 
-	/*
-		Code can be used for sending a power down signal to the vm
-		For the time being, this will not be implemented as we would
-		expect a user to be able to issue a power down command directly.
-
-		cmd := mmcli.NewNamespacedCommand(expName)
-		qmp := fmt.Sprintf(`{ "execute": "system_powerdown" }`)
-		cmd.Command = fmt.Sprintf("vm qmp %s '%s'", vmName, qmp)
-
-
-		_, err := mmcli.SingleResponse(mmcli.Run(cmd))
-		if err != nil {
-			return fmt.Errorf("Shutting down VM %s: %w", vmName, err)
-		}
-
-	*/
-
-	//Stop all packet captures for a vm that will be powered down
+	// Stop all packet captures for a vm that will be powered down
 	err = StopCaptures(expName, vmName)
 	if err != nil && !errors.Is(err, ErrNoCaptures) {
 		return fmt.Errorf("stopping captures for VM %s in experiment %s: %w", vmName, expName, err)
 	}
 
-	//Forced shutdown implementation is equivalent to killing the vm
-	//without a flush to preserve the state
+	// Send a powerdown signal to the VM using QEMU QMP.
 	cmd := mmcli.NewNamespacedCommand(expName)
-	cmd.Command = "vm kill " + vmName
+	qmp := `{ "execute": "system_powerdown" }`
+	cmd.Command = fmt.Sprintf("vm qmp %s '%s'", vmName, qmp)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-		return fmt.Errorf("Shutting down VM %s in experiment %s: %w", vmName, expName, err)
+		// return fmt.Errorf("powering down VM %s: %w", vmName, err)
+
+		cmd.Command = "vm kill " + vmName
+		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+			return fmt.Errorf("shutting down VM %s in experiment %s: %w", vmName, expName, err)
+		}
+	}
+
+	waitForShutdown := func() bool {
+		// Give the VM a maximum of 30s to shutdown.
+		after := time.After(30 * time.Second)
+
+		for {
+			select {
+			case <-after:
+				return false
+			default:
+				time.Sleep(1 * time.Second)
+
+				state, _ := mm.GetVMState(mm.NS(expName), mm.VMName(vmName))
+				if state == "QUIT" {
+					return true
+				}
+			}
+		}
+	}
+
+	if !waitForShutdown() {
+		// Forced shutdown implementation is equivalent to killing the vm without a
+		// flush to preserve the state.
+		cmd.Command = "vm kill " + vmName
+		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+			return fmt.Errorf("shutting down VM %s in experiment %s: %w", vmName, expName, err)
+		}
 	}
 
 	return nil
@@ -878,7 +892,6 @@ func Restore(expName, vmName, snap string) error {
 
 func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error) {
 	// Determine name of new disk image, if not provided.
-
 	if out == "" {
 		var err error
 
@@ -893,7 +906,7 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		return "", fmt.Errorf("getting base image for VM %s in experiment %s: %w", vmName, expName, err)
 	}
 
-	// Get compute node VM is running on.
+	// Get status of VM (scheduled host, VM state).
 
 	cmd := mmcli.NewNamespacedCommand(expName)
 	cmd.Command = "vm info"
@@ -911,12 +924,15 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		snap = "/tmp/minimega/" + status[0]["id"] + "/disk-0.qcow2"
 		node = status[0]["host"]
 	)
+
 	if !filepath.IsAbs(base) {
 		base = common.PhenixBase + "/images/" + base
 	}
+
 	if !filepath.IsAbs(out) {
 		out = common.PhenixBase + "/images/" + out
 	}
+
 	wait, ctx := errgroup.WithContext(context.Background())
 
 	// Make copy of base image locally on headnode. Using a context here will help
@@ -947,10 +963,7 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 
 	// VM can't be running or we won't be able to copy snapshot remotely.
 	if status[0]["state"] != "QUIT" {
-		cmd = mmcli.NewNamespacedCommand(expName)
-		cmd.Command = "vm kill " + vmName
-
-		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		if err := Shutdown(expName, vmName); err != nil {
 			return "", fmt.Errorf("stopping VM: %w", err)
 		}
 	}
