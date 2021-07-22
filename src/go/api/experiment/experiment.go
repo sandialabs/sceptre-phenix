@@ -430,8 +430,13 @@ func Start(ctx context.Context, opts ...StartOption) error {
 
 	if o.errChan == nil {
 		if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
-			mm.ClearNamespace(exp.Spec.ExperimentName())
-			return fmt.Errorf("applying apps to experiment: %w", err)
+			errors := multierror.Append(nil, fmt.Errorf("applying apps to experiment: %w", err))
+
+			if err := mm.ClearNamespace(exp.Spec.ExperimentName()); err != nil {
+				errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
+			}
+
+			return errors
 		}
 
 		c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
@@ -444,16 +449,11 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	} else {
 		go func() {
 			if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
-				mm.ClearNamespace(exp.Spec.ExperimentName())
 				o.errChan <- fmt.Errorf("applying apps to experiment: %w", err)
-			}
 
-			c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
-			c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
-
-			if err := store.Update(c); err != nil {
-				mm.ClearNamespace(exp.Spec.ExperimentName())
-				o.errChan <- fmt.Errorf("updating experiment config: %w", err)
+				if err := Stop(exp.Spec.ExperimentName()); err != nil {
+					o.errChan <- fmt.Errorf("stopping experiment: %w", err)
+				}
 			}
 
 			close(o.errChan)
