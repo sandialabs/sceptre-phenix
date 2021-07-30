@@ -24,10 +24,10 @@ spec:
   - linux-image-amd64
   - linux-headers-amd64
   - xserver-xorg
-  - kali-desktop-xfce
   ramdisk: false
   release: kali
   script_order:
+  - POSTBUILD_APT_KALI
   - POSTBUILD_APT_CLEANUP
   - POSTBUILD_NO_ROOT_PASSWD
   - POSTBUILD_PHENIX_HOSTNAME
@@ -35,6 +35,9 @@ spec:
   scripts:
     POSTBUILD_APT_CLEANUP: |
       apt clean || apt-get clean || echo "unable to clean apt cache"
+    POSTBUILD_APT_KALI: |
+      export DEBIAN_FRONTEND=noninteractive
+      apt -y install kali-linux-core kali-desktop-xfce kali-tools-top10
     POSTBUILD_NO_ROOT_PASSWD: |
       sed -i 's/nullok_secure/nullok/' /etc/pam.d/common-auth
       sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
@@ -62,25 +65,15 @@ spec:
       cat > /usr/local/bin/phenix-start.sh <<EOF
       #!/bin/bash
       for file in /etc/phenix/startup/*; do
-      echo \$file
-      bash \$file
+        echo \$file
+        bash \$file
       done
       EOF
       chmod +x /usr/local/bin/phenix-start.sh
       mkdir -p /etc/phenix/startup
     POSTBUILD_PHENIX_HOSTNAME: |
-      echo "phenix" > /etc/hostname
-      sed -i 's/127.0.1.1 .*/127.0.1.1 phenix/' /etc/hosts
-      cat > /etc/motd <<EOF
-
-      ██████╗ ██╗  ██╗███████╗███╗  ██╗██╗██╗  ██╗
-      ██╔══██╗██║  ██║██╔════╝████╗ ██║██║╚██╗██╔╝
-      ██████╔╝███████║█████╗  ██╔██╗██║██║ ╚███╔╝
-      ██╔═══╝ ██╔══██║██╔══╝  ██║╚████║██║ ██╔██╗
-      ██║     ██║  ██║███████╗██║ ╚███║██║██╔╝╚██╗
-      ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚══╝╚═╝╚═╝  ╚═╝
-
-      EOF
-      echo "\nBuilt with phenix image on $(date)\n\n" >> /etc/motd
+      echo "kali-phenix" > /etc/hostname
+      sed -i 's/127.0.1.1 .*/127.0.1.1 kali-phenix/' /etc/hosts
+      echo "\nBuilt with kali image on $(date)\n\n" >> /etc/motd
   size: 10G
   variant: minbase
