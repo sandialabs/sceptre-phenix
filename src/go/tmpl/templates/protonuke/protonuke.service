@@ -4,7 +4,7 @@ Description=protonuke Agent
 [Service]
 ConditionPathExists=/etc/default/protonuke
 EnvironmentFile=/etc/default/protonuke
-ExecStart=/usr/local/bin/protonuke ${PROTONUKE_ARGS}
+ExecStart=/usr/local/bin/protonuke $PROTONUKE_ARGS
 
 [Install]
 WantedBy=multi-user.target

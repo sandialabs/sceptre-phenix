@@ -1,6 +1,6 @@
 FROM node:14.2 AS jsbuilder
 
-RUN npm install -g @vue/cli
+RUN npm install -g @vue/cli redoc-cli
 
 COPY ./src/js /phenix/src/js
 
@@ -11,6 +11,12 @@ ENV VUE_APP_AUTH ${PHENIX_WEB_AUTH}
 
 RUN npm install \
   && npm run build
+
+COPY ./src/go/web/public/docs/openapi.yml /phenix/src/go/web/public/docs/openapi.yml
+
+WORKDIR /phenix/src/go/web/public/docs
+
+RUN npx redoc-cli bundle openapi.yml -o index.html --title 'phenix API'
 
 
 FROM golang:1.16.5 AS gobuilder
@@ -24,6 +30,7 @@ COPY ./src/go   /phenix/src/go
 WORKDIR /phenix
 
 COPY --from=jsbuilder /phenix/src/js /phenix/src/js
+COPY --from=jsbuilder /phenix/src/go/web/public/docs/index.html /phenix/src/go/web/public/docs/index.html
 
 ARG INSTALL_CERTS=
 RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
@@ -42,7 +49,7 @@ RUN VER=${PHENIX_VERSION} COMMIT=${PHENIX_COMMIT} make bin/phenix
 RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.0/vmdb2 -P bin/ \
   && chmod +x bin/vmdb2
 
-RUN git clone --branch main https://github.com/sandia-minimega/phenix-apps.git /phenix-apps
+RUN git clone --branch mirror-ovs-vm https://github.com/activeshadow/phenix-apps.git /phenix-apps
 
 WORKDIR /phenix-apps/src/go
 

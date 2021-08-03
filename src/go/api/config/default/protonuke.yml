@@ -33,7 +33,6 @@ spec:
   - POSTBUILD_NO_ROOT_PASSWD
   - POSTBUILD_PHENIX_HOSTNAME
   - POSTBUILD_PHENIX_BASE
-  - POSTBUILD_PROTONUKE
   scripts:
     POSTBUILD_APT_CLEANUP: |
       apt clean || apt-get clean || echo "unable to clean apt cache"
@@ -59,14 +58,6 @@ spec:
       EOF
       echo "\nBuilt with phenix image on $(date)\n\n" >> /etc/motd
     POSTBUILD_PHENIX_BASE: |
-      cat > /etc/systemd/system/miniccc.service <<EOF
-      [Unit]
-      Description=miniccc
-      [Service]
-      ExecStart=/opt/minimega/bin/miniccc -v=false -serial /dev/virtio-ports/cc -logfile /var/log/miniccc.log
-      [Install]
-      WantedBy=multi-user.target
-      EOF
       cat > /etc/systemd/system/phenix.service <<EOF
       [Unit]
       Description=phenix startup service
@@ -81,7 +72,6 @@ spec:
       WantedBy=multi-user.target
       EOF
       mkdir -p /etc/systemd/system/multi-user.target.wants
-      ln -s /etc/systemd/system/miniccc.service /etc/systemd/system/multi-user.target.wants/miniccc.service
       ln -s /etc/systemd/system/phenix.service /etc/systemd/system/multi-user.target.wants/phenix.service
       mkdir -p /usr/local/bin
       cat > /usr/local/bin/phenix-start.sh <<EOF
@@ -93,19 +83,5 @@ spec:
       EOF
       chmod +x /usr/local/bin/phenix-start.sh
       mkdir -p /etc/phenix/startup
-    POSTBUILD_PROTONUKE: |
-      cat > /etc/systemd/system/protonuke.service <<EOF
-      [Unit]
-      Description=protonuke
-      After=network-online.target
-      Wants=network-online.target
-      [Service]
-      EnvironmentFile=/etc/default/protonuke
-      ExecStart=/opt/minimega/bin/protonuke \$PROTONUKE_ARGS
-      [Install]
-      WantedBy=multi-user.target
-      EOF
-      mkdir -p /etc/systemd/system/multi-user.target.wants
-      ln -s /etc/systemd/system/protonuke.service /etc/systemd/system/multi-user.target.wants/protonuke.service
   size: 5G
   variant: minbase

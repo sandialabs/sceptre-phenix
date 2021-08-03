@@ -58,14 +58,6 @@ spec:
       EOF
       echo "\nBuilt with phenix image on $(date)\n\n" >> /etc/motd
     POSTBUILD_PHENIX_BASE: |
-      cat > /etc/systemd/system/miniccc.service <<EOF
-      [Unit]
-      Description=miniccc
-      [Service]
-      ExecStart=/opt/minimega/bin/miniccc -v=false -serial /dev/virtio-ports/cc -logfile /var/log/miniccc.log
-      [Install]
-      WantedBy=multi-user.target
-      EOF
       cat > /etc/systemd/system/phenix.service <<EOF
       [Unit]
       Description=phenix startup service
@@ -80,7 +72,6 @@ spec:
       WantedBy=multi-user.target
       EOF
       mkdir -p /etc/systemd/system/multi-user.target.wants
-      ln -s /etc/systemd/system/miniccc.service /etc/systemd/system/multi-user.target.wants/miniccc.service
       ln -s /etc/systemd/system/phenix.service /etc/systemd/system/multi-user.target.wants/phenix.service
       mkdir -p /usr/local/bin
       cat > /usr/local/bin/phenix-start.sh <<EOF

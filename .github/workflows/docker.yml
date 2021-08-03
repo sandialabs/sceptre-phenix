@@ -26,6 +26,9 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
+          build-args: |
+            PHENIX_VERSION=${{ steps.short.outputs.branch }}
+            PHENIX_COMMIT=${{ steps.short.outputs.sha }}
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/phenix:${{ steps.short.outputs.sha }}
