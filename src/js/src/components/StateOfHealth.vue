@@ -102,18 +102,17 @@
     </b-modal>
     <hr>
     <div class="columns is-centered"> 
-      <!-- TO-DO: fix column width -->
-      <div class="column">
+      <div class="column is-1">
         <router-link class="button is-dark" :to="{ name: 'experiment', params: { id: this.$route.params.id }}">
           <b-tooltip label="return to the experiment component" type="is-light is-right" :delay="1000">
             <b-icon icon="history"></b-icon>
           </b-tooltip>
         </router-link>
       </div>
-      <div class="column is-three-fifths">
+      <div class="column has-text-centered">
         <span style="font-weight: bold; font-size: x-large;">State of Health for Experiment: {{ this.$route.params.id }}</span>
       </div>
-      <div class="column" />
+      <div class="column is-1" />
     </div>
     <div>
       <b-tabs>

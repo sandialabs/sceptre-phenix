@@ -242,6 +242,84 @@ func (this *BoltDB) GetEvents() (Events, error) {
 	return events, nil
 }
 
+func (this *BoltDB) GetEventsBy(e Event) (Events, error) {
+	this.open()
+	defer this.Close()
+
+	if err := this.ensureBucket("events"); err != nil {
+		return nil, err
+	}
+
+	if e.ID != "" {
+		v, err := this.get("events", e.ID)
+		if err != nil {
+			return nil, fmt.Errorf("getting event: %w", err)
+		}
+
+		var event Event
+
+		if err := json.Unmarshal(v, &event); err != nil {
+			return nil, fmt.Errorf("unmarshaling event JSON: %w", err)
+		}
+
+		return []Event{event}, nil
+	}
+
+	var events Events
+
+	err := this.db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("events"))
+
+		err := b.ForEach(func(_, v []byte) error {
+			var event Event
+
+			if err := json.Unmarshal(v, &event); err != nil {
+				return fmt.Errorf("unmarshaling event JSON: %w", err)
+			}
+
+			if e.Type != EventTypeNotSet {
+				if event.Type != e.Type {
+					return nil
+				}
+			}
+
+			if e.Source != "" {
+				if event.Source != e.Source {
+					return nil
+				}
+			}
+
+			if e.Metadata != nil {
+				if event.Metadata == nil {
+					return nil
+				}
+
+				for k, v := range e.Metadata {
+					if event.Metadata[k] != v {
+						return nil
+					}
+				}
+			}
+
+			events = append(events, event)
+
+			return nil
+		})
+
+		if err != nil {
+			return fmt.Errorf("iterating event bucket: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("getting events from store: %w", err)
+	}
+
+	return events, nil
+}
+
 func (this *BoltDB) GetEvent(e *Event) error {
 	this.open()
 	defer this.Close()

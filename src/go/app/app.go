@@ -215,11 +215,29 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 
 			switch options.Stage {
 			case ACTIONCONFIG:
+				exp.Status.SetAppRunning(app.Name(), true)
+				exp.WriteToStore(true)
+
 				err = a.Configure(ctx, exp)
+
+				exp.Status.SetAppRunning(app.Name(), false)
+				exp.WriteToStore(true)
 			case ACTIONPRESTART:
+				exp.Status.SetAppRunning(app.Name(), true)
+				exp.WriteToStore(true)
+
 				err = a.PreStart(ctx, exp)
+
+				exp.Status.SetAppRunning(app.Name(), false)
+				exp.WriteToStore(true)
 			case ACTIONPOSTSTART:
+				exp.Status.SetAppRunning(app.Name(), true)
+				exp.WriteToStore(true)
+
 				err = a.PostStart(ctx, exp)
+
+				exp.Status.SetAppRunning(app.Name(), false)
+				exp.WriteToStore(true)
 			case ACTIONRUNNING:
 				if len(options.Filter) > 0 {
 					if _, ok := options.Filter[app.Name()]; !ok {
@@ -240,18 +258,31 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				exp.Status.SetAppRunning(app.Name(), true)
 
 				if err := exp.WriteToStore(true); err != nil {
-					notes.AddErrors(ctx, fmt.Errorf("error updating store with experiment (%s): %v", exp.Metadata.Name, err))
+					notes.AddErrors(ctx, fmt.Errorf("error updating store with experiment (%s): %v", exp.Spec.ExperimentName(), err))
 				}
 
+				pubsub.Publish("trigger-app", Publication{Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "start"})
+
 				err = a.Running(ctx, exp)
+				if err != nil {
+					pubsub.Publish("trigger-app", Publication{Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "error", Error: err})
+				}
+
+				pubsub.Publish("trigger-app", Publication{Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "success"})
 
 				exp.Status.SetAppRunning(app.Name(), false)
 
 				if err := exp.WriteToStore(true); err != nil {
-					notes.AddErrors(ctx, fmt.Errorf("error updating store with experiment (%s): %v", exp.Metadata.Name, err))
+					notes.AddErrors(ctx, fmt.Errorf("error updating store with experiment (%s): %v", exp.Spec.ExperimentName(), err))
 				}
 			case ACTIONCLEANUP:
+				exp.Status.SetAppRunning(app.Name(), true)
+				exp.WriteToStore(true)
+
 				err = a.Cleanup(ctx, exp)
+
+				exp.Status.SetAppRunning(app.Name(), false)
+				exp.WriteToStore(true)
 			}
 
 			var (
@@ -318,7 +349,7 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 					exp.Status.SetAppRunning(app.Name(), false)
 
 					if err := exp.WriteToStore(true); err != nil {
-						color.New(color.FgRed).Printf("[✗] error updating store with experiment (%s): %v\n", exp.Metadata.Name, err)
+						color.New(color.FgRed).Printf("[✗] error updating store with experiment (%s): %v\n", exp.Spec.ExperimentName(), err)
 					}
 
 					timer := time.NewTimer(duration)
@@ -334,7 +365,7 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 							exp.Status.SetAppRunning(app.Name(), false)
 
 							if err := exp.WriteToStore(true); err != nil {
-								color.New(color.FgRed).Printf("[✗] error updating store with experiment (%s): %v\n", exp.Metadata.Name, err)
+								color.New(color.FgRed).Printf("[✗] error updating store with experiment (%s): %v\n", exp.Spec.ExperimentName(), err)
 							}
 
 							return
@@ -359,23 +390,23 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 							exp.Status.SetAppRunning(app.Name(), true)
 
 							if err := exp.WriteToStore(true); err != nil {
-								color.New(color.FgRed).Printf("[✗] error updating store with experiment (%s): %v\n", exp.Metadata.Name, err)
+								color.New(color.FgRed).Printf("[✗] error updating store with experiment (%s): %v\n", exp.Spec.ExperimentName(), err)
 							}
 
-							pubsub.Publish("trigger-app", Publication{Experiment: exp.Metadata.Name, App: app.Name(), State: "start"})
+							pubsub.Publish("trigger-app", Publication{Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "start"})
 
 							if err := a.Running(ctx, exp); err != nil {
-								pubsub.Publish("trigger-app", Publication{Experiment: exp.Metadata.Name, App: app.Name(), State: "error", Error: err})
+								pubsub.Publish("trigger-app", Publication{Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "error", Error: err})
 
 								color.New(color.FgRed).Printf("[✗] error periodically running app (%s): %v\n", app.Name(), err)
 							}
 
-							pubsub.Publish("trigger-app", Publication{Experiment: exp.Metadata.Name, App: app.Name(), State: "success"})
+							pubsub.Publish("trigger-app", Publication{Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "success"})
 
 							exp.Status.SetAppRunning(app.Name(), false)
 
 							if err := exp.WriteToStore(true); err != nil {
-								color.New(color.FgRed).Printf("[✗] error updating store with experiment (%s): %v\n", exp.Metadata.Name, err)
+								color.New(color.FgRed).Printf("[✗] error updating store with experiment (%s): %v\n", exp.Spec.ExperimentName(), err)
 							}
 
 							timer.Reset(duration)

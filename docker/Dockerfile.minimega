@@ -1,0 +1,8 @@
+FROM ghcr.io/sandia-minimega/minimega/minimega:master
+
+# iptables needed in minimega container for scorch
+RUN apt update && apt install -y iptables \
+  && apt autoremove -y \
+  && apt clean -y \
+  && rm -rf /var/lib/apt/lists/* \
+  && rm -rf /var/cache/apt/archives/*

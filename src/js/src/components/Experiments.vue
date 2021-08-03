@@ -150,23 +150,21 @@
             <b-table-column field="start_time" label="Start Time" width="250" sortable>
               {{ props.row.start_time }}
             </b-table-column>
-            <b-table-column field="vm_count" label="# of VMs" width="100" centered sortable>
+            <b-table-column field="vm_count" label="VMs" width="100" centered sortable>
               {{ props.row.vm_count }}
             </b-table-column>
-            <b-table-column field="vlan_range" label="VLAN Range" width="100" centered>
-              {{ props.row.vlan_min }} - {{ props.row.vlan_max}}
+            <b-table-column field="vlan_range" label="VLANs" width="100" centered>
+              {{ props.row.vlan_min }} - {{ props.row.vlan_max}} ({{ props.row.vlan_count }})
             </b-table-column>
-            <b-table-column field="vlan_count" label="Total VLANs" width="100" centered>
-              {{ props.row.vlan_count }}
-            </b-table-column>
-            <b-table-column v-if="globalUser()" label="Delete" width="50" centered>
-              <button :disabled="updating( props.row.status )" class="button is-light is-small" @click="del( props.row.name, props.row.running )">
+            <b-table-column v-if="globalUser()" label="Actions" width="150" centered>
+              <button class="button is-light is-small action" :disabled="updating( props.row.status )" @click="del( props.row.name, props.row.running )">
                 <b-icon icon="trash"></b-icon>
               </button>
-            </b-table-column>
-            <b-table-column v-if="globalUser()" label="SoH" width="50" centered>
-              <router-link :disabled="updating( props.row.status )" class="button is-light is-small" :to="{ name: 'soh', params: { id: props.row.name }}">
+              <router-link class="button is-light is-small action" :disabled="updating( props.row.status )" :to="{ name: 'soh', params: { id: props.row.name }}">
                 <b-icon icon="heartbeat"></b-icon>
+              </router-link>
+              <router-link class="button is-light is-small action" :disabled="updating( props.row.status )" :to="{ name: 'scorch', params: { id: props.row.name }}">
+                <b-icon icon="fire"></b-icon>
               </router-link>
             </b-table-column>
           </template>
@@ -768,5 +766,13 @@
 <style scoped>
   div.autocomplete >>> a.dropdown-item {
     color: #383838 !important;
+  }
+
+  button.action {
+    margin-right: 5px;
+  }
+
+  a.action {
+    margin-right: 5px;
   }
 </style>

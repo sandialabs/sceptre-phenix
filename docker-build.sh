@@ -57,11 +57,17 @@ USER_UID=$(id -u)
 USERNAME=builder
 
 
+if (( $USER_UID == 0 )); then
+  USERNAME=root
+fi
+
+
 docker build -t phenix:builder -f - . <<EOF
 FROM ubuntu:20.04
 
-RUN groupadd --gid $USER_UID $USERNAME \
-  && useradd -s /bin/bash --uid $USER_UID --gid $USER_UID -m $USERNAME
+RUN ["/bin/bash", "-c", "if (( $USER_UID != 0 )); then \
+  groupadd --gid $USER_UID $USERNAME \
+  && useradd -s /bin/bash --uid $USER_UID --gid $USER_UID -m $USERNAME; fi"]
 
 RUN apt update && apt install -y curl gnupg2 make protobuf-compiler wget xz-utils
 

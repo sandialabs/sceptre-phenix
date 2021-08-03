@@ -37,8 +37,20 @@ func newEventListCmd() *cobra.Command {
 			if len(events) == 0 {
 				fmt.Println("\nThere are no recorded events\n")
 			} else {
-				events.SortByTimestamp()
-				printer.PrintTableOfEvents(os.Stdout, events, MustGetBool(cmd.Flags(), "show-id"))
+				var show store.Events
+
+				if MustGetBool(cmd.Flags(), "show-history") {
+					show = events
+				} else {
+					for _, event := range events {
+						if event.Type != store.EventTypeHistory {
+							show = append(show, event)
+						}
+					}
+				}
+
+				show.SortByTimestamp(true)
+				printer.PrintTableOfEvents(os.Stdout, show, MustGetBool(cmd.Flags(), "show-id"))
 			}
 
 			return nil
@@ -46,6 +58,7 @@ func newEventListCmd() *cobra.Command {
 	}
 
 	cmd.Flags().Bool("show-id", false, "Include event IDs in table")
+	cmd.Flags().Bool("show-history", false, "Include history events in table")
 
 	return cmd
 }

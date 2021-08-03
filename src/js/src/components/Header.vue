@@ -29,6 +29,9 @@ are only available to Global Administrator or Global Viewer.
           <menu-link v-if="auth && globalAdmin()"
                        to="/log"
                        class="navbar-item">Log</menu-link>
+          <menu-link v-if="auth && experimentUser()"
+                       to="/scorch"
+                       class="navbar-item">Scorch</menu-link>
         </div>
       </div>
       <div class="navbar-end">

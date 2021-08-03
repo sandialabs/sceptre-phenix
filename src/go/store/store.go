@@ -40,6 +40,9 @@ type Store interface {
 	// GetEvents gets all the events from the store.
 	GetEvents() (Events, error)
 
+	// GetEventsBy gets all the events from the store that match the given event.
+	GetEventsBy(Event) (Events, error)
+
 	// GetEvent initializes the given event with details from the store.
 	GetEvent(*Event) error
 

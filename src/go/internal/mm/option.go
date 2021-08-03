@@ -230,3 +230,63 @@ func C2ResponseTypeStderr() C2Option {
 		o.responseType = C2ResponseStderr
 	}
 }
+
+type TapOption func(*tapOptions)
+
+type tapOptions struct {
+	ns     string
+	name   string
+	bridge string
+	vlan   string
+	ip     string
+
+	untap bool
+}
+
+func NewTapOptions(opts ...TapOption) tapOptions {
+	o := tapOptions{
+		bridge: "phenix",
+	}
+
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	return o
+}
+
+func TapNS(n string) TapOption {
+	return func(o *tapOptions) {
+		o.ns = n
+	}
+}
+
+func TapName(n string) TapOption {
+	return func(o *tapOptions) {
+		o.name = n
+	}
+}
+
+func TapBridge(b string) TapOption {
+	return func(o *tapOptions) {
+		o.bridge = b
+	}
+}
+
+func TapVLANAlias(v string) TapOption {
+	return func(o *tapOptions) {
+		o.vlan = v
+	}
+}
+
+func TapIP(i string) TapOption {
+	return func(o *tapOptions) {
+		o.ip = i
+	}
+}
+
+func TapDelete() TapOption {
+	return func(o *tapOptions) {
+		o.untap = true
+	}
+}

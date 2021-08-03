@@ -111,3 +111,11 @@ func WaitForC2Response(opts ...C2Option) (string, error) {
 func ClearC2Responses(opts ...C2Option) error {
 	return DefaultMM.ClearC2Responses(opts...)
 }
+
+func TapVLAN(opts ...TapOption) error {
+	return DefaultMM.TapVLAN(opts...)
+}
+
+func Shell(cmd string) error {
+	return DefaultMM.Shell(cmd)
+}

@@ -1,5 +1,7 @@
 package config
 
+import "phenix/store"
+
 type DataType int
 
 const (
@@ -12,6 +14,7 @@ type CreateOption func(*createOptions)
 
 type createOptions struct {
 	path     string
+	config   *store.Config
 	data     []byte
 	dataType DataType
 	validate bool
@@ -30,6 +33,12 @@ func newCreateOptions(opts ...CreateOption) createOptions {
 func CreateFromPath(p string) CreateOption {
 	return func(o *createOptions) {
 		o.path = p
+	}
+}
+
+func CreateFromConfig(c *store.Config) CreateOption {
+	return func(o *createOptions) {
+		o.config = c
 	}
 }
 

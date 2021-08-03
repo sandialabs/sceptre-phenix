@@ -37,4 +37,7 @@ type MM interface {
 	GetC2Response(...C2Option) (string, error)
 	WaitForC2Response(...C2Option) (string, error)
 	ClearC2Responses(...C2Option) error
+
+	TapVLAN(...TapOption) error
+	Shell(cmd string) error
 }

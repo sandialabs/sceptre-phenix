@@ -6,6 +6,8 @@ require (
 	github.com/activeshadow/libminimega v0.0.0-20190412123224-5384445d4b63
 	github.com/activeshadow/structs v1.3.0
 	github.com/cescoferraro/go-jwt-middleware v0.0.0-20161113181124-eb52b4929b4e
+	github.com/coreos/go-iptables v0.6.0
+	github.com/creack/pty v1.1.11
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/elazarl/go-bindata-assetfs v1.0.1
 	github.com/fatih/color v1.9.0
@@ -31,6 +33,7 @@ require (
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	golang.org/x/net v0.0.0-20210405180319-a5a99cb37ef4
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
+	golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/yaml.v2 v2.3.0
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
@@ -71,7 +74,7 @@ require (
 	go.uber.org/zap v1.15.0 // indirect
 	golang.org/x/lint v0.0.0-20200302205851-738671d3881b // indirect
 	golang.org/x/mod v0.4.2 // indirect
-	golang.org/x/sys v0.0.0-20210510120138-977fb7262007 // indirect
+	golang.org/x/sys v0.0.0-20210615035016-665e8c7367d1 // indirect
 	golang.org/x/text v0.3.3 // indirect
 	golang.org/x/tools v0.1.5 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect

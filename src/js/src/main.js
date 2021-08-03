@@ -3,7 +3,6 @@ import VueResource   from 'vue-resource'
 import Buefy         from 'buefy'
 import VueNativeSock from 'vue-native-websocket'
 
-
 import '@fortawesome/fontawesome-free/css/all.css'
 import '@fortawesome/fontawesome-free/js/all.js'
 
@@ -26,11 +25,9 @@ Vue.config.productionTip = false
 Vue.use( Buefy, {
   defaultIconComponent:'font-awesome-icon',
 	defaultIconPack: 'fa'
-
 })
 
 Vue.use( VueResource )
-
 Vue.use( VueNativeSock, '//' + location.host, { connectManually: true, reconnection: true } );
 
 Vue.filter( 'lowercase', function( value ) {

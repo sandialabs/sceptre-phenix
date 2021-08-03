@@ -2,6 +2,8 @@ package broker
 
 import (
 	"encoding/json"
+	"fmt"
+
 	"phenix/app"
 	"phenix/util/pubsub"
 )
@@ -14,30 +16,24 @@ var (
 )
 
 func Start() {
-	sub := pubsub.Subscribe("trigger-app")
+	triggerSub := pubsub.Subscribe("trigger-app")
 
 	for {
 		select {
-		case pub := <-sub:
+		case pub := <-triggerSub:
 			trigger := pub.(app.Publication)
 
-			var action string
-
-			switch trigger.State {
-			case "start":
-				action = "triggering"
-			case "success":
-				action = "trigger"
-			case "error":
-				action = "errorTriggering"
-			default:
-				continue
-			}
+			typ := fmt.Sprintf("apps/%s", trigger.App)
 
 			policy := NewRequestPolicy("experiments/trigger", "create", trigger.Experiment)
-			resource := NewResource("experiment", trigger.Experiment, action)
+			resource := NewResource(typ, trigger.Experiment, trigger.State)
 
-			broadcast <- Publish{RequestPolicy: policy, Resource: resource, Result: nil}
+			if trigger.State == "error" {
+				result, _ := json.Marshal(map[string]interface{}{"error": trigger.Error.Error()})
+				broadcast <- Publish{RequestPolicy: policy, Resource: resource, Result: result}
+			} else {
+				broadcast <- Publish{RequestPolicy: policy, Resource: resource, Result: nil}
+			}
 		case cli := <-register:
 			clients[cli] = true
 		case cli := <-unregister:

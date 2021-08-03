@@ -19,6 +19,7 @@ import (
 	"phenix/web/broker"
 	"phenix/web/rbac"
 	"phenix/web/util"
+	"phenix/web/weberror"
 
 	log "github.com/activeshadow/libminimega/minilog"
 	"github.com/gorilla/mux"
@@ -37,7 +38,7 @@ func GetConfigs(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("configs", "list") {
-		err := NewWebError(nil, "listing configs not allowed for %s", ctx.Value("user").(string))
+		err := weberror.NewWebError(nil, "listing configs not allowed for %s", ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
 
@@ -47,7 +48,7 @@ func GetConfigs(w http.ResponseWriter, r *http.Request) error {
 
 	configs, err := config.List(kind)
 	if err != nil {
-		return NewWebError(err, "unable to get configs from store")
+		return weberror.NewWebError(err, "unable to get configs from store")
 	}
 
 	var allowed []store.Config
@@ -65,7 +66,7 @@ func GetConfigs(w http.ResponseWriter, r *http.Request) error {
 
 	body, err := json.Marshal(util.WithRoot("configs", allowed))
 	if err != nil {
-		err := NewWebError(err, "unable to process configs")
+		err := weberror.NewWebError(err, "unable to process configs")
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
@@ -85,20 +86,20 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("configs", "get") {
-		err := NewWebError(nil, "downloading configs not allowed for %s", ctx.Value("user").(string))
+		err := weberror.NewWebError(nil, "downloading configs not allowed for %s", ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
 
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		err := NewWebError(err, "unable to read request")
+		err := weberror.NewWebError(err, "unable to read request")
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
 	var configs []string
 
 	if err := json.Unmarshal(body, &configs); err != nil {
-		return NewWebError(err, "unable to parse request")
+		return weberror.NewWebError(err, "unable to parse request")
 	}
 
 	// TODO: check for len == 0
@@ -107,13 +108,13 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 		name := configs[0]
 
 		if !role.Allowed("configs", "get", name) {
-			err := NewWebError(nil, "downloading config %s not allowed for %s", name, ctx.Value("user").(string))
+			err := weberror.NewWebError(nil, "downloading config %s not allowed for %s", name, ctx.Value("user").(string))
 			return err.SetStatus(http.StatusForbidden)
 		}
 
 		cfg, err := config.Get(name, false)
 		if err != nil {
-			return NewWebError(err, "unable to get config %s from store", name)
+			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
 
 		// TODO: also clear passwords for users
@@ -124,7 +125,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 
 		body, err := yaml.Marshal(cfg)
 		if err != nil {
-			err := NewWebError(err, "unable to process config %s", name)
+			err := weberror.NewWebError(err, "unable to process config %s", name)
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -146,7 +147,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 
 		cfg, err := config.Get(name, false)
 		if err != nil {
-			return NewWebError(err, "unable to get config %s from store", name)
+			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
 
 		// TODO: also clear passwords for users
@@ -157,7 +158,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 
 		body, err := yaml.Marshal(cfg)
 		if err != nil {
-			err := NewWebError(err, "unable to process config %s", name)
+			err := weberror.NewWebError(err, "unable to process config %s", name)
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -196,7 +197,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("configs", "create") {
-		err := NewWebError(nil, "creating configs not allowed for %s", ctx.Value("user").(string))
+		err := weberror.NewWebError(nil, "creating configs not allowed for %s", ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
 
@@ -209,7 +210,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 	case typ == "application/json": // default to JSON if not set
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			err := NewWebError(err, "unable to parse request")
+			err := weberror.NewWebError(err, "unable to parse request")
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -217,7 +218,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 	case typ == "application/x-yaml":
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			err := NewWebError(err, "unable to parse request")
+			err := weberror.NewWebError(err, "unable to parse request")
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -227,7 +228,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 		file, handler, err := r.FormFile("fileupload") // assume `fileupload` key used for upload
 		if err != nil {
-			err := NewWebError(err, "unable to access uploaded file")
+			err := weberror.NewWebError(err, "unable to access uploaded file")
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -237,7 +238,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		case ".json":
 			body, err := ioutil.ReadAll(file)
 			if err != nil {
-				err := NewWebError(err, "unable to parse uploaded file")
+				err := weberror.NewWebError(err, "unable to parse uploaded file")
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
@@ -245,41 +246,41 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		case ".yaml", ".yml":
 			body, err := ioutil.ReadAll(file)
 			if err != nil {
-				err := NewWebError(err, "unable to parse uploaded file")
+				err := weberror.NewWebError(err, "unable to parse uploaded file")
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
 			opts = append(opts, config.CreateFromYAML(body))
 		default:
-			return NewWebError(nil, "unknown file extension for uploaded file: %s", handler.Filename)
+			return weberror.NewWebError(nil, "unknown file extension for uploaded file: %s", handler.Filename)
 		}
 	default:
-		return NewWebError(nil, "unknown content type provided when creating config: %s", typ)
+		return weberror.NewWebError(nil, "unknown content type provided when creating config: %s", typ)
 	}
 
 	c, err := config.Create(opts...)
 	if err != nil {
 		if errors.Is(err, store.ErrExist) {
-			return NewWebError(err, "config with same name already exists")
+			return weberror.NewWebError(err, "config with same name already exists")
 		}
 
 		if errors.Is(err, types.ErrValidationFailed) {
 			cause := errors.Unwrap(err)
 			lines := strings.Split(cause.Error(), "\n")
 
-			return NewWebError(cause, lines[0]).WithMetadata("validation", cause.Error(), true)
+			return weberror.NewWebError(cause, lines[0]).WithMetadata("validation", cause.Error(), true)
 		}
 
 		if errors.Is(err, store.ErrInvalidFormat) {
 			cause := errors.Unwrap(err)
-			return NewWebError(cause, "invalid formatting").WithMetadata("validation", cause.Error(), true)
+			return weberror.NewWebError(cause, "invalid formatting").WithMetadata("validation", cause.Error(), true)
 		}
 
 		if errors.Is(err, version.ErrInvalidKind) {
-			return NewWebError(err, "unknown config kind provided")
+			return weberror.NewWebError(err, "unknown config kind provided")
 		}
 
-		return NewWebError(err, "unable to create new config")
+		return weberror.NewWebError(err, "unable to create new config")
 	}
 
 	w.Header().Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
@@ -315,7 +316,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("configs", "get", name) {
-		err := NewWebError(nil, "getting config %s not allowed for %s", name, ctx.Value("user").(string))
+		err := weberror.NewWebError(nil, "getting config %s not allowed for %s", name, ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
 
@@ -327,7 +328,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 
 	cfg, err := config.Get(name, upgrade)
 	if err != nil {
-		return NewWebError(err, "unable to get config %s from store", name)
+		return weberror.NewWebError(err, "unable to get config %s from store", name)
 	}
 
 	if cfg.Kind == "Experiment" {
@@ -343,7 +344,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 
 		body, err = json.Marshal(cfg)
 		if err != nil {
-			err := NewWebError(err, "unable to process config %s", name)
+			err := weberror.NewWebError(err, "unable to process config %s", name)
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -353,13 +354,13 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 
 		body, err = yaml.Marshal(cfg)
 		if err != nil {
-			err := NewWebError(err, "unable to process config %s", name)
+			err := weberror.NewWebError(err, "unable to process config %s", name)
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
 		w.Header().Set("Content-Type", "application/x-yaml")
 	default:
-		return NewWebError(nil, "unknown accept content type provided when creating config: %s", typ)
+		return weberror.NewWebError(nil, "unknown accept content type provided when creating config: %s", typ)
 	}
 
 	w.Write(body)
@@ -379,7 +380,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("configs", "update", name) {
-		err := NewWebError(nil, "updating config %s not allowed for %s", name, ctx.Value("user").(string))
+		err := weberror.NewWebError(nil, "updating config %s not allowed for %s", name, ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
 
@@ -392,25 +393,25 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	case typ == "application/json": // default to JSON if not set
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			err := NewWebError(err, "unable to parse request")
+			err := weberror.NewWebError(err, "unable to parse request")
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
 		c, err = store.NewConfigFromJSON(body)
 		if err != nil {
-			err := NewWebError(err, "unable to parse request")
+			err := weberror.NewWebError(err, "unable to parse request")
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 	case typ == "application/x-yaml":
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			err := NewWebError(err, "unable to parse request")
+			err := weberror.NewWebError(err, "unable to parse request")
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
 		c, err = store.NewConfigFromYAML(body)
 		if err != nil {
-			err := NewWebError(err, "unable to parse request")
+			err := weberror.NewWebError(err, "unable to parse request")
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 	case strings.HasPrefix(typ, "multipart/form-data"): // file upload
@@ -418,7 +419,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 
 		file, handler, err := r.FormFile("fileupload") // assume `fileupload` key used for upload
 		if err != nil {
-			err := NewWebError(err, "unable to access uploaded file")
+			err := weberror.NewWebError(err, "unable to access uploaded file")
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -428,32 +429,32 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		case ".json":
 			body, err := ioutil.ReadAll(file)
 			if err != nil {
-				err := NewWebError(err, "unable to parse uploaded file")
+				err := weberror.NewWebError(err, "unable to parse uploaded file")
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
 			c, err = store.NewConfigFromJSON(body)
 			if err != nil {
-				err := NewWebError(err, "unable to parse uploaded file")
+				err := weberror.NewWebError(err, "unable to parse uploaded file")
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 		case ".yaml", ".yml":
 			body, err := ioutil.ReadAll(file)
 			if err != nil {
-				err := NewWebError(err, "unable to parse uploaded file")
+				err := weberror.NewWebError(err, "unable to parse uploaded file")
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
 			c, err = store.NewConfigFromYAML(body)
 			if err != nil {
-				err := NewWebError(err, "unable to parse uploaded file")
+				err := weberror.NewWebError(err, "unable to parse uploaded file")
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 		default:
-			return NewWebError(nil, "unknown file extension for uploaded file: %s", handler.Filename)
+			return weberror.NewWebError(nil, "unknown file extension for uploaded file: %s", handler.Filename)
 		}
 	default:
-		return NewWebError(nil, "unknown content type provided when updating config: %s", typ)
+		return weberror.NewWebError(nil, "unknown content type provided when updating config: %s", typ)
 	}
 
 	if c.Kind == "Experiment" {
@@ -463,22 +464,22 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	if err := config.Update(name, c); err != nil {
 		if errors.Is(err, store.ErrNotExist) {
-			return NewWebError(err, "config to update (%s) does not exist", name)
+			return weberror.NewWebError(err, "config to update (%s) does not exist", name)
 		}
 
 		if errors.Is(err, types.ErrValidationFailed) {
 			cause := errors.Unwrap(err)
 			lines := strings.Split(cause.Error(), "\n")
 
-			return NewWebError(cause, lines[0]).WithMetadata("validation", cause.Error(), true)
+			return weberror.NewWebError(cause, lines[0]).WithMetadata("validation", cause.Error(), true)
 		}
 
 		if errors.Is(err, store.ErrInvalidFormat) {
 			cause := errors.Unwrap(err)
-			return NewWebError(cause, "invalid formatting").WithMetadata("validation", cause.Error(), true)
+			return weberror.NewWebError(cause, "invalid formatting").WithMetadata("validation", cause.Error(), true)
 		}
 
-		return NewWebError(err, "unable to update config %s", name)
+		return weberror.NewWebError(err, "unable to update config %s", name)
 	}
 
 	w.Header().Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
@@ -514,12 +515,12 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("configs", "delete", name) {
-		err := NewWebError(nil, "deleting config %s not allowed for %s", name, ctx.Value("user").(string))
+		err := weberror.NewWebError(nil, "deleting config %s not allowed for %s", name, ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
 
 	if err := config.Delete(name); err != nil {
-		return NewWebError(err, "unable to update config %s", name)
+		return weberror.NewWebError(err, "unable to update config %s", name)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

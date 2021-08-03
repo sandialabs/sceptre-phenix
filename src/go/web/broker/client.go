@@ -3,6 +3,7 @@ package broker
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -43,7 +44,7 @@ var (
 )
 
 type Client struct {
-	sync.RWMutex
+	sync.Mutex
 
 	role rbac.Role
 	conn *websocket.Conn
@@ -349,11 +350,19 @@ func (this *Client) screenshots() {
 		case <-this.done:
 			return
 		case <-ticker.C:
-			this.RLock()
+			this.Lock()
 
 			for _, v := range this.vms {
 				screenshot, err := util.GetScreenshot(v.exp, v.name, "200")
 				if err != nil {
+					if errors.Is(err, mm.ErrVMNotFound) {
+						continue
+					}
+
+					if errors.Is(err, mm.ErrScreenshotNotFound) {
+						continue
+					}
+
 					log.Error("getting screenshot for WebSocket client: %v", err)
 				} else {
 					encoded := "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
@@ -370,7 +379,7 @@ func (this *Client) screenshots() {
 				}
 			}
 
-			this.RUnlock()
+			this.Unlock()
 		}
 	}
 }

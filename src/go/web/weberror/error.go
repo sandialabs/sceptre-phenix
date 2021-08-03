@@ -1,4 +1,4 @@
-package web
+package weberror
 
 import (
 	"encoding/json"
@@ -23,8 +23,12 @@ type WebError struct {
 func NewWebError(cause error, format string, args ...interface{}) *WebError {
 	event := store.NewErrorEvent(fmt.Errorf(format, args...))
 
+	if cause != nil {
+		event = event.WithMetadata("cause", cause.Error())
+	}
+
 	err := &WebError{
-		Event:  event.WithMetadata("cause", cause.Error()),
+		Event:  event,
 		Cause:  cause,
 		Status: http.StatusBadRequest,
 		URL:    "/api/v1/errors/" + event.ID,
@@ -80,7 +84,7 @@ func (this ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		web.Event.Metadata = nil
 
 		body, _ := json.Marshal(web)
-		log.Infoln(string(body))
+		log.Errorln(string(body))
 
 		w.WriteHeader(web.Status)
 		w.Write(body)

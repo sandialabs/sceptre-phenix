@@ -35,9 +35,9 @@ func init() {
 
 		switch stage {
 		case "create":
-			exp.Spec.Init()
-
 			exp.Spec.SetExperimentName(c.Metadata.Name)
+
+			exp.Spec.Init()
 
 			if err := exp.Spec.VerifyScenario(context.TODO()); err != nil {
 				return fmt.Errorf("verifying experiment scenario: %w", err)
@@ -294,12 +294,8 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 
-	if err := types.ValidateConfigSpec(*c); err != nil {
-		return fmt.Errorf("validating experiment config: %w", err)
-	}
-
-	if err := store.Create(c); err != nil {
-		return fmt.Errorf("storing experiment config: %w", err)
+	if _, err := config.Create(config.CreateFromConfig(c), config.CreateWithValidation()); err != nil {
+		return fmt.Errorf("creating experiment config: %w", err)
 	}
 
 	return nil
@@ -624,7 +620,7 @@ func Reconfigure(name string) error {
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 
-	if err := store.Update(c); err != nil {
+	if err := config.Update(c.FullName(), c); err != nil {
 		return fmt.Errorf("updating experiment config: %w", err)
 	}
 
@@ -651,7 +647,7 @@ func TriggerRunning(ctx context.Context, name string, apps ...string) error {
 	}
 
 	if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONRUNNING), app.FilterApp(apps...)); err != nil {
-		return fmt.Errorf("configuring apps for experiment: %w", err)
+		return fmt.Errorf("triggering apps for experiment: %w", err)
 	}
 
 	return nil

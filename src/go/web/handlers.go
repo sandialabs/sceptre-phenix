@@ -22,7 +22,6 @@ import (
 	"phenix/api/config"
 	"phenix/api/experiment"
 	"phenix/api/scenario"
-	"phenix/api/soh"
 	"phenix/api/vm"
 	"phenix/app"
 	"phenix/internal/mm"
@@ -35,6 +34,7 @@ import (
 	"phenix/web/proto"
 	"phenix/web/rbac"
 	"phenix/web/util"
+	"phenix/web/weberror"
 
 	log "github.com/activeshadow/libminimega/minilog"
 	"github.com/dgrijalva/jwt-go"
@@ -240,13 +240,13 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("experiments", "get", name) {
-		err := NewWebError(nil, "getting experiment %s not allowed for %s", name, ctx.Value("user").(string))
+		err := weberror.NewWebError(nil, "getting experiment %s not allowed for %s", name, ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
 
 	exp, err := experiment.Get(name)
 	if err != nil {
-		return NewWebError(err, "unable to get experiment %s from store", name)
+		return weberror.NewWebError(err, "unable to get experiment %s from store", name)
 	}
 
 	vms, err := vm.List(name)
@@ -314,7 +314,7 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 	body, err := marshaler.Marshal(experiment)
 
 	if err != nil {
-		err := NewWebError(err, "marshaling experiment %s - %v", name, err)
+		err := weberror.NewWebError(err, "marshaling experiment %s - %v", name, err)
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
@@ -614,36 +614,92 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
 
 	broker.Broadcast(
 		broker.NewRequestPolicy("experiments/trigger", "create", name),
-		broker.NewResource("experiment/apps", name, "triggering"),
+		broker.NewResource("experiment/apps", name, "triggered"),
 		nil,
 	)
 
 	go func() {
 		apps := strings.Split(appsFilter, ",")
 
-		// We don't want to use the HTTP request's context here.
-		ctx, cancel := context.WithCancel(context.Background())
-		cancelers[name] = append(cancelers[name], cancel)
+		for _, a := range apps {
+			k := fmt.Sprintf("%s/%s", name, a)
 
-		if err := experiment.TriggerRunning(ctx, name, apps...); err != nil {
-			cancel() // avoid leakage
-			delete(cancelers, name)
+			// We don't want to use the HTTP request's context here.
+			ctx, cancel := context.WithCancel(context.Background())
+			ctx = app.SetContextTriggerUI(ctx)
+			cancelers[k] = append(cancelers[k], cancel)
 
-			humanized := putil.HumanizeError(err, "Unable to trigger running stage for apps in %s experiment", name)
+			if err := experiment.TriggerRunning(ctx, name, a); err != nil {
+				cancel() // avoid leakage
+				delete(cancelers, k)
 
-			broker.Broadcast(
-				broker.NewRequestPolicy("experiments/trigger", "create", name),
-				broker.NewResource("experiment/apps", name, "errorTriggering"),
-				[]byte(humanized.Humanize()),
-			)
+				humanized := putil.HumanizeError(err, "Unable to trigger running stage for %s app in %s experiment", a, name)
 
-			log.Error("triggering experiment %s apps - %v", name, err)
-			return
+				broker.Broadcast(
+					broker.NewRequestPolicy("experiments/trigger", "create", name),
+					broker.NewResource("experiment/apps", name, "triggerError"),
+					[]byte(humanized.Humanize()),
+				)
+
+				log.Error("triggering experiment %s app %s - %v", name, a, err)
+				return
+			}
 		}
 
 		broker.Broadcast(
 			broker.NewRequestPolicy("experiments/trigger", "create", name),
-			broker.NewResource("experiment/apps", name, "trigger"),
+			broker.NewResource("experiment/apps", name, "triggerSuccess"),
+			notes.ToJSON(ctx),
+		)
+	}()
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// DELETE /experiments/{name}/trigger[?apps=<foo,bar,baz>]
+func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
+	log.Debug("CancelTriggeredExperimentApps HTTP handler called")
+
+	var (
+		ctx  = r.Context()
+		role = ctx.Value("role").(rbac.Role)
+		vars = mux.Vars(r)
+		name = vars["name"]
+
+		query      = r.URL.Query()
+		appsFilter = query.Get("apps")
+	)
+
+	if !role.Allowed("experiments/trigger", "delete", name) {
+		log.Warn("canceling triggered experiment %s apps not allowed for %s", name, ctx.Value("user").(string))
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	broker.Broadcast(
+		broker.NewRequestPolicy("experiments/trigger", "delete", name),
+		broker.NewResource("experiment/apps", name, "cancelTrigger"),
+		nil,
+	)
+
+	go func() {
+		apps := strings.Split(appsFilter, ",")
+
+		for _, a := range apps {
+			k := fmt.Sprintf("%s/%s", name, a)
+
+			cancels := cancelers[k]
+
+			for _, cancel := range cancels {
+				cancel()
+			}
+
+			delete(cancelers, k)
+		}
+
+		broker.Broadcast(
+			broker.NewRequestPolicy("experiments/trigger", "delete", name),
+			broker.NewResource("experiment/apps", name, "cancelTriggerSuccess"),
 			notes.ToJSON(ctx),
 		)
 	}()
@@ -893,44 +949,42 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, "", time.Now(), bytes.NewReader(contents))
 }
 
-// GET /experiments/{exp}/soh[?statusFilter=<status filter>]
-func GetExperimentSoH(w http.ResponseWriter, r *http.Request) {
-	log.Debug("GetExperimentSoH HTTP handler called")
+// GET /experiments/{name}/apps
+func GetExperimentApps(w http.ResponseWriter, r *http.Request) error {
+	log.Debug("GetExperimentApps HTTP handler called")
 
 	var (
 		ctx  = r.Context()
 		role = ctx.Value("role").(rbac.Role)
-		vars = mux.Vars(r)
-		exp  = vars["name"]
-
-		query        = r.URL.Query()
-		statusFilter = query.Get("statusFilter")
+		name = mux.Vars(r)["name"]
 	)
 
-	if !role.Allowed("vms", "list") {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
+	if !role.Allowed("experiments/apps", "get", name) {
+		err := weberror.NewWebError(nil, "getting experiment apps for %s not allowed for %s", name, ctx.Value("user").(string))
+		return err.SetStatus(http.StatusForbidden)
 	}
 
-	state, err := soh.Get(exp, statusFilter)
+	exp, err := experiment.Get(name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return weberror.NewWebError(err, "unable to get experiment %s from store", name)
 	}
 
-	hosts, flows, err := soh.GetFlows(exp)
-	if err == nil {
-		state.Hosts = hosts
-		state.HostFlows = flows
+	apps := make(map[string]bool)
+
+	for _, app := range exp.Apps() {
+		apps[app.Name()] = false
 	}
 
-	marshalled, err := json.Marshal(state)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	for app, running := range exp.Status.AppRunning() {
+		apps[app] = running
 	}
 
-	w.Write(marshalled)
+	body, _ := json.Marshal(apps)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(body)
+
+	return nil
 }
 
 // GET /experiments/{exp}/vms

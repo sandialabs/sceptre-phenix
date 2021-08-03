@@ -1,5 +1,6 @@
 version: '3.7'
 x-common: &common
+  network_mode: host
   restart: always
   logging:
     driver: "json-file"
@@ -19,53 +20,68 @@ services:
     - --hostname-suffixes=-minimega,-phenix
     image: phenix
     container_name: phenix
-    hostname: ${HOSTNAME}-phenix
     privileged: true
     <<: *common
-    networks:
-      phenix:
-    ports:
-      - 3000:3000
     volumes:
       - /dev:/dev
       - /proc:/proc
       - /etc/localtime:/etc/localtime:ro
       - /tmp/minimega:/tmp/minimega
       - /tmp/phenix:/tmp/phenix
-      - /phenix:/phenix
       - /var/log/phenix:/var/log/phenix
       - /etc/phenix:/etc/phenix
+      - type: bind
+        source: /phenix
+        target: /phenix
+        bind:
+          propagation: shared
     depends_on:
       - minimega
     healthcheck:
       test: phenix version
   minimega:
-    image: ghcr.io/activeshadow/minimega/minimega:latest
-    pull_policy: always
+    build:
+      context: .
+      dockerfile: Dockerfile.minimega
+    image: minimega
     container_name: minimega
-    hostname: ${HOSTNAME}-minimega
     privileged: true
     cap_add:
       - ALL
-    tty: true
     <<: *common
-    networks:
-      phenix:
-        aliases:
-          - ${HOSTNAME}-minimega
-    ports:
-      - 9000:9000/udp
-      - 9001:9001
     volumes:
       - /dev:/dev
       - /lib/modules:/lib/modules:ro
       - /etc/localtime:/etc/localtime:ro
       - /tmp/minimega:/tmp/minimega
       - /tmp/phenix:/tmp/phenix
-      - /phenix:/phenix
+      - type: bind
+        source: /phenix
+        target: /phenix
+        bind:
+          propagation: shared
     healthcheck:
       test: mm version
     environment:
       MM_FILEPATH: /phenix/images
-networks:
-  phenix:
+  es:
+    image: elasticsearch:7.14.2
+    container_name: es
+    <<: *common
+    volumes:
+      - /phenix/share/elasticsearch/data:/usr/share/elasticsearch/data
+    environment:
+      discovery.type: single-node
+    depends_on:
+      - volume-permissions-manager
+  kibana:
+    image: kibana:7.14.2
+    container_name: kibana
+    <<: *common
+    environment:
+      ELASTICSEARCH_HOSTS: http://localhost:9200
+  volume-permissions-manager:
+    image: alpine:latest
+    command: sh -c "chmod -R 777 /usr/share/elasticsearch"
+    volumes:
+      - /phenix/share/elasticsearch/data:/usr/share/elasticsearch/data

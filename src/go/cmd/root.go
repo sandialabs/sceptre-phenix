@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"phenix/api/config"
+	_ "phenix/api/scorch"
 	"phenix/internal/common"
 	"phenix/store"
 	"phenix/util"

@@ -1,6 +1,8 @@
 package broker
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 type RequestPolicy struct {
 	Resource     string

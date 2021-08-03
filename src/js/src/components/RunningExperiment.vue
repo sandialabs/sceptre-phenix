@@ -317,7 +317,7 @@
       <div  class="level-item" v-if="experiment.scenario">
         <span style="font-weight: bold;">Scenario: {{ experiment.scenario }}</span>&nbsp;
       </div>
-      <div  class="level-item" v-if="experiment.scenario" @click="getApps()">
+      <div  class="level-item" v-if="experiment.apps" @click="getApps()">
         <span style="font-weight: bold;">Apps:</span>&nbsp;
         <b-taglist>
           <b-tag v-for="( a, index ) in experiment.apps" :key="index" type="is-light">
@@ -437,10 +437,14 @@
           &nbsp; &nbsp;
           <p  class="control">
             <b-button v-if="adminUser()" class="button is-danger" slot="trigger" icon-right="stop" @click="stop"></b-button>
-			 &nbsp;
-			<router-link v-if="adminUser()" class="button is-light" :to="{ name: 'soh', params: { id: this.$route.params.id }}">
-			  <b-icon icon="heartbeat"></b-icon>
-			</router-link>
+            &nbsp;
+            <router-link v-if="adminUser()" class="button is-light" :to="{ name: 'soh', params: { id: this.$route.params.id }}">
+              <b-icon icon="heartbeat"></b-icon>
+            </router-link>
+            &nbsp;
+            <router-link v-if="adminUser()" class="button is-light" :to="{ name: 'scorch', params: { id: this.$route.params.id }}">
+              <b-icon icon="fire"></b-icon>
+            </router-link>
           </p>
         </b-field>
        </div>
@@ -466,7 +470,7 @@
             <template slot="empty">
               <section  class="section">
                 <div class="content has-text-white has-text-centered">
-                  Your  search turned up empty!
+                  Your search turned up empty!
                 </div>
               </section>
             </template>

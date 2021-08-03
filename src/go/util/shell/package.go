@@ -14,6 +14,10 @@ func CommandExists(cmd string) bool {
 	return DefaultShell.CommandExists(cmd)
 }
 
+func ProcessExists(pid int) bool {
+	return DefaultShell.ProcessExists(pid)
+}
+
 func ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, error) {
 	return DefaultShell.ExecCommand(ctx, opts...)
 }

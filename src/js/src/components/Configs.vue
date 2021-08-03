@@ -11,7 +11,7 @@
           </div>
         </section>
         <footer class="modal-card-foot x-modal-dark buttons is-right">
-          <button class="button is-light" @click="resetErrorModal">Exit</button>
+          <button class="button is-dark" @click="resetErrorModal">Exit</button>
         </footer>
       </div>
     </b-modal>
@@ -32,7 +32,7 @@
           <button class="button is-info" @click="action( 'dl', { 'kind': viewer.kind, 'metadata': { 'name': viewer.name } } )">
             <b-icon icon="download"></b-icon>
           </button>
-          <button class="button is-light" @click="resetViewer">
+          <button class="button is-dark" @click="resetViewer">
             Exit
           </button>
         </footer>
@@ -228,13 +228,13 @@
               {{ props.row.metadata.updated }}
             </b-table-column>
             <b-table-column v-if="globalUser()" label="Actions" centered>
-              <button class="button is-light is-small" id="main" @click="action( 'edit', props.row )">
+              <button class="button is-light is-small action" @click="action( 'edit', props.row )">
                 <b-icon icon="edit"></b-icon>
               </button>
-              <button class="button is-light is-small" id="main" @click="action( 'dl', props.row )">
+              <button class="button is-light is-small action" @click="action( 'dl', props.row )">
                 <b-icon icon="download"></b-icon>
               </button>
-              <button class="button is-light is-small" id="main" @click="action( 'del', props.row )">
+              <button class="button is-light is-small action" @click="action( 'del', props.row )">
                 <b-icon icon="trash"></b-icon>
               </button>
             </b-table-column>
@@ -1264,7 +1264,7 @@
     margin-right: 10px;
   }
 
-  button#main {
+  button.action {
     margin-right: 5px;
   }
 </style>

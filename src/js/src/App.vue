@@ -28,7 +28,7 @@ login and returns a user to Experiments component if successful.
     },
     
     beforeDestroy () {
-      this.$disconnect();
+      this.wsDisconnect();
       this.unwatch();
     },
     
@@ -53,20 +53,22 @@ login and returns a user to Experiments component if successful.
       this.unwatch = this.$store.watch(
         ( _, getters ) => getters.auth,
         () => {
-          console.log(auth);
-
-          // Disconnect the websocket client no matter what on auth changes.
-          this.$disconnect();
+          // Disconnect the websocket clients no matter what on auth changes.
+          this.wsDisconnect();
           this.wsConnect();
         }
       )
     },
 
     methods: {
+      data () {
+        return {
+          socket: null
+        }
+      },
+
       wsConnect () {
         if ( this.$store.getters.auth ) {
-          console.log('client authenticated -- initializing websocket');
-
           let path = '/api/v1/ws';
 
           if ( this.$store.getters.token ) {
@@ -74,7 +76,48 @@ login and returns a user to Experiments component if successful.
           }
 
           this.$connect( '//' + location.host + path );
+
+          // TODO: separate, stand-alone websocket connection to handle app-wide
+          // notifications (e.g. new scorch terminal notifications).
+          let proto = location.protocol == "https:" ? "wss://" : "ws://";
+          let url = proto + location.host + path;
+          this.socket = new WebSocket( url );
+
+          this.socket.onmessage = this.globalWsHandler;
         }
+      },
+
+      wsDisconnect () {
+        this.$disconnect();
+
+        this.socket.close();
+        this.socket = null;
+      },
+
+      globalWsHandler ( event ) {
+        event.data.split( /\r?\n/ ).forEach( m => {
+          if ( m ) {
+            let msg = JSON.parse( m );
+
+            switch ( msg.resource.type ) {
+              case 'apps/scorch': {
+                switch ( msg.resource.action ) {
+                  case 'terminal-create': {
+                    this.$buefy.toast.open({
+                      message: 'SCORCH terminal created for experiment ' + msg.resource.name + '.',
+                      type: 'is-success',
+                      duration: 5000
+                    });
+
+                    break;
+                  }
+                }
+
+                break;
+              }
+            }
+          }
+        });
       }
     }
   }

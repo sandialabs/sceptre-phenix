@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"phenix/api/config"
 	"phenix/api/experiment"
+	"phenix/api/scorch/scorchexe"
 	"phenix/app"
 	"phenix/scheduler"
 	"phenix/types"
@@ -497,7 +499,7 @@ func newExperimentRestartCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolP("dry-run", "", false, "Do everything but actually call out to minimega")
+	cmd.Flags().Bool("dry-run", false, "Do everything but actually call out to minimega")
 
 	return cmd
 }
@@ -600,6 +602,8 @@ func newExperimentTriggerRunningCmd() *cobra.Command {
 				experiments = []types.Experiment{*exp}
 			}
 
+			ctx = app.SetContextTriggerCLI(ctx)
+
 			for _, exp := range experiments {
 				if !exp.Running() {
 					fmt.Printf("Not triggering the running stage for apps in the stopped experiment %s\n", exp.Metadata.Name)
@@ -621,6 +625,52 @@ func newExperimentTriggerRunningCmd() *cobra.Command {
 	return cmd
 }
 
+func newExperimentScorchCmd() *cobra.Command {
+	desc := `Start a Scorch run for an experiment
+
+	Used to start a Scorch run with the given run ID for the given experiment. By
+	default, the run ID used will be 0 if not provided.`
+
+	cmd := &cobra.Command{
+		Use:   "scorch <experiment name>",
+		Short: "Start a Scorch run for experiment",
+		Long:  desc,
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var (
+				name = args[0]
+				run  = MustGetInt(cmd.Flags(), "run")
+				ctx  = sigterm.CancelContext(context.Background())
+			)
+
+			exp, err := experiment.Get(name)
+			if err != nil {
+				err := util.HumanizeError(err, fmt.Sprintf("Unable to start Scorch run %d for %s experiment", run, exp.Metadata.Name))
+				return err.Humanized()
+			}
+
+			ctx = app.SetContextTriggerCLI(ctx)
+
+			if err := scorchexe.Execute(ctx, exp, run); err != nil {
+				if errors.Is(err, context.Canceled) {
+					return nil
+				}
+
+				err := util.HumanizeError(err, fmt.Sprintf("Unable to start Scorch run %d for %s experiment", run, exp.Metadata.Name))
+				return err.Humanized()
+			}
+
+			fmt.Printf("Scorch run %d successfully triggered for experiment %s\n", run, exp.Metadata.Name)
+
+			return nil
+		},
+	}
+
+	cmd.Flags().IntP("run", "r", 0, "ID of Scorch run to start for experiment (defaults to 0)")
+
+	return cmd
+}
+
 func init() {
 	experimentCmd := newExperimentCmd()
 
@@ -635,6 +685,7 @@ func init() {
 	experimentCmd.AddCommand(newExperimentRestartCmd())
 	experimentCmd.AddCommand(newExperimentReconfigureCmd())
 	experimentCmd.AddCommand(newExperimentTriggerRunningCmd())
+	experimentCmd.AddCommand(newExperimentScorchCmd())
 
 	rootCmd.AddCommand(experimentCmd)
 }

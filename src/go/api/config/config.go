@@ -68,7 +68,9 @@ func Init() error {
 			continue
 		}
 
-		if err := store.Create(&c); err != nil {
+		opts := []CreateOption{CreateFromYAML(MustAsset(file))}
+
+		if _, err := Create(opts...); err != nil {
 			return fmt.Errorf("storing default config %s: %w", file, err)
 		}
 	}
@@ -133,9 +135,11 @@ func Init() error {
 			return nil
 		}
 
+		opts := []CreateOption{CreateFromPath(path)}
+
 		// Not checking error here since if there is one it's likely due to the
 		// current path not being a valid phenix config (which is OK).
-		store.Create(&c)
+		Create(opts...)
 
 		return nil
 	}
@@ -246,6 +250,8 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("creating new config from file: %w", err)
 		}
+	} else if o.config != nil {
+		c = o.config
 	} else if o.data != nil {
 		var err error
 

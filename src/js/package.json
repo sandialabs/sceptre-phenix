@@ -28,7 +28,8 @@
     "vue-router": "^3.0.6",
     "vue-uuid": "^1.1.1",
     "vue2-ace-editor": "^0.0.15",
-    "vuex": "^3.0.1"
+    "vuex": "^3.0.1",
+    "xterm": "^3.13.1"
   },
   "devDependencies": {
     "@fortawesome/fontawesome-free": "^5.15.1",

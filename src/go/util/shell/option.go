@@ -9,6 +9,9 @@ type options struct {
 	env   []string
 	args  []string
 	stdin []byte
+
+	stdout chan []byte
+	stderr chan []byte
 }
 
 func newOptions(opts ...Option) options {
@@ -44,5 +47,17 @@ func Args(a ...string) Option {
 func Stdin(s []byte) Option {
 	return func(o *options) {
 		o.stdin = s
+	}
+}
+
+func StreamStdout(s chan []byte) Option {
+	return func(o *options) {
+		o.stdout = s
+	}
+}
+
+func StreamStderr(s chan []byte) Option {
+	return func(o *options) {
+		o.stderr = s
 	}
 }

@@ -165,9 +165,11 @@ func ConfigFullName(name ...string) string {
 type EventType string
 
 const (
+	EventTypeNotSet  EventType = ""
 	EventTypeInfo    EventType = "info"
 	EventTypeError   EventType = "error"
 	EventTypeUnknown EventType = "unknown"
+	EventTypeHistory EventType = "history"
 )
 
 type Event struct {
@@ -204,6 +206,13 @@ func NewErrorEvent(err error) *Event {
 	return event
 }
 
+func NewHistoryEvent(history string) *Event {
+	event := NewEvent(history)
+	event.Type = EventTypeHistory
+
+	return event
+}
+
 func (this *Event) WithMetadata(k, v string) *Event {
 	if this.Metadata == nil {
 		this.Metadata = make(map[string]string)
@@ -215,8 +224,12 @@ func (this *Event) WithMetadata(k, v string) *Event {
 
 type Events []Event
 
-func (this Events) SortByTimestamp() {
+func (this Events) SortByTimestamp(asc bool) {
 	sort.Slice(this, func(i, j int) bool {
-		return this[i].Timestamp.Before(this[j].Timestamp)
+		if asc {
+			return this[i].Timestamp.Before(this[j].Timestamp)
+		}
+
+		return this[i].Timestamp.After(this[j].Timestamp)
 	})
 }

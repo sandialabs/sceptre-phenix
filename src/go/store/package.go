@@ -59,6 +59,10 @@ func GetEvents() (Events, error) {
 	return DefaultStore.GetEvents()
 }
 
+func GetEventsBy(e Event) (Events, error) {
+	return DefaultStore.GetEventsBy(e)
+}
+
 func GetEvent(e *Event) error {
 	return DefaultStore.GetEvent(e)
 }

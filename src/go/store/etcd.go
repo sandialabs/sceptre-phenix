@@ -179,6 +179,10 @@ func (this Etcd) GetEvents() (Events, error) {
 	return events, nil
 }
 
+func (Etcd) GetEventsBy(Event) (Events, error) {
+	return nil, fmt.Errorf("GetEventsBy not implemented for Etcd store")
+}
+
 func (this Etcd) GetEvent(e *Event) error {
 	key := fmt.Sprintf("events/%s", e.ID)
 

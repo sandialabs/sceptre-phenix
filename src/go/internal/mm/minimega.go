@@ -14,12 +14,16 @@ import (
 
 	"phenix/internal/common"
 	"phenix/internal/mm/mmcli"
+
+	log "github.com/activeshadow/libminimega/minilog"
 )
 
 var (
-	ErrCaptureExists     = fmt.Errorf("capture already exists")
-	ErrNoCaptures        = fmt.Errorf("no captures exist")
-	ErrC2ClientNotActive = fmt.Errorf("C2 client not active for VM")
+	ErrCaptureExists      = fmt.Errorf("capture already exists")
+	ErrNoCaptures         = fmt.Errorf("no captures exist")
+	ErrC2ClientNotActive  = fmt.Errorf("C2 client not active for VM")
+	ErrVMNotFound         = fmt.Errorf("VM not found")
+	ErrScreenshotNotFound = fmt.Errorf("screenshot not found")
 )
 
 // Mutex to protect minimega cc filter setting when configuring cc commands from
@@ -211,43 +215,34 @@ func (Minimega) GetVMScreenshot(opts ...Option) ([]byte, error) {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = fmt.Sprintf("vm screenshot %s file /dev/null %s", o.vm, o.screenshotSize)
 
-	var screenshot []byte
-
 	for resps := range mmcli.Run(cmd) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
-				if strings.HasPrefix(resp.Error, "vm not running:") {
-					continue
-				} else if resp.Error == "cannot take screenshot of container" {
-					continue
+				if strings.HasPrefix(resp.Error, "vm not found:") {
+					return nil, ErrVMNotFound
 				}
 
-				// Unknown error
-				return nil, fmt.Errorf("unknown error getting VM screenshot: %s", resp.Error)
+				if strings.HasPrefix(resp.Error, "vm not running:") {
+					return nil, ErrVMNotFound
+				}
+
+				continue
 			}
 
 			if resp.Data == nil {
-				return nil, fmt.Errorf("not found")
+				continue
 			}
 
-			if screenshot == nil {
-				var err error
-
-				screenshot, err = base64.StdEncoding.DecodeString(resp.Data.(string))
-				if err != nil {
-					return nil, fmt.Errorf("decoding screenshot: %s", err)
-				}
-			} else {
-				return nil, fmt.Errorf("received more than one screenshot")
+			screenshot, err := base64.StdEncoding.DecodeString(resp.Data.(string))
+			if err != nil {
+				return nil, fmt.Errorf("decoding screenshot: %w", err)
 			}
+
+			return screenshot, nil
 		}
 	}
 
-	if screenshot == nil {
-		return nil, fmt.Errorf("not found")
-	}
-
-	return screenshot, nil
+	return nil, ErrScreenshotNotFound
 }
 
 func (Minimega) GetVNCEndpoint(opts ...Option) (string, error) {
@@ -890,6 +885,47 @@ func (Minimega) ClearC2Responses(opts ...C2Option) error {
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("clearing C2 responses for namespace %s: %w", o.ns, err)
+	}
+
+	return nil
+}
+
+func (Minimega) TapVLAN(opts ...TapOption) error {
+	o := NewTapOptions(opts...)
+
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+
+	if o.untap {
+		cmd.Command = fmt.Sprintf("tap delete %s", o.name)
+	} else {
+		cmd.Command = fmt.Sprintf(
+			"tap create %s bridge %s ip %s %s",
+			o.vlan, o.bridge, o.ip, o.name,
+		)
+	}
+
+	log.Debug("TAP: " + cmd.Command)
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		action := "creating"
+		if o.untap {
+			action = "deleting"
+		}
+
+		return fmt.Errorf("%s tap %s: %w", action, o.name, err)
+	}
+
+	return nil
+}
+
+func (Minimega) Shell(cmdStr string) error {
+	cmd := mmcli.NewCommand()
+	cmd.Command = fmt.Sprintf("shell %s", cmdStr)
+
+	log.Debug("SHELL: " + cmd.Command)
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("running shell command %s: %w", cmdStr, err)
 	}
 
 	return nil

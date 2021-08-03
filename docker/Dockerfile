@@ -64,25 +64,31 @@ FROM ubuntu:20.04
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+# tshark needed for scorch tcpdump component
 RUN apt update \
-  && apt install -y cpio debootstrap git locales nano python3-pip systemd-container vim vmdb2 \
+  && echo 'wireshark-common wireshark-common/install-setuid boolean false' | debconf-set-selections \
+  && apt install -y cpio debootstrap git locales nano python3-pip tshark vim vmdb2 \
   && locale-gen en_US.UTF-8 \
-  && apt clean \
+  && apt autoremove -y \
+  && apt clean -y \
   && rm -rf /var/lib/apt/lists/* \
   && rm -rf /var/cache/apt/archives/*
 
 ENV LANG   en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
 
-COPY --from=gobuilder /phenix/bin/phenix   /usr/local/bin/phenix
-COPY --from=gobuilder /phenix/bin/vmdb2    /usr/bin/vmdb2
-COPY --from=gobuilder /go/bin/phenix-app-* /usr/local/bin
-
 RUN python3 -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org "git+https://github.com/sandia-minimega/phenix-apps.git@main#egg=phenix-apps&subdirectory=src/python"
 
+# needed to build Kali images with phenix
 RUN wget -O kali.deb http://http.kali.org/kali/pool/main/k/kali-archive-keyring/kali-archive-keyring_2020.2_all.deb \
 	&& dpkg -i kali.deb && rm kali.deb
 
-RUN echo "root:t00r" | chpasswd
+# used by scorch
+RUN wget -O filebeat.deb https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.14.2-amd64.deb \
+	&& dpkg -i filebeat.deb && rm filebeat.deb
+
+COPY --from=gobuilder /phenix/bin/phenix   /usr/local/bin/phenix
+COPY --from=gobuilder /phenix/bin/vmdb2    /usr/bin/vmdb2
+COPY --from=gobuilder /go/bin/phenix-app-* /usr/local/bin
 
 CMD ["phenix", "help"]

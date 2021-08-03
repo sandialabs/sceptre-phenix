@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"strings"
 
 	"phenix/internal/mm"
 	"phenix/store"
@@ -81,6 +82,18 @@ func (this Experiment) Running() bool {
 	}
 
 	return true
+}
+
+func (this Experiment) DryRun() bool {
+	if this.Status == nil {
+		return false
+	}
+
+	if this.Status.StartTime() == "" {
+		return false
+	}
+
+	return strings.Contains(this.Status.StartTime(), "DRYRUN")
 }
 
 func DecodeExperimentFromConfig(c store.Config) (*Experiment, error) {
