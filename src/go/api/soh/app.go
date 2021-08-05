@@ -138,7 +138,7 @@ func (this *SOH) PostStart(ctx context.Context, exp *types.Experiment) error {
 		return nil
 	}
 
-	if err := this.runChecks(ctx, exp, true); err != nil {
+	if err := this.runChecks(ctx, exp); err != nil {
 		if this.md.ExitOnError {
 			return fmt.Errorf("running initial SoH checks: %w", err)
 		}
@@ -156,7 +156,7 @@ func (this *SOH) Running(ctx context.Context, exp *types.Experiment) error {
 
 	this.apps = exp.Spec.Scenario().Apps()
 
-	return this.runChecks(ctx, exp, false)
+	return this.runChecks(ctx, exp)
 }
 
 func (SOH) Cleanup(ctx context.Context, exp *types.Experiment) error {
@@ -167,7 +167,7 @@ func (SOH) Cleanup(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment, initial bool) error {
+func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	printer := color.New(color.FgBlue)
 
 	printer.Println("  Starting SoH checks...")
@@ -348,12 +348,10 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment, initial b
 		return ctx.Err()
 	}
 
-	if !initial {
-		this.getFlows(ctx, exp)
+	this.getFlows(ctx, exp)
 
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 
 	// *** WRITE RESULTS TO EXPERIMENT STATUS *** //
