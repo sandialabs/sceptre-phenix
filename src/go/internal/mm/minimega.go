@@ -696,19 +696,16 @@ func (Minimega) IsC2ClientActive(opts ...C2Option) error {
 		return nil
 	}
 
-	vms := GetVMInfo(NS(o.ns), VMName(o.vm))
-	if len(vms) == 0 {
-		return fmt.Errorf("VM %s does not exist", o.vm)
-	}
-
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "cc client"
 
-	// We use the UUID of the VM instead of the name since `cc clients` returns
-	// the actual hostname of the VM as reported by the miniccc agent, which may
-	// not always match the name minimega uses to track the VM.
-	cmd.Columns = []string{"uuid"}
-	cmd.Filters = []string{"uuid=" + vms[0].UUID}
+	// Even though `cc clients` returns the actual hostname of the VM as reported
+	// by the miniccc agent, we still go ahead and check for the VM name as
+	// defined in the topology since that is what the hostname should be in the VM
+	// (per the startup app). This way, we don't consider Windows VMs ready until
+	// they've rebooted to get their hostname set correctly.
+	cmd.Columns = []string{"hostname"}
+	cmd.Filters = []string{"hostname=" + o.vm}
 
 	after := time.After(o.timeout)
 
@@ -731,31 +728,40 @@ func (Minimega) IsC2ClientActive(opts ...C2Option) error {
 }
 
 func (this Minimega) ExecC2Command(opts ...C2Option) (string, error) {
-	ccMu.Lock()
-	defer ccMu.Unlock()
-
 	if err := this.IsC2ClientActive(opts...); err != nil {
 		return "", fmt.Errorf("cannot execute command: %w", err)
 	}
 
-	o := NewC2Options(opts...)
+	exec := func(ns, vm, cmd string) (string, error) {
+		ccMu.Lock()
+		defer ccMu.Unlock()
 
-	cmd := mmcli.NewNamespacedCommand(o.ns)
-	cmd.Command = fmt.Sprintf("cc filter name=%s", o.vm)
+		c := mmcli.NewNamespacedCommand(ns)
+		c.Command = fmt.Sprintf("cc filter name=%s", vm)
 
-	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-		return "", fmt.Errorf("setting host filter to %s: %w", o.vm, err)
-	}
-
-	if o.testConn != "" {
-		cmd.Command = fmt.Sprintf("cc test-conn %s", o.testConn)
-
-		data, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
-		if err != nil {
-			return "", fmt.Errorf("calling '%s' for vm %s: %w", cmd.Command, o.vm, err)
+		if err := mmcli.ErrorResponse(mmcli.Run(c)); err != nil {
+			return "", fmt.Errorf("setting host filter to %s: %w", vm, err)
 		}
 
-		id := fmt.Sprintf("%v", data)
+		c.Command = cmd
+
+		data, err := mmcli.SingleDataResponse(mmcli.Run(c))
+		if err != nil {
+			return "", fmt.Errorf("running '%s' in vm %s: %w", cmd, vm, err)
+		}
+
+		return fmt.Sprintf("%v", data), nil
+	}
+
+	o := NewC2Options(opts...)
+
+	if o.testConn != "" {
+		cmd := fmt.Sprintf("cc test-conn %s", o.testConn)
+
+		id, err := exec(o.ns, o.vm, cmd)
+		if err != nil {
+			return "", fmt.Errorf("calling '%s' for vm %s: %w", cmd, o.vm, err)
+		}
 
 		if o.wait {
 			if err := waitForResponse(o.ctx, o.ns, id, o.timeout); err != nil {
@@ -767,14 +773,12 @@ func (this Minimega) ExecC2Command(opts ...C2Option) (string, error) {
 	}
 
 	if o.sendFile != "" {
-		cmd.Command = fmt.Sprintf("cc send %s", o.sendFile)
+		cmd := fmt.Sprintf("cc send %s", o.sendFile)
 
-		data, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
+		id, err := exec(o.ns, o.vm, cmd)
 		if err != nil {
 			return "", fmt.Errorf("sending file '%s' to vm %s: %w", o.sendFile, o.vm, err)
 		}
-
-		id := fmt.Sprintf("%v", data)
 
 		// Special case: if both the `sendFile` and `command` options are set, then
 		// send the file first, wait for it to be sent (no matter what), then
@@ -791,14 +795,12 @@ func (this Minimega) ExecC2Command(opts ...C2Option) (string, error) {
 	}
 
 	if o.command != "" {
-		cmd.Command = fmt.Sprintf("cc exec %s", o.command)
+		cmd := fmt.Sprintf("cc exec %s", o.command)
 
-		data, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
+		id, err := exec(o.ns, o.vm, cmd)
 		if err != nil {
-			return "", fmt.Errorf("calling '%s' for vm %s: %w", cmd.Command, o.vm, err)
+			return "", fmt.Errorf("calling '%s' for vm %s: %w", cmd, o.vm, err)
 		}
-
-		id := fmt.Sprintf("%v", data)
 
 		if o.wait {
 			if err := waitForResponse(o.ctx, o.ns, id, o.timeout); err != nil {
@@ -806,7 +808,6 @@ func (this Minimega) ExecC2Command(opts ...C2Option) (string, error) {
 			}
 		}
 
-		// This will be the ID for the cc exec command
 		return id, nil
 	}
 
