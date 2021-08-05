@@ -432,6 +432,10 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
 			errors := multierror.Append(nil, fmt.Errorf("applying apps to experiment: %w", err))
 
+			if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCLEANUP), app.DryRun(o.dryrun)); err != nil {
+				errors = multierror.Append(errors, fmt.Errorf("cleaning up app experiments: %w", err))
+			}
+
 			if err := mm.ClearNamespace(exp.Spec.ExperimentName()); err != nil {
 				errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
 			}
@@ -494,7 +498,7 @@ func Stop(name string) error {
 	var errors error
 
 	if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCLEANUP), app.DryRun(dryrun)); err != nil {
-		errors = multierror.Append(errors, fmt.Errorf("applying apps to experiment: %w", err))
+		errors = multierror.Append(errors, fmt.Errorf("cleaning up app experiments: %w", err))
 	}
 
 	if !dryrun {
