@@ -859,7 +859,7 @@ func (this SOH) isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns 
 						return mm.C2RetryError{Delay: 5 * time.Second}
 					}
 				case "windows":
-					expected := fmt.Sprintf(`%s\s+Default`, gateway)
+					expected := fmt.Sprintf(`0.0.0.0\s+0.0.0.0\s+%s`, gateway)
 
 					// If `resp` doesn't contain the default gateway, then the default gateway
 					// isn't configured yet, so keep retrying the C2 command.
