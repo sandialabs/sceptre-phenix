@@ -123,12 +123,20 @@ func (this *BoltDB) Create(c *Config) error {
 	defer this.Close()
 
 	if _, err := this.get(c.Kind, c.Metadata.Name); err == nil {
-		return fmt.Errorf("config %s/%s already exists", c.Kind, c.Metadata.Name)
+		return ErrExist
 	}
 
 	now := time.Now().Format(time.RFC3339)
 
-	c.Metadata.Created = now
+	// The created timestamp may already be set if the call to Create is part of a
+	// config update that includes a rename (which essentially becomes a
+	// Create/Delete activity). Freshly created configs are guaranteed to have
+	// their created timestamp reset (see helpers in types.go) to prevent users
+	// from setting them.
+	if c.Metadata.Created == "" {
+		c.Metadata.Created = now
+	}
+
 	c.Metadata.Updated = now
 
 	v, err := json.Marshal(c)
@@ -148,7 +156,7 @@ func (this *BoltDB) Update(c *Config) error {
 	defer this.Close()
 
 	if _, err := this.get(c.Kind, c.Metadata.Name); err != nil {
-		return fmt.Errorf("config does not exist")
+		return ErrNotExist
 	}
 
 	c.Metadata.Updated = time.Now().Format(time.RFC3339)
@@ -179,6 +187,12 @@ func (this *BoltDB) Delete(c *Config) error {
 
 	err := this.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Kind))
+		v := b.Get([]byte(c.Metadata.Name))
+
+		if v == nil {
+			return ErrNotExist
+		}
+
 		return b.Delete([]byte(c.Metadata.Name))
 	})
 
@@ -274,7 +288,7 @@ func (this *BoltDB) get(b, k string) ([]byte, error) {
 	})
 
 	if v == nil {
-		return nil, fmt.Errorf("key %s does not exist in bucket %s", k, b)
+		return nil, fmt.Errorf("%w: key %s does not exist in bucket %s", ErrNotExist, k, b)
 	}
 
 	return v, nil

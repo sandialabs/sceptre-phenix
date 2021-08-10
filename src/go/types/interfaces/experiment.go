@@ -25,6 +25,8 @@ type ExperimentSpec interface {
 	Schedules() map[string]string
 	RunLocal() bool
 
+	SetExperimentName(string)
+	SetBaseDir(string)
 	SetVLANAlias(string, int, bool) error
 	SetVLANRange(int, int, bool) error
 	SetSchedule(map[string]string)

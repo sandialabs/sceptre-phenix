@@ -7,8 +7,10 @@ import (
 	"strings"
 
 	"phenix/api/config"
+	"phenix/store"
 	v1 "phenix/types/version/v1"
 
+	"github.com/activeshadow/structs"
 	"github.com/mitchellh/mapstructure"
 )
 
@@ -21,9 +23,15 @@ var NAME_TO_ROLE_CONFIG = map[string]string{
 	"VM Viewer":         "vm-viewer",
 }
 
+var (
+	ErrResourceNameExists  = fmt.Errorf("resource name for role exists")
+	ErrResourceNameInvalid = fmt.Errorf("invalid resource name for role")
+)
+
 type Role struct {
 	Spec *v1.RoleSpec
 
+	config         *store.Config
 	mappedPolicies map[string][]Policy
 }
 
@@ -43,7 +51,17 @@ func RoleFromConfig(name string) (*Role, error) {
 		return nil, fmt.Errorf("decoding role: %w", err)
 	}
 
-	return &Role{Spec: &role}, nil
+	return &Role{Spec: &role, config: c}, nil
+}
+
+func (this Role) Save() error {
+	this.config.Spec = structs.MapDefaultCase(this.Spec, structs.CASESNAKE)
+
+	if err := store.Update(this.config); err != nil {
+		return fmt.Errorf("updating user in store: %w", err)
+	}
+
+	return nil
 }
 
 func (this *Role) SetResourceNames(names ...string) error {
@@ -60,14 +78,34 @@ func (this *Role) SetResourceNames(names ...string) error {
 
 	for _, policy := range this.Spec.Policies {
 		if policy.ResourceNames != nil {
-			return fmt.Errorf("resource names already exist for policy")
+			return fmt.Errorf("%w: resource names already exist for policy", ErrResourceNameExists)
 		}
 
 		for _, name := range names {
 			// Checking to make sure pattern given in 'name' is valid. Thus, the
 			// string provided to match it against is useless.
 			if _, err := filepath.Match(name, "useless"); err != nil {
-				continue
+				return fmt.Errorf("%w: %s", ErrResourceNameInvalid, name)
+			}
+
+			policy.ResourceNames = append(policy.ResourceNames, name)
+		}
+	}
+
+	return nil
+}
+
+func (this *Role) AddResourceName(name string) error {
+	for _, policy := range this.Spec.Policies {
+		for _, existing := range policy.ResourceNames {
+			if name == existing {
+				return fmt.Errorf("%w: %s", ErrResourceNameExists, name)
+			}
+
+			// Checking to make sure pattern given in 'name' is valid. Thus, the
+			// string provided to match it against is useless.
+			if _, err := filepath.Match(name, "useless"); err != nil {
+				return fmt.Errorf("%w: %s", ErrResourceNameInvalid, name)
 			}
 
 			policy.ResourceNames = append(policy.ResourceNames, name)

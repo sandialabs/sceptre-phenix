@@ -1,5 +1,12 @@
 package store
 
+import "fmt"
+
+var (
+	ErrExist    = fmt.Errorf("config already exists")
+	ErrNotExist = fmt.Errorf("config does not exist")
+)
+
 // Store is the interface that identifies all the required functionality for a
 // config store. Not all functions are required to be implemented. If not
 // implemented, they should return an error stating such.

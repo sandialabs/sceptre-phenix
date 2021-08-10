@@ -81,6 +81,14 @@ func Start(opts ...ServerOption) error {
 	api := router.PathPrefix("/api/v1").Subrouter()
 
 	// OPTIONS method needed for CORS
+	api.Handle("/configs", ErrorHandler(GetConfigs)).Methods("GET", "OPTIONS")
+	api.Handle("/configs", ErrorHandler(CreateConfig)).Methods("POST", "OPTIONS")
+	api.Handle("/configs/{kind}/{name}", ErrorHandler(GetConfig)).Methods("GET", "OPTIONS")
+	api.Handle("/configs/{kind}/{name}", ErrorHandler(UpdateConfig)).Methods("PUT", "OPTIONS")
+	api.Handle("/configs/{kind}/{name}", ErrorHandler(DeleteConfig)).Methods("DELETE", "OPTIONS")
+	api.Handle("/configs/download", ErrorHandler(DownloadConfigs)).Methods("POST", "OPTIONS")
+	api.Handle("/schemas/{version}", ErrorHandler(GetSchemaSpec)).Methods("GET", "OPTIONS")
+	api.Handle("/schemas/{kind}/{version}", ErrorHandler(GetSchema)).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments", GetExperiments).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments", CreateExperiment).Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{name}", ErrorHandler(GetExperiment)).Methods("GET", "OPTIONS")

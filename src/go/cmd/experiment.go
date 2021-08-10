@@ -129,7 +129,9 @@ func newExperimentCreateCmd() *cobra.Command {
 			)
 
 			if ext := filepath.Ext(topology); ext != "" {
-				c, err := config.Create(topology, true)
+				opts := []config.CreateOption{config.CreateFromPath(topology), config.CreateWithValidation()}
+
+				c, err := config.Create(opts...)
 				if err != nil {
 					err := util.HumanizeError(err, "Unable to create configuration from "+topology)
 					return err.Humanized()
@@ -141,7 +143,9 @@ func newExperimentCreateCmd() *cobra.Command {
 			// If scenario is not provided, then ext will be an empty string, so the
 			// following won't be run.
 			if ext := filepath.Ext(scenario); ext != "" {
-				c, err := config.Create(scenario, true)
+				opts := []config.CreateOption{config.CreateFromPath(scenario), config.CreateWithValidation()}
+
+				c, err := config.Create(opts...)
 				if err != nil {
 					err := util.HumanizeError(err, "Unable to create configuration from "+scenario)
 					return err.Humanized()

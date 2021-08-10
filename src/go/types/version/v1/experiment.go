@@ -27,6 +27,10 @@ func (this *VLANSpec) Init() error {
 }
 
 func (this VLANSpec) Aliases() map[string]int {
+	if this.AliasesF == nil {
+		return make(map[string]int)
+	}
+
 	return this.AliasesF
 }
 
@@ -65,7 +69,7 @@ func (this VLANSpec) Validate() error {
 }
 
 type ExperimentSpec struct {
-	ExperimentNameF string            `json:"experimentName" yaml:"experimentName" structs:"experimentName" mapstructure:"experimentName"`
+	ExperimentNameF string            `json:"experimentName,omitempty" yaml:"experimentName,omitempty" structs:"experimentName" mapstructure:"experimentName"`
 	BaseDirF        string            `json:"baseDir" yaml:"baseDir" structs:"baseDir" mapstructure:"baseDir"`
 	TopologyF       *TopologySpec     `json:"topology" yaml:"topology" structs:"topology" mapstructure:"topology"`
 	ScenarioF       *v2.ScenarioSpec  `json:"scenario" yaml:"scenario" structs:"scenario" mapstructure:"scenario"`
@@ -87,6 +91,7 @@ func (this *ExperimentSpec) Init() error {
 
 	if this.VLANsF == nil {
 		this.VLANsF = new(VLANSpec)
+		this.VLANsF.Init()
 	}
 
 	if this.VLANsF.AliasesF == nil {
@@ -121,23 +126,47 @@ func (this ExperimentSpec) BaseDir() string {
 }
 
 func (this ExperimentSpec) Topology() ifaces.TopologySpec {
+	if this.TopologyF == nil {
+		return new(TopologySpec)
+	}
+
 	return this.TopologyF
 }
 
 func (this ExperimentSpec) Scenario() ifaces.ScenarioSpec {
+	if this.ScenarioF == nil {
+		return new(v2.ScenarioSpec)
+	}
+
 	return this.ScenarioF
 }
 
 func (this ExperimentSpec) VLANs() ifaces.VLANSpec {
+	if this.VLANsF == nil {
+		return new(VLANSpec)
+	}
+
 	return this.VLANsF
 }
 
 func (this ExperimentSpec) Schedules() map[string]string {
+	if this.SchedulesF == nil {
+		return make(map[string]string)
+	}
+
 	return this.SchedulesF
 }
 
 func (this ExperimentSpec) RunLocal() bool {
 	return this.RunLocalF
+}
+
+func (this *ExperimentSpec) SetExperimentName(name string) {
+	this.ExperimentNameF = name
+}
+
+func (this *ExperimentSpec) SetBaseDir(dir string) {
+	this.BaseDirF = dir
 }
 
 func (this *ExperimentSpec) SetVLANAlias(a string, i int, f bool) error {

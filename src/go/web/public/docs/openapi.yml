@@ -9,6 +9,10 @@ info:
   license:
     name: GNU General Public License v3.0
 tags:
+  - name: Configs
+    description: Config details and controls
+  - name: Schemas
+    description: Config spec schemas
   - name: Experiments
     description: Experiments details and controls
   - name: Virtual Machines
@@ -24,6 +28,219 @@ tags:
   - name: Users
     description: User details and controls
 paths:
+  "/configs":
+    get:
+      tags:
+        - Configs
+      summary: Get all phenix configs
+      description: ""
+      operationId: getConfigs
+      parameters:
+        - name: kind
+          in: query
+          description: limit configs to specified kind (defaults to all)
+          required: false
+          schema:
+            type: string
+            enum:
+              - all
+              - topology
+              - scenario
+              - experiment
+              - image
+              - user
+              - role
+            default: all
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Configs"
+    post:
+      tags:
+        - Configs
+      summary: Create new phenix config
+      description: ""
+      operationId: postConfigs
+      requestBody:
+        description: phenix config creation parameters
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Config"
+          application/x-yaml:
+            schema:
+              $ref: "#/components/schemas/Config"
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                fileupload:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: successful config creation
+          headers:
+            Location:
+              schema:
+                description: location of newly created config
+                type: string
+                format: uri
+  "/configs/{kind}/{name}":
+    get:
+      tags:
+        - Configs
+      summary: Get existing phenix config
+      description: ""
+      operationId: getConfigsKindName
+      parameters:
+        - name: kind
+          in: path
+          description: kind of phenix config to get
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          description: name of phenix config to get
+          required: true
+          schema:
+            type: string
+        - name: Accept
+          in: header
+          description: content format for response
+          required: false
+          schema:
+            type: string
+            enum:
+              - application/json
+              - application/x-yaml
+            default: application/json
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Config"
+            application/x-yaml:
+              schema:
+                $ref: "#/components/schemas/Config"
+    put:
+      tags:
+        - Configs
+      summary: Update existing phenix config
+      description: >
+        Can also be used to rename a config by changing the name in the metadata
+        portion of the config header and using the old name in the request path.
+      operationId: putConfigsKindName
+      parameters:
+        - name: kind
+          in: path
+          description: kind of phenix config to get
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          description: name of phenix config to get
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: phenix config update parameters
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Config"
+          application/x-yaml:
+            schema:
+              $ref: "#/components/schemas/Config"
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                fileupload:
+                  type: string
+                  format: binary
+      responses:
+        "204":
+          description: successful config update
+          headers:
+            Location:
+              schema:
+                description: location of updated config
+                type: string
+                format: uri
+    delete:
+      tags:
+        - Configs
+      summary: Delete existing phenix config
+      description: ""
+      operationId: deleteConfigsKindName
+      parameters:
+        - name: kind
+          in: path
+          description: kind of phenix config to delete
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          description: name of phenix config to delete
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: successful operation
+  "/schemas/{kind}/{version}":
+    get:
+      tags:
+        - Schemas
+      summary: Get schema for specific config spec kind/version
+      description: ""
+      operationId: getSchemasKindVersion
+      parameters:
+        - name: kind
+          in: path
+          description: kind of phenix config schema to get
+          required: true
+          schema:
+            type: string
+        - name: version
+          in: path
+          description: version of phenix config schema to get
+          required: true
+          schema:
+            type: string
+        - name: Accept
+          in: header
+          description: content format for response
+          required: false
+          schema:
+            type: string
+            enum:
+              - application/json
+              - application/x-yaml
+            default: application/json
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+            application/x-yaml:
+              schema:
+                type: object
+                additionalProperties: true
   "/experiments":
     get:
       tags:
@@ -1027,9 +1244,42 @@ externalDocs:
   description: Find out more about Swagger
   url: http://swagger.io
 servers:
-  - url: http://phenix.web/api/v1
+  - url: http://localhost:3000/api/v1
 components:
   schemas:
+    Configs:
+      type: object
+      properties:
+        configs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Config"
+    Config:
+      type: object
+      properties:
+        apiVersion:
+          type: string
+        kind:
+          type: string
+        metadata:
+          type: object
+          properties:
+            name:
+              type: string
+            annotations:
+              type: object
+              additionalProperties:
+                type: string
+          required:
+            - name
+        spec:
+          type: object
+          additionalProperties: true
+      required:
+        - apiVersion
+        - kind
+        - metadata
+        - spec
     Experiments:
       type: object
       properties:

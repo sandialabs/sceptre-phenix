@@ -28,14 +28,16 @@ import (
 
 func init() {
 	config.RegisterConfigHook("Experiment", func(stage string, c *store.Config) error {
+		exp, err := types.DecodeExperimentFromConfig(*c)
+		if err != nil {
+			return fmt.Errorf("decoding experiment from config: %w", err)
+		}
+
 		switch stage {
 		case "create":
-			exp, err := types.DecodeExperimentFromConfig(*c)
-			if err != nil {
-				return fmt.Errorf("decoding experiment from config: %w", err)
-			}
-
 			exp.Spec.Init()
+
+			exp.Spec.SetExperimentName(c.Metadata.Name)
 
 			if err := exp.Spec.VerifyScenario(context.TODO()); err != nil {
 				return fmt.Errorf("verifying experiment scenario: %w", err)
@@ -46,17 +48,28 @@ func init() {
 			}
 
 			c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
-
-			if err := types.ValidateConfigSpec(*c); err != nil {
-				return fmt.Errorf("validating experiment config: %w", err)
+		case "update":
+			if exp.Running() {
+				// Halt this update if the experiment is running.
+				return fmt.Errorf("cannot update running experiment")
 			}
+
+			exp.Spec.Init()
+
+			if exp.Spec.ExperimentName() != c.Metadata.Name {
+				if strings.Contains(exp.Spec.BaseDir(), exp.Spec.ExperimentName()) {
+					// If the experiment's base directory contains the current experiment
+					// name, replace it with the new name.
+					dir := strings.ReplaceAll(exp.Spec.BaseDir(), exp.Spec.ExperimentName(), c.Metadata.Name)
+					exp.Spec.SetBaseDir(dir)
+				}
+
+				exp.Spec.SetExperimentName(c.Metadata.Name)
+			}
+
+			c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 		case "delete":
 			var errors error
-
-			exp, err := types.DecodeExperimentFromConfig(*c)
-			if err != nil {
-				return fmt.Errorf("decoding experiment from config: %w", err)
-			}
 
 			// Delete any snapshot files created by this headnode for this experiment
 			// after deleting the experiment.

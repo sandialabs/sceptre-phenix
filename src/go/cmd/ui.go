@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -22,6 +23,10 @@ func newUiCmd() *cobra.Command {
 		Short: "Run the phenix UI",
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := web.Init(); err != nil {
+				return fmt.Errorf("initializing web package: %w", err)
+			}
+
 			level, err := log.ParseLevel(viper.GetString("ui.log-level"))
 			if err != nil {
 				return err

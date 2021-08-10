@@ -18,6 +18,8 @@ import (
 
 const API_GROUP = "phenix.sandia.gov"
 
+var ErrInvalidFormat = fmt.Errorf("invalid formatting")
+
 type (
 	Configs     []Config
 	Annotations map[string]string
@@ -27,7 +29,7 @@ type Config struct {
 	Version  string                 `json:"apiVersion" yaml:"apiVersion"`
 	Kind     string                 `json:"kind" yaml:"kind"`
 	Metadata ConfigMetadata         `json:"metadata" yaml:"metadata"`
-	Spec     map[string]interface{} `json:"spec" yaml:"spec"`
+	Spec     map[string]interface{} `json:"spec,omitempty" yaml:"spec,omitempty"`
 	Status   map[string]interface{} `json:"status,omitempty" yaml:"status,omitempty"`
 }
 
@@ -73,15 +75,47 @@ func NewConfigFromFile(path string) (*Config, error) {
 	switch filepath.Ext(path) {
 	case ".json":
 		if err := json.Unmarshal(file, &c); err != nil {
-			return nil, fmt.Errorf("unmarshaling config: %w", err)
+			return nil, fmt.Errorf("%w: %v", ErrInvalidFormat, err)
 		}
 	case ".yaml", ".yml":
 		if err := yaml.Unmarshal(file, &c); err != nil {
-			return nil, fmt.Errorf("unmarshaling config: %w", err)
+			return nil, fmt.Errorf("%w: %v", ErrInvalidFormat, err)
 		}
 	default:
 		return nil, fmt.Errorf("invalid config extension")
 	}
+
+	// ensure users aren't trying to set these values
+	c.Metadata.Created = ""
+	c.Metadata.Updated = ""
+
+	return &c, nil
+}
+
+func NewConfigFromJSON(body []byte) (*Config, error) {
+	var c Config
+
+	if err := json.Unmarshal(body, &c); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidFormat, err)
+	}
+
+	// ensure users aren't trying to set these values
+	c.Metadata.Created = ""
+	c.Metadata.Updated = ""
+
+	return &c, nil
+}
+
+func NewConfigFromYAML(body []byte) (*Config, error) {
+	var c Config
+
+	if err := yaml.Unmarshal(body, &c); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidFormat, err)
+	}
+
+	// ensure users aren't trying to set these values
+	c.Metadata.Created = ""
+	c.Metadata.Updated = ""
 
 	return &c, nil
 }
@@ -106,6 +140,26 @@ func (this Config) APIVersion() string {
 	} else {
 		return s[1]
 	}
+}
+
+func (this Config) FullName() string {
+	return this.Kind + "/" + this.Metadata.Name
+}
+
+func ConfigFullName(name ...string) string {
+	if len(name) == 1 {
+		n := strings.Split(name[0], "/")
+
+		if len(n) != 2 {
+			return ""
+		}
+
+		return strings.Title(n[0]) + "/" + n[1]
+	} else if len(name) == 2 {
+		return strings.Title(name[0]) + "/" + name[1]
+	}
+
+	return ""
 }
 
 type EventType string

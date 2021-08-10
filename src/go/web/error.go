@@ -16,6 +16,8 @@ type WebError struct {
 	Cause  error  `json:"-"`
 	Status int    `json:"-"`
 	URL    string `json:"url"`
+
+	UserMetadata map[string]string `json:"metadata,omitempty"`
 }
 
 func NewWebError(cause error, format string, args ...interface{}) *WebError {
@@ -29,6 +31,20 @@ func NewWebError(cause error, format string, args ...interface{}) *WebError {
 	}
 
 	return err
+}
+
+func (this *WebError) WithMetadata(k, v string, user bool) *WebError {
+	this.Event.WithMetadata(k, v)
+
+	if user {
+		if this.UserMetadata == nil {
+			this.UserMetadata = make(map[string]string)
+		}
+
+		this.UserMetadata[k] = v
+	}
+
+	return this
 }
 
 func (this *WebError) SetInformational() *WebError {

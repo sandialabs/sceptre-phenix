@@ -1,10 +1,16 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 
+	"phenix/internal/common"
 	"phenix/store"
 	"phenix/types"
 	"phenix/types/version"
@@ -13,6 +19,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+var AllKinds = []string{"Topology", "Scenario", "Experiment", "Image", "User", "Role"}
+
+var NameRegex = regexp.MustCompile(`^[a-zA-Z0-9_@.-]*$`)
 
 // ConfigHook is a function to be called during the different lifecycle stages
 // of a config. The passed config can be updated by the hook functions as
@@ -27,7 +37,22 @@ func RegisterConfigHook(kind string, hook ConfigHook) {
 	hooks[kind] = append(hooks[kind], hook)
 }
 
+func init() {
+	for _, kind := range AllKinds {
+		RegisterConfigHook(kind, func(stage string, c *store.Config) error {
+			if stage == "create" || stage == "update" {
+				if !NameRegex.MatchString(c.Metadata.Name) {
+					return fmt.Errorf("config name is not a valid format")
+				}
+			}
+
+			return nil
+		})
+	}
+}
+
 func Init() error {
+	// Ensure all built-in, default configs are present in the store.
 	for _, file := range AssetNames() {
 		var c store.Config
 
@@ -48,6 +73,77 @@ func Init() error {
 		}
 	}
 
+	// Recursively traverse default configs directory (e.g. /phenix/configs) and
+	// ensure any valid phenix configs are present in the store.
+	base := common.PhenixBase + "/configs"
+
+	step := func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			var pathErr *fs.PathError
+			if errors.As(err, &pathErr) {
+				if strings.Contains(err.Error(), fmt.Sprintf("%s: no such file or directory", base)) {
+					// Means the base path doesn't exist (which is OK)
+					return nil
+				}
+			}
+
+			return fmt.Errorf("path error: %w", err)
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		var c store.Config
+
+		switch filepath.Ext(path) {
+		case ".yaml", ".yml":
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("reading %s: %w", path, err)
+			}
+
+			if err := yaml.Unmarshal(body, &c); err != nil {
+				return fmt.Errorf("parsing %s: %w", path, err)
+			}
+		case ".json":
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("reading %s: %w", path, err)
+			}
+
+			if err := json.Unmarshal(body, &c); err != nil {
+				return fmt.Errorf("parsing %s: %w", path, err)
+			}
+		default:
+			return nil
+		}
+
+		name := strings.ToLower(c.Kind) + "/" + c.Metadata.Name
+
+		// `name` will be `/` if the YAML/JSON file parsed was not a valid phenix
+		// config (which is OK).
+		if name == "/" {
+			return nil
+		}
+
+		// Don't attempt to create this default config again if it already exists in
+		// the store.
+		if _, err := Get(name, false); err == nil {
+			return nil
+		}
+
+		// Not checking error here since if there is one it's likely due to the
+		// current path not being a valid phenix config (which is OK).
+		store.Create(&c)
+
+		return nil
+	}
+
+	if err := filepath.WalkDir(base, step); err != nil {
+		return fmt.Errorf("parsing config files in %s: %w", base, err)
+	}
+
 	return nil
 }
 
@@ -61,9 +157,9 @@ func List(which string) (store.Configs, error) {
 		err     error
 	)
 
-	switch which {
+	switch strings.ToLower(which) {
 	case "", "all":
-		configs, err = store.List("Topology", "Scenario", "Experiment", "Image", "User", "Role")
+		configs, err = store.List(AllKinds...)
 	case "topology":
 		configs, err = store.List("Topology")
 	case "scenario":
@@ -138,17 +234,41 @@ func Get(name string, upgrade bool) (*store.Config, error) {
 // additional validations are done to ensure the annotated topology (required)
 // and scenario (optional) exist. It returns a pointer to the resulting config
 // struct and eny errors encountered while creating the config.
-func Create(path string, validate bool) (*store.Config, error) {
-	if path == "" {
-		return nil, fmt.Errorf("no config file provided")
+func Create(opts ...CreateOption) (*store.Config, error) {
+	o := newCreateOptions(opts...)
+
+	var c *store.Config
+
+	if o.path != "" {
+		var err error
+
+		c, err = store.NewConfigFromFile(o.path)
+		if err != nil {
+			return nil, fmt.Errorf("creating new config from file: %w", err)
+		}
+	} else if o.data != nil {
+		var err error
+
+		switch o.dataType {
+		case DataTypeJSON:
+			c, err = store.NewConfigFromJSON(o.data)
+			if err != nil {
+				return nil, fmt.Errorf("creating new config from JSON: %w", err)
+			}
+		case DataTypeYAML:
+			c, err = store.NewConfigFromYAML(o.data)
+			if err != nil {
+				return nil, fmt.Errorf("creating new config from YAML: %w", err)
+			}
+		default:
+			return nil, fmt.Errorf("unknown data type provided")
+		}
+
+	} else {
+		return nil, fmt.Errorf("no config path or data provided")
 	}
 
-	c, err := store.NewConfigFromFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("creating new config from file: %w", err)
-	}
-
-	if validate {
+	if o.validate {
 		if err := types.ValidateConfigSpec(*c); err != nil {
 			return nil, fmt.Errorf("validating config: %w", err)
 		}
@@ -159,10 +279,10 @@ func Create(path string, validate bool) (*store.Config, error) {
 			return nil, fmt.Errorf("calling config hook: %w", err)
 		}
 
-		if validate {
+		if o.validate {
 			// Validate again since config hooks can modify the config.
 			if err := types.ValidateConfigSpec(*c); err != nil {
-				return nil, fmt.Errorf("validating config after config hook: %w", err)
+				return nil, fmt.Errorf("validating config after config hooks: %w", err)
 			}
 		}
 	}
@@ -197,18 +317,23 @@ func Edit(name string, force bool) (*store.Config, error) {
 		return nil, fmt.Errorf("getting config from store: %w", err)
 	}
 
-	if !force && c.Kind == "Experiment" {
+	var expName string
+
+	if c.Kind == "Experiment" {
 		exp, err := types.DecodeExperimentFromConfig(*c)
 		if err != nil {
 			return nil, fmt.Errorf("decoding experiment from config: %w", err)
 		}
 
-		if exp.Running() {
+		if !force && exp.Running() {
 			return nil, fmt.Errorf("cannot edit running experiment")
 		}
+
+		expName = exp.Spec.ExperimentName()
+		delete(c.Spec, "experimentName")
 	}
 
-	body, err := yaml.Marshal(c.Spec)
+	body, err := yaml.Marshal(c)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling config to YAML: %w", err)
 	}
@@ -218,27 +343,69 @@ func Edit(name string, force bool) (*store.Config, error) {
 		return nil, fmt.Errorf("editing config: %w", err)
 	}
 
-	var spec map[string]interface{}
-
-	if err := yaml.Unmarshal(body, &spec); err != nil {
+	if err := yaml.Unmarshal(body, c); err != nil {
 		return nil, fmt.Errorf("unmarshaling config as YAML: %w", err)
 	}
 
-	c.Spec = spec
+	if c.Kind == "Experiment" {
+		c.Spec["experimentName"] = expName
+	}
 
-	// TODO: validate after edit
+	if err := Update(name, c); err != nil {
+		return nil, fmt.Errorf("updating edited config: %w", err)
+	}
+
+	return c, nil
+}
+
+// Update updates the store with the given config. If the name of the config was
+// changed as part of the update, a new config will be created and the old
+// config deleted.
+func Update(name string, c *store.Config) error {
+	old, err := store.NewConfig(name)
+	if err != nil {
+		return fmt.Errorf("getting config to update: %w", err)
+	}
+
+	if err := store.Get(old); err != nil {
+		return fmt.Errorf("getting config to update: %w", err)
+	}
+
+	c.Metadata.Created = old.Metadata.Created
+
+	if err := types.ValidateConfigSpec(*c); err != nil {
+		return fmt.Errorf("validating config: %w", err)
+	}
 
 	for _, hook := range hooks[c.Kind] {
-		if err := hook("edit", c); err != nil {
-			return nil, fmt.Errorf("calling config hook: %w", err)
+		if err := hook("update", c); err != nil {
+			return fmt.Errorf("calling config hook: %w", err)
+		}
+
+		// Validate again since config hooks can modify the config.
+		if err := types.ValidateConfigSpec(*c); err != nil {
+			return fmt.Errorf("validating config after config hooks: %w", err)
 		}
 	}
 
 	if err := store.Update(c); err != nil {
-		return nil, fmt.Errorf("updating config in store: %w", err)
+		if errors.Is(err, store.ErrNotExist) { // name changed during update
+			if err := store.Create(c); err != nil {
+				return fmt.Errorf("renaming updated config in store: %w", err)
+			}
+
+			if err := store.Delete(old); err != nil {
+				store.Delete(c) // don't offer a path to creation via updates
+				return fmt.Errorf("renaming updated config in store: %w", err)
+			}
+
+			return nil
+		}
+
+		return fmt.Errorf("updating config in store: %w", err)
 	}
 
-	return c, nil
+	return nil
 }
 
 // Delete removes the config with the given name from the store. The given name
@@ -255,7 +422,7 @@ func Delete(name string) error {
 		configs, _ := List("all")
 
 		for _, c := range configs {
-			if err := delete(&c); err != nil {
+			if err := store.Delete(&c); err != nil {
 				return err
 			}
 
@@ -274,7 +441,7 @@ func Delete(name string) error {
 		return fmt.Errorf("getting config '%s': %w", name, err)
 	}
 
-	if err := delete(c); err != nil {
+	if err := store.Delete(c); err != nil {
 		return err
 	}
 
@@ -282,14 +449,6 @@ func Delete(name string) error {
 		if err := hook("delete", c); err != nil {
 			// TODO: what to do w/ error?
 		}
-	}
-
-	return nil
-}
-
-func delete(c *store.Config) error {
-	if err := store.Delete(c); err != nil {
-		return fmt.Errorf("deleting config in store: %w", err)
 	}
 
 	return nil

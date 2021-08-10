@@ -104,7 +104,10 @@ func AuthMiddleware(jwtKey string) mux.MiddlewareFunc {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			role, _ := rbac.RoleFromConfig("global-admin")
 
-			ctx := context.WithValue(r.Context(), "role", *role)
+			ctx := r.Context()
+
+			ctx = context.WithValue(ctx, "user", "global-admin")
+			ctx = context.WithValue(ctx, "role", *role)
 
 			h.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -117,7 +120,6 @@ func AuthMiddleware(jwtKey string) mux.MiddlewareFunc {
 			ctx := r.Context()
 
 			ctx = context.WithValue(ctx, "user", creds[1])
-			ctx = context.WithValue(ctx, "uid", 0)
 			ctx = context.WithValue(ctx, "role", creds[2])
 
 			h.ServeHTTP(w, r.WithContext(ctx))

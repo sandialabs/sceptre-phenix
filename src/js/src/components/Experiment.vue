@@ -27,10 +27,8 @@ this will only show a list of VMs that a user can view.
         let resp = await Vue.http.get( 'experiments/' + to.params.id );
         let state = await resp.json();
 
-        next( vm => vm.running = state.running );
+        next( exp => exp.running = state.running );
       } catch ( err ) {
-        console.log( err );
-
         Vue.toast.open({
           message: 'Getting the ' + to.params.id + ' experiment failed.',
           type: 'is-danger',

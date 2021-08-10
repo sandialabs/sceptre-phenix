@@ -8,6 +8,7 @@ import Users            from './components/Users.vue'
 import Log              from './components/Log.vue'
 import VMtiles          from './components/VMtiles.vue'
 import StateOfHealth    from './components/StateOfHealth.vue'
+import Configs          from './components/Configs.vue'
 import store            from './store'
 
 Vue.use(Router)
@@ -23,6 +24,7 @@ const router = new Router({
     { path: '/hosts',             name: 'hosts',            component: Hosts },
     { path: '/users',             name: 'users',            component: Users },
     { path: '/log',               name: 'log',              component: Log },
+    { path: '/configs',           name: 'configs',          component: Configs },
     { path: '/signin',            name: 'signin',           component: SignIn },
     { path: '/stateofhealth/:id', name: 'soh',              component: StateOfHealth },
     { path: '*',                  redirect: '/signin' }

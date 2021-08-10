@@ -10,5 +10,6 @@ spec:
     - "*/*"
     resourceNames:
     - "*"
+    - "*/*"
     verbs:
     - "*"

@@ -25,20 +25,9 @@ func newEventCmd() *cobra.Command {
 
 func newEventListCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "list [uuid]",
+		Use:   "list",
 		Short: "Display a table of events",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 1 {
-				event := store.Event{ID: args[0]}
-				if err := store.GetEvent(&event); err != nil {
-					err := util.HumanizeError(err, "Unable to get event %s", args[0])
-					return err.Humanized()
-				}
-
-				printer.PrintEventTable(os.Stdout, event)
-				return nil
-			}
-
 			events, err := store.GetEvents()
 			if err != nil {
 				err := util.HumanizeError(err, "Unable to get list of events")
@@ -61,10 +50,31 @@ func newEventListCmd() *cobra.Command {
 	return cmd
 }
 
+func newEventShowCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "show <uuid>",
+		Short: "Show details of specific event",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			event := store.Event{ID: args[0]}
+			if err := store.GetEvent(&event); err != nil {
+				err := util.HumanizeError(err, "Unable to get event %s", args[0])
+				return err.Humanized()
+			}
+
+			printer.PrintEventTable(os.Stdout, event)
+			return nil
+		},
+	}
+
+	return cmd
+}
+
 func init() {
 	eventCmd := newEventCmd()
 
 	eventCmd.AddCommand(newEventListCmd())
+	eventCmd.AddCommand(newEventShowCmd())
 
 	rootCmd.AddCommand(eventCmd)
 }

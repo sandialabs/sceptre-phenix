@@ -103,12 +103,12 @@
                 <b-table-column  field="multiselect" label="">              
                   <template v-slot:header="{ column }">
                     <b-tooltip label="Select/Unselect All" type="is-dark">
-                    <b-checkbox @input="selectAllVMs" v-model="checkAll" type="is-info"/>
+                    <b-checkbox @input="selectAllVMs" v-model="checkAll" type="is-primary"/>
                     </b-tooltip>
                   </template>
                   <template>
                     <div>
-                      <b-checkbox v-model="selectedRows" :native-value=props.row.name type="is-info"/>
+                      <b-checkbox v-model="selectedRows" :native-value=props.row.name type="is-primary"/>
                     </div>
                   </template>                  
                 </b-table-column>
@@ -275,7 +275,7 @@
                           {{ props.row.category }}                      
                 </b-table-column>
                 <b-table-column field="download" label="Download" centered>   
-                        <a :href="'/api/v1/experiments/'
+                        <a :href="'api/v1/experiments/'
                           + experiment.name 
                           + '/files/' 
                           + props.row.name
@@ -295,7 +295,7 @@
         </b-tab-item>
       </b-tabs>
     </div>
-    <b-loading :is-full-page="true" :active.sync="isWaiting" :can-cancel="false"></b-loading>
+    <b-loading :is-full-page="true" :active="isWaiting" :can-cancel="false"></b-loading>
   </div>
 </template>
 
@@ -307,12 +307,7 @@
 
     async created () {
       this.$options.sockets.onmessage = this.handler;
-      this.updateExperiment();
-      
-      if ( this.adminUser() ) {
-        this.updateHosts();
-        this.updateDisks();      
-      }
+      this.updateExperiment( this.adminUser() );
     },
 
     computed: {
@@ -511,7 +506,7 @@
         }
       },
       
-      updateExperiment () {
+      updateExperiment ( hostsAndDisks = false ) {
         let params = '?show_dnb=true&filter=' + this.searchName
         params = params + '&sortCol=' + this.table.sortColumn
         params = params + '&sortDir=' + this.table.defaultSortDirection
@@ -525,7 +520,7 @@
           response => {
             response.json().then( state => {
               this.experiment = state;
-              this.table.total  = state.vm_count;               
+              this.table.total = state.vm_count;
 
               // Only add successful searches to the search history
               if (this.table.total > 0) {
@@ -536,16 +531,20 @@
                 this.searchHistory = this.getUniqueItems(this.searchHistory)
               }
 
-              this.isWaiting = false;
+              if ( hostsAndDisks ) {
+                this.updateHosts()
+                this.updateDisks()
+              }
             });
-          }, response => {
-            this.isWaiting = false;
+          }, () => {
             this.$buefy.toast.open({
               message: 'Getting the experiments failed.',
               type: 'is-danger',
               duration: 4000
             });
           }
+        ).finally(
+          () => { this.isWaiting = false }
         );
       },
       
@@ -554,21 +553,14 @@
           response => {
             response.json().then(
               state => {
-                if ( state.hosts.length == 0 ) {
-                  this.isWaiting = true;
-                } else {
-                  for ( let i = 0; i < state.hosts.length; i++ ) {
-                    if ( state.hosts[ i ].schedulable ) {
-                      this.hosts.push( state.hosts[ i ].name );
-                    }
+                for ( let i = 0; i < state.hosts.length; i++ ) {
+                  if ( state.hosts[ i ].schedulable ) {
+                    this.hosts.push( state.hosts[ i ].name );
                   }
-                  
-                  this.isWaiting = false;
                 }
               }
             );
-          }, response => {
-            this.isWaiting = false;
+          }, () => {
             this.$buefy.toast.open({
               message: 'Getting the hosts failed.',
               type: 'is-danger',
@@ -583,19 +575,12 @@
           response => {
             response.json().then(
               state => {
-                if ( state.disks.length == 0 ) {
-                  this.isWaiting = true;
-                } else {
-                  for ( let i = 0; i < state.disks.length; i++ ) {
-                    this.disks.push( state.disks[ i ] );
-                  }
-                  
-                  this.isWaiting = false;
+                for ( let i = 0; i < state.disks.length; i++ ) {
+                  this.disks.push( state.disks[ i ] );
                 }
               }
             );
-          }, response => {
-            this.isWaiting = false;
+          }, () => {
             this.$buefy.toast.open({
               message: 'Getting the disks failed.',
               type: 'is-danger',
@@ -625,7 +610,6 @@
       },
 
       updateFiles () {               
-
         let params = '?filter=' + this.searchName
         params = params + '&sortCol=' + this.filesTable.sortColumn
         params = params + '&sortDir=' + this.filesTable.defaultSortDirection
@@ -649,18 +633,16 @@
 
                 // Only add successful searches to the search history
                 if (this.files.length > 0) {
-                if (this.searchHistory > this.searchHistoryLength) {
-                  this.searchHistory.pop()
+                  if (this.searchHistory > this.searchHistoryLength) {
+                    this.searchHistory.pop()
+                  }
+
+                  this.searchHistory.push(this.searchName.trim())
+                  this.searchHistory = this.getUniqueItems(this.searchHistory)
                 }
-                this.searchHistory.push(this.searchName.trim())
-                this.searchHistory = this.getUniqueItems(this.searchHistory)
-              }
-                
-                this.isWaiting = false;
               }
             );
-          }, response => {
-            this.isWaiting = false;
+          }, () => {
             this.$buefy.toast.open({
               message: 'Getting the files failed.',
               type: 'is-danger',

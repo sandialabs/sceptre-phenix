@@ -139,6 +139,11 @@ func newConfigGetCmd() *cobra.Command {
 				return err.Humanized()
 			}
 
+			if c.Kind == "Experiment" {
+				// Clear experiment name... not applicable to end users.
+				delete(c.Spec, "experimentName")
+			}
+
 			output := MustGetString(cmd.Flags(), "output")
 
 			switch output {
@@ -237,7 +242,13 @@ func newConfigCreateCmd() *cobra.Command {
 				}
 
 				for _, f := range configs {
-					c, err := config.Create(f, !skip)
+					opts := []config.CreateOption{config.CreateFromPath(f)}
+
+					if !skip {
+						opts = append(opts, config.CreateWithValidation())
+					}
+
+					c, err := config.Create(opts...)
 					if err != nil {
 						err := util.HumanizeError(err, "Unable to create configuration from "+f)
 						return err.Humanized()

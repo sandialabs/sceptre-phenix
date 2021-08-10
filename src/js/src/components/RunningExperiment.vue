@@ -474,12 +474,12 @@
                <b-table-column  field="multiselect" label="">              
                  <template v-slot:header="{ column }">
                    <b-tooltip label="Select/Unselect All" type="is-dark">
-                   <b-checkbox @input="selectAllVMs" v-model="checkAll" type="is-info"/>
+                   <b-checkbox @input="selectAllVMs" v-model="checkAll" type="is-primary"/>
                    </b-tooltip>
                  </template>
                 <template v-if="!props.row.busy">
                   <div>
-                    <b-checkbox v-model="vmSelectedArray" :native-value=props.row.name type="is-info"/>
+                    <b-checkbox v-model="vmSelectedArray" :native-value=props.row.name type="is-primary"/>
                   </div>
                 </template>
                 <template v-else>
