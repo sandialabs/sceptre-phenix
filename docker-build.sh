@@ -1,6 +1,6 @@
 #!/bin/bash
 
-usage="usage: $(basename "$0") [-d] [-h] [-v]
+usage="usage: $(basename "$0") [-b] [-d] [-h] [-v]
 
 This script will build the phenix binary using a temporary Docker image to
 avoid having to install build dependencies locally.
@@ -13,19 +13,22 @@ If not provided, the '-v' flag will default to the hash of the current git
 repository commit.
 
 where:
+    -b      base path for web UI deployment (defaults to '/')
     -d      disable phenix web UI authentication
     -h      show this help text
     -v      version number to use for phenix"
 
 
+base=/
 auth=enabled
 version=$(git log -1 --format="%h")
 commit=$(git log -1 --format="%h")
 
 
 # loop through positional options/arguments
-while getopts ':dhv:' option; do
+while getopts ':b:dhv:' option; do
     case "$option" in
+        b)  base="$OPTARG"         ;;
         d)  auth=disabled          ;;
         h)  echo -e "$usage"; exit ;;
         v)  version="$OPTARG"      ;;
@@ -36,6 +39,7 @@ while getopts ':dhv:' option; do
 done
 
 
+echo    "phenix web UI base path:      $base"
 echo    "phenix web UI authentication: $auth"
 echo    "phenix version number:        $version"
 echo -e "phenix commit:                $commit\n"
@@ -99,6 +103,7 @@ docker run -it --rm \
   -w /phenix \
   -u $USERNAME \
   -e VUE_APP_AUTH=$auth \
+  -e VUE_BASE_PATH=$base \
   -e VER=$version \
   -e COMMIT=$commit \
   phenix:builder make bin/phenix

@@ -7,7 +7,10 @@ COPY ./src/js /phenix/src/js
 WORKDIR /phenix/src/js
 
 ARG PHENIX_WEB_AUTH=disabled
+ARG PHENIX_BASE_PATH=/
+
 ENV VUE_APP_AUTH ${PHENIX_WEB_AUTH}
+ENV VUE_BASE_PATH ${PHENIX_BASE_PATH}
 
 RUN npm install \
   && npm run build

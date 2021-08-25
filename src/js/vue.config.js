@@ -1,4 +1,5 @@
 module.exports = {
+  publicPath: process.env.VUE_BASE_PATH || '/',
   assetsDir: 'assets',
 
   devServer: {
