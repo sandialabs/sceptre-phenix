@@ -189,6 +189,77 @@ func (this *BoltDB) Delete(c *Config) error {
 	return nil
 }
 
+func (this *BoltDB) GetEvents() (Events, error) {
+	this.open()
+	defer this.Close()
+
+	if err := this.ensureBucket("events"); err != nil {
+		return nil, err
+	}
+
+	var events Events
+
+	err := this.db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("events"))
+
+		err := b.ForEach(func(_, v []byte) error {
+			var e Event
+
+			if err := json.Unmarshal(v, &e); err != nil {
+				return fmt.Errorf("unmarshaling event JSON: %w", err)
+			}
+
+			events = append(events, e)
+
+			return nil
+		})
+
+		if err != nil {
+			return fmt.Errorf("iterating event bucket: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("getting events from store: %w", err)
+	}
+
+	return events, nil
+}
+
+func (this *BoltDB) GetEvent(e *Event) error {
+	this.open()
+	defer this.Close()
+
+	v, err := this.get("events", e.ID)
+	if err != nil {
+		return fmt.Errorf("getting event: %w", err)
+	}
+
+	if err := json.Unmarshal(v, e); err != nil {
+		return fmt.Errorf("unmarshaling event JSON: %w", err)
+	}
+
+	return nil
+}
+
+func (this *BoltDB) AddEvent(e Event) error {
+	this.open()
+	defer this.Close()
+
+	v, err := json.Marshal(e)
+	if err != nil {
+		return fmt.Errorf("marshaling event JSON: %w", err)
+	}
+
+	if err := this.put("events", e.ID, v); err != nil {
+		return fmt.Errorf("writing event JSON to Bolt: %w", err)
+	}
+
+	return nil
+}
+
 func (this *BoltDB) get(b, k string) ([]byte, error) {
 	if err := this.ensureBucket(b); err != nil {
 		return nil, err

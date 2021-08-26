@@ -26,6 +26,7 @@ import (
 	"phenix/api/vm"
 	"phenix/app"
 	"phenix/internal/mm"
+	"phenix/store"
 	"phenix/types"
 	putil "phenix/util"
 	"phenix/util/notes"
@@ -219,7 +220,7 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /experiments/{name}
-func GetExperiment(w http.ResponseWriter, r *http.Request) {
+func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 	log.Debug("GetExperiment HTTP handler called")
 
 	var (
@@ -238,16 +239,13 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("experiments", "get", name) {
-		log.Warn("getting experiment %s not allowed for %s", name, ctx.Value("user").(string))
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
+		err := NewWebError(nil, "getting experiment %s not allowed for %s", name, ctx.Value("user").(string))
+		return err.SetStatus(http.StatusForbidden)
 	}
 
 	exp, err := experiment.Get(name)
 	if err != nil {
-		log.Error("getting experiment %s - %v", name, err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		return NewWebError(err, "unable to get experiment %s from store", name)
 	}
 
 	vms, err := vm.List(name)
@@ -315,12 +313,12 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) {
 	body, err := marshaler.Marshal(experiment)
 
 	if err != nil {
-		log.Error("marshaling experiment %s - %v", name, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		err := NewWebError(err, "marshaling experiment %s - %v", name, err)
+		return err.SetStatus(http.StatusInternalServerError)
 	}
 
 	w.Write(body)
+	return nil
 }
 
 // DELETE /experiments/{name}
@@ -3243,6 +3241,23 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// GET /errors/{uuid}
+func GetError(w http.ResponseWriter, r *http.Request) {
+	log.Debug("GetError HTTP handler called")
+
+	event := store.Event{ID: mux.Vars(r)["uuid"]}
+
+	if err := store.GetEvent(&event); err != nil {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+
+	event.Metadata = nil
+	body, _ := json.Marshal(event)
+
+	w.Write(body)
 }
 
 func parseDuration(v string, d *time.Duration) error {

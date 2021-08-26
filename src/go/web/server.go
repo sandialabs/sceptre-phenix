@@ -83,7 +83,7 @@ func Start(opts ...ServerOption) error {
 	// OPTIONS method needed for CORS
 	api.HandleFunc("/experiments", GetExperiments).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments", CreateExperiment).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{name}", GetExperiment).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}", ErrorHandler(GetExperiment)).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}", DeleteExperiment).Methods("DELETE", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/start", StartExperiment).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/stop", StopExperiment).Methods("POST", "OPTIONS")
@@ -131,6 +131,7 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/signup", Signup).Methods("POST", "OPTIONS")
 	api.HandleFunc("/login", Login).Methods("GET", "POST", "OPTIONS")
 	api.HandleFunc("/logout", Logout).Methods("GET", "OPTIONS")
+	api.HandleFunc("/errors/{uuid}", GetError).Methods("GET", "OPTIONS")
 	api.HandleFunc("/ws", broker.ServeWS).Methods("GET")
 
 	if o.allowCORS {

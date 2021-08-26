@@ -29,4 +29,13 @@ type Store interface {
 
 	// Delete removes the given config from the config store.
 	Delete(*Config) error
+
+	// GetEvents gets all the events from the store.
+	GetEvents() (Events, error)
+
+	// GetEvent initializes the given event with details from the store.
+	GetEvent(*Event) error
+
+	// AddEvent adds the given event to the store.
+	AddEvent(Event) error
 }

@@ -54,3 +54,15 @@ func Patch(config *Config, data map[string]interface{}) error {
 func Delete(config *Config) error {
 	return DefaultStore.Delete(config)
 }
+
+func GetEvents() (Events, error) {
+	return DefaultStore.GetEvents()
+}
+
+func GetEvent(e *Event) error {
+	return DefaultStore.GetEvent(e)
+}
+
+func AddEvent(e Event) error {
+	return DefaultStore.AddEvent(e)
+}

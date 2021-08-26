@@ -206,10 +206,20 @@ func (this General) VMType() string {
 }
 
 func (this General) Snapshot() *bool {
+	if this.SnapshotF == nil {
+		snapshot := false
+		return &snapshot
+	}
+
 	return this.SnapshotF
 }
 
 func (this General) DoNotBoot() *bool {
+	if this.DoNotBootF == nil {
+		dnb := false
+		return &dnb
+	}
+
 	return this.DoNotBootF
 }
 
