@@ -80,9 +80,11 @@ Vue.filter( 'uptime', function( value ) {
   }
 })
 
-// This needs to be relative path in order to work correctly when used on a URL
-// with a base path other than "/".
-Vue.http.options.root = 'api/v1/'
+if ( process.env.BASE_URL === '/' ) {
+  Vue.http.options.root = '/api/v1/'
+} else {
+  Vue.http.options.root = process.env.BASE_URL + '/api/v1/'
+}
 
 Vue.http.interceptors.push(
   request => {
