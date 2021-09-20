@@ -199,6 +199,45 @@ paths:
       responses:
         "204":
           description: successful operation
+  "/schemas/{version}":
+    get:
+      tags:
+        - Schemas
+      summary: Get full schema (all config specs) for specific version
+      description: ""
+      operationId: getSchemasVersion
+      parameters:
+        - name: version
+          in: path
+          description: version of phenix config schema to get
+          required: true
+          schema:
+            type: string
+            enum:
+              - "v1"
+              - "v2"
+        - name: Accept
+          in: header
+          description: content format for response
+          required: false
+          schema:
+            type: string
+            enum:
+              - application/json
+              - application/x-yaml
+            default: application/json
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+            application/x-yaml:
+              schema:
+                type: object
+                additionalProperties: true
   "/schemas/{kind}/{version}":
     get:
       tags:
@@ -213,12 +252,22 @@ paths:
           required: true
           schema:
             type: string
+            enum:
+              - topology
+              - scenario
+              - experiment
+              - image
+              - user
+              - role
         - name: version
           in: path
           description: version of phenix config schema to get
           required: true
           schema:
             type: string
+            enum:
+              - "v1"
+              - "v2"
         - name: Accept
           in: header
           description: content format for response
