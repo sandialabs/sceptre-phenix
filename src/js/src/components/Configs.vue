@@ -2,30 +2,30 @@
   <div class="content">
     <b-modal :active.sync="error.modal" :on-cancel="resetErrorModal" has-modal-card>
       <div class="modal-card" style="width:50em">
-        <header class="modal-card-head">
+        <header class="modal-card-head x-modal-dark">
           <p class="modal-card-title">{{ error.title }}</p>
         </header>
-        <section class="modal-card-body">
+        <section class="modal-card-body x-modal-dark">
           <div class="control">
-            <textarea class="textarea has-fixed-size" style="font-family: monospace;" rows="30" v-model="error.msg" readonly />
+            <textarea class="textarea x-config-text has-fixed-size" style="font-family: monospace;" rows="30" v-model="error.msg" readonly />
           </div>
         </section>
-        <footer class="modal-card-foot buttons is-right">
+        <footer class="modal-card-foot x-modal-dark buttons is-right">
           <button class="button is-light" @click="resetErrorModal">Exit</button>
         </footer>
       </div>
     </b-modal>
     <b-modal :active.sync="viewer.modal" :on-cancel="resetViewer" has-modal-card>
       <div class="modal-card" style="width:50em">
-        <header class="modal-card-head">
-          <p class="modal-card-title" style="font-family:monospace;">{{ viewer.title }}</p>
+        <header class="modal-card-head x-modal-dark">
+          <p class="modal-card-title x-config-text">{{ viewer.title }}</p>
         </header>
-        <section class="modal-card-body">
+        <section class="modal-card-body x-modal-dark">
           <div class="control">
-            <textarea class="textarea has-fixed-size" style="font-family:monospace;" rows="30" v-model="config.str" readonly />
+            <textarea class="textarea x-config-text has-fixed-size" rows="30" v-model="config.str" readonly />
           </div>
         </section>
-        <footer class="modal-card-foot buttons is-right">
+        <footer class="modal-card-foot x-modal-dark buttons is-right">
           <button class="button is-success" @click="action( 'edit', { 'kind': viewer.kind, 'metadata': { 'name': viewer.name } } )">
             Edit Config
           </button>
@@ -40,10 +40,10 @@
     </b-modal>
     <b-modal :active.sync="uploader.modal" :on-cancel="resetUploader" has-modal-card>
       <div class="modal-card" style="width: auto">
-        <header class="modal-card-head">
+        <header class="modal-card-head x-modal-dark">
           <p class="modal-card-title">Upload a Config</p>
         </header>
-        <section class="modal-card-body">
+        <section class="modal-card-body x-modal-dark">
           <b-field>
             <b-upload v-model="uploader.file" drag-drop @input="uploadFile">
               <section class="section">
@@ -104,7 +104,7 @@
                 JSON
               </b-radio>
             </b-field>
-            <b-field class="editor" label="Vim Keybindings">
+            <b-field class="editor" label="Vim Mode">
               <b-switch v-model="editor.vim" type="is-light" @input="changeKeybinding()">
                 {{ keybinding }}
               </b-switch>
@@ -314,6 +314,27 @@
       this.updateConfigs();
 
       this.debouncedUpdateConfigTemplate = _.debounce( this.updateConfigTemplate, 500 )
+    },
+
+    watch: {
+      'editor.use': function (use) {
+        if ( use ) {
+          let user = localStorage.getItem( 'user' );
+          if ( localStorage.getItem( user + '.vimMode' ) ) {
+            this.editor.vim = localStorage.getItem( user + '.vimMode' )  == 'true';
+          }
+
+          if ( this.editor.vim ) {
+            this.$nextTick(() => {
+              this.$refs.configEditor.editor.setKeyboardHandler( 'ace/keyboard/vim' );
+            })
+          } else {
+            this.$nextTick(() => {
+              this.$refs.configEditor.editor.setKeyboardHandler( null );
+            })
+          }
+        }
+      }
     },
 
     computed: {
@@ -1121,6 +1142,9 @@
       },
 
       changeKeybinding () {
+        let user = localStorage.getItem( 'user' );
+        localStorage.setItem( user + '.vimMode', this.editor.vim );
+
         if ( this.editor.vim ) {
           this.$refs.configEditor.editor.setKeyboardHandler( 'ace/keyboard/vim' );
         } else {
@@ -1212,6 +1236,23 @@
 <style scoped>
   div.autocomplete >>> a.dropdown-item {
     color: #383838 !important;
+  }
+
+  .x-modal-dark {
+    background-color: #5b5b5b;
+  }
+
+  .x-modal-dark >>> p {
+    color: whitesmoke;
+  }
+
+  .x-modal-dark >>> textarea {
+    background-color: #686868;
+    color: whitesmoke;
+  }
+
+  .x-config-text {
+    font-family: monospace;
   }
 
   /deep/ .editor > .label {
