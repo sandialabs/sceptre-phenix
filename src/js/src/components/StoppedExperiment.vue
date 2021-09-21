@@ -37,6 +37,20 @@
       </div>
     </div>
     <b-field v-if="experimentUser() || experimentViewer()" position="is-right">
+      <template v-if="selectedRows.length != 0">
+        <b-tooltip label="Set to Boot" type="is-light">
+          <p class="control">
+            <b-button v-if="adminUser()" class="button is-light" slot="trigger" icon-right="bolt" style="color: #c46200;" @click="setBoot( false )" />
+          </p>
+        </b-tooltip>
+        &nbsp; &nbsp;
+        <b-tooltip label="Set to Do Not Boot" type="is-light">
+          <p class="control">
+            <b-button v-if="adminUser()" class="button is-light" slot="trigger" icon-right="bolt" style="color: #ffffff;" @click="setBoot( true )" />
+          </p>
+        </b-tooltip>
+        &nbsp; &nbsp;
+      </template>
       <b-autocomplete
         v-model="searchName"
         :placeholder="searchPlaceholder"
@@ -208,25 +222,9 @@
                   </template>
                 </b-table-column>
                 <b-table-column v-if="experimentUser()" label="Boot" centered>
-                  <template v-slot:header = "{ column }">                  
-                      {{ column.label }}   
-                      <div></div>                       
-                      <div class="level" style="padding: 0px;" centered>                    
-                        <b-tooltip label="Set to Boot" type="is-dark" :active="visibleItems()"> 
-                          <div v-if="visibleItems()" @click="setBoot(false)">                  
-                            <b-icon icon="bolt" style="color: #c46200;" size="is-small"></b-icon>  	
-                          </div>  
-                        </b-tooltip>                        
-                        <b-tooltip label="Set to Do Not Boot" type="is-dark" :active="visibleItems()">             
-                          <div v-if="visibleItems()" @click="setBoot(true)">                  
-                            <b-icon icon="bolt" style="color: #ffffff;" size="is-small"></b-icon>  	
-                          </div>  
-                        </b-tooltip>                   
-                      </div>
-                  </template>
-                  <b-tooltip :label="getBootLabel(props.row.name,props.row.dnb)" type="is-dark">
-                    <div @click="updateDnb(props.row.name, !props.row.dnb)">
-                      <font-awesome-icon :class="bootDecorator(props.row.dnb)" icon="bolt" />
+                  <b-tooltip :label="getBootLabel( props.row.name, props.row.dnb )" type="is-dark">
+                    <div @click="updateDnb( props.row.name, !props.row.dnb )">
+                      <font-awesome-icon :class="bootDecorator( props.row.dnb )" icon="bolt" />
                     </div>
                   </b-tooltip>
                 </b-table-column>
@@ -946,95 +944,75 @@
 
       updateDnb ( name, dnb ) {
         if ( dnb ) {
-          this.$buefy.dialog.confirm({
-            title: 'Set Do NOT Boot',
-            message: 'This will set the ' + name + ' VM to NOT boot when the experiment starts.',
-            cancelText: 'Cancel',
-            confirmText: 'Do NOT Boot',
-            type: 'is-warning',
-            hasIcon: true,
-            onConfirm: () => {
-              this.isWaiting = true;
-              
-              let update = { "dnb": dnb };
+          this.isWaiting = true;
+          
+          let update = { "dnb": dnb };
 
-              this.$http.patch(
-                'experiments/' + this.$route.params.id + '/vms/' + name, update
-              ).then(
-                response => {
-                  let vms = this.experiment.vms;
-                
-                  for ( let i = 0; i < vms.length; i++ ) {
-                    if ( vms[ i ].name == response.body.name ) {
-                      vms[ i ] = response.body;
-                      break;
-                    }
-                  }
-              
-                  this.experiment.vms = [ ...vms ];
-              
-                  this.isWaiting = false;              
-                }, response => {
-                  this.$buefy.toast.open({
-                    message: 'Setting the ' 
-                             + name 
-                             + ' VM to NOT boot when experiment starts failed with ' 
-                             + response.status 
-                             + ' status.',
-                    type: 'is-danger',
-                    duration: 4000
-                  });
-                  
-                  this.isWaiting = false;
+          this.$http.patch(
+            'experiments/' + this.$route.params.id + '/vms/' + name, update
+          ).then(
+            response => {
+              let vms = this.experiment.vms;
+            
+              for ( let i = 0; i < vms.length; i++ ) {
+                if ( vms[ i ].name == response.body.name ) {
+                  vms[ i ] = response.body;
+                  break;
                 }
-              )
+              }
+          
+              this.experiment.vms = [ ...vms ];
+          
+              this.isWaiting = false;              
+            }, response => {
+              this.$buefy.toast.open({
+                message: 'Setting the ' 
+                          + name 
+                          + ' VM to NOT boot when experiment starts failed with ' 
+                          + response.status 
+                          + ' status.',
+                type: 'is-danger',
+                duration: 4000
+              });
+              
+              this.isWaiting = false;
             }
-          })
+          )
         } else {
-          this.$buefy.dialog.confirm({
-            title: 'Set Boot',
-            message: 'This will set the ' + name + ' VM to boot when the experiment starts.',
-            cancelText: 'Cancel',
-            confirmText: 'Boot',
-            type: 'is-success',
-            hasIcon: true,
-            onConfirm: () => {
-              this.isWaiting = true;
-              
-              let update = { "dnb": dnb };
+          this.isWaiting = true;
+          
+          let update = { "dnb": dnb };
 
-              this.$http.patch(
-                'experiments/' + this.$route.params.id + '/vms/' + name, update
-              ).then(
-                response => {
-                  let vms = this.experiment.vms;
-                
-                  for ( let i = 0; i < vms.length; i++ ) {
-                    if ( vms[ i ].name == response.body.name ) {
-                      vms[ i ] = response.body;
-                      break;
-                    }
-                  }
-              
-                  this.experiment.vms = [ ...vms ];
-              
-                  this.isWaiting = false;              
-                }, response => {                  
-                  this.$buefy.toast.open({
-                    message: 'Setting the ' 
-                             + name 
-                             + ' VM to boot when experiment starts failed with ' 
-                             + response.status 
-                             + ' status.',
-                    type: 'is-danger',
-                    duration: 4000
-                  });
-                  
-                  this.isWaiting = false;
+          this.$http.patch(
+            'experiments/' + this.$route.params.id + '/vms/' + name, update
+          ).then(
+            response => {
+              let vms = this.experiment.vms;
+            
+              for ( let i = 0; i < vms.length; i++ ) {
+                if ( vms[ i ].name == response.body.name ) {
+                  vms[ i ] = response.body;
+                  break;
                 }
-              )
+              }
+          
+              this.experiment.vms = [ ...vms ];
+          
+              this.isWaiting = false;              
+            }, response => {                  
+              this.$buefy.toast.open({
+                message: 'Setting the ' 
+                          + name 
+                          + ' VM to boot when experiment starts failed with ' 
+                          + response.status 
+                          + ' status.',
+                type: 'is-danger',
+                duration: 4000
+              });
+              
+              this.isWaiting = false;
             }
-          })
+          )
         }
       },
 
@@ -1165,100 +1143,78 @@
         
       },
 
-      setBoot(dnb){
+      setBoot( dnb ) {
         let vms = []
-        let attemptMessage = "";
+
         let successMessage = "";
         let failedMessage = "";
 
         //Determine the list of VMs to apply the boot request to
-        if (this.selectedRows.length == 0 && this.searchName.length > 0){
-            
-            let visibleItems = this.$refs["vmTable"].visibleData
-            
-            for(let i = 0; i<visibleItems.length;i++){
-              vms.push(visibleItems[i].name)
-            }
-        }
-        else{
-          for(let i = 0; i<this.selectedRows.length;i++){
-              vms.push(this.selectedRows[i])
-            }
+        if ( this.selectedRows.length == 0 && this.searchName.length > 0 ) {
+          let visibleItems = this.$refs["vmTable"].visibleData
+          
+          for ( let i = 0; i < visibleItems.length; i++ ) {
+            vms.push( visibleItems[ i ].name );
+          }
+        } else {
+          for ( let i = 0; i < this.selectedRows.length; i++ ) {
+            vms.push( this.selectedRows[ i ] );
+          }
         }
 
-        if (vms.length == 0){
-            return
+        if ( vms.length == 0 ) {
+          return;
         }
 
-        if (dnb){
-          attemptMessage = " to not boot when the experiment starts"
-          successMessage = " The selected VMs were set to not boot "
-          failedMessage = " The selected VMs were unable to be set to not boot "
+        if ( dnb ) {
+          successMessage = "The selected VMs were set to not boot";
+          failedMessage = "The selected VMs were unable to be set to not boot";
+        } else {
+          successMessage = "The selected VMs were set to boot";
+          failedMessage = "The selected VMs were unable to be set to boot";
         }
-        else {
-          attemptMessage = " to boot when the experiment starts"
-          successMessage = " The selected VMs were set to boot "
-          failedMessage = " The selected VMs were unable to be set to boot " 
-        }
-
-        this.$buefy.dialog.confirm({
-            title:"Set Boot",
-            message:"This will set " + vms.join(", ") + attemptMessage ,
-            cancelText:"Cancel",
-            confirmText:"Ok",
-            type:"is-success",
-            onConfirm: () => {
               
-                let requestList = [];
+        let requestList = [];
 
-                vms.forEach((vmName) => {
-                  let update = {"name":vmName, "dnb": dnb };
-                  requestList.push(update)
-                })
+        vms.forEach( ( vmName ) => {
+          let update = { "name": vmName, "dnb": dnb };
+          requestList.push( update );
+        })
               
-                this.$http.patch(
-                  'experiments/' + this.$route.params.id + '/vms', {"vms":requestList,"total":requestList.length}
-                  ).then(
-                  response  => {
-                    let vms = this.experiment.vms;                  
-              
-                    for ( let i = 0; i < response.body.vms.length; i++ ) {
-                      for (let j=0; j<vms.length;j++){
-                        if ( response.body.vms[i].name == vms[j].name ) {
-                          vms[j] = response.body.vms[i];
-                          break;
-                        } 
-                      }                      
-                    }   
-            
-                  this.experiment.vms = [ ...vms ];              
-                  this.isWaiting = false; 
-                  
-                  
-                   this.$buefy.toast.open({
-                    message: successMessage,
-                    type: 'is-success',
-                    duration: 4000
-                  });
-                      
-                
-                  },  response => {
+        this.$http.patch(
+          'experiments/' + this.$route.params.id + '/vms', { "vms": requestList,"total": requestList.length }
+          ).then( response => {
+            let vms = this.experiment.vms;                  
+      
+            for ( let i = 0; i < response.body.vms.length; i++ ) {
+              for ( let j = 0; j < vms.length; j++ ) {
+                if ( response.body.vms[ i ].name == vms[ j ].name ) {
+                  vms[ j ] = response.body.vms[ i ];
+                  break;
+                } 
+              }                      
+            }   
+    
+            this.experiment.vms = [ ...vms ];              
+            this.isWaiting = false; 
                     
-                    this.$buefy.toast.open({
-                    message: failedMessage,
-                    type: 'is-danger',
-                    duration: 4000
-                  });
-                
-                this.isWaiting = false;
-              }
-              )                  
-                
-            }
-          })
-          //clear the selection
-          this.unSelectAllVMs()
-           
+            this.$buefy.toast.open({
+              message: successMessage,
+              type: 'is-success',
+              duration: 4000
+            });
+          }, response => {
+            this.$buefy.toast.open({
+            message: failedMessage,
+            type: 'is-danger',
+            duration: 4000
+          });
+          
+          this.isWaiting = false;
+        });
+
+        // clear the selection
+        this.unSelectAllVMs()
       }, 
       
       formatFileSize(fileSize){
