@@ -22,6 +22,10 @@ func (this GroupError) Error() string {
 	return this.Err.Error()
 }
 
+func (this GroupError) Unwrap() error {
+	return this.Err
+}
+
 type ErrGroup struct {
 	sync.Mutex     // embed
 	sync.WaitGroup // embed

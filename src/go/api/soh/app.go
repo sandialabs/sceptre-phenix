@@ -199,6 +199,10 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 		// mapping the first time C2 is proven to not be working.
 		this.c2Hosts[host] = struct{}{}
 
+		if this.md.SkipNetworkConfig {
+			continue
+		}
+
 		for idx, iface := range node.Network().Interfaces() {
 			if strings.EqualFold(iface.VLAN(), "MGMT") {
 				continue
@@ -274,13 +278,10 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 			ips[iface.Name()] = iface.Address()
 			this.hostIPs[host] = ips
 
-			if !this.md.SkipNetworkConfig {
-				cidr := fmt.Sprintf("%s/%d", iface.Address(), iface.Mask())
+			cidr := fmt.Sprintf("%s/%d", iface.Address(), iface.Mask())
+			printer.Printf("  Waiting for IP %s on host %s to be set...\n", cidr, host)
 
-				printer.Printf("  Waiting for IP %s on host %s to be set...\n", cidr, host)
-
-				this.isNetworkingConfigured(ctx, wg, ns, node, iface)
-			}
+			this.isNetworkingConfigured(ctx, wg, ns, node, iface)
 		}
 	}
 
@@ -319,60 +320,46 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	// *** RUN ACTUAL STATE OF HEALTH CHECKS *** //
 
 	this.waitForReachabilityTest(ctx, ns)
+	this.writeResults(exp)
 
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
 	this.waitForProcTest(ctx, ns)
+	this.writeResults(exp)
 
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
 	this.waitForPortTest(ctx, ns)
+	this.writeResults(exp)
 
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
 	this.waitForCustomTest(ctx, ns)
+	this.writeResults(exp)
 
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
 	this.waitForCPULoad(ctx, ns)
+	this.writeResults(exp)
 
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
 	this.getFlows(ctx, exp)
+	this.writeResults(exp)
 
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-
-	// *** WRITE RESULTS TO EXPERIMENT STATUS *** //
-
-	appStatus := make(map[string]interface{})
-
-	if len(this.status) > 0 {
-		var states []map[string]interface{}
-
-		for _, state := range this.status {
-			states = append(states, structs.Map(state))
-		}
-
-		appStatus["hosts"] = states
-	}
-
-	if len(this.packetCapture) > 0 {
-		appStatus["packetCapture"] = this.packetCapture
-	}
-
-	exp.Status.SetAppStatus("soh", appStatus)
 
 	if len(wg.Errors) > 0 {
 		return fmt.Errorf("errors encountered in state of health app")
@@ -489,4 +476,25 @@ func (this *SOH) getFlows(ctx context.Context, exp *types.Experiment) {
 
 	this.packetCapture["hosts"] = hosts
 	this.packetCapture["flows"] = flows
+}
+
+func (this SOH) writeResults(exp *types.Experiment) {
+	appStatus := make(map[string]interface{})
+
+	if len(this.status) > 0 {
+		var states []map[string]interface{}
+
+		for _, state := range this.status {
+			states = append(states, structs.Map(state))
+		}
+
+		appStatus["hosts"] = states
+	}
+
+	if len(this.packetCapture) > 0 {
+		appStatus["packetCapture"] = this.packetCapture
+	}
+
+	exp.Status.SetAppStatus("soh", appStatus)
+	exp.WriteToStore(true)
 }

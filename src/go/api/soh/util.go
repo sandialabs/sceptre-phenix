@@ -297,6 +297,10 @@ func (this *SOH) decodeMetadata(exp *types.Experiment) error {
 }
 
 func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
+	if this.md.SkipNetworkConfig {
+		return
+	}
+
 	var (
 		icmpDisabled   bool
 		customDisabled bool
