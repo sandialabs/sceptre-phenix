@@ -2548,6 +2548,8 @@ func GetDisks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	sort.Strings(allowed)
+
 	body, err := marshaler.Marshal(&proto.DiskList{Disks: allowed})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
