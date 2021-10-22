@@ -10,16 +10,16 @@ import (
 )
 
 type Node struct {
-	AnnotationsF map[string]string `json:"annotations" yaml:"annotations" structs:"annotations" mapstructure:"annotations"`
-	LabelsF      map[string]string `json:"labels" yaml:"labels" structs:"labels" mapstructure:"labels"`
-	TypeF        string            `json:"type" yaml:"type" structs:"type" mapstructure:"type"`
-	GeneralF     *General          `json:"general" yaml:"general" structs:"general" mapstructure:"general"`
-	HardwareF    *Hardware         `json:"hardware" yaml:"hardware" structs:"hardware" mapstructure:"hardware"`
-	NetworkF     *Network          `json:"network" yaml:"network" structs:"network" mapstructure:"network"`
-	InjectionsF  []*Injection      `json:"injections" yaml:"injections" structs:"injections" mapstructure:"injections"`
+	AnnotationsF map[string]interface{} `json:"annotations" yaml:"annotations" structs:"annotations" mapstructure:"annotations"`
+	LabelsF      map[string]string      `json:"labels" yaml:"labels" structs:"labels" mapstructure:"labels"`
+	TypeF        string                 `json:"type" yaml:"type" structs:"type" mapstructure:"type"`
+	GeneralF     *General               `json:"general" yaml:"general" structs:"general" mapstructure:"general"`
+	HardwareF    *Hardware              `json:"hardware" yaml:"hardware" structs:"hardware" mapstructure:"hardware"`
+	NetworkF     *Network               `json:"network" yaml:"network" structs:"network" mapstructure:"network"`
+	InjectionsF  []*Injection           `json:"injections" yaml:"injections" structs:"injections" mapstructure:"injections"`
 }
 
-func (this Node) Annotations() map[string]string {
+func (this Node) Annotations() map[string]interface{} {
 	return this.AnnotationsF
 }
 
@@ -130,9 +130,9 @@ func (Node) SetAdvanced(map[string]string) {}
 func (Node) AddAdvanced(string, string)    {}
 func (Node) AddOverride(string, string)    {}
 
-func (this Node) GetAnnotation(a string) (string, bool) {
+func (this Node) GetAnnotation(a string) (interface{}, bool) {
 	if this.AnnotationsF == nil {
-		return "", false
+		return nil, false
 	}
 
 	for k := range this.AnnotationsF {
@@ -141,7 +141,7 @@ func (this Node) GetAnnotation(a string) (string, bool) {
 		}
 	}
 
-	return "", false
+	return nil, false
 }
 
 type General struct {

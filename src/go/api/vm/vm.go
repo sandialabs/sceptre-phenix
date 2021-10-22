@@ -160,16 +160,18 @@ func Get(expName, vmName string) (*mm.VM, error) {
 		}
 
 		vm = &mm.VM{
-			ID:         idx,
-			Name:       node.General().Hostname(),
-			Experiment: exp.Spec.ExperimentName(),
-			CPUs:       node.Hardware().VCPU(),
-			RAM:        node.Hardware().Memory(),
-			Disk:       node.Hardware().Drives()[0].Image(),
-			Interfaces: make(map[string]string),
-			DoNotBoot:  *node.General().DoNotBoot(),
-			OSType:     string(node.Hardware().OSType()),
-			Metadata:   make(map[string]interface{}),
+			ID:          idx,
+			Name:        node.General().Hostname(),
+			Experiment:  exp.Spec.ExperimentName(),
+			CPUs:        node.Hardware().VCPU(),
+			RAM:         node.Hardware().Memory(),
+			Disk:        node.Hardware().Drives()[0].Image(),
+			Interfaces:  make(map[string]string),
+			DoNotBoot:   *node.General().DoNotBoot(),
+			OSType:      string(node.Hardware().OSType()),
+			Metadata:    make(map[string]interface{}),
+			Labels:      node.Labels(),
+			Annotations: node.Annotations(),
 		}
 
 		for _, iface := range node.Network().Interfaces() {

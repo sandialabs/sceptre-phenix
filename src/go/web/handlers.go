@@ -38,9 +38,7 @@ import (
 
 	log "github.com/activeshadow/libminimega/minilog"
 	"github.com/dgrijalva/jwt-go"
-	assetfs "github.com/elazarl/go-bindata-assetfs"
 	"github.com/gorilla/mux"
-	"golang.org/x/net/websocket"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -1757,59 +1755,6 @@ func GetScreenshot(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "image/png")
 	w.Write(screenshot)
-}
-
-// GET /experiments/{exp}/vms/{name}/vnc
-func GetVNC(w http.ResponseWriter, r *http.Request) {
-	log.Debug("GetVNC HTTP handler called")
-
-	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
-		name = vars["name"]
-	)
-
-	if !role.Allowed("vms/vnc", "get", fmt.Sprintf("%s_%s", exp, name)) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-
-	bfs := util.NewBinaryFileSystem(
-		&assetfs.AssetFS{
-			Asset:     Asset,
-			AssetDir:  AssetDir,
-			AssetInfo: AssetInfo,
-		},
-	)
-
-	// set no-cache headers
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate") // HTTP 1.1.
-	w.Header().Set("Pragma", "no-cache")                                   // HTTP 1.0.
-	w.Header().Set("Expires", "0")                                         // Proxies.
-
-	bfs.ServeFile(w, r, "vnc.html")
-}
-
-// GET /experiments/{exp}/vms/{name}/vnc/ws
-func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) {
-	log.Debug("GetVNCWebSocket HTTP handler called")
-
-	var (
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
-		name = vars["name"]
-	)
-
-	endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(name))
-	if err != nil {
-		log.Error("getting VNC endpoint: %v", err)
-		http.Error(w, "", http.StatusBadRequest)
-		return
-	}
-
-	websocket.Handler(util.ConnectWSHandler(endpoint)).ServeHTTP(w, r)
 }
 
 // GET /experiments/{exp}/vms/{name}/captures

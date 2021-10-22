@@ -1,9 +1,11 @@
 package util
 
 import (
+	"html/template"
+	"io"
 	"net/http"
 
-	"github.com/elazarl/go-bindata-assetfs"
+	assetfs "github.com/elazarl/go-bindata-assetfs"
 )
 
 type BinaryFileSystem struct {
@@ -30,4 +32,23 @@ func (this BinaryFileSystem) ServeFile(w http.ResponseWriter, r *http.Request, n
 	}
 
 	http.ServeContent(w, r, d.Name(), d.ModTime(), f)
+}
+
+func (this BinaryFileSystem) ServeTemplate(w http.ResponseWriter, name string, data interface{}) {
+	f, err := this.assets.Open(name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	defer f.Close()
+
+	body, err := io.ReadAll(f)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	tmpl := template.Must(template.New(name).Parse(string(body)))
+	tmpl.Execute(w, data)
 }

@@ -153,7 +153,7 @@ func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 	for _, node := range exp.Spec.Topology().Nodes() {
 		if strings.EqualFold(node.Hardware().OSType(), "windows") {
 			// Windows 10 doesn't automatically run scripts in the startup folder
-			if ver, ok := node.GetAnnotation("windows-version"); ok && ver == "10" {
+			if ver, ok := node.GetAnnotation("windows-version"); ok && (ver == "10" || ver == 10) {
 				_, err := mm.ExecC2Command(
 					mm.C2NS(exp.Metadata.Name),
 					mm.C2VM(node.General().Hostname()),

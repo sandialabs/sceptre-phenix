@@ -14,7 +14,7 @@
     or the fragment:
         http://example.com/#host=HOST&port=PORT&encrypt=1&true_color=1
     -->
-    <title>noVNC</title>
+    <title>{{ .VMName }} - {{ .ExpName }}</title>
 
     <meta charset="utf-8" />
 
@@ -45,6 +45,50 @@
         src='http://getfirebug.com/releases/lite/1.2/firebug-lite-compressed.js'></script>
     -->
 
+    <style>
+        div#noVNC_control_bar {
+            position: static;
+        }
+
+        div#noVNC_container {
+            height: 0;
+        }
+
+        div#noVNC_screen {
+            position: static;
+        }
+
+        canvas#noVNC_canvas {
+            margin-top: 15px;
+        }
+
+        div.banner-top {
+            display: block;
+            width: 100%;
+            padding-top: 5px;
+            background-color: {{ .TopBanner.BackgroundColor }};
+        }
+
+        div.banner-bottom {
+            position: fixed;
+            width: 100%;
+            bottom: 0px;
+            padding-top: 5px;
+            background-color: {{ .BottomBanner.BackgroundColor }};
+        }
+
+        h3.banner-top {
+            margin: 0;
+            color: {{ .TopBanner.TextColor }};
+            text-align: center;
+        }
+
+        h3.banner-bottom {
+            margin: 0;
+            color: {{ .BottomBanner.TextColor }};
+            text-align: center;
+        }
+    </style>
 </head>
 
 <body>
@@ -206,6 +250,12 @@
 
     </div> <!-- End of noVNC_control_bar -->
 
+{{- if .TopBanner.Banner }}
+    <div id="banner-top" class="banner-top"><h3 class="banner-top">{{ .TopBanner.Banner }}</h3></div>
+{{- end }}
+{{- if .BottomBanner.Banner }}
+    <div class="banner-bottom"><h3 class="banner-bottom">{{ .BottomBanner.Banner }}</h3></div>
+{{- end }}
 
     <div id="noVNC_container">
         <h1 id="noVNC_logo"><span>no</span><br />VNC</h1>
@@ -223,9 +273,6 @@
     <script src="/novnc/include/ui.js"></script>
     <script>
         window.onload = function () {
-            var theurl = window.location.pathname.split('/');
-            document.title = theurl[theurl.length - 2];
-
             // if port == 80 (or 443) then it won't be present and should be
             // set manually
             var port = window.location.port;

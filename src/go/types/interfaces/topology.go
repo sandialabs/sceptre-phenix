@@ -13,7 +13,7 @@ type TopologySpec interface {
 }
 
 type NodeSpec interface {
-	Annotations() map[string]string
+	Annotations() map[string]interface{}
 	Labels() map[string]string
 	Type() string
 	General() NodeGeneral
@@ -35,7 +35,7 @@ type NodeSpec interface {
 	AddAdvanced(string, string)
 	AddOverride(string, string)
 
-	GetAnnotation(string) (string, bool)
+	GetAnnotation(string) (interface{}, bool)
 }
 
 type NodeGeneral interface {

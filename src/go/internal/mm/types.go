@@ -222,8 +222,10 @@ type VM struct {
 	Interfaces map[string]string `json:"-"`
 
 	// Used internally for showing VM details.
-	OSType   string                 `json:"-"`
-	Metadata map[string]interface{} `json:"-"`
+	OSType      string                 `json:"-"`
+	Metadata    map[string]interface{} `json:"-"`
+	Labels      map[string]string      `json:"-"`
+	Annotations map[string]interface{} `json:"-"`
 
 	// Used internally to track state of VM in minimega.
 	State string `json:"-"`
