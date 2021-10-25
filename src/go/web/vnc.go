@@ -58,20 +58,24 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	bfs := util.NewBinaryFileSystem(
-		&assetfs.AssetFS{
-			Asset:     Asset,
-			AssetDir:  AssetDir,
-			AssetInfo: AssetInfo,
-		},
-	)
-
 	// set no-cache headers
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate") // HTTP 1.1.
 	w.Header().Set("Pragma", "no-cache")                                   // HTTP 1.0.
 	w.Header().Set("Expires", "0")                                         // Proxies.
 
-	bfs.ServeTemplate(w, "vnc.html", config)
+	if o.unbundled {
+		http.ServeFile(w, r, "web/public/vnc.html")
+	} else {
+		bfs := util.NewBinaryFileSystem(
+			&assetfs.AssetFS{
+				Asset:     Asset,
+				AssetDir:  AssetDir,
+				AssetInfo: AssetInfo,
+			},
+		)
+
+		bfs.ServeTemplate(w, "vnc.html", config)
+	}
 }
 
 // GET /experiments/{exp}/vms/{name}/vnc/ws

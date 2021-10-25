@@ -672,9 +672,6 @@
           this.createModal.nameErrType = 'is-danger';
           this.createModal.nameErrMsg  = 'experiment names cannot have a space';
           return false
-        } else if ( /[A-Z]/.test( this.createModal.name ) ) {
-          this.createModal.nameErrType = 'is-danger';
-          this.createModal.nameErrMsg  = 'experiment names cannot have an upper case letter';
         } else if ( this.createModal.name == "create" ) {
           this.createModal.nameErrType = 'is-danger';
           this.createModal.nameErrMsg  = 'experiment names cannot be create!';

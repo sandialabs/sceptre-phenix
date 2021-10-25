@@ -6,6 +6,6 @@ component.
 <template>
   <div>
     <hr>
-    <small>Copyright &copy; <b>2019 Sandia National Laboratories</b>. All Rights Reserved.</small>
+    <small>Copyright &copy; <b>2019-2022 Sandia National Laboratories</b>. All Rights Reserved.</small>
   </div>
 </template>

@@ -39,7 +39,7 @@ const router = new Router({
 router.beforeEach( ( to, from, next ) => {
   if ( process.env.VUE_APP_AUTH === 'disabled' ) {
     if ( !store.getters.auth ) {
-      store.commit( 'LOGIN', { 'user': { 'role': 'Global Admin' }, 'remember': false } )
+      store.commit( 'LOGIN', { 'user': { 'token': '', 'role': 'Global Admin' }, 'remember': false } )
     }
 
     next()

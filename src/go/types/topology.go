@@ -41,7 +41,7 @@ func DecodeTopologyFromConfig(c store.Config) (ifaces.TopologySpec, error) {
 			return nil, fmt.Errorf("getting versioned spec for config: %w", err)
 		}
 
-		if err := mapstructure.Decode(c.Spec, &iface); err != nil {
+		if err := mapstructure.WeakDecode(c.Spec, &iface); err != nil {
 			return nil, fmt.Errorf("decoding versioned spec: %w", err)
 		}
 	}

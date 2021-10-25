@@ -373,7 +373,9 @@ func (this *Node) SetDefaults() {
 		this.OverridesF = make(map[string]string)
 	}
 
-	this.NetworkF.SetDefaults()
+	if this.NetworkF != nil {
+		this.NetworkF.SetDefaults()
+	}
 }
 
 func (this Node) FileInjects(baseDir string) string {

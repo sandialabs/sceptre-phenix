@@ -13,8 +13,8 @@ const (
 type CreateOption func(*createOptions)
 
 type createOptions struct {
-	path     string
 	config   *store.Config
+	path     string
 	data     []byte
 	dataType DataType
 	validate bool
@@ -30,15 +30,15 @@ func newCreateOptions(opts ...CreateOption) createOptions {
 	return o
 }
 
-func CreateFromPath(p string) CreateOption {
-	return func(o *createOptions) {
-		o.path = p
-	}
-}
-
 func CreateFromConfig(c *store.Config) CreateOption {
 	return func(o *createOptions) {
 		o.config = c
+	}
+}
+
+func CreateFromPath(p string) CreateOption {
+	return func(o *createOptions) {
+		o.path = p
 	}
 }
 

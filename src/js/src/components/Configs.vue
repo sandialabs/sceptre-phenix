@@ -219,9 +219,13 @@
                     </div>
                   </div>
                 </b-tooltip>
+                &nbsp;
+                <b-tag type="is-info" v-if="isBuilderTopology(props.row)">builder</b-tag>
               </template>
               <template v-else>
                 {{ props.row.metadata.name }}
+                &nbsp;
+                <b-tag type="is-info" v-if="isBuilderTopology(props.row)">builder</b-tag>
               </template>
             </b-table-column>
             <b-table-column field="updated" label="Last Updated">
@@ -683,18 +687,28 @@
               'configs/' + name, { 'headers': { 'Accept': 'application/json' } }
             ).then(
               response => {
-                this.config.obj = response.body;
-                this.config.str = this.getConfigStr( 'yaml' );
+                if ( this.isBuilderTopology(response.body) ) {
+                  this.$buefy.dialog.alert({
+                    title: 'Built by Builder',
+                    message: 'This configuration can only be edited in Builder',
+                    confirmText: 'OK',
+                    type: 'is-warning',
+                    hasIcon: true                  
+                  })
+                } else {
+                  this.config.obj = response.body;
+                  this.config.str = this.getConfigStr( 'yaml' );
 
-                if ( this.config.obj.kind == 'Experiment' ) {
-                  if ( this.config.obj.status && this.config.obj.status.startTime !== '' ) {
-                    this.expStart = true;
+                  if ( this.config.obj.kind == 'Experiment' ) {
+                    if ( this.config.obj.status && this.config.obj.status.startTime !== '' ) {
+                      this.expStart = true;
+                    }
                   }
-                }
 
-                this.editor.action = true;
-                this.editor.lang = 'yaml';
-                this.editor.use = true;
+                  this.editor.action = true;
+                  this.editor.lang = 'yaml';
+                  this.editor.use = true;
+                }
               }, response => {
                 this.$buefy.toast.open({
                   message: 'Getting the ' + name + ' config failed: ' + response.statusText,
@@ -797,6 +811,16 @@
 
           break;
         }
+      },
+
+      isBuilderTopology ( cfg ) {
+        if (cfg.kind == 'Topology') {
+          if ('annotations' in cfg.metadata) {
+            return 'builder-xml' in cfg.metadata.annotations;
+          }
+        }
+
+        return false;
       },
 
       viewConfig ( cfg ) {
@@ -980,13 +1004,29 @@
           str = this.config.str
         }
 
+
+
         switch ( lang ) {
           case 'json': {
-            return JSON.parse( str )
+            if (this.config.builderXML) {
+              let obj = JSON.parse( str );
+              obj.metadata.annotations['builder-xml'] = this.config.builderXML;
+
+              return obj;
+            } else {
+              return JSON.parse( str );
+            }
           }
 
           case 'yaml': {
-            return YAML.load( str )
+            if (this.config.builderXML) {
+              let obj = YAML.load( str );
+              obj.metadata.annotations['builder-xml'] = this.config.builderXML;
+              
+              return obj;
+            } else {
+              return YAML.load( str );
+            }
           }
         }
       },
@@ -1000,6 +1040,13 @@
 
         if ( !obj ) {
           obj = this.config.obj
+        }
+
+        if ('annotations' in obj.metadata) {
+          if ('builder-xml' in obj.metadata.annotations) {
+            this.config.builderXML = obj.metadata.annotations['builder-xml'];
+            obj.metadata.annotations['builder-xml'] = '<SNIPPED>';
+          }
         }
 
         switch ( lang ) {
@@ -1076,6 +1123,7 @@
         this.editor.vim = false;
         this.config.obj = null;
         this.config.str = null;
+        this.config.builderXML = null;
 
         this.editor.nameErrType = null;
         this.editor.nameErrMsg = null;
@@ -1103,6 +1151,7 @@
       resetViewer () {
         this.config.obj = null;
         this.config.str = null;
+        this.config.builderXML = null;
         this.viewer.modal = false;
         this.viewer.kind = null;
         this.viewer.name = null;
@@ -1220,7 +1269,8 @@
         configs: [],
         config: {
           obj: null,
-          str: null
+          str: null,
+          builderXML: null
         },
         checkAll: false,
         showSelectBar: false,

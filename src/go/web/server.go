@@ -56,11 +56,22 @@ func Start(opts ...ServerOption) error {
 	}
 
 	router := mux.NewRouter().StrictSlash(true)
-	assets := &assetfs.AssetFS{
-		Asset:     Asset,
-		AssetDir:  AssetDir,
-		AssetInfo: AssetInfo,
+
+	var assets http.FileSystem
+
+	if o.unbundled {
+		assets = http.Dir("web/public")
+		log.Info("Serving unbundled assets")
+	} else {
+		assets = &assetfs.AssetFS{
+			Asset:     Asset,
+			AssetDir:  AssetDir,
+			AssetInfo: AssetInfo,
+		}
 	}
+
+	router.HandleFunc("/builder", GetBuilder).Methods("GET")
+	router.HandleFunc("/builder/save", SaveBuilderTopology).Methods("POST")
 
 	log.Info("Setting up assets")
 
@@ -80,13 +91,24 @@ func Start(opts ...ServerOption) error {
 		http.FileServer(assets),
 	)
 
+	router.PathPrefix("/grapheditor/").Handler(
+		http.FileServer(assets),
+	)
+
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		util.NewBinaryFileSystem(assets).ServeFile(w, r, "index.html")
+		switch a := assets.(type) {
+		case *assetfs.AssetFS:
+			util.NewBinaryFileSystem(a).ServeFile(w, r, "index.html")
+		case http.FileSystem:
+			http.ServeFile(w, r, "web/public/index.html")
+		}
 	})
 
 	api := router.PathPrefix("/api/v1").Subrouter()
 
 	// OPTIONS method needed for CORS
+	api.Handle("/builder/topologies", weberror.ErrorHandler(GetBuilderTopologies)).Methods("GET", "OPTIONS")
+	api.Handle("/builder/topologies/{name}", weberror.ErrorHandler(GetBuilderTopology)).Methods("GET", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(GetConfigs)).Methods("GET", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(CreateConfig)).Methods("POST", "OPTIONS")
 	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(GetConfig)).Methods("GET", "OPTIONS")
@@ -97,6 +119,7 @@ func Start(opts ...ServerOption) error {
 	api.Handle("/schemas/{kind}/{version}", weberror.ErrorHandler(GetSchema)).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments", GetExperiments).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments", CreateExperiment).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/builder", weberror.ErrorHandler(CreateExperimentFromBuilder)).Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{name}", weberror.ErrorHandler(GetExperiment)).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}", DeleteExperiment).Methods("DELETE", "OPTIONS")
 	api.Handle("/experiments/{name}/apps", weberror.ErrorHandler(GetExperimentApps)).Methods("GET", "OPTIONS")

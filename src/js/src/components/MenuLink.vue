@@ -1,5 +1,8 @@
 <template>
-  <a :href="resolvedRoute.route.fullPath" :class="{ 'is-active': resolvedRoute.route.name == $route.name }" @click.prevent="clicked">
+  <a v-if="external" :href="to" target="_blank">
+    <slot></slot>
+  </a>
+  <a v-else :href="resolvedRoute.route.fullPath" :class="{ 'is-active': resolvedRoute.route.name == $route.name }" @click.prevent="clicked">
     <slot></slot>
   </a>
 </template>
@@ -13,6 +16,10 @@
       to: {
         type: String,
         default: '/'
+      },
+      external: {
+        type: Boolean,
+        default: false
       }
     },
 

@@ -8,12 +8,13 @@ import (
 type CreateOption func(*createOptions)
 
 type createOptions struct {
-	name     string
-	topology string
-	scenario string
-	vlanMin  int
-	vlanMax  int
-	baseDir  string
+	name        string
+	topology    string
+	scenario    string
+	vlanMin     int
+	vlanMax     int
+	vlanAliases map[string]int
+	baseDir     string
 }
 
 func newCreateOptions(opts ...CreateOption) createOptions {
@@ -57,6 +58,12 @@ func CreateWithVLANMin(m int) CreateOption {
 func CreateWithVLANMax(m int) CreateOption {
 	return func(o *createOptions) {
 		o.vlanMax = m
+	}
+}
+
+func CreateWithVLANAliases(a map[string]int) CreateOption {
+	return func(o *createOptions) {
+		o.vlanAliases = a
 	}
 }
 

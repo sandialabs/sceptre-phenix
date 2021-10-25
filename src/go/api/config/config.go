@@ -243,7 +243,9 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 
 	var c *store.Config
 
-	if o.path != "" {
+	if o.config != nil {
+		c = o.config
+	} else if o.path != "" {
 		var err error
 
 		c, err = store.NewConfigFromFile(o.path)
@@ -269,9 +271,8 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 		default:
 			return nil, fmt.Errorf("unknown data type provided")
 		}
-
 	} else {
-		return nil, fmt.Errorf("no config path or data provided")
+		return nil, fmt.Errorf("no config, path, or data provided")
 	}
 
 	if o.validate {

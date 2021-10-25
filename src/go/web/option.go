@@ -15,6 +15,8 @@ type serverOptions struct {
 	publishLogs  bool
 	phenixLogs   string
 	minimegaLogs string
+
+	unbundled bool
 }
 
 func newServerOptions(opts ...ServerOption) serverOptions {
@@ -74,5 +76,11 @@ func ServePhenixLogs(p string) ServerOption {
 func ServeMinimegaLogs(m string) ServerOption {
 	return func(o *serverOptions) {
 		o.minimegaLogs = m
+	}
+}
+
+func ServeUnbundled() ServerOption {
+	return func(o *serverOptions) {
+		o.unbundled = true
 	}
 }

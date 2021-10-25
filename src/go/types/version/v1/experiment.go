@@ -106,6 +106,10 @@ func (this *ExperimentSpec) Init() error {
 		this.TopologyF.SetDefaults()
 
 		for _, n := range this.TopologyF.NodesF {
+			if n.NetworkF == nil {
+				continue
+			}
+
 			for _, i := range n.NetworkF.InterfacesF {
 				if _, ok := this.VLANsF.AliasesF[i.VLANF]; !ok {
 					this.VLANsF.AliasesF[i.VLANF] = 0

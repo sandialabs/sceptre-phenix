@@ -63,6 +63,10 @@ func newUiCmd() *cobra.Command {
 				opts = append(opts, web.ServeWithMiddlewareLogging("full"))
 			}
 
+			if MustGetBool(cmd.Flags(), "unbundled") {
+				opts = append(opts, web.ServeUnbundled())
+			}
+
 			if err := web.Start(opts...); err != nil {
 				return util.HumanizeError(err, "Unable to serve UI").Humanized()
 			}
@@ -72,7 +76,8 @@ func newUiCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringP("listen-endpoint", "e", "0.0.0.0:3000", "endpoint to listen on")
-	cmd.Flags().StringP("jwt-signing-key", "k", "", "Secret key used to sign JWT for authentication")
+	cmd.Flags().StringP("jwt-signing-key", "k", "", "secret key used to sign JWT for authentication")
+	cmd.Flags().Bool("unbundled", false, "serve local public files instead of bundled")
 	cmd.Flags().String("log-level", "info", "log level for UI logs")
 	cmd.Flags().Bool("log-verbose", true, "write UI logs to STDERR")
 	cmd.Flags().String("logs.phenix-path", "", "path to phenix log file to publish to UI")

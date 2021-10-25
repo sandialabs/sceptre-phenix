@@ -142,6 +142,15 @@ func (this Config) APIVersion() string {
 	}
 }
 
+func (this Config) HasAnnotation(name string) bool {
+	if this.Metadata.Annotations == nil {
+		return false
+	}
+
+	_, ok := this.Metadata.Annotations[name]
+	return ok
+}
+
 func (this Config) FullName() string {
 	return this.Kind + "/" + this.Metadata.Name
 }

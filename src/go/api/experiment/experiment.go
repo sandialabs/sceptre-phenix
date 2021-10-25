@@ -281,6 +281,7 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 	}
 
 	exp.Spec.SetVLANRange(o.vlanMin, o.vlanMax, false)
+	exp.Spec.VLANs().SetAliases(o.vlanAliases)
 
 	exp.Spec.Init()
 

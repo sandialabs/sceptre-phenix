@@ -1,0 +1,52 @@
+{
+  "$id": "#/vlans",
+  "type": "object",
+  "title": "VLAN",
+  "required": [
+    "device",
+    "hostname",
+    "id",
+    "name"
+  ],
+  "properties": {
+    "device": {
+      "$id": "#/vlans/properties/device",
+      "type": "string",
+      "title": "Device",
+      "readonly": true,
+      "default": "Switch",
+      "pattern": "^(.*)$"
+    },
+    "hostname": {
+      "$id": "#/vlans/properties/hostname",
+      "type": "string",
+      "title": "Hostname",
+      "minLength": 1,
+      "default": "",
+      "examples": [
+        "switch"
+      ],
+      "pattern": "^[\\w-]+$"
+    },
+    "id": {
+      "$id": "#/vlans/properties/id",
+      "type": "integer",
+      "title": "VLAN ID",
+      "default": 0,
+      "examples": [
+        101
+      ]
+    },
+    "name": {
+      "$id": "#/vlans/properties/name",
+      "type": "string",
+      "title": "VLAN Name",
+      "minLength": 1,
+      "default": "",
+      "examples": [
+        "SCADAPWR"
+      ],
+      "pattern": "^(.*)$"
+    }
+  }
+}

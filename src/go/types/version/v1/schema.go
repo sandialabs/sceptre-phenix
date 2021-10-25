@@ -256,11 +256,15 @@ components:
               default: Broadwell
               example: Broadwell
             vcpus:
-              type: integer
+              oneOf:
+              - type: integer
+              - type: string
               default: 1
               example: 4
             memory:
-              type: integer
+              oneOf:
+              - type: integer
+              - type: string
               default: 1024
               example: 8192
             os_type:
@@ -275,6 +279,7 @@ components:
               example: windows
             drives:
               type: array
+              minItems: 1
               items:
                 type: object
                 required:
