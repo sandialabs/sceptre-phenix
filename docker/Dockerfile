@@ -1,4 +1,4 @@
-FROM node:14.2 AS jsbuilder
+FROM node:12.18.3 AS jsbuilder
 
 RUN npm install -g @vue/cli redoc-cli
 
@@ -22,7 +22,7 @@ WORKDIR /phenix/src/go/web/public/docs
 RUN npx redoc-cli bundle openapi.yml -o index.html --title 'phenix API'
 
 
-FROM golang:1.16.5 AS gobuilder
+FROM golang:1.17.2 AS gobuilder
 
 RUN apt update \
   && apt install -y protobuf-compiler xz-utils
@@ -52,7 +52,7 @@ RUN VER=${PHENIX_VERSION} COMMIT=${PHENIX_COMMIT} make bin/phenix
 RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.0/vmdb2 -P bin/ \
   && chmod +x bin/vmdb2
 
-RUN git clone --branch mirror-ovs-vm https://github.com/activeshadow/phenix-apps.git /phenix-apps
+RUN git clone --branch main https://github.com/sandia-minimega/phenix-apps.git /phenix-apps
 
 WORKDIR /phenix-apps/src/go
 

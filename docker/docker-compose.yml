@@ -29,25 +29,19 @@ services:
     volumes:
       - /dev:/dev
       - /proc:/proc
-      - /sys:/sys
-      - /phenix:/phenix
-      - /etc/phenix:/etc/phenix
-      - /tmp:/tmp
-      - /var/log/phenix:/var/log/phenix
       - /etc/localtime:/etc/localtime:ro
+      - /tmp/minimega:/tmp/minimega
+      - /tmp/phenix:/tmp/phenix
+      - /phenix:/phenix
+      - /var/log/phenix:/var/log/phenix
+      - /etc/phenix:/etc/phenix
     depends_on:
       - minimega
     healthcheck:
       test: phenix version
   minimega:
-    build:
-      context: ../../
-      dockerfile: phenix/docker/minimega/Dockerfile
-      args:
-        MM_FILEPATH: /phenix/images
-        MM_PORT: "9000"
-        MM_CONTEXT: ${HOSTNAME}
-    image: minimega
+    image: ghcr.io/activeshadow/minimega/minimega:latest
+    pull_policy: always
     container_name: minimega
     hostname: ${HOSTNAME}-minimega
     privileged: true
@@ -63,14 +57,15 @@ services:
       - 9000:9000/udp
       - 9001:9001
     volumes:
-      - /phenix:/phenix
-      - /tmp/minimega:/tmp/minimega
       - /dev:/dev
       - /lib/modules:/lib/modules:ro
-      - /sys/fs/cgroup:/sys/fs/cgroup:ro
-      - /root/.ssh:/root/.ssh:ro
       - /etc/localtime:/etc/localtime:ro
+      - /tmp/minimega:/tmp/minimega
+      - /tmp/phenix:/tmp/phenix
+      - /phenix:/phenix
     healthcheck:
-      test: minimega -e version
+      test: mm version
+    environment:
+      MM_FILEPATH: /phenix/images
 networks:
   phenix:
