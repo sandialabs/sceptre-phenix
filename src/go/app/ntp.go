@@ -20,67 +20,79 @@ func (NTP) Name() string {
 	return "ntp"
 }
 
-func (this *NTP) Configure(ctx context.Context, exp *types.Experiment) error {
-	ntpServers := exp.Spec.Topology().FindNodesWithLabels("ntp-server")
-
-	if len(ntpServers) != 0 {
-		// Just take first server if more than one are labeled.
-		node := ntpServers[0]
-
-		ntpDir := exp.Spec.BaseDir() + "/ntp"
-		ntpFile := ntpDir + "/" + node.General().Hostname() + "_ntp"
-
-		if err := os.MkdirAll(ntpDir, 0755); err != nil {
-			return fmt.Errorf("creating experiment ntp directory path: %w", err)
-		}
-
-		if strings.EqualFold(node.Type(), "router") {
-			if strings.EqualFold(node.Hardware().OSType(), "minirouter") {
-				node.AddInject(ntpFile, "/etc/ntp.conf", "", "")
-			} else {
-				node.AddInject(ntpFile, "/opt/vyatta/etc/ntp.conf", "", "")
-			}
-		} else if node.Hardware().OSType() == "linux" {
-			node.AddInject(ntpFile, "/etc/ntp.conf", "", "")
-		} else if node.Hardware().OSType() == "windows" {
-			node.AddInject(ntpFile, "ntp.ps1", "0755", "")
-		}
-	}
-
+func (NTP) Configure(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (this NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
-	ntpServers := exp.Spec.Topology().FindNodesWithLabels("ntp-server")
+func (NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
+	servers := exp.Spec.Topology().FindNodesWithLabels("ntp-server")
 
-	if len(ntpServers) != 0 {
-		// Just take first server if more than one are labeled.
-		node := ntpServers[0]
+	if len(servers) == 0 {
+		// Nothing to do if no NTP server is present in the topology.
+		return nil
+	}
 
-		var ntpAddr string
+	var (
+		server = servers[0] // use first server if more than one present
+		ntpDir = exp.Spec.BaseDir() + "/ntp"
 
-		for _, iface := range node.Network().Interfaces() {
-			if strings.EqualFold(iface.VLAN(), "mgmt") {
-				ntpAddr = iface.Address()
-				break
-			}
+		serverAddr string
+	)
+
+	ifaceName := server.Labels()["ntp-server"]
+
+	for _, iface := range server.Network().Interfaces() {
+		if strings.EqualFold(iface.Name(), ifaceName) {
+			serverAddr = iface.Address()
+			break
+		}
+	}
+
+	if serverAddr == "" {
+		return fmt.Errorf("no IP address provided for NTP server")
+	}
+
+	if err := os.MkdirAll(ntpDir, 0755); err != nil {
+		return fmt.Errorf("creating experiment NTP directory path: %w", err)
+	}
+
+	// Configure topology nodes as NTP clients.
+	for _, node := range exp.Spec.Topology().Nodes() {
+		if _, ok := node.Labels()["ntp-server"]; ok {
+			// Don't configure NTP server nodes as clients.
+			continue
 		}
 
-		ntpDir := exp.Spec.BaseDir() + "/ntp"
 		ntpFile := ntpDir + "/" + node.General().Hostname() + "_ntp"
 
-		if node.Type() == "Router" {
-			if err := tmpl.CreateFileFromTemplate("ntp_linux.tmpl", ntpAddr, ntpFile); err != nil {
-				return fmt.Errorf("generating ntp script: %w", err)
+		if strings.ToUpper(node.Type()) == "ROUTER" {
+			if err := tmpl.CreateFileFromTemplate("ntp_linux.tmpl", serverAddr, ntpFile); err != nil {
+				return fmt.Errorf("generating Router NTP script: %w", err)
 			}
-		} else if node.Hardware().OSType() == "linux" {
-			if err := tmpl.CreateFileFromTemplate("ntp_linux.tmpl", ntpAddr, ntpFile); err != nil {
-				return fmt.Errorf("generating ntp script: %w", err)
+
+			switch strings.ToUpper(node.Hardware().OSType()) {
+			case "MINIROUTER":
+				node.AddInject(ntpFile, "/etc/ntp.conf", "", "")
+			default:
+				node.AddInject(ntpFile, "/opt/vyatta/etc/ntp.conf", "", "")
 			}
-		} else if node.Hardware().OSType() == "windows" {
-			if err := tmpl.CreateFileFromTemplate("ntp_windows.tmpl", ntpAddr, ntpFile); err != nil {
-				return fmt.Errorf("generating ntp script: %w", err)
+
+			continue
+		}
+
+		switch strings.ToUpper(node.Hardware().OSType()) {
+		case "LINUX", "RHEL", "CENTOS":
+			if err := tmpl.CreateFileFromTemplate("ntp_linux.tmpl", serverAddr, ntpFile); err != nil {
+				return fmt.Errorf("generating Linux NTP script: %w", err)
 			}
+
+			node.AddInject(ntpFile, "/etc/ntp.conf", "", "")
+		case "WINDOWS":
+			if err := tmpl.CreateFileFromTemplate("ntp_windows.tmpl", serverAddr, ntpFile); err != nil {
+				return fmt.Errorf("generating Windows NTP script: %w", err)
+			}
+
+			node.AddInject(ntpFile, "ntp.ps1", "0755", "")
 		}
 	}
 
