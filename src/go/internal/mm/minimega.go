@@ -123,7 +123,7 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "vm info"
-	cmd.Columns = []string{"uuid", "host", "name", "state", "uptime", "vlan", "tap", "ip", "memory", "vcpus", "disks", "tags"}
+	cmd.Columns = []string{"uuid", "host", "name", "state", "uptime", "vlan", "tap", "ip", "memory", "vcpus", "disks", "snapshot", "tags"}
 
 	if o.vm != "" {
 		cmd.Filters = []string{"name=" + o.vm}
@@ -191,16 +191,22 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 		// will always be first setting.
 		disk = strings.Split(disk, ",")[0]
 
-		cmd = mmcli.NewCommand()
-		cmd.Command = "disk info " + disk
+		snapshot, _ := strconv.ParseBool(row["snapshot"])
 
-		// Only expect one row returned
-		resp := mmcli.RunTabular(cmd)[0]
+		if snapshot {
+			cmd = mmcli.NewCommand()
+			cmd.Command = "disk info " + disk
 
-		if resp["backingfile"] == "" {
-			vm.Disk = resp["image"]
+			// Only expect one row returned
+			resp := mmcli.RunTabular(cmd)[0]
+
+			if resp["backingfile"] == "" {
+				vm.Disk = resp["image"]
+			} else {
+				vm.Disk = resp["backingfile"]
+			}
 		} else {
-			vm.Disk = resp["backingfile"]
+			vm.Disk = disk
 		}
 
 		vms = append(vms, vm)
@@ -698,16 +704,29 @@ func (Minimega) IsC2ClientActive(opts ...C2Option) error {
 		return nil
 	}
 
+	vms := GetVMInfo(NS(o.ns), VMName(o.vm))
+	if len(vms) == 0 {
+		return fmt.Errorf("VM %s does not exist", o.vm)
+	}
+
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "cc client"
 
-	// Even though `cc clients` returns the actual hostname of the VM as reported
-	// by the miniccc agent, we still go ahead and check for the VM name as
-	// defined in the topology since that is what the hostname should be in the VM
-	// (per the startup app). This way, we don't consider Windows VMs ready until
-	// they've rebooted to get their hostname set correctly.
-	cmd.Columns = []string{"hostname"}
-	cmd.Filters = []string{"hostname=" + o.vm}
+	if o.idByUUID {
+		// We use the UUID of the VM instead of the name since `cc clients` returns
+		// the actual hostname of the VM as reported by the miniccc agent, which may
+		// not always match the name minimega uses to track the VM.
+		cmd.Columns = []string{"uuid"}
+		cmd.Filters = []string{"uuid=" + vms[0].UUID}
+	} else {
+		// Even though `cc clients` returns the actual hostname of the VM as reported
+		// by the miniccc agent, we still go ahead and check for the VM name as
+		// defined in the topology since that is what the hostname should be in the VM
+		// (per the startup app). This way, we don't consider Windows VMs ready until
+		// they've rebooted to get their hostname set correctly.
+		cmd.Columns = []string{"hostname"}
+		cmd.Filters = []string{"hostname=" + vms[0].Name}
+	}
 
 	after := time.After(o.timeout)
 

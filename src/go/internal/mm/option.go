@@ -144,6 +144,7 @@ type c2Options struct {
 	skipActiveClientCheck bool
 
 	responseType C2ResponseType
+	idByUUID     bool
 }
 
 func NewC2Options(opts ...C2Option) c2Options {
@@ -228,6 +229,12 @@ func C2ResponseTypeStdout() C2Option {
 func C2ResponseTypeStderr() C2Option {
 	return func(o *c2Options) {
 		o.responseType = C2ResponseStderr
+	}
+}
+
+func C2IDClientsByUUID() C2Option {
+	return func(o *c2Options) {
+		o.idByUUID = true
 	}
 }
 

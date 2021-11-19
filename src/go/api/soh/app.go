@@ -383,6 +383,10 @@ func (this *SOH) getFlows(ctx context.Context, exp *types.Experiment) {
 
 		opts := []mm.C2Option{mm.C2NS(exp.Metadata.Name), mm.C2VM(hostname), mm.C2Command("query-flows.sh")}
 
+		if this.md.useUUIDForC2Active(hostname) {
+			opts = append(opts, mm.C2IDClientsByUUID())
+		}
+
 		id, err = mm.ExecC2Command(opts...)
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {

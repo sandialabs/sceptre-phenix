@@ -130,8 +130,17 @@ type sohMetadata struct {
 	SkipNetworkConfig  bool                        `mapstructure:"skipInitialNetworkConfigTests"`
 	SkipHosts          []string                    `mapstructure:"skipHosts"`
 
+	// The `hostsToUseUUIDForC2Active` setting can be either a string or a slice
+	// of strings. Decoding `hostsToUseUUIDForC2Active` into `UseUUIDForC2Active`
+	// as a generic interface{} causes mapstructure.Decode to panic. We are using
+	// the `mapstructure:",remain"` option below as a workaround.
+	// UseUUIDForC2Active interface{} `mapstructure:"hostsToUseUUIDForC2Active"`
+
+	Other map[string]interface{} `mapstructure:",remain"`
+
 	// set after parsing
 	c2Timeout time.Duration
+	uuidHosts map[string]struct{}
 }
 
 func (this *sohMetadata) init() error {
@@ -168,7 +177,42 @@ func (this *sohMetadata) init() error {
 		this.AppProfileKey = "sohProfile"
 	}
 
+	this.uuidHosts = make(map[string]struct{})
+
+	if useUUID, ok := this.Other["hostsToUseUUIDForC2Active"]; ok {
+		switch hosts := useUUID.(type) {
+		case nil: // this is okay
+		case string:
+			this.uuidHosts[hosts] = struct{}{}
+		case []interface{}:
+			if len(hosts) > 0 {
+				for _, host := range hosts {
+					h, ok := host.(string)
+					if !ok {
+						return fmt.Errorf("parsing 'hostsToUseUUIDForC2Active': must be a string or string slice")
+					}
+
+					this.uuidHosts[h] = struct{}{}
+				}
+			}
+		default:
+			return fmt.Errorf("parsing 'hostsToUseUUIDForC2Active': must be a string or string slice")
+		}
+	}
+
 	return nil
+}
+
+func (this sohMetadata) useUUIDForC2Active(host string) bool {
+	if _, ok := this.uuidHosts["all"]; ok {
+		return true
+	}
+
+	if _, ok := this.uuidHosts[host]; ok {
+		return true
+	}
+
+	return false
 }
 
 type sohProfile struct {

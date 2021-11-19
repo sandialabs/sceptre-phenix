@@ -739,6 +739,10 @@ func (this *SOH) waitForCPULoad(ctx context.Context, ns string) {
 
 			opts := []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2Command(exec)}
 
+			if this.md.useUUIDForC2Active(host) {
+				opts = append(opts, mm.C2IDClientsByUUID())
+			}
+
 			id, err := mm.ExecC2Command(opts...)
 			if err != nil {
 				wg.AddError(fmt.Errorf("executing command '%s': %w", exec, err), map[string]interface{}{"host": host})
@@ -1096,9 +1100,13 @@ func (this SOH) portTest(ctx context.Context, wg *mm.ErrGroup, ns string, node i
 }
 
 func (this SOH) newParallelCommand(ns, host, exec string) *mm.C2ParallelCommand {
-	return &mm.C2ParallelCommand{
-		Options: []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2Command(exec), mm.C2Timeout(this.md.c2Timeout)},
+	opts := []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2Command(exec), mm.C2Timeout(this.md.c2Timeout)}
+
+	if this.md.useUUIDForC2Active(host) {
+		opts = append(opts, mm.C2IDClientsByUUID())
 	}
+
+	return &mm.C2ParallelCommand{Options: opts}
 }
 
 func injectICMPAllowRules(nodes []ifaces.NodeSpec) error {

@@ -81,7 +81,7 @@ func PublishLogs(ctx context.Context, phenix, minimega string) {
 					}
 
 					phenixBody = map[string]interface{}{
-						"source":    "gophenix",
+						"source":    "phenix",
 						"timestamp": parts[1],
 						"epoch":     ts.Unix(),
 						"level":     parts[2],
@@ -97,7 +97,7 @@ func PublishLogs(ctx context.Context, phenix, minimega string) {
 
 				broker.Broadcast(
 					nil,
-					broker.NewResource("log", "gophenix", "update"),
+					broker.NewResource("log", "phenix", "update"),
 					marshalled,
 				)
 			case LOG_MINIMEGA:
