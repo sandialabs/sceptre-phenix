@@ -203,6 +203,7 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 	vms, err := vm.List(req.Name)
 	if err != nil {
 		// TODO
+		log.Error("listing VMs in experiment %s - %v", req.Name, err)
 	}
 
 	body, err = marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vms))
@@ -217,6 +218,8 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 		broker.NewResource("experiment", req.Name, "create"),
 		body,
 	)
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // GET /experiments/{name}
@@ -420,6 +423,7 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) {
 		}
 
 		exp, err := experiment.Get(name)
+
 		status <- result{exp, err}
 	}()
 
@@ -438,6 +442,7 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) {
 
 				log.Error("starting experiment %s - %v", name, s.err)
 				http.Error(w, s.err.Error(), http.StatusBadRequest)
+
 				return
 			}
 
@@ -459,6 +464,7 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) {
 			vms, err := vm.List(name)
 			if err != nil {
 				// TODO
+				log.Error("listing VMs in experiment %s - %v", name, err)
 			}
 
 			body, err := marshaler.Marshal(util.ExperimentToProtobuf(*s.exp, "", vms))

@@ -8,9 +8,9 @@ import (
 
 var (
 	clients    = make(map[*Client]bool)
-	broadcast  = make(chan Publish)
-	register   = make(chan *Client)
-	unregister = make(chan *Client)
+	broadcast  = make(chan Publish, 1024)
+	register   = make(chan *Client, 1024)
+	unregister = make(chan *Client, 1024)
 )
 
 func Start() {

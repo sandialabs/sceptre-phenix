@@ -28,10 +28,10 @@ type vmScope struct {
 }
 
 const (
-	writeWait  = 10 * time.Second
+	writeWait  = 5 * time.Second
 	pongWait   = 5 * time.Second
 	pingPeriod = (pongWait * 9) / 10
-	maxMsgSize = 512
+	maxMsgSize = 1024
 )
 
 var (
@@ -84,6 +84,11 @@ func (this *Client) Stop() {
 func (this *Client) stop() {
 	unregister <- this
 	close(this.done)
+
+	if err := this.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
+		log.Error("closing client connection: %v", err)
+	}
+
 	this.conn.Close()
 
 	log.Debug("[gophenix] WS client destroyed")
@@ -93,179 +98,195 @@ func (this *Client) read() {
 	defer this.Stop()
 
 	this.conn.SetReadLimit(maxMsgSize)
-	this.conn.SetReadDeadline(time.Now().Add(pongWait))
+
+	if err := this.conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+		log.Error("setting read deadline for client connection: %v", err)
+		return
+	}
 
 	ponger := func(string) error {
-		this.conn.SetReadDeadline(time.Now().Add(pongWait))
+		if err := this.conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+			log.Error("setting read deadline in pong handler for client connection: %v", err)
+			return err
+		}
+
 		return nil
 	}
 
 	this.conn.SetPongHandler(ponger)
 
 	for {
-		_, msg, err := this.conn.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Debug("reading from WebSocket client: %v", err)
+		select {
+		case <-this.done:
+			return
+		default:
+			_, msg, err := this.conn.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					log.Debug("reading from WebSocket client: %v", err)
+				}
+
+				return
 			}
 
-			break
-		}
-
-		var req Request
-		if err := json.Unmarshal(msg, &req); err != nil {
-			log.Error("cannot unmarshal request JSON: %v", err)
-			continue
-		}
-
-		switch req.Resource.Type {
-		case "experiment/vms":
-		default:
-			log.Error("unexpected WebSocket request resource type: %s", req.Resource.Type)
-			continue
-		}
-
-		switch req.Resource.Action {
-		case "list":
-		default:
-			log.Error("unexpected WebSocket request resource action: %s", req.Resource.Action)
-			continue
-		}
-
-		var payload map[string]interface{}
-		if err := json.Unmarshal(req.Payload, &payload); err != nil {
-			log.Error("cannot unmarshal WebSocket request payload JSON: %v", err)
-			continue
-		}
-
-		if !this.role.Allowed("vms", "list") {
-			log.Warn("client access to vms/list forbidden")
-			continue
-		}
-
-		expName := req.Resource.Name
-
-		exp, err := experiment.Get(expName)
-		if err != nil {
-			log.Error("getting experiment %s for WebSocket client: %v", expName, err)
-			continue
-		}
-
-		vms, err := vm.List(expName)
-		if err != nil {
-			// TODO
-		}
-
-		// A Boolean expression tree is built and the fields that
-		// should be searched are determined based on the search string
-		clientFilter, _ := payload["filter"].(string)
-		filterTree := mm.BuildTree(clientFilter)
-
-		// If `show_dnb` was not provided client-side, `showDNB` will be false,
-		// which is the default we want.
-		showDNB, _ := payload["show_dnb"].(bool)
-
-		allowed := mm.VMs{}
-
-		for _, vm := range vms {
-			// If the VM is marked as do not boot, and we're not showing VMs marked as
-			// such, continue on to the next VM right away.
-			if vm.DoNotBoot && !showDNB {
+			var req Request
+			if err := json.Unmarshal(msg, &req); err != nil {
+				log.Error("cannot unmarshal request JSON: %v", err)
 				continue
 			}
 
-			// If the filter supplied could not be
-			// parsed, do not add the VM
-			if len(clientFilter) > 0 {
-				if filterTree == nil {
+			switch req.Resource.Type {
+			case "experiment/vms":
+			default:
+				log.Error("unexpected WebSocket request resource type: %s", req.Resource.Type)
+				continue
+			}
+
+			switch req.Resource.Action {
+			case "list":
+			default:
+				log.Error("unexpected WebSocket request resource action: %s", req.Resource.Action)
+				continue
+			}
+
+			var payload map[string]interface{}
+			if err := json.Unmarshal(req.Payload, &payload); err != nil {
+				log.Error("cannot unmarshal WebSocket request payload JSON: %v", err)
+				continue
+			}
+
+			if !this.role.Allowed("vms", "list") {
+				log.Warn("client access to vms/list forbidden")
+				continue
+			}
+
+			expName := req.Resource.Name
+
+			exp, err := experiment.Get(expName)
+			if err != nil {
+				log.Error("getting experiment %s for WebSocket client: %v", expName, err)
+				continue
+			}
+
+			vms, err := vm.List(expName)
+			if err != nil {
+				log.Error("getting list of VMs for experiment %s: %v", expName, err)
+				continue
+			}
+
+			// A Boolean expression tree is built and the fields that
+			// should be searched are determined based on the search string
+			clientFilter, _ := payload["filter"].(string)
+			filterTree := mm.BuildTree(clientFilter)
+
+			// If `show_dnb` was not provided client-side, `showDNB` will be false,
+			// which is the default we want.
+			showDNB, _ := payload["show_dnb"].(bool)
+
+			allowed := mm.VMs{}
+
+			for _, vm := range vms {
+				// If the VM is marked as do not boot, and we're not showing VMs marked as
+				// such, continue on to the next VM right away.
+				if vm.DoNotBoot && !showDNB {
 					continue
-				} else {
-					// If the search string could be parsed,
-					// determine if the VM should be included
-					if !filterTree.Evaluate(&vm) {
+				}
+
+				// If the filter supplied could not be
+				// parsed, do not add the VM
+				if len(clientFilter) > 0 {
+					if filterTree == nil {
 						continue
-					}
-				}
-			}
-
-			if this.role.Allowed("vms", "list", fmt.Sprintf("%s_%s", expName, vm.Name)) {
-				if vm.Running {
-					screenshot, err := util.GetScreenshot(expName, vm.Name, "200")
-					if err != nil {
-						log.Error("getting screenshot for WebSocket client: %v", err)
 					} else {
-						vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+						// If the search string could be parsed,
+						// determine if the VM should be included
+						if !filterTree.Evaluate(&vm) {
+							continue
+						}
 					}
 				}
 
-				allowed = append(allowed, vm)
+				if this.role.Allowed("vms", "list", fmt.Sprintf("%s_%s", expName, vm.Name)) {
+					if vm.Running {
+						screenshot, err := util.GetScreenshot(expName, vm.Name, "200")
+						if err != nil {
+							log.Error("getting screenshot for WebSocket client: %v", err)
+						} else {
+							vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+						}
+					}
+
+					allowed = append(allowed, vm)
+				}
 			}
-		}
 
-		var (
-			sort = payload["sort_column"].(string)
-			asc  = payload["sort_asc"].(bool)
-			page = int(payload["page_number"].(float64))
-			size = int(payload["page_size"].(float64))
-		)
+			var (
+				sort = payload["sort_column"].(string)
+				asc  = payload["sort_asc"].(bool)
+				page = int(payload["page_number"].(float64))
+				size = int(payload["page_size"].(float64))
+			)
 
-		payload = map[string]interface{}{"total": len(allowed)}
+			payload = map[string]interface{}{"total": len(allowed)}
 
-		if sort != "" {
-			allowed.SortBy(sort, asc)
-		}
+			if sort != "" {
+				allowed.SortBy(sort, asc)
+			}
 
-		if page != 0 && size != 0 {
-			allowed = allowed.Paginate(page, size)
-		}
+			if page != 0 && size != 0 {
+				allowed = allowed.Paginate(page, size)
+			}
 
-		this.Lock()
+			this.Lock()
 
-		this.vms = nil
+			this.vms = nil
 
-		for _, v := range allowed {
-			this.vms = append(this.vms, vmScope{exp: expName, name: v.Name})
-		}
+			for _, v := range allowed {
+				this.vms = append(this.vms, vmScope{exp: expName, name: v.Name})
+			}
 
-		this.Unlock()
+			this.Unlock()
 
-		resp := &proto.VMList{Total: uint32(len(allowed))}
+			resp := &proto.VMList{Total: uint32(len(allowed))}
 
-		resp.Vms = make([]*proto.VM, len(allowed))
-		for i, v := range allowed {
-			resp.Vms[i] = util.VMToProtobuf(exp.Metadata.Name, v)
-		}
+			resp.Vms = make([]*proto.VM, len(allowed))
+			for i, v := range allowed {
+				resp.Vms[i] = util.VMToProtobuf(exp.Metadata.Name, v)
+			}
 
-		body, err := marshaler.Marshal(resp)
-		if err != nil {
-			log.Error("marshaling experiment %s VMs for WebSocket client: %v", exp, err)
-			continue
-		}
+			body, err := marshaler.Marshal(resp)
+			if err != nil {
+				log.Error("marshaling experiment %s VMs for WebSocket client: %v", exp, err)
+				continue
+			}
 
-		this.publish <- Publish{
-			Resource: NewResource("experiment/vms", expName, "list"),
-			Result:   body,
+			this.publish <- Publish{
+				Resource: NewResource("experiment/vms", expName, "list"),
+				Result:   body,
+			}
 		}
 	}
 }
 
 func (this *Client) write() {
-	defer this.Stop()
-
 	ticker := time.NewTicker(pingPeriod)
 
 	defer ticker.Stop()
+	defer this.Stop()
 
 	for {
 		select {
 		case <-this.done:
-			this.conn.WriteMessage(websocket.CloseMessage, []byte{})
 			return
 		case msg := <-this.publish:
-			this.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := this.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				log.Error("setting write deadline for client connection: %v", err)
+				return
+			}
 
 			w, err := this.conn.NextWriter(websocket.TextMessage)
 			if err != nil {
+				log.Error("getting next writer for client connection: %v", err)
 				return
 			}
 
@@ -275,10 +296,15 @@ func (this *Client) write() {
 				continue
 			}
 
-			w.Write(b)
+			if _, err := w.Write(b); err != nil {
+				log.Error("writing message to client connection: %v", err)
+				return
+			}
 
 			for i := 0; i < len(this.publish); i++ {
-				w.Write(newline)
+				if _, err := w.Write(newline); err != nil {
+					log.Error("writing newline to client connection: %v", err)
+				}
 
 				msg := <-this.publish
 
@@ -288,16 +314,24 @@ func (this *Client) write() {
 					continue
 				}
 
-				w.Write(b)
+				if _, err := w.Write(b); err != nil {
+					log.Error("writing message to client connection: %v", err)
+					return
+				}
 			}
 
 			if err := w.Close(); err != nil {
+				log.Error("closing client connection: %v", err)
 				return
 			}
 		case <-ticker.C:
-			this.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := this.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				log.Error("setting write deadline for client connection: %v", err)
+				return
+			}
 
 			if err := this.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Error("pinging client connection: %v", err)
 				return
 			}
 		}
@@ -305,11 +339,10 @@ func (this *Client) write() {
 }
 
 func (this *Client) screenshots() {
-	defer this.Stop()
-
 	ticker := time.NewTicker(5 * time.Second)
 
 	defer ticker.Stop()
+	defer this.Stop()
 
 	for {
 		select {
