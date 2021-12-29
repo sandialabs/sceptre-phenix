@@ -513,6 +513,13 @@ components:
                     type: boolean
         advanced:
           type: object
+        commands:
+          type: array
+          nullable: true
+          items:
+            type: string
+          example:
+          - exec df -h
     iface:
       type: object
       required:

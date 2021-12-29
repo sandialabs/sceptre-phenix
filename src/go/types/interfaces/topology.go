@@ -13,6 +13,8 @@ type TopologySpec interface {
 	AddNode(string, string) NodeSpec
 	RemoveNode(string)
 
+	HasCommands() bool
+
 	Init() error
 }
 
@@ -27,6 +29,7 @@ type NodeSpec interface {
 	Delay() NodeDelay
 	Advanced() map[string]string
 	Overrides() map[string]string
+	Commands() []string
 
 	SetInjections([]NodeInjection)
 
@@ -39,6 +42,7 @@ type NodeSpec interface {
 	SetAdvanced(map[string]string)
 	AddAdvanced(string, string)
 	AddOverride(string, string)
+	AddCommand(string)
 
 	GetAnnotation(string) (interface{}, bool)
 	Delayed() string

@@ -323,10 +323,19 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		return fmt.Errorf("applying apps to experiment: %w", err)
 	}
 
-	filename := fmt.Sprintf("%s/mm_files/%s.mm", exp.Spec.BaseDir(), exp.Spec.ExperimentName())
+	var (
+		mmScript = fmt.Sprintf("%s/mm_files/%s.mm", exp.Spec.BaseDir(), exp.Spec.ExperimentName())
+		ccScript = fmt.Sprintf("%s/mm_files/%s-cc.mm", exp.Spec.BaseDir(), exp.Spec.ExperimentName())
+	)
 
-	if err := tmpl.CreateFileFromTemplate("minimega_script.tmpl", exp.Spec, filename); err != nil {
+	if err := tmpl.CreateFileFromTemplate("minimega_script.tmpl", exp.Spec, mmScript); err != nil {
 		return fmt.Errorf("generating minimega script: %w", err)
+	}
+
+	if exp.Spec.Topology().HasCommands() {
+		if err := tmpl.CreateFileFromTemplate("minimega_cc_script.tmpl", exp.Spec.Topology().Nodes(), ccScript); err != nil {
+			return fmt.Errorf("generating minimega cc script: %w", err)
+		}
 	}
 
 	var (
@@ -347,7 +356,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			return fmt.Errorf("deleting experiment snapshots and CC responses: %w", err)
 		}
 
-		if err := mm.ReadScriptFromFile(filename); err != nil {
+		if err := mm.ReadScriptFromFile(mmScript); err != nil {
 			if !o.mmErrAsWarn {
 				mm.ClearNamespace(exp.Spec.ExperimentName())
 				return fmt.Errorf("reading minimega script: %w", err)
@@ -453,6 +462,18 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		start := time.Now().Format(time.RFC3339)
 
 		if o.errChan == nil {
+			if exp.Spec.Topology().HasCommands() {
+				if err := mm.ReadScriptFromFile(ccScript); err != nil {
+					errors := multierror.Append(nil, fmt.Errorf("reading minimega cc script: %w", err))
+
+					if err := mm.ClearNamespace(exp.Spec.ExperimentName()); err != nil {
+						errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
+					}
+
+					return errors
+				}
+			}
+
 			if err := handleDelayedVMs(ctx, exp.Spec.ExperimentName(), delays, c2s); err != nil {
 				errors := multierror.Append(nil, fmt.Errorf("handling delayed VMs: %w", err))
 
@@ -478,21 +499,32 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			}
 		} else {
 			go func() {
-				err := handleDelayedVMs(ctx, exp.Spec.ExperimentName(), delays, c2s)
+				if exp.Spec.Topology().HasCommands() {
+					if err := mm.ReadScriptFromFile(ccScript); err != nil {
+						o.errChan <- fmt.Errorf("reading minimega cc script: %w", err)
 
-				if err == nil {
+						if err := Stop(exp.Spec.ExperimentName()); err != nil {
+							o.errChan <- fmt.Errorf("stopping experiment: %w", err)
+						}
+
+						close(o.errChan)
+						return
+					}
+				}
+
+				if err := handleDelayedVMs(ctx, exp.Spec.ExperimentName(), delays, c2s); err != nil {
+					o.errChan <- fmt.Errorf("handling delayed VMs: %w", err)
+
+					if err := Stop(exp.Spec.ExperimentName()); err != nil {
+						o.errChan <- fmt.Errorf("stopping experiment: %w", err)
+					}
+				} else {
 					if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
 						o.errChan <- fmt.Errorf("applying apps to experiment: %w", err)
 
 						if err := Stop(exp.Spec.ExperimentName()); err != nil {
 							o.errChan <- fmt.Errorf("stopping experiment: %w", err)
 						}
-					}
-				} else {
-					o.errChan <- fmt.Errorf("handling delayed VMs: %w", err)
-
-					if err := Stop(exp.Spec.ExperimentName()); err != nil {
-						o.errChan <- fmt.Errorf("stopping experiment: %w", err)
 					}
 				}
 

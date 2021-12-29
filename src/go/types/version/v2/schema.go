@@ -542,6 +542,13 @@ components:
           nullable: true
           additionalProperties:
             type: string
+        commands:
+          type: array
+          nullable: true
+          items:
+            type: string
+          example:
+          - exec df -h
     iface:
       type: object
       required:

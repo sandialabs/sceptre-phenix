@@ -21,6 +21,7 @@ type Node struct {
 	AdvancedF    map[string]string      `json:"advanced" yaml:"advanced" structs:"advanced" mapstructure:"advanced"`
 	OverridesF   map[string]string      `json:"overrides" yaml:"overrides" structs:"overrides" mapstructure:"overrides"`
 	DelayF       *Delay                 `json:"delay" yaml:"delay" structs:"delay" mapstructure:"delay"`
+	CommandsF    []string               `json:"commands" yaml:"commands" structs:"commands" mapstructure:"commands"`
 }
 
 func (this Node) Annotations() map[string]interface{} {
@@ -71,6 +72,10 @@ func (this Node) Advanced() map[string]string {
 
 func (this Node) Overrides() map[string]string {
 	return this.OverridesF
+}
+
+func (this Node) Commands() []string {
+	return this.CommandsF
 }
 
 func (this *Node) SetInjections(injections []ifaces.NodeInjection) {
@@ -179,6 +184,17 @@ func (this *Node) AddOverride(match, replace string) {
 	}
 
 	this.OverridesF[match] = replace
+}
+
+func (this *Node) AddCommand(cmd string) {
+	// avoid duplicates
+	for _, c := range this.CommandsF {
+		if c == cmd {
+			return
+		}
+	}
+
+	this.CommandsF = append(this.CommandsF, cmd)
 }
 
 func (this Node) GetAnnotation(a string) (interface{}, bool) {

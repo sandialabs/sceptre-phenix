@@ -114,6 +114,16 @@ func (this *TopologySpec) RemoveNode(hostname string) {
 	}
 }
 
+func (this TopologySpec) HasCommands() bool {
+	for _, node := range this.Nodes() {
+		if len(node.Commands()) > 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (this *TopologySpec) Init() error {
 	this.SetDefaults()
 	return nil

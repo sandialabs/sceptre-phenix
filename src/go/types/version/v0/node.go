@@ -66,6 +66,10 @@ func (Node) Overrides() map[string]string {
 	return nil
 }
 
+func (Node) Commands() []string {
+	return nil
+}
+
 func (this *Node) SetInjections(injections []ifaces.NodeInjection) {
 	injects := make([]*Injection, len(injections))
 
@@ -134,6 +138,7 @@ func (this *Node) AddInject(src, dst, perms, desc string) {
 func (Node) SetAdvanced(map[string]string) {}
 func (Node) AddAdvanced(string, string)    {}
 func (Node) AddOverride(string, string)    {}
+func (Node) AddCommand(string)             {}
 
 func (this Node) GetAnnotation(a string) (interface{}, bool) {
 	if this.AnnotationsF == nil {
