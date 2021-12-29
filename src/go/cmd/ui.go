@@ -51,6 +51,7 @@ func newUiCmd() *cobra.Command {
 			opts := []web.ServerOption{
 				web.ServeOnEndpoint(viper.GetString("ui.listen-endpoint")),
 				web.ServeWithJWTKey(viper.GetString("ui.jwt-signing-key")),
+				web.ServeWithTLS(viper.GetString("ui.tls-key"), viper.GetString("ui.tls-cert")),
 				web.ServePhenixLogs(viper.GetString("ui.logs.phenix-path")),
 				web.ServeMinimegaLogs(viper.GetString("ui.logs.minimega-path")),
 			}
@@ -76,7 +77,9 @@ func newUiCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringP("listen-endpoint", "e", "0.0.0.0:3000", "endpoint to listen on")
-	cmd.Flags().StringP("jwt-signing-key", "k", "", "secret key used to sign JWT for authentication")
+	cmd.Flags().StringP("jwt-signing-key", "k", "", "Secret key used to sign JWT for authentication")
+	cmd.Flags().String("tls-key", "", "path to TLS key file")
+	cmd.Flags().String("tls-cert", "", "path to TLS cert file")
 	cmd.Flags().Bool("unbundled", false, "serve local public files instead of bundled")
 	cmd.Flags().String("log-level", "info", "log level for UI logs")
 	cmd.Flags().Bool("log-verbose", true, "write UI logs to STDERR")
@@ -85,6 +88,8 @@ func newUiCmd() *cobra.Command {
 
 	viper.BindPFlag("ui.listen-endpoint", cmd.Flags().Lookup("listen-endpoint"))
 	viper.BindPFlag("ui.jwt-signing-key", cmd.Flags().Lookup("jwt-signing-key"))
+	viper.BindPFlag("ui.tls-key", cmd.Flags().Lookup("tls-key"))
+	viper.BindPFlag("ui.tls-cert", cmd.Flags().Lookup("tls-cert"))
 	viper.BindPFlag("ui.log-level", cmd.Flags().Lookup("log-level"))
 	viper.BindPFlag("ui.log-verbose", cmd.Flags().Lookup("log-verbose"))
 	viper.BindPFlag("ui.logs.phenix-path", cmd.Flags().Lookup("logs.phenix-path"))
@@ -92,6 +97,8 @@ func newUiCmd() *cobra.Command {
 
 	viper.BindEnv("ui.listen-endpoint")
 	viper.BindEnv("ui.jwt-signing-key")
+	viper.BindEnv("ui.tls-key")
+	viper.BindEnv("ui.tls-cert")
 	viper.BindEnv("ui.log-level")
 	viper.BindEnv("ui.log-verbose")
 	viper.BindEnv("ui.logs.phenix-path")

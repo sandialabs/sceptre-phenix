@@ -212,7 +212,11 @@ func Start(opts ...ServerOption) error {
 
 	go PublishLogs(context.Background(), o.phenixLogs, o.minimegaLogs)
 
-	log.Info("Starting HTTP server on %s", o.endpoint)
-
-	return http.ListenAndServe(o.endpoint, router)
+	if o.tlsEnabled() {
+		log.Info("Starting HTTPS server on %s", o.endpoint)
+		return http.ListenAndServeTLS(o.endpoint, o.tlsCrtPath, o.tlsKeyPath, router)
+	} else {
+		log.Info("Starting HTTP server on %s", o.endpoint)
+		return http.ListenAndServe(o.endpoint, router)
+	}
 }

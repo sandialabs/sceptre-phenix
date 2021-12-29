@@ -10,6 +10,9 @@ type serverOptions struct {
 	users     []string
 	allowCORS bool
 
+	tlsKeyPath string
+	tlsCrtPath string
+
 	logMiddleware string
 
 	publishLogs  bool
@@ -21,9 +24,8 @@ type serverOptions struct {
 
 func newServerOptions(opts ...ServerOption) serverOptions {
 	o := serverOptions{
-		endpoint:  ":3000",
-		users:     []string{"admin@foo.com:foobar:Global Admin"},
-		allowCORS: true, // TODO: default to false
+		endpoint: ":3000",
+		users:    []string{"admin@foo.com:foobar:Global Admin"},
 	}
 
 	for _, opt := range opts {
@@ -35,6 +37,18 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 	}
 
 	return o
+}
+
+func (this serverOptions) tlsEnabled() bool {
+	if this.tlsKeyPath == "" {
+		return false
+	}
+
+	if this.tlsCrtPath == "" {
+		return false
+	}
+
+	return true
 }
 
 func ServeOnEndpoint(e string) ServerOption {
@@ -58,6 +72,13 @@ func ServeWithUsers(u string) ServerOption {
 func ServeWithCORS(c bool) ServerOption {
 	return func(o *serverOptions) {
 		o.allowCORS = c
+	}
+}
+
+func ServeWithTLS(k, c string) ServerOption {
+	return func(o *serverOptions) {
+		o.tlsKeyPath = k
+		o.tlsCrtPath = c
 	}
 }
 

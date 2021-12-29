@@ -60,8 +60,6 @@ type Client struct {
 }
 
 func NewClient(role rbac.Role, conn *websocket.Conn) *Client {
-	log.Debug("[gophenix] new WS client created")
-
 	return &Client{
 		role:    role,
 		conn:    conn,
@@ -87,12 +85,10 @@ func (this *Client) stop() {
 	close(this.done)
 
 	if err := this.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
-		log.Error("closing client connection: %v", err)
+		log.Warn("closing client connection: %v", err)
 	}
 
 	this.conn.Close()
-
-	log.Debug("[gophenix] WS client destroyed")
 }
 
 func (this *Client) read() {
