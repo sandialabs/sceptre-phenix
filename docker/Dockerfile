@@ -80,7 +80,7 @@ ENV LC_ALL en_US.UTF-8
 RUN python3 -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org "git+https://github.com/sandia-minimega/phenix-apps.git@main#egg=phenix-apps&subdirectory=src/python"
 
 # needed to build Kali images with phenix
-RUN wget -O kali.deb http://http.kali.org/kali/pool/main/k/kali-archive-keyring/kali-archive-keyring_2020.2_all.deb \
+RUN wget -O kali.deb https://http.kali.org/kali/pool/main/k/kali-archive-keyring/kali-archive-keyring_2022.1_all.deb \
 	&& dpkg -i kali.deb && rm kali.deb
 
 # used by scorch
