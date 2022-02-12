@@ -1,6 +1,10 @@
 Import-Module C:\Windows\System32\UIAutomation.0.8.7B3.NET35\UIAutomation.dll
 echo 'Configuring network interfaces...'
-$wmi = gwmi win32_NetworkAdapterConfiguration -Filter 'ipenabled = "true"' | sort -Property Description
+$wmi = $null
+Do {
+    Start-Sleep -Milliseconds 1000
+    $wmi = gwmi win32_NetworkAdapterConfiguration -Filter 'ipenabled = "true"' | sort -Property Description
+} While ($wmi -eq $null)
 {{ $length := len .Node.Network.Interfaces }}
 {{ range $idx, $iface := .Node.Network.Interfaces }}
     {{ $mask := $iface.NetworkMask }}
@@ -71,11 +75,7 @@ if (($host_name -eq "{{ .Node.General.Hostname }}") -or ("{{ .Node.General.Hostn
     Set-ItemProperty -Path $path -Name DefaultDomainName -Value $domain
     Set-ItemProperty -Path $path -Name AutoAdminLogon -Value 1
 {{ end }}
-    echo 'Deleting hostname script...'
-    While (Test-Path C:\startup.ps1) {
-        Start-Sleep -m 500
-        Remove-Item $MyInvocation.InvocationName
-    }
+    echo 'Startup script complete!'
 {{ if .Metadata.domain_controller }}
     echo 'Domain joined..  Restarting...'
     Restart-Computer

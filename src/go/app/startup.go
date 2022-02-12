@@ -97,22 +97,25 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 				return fmt.Errorf("generating linux interfaces script: %w", err)
 			}
 		case "windows":
-			var (
-				startupFile = startupDir + "/" + node.General().Hostname() + "-startup.ps1"
-				schedFile   = startupDir + "/startup-scheduler.cmd"
-			)
+			startupFile := startupDir + "/" + node.General().Hostname() + "-startup.ps1"
 
 			node.AddInject(
 				startupFile,
-				"startup.ps1",
+				"/phenix/startup/startup.ps1",
 				"0755", "",
 			)
 
-			node.AddInject(
-				schedFile,
-				"ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/startup_scheduler.cmd",
-				"0755", "",
-			)
+			if incl, ok := node.GetAnnotation("includes-phenix-startup"); !ok || incl == "false" || incl == false {
+				node.AddInject(
+					startupDir+"/startup-scheduler.cmd",
+					"ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/startup_scheduler.cmd",
+					"0755", "",
+				)
+
+				if err := tmpl.RestoreAsset(startupDir, "startup-scheduler.cmd"); err != nil {
+					return fmt.Errorf("restoring windows startup scheduler: %w", err)
+				}
+			}
 
 			// Temporary struct to send to the Windows Startup template.
 			data := struct {
@@ -138,10 +141,6 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 			if err := tmpl.CreateFileFromTemplate("windows_startup.tmpl", data, startupFile); err != nil {
 				return fmt.Errorf("generating windows startup script: %w", err)
-			}
-
-			if err := tmpl.RestoreAsset(startupDir, "startup-scheduler.cmd"); err != nil {
-				return fmt.Errorf("restoring windows startup scheduler: %w", err)
 			}
 		}
 	}
