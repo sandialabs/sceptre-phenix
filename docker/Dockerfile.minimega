@@ -1,4 +1,4 @@
-FROM ghcr.io/activeshadow/minimega/minimega:latest
+FROM ghcr.io/sandia-minimega/minimega/minimega:master
 
 # iptables needed in minimega container for scorch
 RUN apt update && apt install -y iptables \
