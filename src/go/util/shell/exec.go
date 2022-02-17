@@ -127,6 +127,8 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 
 	go func() {
 		scanner := bufio.NewScanner(stdout)
+		scanner.Split(o.splitter)
+
 		for scanner.Scan() {
 			bytes := scanner.Bytes()
 
@@ -144,6 +146,8 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 
 	go func() {
 		scanner := bufio.NewScanner(stderr)
+		scanner.Split(bufio.ScanLines)
+
 		for scanner.Scan() {
 			bytes := scanner.Bytes()
 

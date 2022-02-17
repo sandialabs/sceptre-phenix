@@ -1,6 +1,9 @@
 package shell
 
-import "os"
+import (
+	"bufio"
+	"os"
+)
 
 type Option func(*options)
 
@@ -12,11 +15,14 @@ type options struct {
 
 	stdout chan []byte
 	stderr chan []byte
+
+	splitter bufio.SplitFunc
 }
 
 func newOptions(opts ...Option) options {
 	o := options{
-		env: os.Environ(),
+		env:      os.Environ(),
+		splitter: bufio.ScanLines,
 	}
 
 	for _, opt := range opts {
@@ -59,5 +65,17 @@ func StreamStdout(s chan []byte) Option {
 func StreamStderr(s chan []byte) Option {
 	return func(o *options) {
 		o.stderr = s
+	}
+}
+
+func SplitLines() Option {
+	return func(o *options) {
+		o.splitter = bufio.ScanLines
+	}
+}
+
+func SplitWords() Option {
+	return func(o *options) {
+		o.splitter = bufio.ScanWords
 	}
 }
