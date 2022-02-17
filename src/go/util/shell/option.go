@@ -74,8 +74,8 @@ func SplitLines() Option {
 	}
 }
 
-func SplitWords() Option {
+func SplitBytes() Option {
 	return func(o *options) {
-		o.splitter = bufio.ScanWords
+		o.splitter = bufio.ScanBytes
 	}
 }

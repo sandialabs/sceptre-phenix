@@ -100,7 +100,7 @@ func (this UserApp) shellOut(ctx context.Context, action Action, exp *types.Expe
 		shell.Command(cmdName),
 		shell.Args(string(action)),
 		shell.Stdin(data),
-		shell.SplitWords(),
+		shell.SplitBytes(),
 		shell.Env(
 			"PHENIX_DIR="+common.PhenixBase,
 			"PHENIX_LOG_LEVEL="+util.GetEnv("PHENIX_LOG_LEVEL", "DEBUG"),
