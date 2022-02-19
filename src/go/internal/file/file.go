@@ -317,6 +317,9 @@ func (MMClusterFiles) SyncFile(path string, status CopyStatus) error {
 }
 
 func (MMClusterFiles) DeleteFile(path string) error {
+	// NOTE: this is replicated in `internal/mm/minimega.go` to avoid cyclical
+	// dependency between mm and file packages.
+
 	// First delete file from mesh, then from headnode.
 	commands := []string{"mesh send all file delete", "file delete"}
 

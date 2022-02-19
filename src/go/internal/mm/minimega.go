@@ -297,6 +297,17 @@ func (Minimega) RedeployVM(opts ...Option) error {
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 
+	// Get VM info before killing VM below.
+	cmd.Command = "vm info"
+	cmd.Filters = []string{"name=" + o.vm}
+
+	info := mmcli.RunTabular(cmd)
+	if len(info) == 0 {
+		return fmt.Errorf("no info found for VM %s in namespace %s", o.vm, o.ns)
+	}
+
+	cmd.Filters = nil
+
 	cmd.Command = "vm config clone " + o.vm
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("cloning VM %s in namespace %s: %w", o.vm, o.ns, err)
@@ -338,34 +349,30 @@ func (Minimega) RedeployVM(opts ...Option) error {
 		if len(o.injects) == 0 {
 			disk = o.disk
 		} else {
-			cmd.Command = "vm config disk"
-			cmd.Columns = []string{"disks"}
-			cmd.Filters = []string{"name=" + o.vm}
+			// Should only be one row of data since we filtered by VM name.
+			disks := info[0]["disks"]
 
-			config := mmcli.RunTabular(cmd)
+			// Only do injects if this VM was originally deployed with a disk snapshot.
+			if strings.Contains(disks, "_snapshot") {
+				old := newDiskConfig(disks)
+				new := newDiskConfig(o.disk)
 
-			cmd.Columns = nil
-			cmd.Filters = nil
+				// Delete disk snapshot file acrosss cluster
+				deleteFile(old.base)
 
-			if len(config) == 0 {
-				return fmt.Errorf("disk config not found for VM %s in namespace %s", o.vm, o.ns)
-			}
-
-			// Should only be one row of data since we filter by VM name above.
-			status := config[0]
-
-			disk = filepath.Base(status["disks"])
-
-			if strings.Contains(disk, "_snapshot") {
-				cmd.Command = fmt.Sprintf("disk snapshot %s %s", o.disk, disk)
+				cmd.Command = fmt.Sprintf("disk snapshot %s %s", new.path, old.base)
 
 				if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 					return fmt.Errorf("snapshotting disk for VM %s in namespace %s: %w", o.vm, o.ns, err)
 				}
 
-				if err := inject(disk, o.injectPart, o.injects...); err != nil {
+				if err := inject(old.base, o.injectPart, o.injects...); err != nil {
 					return err
 				}
+
+				// Use disk cache mode if provided by user. Otherwise, use original disk
+				// cache mode.
+				disk = old.string(new.cache)
 			} else {
 				disk = o.disk
 			}
@@ -1003,6 +1010,25 @@ func inject(disk string, part int, injects ...string) error {
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("injecting files into disk %s: %w", disk, err)
+	}
+
+	return nil
+}
+
+// Ugh... replicating `file.DeleteFile` here to avoid cyclical dependency
+// between mm and file packages.
+func deleteFile(path string) error {
+	// First delete file from mesh, then from headnode.
+	commands := []string{"mesh send all file delete", "file delete"}
+
+	cmd := mmcli.NewCommand()
+
+	for _, command := range commands {
+		cmd.Command = fmt.Sprintf("%s %s", command, path)
+
+		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+			return fmt.Errorf("deleting file from cluster nodes: %w", err)
+		}
 	}
 
 	return nil

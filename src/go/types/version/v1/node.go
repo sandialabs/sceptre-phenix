@@ -304,7 +304,12 @@ func (this Drive) CacheMode() string {
 }
 
 func (this Drive) InjectPartition() *int {
-	return this.InjectPartitionF
+	if this.InjectPartitionF != nil {
+		return this.InjectPartitionF
+	}
+
+	part := 1
+	return &part
 }
 
 func (this *Drive) SetImage(i string) {

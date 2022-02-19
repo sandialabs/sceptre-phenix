@@ -2,6 +2,8 @@ package mm
 
 import (
 	"errors"
+	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -264,4 +266,37 @@ type BlockDumpResponse struct {
 		Status    string `json:"status"`
 		Total     int    `json:"total"`
 	} `json:"return"`
+}
+
+type diskConfig struct {
+	path  string
+	base  string
+	cache string
+}
+
+func newDiskConfig(c string) diskConfig {
+	tokens := strings.Split(c, ",")
+
+	cfg := diskConfig{
+		path: tokens[0],
+		base: filepath.Base(tokens[0]),
+	}
+
+	if len(tokens) > 1 {
+		cfg.cache = tokens[1]
+	}
+
+	return cfg
+}
+
+func (this diskConfig) string(cache string) string {
+	if cache != "" {
+		return fmt.Sprintf("%s,%s", this.path, cache)
+	}
+
+	if this.cache != "" {
+		return fmt.Sprintf("%s,%s", this.path, this.cache)
+	}
+
+	return this.path
 }
