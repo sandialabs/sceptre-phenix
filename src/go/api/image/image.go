@@ -296,11 +296,11 @@ func Build(ctx context.Context, name string, verbosity int, cache bool, dryrun b
 		}
 
 		if img.IncludeMiniccc {
-			notes.AddWarnings(ctx, fmt.Errorf("inject_miniccc setting is DEPRECATED - use 'image inject-miniexe' subcommand after image is built"))
+			notes.AddWarnings(ctx, false, fmt.Errorf("inject_miniccc setting is DEPRECATED - use 'image inject-miniexe' subcommand after image is built"))
 		}
 
 		if img.IncludeProtonuke {
-			notes.AddWarnings(ctx, fmt.Errorf("inject_protonuke setting is DEPRECATED - use 'image inject-miniexe' subcommand after image is built"))
+			notes.AddWarnings(ctx, false, fmt.Errorf("inject_protonuke setting is DEPRECATED - use 'image inject-miniexe' subcommand after image is built"))
 		}
 	}
 

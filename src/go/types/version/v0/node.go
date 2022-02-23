@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	ifaces "phenix/types/interfaces"
 )
@@ -51,6 +52,10 @@ func (this Node) Injections() []ifaces.NodeInjection {
 	}
 
 	return injects
+}
+
+func (this Node) Delay() ifaces.NodeDelay {
+	return new(Delay)
 }
 
 func (Node) Advanced() map[string]string {
@@ -142,6 +147,10 @@ func (this Node) GetAnnotation(a string) (interface{}, bool) {
 	}
 
 	return nil, false
+}
+
+func (Node) Delayed() string {
+	return ""
 }
 
 type General struct {
@@ -282,6 +291,20 @@ func (this Injection) Description() string {
 
 func (this Injection) Permissions() string {
 	return this.PermissionsF
+}
+
+type Delay struct{}
+
+func (this Delay) Timer() time.Duration {
+	return 0
+}
+
+func (this Delay) User() bool {
+	return false
+}
+
+func (this Delay) C2() []ifaces.NodeC2Delay {
+	return nil
 }
 
 func (this *Node) SetDefaults() {

@@ -1,10 +1,14 @@
 package ifaces
 
+import "time"
+
 type TopologySpec interface {
 	Nodes() []NodeSpec
+	BootableNodes() []NodeSpec
 
 	FindNodeByName(string) NodeSpec
 	FindNodesWithLabels(...string) []NodeSpec
+	FindDelayedNodes() []NodeSpec
 
 	AddNode(string, string) NodeSpec
 	RemoveNode(string)
@@ -20,6 +24,7 @@ type NodeSpec interface {
 	Hardware() NodeHardware
 	Network() NodeNetwork
 	Injections() []NodeInjection
+	Delay() NodeDelay
 	Advanced() map[string]string
 	Overrides() map[string]string
 
@@ -36,6 +41,7 @@ type NodeSpec interface {
 	AddOverride(string, string)
 
 	GetAnnotation(string) (interface{}, bool)
+	Delayed() string
 }
 
 type NodeGeneral interface {
@@ -174,4 +180,15 @@ type NodeInjection interface {
 	Dst() string
 	Description() string
 	Permissions() string
+}
+
+type NodeDelay interface {
+	Timer() time.Duration
+	User() bool
+	C2() []NodeC2Delay
+}
+
+type NodeC2Delay interface {
+	Hostname() string
+	UseUUID() bool
 }

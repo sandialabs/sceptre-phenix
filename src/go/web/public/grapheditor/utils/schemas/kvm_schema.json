@@ -601,6 +601,42 @@
         }
       }
     },
+    "delay": {
+      "$id": "#/nodes/properties/delay",
+      "type": "object",
+      "properties": {
+        "timer": {
+          "$id": "#/nodes/properties/delay/timer",
+          "type": "string"
+        },
+        "user": {
+          "$id": "#/nodes/properties/delay/user",
+          "type": "boolean"
+        },
+        "c2": {
+          "$id": "#/nodes/properties/delay/c2",
+          "type": "array",
+          "items": {
+            "$id": "#/nodes/properties/delay/c2/items",
+            "type": "object",
+            "required": [
+              "hostname",
+              "useUUID"
+            ],
+            "properties": {
+              "hostname": {
+                "$id": "#/nodes/properties/delay/c2/items/hostname",
+                "type": "string"
+              },
+              "useUUID": {
+                "$id": "#/nodes/properties/delay/c2/items/useUUID",
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
     "commands": {
       "$id": "#/nodes/properties/commands",
       "type": "array",

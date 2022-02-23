@@ -27,6 +27,8 @@ message Experiment {
 	// TODO: depricate
 	uint32 vlan_count = 14 [json_name="vlan_count"];
 	uint32 vm_count = 15 [json_name="vm_count"];
+
+	uint32 delayed_vms = 20 [json_name="delayed_vms"];
 }
 
 message ExperimentList {

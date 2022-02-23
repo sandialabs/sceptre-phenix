@@ -239,7 +239,7 @@ func (this ExperimentSpec) VerifyScenario(ctx context.Context) error {
 	for _, app := range this.ScenarioF.AppsF {
 		for _, host := range app.HostsF {
 			if _, ok := hosts[host.HostnameF]; !ok {
-				notes.AddWarnings(ctx, fmt.Errorf("host %s in app %s not in topology", host.HostnameF, app.NameF))
+				notes.AddWarnings(ctx, false, fmt.Errorf("host %s in app %s not in topology", host.HostnameF, app.NameF))
 			}
 		}
 	}

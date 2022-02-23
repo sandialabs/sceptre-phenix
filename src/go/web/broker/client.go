@@ -248,7 +248,7 @@ func (this *Client) read() {
 
 			resp.Vms = make([]*proto.VM, len(allowed))
 			for i, v := range allowed {
-				resp.Vms[i] = util.VMToProtobuf(exp.Metadata.Name, v)
+				resp.Vms[i] = util.VMToProtobuf(expName, v, exp.Spec.Topology())
 			}
 
 			body, err := marshaler.Marshal(resp)

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -272,14 +273,14 @@ func newImageBuildCmd() *cobra.Command {
 				verbosity = verbosity | image.V_VVVERBOSE
 			}
 
-			ctx := notes.Context(nil)
+			ctx := notes.Context(context.Background(), false)
 
 			if err := image.Build(ctx, name, verbosity, cache, dryrun, output); err != nil {
 				err := util.HumanizeError(err, "Unable to build the "+name+" image")
 				return err.Humanized()
 			}
 
-			notes.PrettyPrint(ctx)
+			notes.PrettyPrint(ctx, false)
 
 			fmt.Printf("The %s image was successfully built\n", name)
 

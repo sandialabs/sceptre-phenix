@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	ifaces "phenix/types/interfaces"
 )
@@ -19,6 +20,7 @@ type Node struct {
 	InjectionsF  []*Injection           `json:"injections" yaml:"injections" structs:"injections" mapstructure:"injections"`
 	AdvancedF    map[string]string      `json:"advanced" yaml:"advanced" structs:"advanced" mapstructure:"advanced"`
 	OverridesF   map[string]string      `json:"overrides" yaml:"overrides" structs:"overrides" mapstructure:"overrides"`
+	DelayF       *Delay                 `json:"delay" yaml:"delay" structs:"delay" mapstructure:"delay"`
 }
 
 func (this Node) Annotations() map[string]interface{} {
@@ -53,6 +55,14 @@ func (this Node) Injections() []ifaces.NodeInjection {
 	}
 
 	return injects
+}
+
+func (this Node) Delay() ifaces.NodeDelay {
+	if this.DelayF == nil {
+		return new(Delay)
+	}
+
+	return this.DelayF
 }
 
 func (this Node) Advanced() map[string]string {
@@ -183,6 +193,32 @@ func (this Node) GetAnnotation(a string) (interface{}, bool) {
 	}
 
 	return nil, false
+}
+
+func (this Node) Delayed() string {
+	if this.DelayF == nil {
+		return ""
+	}
+
+	if this.DelayF.TimerF != "" {
+		return fmt.Sprintf("timer:%s", this.DelayF.TimerF)
+	}
+
+	if this.DelayF.UserF {
+		return "user"
+	}
+
+	if len(this.DelayF.C2F) > 0 {
+		hosts := make([]string, len(this.DelayF.C2F))
+
+		for i, host := range this.DelayF.C2F {
+			hosts[i] = host.Hostname()
+		}
+
+		return fmt.Sprintf("cc:%s", strings.Join(hosts, ","))
+	}
+
+	return ""
 }
 
 type General struct {
@@ -381,6 +417,48 @@ func (this *Node) SetDefaults() {
 	if this.NetworkF != nil {
 		this.NetworkF.SetDefaults()
 	}
+}
+
+type Delay struct {
+	TimerF string    `json:"timer" yaml:"timer" structs:"timer" mapstructure:"timer"`
+	UserF  bool      `json:"user" yaml:"user" structs:"user" mapstructure:"user"`
+	C2F    []C2Delay `json:"c2" yaml:"c2" structs:"c2" mapstructure:"c2"`
+}
+
+func (this Delay) Timer() time.Duration {
+	if this.TimerF == "" {
+		return 0
+	}
+
+	delay, _ := time.ParseDuration(this.TimerF)
+	return delay
+}
+
+func (this Delay) User() bool {
+	return this.UserF
+}
+
+func (this Delay) C2() []ifaces.NodeC2Delay {
+	delays := make([]ifaces.NodeC2Delay, len(this.C2F))
+
+	for i, d := range this.C2F {
+		delays[i] = d
+	}
+
+	return delays
+}
+
+type C2Delay struct {
+	HostnameF string `json:"hostname" yaml:"hostname" structs:"hostname" mapstructure:"hostname"`
+	UseUUIDF  bool   `json:"useUUID" yaml:"useUUID" structs:"useUUID" mapstructure:"useUUID"`
+}
+
+func (this C2Delay) Hostname() string {
+	return this.HostnameF
+}
+
+func (this C2Delay) UseUUID() bool {
+	return this.UseUUIDF
 }
 
 func (this Node) FileInjects(baseDir string) string {

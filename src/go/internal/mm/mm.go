@@ -6,7 +6,7 @@ type MM interface {
 	ReadScriptFromFile(string) error
 	ClearNamespace(string) error
 
-	LaunchVMs(string) error
+	LaunchVMs(string, ...string) error
 	GetLaunchProgress(string, int) (float64, error)
 
 	GetVMInfo(...Option) VMs

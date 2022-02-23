@@ -165,14 +165,14 @@ func newExperimentCreateCmd() *cobra.Command {
 				experiment.CreateWithVLANMax(MustGetInt(cmd.Flags(), "vlan-max")),
 			}
 
-			ctx := notes.Context(nil)
+			ctx := notes.Context(context.Background(), false)
 
 			if err := experiment.Create(ctx, opts...); err != nil {
 				err := util.HumanizeError(err, "Unable to create the "+args[0]+" experiment")
 				return err.Humanized()
 			}
 
-			notes.PrettyPrint(ctx)
+			notes.PrettyPrint(ctx, false)
 
 			fmt.Printf("The %s experiment was created\n", args[0])
 
@@ -304,7 +304,7 @@ func newExperimentStartCmd() *cobra.Command {
 				periodic    = MustGetBool(cmd.Flags(), "honor-run-periodically")
 				experiments []types.Experiment
 
-				ctx = notes.Context(sigterm.CancelContext(nil))
+				ctx = notes.Context(sigterm.CancelContext(context.Background()), true)
 				wg  sync.WaitGroup
 			)
 
@@ -345,7 +345,7 @@ func newExperimentStartCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				notes.PrettyPrint(ctx)
+				notes.PrettyPrint(ctx, false)
 
 				if dryrun {
 					fmt.Printf("The %s experiment was started in a dry-run\n", exp.Metadata.Name)

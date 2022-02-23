@@ -489,6 +489,25 @@ components:
               permissions:
                 type: string
                 example: '0664'
+        delay:
+          type: object
+          nullable: true
+          properties:
+            timer:
+              type: string
+              example: 5m
+            user:
+              type: boolean
+            c2:
+              type: array
+              nullable: true
+              items:
+                type: object
+                properties:
+                  hostname:
+                    type: string
+                  useUUID:
+                    type: boolean
         advanced:
           type: object
     iface:

@@ -1,11 +1,15 @@
 package broker
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"phenix/api/vm"
 	"phenix/app"
 	"phenix/util/pubsub"
+	"phenix/web/util"
 )
 
 var (
@@ -17,6 +21,7 @@ var (
 
 func Start() {
 	triggerSub := pubsub.Subscribe("trigger-app")
+	delayedSub := pubsub.Subscribe("delayed-start")
 
 	for {
 		select {
@@ -34,6 +39,29 @@ func Start() {
 			} else {
 				broadcast <- Publish{RequestPolicy: policy, Resource: resource, Result: nil}
 			}
+		case pub := <-delayedSub:
+			delayed := pub.(string)
+			names := strings.Split(delayed, "/")
+
+			v, err := vm.Get(names[0], names[1])
+			if err != nil {
+				continue
+			}
+
+			screenshot, err := util.GetScreenshot(names[0], names[1], "215")
+			if err == nil {
+				v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+			}
+
+			body, err := marshaler.Marshal(util.VMToProtobuf(names[0], *v, nil))
+			if err != nil {
+				continue
+			}
+
+			policy := NewRequestPolicy("vms/start", "update", strings.Join(names, "_"))
+			resource := NewResource("experiment/vm", delayed, "start")
+
+			broadcast <- Publish{RequestPolicy: policy, Resource: resource, Result: body}
 		case cli := <-register:
 			clients[cli] = true
 		case cli := <-unregister:

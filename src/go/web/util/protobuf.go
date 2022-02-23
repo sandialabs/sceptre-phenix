@@ -6,6 +6,7 @@ import (
 	"phenix/internal/file"
 	"phenix/internal/mm"
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	"phenix/web/cache"
 	"phenix/web/proto"
 	"phenix/web/rbac"
@@ -24,7 +25,12 @@ func ExperimentToProtobuf(exp types.Experiment, status cache.Status, vms []mm.VM
 
 	pb.Vms = make([]*proto.VM, len(vms))
 	for i, v := range vms {
-		pb.Vms[i] = VMToProtobuf(exp.Metadata.Name, v)
+		vm := VMToProtobuf(exp.Spec.ExperimentName(), v, exp.Spec.Topology())
+
+		pb.Vms[i] = vm
+		if vm.DelayedStart != "" {
+			pb.DelayedVms++
+		}
 	}
 
 	var apps []string
@@ -83,8 +89,8 @@ func ExperimentToProtobuf(exp types.Experiment, status cache.Status, vms []mm.VM
 	return pb
 }
 
-func VMToProtobuf(exp string, vm mm.VM) *proto.VM {
-	return &proto.VM{
+func VMToProtobuf(exp string, vm mm.VM, topology ifaces.TopologySpec) *proto.VM {
+	v := &proto.VM{
 		Name:       vm.Name,
 		Host:       vm.Host,
 		Ipv4:       vm.IPv4,
@@ -103,6 +109,16 @@ func VMToProtobuf(exp string, vm mm.VM) *proto.VM {
 		State:      vm.State,
 		Tags:       vm.Tags,
 	}
+
+	if topology == nil {
+		return v
+	}
+
+	if vm := topology.FindNodeByName(vm.Name); vm != nil {
+		v.DelayedStart = vm.Delayed()
+	}
+
+	return v
 }
 
 func CaptureToProtobuf(capture mm.Capture) *proto.Capture {

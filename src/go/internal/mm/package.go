@@ -8,8 +8,8 @@ func ClearNamespace(ns string) error {
 	return DefaultMM.ClearNamespace(ns)
 }
 
-func LaunchVMs(ns string) error {
-	return DefaultMM.LaunchVMs(ns)
+func LaunchVMs(ns string, start ...string) error {
+	return DefaultMM.LaunchVMs(ns, start...)
 }
 
 func GetLaunchProgress(ns string, expected int) (float64, error) {

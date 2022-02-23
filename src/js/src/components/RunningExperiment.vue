@@ -12,6 +12,7 @@
           <p>Memory:  {{ expModal.vm.ram | ram }}</p>
           <p>Disk:  {{ expModal.vm.disk }}</p>
           <p>Uptime:  {{ expModal.vm.uptime | uptime }}</p>
+          <p>Delay:  {{ expModal.vm.delayed_start }}</p>
           <p>Network(s):  {{ expModal.vm.networks | stringify | lowercase }}</p>
           <p>Taps:  {{ expModal.vm.taps | stringify | lowercase }}</p>
           <p  v-if="expModal.snapshots">
@@ -518,10 +519,15 @@
                   <b-progress size="is-small" type="is-warning" show-value  :value=props.row.percent format="percent"></b-progress>
                 </section>
               </b-table-column>
-              <b-table-column field="screenshot"  label="Screenshot">
+              <b-table-column field="screenshot"  label="Screenshot" centered>
                 <template v-if="props.row.running && !props.row.busy && !props.row.screenshot">
                   <a  :href="vncLoc(props.row)" target="_blank">
-                    <img src="@/assets/not-available.png">
+                    <img src="@/assets/not-available.png" width="200" height="150">
+                  </a>
+                </template>
+                <template v-else-if="props.row.delayed_start && props.row.state == 'BUILDING'">
+                  <a  :href="vncLoc(props.row)" target="_blank">
+                    <img src="@/assets/delayed.png" width="200" height="150">
                   </a>
                 </template>
                 <template v-else-if="props.row.running && !props.row.busy && props.row.screenshot">
@@ -531,13 +537,16 @@
                 </template>
                 <template v-else-if="props.row.busy">
                   <b-tooltip  label="Screenshot not available while busy with action" type="is-dark">
-                  <img  src="@/assets/not-available.png">
+                  <img  src="@/assets/not-available.png" width="200" height="150">
                   </b-tooltip>
                 </template>
                 <template v-else>
-                  <img  src="@/assets/not-running.png">
+                  <img  src="@/assets/not-running.png" width="200" height="150">
                 </template>
               </b-table-column>
+              <b-table-column v-if="isDelayed()" field="delayed"  label="Delay" centered>
+                <b-tag type="is-info" v-if="props.row.delayed_start && props.row.state == 'BUILDING'">{{ props.row.delayed_start }}</b-tag>
+              </b-table-column> 
               <b-table-column field="host"  label="Host" width="150" sortable>
                 {{ props.row.host }}
               </b-table-column>   
@@ -959,10 +968,9 @@
               case  'redeploying': {
                 break;
               }
-                    
-              case  'shutdown':{                
+
+              case  'shutdown': {
                 break;
-                    
               }
 			  
               case  'redeployed': {
@@ -995,6 +1003,20 @@
                   this.isWaiting  = false;
                 }
  
+                break;
+              }
+
+              case 'error': {
+                // Only show this error if the user is currently viewing the
+                // running experiment in which the error occurred.
+                if (this.$route.params.id == vm[0]) {
+                  this.$buefy.toast.open({
+                    message:  msg.result.error,
+                    type: 'is-danger',
+                    duration: 4000
+                  });
+                }
+
                 break;
               }
             }
@@ -1309,6 +1331,16 @@
             break;
           }
         }
+      },
+
+      isDelayed () {
+        for ( let i = 0; i < this.experiment.vms.length; i++ ) {
+          if ( this.experiment.vms[i].delayed_start && this.experiment.vms[i].state == 'BUILDING' ) {
+            return true;
+          }
+        }
+
+        return false;
       },
 
       async updateExperiment  () {

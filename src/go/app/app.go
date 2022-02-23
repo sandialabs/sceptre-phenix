@@ -251,14 +251,14 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				// Check to make sure this app isn't already running via an automatic
 				// periodic execution.
 				if running := exp.Status.AppRunning()[app.Name()]; running {
-					notes.AddInfo(ctx, fmt.Sprintf("app %s is currently already executing its running stage -- skipping", app.Name()))
+					notes.AddInfo(ctx, false, fmt.Sprintf("app %s is currently already executing its running stage -- skipping", app.Name()))
 					continue
 				}
 
 				exp.Status.SetAppRunning(app.Name(), true)
 
 				if err := exp.WriteToStore(true); err != nil {
-					notes.AddErrors(ctx, fmt.Errorf("error updating store with experiment (%s): %v", exp.Spec.ExperimentName(), err))
+					notes.AddErrors(ctx, false, fmt.Errorf("error updating store with experiment (%s): %v", exp.Spec.ExperimentName(), err))
 				}
 
 				pubsub.Publish("trigger-app", Publication{Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "start"})
@@ -273,7 +273,7 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				exp.Status.SetAppRunning(app.Name(), false)
 
 				if err := exp.WriteToStore(true); err != nil {
-					notes.AddErrors(ctx, fmt.Errorf("error updating store with experiment (%s): %v", exp.Spec.ExperimentName(), err))
+					notes.AddErrors(ctx, false, fmt.Errorf("error updating store with experiment (%s): %v", exp.Spec.ExperimentName(), err))
 				}
 			case ACTIONCLEANUP:
 				exp.Status.SetAppRunning(app.Name(), true)

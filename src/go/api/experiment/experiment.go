@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"phenix/api/config"
@@ -13,6 +14,7 @@ import (
 	"phenix/internal/common"
 	"phenix/internal/file"
 	"phenix/internal/mm"
+	"phenix/internal/mm/mmcli"
 	"phenix/scheduler"
 	"phenix/store"
 	"phenix/tmpl"
@@ -20,6 +22,7 @@ import (
 	"phenix/types/version"
 	v1 "phenix/types/version/v1"
 	"phenix/util/notes"
+	"phenix/util/pubsub"
 
 	"github.com/activeshadow/structs"
 	"github.com/hashicorp/go-multierror"
@@ -376,6 +379,11 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		return fmt.Errorf("generating minimega script: %w", err)
 	}
 
+	var (
+		delays = make(map[string]time.Duration)
+		c2s    = make(map[string]map[string]bool)
+	)
+
 	if o.dryrun {
 		exp.Status.SetVLANs(exp.Spec.VLANs().Aliases())
 	} else {
@@ -396,22 +404,76 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			}
 
 			if merr, ok := err.(*multierror.Error); ok {
-				notes.AddWarnings(ctx, merr.Errors...)
+				notes.AddWarnings(ctx, false, merr.Errors...)
 			} else {
-				notes.AddWarnings(ctx, err)
+				notes.AddWarnings(ctx, false, err)
 			}
 		}
 
-		if err := mm.LaunchVMs(exp.Spec.ExperimentName()); err != nil {
+		var (
+			bootable = exp.Spec.Topology().BootableNodes()
+			start    = make([]string, 0) // nil vs. slice makes a difference here
+		)
+
+		for _, node := range bootable {
+			hostname := node.General().Hostname()
+
+			if node.Delay().User() {
+				notes.AddInfo(ctx, true, fmt.Sprintf("VM %s delayed - to be started by user", hostname))
+				continue
+			}
+
+			if others := node.Delay().C2(); len(others) > 0 {
+				var (
+					c2    = make(map[string]bool)
+					hosts = make([]string, len(others))
+				)
+
+				for i, other := range others {
+					if other.Hostname() == "" {
+						continue
+					}
+
+					c2[other.Hostname()] = other.UseUUID()
+					hosts[i] = other.Hostname()
+				}
+
+				if len(c2) > 0 {
+					c2s[hostname] = c2
+					notes.AddInfo(ctx, true, fmt.Sprintf("VM %s delayed - will be started after C2 for %v is active", hostname, hosts))
+
+					continue
+				}
+			}
+
+			if d := node.Delay().Timer(); d != 0 {
+				delays[hostname] = d
+
+				notes.AddInfo(ctx, true, fmt.Sprintf("VM %s delayed - will be started after %v", hostname, d))
+
+				continue
+			}
+
+			start = append(start, hostname)
+		}
+
+		if len(start) == len(bootable) {
+			// Reset start slice so the call to mm.LaunchVMs results in `vm start all`
+			// being used (to reduce calls to minimega). A nil slice vs. an empty
+			// slice makes a difference here.
+			start = nil
+		}
+
+		if err := mm.LaunchVMs(exp.Spec.ExperimentName(), start...); err != nil {
 			if !o.mmErrAsWarn {
 				mm.ClearNamespace(exp.Spec.ExperimentName())
 				return fmt.Errorf("launching experiment VMs: %w", err)
 			}
 
 			if merr, ok := err.(*multierror.Error); ok {
-				notes.AddWarnings(ctx, merr.Errors...)
+				notes.AddWarnings(ctx, false, merr.Errors...)
 			} else {
-				notes.AddWarnings(ctx, err)
+				notes.AddWarnings(ctx, false, err)
 			}
 		}
 
@@ -436,50 +498,62 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		exp.Status.SetStartTime(time.Now().Format(time.RFC3339) + "-DRYRUN")
 	} else {
 		exp.Status.SetStartTime(time.Now().Format(time.RFC3339))
+
+		if o.errChan == nil {
+			if err := handleDelayedVMs(ctx, exp.Spec.ExperimentName(), delays, c2s); err != nil {
+				errors := multierror.Append(nil, fmt.Errorf("handling delayed VMs: %w", err))
+
+				if err := mm.ClearNamespace(exp.Spec.ExperimentName()); err != nil {
+					errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
+				}
+
+				return errors
+			}
+
+			if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
+				errors := multierror.Append(nil, fmt.Errorf("applying apps to experiment: %w", err))
+
+				if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCLEANUP), app.DryRun(o.dryrun)); err != nil {
+					errors = multierror.Append(errors, fmt.Errorf("cleaning up app experiments: %w", err))
+				}
+
+				if err := mm.ClearNamespace(exp.Spec.ExperimentName()); err != nil {
+					errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
+				}
+
+				return errors
+			}
+		} else {
+			go func() {
+				err := handleDelayedVMs(ctx, exp.Spec.ExperimentName(), delays, c2s)
+
+				if err == nil {
+					if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
+						o.errChan <- fmt.Errorf("applying apps to experiment: %w", err)
+
+						if err := Stop(exp.Spec.ExperimentName()); err != nil {
+							o.errChan <- fmt.Errorf("stopping experiment: %w", err)
+						}
+					}
+				} else {
+					o.errChan <- fmt.Errorf("handling delayed VMs: %w", err)
+
+					if err := Stop(exp.Spec.ExperimentName()); err != nil {
+						o.errChan <- fmt.Errorf("stopping experiment: %w", err)
+					}
+				}
+
+				close(o.errChan)
+			}()
+		}
 	}
 
-	if o.errChan == nil {
-		if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
-			errors := multierror.Append(nil, fmt.Errorf("applying apps to experiment: %w", err))
+	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
+	c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
 
-			if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCLEANUP), app.DryRun(o.dryrun)); err != nil {
-				errors = multierror.Append(errors, fmt.Errorf("cleaning up app experiments: %w", err))
-			}
-
-			if err := mm.ClearNamespace(exp.Spec.ExperimentName()); err != nil {
-				errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
-			}
-
-			return errors
-		}
-
-		c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
-		c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
-
-		if err := store.Update(c); err != nil {
-			mm.ClearNamespace(exp.Spec.ExperimentName())
-			return fmt.Errorf("updating experiment config: %w", err)
-		}
-	} else {
-		go func() {
-			if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
-				o.errChan <- fmt.Errorf("applying apps to experiment: %w", err)
-
-				if err := Stop(exp.Spec.ExperimentName()); err != nil {
-					o.errChan <- fmt.Errorf("stopping experiment: %w", err)
-				}
-			}
-
-			close(o.errChan)
-		}()
-
-		c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
-		c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
-
-		if err := store.Update(c); err != nil {
-			mm.ClearNamespace(exp.Spec.ExperimentName())
-			return fmt.Errorf("updating experiment config: %w", err)
-		}
+	if err := store.Update(c); err != nil {
+		mm.ClearNamespace(exp.Spec.ExperimentName())
+		return fmt.Errorf("updating experiment config: %w", err)
 	}
 
 	return nil
@@ -690,7 +764,6 @@ func Delete(name string) error {
 }
 
 func Files(name, filter string) (file.ExperimentFiles, error) {
-
 	return file.GetExperimentFileNames(name, filter)
 }
 
@@ -754,6 +827,105 @@ func deleteSnapshots(exp *types.Experiment) error {
 		if err := file.DeleteFile(snapshot); err != nil {
 			return fmt.Errorf("deleting snapshot file for VM %s in experiment %s: %w", hostname, expName, err)
 		}
+	}
+
+	return nil
+}
+
+func handleDelayedVMs(ctx context.Context, ns string, delays map[string]time.Duration, c2s map[string]map[string]bool) error {
+	if len(delays) == 0 && len(c2s) == 0 {
+		return nil
+	}
+
+	notes.AddInfo(ctx, true, "Waiting for delayed VMs to be started...")
+
+	var (
+		wg     sync.WaitGroup
+		errors error
+	)
+
+	for host, delay := range delays {
+		wg.Add(1)
+
+		go func(host string, delay time.Duration) {
+			defer wg.Done()
+
+			select {
+			case <-ctx.Done():
+				errors = multierror.Append(errors, ctx.Err())
+				return
+			case <-time.After(delay):
+				cmd := mmcli.NewNamespacedCommand(ns)
+				cmd.Command = "vm start " + host
+
+				if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+					errors = multierror.Append(errors, NewDelayedVMError(host, err, "starting VM %s", host))
+					return
+				}
+
+				notes.AddInfo(ctx, true, fmt.Sprintf("Time delayed VM %s started", host))
+				pubsub.Publish("delayed-start", fmt.Sprintf("%s/%s", ns, host))
+			}
+		}(host, delay)
+	}
+
+	for host, others := range c2s {
+		wg.Add(1)
+
+		go func(host string, others map[string]bool) {
+			defer wg.Done()
+
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ctx.Done():
+					errors = multierror.Append(errors, ctx.Err())
+					return
+				case <-ticker.C:
+					done := true
+
+					for other, useUUID := range others {
+						opts := []mm.C2Option{mm.C2NS(ns), mm.C2VM(other), mm.C2Timeout(1*time.Second)}
+
+						if useUUID {
+							opts = append(opts, mm.C2IDClientsByUUID())
+						}
+
+						if mm.IsC2ClientActive(opts...) != nil {
+							done = false
+							break
+						}
+					}
+
+					if done {
+						cmd := mmcli.NewNamespacedCommand(ns)
+						cmd.Command = "vm start " + host
+
+						if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+							errors = multierror.Append(errors, NewDelayedVMError(host, err, "starting VM %s", host))
+							return
+						}
+
+						notes.AddInfo(ctx, true, fmt.Sprintf("C2 delayed VM %s started", host))
+						pubsub.Publish("delayed-start", fmt.Sprintf("%s/%s", ns, host))
+
+						return
+					}
+				}
+			}
+		}(host, others)
+	}
+
+	wg.Wait()
+
+	if errors != nil {
+		if err := mm.ClearNamespace(ns); err != nil {
+			errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
+		}
+
+		return errors
 	}
 
 	return nil

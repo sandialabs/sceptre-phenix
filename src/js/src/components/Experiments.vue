@@ -303,9 +303,17 @@
             }
           
             this.experiments = [ ...exp ];
+
+            let toast = `The ${msg.resource.name} experiment has been started`;
+
+            if (msg.resource.delayed_vms > 0) {
+              toast = `${toast} (with ${msg.resource.delayed_vms} delayed VMs).`;
+            } else {
+              toast = `${toast}.`;
+            }
           
             this.$buefy.toast.open({
-              message: 'The ' + msg.resource.name + ' experiment has been started.',
+              message: toast,
               type: 'is-success',
               duration: 4000
             });

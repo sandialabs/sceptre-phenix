@@ -58,7 +58,7 @@ func (Minimega) ClearNamespace(ns string) error {
 	return nil
 }
 
-func (Minimega) LaunchVMs(ns string) error {
+func (Minimega) LaunchVMs(ns string, start ...string) error {
 	cmd := mmcli.NewNamespacedCommand(ns)
 	cmd.Command = "vm launch"
 
@@ -66,10 +66,20 @@ func (Minimega) LaunchVMs(ns string) error {
 		return fmt.Errorf("launching VMs: %w", err)
 	}
 
-	cmd.Command = "vm start all"
+	if start == nil {
+		cmd.Command = "vm start all"
 
-	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-		return fmt.Errorf("starting VMs: %w", err)
+		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+			return fmt.Errorf("starting VMs: %w", err)
+		}
+	} else {
+		for _, name := range start {
+			cmd.Command = "vm start " + name
+
+			if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+				return fmt.Errorf("starting VM %s: %w", name, err)
+			}
+		}
 	}
 
 	return nil
@@ -206,6 +216,8 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 				vm.Disk = resp["backingfile"]
 			}
 		} else {
+			// Attempting to get disk info when not using a snapshot will cause a
+			// locked file error.
 			vm.Disk = disk
 		}
 

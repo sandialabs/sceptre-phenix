@@ -51,7 +51,7 @@
       </b-field>
       <div>
         <div class="control">
-          <textarea class="textarea" style="font-family:'Courier New'" readonly rows="40">{{ this.filteredLogs }}</textarea>
+          <textarea class="textarea" style="font-family:'Courier New'" readonly rows="40" v-model="filteredLogs"></textarea>
         </div>
       </div>
     </template>

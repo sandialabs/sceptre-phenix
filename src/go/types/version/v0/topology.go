@@ -22,6 +22,30 @@ func (this *TopologySpec) Nodes() []ifaces.NodeSpec {
 	return nodes
 }
 
+func (this *TopologySpec) BootableNodes() []ifaces.NodeSpec {
+	if this == nil {
+		return nil
+	}
+
+	var bootable []ifaces.NodeSpec
+
+	for _, n := range this.NodesF {
+		var dnb bool
+
+		if n.GeneralF.DoNotBootF != nil {
+			dnb = *n.GeneralF.DoNotBootF
+		}
+
+		if dnb {
+			continue
+		}
+
+		bootable = append(bootable, n)
+	}
+
+	return bootable
+}
+
 func (this TopologySpec) FindNodeByName(name string) ifaces.NodeSpec {
 	for _, node := range this.NodesF {
 		if node.GeneralF.HostnameF == name {
@@ -48,6 +72,10 @@ func (this TopologySpec) FindNodesWithLabels(labels ...string) []ifaces.NodeSpec
 	}
 
 	return nodes
+}
+
+func (TopologySpec) FindDelayedNodes() []ifaces.NodeSpec {
+	return nil
 }
 
 func (this *TopologySpec) AddNode(typ, hostname string) ifaces.NodeSpec {
