@@ -92,7 +92,7 @@ func (NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
 				return fmt.Errorf("generating Windows NTP script: %w", err)
 			}
 
-			node.AddInject(ntpFile, "ntp.ps1", "0755", "")
+			node.AddInject(ntpFile, "/phenix/startup/25-ntp.ps1", "0755", "")
 		}
 	}
 

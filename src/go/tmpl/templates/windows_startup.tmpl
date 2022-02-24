@@ -1,4 +1,37 @@
+function Phenix-SetStartupStatus($status) {
+    echo "Marking phenix startup as $status in registry..."
+
+    If (-NOT (Test-Path 'HKLM:\Software\phenix')) {
+        New-Item -Path 'HKLM:\Software\phenix' -Force | Out-Null
+    }
+
+    New-ItemProperty -Path 'HKLM:\Software\phenix' -Name 'startup' -Value $status -PropertyType String -Force | Out-Null
+}
+
+function Phenix-StartupComplete {
+    $key = Get-Item -LiteralPath 'HKLM:\Software\phenix' -ErrorAction SilentlyContinue
+
+    if ($key) {
+        $val = $key.GetValue('startup')
+
+        if ($val) {
+          return $val -eq 'done'
+        }
+
+        return $false
+    }
+
+    return $false
+}
+
+if (Phenix-StartupComplete) {
+    exit
+}
+
+Phenix-SetStartupStatus('running')
+
 Import-Module C:\Windows\System32\UIAutomation.0.8.7B3.NET35\UIAutomation.dll
+
 echo 'Configuring network interfaces...'
 $wmi = $null
 Do {
@@ -58,32 +91,34 @@ if (($host_name -eq "{{ .Node.General.Hostname }}") -or ("{{ .Node.General.Hostn
     $password = "{{ index .Metadata "domain_controller" "password" }}" | ConvertTo-SecureString -AsPlainText -Force
     $credential = New-Object System.Management.Automation.PSCredential($username,$password)
     $sysinfo = systeminfo /fo csv | ConvertFrom-Csv
+
     if ($sysinfo.Domain.contains($domain.ToUpper())) {
-        echo 'Deleting startup script...'
-        While (Test-Path C:\startup.ps1) {
-            Start-Sleep -m 500
-            Remove-Item $MyInvocation.InvocationName
-        }
+        echo 'Startup script complete!'
+        Phenix-SetStartupStatus('done')
         exit
     }
+
     echo 'Joining $domain domain'
     Add-Computer -DomainName $domain -Credential $credential
+
     echo 'Adding auto logon'
     $path = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
     Set-ItemProperty -Path $path -Name DefaultUserName -Value $username
     Set-ItemProperty -Path $path -Name DefaultPassword -Value {{ index .Metadata "domain_controller" "password" }}
     Set-ItemProperty -Path $path -Name DefaultDomainName -Value $domain
     Set-ItemProperty -Path $path -Name AutoAdminLogon -Value 1
-{{ end }}
-    echo 'Startup script complete!'
-{{ if .Metadata.domain_controller }}
-    echo 'Domain joined..  Restarting...'
+
+    echo 'Domain joined. Restarting...'
     Restart-Computer
+{{ else }}
+    echo 'Startup script complete!'
+    Phenix-SetStartupStatus('done')
+    exit
 {{ end }}
 } else {
     echo 'Changing hostname'
     $computer_info = Get-WmiObject -Class Win32_ComputerSystem
     $computer_info.Rename("{{ .Node.General.Hostname }}")
-    echo 'Hostname changed.  Restarting...'
+    echo 'Hostname changed. Restarting...'
     Restart-Computer
 }

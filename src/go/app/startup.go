@@ -101,11 +101,21 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 			node.AddInject(
 				startupFile,
-				"/phenix/startup/startup.ps1",
+				"/phenix/startup/20-startup.ps1",
 				"0755", "",
 			)
 
 			if incl, ok := node.GetAnnotation("includes-phenix-startup"); !ok || incl == "false" || incl == false {
+				node.AddInject(
+					startupDir+"/phenix-startup.ps1",
+					"/phenix/phenix-startup.ps1",
+					"0755", "",
+				)
+
+				if err := tmpl.RestoreAsset(startupDir, "phenix-startup.ps1"); err != nil {
+					return fmt.Errorf("restoring phenix startup script: %w", err)
+				}
+
 				node.AddInject(
 					startupDir+"/startup-scheduler.cmd",
 					"ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/startup_scheduler.cmd",
@@ -157,7 +167,7 @@ func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 					mm.C2NS(exp.Metadata.Name),
 					mm.C2VM(node.General().Hostname()),
 					mm.C2SkipActiveClientCheck(true),
-					mm.C2Command(`powershell.exe -noprofile -executionpolicy bypass -file /startup.ps1`),
+					mm.C2Command(`powershell.exe -noprofile -executionpolicy bypass -file /phenix/phenix-startup.ps1`),
 				)
 
 				if err != nil {
