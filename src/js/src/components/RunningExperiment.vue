@@ -520,22 +520,12 @@
               </b-table-column>
               <b-table-column field="screenshot"  label="Screenshot">
                 <template v-if="props.row.running && !props.row.busy && !props.row.screenshot">
-                  <a  :href="'/api/v1/experiments/' 
-                    + $route.params.id 
-                    + '/vms/' 
-                    + props.row.name 
-                    + '/vnc?token=' 
-                    + $store.state.token" target="_blank">
+                  <a  :href="vncLoc(props.row)" target="_blank">
                     <img src="@/assets/not-available.png">
                   </a>
                 </template>
                 <template v-else-if="props.row.running && !props.row.busy && props.row.screenshot">
-                  <a  :href="'/api/v1/experiments/' 
-                    + $route.params.id 
-                    + '/vms/' 
-                    + props.row.name 
-                    + '/vnc?token=' 
-                    + $store.state.token" target="_blank">
+                  <a  :href="vncLoc(props.row)" target="_blank">
                     <img :src="props.row.screenshot">
                   </a>
                 </template>
@@ -783,6 +773,10 @@
       changeFilesPaginate () {
         var user = localStorage.getItem( 'user' );
         localStorage.setItem( user + '.lastPaginate', this.filesTable.isPaginated );
+      },
+
+      vncLoc (vm) {
+        return `${process.env.BASE_URL}api/v1/experiments/${this.$route.params.id}/vms/${vm.name}/vnc?token=${this.$store.state.token}`;
       },
 
       searchVMs: _.debounce(function ( term ) {

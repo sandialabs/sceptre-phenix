@@ -69,7 +69,7 @@ login and returns a user to Experiments component if successful.
 
       wsConnect () {
         if ( this.$store.getters.auth ) {
-          let path = '/api/v1/ws';
+          let path = `${process.env.BASE_URL}api/v1/ws`;
 
           if ( this.$store.getters.token ) {
             path += '?token=' + this.$store.getters.token;

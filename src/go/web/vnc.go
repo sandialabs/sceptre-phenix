@@ -64,7 +64,8 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Expires", "0")                                         // Proxies.
 
 	if o.unbundled {
-		http.ServeFile(w, r, "web/public/vnc.html")
+		tmpl := template.Must(template.New("vnc.html").ParseFiles("web/public/vnc.html"))
+		tmpl.Execute(w, config)
 	} else {
 		bfs := util.NewBinaryFileSystem(
 			&assetfs.AssetFS{
@@ -109,8 +110,9 @@ type bannerConfig struct {
 }
 
 type vncConfig struct {
-	ExpName string
-	VMName  string
+	BasePath string
+	ExpName  string
+	VMName   string
 
 	TopBanner    bannerConfig `mapstructure:"topBanner"`
 	BottomBanner bannerConfig `mapstructure:"bottomBanner"`
@@ -118,8 +120,9 @@ type vncConfig struct {
 
 func newVNCBannerConfig(exp, vm string) *vncConfig {
 	return &vncConfig{
-		ExpName: exp,
-		VMName:  vm,
+		BasePath: o.basePath,
+		ExpName:  exp,
+		VMName:   vm,
 		TopBanner: bannerConfig{
 			BackgroundColor: "white",
 			TextColor:       "black",

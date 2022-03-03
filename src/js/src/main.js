@@ -28,7 +28,7 @@ Vue.use( Buefy, {
 })
 
 Vue.use( VueResource )
-Vue.use( VueNativeSock, '//' + location.host, { connectManually: true, reconnection: true } );
+Vue.use( VueNativeSock, `//${location.host}/${process.env.BASE_URL}`, { connectManually: true, reconnection: true } );
 
 Vue.filter( 'lowercase', function( value ) {
   if ( value == null ) { return value }

@@ -33,3 +33,36 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}/phenix:${{ steps.short.outputs.sha }}
             ghcr.io/${{ github.repository }}/phenix:${{ steps.short.outputs.branch }}
+  push-jit-to-ghcr:
+    name: Push JIT Docker image to GitHub Packages
+    needs: push-to-ghcr
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v2
+      - name: Get short SHA
+        id: short
+        run: |
+          echo "::set-output name=sha::$(git rev-parse --short HEAD)"
+          echo "::set-output name=branch::$(echo ${GITHUB_REF#refs/heads/})"
+      - name: Log in to GitHub Docker Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build container image
+        uses: docker/build-push-action@v2
+        with:
+          context: docker/jit
+          file: docker/jit/Dockerfile
+          build-args: |
+            PHENIX_REPO=${{ github.repository }}
+            PHENIX_TAG=${{ steps.short.outputs.branch }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/phenix-jit-ui:${{ steps.short.outputs.sha }}
+            ghcr.io/${{ github.repository }}/phenix-jit-ui:${{ steps.short.outputs.branch }}

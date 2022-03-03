@@ -50,6 +50,7 @@ func newUiCmd() *cobra.Command {
 
 			opts := []web.ServerOption{
 				web.ServeOnEndpoint(viper.GetString("ui.listen-endpoint")),
+				web.ServeBasePath(viper.GetString("ui.base-path")),
 				web.ServeWithJWTKey(viper.GetString("ui.jwt-signing-key")),
 				web.ServeWithTLS(viper.GetString("ui.tls-key"), viper.GetString("ui.tls-cert")),
 				web.ServePhenixLogs(viper.GetString("ui.logs.phenix-path")),
@@ -77,6 +78,7 @@ func newUiCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringP("listen-endpoint", "e", "0.0.0.0:3000", "endpoint to listen on")
+	cmd.Flags().StringP("base-path", "b", "/", "base path to use for UI (must run behind proxy if not '/')")
 	cmd.Flags().StringP("jwt-signing-key", "k", "", "Secret key used to sign JWT for authentication")
 	cmd.Flags().String("tls-key", "", "path to TLS key file")
 	cmd.Flags().String("tls-cert", "", "path to TLS cert file")
@@ -87,6 +89,7 @@ func newUiCmd() *cobra.Command {
 	cmd.Flags().String("logs.minimega-path", "", "path to minimega log file to publish to UI")
 
 	viper.BindPFlag("ui.listen-endpoint", cmd.Flags().Lookup("listen-endpoint"))
+	viper.BindPFlag("ui.base-path", cmd.Flags().Lookup("base-path"))
 	viper.BindPFlag("ui.jwt-signing-key", cmd.Flags().Lookup("jwt-signing-key"))
 	viper.BindPFlag("ui.tls-key", cmd.Flags().Lookup("tls-key"))
 	viper.BindPFlag("ui.tls-cert", cmd.Flags().Lookup("tls-cert"))
@@ -96,6 +99,7 @@ func newUiCmd() *cobra.Command {
 	viper.BindPFlag("ui.logs.minimega-path", cmd.Flags().Lookup("logs.minimega-path"))
 
 	viper.BindEnv("ui.listen-endpoint")
+	viper.BindEnv("ui.base-path")
 	viper.BindEnv("ui.jwt-signing-key")
 	viper.BindEnv("ui.tls-key")
 	viper.BindEnv("ui.tls-cert")

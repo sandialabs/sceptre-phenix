@@ -20,12 +20,14 @@ type serverOptions struct {
 	minimegaLogs string
 
 	unbundled bool
+	basePath  string
 }
 
 func newServerOptions(opts ...ServerOption) serverOptions {
 	o := serverOptions{
 		endpoint: ":3000",
 		users:    []string{"admin@foo.com:foobar:Global Admin"},
+		basePath: "/",
 	}
 
 	for _, opt := range opts {
@@ -34,6 +36,14 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 
 	if o.phenixLogs != "" || o.minimegaLogs != "" {
 		o.publishLogs = true
+	}
+
+	if !strings.HasPrefix(o.basePath, "/") {
+		o.basePath = "/" + o.basePath
+	}
+
+	if !strings.HasSuffix(o.basePath, "/") {
+		o.basePath = o.basePath + "/"
 	}
 
 	return o
@@ -103,5 +113,11 @@ func ServeMinimegaLogs(m string) ServerOption {
 func ServeUnbundled() ServerOption {
 	return func(o *serverOptions) {
 		o.unbundled = true
+	}
+}
+
+func ServeBasePath(p string) ServerOption {
+	return func(o *serverOptions) {
+		o.basePath = p
 	}
 }

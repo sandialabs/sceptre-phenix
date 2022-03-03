@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -40,7 +41,8 @@ func GetBuilder(w http.ResponseWriter, r *http.Request) {
 	log.Debug("GetBuilder HTTP handler called")
 
 	if o.unbundled {
-		http.ServeFile(w, r, "web/public/builder.html")
+		tmpl := template.Must(template.New("builder.html").ParseFiles("web/public/builder.html"))
+		tmpl.Execute(w, o.basePath)
 	} else {
 		bfs := util.NewBinaryFileSystem(
 			&assetfs.AssetFS{
@@ -50,7 +52,7 @@ func GetBuilder(w http.ResponseWriter, r *http.Request) {
 			},
 		)
 
-		bfs.ServeFile(w, r, "builder.html")
+		bfs.ServeTemplate(w, "builder.html", o.basePath)
 	}
 }
 

@@ -33,7 +33,7 @@ are only available to Global Administrator or Global Viewer.
                        to="/scorch"
                        class="navbar-item">Scorch</menu-link>
           <menu-link v-if="auth && globalAdmin()"
-                        :to="'/builder?token=' + $store.state.token"
+                        :to="builderLoc()"
                         external
                         class="navbar-item">Builder</menu-link>
         </div>
@@ -90,6 +90,10 @@ are only available to Global Administrator or Global Viewer.
       
       experimentUser () {
         return [ 'Global Admin', 'Experiment Admin', 'Experiment User', 'Experiment Viewer' ].includes( this.$store.getters.role );
+      },
+
+      builderLoc () {
+        return `${process.env.BASE_URL}builder?token=${this.$store.state.token}`;
       }
     }
   }

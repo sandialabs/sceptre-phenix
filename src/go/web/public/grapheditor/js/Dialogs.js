@@ -2466,7 +2466,7 @@ var viewJSONDialog = function(ui)
             }
 
             $.ajax({
-                url: '/api/v1/configs?kind=scenario',
+                url: `${window.PHENIX_API_PATH}/configs?kind=scenario`,
                 type: 'get',
                 headers,
                 success: function (data) {
@@ -2624,7 +2624,7 @@ var viewJSONDialog = function(ui)
                     }
 
                     $.ajax({
-                        url: '/api/v1/experiments/builder',
+                        url: `${window.PHENIX_API_PATH}/experiments/builder`,
                         type: 'post',
                         data: JSON.stringify(payload),
                         headers,
@@ -2666,7 +2666,7 @@ var viewJSONDialog = function(ui)
                     json.metadata.annotations = { 'builder-xml': xml };
 
                     $.ajax({
-                        url: '/api/v1/configs',
+                        url: `${window.PHENIX_API_PATH}/configs`,
                         type: 'post',
                         data: JSON.stringify(json),
                         headers,

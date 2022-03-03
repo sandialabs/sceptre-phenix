@@ -73,7 +73,7 @@ Actions.prototype.init = function()
             }
 
             $.ajax({
-                url: '/api/v1/builder/topologies',
+                url: `${window.PHENIX_API_PATH}/builder/topologies`,
                 type: 'get',
                 headers,
                 success: function (data) {
@@ -119,7 +119,7 @@ Actions.prototype.init = function()
 
                 if (topoSelect.value) {
                     $.ajax({
-                        url: '/api/v1/builder/topologies/' + topoSelect.value,
+                        url: `${window.PHENIX_API_PATH}/builder/topologies/${topoSelect.value}`,
                         type: 'get',
                         dataType: 'text',
                         success: function (data) {
