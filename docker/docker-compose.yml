@@ -46,8 +46,6 @@ services:
     image: minimega
     container_name: minimega
     privileged: true
-    cap_add:
-      - ALL
     <<: *common
     volumes:
       - /dev:/dev
@@ -80,6 +78,8 @@ services:
     <<: *common
     environment:
       ELASTICSEARCH_HOSTS: http://localhost:9200
+    depends_on:
+      - es
   volume-permissions-manager:
     image: alpine:latest
     command: sh -c "chmod -R 777 /usr/share/elasticsearch"

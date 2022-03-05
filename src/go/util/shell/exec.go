@@ -11,8 +11,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+
+	"github.com/hashicorp/go-multierror"
 )
 
 type shell struct{}
@@ -107,7 +110,11 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 		return nil, nil, fmt.Errorf("starting command: %w", err)
 	}
 
-	done := make(chan struct{})
+	var (
+		done = make(chan struct{})
+		errs error
+		wg   sync.WaitGroup
+	)
 
 	go func() {
 		select {
@@ -125,7 +132,11 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 		}
 	}()
 
+	wg.Add(1)
+
 	go func() {
+		defer wg.Done()
+
 		scanner := bufio.NewScanner(stdout)
 		scanner.Split(o.splitter)
 
@@ -139,12 +150,20 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 			}
 		}
 
+		if err := scanner.Err(); err != nil {
+			errs = multierror.Append(errs, fmt.Errorf("scanning STDOUT: %w", err))
+		}
+
 		if o.stdout != nil {
 			close(o.stdout)
 		}
 	}()
 
+	wg.Add(1)
+
 	go func() {
+		defer wg.Done()
+
 		scanner := bufio.NewScanner(stderr)
 		scanner.Split(bufio.ScanLines)
 
@@ -158,13 +177,22 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 			}
 		}
 
+		if err := scanner.Err(); err != nil {
+			errs = multierror.Append(errs, fmt.Errorf("scanning STDERR: %w", err))
+		}
+
 		if o.stderr != nil {
 			close(o.stderr)
 		}
 	}()
 
-	err := cmd.Wait()
+	wg.Wait()
+
+	if err := cmd.Wait(); err != nil {
+		errs = multierror.Append(errs, fmt.Errorf("waiting for command to complete: %w", err))
+	}
+
 	close(done)
 
-	return stdoutBytes, stderrBytes, err
+	return stdoutBytes, stderrBytes, errs
 }
