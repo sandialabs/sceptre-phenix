@@ -127,6 +127,8 @@ Actions.prototype.init = function()
                             editor.graph.setSelectionCells(editor.graph.importGraphModel(doc.documentElement));
 
                             ui.hideDialog.apply(ui, arguments);
+
+                            window.currentTopology = topoSelect.value;
                         },
                         error: function (e) {
                             const err = JSON.parse( e.responseText );

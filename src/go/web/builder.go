@@ -214,6 +214,229 @@ func CreateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// PUT /experiments/builder
+func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
+	log.Debug("UpdateExperimentFromBuilder HTTP handler called")
+
+	var (
+		ctx  = r.Context()
+		role = ctx.Value("role").(rbac.Role)
+	)
+
+	if !role.Allowed("experiments", "update") {
+		err := weberror.NewWebError(nil, "updating experiments not allowed for %s", ctx.Value("user").(string))
+		return err.SetStatus(http.StatusForbidden)
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return weberror.NewWebError(err, "reading request body").SetStatus(http.StatusInternalServerError)
+	}
+
+	var req builder
+
+	if err := json.Unmarshal(body, &req); err != nil {
+		return weberror.NewWebError(err, "unmarshaling request body")
+	}
+
+	// update existing topology
+
+	topo, _ := store.NewConfig("topology/" + req.Name)
+
+	topo.Metadata.Annotations = store.Annotations{"builder-xml": req.XML}
+	topo.Spec = req.Topology
+
+	if err := config.Update(topo.FullName(), topo); err != nil {
+		if errors.Is(err, store.ErrNotExist) {
+			return weberror.NewWebError(err, "topology with same name doesn't exist yet").WithMetadata("type", "topology", true)
+		}
+
+		if errors.Is(err, types.ErrValidationFailed) {
+			cause := errors.Unwrap(err)
+			lines := strings.Split(cause.Error(), "\n")
+
+			return weberror.NewWebError(cause, lines[0]).WithMetadata("type", "topology", true).WithMetadata("validation", cause.Error(), true)
+		}
+
+		return weberror.NewWebError(err, "unable to update existing topology").WithMetadata("type", "topology", true)
+	}
+
+	// Grab this now, before we clear the spec from the toplology config, just in
+	// case we need it later.
+	topoSpec, err := types.DecodeTopologyFromConfig(*topo)
+	if err != nil {
+		err := weberror.NewWebError(err, "decoding topology %s", req.Name)
+		return err.SetStatus(http.StatusInternalServerError)
+	}
+
+	// publish updated topology
+
+	topo.Spec = nil
+	topo.Status = nil
+
+	body, err = json.Marshal(topo)
+	if err != nil {
+		err := weberror.NewWebError(err, "marshaling topology %s", req.Name)
+		return err.SetStatus(http.StatusInternalServerError)
+	}
+
+	broker.Broadcast(
+		broker.NewRequestPolicy("configs", "list", topo.FullName()),
+		broker.NewResource("config", topo.FullName(), "update"),
+		body,
+	)
+
+	// Create or update experiment using updated topology. It's possible that the
+	// topology already existed (so it's being updated), but an experiment with
+	// the same name doesn't exist yet (e.g., they created just the topology the
+	// first time around, but after editing the topology they decided to also
+	// create an experiment from it). As such, we need to support either creating
+	// or updating an experiment here.
+
+	exists := true
+
+	exp, err := experiment.Get(req.Name)
+	if err != nil {
+		if errors.Is(err, store.ErrNotExist) {
+			exists = false
+		} else {
+			err := weberror.NewWebError(err, "determining if experiment %s already exists", req.Name)
+			return err.SetStatus(http.StatusInternalServerError)
+		}
+	}
+
+	if exists {
+		annotations := exp.Metadata.Annotations
+		if annotations == nil {
+			err := weberror.NewWebError(err, "unable to determine if experiment uses topology %s", req.Name)
+			return err.SetStatus(http.StatusInternalServerError)
+		}
+
+		t, ok := annotations["topology"]
+		if !ok {
+			err := weberror.NewWebError(err, "unable to determine if experiment uses topology %s", req.Name)
+			return err.SetStatus(http.StatusInternalServerError)
+		}
+
+		if t != req.Name {
+			return weberror.NewWebError(err, "existing experiment not created from topology %s", req.Name)
+		}
+
+		if err := lockExperimentForUpdate(req.Name); err != nil {
+			err := weberror.NewWebError(err, "locking experiment for update")
+			return err.SetStatus(http.StatusConflict)
+		}
+
+		defer unlockExperiment(req.Name)
+
+		// update existing experiment
+
+		exp.Spec.SetTopology(topoSpec)
+
+		if err := exp.WriteToStore(false); err != nil {
+			err := weberror.NewWebError(err, "updating experiment %s", req.Name)
+			return err.SetStatus(http.StatusInternalServerError)
+		}
+	} else {
+		if err := lockExperimentForCreation(req.Name); err != nil {
+			err := weberror.NewWebError(err, "locking experiment for creation")
+			return err.SetStatus(http.StatusConflict)
+		}
+
+		defer unlockExperiment(req.Name)
+
+		if req.Scenario != "" {
+			scenario, _ := store.NewConfig("scenario/" + req.Scenario)
+
+			if err := store.Get(scenario); err != nil {
+				return weberror.NewWebError(nil, "scenario %s doesn't exist", req.Scenario)
+			}
+
+			// add this topology to the given scenario
+
+			topo := scenario.Metadata.Annotations["topology"]
+			topo = fmt.Sprintf("%s,%s", topo, req.Name)
+
+			scenario.Metadata.Annotations["topology"] = topo
+
+			if err := store.Update(scenario); err != nil {
+				err := weberror.NewWebError(err, "updating scenario %s", req.Scenario)
+				return err.SetStatus(http.StatusInternalServerError)
+			}
+		}
+
+		// create new experiment
+
+		opts := []experiment.CreateOption{
+			experiment.CreateWithName(req.Name),
+			experiment.CreateWithTopology(req.Name),
+			experiment.CreateWithScenario(req.Scenario),
+			experiment.CreateWithVLANAliases(req.VLANs),
+		}
+
+		if err := experiment.Create(ctx, opts...); err != nil {
+			if errors.Is(err, store.ErrExist) {
+				return weberror.NewWebError(err, "experiment with same name already exists").WithMetadata("type", "experiment", true)
+			}
+
+			if errors.Is(err, types.ErrValidationFailed) {
+				cause := errors.Unwrap(err)
+				lines := strings.Split(cause.Error(), "\n")
+
+				return weberror.NewWebError(cause, lines[0]).WithMetadata("type", "experiment", true).WithMetadata("validation", cause.Error(), true)
+			}
+
+			return weberror.NewWebError(err, "unable to create new experiment").WithMetadata("type", "experiment", true)
+		}
+
+		if warns := notes.Warnings(ctx); warns != nil {
+			for _, warn := range warns {
+				log.Warn("%v", warn)
+			}
+		}
+	}
+
+	// publish experiment
+
+	exp, err = experiment.Get(req.Name)
+	if err != nil {
+		err := weberror.NewWebError(err, "getting experiment %s", req.Name)
+		return err.SetStatus(http.StatusInternalServerError)
+	}
+
+	config, _ := store.NewConfig("experiment/" + req.Name)
+	config.Metadata = exp.Metadata
+
+	body, _ = json.Marshal(config)
+
+	action := "create"
+	if exists {
+		action = "update"
+	}
+
+	broker.Broadcast(
+		broker.NewRequestPolicy("configs", "list", config.FullName()),
+		broker.NewResource("config", config.FullName(), action),
+		body,
+	)
+
+	vms, _ := vm.List(req.Name)
+
+	body, err = marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vms))
+	if err != nil {
+		err := weberror.NewWebError(err, "marshaling experiment %s", req.Name)
+		return err.SetStatus(http.StatusInternalServerError)
+	}
+
+	broker.Broadcast(
+		broker.NewRequestPolicy("experiments", "get", req.Name),
+		broker.NewResource("experiment", req.Name, action),
+		body,
+	)
+
+	return nil
+}
+
 // POST /builder/save
 func SaveBuilderTopology(w http.ResponseWriter, r *http.Request) {
 	log.Debug("SaveBuilderTopology HTTP handler called")

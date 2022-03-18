@@ -41,6 +41,16 @@ func lockExperimentForCreation(name string) error {
 	return nil
 }
 
+func lockExperimentForUpdate(name string) error {
+	key := "experiment|" + name
+
+	if status := cache.Lock(key, cache.StatusUpdating, 5*time.Minute); status != "" {
+		return fmt.Errorf("experiment %s is locked with status %s", name, status)
+	}
+
+	return nil
+}
+
 func lockExperimentForDeletion(name string) error {
 	key := "experiment|" + name
 

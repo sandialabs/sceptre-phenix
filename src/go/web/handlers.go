@@ -73,8 +73,6 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) {
 	experiments, err := experiment.List()
 	if err != nil {
 		log.Error("getting experiments - %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 
 	allowed := []*proto.Experiment{}
@@ -2619,8 +2617,6 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 	exps, err := experiment.List()
 	if err != nil {
 		log.Error("getting experiments: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 
 	allowed := []*proto.VM{}

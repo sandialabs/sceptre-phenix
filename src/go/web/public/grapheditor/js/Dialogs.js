@@ -2383,6 +2383,11 @@ var viewJSONDialog = function(ui)
     json.kind = "Topology";
     json.metadata = {};
     json.metadata.name = 'FIXME';
+    
+    if (window.currentTopology) {
+        json.metadata.name = window.currentTopology;
+    }
+
     json.spec = { nodes: nodeArray }; // global model JSON
 
     if (window.experiment_vars != undefined) {
@@ -2623,9 +2628,14 @@ var viewJSONDialog = function(ui)
                         builderXML: xml
                     }
 
+                    var method = 'post';
+                    if (json.metadata.name == window.currentTopology) { 
+                        method = 'put'; 
+                    }
+
                     $.ajax({
                         url: `${window.PHENIX_API_PATH}/experiments/builder`,
-                        type: 'post',
+                        type: method,
                         data: JSON.stringify(payload),
                         headers,
                         success: function () {
@@ -2665,12 +2675,20 @@ var viewJSONDialog = function(ui)
                 } else { // creating topology only
                     json.metadata.annotations = { 'builder-xml': xml };
 
+                    var url    = `${window.PHENIX_API_PATH}/configs`;
+                    var method = 'post';
+
+                    if (json.metadata.name == window.currentTopology) { 
+                        url    = `${url}/topology/${json.metadata.name}`;
+                        method = 'put'; 
+                    }
+
                     $.ajax({
-                        url: `${window.PHENIX_API_PATH}/configs`,
-                        type: 'post',
+                        url: url,
+                        type: method,
                         data: JSON.stringify(json),
                         headers,
-                        success: function (data) {
+                        success: function () {
                             newDiv.html('The ' + json.metadata.name + ' topology was added to phēnix store');
                             newDiv.dialog({title: 'Success'}).parent().addClass('ui-state-highlight');
                             ui.hideDialog.apply(ui, arguments);

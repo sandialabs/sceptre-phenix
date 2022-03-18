@@ -30,6 +30,7 @@ type ExperimentSpec interface {
 	SetVLANAlias(string, int, bool) error
 	SetVLANRange(int, int, bool) error
 	SetSchedule(map[string]string)
+	SetTopology(TopologySpec)
 
 	VerifyScenario(context.Context) error
 	ScheduleNode(string, string) error

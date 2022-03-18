@@ -100,18 +100,22 @@ func List() ([]types.Experiment, error) {
 		return nil, fmt.Errorf("getting list of experiment configs from store: %w", err)
 	}
 
-	var experiments []types.Experiment
+	var (
+		experiments []types.Experiment
+		errs        error
+	)
 
 	for _, c := range configs {
 		exp, err := types.DecodeExperimentFromConfig(c)
 		if err != nil {
-			return nil, fmt.Errorf("decoding experiment from config: %w", err)
+			errs = multierror.Append(err, fmt.Errorf("decoding experiment %s from config: %w", c.Metadata.Name, err))
+			continue
 		}
 
 		experiments = append(experiments, *exp)
 	}
 
-	return experiments, nil
+	return experiments, errs
 }
 
 // Get retrieves the experiment with the given name. It returns a pointer to a

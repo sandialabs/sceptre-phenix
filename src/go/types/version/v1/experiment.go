@@ -225,6 +225,10 @@ func (this *ExperimentSpec) SetSchedule(s map[string]string) {
 	this.SchedulesF = s
 }
 
+func (this *ExperimentSpec) SetTopology(topo ifaces.TopologySpec) {
+	this.TopologyF = topo.(*TopologySpec)
+}
+
 func (this ExperimentSpec) VerifyScenario(ctx context.Context) error {
 	if this.ScenarioF == nil {
 		return nil

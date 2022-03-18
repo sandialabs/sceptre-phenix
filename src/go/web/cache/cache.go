@@ -12,6 +12,7 @@ const (
 	StatusStarting     Status = "starting"
 	StatusStarted      Status = "started"
 	StatusCreating     Status = "creating"
+	StatusUpdating     Status = "updating"
 	StatusDeleting     Status = "deleting"
 	StatusRedeploying  Status = "redeploying"
 	StatusSnapshotting Status = "snapshotting"

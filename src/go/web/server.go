@@ -120,6 +120,7 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/experiments", GetExperiments).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments", CreateExperiment).Methods("POST", "OPTIONS")
 	api.Handle("/experiments/builder", weberror.ErrorHandler(CreateExperimentFromBuilder)).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/builder", weberror.ErrorHandler(UpdateExperimentFromBuilder)).Methods("PUT", "OPTIONS")
 	api.Handle("/experiments/{name}", weberror.ErrorHandler(GetExperiment)).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}", DeleteExperiment).Methods("DELETE", "OPTIONS")
 	api.Handle("/experiments/{name}/apps", weberror.ErrorHandler(GetExperimentApps)).Methods("GET", "OPTIONS")
