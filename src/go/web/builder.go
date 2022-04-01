@@ -389,7 +389,7 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to create new experiment").WithMetadata("type", "experiment", true)
 		}
 
-		if warns := notes.Warnings(ctx); warns != nil {
+		if warns := notes.Warnings(ctx, false); warns != nil {
 			for _, warn := range warns {
 				log.Warn("%v", warn)
 			}
