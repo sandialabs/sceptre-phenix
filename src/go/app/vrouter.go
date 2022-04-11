@@ -217,6 +217,8 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 					return fmt.Errorf("configuring interface for router %s: %w", node.General().Hostname(), err)
 				}
 			}
+			
+			commit = true
 		}
 
 		for _, route := range node.Network().Routes() {
