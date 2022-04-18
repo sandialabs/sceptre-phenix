@@ -22,7 +22,7 @@ WORKDIR /phenix/src/go/web/public/docs
 RUN npx redoc-cli bundle openapi.yml -o index.html --title 'phenix API'
 
 
-FROM golang:1.17.2 AS gobuilder
+FROM golang:1.18 AS gobuilder
 
 RUN apt update \
   && apt install -y protobuf-compiler xz-utils
@@ -56,7 +56,7 @@ RUN git clone --branch main https://github.com/sandia-minimega/phenix-apps.git /
 
 WORKDIR /phenix-apps/src/go
 
-RUN go install ./...
+RUN CGO_ENABLED=0 GOOS=linux go install -trimpath ./...
 
 
 FROM ubuntu:20.04
