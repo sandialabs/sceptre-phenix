@@ -29,25 +29,24 @@ type vmScope struct {
 }
 
 const (
-	writeWait  = 5 * time.Second
-	pongWait   = 5 * time.Second
+	writeWait  = 10 * time.Second
+	pongWait   = 60 * time.Second
 	pingPeriod = (pongWait * 9) / 10
-	maxMsgSize = 1024
+	maxMsgSize = 2048
 )
 
 var (
 	newline  = []byte{'\n'}
 	upgrader = websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
+		ReadBufferSize:  4096,
+		WriteBufferSize: 4096,
 	}
 )
 
 type Client struct {
-	sync.Mutex
-
-	role rbac.Role
-	conn *websocket.Conn
+	role   rbac.Role
+	conn   *websocket.Conn
+	connMu sync.Mutex
 
 	publish chan interface{}
 	done    chan struct{}
@@ -56,7 +55,8 @@ type Client struct {
 	// Track the VMs this client currently has in view, if any, so we know
 	// what screenshots need to periodically be pushed to the client over
 	// the WebSocket connection.
-	vms []vmScope
+	vms  []vmScope
+	vmMu sync.RWMutex
 }
 
 func NewClient(role rbac.Role, conn *websocket.Conn) *Client {
@@ -83,6 +83,9 @@ func (this *Client) Stop() {
 func (this *Client) stop() {
 	unregister <- this
 	close(this.done)
+
+	this.connMu.Lock()
+	defer this.connMu.Unlock()
 
 	if err := this.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
 		log.Warn("closing client connection: %v", err)
@@ -234,7 +237,7 @@ func (this *Client) read() {
 				allowed = allowed.Paginate(page, size)
 			}
 
-			this.Lock()
+			this.vmMu.Lock()
 
 			this.vms = nil
 
@@ -242,7 +245,7 @@ func (this *Client) read() {
 				this.vms = append(this.vms, vmScope{exp: expName, name: v.Name})
 			}
 
-			this.Unlock()
+			this.vmMu.Unlock()
 
 			resp := &proto.VMList{Total: uint32(len(allowed))}
 
@@ -276,50 +279,8 @@ func (this *Client) write() {
 		case <-this.done:
 			return
 		case msg := <-this.publish:
-			if err := this.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
-				log.Error("setting write deadline for client connection: %v", err)
-				return
-			}
-
-			w, err := this.conn.NextWriter(websocket.TextMessage)
-			if err != nil {
-				log.Error("getting next writer for client connection: %v", err)
-				return
-			}
-
-			b, err := json.Marshal(msg)
-			if err != nil {
-				log.Error("marshaling message to be published: %v", err)
-				continue
-			}
-
-			if _, err := w.Write(b); err != nil {
-				log.Error("writing message to client connection: %v", err)
-				return
-			}
-
-			for i := 0; i < len(this.publish); i++ {
-				if _, err := w.Write(newline); err != nil {
-					log.Error("writing newline to client connection: %v", err)
-				}
-
-				msg := <-this.publish
-
-				b, err := json.Marshal(msg)
-				if err != nil {
-					log.Error("marshaling message to be published: %v", err)
-					continue
-				}
-
-				if _, err := w.Write(b); err != nil {
-					log.Error("writing message to client connection: %v", err)
-					return
-				}
-			}
-
-			if err := w.Close(); err != nil {
-				log.Error("closing client connection: %v", err)
-				return
+			if err := this.publisher(msg); err != nil {
+				log.Error("publishing message to client: %v", err)
 			}
 		case <-ticker.C:
 			if err := this.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
@@ -335,6 +296,52 @@ func (this *Client) write() {
 	}
 }
 
+func (this *Client) publisher(msg interface{}) error {
+	this.connMu.Lock()
+	defer this.connMu.Unlock()
+
+	if err := this.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+		return fmt.Errorf("setting write deadline for client connection: %w", err)
+	}
+
+	w, err := this.conn.NextWriter(websocket.TextMessage)
+	if err != nil {
+		return fmt.Errorf("getting next writer for client connection: %w", err)
+	}
+
+	defer w.Close()
+
+	b, err := json.Marshal(msg)
+	if err != nil {
+		log.Error("marshaling message to be published: %v", err)
+		return nil
+	}
+
+	if _, err := w.Write(b); err != nil {
+		return fmt.Errorf("writing message to client connection: %w", err)
+	}
+
+	for i := 0; i < len(this.publish); i++ {
+		if _, err := w.Write(newline); err != nil {
+			return fmt.Errorf("writing newline to client connection: %w", err)
+		}
+
+		msg := <-this.publish
+
+		b, err := json.Marshal(msg)
+		if err != nil {
+			log.Error("marshaling message to be published: %v", err)
+			continue
+		}
+
+		if _, err := w.Write(b); err != nil {
+			return fmt.Errorf("writing message to client connection: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func (this *Client) screenshots() {
 	ticker := time.NewTicker(5 * time.Second)
 
@@ -346,36 +353,45 @@ func (this *Client) screenshots() {
 		case <-this.done:
 			return
 		case <-ticker.C:
-			this.Lock()
+			names := make(map[string][]string)
+
+			this.vmMu.RLock()
 
 			for _, v := range this.vms {
-				screenshot, err := util.GetScreenshot(v.exp, v.name, "200")
-				if err != nil {
-					if errors.Is(err, mm.ErrVMNotFound) {
+				names[v.exp] = append(names[v.exp], v.name)
+			}
+
+			this.vmMu.RUnlock()
+
+			for exp, vms := range names {
+				for _, vm := range vms {
+					screenshot, err := util.GetScreenshot(exp, vm, "200")
+					if err != nil {
+						if errors.Is(err, mm.ErrVMNotFound) {
+							continue
+						}
+
+						if errors.Is(err, mm.ErrScreenshotNotFound) {
+							continue
+						}
+
+						log.Error("getting screenshot for WebSocket client: %v", err)
 						continue
 					}
 
-					if errors.Is(err, mm.ErrScreenshotNotFound) {
-						continue
-					}
-
-					log.Error("getting screenshot for WebSocket client: %v", err)
-				} else {
 					encoded := "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
 					marshalled, err := json.Marshal(util.WithRoot("screenshot", encoded))
 					if err != nil {
-						log.Error("marshaling VM %s screenshot for WebSocket client: %v", v, err)
+						log.Error("marshaling VM %s screenshot for WebSocket client: %v", vm, err)
 						continue
 					}
 
 					this.publish <- Publish{
-						Resource: NewResource("experiment/vm/screenshot", fmt.Sprintf("%s/%s", v.exp, v.name), "update"),
+						Resource: NewResource("experiment/vm/screenshot", fmt.Sprintf("%s/%s", exp, vm), "update"),
 						Result:   marshalled,
 					}
 				}
 			}
-
-			this.Unlock()
 		}
 	}
 }

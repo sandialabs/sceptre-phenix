@@ -33,10 +33,10 @@ login and returns a user to Experiments component if successful.
     },
     
     created () {
-      const username = localStorage.getItem( 'user' );
-      const token    = localStorage.getItem( 'token' );
-      const role     = localStorage.getItem( 'role' );
-      const auth     = localStorage.getItem( 'auth' );
+      const username = localStorage.getItem( 'phenix.user' );
+      const token    = localStorage.getItem( 'phenix.token' );
+      const role     = localStorage.getItem( 'phenix.role' );
+      const auth     = localStorage.getItem( 'phenix.auth' === 'true' );
 
       if ( token && auth ) {
         const user = {
@@ -77,12 +77,11 @@ login and returns a user to Experiments component if successful.
 
           this.$connect( '//' + location.host + path );
 
-          // TODO: separate, stand-alone websocket connection to handle app-wide
+          // Separate, stand-alone websocket connection to handle app-wide
           // notifications (e.g. new scorch terminal notifications).
-          let proto = location.protocol == "https:" ? "wss://" : "ws://";
-          let url = proto + location.host + path;
-          this.socket = new WebSocket( url );
-
+          // let proto = location.protocol == "https:" ? "wss://" : "ws://";
+          // let url = proto + location.host + path;
+          this.socket = new WebSocket( '//' + location.host + path );
           this.socket.onmessage = this.globalWsHandler;
         }
       },
@@ -90,8 +89,10 @@ login and returns a user to Experiments component if successful.
       wsDisconnect () {
         this.$disconnect();
 
-        this.socket.close();
-        this.socket = null;
+        if ( this.socket ) {
+          this.socket.close();
+          this.socket = null;
+        }
       },
 
       globalWsHandler ( event ) {

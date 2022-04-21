@@ -20,10 +20,10 @@ export default new Vuex.Store({
       state.auth     = true;
 
       if ( remember ) {
-        localStorage.setItem( 'user',  state.username );
-        localStorage.setItem( 'token', state.token );
-        localStorage.setItem( 'role',  state.role );
-        localStorage.setItem( 'auth',  state.auth );
+        localStorage.setItem( 'phenix.user',  state.username );
+        localStorage.setItem( 'phenix.token', state.token );
+        localStorage.setItem( 'phenix.role',  state.role );
+        localStorage.setItem( 'phenix.auth',  state.auth );
       }
 
       if ( state.role === "VM Viewer" ) {
@@ -40,11 +40,11 @@ export default new Vuex.Store({
       state.auth     = false;
       state.logs     = [];
 
-      if ( localStorage.getItem( 'auth' ) ) {
-        localStorage.removeItem( 'user' );
-        localStorage.removeItem( 'token' );
-        localStorage.removeItem( 'role' );
-        localStorage.setItem( 'auth', state.auth );
+      if ( localStorage.getItem( 'phenix.auth' === 'true' ) ) {
+        localStorage.removeItem( 'phenix.user' );
+        localStorage.removeItem( 'phenix.token' );
+        localStorage.removeItem( 'phenix.role' );
+        localStorage.setItem( 'phenix.auth', state.auth );
       }
       router.replace( '/signin' );
     }

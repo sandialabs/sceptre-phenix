@@ -1353,7 +1353,9 @@
           this.table.total  = state.vm_count;          
 
           this.updateTable(); 
-        } catch {
+        } catch (err) {
+          console.log(`ERROR getting experiments: ${err}`);
+
           this.$buefy.toast.open({
             message: 'Getting the experiments failed.',
             type: 'is-danger',
