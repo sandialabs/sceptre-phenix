@@ -74,6 +74,7 @@ type Interface struct {
 	BridgeF     string `json:"bridge" yaml:"bridge" structs:"bridge" mapstructure:"bridge"`
 	AutostartF  bool   `json:"autostart" yaml:"autostart" structs:"autostart" mapstructure:"autostart"`
 	MACF        string `json:"mac" yaml:"mac" structs:"mac" mapstructure:"mac"`
+	DriverF     string `json:"driver" yaml:"driver" structs:"driver" mapstructure:"driver"`
 	MTUF        int    `json:"mtu" yaml:"mtu" structs:"mtu" mapstructure:"mtu"`
 	AddressF    string `json:"address" yaml:"address" structs:"address" mapstructure:"address"`
 	MaskF       int    `json:"mask" yaml:"mask" structs:"mask" mapstructure:"mask"`
@@ -120,6 +121,10 @@ func (this Interface) Autostart() bool {
 
 func (this Interface) MAC() string {
 	return this.MACF
+}
+
+func (this Interface) Driver() string {
+	return this.DriverF
 }
 
 func (this Interface) MTU() int {
@@ -440,6 +445,10 @@ func (this Network) InterfaceConfig() string {
 
 		if iface.MACF != "" {
 			config = append(config, iface.MACF)
+		}
+
+		if iface.DriverF != "" {
+			config = append(config, iface.DriverF)
 		}
 
 		configs[i] = strings.Join(config, ",")

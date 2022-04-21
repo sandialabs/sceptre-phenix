@@ -97,6 +97,7 @@ type NodeNetworkInterface interface {
 	Bridge() string
 	Autostart() bool
 	MAC() string
+	Driver() string
 	MTU() int
 	Address() string
 	Mask() int
