@@ -868,6 +868,13 @@
           "type": "string",
           "title": "bridge",
           "default": "phenix"
+        },
+        "driver": {
+          "type": "string",
+          "title": "driver",
+          "examples": [
+            "e1000"
+          ]
         }
       },
       "required": [

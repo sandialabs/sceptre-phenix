@@ -538,6 +538,9 @@ components:
         bridge:
           type: string
           default: phenix
+        driver:
+          type: string
+          example: e1000
     iface_address:
       type: object
       required:
