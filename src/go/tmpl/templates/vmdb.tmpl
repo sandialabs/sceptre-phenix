@@ -31,18 +31,15 @@ steps:
       - {{ $overlay }}
       {{- end }}
   {{- end }}
+  - fstab: root
+  - grub: bios
+    tag: root
+  - mount-virtual-filesystems: root
   {{- if .Scripts }}
   - chroot: root
     shell: |
 {{ .PostBuild }}
   {{- end }}
-  - fstab: root
-  - grub: bios
-    tag: root
   {{- if .Ramdisk }}
   - ramdisk: root
   {{- end }}
-  - shell: |
-      echo Disk usage of this installation:
-      du -sh "$ROOT"
-    root-fs: root
