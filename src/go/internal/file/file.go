@@ -342,8 +342,8 @@ func fillInFileDates(expName string, expFiles map[string]ExperimentFile) {
 
 	// First get file listings from mesh, then from headnode.
 	commands := []string{
-		"mesh send all shell /usr/bin/ls -alht --full-time " + dirPath,
-		"shell /usr/bin/ls -alht --full-time " + dirPath,
+		"mesh send all shell ls -alht --full-time " + dirPath,
+		"shell ls -alht --full-time " + dirPath,
 	}
 
 	cmd := mmcli.NewCommand()
