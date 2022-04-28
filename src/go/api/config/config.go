@@ -252,19 +252,23 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("creating new config from file: %w", err)
 		}
-	} else if o.config != nil {
-		c = o.config
 	} else if o.data != nil {
 		var err error
 
+		data := string(o.data)
+
+		for _, v := range o.scopeVariables {
+			data = strings.ReplaceAll(data, v, o.scope)
+		}
+
 		switch o.dataType {
 		case DataTypeJSON:
-			c, err = store.NewConfigFromJSON(o.data)
+			c, err = store.NewConfigFromJSON([]byte(data))
 			if err != nil {
 				return nil, fmt.Errorf("creating new config from JSON: %w", err)
 			}
 		case DataTypeYAML:
-			c, err = store.NewConfigFromYAML(o.data)
+			c, err = store.NewConfigFromYAML([]byte(data))
 			if err != nil {
 				return nil, fmt.Errorf("creating new config from YAML: %w", err)
 			}

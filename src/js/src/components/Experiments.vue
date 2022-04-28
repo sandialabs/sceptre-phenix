@@ -1,7 +1,7 @@
 <template>
   <div class="content">
     <b-modal :active.sync="createModal.active" :on-cancel="resetCreateModal" has-modal-card>
-      <div class="modal-card" style="width: auto">
+      <div class="modal-card" style="width:25em">
         <header class="modal-card-head">
           <p class="modal-card-title">Create a New Experiment</p>
         </header>
@@ -39,13 +39,30 @@
               {{ a }}  
             </b-tag>
           </b-taglist>
-          <br><br>
-          <b-field label="VLAN Range">
-            <b-field>
-              <b-input type="number" min="1" max="4094" placeholder="minimum" v-model="createModal.vlan_min" expanded></b-input>
-              <b-input type="number" min="1" max="4094" placeholder="maximum" v-model="createModal.vlan_max" expanded></b-input>
-            </b-field>
-          </b-field>
+          <b-collapse class="card" animation="slide" :open="false">
+            <template #trigger="props">
+              <div class="card-header" role="button">
+                <p class="card-header-title">Options</p>
+                <a class="card-header-icon">
+                  <b-icon type="is-dark" size="is-small" :icon="props.open ? 'chevron-down' : 'chevron-up'"></b-icon>
+                </a>
+              </div>
+            </template>
+            <div class="card-content">
+              <div class="content">
+                <b-field label="VLAN Range">
+                  <b-field>
+                    <b-numberinput min="0" max="4094" type="is-light" size="is-small" controls-alignment="right" controls-position="compact" placeholder="min" v-model="createModal.vlan_min" />
+                    &nbsp;
+                    <b-numberinput min="0" max="4094" type="is-light" size="is-small" controls-alignment="right" controls-position="compact" placeholder="max" v-model="createModal.vlan_max" />
+                  </b-field>
+                </b-field>
+                <b-field label="Git Workflow Branch Name">
+                  <b-input type="text" v-model="createModal.branch" />
+                </b-field>
+              </div>
+            </div>
+          </b-collapse>
         </section>
         <footer class="modal-card-foot buttons is-right">
           <button class="button is-light" :disabled="!validate()" @click="create">Create Experiment</button>
@@ -577,7 +594,8 @@
           topology: this.createModal.topology,
           scenario: this.createModal.scenario,
           vlan_min: +this.createModal.vlan_min,
-          vlan_max: +this.createModal.vlan_max
+          vlan_max: +this.createModal.vlan_max,
+          workflow_branch: this.createModal.branch,
         }
         
         if ( !this.createModal.name ) {
@@ -753,7 +771,8 @@
           scenarios: {},
           scenario: null,
           vlan_min: null,
-          vlan_max: null
+          vlan_max: null,
+          branch: null
         },
         experiments: [],
         topologies: [],
@@ -779,5 +798,12 @@
 
   a.action {
     margin-right: 5px;
+  }
+
+  /* prevent bottom margin from being added to collapsible
+   * card in experiment create modal for options.
+   */
+  p.card-header-title {
+    margin: 0;
   }
 </style>

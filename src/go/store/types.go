@@ -92,10 +92,23 @@ func NewConfigFromFile(path string) (*Config, error) {
 	return &c, nil
 }
 
-func NewConfigFromJSON(body []byte) (*Config, error) {
+func NewConfigFromJSON(body []byte, replacements ...string) (*Config, error) {
+	data := string(body)
+
+	// Starting at 1 handles the case where replacements has an odd number of
+	// entries.
+	for i := 1; i < len(replacements); i += 2 {
+		var (
+			tmpl = replacements[i-1]
+			val  = replacements[i]
+		)
+
+		data = strings.ReplaceAll(data, tmpl, val)
+	}
+
 	var c Config
 
-	if err := json.Unmarshal(body, &c); err != nil {
+	if err := json.Unmarshal([]byte(data), &c); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidFormat, err)
 	}
 
@@ -106,10 +119,23 @@ func NewConfigFromJSON(body []byte) (*Config, error) {
 	return &c, nil
 }
 
-func NewConfigFromYAML(body []byte) (*Config, error) {
+func NewConfigFromYAML(body []byte, replacements ...string) (*Config, error) {
+	data := string(body)
+
+	// Starting at 1 handles the case where replacements has an odd number of
+	// entries.
+	for i := 1; i < len(replacements); i += 2 {
+		var (
+			tmpl = replacements[i-1]
+			val  = replacements[i]
+		)
+
+		data = strings.ReplaceAll(data, tmpl, val)
+	}
+
 	var c Config
 
-	if err := yaml.Unmarshal(body, &c); err != nil {
+	if err := yaml.Unmarshal([]byte(data), &c); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidFormat, err)
 	}
 

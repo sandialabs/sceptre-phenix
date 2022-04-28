@@ -68,6 +68,7 @@ message CreateExperimentRequest {
 	string scenario = 3;
 	uint32 vlan_min = 4 [json_name="vlan_min"];
 	uint32 vlan_max = 5 [json_name="vlan_max"];
+	string workflow_branch = 6 [json_name="workflow_branch"];
 }
 
 message SnapshotRequest {

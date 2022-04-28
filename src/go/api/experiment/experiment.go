@@ -207,17 +207,8 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 			return fmt.Errorf("topology annotation missing from scenario")
 		}
 
-		var found bool
-
-		for _, t := range strings.Split(topo, ",") {
-			if t == o.topology {
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			return fmt.Errorf("experiment/scenario topology mismatch")
+		if !strings.Contains(topo, o.topology) {
+			return fmt.Errorf("experiment/scenario topology mismatch for scenario %s", o.scenario)
 		}
 
 		// This will upgrade the scenario to the latest known version if needed.
@@ -226,53 +217,18 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 			return fmt.Errorf("decoding scenario from config: %w", err)
 		}
 
-		// This will look for `fromScenario` keys in the provided scenario and, if
-		// present, replace the config from the specified scenario.
-		for _, app := range scenario.Apps() {
-			if app.FromScenario() != "" {
-				fromScenarioC, _ := store.NewConfig("scenario/" + app.FromScenario())
-
-				if err := store.Get(fromScenarioC); err != nil {
-					return fmt.Errorf("scenario %s doesn't exist", app.FromScenario())
-				}
-
-				topo, ok := scenarioC.Metadata.Annotations["topology"]
-				if !ok {
-					return fmt.Errorf("topology annotation missing from scenario %s", app.FromScenario())
-				}
-
-				if topo != o.topology {
-					return fmt.Errorf("experiment/scenario topology mismatch")
-				}
-
-				// This will upgrade the scenario to the latest known version if needed.
-				fromScenario, err := types.DecodeScenarioFromConfig(*fromScenarioC)
-				if err != nil {
-					return fmt.Errorf("decoding scenario %s from config: %w", app.FromScenario(), err)
-				}
-
-				var found bool
-
-				for _, fromApp := range fromScenario.Apps() {
-					if fromApp.Name() == app.Name() {
-						app.SetAssetDir(fromApp.AssetDir())
-						app.SetMetadata(fromApp.Metadata())
-						app.SetHosts(fromApp.Hosts())
-
-						found = true
-						break
-					}
-				}
-
-				if !found {
-					return fmt.Errorf("no app named %s in scenario %s", app.Name(), app.FromScenario())
-				}
-
-			}
+		if err := types.MergeScenariosForTopology(scenario, o.topology); err != nil {
+			return fmt.Errorf("merging scenerios: %w", err)
 		}
 
 		meta.Annotations["scenario"] = o.scenario
 		specMap["scenario"] = scenario
+	}
+
+	for k, v := range o.annotations {
+		if _, ok := meta.Annotations[k]; !ok {
+			meta.Annotations[k] = v
+		}
 	}
 
 	c := &store.Config{
@@ -289,6 +245,7 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 
 	exp.Spec.SetVLANRange(o.vlanMin, o.vlanMax, false)
 	exp.Spec.VLANs().SetAliases(o.vlanAliases)
+	exp.Spec.SetSchedule(o.schedules)
 
 	exp.Spec.Init()
 
@@ -891,7 +848,7 @@ func handleDelayedVMs(ctx context.Context, ns string, delays map[string]time.Dur
 					done := true
 
 					for other, useUUID := range others {
-						opts := []mm.C2Option{mm.C2NS(ns), mm.C2VM(other), mm.C2Timeout(1*time.Second)}
+						opts := []mm.C2Option{mm.C2NS(ns), mm.C2VM(other), mm.C2Timeout(1 * time.Second)}
 
 						if useUUID {
 							opts = append(opts, mm.C2IDClientsByUUID())

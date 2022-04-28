@@ -18,6 +18,8 @@ services:
     - phenix
     - ui
     - --hostname-suffixes=-minimega,-phenix
+#   - --logs.phenix-path=/var/log/phenix/phenix.log
+#   - --logs.minimega-path=/var/log/phenix/minimega.log
     image: phenix
     container_name: phenix
     privileged: true
@@ -53,6 +55,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /tmp/minimega:/tmp/minimega
       - /tmp/phenix:/tmp/phenix
+      - /var/log/phenix:/var/log/phenix
       - type: bind
         source: /phenix
         target: /phenix
@@ -62,6 +65,8 @@ services:
       test: mm version
     environment:
       MM_FILEPATH: /phenix/images
+      MM_LOGFILE: /var/log/phenix/minimega.log
+      MM_LOGLEVEL: info
   es:
     image: elasticsearch:7.14.2
     container_name: es

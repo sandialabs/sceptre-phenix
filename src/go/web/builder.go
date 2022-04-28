@@ -19,6 +19,7 @@ import (
 	"phenix/types"
 	"phenix/util/notes"
 	"phenix/web/broker"
+	"phenix/web/cache"
 	"phenix/web/rbac"
 	"phenix/web/util"
 	"phenix/web/weberror"
@@ -121,12 +122,12 @@ func CreateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	if err := lockExperimentForCreation(req.Name); err != nil {
+	if err := cache.LockExperimentForCreation(req.Name); err != nil {
 		err := weberror.NewWebError(err, "locking experiment for creation")
 		return err.SetStatus(http.StatusConflict)
 	}
 
-	defer unlockExperiment(req.Name)
+	defer cache.UnlockExperiment(req.Name)
 
 	if req.Scenario != "" {
 		scenario, _ := store.NewConfig("scenario/" + req.Scenario)
@@ -322,12 +323,12 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "existing experiment not created from topology %s", req.Name)
 		}
 
-		if err := lockExperimentForUpdate(req.Name); err != nil {
+		if err := cache.LockExperimentForUpdate(req.Name); err != nil {
 			err := weberror.NewWebError(err, "locking experiment for update")
 			return err.SetStatus(http.StatusConflict)
 		}
 
-		defer unlockExperiment(req.Name)
+		defer cache.UnlockExperiment(req.Name)
 
 		// update existing experiment
 
@@ -338,12 +339,12 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 	} else {
-		if err := lockExperimentForCreation(req.Name); err != nil {
+		if err := cache.LockExperimentForCreation(req.Name); err != nil {
 			err := weberror.NewWebError(err, "locking experiment for creation")
 			return err.SetStatus(http.StatusConflict)
 		}
 
-		defer unlockExperiment(req.Name)
+		defer cache.UnlockExperiment(req.Name)
 
 		if req.Scenario != "" {
 			scenario, _ := store.NewConfig("scenario/" + req.Scenario)

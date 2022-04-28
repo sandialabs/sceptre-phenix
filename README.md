@@ -30,3 +30,87 @@ The Docker image is updated automatically each time a commit is pushed to the
 
 Please see the documentation at https://phenix.sceptre.dev for phenix usage
 documentation.
+
+## Git Workflow Support
+
+phenix can now support a git workflow. The following assumes an intermediary
+(e.g., a GitLab runner) exists to react to git push events.
+
+The first example cURL command below should be run for each phenix topology or
+scenario file present in the repository. These should be run prior to the
+`Workflow Apply` request being executed.
+
+Once all the phenix topology and scenario files have been added/updated, the
+phenix workflow config file (likely to be a hidden file in the root of the
+repository named `.phenix.yml`) should be applied. Applying the phenix workflow
+config file will trigger existing experiments to be updated and restarted,
+depending on settings within the workflow config file.
+
+### Add/Update Topology or Scenario Config
+
+```
+curl -XPOST -H "Content-Type: application/x-yaml" \
+  --data-binary @{/path/to/config/file.yml} \
+  http://localhost:3000/api/v1/workflow/configs/{branch name}
+```
+
+### Apply phenix Workflow Config
+
+```
+curl -XPOST -H "Content-Type: application/x-yaml" \
+  --data-binary @{/path/to/config/file.yml} \
+  http://localhost:3000/api/v1/workflow/apply/{branch name}
+```
+
+### phenix Workflow Config File Documentation
+
+Below is an example phenix workflow config file.
+
+```
+apiVersion: phenix.sandia.gov/v0
+kind: Workflow
+metadata: {}
+spec:
+  auto:
+    create: {{BRANCH_NAME}}-<string>
+    update: <bool>  # defaults to true
+    restart: <bool> # defaults to true
+  topology: {{BRANCH_NAME}}-<string>
+  scenario: {{BRANCH_NAME}}-<string>
+  vlans:
+    <alias>: <int>
+  schedules:
+    <vm>: <string>
+```
+
+* `auto` - this group of settings is used to determine what events happen
+  automatically when the workflow config is applied.
+    * `create` - if set, this string will be used as the name of the new
+      experiment to automatically be created for the current branch if one does
+      not already exist. Omit this setting to prevent an experiment from
+      automatically being created for the current branch.
+    * `update` - if true (the default), an experiment for the current branch
+      will be updated with its topology and scenario (if it has one). If the
+      experiment is currently running, it will only be updated if `auto.restart`
+      is also true.
+    * `restart` - if true (the default), a running experiment for the current
+      branch will be stopped, updated, and restarted when the workflow config is
+      applied to phenix. If the existing experiment is already stopped, or a new
+      experiment is created, it will be started. This setting has no affect if
+      `auto.update` is disabled and an experiment exists for the current branch.
+* `topology` - the name of the topology config to use for the experiment.
+  Variable substation will be applied to the config name. This setting can be
+  changed to force an existing experiment for the current branch to use a
+  different topology.
+* `scenario` - the name of the scenario config to use for the experiment.
+  Variable substation will be applied to the config name. This setting can be
+  changed to force an existing experiment for the current branch to use a
+  different scenario.
+* `vlans` - a map of VLAN alias to VLAN IDs to apply to the experiment for the
+  current branch. This setting has no affect if `auto.update` is disabled, or if
+  `auto.restart` is disabled and the experiment for the current branch is
+  running.
+* `schedules` - a map of VM hostnames to cluster hosts to apply to the
+  experiment for the current branch. This setting has no affect if `auto.update`
+  is disabled, or if `auto.restart` is disabled and the experiment for the
+  current branch is running.

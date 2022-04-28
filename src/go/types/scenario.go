@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"strings"
 
 	"phenix/store"
 	ifaces "phenix/types/interfaces"
@@ -66,13 +67,57 @@ func DecodeScenarioFromConfig(c store.Config) (ifaces.ScenarioSpec, error) {
 	return spec, nil
 }
 
+func MergeScenariosForTopology(scenario ifaces.ScenarioSpec, topology string) error {
+	// This will look for `fromScenario` keys in the provided scenario and, if
+	// present, replace the config from the specified scenario.
+	for _, app := range scenario.Apps() {
+		if app.FromScenario() != "" {
+			fromScenarioC, _ := store.NewConfig("scenario/" + app.FromScenario())
+
+			if err := store.Get(fromScenarioC); err != nil {
+				return fmt.Errorf("scenario %s doesn't exist", app.FromScenario())
+			}
+
+			topo, ok := fromScenarioC.Metadata.Annotations["topology"]
+			if !ok {
+				return fmt.Errorf("topology annotation missing from scenario %s", app.FromScenario())
+			}
+
+			if !strings.Contains(topo, topology) {
+				return fmt.Errorf("experiment/scenario topology mismatch for scenario %s", app.FromScenario())
+			}
+
+			// This will upgrade the scenario to the latest known version if needed.
+			fromScenario, err := DecodeScenarioFromConfig(*fromScenarioC)
+			if err != nil {
+				return fmt.Errorf("decoding scenario %s from config: %w", app.FromScenario(), err)
+			}
+
+			var found bool
+
+			for _, fromApp := range fromScenario.Apps() {
+				if fromApp.Name() == app.Name() {
+					app.SetAssetDir(fromApp.AssetDir())
+					app.SetMetadata(fromApp.Metadata())
+					app.SetHosts(fromApp.Hosts())
+
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				return fmt.Errorf("no app named %s in scenario %s", app.Name(), app.FromScenario())
+			}
+		}
+	}
+
+	return nil
+}
+
 type scenario struct{}
 
 func (scenario) Upgrade(version string, spec map[string]interface{}, md store.ConfigMetadata) (interface{}, error) {
-	// This is a dummy topology upgrader to provide an exmaple of how an upgrader
-	// might be coded up. The specs in v0 simply assume that some integer values
-	// might be represented as strings when in JSON format.
-
 	if version == "v1" {
 		var (
 			V1 = new(v1.ScenarioSpec)

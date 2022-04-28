@@ -125,8 +125,8 @@ func Start(opts ...ServerOption) error {
 	api.Handle("/experiments/{name}", weberror.ErrorHandler(UpdateExperiment)).Methods("PATCH", "OPTIONS")
 	api.HandleFunc("/experiments/{name}", DeleteExperiment).Methods("DELETE", "OPTIONS")
 	api.Handle("/experiments/{name}/apps", weberror.ErrorHandler(GetExperimentApps)).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/start", StartExperiment).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/stop", StopExperiment).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{name}/start", weberror.ErrorHandler(StartExperiment)).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{name}/stop", weberror.ErrorHandler(StopExperiment)).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/trigger", TriggerExperimentApps).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/trigger", CancelTriggeredExperimentApps).Methods("DELETE", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/schedule", GetExperimentSchedule).Methods("GET", "OPTIONS")
@@ -187,6 +187,8 @@ func Start(opts ...ServerOption) error {
 	api.Handle("/history", weberror.ErrorHandler(GetHistory)).Methods("POST", "OPTIONS")
 	api.HandleFunc("/errors/{uuid}", GetError).Methods("GET", "OPTIONS")
 	api.HandleFunc("/ws", broker.ServeWS).Methods("GET")
+	api.Handle("/workflow/apply/{branch}", weberror.ErrorHandler(ApplyWorkflow)).Methods("POST", "OPTIONS")
+	api.Handle("/workflow/configs/{branch}", weberror.ErrorHandler(WorkflowUpsertConfig)).Methods("POST", "OPTIONS")
 
 	if o.allowCORS {
 		log.Info("CORS is enabled on HTTP API endpoints")

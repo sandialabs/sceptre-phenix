@@ -9,11 +9,13 @@ type CreateOption func(*createOptions)
 
 type createOptions struct {
 	name        string
+	annotations map[string]string
 	topology    string
 	scenario    string
 	vlanMin     int
 	vlanMax     int
 	vlanAliases map[string]int
+	schedules   map[string]string
 	baseDir     string
 }
 
@@ -34,6 +36,12 @@ func newCreateOptions(opts ...CreateOption) createOptions {
 func CreateWithName(n string) CreateOption {
 	return func(o *createOptions) {
 		o.name = n
+	}
+}
+
+func CreateWithAnnotations(a map[string]string) CreateOption {
+	return func(o *createOptions) {
+		o.annotations = a
 	}
 }
 
@@ -64,6 +72,12 @@ func CreateWithVLANMax(m int) CreateOption {
 func CreateWithVLANAliases(a map[string]int) CreateOption {
 	return func(o *createOptions) {
 		o.vlanAliases = a
+	}
+}
+
+func CreateWithSchedules(s map[string]string) CreateOption {
+	return func(o *createOptions) {
+		o.schedules = s
 	}
 }
 
