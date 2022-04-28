@@ -19,6 +19,26 @@
         </footer>
       </div>
     </b-modal>
+    <b-modal :active.sync="vlanModal.active" has-modal-card>
+      <div class="modal-card" style="width:25em; height:30em">
+        <header class="modal-card-head">
+          <p class="modal-card-title">VLAN Assignments for <br> {{ this.$route.params.id }} Experiment</p>
+        </header>
+        <section class="modal-card-body">
+          <div v-for="( vlan, index ) in vlanModal.vlans" :key="index">
+            <table>
+              <tr>
+                <td style="width:50%"><font color="#202020">{{ vlan.alias }}</font></td>
+                <td><b-numberinput min="0" max="4094" type="is-light" size="is-small" controls-alignment="right" controls-position="compact" v-model=vlan.vlan /></td>
+              </tr>
+            </table>
+          </div>
+        </section>
+        <footer class="modal-card-foot buttons is-right">
+          <button class="button is-light" @click="updateVLANs">Update VLAN(s)</button>
+        </footer>
+      </div>
+    </b-modal>
     <hr>
     <div class="level is-vcentered">
       <div class="level-item">
@@ -51,6 +71,12 @@
         </b-tooltip>
         &nbsp; &nbsp;
       </template>
+      <b-tooltip label="assign VLAN ID to alias" type="is-light">
+        <button class='button is-light' @click="vlanModal.active = true">
+          <b-icon icon="network-wired"></b-icon>
+        </button>
+      </b-tooltip>
+      &nbsp; &nbsp;
       <b-autocomplete
         v-model="searchName"
         :placeholder="searchPlaceholder"
@@ -519,6 +545,8 @@
             response.json().then( state => {
               this.experiment = state;
               this.table.total = state.vm_count;
+              
+              this.vlanModal.vlans = this.experiment.vlans.map( vlan => { return vlan; } );
 
               // Only add successful searches to the search history
               if (this.table.total > 0) {
@@ -653,6 +681,41 @@
           }, () => {
             this.$buefy.toast.open({
               message: 'Getting the files failed.',
+              type: 'is-danger',
+              duration: 4000
+            });
+          }
+        );
+      },
+
+      updateVLANs () {
+        this.vlanModal.active = false;
+
+        let vlans = {};
+
+        for ( let i = 0; i < this.vlanModal.vlans.length; i++ ) {
+          let obj = this.vlanModal.vlans[i];
+          if ( obj.vlan !== 0 ) {
+            vlans[obj.alias] = obj.vlan;
+          }
+        }
+
+        let body = JSON.stringify(vlans);
+
+        console.log(body);
+
+        this.$http.patch(
+          'experiments/' + this.$route.params.id, body
+        ).then(
+          response => {
+            this.$buefy.toast.open({
+              message: 'Updating the VLAN Assignment for the ' + this.$route.params.id + ' Experiment was successful.',
+              type: 'is-success',
+              duration: 4000
+            });
+          }, response => {
+            this.$buefy.toast.open({
+              message: 'Updating the VLAN Assignment for the ' + this.$route.params.id + ' Experiment failed with ' + response.status + ' status.',
               type: 'is-danger',
               duration: 4000
             });
@@ -1292,7 +1355,11 @@
         checkAll:false,
         selectedRows: [],
         searchPlaceholder:"Find a VM",
-        activeTab:0
+        activeTab:0,
+        vlanModal: {
+          active: false,
+          vlans: []
+        }
       }
     }
   }

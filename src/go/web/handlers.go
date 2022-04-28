@@ -218,6 +218,66 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// PUT /experiments/{name}
+func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
+	log.Debug("UpdateExperiment HTTP handler called")
+
+	var (
+		ctx  = r.Context()
+		role = ctx.Value("role").(rbac.Role)
+		vars = mux.Vars(r)
+		name = vars["name"]
+	)
+
+	if !role.Allowed("experiments", "patch", name) {
+		err := weberror.NewWebError(nil, "updating experiment %s not allowed for %s", name, ctx.Value("user").(string))
+		return err.SetStatus(http.StatusForbidden)
+	}
+
+	exp, err := experiment.Get(name)
+	if err != nil {
+		err := weberror.NewWebError(err, "unable to get experiment %s details", name)
+		return err.SetStatus(http.StatusInternalServerError)
+	}
+
+	if exp.Running() {
+		err := weberror.NewWebError(err, "cannot update running experiment %s", name)
+		return err.SetStatus(http.StatusBadRequest)
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		err := weberror.NewWebError(err, "unable to parse update request for experiment %s", name)
+		return err.SetStatus(http.StatusInternalServerError)
+	}
+
+	var vlans map[string]int
+
+	if err := json.Unmarshal(body, &vlans); err != nil {
+		err := weberror.NewWebError(err, "unable to parse update request for experiment %s", name)
+		return err.SetStatus(http.StatusInternalServerError)
+	}
+
+	aliases := exp.Spec.VLANs().Aliases()
+
+	if len(vlans) > 0 {
+		for alias, id := range vlans {
+			if _, ok := aliases[alias]; ok {
+				aliases[alias] = id
+			}
+		}
+
+		exp.Spec.VLANs().SetAliases(aliases)
+
+		if err := exp.WriteToStore(false); err != nil {
+			err := weberror.NewWebError(err, "unable to write updated experiment %s", name)
+			return err.SetStatus(http.StatusInternalServerError)
+		}
+	}
+
+	return nil
+}
+
 // GET /experiments/{name}
 func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 	log.Debug("GetExperiment HTTP handler called")
