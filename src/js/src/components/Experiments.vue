@@ -1,7 +1,7 @@
 <template>
   <div class="content">
     <b-modal :active.sync="createModal.active" :on-cancel="resetCreateModal" has-modal-card>
-      <div class="modal-card" style="width: auto">
+      <div class="modal-card" style="width:25em">
         <header class="modal-card-head">
           <p class="modal-card-title">Create a New Experiment</p>
         </header>
@@ -39,18 +39,24 @@
               {{ a }}  
             </b-tag>
           </b-taglist>
-          <br><br>
-          <b-field label="VLAN Range">
-            <b-field>
-              <b-input type="number" min="1" max="4094" placeholder="minimum" v-model="createModal.vlan_min" expanded></b-input>
-              <b-input type="number" min="1" max="4094" placeholder="maximum" v-model="createModal.vlan_max" expanded></b-input>
+          <br>
+          <b-collapse :open="false">
+            <template #trigger="props">
+              <b-icon type="is-dark" size="is-small" :icon="!props.open ? 'chevron-down' : 'chevron-up'" />
+              <font size="-1" color="#383838"><b>Options</b></font>
+            </template>
+            <br>
+            <b-field label="VLAN Range">
+              <b-field>
+                <b-numberinput min="0" max="4094" type="is-light" size="is-small" controls-alignment="right" controls-position="compact" placeholder="minimum" v-model="createModal.vlan_min" />
+                &nbsp;
+                <b-numberinput min="0" max="4094" type="is-light" size="is-small" controls-alignment="right" controls-position="compact" placeholder="maximum" v-model="createModal.vlan_max" />
+              </b-field>
             </b-field>
-          </b-field>
-          <br><br>
-          <b-collapse :open="false" position="is-bottom">
-            <b-field label="Branch name">
+            <b-field label="Branch Name">
               <b-input type="text" v-model="createModal.branch" />
             </b-field>
+          </b-collapse>
         </section>
         <footer class="modal-card-foot buttons is-right">
           <button class="button is-light" :disabled="!validate()" @click="create">Create Experiment</button>
@@ -585,6 +591,7 @@
           vlan_max: +this.createModal.vlan_max
         }
 
+        // TODO: update when server side API is available
         console.log('branch ' + this.createModal.branch);
         
         if ( !this.createModal.name ) {
