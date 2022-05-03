@@ -46,6 +46,11 @@
               <b-input type="number" min="1" max="4094" placeholder="maximum" v-model="createModal.vlan_max" expanded></b-input>
             </b-field>
           </b-field>
+          <br><br>
+          <b-collapse :open="false" position="is-bottom">
+            <b-field label="Branch name">
+              <b-input type="text" v-model="createModal.branch" />
+            </b-field>
         </section>
         <footer class="modal-card-foot buttons is-right">
           <button class="button is-light" :disabled="!validate()" @click="create">Create Experiment</button>
@@ -579,6 +584,8 @@
           vlan_min: +this.createModal.vlan_min,
           vlan_max: +this.createModal.vlan_max
         }
+
+        console.log('branch ' + this.createModal.branch);
         
         if ( !this.createModal.name ) {
           this.$buefy.toast.open({
@@ -753,7 +760,8 @@
           scenarios: {},
           scenario: null,
           vlan_min: null,
-          vlan_max: null
+          vlan_max: null,
+          branch: null
         },
         experiments: [],
         topologies: [],
