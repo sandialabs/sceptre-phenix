@@ -24,6 +24,12 @@ function Phenix-StartupComplete {
     return $false
 }
 
+{{ $rearm := index .Node.Annotations "phenix/windows-rearm" }}
+
+{{ if toBool $rearm }}
+taskkill /IM "slui.exe" /F
+{{ end }}
+
 if (Phenix-StartupComplete) {
     exit
 }
@@ -116,6 +122,11 @@ if (($host_name -eq "{{ .Node.General.Hostname }}") -or ("{{ .Node.General.Hostn
     exit
 {{ end }}
 } else {
+    {{ if toBool $rearm }}
+    echo 'Rearming license'
+    cscript C:\Windows\System32\slmgr.vbs /rearm
+    {{ end }}
+
     echo 'Changing hostname'
     $computer_info = Get-WmiObject -Class Win32_ComputerSystem
     $computer_info.Rename("{{ .Node.General.Hostname }}")

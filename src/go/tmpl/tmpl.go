@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"text/template"
 )
 
@@ -37,6 +38,23 @@ func GenerateFromTemplate(name string, data interface{}, w io.Writer) error {
 			mask := ipv4Net.Mask
 
 			return fmt.Sprintf("%d.%d.%d.%d", mask[0], mask[1], mask[2], mask[3])
+		},
+		"toBool": func(val interface{}) bool {
+			switch v := val.(type) {
+			case string:
+				b, err := strconv.ParseBool(v)
+				if err != nil {
+					return false
+				}
+
+				return b
+			case int:
+				return v != 0
+			case bool:
+				return v
+			default:
+				return false
+			}
 		},
 	}
 
