@@ -71,12 +71,23 @@
         </b-tooltip>
         &nbsp; &nbsp;
       </template>
+<<<<<<< HEAD
       <b-tooltip label="assign VLAN ID to alias" type="is-light">
         <button class='button is-light' @click="vlanModal.active = true">
           <b-icon icon="network-wired"></b-icon>
         </button>
       </b-tooltip>
       &nbsp; &nbsp;
+=======
+      <template v-if="this.activeTab == 1">
+        <b-tooltip label="search on a specific category" type="is-light">
+          <b-select :value="filesTable.category" @input="( value ) => assignCategory( value )" placeholder="All Categories">
+            <option v-for="( category, index ) in filesTable.categories" :key="index" :value=category>{{ category }}</option>
+          </b-select>
+        </b-tooltip>
+        &nbsp;
+      </template>
+>>>>>>> 7517723 (Improve access to experiment files via the UI, to include Scorch files)
       <b-autocomplete
         v-model="searchName"
         :placeholder="searchPlaceholder"
@@ -87,7 +98,7 @@
           <template slot="empty">No results found</template>
       </b-autocomplete>
       <p class='control'>
-         <button class='button' style="color:#686868" @click="searchVMs('')">
+         <button class='button' style="color:#686868" @click="searchVMs(''); filesTable.category = null">
           <b-icon icon="window-close"></b-icon>
         </button>
       </p>
@@ -115,7 +126,7 @@
     </b-field>
     <div style="margin-top: -4em;">
       <b-tabs @input="tabsSwitched()" v-model="activeTab">
-        <b-tab-item label="Table">          
+        <b-tab-item label="VMs" icon="desktop">      
           <b-table
             :key="table.key"
             :data="experiment.vms"
@@ -263,7 +274,7 @@
             </div>
           </b-field>
         </b-tab-item>
-        <b-tab-item label="Files">
+        <b-tab-item label="Files" icon="file-alt">
           <b-table            
             :data="files"
             :paginated="filesTable.isPaginated  && filesPaginationNeeded"
@@ -279,35 +290,37 @@
             default-sort="date"
             @sort="onFilesSort">
             <template slot="empty">
-                <section class="section">
-                  <div class="content has-text-white has-text-centered">
-                    No Files Are Available!
-                  </div>
-                </section>
+              <section class="section">
+                <div class="content has-text-white has-text-centered">
+                  No Files Are Available!
+                </div>
+              </section>
             </template>
             <template slot-scope="props">
-                <b-table-column field="name" label="Name" sortable centered>                  
-                          {{ props.row.name }}                      
-                </b-table-column>
-                <b-table-column field="date" label="Date" sortable centered>                  
-                          {{ props.row.date }}                      
-                </b-table-column>
-                <b-table-column field="size" label="Size" sortable centered>                  
-                          {{ props.row.size }}                      
-                </b-table-column>
-                 <b-table-column field="category" label="Category" sortable centered>                  
-                          {{ props.row.category }}                      
-                </b-table-column>
-                <b-table-column field="download" label="Download" centered>   
-                        <a :href="'api/v1/experiments/'
-                          + experiment.name 
-                          + '/files/' 
-                          + props.row.name
-                          + '?token=' 
-                          + $store.state.token" target="_blank"> 
-                          <b-icon icon="file-download" size="is-small"></b-icon>                       
-                          </a>                      
-                </b-table-column>
+              <b-table-column field="name" label="Name" sortable>                  
+                {{ props.row.name }}            
+              </b-table-column>
+              <b-table-column field="path" label="Path" centered>
+                <b-tooltip :label="'/phenix/images/' + experiment.name + '/files/' + props.row.path" type="is-dark">
+                  <b-icon icon="info-circle" size="is-small" />
+                </b-tooltip>
+              </b-table-column>
+              <b-table-column field="categories" label="Category">
+                <b-taglist>
+                  <b-tag v-for="( c, index ) in props.row.categories" :key="index" type="is-light">{{ c }}</b-tag>
+                </b-taglist>
+              </b-table-column>
+              <b-table-column field="date" label="Date" sortable centered>                  
+                {{ props.row.date }}                      
+              </b-table-column>
+              <b-table-column field="size" label="Size" sortable centered>                  
+                {{ props.row.size }}                      
+              </b-table-column>
+              <b-table-column field="actions" label="Actions" centered>
+                <a :href="fileDownloadURL(props.row.name, props.row.path)" target="_blank">
+                  <b-icon icon="file-download" size="is-small"></b-icon>
+                </a>
+              </b-table-column>
             </template>
           </b-table>
           <br>
@@ -662,8 +675,24 @@
                 this.files = state.files
                 this.filesTable.total = state.total
 
+                for ( let i = 0; i < state.files.length; i++ ) {
+                  this.filesTable.categories.push( ...state.files[i].categories );
+                }
+
+                this.filesTable.categories = this.getUniqueItems(this.filesTable.categories);
+
+                if (this.filesTable.category) {
+                  let files = this.files;
+                  this.files = [];
+                  for (let i = 0; i < files.length; i++) {
+                    if (files[i].categories.includes(this.filesTable.category)) {
+                      this.files.push(files[i]);
+                    }
+                  }
+                }
+
                 // Format the file sizes
-                for(let i = 0; i<this.files.length;i++){
+                for(let i = 0; i < this.files.length; i++){
                   this.files[i].size = this.formatFileSize(this.files[i].size)
                 }
 
@@ -690,7 +719,6 @@
 
       updateVLANs () {
         this.vlanModal.active = false;
-
         let vlans = {};
 
         for ( let i = 0; i < this.vlanModal.vlans.length; i++ ) {
@@ -702,12 +730,10 @@
 
         let body = JSON.stringify(vlans);
 
-        console.log(body);
-
         this.$http.patch(
           'experiments/' + this.$route.params.id, body
         ).then(
-          response => {
+          _ => {
             this.$buefy.toast.open({
               message: 'Updating the VLAN Assignment for the ' + this.$route.params.id + ' Experiment was successful.',
               type: 'is-success',
@@ -721,6 +747,11 @@
             });
           }
         );
+      },
+
+      assignCategory ( value ) {
+        this.filesTable.category = value;
+        this.updateFiles();
       },
 
       start () {
@@ -1307,6 +1338,10 @@
 
       getDiskToolTip (fullPath) {       
         return this.disks.indexOf(fullPath) == -1 ? "menu for assigning vm(s) disk" : fullPath
+      },
+
+      fileDownloadURL(name, path) {
+        return `${process.env.BASE_URL}api/v1/experiments/${this.$route.params.id}/files/${name}?token=${this.$store.state.token}&path=${path}`;
       }
     },
 
@@ -1331,7 +1366,9 @@
           total:  0,
           sortColumn: 'date',          
           paginationSize: 'is-small',
-          defaultSortDirection: 'desc'
+          defaultSortDirection: 'desc',
+          categories: [],
+          category: null
         },
         expModal: {
           active: false,

@@ -26,7 +26,7 @@
             </p>
           </p>          
       </section>
-      <footer class="modal-card-foot  buttons is-right">
+      <footer class="modal-card-foot buttons is-right">
         <div v-if="adminUser() && !showModifyStateBar">
           <template v-if="!expModal.vm.running">
             <b-tooltip label="start" type="is-light">
@@ -421,6 +421,14 @@
         &nbsp;&nbsp;
        <div class="level-item"  style="margin-bottom: -1em;">
         <b-field v-if="experimentUser() || experimentViewer()" position="is-right">
+          <template v-if="this.activeTab == 1">
+            <b-tooltip label="search on a specific category" type="is-light">
+              <b-select :value="filesTable.category" @input="( value ) => assignCategory( value )" placeholder="All Categories">
+                <option v-for="( category, index ) in filesTable.categories" :key="index" :value=category>{{ category }}</option>
+              </b-select>
+            </b-tooltip>
+            &nbsp;
+          </template>
           <b-autocomplete
             v-model="search.filter"
             :placeholder="searchPlaceholder"
@@ -431,7 +439,7 @@
             <template slot="empty">No results found</template>
           </b-autocomplete>
           <p  class='control'>
-            <button class='button' style="color:#686868" @click="searchVMs('')">
+            <button class='button' style="color:#686868" @click="searchVMs(''); filesTable.category = null">
               <b-icon icon="window-close"></b-icon>
             </button>
           </p>
@@ -453,7 +461,7 @@
     </div>
     <div style="margin-top: -4em;">
       <b-tabs @input="tabsSwitched()" v-model="activeTab">
-        <b-tab-item label="Table">
+        <b-tab-item label="VMs" icon="desktop">
           <b-table
             :data="experiment.vms"
             :paginated="table.isPaginated"
@@ -635,7 +643,7 @@
             </div>
           </b-field>
         </b-tab-item>
-        <b-tab-item label="Files">
+        <b-tab-item label="Files" icon="file-alt">
           <b-table            
             :data="files"
             :paginated="filesTable.isPaginated"
@@ -651,35 +659,37 @@
             default-sort="date"
             @sort="onFilesSort">
             <template slot="empty">
-                <section class="section">
-                  <div class="content has-text-white has-text-centered">
-                    No Files Are Available!
-                  </div>
-                </section>
+              <section class="section">
+                <div class="content has-text-white has-text-centered">
+                  No Files Are Available!
+                </div>
+              </section>
             </template>
             <template slot-scope="props">
-                <b-table-column field="name" label="Name" sortable centered>                  
-                          {{ props.row.name }}                      
-                </b-table-column>
-                <b-table-column field="date" label="Date" sortable centered>                  
-                          {{ props.row.date }}                      
-                </b-table-column>
-                <b-table-column field="size" label="Size" sortable centered>                  
-                          {{ props.row.size }}                      
-                </b-table-column>
-                 <b-table-column field="category" label="Category" sortable centered>                  
-                          {{ props.row.category }}                      
-                </b-table-column>
-                <b-table-column field="download" label="Download" centered>   
-                        <a :href="'/api/v1/experiments/'
-                          + experiment.name 
-                          + '/files/' 
-                          + props.row.name
-                          + '?token=' 
-                          + $store.state.token" target="_blank"> 
-                          <b-icon icon="file-download" size="is-small"></b-icon>                       
-                          </a>                      
-                </b-table-column>
+              <b-table-column field="name" label="Name" sortable>                  
+                {{ props.row.name }}            
+              </b-table-column>
+              <b-table-column field="path" label="Path" centered>
+                <b-tooltip :label="'/phenix/images/' + experiment.name + '/files/' + props.row.path" type="is-dark">
+                  <b-icon icon="info-circle" size="is-small" />
+                </b-tooltip>
+              </b-table-column>
+              <b-table-column field="categories" label="Category">
+                <b-taglist>
+                  <b-tag v-for="( c, index ) in props.row.categories" :key="index" type="is-light">{{ c }}</b-tag>
+                </b-taglist>
+              </b-table-column>
+              <b-table-column field="date" label="Date" sortable centered>                  
+                {{ props.row.date }}                      
+              </b-table-column>
+              <b-table-column field="size" label="Size" sortable centered>                  
+                {{ props.row.size }}                      
+              </b-table-column>
+              <b-table-column field="actions" label="Actions" centered>
+                <a :href="fileDownloadURL(props.row.name, props.row.path)" target="_blank">
+                  <b-icon icon="file-download" size="is-small"></b-icon>
+                </a>
+              </b-table-column>
             </template>            
           </b-table>
           <br>
@@ -1434,8 +1444,24 @@
                 this.files = state.files
                 this.filesTable.total = state.total
 
+                for ( let i = 0; i < state.files.length; i++ ) {
+                  this.filesTable.categories.push( ...state.files[i].categories );
+                }
+
+                this.filesTable.categories = this.getUniqueItems(this.filesTable.categories);
+
+                if (this.filesTable.category) {
+                  let files = this.files;
+                  this.files = [];
+                  for (let i = 0; i < files.length; i++) {
+                    if (files[i].categories.includes(this.filesTable.category)) {
+                      this.files.push(files[i]);
+                    }
+                  }
+                }
+
                 // Format the file sizes
-                for(let i = 0; i<this.files.length;i++){
+                for(let i = 0; i < this.files.length; i++){
                   this.files[i].size = this.formatFileSize(this.files[i].size)
                 }
                
@@ -1461,6 +1487,11 @@
             this.isWaiting = false;
           }
         );
+      },
+
+      assignCategory ( value ) {
+        this.filesTable.category = value;
+        this.updateFiles();
       },
 
       getInfo ( vm  ) {
@@ -2867,6 +2898,10 @@
         }
         
         return false  
+      },
+
+      fileDownloadURL(name, path) {
+        return `${process.env.BASE_URL}api/v1/experiments/${this.$route.params.id}/files/${name}?token=${this.$store.state.token}&path=${path}`;
       }
     },
     
@@ -2894,7 +2929,9 @@
           total:  0,
           sortColumn: 'date',          
           paginationSize: 'is-small',
-          defaultSortDirection: 'desc'
+          defaultSortDirection: 'desc',
+          categories: [],
+          category: null
         },
         expModal: {
           active: false,

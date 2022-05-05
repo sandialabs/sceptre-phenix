@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -725,28 +726,28 @@ func Delete(name string) error {
 }
 
 func Files(name, filter string) (file.ExperimentFiles, error) {
-	return file.GetExperimentFileNames(name, filter)
+	return file.GetExperimentFiles(name, filter)
 }
 
-func File(name, fileName string) ([]byte, error) {
-	files, err := file.GetExperimentFileNames(name, "")
+func File(name, filePath string) ([]byte, error) {
+	files, err := file.GetExperimentFiles(name, "")
 	if err != nil {
 		return nil, fmt.Errorf("getting list of experiment files: %w", err)
 	}
 
 	for _, c := range mm.GetExperimentCaptures(mm.NS(name)) {
-		if strings.Contains(c.Filepath, fileName) {
+		if strings.Contains(c.Filepath, path.Base(filePath)) {
 			return nil, mm.ErrCaptureExists
 		}
 	}
 
 	for _, f := range files {
-		if fileName == f.Name {
+		if filePath == f.Path {
 			headnode, _ := os.Hostname()
 
-			file.CopyFile(headnode, fmt.Sprintf("/%s/files/%s", name, f.Name), nil)
+			file.CopyFile(fmt.Sprintf("/%s/files/%s", name, f.Path), headnode, nil)
 
-			path := fmt.Sprintf("%s/images/%s/files/%s", common.PhenixBase, name, f.Name)
+			path := fmt.Sprintf("%s/images/%s/files/%s", common.PhenixBase, name, f.Path)
 
 			data, err := ioutil.ReadFile(path)
 			if err != nil {

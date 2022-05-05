@@ -96,17 +96,17 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	if this.md.Filebeat.Enabled {
-		if err := createFilebeatConfig(this.md, exp.Spec.ExperimentName(), exp.Spec.BaseDir(), runID); err != nil {
+		if err := createFilebeatConfig(this.md, exp.Spec.ExperimentName(), exp.FilesDir(), runID); err != nil {
 			return fmt.Errorf("creating Filebeat config: %w", err)
 		}
 	}
 
-	cmd, err := this.startFilebeat(ctx, exp.Spec.BaseDir(), runID)
+	cmd, err := this.startFilebeat(ctx, exp.FilesDir(), runID)
 	if err != nil {
 		return fmt.Errorf("starting Filebeat: %w", err)
 	}
 
-	defer this.stopFilebeat(ctx, cmd, exp.Spec.BaseDir(), runID)
+	defer this.stopFilebeat(ctx, cmd, exp.FilesDir(), runID)
 
 	var (
 		errors error

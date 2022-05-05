@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"phenix/internal/common"
 	"phenix/internal/mm"
 	"phenix/store"
 	ifaces "phenix/types/interfaces"
@@ -94,6 +95,10 @@ func (this Experiment) DryRun() bool {
 	}
 
 	return strings.Contains(this.Status.StartTime(), "DRYRUN")
+}
+
+func (this Experiment) FilesDir() string {
+	return fmt.Sprintf("%s/images/%s/files", common.PhenixBase, this.Metadata.Name)
 }
 
 func DecodeExperimentFromConfig(c store.Config) (*Experiment, error) {

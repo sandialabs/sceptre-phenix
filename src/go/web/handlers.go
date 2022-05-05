@@ -766,8 +766,6 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	experimentFilesTotal := len(files)
-
 	if sortCol != "" && sortDir != "" {
 		files.SortBy(sortCol, sortDir == "asc")
 	}
@@ -779,10 +777,7 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
 		files = files.Paginate(n, s)
 	}
 
-	experimentFileList := util.ExperimentFileListToProtobuf(files)
-	experimentFileList.Total = uint32(experimentFilesTotal)
-
-	body, err := marshaler.Marshal(experimentFileList)
+	body, err := json.Marshal(util.WithRoot("files", files))
 	if err != nil {
 		log.Error("marshaling file list for experiment %s - %v", name, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -797,11 +792,13 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 	log.Debug("GetExperimentFile HTTP handler called")
 
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
-		vars = mux.Vars(r)
-		name = vars["name"]
-		file = vars["filename"]
+		ctx   = r.Context()
+		role  = ctx.Value("role").(rbac.Role)
+		vars  = mux.Vars(r)
+		name  = vars["name"]
+		file  = vars["filename"]
+		query = r.URL.Query()
+		path  = query.Get("path")
 	)
 
 	if !role.Allowed("experiments/files", "get", name) {
@@ -810,14 +807,14 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contents, err := experiment.File(name, file)
+	contents, err := experiment.File(name, path)
 	if err != nil {
 		if errors.Is(err, mm.ErrCaptureExists) {
 			http.Error(w, "capture still in progress", http.StatusBadRequest)
 			return
 		}
 
-		log.Error("getting file %s for experiment %s - %v", file, name, err)
+		log.Error("getting file %s for experiment %s - %v", path, name, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

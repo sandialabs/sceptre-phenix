@@ -102,6 +102,7 @@ func (this UserComponent) run(ctx context.Context, stage Action, cmd string, dat
 		shell.StreamStdout(stdout),
 		shell.Env(
 			"PHENIX_DIR="+common.PhenixBase,
+			"PHENIX_FILES_DIR="+this.options.Exp.FilesDir(),
 			"PHENIX_LOG_LEVEL="+util.GetEnv("PHENIX_LOG_LEVEL", "DEBUG"),
 			"PHENIX_LOG_FILE="+util.GetEnv("PHENIX_LOG_FILE", common.LogFile),
 			"PHENIX_DRYRUN="+strconv.FormatBool(this.options.Exp.DryRun()),

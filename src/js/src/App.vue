@@ -29,7 +29,9 @@ login and returns a user to Experiments component if successful.
     
     beforeDestroy () {
       this.wsDisconnect();
-      this.unwatch();
+      if ( this.unwatch ) {
+        this.unwatch();
+      }
     },
     
     created () {
@@ -75,13 +77,14 @@ login and returns a user to Experiments component if successful.
             path += '?token=' + this.$store.getters.token;
           }
 
-          this.$connect( '//' + location.host + path );
+          let proto = location.protocol == "https:" ? "wss://" : "ws://";
+          let url = proto + location.host + path;
+
+          this.$connect( url );
 
           // Separate, stand-alone websocket connection to handle app-wide
           // notifications (e.g. new scorch terminal notifications).
-          // let proto = location.protocol == "https:" ? "wss://" : "ws://";
-          // let url = proto + location.host + path;
-          this.socket = new WebSocket( '//' + location.host + path );
+          this.socket = new WebSocket( url );
           this.socket.onmessage = this.globalWsHandler;
         }
       },

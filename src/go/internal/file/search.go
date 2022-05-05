@@ -69,7 +69,6 @@ func (node *ExpressionTree) PrintTree() {
 }
 
 func BuildTree(searchFilter string) *ExpressionTree {
-
 	if len(searchFilter) == 0 {
 		return nil
 	}
@@ -215,7 +214,7 @@ func postfix(terms []string) ([]string, error) {
 			token := ""
 			for token != "(" {
 				if tmpToken, ok := opStack.Pop().(string); !ok {
-					return output, fmt.Errorf("Error: type assertion parsing token")
+					return output, fmt.Errorf("type assertion parsing token")
 				} else {
 					token = tmpToken
 				}
@@ -237,7 +236,7 @@ func postfix(terms []string) ([]string, error) {
 	for !opStack.IsEmpty() {
 
 		if token, ok := opStack.Pop().(string); !ok {
-			return output, fmt.Errorf("Error: type assertion parsing token")
+			return output, fmt.Errorf("type assertion parsing token")
 		} else {
 			output = append(output, token)
 		}
@@ -259,7 +258,7 @@ func createTree(postFix []string) (*ExpressionTree, error) {
 			opTree.term = term
 
 			if t1, ok := stack.Pop().(*ExpressionTree); !ok {
-				return nil, fmt.Errorf("Error: type assertion parsing token")
+				return nil, fmt.Errorf("type assertion parsing token")
 			} else {
 				opTree.right = t1
 			}
@@ -267,7 +266,7 @@ func createTree(postFix []string) (*ExpressionTree, error) {
 			if !stack.IsEmpty() && term != "not" {
 
 				if t2, ok := stack.Pop().(*ExpressionTree); !ok {
-					return nil, fmt.Errorf("Error: type assertion parsing token")
+					return nil, fmt.Errorf("type assertion parsing token")
 				} else {
 					opTree.left = t2
 				}
@@ -300,7 +299,7 @@ func createTree(postFix []string) (*ExpressionTree, error) {
 	}
 
 	if expressionTree, ok := stack.Pop().(*ExpressionTree); !ok {
-		return nil, fmt.Errorf("Error: type assertion parsing token")
+		return nil, fmt.Errorf("type assertion parsing token")
 	} else {
 		return expressionTree, nil
 	}
@@ -374,15 +373,15 @@ func (node *ExpressionTree) match(file *ExperimentFile) bool {
 
 				switch compOp {
 				case "<":
-					return file.DateTime.Before(t)
+					return file.dateTime.Before(t)
 				case ">":
-					return file.DateTime.After(t)
+					return file.dateTime.After(t)
 				case "=":
-					return dateTimeEqual(file.DateTime, t, layout)
+					return dateTimeEqual(file.dateTime, t, layout)
 				case ">=":
-					return file.DateTime.After(t) || dateTimeEqual(file.DateTime, t, layout)
+					return file.dateTime.After(t) || dateTimeEqual(file.dateTime, t, layout)
 				case "<=":
-					return file.DateTime.Before(t) || dateTimeEqual(file.DateTime, t, layout)
+					return file.dateTime.Before(t) || dateTimeEqual(file.dateTime, t, layout)
 
 				}
 
@@ -451,15 +450,17 @@ func (node *ExpressionTree) match(file *ExperimentFile) bool {
 				}
 
 			}
-		case "Category":
-			{
-				match := strings.Contains(strings.ToLower(file.Category), node.term)
-				if match {
-					return match
-				}
+			/*
+				case "Category":
+					{
+						match := strings.Contains(strings.ToLower(file.Category), node.term)
+						if match {
+							return match
+						}
 
-				continue
-			}
+						continue
+					}
+			*/
 		case "Name":
 			{
 				match := strings.Contains(strings.ToLower(file.Name), node.term)
