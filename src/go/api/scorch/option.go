@@ -16,6 +16,7 @@ type Options struct {
 	Name       string
 	Exp        types.Experiment
 	Meta       scorchmd.ComponentMetadata
+	StartTime  string
 	Run        int
 	Loop       int
 	Count      int
@@ -65,6 +66,13 @@ func Experiment(e types.Experiment) Option {
 func Metadata(m scorchmd.ComponentMetadata) Option {
 	return func(o *Options) {
 		o.Meta = m
+	}
+}
+
+// StartTime sets the start time of the current pipeline.
+func StartTime(s string) Option {
+	return func(o *Options) {
+		o.StartTime = s
 	}
 }
 

@@ -111,7 +111,7 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 	var (
 		errors error
 		run    = this.md.Runs[runID]
-		opts   = []Option{Experiment(*exp), RunID(runID)}
+		opts   = []Option{Experiment(*exp), RunID(runID), StartTime(time.Now().UTC().Format("Mon Jan 02 15:04:05 -0700 2006"))}
 	)
 
 	for i := 0; i < run.Count; i++ {

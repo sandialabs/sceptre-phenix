@@ -106,6 +106,7 @@ func (this UserComponent) run(ctx context.Context, stage Action, cmd string, dat
 			"PHENIX_LOG_LEVEL="+util.GetEnv("PHENIX_LOG_LEVEL", "DEBUG"),
 			"PHENIX_LOG_FILE="+util.GetEnv("PHENIX_LOG_FILE", common.LogFile),
 			"PHENIX_DRYRUN="+strconv.FormatBool(this.options.Exp.DryRun()),
+			"PHENIX_SCORCH_STARTTIME="+this.options.StartTime,
 		),
 	}
 
