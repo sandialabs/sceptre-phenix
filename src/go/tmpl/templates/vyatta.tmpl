@@ -1,13 +1,17 @@
 {{ $ntpAddr := index . "ntp-addr" }}
 {{ $node := index . "node" }}
 {{ $ipsec := index . "ipsec" }}
+{{ $vyos := index . "vyos" }}
+{{ $passwd := index . "passwd" }}
 
 interfaces {
 {{ range $idx, $iface := $node.Network.Interfaces }}
     ethernet eth{{ $idx }} {
         address {{ $iface.Address }}/{{ $iface.Mask }}
         duplex auto
+        {{ if and (ge $iface.MTU 68) (le $iface.MTU 16000) }}
         mtu {{ $iface.MTU }}
+        {{ end }}
         {{ if eq $iface.Proto "OSPF" }}
         ip {
             ospf {
@@ -173,6 +177,16 @@ vpn {
 
 system {
     host-name {{ $node.RouterName }}
+{{ if $vyos }}
+    login {
+        user vyos {
+            authentication {
+                plaintext-password "{{ $passwd }}"
+            }
+            level "admin"
+        }
+    }
+{{ end }}
 {{ if $ntpAddr }}
     ntp {
         server {{ $ntpAddr }} {
@@ -182,5 +196,8 @@ system {
 {{ end }}
 }
 /* Warning: Do not remove the following line. */
+{{ if $vyos }}
+// vyos-config-version: "broadcast-relay@1:cluster@1:config-management@1:conntrack@3:conntrack-sync@2:dhcp-relay@2:dhcp-server@6:dhcpv6-server@1:dns-forwarding@3:firewall@5:https@2:interfaces@22:ipoe-server@1:ipsec@5:isis@1:l2tp@3:lldp@1:mdns@1:nat@5:ntp@1:pppoe-server@5:pptp@2:qos@1:quagga@8:rpki@1:salt@1:snmp@2:ssh@2:sstp@3:system@21:vrrp@2:vyos-accel-ppp@2:wanloadbalance@3:webproxy@2:zone-policy@1"
+{{ else }}
 /* === vyatta-config-version: "dhcp-relay@1:vrrp@1:zone-policy@1:content-inspection@3:webproxy@1:quagga@2:webgui@1:wanloadbalance@3:ipsec@3:firewall@4:conntrack-sync@1:cluster@1:system@4:qos@1:nat@3:dhcp-server@4:config-management@1" === */
-/* Release version: VC6.3-2011.07.21 */
+{{ end }}

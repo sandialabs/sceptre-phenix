@@ -139,12 +139,13 @@
           "type": "string",
           "title": "os_type",
           "enum": [
-            "windows",
-            "linux",
-            "rhel",
             "centos",
+            "linux",
+            "minirouter",
+            "rhel",
             "vyatta",
-            "minirouter"
+            "vyos",
+            "windows"
           ],
           "default": "linux",
           "examples": [

@@ -112,24 +112,43 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 		// support.
 		if !util.StringSliceContains([]string{"vyatta", "vyos", "linux"}, strings.ToLower(node.Hardware().OSType())) {
 			if strings.ToLower(node.Hardware().OSType()) != "minirouter" {
-				fmt.Printf("  === OS Type %s for Node Type %s unsupported ===", node.Hardware().OSType(), node.Type())
+				fmt.Printf("  === OS Type %s for Node Type %s unsupported ===\n", node.Hardware().OSType(), node.Type())
 			}
 
 			continue
 		}
 
-		vrouterDir := exp.Spec.BaseDir() + "/vrouter"
-		vyattaFile := vrouterDir + "/" + node.General().Hostname() + ".boot"
+		if strings.EqualFold(node.Hardware().OSType(), "linux") {
+			fmt.Printf("  === using OS Type 'linux' for Node Type %s is depricated ===\n", node.Type())
+			fmt.Printf("  === use 'vyatta', 'vyos', or 'minirouter' OS type instead ===\n")
+		}
+
+		var (
+			isVyos       = strings.EqualFold(node.Hardware().OSType(), "vyos")
+			vrouterDir   = exp.Spec.BaseDir() + "/vrouter"
+			vyattaFile   = vrouterDir + "/" + node.General().Hostname() + ".boot"
+			vyattaConfig = "/opt/vyatta/etc/config/config.boot"
+		)
+
+		if isVyos {
+			vyattaConfig = "/boot/vyos/rw/config/config.boot"
+		}
 
 		node.AddInject(
 			vyattaFile,
-			"/opt/vyatta/etc/config/config.boot",
+			vyattaConfig,
 			"", "",
 		)
 
 		data := map[string]interface{}{
 			"node":     node,
 			"ntp-addr": ntpAddr,
+			"vyos":     isVyos,
+			"passwd":   "vyos", // will only be used if `isVyos` is true
+		}
+
+		if passwd, ok := node.GetAnnotation("vrouter/vyos-password"); ok {
+			data["passwd"] = passwd // will only be used if `isVyos` is true
 		}
 
 		// Check to see if a scenario exists for this experiment and if it contains
@@ -157,7 +176,7 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 		}
 
 		if err := tmpl.CreateFileFromTemplate("vyatta.tmpl", data, vyattaFile); err != nil {
-			return fmt.Errorf("generating vyatta config: %w", err)
+			return fmt.Errorf("generating %s config: %w", node.Hardware().OSType(), err)
 		}
 	}
 

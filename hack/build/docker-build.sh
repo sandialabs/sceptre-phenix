@@ -1,5 +1,8 @@
 #!/bin/bash
 
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+ROOT_DIR="$( cd ${SCRIPT_DIR}/../.. && pwd )"
+
 usage="usage: $(basename "$0") [-b] [-d] [-h] [-v]
 
 This script will build the phenix binary using a temporary Docker image to
@@ -99,13 +102,13 @@ EOF
 echo BUILDING PHENIX...
 
 docker run -it --rm \
-  -v $(pwd):/phenix \
+  -v $ROOT_DIR:/phenix \
   -w /phenix \
   -u $USERNAME \
   phenix:builder make clean
 
 docker run -it --rm \
-  -v $(pwd):/phenix \
+  -v $ROOT_DIR:/phenix \
   -w /phenix \
   -u $USERNAME \
   -e VUE_APP_AUTH=$auth \
