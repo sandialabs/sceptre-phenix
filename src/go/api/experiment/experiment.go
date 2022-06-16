@@ -695,13 +695,12 @@ func Delete(name string) error {
 		return fmt.Errorf("cannot delete a running experiment")
 	}
 
-	c, _ := store.NewConfig("experiment/" + name)
-
-	if err := store.Get(c); err != nil {
+	c, err := config.Get("experiment/"+name, true)
+	if err != nil {
 		return fmt.Errorf("getting experiment %s: %w", name, err)
 	}
 
-	if err := store.Delete(c); err != nil {
+	if err := config.Delete("experiment/" + name); err != nil {
 		return fmt.Errorf("deleting experiment %s: %w", name, err)
 	}
 

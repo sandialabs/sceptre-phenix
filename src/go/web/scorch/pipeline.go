@@ -371,8 +371,12 @@ func newPipeline(exp string, run, loop int) *pipeline {
 }
 
 func getPipeline(name string, run, loop int) (*pipeline, error) {
-	if pl, ok := pipelines[name][run][loop]; ok {
-		return pl, nil
+	if _, ok := pipelines[name]; ok {
+		if _, ok := pipelines[name][run]; ok {
+			if pl, ok := pipelines[name][run][loop]; ok {
+				return pl, nil
+			}
+		}
 	}
 
 	exp, err := experiment.Get(name)
@@ -545,6 +549,7 @@ type pipelineDelete struct {
 }
 
 var (
+	// maps to experiment, run, loop...
 	pipelines        map[string]map[int]map[int]*pipeline
 	pipelineUpdates  chan PipelineUpdate
 	pipelineRequests chan pipelineRequest
@@ -603,7 +608,11 @@ func processPipelines() {
 			req.resp <- pipelineResponse{pl, err}
 		case del := <-pipelineDeletes:
 			deleteLoop := func(loop int, rebuild bool) {
-				delete(pipelines[del.exp], loop)
+				if _, ok := pipelines[del.exp]; ok {
+					if _, ok := pipelines[del.exp][del.run]; ok {
+						delete(pipelines[del.exp][del.run], loop)
+					}
+				}
 
 				if rebuild {
 					if pl, err := getPipeline(del.exp, del.run, loop); err == nil {
@@ -621,8 +630,12 @@ func processPipelines() {
 
 				var loops []int
 
-				for loop := range pipelines[del.exp] {
-					loops = append(loops, loop)
+				if _, ok := pipelines[del.exp]; ok {
+					if _, ok := pipelines[del.exp][del.run]; ok {
+						for loop := range pipelines[del.exp][del.run] {
+							loops = append(loops, loop)
+						}
+					}
 				}
 
 				sort.Ints(loops)
