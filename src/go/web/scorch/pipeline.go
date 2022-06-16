@@ -153,8 +153,9 @@ func (this *pipeline) setStageStatus(stage string, status string) bool {
 		switch status {
 		case "success", "failure":
 			this.cleanup.updateEdge(this.done, 2)
-			this.done.Status = "success"
 		}
+	case "done":
+		this.done.Status = status
 	case "loop":
 		if this.loop == nil {
 			return false
@@ -331,8 +332,6 @@ func (this *pipeline) updateNodeStatus(stage string, name string, status string)
 			for _, v := range this.cleanups {
 				v.updateEdge(this.done, 2)
 			}
-
-			this.done.Status = "success"
 		}
 	default:
 		return false

@@ -3,7 +3,10 @@ package scorch
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"time"
@@ -89,24 +92,52 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 		return err
 	}
 
-	runID := scorchexe.MustRunID(ctx)
+	var (
+		runID     = scorchexe.MustRunID(ctx)
+		startTime = time.Now().UTC().Format("Mon Jan 02 15:04:05 -0700 2006")
+	)
 
 	if runID < 0 || runID >= len(this.md.Runs) {
 		return fmt.Errorf("invalid Scorch run ID for experiment %s", exp.Metadata.Name)
 	}
 
+	update := scorch.ComponentUpdate{
+		Exp:   exp.Metadata.Name,
+		Run:   runID,
+		Loop:  0,
+		Stage: string(ACTIONDONE),
+	}
+
 	if this.md.Filebeat.Enabled {
-		if err := createFilebeatConfig(this.md, exp.Spec.ExperimentName(), exp.FilesDir(), runID); err != nil {
+		inputs, err := createFilebeatConfig(this.md, exp.Spec.ExperimentName(), exp.Spec.BaseDir(), startTime, runID)
+		if err != nil {
 			return fmt.Errorf("creating Filebeat config: %w", err)
 		}
-	}
 
-	cmd, err := this.startFilebeat(ctx, exp.FilesDir(), runID)
-	if err != nil {
-		return fmt.Errorf("starting Filebeat: %w", err)
-	}
+		if inputs > 0 {
+			// TODO: only start Filebeat if at least one Scorch component had a Filebeat
+			// input configured.
+			cmd, err := this.startFilebeat(ctx, exp.Spec.BaseDir(), runID)
+			if err != nil {
+				return fmt.Errorf("starting Filebeat: %w", err)
+			}
 
-	defer this.stopFilebeat(ctx, cmd, exp.FilesDir(), runID)
+			defer func() {
+				update.Status = "running"
+				scorch.UpdatePipeline(update)
+
+				this.stopFilebeat(ctx, cmd, exp.Spec.BaseDir(), runID)
+
+				update.Status = "success"
+				scorch.UpdatePipeline(update)
+			}()
+		}
+	} else {
+		defer func() {
+			update.Status = "success"
+			scorch.UpdatePipeline(update)
+		}()
+	}
 
 	var (
 		errors error
@@ -150,7 +181,9 @@ func (this Scorch) startFilebeat(ctx context.Context, baseDir string, runID int)
 			cfg  = fmt.Sprintf("%s/filebeat.yml", base)
 		)
 
-		cmd = exec.CommandContext(ctx, "filebeat", "-c", cfg, "--path.data", data)
+		// We include the httpprof server so we can query for running harvesters
+		// when stopping Filebeat below.
+		cmd = exec.CommandContext(ctx, "filebeat", "-c", cfg, "--path.data", data, "--httpprof", "127.0.0.1:5066")
 
 		cmd.Stdin = nil
 		cmd.Stdout = &stdOut
@@ -168,51 +201,106 @@ func (this Scorch) startFilebeat(ctx context.Context, baseDir string, runID int)
 				return nil, err
 			}
 		}
-
-		fmt.Println("FILEBEAT STARTED")
 	}
 
 	return cmd, nil
 }
 
 func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, baseDir string, runID int) {
-	if cmd != nil {
-		if shell.ProcessExists(cmd.Process.Pid) {
-			defer func() {
+	if cmd == nil {
+		return
+	}
+
+	if !shell.ProcessExists(cmd.Process.Pid) {
+		if err := cmd.Wait(); err != nil {
+			log.Error("the Filebeat process terminated early (logs may be missing): %v", err)
+		}
+
+		return
+	}
+
+	// Sleeping for 7s here since we have Filebeat configured with a scan
+	// frequency of 5s for inputs in the config file.
+	time.Sleep(7 * time.Second)
+
+	var (
+		max  = time.NewTimer(1 * time.Minute)
+		tick = time.NewTicker(5 * time.Second)
+
+		metrics filebeatMetrics
+	)
+
+	defer max.Stop()
+	defer tick.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			cmd.Process.Signal(os.Interrupt)
+			return
+		case <-max.C:
+			log.Warn("max amount of time for Filebeat to harvest inputs reached")
+
+			cmd.Process.Signal(os.Interrupt)
+			cmd.Wait()
+
+			return
+		case <-tick.C:
+			resp, err := http.Get("http://localhost:5066/debug/vars")
+			if err != nil {
+				log.Error("unable to get number of active harvesters from Filebeat: %v", err)
+
 				cmd.Process.Signal(os.Interrupt)
 				cmd.Wait()
-			}()
 
-			fmt.Println("FILEBEAT STILL RUNNING")
-
-			reg := fmt.Sprintf("%s/scorch/run-%d/filebeat/registry/filebeat/log.json", baseDir, runID)
-
-			for i := 0; i < 60; i++ {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					fmt.Println("WAITING FOR FILEBEAT TO FINISH")
-
-					time.Sleep(1 * time.Second)
-
-					stats, err := os.Stat(reg)
-					if err != nil {
-						fmt.Println("  NO REGISTRY FILE")
-						continue
-					}
-
-					if stats.Size() > 0 {
-						// Give Filebeat a little more time to finish processing logs.
-						fmt.Println("  GIVING FILEBEAT 5 MORE SECONDS")
-						time.Sleep(5 * time.Second)
-						return
-					}
-				}
+				return
 			}
-		} else {
-			if err := cmd.Wait(); err != nil {
-				log.Error("the Filebeat process terminated early (logs may be missing): %v", err)
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				log.Error("unable to get number of active harvesters from Filebeat: %v", err)
+
+				cmd.Process.Signal(os.Interrupt)
+				cmd.Wait()
+
+				return
+			}
+
+			prev := metrics
+
+			if err := json.Unmarshal(body, &metrics); err != nil {
+				log.Error("unmarshaling Filebeat harvester metrics: %v", err)
+				continue
+			}
+
+			// Reset the max timer if progress is being made.
+			if metrics.Progress(prev) {
+				// stop and drain the max timer before resetting it
+				if !max.Stop() {
+					<-max.C
+				}
+
+				max.Reset(1 * time.Minute)
+
+				// Skip the check below so we don't kill Filebeat prematurely if
+				// progress is being made.
+				continue
+			}
+
+			// NOTE: This might cause Filebeat to be killed prematurely if the
+			// number of started harvesters doesn't yet match the number of total
+			// files generated that need to be harvested. However, I'm not sure it's
+			// a good idea to assume started must equal the number of inputs defined
+			// in the Scorch config since 1) there's no guarantee all of them will
+			// actually be generated, and 2) the input paths defined in the Filebeat
+			// config have wildcards in them for run loops and counts.
+			if metrics.Done() {
+				log.Info("Filebeat has completed harvesting inputs")
+
+				cmd.Process.Signal(os.Interrupt)
+				cmd.Wait()
+
+				return
 			}
 		}
 	}
@@ -488,6 +576,15 @@ func executor(ctx context.Context, components scorchmd.ComponentSpecMap, exe *sc
 
 	if err := cleanup(); err != nil {
 		errors = multierror.Append(errors, err)
+	}
+
+	if update.Loop != 0 {
+		update.CmpType = ""
+		update.CmpName = ""
+		update.Stage = string(ACTIONDONE)
+		update.Status = "success"
+
+		scorch.UpdatePipeline(update)
 	}
 
 	return errors

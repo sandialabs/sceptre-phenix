@@ -420,7 +420,17 @@
 
       componentDetail ( comp ) {
         switch ( comp.name ) {
-          case 'configure': case 'start': case 'stop': case 'cleanup': case 'done': {
+          case 'configure': case 'start': case 'stop': case 'cleanup': {
+            break;
+          }
+
+          case 'done': {
+            if ( comp.status === "running" ) {
+              this.output.title = comp.exp + ' - ' + 'Run: ' + comp.run;
+              this.output.msg = 'Filebeat is processing Scorch component files from the current run.';
+              this.output.modal = true;
+            }
+
             break;
           }
 
