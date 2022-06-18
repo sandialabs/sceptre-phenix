@@ -28,6 +28,7 @@ spec:
   - net-tools
   - netbase
   - netcat-openbsd
+  - ntp
   - openssh-server
   - tcpdump
   - telnet
@@ -54,10 +55,13 @@ spec:
       sed -i 's/PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
       passwd -d root
     POSTBUILD_DISABLE_SERVICES: |
-      rm /etc/systemd/system/multi-user.target.wants/systemd-resolved.service
-      rm /etc/systemd/system/multi-user.target.wants/dnsmasq.service
-      rm /etc/systemd/system/multi-user.target.wants/bird.service
-      rm /etc/systemd/system/multi-user.target.wants/bird6.service
+      rm -f /etc/systemd/system/dbus-org.freedesktop.resolve1.service
+      rm -f /etc/systemd/system/dbus-org.freedesktop.timesync1.service
+      rm -f /etc/systemd/system/multi-user.target.wants/systemd-resolved.service
+      rm -f /etc/systemd/system/multi-user.target.wants/dnsmasq.service
+      rm -f /etc/systemd/system/multi-user.target.wants/bird.service
+      rm -f /etc/systemd/system/multi-user.target.wants/bird6.service
+      rm -f /etc/systemd/system/sysinit.target.wants/systemd-timesyncd.service
     POSTBUILD_ENABLE_IPFORWARDING: |
       cat > /etc/sysctl.d/local.conf <<EOF
       net.ipv4.ip_forward = 1
