@@ -71,14 +71,12 @@
         </b-tooltip>
         &nbsp; &nbsp;
       </template>
-<<<<<<< HEAD
       <b-tooltip label="assign VLAN ID to alias" type="is-light">
         <button class='button is-light' @click="vlanModal.active = true">
           <b-icon icon="network-wired"></b-icon>
         </button>
       </b-tooltip>
       &nbsp; &nbsp;
-=======
       <template v-if="this.activeTab == 1">
         <b-tooltip label="search on a specific category" type="is-light">
           <b-select :value="filesTable.category" @input="( value ) => assignCategory( value )" placeholder="All Categories">
@@ -87,7 +85,6 @@
         </b-tooltip>
         &nbsp;
       </template>
->>>>>>> 7517723 (Improve access to experiment files via the UI, to include Scorch files)
       <b-autocomplete
         v-model="searchName"
         :placeholder="searchPlaceholder"
