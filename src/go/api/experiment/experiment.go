@@ -77,8 +77,8 @@ func init() {
 
 			// Delete any snapshot files created by this headnode for this experiment
 			// after deleting the experiment.
-			if err := deleteSnapshots(exp); err != nil {
-				errors = multierror.Append(errors, fmt.Errorf("deleting experiment snapshots: %w", err))
+			if err := deleteC2AndSnapshots(exp); err != nil {
+				errors = multierror.Append(errors, fmt.Errorf("deleting experiment snapshots and CC responses: %w", err))
 			}
 
 			if err := os.RemoveAll(exp.Spec.BaseDir()); err != nil {
@@ -355,8 +355,8 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		// this after stopping an experiment just in case users need to access the
 		// snapshots for any reason, but we do clean them up when an experiment is
 		// deleted.
-		if err := deleteSnapshots(exp); err != nil {
-			return fmt.Errorf("deleting experiment snapshots: %w", err)
+		if err := deleteC2AndSnapshots(exp); err != nil {
+			return fmt.Errorf("deleting experiment snapshots and CC responses: %w", err)
 		}
 
 		if err := mm.ReadScriptFromFile(filename); err != nil {
@@ -714,8 +714,8 @@ func Delete(name string) error {
 
 	// Delete any snapshot files created by this headnode for this experiment
 	// after deleting the experiment.
-	if err := deleteSnapshots(exp); err != nil {
-		errors = multierror.Append(errors, fmt.Errorf("deleting experiment snapshots: %w", err))
+	if err := deleteC2AndSnapshots(exp); err != nil {
+		errors = multierror.Append(errors, fmt.Errorf("deleting experiment snapshots and CC responses: %w", err))
 	}
 
 	if err := os.RemoveAll(exp.Spec.BaseDir()); err != nil {
@@ -761,7 +761,7 @@ func File(name, filePath string) ([]byte, error) {
 	return nil, fmt.Errorf("file not found")
 }
 
-func deleteSnapshots(exp *types.Experiment) error {
+func deleteC2AndSnapshots(exp *types.Experiment) error {
 	// Snapshot naming convention is as follows:
 	//   {hostname}_{experiment_name}_{vm_name}_snapshot
 	// Now, we *could* use {hostname}_{experiment_name}_*_snapshot as the deletion
@@ -781,6 +781,12 @@ func deleteSnapshots(exp *types.Experiment) error {
 		expName  = exp.Metadata.Name
 		headnode = mm.Headnode()
 	)
+
+	c2Path := expName + "/miniccc_responses"
+
+	if err := file.DeleteFile(c2Path); err != nil {
+		return fmt.Errorf("deleting CC responses for experiment %s: %w", expName, err)
+	}
 
 	for _, node := range exp.Spec.Topology().Nodes() {
 		hostname := node.General().Hostname()
