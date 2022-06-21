@@ -310,6 +310,23 @@
         </footer>
       </div>
     </b-modal>
+    <b-modal :active.sync="fileViewerModal.active" :on-cancel="resetFileViewerModal" has-modal-card>
+      <div class="modal-card" style="width:50em">
+        <header class="modal-card-head x-modal-dark">
+          <p class="modal-card-title x-config-text">{{ fileViewerModal.title }}</p>
+        </header>
+        <section class="modal-card-body x-modal-dark">
+          <div class="control">
+            <textarea class="textarea x-config-text has-fixed-size" rows="30" v-model="fileViewerModal.contents" readonly />
+          </div>
+        </section>
+        <footer class="modal-card-foot x-modal-dark buttons is-right">
+          <button class="button is-dark" @click="resetFileViewerModal">
+            Exit
+          </button>
+        </footer>
+      </div>
+    </b-modal>
     <hr>
     <div class="level is-vcentered">
       <div  class="level-item">
@@ -666,8 +683,19 @@
               </section>
             </template>
             <template slot-scope="props">
-              <b-table-column field="name" label="Name" sortable>                  
-                {{ props.row.name }}            
+              <b-table-column field="name" label="Name" sortable>
+                <template v-if="props.row.plainText">
+                  <b-tooltip label="view file" type="is-dark">
+                    <div class="field">
+                      <div @click="viewFile( props.row )">
+                        {{ props.row.name }}
+                      </div>
+                    </div>
+                  </b-tooltip>
+                </template>
+                <template v-else>
+                  {{ props.row.name }}
+                </template>
               </b-table-column>
               <b-table-column field="path" label="Path" centered>
                 <b-tooltip :label="'/phenix/images/' + experiment.name + '/files/' + props.row.path" type="is-dark">
@@ -679,18 +707,18 @@
                   <b-tag v-for="( c, index ) in props.row.categories" :key="index" type="is-light">{{ c }}</b-tag>
                 </b-taglist>
               </b-table-column>
-              <b-table-column field="date" label="Date" sortable centered>                  
-                {{ props.row.date }}                      
+              <b-table-column field="date" label="Date" sortable centered>
+                {{ props.row.date }}
               </b-table-column>
-              <b-table-column field="size" label="Size" sortable centered>                  
-                {{ props.row.size }}                      
+              <b-table-column field="size" label="Size" sortable centered>
+                {{ props.row.size }}
               </b-table-column>
               <b-table-column field="actions" label="Actions" centered>
                 <a :href="fileDownloadURL(props.row.name, props.row.path)" target="_blank">
                   <b-icon icon="file-download" size="is-small"></b-icon>
                 </a>
               </b-table-column>
-            </template>            
+            </template>
           </b-table>
           <br>
           <b-field v-if="filesPaginationNeeded" grouped position="is-right">
@@ -1486,6 +1514,29 @@
 
             this.isWaiting = false;
           }
+        );
+      },
+
+      viewFile ( file ) {
+        this.isWaiting = true;
+
+        this.$http.get(
+          `experiments/${this.$route.params.id}/files/${file.name}?path=${file.path}`,
+          { 'headers': { 'Accept': 'text/plain' } },
+        ).then(
+          resp => {
+            this.fileViewerModal.title = file.path;
+            this.fileViewerModal.contents = resp.bodyText;
+            this.fileViewerModal.active = true;
+          }, () => {
+            this.$buefy.toast.open({
+              message:  `Unable to get file ${file.name} for viewing.`,
+              type: 'is-danger',
+              duration: 4000
+            });
+          }
+        ).finally(
+          () => { this.isWaiting = false; }
         );
       },
 
@@ -2735,6 +2786,12 @@
         this.appsModal.apps = [];
         this.appsModal.active = false;
       },
+
+      resetFileViewerModal () {
+        this.fileViewerModal.active = false;
+        this.fileViewerModal.title = null;
+        this.fileViewerModal.contents = null;
+      },
       
       validate (modalVMQueue) {  
         var regexp = /^[a-zA-Z0-9-_]+$/;
@@ -2975,6 +3032,11 @@
           active: false,
           triggerable: [],
           apps: []
+        },
+        fileViewerModal: {
+          active: false,
+          title: null,
+          contents: null
         },
         apps: null,
         experiment: [],

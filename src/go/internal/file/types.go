@@ -28,6 +28,7 @@ type ExperimentFile struct {
 	Date       string   `json:"date"`
 	Size       int      `json:"size"`
 	Categories []string `json:"categories"`
+	PlainText  bool     `json:"plainText"`
 
 	// Internal use to aid in sorting
 	dateTime time.Time

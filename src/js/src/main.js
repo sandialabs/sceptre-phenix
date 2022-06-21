@@ -47,9 +47,9 @@ Vue.filter( 'ram', function( value ) {
   if ( value == 0 ) {
     return '0 Byte';
   } else {
-    var size = ['MB', 'GB'];
+    var size = ['MB', 'GB', 'TB'];
     let i = parseInt( Math.floor( Math.log( value ) / Math.log( 1024 ) ) );
-    var output = Math.round( value / Math.pow( 1024, i ), 2 ) + ' ' + size[ i] ;
+    var output = Math.round( value / Math.pow( 1024, i ), 2 ) + ' ' + size[i];
     return output;
   }
 })

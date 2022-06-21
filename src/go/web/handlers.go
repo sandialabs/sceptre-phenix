@@ -819,6 +819,12 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.Header.Get("Accept") == "text/plain" {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write(contents)
+		return
+	}
+
 	w.Header().Set("Content-Disposition", "attachment; filename="+file)
 	http.ServeContent(w, r, "", time.Now(), bytes.NewReader(contents))
 }

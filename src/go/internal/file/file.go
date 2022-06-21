@@ -9,6 +9,7 @@ import (
 
 	"phenix/internal/mm"
 	"phenix/internal/mm/mmcli"
+	"phenix/util"
 )
 
 var DefaultClusterFiles ClusterFiles = new(MMClusterFiles)
@@ -119,7 +120,9 @@ func (MMClusterFiles) GetImages(kind ImageKind) ([]ImageDetails, error) {
 
 func (MMClusterFiles) GetExperimentFiles(exp, filter string) (ExperimentFiles, error) {
 	var (
-		// Using a map here to weed out duplicates.
+		// Using a map here to weed out duplicates. The key is the relative path to
+		// the file to ensure files with the same name in different directories get
+		// included.
 		matches = make(map[string]ExperimentFile)
 		root    = fmt.Sprintf("%s/files/", exp)
 	)
@@ -141,15 +144,35 @@ func (MMClusterFiles) GetExperimentFiles(exp, filter string) (ExperimentFiles, e
 
 		for _, row := range mmcli.RunTabular(cmd) {
 			name := filepath.Base(row["name"])
+			file := ExperimentFile{Name: name, Path: strings.TrimPrefix(row["name"], root)}
 
-			if _, ok := matches[name]; ok {
+			if _, ok := matches[file.Path]; ok {
 				continue
 			}
 
-			file := ExperimentFile{Name: name, Path: strings.TrimPrefix(row["name"], root)}
-
 			if strings.Contains(file.Path, "scorch") {
 				file.Categories = append(file.Categories, "Scorch Artifact")
+
+				directories := strings.Split(filepath.Dir(file.Path), "/")
+
+				if len(directories) > 1 {
+					// Add Scorch run ID as a category.
+					file.Categories = append(file.Categories, directories[1])
+				}
+
+				if strings.Contains(file.Path, "filebeat") {
+					if name != "filebeat.log" {
+						// Exclude Filebeat-relevant files except for the log file.
+						continue
+					}
+
+					file.Categories = append(file.Categories, "Filebeat")
+				} else {
+					if len(directories) > 2 {
+						// Add Scorch component name as a category.
+						file.Categories = append(file.Categories, directories[2])
+					}
+				}
 			}
 
 			switch extension := filepath.Ext(name); extension {
@@ -165,15 +188,20 @@ func (MMClusterFiles) GetExperimentFiles(exp, filter string) (ExperimentFiles, e
 			file.Date = row["modified"]
 			file.dateTime, _ = time.Parse(time.RFC3339, row["modified"])
 
-			matches[name] = file
+			matches[file.Path] = file
 		}
 	}
 
-	var files ExperimentFiles
+	var (
+		files ExperimentFiles
+		plain = []string{".json", ".jsonl", ".log", ".txt", ".yaml", ".yml"}
+	)
 
 	for _, file := range matches {
-		// Add categories for qcow images prior to filtering
-		switch extension := filepath.Ext(file.Name); extension {
+		extension := filepath.Ext(file.Name)
+
+		// Add categories for qcow images prior to filtering.
+		switch extension {
 		case ".qc2", ".qcow2":
 			rootName := strings.TrimSuffix(file.Name, extension)
 			if _, ok := matches[rootName+".SNAP"]; ok {
@@ -183,6 +211,10 @@ func (MMClusterFiles) GetExperimentFiles(exp, filter string) (ExperimentFiles, e
 			} else {
 				file.Categories = append(file.Categories, "Backing Image")
 			}
+		}
+
+		if util.StringSliceContains(plain, extension) {
+			file.PlainText = true
 		}
 
 		if len(file.Categories) == 0 {
