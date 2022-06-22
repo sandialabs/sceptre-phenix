@@ -28,6 +28,7 @@ function Phenix-StartupComplete {
 
 {{ if toBool $rearm }}
 taskkill /IM "slui.exe" /F
+Stop-Service -Name 'WLMS'
 {{ end }}
 
 if (Phenix-StartupComplete) {
@@ -125,6 +126,8 @@ if (($host_name -eq "{{ .Node.General.Hostname }}") -or ("{{ .Node.General.Hostn
     {{ if toBool $rearm }}
     echo 'Rearming license'
     cscript C:\Windows\System32\slmgr.vbs /rearm
+    Get-CimInstance -ClassName Win32_Service -Filter "Name='WLMS'" | Remove-CimInstance
+    Get-Item HKLM:\SYSTEM\CurrentControlSet\Services\WLMS | Remove-Item -Recurse -Force -Verbose
     {{ end }}
 
     echo 'Changing hostname'
