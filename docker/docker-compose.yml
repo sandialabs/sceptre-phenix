@@ -1,5 +1,6 @@
 version: '3.7'
 x-common: &common
+  init: true
   network_mode: host
   restart: always
   logging:
