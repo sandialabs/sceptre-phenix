@@ -151,6 +151,16 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 			data["passwd"] = passwd // will only be used if `isVyos` is true
 		}
 
+		if val, ok := node.GetAnnotation("vrouter/enable-ssh"); ok {
+			if addrOrIface, ok := val.(string); ok {
+				if ip := net.ParseIP(addrOrIface); ip != nil {
+					data["ssh"] = ip.String()
+				} else if addr := node.Network().InterfaceAddress(addrOrIface); addr != "" {
+					data["ssh"] = addr
+				}
+			}
+		}
+
 		// Check to see if a scenario exists for this experiment and if it contains
 		// a "vrouter" app. If so, see if this node has an ipsec metadata entry in
 		// the scenario app configuration.

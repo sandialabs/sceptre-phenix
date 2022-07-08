@@ -3,6 +3,7 @@
 {{ $ipsec := index . "ipsec" }}
 {{ $vyos := index . "vyos" }}
 {{ $passwd := index . "passwd" }}
+{{ $ssh := index . "ssh" }}
 
 interfaces {
 {{ range $idx, $iface := $node.Network.Interfaces }}
@@ -174,6 +175,14 @@ vpn {
     }
     {{ end }}
 }
+
+{{ if $ssh }}
+service {
+    ssh {
+        listen-address {{ $ssh }}
+    }
+}
+{{ end }}
 
 system {
     host-name {{ $node.RouterName }}

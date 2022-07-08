@@ -84,6 +84,8 @@ type NodeNetwork interface {
 
 	SetRulesets([]NodeNetworkRuleset)
 	AddRuleset(NodeNetworkRuleset)
+
+	InterfaceAddress(string) string
 }
 
 type NodeNetworkInterface interface {

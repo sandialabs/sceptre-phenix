@@ -85,6 +85,16 @@ func (this *Network) AddRuleset(rule ifaces.NodeNetworkRuleset) {
 	this.RulesetsF = append(this.RulesetsF, rule.(*Ruleset))
 }
 
+func (this *Network) InterfaceAddress(name string) string {
+	for _, iface := range this.InterfacesF {
+		if strings.EqualFold(iface.NameF, name) {
+			return iface.AddressF
+		}
+	}
+
+	return ""
+}
+
 type Interface struct {
 	NameF       string `json:"name" yaml:"name" structs:"name" mapstructure:"name"`
 	TypeF       string `json:"type" yaml:"type" structs:"type" mapstructure:"type"`

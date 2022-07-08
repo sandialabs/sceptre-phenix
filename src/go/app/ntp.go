@@ -167,13 +167,7 @@ func (NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
 	)
 
 	ifaceName := server.Labels()["ntp-server"]
-
-	for _, iface := range server.Network().Interfaces() {
-		if strings.EqualFold(iface.Name(), ifaceName) {
-			serverAddr = iface.Address()
-			break
-		}
-	}
+	serverAddr = server.Network().InterfaceAddress(ifaceName)
 
 	if serverAddr == "" {
 		return fmt.Errorf("no IP address provided for NTP server")
