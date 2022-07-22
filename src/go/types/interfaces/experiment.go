@@ -41,18 +41,19 @@ type ExperimentStatus interface {
 	Init() error
 
 	StartTime() string
-	AppStatus() map[string]interface{}
+	AppStatus() map[string]any
 	AppFrequency() map[string]string
 	AppRunning() map[string]bool
 	VLANs() map[string]int
 	Schedules() map[string]string
 
 	SetStartTime(string)
-	SetAppStatus(string, interface{})
+	SetAppStatus(string, any)
 	SetAppFrequency(string, string)
 	SetAppRunning(string, bool)
 	SetVLANs(map[string]int)
 	SetSchedule(map[string]string)
 
+	ParseAppStatus(string, any) error
 	ResetAppStatus()
 }

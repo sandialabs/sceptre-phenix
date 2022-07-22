@@ -2,11 +2,15 @@
 
 package util
 
-import "math/rand"
+import (
+	"math/rand"
+	"time"
+)
 
 var chars = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
 func RandomString(n int) string {
+	rand.Seed(time.Now().UnixNano())
 	b := make([]rune, n)
 
 	for i := range b {

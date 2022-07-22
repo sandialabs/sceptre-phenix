@@ -10,6 +10,8 @@ import (
 	ifaces "phenix/types/interfaces"
 	v2 "phenix/types/version/v2"
 	"phenix/util/notes"
+
+	"github.com/mitchellh/mapstructure"
 )
 
 type VLANSpec struct {
@@ -361,6 +363,23 @@ func (this *ExperimentStatus) SetVLANs(v map[string]int) {
 
 func (this *ExperimentStatus) SetSchedule(s map[string]string) {
 	this.SchedulesF = s
+}
+
+func (this ExperimentStatus) ParseAppStatus(name string, status any) error {
+	if this.AppsF == nil {
+		return fmt.Errorf("missing status for app %s", name)
+	}
+
+	app, ok := this.AppsF[name]
+	if !ok {
+		return fmt.Errorf("missing status for app %s", name)
+	}
+
+	if err := mapstructure.Decode(app, status); err != nil {
+		return fmt.Errorf("decoding status for app %s: %w", name, err)
+	}
+
+	return nil
 }
 
 func (this *ExperimentStatus) ResetAppStatus() {

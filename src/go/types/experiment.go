@@ -73,6 +73,20 @@ func (this Experiment) Apps() []ifaces.ScenarioApp {
 	return nil
 }
 
+func (this Experiment) App(name string) ifaces.ScenarioApp {
+	if this.Spec.Scenario() == nil {
+		return nil
+	}
+
+	for _, app := range this.Spec.Scenario().Apps() {
+		if app.Name() == name {
+			return app
+		}
+	}
+
+	return nil
+}
+
 func (this Experiment) Running() bool {
 	if this.Status == nil {
 		return false
@@ -99,6 +113,28 @@ func (this Experiment) DryRun() bool {
 
 func (this Experiment) FilesDir() string {
 	return fmt.Sprintf("%s/images/%s/files", common.PhenixBase, this.Metadata.Name)
+}
+
+func RunningExperiments() ([]*Experiment, error) {
+	configs, err := store.List("Experiment")
+	if err != nil {
+		return nil, fmt.Errorf("getting list of experiment configs from store: %w", err)
+	}
+
+	var experiments []*Experiment
+
+	for _, c := range configs {
+		exp, err := DecodeExperimentFromConfig(c)
+		if err != nil {
+			return nil, fmt.Errorf("decoding experiment %s from config: %w", c.Metadata.Name, err)
+		}
+
+		if exp.Running() {
+			experiments = append(experiments, exp)
+		}
+	}
+
+	return experiments, nil
 }
 
 func DecodeExperimentFromConfig(c store.Config) (*Experiment, error) {

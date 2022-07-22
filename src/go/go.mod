@@ -1,12 +1,11 @@
 module phenix
 
-go 1.17
+go 1.18
 
 require (
 	github.com/activeshadow/libminimega v0.0.0-20190412123224-5384445d4b63
 	github.com/activeshadow/structs v1.3.0
 	github.com/cescoferraro/go-jwt-middleware v0.0.0-20161113181124-eb52b4929b4e
-	github.com/coreos/go-iptables v0.6.0
 	github.com/creack/pty v1.1.11
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/elazarl/go-bindata-assetfs v1.0.1
@@ -37,6 +36,7 @@ require (
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/yaml.v2 v2.3.0
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
+	inet.af/netaddr v0.0.0-20220617031823-097006376321
 )
 
 require (
@@ -72,6 +72,8 @@ require (
 	go.uber.org/atomic v1.6.0 // indirect
 	go.uber.org/multierr v1.5.0 // indirect
 	go.uber.org/zap v1.15.0 // indirect
+	go4.org/intern v0.0.0-20211027215823-ae77deb06f29 // indirect
+	go4.org/unsafe/assume-no-moving-gc v0.0.0-20220617031537-928513b29760 // indirect
 	golang.org/x/lint v0.0.0-20200302205851-738671d3881b // indirect
 	golang.org/x/mod v0.4.2 // indirect
 	golang.org/x/sys v0.0.0-20210615035016-665e8c7367d1 // indirect
