@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"phenix/internal/common"
 	"phenix/store"
 	"phenix/util"
+	"phenix/util/common"
 	"phenix/util/shell"
 	"phenix/web/scorch"
 )

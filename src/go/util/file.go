@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"phenix/internal/common"
+	"phenix/util/common"
 )
 
 var (

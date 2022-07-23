@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"phenix/app"
-	"phenix/internal/mm"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
+	"phenix/util/mm"
 
 	"github.com/activeshadow/structs"
 	"github.com/fatih/color"

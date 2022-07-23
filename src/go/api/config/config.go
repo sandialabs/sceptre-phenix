@@ -10,11 +10,11 @@ import (
 	"regexp"
 	"strings"
 
-	"phenix/internal/common"
 	"phenix/store"
 	"phenix/types"
 	"phenix/types/version"
 	"phenix/util"
+	"phenix/util/common"
 	"phenix/util/editor"
 
 	"github.com/hashicorp/go-multierror"

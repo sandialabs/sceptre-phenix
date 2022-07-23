@@ -11,6 +11,7 @@ var (
 	LogFile   = "/var/log/phenix/phenix.log"
 	ErrorFile = "/var/log/phenix/error.log"
 
+	StoreEndpoint    string
 	HostnameSuffixes string
 )
 

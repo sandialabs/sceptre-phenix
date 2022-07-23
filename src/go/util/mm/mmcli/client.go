@@ -5,9 +5,10 @@ package mmcli
 import (
 	"errors"
 	"fmt"
-	"phenix/internal/common"
 	"strings"
 	"sync"
+
+	"phenix/util/common"
 
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/activeshadow/libminimega/miniclient"

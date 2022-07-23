@@ -8,9 +8,9 @@ import (
 
 	"phenix/api/config"
 	_ "phenix/api/scorch"
-	"phenix/internal/common"
 	"phenix/store"
 	"phenix/util"
+	"phenix/util/common"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -39,6 +39,7 @@ var rootCmd = &cobra.Command{
 		)
 
 		common.ErrorFile = errFile
+		common.StoreEndpoint = endpoint
 
 		if err := store.Init(store.Endpoint(endpoint)); err != nil {
 			return fmt.Errorf("initializing storage: %w", err)

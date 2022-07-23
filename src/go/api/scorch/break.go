@@ -4,19 +4,20 @@ import (
 	"context"
 	"fmt"
 
+	"phenix/api/scorch/scorchmd"
 	"phenix/app"
+	"phenix/types"
 	"phenix/util"
+	"phenix/util/mm"
+	"phenix/util/tap"
 	"phenix/web/scorch"
 
 	"github.com/mitchellh/mapstructure"
+	"inet.af/netaddr"
 )
 
 type BreakMetadata struct {
-	Tap *TapMetadata `mapstructure:"tap"`
-}
-
-func (this *BreakMetadata) Validate() error {
-	return this.Tap.Validate()
+	Tap *tap.Tap `mapstructure:"tap"`
 }
 
 type Break struct {
@@ -57,34 +58,57 @@ func (this Break) breakPoint(ctx context.Context, stage Action) error {
 		return fmt.Errorf("decoding 'break' component metadata: %w", err)
 	}
 
-	if err := md.Validate(); err != nil {
-		return fmt.Errorf("validating break component metadata: %w", err)
-	}
-
 	if md.Tap != nil {
+		pairs := this.discoverUsedPairs()
+		md.Tap.Init(tap.Experiment(exp), tap.UsedPairs(pairs))
+
+		// backwards compatibility (doesn't support external access firewall rules)
+		if v, ok := md.Tap.Other["internetAccess"]; ok {
+			enabled, _ := v.(bool)
+			md.Tap.External.Enabled = enabled
+		}
+
 		// tap names cannot be longer than 15 characters
 		// (dictated by max length of Linux interface names)
-		tapName := fmt.Sprintf("break_tap_%s", util.RandomString(5))
+		md.Tap.Name = fmt.Sprintf("%s-tapbrk", util.RandomString(8))
 
-		routed, err := getDefaultInterface()
-		if err != nil {
-			return fmt.Errorf("getting interface for default route: %w", err)
+		if err := md.Tap.Create(mm.Headnode()); err != nil {
+			return fmt.Errorf("setting up tap for break: %w", err)
 		}
 
-		if err := setupTap(*md.Tap, exp, tapName, routed); err != nil {
-			return fmt.Errorf("setting up tap interface for break: %w", err)
+		var status scorchmd.ScorchStatus
+		if err := this.options.Exp.Status.ParseAppStatus("scorch", &status); err != nil {
+			return fmt.Errorf("getting experiment status for scorch app: %w", err)
 		}
 
-		defer teardownTap(*md.Tap, exp, tapName, routed)
+		status.Taps[this.options.Name] = md.Tap
+
+		this.options.Exp.Status.SetAppStatus("scorch", status)
+		this.options.Exp.WriteToStore(true)
+
+		defer md.Tap.Delete(mm.Headnode())
+	}
+
+	var (
+		cmd  string
+		args []string
+	)
+
+	if md.Tap == nil {
+		cmd = "/bin/bash"
+	} else {
+		// create shell in the network namespace created for the tap
+		cmd = "ip"
+		args = []string{"netns", "exec", md.Tap.Name, "/bin/bash"}
 	}
 
 	if app.IsContextTriggerCLI(ctx) {
 		// this blocks until terminal is exited
-		if err := terminal(ctx, "/bin/bash"); err != nil {
+		if err := terminal(ctx, cmd, args); err != nil {
 			return fmt.Errorf("starting bash terminal: %w", err)
 		}
 	} else if app.IsContextTriggerUI(ctx) {
-		done, err := scorch.CreateWebTerminal(ctx, exp, this.options.Run, this.options.Loop, string(stage), this.options.Name, "/bin/bash")
+		done, err := scorch.CreateWebTerminal(ctx, exp, this.options.Run, this.options.Loop, string(stage), this.options.Name, cmd, args)
 		if err != nil {
 			return fmt.Errorf("triggering web terminal: %w", err)
 		}
@@ -97,4 +121,26 @@ func (this Break) breakPoint(ctx context.Context, stage Action) error {
 	}
 
 	return ctx.Err()
+}
+
+func (Break) discoverUsedPairs() []netaddr.IPPrefix {
+	var pairs []netaddr.IPPrefix
+
+	running, err := types.RunningExperiments()
+	if err != nil {
+		return nil
+	}
+
+	for _, exp := range running {
+		var status scorchmd.ScorchStatus
+		if err := exp.Status.ParseAppStatus("scorch", &status); err == nil {
+			for _, tap := range status.Taps {
+				if pair, err := netaddr.ParseIPPrefix(tap.Subnet); err == nil {
+					pairs = append(pairs, pair)
+				}
+			}
+		}
+	}
+
+	return pairs
 }

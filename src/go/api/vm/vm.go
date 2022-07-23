@@ -15,11 +15,11 @@ import (
 	"time"
 
 	"phenix/api/experiment"
-	"phenix/internal/common"
-	"phenix/internal/file"
-	"phenix/internal/mm"
-	"phenix/internal/mm/mmcli"
 	"phenix/util"
+	"phenix/util/common"
+	"phenix/util/file"
+	"phenix/util/mm"
+	"phenix/util/mm/mmcli"
 
 	"golang.org/x/sync/errgroup"
 )

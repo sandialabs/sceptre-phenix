@@ -67,7 +67,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 # tshark needed for scorch tcpdump component
 RUN apt update \
   && echo 'wireshark-common wireshark-common/install-setuid boolean false' | debconf-set-selections \
-  && apt install -y cpio debootstrap git locales nano python3-pip tshark vim vmdb2 \
+  && apt install -y cpio debootstrap git iproute2 iputils-ping locales nano python3-pip tshark vim vmdb2 \
   && locale-gen en_US.UTF-8 \
   && apt autoremove -y \
   && apt clean -y \

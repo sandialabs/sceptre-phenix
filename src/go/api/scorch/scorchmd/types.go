@@ -1,6 +1,9 @@
 package scorchmd
 
-import "phenix/util"
+import (
+	"phenix/util"
+	"phenix/util/tap"
+)
 
 /*
 spec:
@@ -131,3 +134,8 @@ type FilebeatSpec struct {
 
 type ComponentMetadata map[string]interface{}
 type ComponentSpecMap map[string]ComponentSpec
+
+type ScorchStatus struct {
+	RunID int                 `structs:"runID" mapstructure:"runID"`
+	Taps  map[string]*tap.Tap `structs:"taps" mapstructure:"taps"`
+}

@@ -12,16 +12,16 @@ import (
 
 	"phenix/api/config"
 	"phenix/app"
-	"phenix/internal/common"
-	"phenix/internal/file"
-	"phenix/internal/mm"
-	"phenix/internal/mm/mmcli"
 	"phenix/scheduler"
 	"phenix/store"
 	"phenix/tmpl"
 	"phenix/types"
 	"phenix/types/version"
 	v1 "phenix/types/version/v1"
+	"phenix/util/common"
+	"phenix/util/file"
+	"phenix/util/mm"
+	"phenix/util/mm/mmcli"
 	"phenix/util/notes"
 	"phenix/util/pubsub"
 
@@ -459,7 +459,10 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	if o.dryrun {
 		exp.Status.SetStartTime(time.Now().Format(time.RFC3339) + "-DRYRUN")
 	} else {
-		exp.Status.SetStartTime(time.Now().Format(time.RFC3339))
+		// Grab the actual start time now, but don't set it in the experiment status
+		// until the end of this block since app code that runs as part of the
+		// post-start stage may persist the status to the store.
+		start := time.Now().Format(time.RFC3339)
 
 		if o.errChan == nil {
 			if err := handleDelayedVMs(ctx, exp.Spec.ExperimentName(), delays, c2s); err != nil {
@@ -508,6 +511,8 @@ func Start(ctx context.Context, opts ...StartOption) error {
 				close(o.errChan)
 			}()
 		}
+
+		exp.Status.SetStartTime(start)
 	}
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)

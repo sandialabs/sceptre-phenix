@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"strings"
 
-	"phenix/internal/common"
-	"phenix/internal/mm"
 	"phenix/scheduler"
 	"phenix/types"
 	"phenix/util"
+	"phenix/util/common"
+	"phenix/util/mm"
 	"phenix/util/shell"
 )
 
@@ -107,6 +107,7 @@ func (this UserApp) shellOut(ctx context.Context, action Action, exp *types.Expe
 			"PHENIX_LOG_LEVEL="+util.GetEnv("PHENIX_LOG_LEVEL", "DEBUG"),
 			"PHENIX_LOG_FILE="+util.GetEnv("PHENIX_LOG_FILE", common.LogFile),
 			"PHENIX_DRYRUN="+strconv.FormatBool(this.options.DryRun),
+			"PHENIX_STORE_ENDPOINT="+common.StoreEndpoint,
 		),
 	}
 
@@ -130,7 +131,7 @@ func (this UserApp) shellOut(ctx context.Context, action Action, exp *types.Expe
 		}
 
 		// FIXME: improve on this
-		fmt.Printf(string(stdErr))
+		fmt.Println(string(stdErr))
 
 		return fmt.Errorf("user app %s command %s failed: %w", this.options.Name, cmdName, err)
 	}

@@ -3,10 +3,10 @@ package util
 import (
 	"sort"
 
-	"phenix/internal/file"
-	"phenix/internal/mm"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
+	"phenix/util/file"
+	"phenix/util/mm"
 	"phenix/web/cache"
 	"phenix/web/proto"
 	"phenix/web/rbac"

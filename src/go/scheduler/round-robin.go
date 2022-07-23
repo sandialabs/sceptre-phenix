@@ -3,8 +3,8 @@ package scheduler
 import (
 	"fmt"
 
-	"phenix/internal/mm"
 	ifaces "phenix/types/interfaces"
+	"phenix/util/mm"
 )
 
 func init() {

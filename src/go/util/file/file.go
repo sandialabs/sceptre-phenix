@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"phenix/internal/mm"
-	"phenix/internal/mm/mmcli"
 	"phenix/util"
+	"phenix/util/mm"
+	"phenix/util/mm/mmcli"
 )
 
 var DefaultClusterFiles ClusterFiles = new(MMClusterFiles)

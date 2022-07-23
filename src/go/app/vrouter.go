@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"phenix/internal/mm/mmcli"
 	"phenix/tmpl"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
 	"phenix/util"
+	"phenix/util/mm/mmcli"
 
 	"github.com/mitchellh/mapstructure"
 )

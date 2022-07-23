@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"phenix/api/scorch/scorchmd"
 	"phenix/app"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
@@ -37,7 +38,7 @@ func Execute(ctx context.Context, exp *types.Experiment, run int) error {
 	}
 
 	exp.Status.SetAppRunning("scorch", true)
-	exp.Status.SetAppStatus("scorch", map[string]int{"runID": run})
+	exp.Status.SetAppStatus("scorch", scorchmd.ScorchStatus{RunID: run})
 
 	if err := exp.WriteToStore(true); err != nil {
 		return fmt.Errorf("error updating store with experiment %s: %v", exp.Metadata.Name, err)

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"phenix/api/vm"
-	"phenix/internal/mm"
+	"phenix/util/mm"
 	"phenix/web/rbac"
 	"phenix/web/util"
 

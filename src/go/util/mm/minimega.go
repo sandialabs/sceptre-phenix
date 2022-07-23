@@ -12,10 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"phenix/internal/common"
-	"phenix/internal/mm/mmcli"
+	"phenix/util/common"
+	"phenix/util/mm/mmcli"
 
 	log "github.com/activeshadow/libminimega/minilog"
+	"github.com/hashicorp/go-multierror"
 )
 
 var (
@@ -928,42 +929,129 @@ func (Minimega) ClearC2Responses(opts ...C2Option) error {
 	return nil
 }
 
-func (Minimega) TapVLAN(opts ...TapOption) error {
+func (this Minimega) TapVLAN(opts ...TapOption) error {
 	o := NewTapOptions(opts...)
 
-	cmd := mmcli.NewNamespacedCommand(o.ns)
-
 	if o.untap {
-		cmd.Command = fmt.Sprintf("tap delete %s", o.name)
+		log.Info("deleting tap %s from host %s", o.name, o.host)
+
+		var errs error
+
+		cmd := fmt.Sprintf("tap delete %s", o.name)
+		if err := this.MeshSend(o.ns, o.host, cmd); err != nil {
+			errs = multierror.Append(errs, fmt.Errorf("deleting tap %s on node %s: %w", o.name, o.host, err))
+		}
+
+		if o.netns != "" {
+			log.Info("deleting network namespace %s from host %s", o.netns, o.host)
+
+			cmd := fmt.Sprintf("ip netns delete %s", o.netns)
+			if err := this.MeshShell(o.host, cmd); err != nil {
+				return fmt.Errorf("deleting netns %s on node %s: %w", o.netns, o.host, err)
+			}
+		}
+
+		return errs
+	}
+
+	log.Info("creating tap %s on host %s", o.name, o.host)
+
+	var cmd string
+
+	if o.ip == "" || o.netns != "" {
+		cmd = fmt.Sprintf(
+			"tap create %s bridge %s name %s",
+			o.vlan, o.bridge, o.name,
+		)
 	} else {
-		cmd.Command = fmt.Sprintf(
+		cmd = fmt.Sprintf(
 			"tap create %s bridge %s ip %s %s",
 			o.vlan, o.bridge, o.ip, o.name,
 		)
 	}
 
-	log.Debug("TAP: " + cmd.Command)
+	if err := this.MeshSend(o.ns, o.host, cmd); err != nil {
+		return fmt.Errorf("creating tap %s on node %s: %w", o.name, o.host, err)
+	}
 
-	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-		action := "creating"
-		if o.untap {
-			action = "deleting"
+	if o.netns != "" {
+		log.Info("creating network namespace for tap %s on host %s", o.name, o.host)
+
+		cmd := fmt.Sprintf("ip netns add %s", o.name)
+		if err := this.MeshShell(o.host, cmd); err != nil {
+			return fmt.Errorf("creating network o.namespace on host %s: %w", o.host, err)
 		}
 
-		return fmt.Errorf("%s tap %s: %w", action, o.name, err)
+		log.Info("moving tap %s to network o.namespace on host %s", o.name, o.host)
+
+		cmd = fmt.Sprintf("ip link set dev %s netns %s", o.name, o.name)
+		if err := this.MeshShell(o.host, cmd); err != nil {
+			return fmt.Errorf("moving tap to network o.namespace on host %s: %w", o.host, err)
+		}
+
+		log.Info("bringing tap %s up in network o.namespace on host %s", o.name, o.host)
+
+		cmd = fmt.Sprintf("ip netns exec %s ip link set dev %s up", o.name, o.name)
+		if err := this.MeshShell(o.host, cmd); err != nil {
+			return fmt.Errorf("bringing tap up in network o.namespace on host %s: %w", o.host, err)
+		}
+
+		if o.ip != "" {
+			log.Info("setting IP address for tap %s in network o.namespace on host %s", o.name, o.host)
+
+			cmd := fmt.Sprintf("ip netns exec %s ip addr add %s dev %s", o.name, o.ip, o.name)
+			if err := this.MeshShell(o.host, cmd); err != nil {
+				return fmt.Errorf("setting IP address for tap in network o.namespace on host %s: %w", o.host, err)
+			}
+		}
 	}
 
 	return nil
 }
 
-func (Minimega) Shell(cmdStr string) error {
+func (Minimega) MeshShell(host, command string) error {
 	cmd := mmcli.NewCommand()
-	cmd.Command = fmt.Sprintf("shell %s", cmdStr)
+
+	if host == "" {
+		host = Headnode()
+	}
+
+	if IsHeadnode(host) {
+		cmd.Command = fmt.Sprintf("shell %s", command)
+	} else {
+		cmd.Command = fmt.Sprintf("mesh send %s shell %s", host, command)
+	}
 
 	log.Debug("SHELL: " + cmd.Command)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-		return fmt.Errorf("running shell command %s: %w", cmdStr, err)
+		return fmt.Errorf("running shell command (host %s) %s: %w", host, command, err)
+	}
+
+	return nil
+}
+
+func (Minimega) MeshSend(ns, host, command string) error {
+	var cmd *mmcli.Command
+
+	if ns == "" {
+		cmd = mmcli.NewCommand()
+	} else {
+		cmd = mmcli.NewNamespacedCommand(ns)
+	}
+
+	if host == "" {
+		host = Headnode()
+	}
+
+	if IsHeadnode(host) {
+		cmd.Command = command
+	} else {
+		cmd.Command = fmt.Sprintf("mesh send %s %s", host, command)
+	}
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("executing mesh send (%s): %w", cmd.Command, err)
 	}
 
 	return nil

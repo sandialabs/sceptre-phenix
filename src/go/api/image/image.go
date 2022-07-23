@@ -13,11 +13,11 @@ import (
 	"path"
 	"strings"
 
-	"phenix/internal/mm/mmcli"
 	"phenix/store"
 	"phenix/tmpl"
 	"phenix/types"
 	v1 "phenix/types/version/v1"
+	"phenix/util/mm/mmcli"
 	"phenix/util/notes"
 	"phenix/util/shell"
 

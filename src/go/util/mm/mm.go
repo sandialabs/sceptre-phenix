@@ -39,5 +39,6 @@ type MM interface {
 	ClearC2Responses(...C2Option) error
 
 	TapVLAN(...TapOption) error
-	Shell(cmd string) error
+	MeshShell(string, string) error
+	MeshSend(string, string, string) error
 }

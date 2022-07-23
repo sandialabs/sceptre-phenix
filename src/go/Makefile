@@ -26,7 +26,7 @@ all:
 clean:
 	$(RM) bin/phenix
 	$(RM) app/mock.go
-	$(RM) internal/mm/mock.go
+	$(RM) util/mm/mock.go
 	$(RM) store/mock.go
 	$(RM) tmpl/bindata.go
 	$(RM) util/shell/mock.go
@@ -71,16 +71,16 @@ web/bindata.go: web/public/docs/index.html web/public/index.html web/public/vnc.
 	$(GOBIN)/go-bindata -pkg web -prefix web/public -o web/bindata.go web/public/...
 
 .PHONY: generate-mocks
-generate-mocks: app/mock.go internal/mm/mock.go store/mock.go util/shell/mock.go
+generate-mocks: app/mock.go store/mock.go util/mm/mock.go util/shell/mock.go
 
 app/mock.go: app/app.go bin/mockgen
 	$(GOBIN)/mockgen -self_package phenix/app -destination app/mock.go -package app phenix/app App
 
-internal/mm/mock.go: internal/mm/mm.go bin/mockgen
-	$(GOBIN)/mockgen -self_package phenix/internal/mm -destination internal/mm/mock.go -package mm phenix/internal/mm MM
-
 store/mock.go: store/store.go bin/mockgen
 	$(GOBIN)/mockgen -self_package phenix/store -destination store/mock.go -package store phenix/store Store
+
+util/mm/mock.go: util/mm/mm.go bin/mockgen
+	$(GOBIN)/mockgen -self_package phenix/util/mm -destination util/mm/mock.go -package mm phenix/util/mm MM
 
 util/shell/mock.go: util/shell/shell.go bin/mockgen
 	$(GOBIN)/mockgen -self_package phenix/util/shell -destination util/shell/mock.go -package shell phenix/util/shell Shell

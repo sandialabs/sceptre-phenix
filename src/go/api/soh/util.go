@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"phenix/internal/common"
-	"phenix/internal/mm"
 	"phenix/tmpl"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
+	"phenix/util/common"
+	"phenix/util/mm"
 
 	"github.com/fatih/color"
 	"github.com/mitchellh/mapstructure"

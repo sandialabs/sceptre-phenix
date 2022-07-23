@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"phenix/internal/common"
 	"phenix/util"
+	"phenix/util/common"
 	"phenix/web"
 
 	log "github.com/activeshadow/libminimega/minilog"

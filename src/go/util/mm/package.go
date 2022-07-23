@@ -116,6 +116,10 @@ func TapVLAN(opts ...TapOption) error {
 	return DefaultMM.TapVLAN(opts...)
 }
 
-func Shell(cmd string) error {
-	return DefaultMM.Shell(cmd)
+func MeshShell(host, cmd string) error {
+	return DefaultMM.MeshShell(host, cmd)
+}
+
+func MeshSend(ns, host, command string) error {
+	return DefaultMM.MeshSend(ns, host, command)
 }

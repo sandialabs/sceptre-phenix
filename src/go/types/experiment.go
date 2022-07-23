@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"phenix/internal/common"
-	"phenix/internal/mm"
 	"phenix/store"
 	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
+	"phenix/util/common"
+	"phenix/util/mm"
 
 	"github.com/activeshadow/structs"
 	"github.com/mitchellh/mapstructure"

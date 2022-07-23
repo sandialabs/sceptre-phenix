@@ -2,6 +2,8 @@ package mm
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -243,20 +245,32 @@ type TapOption func(*tapOptions)
 type tapOptions struct {
 	ns     string
 	name   string
+	host   string
 	bridge string
 	vlan   string
+	netns  string
 	ip     string
 
 	untap bool
 }
 
 func NewTapOptions(opts ...TapOption) tapOptions {
-	o := tapOptions{
-		bridge: "phenix",
-	}
+	var o tapOptions
 
 	for _, opt := range opts {
 		opt(&o)
+	}
+
+	if o.host == "" {
+		o.host = Headnode()
+	}
+
+	if o.bridge == "" {
+		o.bridge = "phenix"
+	}
+
+	if !strings.Contains(o.vlan, "//") && o.ns != "" {
+		o.vlan = fmt.Sprintf("%s//%s", o.ns, o.vlan)
 	}
 
 	return o
@@ -274,6 +288,12 @@ func TapName(n string) TapOption {
 	}
 }
 
+func TapHost(h string) TapOption {
+	return func(o *tapOptions) {
+		o.host = h
+	}
+}
+
 func TapBridge(b string) TapOption {
 	return func(o *tapOptions) {
 		o.bridge = b
@@ -283,6 +303,12 @@ func TapBridge(b string) TapOption {
 func TapVLANAlias(v string) TapOption {
 	return func(o *tapOptions) {
 		o.vlan = v
+	}
+}
+
+func TapNetNS(n string) TapOption {
+	return func(o *tapOptions) {
+		o.netns = n
 	}
 }
 

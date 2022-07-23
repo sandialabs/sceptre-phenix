@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"phenix/internal/common"
-	"phenix/internal/mm"
 	"phenix/tmpl"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
+	"phenix/util/common"
+	"phenix/util/mm"
 )
 
 type Startup struct{}

@@ -33,11 +33,8 @@ services:
       - /tmp/phenix:/tmp/phenix
       - /var/log/phenix:/var/log/phenix
       - /etc/phenix:/etc/phenix
-      - type: bind
-        source: /phenix
-        target: /phenix
-        bind:
-          propagation: shared
+      - /var/run/netns:/var/run/netns:shared
+      - /phenix:/phenix:shared
     depends_on:
       - minimega
     healthcheck:
@@ -57,11 +54,8 @@ services:
       - /tmp/minimega:/tmp/minimega
       - /tmp/phenix:/tmp/phenix
       - /var/log/phenix:/var/log/phenix
-      - type: bind
-        source: /phenix
-        target: /phenix
-        bind:
-          propagation: shared
+      - /var/run/netns:/var/run/netns:shared
+      - /phenix:/phenix:shared
     healthcheck:
       test: mm version
     environment:
