@@ -63,7 +63,7 @@ services:
       MM_LOGFILE: /var/log/phenix/minimega.log
       MM_LOGLEVEL: info
   es:
-    image: elasticsearch:7.14.2
+    image: elasticsearch:7.17.5
     container_name: es
     <<: *common
     volumes:
@@ -73,7 +73,7 @@ services:
     depends_on:
       - volume-permissions-manager
   kibana:
-    image: kibana:7.14.2
+    image: kibana:7.17.5
     container_name: kibana
     <<: *common
     environment:

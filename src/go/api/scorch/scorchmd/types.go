@@ -12,13 +12,14 @@ spec:
     metadata:
       filebeat:
         enabled: false
+        expNameAsIndexName: true
         config:
           output.elasticsearch:
             hosts: ["localhost:9200"]
             index: "scorch-%{+yyyy.MM.dd}"
           setup:
             ilm.enabled: false
-            template.name: "scorch"
+            template.name: "filebeat"
             template.pattern: "scorch-*"
             template.overwrite: "false"
           filebeat.shutdown_timeout: 60s
@@ -87,13 +88,43 @@ func (this ScorchMetadata) ComponentSpecs() ComponentSpecMap {
 	return this.components
 }
 
+func (this ScorchMetadata) FilebeatEnabled(id int) bool {
+	run := this.Runs[id]
+	return (run.Filebeat == nil && this.Filebeat.Enabled) || (run.Filebeat != nil && run.Filebeat.Enabled)
+}
+
+func (this ScorchMetadata) FilebeatConfig(id int) map[string]interface{} {
+	run := this.Runs[id]
+
+	if run.Filebeat == nil {
+		return this.Filebeat.Config
+	}
+
+	return run.Filebeat.Config
+}
+
+func (this ScorchMetadata) UseExpNameAsIndexName(id int) bool {
+	run := this.Runs[id]
+
+	if run.Filebeat == nil && this.Filebeat.Enabled {
+		return this.Filebeat.ExpAsIndex
+	}
+
+	if run.Filebeat != nil && run.Filebeat.Enabled {
+		return run.Filebeat.ExpAsIndex
+	}
+
+	return false
+}
+
 type Loop struct {
-	Count     int      `mapstructure:"count"`
-	Configure []string `mapstructure:"configure"`
-	Start     []string `mapstructure:"start"`
-	Stop      []string `mapstructure:"stop"`
-	Cleanup   []string `mapstructure:"cleanup"`
-	Loop      *Loop    `mapstructure:"loop"` // using a pointer here to avoid cyclical references
+	Filebeat  *FilebeatSpec `mapstructure:"filebeat"`
+	Count     int           `mapstructure:"count"`
+	Configure []string      `mapstructure:"configure"`
+	Start     []string      `mapstructure:"start"`
+	Stop      []string      `mapstructure:"stop"`
+	Cleanup   []string      `mapstructure:"cleanup"`
+	Loop      *Loop         `mapstructure:"loop"` // using a pointer here to avoid cyclical references
 }
 
 func (this Loop) ContainsComponent(name string) bool {
@@ -128,8 +159,9 @@ type ComponentSpec struct {
 }
 
 type FilebeatSpec struct {
-	Enabled bool                   `mapstructure:"enabled"`
-	Config  map[string]interface{} `mapstructure:"config"`
+	Enabled    bool                   `mapstructure:"enabled"`
+	ExpAsIndex bool                   `mapstructure:"expNameAsIndexName" structs:"expNameAsIndexName"`
+	Config     map[string]interface{} `mapstructure:"config"`
 }
 
 type ComponentMetadata map[string]interface{}

@@ -84,7 +84,7 @@ RUN wget -O kali.deb https://http.kali.org/kali/pool/main/k/kali-archive-keyring
 	&& dpkg -i kali.deb && rm kali.deb
 
 # used by scorch
-RUN wget -O filebeat.deb https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.14.2-amd64.deb \
+RUN wget -O filebeat.deb https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.17.5-amd64.deb \
 	&& dpkg -i filebeat.deb && rm filebeat.deb
 
 COPY --from=gobuilder /phenix/bin/phenix   /usr/local/bin/phenix

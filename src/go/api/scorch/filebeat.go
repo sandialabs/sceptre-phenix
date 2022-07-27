@@ -72,12 +72,36 @@ func createFilebeatConfig(md scorchmd.ScorchMetadata, expName, expDir, startTime
 }
 
 func mergeFilebeatConfig(md scorchmd.ScorchMetadata, expName, expDir, startTime string, runID int) (int, error) {
-	c := md.Filebeat.Config
+	c := md.FilebeatConfig(runID)
 
-	// Used to determine if file harvesters are still running once a Scorch run is
-	// complete.
-	// c["http.enabled"] = true
-	// c["http.pprof.enabled"] = true
+	if md.UseExpNameAsIndexName(runID) { // force index name to be experiment name
+		if v, ok := c["output.elasticsearch"]; ok {
+			o := v.(map[string]interface{})
+
+			o["index"] = fmt.Sprintf("experiment-%s", expName)
+			c["output.elasticsearch"] = o
+		} else {
+			c["output.elasticsearch"] = map[string]interface{}{"index": fmt.Sprintf("experiment-%s", expName)}
+		}
+
+		if v, ok := c["setup"]; ok {
+			s := v.(map[string]interface{})
+
+			s["ilm.enabled"] = false
+			s["template.name"] = "filebeat"
+			s["template.pattern"] = "experiment-*"
+			s["template.overwrite"] = false
+
+			c["setup"] = s
+		} else {
+			c["setup"] = map[string]interface{}{
+				"ilm.enabled":        false,
+				"template.name":      "filebeat",
+				"template.pattern":   "experiment-*",
+				"template.overwrite": false,
+			}
+		}
+	}
 
 	c["fields_under_root"] = true
 
@@ -180,32 +204,20 @@ func mergeFilebeatConfig(md scorchmd.ScorchMetadata, expName, expDir, startTime 
 					// metrics for the number of open harvesters.
 					in["scan_frequency"] = "5s"
 
-					// add a few default Filebeat processors for first path only
+					// add a default Filebeat dissector
 
-					if pathStr, ok := paths[0].(string); ok {
-						fileName := filepath.Base(pathStr)
-
-						dissector := map[string]interface{}{
-							"tokenizer":     fmt.Sprintf("%s/%%{scorch.itername}/%s", baseDir, fileName),
-							"field":         "log.file.path",
-							"target_prefix": "",
-						}
-
-						addFields := map[string]interface{}{
-							"target": "",
-							"fields": map[string]interface{}{
-								"scorch.output_file": fileName,
-							},
-						}
-
-						processors = append(
-							processors,
-							map[string]interface{}{"dissect": dissector},
-							map[string]interface{}{"add_fields": addFields},
-						)
-
-						in["processors"] = processors
+					dissector := map[string]interface{}{
+						"tokenizer":     fmt.Sprintf("%s/%%{scorch.itername}/%%{scorch.output_file}", baseDir),
+						"field":         "log.file.path",
+						"target_prefix": "",
 					}
+
+					processors = append(
+						processors,
+						map[string]interface{}{"dissect": dissector},
+					)
+
+					in["processors"] = processors
 				}
 			}
 
@@ -229,7 +241,7 @@ func writeFilebeatConfig(md scorchmd.ScorchMetadata, expDir string, runID int) e
 	encoder := yaml.NewEncoder(&buf)
 	encoder.SetIndent(2)
 
-	if err := encoder.Encode(md.Filebeat.Config); err != nil {
+	if err := encoder.Encode(md.FilebeatConfig(runID)); err != nil {
 		return fmt.Errorf("marshaling Filebeat config: %w", err)
 	}
 

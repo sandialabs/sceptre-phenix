@@ -108,16 +108,14 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 		Stage: string(ACTIONDONE),
 	}
 
-	if this.md.Filebeat.Enabled {
-		inputs, err := createFilebeatConfig(this.md, exp.Spec.ExperimentName(), exp.Spec.BaseDir(), startTime, runID)
+	if this.md.FilebeatEnabled(runID) {
+		inputs, err := createFilebeatConfig(this.md, exp.Spec.ExperimentName(), exp.FilesDir(), startTime, runID)
 		if err != nil {
 			return fmt.Errorf("creating Filebeat config: %w", err)
 		}
 
 		if inputs > 0 {
-			// TODO: only start Filebeat if at least one Scorch component had a Filebeat
-			// input configured.
-			cmd, err := this.startFilebeat(ctx, exp.Spec.BaseDir(), runID)
+			cmd, err := this.startFilebeat(ctx, exp.FilesDir(), runID)
 			if err != nil {
 				return fmt.Errorf("starting Filebeat: %w", err)
 			}
@@ -126,7 +124,7 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 				update.Status = "running"
 				scorch.UpdatePipeline(update)
 
-				this.stopFilebeat(ctx, cmd, exp.Spec.BaseDir(), runID)
+				this.stopFilebeat(ctx, cmd)
 
 				update.Status = "success"
 				scorch.UpdatePipeline(update)
@@ -206,7 +204,7 @@ func (this Scorch) startFilebeat(ctx context.Context, baseDir string, runID int)
 	return cmd, nil
 }
 
-func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, baseDir string, runID int) {
+func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd) {
 	if cmd == nil {
 		return
 	}
