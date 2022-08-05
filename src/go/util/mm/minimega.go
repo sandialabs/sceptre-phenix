@@ -960,13 +960,13 @@ func (this Minimega) TapVLAN(opts ...TapOption) error {
 
 	if o.ip == "" || o.netns != "" {
 		cmd = fmt.Sprintf(
-			"tap create %s bridge %s name %s",
-			o.vlan, o.bridge, o.name,
+			"tap create %s//%s bridge %s name %s",
+			o.ns, o.vlan, o.bridge, o.name,
 		)
 	} else {
 		cmd = fmt.Sprintf(
-			"tap create %s bridge %s ip %s %s",
-			o.vlan, o.bridge, o.ip, o.name,
+			"tap create %s//%s bridge %s ip %s %s",
+			o.ns, o.vlan, o.bridge, o.ip, o.name,
 		)
 	}
 
