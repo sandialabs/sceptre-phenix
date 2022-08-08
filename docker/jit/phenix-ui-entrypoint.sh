@@ -27,6 +27,7 @@ popd &> /dev/null
 end_time=$(date +%s)
 echo -e "phenix UI took $((end_time - start_time)) seconds to build\n"
 
+cd /opt/phenix
 cp -a /usr/local/src/phenix/src/js/dist/* web/public
 
 exec phenix ui --base-path "$base" --unbundled "$@"
