@@ -4,6 +4,7 @@
 {{ $vyos := index . "vyos" }}
 {{ $passwd := index . "passwd" }}
 {{ $ssh := index . "ssh" }}
+{{ $emulators := index . "emulators" }}
 
 interfaces {
 {{ range $idx, $iface := $node.Network.Interfaces }}
@@ -35,6 +36,24 @@ interfaces {
             out {
                 name {{ $iface.RulesetOut }}
             }
+            {{ end }}
+        }
+        {{ end }}
+        {{ if $emulators }}
+        traffic-policy {
+            {{ range $emulator := $emulators }}
+                {{ range $in := $emulator.Ingress }}
+                    {{ if eq $in $iface.Name }}
+            in {{ $emulator.Name }}
+                        {{break}}
+                    {{ end }}
+                {{ end }}
+                {{ range $out := $emulator.Egress }}
+                    {{ if eq $out $iface.Name }}
+            out {{ $emulator.Name }}
+                        {{break}}
+                    {{ end }}
+                {{ end }}
             {{ end }}
         }
         {{ end }}
@@ -83,6 +102,33 @@ firewall {
     {{ end }}
 {{ end }}
 }
+
+{{ if $emulators }}
+traffic-policy {
+{{ range $emulator := $emulators }}
+    network-emulator {{ $emulator.Name }} {
+    {{ if $emulator.Bandwidth }}
+        bandwidth {{ $emulator.Bandwidth }}
+    {{ end }}
+    {{ if $emulator.Burst }}
+        burst {{ $emulator.Burst }}
+    {{ end }}
+    {{ if $emulator.Delay }}
+        network-delay {{ $emulator.Delay }}
+    {{ end }}
+    {{ if $emulator.Corruption }}
+        packet-corruption {{ $emulator.Corruption }}
+    {{ end }}
+    {{ if $emulator.Loss }}
+        packet-loss {{ $emulator.Loss }}
+    {{ end }}
+    {{ if $emulator.Reordering }}
+        packet-reordering {{ $emulator.Reordering }}
+    {{ end }}
+    }
+{{ end }}
+}
+{{ end }}
 
 protocols {
     static {

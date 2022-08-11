@@ -49,6 +49,18 @@ type DHCPConfig struct {
 	Static       map[string]string `mapstructure:"staticAssignments"`
 }
 
+type Emulator struct {
+	Ingress    []string `mapstructure:"ingress"`
+	Egress     []string `mapstructure:"egress"`
+	Name       string   `mapstructure:"name"`
+	Bandwidth  string   `mapstructure:"bandwidth"`
+	Burst      string   `mapstructure:"burst"`
+	Delay      string   `mapstructure:"delay"`
+	Corruption string   `mapstructure:"corruption"`
+	Loss       string   `mapstructure:"loss"`
+	Reordering string   `mapstructure:"reordering"`
+}
+
 type Vrouter struct {
 	ipsecPresharedKeys map[string]string
 }
@@ -168,12 +180,24 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 			if app.Name() == "vrouter" {
 				for _, host := range app.Hosts() {
 					if host.Hostname() == node.General().Hostname() {
-						ipsec, err := this.processIPSec(host.Metadata(), node.Network().Interfaces())
+						md := host.Metadata()
+
+						ipsec, err := this.processIPSec(md, node.Network().Interfaces())
 						if err != nil {
 							return fmt.Errorf("processing IPSec metadata for host %s: %w", host.Hostname(), err)
 						}
 
 						data["ipsec"] = ipsec
+
+						if e, ok := md["emulators"]; ok {
+							var emulators []Emulator
+
+							if err := mapstructure.Decode(e, &emulators); err != nil {
+								return fmt.Errorf("processing emulator metadata for host %s: %w", host.Hostname(), err)
+							}
+
+							data["emulators"] = emulators
+						}
 
 						break
 					}
