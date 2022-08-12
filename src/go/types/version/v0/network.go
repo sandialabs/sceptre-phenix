@@ -49,6 +49,10 @@ func (this Network) Rulesets() []ifaces.NodeNetworkRuleset {
 	return sets
 }
 
+func (Network) NAT() []ifaces.NodeNetworkNAT {
+	return nil
+}
+
 func (this *Network) SetRulesets(rules []ifaces.NodeNetworkRuleset) {
 	sets := make([]*Ruleset, len(rules))
 

@@ -13,6 +13,7 @@ type Network struct {
 	RoutesF     []Route      `json:"routes" yaml:"routes" structs:"routes" mapstructure:"routes"`
 	OSPFF       *OSPF        `json:"ospf" yaml:"ospf" structs:"ospf" mapstructure:"ospf"`
 	RulesetsF   []*Ruleset   `json:"rulesets" yaml:"rulesets" structs:"rulesets" mapstructure:"rulesets"`
+	NATF        []NAT        `json:"nat" yaml:"nat" structs:"nat" mapstructure:"nat"`
 }
 
 func (this *Network) Interfaces() []ifaces.NodeNetworkInterface {
@@ -69,6 +70,20 @@ func (this *Network) Rulesets() []ifaces.NodeNetworkRuleset {
 	}
 
 	return sets
+}
+
+func (this *Network) NAT() []ifaces.NodeNetworkNAT {
+	if this == nil {
+		return nil
+	}
+
+	nat := make([]ifaces.NodeNetworkNAT, len(this.NATF))
+
+	for i, n := range this.NATF {
+		nat[i] = n
+	}
+
+	return nat
 }
 
 func (this *Network) SetRulesets(rules []ifaces.NodeNetworkRuleset) {
@@ -468,6 +483,19 @@ func (this AddrPort) Address() string {
 
 func (this AddrPort) Port() int {
 	return this.PortF
+}
+
+type NAT struct {
+	InF  []string `json:"in" yaml:"in" structs:"in" mapstructure:"in"`
+	OutF string   `json:"out" yaml:"out" structs:"out" mapstructure:"out"`
+}
+
+func (this NAT) In() []string {
+	return this.InF
+}
+
+func (this NAT) Out() string {
+	return this.OutF
 }
 
 func (this *Network) SetDefaults() {

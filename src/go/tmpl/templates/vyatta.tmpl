@@ -5,6 +5,8 @@
 {{ $passwd := index . "passwd" }}
 {{ $ssh := index . "ssh" }}
 {{ $emulators := index . "emulators" }}
+{{ $snat := index . "snat" }}
+{{ $dnat := index . "dnat" }}
 
 interfaces {
 {{ range $idx, $iface := $node.Network.Interfaces }}
@@ -57,6 +59,85 @@ interfaces {
             {{ end }}
         }
         {{ end }}
+    }
+{{ end }}
+}
+
+nat {
+{{ if $snat }}
+    source {
+    {{ range $i, $rule := $snat }}
+        rule {{ addInt $i 100 }} {
+            outbound-interface eth{{ $rule.InterfaceIndex }}
+            source {
+        {{ if $rule.SourceAddress }}
+                address {{ $rule.SourceAddress }}
+        {{ end }}
+        {{ if $rule.SourcePort }}
+                port {{ $rule.SourcePort }}
+        {{ end }}
+            }
+        {{ if or $rule.DestinationAddress $rule.DestinationPort }}
+            destination {
+            {{ if $rule.DestinationAddress }}
+                address {{ $rule.DestinationAddress }}
+            {{ end }}
+            {{ if $rule.DestinationPort }}
+                port {{ $rule.DestinationPort }}
+            {{ end }}
+            }
+        {{ end }}
+        {{ if $rule.Protocol }}
+            protocol {{ $rule.Protocol }}
+        {{ end }}
+            translation {
+        {{ if $rule.TranslationAddress }}
+                address {{ $rule.TranslationAddress }}
+            {{ if $rule.TranslationPort }}
+                port {{ $rule.TranslationPort }}
+            {{ end }}
+        {{ else }}
+                address masquerade
+        {{ end }}
+            }
+        }
+    {{ end }}
+    }
+{{ end }}
+{{ if $dnat }}
+    destination {
+    {{ range $i, $rule := $dnat }}
+        rule {{ addInt $i 100 }} {
+            inbound-interface eth{{ $rule.InterfaceIndex }}
+        {{ if or $rule.SourceAddress $rule.SourcePort }}
+            source {
+            {{ if $rule.SourceAddress }}
+                address {{ $rule.SourceAddress }}
+            {{ end }}
+            {{ if $rule.SourcePort }}
+                port {{ $rule.SourcePort }}
+            {{ end }}
+            }
+        {{ end }}
+            destination {
+        {{ if $rule.DestinationAddress }}
+                address {{ $rule.DestinationAddress }}
+        {{ end }}
+        {{ if $rule.DestinationPort }}
+                port {{ $rule.DestinationPort }}
+        {{ end }}
+            }
+        {{ if $rule.Protocol }}
+            protocol {{ $rule.Protocol }}
+        {{ end }}
+            translation {
+                address {{ $rule.TranslationAddress }}
+        {{ if $rule.TranslationPort }}
+                port {{ $rule.TranslationPort }}
+        {{ end }}
+            }
+        }
+    {{ end }}
     }
 {{ end }}
 }

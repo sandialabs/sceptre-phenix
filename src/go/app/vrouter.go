@@ -17,6 +17,7 @@ import (
 	"phenix/util/mm/mmcli"
 
 	"github.com/mitchellh/mapstructure"
+	"inet.af/netaddr"
 )
 
 type ACLConfig struct {
@@ -59,6 +60,41 @@ type Emulator struct {
 	Corruption string   `mapstructure:"corruption"`
 	Loss       string   `mapstructure:"loss"`
 	Reordering string   `mapstructure:"reordering"`
+}
+
+type NATRule struct {
+	Interface          string `mapstructure:"interface"`
+	SourceAddress      string `mapstructure:"srcAddr"`
+	SourcePort         string `mapstructure:"srcPort"`
+	DestinationAddress string `mapstructure:"destAddr"`
+	DestinationPort    string `mapstructure:"dstPort"`
+	Protocol           string `mapstructure:"protocol"`
+	Translation        string `mapstructure:"translation"`
+
+	// Needs to be set via configuration code.
+	ifaceIndex int
+}
+
+func (this NATRule) InterfaceIndex() int {
+	return this.ifaceIndex
+}
+
+func (this NATRule) TranslationAddress() string {
+	if strings.Contains(this.Translation, ":") {
+		parts := strings.Split(this.Translation, ":")
+		return parts[0]
+	}
+
+	return this.Translation
+}
+
+func (this NATRule) TranslationPort() string {
+	if strings.Contains(this.Translation, ":") {
+		parts := strings.Split(this.Translation, ":")
+		return parts[1]
+	}
+
+	return ""
 }
 
 type Vrouter struct {
@@ -199,9 +235,66 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 							data["emulators"] = emulators
 						}
 
+						sources, destinations, err := this.processNAT(md, node.Network().Interfaces())
+						if err != nil {
+							return fmt.Errorf("processing NAT metadata for host %s: %w", host.Hostname(), err)
+						}
+
+						data["snat"] = sources
+						data["dnat"] = destinations
+
 						break
 					}
 				}
+			}
+		}
+
+		// If app host metadata didn't include NAT configs, then see if NAT was
+		// specified in the topology network config.
+		if _, ok := data["nat"]; !ok {
+			var sources []NATRule
+
+			for _, n := range node.Network().NAT() {
+				ifaceIndex := -1
+				var rules []NATRule
+
+				for i, iface := range node.Network().Interfaces() {
+					if iface.Name() == n.Out() {
+						ifaceIndex = i
+						continue
+					}
+
+					if iface.Type() != "ethernet" || iface.Proto() != "static" {
+						continue
+					}
+
+					if !util.StringSliceContains(n.In(), iface.Name()) {
+						continue
+					}
+
+					net := netaddr.IPPrefixFrom(
+						netaddr.MustParseIP(iface.Address()),
+						uint8(iface.Mask()),
+					)
+
+					rules = append(rules, NATRule{SourceAddress: net.Masked().String()})
+				}
+
+				if ifaceIndex < 0 {
+					return fmt.Errorf("NAT outbound interface %s specified for host %s not found", n.Out(), node.General().Hostname())
+				}
+
+				// Go back and set the outbound interface index for each rule.
+				for i, rule := range rules {
+					rule.ifaceIndex = ifaceIndex
+					rules[i] = rule
+				}
+
+				sources = append(sources, rules...)
+			}
+
+			if len(sources) > 0 {
+				data["snat"] = sources
 			}
 		}
 
@@ -598,6 +691,59 @@ func (this *Vrouter) processIPSec(md map[string]interface{}, nets []ifaces.NodeN
 	}
 
 	return &ipsec, nil
+}
+
+func (this *Vrouter) processNAT(md map[string]interface{}, nets []ifaces.NodeNetworkInterface) ([]NATRule, []NATRule, error) {
+	var (
+		sources      []NATRule
+		destinations []NATRule
+	)
+
+	if _, ok := md["snat"]; ok {
+		if err := mapstructure.Decode(md["snat"], &sources); err != nil {
+			return nil, nil, fmt.Errorf("processing SNAT metadata: %w", err)
+		}
+
+		for i, rule := range sources {
+			rule.ifaceIndex = -1
+
+			for j, iface := range nets {
+				if rule.Interface == iface.Name() {
+					rule.ifaceIndex = j
+					sources[i] = rule
+					break
+				}
+			}
+
+			if rule.ifaceIndex < 0 {
+				return nil, nil, fmt.Errorf("NAT outbound interface %s not found", rule.Interface)
+			}
+		}
+	}
+
+	if _, ok := md["dnat"]; ok {
+		if err := mapstructure.Decode(md["dnat"], &destinations); err != nil {
+			return nil, nil, fmt.Errorf("processing DNAT metadata: %w", err)
+		}
+
+		for i, rule := range destinations {
+			rule.ifaceIndex = -1
+
+			for j, iface := range nets {
+				if rule.Interface == iface.Name() {
+					rule.ifaceIndex = j
+					destinations[i] = rule
+					break
+				}
+			}
+
+			if rule.ifaceIndex < 0 {
+				return nil, nil, fmt.Errorf("NAT inbound interface %s not found", rule.Interface)
+			}
+		}
+	}
+
+	return sources, destinations, nil
 }
 
 func addChainRules(cmd *mmcli.Command, node string, ruleset ifaces.NodeNetworkRuleset) error {
