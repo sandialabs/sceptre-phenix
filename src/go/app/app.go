@@ -85,17 +85,22 @@ func List() []string {
 		names = append(names, name)
 	}
 
-	for _, name := range shell.FindCommandsWithPrefix("phenix-app-") {
-		names = append(names, name)
-	}
+	names = append(names, shell.FindCommandsWithPrefix(USER_APP_PREFIX)...)
 
 	return names
 }
 
-// GetApp returns the initialized phenix app with the given name. If an app with
-// the given name is not known internally, it returns the generic `user-shell`
-// app that handles shelling out to external custom user apps.
+// GetApp returns the phenix app with the given name. Preference is given to a
+// user app with the given name to allow users to override internal apps.
 func GetApp(name string) App {
+	cmdName := USER_APP_PREFIX + name
+
+	// Default to shelling out to a user app with the given name so internal apps
+	// can be overridden by users.
+	if shell.CommandExists(cmdName) {
+		return apps["user-shell"]
+	}
+
 	app, ok := apps[name]
 	if !ok {
 		app = apps["user-shell"]
@@ -105,14 +110,14 @@ func GetApp(name string) App {
 }
 
 // DefaultApps returns a slice of all the initialized default phenix apps.
-func DefaultApps() []App {
-	var a []App
+func DefaultApps() []string {
+	var apps []string
 
 	for app := range defaultApps {
-		a = append(a, apps[app])
+		apps = append(apps, app)
 	}
 
-	return a
+	return apps
 }
 
 // App is the interface that identifies all the required functionality for a
@@ -164,10 +169,12 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 		exp.Status.ResetAppStatus()
 	}
 
-	for _, a := range DefaultApps() {
+	for _, name := range DefaultApps() {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+
+		a := GetApp(name)
 
 		switch options.Stage {
 		case ACTIONCONFIG:

@@ -21,7 +21,10 @@ const (
 	EXIT_SCHEDULE int = 101
 )
 
-var ErrUserAppNotFound = errors.New("user app not found")
+var (
+	USER_APP_PREFIX    = "phenix-app-"
+	ErrUserAppNotFound = errors.New("user app not found")
+)
 
 type UserApp struct {
 	options Options
@@ -78,7 +81,7 @@ func (this UserApp) Cleanup(ctx context.Context, exp *types.Experiment) error {
 }
 
 func (this UserApp) shellOut(ctx context.Context, action Action, exp *types.Experiment) error {
-	cmdName := "phenix-app-" + this.options.Name
+	cmdName := USER_APP_PREFIX + this.options.Name
 
 	if !shell.CommandExists(cmdName) {
 		return fmt.Errorf("external user app %s does not exist in your path: %w", cmdName, ErrUserAppNotFound)
