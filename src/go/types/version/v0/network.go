@@ -409,6 +409,10 @@ func (this Rule) Destination() ifaces.NodeNetworkRulesetRuleAddrPort {
 	return this.DestinationF
 }
 
+func (Rule) Stateful() bool {
+	return false
+}
+
 func (this *Rule) SetDescription(d string) {
 	this.DescriptionF = d
 }
@@ -428,6 +432,8 @@ func (this *Rule) SetSource(a string, p int) {
 func (this *Rule) SetDestination(a string, p int) {
 	this.DestinationF = &AddrPort{AddressF: a, PortF: p}
 }
+
+func (Rule) SetStateful(bool) {}
 
 type AddrPort struct {
 	AddressF string `json:"address" yaml:"address" structs:"address" mapstructure:"address"`

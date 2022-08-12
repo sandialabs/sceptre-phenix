@@ -166,12 +166,14 @@ type NodeNetworkRulesetRule interface {
 	Protocol() string
 	Source() NodeNetworkRulesetRuleAddrPort
 	Destination() NodeNetworkRulesetRuleAddrPort
+	Stateful() bool
 
 	SetDescription(string)
 	SetAction(string)
 	SetProtocol(string)
 	SetSource(string, int)
 	SetDestination(string, int)
+	SetStateful(bool)
 }
 
 type NodeNetworkRulesetRuleAddrPort interface {

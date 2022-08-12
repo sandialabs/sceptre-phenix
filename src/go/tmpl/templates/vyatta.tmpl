@@ -156,7 +156,9 @@ firewall {
             {{ if .Description }}
             description "{{ .Description }}"
             {{ end }}
+            {{ if .Protocol }}
             protocol {{ .Protocol }}
+            {{ end }}
             {{ if .Source }}
             source {
                 {{ if .Source.Address }}
@@ -175,6 +177,12 @@ firewall {
                 {{ if .Destination.Port }}
                 port {{ .Destination.Port }}
                 {{ end }}
+            }
+            {{ end }}
+            {{ if .Stateful }}
+            state {
+                established enable
+                related enable
             }
             {{ end }}
         }

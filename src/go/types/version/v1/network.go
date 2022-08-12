@@ -416,6 +416,7 @@ type Rule struct {
 	ProtocolF    string    `json:"protocol" yaml:"protocol" structs:"protocol" mapstructure:"protocol"`
 	SourceF      *AddrPort `json:"source" yaml:"source" structs:"source" mapstructure:"source"`
 	DestinationF *AddrPort `json:"destination" yaml:"destination" structs:"destination" mapstructure:"destination"`
+	StatefulF    bool      `json:"stateful" yaml:"stateful" structs:"stateful" mapstructure:"stateful"`
 }
 
 func (this Rule) ID() int {
@@ -452,6 +453,10 @@ func (this Rule) Destination() ifaces.NodeNetworkRulesetRuleAddrPort {
 	return this.DestinationF
 }
 
+func (this Rule) Stateful() bool {
+	return this.StatefulF
+}
+
 func (this *Rule) SetDescription(d string) {
 	this.DescriptionF = d
 }
@@ -470,6 +475,10 @@ func (this *Rule) SetSource(a string, p int) {
 
 func (this *Rule) SetDestination(a string, p int) {
 	this.DestinationF = &AddrPort{AddressF: a, PortF: p}
+}
+
+func (this *Rule) SetStateful(s bool) {
+	this.StatefulF = s
 }
 
 type AddrPort struct {
