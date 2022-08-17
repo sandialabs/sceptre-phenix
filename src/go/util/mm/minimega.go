@@ -954,7 +954,7 @@ func (this Minimega) TapVLAN(opts ...TapOption) error {
 		return errs
 	}
 
-	log.Info("creating tap %s on host %s", o.name, o.host)
+	log.Info("creating tap %s (tapping VLAN %s on bridge %s) on host %s", o.name, o.vlan, o.bridge, o.host)
 
 	var cmd string
 
@@ -979,29 +979,29 @@ func (this Minimega) TapVLAN(opts ...TapOption) error {
 
 		cmd := fmt.Sprintf("ip netns add %s", o.name)
 		if err := this.MeshShell(o.host, cmd); err != nil {
-			return fmt.Errorf("creating network o.namespace on host %s: %w", o.host, err)
+			return fmt.Errorf("creating network namespace on host %s: %w", o.host, err)
 		}
 
-		log.Info("moving tap %s to network o.namespace on host %s", o.name, o.host)
+		log.Info("moving tap %s to network namespace on host %s", o.name, o.host)
 
 		cmd = fmt.Sprintf("ip link set dev %s netns %s", o.name, o.name)
 		if err := this.MeshShell(o.host, cmd); err != nil {
-			return fmt.Errorf("moving tap to network o.namespace on host %s: %w", o.host, err)
+			return fmt.Errorf("moving tap to network namespace on host %s: %w", o.host, err)
 		}
 
-		log.Info("bringing tap %s up in network o.namespace on host %s", o.name, o.host)
+		log.Info("bringing tap %s up in network namespace on host %s", o.name, o.host)
 
 		cmd = fmt.Sprintf("ip netns exec %s ip link set dev %s up", o.name, o.name)
 		if err := this.MeshShell(o.host, cmd); err != nil {
-			return fmt.Errorf("bringing tap up in network o.namespace on host %s: %w", o.host, err)
+			return fmt.Errorf("bringing tap up in network namespace on host %s: %w", o.host, err)
 		}
 
 		if o.ip != "" {
-			log.Info("setting IP address for tap %s in network o.namespace on host %s", o.name, o.host)
+			log.Info("setting IP address for tap %s in network namespace on host %s", o.name, o.host)
 
 			cmd := fmt.Sprintf("ip netns exec %s ip addr add %s dev %s", o.name, o.ip, o.name)
 			if err := this.MeshShell(o.host, cmd); err != nil {
-				return fmt.Errorf("setting IP address for tap in network o.namespace on host %s: %w", o.host, err)
+				return fmt.Errorf("setting IP address for tap in network namespace on host %s: %w", o.host, err)
 			}
 		}
 	}
