@@ -246,13 +246,6 @@ components:
           properties:
             cpu:
               type: string
-              enum:
-              - Broadwell
-              - Haswell
-              - core2duo
-              - pentium3
-              - host
-              - ""
               default: Broadwell
               example: Broadwell
             vcpus:
