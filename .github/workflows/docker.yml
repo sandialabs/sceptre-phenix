@@ -5,8 +5,37 @@ on:
   repository_dispatch:
     types: [apps-update]
 jobs:
+  push-mm-to-ghcr:
+    name: Push minimega Docker image to GitHub Packages
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v2
+      - name: Get short SHA
+        id: short
+        run: |
+          echo "::set-output name=sha::$(git rev-parse --short HEAD)"
+          echo "::set-output name=branch::$(echo ${GITHUB_REF#refs/heads/})"
+      - name: Log in to GitHub Docker Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build container image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: docker/Dockerfile.minimega
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/minimega:${{ steps.short.outputs.sha }}
+            ghcr.io/${{ github.repository }}/minimega:${{ steps.short.outputs.branch }}
   push-to-ghcr:
-    name: Push Docker image to GitHub Packages
+    name: Push phenix Docker image to GitHub Packages
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -39,7 +68,7 @@ jobs:
             ghcr.io/${{ github.repository }}/phenix:${{ steps.short.outputs.sha }}
             ghcr.io/${{ github.repository }}/phenix:${{ steps.short.outputs.branch }}
   push-jit-to-ghcr:
-    name: Push JIT Docker image to GitHub Packages
+    name: Push phenix JIT Docker image to GitHub Packages
     needs: push-to-ghcr
     runs-on: ubuntu-latest
     permissions:

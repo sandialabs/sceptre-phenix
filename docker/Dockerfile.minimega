@@ -1,6 +1,6 @@
 FROM ghcr.io/activeshadow/minimega/minimega:latest
 
-# iptables needed in minimega container for scorch
+# iptables needed in minimega container for scorch and tap apps
 RUN apt update && apt install -y iptables \
   && apt autoremove -y \
   && apt clean -y \
