@@ -134,5 +134,7 @@ if (($host_name -eq "{{ .Node.General.Hostname }}") -or ("{{ .Node.General.Hostn
     $computer_info = Get-WmiObject -Class Win32_ComputerSystem
     $computer_info.Rename("{{ .Node.General.Hostname }}")
     echo 'Hostname changed. Restarting...'
-    Restart-Computer
+    Restart-Computer -Force
 }
+
+$error | Out-File C:\phenix-startup-error.log
