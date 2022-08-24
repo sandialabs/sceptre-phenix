@@ -1,5 +1,10 @@
 FROM node:12.18.3 AS jsbuilder
 
+RUN apt update && apt install -y apt-transport-https ca-certificates
+RUN curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add - \
+  && echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list \
+  && apt update && apt install -y yarn
+
 RUN npm install -g @vue/cli redoc-cli
 
 COPY ./src/js /phenix/src/js
@@ -12,8 +17,7 @@ ARG PHENIX_BASE_PATH=/
 ENV VUE_APP_AUTH ${PHENIX_WEB_AUTH}
 ENV VUE_BASE_PATH ${PHENIX_BASE_PATH}
 
-RUN npm install \
-  && npm run build
+RUN make dist/index.html
 
 COPY ./src/go/web/public/docs/openapi.yml /phenix/src/go/web/public/docs/openapi.yml
 
@@ -22,7 +26,7 @@ WORKDIR /phenix/src/go/web/public/docs
 RUN npx redoc-cli build openapi.yml -o index.html --title 'phenix API'
 
 
-FROM golang:1.18 AS gobuilder
+FROM golang:1.18.5 AS gobuilder
 
 RUN apt update \
   && apt install -y protobuf-compiler xz-utils

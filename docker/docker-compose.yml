@@ -15,7 +15,7 @@ services:
       dockerfile: docker/Dockerfile
       args:
         PHENIX_WEB_AUTH: disabled
-        APPS_REPO: sandia-minimega/phenix-apps
+        APPS_REPO: activeshadow/phenix-apps
     command:
     - phenix
     - ui
@@ -30,12 +30,12 @@ services:
       - /dev:/dev
       - /proc:/proc
       - /etc/localtime:/etc/localtime:ro
-      - /tmp/minimega:/tmp/minimega
-      - /tmp/phenix:/tmp/phenix
       - /var/log/phenix:/var/log/phenix
       - /etc/phenix:/etc/phenix
       - /var/run/netns:/var/run/netns:shared
       - /phenix:/phenix:shared
+      - ./tmp/minimega:/tmp/minimega
+      - ./tmp/phenix:/tmp/phenix
     depends_on:
       - minimega
     healthcheck:
@@ -52,11 +52,11 @@ services:
       - /dev:/dev
       - /lib/modules:/lib/modules:ro
       - /etc/localtime:/etc/localtime:ro
-      - /tmp/minimega:/tmp/minimega
-      - /tmp/phenix:/tmp/phenix
       - /var/log/phenix:/var/log/phenix
       - /var/run/netns:/var/run/netns:shared
       - /phenix:/phenix:shared
+      - ./tmp/minimega:/tmp/minimega
+      - ./tmp/phenix:/tmp/phenix
     healthcheck:
       test: mm version
     environment:
