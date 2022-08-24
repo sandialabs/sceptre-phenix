@@ -19,7 +19,7 @@ COPY ./src/go/web/public/docs/openapi.yml /phenix/src/go/web/public/docs/openapi
 
 WORKDIR /phenix/src/go/web/public/docs
 
-RUN npx redoc-cli bundle openapi.yml -o index.html --title 'phenix API'
+RUN npx redoc-cli build openapi.yml -o index.html --title 'phenix API'
 
 
 FROM golang:1.18 AS gobuilder
@@ -52,7 +52,8 @@ RUN VER=${PHENIX_VERSION} COMMIT=${PHENIX_COMMIT} make bin/phenix
 RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.0/vmdb2 -P bin/ \
   && chmod +x bin/vmdb2
 
-RUN git clone --branch main https://github.com/sandia-minimega/phenix-apps.git /phenix-apps
+ARG APPS_REPO=sandia-minimega/phenix-apps
+RUN git clone --branch main https://github.com/${APPS_REPO}.git /phenix-apps
 
 WORKDIR /phenix-apps/src/go
 
@@ -77,7 +78,11 @@ RUN apt update \
 ENV LANG   en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
 
-RUN python3 -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org "git+https://github.com/sandia-minimega/phenix-apps.git@main#egg=phenix-apps&subdirectory=src/python"
+ARG APPS_REPO=sandia-minimega/phenix-apps
+RUN python3 -m pip install \
+  --trusted-host pypi.org \
+  --trusted-host files.pythonhosted.org \
+  "git+https://github.com/${APPS_REPO}.git@main#egg=phenix-apps&subdirectory=src/python"
 
 # needed to build Kali images with phenix
 RUN wget -O kali.deb https://http.kali.org/kali/pool/main/k/kali-archive-keyring/kali-archive-keyring_2022.1_all.deb \

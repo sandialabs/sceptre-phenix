@@ -15,6 +15,7 @@ services:
       dockerfile: docker/Dockerfile
       args:
         PHENIX_WEB_AUTH: disabled
+        APPS_REPO: sandia-minimega/phenix-apps
     command:
     - phenix
     - ui
