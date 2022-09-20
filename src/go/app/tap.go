@@ -17,7 +17,7 @@ import (
 )
 
 func init() {
-	RegisterUserApp(new(Tap))
+	RegisterUserApp("tap", func() App { return new(Tap) })
 }
 
 type TapAppMetadata struct {

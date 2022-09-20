@@ -45,14 +45,21 @@ func Get(expName, statusFilter string) (*Network, error) {
 				return nil, fmt.Errorf("unable to decode state of health details: %w", err)
 			}
 
-			var statuses []*HostState
+			var states []*HostState
 
-			if err := mapstructure.Decode(data["hosts"], &statuses); err != nil {
+			if err := mapstructure.Decode(data["hosts"], &states); err != nil {
 				return nil, fmt.Errorf("unable to decode state of health host details: %w", err)
 			}
 
-			for _, s := range statuses {
-				status[s.Hostname] = s
+			for _, state := range states {
+				for _, s := range state.AllStates() {
+					if s.Error != "" {
+						state.Errors = true
+						break
+					}
+				}
+
+				status[state.Hostname] = state
 			}
 		}
 	}

@@ -19,6 +19,9 @@ import (
 // Action represents the different experiment lifecycle hooks.
 type Action string
 
+// AppFactory is a function that returns a new app struct.
+type AppFactory func() App
+
 type Publication struct {
 	Experiment string
 	App        string
@@ -35,7 +38,7 @@ const (
 )
 
 var (
-	apps = make(map[string]App)
+	apps = make(map[string]AppFactory)
 
 	defaultApps = map[string]struct{}{
 		"ntp":     {},
@@ -49,21 +52,21 @@ var ErrUserAppAlreadyRegistered = fmt.Errorf("user app already registered")
 
 func init() {
 	// Default apps (always run)
-	apps["ntp"] = new(NTP)
-	apps["serial"] = new(Serial)
-	apps["startup"] = new(Startup)
-	apps["vrouter"] = new(Vrouter)
+	apps["ntp"] = func() App { return new(NTP) }
+	apps["serial"] = func() App { return new(Serial) }
+	apps["startup"] = func() App { return new(Startup) }
+	apps["vrouter"] = func() App { return new(Vrouter) }
 
 	// External user apps
-	apps["user-shell"] = new(UserApp)
+	apps["user-shell"] = func() App { return new(UserApp) }
 }
 
-func RegisterUserApp(app App) error {
-	if _, ok := apps[app.Name()]; ok {
+func RegisterUserApp(name string, factory AppFactory) error {
+	if _, ok := apps[name]; ok {
 		return ErrUserAppAlreadyRegistered
 	}
 
-	apps[app.Name()] = app
+	apps[name] = factory
 	return nil
 }
 
@@ -98,7 +101,7 @@ func GetApp(name string) App {
 	// Default to shelling out to a user app with the given name so internal apps
 	// can be overridden by users.
 	if shell.CommandExists(cmdName) {
-		return apps["user-shell"]
+		return apps["user-shell"]()
 	}
 
 	app, ok := apps[name]
@@ -106,7 +109,7 @@ func GetApp(name string) App {
 		app = apps["user-shell"]
 	}
 
-	return app
+	return app()
 }
 
 // DefaultApps returns a slice of all the initialized default phenix apps.
@@ -175,6 +178,7 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 		}
 
 		a := GetApp(name)
+		a.Init(Name(name), DryRun(options.DryRun))
 
 		switch options.Stage {
 		case ACTIONCONFIG:

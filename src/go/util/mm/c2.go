@@ -9,42 +9,61 @@ import (
 	"time"
 )
 
-type GroupError struct {
-	Err  error
+type GroupState struct {
+	Msg string
+	Err error
+
 	Meta map[string]interface{}
 }
 
-func NewGroupError(err error, meta map[string]interface{}) GroupError {
-	return GroupError{Err: err, Meta: meta}
+func NewGroupSuccess(msg string, meta map[string]interface{}) GroupState {
+	return GroupState{Msg: msg, Meta: meta}
 }
 
-func (this GroupError) Error() string {
+func NewGroupError(err error, meta map[string]interface{}) GroupState {
+	return GroupState{Err: err, Meta: meta}
+}
+
+func (this GroupState) Error() string {
 	return this.Err.Error()
 }
 
-func (this GroupError) Unwrap() error {
+func (this GroupState) Unwrap() error {
 	return this.Err
 }
 
-type ErrGroup struct {
+type StateGroup struct {
 	sync.Mutex     // embed
 	sync.WaitGroup // embed
 
-	Errors []GroupError
+	States   []GroupState
+	ErrCount int
 }
 
-func (this *ErrGroup) AddError(err error, meta map[string]interface{}) {
+func (this *StateGroup) AddSuccess(msg string, meta map[string]interface{}) {
 	this.Lock()
 	defer this.Unlock()
 
-	this.Errors = append(this.Errors, NewGroupError(err, meta))
+	this.States = append(this.States, NewGroupSuccess(msg, meta))
 }
 
-func (this *ErrGroup) AddGroupError(err GroupError) {
+func (this *StateGroup) AddError(err error, meta map[string]interface{}) {
 	this.Lock()
 	defer this.Unlock()
 
-	this.Errors = append(this.Errors, err)
+	this.States = append(this.States, NewGroupError(err, meta))
+	this.ErrCount++
+}
+
+func (this *StateGroup) AddGroupState(state GroupState) {
+	this.Lock()
+	defer this.Unlock()
+
+	this.States = append(this.States, state)
+
+	if state.Err != nil {
+		this.ErrCount++
+	}
 }
 
 type C2RetryError struct {
@@ -56,7 +75,7 @@ func (C2RetryError) Error() string {
 }
 
 type C2ParallelCommand struct {
-	Wait           *ErrGroup
+	Wait           *StateGroup
 	Options        []C2Option
 	Meta           map[string]interface{}
 	Expected       func(string) error

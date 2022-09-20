@@ -40,37 +40,70 @@ type Network struct {
 	HostFlows       [][]int  `json:"host_flows"`
 }
 
+type State struct {
+	Metadata  map[string]interface{} `json:"metadata" mapstructure:"metadata" structs:"metadata"`
+	Timestamp string                 `json:"timestamp" mapstructure:"timestamp" structs:"timestamp"`
+	Success   string                 `json:"success" mapstructure:"success" structs:"success"`
+	Error     string                 `json:"error" mapstructure:"error" structs:"error"`
+}
+
+type Networking struct {
+	Timestamp string `json:"timestamp" mapstructure:"timestamp" structs:"timestamp"`
+	Error     string `json:"error" mapstructure:"error" structs:"error"`
+	Success   string `json:"success" mapstructure:"success" structs:"success"`
+}
+
 type Reachability struct {
 	Hostname  string `json:"hostname" mapstructure:"hostname" structs:"hostname"`
 	Timestamp string `json:"timestamp" mapstructure:"timestamp" structs:"timestamp"`
 	Error     string `json:"error" mapstructure:"error" structs:"error"`
+	Success   string `json:"success" mapstructure:"success" structs:"success"`
 }
 
 type Process struct {
 	Process   string `json:"process" mapstructure:"process" structs:"process"`
 	Timestamp string `json:"timestamp" mapstructure:"timestamp" structs:"timestamp"`
 	Error     string `json:"error" mapstructure:"error" structs:"error"`
+	Success   string `json:"success" mapstructure:"success" structs:"success"`
 }
 
 type Listener struct {
 	Listener  string `json:"listener" mapstructure:"listener" structs:"listener"`
 	Timestamp string `json:"timestamp" mapstructure:"timestamp" structs:"timestamp"`
 	Error     string `json:"error" mapstructure:"error" structs:"error"`
+	Success   string `json:"success" mapstructure:"success" structs:"success"`
 }
 
 type CustomTest struct {
 	Test      string `json:"test" mapstructure:"test" structs:"test"`
 	Timestamp string `json:"timestamp" mapstructure:"timestamp" structs:"timestamp"`
 	Error     string `json:"error" mapstructure:"error" structs:"error"`
+	Success   string `json:"success" mapstructure:"success" structs:"success"`
 }
 
 type HostState struct {
-	Hostname     string         `json:"hostname" mapstructure:"hostname" structs:"hostname"`
-	CPULoad      string         `json:"cpuLoad" mapstructure:"cpuLoad" structs:"cpuLoad"`
-	Reachability []Reachability `json:"reachability,omitempty" mapstructure:"reachability,omitempty" structs:"reachability,omitempty"`
-	Processes    []Process      `json:"processes,omitempty" mapstructure:"processes,omitempty" structs:"processes,omitempty"`
-	Listeners    []Listener     `json:"listeners,omitempty" mapstructure:"listeners,omitempty" structs:"listeners,omitempty"`
-	CustomTests  []CustomTest   `json:"customTest,omitempty" mapstructure:"customTest,omitempty" structs:"customTest,omitempty"`
+	Hostname     string  `json:"hostname" mapstructure:"hostname" structs:"hostname"`
+	CPULoad      string  `json:"cpuLoad" mapstructure:"cpuLoad" structs:"cpuLoad"`
+	Networking   []State `json:"networking,omitempty" mapstructure:"networking,omitempty" structs:"networking,omitempty"`
+	Reachability []State `json:"reachability,omitempty" mapstructure:"reachability,omitempty" structs:"reachability,omitempty"`
+	Processes    []State `json:"processes,omitempty" mapstructure:"processes,omitempty" structs:"processes,omitempty"`
+	Listeners    []State `json:"listeners,omitempty" mapstructure:"listeners,omitempty" structs:"listeners,omitempty"`
+	CustomTests  []State `json:"customTests,omitempty" mapstructure:"customTests,omitempty" structs:"customTests,omitempty"`
+
+	// populated before sending to UI client
+	Errors bool `json:"errors" mapstructure:"-" structs:"-"`
+}
+
+func (this HostState) AllStates() []State {
+	var all []State
+
+	all = append(all, this.Networking...)
+	all = append(all, this.Reachability...)
+	all = append(all, this.Processes...)
+	all = append(all, this.Listeners...)
+	all = append(all, this.CustomTests...)
+
+	return all
 }
 
 type flowsStruct struct {
@@ -100,20 +133,22 @@ type elasticServer struct {
 }
 
 type customReachability struct {
-	Src    string        `mapstructure:"src"`
-	Dst    string        `mapstructure:"dst"`
-	Proto  string        `mapstructure:"proto"`
-	Port   int           `mapstructure:"port"`
-	Wait   time.Duration `mapstructure:"wait"`
-	Packet string        `mapstructure:"udpPacketBase64"`
+	Src    string `mapstructure:"src"`
+	Dst    string `mapstructure:"dst"`
+	Proto  string `mapstructure:"proto"`
+	Port   int    `mapstructure:"port"`
+	Wait   string `mapstructure:"wait"`
+	Packet string `mapstructure:"udpPacketBase64"`
 }
 
 type customHostTest struct {
-	Name       string `mapstructure:"name"`
-	TestScript string `mapstructure:"testScript"`
-	Executor   string `mapstructure:"executor"`
-	TestStdout string `mapstructure:"testStdout"`
-	TestStderr string `mapstructure:"testStderr"`
+	Name           string `mapstructure:"name"`
+	TestScript     string `mapstructure:"testScript"`
+	Executor       string `mapstructure:"executor"`
+	TestStdout     string `mapstructure:"testStdout"`
+	TestStderr     string `mapstructure:"testStderr"`
+	ValidateStdout string `mapstructure:"validateStdout"`
+	ValidateStderr string `mapstructure:"validateStderr"`
 }
 
 type sohMetadata struct {

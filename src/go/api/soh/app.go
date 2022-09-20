@@ -21,7 +21,7 @@ import (
 )
 
 func init() {
-	app.RegisterUserApp(newSOH())
+	app.RegisterUserApp("soh", func() app.App { return newSOH() })
 }
 
 type SOH struct {
@@ -175,7 +175,7 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	// *** WAIT FOR NODES TO HAVE NETWORKING CONFIGURED *** //
 
 	ns := exp.Spec.ExperimentName()
-	wg := new(mm.ErrGroup)
+	wg := new(mm.StateGroup)
 
 	for _, node := range exp.Spec.Topology().Nodes() {
 		if !strings.EqualFold(node.Type(), "VirtualMachine") {
@@ -256,6 +256,7 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 								ips[iface.Name()] = addrs[idx]
 								this.hostIPs[host] = ips
 
+								wg.AddSuccess(fmt.Sprintf("IP %s configured via DHCP", addrs[idx]), map[string]interface{}{"host": host})
 								return
 							}
 						}
@@ -303,17 +304,38 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 
 	printer = color.New(color.FgRed)
 
-	for _, err := range wg.Errors {
-		host := err.Meta["host"].(string)
+	for _, state := range wg.States {
+		host := state.Meta["host"].(string)
 
-		printer.Printf("  [✗] failed to confirm networking on %s: %v\n", host, err)
-
-		if errors.Is(err, mm.ErrC2ClientNotActive) {
-			delete(this.c2Hosts, host)
-		} else {
-			this.failedNetwork[host] = struct{}{}
+		s := State{
+			Metadata:  state.Meta,
+			Timestamp: time.Now().Format(time.RFC3339),
 		}
+
+		if err := state.Err; err != nil {
+			printer.Printf("  [✗] failed to confirm networking on %s: %v\n", host, err)
+
+			if errors.Is(err, mm.ErrC2ClientNotActive) {
+				delete(this.c2Hosts, host)
+			} else {
+				this.failedNetwork[host] = struct{}{}
+			}
+
+			s.Error = err.Error()
+		} else {
+			s.Success = state.Msg
+		}
+
+		state, ok := this.status[host]
+		if !ok {
+			state = HostState{Hostname: host}
+		}
+
+		state.Networking = append(state.Networking, s)
+		this.status[host] = state
 	}
+
+	this.writeResults(exp)
 
 	rand.Seed(time.Now().Unix())
 
@@ -361,7 +383,8 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 		return ctx.Err()
 	}
 
-	if len(wg.Errors) > 0 {
+	// TODO: this does not include errors from above function calls
+	if wg.ErrCount > 0 {
 		return fmt.Errorf("errors encountered in state of health app")
 	}
 

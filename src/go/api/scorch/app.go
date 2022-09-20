@@ -26,7 +26,7 @@ import (
 )
 
 func init() {
-	app.RegisterUserApp(newScorch())
+	app.RegisterUserApp("scorch", func() app.App { return newScorch() })
 }
 
 type Scorch struct {
