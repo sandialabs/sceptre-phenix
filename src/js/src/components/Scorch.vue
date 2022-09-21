@@ -89,7 +89,7 @@
           <p class="modal-card-title">{{ terminalName() }}</p>
         </header>
         <section class="modal-card-body">
-          <vue-terminal :loc="terminal.loc"></vue-terminal>
+          <vue-terminal :wsPath="terminal.loc"></vue-terminal>
         </section>
         <footer class="modal-card-foot buttons is-right">
           <b-tooltip label="this will close but not exit the terminal" type="is-light is-left" :delay="1000">  

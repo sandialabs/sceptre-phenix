@@ -36,6 +36,9 @@ are only available to Global Administrator or Global Viewer.
                         :to="builderLoc()"
                         external
                         class="navbar-item">Builder</menu-link>
+          <menu-link v-if="auth && globalAdmin()"
+                        :to="{name: 'console'}"
+                        class="navbar-item">Console</menu-link>
         </div>
       </div>
       <div class="navbar-end">

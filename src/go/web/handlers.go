@@ -12,10 +12,14 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
+	"unsafe"
 
 	"phenix/api/cluster"
 	"phenix/api/config"
@@ -35,8 +39,10 @@ import (
 	"phenix/web/weberror"
 
 	log "github.com/activeshadow/libminimega/minilog"
+	"github.com/creack/pty"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
+	"golang.org/x/net/websocket"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -45,6 +51,9 @@ import (
 var (
 	marshaler   = protojson.MarshalOptions{EmitUnpopulated: true}
 	unmarshaler = protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
+
+	ptys  = map[int]*os.File{}
+	ptyMu sync.Mutex
 )
 
 // GET /experiments
@@ -3338,6 +3347,168 @@ func GetError(w http.ResponseWriter, r *http.Request) {
 
 	body, _ := json.Marshal(event)
 	w.Write(body)
+}
+
+// POST /console
+func CreateConsole(w http.ResponseWriter, r *http.Request) {
+	if o.minimegaPath == "" {
+		log.Error("request made for minimega console, but minimega-path CLI option not set")
+		http.Error(w, "'minimega-path' CLI arg not set", http.StatusMethodNotAllowed)
+		return
+	}
+
+	role := r.Context().Value("role").(rbac.Role)
+	if !role.Allowed("miniconsole", "post") {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	// create a new console
+	cmd := exec.Command(o.minimegaPath, "-attach")
+
+	tty, err := pty.Start(cmd)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("could not start terminal: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	pid := cmd.Process.Pid
+
+	log.Info("spawned new minimega console, pid = %v", pid)
+
+	ptyMu.Lock()
+	ptys[pid] = tty
+	ptyMu.Unlock()
+
+	body, _ := json.Marshal(util.WithRoot("pid", pid))
+	w.Write(body)
+}
+
+// POST /console/{pid}/size?cols={[0-9]+}&rows={[0-9]+}
+func ResizeConsole(w http.ResponseWriter, r *http.Request) {
+	role := r.Context().Value("role").(rbac.Role)
+
+	if !role.Allowed("miniconsole", "post") {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	vars := mux.Vars(r)
+
+	pid, err := strconv.Atoi(vars["pid"])
+	if err != nil {
+		http.Error(w, "invalid pid", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+
+	ptyMu.Lock()
+
+	tty, ok := ptys[pid]
+	if !ok {
+		http.Error(w, "pty not found", http.StatusNotFound)
+		return
+	}
+
+	ptyMu.Unlock()
+
+	rows, err := strconv.ParseUint(r.FormValue("rows"), 10, 16)
+	if err != nil {
+		http.Error(w, "invalid rows", http.StatusBadRequest)
+		return
+	}
+
+	cols, err := strconv.ParseUint(r.FormValue("cols"), 10, 16)
+	if err != nil {
+		http.Error(w, "invalid cols", http.StatusBadRequest)
+		return
+	}
+
+	log.Debug("resize console %v to %d x %d", pid, cols, rows)
+
+	ws := struct {
+		R, C, X, Y uint16
+	}{
+		R: uint16(rows), C: uint16(cols),
+	}
+
+	_, _, errno := syscall.Syscall(
+		syscall.SYS_IOCTL,
+		tty.Fd(),
+		syscall.TIOCSWINSZ,
+		uintptr(unsafe.Pointer(&ws)),
+	)
+
+	if errno != 0 {
+		log.Error("unable to set winsize: %v", syscall.Errno(errno))
+		http.Error(w, "set winsize failed", http.StatusInternalServerError)
+	}
+
+	// make sure winsize gets processed, hopefully the user isn't typing...
+	time.Sleep(100 * time.Millisecond)
+	io.WriteString(tty, "\n")
+}
+
+// GET /console/{pid}/ws
+func WsConsole(w http.ResponseWriter, r *http.Request) {
+	role := r.Context().Value("role").(rbac.Role)
+
+	if !role.Allowed("miniconsole", "get") {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	vars := mux.Vars(r)
+
+	pid, err := strconv.Atoi(vars["pid"])
+	if err != nil {
+		http.Error(w, "invalid pid", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+
+	ptyMu.Lock()
+
+	tty, ok := ptys[pid]
+	if !ok {
+		http.Error(w, "pty not found", http.StatusNotFound)
+		return
+	}
+
+	ptyMu.Unlock()
+
+	websocket.Handler(func(ws *websocket.Conn) {
+		defer tty.Close()
+
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			log.Error("unable to find process: %v", pid)
+			return
+		}
+
+		go io.Copy(ws, tty)
+		io.Copy(tty, ws)
+
+		log.Debug("Killing minimega console: %v", pid)
+
+		proc.Kill()
+		proc.Wait()
+
+		ptyMu.Lock()
+		delete(ptys, pid)
+		ptyMu.Unlock()
+
+		log.Debug("Finished killing minimega console: %v", pid)
+
+	}).ServeHTTP(w, r)
 }
 
 func parseDuration(v string, d *time.Duration) error {

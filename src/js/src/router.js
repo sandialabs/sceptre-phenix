@@ -12,6 +12,7 @@ import SignIn        from './components/SignIn.vue'
 import StateOfHealth from './components/StateOfHealth.vue'
 import Users         from './components/Users.vue'
 import VMtiles       from './components/VMtiles.vue'
+import MiniConsole   from './components/MiniConsole.vue'
 
 import store from './store'
 
@@ -33,10 +34,14 @@ const router = new Router({
     {path: '/stateofhealth/:id', name: 'soh',         component: StateOfHealth},
     {path: '/users',             name: 'users',       component: Users},
     {path: '/vmtiles',           name: 'vmtiles',     component: VMtiles},
+    {path: '/console',           name: 'console',     component: MiniConsole},
 
     {path: '/builder?token=:token', name: 'builder'},
     {path: '/version',              name: 'version'},
     {path: '/features',             name: 'features'},
+
+    {path: '/api/v1/console/:pid/ws',   name: 'console-ws'},
+    {path: '/api/v1/console/:pid/size', name: 'console-size'},
 
     {path: '/api/v1/experiments/:id/files/:name\\?path=:path&token=:token', name: 'file'},
     {path: '/api/v1/experiments/:id/vms/:name/vnc?token=:token',            name: 'vnc'},

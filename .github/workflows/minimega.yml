@@ -31,7 +31,7 @@ jobs:
       - name: Build container image
         uses: docker/build-push-action@v3
         with:
-          context: .
+          context: docker
           file: docker/Dockerfile.minimega
           push: true
           tags: |
