@@ -2447,34 +2447,36 @@
       
       redeployVm (vms) {
         let body = "";
-        let url = "";
-	      let name = "";
-        vms.forEach((vm,_) => {
-          body = { "cpus": parseInt(vm.cpus), "ram": parseInt(vm.ram), "disk": vm.disk }
-          url = 'experiments/' + this.$route.params.id + '/vms/' + vm.name + '/redeploy'
-		  name = vm.name;
-          if  ( vm.inject ) {
-            url += '?replicate-injects=true'
-          }
-          this.redeployModal.actionsQueue.push({name: vm.name,  url: url, body:body});
-       })
-	   //kick off the first one
-       this.$http.post(url, body)
-         .then(null,response => {
-           this.$buefy.toast.open({
-             message: 'Redeploying the ' + name + ' VM failed with ' + response.status + ' status.',
-             type: 'is-danger',
-             duration: 4000
-           });
-         })
+        let url  = "";
+        let name = "";
 
-         this.isWaiting = true;
-         this.resetExpModal();
-//        this.redeployModal.active = false;
-//        this.resetRedeployModal();
+        vms.forEach((vm, _) => {
+          body = { "cpus": parseInt(vm.cpus), "ram": parseInt(vm.ram), "disk": vm.disk };
+          url  = 'experiments/' + this.$route.params.id + '/vms/' + vm.name + '/redeploy';
+          name = vm.name;
+
+          if ( vm.inject ) {
+            body["injects"] = true;
+          }
+
+          this.redeployModal.actionsQueue.push({name: vm.name, url: url, body: body});
+        })
+
+        this.$http.post(url, body).then(
+          null, response => {
+            this.$buefy.toast.open({
+              message: 'Redeploying the ' + name + ' VM failed with ' + response.status + ' status.',
+              type: 'is-danger',
+              duration: 4000
+            });
+          }
+        );
+
+        this.isWaiting = true;
+        this.resetExpModal();
       },
 
-      changeVlan  ( index, vlan, from, name ) {        
+      changeVlan ( index, vlan, from, name ) {
         if ( vlan === '0' ) {
           this.$buefy.dialog.confirm({
             title: 'Disconnect a VM Network Interface',

@@ -26,12 +26,10 @@ type options struct {
 	captureFile  string
 
 	screenshotSize string
-	c2Command      string
-	c2CommandID    string
 }
 
 func NewOptions(opts ...Option) options {
-	var o options
+	o := options{injectPart: 1}
 
 	for _, opt := range opts {
 		opt(&o)

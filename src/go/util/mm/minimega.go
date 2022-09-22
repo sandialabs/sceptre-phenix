@@ -376,7 +376,7 @@ func (Minimega) RedeployVM(opts ...Option) error {
 				old := newDiskConfig(disks)
 				new := newDiskConfig(o.disk)
 
-				// Delete disk snapshot file acrosss cluster
+				// Delete disk snapshot file across cluster
 				deleteFile(old.base)
 
 				cmd.Command = fmt.Sprintf("disk snapshot %s %s", new.path, old.base)
