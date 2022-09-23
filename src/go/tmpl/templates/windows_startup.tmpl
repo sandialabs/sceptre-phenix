@@ -48,11 +48,11 @@ taskkill /IM "slui.exe" /F
 Stop-Service -Name 'WLMS'
 {{ end }}
 
-if (Phenix-StartupStatusIs('done') {
+if (Phenix-StartupStatusIs('done')) {
     exit
 }
 
-if (-Not Phenix-StartupStatusIsSet) {
+if (-Not (Phenix-StartupStatusIsSet)) {
     Phenix-SetStartupStatus('running')
 }
 
