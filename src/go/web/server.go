@@ -70,6 +70,7 @@ func Start(opts ...ServerOption) error {
 		}
 	}
 
+	router.HandleFunc("/version", GetVersion).Methods("GET")
 	router.HandleFunc("/builder", GetBuilder).Methods("GET")
 	router.HandleFunc("/builder/save", SaveBuilderTopology).Methods("POST")
 

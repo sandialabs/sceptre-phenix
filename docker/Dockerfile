@@ -26,6 +26,7 @@ FROM golang:1.18.5 AS gobuilder
 RUN apt update \
   && apt install -y protobuf-compiler xz-utils
 
+COPY .git       /phenix/.git
 COPY ./Makefile /phenix/Makefile
 COPY ./src/go   /phenix/src/go
 
@@ -43,10 +44,10 @@ RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
   done && \
   update-ca-certificates; fi"]
 
-ARG PHENIX_VERSION
 ARG PHENIX_COMMIT
+ARG PHENIX_TAG
 
-RUN VER=${PHENIX_VERSION} COMMIT=${PHENIX_COMMIT} make bin/phenix
+RUN COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} make bin/phenix
 
 RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.0/vmdb2 -P bin/ \
   && chmod +x bin/vmdb2

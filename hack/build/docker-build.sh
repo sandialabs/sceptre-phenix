@@ -19,22 +19,22 @@ where:
     -b      base path for web UI deployment (defaults to '/')
     -d      disable phenix web UI authentication
     -h      show this help text
-    -v      version number to use for phenix"
+    -t      tag to use for phenix"
 
 
 base=/
 auth=enabled
-version=$(git log -1 --format="%h")
 commit=$(git log -1 --format="%h")
+tag=$(git log -1 --format="%h")
 
 
 # loop through positional options/arguments
-while getopts ':b:dhv:' option; do
+while getopts ':b:dht:' option; do
     case "$option" in
         b)  base="$OPTARG"         ;;
         d)  auth=disabled          ;;
         h)  echo -e "$usage"; exit ;;
-        v)  version="$OPTARG"      ;;
+        t)  tag="$OPTARG"          ;;
         \?) echo -e "illegal option: -$OPTARG\n" >$2
             echo -e "$usage" >&2
             exit 1 ;;
@@ -44,8 +44,8 @@ done
 
 echo    "phenix web UI base path:      $base"
 echo    "phenix web UI authentication: $auth"
-echo    "phenix version number:        $version"
-echo -e "phenix commit:                $commit\n"
+echo    "phenix commit:                $commit"
+echo -e "phenix tag:                   $tag\n"
 
 
 which docker &> /dev/null
@@ -113,7 +113,7 @@ docker run -it --rm \
   -u $USERNAME \
   -e VUE_APP_AUTH=$auth \
   -e VUE_BASE_PATH=$base \
-  -e VER=$version \
+  -e TAG=$tag \
   -e COMMIT=$commit \
   phenix:builder make bin/phenix
 

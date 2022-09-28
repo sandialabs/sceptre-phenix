@@ -1,10 +1,9 @@
 SHELL := /bin/bash
 
 # Default version number to git commit hash if not set.
-VER     := $(or $(VER),$(shell git log -1 --format="%h"))
-COMMIT  := $(or $(COMMIT),$(shell git log -1 --format="%h - %ae"))
-DATE    := $(shell date -u)
-VERSION := $(VER) (commit $(COMMIT)) $(DATE)
+COMMIT := $(or $(COMMIT),$(shell git log -1 --format="%h"))
+TAG    := $(or $(TAG),$(shell git log -1 --format="%h"))
+DATE   := $(shell date -u)
 
 SOURCES   := $(shell find . \( -name '*.go' \))
 CONFIGS   := $(shell find api/config/default \( -name '*' \))
@@ -105,7 +104,7 @@ web/proto/vm.pb.go: web/proto/*.proto bin/protoc-gen-go
 
 bin/phenix: $(GOSOURCES) generate-bindata generate-protobuf
 	mkdir -p bin
-	CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-X 'phenix/version.Version=$(VERSION)' -s -w" -trimpath -o bin/phenix main.go
+	CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -X 'phenix/version.Tag=$(TAG)' -X 'phenix/version.Date=$(DATE)' -s -w" -trimpath -o bin/phenix main.go
 
 bin/phenix-debug: $(GOSOURCES) generate-bindata generate-protobuf
 	mkdir -p bin

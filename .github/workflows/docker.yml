@@ -32,8 +32,8 @@ jobs:
           context: .
           file: docker/Dockerfile
           build-args: |
-            PHENIX_VERSION=${{ steps.short.outputs.branch }}
             PHENIX_COMMIT=${{ steps.short.outputs.sha }}
+            PHENIX_TAG=${{ steps.short.outputs.branch }}
             APPS_REPO=${{ github.event_name == 'repository_dispatch' && github.event.client_payload.repo || 'sandia-minimega/phenix-apps' }}
           push: true
           tags: |
