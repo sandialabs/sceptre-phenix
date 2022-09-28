@@ -37,20 +37,15 @@
               <b-table
                 :data="detailsModal.soh.reachability"
                 default-sort="hostname">
-                <template slot-scope="props">
-                  <b-table-column field="hostname" label="Target Host" sortable>
-                    {{ props.row.metadata.hostname }}
-                  </b-table-column>
-                  <b-table-column field="timestamp" label="Timestamp" sortable>
-                    {{ props.row.timestamp }}
-                  </b-table-column>
-                  <b-table-column field="success" label="Success" sortable>
-                    {{ props.row.success }}
-                  </b-table-column>
-                  <b-table-column field="error" label="Error" sortable>
-                    {{ props.row.error }}
-                  </b-table-column>
-                </template>
+                <b-table-column field="hostname" label="Host" sortable v-slot="props">
+                  {{ props.row.hostname }}
+                </b-table-column>
+                <b-table-column field="timestamp" label="Timestamp" sortable v-slot="props">
+                  {{ props.row.timestamp }}
+                </b-table-column>
+                <b-table-column field="error" label="Error" sortable v-slot="props">
+                  {{ props.row.error }}
+                </b-table-column>
               </b-table>
               <br>
             </div>
@@ -59,20 +54,15 @@
               <b-table
                 :data="detailsModal.soh.processes"
                 default-sort="process">
-                <template slot-scope="props">
-                  <b-table-column field="process" label="Process" sortable>
-                    {{ props.row.metadata.proc }}
-                  </b-table-column>
-                  <b-table-column field="timestamp" label="Timestamp" sortable>
-                    {{ props.row.timestamp }}
-                  </b-table-column>
-                  <b-table-column field="success" label="Success" sortable>
-                    {{ props.row.success }}
-                  </b-table-column>
-                  <b-table-column field="error" label="Error" sortable>
-                    {{ props.row.error }}
-                  </b-table-column>
-                </template>
+                <b-table-column field="process" label="Process" sortable v-slot="props">
+                  {{ props.row.process }}
+                </b-table-column>
+                <b-table-column field="timestamp" label="Timestamp" sortable v-slot="props">
+                  {{ props.row.timestamp }}
+                </b-table-column>
+                <b-table-column field="error" label="Error" sortable v-slot="props">
+                  {{ props.row.error }}
+                </b-table-column>
               </b-table>
               <br>
             </div>
@@ -81,20 +71,18 @@
               <b-table
                 :data="detailsModal.soh.listeners"
                 default-sort="listener">
-                <template slot-scope="props">
-                  <b-table-column field="listener" label="Listener" sortable>
-                    {{ props.row.metadata.port }}
-                  </b-table-column>
-                  <b-table-column field="timestamp" label="Timestamp" sortable>
-                    {{ props.row.timestamp }}
-                  </b-table-column>
-                  <b-table-column field="success" label="Success" sortable>
-                    {{ props.row.success }}
-                  </b-table-column>
-                  <b-table-column field="error" label="Error" sortable>
-                    {{ props.row.error }}
-                  </b-table-column>
-                </template>
+                <b-table-column field="listener" label="Listener" sortable v-slot="props">
+                  {{ props.row.listener }}
+                </b-table-column>
+                <b-table-column field="timestamp" label="Timestamp" sortable v-slot="props">
+                  {{ props.row.timestamp }}
+                </b-table-column>
+                <b-table-column field="success" label="Success" sortable v-slot="props">
+                  {{ props.row.success }}
+                </b-table-column>
+                <b-table-column field="error" label="Error" sortable v-slot="props">
+                  {{ props.row.error }}
+                </b-table-column>
               </b-table>
               <br>
             </div>
@@ -103,20 +91,18 @@
               <b-table
                 :data="detailsModal.soh.customTests"
                 default-sort="test">
-                <template slot-scope="props">
-                  <b-table-column field="test" label="Test Name" sortable>
-                    {{ props.row.metadata.test }}
-                  </b-table-column>
-                  <b-table-column field="timestamp" label="Timestamp" sortable>
-                    {{ props.row.timestamp }}
-                  </b-table-column>
-                  <b-table-column field="success" label="Success" sortable>
-                    {{ props.row.success }}
-                  </b-table-column>
-                  <b-table-column field="error" label="Error" sortable>
-                    {{ props.row.error }}
-                  </b-table-column>
-                </template>
+                <b-table-column field="test" label="Test Name" sortable v-slot="props">
+                  {{ props.row.metadata.test }}
+                </b-table-column>
+                <b-table-column field="timestamp" label="Timestamp" sortable v-slot="props">
+                  {{ props.row.timestamp }}
+                </b-table-column>
+                <b-table-column field="success" label="Success" sortable v-slot="props">
+                  {{ props.row.success }}
+                </b-table-column>
+                <b-table-column field="error" label="Error" sortable v-slot="props">
+                  {{ props.row.error }}
+                </b-table-column>
               </b-table>
               <br>
             </div>
@@ -291,17 +277,15 @@
                     <b-table
                       :data="n.soh.reachability"
                       default-sort="host">
-                      <template slot-scope="props">
-                        <b-table-column field="hostname" label="Host" sortable>
-                          {{ props.row.hostname }}
-                        </b-table-column>
-                        <b-table-column field="timestamp" label="Timestamp" sortable>
-                          {{ props.row.timestamp }}
-                        </b-table-column>
-                        <b-table-column field="error" label="Error" sortable>
-                          {{ props.row.error }}
-                        </b-table-column>
-                      </template>
+                      <b-table-column field="hostname" label="Host" sortable v-slot="props">
+                        {{ props.row.hostname }}
+                      </b-table-column>
+                      <b-table-column field="timestamp" label="Timestamp" sortable v-slot="props">
+                        {{ props.row.timestamp }}
+                      </b-table-column>
+                      <b-table-column field="error" label="Error" sortable v-slot="props">
+                        {{ props.row.error }}
+                      </b-table-column>
                     </b-table>
                     <br>
                   </div>
@@ -310,17 +294,15 @@
                     <b-table
                       :data="n.soh.processes"
                       default-sort="process">
-                      <template slot-scope="props">
-                        <b-table-column field="process" label="Process" sortable>
-                          {{ props.row.process }}
-                        </b-table-column>
-                        <b-table-column field="timestamp" label="Timestamp" sortable>
-                          {{ props.row.timestamp }}
-                        </b-table-column>
-                        <b-table-column field="error" label="Error" sortable>
-                          {{ props.row.error }}
-                        </b-table-column>
-                      </template>
+                      <b-table-column field="process" label="Process" sortable v-slot="props">
+                        {{ props.row.process }}
+                      </b-table-column>
+                      <b-table-column field="timestamp" label="Timestamp" sortable v-slot="props">
+                        {{ props.row.timestamp }}
+                      </b-table-column>
+                      <b-table-column field="error" label="Error" sortable v-slot="props">
+                        {{ props.row.error }}
+                      </b-table-column>
                     </b-table>
                     <br>
                   </div>
@@ -329,17 +311,15 @@
                     <b-table
                       :data="n.soh.listeners"
                       default-sort="listener">
-                      <template slot-scope="props">
-                        <b-table-column field="listener" label="Listener" sortable>
-                          {{ props.row.listener }}
-                        </b-table-column>
-                        <b-table-column field="timestamp" label="Timestamp" sortable>
-                          {{ props.row.timestamp }}
-                        </b-table-column>
-                        <b-table-column field="error" label="Error" sortable>
-                          {{ props.row.error }}
-                        </b-table-column>
-                      </template>
+                      <b-table-column field="listener" label="Listener" sortable v-slot="props">
+                        {{ props.row.listener }}
+                      </b-table-column>
+                      <b-table-column field="timestamp" label="Timestamp" sortable v-slot="props">
+                        {{ props.row.timestamp }}
+                      </b-table-column>
+                      <b-table-column field="error" label="Error" sortable v-slot="props">
+                        {{ props.row.error }}
+                      </b-table-column>
                     </b-table>
                     <br>
                   </div>

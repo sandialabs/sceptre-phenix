@@ -5,7 +5,6 @@ import (
 
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
-	"phenix/util/file"
 	"phenix/util/mm"
 	"phenix/web/cache"
 	"phenix/web/proto"
@@ -108,6 +107,7 @@ func VMToProtobuf(exp string, vm mm.VM, topology ifaces.TopologySpec) *proto.VM 
 		Experiment: exp,
 		State:      vm.State,
 		Tags:       vm.Tags,
+		CcActive:   vm.CCActive,
 	}
 
 	if topology == nil {
@@ -190,20 +190,4 @@ func UserToProtobuf(u rbac.User) *proto.User {
 	}
 
 	return user
-}
-
-func ExperimentFileListToProtobuf(experimentFiles []file.ExperimentFile) *proto.ExperimentFileList {
-	var protoExperimentFiles []*proto.ExperimentFile
-
-	for _, experimentFile := range experimentFiles {
-		protoExperimentFiles = append(protoExperimentFiles,
-			&proto.ExperimentFile{
-				Name:       experimentFile.Name,
-				Date:       experimentFile.Date,
-				Size:       uint32(experimentFile.Size),
-				Categories: experimentFile.Categories,
-			})
-	}
-
-	return &proto.ExperimentFileList{Files: protoExperimentFiles}
 }

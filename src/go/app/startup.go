@@ -61,8 +61,9 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 				if h, ok := ips[iface.Address()]; ok {
 					return fmt.Errorf("duplicate IP detected: %s and %s both have %s configured", h, node.General().Hostname(), iface.Address())
 				}
-
-				ips[iface.Address()] = node.General().Hostname()
+				if iface.Address() != "" {
+					ips[iface.Address()] = node.General().Hostname()
+				}
 			}
 		}
 

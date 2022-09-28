@@ -138,6 +138,8 @@ type c2Options struct {
 	testConn string
 	sendFile string
 
+	mount *bool
+
 	timeout time.Duration
 	wait    bool
 
@@ -199,6 +201,20 @@ func C2TestConn(t string) C2Option {
 func C2SendFile(f string) C2Option {
 	return func(o *c2Options) {
 		o.sendFile = f
+	}
+}
+
+func C2Mount() C2Option {
+	return func(o *c2Options) {
+		t := true
+		o.mount = &t
+	}
+}
+
+func C2Unmount() C2Option {
+	return func(o *c2Options) {
+		f := false
+		o.mount = &f
 	}
 }
 

@@ -5,6 +5,7 @@ package mmcli
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Command represents a command and options to send to minimega.
@@ -13,6 +14,7 @@ type Command struct {
 	Columns   []string
 	Filters   []string
 	Namespace string
+	Timeout   time.Duration
 }
 
 // NewCommand returns a pointer to a new, initialized command.

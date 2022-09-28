@@ -15,6 +15,12 @@ module.exports = {
         changeOrigin: true,
         logLevel: 'debug',
         ws: true
+      },
+      '/features': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        logLevel: 'debug',
+        ws: true
       }
     }
   }

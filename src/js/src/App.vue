@@ -3,7 +3,7 @@ This is the main file for the Vue app. It sets the header, footer,
 and body to the overall Vue window. Header and Footer are separate
 Vue components. There is a dispatch that is used to check for auto
 login and returns a user to Experiments component if successful.
- -->
+-->
 
 <template>
   <div class="container">
@@ -34,7 +34,16 @@ login and returns a user to Experiments component if successful.
       }
     },
     
-    created () {
+    async created () {
+      try {
+        let resp     = await fetch(this.$router.resolve({ name: 'features'}).href);
+        let features = await resp.json();
+
+        this.$store.commit( 'FEATURES', features['features'] );
+      } catch (err) {
+        console.log(`ERROR getting features: ${err}`);
+      }
+
       this.wsConnect();
 
       this.unwatch = this.$store.watch(
@@ -242,6 +251,10 @@ clue what this stuff does.
   $table-background-color: #484848;
   
   $button-text-color: whitesmoke;
+
+
+  $breadcrumb-item-color: $info !important;
+  $breadcrumb-item-active-color: $light-invert !important;
 
   $light: #686868;
   $light-invert: findColorInvert( $light );

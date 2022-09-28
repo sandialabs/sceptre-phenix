@@ -1,7 +1,7 @@
 <template>
   <div class="content">
     <b-modal :active.sync="expModal.active" :on-cancel="resetExpModal" has-modal-card>
-      <div class="modal-card" style="width:25em">
+      <div class="modal-card" style="width:30em">
         <header class="modal-card-head">
           <p class="modal-card-title">{{ expModal.vm.name ? expModal.vm.name : "unknown" }} VM</p>
         </header>
@@ -15,6 +15,7 @@
           <p>Delay: {{ expModal.vm.delayed_start }}</p>
           <p>Network(s): {{ expModal.vm.networks | stringify | lowercase }}</p>
           <p>Taps: {{ expModal.vm.taps | stringify | lowercase }}</p>
+          <p>CC Active: {{ expModal.vm.ccActive }}</p>
           <p v-if="expModal.snapshots">
             Snapshots:       
             <br>
@@ -30,88 +31,95 @@
         <div v-if="adminUser() && !showModifyStateBar">
           <template v-if="!expModal.vm.running">
             <b-tooltip label="start" type="is-light">
-              <b-button class="button is-success" icon-left="play"  @click="startVm( expModal.vm.name )">
+              <b-button class="button is-success" icon-left="play" @click="startVm( expModal.vm.name )">
               </b-button>
             </b-tooltip>
           </template>
           <template v-else>
             <b-tooltip label="pause" type="is-light">
-              <b-button class="button is-warning" icon-left="pause" @click="pauseVm(  expModal.vm.name )">
+              <b-button class="button is-warning" icon-left="pause" @click="pauseVm( expModal.vm.name )">
               </b-button>
             </b-tooltip>
           </template>
         </div>
-        <div v-if="experimentUser() && !showModifyStateBar && expModal.vm.running">
-             &nbsp; 
-          <b-tooltip  label="create memory snapshot" type="is-light">
-            <b-button class="button is-light" icon-left="database" @click="queueMemorySnapshotVMs(expModal.vm.name)">
-             </b-button>
+        <div v-if="features.includes('vm-mount') && (experimentViewer() || experimentUser()) && !showModifyStateBar && expModal.vm.running">
+          &nbsp;
+          <b-tooltip :label="!expModal.vm.ccActive ? 'mount vm (requires active cc)' : 'mount vm'" type="is-light">
+            <b-button class="button is-light" icon-left="hdd" @click="showMountDialog(expModal.vm.name)" :disabled="!expModal.vm.ccActive">
+            </b-button>
           </b-tooltip>
-         </div>
-         <div v-if="experimentUser() && !showModifyStateBar && expModal.vm.running">
-              &nbsp;  
-          <b-tooltip  label="create backing image" type="is-light">
+        </div>
+        <div v-if="experimentUser() && !showModifyStateBar && expModal.vm.running">
+          &nbsp;
+          <b-tooltip label="create memory snapshot" type="is-light">
+            <b-button class="button is-light" icon-left="database" @click="queueMemorySnapshotVMs(expModal.vm.name)">
+            </b-button>
+          </b-tooltip>
+        </div>
+        <div v-if="experimentUser() && !showModifyStateBar && expModal.vm.running">
+          &nbsp;
+          <b-tooltip label="create backing image" type="is-light">
             <b-button class="button is-light" icon-left="save" @click="diskImage(expModal.vm.name)">
             </b-button>
           </b-tooltip>
-          </div>
-         <div v-if="experimentUser() && !showModifyStateBar && expModal.vm.running">
-              &nbsp;  
-              <b-tooltip  label="create vm snapshot" type="is-light">
-               <b-button  class="button is-light" icon-left="camera" @click="captureSnapshot(expModal.vm.name)">
-               </b-button>
-              </b-tooltip>
-          </div>   
-          <div  v-if="experimentUser() && !showModifyStateBar && expModal.vm.running">
-              &nbsp;  
-             <b-tooltip label="record screenshot" type="is-light">
-               <b-button  class="button is-light" icon-left="video" @click="notImplemented()">
-               </b-button>
-             </b-tooltip>
-           </div>             
-            <div v-if="experimentUser() && !showModifyStateBar">
-              &nbsp;  
-              <b-tooltip  label="modify state" type="is-light">
-               <b-button  class="button is-light" icon-left="edit" @click="showModifyStateBar = true">
-               </b-button>
-              </b-tooltip>
-            </div>               
-            <div v-if="experimentUser() && showModifyStateBar">
-                &nbsp; 
-              <b-tooltip  label="redeploy" type="is-light">
-                <b-button class="button is-success" icon-left="history" @click="redeploy(expModal.vm.name)">
-                </b-button>
-              </b-tooltip>               
-               &nbsp;
-              <b-tooltip  label="reset disk state" type="is-light">
-                 <b-button class="button is-success" icon-left="undo-alt" @click="resetVmState(expModal.vm.name)">
-                 </b-button>
-              </b-tooltip>
-             
-                &nbsp;
-              <b-tooltip  label="restart" type="is-light">
-                 <b-button class="button is-success" icon-left="sync-alt" @click="restartVm(expModal.vm.name)">
-                 </b-button>
-              </b-tooltip>
-             
-                &nbsp;              
-                <b-tooltip label="shutdown" type="is-light">
-                  <b-button class="button is-danger"  icon-left="power-off" @click="shutdownVm(expModal.vm.name)">
-                  </b-button>
-                </b-tooltip>              
-               
-                &nbsp;
-                <b-tooltip label="kill" type="is-light">
-                  <b-button class="button is-danger"  icon-left="skull-crossbones" @click="killVm(expModal.vm.name)">
-                  </b-button>
-                </b-tooltip>              
-             
-               &nbsp;
-               <b-tooltip label="close  toolbar" type="is-light">
-                 <b-button class="button is-light" icon-left="window-close" @click="showModifyStateBar = false">
-                 </b-button>
-               </b-tooltip>
-             </div>
+        </div>
+        <div v-if="experimentUser() && !showModifyStateBar && expModal.vm.running">
+          &nbsp;
+          <b-tooltip label="create vm snapshot" type="is-light">
+            <b-button class="button is-light" icon-left="camera" @click="captureSnapshot(expModal.vm.name)">
+            </b-button>
+          </b-tooltip>
+        </div>
+        <div v-if="experimentUser() && !showModifyStateBar && expModal.vm.running">
+          &nbsp;
+          <b-tooltip label="record screenshot" type="is-light">
+            <b-button class="button is-light" icon-left="video" @click="notImplemented()">
+            </b-button>
+          </b-tooltip>
+        </div>
+        <div v-if="experimentUser() && !showModifyStateBar">
+          &nbsp;
+          <b-tooltip label="modify state" type="is-light">
+            <b-button class="button is-light" icon-left="edit" @click="showModifyStateBar = true">
+            </b-button>
+          </b-tooltip>
+        </div>
+        <div v-if="experimentUser() && showModifyStateBar">
+          &nbsp;
+          <b-tooltip label="redeploy" type="is-light">
+            <b-button class="button is-success" icon-left="history" @click="redeploy(expModal.vm.name)">
+            </b-button>
+          </b-tooltip>
+          &nbsp;
+          <b-tooltip label="reset disk state" type="is-light">
+            <b-button class="button is-success" icon-left="undo-alt" @click="resetVmState(expModal.vm.name)">
+            </b-button>
+          </b-tooltip>
+      
+          &nbsp;
+          <b-tooltip label="restart" type="is-light">
+            <b-button class="button is-success" icon-left="sync-alt" @click="restartVm(expModal.vm.name)">
+            </b-button>
+          </b-tooltip>
+      
+          &nbsp;
+          <b-tooltip label="shutdown" type="is-light">
+            <b-button class="button is-danger" icon-left="power-off" @click="shutdownVm(expModal.vm.name)">
+            </b-button>
+          </b-tooltip>
+      
+          &nbsp;
+          <b-tooltip label="kill" type="is-light">
+            <b-button class="button is-danger" icon-left="skull-crossbones" @click="killVm(expModal.vm.name)">
+            </b-button>
+          </b-tooltip>
+      
+          &nbsp;
+          <b-tooltip label="close  toolbar" type="is-light">
+            <b-button class="button is-light" icon-left="window-close" @click="showModifyStateBar = false">
+            </b-button>
+          </b-tooltip>
+        </div>
       </footer>
     </div>
   </b-modal>
@@ -347,91 +355,93 @@
     <div class="level">    
       <div class="level-left"></div>
       <div class="level-right">
+        <!-- Multi-VM options shown next to search -->
         <div class="level-item" style="margin-bottom: -.3em;">
         <b-field v-if="isMultiVmSelected && (experimentUser() || experimentViewer())" position="is-center">
-            <div v-if="adminUser() && !showModifyStateBar">
-                <b-tooltip label="start" type="is-light">
-                  <b-button class="button is-success" icon-left="play"  @click="processMultiVmAction(vmActions.start)">
-                  </b-button>
-                </b-tooltip>
-                &nbsp;
-                <b-tooltip label="pause" type="is-light">
-                  <b-button class="button is-warning" icon-left="pause" @click="processMultiVmAction(vmActions.pause)">
-                 </b-button>
-                </b-tooltip>
-            </div>
-          <div  v-if="experimentUser() && !showModifyStateBar">
-              &nbsp;  
-              <b-tooltip  label="create memory snapshot" type="is-light">
-                <b-button class="button is-light" icon-left="database" @click="processMultiVmAction(vmActions.createMemorySnapshot)">
-                </b-button>
-              </b-tooltip>
-            </div>
-            <div v-if="experimentUser() && !showModifyStateBar">
-              &nbsp;  
-              <b-tooltip  label="create backing image" type="is-light">
-                <b-button class="button is-light" icon-left="save" @click="processMultiVmAction(vmActions.createBacking)">
-                </b-button>
-              </b-tooltip>
-            </div>            
-            <div v-if="experimentUser() && !showModifyStateBar">
-              &nbsp;  
-              <b-tooltip  label="create vm snapshot" type="is-light">
-               <b-button  class="button is-light" icon-left="camera" @click="processMultiVmAction(vmActions.captureSnapshot)">
-               </b-button>
-              </b-tooltip>
-            </div> 
-            <div v-if="experimentUser() && !showModifyStateBar">
-              &nbsp;  
-              <b-tooltip  label="record screenshot" type="is-light">
-                <b-button class="button is-light" icon-left="video" @click="processMultiVmAction(vmActions.recordScreenshots)">
-                </b-button>
-              </b-tooltip>
-            </div>
-            <div v-if="experimentUser() && !showModifyStateBar">
-              &nbsp;  
-              <b-tooltip  label="modify state" type="is-light">
-               <b-button  class="button is-light" icon-left="edit" @click="showModifyStateBar = true">
-               </b-button>
-              </b-tooltip>
-            </div>               
-              <div  v-if="experimentUser() && showModifyStateBar">
-                &nbsp; 
-                <b-tooltip label="redeploy" type="is-light">
-                  <b-button class="button is-success" icon-left="history" @click="processMultiVmAction(vmActions.redeploy)">
-                  </b-button>
-                </b-tooltip>              
-                &nbsp;
-                <b-tooltip label="reset disk state" type="is-light">
-                  <b-button class="button is-success" icon-left="undo-alt"  @click="processMultiVmAction(vmActions.resetState)">
-                  </b-button>
-                </b-tooltip>
-             
-                &nbsp;
-                <b-tooltip label="restart" type="is-light">
-                  <b-button class="button is-success" icon-left="sync-alt" @click="processMultiVmAction(vmActions.restart)">
-                  </b-button>
-                </b-tooltip>
-             
-                &nbsp;
-                <b-tooltip label="shutdown" type="is-light">
-                  <b-button class="button is-danger"  icon-left="power-off" @click="processMultiVmAction(vmActions.shutdown)">
-                  </b-button>
-                </b-tooltip>
-
-                &nbsp;
-                <b-tooltip label="kill" type="is-light">
-                  <b-button class="button is-danger"  icon-left="skull-crossbones" @click="processMultiVmAction(vmActions.kill)">
-                  </b-button>
-                </b-tooltip>              
- 
-                &nbsp;
-                <b-tooltip label="close toolbar" type="is-light">
-                  <b-button class="button is-light" icon-left="window-close"  @click="showModifyStateBar = false">
-                  </b-button>
-                </b-tooltip>
-             </div>
-                                                                                                                                                                                                                     
+          <div v-if="adminUser() && !showModifyStateBar">
+            <b-tooltip label="start" type="is-light">
+              <b-button class="button is-success" icon-left="play" @click="processMultiVmAction(vmActions.start)">
+              </b-button>
+            </b-tooltip>
+            &nbsp;
+            <b-tooltip label="pause" type="is-light">
+              <b-button class="button is-warning" icon-left="pause" @click="processMultiVmAction(vmActions.pause)">
+              </b-button>
+            </b-tooltip>
+          </div>
+          <div v-if="experimentUser() && !showModifyStateBar">
+            &nbsp;
+            <b-tooltip label="create memory snapshot" type="is-light">
+              <b-button class="button is-light" icon-left="database"
+                @click="processMultiVmAction(vmActions.createMemorySnapshot)">
+              </b-button>
+            </b-tooltip>
+          </div>
+          <div v-if="experimentUser() && !showModifyStateBar">
+            &nbsp;
+            <b-tooltip label="create backing image" type="is-light">
+              <b-button class="button is-light" icon-left="save" @click="processMultiVmAction(vmActions.createBacking)">
+              </b-button>
+            </b-tooltip>
+          </div>
+          <div v-if="experimentUser() && !showModifyStateBar">
+            &nbsp;
+            <b-tooltip label="create vm snapshot" type="is-light">
+              <b-button class="button is-light" icon-left="camera" @click="processMultiVmAction(vmActions.captureSnapshot)">
+              </b-button>
+            </b-tooltip>
+          </div>
+          <div v-if="experimentUser() && !showModifyStateBar">
+            &nbsp;
+            <b-tooltip label="record screenshot" type="is-light">
+              <b-button class="button is-light" icon-left="video" @click="processMultiVmAction(vmActions.recordScreenshots)">
+              </b-button>
+            </b-tooltip>
+          </div>
+          <div v-if="experimentUser() && !showModifyStateBar">
+            &nbsp;
+            <b-tooltip label="modify state" type="is-light">
+              <b-button class="button is-light" icon-left="edit" @click="showModifyStateBar = true">
+              </b-button>
+            </b-tooltip>
+          </div>
+          <div v-if="experimentUser() && showModifyStateBar">
+            &nbsp;
+            <b-tooltip label="redeploy" type="is-light">
+              <b-button class="button is-success" icon-left="history" @click="processMultiVmAction(vmActions.redeploy)">
+              </b-button>
+            </b-tooltip>
+            &nbsp;
+            <b-tooltip label="reset disk state" type="is-light">
+              <b-button class="button is-success" icon-left="undo-alt" @click="processMultiVmAction(vmActions.resetState)">
+              </b-button>
+            </b-tooltip>
+        
+            &nbsp;
+            <b-tooltip label="restart" type="is-light">
+              <b-button class="button is-success" icon-left="sync-alt" @click="processMultiVmAction(vmActions.restart)">
+              </b-button>
+            </b-tooltip>
+        
+            &nbsp;
+            <b-tooltip label="shutdown" type="is-light">
+              <b-button class="button is-danger" icon-left="power-off" @click="processMultiVmAction(vmActions.shutdown)">
+              </b-button>
+            </b-tooltip>
+        
+            &nbsp;
+            <b-tooltip label="kill" type="is-light">
+              <b-button class="button is-danger" icon-left="skull-crossbones" @click="processMultiVmAction(vmActions.kill)">
+              </b-button>
+            </b-tooltip>
+        
+            &nbsp;
+            <b-tooltip label="close toolbar" type="is-light">
+              <b-button class="button is-light" icon-left="window-close" @click="showModifyStateBar = false">
+              </b-button>
+            </b-tooltip>
+          </div>
+        
         </b-field>
        </div>
         &nbsp;&nbsp;
@@ -499,158 +509,160 @@
                 </div>
               </section>
             </template>
-            <template slot-scope="props">
-               <b-table-column  field="multiselect" label="">              
-                 <template v-slot:header="{ column }">
-                   <b-tooltip label="Select/Unselect All" type="is-dark">
-                   <b-checkbox @input="selectAllVMs" v-model="checkAll" type="is-primary"/>
-                   </b-tooltip>
-                 </template>
+            <b-table-column  field="multiselect" label="">              
+              <template v-slot:header="{ column }">
+                <b-tooltip label="Select/Unselect All" type="is-dark">
+                <b-checkbox @input="selectAllVMs" v-model="checkAll" type="is-primary"/>
+                </b-tooltip>
+              </template>
+              <template v-slot:default="props">
                 <template v-if="!props.row.busy">
                   <div>
                     <b-checkbox v-model="vmSelectedArray" :native-value=props.row.name type="is-primary"/>
                   </div>
                 </template>
                 <template v-else>
-                 BUSY 
+                  BUSY 
                 </template>
-              </b-table-column>
-              <b-table-column field="name"  label="VM Name" width="150" sortable centered>
-                <template v-if="experimentUser()">
-                  <b-tooltip  label="start/stop/redeploy the vm" type="is-dark">
-                    <span class="tag is-medium" :class="decorator( props.row.state, props.row.busy )">
-                      <div  class="field">
-                        <div @click="getInfo( props.row )">
-                          {{  props.row.name }}
-                        </div>
-                      </div>
-                    </span>
-                  </b-tooltip>
-                </template>
-                <template v-else>
-                  <b-tooltip  label="get info for the vm" type="is-dark">
-                    <span class="tag is-medium" :class="decorator( props.row.running, !props.row.busy )">
-                      <div  class="field">
-                        <div @click="expModal.active = true; expModal.vm = props.row">
-                          {{  props.row.name }}
-                        </div>
-                      </div>
-                    </span>
-                  </b-tooltip>
-                </template>
-                <section v-if="props.row.busy">
-                  <p  />
-                  <b-progress size="is-small" type="is-warning" show-value  :value=props.row.percent format="percent"></b-progress>
-                </section>
-              </b-table-column>
-              <b-table-column field="screenshot"  label="Screenshot" centered>
-                <template v-if="props.row.running && !props.row.busy && !props.row.screenshot">
-                  <a  :href="vncLoc(props.row)" target="_blank">
-                    <img src="@/assets/not-available.png" width="200" height="150">
-                  </a>
-                </template>
-                <template v-else-if="props.row.delayed_start && props.row.state == 'BUILDING'">
-                  <a  :href="vncLoc(props.row)" target="_blank">
-                    <img src="@/assets/delayed.png" width="200" height="150">
-                  </a>
-                </template>
-                <template v-else-if="props.row.running && !props.row.busy && props.row.screenshot">
-                  <a  :href="vncLoc(props.row)" target="_blank">
-                    <img :src="props.row.screenshot">
-                  </a>
-                </template>
-                <template v-else-if="props.row.busy">
-                  <b-tooltip  label="Screenshot not available while busy with action" type="is-dark">
-                  <img  src="@/assets/not-available.png" width="200" height="150">
-                  </b-tooltip>
-                </template>
-                <template v-else>
-                  <img  src="@/assets/not-running.png" width="200" height="150">
-                </template>
-              </b-table-column>
-              <b-table-column v-if="isDelayed()" field="delayed"  label="Delay" centered>
-                <b-tag type="is-info" v-if="props.row.delayed_start && props.row.state == 'BUILDING'">{{ props.row.delayed_start }}</b-tag>
-              </b-table-column> 
-              <b-table-column field="host"  label="Host" width="150" sortable>
-                {{ props.row.host }}
-              </b-table-column>   
-              <b-table-column field="ipv4"  label="IPv4" width="150">
-                <template v-slot:header= "{ column }"> 
-                  <div class="level">  
-                    <div class="level-item"> 
-                      {{ column.label }}             
-                      &nbsp;       
-                      <b-tooltip label="Start Subnet Packet Capture" type="is-dark" :active="isSubnetPresent()"> 
-                          <button :disabled="!isSubnetPresent() || displayedVMsCapturing()" class="button is-light is-small" @click="captureSubnet()" style="width: .1em;">                  
-                          <b-icon icon="play-circle" ></b-icon>  	
-                          </button>  
-                      </b-tooltip>  
-                      &nbsp;&nbsp;   
-                      <b-tooltip label="Stop Subnet Packet Capture" type="is-dark" :active="((isSubnetPresent() || capturesSearched()) && displayedVMsCapturing())">             
-                        <button  :disabled="!((isSubnetPresent() || capturesSearched()) && displayedVMsCapturing())" class="button is-light is-small" @click="stopCaptureSubnet()" style="width: .1em;">  
-                          <b-icon icon="stop-circle" ></b-icon>  	  	
-                        </button> 
-                      </b-tooltip>                   
-                    </div>  
-                  </div>
-                </template>
-               <template  v-if="experimentUser() && props.row.running && !props.row.busy"> 
-                <b-tooltip :label="updateCaptureLabel(props.row)" type="is-dark">
-                <div class="field">
-                  <div  v-for="(ip,index) in props.row.ipv4"
-                     :class="tapDecorator( props.row.captures, index )" 
-                     :key="index" 
-                     @click="handlePcap( props.row, index )">
-                    {{ ip }}
-                  </div>
-                </div>
-                </b-tooltip>
-               </template>
-               <template  v-else>
-                  {{  props.row.ipv4 | stringify | lowercase }}
-               </template>
-              </b-table-column>
-              <b-table-column field="network" label="Network">
-                <template v-if="experimentUser() && props.row.running && !props.row.busy">                  
-                  <b-tooltip  label="change vlan(s)" type="is-dark">
-                    <div class="field">
-                      <div  v-for="( n, index ) in props.row.networks" 
-                        :key="index" 
-                        @click="vlanModal.active = true 
-                        vlanModal.vmName = props.row.name; 
-                        vlanModal.vmFromNet = n; 
-                        vlanModal.vmNet = props.row.networks; 
-                        vlanModal.vmNetIndex = index">
-                        {{ n | lowercase }}
+              </template>
+            </b-table-column>
+            <b-table-column field="name"  label="VM Name" width="150" sortable centered v-slot="props">
+              <template v-if="experimentUser()">
+                <b-tooltip  label="start/stop/redeploy the vm" type="is-dark">
+                  <span class="tag is-medium" :class="decorator( props.row.state, props.row.busy )">
+                    <div  class="field">
+                      <div @click="getInfo( props.row )">
+                        {{  props.row.name }}
                       </div>
                     </div>
-                  </b-tooltip>
-                </template>
-                <template v-else>
-                  {{  props.row.networks | stringify | lowercase }}
-                </template>
-              </b-table-column>
-              <b-table-column field="taps"  label="Taps">
-                <template v-if="experimentUser() && props.row.running && !props.row.busy">
-                  <b-tooltip  :label="updateCaptureLabel(props.row)" type="is-dark">
-                    <div class="field">
-                      <div  v-for="( t, index ) in props.row.taps" 
+                  </span>
+                </b-tooltip>
+              </template>
+              <template v-else>
+                <b-tooltip  label="get info for the vm" type="is-dark">
+                  <span class="tag is-medium" :class="decorator( props.row.running, !props.row.busy )">
+                    <div  class="field">
+                      <div @click="expModal.active = true; expModal.vm = props.row">
+                        {{  props.row.name }}
+                      </div>
+                    </div>
+                  </span>
+                </b-tooltip>
+              </template>
+              <section v-if="props.row.busy">
+                <p  />
+                <b-progress size="is-small" type="is-warning" show-value  :value=props.row.percent format="percent"></b-progress>
+              </section>
+            </b-table-column>
+            <b-table-column field="screenshot"  label="Screenshot" centered v-slot="props">
+              <template v-if="props.row.running && !props.row.busy && !props.row.screenshot">
+                <a  :href="vncLoc(props.row)" target="_blank">
+                  <img src="@/assets/not-available.png" width="200" height="150">
+                </a>
+              </template>
+              <template v-else-if="props.row.delayed_start && props.row.state == 'BUILDING'">
+                <a  :href="vncLoc(props.row)" target="_blank">
+                  <img src="@/assets/delayed.png" width="200" height="150">
+                </a>
+              </template>
+              <template v-else-if="props.row.running && !props.row.busy && props.row.screenshot">
+                <a  :href="vncLoc(props.row)" target="_blank">
+                  <img :src="props.row.screenshot">
+                </a>
+              </template>
+              <template v-else-if="props.row.busy">
+                <b-tooltip  label="Screenshot not available while busy with action" type="is-dark">
+                <img  src="@/assets/not-available.png" width="200" height="150">
+                </b-tooltip>
+              </template>
+              <template v-else>
+                <img  src="@/assets/not-running.png" width="200" height="150">
+              </template>
+            </b-table-column>
+            <b-table-column v-if="isDelayed()" field="delayed"  label="Delay" centered v-slot="props">
+              <b-tag type="is-info" v-if="props.row.delayed_start && props.row.state == 'BUILDING'">{{ props.row.delayed_start }}</b-tag>
+            </b-table-column> 
+            <b-table-column field="host"  label="Host" width="150" sortable v-slot="props">
+              {{ props.row.host }}
+            </b-table-column>   
+            <b-table-column field="ipv4"  label="IPv4" width="150">
+              <template v-slot:header= "{ column }"> 
+                <div class="level">  
+                  <div class="level-item"> 
+                    {{ column.label }}             
+                    &nbsp;       
+                    <b-tooltip label="Start Subnet Packet Capture" type="is-dark" :active="isSubnetPresent()"> 
+                        <button :disabled="!isSubnetPresent() || displayedVMsCapturing()" class="button is-light is-small" @click="captureSubnet()" style="width: .1em;">                  
+                        <b-icon icon="play-circle" ></b-icon>  	
+                        </button>  
+                    </b-tooltip>  
+                    &nbsp;&nbsp;   
+                    <b-tooltip label="Stop Subnet Packet Capture" type="is-dark" :active="((isSubnetPresent() || capturesSearched()) && displayedVMsCapturing())">             
+                      <button  :disabled="!((isSubnetPresent() || capturesSearched()) && displayedVMsCapturing())" class="button is-light is-small" @click="stopCaptureSubnet()" style="width: .1em;">  
+                        <b-icon icon="stop-circle" ></b-icon>  	  	
+                      </button> 
+                    </b-tooltip>                   
+                  </div>  
+                </div>
+              </template>
+              <template v-slot:default="props">
+                <template  v-if="experimentUser() && props.row.running && !props.row.busy"> 
+                  <b-tooltip :label="updateCaptureLabel(props.row)" type="is-dark">
+                  <div class="field">
+                    <div  v-for="(ip,index) in props.row.ipv4"
                         :class="tapDecorator( props.row.captures, index )" 
                         :key="index" 
                         @click="handlePcap( props.row, index )">
-                        {{ t | lowercase }}
-                      </div>
+                      {{ ip }}
                     </div>
+                  </div>
                   </b-tooltip>
                 </template>
-                <template v-else>
-                  {{  props.row.taps | stringify | lowercase }}
+                <template  v-else>
+                  {{  props.row.ipv4 | stringify | lowercase }}
                 </template>
-              </b-table-column>
-              <b-table-column field="uptime"  label="Uptime" width="165">
-                {{ props.row.uptime | uptime }}
-              </b-table-column>
-            </template>
+              </template>
+            </b-table-column>
+            <b-table-column field="network" label="Network" v-slot="props">
+              <template v-if="experimentUser() && props.row.running && !props.row.busy">                  
+                <b-tooltip  label="change vlan(s)" type="is-dark">
+                  <div class="field">
+                    <div  v-for="( n, index ) in props.row.networks" 
+                      :key="index" 
+                      @click="vlanModal.active = true 
+                      vlanModal.vmName = props.row.name; 
+                      vlanModal.vmFromNet = n; 
+                      vlanModal.vmNet = props.row.networks; 
+                      vlanModal.vmNetIndex = index">
+                      {{ n | lowercase }}
+                    </div>
+                  </div>
+                </b-tooltip>
+              </template>
+              <template v-else>
+                {{  props.row.networks | stringify | lowercase }}
+              </template>
+            </b-table-column>
+            <b-table-column field="taps"  label="Taps" v-slot="props">
+              <template v-if="experimentUser() && props.row.running && !props.row.busy">
+                <b-tooltip  :label="updateCaptureLabel(props.row)" type="is-dark">
+                  <div class="field">
+                    <div  v-for="( t, index ) in props.row.taps" 
+                      :class="tapDecorator( props.row.captures, index )" 
+                      :key="index" 
+                      @click="handlePcap( props.row, index )">
+                      {{ t | lowercase }}
+                    </div>
+                  </div>
+                </b-tooltip>
+              </template>
+              <template v-else>
+                {{  props.row.taps | stringify | lowercase }}
+              </template>
+            </b-table-column>
+            <b-table-column field="uptime"  label="Uptime" width="165" v-slot="props">
+              {{ props.row.uptime | uptime }}
+            </b-table-column>
           </b-table>
           <br>
           <b-field v-if="paginationNeeded" grouped position="is-right">
@@ -681,43 +693,41 @@
                 </div>
               </section>
             </template>
-            <template slot-scope="props">
-              <b-table-column field="name" label="Name" sortable>
-                <template v-if="props.row.plainText">
-                  <b-tooltip label="view file" type="is-dark">
-                    <div class="field">
-                      <div @click="viewFile( props.row )">
-                        {{ props.row.name }}
-                      </div>
+            <b-table-column field="name" label="Name" sortable v-slot="props">
+              <template v-if="props.row.plainText">
+                <b-tooltip label="view file" type="is-dark">
+                  <div class="field">
+                    <div @click="viewFile( props.row )">
+                      {{ props.row.name }}
                     </div>
-                  </b-tooltip>
-                </template>
-                <template v-else>
-                  {{ props.row.name }}
-                </template>
-              </b-table-column>
-              <b-table-column field="path" label="Path" centered>
-                <b-tooltip :label="'/phenix/images/' + experiment.name + '/files/' + props.row.path" type="is-dark">
-                  <b-icon icon="info-circle" size="is-small" />
+                  </div>
                 </b-tooltip>
-              </b-table-column>
-              <b-table-column field="categories" label="Category">
-                <b-taglist>
-                  <b-tag v-for="( c, index ) in props.row.categories" :key="index" type="is-light">{{ c }}</b-tag>
-                </b-taglist>
-              </b-table-column>
-              <b-table-column field="date" label="Date" sortable centered>
-                {{ props.row.date }}
-              </b-table-column>
-              <b-table-column field="size" label="Size" sortable centered>
-                {{ props.row.size }}
-              </b-table-column>
-              <b-table-column field="actions" label="Actions" centered>
-                <a :href="fileDownloadURL(props.row.name, props.row.path)" target="_blank">
-                  <b-icon icon="file-download" size="is-small"></b-icon>
-                </a>
-              </b-table-column>
-            </template>
+              </template>
+              <template v-else>
+                {{ props.row.name }}
+              </template>
+            </b-table-column>
+            <b-table-column field="path" label="Path" centered v-slot="props">
+              <b-tooltip :label="'/phenix/images/' + experiment.name + '/files/' + props.row.path" type="is-dark">
+                <b-icon icon="info-circle" size="is-small" />
+              </b-tooltip>
+            </b-table-column>
+            <b-table-column field="categories" label="Category" v-slot="props">
+              <b-taglist>
+                <b-tag v-for="( c, index ) in props.row.categories" :key="index" type="is-light">{{ c }}</b-tag>
+              </b-taglist>
+            </b-table-column>
+            <b-table-column field="date" label="Date" sortable centered v-slot="props">
+              {{ props.row.date }}
+            </b-table-column>
+            <b-table-column field="size" label="Size" sortable centered v-slot="props">
+              {{ props.row.size | fileSize }}
+            </b-table-column>
+            <b-table-column field="actions" label="Actions" centered v-slot="props">
+              <a :href="fileDownloadURL(props.row.name, props.row.path)" target="_blank">
+                <b-icon icon="file-download" size="is-small"></b-icon>
+              </a>
+            </b-table-column>
           </b-table>
           <br>
           <b-field v-if="filesPaginationNeeded" grouped position="is-right">
@@ -733,6 +743,9 @@
 </template>
 
 <script>
+  import { mapState }        from 'vuex';
+  import VmMountBrowserModal from './VMMountBrowserModal.vue';
+
   export  default {
     async beforeDestroy () {
       this.$options.sockets.onmessage = null;
@@ -794,7 +807,10 @@
         }
         return true;
       },
-          
+
+      ...mapState({
+        features: 'features'
+      })
     },
 
     methods: {
@@ -1362,6 +1378,9 @@
       },
 
       isDelayed () {
+        if (this.experiment.vms === undefined) {
+          return false;
+        }
         for ( let i = 0; i < this.experiment.vms.length; i++ ) {
           if ( this.experiment.vms[i].delayed_start && this.experiment.vms[i].state == 'BUILDING' ) {
             return true;
@@ -1449,12 +1468,12 @@
         this.$http.get( 'experiments/' + this.$route.params.id + '/files' + params ).then(
           response => {
             response.json().then(
-              state => {                             
-                this.files = state.files
+              state => {            
+                this.files = state.files === null ? [] : state.files
                 this.filesTable.total = state.total
 
-                for ( let i = 0; i < state.files.length; i++ ) {
-                  this.filesTable.categories.push( ...state.files[i].categories );
+                for ( let i = 0; i < this.files.length; i++ ) {
+                  this.filesTable.categories.push( ...this.files[i].categories );
                 }
 
                 this.filesTable.categories = this.getUniqueItems(this.filesTable.categories);
@@ -1467,11 +1486,6 @@
                       this.files.push(files[i]);
                     }
                   }
-                }
-
-                // Format the file sizes
-                for(let i = 0; i < this.files.length; i++){
-                  this.files[i].size = this.formatFileSize(this.files[i].size)
                 }
                
                 // Only add successful searches to the search history
@@ -1544,6 +1558,26 @@
             }
           );
 
+          // get updated details for this vm
+          this.$http.get(
+            'experiments/' + this.$route.params.id + '/vms/' + vm.name
+          ).then(
+            response => { 
+              return  response.json().then(
+                json => {
+                  this.expModal.vm = json;
+                }
+              )
+            }, response => {
+              this.$buefy.toast.open({
+                message: 'Getting updated info for the ' + vm.name + ' VM failed with ' + response.status + ' status.',
+                type: 'is-danger',
+                duration: 4000
+              });
+
+              this.isWaiting  = false;
+            }
+          );
           this.expModal.vm  = vm;
           this.expModal.active  = true;
         
@@ -2128,11 +2162,12 @@
           })
         }
       },
-        
+
       resetVmState  (name) {
         if (! Array.isArray(name)) {
           name  = [name];
         } 
+        
         
         let vmList = [];
         let vmExcludeList = [];
@@ -2695,6 +2730,7 @@
           case this.vmActions.pause:
             this.pauseVm(this.vmSelectedArray);
             break;
+            break;
           case this.vmActions.kill:
             this.killVm(this.vmSelectedArray);
             break;
@@ -2789,18 +2825,6 @@
         return Object.keys(arrayHash).sort();
       },
 
-      formatFileSize(fileSize){
-        if(fileSize < Math.pow(10,3)) {
-          return fileSize.toFixed(2) + ' B'
-        } else if(fileSize >= Math.pow(10,3) && fileSize < Math.pow(10,6)) {
-          return (fileSize/Math.pow(10,3)).toFixed(2) + ' KB'
-        } else if (fileSize >= Math.pow(10,6) && fileSize < Math.pow(10,9)) {
-          return (fileSize/Math.pow(10,6)).toFixed(2) + ' MB'
-        } else if (fileSize >= Math.pow(10,9)) {
-          return (fileSize/Math.pow(10,9)).toFixed(2) + ' GB'
-        }
-      },
-
       getBaseName(diskName) { 
         return diskName.substring(diskName.lastIndexOf("/")+1);       
       },
@@ -2837,6 +2861,18 @@
 
       fileDownloadURL(name, path) {
         return this.$router.resolve({name: 'file', params: {id: this.$route.params.id, name: name, path: path, token: this.$store.getters.token}}).href;
+      },
+
+      showMountDialog(vm) {
+        this.resetExpModal()
+        this.$buefy.modal.open({
+          parent:       this,
+          component:    VmMountBrowserModal,
+          trapFocus:    true,
+          hasModalCard: true,
+          canCancel:    [],
+          props:        {"targetVm": vm, "targetExp": this.$route.params.id, "isExpUser": this.experimentUser()}
+        })
       }
     },
     
@@ -2937,7 +2973,7 @@
           shutdown:7,
           resetState:8,
           createMemorySnapshot:9,
-          recordScreenshots:10
+          recordScreenshots:10,
         },
         searchHistory: [],
         searchHistoryLength:10,

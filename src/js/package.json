@@ -12,7 +12,7 @@
     "@fortawesome/fontawesome-free": "^5.15.1",
     "@fortawesome/fontawesome-svg-core": "^1.2.32",
     "@fortawesome/vue-fontawesome": "^2.0.6",
-    "buefy": "^0.8.0",
+    "buefy": "^0.9.22",
     "d3": "^6.2.0",
     "file-saver": "^2.0.5",
     "js-yaml": "^4.1.0",

@@ -78,6 +78,18 @@ Vue.filter( 'uptime', function( value ) {
   }
 })
 
+Vue.filter( 'fileSize', function (fileSize) {
+  if(fileSize < Math.pow(10,3)) {
+    return fileSize.toFixed(2) + ' B'
+  } else if(fileSize >= Math.pow(10,3) && fileSize < Math.pow(10,6)) {
+    return (fileSize/Math.pow(10,3)).toFixed(2) + ' KB'
+  } else if (fileSize >= Math.pow(10,6) && fileSize < Math.pow(10,9)) {
+    return (fileSize/Math.pow(10,6)).toFixed(2) + ' MB'
+  } else if (fileSize >= Math.pow(10,9)) {
+    return (fileSize/Math.pow(10,9)).toFixed(2) + ' GB'
+  }
+})
+
 Vue.prototype.errorNotification = errorNotification;
 Vue.errorNotification = errorNotification;
 

@@ -206,43 +206,41 @@
               </div>
             </section>
           </template>
-          <template slot-scope="props">
-            <b-table-column field="kind" label="Kind" width="200" sortable>
-              {{ props.row.kind }}
-            </b-table-column>
-            <b-table-column field="name" label="Name" width="400" sortable>
-              <template v-if="adminUser()">
-                <b-tooltip label="view config" type="is-dark">
-                  <div class="field">
-                    <div @click="viewConfig( props.row )">
-                      {{ props.row.metadata.name }}
-                    </div>
+          <b-table-column field="kind" label="Kind" width="200" sortable v-slot="props">
+            {{ props.row.kind }}
+          </b-table-column>
+          <b-table-column field="name" label="Name" width="400" sortable v-slot="props">
+            <template v-if="adminUser()">
+              <b-tooltip label="view config" type="is-dark">
+                <div class="field">
+                  <div @click="viewConfig( props.row )">
+                    {{ props.row.metadata.name }}
                   </div>
-                </b-tooltip>
-                &nbsp;
-                <b-tag type="is-info" v-if="isBuilderTopology(props.row)">builder</b-tag>
-              </template>
-              <template v-else>
-                {{ props.row.metadata.name }}
-                &nbsp;
-                <b-tag type="is-info" v-if="isBuilderTopology(props.row)">builder</b-tag>
-              </template>
-            </b-table-column>
-            <b-table-column field="updated" label="Last Updated">
-              {{ props.row.metadata.updated }}
-            </b-table-column>
-            <b-table-column v-if="globalUser()" label="Actions" centered>
-              <button class="button is-light is-small action" @click="action( 'edit', props.row )">
-                <b-icon icon="edit"></b-icon>
-              </button>
-              <button class="button is-light is-small action" @click="action( 'dl', props.row )">
-                <b-icon icon="download"></b-icon>
-              </button>
-              <button class="button is-light is-small action" @click="action( 'del', props.row )">
-                <b-icon icon="trash"></b-icon>
-              </button>
-            </b-table-column>
-          </template>
+                </div>
+              </b-tooltip>
+              &nbsp;
+              <b-tag type="is-info" v-if="isBuilderTopology(props.row)">builder</b-tag>
+            </template>
+            <template v-else>
+              {{ props.row.metadata.name }}
+              &nbsp;
+              <b-tag type="is-info" v-if="isBuilderTopology(props.row)">builder</b-tag>
+            </template>
+          </b-table-column>
+          <b-table-column field="updated" label="Last Updated" v-slot="props">
+            {{ props.row.metadata.updated }}
+          </b-table-column>
+          <b-table-column v-if="globalUser()" label="Actions" centered v-slot="props">
+            <button class="button is-light is-small action" @click="action( 'edit', props.row )">
+              <b-icon icon="edit"></b-icon>
+            </button>
+            <button class="button is-light is-small action" @click="action( 'dl', props.row )">
+              <b-icon icon="download"></b-icon>
+            </button>
+            <button class="button is-light is-small action" @click="action( 'del', props.row )">
+              <b-icon icon="trash"></b-icon>
+            </button>
+          </b-table-column>
         </b-table>
         <br>
         <b-field v-if="paginationNeeded" grouped position="is-right">

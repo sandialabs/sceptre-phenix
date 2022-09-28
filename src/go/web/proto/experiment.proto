@@ -96,15 +96,3 @@ message UpdateScheduleRequest {
 message AppList {
 	repeated string applications = 1;
 }
-
-message ExperimentFile {
-	string name = 1;
-	string date = 2;
-	uint32 size = 3;
-	repeated string categories = 4;
-}
-
-message ExperimentFileList {
-	repeated ExperimentFile files = 1;
-	uint32 total = 2;
-}

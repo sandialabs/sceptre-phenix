@@ -124,67 +124,65 @@
               </div>
             </section>
           </template>
-          <template slot-scope="props">
-            <b-table-column field="name" label="Name" width="200" sortable>
-              <template v-if="updating( props.row.status )">
+          <b-table-column field="name" label="Name" width="200" sortable v-slot="props">
+            <template v-if="updating( props.row.status )">
+              {{ props.row.name }}
+            </template>
+            <template v-else>
+              <router-link class="navbar-item" :to="{ name: 'experiment', params: { id: props.row.name }}">
                 {{ props.row.name }}
-              </template>
-              <template v-else>
-                <router-link class="navbar-item" :to="{ name: 'experiment', params: { id: props.row.name }}">
-                  {{ props.row.name }}
-                </router-link>
-              </template>
-            </b-table-column>
-            <b-table-column field="status" label="Status" width="100" sortable centered>
-              <template v-if="props.row.status == 'starting'">
-                <section>
-                  <b-progress size="is-medium" type="is-warning" show-value :value=props.row.percent format="percent"></b-progress>
-                </section>
-              </template>
-              <template v-else-if="adminUser()">                
-                  <b-tooltip :label="getExpControlLabel(props.row.name,props.row.status)" type="is-dark">
-                   <span class="tag is-medium" :class="decorator( props.row.status )">
-                      <div class="field">
-                        <div class="field" @click="( props.row.running ) ? stop( props.row.name, props.row.status ) : start( props.row.name, props.row.status )">
-                          {{ props.row.status }}
-                        </div>
+              </router-link>
+            </template>
+          </b-table-column>
+          <b-table-column field="status" label="Status" width="100" sortable centered v-slot="props">
+            <template v-if="props.row.status == 'starting'">
+              <section>
+                <b-progress size="is-medium" type="is-warning" show-value :value=props.row.percent format="percent"></b-progress>
+              </section>
+            </template>
+            <template v-else-if="adminUser()">                
+                <b-tooltip :label="getExpControlLabel(props.row.name,props.row.status)" type="is-dark">
+                  <span class="tag is-medium" :class="decorator( props.row.status )">
+                    <div class="field">
+                      <div class="field" @click="( props.row.running ) ? stop( props.row.name, props.row.status ) : start( props.row.name, props.row.status )">
+                        {{ props.row.status }}
                       </div>
-                    </span>
-                  </b-tooltip>                
-              </template>
-              <template v-else>
-                <span class="tag is-medium" :class="decorator( props.row.status )">
-                  {{ props.row.status }}
-                </span>
-              </template>
-            </b-table-column>
-            <b-table-column field="topology" label="Topology" width="200">
-              {{ props.row.topology | lowercase }}
-            </b-table-column>
-            <b-table-column field="scenario" label="Scenario" width="200">
-              {{ props.row.scenario | lowercase }}
-            </b-table-column>
-            <b-table-column field="start_time" label="Start Time" width="250" sortable>
-              {{ props.row.start_time }}
-            </b-table-column>
-            <b-table-column field="vm_count" label="VMs" width="100" centered sortable>
-              {{ props.row.vm_count }}
-            </b-table-column>
-            <b-table-column field="vlan_range" label="VLANs" width="100" centered>
-              {{ props.row.vlan_min }} - {{ props.row.vlan_max}} ({{ props.row.vlan_count }})
-            </b-table-column>
-            <b-table-column v-if="globalUser()" label="Actions" width="150" centered>
-              <button class="button is-light is-small action" :disabled="updating( props.row.status )" @click="del( props.row.name, props.row.running )">
-                <b-icon icon="trash"></b-icon>
-              </button>
-              <router-link class="button is-light is-small action" :disabled="updating( props.row.status )" :to="{ name: 'soh', params: { id: props.row.name }}">
-                <b-icon icon="heartbeat"></b-icon>
-              </router-link>
-              <router-link class="button is-light is-small action" :disabled="updating( props.row.status )" :to="{ name: 'scorch', params: { id: props.row.name }}">
-                <b-icon icon="fire"></b-icon>
-              </router-link>
-            </b-table-column>
-          </template>
+                    </div>
+                  </span>
+                </b-tooltip>                
+            </template>
+            <template v-else>
+              <span class="tag is-medium" :class="decorator( props.row.status )">
+                {{ props.row.status }}
+              </span>
+            </template>
+          </b-table-column>
+          <b-table-column field="topology" label="Topology" width="200" v-slot="props">
+            {{ props.row.topology | lowercase }}
+          </b-table-column>
+          <b-table-column field="scenario" label="Scenario" width="200" v-slot="props">
+            {{ props.row.scenario | lowercase }}
+          </b-table-column>
+          <b-table-column field="start_time" label="Start Time" width="250" sortable v-slot="props">
+            {{ props.row.start_time }}
+          </b-table-column>
+          <b-table-column field="vm_count" label="VMs" width="100" centered sortable v-slot="props">
+            {{ props.row.vm_count }}
+          </b-table-column>
+          <b-table-column field="vlan_range" label="VLANs" width="100" centered v-slot="props">
+            {{ props.row.vlan_min }} - {{ props.row.vlan_max}} ({{ props.row.vlan_count }})
+          </b-table-column>
+          <b-table-column v-if="globalUser()" label="Actions" width="150" centered v-slot="props">
+            <button class="button is-light is-small action" :disabled="updating( props.row.status )" @click="del( props.row.name, props.row.running )">
+              <b-icon icon="trash"></b-icon>
+            </button>
+            <router-link class="button is-light is-small action" :disabled="updating( props.row.status )" :to="{ name: 'soh', params: { id: props.row.name }}">
+              <b-icon icon="heartbeat"></b-icon>
+            </router-link>
+            <router-link class="button is-light is-small action" :disabled="updating( props.row.status )" :to="{ name: 'scorch', params: { id: props.row.name }}">
+              <b-icon icon="fire"></b-icon>
+            </router-link>
+          </b-table-column>
         </b-table>
         <br>
         <b-field v-if="paginationNeeded" grouped position="is-right">

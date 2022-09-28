@@ -10,7 +10,9 @@ export default new Vuex.Store({
     token:    localStorage.getItem( 'phenix.token' ),
     role:     localStorage.getItem( 'phenix.role' ),
     auth:     localStorage.getItem( 'phenix.auth' ) === 'true',
-    next:     null
+    next:     null,
+
+    features: [],
   },
 
   mutations: {
@@ -54,6 +56,10 @@ export default new Vuex.Store({
 
     'NEXT' ( state, to ) {
       state.next = to;
+    },
+
+    'FEATURES' ( state, features ) {
+      state.features = features;
     }
   },
   
@@ -72,6 +78,10 @@ export default new Vuex.Store({
     
     auth: state => {
       return state.auth;
+    },
+
+    features: state => {
+      return state.features;
     }
   }
 });

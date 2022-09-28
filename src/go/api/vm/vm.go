@@ -99,6 +99,7 @@ func List(expName string) ([]mm.VM, error) {
 			vm.CPUs = details.CPUs
 			vm.RAM = details.RAM
 			vm.Disk = details.Disk
+			vm.CCActive = details.CCActive
 
 			// `vm.IPv4` could be nil/empty if minimega isn't reporting any IPs for it
 			if len(vm.IPv4) == 0 {
@@ -218,6 +219,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 	vm.CPUs = details[0].CPUs
 	vm.RAM = details[0].RAM
 	vm.Disk = details[0].Disk
+	vm.CCActive = details[0].CCActive
 
 	// `vm.IPv4` could be nil/empty if minimega isn't reporting any IPs for it
 	if len(vm.IPv4) == 0 {

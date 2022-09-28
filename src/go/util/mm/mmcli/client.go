@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"phenix/util/common"
 
@@ -14,6 +15,8 @@ import (
 	"github.com/activeshadow/libminimega/miniclient"
 	"github.com/hashicorp/go-multierror"
 )
+
+var ErrTimeout = fmt.Errorf("timeout running command")
 
 var (
 	mu sync.Mutex
@@ -168,5 +171,26 @@ func Run(c *Command) chan *miniclient.Response {
 		}
 	}
 
-	return mm.Run(c.String())
+	if c.Timeout == 0 {
+		return mm.Run(c.String())
+	}
+
+	var (
+		resp chan *miniclient.Response
+		done = make(chan struct{})
+	)
+
+	go func() {
+		resp = mm.Run(c.String())
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return resp
+	case <-time.After(c.Timeout):
+		// Reset mm since the miniclient has a lock that is likely still activated.
+		mm = nil
+		return wrapErr(ErrTimeout)
+	}
 }

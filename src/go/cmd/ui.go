@@ -57,6 +57,7 @@ func newUiCmd() *cobra.Command {
 				web.ServeWithTLS(viper.GetString("ui.tls-key"), viper.GetString("ui.tls-cert")),
 				web.ServePhenixLogs(viper.GetString("ui.logs.phenix-path")),
 				web.ServeMinimegaLogs(viper.GetString("ui.logs.minimega-path")),
+				web.ServeWithFeatures(viper.GetStringSlice("ui.features")),
 			}
 
 			if MustGetBool(cmd.Flags(), "log-requests") {
@@ -90,6 +91,7 @@ func newUiCmd() *cobra.Command {
 	cmd.Flags().Bool("log-verbose", true, "write UI logs to STDERR")
 	cmd.Flags().String("logs.phenix-path", "", "path to phenix log file to publish to UI")
 	cmd.Flags().String("logs.minimega-path", "", "path to minimega log file to publish to UI")
+	cmd.Flags().StringSlice("features", nil, "list of features to enable (options: vm-mount)")
 
 	viper.BindPFlag("ui.listen-endpoint", cmd.Flags().Lookup("listen-endpoint"))
 	viper.BindPFlag("ui.base-path", cmd.Flags().Lookup("base-path"))
@@ -101,6 +103,7 @@ func newUiCmd() *cobra.Command {
 	viper.BindPFlag("ui.log-verbose", cmd.Flags().Lookup("log-verbose"))
 	viper.BindPFlag("ui.logs.phenix-path", cmd.Flags().Lookup("logs.phenix-path"))
 	viper.BindPFlag("ui.logs.minimega-path", cmd.Flags().Lookup("logs.minimega-path"))
+	viper.BindPFlag("ui.features", cmd.Flags().Lookup("features"))
 
 	viper.BindEnv("ui.listen-endpoint")
 	viper.BindEnv("ui.base-path")
@@ -111,6 +114,7 @@ func newUiCmd() *cobra.Command {
 	viper.BindEnv("ui.log-verbose")
 	viper.BindEnv("ui.logs.phenix-path")
 	viper.BindEnv("ui.logs.minimega-path")
+	viper.BindEnv("ui.features")
 
 	cmd.Flags().Bool("log-requests", false, "Log API requests")
 	cmd.Flags().Bool("log-full", false, "Log API requests and responses")

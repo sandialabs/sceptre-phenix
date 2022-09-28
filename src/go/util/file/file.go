@@ -22,7 +22,7 @@ type ClusterFiles interface {
 	// (such as `base-images` and `container-fs`).
 	GetImages(kind ImageKind) ([]ImageDetails, error)
 
-	GetExperimentFiles(exp, filter string) (ExperimentFiles, error)
+	GetExperimentFiles(exp, filter string) (Files, error)
 
 	// Looks in experiment directory on each cluster node for matching filenames
 	// that end in both `.SNAP` and `.qc2`.
@@ -43,7 +43,7 @@ func GetImages(kind ImageKind) ([]ImageDetails, error) {
 	return DefaultClusterFiles.GetImages(kind)
 }
 
-func GetExperimentFiles(exp, filter string) (ExperimentFiles, error) {
+func GetExperimentFiles(exp, filter string) (Files, error) {
 	return DefaultClusterFiles.GetExperimentFiles(exp, filter)
 }
 
@@ -118,12 +118,12 @@ func (MMClusterFiles) GetImages(kind ImageKind) ([]ImageDetails, error) {
 	return images, nil
 }
 
-func (MMClusterFiles) GetExperimentFiles(exp, filter string) (ExperimentFiles, error) {
+func (MMClusterFiles) GetExperimentFiles(exp, filter string) (Files, error) {
 	var (
 		// Using a map here to weed out duplicates. The key is the relative path to
 		// the file to ensure files with the same name in different directories get
 		// included.
-		matches = make(map[string]ExperimentFile)
+		matches = make(map[string]File)
 		root    = fmt.Sprintf("%s/files/", exp)
 	)
 
@@ -144,7 +144,7 @@ func (MMClusterFiles) GetExperimentFiles(exp, filter string) (ExperimentFiles, e
 
 		for _, row := range mmcli.RunTabular(cmd) {
 			name := filepath.Base(row["name"])
-			file := ExperimentFile{Name: name, Path: strings.TrimPrefix(row["name"], root)}
+			file := File{Name: name, Path: strings.TrimPrefix(row["name"], root)}
 
 			if _, ok := matches[file.Path]; ok {
 				continue
@@ -184,7 +184,7 @@ func (MMClusterFiles) GetExperimentFiles(exp, filter string) (ExperimentFiles, e
 				file.Categories = append(file.Categories, "VM Memory Snapshot")
 			}
 
-			file.Size, _ = strconv.Atoi(row["size"])
+			file.Size, _ = strconv.ParseInt(row["size"], 10, 64)
 			file.Date = row["modified"]
 			file.dateTime, _ = time.Parse(time.RFC3339, row["modified"])
 
@@ -193,7 +193,7 @@ func (MMClusterFiles) GetExperimentFiles(exp, filter string) (ExperimentFiles, e
 	}
 
 	var (
-		files ExperimentFiles
+		files Files
 		plain = []string{".json", ".jsonl", ".log", ".txt", ".yaml", ".yml"}
 	)
 

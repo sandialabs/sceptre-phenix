@@ -19,3 +19,8 @@ spec:
     - "*"
     verbs:
     - list
+  - resources:
+    - "vms/mount"
+    verbs:
+    - post
+    - delete

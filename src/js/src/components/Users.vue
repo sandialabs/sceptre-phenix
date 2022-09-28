@@ -94,36 +94,34 @@
           :pagination-size="table.paginationSize"
           :default-sort-direction="table.defaultSortDirection"
           default-sort="username">
-          <template slot-scope="props">
-            <b-table-column field="username" label="User" sortable>
-              <template v-if="adminUser()">
-                <b-tooltip label="change user settings" type="is-dark">
-                  <div class="field">
-                    <div @click="editUser( props.row.username )">
-                      {{ props.row.username }}
-                    </div>
+          <b-table-column field="username" label="User" sortable v-slot="props">
+            <template v-if="adminUser()">
+              <b-tooltip label="change user settings" type="is-dark">
+                <div class="field">
+                  <div @click="editUser( props.row.username )">
+                    {{ props.row.username }}
                   </div>
-                </b-tooltip>
-              </template>
-              <template v-else>
-                {{ props.row.username }}
-              </template>
-            </b-table-column>
-            <b-table-column field="first_name" label="First Name">
-              {{ props.row.first_name }}
-            </b-table-column>
-            <b-table-column field="last_name" label="Last Name" sortable>
-              {{ props.row.last_name }}
-            </b-table-column>
-            <b-table-column field="role" label="Role" sortable>
-              {{ props.row.role_name ? props.row.role_name : "Not yet assigned" }}
-            </b-table-column>
-            <b-table-column v-if="adminUser()" label="Delete" width="50" centered>
-              <button class="button is-light is-small" @click="deleteUser( props.row.username )">
-                <b-icon icon="trash"></b-icon>
-              </button>
-            </b-table-column>
-          </template>
+                </div>
+              </b-tooltip>
+            </template>
+            <template v-else>
+              {{ props.row.username }}
+            </template>
+          </b-table-column>
+          <b-table-column field="first_name" label="First Name" v-slot="props">
+            {{ props.row.first_name }}
+          </b-table-column>
+          <b-table-column field="last_name" label="Last Name" sortable v-slot="props">
+            {{ props.row.last_name }}
+          </b-table-column>
+          <b-table-column field="role" label="Role" sortable v-slot="props">
+            {{ props.row.role_name ? props.row.role_name : "Not yet assigned" }}
+          </b-table-column>
+          <b-table-column v-if="adminUser()" label="Delete" width="50" centered v-slot="props">
+            <button class="button is-light is-small" @click="deleteUser( props.row.username )">
+              <b-icon icon="trash"></b-icon>
+            </button>
+          </b-table-column>
         </b-table>
         <br>
         <b-field v-if="paginationNeeded" grouped position="is-right">

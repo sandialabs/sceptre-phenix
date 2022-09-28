@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -132,6 +134,9 @@ func (Minimega) GetLaunchProgress(ns string, expected int) (float64, error) {
 func (this Minimega) GetVMInfo(opts ...Option) VMs {
 	o := NewOptions(opts...)
 
+	// don't rely on `cc_active` column in `vm info` table
+	activeC2 := getActiveC2(o.ns)
+
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "vm info"
 	cmd.Columns = []string{"uuid", "host", "name", "state", "uptime", "vlan", "tap", "ip", "memory", "vcpus", "disks", "snapshot", "tags"}
@@ -143,14 +148,14 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 	var vms VMs
 
 	for _, row := range mmcli.RunTabular(cmd) {
-		var vm VM
-
-		vm.UUID = row["uuid"]
-		vm.Host = row["host"]
-		vm.Name = row["name"]
-
-		vm.Running = row["state"] == "RUNNING"
-		vm.State = row["state"]
+		vm := VM{
+			UUID:     row["uuid"],
+			Host:     row["host"],
+			Name:     row["name"],
+			State:    row["state"],
+			Running:  row["state"] == "RUNNING",
+			CCActive: activeC2[row["uuid"]],
+		}
 
 		s := row["vlan"]
 		s = strings.TrimPrefix(s, "[")
@@ -712,7 +717,6 @@ func (Minimega) GetVLANs(opts ...Option) (map[string]int, error) {
 
 func (Minimega) IsC2ClientActive(opts ...C2Option) error {
 	o := NewC2Options(opts...)
-
 	if o.skipActiveClientCheck {
 		return nil
 	}
@@ -766,6 +770,8 @@ func (this Minimega) ExecC2Command(opts ...C2Option) (string, error) {
 		return "", fmt.Errorf("cannot execute command: %w", err)
 	}
 
+	o := NewC2Options(opts...)
+
 	exec := func(ns, vm, cmd string) (string, error) {
 		ccMu.Lock()
 		defer ccMu.Unlock()
@@ -778,16 +784,19 @@ func (this Minimega) ExecC2Command(opts ...C2Option) (string, error) {
 		}
 
 		c.Command = cmd
+		c.Timeout = o.timeout
 
 		data, err := mmcli.SingleDataResponse(mmcli.Run(c))
 		if err != nil {
+			if errors.Is(err, mmcli.ErrTimeout) {
+				return "", fmt.Errorf("timeout running '%s' in vm %s", cmd, vm)
+			}
+
 			return "", fmt.Errorf("running '%s' in vm %s: %w", cmd, vm, err)
 		}
 
 		return fmt.Sprintf("%v", data), nil
 	}
-
-	o := NewC2Options(opts...)
 
 	if o.testConn != "" {
 		cmd := fmt.Sprintf("cc test-conn %s", o.testConn)
@@ -843,6 +852,33 @@ func (this Minimega) ExecC2Command(opts ...C2Option) (string, error) {
 		}
 
 		return id, nil
+	}
+
+	if o.mount != nil {
+		if *o.mount {
+			var (
+				path = GetLocalMountPath(o.ns, o.vm)
+				cmd  = fmt.Sprintf("cc mount %s %s", o.vm, path)
+			)
+
+			os.MkdirAll(path, os.ModePerm)
+
+			id, err := exec(o.ns, o.vm, cmd)
+			if err != nil {
+				return "", fmt.Errorf("Error creating mount: %w", err)
+			}
+
+			return id, nil
+		} else {
+			cmd := fmt.Sprintf("clear cc mount %s", o.vm)
+
+			id, err := exec(o.ns, o.vm, cmd)
+			if err != nil {
+				return "", fmt.Errorf("Error clearing mount: %w", err)
+			}
+
+			return id, nil
+		}
 	}
 
 	return "", fmt.Errorf("no options to execute were provided")
@@ -1055,6 +1091,25 @@ func (Minimega) MeshSend(ns, host, command string) error {
 	}
 
 	return nil
+}
+
+// GetLocalMountPath returns where the mount path should be on this filesystem
+// for the given namespace and VM.
+func GetLocalMountPath(ns string, vm string) string {
+	return filepath.Join(common.PhenixBase, "mounts", ns, vm)
+}
+
+func getActiveC2(ns string) map[string]bool {
+	active := make(map[string]bool)
+
+	cmd := mmcli.NewNamespacedCommand(ns)
+	cmd.Command = "cc client"
+
+	for _, row := range mmcli.RunTabular(cmd) {
+		active[row["uuid"]] = true
+	}
+
+	return active
 }
 
 func waitForResponse(ctx context.Context, ns, id string, timeout time.Duration) error {

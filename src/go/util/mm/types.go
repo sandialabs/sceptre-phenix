@@ -214,6 +214,7 @@ type VM struct {
 	Captures   []Capture `json:"captures"`
 	Running    bool      `json:"running"`
 	Busy       bool      `json:"busy"`
+	CCActive   bool      `json:"ccActive"`
 	Uptime     float64   `json:"uptime"`
 	Screenshot string    `json:"screenshot,omitempty"`
 	Tags       []string  `json:"tags"`

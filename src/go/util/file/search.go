@@ -157,7 +157,7 @@ func BuildTree(searchFilter string) *ExpressionTree {
 
 }
 
-func (node *ExpressionTree) Evaluate(experimentFile *ExperimentFile) bool {
+func (node *ExpressionTree) Evaluate(experimentFile *File) bool {
 
 	if node == nil {
 		return false
@@ -324,7 +324,7 @@ func getSearchFields(term string) []string {
 
 }
 
-func (node *ExpressionTree) match(file *ExperimentFile) bool {
+func (node *ExpressionTree) match(file *File) bool {
 
 	for _, field := range node.searchFields {
 		switch field {
@@ -409,7 +409,7 @@ func (node *ExpressionTree) match(file *ExperimentFile) bool {
 					spec := fileSizeSpec.FindAllStringSubmatch(newTerm, -1)[0][0]
 					newTerm = fileSizeSpec.ReplaceAllString(newTerm, "")
 
-					fileSize, err = strconv.Atoi(newTerm)
+					fileSize, err = strconv.ParseInt(newTerm, 10, 64)
 					if err != nil {
 						return false
 					}
@@ -437,15 +437,15 @@ func (node *ExpressionTree) match(file *ExperimentFile) bool {
 
 				switch compOp {
 				case "<":
-					return file.Size < fileSize.(int)
+					return file.Size < fileSize.(int64)
 				case ">":
-					return file.Size > fileSize.(int)
+					return file.Size > fileSize.(int64)
 				case "=":
-					return file.Size == fileSize.(int)
+					return file.Size == fileSize.(int64)
 				case ">=":
-					return file.Size > fileSize.(int) || file.Size == fileSize.(int)
+					return file.Size > fileSize.(int64) || file.Size == fileSize.(int64)
 				case "<=":
-					return file.Size < fileSize.(int) || file.Size == fileSize.(int)
+					return file.Size < fileSize.(int64) || file.Size == fileSize.(int64)
 
 				}
 

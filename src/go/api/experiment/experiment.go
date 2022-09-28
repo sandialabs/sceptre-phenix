@@ -729,7 +729,7 @@ func Delete(name string) error {
 	return errors
 }
 
-func Files(name, filter string) (file.ExperimentFiles, error) {
+func Files(name, filter string) (file.Files, error) {
 	return file.GetExperimentFiles(name, filter)
 }
 

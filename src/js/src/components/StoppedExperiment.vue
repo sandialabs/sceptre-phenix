@@ -164,122 +164,120 @@
                   </div>
                 </section>
               </template>
-              <template slot-scope="props">
-                <b-table-column  field="multiselect" label="">              
-                  <template v-slot:header="{ column }">
-                    <b-tooltip label="Select/Unselect All" type="is-dark">
-                    <b-checkbox @input="selectAllVMs" v-model="checkAll" type="is-primary"/>
-                    </b-tooltip>
-                  </template>
-                  <template>
-                    <div>
-                      <b-checkbox v-model="selectedRows" :native-value=props.row.name type="is-primary"/>
-                    </div>
-                  </template>                  
-                </b-table-column>
-                <b-table-column field="name" label="VM" sortable>
-                  <template v-if="adminUser()">
-                    <b-tooltip label="get info on the vm" type="is-dark">
-                      <div class="field">
-                        <div @click="expModal.active = true; expModal.vm = props.row">
-                          {{ props.row.name }}
-                        </div>
-                      </div>
-                    </b-tooltip>
-                  </template>
-                  <template v-else>
-                    {{ props.row.name }}
-                  </template>
-                </b-table-column>
-                <b-table-column field="host" label="Host" width="200" sortable>
-                  <template v-if="adminUser()">
-                    <b-tooltip label="assign the vm to a specific host" type="is-dark">
-                      <b-field>
-                        <b-select :value="props.row.host" expanded @input="( value ) => assignHost( props.row.name, value )">
-                          <option
-                            v-for="( h, index ) in hosts"
-                            :key="index"
-                            :value="h">
-                            {{ h }}
-                          </option>
-                        </b-select>
-                        <p class='control'>
-                          <button class='button' 
-                                  @click="unassignHost( props.row.name, props.row.host )">
-                            <b-icon icon="window-close"></b-icon>
-                          </button>
-                        </p>
-                      </b-field>
-                    </b-tooltip>
-                  </template>
-                  <template v-else>
-                    {{ props.row.host }}
-                  </template>
-                </b-table-column>
-                <b-table-column field="ipv4" label="IPv4">
-                  <div v-for="(ip,index) in props.row.ipv4" :key="index">
-                    {{ ip }}
+              <b-table-column  field="multiselect" label="" >              
+                <template v-slot:header="{ column }">
+                  <b-tooltip label="Select/Unselect All" type="is-dark">
+                  <b-checkbox @input="selectAllVMs" v-model="checkAll" type="is-primary"/>
+                  </b-tooltip>
+                </template>
+                <template v-slot:default="props">
+                  <div>
+                    <b-checkbox v-model="selectedRows" :native-value=props.row.name type="is-primary"/>
                   </div>
-                </b-table-column>
-                <b-table-column field="cpus" label="CPUs" sortable centered>
-                  <template v-if="adminUser()">
-                    <b-tooltip label="menu for assigning vm(s) cpus" type="is-dark">
-                      <b-select :value="props.row.cpus" expanded @input="( value ) => assignCpu( props.row.name, value )">
-                        <option value="1">1</option>
-                        <option value="2">2</option>
-                        <option value="3">3</option>
-                        <option value="4">4</option>
-                      </b-select>
-                    </b-tooltip>
-                  </template>
-                  <template v-else>
-                    {{ props.row.cpus }}
-                  </template>
-                </b-table-column>
-                <b-table-column field="ram" label="Memory" sortable centered>
-                  <template v-if="adminUser()">
-                    <b-tooltip label="menu for assigning vm(s) memory" type="is-dark">
-                      <b-select :value="props.row.ram" expanded @input="( value ) => assignRam( props.row.name, value )">
-                        <option value="512">512 MB</option>
-                        <option value="1024">1 GB</option>
-                        <option value="2048">2 GB</option>
-                        <option value="3072">3 GB</option>
-                        <option value="4096">4 GB</option>
-                        <option value="8192">8 GB</option>
-                        <option value="12288">12 GB</option>
-                        <option value="16384">16 GB</option>
-                      </b-select>
-                    </b-tooltip>
-                  </template>
-                  <template v-else>
-                    {{ props.row.ram }}
-                  </template>
-                </b-table-column>
-                <b-table-column field="disk" label="Disk">
-                  <template v-if="adminUser()">
-                    <b-tooltip :label="getDiskToolTip(props.row.disk)" type="is-dark">
-                      <b-select :value="props.row.disk" expanded @input="( value ) => assignDisk( props.row.name, value )">
-                        <option
-                          v-for="( d, index ) in disks"
-                          :key="index"
-                          :value="d">
-                            {{ getBaseName(d) }}
-                        </option>
-                      </b-select>
-                    </b-tooltip>
-                  </template>
-                  <template v-else>
-                    {{ getBaseName(props.row.disk) }}
-                  </template>
-                </b-table-column>
-                <b-table-column v-if="experimentUser()" label="Boot" centered>
-                  <b-tooltip :label="getBootLabel( props.row.name, props.row.dnb )" type="is-dark">
-                    <div @click="updateDnb( props.row.name, !props.row.dnb )">
-                      <font-awesome-icon :class="bootDecorator( props.row.dnb )" icon="bolt" />
+                </template>                  
+              </b-table-column>
+              <b-table-column field="name" label="VM" sortable v-slot="props">
+                <template v-if="adminUser()">
+                  <b-tooltip label="get info on the vm" type="is-dark">
+                    <div class="field">
+                      <div @click="expModal.active = true; expModal.vm = props.row">
+                        {{ props.row.name }}
+                      </div>
                     </div>
                   </b-tooltip>
-                </b-table-column>
-              </template>
+                </template>
+                <template v-else>
+                  {{ props.row.name }}
+                </template>
+              </b-table-column>
+              <b-table-column field="host" label="Host" width="200" sortable v-slot="props">
+                <template v-if="adminUser()">
+                  <b-tooltip label="assign the vm to a specific host" type="is-dark">
+                    <b-field>
+                      <b-select :value="props.row.host" expanded @input="( value ) => assignHost( props.row.name, value )">
+                        <option
+                          v-for="( h, index ) in hosts"
+                          :key="index"
+                          :value="h">
+                          {{ h }}
+                        </option>
+                      </b-select>
+                      <p class='control'>
+                        <button class='button' 
+                                @click="unassignHost( props.row.name, props.row.host )">
+                          <b-icon icon="window-close"></b-icon>
+                        </button>
+                      </p>
+                    </b-field>
+                  </b-tooltip>
+                </template>
+                <template v-else>
+                  {{ props.row.host }}
+                </template>
+              </b-table-column>
+              <b-table-column field="ipv4" label="IPv4" v-slot="props">
+                <div v-for="(ip,index) in props.row.ipv4" :key="index">
+                  {{ ip }}
+                </div>
+              </b-table-column>
+              <b-table-column field="cpus" label="CPUs" sortable centered v-slot="props">
+                <template v-if="adminUser()">
+                  <b-tooltip label="menu for assigning vm(s) cpus" type="is-dark">
+                    <b-select :value="props.row.cpus" expanded @input="( value ) => assignCpu( props.row.name, value )">
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4">4</option>
+                    </b-select>
+                  </b-tooltip>
+                </template>
+                <template v-else>
+                  {{ props.row.cpus }}
+                </template>
+              </b-table-column>
+              <b-table-column field="ram" label="Memory" sortable centered v-slot="props">
+                <template v-if="adminUser()">
+                  <b-tooltip label="menu for assigning vm(s) memory" type="is-dark">
+                    <b-select :value="props.row.ram" expanded @input="( value ) => assignRam( props.row.name, value )">
+                      <option value="512">512 MB</option>
+                      <option value="1024">1 GB</option>
+                      <option value="2048">2 GB</option>
+                      <option value="3072">3 GB</option>
+                      <option value="4096">4 GB</option>
+                      <option value="8192">8 GB</option>
+                      <option value="12288">12 GB</option>
+                      <option value="16384">16 GB</option>
+                    </b-select>
+                  </b-tooltip>
+                </template>
+                <template v-else>
+                  {{ props.row.ram }}
+                </template>
+              </b-table-column>
+              <b-table-column field="disk" label="Disk" v-slot="props">
+                <template v-if="adminUser()">
+                  <b-tooltip :label="getDiskToolTip(props.row.disk)" type="is-dark">
+                    <b-select :value="props.row.disk" expanded @input="( value ) => assignDisk( props.row.name, value )">
+                      <option
+                        v-for="( d, index ) in disks"
+                        :key="index"
+                        :value="d">
+                          {{ getBaseName(d) }}
+                      </option>
+                    </b-select>
+                  </b-tooltip>
+                </template>
+                <template v-else>
+                  {{ getBaseName(props.row.disk) }}
+                </template>
+              </b-table-column>
+              <b-table-column v-if="experimentUser()" label="Boot" centered v-slot="props">
+                <b-tooltip :label="getBootLabel( props.row.name, props.row.dnb )" type="is-dark">
+                  <div @click="updateDnb( props.row.name, !props.row.dnb )">
+                    <font-awesome-icon :class="bootDecorator( props.row.dnb )" icon="bolt" />
+                  </div>
+                </b-tooltip>
+              </b-table-column>
           </b-table>
           <br>
           <b-field v-if="paginationNeeded" grouped position="is-right">
@@ -310,43 +308,41 @@
                 </div>
               </section>
             </template>
-            <template slot-scope="props">
-              <b-table-column field="name" label="Name" sortable>                  
-                <template v-if="props.row.plainText">
-                  <b-tooltip label="view file" type="is-dark">
-                    <div class="field">
-                      <div @click="viewFile( props.row )">
-                        {{ props.row.name }}
-                      </div>
+            <b-table-column field="name" label="Name" sortable v-slot="props">                  
+              <template v-if="props.row.plainText">
+                <b-tooltip label="view file" type="is-dark">
+                  <div class="field">
+                    <div @click="viewFile( props.row )">
+                      {{ props.row.name }}
                     </div>
-                  </b-tooltip>
-                </template>
-                <template v-else>
-                  {{ props.row.name }}
-                </template>
-              </b-table-column>
-              <b-table-column field="path" label="Path" centered>
-                <b-tooltip :label="'/phenix/images/' + experiment.name + '/files/' + props.row.path" type="is-dark">
-                  <b-icon icon="info-circle" size="is-small" />
+                  </div>
                 </b-tooltip>
-              </b-table-column>
-              <b-table-column field="categories" label="Category">
-                <b-taglist>
-                  <b-tag v-for="( c, index ) in props.row.categories" :key="index" type="is-light">{{ c }}</b-tag>
-                </b-taglist>
-              </b-table-column>
-              <b-table-column field="date" label="Date" sortable centered>                  
-                {{ props.row.date }}                      
-              </b-table-column>
-              <b-table-column field="size" label="Size" sortable centered>                  
-                {{ props.row.size }}                      
-              </b-table-column>
-              <b-table-column field="actions" label="Actions" centered>
-                <a :href="fileDownloadURL(props.row.name, props.row.path)" target="_blank">
-                  <b-icon icon="file-download" size="is-small"></b-icon>
-                </a>
-              </b-table-column>
-            </template>
+              </template>
+              <template v-else>
+                {{ props.row.name }}
+              </template>
+            </b-table-column>
+            <b-table-column field="path" label="Path" centered v-slot="props">
+              <b-tooltip :label="'/phenix/images/' + experiment.name + '/files/' + props.row.path" type="is-dark">
+                <b-icon icon="info-circle" size="is-small" />
+              </b-tooltip>
+            </b-table-column>
+            <b-table-column field="categories" label="Category" v-slot="props">
+              <b-taglist>
+                <b-tag v-for="( c, index ) in props.row.categories" :key="index" type="is-light">{{ c }}</b-tag>
+              </b-taglist>
+            </b-table-column>
+            <b-table-column field="date" label="Date" sortable centered v-slot="props">                  
+              {{ props.row.date }}                      
+            </b-table-column>
+            <b-table-column field="size" label="Size" sortable centered v-slot="props">                  
+              {{ props.row.size | fileSize }}                      
+            </b-table-column>
+            <b-table-column field="actions" label="Actions" centered v-slot="props">
+              <a :href="fileDownloadURL(props.row.name, props.row.path)" target="_blank">
+                <b-icon icon="file-download" size="is-small"></b-icon>
+              </a>
+            </b-table-column>
           </b-table>
           <br>
           <b-field v-if="filesPaginationNeeded" grouped position="is-right">
@@ -702,11 +698,6 @@
                       this.files.push(files[i]);
                     }
                   }
-                }
-
-                // Format the file sizes
-                for(let i = 0; i < this.files.length; i++){
-                  this.files[i].size = this.formatFileSize(this.files[i].size)
                 }
 
                 // Only add successful searches to the search history
@@ -1252,18 +1243,6 @@
         // clear the selection
         this.unSelectAllVMs()
       }, 
-      
-      formatFileSize(fileSize){
-        if(fileSize < Math.pow(10,3)){
-          return fileSize.toFixed(2) + ' B'
-        } else if(fileSize >= Math.pow(10,3) && fileSize < Math.pow(10,6)){
-          return (fileSize/Math.pow(10,3)).toFixed(2) + ' KB'
-        } else if (fileSize >= Math.pow(10,6) && fileSize < Math.pow(10,9)){
-          return (fileSize/Math.pow(10,6)).toFixed(2) + ' MB'
-        } else if (fileSize >= Math.pow(10,9)) {
-          return (fileSize/Math.pow(10,9)).toFixed(2) + ' GB'
-        }
-      },
 
       getBaseName (diskName) { 
         return diskName.substring( diskName.lastIndexOf("/") + 1 );

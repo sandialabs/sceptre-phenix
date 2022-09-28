@@ -17,44 +17,42 @@ available for experiments, the number of VMs, and host uptime.
       :pagination-size="table.paginationSize"
       :default-sort-direction="table.defaultSortDirection"
       default-sort="name">
-        <template slot-scope="props">
-          <b-table-column field="name" label="Name" width="150" sortable>
-            {{ hostName(props.row) }}
-          </b-table-column>
-          <b-table-column field="cpus" label="CPUs" width="50" sortable centered>
-            {{ props.row.cpus }}
-          </b-table-column>
-          <b-table-column field="load" label="Load" width="250" centered>
-            <span class="tag" :class="decorator(props.row.load[0], props.row.cpus)">
-              {{ props.row.load[ 0 ] }}
-            </span>
-            --
-            <span class="tag" :class="decorator(props.row.load[1], props.row.cpus)">
-              {{ props.row.load[ 1 ] }}
-            </span>
-            --
-            <span class="tag" :class="decorator(props.row.load[2], props.row.cpus)">
-              {{ props.row.load[ 2 ] }}
-            </span>
-          </b-table-column>
-          <b-table-column field="mem_used" label="RAM Used" width="100" centered>
-            <span class="tag" :class="decorator(props.row.memused, props.row.memtotal)">
-              {{ props.row.memused | ram }}
-            </span>
-          </b-table-column>
-          <b-table-column field="mem_total" label="RAM Total" width="100" centered>
-            {{ props.row.memtotal | ram }}
-          </b-table-column>
-          <b-table-column field="bandwidth" label="Bandwidth (MB/sec)" width="200" centered>
-            {{ props.row.bandwidth }}
-          </b-table-column>
-          <b-table-column field="no_vms" label="# of VMs" width="100" sortable centered>
-            {{ props.row.vms }}
-          </b-table-column>
-          <b-table-column field="uptime" label="Uptime" width="165">
-            {{ props.row.uptime | uptime }}
-          </b-table-column>
-        </template>
+        <b-table-column field="name" label="Name" width="150" sortable v-slot="props">
+          {{ hostName(props.row) }}
+        </b-table-column>
+        <b-table-column field="cpus" label="CPUs" width="50" sortable centered v-slot="props">
+          {{ props.row.cpus }}
+        </b-table-column>
+        <b-table-column field="load" label="Load" width="250" centered v-slot="props">
+          <span class="tag" :class="decorator(props.row.load[0], props.row.cpus)">
+            {{ props.row.load[ 0 ] }}
+          </span>
+          --
+          <span class="tag" :class="decorator(props.row.load[1], props.row.cpus)">
+            {{ props.row.load[ 1 ] }}
+          </span>
+          --
+          <span class="tag" :class="decorator(props.row.load[2], props.row.cpus)">
+            {{ props.row.load[ 2 ] }}
+          </span>
+        </b-table-column>
+        <b-table-column field="mem_used" label="RAM Used" width="100" centered v-slot="props">
+          <span class="tag" :class="decorator(props.row.memused, props.row.memtotal)">
+            {{ props.row.memused | ram }}
+          </span>
+        </b-table-column>
+        <b-table-column field="mem_total" label="RAM Total" width="100" centered v-slot="props">
+          {{ props.row.memtotal | ram }}
+        </b-table-column>
+        <b-table-column field="bandwidth" label="Bandwidth (MB/sec)" width="200" centered v-slot="props">
+          {{ props.row.bandwidth }}
+        </b-table-column>
+        <b-table-column field="no_vms" label="# of VMs" width="100" sortable centered v-slot="props">
+          {{ props.row.vms }}
+        </b-table-column>
+        <b-table-column field="uptime" label="Uptime" width="165" v-slot="props">
+          {{ props.row.uptime | uptime }}
+        </b-table-column>
     </b-table>
     <br>
     <b-field v-if="paginationNeeded" grouped position="is-right">

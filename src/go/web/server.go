@@ -70,6 +70,7 @@ func Start(opts ...ServerOption) error {
 		}
 	}
 
+	router.HandleFunc("/features", GetFeatures).Methods("GET")
 	router.HandleFunc("/version", GetVersion).Methods("GET")
 	router.HandleFunc("/builder", GetBuilder).Methods("GET")
 	router.HandleFunc("/builder/save", SaveBuilderTopology).Methods("POST")
@@ -170,6 +171,15 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/experiments/{exp}/vms/{name}/snapshots/{snapshot}", RestoreVM).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/commit", CommitVM).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/memorySnapshot", CreateVMMemorySnapshot).Methods("POST", "OPTIONS")
+
+	if o.featured("vm-mount") {
+		api.HandleFunc("/experiments/{exp}/vms/{name}/mount", MountVM).Methods("POST", "OPTIONS")
+		api.HandleFunc("/experiments/{exp}/vms/{name}/unmount", UnmountVM).Methods("DELETE", "OPTIONS")
+		api.HandleFunc("/experiments/{exp}/vms/{name}/files", GetMountFiles).Methods("GET", "OPTIONS").Queries("path", "{path}")
+		api.HandleFunc("/experiments/{exp}/vms/{name}/files/download", DownloadMountFile).Methods("GET", "OPTIONS").Queries("path", "{path}")
+		api.HandleFunc("/experiments/{exp}/vms/{name}/files/upload", UploadMountFile).Methods("PUT", "OPTIONS").Queries("path", "{path}")
+	}
+
 	api.HandleFunc("/vms", GetAllVMs).Methods("GET", "OPTIONS")
 	api.HandleFunc("/applications", GetApplications).Methods("GET", "OPTIONS")
 	api.HandleFunc("/topologies", GetTopologies).Methods("GET", "OPTIONS")

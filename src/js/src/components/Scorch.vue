@@ -34,55 +34,53 @@
           </div>
         </section>
       </template>
-      <template slot-scope="props">
-        <b-table-column field="name" label="Experiment" width="400" sortable>
-          <template v-if="adminUser()">
-            <b-tooltip label="view SCORCH components" type="is-dark">
-              <router-link class="navbar-item" :to="{ name: 'scorchruns', params: { id: props.row.name } }">
-                {{ props.row.name }}
-              </router-link>
-            </b-tooltip>
-          </template>
-          <template v-else>
-            {{ props.row.name }}
-          </template>
-        </b-table-column>
-        <b-table-column field="status" label="Experiment Status" width="100" sortable centered>
-          <template v-if="props.row.status == 'starting'">
-            <section>
-              <b-progress size="is-medium" type="is-warning" show-value :value=props.row.percent format="percent"></b-progress>
-            </section>
-          </template>
-          <template v-else-if="adminUser()">
-            <b-tooltip :label="expControlLabel( props.row )" type="is-dark">
-              <span class="tag is-medium" :class="expStatusDecorator( props.row.status )">
-                <div class="field" @click="expControl( props.row )">
-                  {{ props.row.status }}
-                </div>
-              </span>
-            </b-tooltip>
-          </template>
-          <template v-else>
-            <span class="tag is-medium" :class="statusDecorator( props.row.status )">
-              {{ props.row.status }}
-            </span>
-          </template>
-        </b-table-column>
-        <b-table-column v-if="globalUser()" label="Scorch Status" width="100" centered>
-          <b-tooltip :label="scorchControlLabel( props.row )" type="is-dark">
-            <span class="tag is-medium" :class="scorchStatusDecorator( props.row )">
-              <div class="field" @click="scorchControl( props.row, -1)">
-                {{ scorchStatus( props.row ) }}
+      <b-table-column field="name" label="Experiment" width="400" sortable v-slot="props">
+        <template v-if="adminUser()">
+          <b-tooltip label="view SCORCH components" type="is-dark">
+            <router-link class="navbar-item" :to="{ name: 'scorchruns', params: { id: props.row.name } }">
+              {{ props.row.name }}
+            </router-link>
+          </b-tooltip>
+        </template>
+        <template v-else>
+          {{ props.row.name }}
+        </template>
+      </b-table-column>
+      <b-table-column field="status" label="Experiment Status" width="100" sortable centered v-slot="props">
+        <template v-if="props.row.status == 'starting'">
+          <section>
+            <b-progress size="is-medium" type="is-warning" show-value :value=props.row.percent format="percent"></b-progress>
+          </section>
+        </template>
+        <template v-else-if="adminUser()">
+          <b-tooltip :label="expControlLabel( props.row )" type="is-dark">
+            <span class="tag is-medium" :class="expStatusDecorator( props.row.status )">
+              <div class="field" @click="expControl( props.row )">
+                {{ props.row.status }}
               </div>
             </span>
-          </b-tooltip>
-        </b-table-column>
-        <b-table-column v-if="globalUser()" label="Terminal" width="100" centered>
-          <button class="button is-small is-white" @click="showExperimentTerminal( props.row.name )" :disabled="!props.row.terminal">
-            <b-icon icon="terminal"></b-icon>
-          </button>
-        </b-table-column>
-      </template>
+          </b-tooltip>                
+        </template>
+        <template v-else>
+          <span class="tag is-medium" :class="statusDecorator( props.row.status )">
+            {{ props.row.status }}
+          </span>
+        </template>
+      </b-table-column>
+      <b-table-column v-if="globalUser()" label="Scorch Status" width="100" centered v-slot="props">
+        <b-tooltip :label="scorchControlLabel( props.row )" type="is-dark">
+          <span class="tag is-medium" :class="scorchStatusDecorator( props.row )">
+            <div class="field" @click="scorchControl( props.row, -1)">
+              {{ scorchStatus( props.row ) }}
+            </div>
+          </span>
+        </b-tooltip>
+      </b-table-column>
+      <b-table-column v-if="globalUser()" label="Terminal" width="100" centered v-slot="props">
+        <button class="button is-small is-white" @click="showExperimentTerminal( props.row.name )" :disabled="!props.row.terminal">
+          <b-icon icon="terminal"></b-icon>
+        </button>
+      </b-table-column>
     </b-table>
     <b-loading :is-full-page="true" :active.sync="isWaiting" :can-cancel="false"></b-loading>
     <b-modal :active.sync="terminal.modal" :on-cancel="resetTerminal" has-modal-card>

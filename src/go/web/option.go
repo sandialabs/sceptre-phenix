@@ -26,6 +26,8 @@ type serverOptions struct {
 	basePath  string
 
 	jwtLifetime time.Duration
+
+	features []string
 }
 
 func newServerOptions(opts ...ServerOption) serverOptions {
@@ -34,6 +36,7 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 		users:       []string{"admin@foo.com:foobar:Global Admin"},
 		basePath:    "/",
 		jwtLifetime: 24 * time.Hour,
+		features:    make([]string, 0),
 	}
 
 	for _, opt := range opts {
@@ -65,6 +68,16 @@ func (this serverOptions) tlsEnabled() bool {
 	}
 
 	return true
+}
+
+func (this serverOptions) featured(f string) bool {
+	for _, feature := range this.features {
+		if strings.EqualFold(feature, f) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func ServeOnEndpoint(e string) ServerOption {
@@ -131,5 +144,15 @@ func ServeBasePath(p string) ServerOption {
 func ServeWithJWTLifetime(l time.Duration) ServerOption {
 	return func(o *serverOptions) {
 		o.jwtLifetime = l
+	}
+}
+
+func ServeWithFeatures(f []string) ServerOption {
+	return func(o *serverOptions) {
+		if f == nil {
+			o.features = make([]string, 0)
+		} else {
+			o.features = f
+		}
 	}
 }

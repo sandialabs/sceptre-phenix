@@ -14,3 +14,10 @@ spec:
     - "vms/vnc"
     verbs:
     - get
+  - resources:
+    - "vms/mount"
+    verbs:
+    - post
+    - list
+    - delete
+    - get

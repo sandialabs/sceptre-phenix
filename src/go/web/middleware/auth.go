@@ -113,14 +113,19 @@ func AuthMiddleware(jwtKey string) mux.MiddlewareFunc {
 		})
 	}
 
+	// For testing, treats all requests as coming from a given user/role.
+	// To use start with jwt key of format "dev|<username>|<role>"
+	// e.g., "dev|testuser|global-viewer"
 	devAuthMiddleware := func(h http.Handler) http.Handler {
 		creds := strings.Split(jwtKey, "|")
 
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 
+			role, _ := rbac.RoleFromConfig(creds[2])
+
 			ctx = context.WithValue(ctx, "user", creds[1])
-			ctx = context.WithValue(ctx, "role", creds[2])
+			ctx = context.WithValue(ctx, "role", *role)
 
 			h.ServeHTTP(w, r.WithContext(ctx))
 		})

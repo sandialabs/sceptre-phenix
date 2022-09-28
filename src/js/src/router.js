@@ -36,6 +36,7 @@ const router = new Router({
 
     {path: '/builder?token=:token', name: 'builder'},
     {path: '/version',              name: 'version'},
+    {path: '/features',             name: 'features'},
 
     {path: '/api/v1/experiments/:id/files/:name\\?path=:path&token=:token', name: 'file'},
     {path: '/api/v1/experiments/:id/vms/:name/vnc?token=:token',            name: 'vnc'},
