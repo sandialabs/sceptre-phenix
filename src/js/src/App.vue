@@ -35,27 +35,12 @@ login and returns a user to Experiments component if successful.
     },
     
     created () {
-      const username = localStorage.getItem( 'phenix.user' );
-      const token    = localStorage.getItem( 'phenix.token' );
-      const role     = localStorage.getItem( 'phenix.role' );
-      const auth     = localStorage.getItem( 'phenix.auth' === 'true' );
-
-      if ( token && auth ) {
-        const user = {
-          "username": username,
-          "token":    token,
-          "role":     role
-        }
-
-        this.$store.commit( 'LOGIN', { "user": user, "remember": true } );
-      }
-
       this.wsConnect();
 
       this.unwatch = this.$store.watch(
-        ( _, getters ) => getters.auth,
+        ( _, getters ) => getters.token,
         () => {
-          // Disconnect the websocket clients no matter what on auth changes.
+          // Disconnect the websocket clients no matter what on token updates.
           this.wsDisconnect();
           this.wsConnect();
         }
@@ -70,23 +55,21 @@ login and returns a user to Experiments component if successful.
       },
 
       wsConnect () {
-        if ( this.$store.getters.auth ) {
-          let path = `${process.env.BASE_URL}api/v1/ws`;
+        let path = `${process.env.BASE_URL}api/v1/ws`;
 
-          if ( this.$store.getters.token ) {
-            path += '?token=' + this.$store.getters.token;
-          }
-
-          let proto = location.protocol == "https:" ? "wss://" : "ws://";
-          let url = proto + location.host + path;
-
-          this.$connect( url );
-
-          // Separate, stand-alone websocket connection to handle app-wide
-          // notifications (e.g. new scorch terminal notifications).
-          this.socket = new WebSocket( url );
-          this.socket.onmessage = this.globalWsHandler;
+        if (this.$store.getters.token) {
+          path += `?token=${this.$store.getters.token}`;
         }
+
+        let proto = location.protocol == "https:" ? "wss://" : "ws://";
+        let url   = proto + location.host + path;
+
+        this.$connect(url);
+
+        // Separate, stand-alone websocket connection to handle app-wide
+        // notifications (e.g. new scorch terminal notifications).
+        this.socket = new WebSocket(url);
+        this.socket.onmessage = this.globalWsHandler;
       },
 
       wsDisconnect () {
@@ -98,27 +81,17 @@ login and returns a user to Experiments component if successful.
         }
       },
 
-      globalWsHandler ( event ) {
-        event.data.split( /\r?\n/ ).forEach( m => {
-          if ( m ) {
-            let msg = JSON.parse( m );
+      globalWsHandler (event) {
+        event.data.split(/\r?\n/).forEach(data => {
+          if (data) {
+            let msg = JSON.parse(data);
 
-            switch ( msg.resource.type ) {
-              case 'apps/scorch': {
-                switch ( msg.resource.action ) {
-                  case 'terminal-create': {
-                    this.$buefy.toast.open({
-                      message: 'SCORCH terminal created for experiment ' + msg.resource.name + '.',
-                      type: 'is-success',
-                      duration: 5000
-                    });
-
-                    break;
-                  }
-                }
-
-                break;
-              }
+            if (msg.resource.type === 'apps/scorch' && msg.resource.action === 'terminal-create') {
+              this.$buefy.toast.open({
+                message: `Scorch terminal created for experiment ${msg.resource.name}`,
+                type:    'is-success',
+                duration: 5000
+              });
             }
           }
         });

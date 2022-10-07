@@ -199,7 +199,17 @@
 </template>
 
 <script>
+  import EventBus from '@/event-bus'
+
   export default {
+    mounted () {
+      EventBus.$on( 'page-reload', ( route ) => {
+        if ( route.name == 'experiments' ) {
+          this.updateExperiments();
+        }
+      });
+    },
+
     async beforeDestroy () {
       this.$options.sockets.onmessage = null;
     },

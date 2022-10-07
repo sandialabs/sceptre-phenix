@@ -1,6 +1,9 @@
 package web
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 type ServerOption func(*serverOptions)
 
@@ -21,13 +24,16 @@ type serverOptions struct {
 
 	unbundled bool
 	basePath  string
+
+	jwtLifetime time.Duration
 }
 
 func newServerOptions(opts ...ServerOption) serverOptions {
 	o := serverOptions{
-		endpoint: ":3000",
-		users:    []string{"admin@foo.com:foobar:Global Admin"},
-		basePath: "/",
+		endpoint:    ":3000",
+		users:       []string{"admin@foo.com:foobar:Global Admin"},
+		basePath:    "/",
+		jwtLifetime: 24 * time.Hour,
 	}
 
 	for _, opt := range opts {
@@ -119,5 +125,11 @@ func ServeUnbundled() ServerOption {
 func ServeBasePath(p string) ServerOption {
 	return func(o *serverOptions) {
 		o.basePath = p
+	}
+}
+
+func ServeWithJWTLifetime(l time.Duration) ServerOption {
+	return func(o *serverOptions) {
+		o.jwtLifetime = l
 	}
 }

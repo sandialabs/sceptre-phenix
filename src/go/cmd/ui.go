@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"phenix/util"
 	"phenix/util/common"
@@ -52,6 +53,7 @@ func newUiCmd() *cobra.Command {
 				web.ServeOnEndpoint(viper.GetString("ui.listen-endpoint")),
 				web.ServeBasePath(viper.GetString("ui.base-path")),
 				web.ServeWithJWTKey(viper.GetString("ui.jwt-signing-key")),
+				web.ServeWithJWTLifetime(viper.GetDuration("ui.jwt-lifetime")),
 				web.ServeWithTLS(viper.GetString("ui.tls-key"), viper.GetString("ui.tls-cert")),
 				web.ServePhenixLogs(viper.GetString("ui.logs.phenix-path")),
 				web.ServeMinimegaLogs(viper.GetString("ui.logs.minimega-path")),
@@ -80,6 +82,7 @@ func newUiCmd() *cobra.Command {
 	cmd.Flags().StringP("listen-endpoint", "e", "0.0.0.0:3000", "endpoint to listen on")
 	cmd.Flags().StringP("base-path", "b", "/", "base path to use for UI (must run behind proxy if not '/')")
 	cmd.Flags().StringP("jwt-signing-key", "k", "", "Secret key used to sign JWT for authentication")
+	cmd.Flags().Duration("jwt-lifetime", 24*time.Hour, "Lifetime of JWT authentication tokens")
 	cmd.Flags().String("tls-key", "", "path to TLS key file")
 	cmd.Flags().String("tls-cert", "", "path to TLS cert file")
 	cmd.Flags().Bool("unbundled", false, "serve local public files instead of bundled")
@@ -91,6 +94,7 @@ func newUiCmd() *cobra.Command {
 	viper.BindPFlag("ui.listen-endpoint", cmd.Flags().Lookup("listen-endpoint"))
 	viper.BindPFlag("ui.base-path", cmd.Flags().Lookup("base-path"))
 	viper.BindPFlag("ui.jwt-signing-key", cmd.Flags().Lookup("jwt-signing-key"))
+	viper.BindPFlag("ui.jwt-lifetime", cmd.Flags().Lookup("jwt-lifetime"))
 	viper.BindPFlag("ui.tls-key", cmd.Flags().Lookup("tls-key"))
 	viper.BindPFlag("ui.tls-cert", cmd.Flags().Lookup("tls-cert"))
 	viper.BindPFlag("ui.log-level", cmd.Flags().Lookup("log-level"))

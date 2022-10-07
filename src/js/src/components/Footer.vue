@@ -19,13 +19,7 @@ component.
   export default {
     async created () {
       try {
-        let URL = '/version';
-
-        if ( process.env.BASE_URL !== '/' ) {
-          URL = `${process.env.BASE_URL}/version`;
-        }
-
-        let resp    = await fetch(URL);
+        let resp    = await fetch(this.$router.resolve({ name: 'version'}).href);
         let version = await resp.json();
 
         this.version = `Version ${version.commit} (built on ${version.buildDate})`

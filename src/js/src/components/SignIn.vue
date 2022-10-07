@@ -75,8 +75,8 @@ It requires a valid email (user ID) and password.
           return {}
         }
         
-        this.$http.get( 
-          'login?user=' + this.username + '&pass=' + this.password
+        this.$http.post(
+          'login', {'user': this.username, 'pass': this.password}
         ).then(
           response => {
             response.json().then(

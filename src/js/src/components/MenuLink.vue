@@ -2,7 +2,7 @@
   <a v-if="external" :href="to" target="_blank">
     <slot></slot>
   </a>
-  <a v-else :href="resolvedRoute.route.fullPath" :class="{ 'is-active': resolvedRoute.route.name == $route.name }" @click.prevent="clicked">
+  <a v-else :href="resolved.href" :class="{ 'is-active': resolved.route.name == $route.name }" @click.prevent="clicked">
     <slot></slot>
   </a>
 </template>
@@ -14,8 +14,8 @@
     name: 'menu-link',
     props: {
       to: {
-        type: String,
-        default: '/'
+        type: [Object, String],
+        default: {name: 'home'}
       },
       external: {
         type: Boolean,
@@ -25,10 +25,10 @@
 
     computed: {
       isExactActive() {
-        return this.$route.fullPath == this.resolvedRoute.route.fullPath
+        return this.$route.path == this.resolved.route.path
       },
 
-      resolvedRoute() {
+      resolved() {
         return this.$router.resolve(this.to)
       }
     },
@@ -36,7 +36,7 @@
     methods: {
       clicked() {
         if (this.isExactActive) {
-          return EventBus.$emit('page-reload', this.resolvedRoute.route)
+          return EventBus.$emit('page-reload', this.resolved.route)
         }
 
         this.$router.push(this.to)

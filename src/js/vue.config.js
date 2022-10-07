@@ -4,14 +4,14 @@ module.exports = {
 
   devServer: {
     proxy: {
-      '/api/v1': {
-        target: 'http://localhost:3000',
+      '/phenix/api/v1': {
+        target: 'http://localhost',
         changeOrigin: true,
         logLevel: 'debug',
         ws: true
       },
-      '/version': {
-        target: 'http://localhost:3000',
+      '/phenix/version': {
+        target: 'http://localhost',
         changeOrigin: true,
         logLevel: 'debug',
         ws: true

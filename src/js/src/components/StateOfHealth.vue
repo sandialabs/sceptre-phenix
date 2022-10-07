@@ -127,12 +127,7 @@
         </section>
         <footer class="modal-card-foot buttons is-right">
           <template v-if="detailsModal.status == 'running'">
-            <a :href="'/api/v1/experiments/' 
-              + $route.params.id 
-              + '/vms/' 
-              + detailsModal.vm 
-              + '/vnc?token=' 
-              + $store.state.token" target="_blank">
+            <a :href="vncLoc(detailsModal.vm)" target="_blank">
               <b-tooltip label="open vnc for a running vm" type="is-light is-left" :delay="800">
                 <b-button type="is-success">
                   <b-icon icon="tv" />
@@ -920,6 +915,10 @@ export default {
           type: 'is-danger',
         });
       }
+    },
+
+    vncLoc (vm) {
+      return this.$router.resolve({name: 'vnc', params: {id: this.$route.params.id, name: vm, token: this.$store.state.token}});
     }
   },
 

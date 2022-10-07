@@ -310,7 +310,7 @@ func initTerminal(exp string, run, loop int, stage, cmp string) (WebTerm, error)
 	}
 
 	id := uuid.Must(uuid.NewV4()).String()
-	t.Loc = fmt.Sprintf("/api/v1/experiments/%s/scorch/terminals/%d/ws/%s", exp, t.Pid, id)
+	t.Loc = fmt.Sprintf("%sapi/v1/experiments/%s/scorch/terminals/%d/ws/%s", basePath, exp, t.Pid, id)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -319,7 +319,7 @@ func initTerminal(exp string, run, loop int, stage, cmp string) (WebTerm, error)
 		t.RO = true
 	} else {
 		rwTerm[t.Pid] = id
-		t.Exit = fmt.Sprintf("/api/v1/experiments/%s/scorch/terminals/%d/exit/%s", exp, t.Pid, id)
+		t.Exit = fmt.Sprintf("%sapi/v1/experiments/%s/scorch/terminals/%d/exit/%s", basePath, exp, t.Pid, id)
 	}
 
 	done := make(chan struct{})

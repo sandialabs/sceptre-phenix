@@ -213,13 +213,14 @@ func Start(opts ...ServerOption) error {
 
 	log.Info("Starting scorch processors")
 
-	go scorch.Start()
+	go scorch.Start(o.basePath)
 
 	log.Info("Starting log publisher")
 
 	go PublishLogs(context.Background(), o.phenixLogs, o.minimegaLogs)
 
 	log.Info("Using base path '%s'", o.basePath)
+	log.Info("Using JWT lifetime of %v", o.jwtLifetime)
 
 	if o.tlsEnabled() {
 		log.Info("Starting HTTPS server on %s", o.endpoint)

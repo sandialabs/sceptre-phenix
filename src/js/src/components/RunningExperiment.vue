@@ -15,10 +15,10 @@
           <p>Delay:  {{ expModal.vm.delayed_start }}</p>
           <p>Network(s):  {{ expModal.vm.networks | stringify | lowercase }}</p>
           <p>Taps:  {{ expModal.vm.taps | stringify | lowercase }}</p>
-          <p  v-if="expModal.snapshots">
+          <p v-if="expModal.snapshots">
             Snapshots:       
             <br>
-            <p  v-for="( snap, index ) in expModal.snapshots" :key="index">
+            <p v-for="( snap, index ) in expModal.snapshots" :key="index">
               <b-tooltip label="restore this snapshot" type="is-light is-right">
                 <b-icon icon="play-circle"  style="color:#686868" @click.native="restoreSnapshot( expModal.vm.name, snap )"></b-icon>
               </b-tooltip>
@@ -823,7 +823,7 @@
       },
 
       vncLoc (vm) {
-        return `${process.env.BASE_URL}api/v1/experiments/${this.$route.params.id}/vms/${vm.name}/vnc?token=${this.$store.state.token}`;
+        return this.$router.resolve({name: 'vnc', params: {id: this.$route.params.id, name: vm, token: this.$store.state.token}});
       },
 
       searchVMs: _.debounce(function ( term ) {
@@ -2960,7 +2960,7 @@
       },
 
       fileDownloadURL(name, path) {
-        return `${process.env.BASE_URL}api/v1/experiments/${this.$route.params.id}/files/${name}?token=${this.$store.state.token}&path=${path}`;
+        return this.$router.resolve({name: 'file', params: {id: this.$route.params.id, name: name, path: path, token: this.$store.state.token}});
       }
     },
     

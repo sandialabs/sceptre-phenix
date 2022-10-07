@@ -3170,7 +3170,7 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": u.Username(),
-		"exp": time.Now().Add(24 * time.Hour).Unix(),
+		"exp": time.Now().Add(o.jwtLifetime).Unix(),
 	})
 
 	// Sign and get the complete encoded token as a string using the secret
@@ -3262,7 +3262,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": u.Username(),
-		"exp": time.Now().Add(24 * time.Hour).Unix(),
+		"exp": time.Now().Add(o.jwtLifetime).Unix(),
 	})
 
 	// Sign and get the complete encoded token as a string using the secret

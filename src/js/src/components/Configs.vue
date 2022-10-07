@@ -263,6 +263,8 @@
   import FileSaver from 'file-saver'
   import EventBus from '@/event-bus'
 
+  import _ from 'lodash'
+
   var OpenAPISampler = require( 'openapi-sampler' )
 
   export default {
