@@ -918,7 +918,7 @@ export default {
     },
 
     vncLoc (vm) {
-      return this.$router.resolve({name: 'vnc', params: {id: this.$route.params.id, name: vm, token: this.$store.state.token}});
+      return this.$router.resolve({name: 'vnc', params: {id: this.$route.params.id, name: vm, token: this.$store.getters.token}}).href;
     }
   },
 

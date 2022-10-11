@@ -1,20 +1,20 @@
 <template>
-  <div  class="content">
+  <div class="content">
     <b-modal :active.sync="expModal.active" :on-cancel="resetExpModal" has-modal-card>
-      <div  class="modal-card" style="width:25em">
+      <div class="modal-card" style="width:25em">
         <header class="modal-card-head">
-          <p  class="modal-card-title">{{ expModal.vm.name ? expModal.vm.name : "unknown" }} VM</p>
+          <p class="modal-card-title">{{ expModal.vm.name ? expModal.vm.name : "unknown" }} VM</p>
         </header>
         <section class="modal-card-body">
-          <p>Host:  {{ expModal.vm.host }}</p>
-          <p>IPv4:  {{ expModal.vm.ipv4 | stringify }}</p>
-          <p>CPU(s):  {{ expModal.vm.cpus }}</p>
-          <p>Memory:  {{ expModal.vm.ram | ram }}</p>
-          <p>Disk:  {{ expModal.vm.disk }}</p>
-          <p>Uptime:  {{ expModal.vm.uptime | uptime }}</p>
-          <p>Delay:  {{ expModal.vm.delayed_start }}</p>
-          <p>Network(s):  {{ expModal.vm.networks | stringify | lowercase }}</p>
-          <p>Taps:  {{ expModal.vm.taps | stringify | lowercase }}</p>
+          <p>Host: {{ expModal.vm.host }}</p>
+          <p>IPv4: {{ expModal.vm.ipv4 | stringify }}</p>
+          <p>CPU(s): {{ expModal.vm.cpus }}</p>
+          <p>Memory: {{ expModal.vm.ram | ram }}</p>
+          <p>Disk: {{ expModal.vm.disk }}</p>
+          <p>Uptime: {{ expModal.vm.uptime | uptime }}</p>
+          <p>Delay: {{ expModal.vm.delayed_start }}</p>
+          <p>Network(s): {{ expModal.vm.networks | stringify | lowercase }}</p>
+          <p>Taps: {{ expModal.vm.taps | stringify | lowercase }}</p>
           <p v-if="expModal.snapshots">
             Snapshots:       
             <br>
@@ -235,7 +235,7 @@
                         Create disk image of the {{ vmI.name }} VM with filename:                 
                         <br><br>
                         <b-field :type="vmI.nameErrType" :message="vmI.nameErrMsg" autofocus>
-                          <b-input  type="text" v-model="vmI.filename"   focus></b-input>
+                          <b-input  type="text" v-model="vmI.filename" focus></b-input>
                          </b-field>
                   </font>          
                 </div>                                 
@@ -267,7 +267,7 @@
                         Create a memory snapshot for the {{ vmI.name }} VM with filename:                 
                         <br><br>
                         <b-field :type="vmI.nameErrType" :message="vmI.nameErrMsg" autofocus>
-                          <b-input  type="text" v-model="vmI.filename"   focus></b-input>
+                          <b-input  type="text" v-model="vmI.filename" focus></b-input>
                         </b-field>
                   </font>                  
                 </div>                
@@ -329,13 +329,13 @@
     </b-modal>
     <hr>
     <div class="level is-vcentered">
-      <div  class="level-item">
+      <div class="level-item">
         <span style="font-weight: bold; font-size: x-large;">Experiment: {{ this.$route.params.id }}</span>&nbsp;
       </div>
-      <div  class="level-item" v-if="experiment.scenario">
+      <div class="level-item" v-if="experiment.scenario">
         <span style="font-weight: bold;">Scenario: {{ experiment.scenario }}</span>&nbsp;
       </div>
-      <div  class="level-item" v-if="experiment.apps" @click="getApps()">
+      <div class="level-item" v-if="experiment.apps" @click="getApps()">
         <span style="font-weight: bold;">Apps:</span>&nbsp;
         <b-taglist>
           <b-tag v-for="( a, index ) in experiment.apps" :key="index" type="is-light">
@@ -344,10 +344,9 @@
         </b-taglist>
       </div>
     </div>    
-    
     <div class="level">    
-      <div  class="level-left"></div>
-      <div  class="level-right">
+      <div class="level-left"></div>
+      <div class="level-right">
         <div class="level-item" style="margin-bottom: -.3em;">
         <b-field v-if="isMultiVmSelected && (experimentUser() || experimentViewer())" position="is-center">
             <div v-if="adminUser() && !showModifyStateBar">
@@ -823,7 +822,7 @@
       },
 
       vncLoc (vm) {
-        return this.$router.resolve({name: 'vnc', params: {id: this.$route.params.id, name: vm, token: this.$store.state.token}});
+        return this.$router.resolve({name: 'vnc', params: {id: this.$route.params.id, name: vm.name, token: this.$store.getters.token}}).href;
       },
 
       searchVMs: _.debounce(function ( term ) {
@@ -2960,7 +2959,7 @@
       },
 
       fileDownloadURL(name, path) {
-        return this.$router.resolve({name: 'file', params: {id: this.$route.params.id, name: name, path: path, token: this.$store.state.token}});
+        return this.$router.resolve({name: 'file', params: {id: this.$route.params.id, name: name, path: path, token: this.$store.getters.token}}).href;
       }
     },
     

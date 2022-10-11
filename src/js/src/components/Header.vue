@@ -97,7 +97,7 @@ are only available to Global Administrator or Global Viewer.
       },
 
       builderLoc () {
-        return `${process.env.BASE_URL}builder?token=${this.$store.state.token}`;
+        return this.$router.resolve({name: 'builder', params: {token: this.$store.getters.token}}).href;
       }
     }
   }

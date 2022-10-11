@@ -1395,7 +1395,7 @@
       },
 
       fileDownloadURL(name, path) {
-        return `${process.env.BASE_URL}api/v1/experiments/${this.$route.params.id}/files/${name}?token=${this.$store.state.token}&path=${path}`;
+        return this.$router.resolve({name: 'file', params: {id: this.$route.params.id, name: name, path: path, token: this.$store.getters.token}}).href;
       }
     },
 
