@@ -10,6 +10,8 @@ import App    from './App.vue'
 import router from './router'
 import store  from './store'
 
+import { errorNotification } from './components/utils.js'
+
 import { fas }             from '@fortawesome/free-solid-svg-icons'
 import { library }         from '@fortawesome/fontawesome-svg-core'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
@@ -75,6 +77,9 @@ Vue.filter( 'uptime', function( value ) {
     return uptime;
   }
 })
+
+Vue.prototype.errorNotification = errorNotification;
+Vue.errorNotification = errorNotification;
 
 Vue.http.options.root = `${process.env.BASE_URL}api/v1/`
 

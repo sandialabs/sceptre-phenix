@@ -69,15 +69,17 @@
       try {
         this.getLogs();
         this.$options.sockets.onmessage = this.handler;
-      } catch ( resp ) {
-        if ( resp.status == 501)  {
+      } catch ( response ) {
+        if ( response.status == 501)  {
           this.disabled = true
         } else {
-          this.$buefy.toast.open({
-            message: 'Getting logs for the past ' + this.duration + ' failed with ' + resp.status + ' status.',
-            type: 'is-danger',
-            duration: 4000
-          });
+          // this.$buefy.toast.open({
+          //   message: 'Getting logs for the past ' + this.duration + ' failed with ' + resp.status + ' status.',
+          //   type: 'is-danger',
+          //   duration: 4000
+          // });
+
+          this.errorNotification(response); // this may need to be updated
         }
       }
     },

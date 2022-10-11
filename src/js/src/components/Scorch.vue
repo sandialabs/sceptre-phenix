@@ -206,12 +206,8 @@
             // check for existing experiment terminals
             this.getTerminals(exp.name);
           }
-        } catch {
-          this.$buefy.toast.open({
-            message:  'Getting the experiments failed.',
-            type:     'is-danger',
-            duration: 4000
-          });
+        } catch (err) {
+          this.errorNotification(err);
         } finally {
           this.isWaiting = false;
         }
@@ -257,11 +253,7 @@
               try {
                 await this.$http.post(`experiments/${exp.name}/stop`);
               } catch (err) {
-                this.$buefy.toast.open({
-                  message:  `Stopping the ${exp.name} experiment failed with ${err.status} status.`,
-                  type:     'is-danger',
-                  duration: 4000
-                });
+                this.errorNotification(err);
               }
             }
           });
@@ -278,11 +270,7 @@
               try {
                 await this.$http.post(`experiments/${exp.name}/start`);
               } catch (err) {
-                this.$buefy.toast.open({
-                  message:  `Starting the ${exp.name} experiment failed with ${err.status} status.`,
-                  type:     'is-danger',
-                  duration: 4000
-                });
+                this.errorNotification(err);
               }
             }
           });
@@ -326,17 +314,7 @@
               }
             }
           }, err => {
-            let msg = err.statusText;
-
-            if (err.body.message) {
-              msg = err.body.message;
-            }
-
-            this.$buefy.toast.open({
-              message:  `Getting terminals failed: ${msg}`,
-              type:     'is-danger',
-              duration: 4000
-            });
+            this.errorNotification(err);
           }
         )
       },
@@ -395,6 +373,7 @@
                   this.terminal.ro    = t.readOnly;
                   this.terminal.modal = true;
                 } else {
+                  // TODO: do we need to update this as an error? See similarly line 413ff.
                   this.$buefy.toast.open({
                     message:  `Unable to get current terminal for ${exp} experiment`,
                     type:     'is-info',
@@ -402,17 +381,7 @@
                   });
                 }
               }, err => {
-                let msg = err.statusText;
-
-                if ( err.body.message ) {
-                  msg = err.body.message;
-                }
-
-                this.$buefy.toast.open({
-                  message:  `Getting terminal failed: ${msg}`,
-                  type:     'is-danger',
-                  duration: 4000
-                });
+                this.errorNotification(err);
               }
             )
           }            

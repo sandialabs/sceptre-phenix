@@ -92,13 +92,9 @@ available for experiments, the number of VMs, and host uptime.
                 }
               }
             );
-          }, response => {
+          }, err => {
             this.isWaiting = false;
-            this.$buefy.toast.open({
-              message: 'Getting the hosts failed with ' + response + ' response.',
-              type: 'is-danger',
-              duration: 4000
-            });
+            this.errorNotification(err);
           }
         );
       },

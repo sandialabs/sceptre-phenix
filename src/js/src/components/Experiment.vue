@@ -28,7 +28,7 @@ this will only show a list of VMs that a user can view.
         let state = await resp.json();
 
         next( exp => exp.running = state.running );
-      } catch ( err ) {
+      } catch ( err ) { // TODO: do we want to set this as an error?
         Vue.toast.open({
           message: 'Getting the ' + to.params.id + ' experiment failed.',
           type: 'is-danger',

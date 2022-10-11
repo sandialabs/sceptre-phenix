@@ -86,6 +86,8 @@ func (this ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		body, _ := json.Marshal(web)
 		log.Errorln(string(body))
 
+		w.Header().Set("Content-Type", "application/json")
+
 		w.WriteHeader(web.Status)
 		w.Write(body)
 	}

@@ -600,12 +600,8 @@
                 this.updateDisks()
               }
             });
-          }, () => {
-            this.$buefy.toast.open({
-              message: 'Getting the experiments failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
+          }, err => {
+            this.errorNotification(err);
           }
         ).finally(
           () => { this.isWaiting = false }
@@ -627,12 +623,8 @@
                 }
               }
             );
-          }, () => {
-            this.$buefy.toast.open({
-              message: 'Getting the hosts failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
+          }, err => {
+            this.errorNotification(err);
           }
         );
       },
@@ -654,12 +646,8 @@
                 }
               }
             );
-          }, () => {
-            this.$buefy.toast.open({
-              message: 'Getting the disks failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
+          }, err => {
+            this.errorNotification(err);
           }
         );
       },
@@ -732,12 +720,8 @@
                 }
               }
             );
-          }, () => {
-            this.$buefy.toast.open({
-              message: 'Getting the files failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
+          }, err => {
+            this.errorNotification(err);
           }
         );
       },
@@ -749,16 +733,12 @@
           `experiments/${this.$route.params.id}/files/${file.name}?path=${file.path}`,
           { 'headers': { 'Accept': 'text/plain' } },
         ).then(
-          resp => {
+          response => {
             this.fileViewerModal.title = file.path;
-            this.fileViewerModal.contents = resp.bodyText;
+            this.fileViewerModal.contents = response.bodyText;
             this.fileViewerModal.active = true;
-          }, () => {
-            this.$buefy.toast.open({
-              message:  `Unable to get file ${file.name} for viewing.`,
-              type: 'is-danger',
-              duration: 4000
-            });
+          }, err => {
+            this.errorNotification(err);
           }
         ).finally(
           () => { this.isWaiting = false; }
@@ -793,12 +773,8 @@
               type: 'is-success',
               duration: 4000
             });
-          }, response => {
-            this.$buefy.toast.open({
-              message: 'Updating the VLAN Assignment for the ' + this.$route.params.id + ' Experiment failed with ' + response.status + ' status.',
-              type: 'is-danger',
-              duration: 4000
-            });
+          }, err => {
+            this.errorNotification(err);
           }
         );
       },
@@ -825,13 +801,8 @@
               response => { 
                 console.log('the ' + this.$route.params.id + ' experiment was started.'); 
                 this.$router.replace('/experiments/');                
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Starting experiment ' + this.$route.params.id + ' failed with ' + response.status + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-                
+              }, err => {
+                this.errorNotification(err);                
                 this.isWaiting = false;
               }
             );
@@ -868,19 +839,8 @@
                 this.experiment.vms = [ ...vms ];
               
                 this.isWaiting = false;
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Assigning the ' 
-                           + name 
-                           + ' VM to the ' 
-                           + host 
-                           + ' host failed with ' 
-                           + response.status 
-                           + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-                
+              }, err => {
+                this.errorNotification(err);                
                 this.isWaiting = false;
               }
             )
@@ -921,19 +881,8 @@
                 this.experiment.vms = [ ...vms ];
               
                 this.isWaiting = false;              
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Canceling the ' 
-                           + host 
-                           + ' assignment for the ' 
-                           + name 
-                           + ' VM failed with ' 
-                           + response.status 
-                           + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-                
+              }, err => {
+                this.errorNotification(err);                
                 this.isWaiting = false;
               }
             )
@@ -970,19 +919,8 @@
                 this.experiment.vms = [ ...vms ];
               
                 this.isWaiting = false;              
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Assigning ' 
-                           + cpus 
-                           + ' cpu(s) to the ' 
-                           + name 
-                           + ' VM failed with ' 
-                           + response.status 
-                           + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-                
+              }, err => {
+                this.errorNotification(err);                
                 this.isWaiting = false;
               }
             )
@@ -1023,19 +961,8 @@
                 this.experiment.vms = [ ...vms ];
               
                 this.isWaiting = false;              
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Assigning ' 
-                           + ram 
-                           + ' of memory to the ' 
-                           + name 
-                           + ' VM failed with ' 
-                           + response.status 
-                           + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-                
+              }, err => {
+                this.errorNotification(err);                
                 this.isWaiting = false;
               }
             )
@@ -1076,19 +1003,8 @@
                 this.experiment.vms = [ ...vms ];
               
                 this.isWaiting = false;              
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Assigning the ' 
-                           + disk 
-                           + ' to the ' 
-                           + name 
-                           + ' VM failed with ' 
-                           + response.status 
-                           + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-                
+              }, err => {
+                this.errorNotification(err);                
                 this.isWaiting = false;
               }
             )
@@ -1122,17 +1038,8 @@
               this.experiment.vms = [ ...vms ];
           
               this.isWaiting = false;              
-            }, response => {
-              this.$buefy.toast.open({
-                message: 'Setting the ' 
-                          + name 
-                          + ' VM to NOT boot when experiment starts failed with ' 
-                          + response.status 
-                          + ' status.',
-                type: 'is-danger',
-                duration: 4000
-              });
-              
+            }, err => {
+              this.errorNotification(err);              
               this.isWaiting = false;
             }
           )
@@ -1157,17 +1064,8 @@
               this.experiment.vms = [ ...vms ];
           
               this.isWaiting = false;              
-            }, response => {                  
-              this.$buefy.toast.open({
-                message: 'Setting the ' 
-                          + name 
-                          + ' VM to boot when experiment starts failed with ' 
-                          + response.status 
-                          + ' status.',
-                type: 'is-danger',
-                duration: 4000
-              });
-              
+            }, err => {                  
+              this.errorNotification(err);              
               this.isWaiting = false;
             }
           )
@@ -1205,19 +1103,8 @@
                 this.experiment.vms = [ ...vms ];
               
                 this.isWaiting = false;              
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Scheduling the host(s) with the ' 
-                           + this.algorithm 
-                           + ' for the ' 
-                           + this.$route.params.id 
-                           + ' experiment failed with ' 
-                           + response.status 
-                           + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-                
+              }, err => {
+                this.errorNotification(err);                
                 this.isWaiting = false;
               }
             )
@@ -1275,22 +1162,19 @@
           return
           
         }
-
         
         // If the select all checkbox is not checked, then unselect everything        
         if(!this.checkAll) {
           this.unSelectAllVMs();
           return
-        }
-        
+        }        
         
         //Add all visible items
         this.selectedRows=[]
         
         for(var i=0; i<visibleItems.length; i++){
             this.selectedRows.push(visibleItems[i].name)
-        }  
-                
+        }                
       },
         
       unSelectAllVMs(){
@@ -1360,14 +1244,9 @@
               type: 'is-success',
               duration: 4000
             });
-          }, response => {
-            this.$buefy.toast.open({
-            message: failedMessage,
-            type: 'is-danger',
-            duration: 4000
-          });
-          
-          this.isWaiting = false;
+          }, err => {
+            this.errorNotification(err);            
+            this.isWaiting = false;
         });
 
         // clear the selection

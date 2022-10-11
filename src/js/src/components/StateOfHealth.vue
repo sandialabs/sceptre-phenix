@@ -495,27 +495,11 @@ export default {
           )
           this.flows = true;
         } 
-      } catch {
-        this.$buefy.toast.open ({
-          message: 'Getting Network Failed',
-          type: 'is-danger',
-          duration: 4000
-        });
+      } catch (err) {
+        this.errorNotification(err);
       } finally {
         this.isWaiting = false;
       }
-
-      // Check if there are any SoH messages; if so, set messages = true and
-      // break. This is used to determine whether or not the `SoH Messages` tab
-      // should be displayed.
-      /*
-      for ( let n in this.nodes ) {
-        if ( this.nodes[n].soh != null ) {
-          this.messages = true;
-          break;
-        } 
-      }
-      */
     },
 
     updateNodeImage( node ) {
@@ -909,11 +893,8 @@ export default {
 
       try {
         await this.$http.post( url );
-      } catch (e) {
-        this.$buefy.toast.open ({
-          message: 'Triggering State of Health update failed: ' + e.name,
-          type: 'is-danger',
-        });
+      } catch (err) {
+        this.errorNotification(err);
       }
     },
 

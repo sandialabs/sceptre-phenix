@@ -103,31 +103,11 @@
                   this.runs.push( { running, loop: 0, nodes: pipelines[i].pipeline } );
                 }
               }, err => {
-                let msg = err.statusText;
-
-                if ( err.body.message ) {
-                  msg = err.body.message;
-                }
-
-                this.$buefy.toast.open({
-                  message: `Getting Scorch runs for ${exp} failed: ${msg}`,
-                  type:    'is-danger',
-                  duration: 4000
-                });
+                this.errorNotification(err);
               }
             )
           }, err => {
-            let msg = err.statusText;
-
-            if ( err.body.message ) {
-              msg = err.body.message;
-            }
-
-            this.$buefy.toast.open({
-              message: `Getting details for experiment ${exp} failed: ${msg}`,
-              type:    'is-danger',
-              duration: 4000
-            });
+            this.errorNotification(err);
           }
         )
       },
@@ -184,17 +164,7 @@
                   });
                 }
               }, err => {
-                let msg = err.statusText;
-
-                if ( err.body.message ) {
-                  msg = err.body.message;
-                }
-
-                this.$buefy.toast.open({
-                  message: `Getting component details failed: ${msg}`,
-                  type:    'is-danger',
-                  duration: 4000
-                });
+                this.errorNotification(err);
               }
             )
           }
@@ -214,17 +184,7 @@
             // using `Vue.set` to force reactivity
             this.$set(this.runs, runID, run);
           }, err => {
-            let msg = err.statusText;
-
-            if ( err.body.message ) {
-              msg = err.body.message;
-            }
-
-            this.$buefy.toast.open({
-              message: `Getting pipeline for ${exp} (run ${run}, loop ${loop}) failed: ${msg}`,
-              type:    'is-danger',
-              duration: 4000
-            });
+            this.errorNotification(err);
           }
         )
       },

@@ -406,7 +406,7 @@
           }
         }
       },
-       
+
       updateExperiments () {
         this.$http.get( 'experiments' ).then(
           response => {
@@ -414,13 +414,8 @@
               this.experiments = state.experiments;
               this.isWaiting = false;
             });
-          }, response => {
-            this.isWaiting = false;
-            this.$buefy.toast.open({
-              message: 'Getting the experiments failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
+          }, err => {
+            this.errorNotification(err);
           }
         );
       },
@@ -432,13 +427,9 @@
               this.topologies = state.topologies;
               this.isWaiting = false;
             });
-          }, response => {
+          }, err => {
             this.isWaiting = false;
-            this.$buefy.toast.open({
-              message: 'Getting the topologies failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
+            this.errorNotification(err);
           }
         );
       },
@@ -498,13 +489,14 @@
               await this.$http.post('experiments/' + name + '/start');
               console.log('experiment started');
             } catch (err) {
-              this.$buefy.toast.open({
-                message: 'Starting the ' + name + ' experiment failed with ' + err.status + ' status.',
-                type: 'is-danger',
-                duration: 4000
-              });
+              this.errorNotification(err);
 
-              this.isWaiting = false;
+              for (let i = 0; i < this.experiments.length; i++) {
+                if (this.experiments[i].name == name) {
+                  this.$set(this.experiments[i], 'status', 'stopped');
+                  break;
+                }
+              }
             }
           }
         });
@@ -532,14 +524,9 @@
               'experiments/' + name + '/stop'
             ).then(
               response => { 
-                console.log('experiment stopped');
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Stopping the ' + name + ' experiment failed with ' + response.status + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-                
+                console.log('experiment stopped: ' + response);
+              }, err => {
+                this.errorNotification(err);
                 this.isWaiting = false;
               }
             )
@@ -583,13 +570,8 @@
                   }
                 
                   this.isWaiting = false;
-                }, response => {
-                  this.$buefy.toast.open({
-                    message: 'Deleting the ' + name + ' experiment failed with ' + response.status + ' status.',
-                    type: 'is-danger',
-                    duration: 4000
-                  });
-                  
+                }, err => {
+                  this.errorNotification(err);
                   this.isWaiting = false;
                 }
               )
@@ -635,13 +617,8 @@
         ).then(
           response => {            
             this.isWaiting = false;
-          }, response => {
-            this.$buefy.toast.open({
-              message: 'Creating the ' + experimentData.name + ' experiment failed with ' + response.status + ' status.',
-              type: 'is-danger',
-              duration: 4000
-            });
-            
+          }, err => {
+            this.errorNotification(err);
             this.isWaiting = false;
           }
         );
@@ -665,13 +642,8 @@
                 this.createModal.showScenarios = true;
               }
             });
-          }, response => {
-            this.isWaiting = false;
-            this.$buefy.toast.open({
-              message: 'Getting the scenarios failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
+          }, err => {
+            this.errorNotification(err);
           }
         );
       },

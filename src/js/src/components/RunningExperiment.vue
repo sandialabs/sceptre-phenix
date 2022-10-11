@@ -777,7 +777,6 @@
           return true;
         }
       },
-    
 
       /*validate () {
         var regexp = /^[ a-zA-Z0-9-_ ]*$/;
@@ -902,10 +901,10 @@
         switch ( msg.resource.type ) {
           case 'experiment/' + this.$route.params.id: {
             switch ( msg.resource.action ) {
-              case 'errorTriggering': {
+              case 'triggered': {
                 this.$buefy.toast.open({
-                  message: 'Triggering phēnix Apps ' + this.apps + ' failed.',
-                  type: 'is-danger',
+                  message: 'phēnix Apps ' + this.apps + ' have been triggered.',
+                  type: 'is-success',
                   duration: 4000
                 });
 
@@ -914,10 +913,10 @@
                 break;
               }
 
-              case 'trigger': {
+              case 'triggerError': {
                 this.$buefy.toast.open({
-                  message: 'phēnix Apps ' + this.apps + ' have been triggered.',
-                  type: 'is-success',
+                  message: 'Triggering phēnix Apps ' + this.apps + ' failed.',
+                  type: 'is-danger',
                   duration: 4000
                 });
 
@@ -1027,12 +1026,8 @@
                   let body  = this.redeployModal.actionsQueue[0].body;
                   let name  = this.redeployModal.actionsQueue[0].name;
                   this.$http.post(url,  body)
-                   .then(null,response  => {
-                     this.$buefy.toast.open({
-                     message: 'Redeploying the ' + name + ' VM failed with ' + response.status + ' status.',
-                     type: 'is-danger',
-                     duration: 4000
-                   });
+                   .then(null, err  => {
+                     this.errorNotification(err);
                   })
                 } else { 
                   this.redeployModal.active = false;  
@@ -1158,8 +1153,6 @@
                       this.experiment.vms = [ ...vms ];
                       break;
                     }
-                
-                    
                   }
                   break;
                 }
@@ -1180,7 +1173,6 @@
                     this.experiment.vms = [ ...vms ];
                     break;
                   }
-                  
                 }
                 break;
               }
@@ -1219,7 +1211,6 @@
                 break;
               }
             }
-
             break;
           }
 
@@ -1392,12 +1383,7 @@
           this.updateTable(); 
         } catch (err) {
           console.log(`ERROR getting experiments: ${err}`);
-
-          this.$buefy.toast.open({
-            message: 'Getting the experiments failed.',
-            type: 'is-danger',
-            duration: 4000
-          });
+          this.errorNotification(err);
         } finally {
           this.isWaiting  = false;
         }
@@ -1421,14 +1407,10 @@
                 }
               }
             );
-          },  response => {
-            console.log('Getting the disks failed with ' + response.status);
+          },  err => {
+            console.log('Getting the disks failed with ' + err.status);
             this.isWaiting = false;
-            this.$buefy.toast.open({
-              message:  'Getting the disks failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
+            this.errorNotification(err);
           }
         );
       },
@@ -1504,13 +1486,8 @@
                 this.isWaiting = false;
               }
             );
-          },  () => {
-            this.$buefy.toast.open({
-              message:  'Getting the files failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
-
+          },  err => { 
+            this.errorNotification(err);
             this.isWaiting = false;
           }
         );
@@ -1523,16 +1500,12 @@
           `experiments/${this.$route.params.id}/files/${file.name}?path=${file.path}`,
           { 'headers': { 'Accept': 'text/plain' } },
         ).then(
-          resp => {
+          response => {
             this.fileViewerModal.title = file.path;
-            this.fileViewerModal.contents = resp.bodyText;
+            this.fileViewerModal.contents = response.bodyText;
             this.fileViewerModal.active = true;
-          }, () => {
-            this.$buefy.toast.open({
-              message:  `Unable to get file ${file.name} for viewing.`,
-              type: 'is-danger',
-              duration: 4000
-            });
+          }, err => {
+            this.errorNotification(err);
           }
         ).finally(
           () => { this.isWaiting = false; }
@@ -1565,14 +1538,9 @@
                   }
                 }
               )
-            }, response => {
-              this.$buefy.toast.open({
-                message: 'Getting info for the ' + name + ' VM failed with ' + response.status + ' status.',
-                type: 'is-danger',
-                duration: 4000
-              });
-
-              this.isWaiting  = false;
+            }, err => {
+              this.errorNotification(err);
+              this.isWaiting = false;
             }
           );
 
@@ -1593,13 +1561,8 @@
                 }
               }
             )
-          },  response => {
-            this.$buefy.toast.open({
-              message:  'Retrieving the snapshots for the ' + name + ' VM failed with ' + response.status + ' status.',
-              type: 'is-danger',
-              duration: 4000
-            });
-
+          },  err => {
+            this.errorNotification(err);
             this.isWaiting = false;
           }
         );
@@ -1637,12 +1600,8 @@
                   if  ( response.status == 204 ) {
                     console.log('create snapshot for vm ' + vmName);
                   }
-                }, response => {
-                  this.$buefy.toast.open({
-                    message: 'Creating the snapshot for the ' + vmName + ' VM failed with ' + response.status + ' status.',
-                    type: 'is-danger',
-                    duration: 4000
-                  });
+                }, err => {
+                  this.errorNotification(err);
                 }
               );
             })
@@ -1669,18 +1628,8 @@
                 if ( response.status == 204 ) {
                   console.log('restore  snapshot for vm ' + name);
                 }
-              },  response => {
-                this.$buefy.toast.open({
-                  message:  'Restoring the ' 
-                  + snapshot  
-                  + ' snapshot  for the ' 
-                  + name  
-                  + ' VM  failed with ' 
-                  + response.status 
-                  + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
+              },  err => {
+                this.errorNotification(err);
               }
             );
           }
@@ -1702,22 +1651,22 @@
         name.forEach((arg,) => {
           for ( let i = 0; i < vms.length; i++ ) {
             if ( vms[i].name == arg ){
-			  var filename=""; 
-			  if ( /(.*)_\d{14}/.test( vms[i].disk ) ) {
-			    filename = vms[i].disk.substring( 0, vms[i].disk.indexOf( '_' ) ) + '_' + date + time;
-			  } else {
-			    filename = vms[i].disk.substring( 0, vms[i].disk.indexOf( '.' ) ) + '_' + date + time;
-			  }
-                          filename = vms[i].name +"_"+ filename.substring(filename.lastIndexOf( '/')+1 ); 
-                          this.diskImageModal.vm.push({
-                            dateTime:date+time+"" ,
-                            name:vms[i].name ,
-                            filename:filename ,
-                            nameErrType:"" ,
-                            nameErrMsg:""
-                          });
-			}
-		  }
+              var filename=""; 
+              if ( /(.*)_\d{14}/.test( vms[i].disk ) ) {
+                filename = vms[i].disk.substring( 0, vms[i].disk.indexOf( '_' ) ) + '_' + date + time;
+              } else {
+                filename = vms[i].disk.substring( 0, vms[i].disk.indexOf( '.' ) ) + '_' + date + time;
+              }
+                filename = vms[i].name +"_"+ filename.substring(filename.lastIndexOf( '/')+1 ); 
+                this.diskImageModal.vm.push({
+                  dateTime:date+time+"" ,
+                  name:vms[i].name ,
+                  filename:filename ,
+                  nameErrType:"" ,
+                  nameErrMsg:""
+                });
+            }
+		      }
         })
         
         this.diskImageModal.active = true;
@@ -1751,12 +1700,8 @@
               this.$http.post(url,body,{ timeout: 0 }).then(
                 response => {
                    console.log('backing image for vm ' + name + ' failed with ' + response.status);
-                }, response => {
-                  this.$buefy.toast.open({
-                     message: 'Creating the backing image for the ' + name + ' VM failed with ' + response.status + ' status.',
-                     type: 'is-danger',
-                     duration: 4000
-                   });
+                }, err => {
+                  this.errorNotification(err);
                 }
               );
             })
@@ -1785,6 +1730,7 @@
            var filename = date + "_" + time;
        
               filename = vms[i].name +"_"+ filename.substring(filename.lastIndexOf( '/')+1 ); 
+       
               this.memorySnapshotModal.vm.push({
                 dateTime:date+time+"" ,
                 name:vms[i].name ,
@@ -1811,11 +1757,12 @@
           name = arg.name;
           
           this.$http.post(url,body,{ timeout: 0 }).then(
-            response => {
-               console.log('memory snapshot for vm ' + name + ' failed with ' + response.status);
-            });
-        });
-        this.resetMemorySnapshotModal();
+            err => {
+              this.errorNotification(err);
+          });
+          
+          this.resetMemorySnapshotModal();
+        })
       },
 
       killVm ( name ) {
@@ -1874,12 +1821,8 @@
                       this.experiment.vms = [ ...vms  ];
                       this.isWaiting  = false;
                     }
-                  },  response => {
-                    this.$buefy.toast.open({
-                      message: 'Killing the ' + arg + ' VM failed with ' + response.status + ' status.',
-                      type: 'is-danger',
-                      duration: 4000
-                    });
+                  },  err => {
+                    this.errorNotification(err);
                     this.isWaiting = false;
                   }
                 );
@@ -1905,13 +1848,8 @@
             ).then(
               ()  => {
                 this.$router.replace('/experiments/');                
-              },  response => {
-                this.$buefy.toast.open({
-                  message:  'Stopping experiment ' + this.$route.params.id + ' failed with ' + response.status + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-
+              },  err => {
+                this.errorNotification(err);
                 this.isWaiting = false;
               }
             );
@@ -2009,17 +1947,8 @@
                             this.experiment.vms = [ ...vms ]
                             this.isWaiting = false;
                           }
-                        }, response => {
-                          this.$buefy.toast.open({
-                            message: 'Stopping all packet captures for the ' 
-                            + vm.name 
-                            + ' VM failed with ' 
-                            + response.status 
-                            + ' status.',
-                            type: 'is-danger',
-                            duration: 4000
-                          });
-
+                        }, err => {
+                          this.errorNotification(err);
                           this.isWaiting  = false;
                         }
                       )
@@ -2063,14 +1992,9 @@
                             this.experiment.vms = [ ...vms ]
                             this.isWaiting = false;
                           }
-                        }, response => {
-                          this.$buefy.toast.open({
-                            message: 'Starting packet capture for the ' + vm.name + ' VM failed with ' + response.status + ' status.',
-                            type: 'is-danger',
-                            duration: 4000
-                          });
-
-                          this.isWaiting  = false;
+                        }, err => {
+                          this.errorNotification(err);
+                          this.isWaiting = false;
                         }
                       )
                     }
@@ -2133,12 +2057,8 @@
                     }
                     this.experiment.vms = [ ...vms ];
                     this.isWaiting = false;
-                  },  response => {
-                    this.$buefy.toast.open({
-                      message: 'Starting the ' + arg + ' VM failed with ' + response.status + ' status.',
-                      type: 'is-danger',
-                      duration: 4000
-                    });
+                  },  err => {
+                    this.errorNotification(err);
                     this.isWaiting = false;
                   }
                 );
@@ -2198,12 +2118,8 @@
                     } 
                     this.experiment.vms = [ ...vms ];
                     this.isWaiting = false;
-                  },  response => {
-                    this.$buefy.toast.open({
-                      message: 'Pausing the ' + arg + ' VM failed with ' + response.status + ' status.',
-                      type: 'is-danger',
-                      duration: 4000
-                    });
+                  },  err => {
+                    this.errorNotification(err);
                     this.isWaiting = false;
                   } 
                 );
@@ -2265,13 +2181,9 @@
                       } 
                       this.experiment.vms = [ ...vms  ];
                       this.isWaiting  = false;
-                    }, response => {
-                      this.$buefy.toast.open({
-                        message: 'Reseting the ' + vmName + ' VM failed with ' + response.status + ' status.',
-                        type: 'is-danger',
-                        duration: 4000
-                      });
-                      this.isWaiting  = false;
+                    }, err => {
+                      this.errorNotification(err);                      
+                      this.isWaiting = false;
                     } 
                   );
                 })        
@@ -2333,20 +2245,15 @@
                       } 
                       this.experiment.vms = [ ...vms  ];
                       this.isWaiting  = false;
-                    }, response => {
-                      this.$buefy.toast.open({
-                        message: 'Restarting the ' + vmName + ' VM failed with ' + response.status + ' status.',
-                        type: 'is-danger',
-                        duration: 4000
-                      });
-                      this.isWaiting  = false;
+                    }, err => {
+                      this.errorNotification(err);                      
+                      this.isWaiting = false;
                     } 
                   );
                 })        
-            }
+              }
           })
-        }
-             
+        }   
       },
         
       shutdownVm  (name) {
@@ -2402,13 +2309,9 @@
                       } 
                       this.experiment.vms = [ ...vms  ];                      
                       this.isWaiting  = false;
-                    }, response => {
-                      this.$buefy.toast.open({
-                        message: 'Shut down of VM ' + vmName + ' failed with ' + response.status + ' status.',
-                        type: 'is-danger',
-                        duration: 4000
-                      });
-                      this.isWaiting  = false;
+                    }, err => {
+                      this.errorNotification(err);
+                      this.isWaiting = false;
                     } 
                   );
                 })        
@@ -2446,12 +2349,12 @@
       
       redeployVm (vms) {
         let body = "";
-        let url  = "";
+        let postUrl  = "";
         let name = "";
 
         vms.forEach((vm, _) => {
           body = { "cpus": parseInt(vm.cpus), "ram": parseInt(vm.ram), "disk": vm.disk };
-          url  = 'experiments/' + this.$route.params.id + '/vms/' + vm.name + '/redeploy';
+          postUrl  = 'experiments/' + this.$route.params.id + '/vms/' + vm.name + '/redeploy';
           name = vm.name;
 
           if ( vm.inject ) {
@@ -2461,18 +2364,13 @@
           this.redeployModal.actionsQueue.push({name: vm.name, url: url, body: body});
         })
 
-        this.$http.post(url, body).then(
-          null, response => {
-            this.$buefy.toast.open({
-              message: 'Redeploying the ' + name + ' VM failed with ' + response.status + ' status.',
-              type: 'is-danger',
-              duration: 4000
-            });
+        this.$http.post(postUrl, body).then(
+          null, err => {
+            this.errorNotification(err);
+            this.isWaiting = false;
+            this.resetExpModal();
           }
-        );
-
-        this.isWaiting = true;
-        this.resetExpModal();
+        )
       },
 
       changeVlan ( index, vlan, from, name ) {
@@ -2504,14 +2402,9 @@
 
                   this.experiment.vms = [ ...vms  ];
                   this.isWaiting  = false;
-                }, response => {
-                  this.$buefy.toast.open({
-                    message: 'Disconnecting the network for the ' + name + ' VM failed with ' + response.status + ' status.',
-                    type: 'is-danger',
-                    duration: 4000
-                  });
-
-                  this.isWaiting  = false;
+                }, err => {
+                  this.errorNotification(err);       
+                  this.isWaiting = false;
                 }
               );
             }
@@ -2551,14 +2444,9 @@
 
                   this.experiment.vms = [ ...vms  ];
                   this.isWaiting  = false;
-                }, response => {
-                  this.$buefy.toast.open({
-                    message: 'Changing the VLAN for the ' + name + ' VM failed with ' + response.status + ' status.',
-                    type: 'is-danger',
-                    duration: 4000
-                  });
-
-                  this.isWaiting  = false;
+                }, err => {
+                  this.errorNotification(err);
+                  this.isWaiting = false;
                 }
               )
             }
@@ -2633,12 +2521,8 @@
               this.isWaiting = false;
                   
             
-              },  response => {
-                this.$buefy.toast.open({
-                  message: 'Unable to start capturing subnet ' + subnets[0] + ' ' + response.status + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
+              },  err => {
+                this.errorNotification(err);
                 this.isWaiting = false;
               } 
             );
@@ -2713,12 +2597,8 @@
               this.isWaiting = false;
                   
             
-              },  response => {
-                this.$buefy.toast.open({
-                  message: 'Unable to stop subnet capture for ' + subnets[0] + ' ' + response.status + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
+              },  err => {
+                this.errorNotification(err);
                 this.isWaiting = false;
               } 
             );
@@ -2771,13 +2651,10 @@
 
         this.$http.post( 'experiments/' + this.$route.params.id + '/trigger' + '?apps=' + apps )
         .then( response => {
-          console.log('triggering ' + apps);
-        }, response => {
-          this.$buefy.toast.open({
-            message: 'Triggering the Apps ' + apps + ' failed with ' + response.status + ' status.',
-            type: 'is-danger',
-            duration: 4000
-          });
+          console.log('triggering ' + apps + ': ' + response);
+        }, err => {
+          this.errorNotification(err);
+          this.isWaiting = false;
         });
 
         this.resetAppsModal();
