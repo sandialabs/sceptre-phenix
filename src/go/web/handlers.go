@@ -1738,7 +1738,7 @@ func GetScreenshot(w http.ResponseWriter, r *http.Request) {
 		encode = query.Get("base64") != ""
 	)
 
-	if !role.Allowed("vms/screenshot", "get", fmt.Sprintf("%s_%s", exp, name)) {
+	if !role.Allowed("vms/screenshot", "get", exp+"/"+name) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -2466,31 +2466,37 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 	allowed := []*proto.VM{}
 
 	for _, exp := range exps {
-		vms, err := vm.List(exp.Spec.ExperimentName())
-		if err != nil {
-			// TODO
+		if !exp.Running() {
+			// We only care about getting running VMs, which are only present in
+			// running experiments.
+			continue
 		}
 
-		for _, v := range vms {
-			if !role.Allowed("vms", "list", fmt.Sprintf("%s_%s", exp.Spec.ExperimentName(), v.Name)) {
+		// TODO: handle error
+		vms, _ := vm.List(exp.Spec.ExperimentName())
+
+		for _, vm := range vms {
+			id := exp.Metadata.Name + "/" + vm.Name
+
+			if !role.Allowed("vms", "list", id) {
 				continue
 			}
 
-			// TODO: add `show_dnb` query option.
-			if !v.Running {
+			if !vm.Running {
+				// We only care about running VMs.
 				continue
 			}
 
 			if size != "" {
-				screenshot, err := util.GetScreenshot(exp.Spec.ExperimentName(), v.Name, size)
+				screenshot, err := util.GetScreenshot(exp.Metadata.Name, vm.Name, size)
 				if err != nil {
 					log.Error("getting screenshot: %v", err)
 				} else {
-					v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+					vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
 				}
 			}
 
-			allowed = append(allowed, util.VMToProtobuf(exp.Spec.ExperimentName(), v, exp.Spec.Topology()))
+			allowed = append(allowed, util.VMToProtobuf(exp.Metadata.Name, vm, exp.Spec.Topology()))
 		}
 	}
 

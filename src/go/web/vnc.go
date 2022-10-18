@@ -1,7 +1,6 @@
 package web
 
 import (
-	"fmt"
 	"html/template"
 	"net/http"
 	"strings"
@@ -30,7 +29,7 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 		name = vars["name"]
 	)
 
-	if !role.Allowed("vms/vnc", "get", fmt.Sprintf("%s_%s", exp, name)) {
+	if !role.Allowed("vms/vnc", "get", exp+"/"+name) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
