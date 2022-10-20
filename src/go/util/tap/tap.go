@@ -112,7 +112,7 @@ func (this *Tap) connect(host string, subnet netaddr.IPPrefix) error {
 
 	log.Info("creating veth pair for tap %s on host %s", this.Name, host)
 
-	cmd := fmt.Sprintf("ip link add %s type veth peer %s_right", this.Name, this.Name[:9])
+	cmd := fmt.Sprintf("ip link add %s type veth peer name %s_right", this.Name, this.Name[:9])
 	if err := mm.MeshShell(host, cmd); err != nil {
 		return fmt.Errorf("creating veth pair for tap %s on host %s: %w", this.Name, host, err)
 	}
