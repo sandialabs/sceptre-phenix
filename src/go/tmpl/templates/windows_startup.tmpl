@@ -117,12 +117,14 @@ if ($host_name -eq "{{ .Node.General.Hostname }}") {
     echo 'Joining $domain domain'
     Add-Computer -DomainName $domain -Credential $credential
 
+    {{ if .Metadata.auto_logon }}
     echo 'Adding auto logon'
     $path = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
-    Set-ItemProperty -Path $path -Name DefaultUserName -Value $username
-    Set-ItemProperty -Path $path -Name DefaultPassword -Value {{ index .Metadata "domain_controller" "password" }}
+    Set-ItemProperty -Path $path -Name DefaultUserName -Value "{{ index .Metadata "auto_logon" "username" }}"
+    Set-ItemProperty -Path $path -Name DefaultPassword -Value "{{ index .Metadata "auto_logon" "password" }}"
     Set-ItemProperty -Path $path -Name DefaultDomainName -Value $domain
     Set-ItemProperty -Path $path -Name AutoAdminLogon -Value 1
+    {{ end }}
 
     echo 'Domain joined. Restarting...'
     Phenix-SetStartupStatus('joined-domain')
