@@ -43,9 +43,8 @@ function Phenix-StartupStatusIs($status) {
 {{ $rearm := index .Node.Annotations "phenix/windows-rearm" }}
 
 {{ if toBool $rearm }}
-echo 'Killing slui.exe task and stopping WLMS service'
-taskkill /IM "slui.exe" /F
-Stop-Service -Name 'WLMS'
+echo 'Killing Windows Software Licensing UI'
+taskkill.exe /IM "slui.exe" /F
 {{ end }}
 
 if (Phenix-StartupStatusIs('done')) {
@@ -55,6 +54,14 @@ if (Phenix-StartupStatusIs('done')) {
 if (-Not (Phenix-StartupStatusIsSet)) {
     Phenix-SetStartupStatus('running')
 }
+
+{{ if toBool $rearm }}
+if (Phenix-StartupStatusIs('running')) {
+    echo 'Disabling WLMS service and rearming Windows license'
+    sc.exe config WLMS start= disabled
+    cscript.exe C:\Windows\System32\slmgr.vbs /rearm
+}
+{{ end }}
 
 echo 'Configuring network interfaces...'
 
@@ -93,15 +100,6 @@ Start-Sleep -s 5
 
 $host_name = hostname
 if ($host_name -eq "{{ .Node.General.Hostname }}") {
-{{ if toBool $rearm }}
-    if (Phenix-StartupStatusIs('running')) {
-        echo 'Rearming license'
-        cscript C:\Windows\System32\slmgr.vbs /rearm
-        Get-CimInstance -ClassName Win32_Service -Filter "Name='WLMS'" | Remove-CimInstance
-        Get-Item HKLM:\SYSTEM\CurrentControlSet\Services\WLMS | Remove-Item -Recurse -Force -Verbose
-    }
-{{ end }}
-
 {{ if .Metadata.domain_controller }}
     if (Phenix-StartupStatusIs('joined-domain')) {
         echo 'Startup script complete!'
@@ -128,22 +126,13 @@ if ($host_name -eq "{{ .Node.General.Hostname }}") {
 
     echo 'Domain joined. Restarting...'
     Phenix-SetStartupStatus('joined-domain')
-    Restart-Computer
+    Restart-Computer -Force
 {{ else }}
     echo 'Startup script complete!'
     Phenix-SetStartupStatus('done')
     exit
 {{ end }}
 } else {
-{{ if toBool $rearm }}
-    if (Phenix-StartupStatusIs('running')) {
-        echo 'Rearming license'
-        cscript C:\Windows\System32\slmgr.vbs /rearm
-        Get-CimInstance -ClassName Win32_Service -Filter "Name='WLMS'" | Remove-CimInstance
-        Get-Item HKLM:\SYSTEM\CurrentControlSet\Services\WLMS | Remove-Item -Recurse -Force -Verbose
-    }
-{{ end }}
-
     echo 'Changing hostname'
     $computer_info = Get-WmiObject -Class Win32_ComputerSystem
     $computer_info.Rename("{{ .Node.General.Hostname }}")
@@ -153,4 +142,4 @@ if ($host_name -eq "{{ .Node.General.Hostname }}") {
     Restart-Computer -Force
 }
 
-$error | Out-File C:\phenix-startup-error.log
+$error | Out-File C:\phenix\phenix-startup.err
