@@ -475,11 +475,12 @@ func newImageInjectMiniExeCmd() *cobra.Command {
 	If not specified, partition 1 will be assumed.
 
 	In a Windows disk image, the minimega executable will be injected into
-	C:\[miniccc,protonuke]. A scheduler command will be placed into the Windows
-	Startup directory for miniccc, but not for protonuke, since protonuke's
-	command line arguments are dynamic. Users or apps wishing to leverage
-	protonuke on Windows hosts need to inject their own scheduler command in the
-	Windows Startup directory or use miniccc to start protonuke.
+	C:\minimega\[miniccc,protonuke]. A scheduler command will be placed into the
+	Windows Startup directory for miniccc if '--init-system=startup' is provided,
+	but not for protonuke, since protonuke's command line arguments are dynamic.
+	Users or apps wishing to leverage protonuke on Windows hosts need to inject
+	their own scheduler command in the Windows Startup directory or use miniccc to
+	start protonuke.
 
 	In a Linux disk image, the minimega executable will be injected into
 	/usr/local/bin and the service file and symlinks will be injected into the
@@ -516,7 +517,7 @@ func newImageInjectMiniExeCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().String("init-system", "systemd", "Linux init system to generate boot scripts for (systemd, sysinitv)")
+	cmd.Flags().String("init-system", "systemd", "Linux init system to generate boot scripts for (Linux: systemd, sysinitv; Windows: startup)")
 
 	return cmd
 }
