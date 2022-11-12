@@ -1,15 +1,16 @@
-import Vue        from 'vue'
-import Vuex       from 'vuex'
-import router     from './router'
+import Vue    from 'vue'
+import Vuex   from 'vuex'
+import router from './router'
 
 Vue.use( Vuex )
 
 export default new Vuex.Store({
   state: {
-    username: null,
-    token:    null,
-    role:     null,
-    auth:     null
+    username: localStorage.getItem( 'phenix.user' ),
+    token:    localStorage.getItem( 'phenix.token' ),
+    role:     localStorage.getItem( 'phenix.role' ),
+    auth:     localStorage.getItem( 'phenix.auth' ) === 'true',
+    next:     null
   },
 
   mutations: {
@@ -27,9 +28,12 @@ export default new Vuex.Store({
       }
 
       if ( state.role === "VM Viewer" ) {
-        router.replace( '/vmtiles' );
-      } else {
-        router.replace( '/experiments' );
+        router.replace( {name: 'vmtiles'} );
+      } else if ( state.next ) {
+        router.replace( state.next );
+        state.next = null;
+      } else if ( router.currentRoute.path === "/signin" ) {
+        router.replace( {name: 'home'} )
       }
     },
 
@@ -38,15 +42,18 @@ export default new Vuex.Store({
       state.token    = null;
       state.role     = null;
       state.auth     = false;
-      state.logs     = [];
+      state.next     = null;
 
-      if ( localStorage.getItem( 'phenix.auth' === 'true' ) ) {
-        localStorage.removeItem( 'phenix.user' );
-        localStorage.removeItem( 'phenix.token' );
-        localStorage.removeItem( 'phenix.role' );
-        localStorage.setItem( 'phenix.auth', state.auth );
-      }
+      localStorage.removeItem( 'phenix.user' );
+      localStorage.removeItem( 'phenix.token' );
+      localStorage.removeItem( 'phenix.role' );
+      localStorage.removeItem( 'phenix.auth' );
+
       router.replace( '/signin' );
+    },
+
+    'NEXT' ( state, to ) {
+      state.next = to;
     }
   },
   

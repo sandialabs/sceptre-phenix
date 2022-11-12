@@ -13,6 +13,7 @@ const (
 	ACTIONSTART   Action = "start"
 	ACTIONSTOP    Action = "stop"
 	ACTIONCLEANUP Action = "cleanup"
+	ACTIONDONE    Action = "done"
 	ACTIONLOOP    Action = "loop"
 )
 

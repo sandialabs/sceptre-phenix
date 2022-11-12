@@ -277,13 +277,6 @@ components:
           properties:
             cpu:
               type: string
-              enum:
-              - Broadwell
-              - Haswell
-              - core2duo
-              - pentium3
-              - host
-              - ""
               default: Broadwell
               example: Broadwell
             vcpus:
@@ -301,12 +294,13 @@ components:
             os_type:
               type: string
               enum:
-              - windows
-              - linux
-              - rhel
               - centos
-              - vyatta
+              - linux
               - minirouter
+              - rhel
+              - vyatta
+              - vyos
+              - windows
               default: linux
               example: windows
             drives:

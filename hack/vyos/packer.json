@@ -1,0 +1,88 @@
+{
+  "_comment": "Build with `packer build packer.json`",
+  "variables": {
+    "cpus": "2",
+    "disk_size": "5120",
+    "headless": "false",
+    "http_directory": "{{template_dir}}/http",
+    "iso_checksum": "{{ env `ISO_MD5SUM` }}",
+    "iso_checksum_type": "md5",
+    "iso_url": "{{ env `ISO_IMAGE` }}",
+    "memory": "4096",
+    "vm_name": "vyos"
+  },
+  "builders": [
+    {
+      "boot_command": [
+        "<enter><wait3><enter><wait20>",
+        "vyos<enter><wait>vyos<enter><wait>",
+        "install image<enter><wait3>",
+        "<enter><wait3>",
+        "<enter><wait3>",
+        "<enter>",
+        "Yes<enter><wait3>",
+        "<enter><wait10>",
+        "vyos<enter><wait3>",
+        "<enter>",
+        "vyos<enter>",
+        "vyos<enter><wait3>",
+        "<enter><wait10>",
+        "reboot<enter><wait3>Yes<enter>",
+        "<wait1m>",
+        "vyos<enter><wait3>",
+        "vyos<enter><wait3>",
+        "configure<enter><wait3>",
+        "set interface ethernet eth0 address dhcp<enter>",
+        "set service ssh<enter>",
+        "commit<enter><wait3>",
+        "save<enter>"
+      ],
+      "boot_wait": "5s",
+      "disk_size": "{{ user `disk_size` }}",
+      "headless": "{{ user `headless` }}",
+      "http_directory": "{{user `http_directory`}}",
+      "iso_checksum": "{{ user `iso_checksum_type` }}:{{ user `iso_checksum` }}",
+      "iso_urls": [
+        "{{ user `iso_url` }}"
+      ],
+      "output_directory": "artifacts",
+      "qemuargs": [
+        [
+          "-m",
+          "{{ user `memory` }}"
+        ],
+        [
+          "-smp",
+          "cpus={{ user `cpus`}}"
+        ],
+        [
+          "-cpu",
+          "Broadwell"
+        ]
+      ],
+      "shutdown_command": "sudo halt -p",
+      "ssh_username": "vyos",
+      "ssh_password": "vyos",
+      "ssh_timeout": "300s",
+      "type": "qemu",
+      "vm_name": "{{ user `vm_name` }}"
+    }
+  ],
+  "provisioners": [
+    {
+      "execute_command": "{{.Vars}} sudo -S -E sh -eux '{{.Path}}'",
+      "scripts": [
+        "{{template_dir}}/scripts/phenix.sh",
+        "{{template_dir}}/scripts/miniccc.sh"
+      ],
+      "type": "shell"
+    }
+  ],
+  "post-processors": [
+    {
+      "type": "shell-local",
+      "inline": ["mv artifacts/{{user `vm_name`}} artifacts/{{user `vm_name`}}.qc2"]
+    }
+  ]
+}
+

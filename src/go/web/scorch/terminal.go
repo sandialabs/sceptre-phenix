@@ -54,12 +54,12 @@ var (
 
 var ErrTerminalNotFound = fmt.Errorf("web terminal not found")
 
-func CreateWebTerminal(ctx context.Context, exp string, run, loop int, stage, name, cmd string, envs ...string) (chan struct{}, error) {
+func CreateWebTerminal(ctx context.Context, exp string, run, loop int, stage, name, cmd string, args []string, envs ...string) (chan struct{}, error) {
 	log.Debug("CreateTerminal function called")
 
 	term := newWebTerm(exp, run, loop, stage, name)
 
-	c := exec.CommandContext(ctx, cmd)
+	c := exec.CommandContext(ctx, cmd, args...)
 	c.Env = append(c.Env, envs...)
 
 	tty, err := pty.Start(c)

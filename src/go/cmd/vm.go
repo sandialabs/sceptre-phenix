@@ -7,8 +7,8 @@ import (
 	"strconv"
 
 	"phenix/api/vm"
-	"phenix/internal/mm"
 	"phenix/util"
+	"phenix/util/mm"
 	"phenix/util/printer"
 
 	"github.com/spf13/cobra"

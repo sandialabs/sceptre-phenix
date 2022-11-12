@@ -1,9 +1,14 @@
-name: Publish Docker image
-on: [push]
+name: Publish phenix Docker images
+on:
+  push:
+    branches: ['**']
+  repository_dispatch:
+    types: [apps-update]
 jobs:
   push-to-ghcr:
-    name: Push Docker image to GitHub Packages
+    name: Push phenix Docker image to GitHub Packages
     runs-on: ubuntu-latest
+    if: ${{ github.ref_name == 'main' || contains(github.event.head_commit.message, 'BUILD DOCKER IMAGES') }}
     permissions:
       packages: write
       contents: read
@@ -27,16 +32,18 @@ jobs:
           context: .
           file: docker/Dockerfile
           build-args: |
-            PHENIX_VERSION=${{ steps.short.outputs.branch }}
             PHENIX_COMMIT=${{ steps.short.outputs.sha }}
+            PHENIX_TAG=${{ steps.short.outputs.branch }}
+            APPS_REPO=${{ github.event_name == 'repository_dispatch' && github.event.client_payload.repo || 'sandia-minimega/phenix-apps' }}
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/phenix:${{ steps.short.outputs.sha }}
             ghcr.io/${{ github.repository }}/phenix:${{ steps.short.outputs.branch }}
   push-jit-to-ghcr:
-    name: Push JIT Docker image to GitHub Packages
+    name: Push phenix JIT Docker image to GitHub Packages
     needs: push-to-ghcr
     runs-on: ubuntu-latest
+    if: ${{ github.ref_name == 'main' || contains(github.event.head_commit.message, 'BUILD DOCKER IMAGES') }}
     permissions:
       packages: write
       contents: read

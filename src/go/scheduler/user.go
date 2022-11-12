@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 
-	"phenix/internal/common"
-	"phenix/internal/mm"
 	ifaces "phenix/types/interfaces"
+	"phenix/util/common"
+	"phenix/util/mm"
 	"phenix/util/shell"
 )
 

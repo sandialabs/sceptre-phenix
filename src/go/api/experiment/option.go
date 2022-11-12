@@ -1,8 +1,8 @@
 package experiment
 
 import (
-	"phenix/internal/common"
 	ifaces "phenix/types/interfaces"
+	"phenix/util/common"
 )
 
 type CreateOption func(*createOptions)

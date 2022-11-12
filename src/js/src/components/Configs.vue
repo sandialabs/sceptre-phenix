@@ -263,6 +263,8 @@
   import FileSaver from 'file-saver'
   import EventBus from '@/event-bus'
 
+  import _ from 'lodash'
+
   var OpenAPISampler = require( 'openapi-sampler' )
 
   export default {
@@ -525,31 +527,12 @@
                 config.spec = OpenAPISampler.sample( schema.body, { skipReadOnly: true }, spec.body )
                 this.config.str = this.getConfigStr( null, config )
               }, err => {
-                let msg = err.statusText;
-
-                if ( err.body.message ) {
-                  msg = err.body.message;
-                }
-
-                this.$buefy.toast.open({
-                  message: 'Getting the ' + config.kind + ' schema failed: ' + msg,
-                  type: 'is-danger',
-                  duration: 4000
-                });
+                this.errorNotification(err);
               }
             )
           }, err => {
-            let msg = err.statusText;
-
-            if ( err.body.message ) {
-              msg = err.body.message;
-            }
-
-            this.$buefy.toast.open({
-              message: 'Getting the ' + version + ' schema spec failed: ' + msg,
-              type: 'is-danger',
-              duration: 4000
-            });
+            this.errorNotification(err);
+            this.isWaiting = false;
           }
         )
       },
@@ -641,13 +624,9 @@
               this.configs = state.configs;
               this.isWaiting = false;
             });
-          }, response => {
+          }, err => {
             this.isWaiting = false;
-            this.$buefy.toast.open({
-              message: 'Getting the configs failed: ' + response.statusText,
-              type: 'is-danger',
-              duration: 4000
-            });
+            this.errorNotification(err);
           }
         );
       },
@@ -709,12 +688,8 @@
                   this.editor.lang = 'yaml';
                   this.editor.use = true;
                 }
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Getting the ' + name + ' config failed: ' + response.statusText,
-                  type: 'is-danger',
-                  duration: 4000
-                });
+              }, err => {
+                this.errorNotification(err);
               }
             )
 
@@ -751,12 +726,8 @@
                 }
 
                 this.configSelected = [];
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Getting config(s) for download failed: ' + response.statusText,
-                  type: 'is-danger',
-                  duration: 4000
-                });
+              }, err => {
+                this.errorNotification(err);
               }
             )
 
@@ -794,13 +765,8 @@
                   ).then(
                     () => {
                       this.isWaiting = false;
-                    }, response => {
-                      this.$buefy.toast.open({
-                        message: 'Deleting the ' + configs[ i ] + ' config failed: ' + response.statusText,
-                        type: 'is-danger',
-                        duration: 4000
-                      });
-                      
+                    }, err => {
+                      this.errorNotification(err);
                       this.isWaiting = false;
                     }
                   )
@@ -837,12 +803,8 @@
             this.config.obj = response.body;
             this.config.str = this.getConfigStr( 'yaml' );
             this.viewer.modal = true;
-          }, response => {
-            this.$buefy.toast.open({
-              message: 'Getting the ' + this.viewer.name + ' config failed: ' + response.statusText,
-              type: 'is-danger',
-              duration: 4000
-            });
+          }, err => {
+            this.errorNotification(err);
           }
         )
 
@@ -887,17 +849,7 @@
                   this.error.msg = response.body.metadata.validation;
                   this.error.modal = true;
                 } else {
-                  let msg = response.statusText;
-
-                  if ( response.body.message ) {
-                    msg = response.body.message;
-                  }
-
-                  this.$buefy.toast.open({
-                    message: 'Updating the ' + name + ' config failed: ' + msg,
-                    type: 'is-danger',
-                    duration: 4000
-                  });
+                  this.errorNotification(response); // this may need to be updated
                 }
               }
             )
@@ -933,17 +885,7 @@
               this.error.msg = response.body.metadata.validation;
               this.error.modal = true;
             } else {
-              let msg = response.statusText;
-
-              if ( response.body.message ) {
-                msg = response.body.message;
-              }
-
-              this.$buefy.toast.open({
-                message: 'Creating the ' + name + ' config failed: ' + msg,
-                type: 'is-danger',
-                duration: 4000
-              });
+              this.errorNotification(response); // this may need to be updated
             }
           }
         )
@@ -952,8 +894,6 @@
       },
 
       async createEditor () {
-        let kind = 'topology' // we do not appear to be using this anywhere in the funtion?
-
         this.config.obj = {
           'apiVersion': 'phenix.sandia.gov/v1',
           'kind': 'TODO',
@@ -1003,8 +943,6 @@
         if ( !str ) {
           str = this.config.str
         }
-
-
 
         switch ( lang ) {
           case 'json': {
@@ -1093,17 +1031,7 @@
               this.error.msg = response.body.metadata.validation;
               this.error.modal = true;
             } else {
-              let msg = response.statusText;
-
-              if ( response.body.message ) {
-                msg = response.body.message;
-              }
-
-              this.$buefy.toast.open({
-                message: 'Uploading ' + file.name + ' failed: ' + msg,
-                type: 'is-danger',
-                duration: 4000
-              });
+              this.errorNotification(response); // this may need to be updated
             }
           }
         )

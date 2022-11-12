@@ -13,17 +13,39 @@
               <p class="title is-5">CPU Load: {{ detailsModal.soh.cpuLoad }}</p>
             </div>
             <br>
+            <div v-if="detailsModal.soh.networking">
+              <p class="title is-5">Networking</p>
+              <b-table
+                :data="detailsModal.soh.networking"
+                default-sort="timestamp">
+                <template slot-scope="props">
+                  <b-table-column field="timestamp" label="Timestamp" sortable>
+                    {{ props.row.timestamp }}
+                  </b-table-column>
+                  <b-table-column field="success" label="Success" sortable>
+                    {{ props.row.success }}
+                  </b-table-column>
+                  <b-table-column field="error" label="Error" sortable>
+                    {{ props.row.error }}
+                  </b-table-column>
+                </template>
+              </b-table>
+              <br>
+            </div>
             <div v-if="detailsModal.soh.reachability">
               <p class="title is-5">Reachability</p>
               <b-table
                 :data="detailsModal.soh.reachability"
-                default-sort="host">
+                default-sort="hostname">
                 <template slot-scope="props">
-                  <b-table-column field="hostname" label="Host" sortable>
-                    {{ props.row.hostname }}
+                  <b-table-column field="hostname" label="Target Host" sortable>
+                    {{ props.row.metadata.hostname }}
                   </b-table-column>
                   <b-table-column field="timestamp" label="Timestamp" sortable>
                     {{ props.row.timestamp }}
+                  </b-table-column>
+                  <b-table-column field="success" label="Success" sortable>
+                    {{ props.row.success }}
                   </b-table-column>
                   <b-table-column field="error" label="Error" sortable>
                     {{ props.row.error }}
@@ -39,10 +61,13 @@
                 default-sort="process">
                 <template slot-scope="props">
                   <b-table-column field="process" label="Process" sortable>
-                    {{ props.row.process }}
+                    {{ props.row.metadata.proc }}
                   </b-table-column>
                   <b-table-column field="timestamp" label="Timestamp" sortable>
                     {{ props.row.timestamp }}
+                  </b-table-column>
+                  <b-table-column field="success" label="Success" sortable>
+                    {{ props.row.success }}
                   </b-table-column>
                   <b-table-column field="error" label="Error" sortable>
                     {{ props.row.error }}
@@ -58,10 +83,35 @@
                 default-sort="listener">
                 <template slot-scope="props">
                   <b-table-column field="listener" label="Listener" sortable>
-                    {{ props.row.listener }}
+                    {{ props.row.metadata.port }}
                   </b-table-column>
                   <b-table-column field="timestamp" label="Timestamp" sortable>
                     {{ props.row.timestamp }}
+                  </b-table-column>
+                  <b-table-column field="success" label="Success" sortable>
+                    {{ props.row.success }}
+                  </b-table-column>
+                  <b-table-column field="error" label="Error" sortable>
+                    {{ props.row.error }}
+                  </b-table-column>
+                </template>
+              </b-table>
+              <br>
+            </div>
+            <div v-if="detailsModal.soh.customTests">
+              <p class="title is-5">Custom User Tests</p>
+              <b-table
+                :data="detailsModal.soh.customTests"
+                default-sort="test">
+                <template slot-scope="props">
+                  <b-table-column field="test" label="Test Name" sortable>
+                    {{ props.row.metadata.test }}
+                  </b-table-column>
+                  <b-table-column field="timestamp" label="Timestamp" sortable>
+                    {{ props.row.timestamp }}
+                  </b-table-column>
+                  <b-table-column field="success" label="Success" sortable>
+                    {{ props.row.success }}
                   </b-table-column>
                   <b-table-column field="error" label="Error" sortable>
                     {{ props.row.error }}
@@ -77,12 +127,7 @@
         </section>
         <footer class="modal-card-foot buttons is-right">
           <template v-if="detailsModal.status == 'running'">
-            <a :href="'/api/v1/experiments/' 
-              + $route.params.id 
-              + '/vms/' 
-              + detailsModal.vm 
-              + '/vnc?token=' 
-              + $store.state.token" target="_blank">
+            <a :href="vncLoc(detailsModal.vm)" target="_blank">
               <b-tooltip label="open vnc for a running vm" type="is-light is-left" :delay="800">
                 <b-button type="is-success">
                   <b-icon icon="tv" />
@@ -450,27 +495,11 @@ export default {
           )
           this.flows = true;
         } 
-      } catch {
-        this.$buefy.toast.open ({
-          message: 'Getting Network Failed',
-          type: 'is-danger',
-          duration: 4000
-        });
+      } catch (err) {
+        this.errorNotification(err);
       } finally {
         this.isWaiting = false;
       }
-
-      // Check if there are any SoH messages; if so, set messages = true and
-      // break. This is used to determine whether or not the `SoH Messages` tab
-      // should be displayed.
-      /*
-      for ( let i = 0; i < this.nodes.length; i++ ) {
-        if ( this.nodes[i].soh != null ) {
-          this.messages = true;
-          break;
-        } 
-      }
-      */
     },
 
     updateNodeImage( node ) {
@@ -478,7 +507,7 @@ export default {
     },
 
     updateNodeBorder( node ) {
-      if ( node.soh && ( node.soh.listeners || node.soh.processes || node.soh.reachability )) {
+      if ( node.soh && node.soh.errors ) {
         return '#FF9900'; // orange
       }
 
@@ -864,12 +893,13 @@ export default {
 
       try {
         await this.$http.post( url );
-      } catch (e) {
-        this.$buefy.toast.open ({
-          message: 'Triggering State of Health update failed: ' + e.name,
-          type: 'is-danger',
-        });
+      } catch (err) {
+        this.errorNotification(err);
       }
+    },
+
+    vncLoc (vm) {
+      return this.$router.resolve({name: 'vnc', params: {id: this.$route.params.id, name: vm, token: this.$store.getters.token}}).href;
     }
   },
 

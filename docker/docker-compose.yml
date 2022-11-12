@@ -1,5 +1,6 @@
 version: '3.7'
 x-common: &common
+  init: true
   network_mode: host
   restart: always
   logging:
@@ -28,15 +29,12 @@ services:
       - /dev:/dev
       - /proc:/proc
       - /etc/localtime:/etc/localtime:ro
-      - /tmp/minimega:/tmp/minimega
-      - /tmp/phenix:/tmp/phenix
       - /var/log/phenix:/var/log/phenix
       - /etc/phenix:/etc/phenix
-      - type: bind
-        source: /phenix
-        target: /phenix
-        bind:
-          propagation: shared
+      - /var/run/netns:/var/run/netns:shared
+      - /phenix:/phenix:shared
+      - ./tmp/minimega:/tmp/minimega
+      - ./tmp/phenix:/tmp/phenix
     depends_on:
       - minimega
     healthcheck:
@@ -53,14 +51,11 @@ services:
       - /dev:/dev
       - /lib/modules:/lib/modules:ro
       - /etc/localtime:/etc/localtime:ro
-      - /tmp/minimega:/tmp/minimega
-      - /tmp/phenix:/tmp/phenix
       - /var/log/phenix:/var/log/phenix
-      - type: bind
-        source: /phenix
-        target: /phenix
-        bind:
-          propagation: shared
+      - /var/run/netns:/var/run/netns:shared
+      - /phenix:/phenix:shared
+      - ./tmp/minimega:/tmp/minimega
+      - ./tmp/phenix:/tmp/phenix
     healthcheck:
       test: mm version
     environment:
@@ -68,7 +63,7 @@ services:
       MM_LOGFILE: /var/log/phenix/minimega.log
       MM_LOGLEVEL: info
   es:
-    image: elasticsearch:7.14.2
+    image: elasticsearch:7.17.5
     container_name: es
     <<: *common
     volumes:
@@ -78,7 +73,7 @@ services:
     depends_on:
       - volume-permissions-manager
   kibana:
-    image: kibana:7.14.2
+    image: kibana:7.17.5
     container_name: kibana
     <<: *common
     environment:

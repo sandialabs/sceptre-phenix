@@ -47,7 +47,9 @@ vm config disk {{ .Hardware.DiskConfig "" }}
         {{- if eq .Hardware.OSType "linux" }}
 vm config qemu-append -vga qxl
         {{- end }}
+        {{- if .Network }}
 vm config net {{ .Network.InterfaceConfig }}
+        {{- end }}
         {{- range $config, $value := .Advanced }}
 vm config {{ $config }} {{ $value }}
         {{- end }}

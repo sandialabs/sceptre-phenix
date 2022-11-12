@@ -250,13 +250,8 @@
                 this.isWaiting = false;
               }
             );
-          }, response => {
-            this.$buefy.toast.open({
-              message: 'Getting the users failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
-            
+          }, err => {
+            this.errorNotification(err);            
             this.isWaiting = false;
           }
         );
@@ -368,13 +363,8 @@
         ).then(
           response => {            
             this.isWaiting = false;
-          }, response => {
-            this.$buefy.toast.open({
-              message: 'Creating the user ' + name + ' failed with ' + response.status + ' status.',
-              type: 'is-danger',
-              duration: 4000
-            });
-            
+          }, err => {
+            this.errorNotification(err);            
             this.isWaiting = false;
           }
         )
@@ -435,13 +425,8 @@
             
             this.users = [ ...users ];       
             this.isWaiting = false;
-          }, response => {
-            this.$buefy.toast.open({
-              message: 'Updating the ' + user.username + ' user failed with ' + response.status + ' status.',
-              type: 'is-danger',
-              duration: 4000
-            });
-            
+          }, err => {
+            this.errorNotification(err);            
             this.isWaiting = false;
           }
         )
@@ -486,12 +471,8 @@
                 this.users = [ ...users ];
             
                 this.isWaiting = false;
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Deleting the user ' + username + ' failed with ' + response.status + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
+              }, err => {
+                this.errorNotification(err);
               }
             )
           }

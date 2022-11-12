@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"phenix/api/config"
+	"phenix/api/experiment"
 	"phenix/store"
 	"phenix/types"
 	"phenix/types/version"
@@ -480,6 +481,12 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		return weberror.NewWebError(err, "unable to update config %s", name)
+	}
+
+	if c.Kind == "Experiment" {
+		if err := experiment.Reconfigure(c.Metadata.Name); err != nil {
+			return weberror.NewWebError(err, "unable to reconfigure updated experiment %s", c.Metadata.Name)
+		}
 	}
 
 	w.Header().Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))

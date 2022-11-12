@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"reflect"
 
-	"phenix/internal/common"
-	"phenix/internal/mm"
 	ifaces "phenix/types/interfaces"
 	v2 "phenix/types/version/v2"
+	"phenix/util/common"
+	"phenix/util/mm"
 	"phenix/util/notes"
+
+	"github.com/activeshadow/structs"
+	"github.com/mitchellh/mapstructure"
 )
 
 type VLANSpec struct {
@@ -265,10 +269,10 @@ func (this ExperimentSpec) SnapshotName(node string) string {
 }
 
 type ExperimentStatus struct {
-	StartTimeF string                 `json:"startTime" yaml:"startTime" structs:"startTime" mapstructure:"startTime"`
-	SchedulesF map[string]string      `json:"schedules" yaml:"schedules" structs:"schedules" mapstructure:"schedules"`
-	AppsF      map[string]interface{} `json:"apps" yaml:"apps" structs:"apps" mapstructure:"apps"`
-	VLANsF     map[string]int         `json:"vlans" yaml:"vlans" structs:"vlans" mapstructure:"vlans"`
+	StartTimeF string            `json:"startTime" yaml:"startTime" structs:"startTime" mapstructure:"startTime"`
+	SchedulesF map[string]string `json:"schedules" yaml:"schedules" structs:"schedules" mapstructure:"schedules"`
+	AppsF      map[string]any    `json:"apps" yaml:"apps" structs:"apps" mapstructure:"apps"`
+	VLANsF     map[string]int    `json:"vlans" yaml:"vlans" structs:"vlans" mapstructure:"vlans"`
 
 	// Used to track details of an app's running stage. Requires special attention
 	// since it can be run periodically in the background and/or triggered
@@ -283,7 +287,7 @@ func (this *ExperimentStatus) Init() error {
 	}
 
 	if this.AppsF == nil {
-		this.AppsF = make(map[string]interface{})
+		this.AppsF = make(map[string]any)
 	}
 
 	if this.VLANsF == nil {
@@ -297,7 +301,7 @@ func (this ExperimentStatus) StartTime() string {
 	return this.StartTimeF
 }
 
-func (this ExperimentStatus) AppStatus() map[string]interface{} {
+func (this ExperimentStatus) AppStatus() map[string]any {
 	return this.AppsF
 }
 
@@ -321,9 +325,9 @@ func (this *ExperimentStatus) SetStartTime(t string) {
 	this.StartTimeF = t
 }
 
-func (this *ExperimentStatus) SetAppStatus(a string, s interface{}) {
+func (this *ExperimentStatus) SetAppStatus(a string, s any) {
 	if this.AppsF == nil {
-		this.AppsF = make(map[string]interface{})
+		this.AppsF = make(map[string]any)
 	}
 
 	if s == nil {
@@ -331,7 +335,12 @@ func (this *ExperimentStatus) SetAppStatus(a string, s interface{}) {
 		return
 	}
 
-	this.AppsF[a] = s
+	switch v := reflect.ValueOf(s); v.Kind() {
+	case reflect.Struct:
+		this.AppsF[a] = structs.MapDefaultCase(s, structs.CASESNAKE)
+	default:
+		this.AppsF[a] = s
+	}
 }
 
 func (this *ExperimentStatus) SetAppFrequency(a, f string) {
@@ -363,8 +372,25 @@ func (this *ExperimentStatus) SetSchedule(s map[string]string) {
 	this.SchedulesF = s
 }
 
+func (this ExperimentStatus) ParseAppStatus(name string, status any) error {
+	if this.AppsF == nil {
+		return fmt.Errorf("missing status for app %s", name)
+	}
+
+	app, ok := this.AppsF[name]
+	if !ok {
+		return fmt.Errorf("missing status for app %s", name)
+	}
+
+	if err := mapstructure.Decode(app, status); err != nil {
+		return fmt.Errorf("decoding status for app %s: %w", name, err)
+	}
+
+	return nil
+}
+
 func (this *ExperimentStatus) ResetAppStatus() {
-	this.AppsF = make(map[string]interface{})
+	this.AppsF = make(map[string]any)
 
 	this.FrequencyF = nil
 	this.RunningF = nil

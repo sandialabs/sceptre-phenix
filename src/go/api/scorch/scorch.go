@@ -6,7 +6,6 @@ import (
 
 	"phenix/api/config"
 	"phenix/store"
-	"phenix/types"
 	"phenix/web/scorch"
 )
 
@@ -69,14 +68,9 @@ func handleBackgrounded(stage Action, options Options) bool {
 
 func init() {
 	config.RegisterConfigHook("Experiment", func(stage string, c *store.Config) error {
-		exp, err := types.DecodeExperimentFromConfig(*c)
-		if err != nil {
-			return fmt.Errorf("decoding experiment from config: %w", err)
-		}
-
 		switch stage {
 		case "update", "delete":
-			scorch.DeletePipeline(exp.Spec.ExperimentName(), -1, -1, false)
+			scorch.DeletePipeline(c.Metadata.Name, -1, -1, false)
 		}
 
 		return nil

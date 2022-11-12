@@ -5,22 +5,23 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"strings"
 	"sync"
 	"time"
 
 	"phenix/api/config"
 	"phenix/app"
-	"phenix/internal/common"
-	"phenix/internal/file"
-	"phenix/internal/mm"
-	"phenix/internal/mm/mmcli"
 	"phenix/scheduler"
 	"phenix/store"
 	"phenix/tmpl"
 	"phenix/types"
 	"phenix/types/version"
 	v1 "phenix/types/version/v1"
+	"phenix/util/common"
+	"phenix/util/file"
+	"phenix/util/mm"
+	"phenix/util/mm/mmcli"
 	"phenix/util/notes"
 	"phenix/util/pubsub"
 
@@ -76,8 +77,8 @@ func init() {
 
 			// Delete any snapshot files created by this headnode for this experiment
 			// after deleting the experiment.
-			if err := deleteSnapshots(exp); err != nil {
-				errors = multierror.Append(errors, fmt.Errorf("deleting experiment snapshots: %w", err))
+			if err := deleteC2AndSnapshots(exp); err != nil {
+				errors = multierror.Append(errors, fmt.Errorf("deleting experiment snapshots and CC responses: %w", err))
 			}
 
 			if err := os.RemoveAll(exp.Spec.BaseDir()); err != nil {
@@ -354,8 +355,8 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		// this after stopping an experiment just in case users need to access the
 		// snapshots for any reason, but we do clean them up when an experiment is
 		// deleted.
-		if err := deleteSnapshots(exp); err != nil {
-			return fmt.Errorf("deleting experiment snapshots: %w", err)
+		if err := deleteC2AndSnapshots(exp); err != nil {
+			return fmt.Errorf("deleting experiment snapshots and CC responses: %w", err)
 		}
 
 		if err := mm.ReadScriptFromFile(filename); err != nil {
@@ -458,7 +459,10 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	if o.dryrun {
 		exp.Status.SetStartTime(time.Now().Format(time.RFC3339) + "-DRYRUN")
 	} else {
-		exp.Status.SetStartTime(time.Now().Format(time.RFC3339))
+		// Grab the actual start time now, but don't set it in the experiment status
+		// until the end of this block since app code that runs as part of the
+		// post-start stage may persist the status to the store.
+		start := time.Now().Format(time.RFC3339)
 
 		if o.errChan == nil {
 			if err := handleDelayedVMs(ctx, exp.Spec.ExperimentName(), delays, c2s); err != nil {
@@ -507,6 +511,8 @@ func Start(ctx context.Context, opts ...StartOption) error {
 				close(o.errChan)
 			}()
 		}
+
+		exp.Status.SetStartTime(start)
 	}
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
@@ -694,13 +700,12 @@ func Delete(name string) error {
 		return fmt.Errorf("cannot delete a running experiment")
 	}
 
-	c, _ := store.NewConfig("experiment/" + name)
-
-	if err := store.Get(c); err != nil {
+	c, err := config.Get("experiment/"+name, true)
+	if err != nil {
 		return fmt.Errorf("getting experiment %s: %w", name, err)
 	}
 
-	if err := store.Delete(c); err != nil {
+	if err := config.Delete("experiment/" + name); err != nil {
 		return fmt.Errorf("deleting experiment %s: %w", name, err)
 	}
 
@@ -713,8 +718,8 @@ func Delete(name string) error {
 
 	// Delete any snapshot files created by this headnode for this experiment
 	// after deleting the experiment.
-	if err := deleteSnapshots(exp); err != nil {
-		errors = multierror.Append(errors, fmt.Errorf("deleting experiment snapshots: %w", err))
+	if err := deleteC2AndSnapshots(exp); err != nil {
+		errors = multierror.Append(errors, fmt.Errorf("deleting experiment snapshots and CC responses: %w", err))
 	}
 
 	if err := os.RemoveAll(exp.Spec.BaseDir()); err != nil {
@@ -725,28 +730,28 @@ func Delete(name string) error {
 }
 
 func Files(name, filter string) (file.ExperimentFiles, error) {
-	return file.GetExperimentFileNames(name, filter)
+	return file.GetExperimentFiles(name, filter)
 }
 
-func File(name, fileName string) ([]byte, error) {
-	files, err := file.GetExperimentFileNames(name, "")
+func File(name, filePath string) ([]byte, error) {
+	files, err := file.GetExperimentFiles(name, "")
 	if err != nil {
 		return nil, fmt.Errorf("getting list of experiment files: %w", err)
 	}
 
 	for _, c := range mm.GetExperimentCaptures(mm.NS(name)) {
-		if strings.Contains(c.Filepath, fileName) {
+		if strings.Contains(c.Filepath, path.Base(filePath)) {
 			return nil, mm.ErrCaptureExists
 		}
 	}
 
 	for _, f := range files {
-		if fileName == f.Name {
+		if filePath == f.Path {
 			headnode, _ := os.Hostname()
 
-			file.CopyFile(headnode, fmt.Sprintf("/%s/files/%s", name, f.Name), nil)
+			file.CopyFile(fmt.Sprintf("/%s/files/%s", name, f.Path), headnode, nil)
 
-			path := fmt.Sprintf("%s/images/%s/files/%s", common.PhenixBase, name, f.Name)
+			path := fmt.Sprintf("%s/images/%s/files/%s", common.PhenixBase, name, f.Path)
 
 			data, err := ioutil.ReadFile(path)
 			if err != nil {
@@ -760,7 +765,7 @@ func File(name, fileName string) ([]byte, error) {
 	return nil, fmt.Errorf("file not found")
 }
 
-func deleteSnapshots(exp *types.Experiment) error {
+func deleteC2AndSnapshots(exp *types.Experiment) error {
 	// Snapshot naming convention is as follows:
 	//   {hostname}_{experiment_name}_{vm_name}_snapshot
 	// Now, we *could* use {hostname}_{experiment_name}_*_snapshot as the deletion
@@ -780,6 +785,12 @@ func deleteSnapshots(exp *types.Experiment) error {
 		expName  = exp.Metadata.Name
 		headnode = mm.Headnode()
 	)
+
+	c2Path := expName + "/miniccc_responses"
+
+	if err := file.DeleteFile(c2Path); err != nil {
+		return fmt.Errorf("deleting CC responses for experiment %s: %w", expName, err)
+	}
 
 	for _, node := range exp.Spec.Topology().Nodes() {
 		hostname := node.General().Hostname()

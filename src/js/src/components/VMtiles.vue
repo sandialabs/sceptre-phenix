@@ -191,13 +191,10 @@ side will pass.
               this.vms = state.vms;
               this.isWaiting = false;
             });
-          }, response => {
+          }, err => {
             this.isWaiting = false;
-            this.$buefy.toast.open({
-              message: 'Getting the VMs failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
+            // TODO: do we want to include an error like this to a VM Viewer?
+            this.errorNotification(err);
           }
         );
       },

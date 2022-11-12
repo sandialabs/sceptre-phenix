@@ -75,8 +75,8 @@ It requires a valid email (user ID) and password.
           return {}
         }
         
-        this.$http.get( 
-          'login?user=' + this.username + '&pass=' + this.password
+        this.$http.post(
+          'login', {'user': this.username, 'pass': this.password}
         ).then(
           response => {
             response.json().then(
@@ -192,16 +192,10 @@ It requires a valid email (user ID) and password.
                 this.$store.commit( 'SIGN_UP', user );
               }
             )
-          }, response => {
-            this.$buefy.toast.open({
-              message: 'Posting the new user ' + this.username + ' information failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
-            
+          }, err => {
+            this.errorNotification(err);
             this.username = null;
             this.password = null;
-          
           }
         );
 

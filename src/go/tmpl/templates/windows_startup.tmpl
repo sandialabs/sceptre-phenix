@@ -8,14 +8,30 @@ function Phenix-SetStartupStatus($status) {
     New-ItemProperty -Path 'HKLM:\Software\phenix' -Name 'startup' -Value $status -PropertyType String -Force | Out-Null
 }
 
-function Phenix-StartupComplete {
+function Phenix-StartupStatusIsSet {
     $key = Get-Item -LiteralPath 'HKLM:\Software\phenix' -ErrorAction SilentlyContinue
 
     if ($key) {
         $val = $key.GetValue('startup')
 
         if ($val) {
-          return $val -eq 'done'
+          return $true
+        }
+
+        return $false
+    }
+
+    return $false
+}
+
+function Phenix-StartupStatusIs($status) {
+    $key = Get-Item -LiteralPath 'HKLM:\Software\phenix' -ErrorAction SilentlyContinue
+
+    if ($key) {
+        $val = $key.GetValue('startup')
+
+        if ($val) {
+          return $val -eq $status
         }
 
         return $false
@@ -27,18 +43,28 @@ function Phenix-StartupComplete {
 {{ $rearm := index .Node.Annotations "phenix/windows-rearm" }}
 
 {{ if toBool $rearm }}
-taskkill /IM "slui.exe" /F
+echo 'Killing Windows Software Licensing UI'
+taskkill.exe /IM "slui.exe" /F
 {{ end }}
 
-if (Phenix-StartupComplete) {
+if (Phenix-StartupStatusIs('done')) {
     exit
 }
 
-Phenix-SetStartupStatus('running')
+if (-Not (Phenix-StartupStatusIsSet)) {
+    Phenix-SetStartupStatus('running')
+}
 
-Import-Module C:\Windows\System32\UIAutomation.0.8.7B3.NET35\UIAutomation.dll
+{{ if toBool $rearm }}
+if (Phenix-StartupStatusIs('running')) {
+    echo 'Disabling WLMS service and rearming Windows license'
+    sc.exe config WLMS start= disabled
+    cscript.exe C:\Windows\System32\slmgr.vbs /rearm
+}
+{{ end }}
 
 echo 'Configuring network interfaces...'
+
 $wmi = $null
 Do {
     Start-Sleep -Milliseconds 1000
@@ -63,73 +89,57 @@ $wmi.SetGateways('{{ $iface.Gateway }}', 1) | Out-Null
         {{ end }}
     {{ end }}
 {{ end }}
+
 {{ if .Metadata.domain_controller }}
 $adapters = Get-NetAdapter | sort -Property ifIndex
 Set-DnsClientServerAddress -InterfaceIndex $adapters[0].ifIndex -ServerAddresses "{{ index .Metadata "domain_controller" "ip" }}"
 {{ end }}
-echo 'Done.'
-$ErrorActionPreference = [System.Management.Automation.ActionPreference]::SilentlyContinue
-echo 'Checking for restart...'
-$countdown = 5
-Do {
-    Start-Sleep -s 1
-    $countDown--
-    $restart = Get-UIAWindow -Name "Microsoft Windows" | get-UIAButton -n "Restart Later"
-} Until ($restart -or ($countDown -le 0))
-$restart | Invoke-UIAButtonClick | Out-Null
-echo 'Ignoring restart.'
-$countdown = 5
-echo 'Checking for network location popup...'
-Do {
-    Start-Sleep -s 1
-    $countDown--
-    $cancel = Get-UIAWindow -Name "Set Network Location" | get-UIAButton -n "Cancel"
-} Until ($cancel -or ($countDown -le 0))
-$cancel | Invoke-UIAButtonClick | Out-Null
-echo 'Ignoring Set Network Location.'
+
+echo 'Done configuring network interfaces'
 Start-Sleep -s 5
 
 $host_name = hostname
-if (($host_name -eq "{{ .Node.General.Hostname }}") -or ("{{ .Node.General.Hostname }}" -like "*provider*")) {
+if ($host_name -eq "{{ .Node.General.Hostname }}") {
 {{ if .Metadata.domain_controller }}
-    $domain = "{{ index .Metadata "domain_controller" "domain" }}"
-    $username = "{{ index .Metadata "domain_controller" "username" }}"
-    $password = "{{ index .Metadata "domain_controller" "password" }}" | ConvertTo-SecureString -AsPlainText -Force
-    $credential = New-Object System.Management.Automation.PSCredential($username,$password)
-    $sysinfo = systeminfo /fo csv | ConvertFrom-Csv
-
-    if ($sysinfo.Domain.contains($domain.ToUpper())) {
+    if (Phenix-StartupStatusIs('joined-domain')) {
         echo 'Startup script complete!'
         Phenix-SetStartupStatus('done')
         exit
     }
 
+    $domain = "{{ index .Metadata "domain_controller" "domain" }}"
+    $username = "{{ index .Metadata "domain_controller" "username" }}"
+    $password = "{{ index .Metadata "domain_controller" "password" }}" | ConvertTo-SecureString -AsPlainText -Force
+    $credential = New-Object System.Management.Automation.PSCredential($username,$password)
+
     echo 'Joining $domain domain'
     Add-Computer -DomainName $domain -Credential $credential
 
+    {{ if .Metadata.auto_logon }}
     echo 'Adding auto logon'
     $path = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
-    Set-ItemProperty -Path $path -Name DefaultUserName -Value $username
-    Set-ItemProperty -Path $path -Name DefaultPassword -Value {{ index .Metadata "domain_controller" "password" }}
+    Set-ItemProperty -Path $path -Name DefaultUserName -Value "{{ index .Metadata "auto_logon" "username" }}"
+    Set-ItemProperty -Path $path -Name DefaultPassword -Value "{{ index .Metadata "auto_logon" "password" }}"
     Set-ItemProperty -Path $path -Name DefaultDomainName -Value $domain
     Set-ItemProperty -Path $path -Name AutoAdminLogon -Value 1
+    {{ end }}
 
     echo 'Domain joined. Restarting...'
-    Restart-Computer
+    Phenix-SetStartupStatus('joined-domain')
+    Restart-Computer -Force
 {{ else }}
     echo 'Startup script complete!'
     Phenix-SetStartupStatus('done')
     exit
 {{ end }}
 } else {
-    {{ if toBool $rearm }}
-    echo 'Rearming license'
-    cscript C:\Windows\System32\slmgr.vbs /rearm
-    {{ end }}
-
     echo 'Changing hostname'
     $computer_info = Get-WmiObject -Class Win32_ComputerSystem
     $computer_info.Rename("{{ .Node.General.Hostname }}")
+
     echo 'Hostname changed. Restarting...'
-    Restart-Computer
+    Phenix-SetStartupStatus('restarted')
+    Restart-Computer -Force
 }
+
+$error | Out-File C:\phenix\phenix-startup.err

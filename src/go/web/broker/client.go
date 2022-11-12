@@ -11,7 +11,7 @@ import (
 
 	"phenix/api/experiment"
 	"phenix/api/vm"
-	"phenix/internal/mm"
+	"phenix/util/mm"
 	"phenix/web/proto"
 	"phenix/web/rbac"
 	"phenix/web/util"

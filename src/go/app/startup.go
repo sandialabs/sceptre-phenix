@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"phenix/internal/common"
-	"phenix/internal/mm"
 	"phenix/tmpl"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
+	"phenix/util/common"
+	"phenix/util/mm"
 )
 
 type Startup struct{}
@@ -32,6 +32,9 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 	var (
 		startupDir = exp.Spec.BaseDir() + "/startup"
 		imageDir   = common.PhenixBase + "/images/"
+
+		// detect duplicate IPs (IP --> hostname)
+		ips = make(map[string]string)
 	)
 
 	if err := os.MkdirAll(startupDir, 0755); err != nil {
@@ -50,6 +53,17 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 		// check if the disk image is present, if not set do not boot to true
 		if _, err := os.Stat(imagePath); os.IsNotExist(err) {
 			node.General().SetDoNotBoot(true)
+		}
+
+		// check for duplicate IPs
+		if node.Network() != nil && node.Network().Interfaces() != nil {
+			for _, iface := range node.Network().Interfaces() {
+				if h, ok := ips[iface.Address()]; ok {
+					return fmt.Errorf("duplicate IP detected: %s and %s both have %s configured", h, node.General().Hostname(), iface.Address())
+				}
+
+				ips[iface.Address()] = node.General().Hostname()
+			}
 		}
 
 		// if type is router, skip it and continue

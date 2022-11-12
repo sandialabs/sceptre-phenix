@@ -1,39 +1,29 @@
-import { DataSet, DataView } from "vis";
+import Vue from 'vue';
 
-const arrayDiff = ( arr1, arr2 ) => arr1.filter( x => arr2.indexOf( x ) === -1 );
+import {NotificationProgrammatic as Notification} from 'buefy';
 
-const mountVisData = ( vm, propName ) => {
-  let data = vm[ propName ];
-  // If data is DataSet or DataView we return early without attaching our own events
-  if ( !( vm[ propName ] instanceof DataSet || vm[ propName ] instanceof DataView ) ) {
-    data = new DataSet( vm[ propName ] );
-    // Rethrow all events
-    data.on( "*", ( event, properties, senderId ) =>
-      vm.$emit( `${ propName }-${ event }`, { event, properties, senderId } )
-    );
-    // We attach deep watcher on the prop to propagate changes in the DataSet
-    const callback = value => {
-      if ( Array.isArray( value ) ) {
-        const newIds = new DataSet( value ).getIds();
-        const diff = arrayDiff( vm.visData[ propName ].getIds(), newIds );
-        vm.visData[ propName ].update( value );
-        vm.visData[ propName ].remove( diff );
-      }
-    };
+let errorNotification = async (error) => {
+  let message = null;
 
-    vm.$watch( propName, callback, {
-      deep: true
-    });
-  }
+  if (error.headers.get('content-type') == 'application/json') {
+    let resp = await Vue.http.get(error.body.url);
+    let msg  = resp.body;
 
-  // Emitting DataSets back
-  vm.$emit( `${ propName }-mounted`, data );
+    message = `<h2><b>Error:</b> ${msg.message}</h2>`;
 
-  return data;
+    if (msg.metadata) {
+      let cause = msg.metadata.cause.replace(/\n/g, '<br>').replace(/\t/g, '&emsp;');
+      message   = `${message}<br><b>Cause:</b> ${cause}`;
+    }
+  } else { message = `<b>Error:</b> ${error.bodyText}` }
+
+  Notification.open({
+    type:       'is-danger',
+    hasIcon:    true,
+    position:   'is-top',
+    indefinite: true,
+    message:    message
+  })
 };
 
-const translateEvent = event => {
-  return event.replace( /( [ a-z0-9 ] )( [ A-Z ] )/g, "$1-$2" ).toLowerCase();
-};
-
-export { arrayDiff, mountVisData, translateEvent };
+export {errorNotification};

@@ -39,6 +39,23 @@
         </footer>
       </div>
     </b-modal>
+    <b-modal :active.sync="fileViewerModal.active" :on-cancel="resetFileViewerModal" has-modal-card>
+      <div class="modal-card" style="width:50em">
+        <header class="modal-card-head x-modal-dark">
+          <p class="modal-card-title x-config-text">{{ fileViewerModal.title }}</p>
+        </header>
+        <section class="modal-card-body x-modal-dark">
+          <div class="control">
+            <textarea class="textarea x-config-text has-fixed-size" rows="30" v-model="fileViewerModal.contents" readonly />
+          </div>
+        </section>
+        <footer class="modal-card-foot x-modal-dark buttons is-right">
+          <button class="button is-dark" @click="resetFileViewerModal">
+            Exit
+          </button>
+        </footer>
+      </div>
+    </b-modal>
     <hr>
     <div class="level is-vcentered">
       <div class="level-item">
@@ -77,6 +94,14 @@
         </button>
       </b-tooltip>
       &nbsp; &nbsp;
+      <template v-if="this.activeTab == 1">
+        <b-tooltip label="search on a specific category" type="is-light">
+          <b-select :value="filesTable.category" @input="( value ) => assignCategory( value )" placeholder="All Categories">
+            <option v-for="( category, index ) in filesTable.categories" :key="index" :value=category>{{ category }}</option>
+          </b-select>
+        </b-tooltip>
+        &nbsp;
+      </template>
       <b-autocomplete
         v-model="searchName"
         :placeholder="searchPlaceholder"
@@ -87,7 +112,7 @@
           <template slot="empty">No results found</template>
       </b-autocomplete>
       <p class='control'>
-         <button class='button' style="color:#686868" @click="searchVMs('')">
+         <button class='button' style="color:#686868" @click="searchVMs(''); filesTable.category = null">
           <b-icon icon="window-close"></b-icon>
         </button>
       </p>
@@ -115,7 +140,7 @@
     </b-field>
     <div style="margin-top: -4em;">
       <b-tabs @input="tabsSwitched()" v-model="activeTab">
-        <b-tab-item label="Table">          
+        <b-tab-item label="VMs" icon="desktop">      
           <b-table
             :key="table.key"
             :data="experiment.vms"
@@ -263,7 +288,7 @@
             </div>
           </b-field>
         </b-tab-item>
-        <b-tab-item label="Files">
+        <b-tab-item label="Files" icon="file-alt">
           <b-table            
             :data="files"
             :paginated="filesTable.isPaginated  && filesPaginationNeeded"
@@ -279,35 +304,48 @@
             default-sort="date"
             @sort="onFilesSort">
             <template slot="empty">
-                <section class="section">
-                  <div class="content has-text-white has-text-centered">
-                    No Files Are Available!
-                  </div>
-                </section>
+              <section class="section">
+                <div class="content has-text-white has-text-centered">
+                  No Files Are Available!
+                </div>
+              </section>
             </template>
             <template slot-scope="props">
-                <b-table-column field="name" label="Name" sortable centered>                  
-                          {{ props.row.name }}                      
-                </b-table-column>
-                <b-table-column field="date" label="Date" sortable centered>                  
-                          {{ props.row.date }}                      
-                </b-table-column>
-                <b-table-column field="size" label="Size" sortable centered>                  
-                          {{ props.row.size }}                      
-                </b-table-column>
-                 <b-table-column field="category" label="Category" sortable centered>                  
-                          {{ props.row.category }}                      
-                </b-table-column>
-                <b-table-column field="download" label="Download" centered>   
-                        <a :href="'api/v1/experiments/'
-                          + experiment.name 
-                          + '/files/' 
-                          + props.row.name
-                          + '?token=' 
-                          + $store.state.token" target="_blank"> 
-                          <b-icon icon="file-download" size="is-small"></b-icon>                       
-                          </a>                      
-                </b-table-column>
+              <b-table-column field="name" label="Name" sortable>                  
+                <template v-if="props.row.plainText">
+                  <b-tooltip label="view file" type="is-dark">
+                    <div class="field">
+                      <div @click="viewFile( props.row )">
+                        {{ props.row.name }}
+                      </div>
+                    </div>
+                  </b-tooltip>
+                </template>
+                <template v-else>
+                  {{ props.row.name }}
+                </template>
+              </b-table-column>
+              <b-table-column field="path" label="Path" centered>
+                <b-tooltip :label="'/phenix/images/' + experiment.name + '/files/' + props.row.path" type="is-dark">
+                  <b-icon icon="info-circle" size="is-small" />
+                </b-tooltip>
+              </b-table-column>
+              <b-table-column field="categories" label="Category">
+                <b-taglist>
+                  <b-tag v-for="( c, index ) in props.row.categories" :key="index" type="is-light">{{ c }}</b-tag>
+                </b-taglist>
+              </b-table-column>
+              <b-table-column field="date" label="Date" sortable centered>                  
+                {{ props.row.date }}                      
+              </b-table-column>
+              <b-table-column field="size" label="Size" sortable centered>                  
+                {{ props.row.size }}                      
+              </b-table-column>
+              <b-table-column field="actions" label="Actions" centered>
+                <a :href="fileDownloadURL(props.row.name, props.row.path)" target="_blank">
+                  <b-icon icon="file-download" size="is-small"></b-icon>
+                </a>
+              </b-table-column>
             </template>
           </b-table>
           <br>
@@ -562,12 +600,8 @@
                 this.updateDisks()
               }
             });
-          }, () => {
-            this.$buefy.toast.open({
-              message: 'Getting the experiments failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
+          }, err => {
+            this.errorNotification(err);
           }
         ).finally(
           () => { this.isWaiting = false }
@@ -589,12 +623,8 @@
                 }
               }
             );
-          }, () => {
-            this.$buefy.toast.open({
-              message: 'Getting the hosts failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
+          }, err => {
+            this.errorNotification(err);
           }
         );
       },
@@ -616,12 +646,8 @@
                 }
               }
             );
-          }, () => {
-            this.$buefy.toast.open({
-              message: 'Getting the disks failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
+          }, err => {
+            this.errorNotification(err);
           }
         );
       },
@@ -662,8 +688,24 @@
                 this.files = state.files
                 this.filesTable.total = state.total
 
+                for ( let i = 0; i < state.files.length; i++ ) {
+                  this.filesTable.categories.push( ...state.files[i].categories );
+                }
+
+                this.filesTable.categories = this.getUniqueItems(this.filesTable.categories);
+
+                if (this.filesTable.category) {
+                  let files = this.files;
+                  this.files = [];
+                  for (let i = 0; i < files.length; i++) {
+                    if (files[i].categories.includes(this.filesTable.category)) {
+                      this.files.push(files[i]);
+                    }
+                  }
+                }
+
                 // Format the file sizes
-                for(let i = 0; i<this.files.length;i++){
+                for(let i = 0; i < this.files.length; i++){
                   this.files[i].size = this.formatFileSize(this.files[i].size)
                 }
 
@@ -678,19 +720,39 @@
                 }
               }
             );
-          }, () => {
-            this.$buefy.toast.open({
-              message: 'Getting the files failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
+          }, err => {
+            this.errorNotification(err);
           }
         );
       },
 
+      viewFile ( file ) {
+        this.isWaiting = true;
+
+        this.$http.get(
+          `experiments/${this.$route.params.id}/files/${file.name}?path=${file.path}`,
+          { 'headers': { 'Accept': 'text/plain' } },
+        ).then(
+          response => {
+            this.fileViewerModal.title = file.path;
+            this.fileViewerModal.contents = response.bodyText;
+            this.fileViewerModal.active = true;
+          }, err => {
+            this.errorNotification(err);
+          }
+        ).finally(
+          () => { this.isWaiting = false; }
+        );
+      },
+
+      resetFileViewerModal () {
+        this.fileViewerModal.active = false;
+        this.fileViewerModal.title = null;
+        this.fileViewerModal.contents = null;
+      },
+
       updateVLANs () {
         this.vlanModal.active = false;
-
         let vlans = {};
 
         for ( let i = 0; i < this.vlanModal.vlans.length; i++ ) {
@@ -702,25 +764,24 @@
 
         let body = JSON.stringify(vlans);
 
-        console.log(body);
-
         this.$http.patch(
           'experiments/' + this.$route.params.id, body
         ).then(
-          response => {
+          _ => {
             this.$buefy.toast.open({
               message: 'Updating the VLAN Assignment for the ' + this.$route.params.id + ' Experiment was successful.',
               type: 'is-success',
               duration: 4000
             });
-          }, response => {
-            this.$buefy.toast.open({
-              message: 'Updating the VLAN Assignment for the ' + this.$route.params.id + ' Experiment failed with ' + response.status + ' status.',
-              type: 'is-danger',
-              duration: 4000
-            });
+          }, err => {
+            this.errorNotification(err);
           }
         );
+      },
+
+      assignCategory ( value ) {
+        this.filesTable.category = value;
+        this.updateFiles();
       },
 
       start () {
@@ -740,13 +801,8 @@
               response => { 
                 console.log('the ' + this.$route.params.id + ' experiment was started.'); 
                 this.$router.replace('/experiments/');                
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Starting experiment ' + this.$route.params.id + ' failed with ' + response.status + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-                
+              }, err => {
+                this.errorNotification(err);                
                 this.isWaiting = false;
               }
             );
@@ -783,19 +839,8 @@
                 this.experiment.vms = [ ...vms ];
               
                 this.isWaiting = false;
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Assigning the ' 
-                           + name 
-                           + ' VM to the ' 
-                           + host 
-                           + ' host failed with ' 
-                           + response.status 
-                           + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-                
+              }, err => {
+                this.errorNotification(err);                
                 this.isWaiting = false;
               }
             )
@@ -836,19 +881,8 @@
                 this.experiment.vms = [ ...vms ];
               
                 this.isWaiting = false;              
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Canceling the ' 
-                           + host 
-                           + ' assignment for the ' 
-                           + name 
-                           + ' VM failed with ' 
-                           + response.status 
-                           + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-                
+              }, err => {
+                this.errorNotification(err);                
                 this.isWaiting = false;
               }
             )
@@ -885,19 +919,8 @@
                 this.experiment.vms = [ ...vms ];
               
                 this.isWaiting = false;              
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Assigning ' 
-                           + cpus 
-                           + ' cpu(s) to the ' 
-                           + name 
-                           + ' VM failed with ' 
-                           + response.status 
-                           + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-                
+              }, err => {
+                this.errorNotification(err);                
                 this.isWaiting = false;
               }
             )
@@ -938,19 +961,8 @@
                 this.experiment.vms = [ ...vms ];
               
                 this.isWaiting = false;              
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Assigning ' 
-                           + ram 
-                           + ' of memory to the ' 
-                           + name 
-                           + ' VM failed with ' 
-                           + response.status 
-                           + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-                
+              }, err => {
+                this.errorNotification(err);                
                 this.isWaiting = false;
               }
             )
@@ -991,19 +1003,8 @@
                 this.experiment.vms = [ ...vms ];
               
                 this.isWaiting = false;              
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Assigning the ' 
-                           + disk 
-                           + ' to the ' 
-                           + name 
-                           + ' VM failed with ' 
-                           + response.status 
-                           + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-                
+              }, err => {
+                this.errorNotification(err);                
                 this.isWaiting = false;
               }
             )
@@ -1037,17 +1038,8 @@
               this.experiment.vms = [ ...vms ];
           
               this.isWaiting = false;              
-            }, response => {
-              this.$buefy.toast.open({
-                message: 'Setting the ' 
-                          + name 
-                          + ' VM to NOT boot when experiment starts failed with ' 
-                          + response.status 
-                          + ' status.',
-                type: 'is-danger',
-                duration: 4000
-              });
-              
+            }, err => {
+              this.errorNotification(err);              
               this.isWaiting = false;
             }
           )
@@ -1072,17 +1064,8 @@
               this.experiment.vms = [ ...vms ];
           
               this.isWaiting = false;              
-            }, response => {                  
-              this.$buefy.toast.open({
-                message: 'Setting the ' 
-                          + name 
-                          + ' VM to boot when experiment starts failed with ' 
-                          + response.status 
-                          + ' status.',
-                type: 'is-danger',
-                duration: 4000
-              });
-              
+            }, err => {                  
+              this.errorNotification(err);              
               this.isWaiting = false;
             }
           )
@@ -1120,19 +1103,8 @@
                 this.experiment.vms = [ ...vms ];
               
                 this.isWaiting = false;              
-              }, response => {
-                this.$buefy.toast.open({
-                  message: 'Scheduling the host(s) with the ' 
-                           + this.algorithm 
-                           + ' for the ' 
-                           + this.$route.params.id 
-                           + ' experiment failed with ' 
-                           + response.status 
-                           + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-                
+              }, err => {
+                this.errorNotification(err);                
                 this.isWaiting = false;
               }
             )
@@ -1190,22 +1162,19 @@
           return
           
         }
-
         
         // If the select all checkbox is not checked, then unselect everything        
         if(!this.checkAll) {
           this.unSelectAllVMs();
           return
-        }
-        
+        }        
         
         //Add all visible items
         this.selectedRows=[]
         
         for(var i=0; i<visibleItems.length; i++){
             this.selectedRows.push(visibleItems[i].name)
-        }  
-                
+        }                
       },
         
       unSelectAllVMs(){
@@ -1275,14 +1244,9 @@
               type: 'is-success',
               duration: 4000
             });
-          }, response => {
-            this.$buefy.toast.open({
-            message: failedMessage,
-            type: 'is-danger',
-            duration: 4000
-          });
-          
-          this.isWaiting = false;
+          }, err => {
+            this.errorNotification(err);            
+            this.isWaiting = false;
         });
 
         // clear the selection
@@ -1307,6 +1271,10 @@
 
       getDiskToolTip (fullPath) {       
         return this.disks.indexOf(fullPath) == -1 ? "menu for assigning vm(s) disk" : fullPath
+      },
+
+      fileDownloadURL(name, path) {
+        return this.$router.resolve({name: 'file', params: {id: this.$route.params.id, name: name, path: path, token: this.$store.getters.token}}).href;
       }
     },
 
@@ -1331,11 +1299,18 @@
           total:  0,
           sortColumn: 'date',          
           paginationSize: 'is-small',
-          defaultSortDirection: 'desc'
+          defaultSortDirection: 'desc',
+          categories: [],
+          category: null
         },
         expModal: {
           active: false,
           vm: []
+        },
+        fileViewerModal: {
+          active: false,
+          title: null,
+          contents: null
         },
         schedules: [
           'isolate_experiment',

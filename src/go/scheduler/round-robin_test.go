@@ -3,8 +3,8 @@ package scheduler
 import (
 	"testing"
 
-	"phenix/internal/mm"
 	v1 "phenix/types/version/v1"
+	"phenix/util/mm"
 
 	"github.com/golang/mock/gomock"
 )

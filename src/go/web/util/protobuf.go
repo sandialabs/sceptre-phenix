@@ -3,10 +3,10 @@ package util
 import (
 	"sort"
 
-	"phenix/internal/file"
-	"phenix/internal/mm"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
+	"phenix/util/file"
+	"phenix/util/mm"
 	"phenix/web/cache"
 	"phenix/web/proto"
 	"phenix/web/rbac"
@@ -198,10 +198,10 @@ func ExperimentFileListToProtobuf(experimentFiles []file.ExperimentFile) *proto.
 	for _, experimentFile := range experimentFiles {
 		protoExperimentFiles = append(protoExperimentFiles,
 			&proto.ExperimentFile{
-				Name:     experimentFile.Name,
-				Date:     experimentFile.Date,
-				Size:     uint32(experimentFile.Size),
-				Category: experimentFile.Category,
+				Name:       experimentFile.Name,
+				Date:       experimentFile.Date,
+				Size:       uint32(experimentFile.Size),
+				Categories: experimentFile.Categories,
 			})
 	}
 

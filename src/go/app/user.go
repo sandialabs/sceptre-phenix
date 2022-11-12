@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"strings"
 
-	"phenix/internal/common"
-	"phenix/internal/mm"
 	"phenix/scheduler"
 	"phenix/types"
 	"phenix/util"
+	"phenix/util/common"
+	"phenix/util/mm"
 	"phenix/util/shell"
 )
 
@@ -21,7 +21,10 @@ const (
 	EXIT_SCHEDULE int = 101
 )
 
-var ErrUserAppNotFound = errors.New("user app not found")
+var (
+	USER_APP_PREFIX    = "phenix-app-"
+	ErrUserAppNotFound = errors.New("user app not found")
+)
 
 type UserApp struct {
 	options Options
@@ -78,7 +81,7 @@ func (this UserApp) Cleanup(ctx context.Context, exp *types.Experiment) error {
 }
 
 func (this UserApp) shellOut(ctx context.Context, action Action, exp *types.Experiment) error {
-	cmdName := "phenix-app-" + this.options.Name
+	cmdName := USER_APP_PREFIX + this.options.Name
 
 	if !shell.CommandExists(cmdName) {
 		return fmt.Errorf("external user app %s does not exist in your path: %w", cmdName, ErrUserAppNotFound)
@@ -103,9 +106,11 @@ func (this UserApp) shellOut(ctx context.Context, action Action, exp *types.Expe
 		shell.SplitBytes(),
 		shell.Env(
 			"PHENIX_DIR="+common.PhenixBase,
+			"PHENIX_FILES_DIR="+exp.FilesDir(),
 			"PHENIX_LOG_LEVEL="+util.GetEnv("PHENIX_LOG_LEVEL", "DEBUG"),
 			"PHENIX_LOG_FILE="+util.GetEnv("PHENIX_LOG_FILE", common.LogFile),
 			"PHENIX_DRYRUN="+strconv.FormatBool(this.options.DryRun),
+			"PHENIX_STORE_ENDPOINT="+common.StoreEndpoint,
 		),
 	}
 
@@ -129,7 +134,7 @@ func (this UserApp) shellOut(ctx context.Context, action Action, exp *types.Expe
 		}
 
 		// FIXME: improve on this
-		fmt.Printf(string(stdErr))
+		fmt.Println(string(stdErr))
 
 		return fmt.Errorf("user app %s command %s failed: %w", this.options.Name, cmdName, err)
 	}

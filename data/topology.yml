@@ -84,7 +84,7 @@ spec:
         type: ethernet
   - type: Router
     labels:
-      ntp-server: "true"
+      ntp-server: IF0
     general:
       hostname: router-00
       snapshot: true
@@ -101,14 +101,14 @@ spec:
         proto: static
         type: ethernet
         ruleset_out: test
-      - name: IF0
+      - name: IF1
         vlan: dmz
         address: 10.0.0.254
         mask: 24
         proto: static
         type: ethernet
         ruleset_in: test
-      - name: IF1
+      - name: IF2
         vlan: MGMT
         address: 172.16.10.254
         mask: 16

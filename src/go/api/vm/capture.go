@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"phenix/api/experiment"
-	"phenix/internal/mm"
+	"phenix/util/mm"
 )
 
 var (

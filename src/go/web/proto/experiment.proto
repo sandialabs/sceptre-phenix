@@ -101,7 +101,7 @@ message ExperimentFile {
 	string name = 1;
 	string date = 2;
 	uint32 size = 3;
-	string category = 4;
+	repeated string categories = 4;
 }
 
 message ExperimentFileList {

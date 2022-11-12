@@ -5,37 +5,111 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
 	"phenix/api/scorch/scorchmd"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-func createFilebeatConfig(md scorchmd.ScorchMetadata, expName, expDir string, runID int) error {
-	if err := mergeFilebeatConfig(md, expName, expDir, runID); err != nil {
-		return fmt.Errorf("merging Filebeat configs: %w", err)
+type filebeatMetrics struct {
+	Started int `json:"filebeat.harvester.started"`
+	Open    int `json:"filebeat.harvester.open_files"`
+	Closed  int `json:"filebeat.harvester.closed"`
+	Running int `json:"filebeat.harvester.running"`
+}
+
+func (this filebeatMetrics) Progress(prev filebeatMetrics) bool {
+	if this.Started > prev.Started {
+		return true
+	}
+
+	if this.Open > prev.Open {
+		return true
+	}
+
+	if this.Closed > prev.Closed {
+		return true
+	}
+
+	if this.Running > prev.Running {
+		return true
+	}
+
+	return false
+}
+
+func (this filebeatMetrics) Done() bool {
+	if this.Started == 0 {
+		return false
+	}
+
+	if this.Closed != this.Started {
+		return false
+	}
+
+	if this.Open != 0 {
+		return false
+	}
+
+	if this.Running != 0 {
+		return false
+	}
+
+	return true
+}
+
+func createFilebeatConfig(md scorchmd.ScorchMetadata, expName, expDir, startTime string, runID int) (int, error) {
+	inputs, err := mergeFilebeatConfig(md, expName, expDir, startTime, runID)
+	if err != nil {
+		return inputs, fmt.Errorf("merging Filebeat configs: %w", err)
 	}
 
 	if err := writeFilebeatConfig(md, expDir, runID); err != nil {
-		return fmt.Errorf("writing Filebeat config: %w", err)
+		return inputs, fmt.Errorf("writing Filebeat config: %w", err)
 	}
 
-	return nil
+	return inputs, nil
 }
 
-func mergeFilebeatConfig(md scorchmd.ScorchMetadata, expName, expDir string, runID int) error {
-	var (
-		c   = md.Filebeat.Config
-		now = time.Now().UTC()
-	)
+func mergeFilebeatConfig(md scorchmd.ScorchMetadata, expName, expDir, startTime string, runID int) (int, error) {
+	c := md.FilebeatConfig(runID)
+
+	if md.UseExpNameAsIndexName(runID) { // force index name to be experiment name
+		if v, ok := c["output.elasticsearch"]; ok {
+			o := v.(map[string]interface{})
+
+			o["index"] = fmt.Sprintf("experiment-%s", expName)
+			c["output.elasticsearch"] = o
+		} else {
+			c["output.elasticsearch"] = map[string]interface{}{"index": fmt.Sprintf("experiment-%s", expName)}
+		}
+
+		if v, ok := c["setup"]; ok {
+			s := v.(map[string]interface{})
+
+			s["ilm.enabled"] = false
+			s["template.name"] = "filebeat"
+			s["template.pattern"] = "experiment-*"
+			s["template.overwrite"] = false
+
+			c["setup"] = s
+		} else {
+			c["setup"] = map[string]interface{}{
+				"ilm.enabled":        false,
+				"template.name":      "filebeat",
+				"template.pattern":   "experiment-*",
+				"template.overwrite": false,
+			}
+		}
+	}
 
 	c["fields_under_root"] = true
 
 	c["fields"] = map[string]interface{}{
-		"s_time":            now,
+		"s_time":            startTime,
 		"scorch.experiment": expName,
 		"scorch.run_id":     runID,
-		"scorch.runtime":    now,
+		"scorch.runtime":    startTime,
 	}
 
 	c["processors"] = []map[string]interface{}{
@@ -57,6 +131,7 @@ func mergeFilebeatConfig(md scorchmd.ScorchMetadata, expName, expDir string, run
 		// default log level to warning if not set in config
 		c["logging.level"] = "warning"
 	}
+
 	c["logging.to_files"] = true
 
 	c["logging.files"] = map[string]interface{}{
@@ -114,32 +189,35 @@ func mergeFilebeatConfig(md scorchmd.ScorchMetadata, expName, expDir string, run
 
 					in["paths"] = paths
 
-					// add a few default Filebeat processors for first path only
-
-					if pathStr, ok := paths[0].(string); ok {
-						fileName := filepath.Base(pathStr)
-
-						dissector := map[string]interface{}{
-							"tokenizer":     fmt.Sprintf("%s/%%{scorch.itername}/%s", baseDir, fileName),
-							"field":         "log.file.path",
-							"target_prefix": "",
-						}
-
-						addFields := map[string]interface{}{
-							"target": "",
-							"fields": map[string]interface{}{
-								"scorch.output_file": fileName,
-							},
-						}
-
-						processors = append(
-							processors,
-							map[string]interface{}{"dissect": dissector},
-							map[string]interface{}{"add_fields": addFields},
-						)
-
-						in["processors"] = processors
+					if _, ok := in["close_inactive"]; !ok {
+						// Since we don't anticipate having to tail files from VMs for
+						// processing, we can close processed files almost immediately.
+						// We don't close them immediately just in case whatever tool might
+						// be generating the file phenix-side (e.g., tshark for pcap -->
+						// json) ends up streaming to the file instead of writing to it all
+						// at once.
+						in["close_inactive"] = "5s"
 					}
+
+					// If this is ever updated, we need to also update the amount of
+					// time we wait between the end of a run and checking Filebeat
+					// metrics for the number of open harvesters.
+					in["scan_frequency"] = "5s"
+
+					// add a default Filebeat dissector
+
+					dissector := map[string]interface{}{
+						"tokenizer":     fmt.Sprintf("%s/%%{scorch.itername}/%%{scorch.output_file}", baseDir),
+						"field":         "log.file.path",
+						"target_prefix": "",
+					}
+
+					processors = append(
+						processors,
+						map[string]interface{}{"dissect": dissector},
+					)
+
+					in["processors"] = processors
 				}
 			}
 
@@ -151,7 +229,7 @@ func mergeFilebeatConfig(md scorchmd.ScorchMetadata, expName, expDir string, run
 
 	c["filebeat.registry.path"] = fmt.Sprintf("%s/scorch/run-%d/filebeat/registry", expDir, runID)
 
-	return nil
+	return len(inputs), nil
 }
 
 func writeFilebeatConfig(md scorchmd.ScorchMetadata, expDir string, runID int) error {
@@ -163,7 +241,7 @@ func writeFilebeatConfig(md scorchmd.ScorchMetadata, expDir string, runID int) e
 	encoder := yaml.NewEncoder(&buf)
 	encoder.SetIndent(2)
 
-	if err := encoder.Encode(md.Filebeat.Config); err != nil {
+	if err := encoder.Encode(md.FilebeatConfig(runID)); err != nil {
 		return fmt.Errorf("marshaling Filebeat config: %w", err)
 	}
 

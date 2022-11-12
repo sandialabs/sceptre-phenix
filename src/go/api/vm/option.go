@@ -89,7 +89,7 @@ type redeployOptions struct {
 }
 
 func newRedeployOptions(opts ...RedeployOption) redeployOptions {
-	var o redeployOptions
+	o := redeployOptions{part: 1}
 
 	for _, opt := range opts {
 		opt(&o)

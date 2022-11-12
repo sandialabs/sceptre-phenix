@@ -7,21 +7,24 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
-	"phenix/internal/common"
-	"phenix/internal/mm"
 	"phenix/tmpl"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
+	"phenix/util/common"
+	"phenix/util/mm"
 
 	"github.com/fatih/color"
 	"github.com/mitchellh/mapstructure"
 )
+
+var stringSpacePattern = regexp.MustCompile(`\s+`)
 
 func (this *SOH) deployCapture(exp *types.Experiment, dryrun bool) error {
 	if err := this.decodeMetadata(exp); err != nil {
@@ -324,7 +327,7 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
 
 	printer.Printf("  Reachability test set to %s mode\n", this.md.Reachability)
 
-	wg := new(mm.ErrGroup)
+	wg := new(mm.StateGroup)
 
 	for host := range this.reachabilityHosts {
 		// Assume we're not skipping this host by default.
@@ -435,7 +438,13 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
 		}
 
 		printer.Printf("  Connecting to %s://%s:%d from host %s\n", reach.Proto, target, reach.Port, host)
-		connTest(ctx, wg, ns, host, target, reach.Proto, reach.Port, reach.Wait, reach.Packet)
+
+		wait, err := time.ParseDuration(reach.Wait)
+		if err != nil && reach.Wait != "" {
+			printer.Printf("    invalid wait time of %s provided, using default\n", reach.Wait)
+		}
+
+		connTest(ctx, wg, ns, host, target, reach.Proto, reach.Port, wait, reach.Packet)
 	}
 
 	cancel := periodicallyNotify(ctx, "waiting for reachability tests to complete...", 5*time.Second)
@@ -446,23 +455,40 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
 
 	printer = color.New(color.FgRed)
 
-	for _, err := range wg.Errors {
+	for _, state := range wg.States {
 		var (
-			host   = err.Meta["host"].(string)
-			target = err.Meta["target"].(string)
+			host   = state.Meta["host"].(string)
+			target = state.Meta["target"].(string)
 		)
 
-		if errors.Is(err, mm.ErrC2ClientNotActive) {
-			delete(this.c2Hosts, host)
+		s := State{
+			Metadata:  state.Meta,
+			Timestamp: time.Now().Format(time.RFC3339),
 		}
 
 		// Convert target IP to hostname.
 		hostname := this.addrHosts[target]
+		s.Metadata["hostname"] = hostname
 
-		r := Reachability{
-			Hostname:  fmt.Sprintf("%s (%s)", hostname, target),
-			Timestamp: time.Now().Format(time.RFC3339),
-			Error:     err.Error(),
+		if err := state.Err; err != nil {
+			if errors.Is(err, mm.ErrC2ClientNotActive) {
+				delete(this.c2Hosts, host)
+			}
+
+			s.Error = err.Error()
+
+			if _, ok := state.Meta["port"]; ok {
+				var (
+					port  = state.Meta["port"].(int)
+					proto = state.Meta["proto"].(string)
+				)
+
+				printer.Printf("  [✗] failed to connect to %s://%s:%d from %s\n", proto, target, port, host)
+			} else {
+				printer.Printf("  [✗] failed to ping %s (%s) from %s\n", hostname, target, host)
+			}
+		} else {
+			s.Success = state.Msg
 		}
 
 		state, ok := this.status[host]
@@ -470,24 +496,13 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
 			state = HostState{Hostname: host}
 		}
 
-		state.Reachability = append(state.Reachability, r)
+		state.Reachability = append(state.Reachability, s)
 		this.status[host] = state
-
-		if _, ok := err.Meta["port"]; ok {
-			var (
-				port  = err.Meta["port"].(int)
-				proto = err.Meta["proto"].(string)
-			)
-
-			printer.Printf("  [✗] failed to connect to %s://%s:%d from %s\n", proto, target, port, host)
-		} else {
-			printer.Printf("  [✗] failed to ping %s (%s) from %s\n", hostname, target, host)
-		}
 	}
 }
 
 func (this *SOH) waitForProcTest(ctx context.Context, ns string) {
-	wg := new(mm.ErrGroup)
+	wg := new(mm.StateGroup)
 	printer := color.New(color.FgBlue)
 
 	for host, processes := range this.md.HostProcesses {
@@ -535,20 +550,27 @@ func (this *SOH) waitForProcTest(ctx context.Context, ns string) {
 
 	printer = color.New(color.FgRed)
 
-	for _, err := range wg.Errors {
+	for _, state := range wg.States {
 		var (
-			host = err.Meta["host"].(string)
-			proc = err.Meta["proc"].(string)
+			host = state.Meta["host"].(string)
+			proc = state.Meta["proc"].(string)
 		)
 
-		if errors.Is(err, mm.ErrC2ClientNotActive) {
-			delete(this.c2Hosts, host)
+		s := State{
+			Metadata:  state.Meta,
+			Timestamp: time.Now().Format(time.RFC3339),
 		}
 
-		p := Process{
-			Process:   proc,
-			Timestamp: time.Now().Format(time.RFC3339),
-			Error:     err.Error(),
+		if err := state.Err; err != nil {
+			if errors.Is(err, mm.ErrC2ClientNotActive) {
+				delete(this.c2Hosts, host)
+			}
+
+			s.Error = err.Error()
+
+			printer.Printf("  [✗] process %s not running on host %s\n", proc, host)
+		} else {
+			s.Success = state.Msg
 		}
 
 		state, ok := this.status[host]
@@ -556,15 +578,13 @@ func (this *SOH) waitForProcTest(ctx context.Context, ns string) {
 			state = HostState{Hostname: host}
 		}
 
-		state.Processes = append(state.Processes, p)
+		state.Processes = append(state.Processes, s)
 		this.status[host] = state
-
-		printer.Printf("  [✗] process %s not running on host %s\n", proc, host)
 	}
 }
 
 func (this *SOH) waitForPortTest(ctx context.Context, ns string) {
-	wg := new(mm.ErrGroup)
+	wg := new(mm.StateGroup)
 	printer := color.New(color.FgBlue)
 
 	for host, listeners := range this.md.HostListeners {
@@ -612,20 +632,27 @@ func (this *SOH) waitForPortTest(ctx context.Context, ns string) {
 
 	printer = color.New(color.FgRed)
 
-	for _, err := range wg.Errors {
+	for _, state := range wg.States {
 		var (
-			host = err.Meta["host"].(string)
-			port = err.Meta["port"].(string)
+			host = state.Meta["host"].(string)
+			port = state.Meta["port"].(string)
 		)
 
-		if errors.Is(err, mm.ErrC2ClientNotActive) {
-			delete(this.c2Hosts, host)
+		s := State{
+			Metadata:  state.Meta,
+			Timestamp: time.Now().Format(time.RFC3339),
 		}
 
-		l := Listener{
-			Listener:  port,
-			Timestamp: time.Now().Format(time.RFC3339),
-			Error:     err.Error(),
+		if err := state.Err; err != nil {
+			if errors.Is(err, mm.ErrC2ClientNotActive) {
+				delete(this.c2Hosts, host)
+			}
+
+			s.Error = err.Error()
+
+			printer.Printf("  [✗] not listening on port %s on host %s\n", port, host)
+		} else {
+			s.Success = state.Msg
 		}
 
 		state, ok := this.status[host]
@@ -633,15 +660,13 @@ func (this *SOH) waitForPortTest(ctx context.Context, ns string) {
 			state = HostState{Hostname: host}
 		}
 
-		state.Listeners = append(state.Listeners, l)
+		state.Listeners = append(state.Listeners, s)
 		this.status[host] = state
-
-		printer.Printf("  [✗] not listening on port %s on host %s\n", port, host)
 	}
 }
 
 func (this *SOH) waitForCustomTest(ctx context.Context, ns string) {
-	wg := new(mm.ErrGroup)
+	wg := new(mm.StateGroup)
 	printer := color.New(color.FgBlue)
 
 	for host, tests := range this.md.CustomHostTests {
@@ -689,20 +714,27 @@ func (this *SOH) waitForCustomTest(ctx context.Context, ns string) {
 
 	printer = color.New(color.FgRed)
 
-	for _, err := range wg.Errors {
+	for _, state := range wg.States {
 		var (
-			host = err.Meta["host"].(string)
-			test = err.Meta["test"].(string)
+			host = state.Meta["host"].(string)
+			test = state.Meta["test"].(string)
 		)
 
-		if errors.Is(err, mm.ErrC2ClientNotActive) {
-			delete(this.c2Hosts, host)
+		s := State{
+			Metadata:  state.Meta,
+			Timestamp: time.Now().Format(time.RFC3339),
 		}
 
-		t := CustomTest{
-			Test:      test,
-			Timestamp: time.Now().Format(time.RFC3339),
-			Error:     err.Error(),
+		if err := state.Err; err != nil {
+			if errors.Is(err, mm.ErrC2ClientNotActive) {
+				delete(this.c2Hosts, host)
+			}
+
+			s.Error = err.Error()
+
+			printer.Printf("  [✗] test %s failed on host %s\n", test, host)
+		} else {
+			s.Success = state.Msg
 		}
 
 		state, ok := this.status[host]
@@ -710,10 +742,8 @@ func (this *SOH) waitForCustomTest(ctx context.Context, ns string) {
 			state = HostState{Hostname: host}
 		}
 
-		state.CustomTests = append(state.CustomTests, t)
+		state.CustomTests = append(state.CustomTests, s)
 		this.status[host] = state
-
-		printer.Printf("  [✗] test %s failed on host %s\n", test, host)
 	}
 }
 
@@ -721,7 +751,7 @@ func (this *SOH) waitForCPULoad(ctx context.Context, ns string) {
 	printer := color.New(color.FgBlue)
 	printer.Println("  Querying nodes for CPU load")
 
-	wg := new(mm.ErrGroup)
+	wg := new(mm.StateGroup)
 
 	// Only check for CPU load in hosts that have confirmed C2 availability.
 	for host := range this.c2Hosts {
@@ -792,30 +822,35 @@ func (this *SOH) waitForCPULoad(ctx context.Context, ns string) {
 
 	printer = color.New(color.FgRed)
 
-	for _, err := range wg.Errors {
-		host := err.Meta["host"].(string)
+	for _, state := range wg.States {
+		host := state.Meta["host"].(string)
 
-		if errors.Is(err, mm.ErrC2ClientNotActive) {
-			delete(this.c2Hosts, host)
+		if err := state.Err; err != nil {
+			if errors.Is(err, mm.ErrC2ClientNotActive) {
+				delete(this.c2Hosts, host)
+			}
+
+			state, ok := this.status[host]
+			if !ok {
+				state = HostState{Hostname: host}
+			}
+
+			state.CPULoad = err.Error()
+			this.status[host] = state
+
+			printer.Printf("  [✗] failed to get CPU load from %s: %v\n", host, err)
 		}
-
-		state, ok := this.status[host]
-		if !ok {
-			state = HostState{Hostname: host}
-		}
-
-		state.CPULoad = err.Error()
-		this.status[host] = state
-
-		printer.Printf("  [✗] failed to get CPU load from %s: %v\n", host, err)
 	}
 }
 
-func (this SOH) isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, iface ifaces.NodeNetworkInterface) {
+func (this SOH) isNetworkingConfigured(ctx context.Context, wg *mm.StateGroup, ns string, node ifaces.NodeSpec, iface ifaces.NodeNetworkInterface) {
 	retryUntil := time.Now().Add(5 * time.Minute)
 
-	host := node.General().Hostname()
-	gateway := iface.Gateway()
+	var (
+		host    = node.General().Hostname()
+		gateway = iface.Gateway()
+		meta    = map[string]interface{}{"host": host}
+	)
 
 	// First, we wait for the IP address to be set on the interface. Then, we wait
 	// for the default gateway to be set. Last, we wait for the default gateway to
@@ -848,6 +883,8 @@ func (this SOH) isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns 
 		default:
 			return fmt.Errorf("unknown OS type %s when checking interface IP", node.Hardware().OSType())
 		}
+
+		wg.AddSuccess(fmt.Sprintf("IP %s configured", iface.Address()), meta)
 
 		if gateway != "" {
 			// The IP address is now set, so schedule a C2 command for determining if
@@ -882,6 +919,8 @@ func (this SOH) isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns 
 					return fmt.Errorf("unknown OS type %s when checking default route", node.Hardware().OSType())
 				}
 
+				wg.AddSuccess(fmt.Sprintf("gateway %s configured", gateway), meta)
+
 				// The default gateway is now set, so schedule a C2 command for
 				// determining if the default gateway is up (pingable).
 				gwPingExpected := func(resp string) error {
@@ -911,6 +950,7 @@ func (this SOH) isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns 
 						return fmt.Errorf("unknown OS type %s waiting for gateway to be up", node.Hardware().OSType())
 					}
 
+					wg.AddSuccess(fmt.Sprintf("gateway %s is up", gateway), meta)
 					return nil
 				}
 
@@ -955,18 +995,23 @@ func (this SOH) isNetworkingConfigured(ctx context.Context, wg *mm.ErrGroup, ns 
 
 	cmd := this.newParallelCommand(ns, host, exec)
 	cmd.Wait = wg
-	cmd.Meta = map[string]interface{}{"host": host}
+	cmd.Meta = meta
 	cmd.Expected = ipExpected
 
 	mm.ScheduleC2ParallelCommand(ctx, cmd)
 }
 
-func (this SOH) pingTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, target string) {
+func (this SOH) pingTest(ctx context.Context, wg *mm.StateGroup, ns string, node ifaces.NodeSpec, target string) {
 	exec := fmt.Sprintf("ping -c 1 %s", target)
 
 	if strings.EqualFold(node.Hardware().OSType(), "windows") {
 		exec = fmt.Sprintf("ping -n 1 %s", target)
 	}
+
+	var (
+		host = node.General().Hostname()
+		meta = map[string]interface{}{"host": host, "target": target}
+	)
 
 	expected := func(resp string) error {
 		switch strings.ToLower(node.Hardware().OSType()) {
@@ -987,20 +1032,19 @@ func (this SOH) pingTest(ctx context.Context, wg *mm.ErrGroup, ns string, node i
 			return fmt.Errorf("unknown OS type %s waiting for gateway to be up", node.Hardware().OSType())
 		}
 
+		wg.AddSuccess(fmt.Sprintf("pinging %s succeeded", target), meta)
 		return nil
 	}
 
-	host := node.General().Hostname()
-
 	cmd := this.newParallelCommand(ns, host, exec)
 	cmd.Wait = wg
-	cmd.Meta = map[string]interface{}{"host": host, "target": target}
+	cmd.Meta = meta
 	cmd.Expected = expected
 
 	mm.ScheduleC2ParallelCommand(ctx, cmd)
 }
 
-func connTest(ctx context.Context, wg *mm.ErrGroup, ns, src, dst, proto string, port int, wait time.Duration, packet string) {
+func connTest(ctx context.Context, wg *mm.StateGroup, ns, src, dst, proto string, port int, wait time.Duration, packet string) {
 	test := fmt.Sprintf("%s %s %d wait", proto, dst, port)
 
 	if wait == 0 {
@@ -1013,15 +1057,18 @@ func connTest(ctx context.Context, wg *mm.ErrGroup, ns, src, dst, proto string, 
 		test = fmt.Sprintf("%s %s", test, packet)
 	}
 
+	meta := map[string]interface{}{"host": src, "target": dst, "port": port, "proto": proto}
+
 	cmd := &mm.C2ParallelCommand{
 		Wait:    wg,
 		Options: []mm.C2Option{mm.C2NS(ns), mm.C2VM(src), mm.C2TestConn(test)},
-		Meta:    map[string]interface{}{"host": src, "target": dst, "port": port, "proto": proto},
+		Meta:    meta,
 		Expected: func(resp string) error {
 			if strings.Contains(resp, "fail") {
 				return fmt.Errorf("failed to connect to %s://%s:%d", proto, dst, port)
 			}
 
+			wg.AddSuccess(fmt.Sprintf("connection to %s://%s:%d succeeded", proto, dst, port), meta)
 			return nil
 		},
 	}
@@ -1029,12 +1076,17 @@ func connTest(ctx context.Context, wg *mm.ErrGroup, ns, src, dst, proto string, 
 	mm.ScheduleC2ParallelCommand(ctx, cmd)
 }
 
-func (this SOH) procTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, proc string) {
+func (this SOH) procTest(ctx context.Context, wg *mm.StateGroup, ns string, node ifaces.NodeSpec, proc string) {
 	exec := fmt.Sprintf("pgrep -f %s", proc)
 
 	if strings.EqualFold(node.Hardware().OSType(), "windows") {
 		exec = fmt.Sprintf(`powershell -command "Get-Process %s -ErrorAction SilentlyContinue"`, proc)
 	}
+
+	var (
+		host = node.General().Hostname()
+		meta = map[string]interface{}{"host": host, "proc": proc}
+	)
 
 	retries := 5
 	expected := func(resp string) error {
@@ -1047,25 +1099,29 @@ func (this SOH) procTest(ctx context.Context, wg *mm.ErrGroup, ns string, node i
 			return fmt.Errorf("process not running")
 		}
 
+		wg.AddSuccess("process running", meta)
 		return nil
 	}
 
-	host := node.General().Hostname()
-
 	cmd := this.newParallelCommand(ns, host, exec)
 	cmd.Wait = wg
-	cmd.Meta = map[string]interface{}{"host": host, "proc": proc}
+	cmd.Meta = meta
 	cmd.Expected = expected
 
 	mm.ScheduleC2ParallelCommand(ctx, cmd)
 }
 
-func (this SOH) portTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, port string) {
+func (this SOH) portTest(ctx context.Context, wg *mm.StateGroup, ns string, node ifaces.NodeSpec, port string) {
 	exec := fmt.Sprintf("ss -lntu state all 'sport = %s'", port)
 
 	if strings.EqualFold(node.Hardware().OSType(), "windows") {
 		exec = fmt.Sprintf(`powershell -command "netstat -an | select-string -pattern 'listening' | select-string -pattern '%s'"`, port)
 	}
+
+	var (
+		host = node.General().Hostname()
+		meta = map[string]interface{}{"host": host, "port": port}
+	)
 
 	retries := 5
 	expected := func(resp string) error {
@@ -1086,14 +1142,13 @@ func (this SOH) portTest(ctx context.Context, wg *mm.ErrGroup, ns string, node i
 			return fmt.Errorf("not listening on port")
 		}
 
+		wg.AddSuccess("listening on port", meta)
 		return nil
 	}
 
-	host := node.General().Hostname()
-
 	cmd := this.newParallelCommand(ns, host, exec)
 	cmd.Wait = wg
-	cmd.Meta = map[string]interface{}{"host": host, "port": port}
+	cmd.Meta = meta
 	cmd.Expected = expected
 
 	mm.ScheduleC2ParallelCommand(ctx, cmd)
@@ -1168,7 +1223,7 @@ func removeICMPAllowRules(nodes []ifaces.NodeSpec) error {
 	return nil
 }
 
-func customTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.NodeSpec, test customHostTest) {
+func customTest(ctx context.Context, wg *mm.StateGroup, ns string, node ifaces.NodeSpec, test customHostTest) {
 	host := node.General().Hostname()
 	meta := map[string]interface{}{"host": host, "test": test.Name}
 
@@ -1177,12 +1232,12 @@ func customTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.Nod
 		return
 	}
 
-	if test.TestStdout == "" && test.TestStderr == "" {
-		wg.AddError(fmt.Errorf("no expected test script output provided"), meta)
+	if test.TestStdout == "" && test.TestStderr == "" && test.ValidateStdout == "" && test.ValidateStderr == "" {
+		wg.AddError(fmt.Errorf("no output test strings or validators provided"), meta)
 		return
 	}
 
-	script := fmt.Sprintf("%s-%s", host, test.Name)
+	script := fmt.Sprintf("%s-%s", host, stringSpacePattern.ReplaceAllString(test.Name, "_"))
 	path := fmt.Sprintf("%s/images/%s/%s", common.PhenixBase, ns, script)
 
 	if err := os.WriteFile(path, []byte(test.TestScript), 0600); err != nil {
@@ -1200,17 +1255,18 @@ func customTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.Nod
 		}
 	}
 
-	exec := fmt.Sprintf("%s /tmp/miniccc/files/%s", executor, script)
+	command := fmt.Sprintf("%s /tmp/miniccc/files/%s/%s", executor, ns, script)
 
 	cmd := &mm.C2ParallelCommand{
 		Wait:    wg,
-		Options: []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2SendFile(script), mm.C2Command(exec)},
+		Options: []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2SendFile(script), mm.C2Command(command)},
 		Meta:    meta,
 	}
 
 	if test.TestStdout != "" {
 		cmd.ExpectedStdout = func(resp string) error {
 			if strings.Contains(resp, test.TestStdout) {
+				wg.AddSuccess(fmt.Sprintf("STDOUT contained %s", test.TestStdout), meta)
 				return nil
 			}
 
@@ -1221,10 +1277,75 @@ func customTest(ctx context.Context, wg *mm.ErrGroup, ns string, node ifaces.Nod
 	if test.TestStderr != "" {
 		cmd.ExpectedStderr = func(resp string) error {
 			if strings.Contains(resp, test.TestStderr) {
+				wg.AddSuccess(fmt.Sprintf("STDERR contained %s", test.TestStderr), meta)
 				return nil
 			}
 
 			return fmt.Errorf("script STDERR did not contain test output")
+		}
+	}
+
+	if test.ValidateStdout != "" {
+		cmd.ExpectedStdout = func(resp string) error {
+			f, err := os.CreateTemp("", "soh-validator-")
+			if err != nil {
+				return fmt.Errorf("unable to create STDOUT validator script")
+			}
+
+			defer os.Remove(f.Name())
+
+			if _, err := f.Write([]byte(test.ValidateStdout)); err != nil {
+				return fmt.Errorf("unable to create STDOUT validator script")
+			}
+
+			f.Close()
+
+			bash, err := exec.LookPath("bash")
+			if err != nil {
+				return fmt.Errorf("bash command is not available for STDOUT validation")
+			}
+
+			cmd := exec.Command(bash, f.Name())
+			cmd.Stdin = strings.NewReader(resp)
+
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("script STDOUT was not valid")
+			}
+
+			wg.AddSuccess("STDOUT validated", meta)
+			return nil
+		}
+	}
+
+	if test.ValidateStderr != "" {
+		cmd.ExpectedStderr = func(resp string) error {
+			f, err := os.CreateTemp("", "soh-validator-")
+			if err != nil {
+				return fmt.Errorf("unable to create STDERR validator script")
+			}
+
+			defer os.Remove(f.Name())
+
+			if _, err := f.Write([]byte(test.ValidateStderr)); err != nil {
+				return fmt.Errorf("unable to create STDERR validator script")
+			}
+
+			f.Close()
+
+			bash, err := exec.LookPath("bash")
+			if err != nil {
+				return fmt.Errorf("bash command is not available for STDERR validation")
+			}
+
+			cmd := exec.Command(bash, f.Name())
+			cmd.Stdin = strings.NewReader(resp)
+
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("script STDERR was not valid")
+			}
+
+			wg.AddSuccess("STDERR validated", meta)
+			return nil
 		}
 	}
 

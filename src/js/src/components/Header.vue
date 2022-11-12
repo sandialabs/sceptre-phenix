@@ -8,29 +8,29 @@ are only available to Global Administrator or Global Viewer.
 
 <template>
   <div>
-    <a href="experiments">
+    <a :href="homeLoc()">
       <img src="@/assets/phenix-banner.png" width="240">
     </a>
     <nav class="navbar is-light" role="navigation" aria-label="main navigation">
       <div id="navbarBasicExample" class="navbar-menu">
         <div class="navbar-start">
           <menu-link v-if="auth && experimentUser()"
-                       to="/"
+                       :to="{name: 'experiments'}"
                        class="navbar-item">Experiments</menu-link>
           <menu-link v-if="auth && experimentUser()"
-                       to="/configs"
+                       :to="{name: 'configs'}"
                        class="navbar-item">Configs</menu-link>
           <menu-link v-if="auth && experimentUser()"
-                       to="/hosts"
+                       :to="{name: 'hosts'}"
                        class="navbar-item">Hosts</menu-link>
           <menu-link v-if="auth && globalAdmin()"
-                       to="/users"
+                       :to="{name: 'users'}"
                        class="navbar-item">Users</menu-link>
           <menu-link v-if="auth && globalAdmin()"
-                       to="/log"
+                       :to="{name: 'log'}"
                        class="navbar-item">Log</menu-link>
           <menu-link v-if="auth && experimentUser()"
-                       to="/scorch"
+                       :to="{name: 'scorch'}"
                        class="navbar-item">Scorch</menu-link>
           <menu-link v-if="auth && globalAdmin()"
                         :to="builderLoc()"
@@ -92,8 +92,12 @@ are only available to Global Administrator or Global Viewer.
         return [ 'Global Admin', 'Experiment Admin', 'Experiment User', 'Experiment Viewer' ].includes( this.$store.getters.role );
       },
 
+      homeLoc () {
+        return this.$router.resolve({name: 'home'}).href
+      },
+
       builderLoc () {
-        return `${process.env.BASE_URL}builder?token=${this.$store.state.token}`;
+        return this.$router.resolve({name: 'builder', params: {token: this.$store.getters.token}}).href;
       }
     }
   }

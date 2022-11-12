@@ -23,13 +23,15 @@ type ImageDetails struct {
 }
 
 type ExperimentFile struct {
-	Name     string
-	Date     string
-	Size     int
-	Category string
+	Name       string   `json:"name"`
+	Path       string   `json:"path"`
+	Date       string   `json:"date"`
+	Size       int      `json:"size"`
+	Categories []string `json:"categories"`
+	PlainText  bool     `json:"plainText"`
 
 	// Internal use to aid in sorting
-	DateTime time.Time
+	dateTime time.Time
 }
 
 type ExperimentFiles []ExperimentFile
@@ -47,10 +49,10 @@ func (this ExperimentFiles) SortByName(asc bool) {
 func (this ExperimentFiles) SortByDate(asc bool) {
 	sort.Slice(this, func(i, j int) bool {
 		if asc {
-			return this[i].DateTime.Before(this[j].DateTime)
+			return this[i].dateTime.Before(this[j].dateTime)
 		}
 
-		return this[i].DateTime.After(this[j].DateTime)
+		return this[i].dateTime.After(this[j].dateTime)
 	})
 }
 
@@ -64,6 +66,7 @@ func (this ExperimentFiles) SortBySize(asc bool) {
 	})
 }
 
+/*
 func (this ExperimentFiles) SortByCategory(asc bool) {
 	sort.Slice(this, func(i, j int) bool {
 		if asc {
@@ -73,6 +76,7 @@ func (this ExperimentFiles) SortByCategory(asc bool) {
 		return strings.ToLower(this[i].Category) > strings.ToLower(this[j].Category)
 	})
 }
+*/
 
 func (this ExperimentFiles) SortBy(col string, asc bool) {
 	switch col {
@@ -82,8 +86,8 @@ func (this ExperimentFiles) SortBy(col string, asc bool) {
 		this.SortByDate(asc)
 	case "size":
 		this.SortBySize(asc)
-	case "category":
-		this.SortByCategory(asc)
+		// case "category":
+		// this.SortByCategory(asc)
 	}
 }
 

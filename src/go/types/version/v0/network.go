@@ -49,6 +49,10 @@ func (this Network) Rulesets() []ifaces.NodeNetworkRuleset {
 	return sets
 }
 
+func (Network) NAT() []ifaces.NodeNetworkNAT {
+	return nil
+}
+
 func (this *Network) SetRulesets(rules []ifaces.NodeNetworkRuleset) {
 	sets := make([]*Ruleset, len(rules))
 
@@ -61,6 +65,16 @@ func (this *Network) SetRulesets(rules []ifaces.NodeNetworkRuleset) {
 
 func (this *Network) AddRuleset(rule ifaces.NodeNetworkRuleset) {
 	this.RulesetsF = append(this.RulesetsF, rule.(*Ruleset))
+}
+
+func (this *Network) InterfaceAddress(name string) string {
+	for _, iface := range this.InterfacesF {
+		if strings.EqualFold(iface.NameF, name) {
+			return iface.AddressF
+		}
+	}
+
+	return ""
 }
 
 type Interface struct {
@@ -395,6 +409,10 @@ func (this Rule) Destination() ifaces.NodeNetworkRulesetRuleAddrPort {
 	return this.DestinationF
 }
 
+func (Rule) Stateful() bool {
+	return false
+}
+
 func (this *Rule) SetDescription(d string) {
 	this.DescriptionF = d
 }
@@ -414,6 +432,8 @@ func (this *Rule) SetSource(a string, p int) {
 func (this *Rule) SetDestination(a string, p int) {
 	this.DestinationF = &AddrPort{AddressF: a, PortF: p}
 }
+
+func (Rule) SetStateful(bool) {}
 
 type AddrPort struct {
 	AddressF string `json:"address" yaml:"address" structs:"address" mapstructure:"address"`

@@ -2,7 +2,8 @@ package vm
 
 import (
 	"fmt"
-	"phenix/internal/mm"
+
+	"phenix/util/mm"
 )
 
 // Connect moves or reconnects the given interface for the given VM in the given

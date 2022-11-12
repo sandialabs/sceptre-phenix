@@ -81,9 +81,12 @@ type NodeNetwork interface {
 	Routes() []NodeNetworkRoute
 	OSPF() NodeNetworkOSPF
 	Rulesets() []NodeNetworkRuleset
+	NAT() []NodeNetworkNAT
 
 	SetRulesets([]NodeNetworkRuleset)
 	AddRuleset(NodeNetworkRuleset)
+
+	InterfaceAddress(string) string
 }
 
 type NodeNetworkInterface interface {
@@ -163,17 +166,24 @@ type NodeNetworkRulesetRule interface {
 	Protocol() string
 	Source() NodeNetworkRulesetRuleAddrPort
 	Destination() NodeNetworkRulesetRuleAddrPort
+	Stateful() bool
 
 	SetDescription(string)
 	SetAction(string)
 	SetProtocol(string)
 	SetSource(string, int)
 	SetDestination(string, int)
+	SetStateful(bool)
 }
 
 type NodeNetworkRulesetRuleAddrPort interface {
 	Address() string
 	Port() int
+}
+
+type NodeNetworkNAT interface {
+	In() []string
+	Out() string
 }
 
 type NodeInjection interface {

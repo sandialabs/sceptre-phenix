@@ -121,12 +121,6 @@
                 "type": "string",
                 "title": "cpu",
                 "default": "Broadwell",
-                "examples": [
-                  "Broadwell",
-                  "Haswell",
-                  "core2duo",
-                  "pentium3"
-                ],
                 "pattern": "^(.*)$"
               },
               "vcpus": {

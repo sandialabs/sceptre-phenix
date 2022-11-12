@@ -1,24 +1,24 @@
 <template>
-  <div  class="content">
+  <div class="content">
     <b-modal :active.sync="expModal.active" :on-cancel="resetExpModal" has-modal-card>
-      <div  class="modal-card" style="width:25em">
+      <div class="modal-card" style="width:25em">
         <header class="modal-card-head">
-          <p  class="modal-card-title">{{ expModal.vm.name ? expModal.vm.name : "unknown" }} VM</p>
+          <p class="modal-card-title">{{ expModal.vm.name ? expModal.vm.name : "unknown" }} VM</p>
         </header>
         <section class="modal-card-body">
-          <p>Host:  {{ expModal.vm.host }}</p>
-          <p>IPv4:  {{ expModal.vm.ipv4 | stringify }}</p>
-          <p>CPU(s):  {{ expModal.vm.cpus }}</p>
-          <p>Memory:  {{ expModal.vm.ram | ram }}</p>
-          <p>Disk:  {{ expModal.vm.disk }}</p>
-          <p>Uptime:  {{ expModal.vm.uptime | uptime }}</p>
-          <p>Delay:  {{ expModal.vm.delayed_start }}</p>
-          <p>Network(s):  {{ expModal.vm.networks | stringify | lowercase }}</p>
-          <p>Taps:  {{ expModal.vm.taps | stringify | lowercase }}</p>
-          <p  v-if="expModal.snapshots">
+          <p>Host: {{ expModal.vm.host }}</p>
+          <p>IPv4: {{ expModal.vm.ipv4 | stringify }}</p>
+          <p>CPU(s): {{ expModal.vm.cpus }}</p>
+          <p>Memory: {{ expModal.vm.ram | ram }}</p>
+          <p>Disk: {{ expModal.vm.disk }}</p>
+          <p>Uptime: {{ expModal.vm.uptime | uptime }}</p>
+          <p>Delay: {{ expModal.vm.delayed_start }}</p>
+          <p>Network(s): {{ expModal.vm.networks | stringify | lowercase }}</p>
+          <p>Taps: {{ expModal.vm.taps | stringify | lowercase }}</p>
+          <p v-if="expModal.snapshots">
             Snapshots:       
             <br>
-            <p  v-for="( snap, index ) in expModal.snapshots" :key="index">
+            <p v-for="( snap, index ) in expModal.snapshots" :key="index">
               <b-tooltip label="restore this snapshot" type="is-light is-right">
                 <b-icon icon="play-circle"  style="color:#686868" @click.native="restoreSnapshot( expModal.vm.name, snap )"></b-icon>
               </b-tooltip>
@@ -26,7 +26,7 @@
             </p>
           </p>          
       </section>
-      <footer class="modal-card-foot  buttons is-right">
+      <footer class="modal-card-foot buttons is-right">
         <div v-if="adminUser() && !showModifyStateBar">
           <template v-if="!expModal.vm.running">
             <b-tooltip label="start" type="is-light">
@@ -235,7 +235,7 @@
                         Create disk image of the {{ vmI.name }} VM with filename:                 
                         <br><br>
                         <b-field :type="vmI.nameErrType" :message="vmI.nameErrMsg" autofocus>
-                          <b-input  type="text" v-model="vmI.filename"   focus></b-input>
+                          <b-input  type="text" v-model="vmI.filename" focus></b-input>
                          </b-field>
                   </font>          
                 </div>                                 
@@ -267,7 +267,7 @@
                         Create a memory snapshot for the {{ vmI.name }} VM with filename:                 
                         <br><br>
                         <b-field :type="vmI.nameErrType" :message="vmI.nameErrMsg" autofocus>
-                          <b-input  type="text" v-model="vmI.filename"   focus></b-input>
+                          <b-input  type="text" v-model="vmI.filename" focus></b-input>
                         </b-field>
                   </font>                  
                 </div>                
@@ -310,15 +310,32 @@
         </footer>
       </div>
     </b-modal>
+    <b-modal :active.sync="fileViewerModal.active" :on-cancel="resetFileViewerModal" has-modal-card>
+      <div class="modal-card" style="width:50em">
+        <header class="modal-card-head x-modal-dark">
+          <p class="modal-card-title x-config-text">{{ fileViewerModal.title }}</p>
+        </header>
+        <section class="modal-card-body x-modal-dark">
+          <div class="control">
+            <textarea class="textarea x-config-text has-fixed-size" rows="30" v-model="fileViewerModal.contents" readonly />
+          </div>
+        </section>
+        <footer class="modal-card-foot x-modal-dark buttons is-right">
+          <button class="button is-dark" @click="resetFileViewerModal">
+            Exit
+          </button>
+        </footer>
+      </div>
+    </b-modal>
     <hr>
     <div class="level is-vcentered">
-      <div  class="level-item">
+      <div class="level-item">
         <span style="font-weight: bold; font-size: x-large;">Experiment: {{ this.$route.params.id }}</span>&nbsp;
       </div>
-      <div  class="level-item" v-if="experiment.scenario">
+      <div class="level-item" v-if="experiment.scenario">
         <span style="font-weight: bold;">Scenario: {{ experiment.scenario }}</span>&nbsp;
       </div>
-      <div  class="level-item" v-if="experiment.apps" @click="getApps()">
+      <div class="level-item" v-if="experiment.apps" @click="getApps()">
         <span style="font-weight: bold;">Apps:</span>&nbsp;
         <b-taglist>
           <b-tag v-for="( a, index ) in experiment.apps" :key="index" type="is-light">
@@ -327,10 +344,9 @@
         </b-taglist>
       </div>
     </div>    
-    
     <div class="level">    
-      <div  class="level-left"></div>
-      <div  class="level-right">
+      <div class="level-left"></div>
+      <div class="level-right">
         <div class="level-item" style="margin-bottom: -.3em;">
         <b-field v-if="isMultiVmSelected && (experimentUser() || experimentViewer())" position="is-center">
             <div v-if="adminUser() && !showModifyStateBar">
@@ -421,6 +437,14 @@
         &nbsp;&nbsp;
        <div class="level-item"  style="margin-bottom: -1em;">
         <b-field v-if="experimentUser() || experimentViewer()" position="is-right">
+          <template v-if="this.activeTab == 1">
+            <b-tooltip label="search on a specific category" type="is-light">
+              <b-select :value="filesTable.category" @input="( value ) => assignCategory( value )" placeholder="All Categories">
+                <option v-for="( category, index ) in filesTable.categories" :key="index" :value=category>{{ category }}</option>
+              </b-select>
+            </b-tooltip>
+            &nbsp;
+          </template>
           <b-autocomplete
             v-model="search.filter"
             :placeholder="searchPlaceholder"
@@ -431,7 +455,7 @@
             <template slot="empty">No results found</template>
           </b-autocomplete>
           <p  class='control'>
-            <button class='button' style="color:#686868" @click="searchVMs('')">
+            <button class='button' style="color:#686868" @click="searchVMs(''); filesTable.category = null">
               <b-icon icon="window-close"></b-icon>
             </button>
           </p>
@@ -453,7 +477,7 @@
     </div>
     <div style="margin-top: -4em;">
       <b-tabs @input="tabsSwitched()" v-model="activeTab">
-        <b-tab-item label="Table">
+        <b-tab-item label="VMs" icon="desktop">
           <b-table
             :data="experiment.vms"
             :paginated="table.isPaginated"
@@ -635,7 +659,7 @@
             </div>
           </b-field>
         </b-tab-item>
-        <b-tab-item label="Files">
+        <b-tab-item label="Files" icon="file-alt">
           <b-table            
             :data="files"
             :paginated="filesTable.isPaginated"
@@ -651,36 +675,49 @@
             default-sort="date"
             @sort="onFilesSort">
             <template slot="empty">
-                <section class="section">
-                  <div class="content has-text-white has-text-centered">
-                    No Files Are Available!
-                  </div>
-                </section>
+              <section class="section">
+                <div class="content has-text-white has-text-centered">
+                  No Files Are Available!
+                </div>
+              </section>
             </template>
             <template slot-scope="props">
-                <b-table-column field="name" label="Name" sortable centered>                  
-                          {{ props.row.name }}                      
-                </b-table-column>
-                <b-table-column field="date" label="Date" sortable centered>                  
-                          {{ props.row.date }}                      
-                </b-table-column>
-                <b-table-column field="size" label="Size" sortable centered>                  
-                          {{ props.row.size }}                      
-                </b-table-column>
-                 <b-table-column field="category" label="Category" sortable centered>                  
-                          {{ props.row.category }}                      
-                </b-table-column>
-                <b-table-column field="download" label="Download" centered>   
-                        <a :href="'/api/v1/experiments/'
-                          + experiment.name 
-                          + '/files/' 
-                          + props.row.name
-                          + '?token=' 
-                          + $store.state.token" target="_blank"> 
-                          <b-icon icon="file-download" size="is-small"></b-icon>                       
-                          </a>                      
-                </b-table-column>
-            </template>            
+              <b-table-column field="name" label="Name" sortable>
+                <template v-if="props.row.plainText">
+                  <b-tooltip label="view file" type="is-dark">
+                    <div class="field">
+                      <div @click="viewFile( props.row )">
+                        {{ props.row.name }}
+                      </div>
+                    </div>
+                  </b-tooltip>
+                </template>
+                <template v-else>
+                  {{ props.row.name }}
+                </template>
+              </b-table-column>
+              <b-table-column field="path" label="Path" centered>
+                <b-tooltip :label="'/phenix/images/' + experiment.name + '/files/' + props.row.path" type="is-dark">
+                  <b-icon icon="info-circle" size="is-small" />
+                </b-tooltip>
+              </b-table-column>
+              <b-table-column field="categories" label="Category">
+                <b-taglist>
+                  <b-tag v-for="( c, index ) in props.row.categories" :key="index" type="is-light">{{ c }}</b-tag>
+                </b-taglist>
+              </b-table-column>
+              <b-table-column field="date" label="Date" sortable centered>
+                {{ props.row.date }}
+              </b-table-column>
+              <b-table-column field="size" label="Size" sortable centered>
+                {{ props.row.size }}
+              </b-table-column>
+              <b-table-column field="actions" label="Actions" centered>
+                <a :href="fileDownloadURL(props.row.name, props.row.path)" target="_blank">
+                  <b-icon icon="file-download" size="is-small"></b-icon>
+                </a>
+              </b-table-column>
+            </template>
           </b-table>
           <br>
           <b-field v-if="filesPaginationNeeded" grouped position="is-right">
@@ -740,7 +777,6 @@
           return true;
         }
       },
-    
 
       /*validate () {
         var regexp = /^[ a-zA-Z0-9-_ ]*$/;
@@ -785,7 +821,7 @@
       },
 
       vncLoc (vm) {
-        return `${process.env.BASE_URL}api/v1/experiments/${this.$route.params.id}/vms/${vm.name}/vnc?token=${this.$store.state.token}`;
+        return this.$router.resolve({name: 'vnc', params: {id: this.$route.params.id, name: vm.name, token: this.$store.getters.token}}).href;
       },
 
       searchVMs: _.debounce(function ( term ) {
@@ -865,10 +901,10 @@
         switch ( msg.resource.type ) {
           case 'experiment/' + this.$route.params.id: {
             switch ( msg.resource.action ) {
-              case 'errorTriggering': {
+              case 'triggered': {
                 this.$buefy.toast.open({
-                  message: 'Triggering phēnix Apps ' + this.apps + ' failed.',
-                  type: 'is-danger',
+                  message: 'phēnix Apps ' + this.apps + ' have been triggered.',
+                  type: 'is-success',
                   duration: 4000
                 });
 
@@ -877,10 +913,10 @@
                 break;
               }
 
-              case 'trigger': {
+              case 'triggerError': {
                 this.$buefy.toast.open({
-                  message: 'phēnix Apps ' + this.apps + ' have been triggered.',
-                  type: 'is-success',
+                  message: 'Triggering phēnix Apps ' + this.apps + ' failed.',
+                  type: 'is-danger',
                   duration: 4000
                 });
 
@@ -990,12 +1026,8 @@
                   let body  = this.redeployModal.actionsQueue[0].body;
                   let name  = this.redeployModal.actionsQueue[0].name;
                   this.$http.post(url,  body)
-                   .then(null,response  => {
-                     this.$buefy.toast.open({
-                     message: 'Redeploying the ' + name + ' VM failed with ' + response.status + ' status.',
-                     type: 'is-danger',
-                     duration: 4000
-                   });
+                   .then(null, err  => {
+                     this.errorNotification(err);
                   })
                 } else { 
                   this.redeployModal.active = false;  
@@ -1121,8 +1153,6 @@
                       this.experiment.vms = [ ...vms ];
                       break;
                     }
-                
-                    
                   }
                   break;
                 }
@@ -1143,7 +1173,6 @@
                     this.experiment.vms = [ ...vms ];
                     break;
                   }
-                  
                 }
                 break;
               }
@@ -1182,7 +1211,6 @@
                 break;
               }
             }
-
             break;
           }
 
@@ -1355,12 +1383,7 @@
           this.updateTable(); 
         } catch (err) {
           console.log(`ERROR getting experiments: ${err}`);
-
-          this.$buefy.toast.open({
-            message: 'Getting the experiments failed.',
-            type: 'is-danger',
-            duration: 4000
-          });
+          this.errorNotification(err);
         } finally {
           this.isWaiting  = false;
         }
@@ -1384,14 +1407,10 @@
                 }
               }
             );
-          },  response => {
-            console.log('Getting the disks failed with ' + response.status);
+          },  err => {
+            console.log('Getting the disks failed with ' + err.status);
             this.isWaiting = false;
-            this.$buefy.toast.open({
-              message:  'Getting the disks failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
+            this.errorNotification(err);
           }
         );
       },
@@ -1434,8 +1453,24 @@
                 this.files = state.files
                 this.filesTable.total = state.total
 
+                for ( let i = 0; i < state.files.length; i++ ) {
+                  this.filesTable.categories.push( ...state.files[i].categories );
+                }
+
+                this.filesTable.categories = this.getUniqueItems(this.filesTable.categories);
+
+                if (this.filesTable.category) {
+                  let files = this.files;
+                  this.files = [];
+                  for (let i = 0; i < files.length; i++) {
+                    if (files[i].categories.includes(this.filesTable.category)) {
+                      this.files.push(files[i]);
+                    }
+                  }
+                }
+
                 // Format the file sizes
-                for(let i = 0; i<this.files.length;i++){
+                for(let i = 0; i < this.files.length; i++){
                   this.files[i].size = this.formatFileSize(this.files[i].size)
                 }
                
@@ -1451,16 +1486,35 @@
                 this.isWaiting = false;
               }
             );
-          },  () => {
-            this.$buefy.toast.open({
-              message:  'Getting the files failed.',
-              type: 'is-danger',
-              duration: 4000
-            });
-
+          },  err => { 
+            this.errorNotification(err);
             this.isWaiting = false;
           }
         );
+      },
+
+      viewFile ( file ) {
+        this.isWaiting = true;
+
+        this.$http.get(
+          `experiments/${this.$route.params.id}/files/${file.name}?path=${file.path}`,
+          { 'headers': { 'Accept': 'text/plain' } },
+        ).then(
+          response => {
+            this.fileViewerModal.title = file.path;
+            this.fileViewerModal.contents = response.bodyText;
+            this.fileViewerModal.active = true;
+          }, err => {
+            this.errorNotification(err);
+          }
+        ).finally(
+          () => { this.isWaiting = false; }
+        );
+      },
+
+      assignCategory ( value ) {
+        this.filesTable.category = value;
+        this.updateFiles();
       },
 
       getInfo ( vm  ) {
@@ -1484,14 +1538,9 @@
                   }
                 }
               )
-            }, response => {
-              this.$buefy.toast.open({
-                message: 'Getting info for the ' + name + ' VM failed with ' + response.status + ' status.',
-                type: 'is-danger',
-                duration: 4000
-              });
-
-              this.isWaiting  = false;
+            }, err => {
+              this.errorNotification(err);
+              this.isWaiting = false;
             }
           );
 
@@ -1512,13 +1561,8 @@
                 }
               }
             )
-          },  response => {
-            this.$buefy.toast.open({
-              message:  'Retrieving the snapshots for the ' + name + ' VM failed with ' + response.status + ' status.',
-              type: 'is-danger',
-              duration: 4000
-            });
-
+          },  err => {
+            this.errorNotification(err);
             this.isWaiting = false;
           }
         );
@@ -1556,12 +1600,8 @@
                   if  ( response.status == 204 ) {
                     console.log('create snapshot for vm ' + vmName);
                   }
-                }, response => {
-                  this.$buefy.toast.open({
-                    message: 'Creating the snapshot for the ' + vmName + ' VM failed with ' + response.status + ' status.',
-                    type: 'is-danger',
-                    duration: 4000
-                  });
+                }, err => {
+                  this.errorNotification(err);
                 }
               );
             })
@@ -1588,18 +1628,8 @@
                 if ( response.status == 204 ) {
                   console.log('restore  snapshot for vm ' + name);
                 }
-              },  response => {
-                this.$buefy.toast.open({
-                  message:  'Restoring the ' 
-                  + snapshot  
-                  + ' snapshot  for the ' 
-                  + name  
-                  + ' VM  failed with ' 
-                  + response.status 
-                  + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
+              },  err => {
+                this.errorNotification(err);
               }
             );
           }
@@ -1621,22 +1651,22 @@
         name.forEach((arg,) => {
           for ( let i = 0; i < vms.length; i++ ) {
             if ( vms[i].name == arg ){
-			  var filename=""; 
-			  if ( /(.*)_\d{14}/.test( vms[i].disk ) ) {
-			    filename = vms[i].disk.substring( 0, vms[i].disk.indexOf( '_' ) ) + '_' + date + time;
-			  } else {
-			    filename = vms[i].disk.substring( 0, vms[i].disk.indexOf( '.' ) ) + '_' + date + time;
-			  }
-                          filename = vms[i].name +"_"+ filename.substring(filename.lastIndexOf( '/')+1 ); 
-                          this.diskImageModal.vm.push({
-                            dateTime:date+time+"" ,
-                            name:vms[i].name ,
-                            filename:filename ,
-                            nameErrType:"" ,
-                            nameErrMsg:""
-                          });
-			}
-		  }
+              var filename=""; 
+              if ( /(.*)_\d{14}/.test( vms[i].disk ) ) {
+                filename = vms[i].disk.substring( 0, vms[i].disk.indexOf( '_' ) ) + '_' + date + time;
+              } else {
+                filename = vms[i].disk.substring( 0, vms[i].disk.indexOf( '.' ) ) + '_' + date + time;
+              }
+                filename = vms[i].name +"_"+ filename.substring(filename.lastIndexOf( '/')+1 ); 
+                this.diskImageModal.vm.push({
+                  dateTime:date+time+"" ,
+                  name:vms[i].name ,
+                  filename:filename ,
+                  nameErrType:"" ,
+                  nameErrMsg:""
+                });
+            }
+		      }
         })
         
         this.diskImageModal.active = true;
@@ -1670,12 +1700,8 @@
               this.$http.post(url,body,{ timeout: 0 }).then(
                 response => {
                    console.log('backing image for vm ' + name + ' failed with ' + response.status);
-                }, response => {
-                  this.$buefy.toast.open({
-                     message: 'Creating the backing image for the ' + name + ' VM failed with ' + response.status + ' status.',
-                     type: 'is-danger',
-                     duration: 4000
-                   });
+                }, err => {
+                  this.errorNotification(err);
                 }
               );
             })
@@ -1704,6 +1730,7 @@
            var filename = date + "_" + time;
        
               filename = vms[i].name +"_"+ filename.substring(filename.lastIndexOf( '/')+1 ); 
+       
               this.memorySnapshotModal.vm.push({
                 dateTime:date+time+"" ,
                 name:vms[i].name ,
@@ -1730,11 +1757,12 @@
           name = arg.name;
           
           this.$http.post(url,body,{ timeout: 0 }).then(
-            response => {
-               console.log('memory snapshot for vm ' + name + ' failed with ' + response.status);
-            });
-        });
-        this.resetMemorySnapshotModal();
+            err => {
+              this.errorNotification(err);
+          });
+          
+          this.resetMemorySnapshotModal();
+        })
       },
 
       killVm ( name ) {
@@ -1793,12 +1821,8 @@
                       this.experiment.vms = [ ...vms  ];
                       this.isWaiting  = false;
                     }
-                  },  response => {
-                    this.$buefy.toast.open({
-                      message: 'Killing the ' + arg + ' VM failed with ' + response.status + ' status.',
-                      type: 'is-danger',
-                      duration: 4000
-                    });
+                  },  err => {
+                    this.errorNotification(err);
                     this.isWaiting = false;
                   }
                 );
@@ -1824,13 +1848,8 @@
             ).then(
               ()  => {
                 this.$router.replace('/experiments/');                
-              },  response => {
-                this.$buefy.toast.open({
-                  message:  'Stopping experiment ' + this.$route.params.id + ' failed with ' + response.status + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
-
+              },  err => {
+                this.errorNotification(err);
                 this.isWaiting = false;
               }
             );
@@ -1928,17 +1947,8 @@
                             this.experiment.vms = [ ...vms ]
                             this.isWaiting = false;
                           }
-                        }, response => {
-                          this.$buefy.toast.open({
-                            message: 'Stopping all packet captures for the ' 
-                            + vm.name 
-                            + ' VM failed with ' 
-                            + response.status 
-                            + ' status.',
-                            type: 'is-danger',
-                            duration: 4000
-                          });
-
+                        }, err => {
+                          this.errorNotification(err);
                           this.isWaiting  = false;
                         }
                       )
@@ -1982,14 +1992,9 @@
                             this.experiment.vms = [ ...vms ]
                             this.isWaiting = false;
                           }
-                        }, response => {
-                          this.$buefy.toast.open({
-                            message: 'Starting packet capture for the ' + vm.name + ' VM failed with ' + response.status + ' status.',
-                            type: 'is-danger',
-                            duration: 4000
-                          });
-
-                          this.isWaiting  = false;
+                        }, err => {
+                          this.errorNotification(err);
+                          this.isWaiting = false;
                         }
                       )
                     }
@@ -2052,12 +2057,8 @@
                     }
                     this.experiment.vms = [ ...vms ];
                     this.isWaiting = false;
-                  },  response => {
-                    this.$buefy.toast.open({
-                      message: 'Starting the ' + arg + ' VM failed with ' + response.status + ' status.',
-                      type: 'is-danger',
-                      duration: 4000
-                    });
+                  },  err => {
+                    this.errorNotification(err);
                     this.isWaiting = false;
                   }
                 );
@@ -2117,12 +2118,8 @@
                     } 
                     this.experiment.vms = [ ...vms ];
                     this.isWaiting = false;
-                  },  response => {
-                    this.$buefy.toast.open({
-                      message: 'Pausing the ' + arg + ' VM failed with ' + response.status + ' status.',
-                      type: 'is-danger',
-                      duration: 4000
-                    });
+                  },  err => {
+                    this.errorNotification(err);
                     this.isWaiting = false;
                   } 
                 );
@@ -2184,13 +2181,9 @@
                       } 
                       this.experiment.vms = [ ...vms  ];
                       this.isWaiting  = false;
-                    }, response => {
-                      this.$buefy.toast.open({
-                        message: 'Reseting the ' + vmName + ' VM failed with ' + response.status + ' status.',
-                        type: 'is-danger',
-                        duration: 4000
-                      });
-                      this.isWaiting  = false;
+                    }, err => {
+                      this.errorNotification(err);                      
+                      this.isWaiting = false;
                     } 
                   );
                 })        
@@ -2252,20 +2245,15 @@
                       } 
                       this.experiment.vms = [ ...vms  ];
                       this.isWaiting  = false;
-                    }, response => {
-                      this.$buefy.toast.open({
-                        message: 'Restarting the ' + vmName + ' VM failed with ' + response.status + ' status.',
-                        type: 'is-danger',
-                        duration: 4000
-                      });
-                      this.isWaiting  = false;
+                    }, err => {
+                      this.errorNotification(err);                      
+                      this.isWaiting = false;
                     } 
                   );
                 })        
-            }
+              }
           })
-        }
-             
+        }   
       },
         
       shutdownVm  (name) {
@@ -2321,13 +2309,9 @@
                       } 
                       this.experiment.vms = [ ...vms  ];                      
                       this.isWaiting  = false;
-                    }, response => {
-                      this.$buefy.toast.open({
-                        message: 'Shut down of VM ' + vmName + ' failed with ' + response.status + ' status.',
-                        type: 'is-danger',
-                        duration: 4000
-                      });
-                      this.isWaiting  = false;
+                    }, err => {
+                      this.errorNotification(err);
+                      this.isWaiting = false;
                     } 
                   );
                 })        
@@ -2365,34 +2349,31 @@
       
       redeployVm (vms) {
         let body = "";
-        let url = "";
-	      let name = "";
-        vms.forEach((vm,_) => {
-          body = { "cpus": parseInt(vm.cpus), "ram": parseInt(vm.ram), "disk": vm.disk }
-          url = 'experiments/' + this.$route.params.id + '/vms/' + vm.name + '/redeploy'
-		  name = vm.name;
-          if  ( vm.inject ) {
-            url += '?replicate-injects=true'
-          }
-          this.redeployModal.actionsQueue.push({name: vm.name,  url: url, body:body});
-       })
-	   //kick off the first one
-       this.$http.post(url, body)
-         .then(null,response => {
-           this.$buefy.toast.open({
-             message: 'Redeploying the ' + name + ' VM failed with ' + response.status + ' status.',
-             type: 'is-danger',
-             duration: 4000
-           });
-         })
+        let postUrl  = "";
+        let name = "";
 
-         this.isWaiting = true;
-         this.resetExpModal();
-//        this.redeployModal.active = false;
-//        this.resetRedeployModal();
+        vms.forEach((vm, _) => {
+          body = { "cpus": parseInt(vm.cpus), "ram": parseInt(vm.ram), "disk": vm.disk };
+          postUrl  = 'experiments/' + this.$route.params.id + '/vms/' + vm.name + '/redeploy';
+          name = vm.name;
+
+          if ( vm.inject ) {
+            body["injects"] = true;
+          }
+
+          this.redeployModal.actionsQueue.push({name: vm.name, url: url, body: body});
+        })
+
+        this.$http.post(postUrl, body).then(
+          null, err => {
+            this.errorNotification(err);
+            this.isWaiting = false;
+            this.resetExpModal();
+          }
+        )
       },
 
-      changeVlan  ( index, vlan, from, name ) {        
+      changeVlan ( index, vlan, from, name ) {
         if ( vlan === '0' ) {
           this.$buefy.dialog.confirm({
             title: 'Disconnect a VM Network Interface',
@@ -2421,14 +2402,9 @@
 
                   this.experiment.vms = [ ...vms  ];
                   this.isWaiting  = false;
-                }, response => {
-                  this.$buefy.toast.open({
-                    message: 'Disconnecting the network for the ' + name + ' VM failed with ' + response.status + ' status.',
-                    type: 'is-danger',
-                    duration: 4000
-                  });
-
-                  this.isWaiting  = false;
+                }, err => {
+                  this.errorNotification(err);       
+                  this.isWaiting = false;
                 }
               );
             }
@@ -2468,14 +2444,9 @@
 
                   this.experiment.vms = [ ...vms  ];
                   this.isWaiting  = false;
-                }, response => {
-                  this.$buefy.toast.open({
-                    message: 'Changing the VLAN for the ' + name + ' VM failed with ' + response.status + ' status.',
-                    type: 'is-danger',
-                    duration: 4000
-                  });
-
-                  this.isWaiting  = false;
+                }, err => {
+                  this.errorNotification(err);
+                  this.isWaiting = false;
                 }
               )
             }
@@ -2550,12 +2521,8 @@
               this.isWaiting = false;
                   
             
-              },  response => {
-                this.$buefy.toast.open({
-                  message: 'Unable to start capturing subnet ' + subnets[0] + ' ' + response.status + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
+              },  err => {
+                this.errorNotification(err);
                 this.isWaiting = false;
               } 
             );
@@ -2630,12 +2597,8 @@
               this.isWaiting = false;
                   
             
-              },  response => {
-                this.$buefy.toast.open({
-                  message: 'Unable to stop subnet capture for ' + subnets[0] + ' ' + response.status + ' status.',
-                  type: 'is-danger',
-                  duration: 4000
-                });
+              },  err => {
+                this.errorNotification(err);
                 this.isWaiting = false;
               } 
             );
@@ -2688,13 +2651,10 @@
 
         this.$http.post( 'experiments/' + this.$route.params.id + '/trigger' + '?apps=' + apps )
         .then( response => {
-          console.log('triggering ' + apps);
-        }, response => {
-          this.$buefy.toast.open({
-            message: 'Triggering the Apps ' + apps + ' failed with ' + response.status + ' status.',
-            type: 'is-danger',
-            duration: 4000
-          });
+          console.log('triggering ' + apps + ': ' + response);
+        }, err => {
+          this.errorNotification(err);
+          this.isWaiting = false;
         });
 
         this.resetAppsModal();
@@ -2703,6 +2663,12 @@
       resetAppsModal () {
         this.appsModal.apps = [];
         this.appsModal.active = false;
+      },
+
+      resetFileViewerModal () {
+        this.fileViewerModal.active = false;
+        this.fileViewerModal.title = null;
+        this.fileViewerModal.contents = null;
       },
       
       validate (modalVMQueue) {  
@@ -2867,6 +2833,10 @@
         }
         
         return false  
+      },
+
+      fileDownloadURL(name, path) {
+        return this.$router.resolve({name: 'file', params: {id: this.$route.params.id, name: name, path: path, token: this.$store.getters.token}}).href;
       }
     },
     
@@ -2894,7 +2864,9 @@
           total:  0,
           sortColumn: 'date',          
           paginationSize: 'is-small',
-          defaultSortDirection: 'desc'
+          defaultSortDirection: 'desc',
+          categories: [],
+          category: null
         },
         expModal: {
           active: false,
@@ -2938,6 +2910,11 @@
           active: false,
           triggerable: [],
           apps: []
+        },
+        fileViewerModal: {
+          active: false,
+          title: null,
+          contents: null
         },
         apps: null,
         experiment: [],

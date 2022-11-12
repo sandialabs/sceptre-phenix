@@ -14,6 +14,8 @@ type wsRequest struct {
 var (
 	ws         map[string]map[string]wsRequest
 	wsRequests chan wsRequest
+
+	basePath string
 )
 
 func processWebSockets() {
@@ -48,7 +50,9 @@ func processWebSockets() {
 	}
 }
 
-func Start() {
+func Start(base string) {
+	basePath = base
+
 	go processWebSockets()
 	go processComponents()
 	go processPipelines()

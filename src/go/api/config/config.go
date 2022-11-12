@@ -10,13 +10,14 @@ import (
 	"regexp"
 	"strings"
 
-	"phenix/internal/common"
 	"phenix/store"
 	"phenix/types"
 	"phenix/types/version"
 	"phenix/util"
+	"phenix/util/common"
 	"phenix/util/editor"
 
+	"github.com/hashicorp/go-multierror"
 	"gopkg.in/yaml.v3"
 )
 
@@ -429,40 +430,43 @@ func Delete(name string) error {
 		return fmt.Errorf("no config name provided")
 	}
 
+	var errors error
+
 	if name == "all" {
 		configs, _ := List("all")
 
 		for _, c := range configs {
 			if err := store.Delete(&c); err != nil {
-				return err
+				errors = multierror.Append(errors, fmt.Errorf("deleting config %s/%s: %w", c.Kind, c.Metadata.Name, err))
+				continue
 			}
 
 			for _, hook := range hooks[c.Kind] {
 				if err := hook("delete", &c); err != nil {
-					// TODO: what to do w/ error?
+					errors = multierror.Append(errors, fmt.Errorf("executing delete experiment hook for config %s/%s: %w", c.Kind, c.Metadata.Name, err))
 				}
 			}
 		}
 
-		return nil
+		return errors
 	}
 
 	c, err := Get(name, false)
 	if err != nil {
-		return fmt.Errorf("getting config '%s': %w", name, err)
+		return fmt.Errorf("getting config %s: %w", name, err)
 	}
 
 	if err := store.Delete(c); err != nil {
-		return err
+		return fmt.Errorf("deleting config %s: %w", name, err)
 	}
 
 	for _, hook := range hooks[c.Kind] {
 		if err := hook("delete", c); err != nil {
-			// TODO: what to do w/ error?
+			errors = multierror.Append(errors, fmt.Errorf("executing delete experiment hook for config %s: %w", name, err))
 		}
 	}
 
-	return nil
+	return errors
 }
 
 // IsConfigNotModified returns a boolean indicating whether the error is known

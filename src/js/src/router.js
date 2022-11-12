@@ -7,6 +7,7 @@ import Experiments   from './components/Experiments.vue'
 import Hosts         from './components/Hosts.vue'
 import Log           from './components/Log.vue'
 import Scorch        from './components/Scorch.vue'
+import ScorchRuns    from './components/ScorchRuns.vue'
 import SignIn        from './components/SignIn.vue'
 import StateOfHealth from './components/StateOfHealth.vue'
 import Users         from './components/Users.vue'
@@ -20,26 +21,33 @@ const router = new Router({
   mode: 'history',
   base: process.env.BASE_URL,
   routes: [
-    { path: '/',                  name: 'home',        redirect: '/experiments' },
-    { path: '/configs',           name: 'configs',     component: Configs },
-    { path: '/experiments',       name: 'experiments', component: Experiments },
-    { path: '/experiment/:id',    name: 'experiment',  component: Experiment },
-    { path: '/hosts',             name: 'hosts',       component: Hosts },
-    { path: '/log',               name: 'log',         component: Log },
-    { path: '/scorch/:id',        name: 'scorch',      component: Scorch },
-    { path: '/scorch',            name: 'scorch',      component: Scorch },
-    { path: '/signin',            name: 'signin',      component: SignIn },
-    { path: '/stateofhealth/:id', name: 'soh',         component: StateOfHealth },
-    { path: '/users',             name: 'users',       component: Users },
-    { path: '/vmtiles',           name: 'vmtiles',     component: VMtiles },
-    { path: '*',                  redirect: '/signin' }
+    {path: '/',                  name: 'home',        redirect:  {name: 'experiments'}},
+    {path: '/configs',           name: 'configs',     component: Configs},
+    {path: '/experiments',       name: 'experiments', component: Experiments},
+    {path: '/experiment/:id',    name: 'experiment',  component: Experiment},
+    {path: '/hosts',             name: 'hosts',       component: Hosts},
+    {path: '/log',               name: 'log',         component: Log},
+    {path: '/scorch/:id',        name: 'scorchruns',  component: ScorchRuns},
+    {path: '/scorch',            name: 'scorch',      component: Scorch},
+    {path: '/signin',            name: 'signin',      component: SignIn},
+    {path: '/stateofhealth/:id', name: 'soh',         component: StateOfHealth},
+    {path: '/users',             name: 'users',       component: Users},
+    {path: '/vmtiles',           name: 'vmtiles',     component: VMtiles},
+
+    {path: '/builder?token=:token', name: 'builder'},
+    {path: '/version',              name: 'version'},
+
+    {path: '/api/v1/experiments/:id/files/:name\\?path=:path&token=:token', name: 'file'},
+    {path: '/api/v1/experiments/:id/vms/:name/vnc?token=:token',            name: 'vnc'},
+
+    {path: '*', redirect: {name: 'signin'}}
   ]
 })
 
 router.beforeEach( ( to, from, next ) => {
   if ( process.env.VUE_APP_AUTH === 'disabled' ) {
     if ( !store.getters.auth ) {
-      store.commit( 'LOGIN', { 'user': { 'token': '', 'role': 'Global Admin' }, 'remember': false } )
+      store.commit( 'LOGIN', { 'user': { 'token': 'authorized', 'role': 'Global Admin' }, 'remember': false } )
     }
 
     next()
@@ -53,10 +61,11 @@ router.beforeEach( ( to, from, next ) => {
     return
   }
 
-  if ( store.state.auth ) {
+  if ( store.getters.auth ) {
     next()
   } else {
-    next( '/signin' )
+    store.commit( 'NEXT', to )
+    next( {name: 'signin'} )
   }
 })
 

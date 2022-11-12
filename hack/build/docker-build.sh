@@ -1,5 +1,8 @@
 #!/bin/bash
 
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+ROOT_DIR="$( cd ${SCRIPT_DIR}/../.. && pwd )"
+
 usage="usage: $(basename "$0") [-b] [-d] [-h] [-v]
 
 This script will build the phenix binary using a temporary Docker image to
@@ -16,22 +19,22 @@ where:
     -b      base path for web UI deployment (defaults to '/')
     -d      disable phenix web UI authentication
     -h      show this help text
-    -v      version number to use for phenix"
+    -t      tag to use for phenix"
 
 
 base=/
 auth=enabled
-version=$(git log -1 --format="%h")
 commit=$(git log -1 --format="%h")
+tag=$(git log -1 --format="%h")
 
 
 # loop through positional options/arguments
-while getopts ':b:dhv:' option; do
+while getopts ':b:dht:' option; do
     case "$option" in
         b)  base="$OPTARG"         ;;
         d)  auth=disabled          ;;
         h)  echo -e "$usage"; exit ;;
-        v)  version="$OPTARG"      ;;
+        t)  tag="$OPTARG"          ;;
         \?) echo -e "illegal option: -$OPTARG\n" >$2
             echo -e "$usage" >&2
             exit 1 ;;
@@ -41,8 +44,8 @@ done
 
 echo    "phenix web UI base path:      $base"
 echo    "phenix web UI authentication: $auth"
-echo    "phenix version number:        $version"
-echo -e "phenix commit:                $commit\n"
+echo    "phenix commit:                $commit"
+echo -e "phenix tag:                   $tag\n"
 
 
 which docker &> /dev/null
@@ -71,7 +74,7 @@ RUN ["/bin/bash", "-c", "if (( $USER_UID != 0 )); then \
 
 RUN apt update && apt install -y curl gnupg2 make protobuf-compiler wget xz-utils
 
-ENV GOLANG_VERSION 1.16.5
+ENV GOLANG_VERSION 1.18.5
 
 RUN wget -O go.tgz https://golang.org/dl/go\${GOLANG_VERSION}.linux-amd64.tar.gz \
   && tar -C /usr/local -xzf go.tgz && rm go.tgz
@@ -99,18 +102,18 @@ EOF
 echo BUILDING PHENIX...
 
 docker run -it --rm \
-  -v $(pwd):/phenix \
+  -v $ROOT_DIR:/phenix \
   -w /phenix \
   -u $USERNAME \
   phenix:builder make clean
 
 docker run -it --rm \
-  -v $(pwd):/phenix \
+  -v $ROOT_DIR:/phenix \
   -w /phenix \
   -u $USERNAME \
   -e VUE_APP_AUTH=$auth \
   -e VUE_BASE_PATH=$base \
-  -e VER=$version \
+  -e TAG=$tag \
   -e COMMIT=$commit \
   phenix:builder make bin/phenix
 

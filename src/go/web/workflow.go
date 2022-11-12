@@ -281,6 +281,10 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
+		if err := experiment.Reconfigure(expName); err != nil {
+			return weberror.NewWebError(err, "unable to reconfigure updated experiment %s", expName)
+		}
+
 		if wf.AutoRestart() {
 			cache.UnlockExperiment(expName)
 

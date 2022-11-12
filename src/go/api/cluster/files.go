@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"phenix/api/experiment"
-	"phenix/internal/mm"
-	"phenix/internal/mm/mmcli"
 	"phenix/util"
+	"phenix/util/mm"
+	"phenix/util/mm/mmcli"
 )
 
 type ImageKind int

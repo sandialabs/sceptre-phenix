@@ -6,14 +6,14 @@ import VueNativeSock from 'vue-native-websocket'
 import '@fortawesome/fontawesome-free/css/all.css'
 import '@fortawesome/fontawesome-free/js/all.js'
 
-import _ from 'lodash'
-
 import App    from './App.vue'
 import router from './router'
 import store  from './store'
 
-import { fas } from '@fortawesome/free-solid-svg-icons'
-import { library } from '@fortawesome/fontawesome-svg-core'
+import { errorNotification } from './components/utils.js'
+
+import { fas }             from '@fortawesome/free-solid-svg-icons'
+import { library }         from '@fortawesome/fontawesome-svg-core'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 
 library.add(fas)
@@ -22,13 +22,13 @@ Vue.component( 'font-awesome-icon', FontAwesomeIcon )
 
 Vue.config.productionTip = false
 
-Vue.use( Buefy, {
-  defaultIconComponent:'font-awesome-icon',
-	defaultIconPack: 'fa'
+Vue.use(Buefy, {
+  defaultIconComponent: 'font-awesome-icon',
+	defaultIconPack:      'fa'
 })
 
 Vue.use( VueResource )
-Vue.use( VueNativeSock, `//${location.host}/${process.env.BASE_URL}`, { connectManually: true, reconnection: true } );
+Vue.use( VueNativeSock, `//${location.host}${process.env.BASE_URL}`, { connectManually: true, reconnection: true } );
 
 Vue.filter( 'lowercase', function( value ) {
   if ( value == null ) { return value }
@@ -47,9 +47,10 @@ Vue.filter( 'ram', function( value ) {
   if ( value == 0 ) {
     return '0 Byte';
   } else {
-    var size = ['MB', 'GB'];
-    let i = parseInt( Math.floor( Math.log( value ) / Math.log( 1024 ) ) );
-    var output = Math.round( value / Math.pow( 1024, i ), 2 ) + ' ' + size[ i] ;
+    let size   = ['MB', 'GB', 'TB'];
+    let i      = parseInt( Math.floor( Math.log( value ) / Math.log( 1024 ) ) );
+    let output = Math.round( value / Math.pow( 1024, i ), 2 ) + ' ' + size[i];
+
     return output;
   }
 })
@@ -77,11 +78,10 @@ Vue.filter( 'uptime', function( value ) {
   }
 })
 
-if ( process.env.BASE_URL === '/' ) {
-  Vue.http.options.root = '/api/v1/'
-} else {
-  Vue.http.options.root = process.env.BASE_URL + '/api/v1/'
-}
+Vue.prototype.errorNotification = errorNotification;
+Vue.errorNotification = errorNotification;
+
+Vue.http.options.root = `${process.env.BASE_URL}api/v1/`
 
 Vue.http.interceptors.push(
   request => {
@@ -96,7 +96,7 @@ Vue.http.interceptors.push(
       // the user to the login screen.
       if ( response.status === 401 ) {
         store.commit( 'LOGOUT' )
-        router.replace( '/signin' )
+        router.replace( {name: 'signin'} )
       }
     }
   }

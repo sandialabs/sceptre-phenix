@@ -13,6 +13,7 @@ type Network struct {
 	RoutesF     []Route      `json:"routes" yaml:"routes" structs:"routes" mapstructure:"routes"`
 	OSPFF       *OSPF        `json:"ospf" yaml:"ospf" structs:"ospf" mapstructure:"ospf"`
 	RulesetsF   []*Ruleset   `json:"rulesets" yaml:"rulesets" structs:"rulesets" mapstructure:"rulesets"`
+	NATF        []NAT        `json:"nat" yaml:"nat" structs:"nat" mapstructure:"nat"`
 }
 
 func (this *Network) Interfaces() []ifaces.NodeNetworkInterface {
@@ -71,6 +72,20 @@ func (this *Network) Rulesets() []ifaces.NodeNetworkRuleset {
 	return sets
 }
 
+func (this *Network) NAT() []ifaces.NodeNetworkNAT {
+	if this == nil {
+		return nil
+	}
+
+	nat := make([]ifaces.NodeNetworkNAT, len(this.NATF))
+
+	for i, n := range this.NATF {
+		nat[i] = n
+	}
+
+	return nat
+}
+
 func (this *Network) SetRulesets(rules []ifaces.NodeNetworkRuleset) {
 	sets := make([]*Ruleset, len(rules))
 
@@ -83,6 +98,16 @@ func (this *Network) SetRulesets(rules []ifaces.NodeNetworkRuleset) {
 
 func (this *Network) AddRuleset(rule ifaces.NodeNetworkRuleset) {
 	this.RulesetsF = append(this.RulesetsF, rule.(*Ruleset))
+}
+
+func (this *Network) InterfaceAddress(name string) string {
+	for _, iface := range this.InterfacesF {
+		if strings.EqualFold(iface.NameF, name) {
+			return iface.AddressF
+		}
+	}
+
+	return ""
 }
 
 type Interface struct {
@@ -391,6 +416,7 @@ type Rule struct {
 	ProtocolF    string    `json:"protocol" yaml:"protocol" structs:"protocol" mapstructure:"protocol"`
 	SourceF      *AddrPort `json:"source" yaml:"source" structs:"source" mapstructure:"source"`
 	DestinationF *AddrPort `json:"destination" yaml:"destination" structs:"destination" mapstructure:"destination"`
+	StatefulF    bool      `json:"stateful" yaml:"stateful" structs:"stateful" mapstructure:"stateful"`
 }
 
 func (this Rule) ID() int {
@@ -427,6 +453,10 @@ func (this Rule) Destination() ifaces.NodeNetworkRulesetRuleAddrPort {
 	return this.DestinationF
 }
 
+func (this Rule) Stateful() bool {
+	return this.StatefulF
+}
+
 func (this *Rule) SetDescription(d string) {
 	this.DescriptionF = d
 }
@@ -447,6 +477,10 @@ func (this *Rule) SetDestination(a string, p int) {
 	this.DestinationF = &AddrPort{AddressF: a, PortF: p}
 }
 
+func (this *Rule) SetStateful(s bool) {
+	this.StatefulF = s
+}
+
 type AddrPort struct {
 	AddressF string `json:"address" yaml:"address" structs:"address" mapstructure:"address"`
 	PortF    int    `json:"port" yaml:"port" structs:"port" mapstructure:"port"`
@@ -458,6 +492,19 @@ func (this AddrPort) Address() string {
 
 func (this AddrPort) Port() int {
 	return this.PortF
+}
+
+type NAT struct {
+	InF  []string `json:"in" yaml:"in" structs:"in" mapstructure:"in"`
+	OutF string   `json:"out" yaml:"out" structs:"out" mapstructure:"out"`
+}
+
+func (this NAT) In() []string {
+	return this.InF
+}
+
+func (this NAT) Out() string {
+	return this.OutF
 }
 
 func (this *Network) SetDefaults() {

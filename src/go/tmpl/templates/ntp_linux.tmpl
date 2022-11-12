@@ -12,12 +12,13 @@ filegen clockstats file clockstats type day enable
 
 # Specify one or more NTP servers.
 
-# Use servers from the NTP Pool Project. Approved by Ubuntu Technical Board
-# on 2011-02-08 (LP: #104525). See http://www.pool.ntp.org/join.html for
-# more information.
-server {{ . }} iburst prefer # Use ELK box as priority if it exists
-server 127.127.1.0 # Else, use the local clock
-fudge 127.127.1.0 stratum 10
+{{ if . }}
+server {{ . }} iburst prefer
+server 127.127.1.1
+{{- else }}
+server 127.127.1.1 iburst prefer
+{{- end }}
+fudge 127.127.1.1 stratum 8
 
 # By default, exchange time with everybody, but don't allow configuration.
 restrict -4 default kod notrap nomodify nopeer noquery limited

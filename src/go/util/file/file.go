@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"phenix/internal/common"
-	"phenix/internal/mm"
-	"phenix/internal/mm/mmcli"
+	"phenix/util"
+	"phenix/util/mm"
+	"phenix/util/mm/mmcli"
 )
 
 var DefaultClusterFiles ClusterFiles = new(MMClusterFiles)
@@ -22,7 +22,7 @@ type ClusterFiles interface {
 	// (such as `base-images` and `container-fs`).
 	GetImages(kind ImageKind) ([]ImageDetails, error)
 
-	GetExperimentFileNames(exp, filter string) (ExperimentFiles, error)
+	GetExperimentFiles(exp, filter string) (ExperimentFiles, error)
 
 	// Looks in experiment directory on each cluster node for matching filenames
 	// that end in both `.SNAP` and `.qc2`.
@@ -43,8 +43,8 @@ func GetImages(kind ImageKind) ([]ImageDetails, error) {
 	return DefaultClusterFiles.GetImages(kind)
 }
 
-func GetExperimentFileNames(exp, filter string) (ExperimentFiles, error) {
-	return DefaultClusterFiles.GetExperimentFileNames(exp, filter)
+func GetExperimentFiles(exp, filter string) (ExperimentFiles, error) {
+	return DefaultClusterFiles.GetExperimentFiles(exp, filter)
 }
 
 func GetExperimentSnapshots(exp string) ([]string, error) {
@@ -118,17 +118,19 @@ func (MMClusterFiles) GetImages(kind ImageKind) ([]ImageDetails, error) {
 	return images, nil
 }
 
-func (MMClusterFiles) GetExperimentFileNames(exp, filter string) (ExperimentFiles, error) {
-	// Using a map here to weed out duplicates.
-	matches := make(map[string]ExperimentFile)
-	var category string
-
-	dir := fmt.Sprintf("/%s/files", exp)
+func (MMClusterFiles) GetExperimentFiles(exp, filter string) (ExperimentFiles, error) {
+	var (
+		// Using a map here to weed out duplicates. The key is the relative path to
+		// the file to ensure files with the same name in different directories get
+		// included.
+		matches = make(map[string]ExperimentFile)
+		root    = fmt.Sprintf("%s/files/", exp)
+	)
 
 	// First get file listings from mesh, then from headnode.
 	commands := []string{
-		"mesh send all file list " + dir,
-		"file list " + dir,
+		fmt.Sprintf("mesh send all file list %s recursive", root),
+		fmt.Sprintf("file list %s recursive", root),
 	}
 
 	cmd := mmcli.NewCommand()
@@ -141,56 +143,82 @@ func (MMClusterFiles) GetExperimentFileNames(exp, filter string) (ExperimentFile
 		cmd.Command = command
 
 		for _, row := range mmcli.RunTabular(cmd) {
-			// Only looking for files.
-			if row["dir"] != "" {
+			name := filepath.Base(row["name"])
+			file := ExperimentFile{Name: name, Path: strings.TrimPrefix(row["name"], root)}
+
+			if _, ok := matches[file.Path]; ok {
 				continue
 			}
 
-			name := filepath.Base(row["name"])
+			if strings.Contains(file.Path, "scorch") {
+				file.Categories = append(file.Categories, "Scorch Artifact")
+
+				directories := strings.Split(filepath.Dir(file.Path), "/")
+
+				if len(directories) > 1 {
+					// Add Scorch run ID as a category.
+					file.Categories = append(file.Categories, directories[1])
+				}
+
+				if strings.Contains(file.Path, "filebeat") {
+					if name != "filebeat.log" {
+						// Exclude Filebeat-relevant files except for the log file.
+						continue
+					}
+
+					file.Categories = append(file.Categories, "Filebeat")
+				} else {
+					if len(directories) > 2 {
+						// Add Scorch component name as a category.
+						file.Categories = append(file.Categories, directories[2])
+					}
+				}
+			}
 
 			switch extension := filepath.Ext(name); extension {
 			case ".pcap":
-				category = "Packet Capture"
+				file.Categories = append(file.Categories, "Packet Capture")
 			case ".elf":
-				category = "ELF Memory Snapshot"
-			case ".SNAP":
-				category = "VM Memory Snapshot"
-			default:
-				category = "Unknown"
-
+				file.Categories = append(file.Categories, "ELF Memory Snapshot")
+			case ".SNAP", ".snap":
+				file.Categories = append(file.Categories, "VM Memory Snapshot")
 			}
 
-			fileSize, _ := strconv.Atoi(row["size"])
+			file.Size, _ = strconv.Atoi(row["size"])
+			file.Date = row["modified"]
+			file.dateTime, _ = time.Parse(time.RFC3339, row["modified"])
 
-			if _, ok := matches[name]; !ok {
+			matches[file.Path] = file
+		}
+	}
 
-				matches[name] = ExperimentFile{
-					Name:     name,
-					Size:     fileSize,
-					Category: category,
-				}
+	var (
+		files ExperimentFiles
+		plain = []string{".json", ".jsonl", ".log", ".txt", ".yaml", ".yml"}
+	)
+
+	for _, file := range matches {
+		extension := filepath.Ext(file.Name)
+
+		// Add categories for qcow images prior to filtering.
+		switch extension {
+		case ".qc2", ".qcow2":
+			rootName := strings.TrimSuffix(file.Name, extension)
+			if _, ok := matches[rootName+".SNAP"]; ok {
+				file.Categories = append(file.Categories, "VM Disk Snapshot")
+			} else if _, ok := matches[rootName+".snap"]; ok {
+				file.Categories = append(file.Categories, "VM Disk Snapshot")
+			} else {
+				file.Categories = append(file.Categories, "Backing Image")
 			}
 		}
 
-	}
+		if util.StringSliceContains(plain, extension) {
+			file.PlainText = true
+		}
 
-	// Add the file modification dates
-	fillInFileDates(exp, matches)
-
-	experimentFiles := ExperimentFiles{}
-
-	for _, expFile := range matches {
-
-		// Add categories for qcow images prior to filtering
-		switch extension := filepath.Ext(expFile.Name); extension {
-		case ".qc2", ".qcow2":
-			rootName := strings.TrimSuffix(expFile.Name, extension)
-			if _, ok := matches[rootName+".SNAP"]; ok {
-				expFile.Category = "VM Disk Snapshot"
-			} else {
-				expFile.Category = "Backing Image"
-			}
-
+		if len(file.Categories) == 0 {
+			file.Categories = []string{"Unknown"}
 		}
 
 		// Apply any filters
@@ -198,15 +226,16 @@ func (MMClusterFiles) GetExperimentFileNames(exp, filter string) (ExperimentFile
 			if filterTree == nil {
 				continue
 			}
-			if !filterTree.Evaluate(&expFile) {
+
+			if !filterTree.Evaluate(&file) {
 				continue
 			}
 		}
 
-		experimentFiles = append(experimentFiles, expFile)
+		files = append(files, file)
 	}
 
-	return experimentFiles, nil
+	return files, nil
 }
 
 func (MMClusterFiles) GetExperimentSnapshots(exp string) ([]string, error) {
@@ -214,7 +243,7 @@ func (MMClusterFiles) GetExperimentSnapshots(exp string) ([]string, error) {
 	// both a memory snapshot (.snap) and a disk snapshot (.qc2).
 	matches := make(map[string]string)
 
-	files, err := GetExperimentFileNames(exp, "")
+	files, err := GetExperimentFiles(exp, "")
 	if err != nil {
 		return nil, fmt.Errorf("getting experiment file names: %w", err)
 	}
@@ -267,7 +296,7 @@ func (MMClusterFiles) CopyFile(path, dest string, status CopyStatus) error {
 	}
 
 	if mm.IsHeadnode(dest) {
-		cmd.Command = fmt.Sprintf(`file status`)
+		cmd.Command = "file status"
 	} else {
 		cmd.Command = fmt.Sprintf(`mesh send %s file status`, dest)
 	}
@@ -334,57 +363,4 @@ func (MMClusterFiles) DeleteFile(path string) error {
 	}
 
 	return nil
-}
-
-func fillInFileDates(expName string, expFiles map[string]ExperimentFile) {
-
-	dirPath := fmt.Sprintf("%s/images/%s/files", common.PhenixBase, expName)
-
-	// First get file listings from mesh, then from headnode.
-	commands := []string{
-		"mesh send all shell ls -alht --full-time " + dirPath,
-		"shell ls -alht --full-time " + dirPath,
-	}
-
-	cmd := mmcli.NewCommand()
-
-	for _, command := range commands {
-		cmd.Command = command
-
-		for response := range mmcli.Run(cmd) {
-			for _, r := range response.Resp {
-				if len(r.Response) == 0 {
-					continue
-				}
-
-				lines := strings.Split(r.Response, "\n")
-
-				for _, line := range lines {
-					fields := strings.Fields(line)
-					if len(fields) < 9 {
-						continue
-					}
-
-					directoryFlag := fields[0:1][0][0:1]
-					if directoryFlag == "d" {
-						continue
-					}
-
-					fileModDate := strings.Join(fields[5:7], " ")
-					fileName := fields[8:9][0]
-
-					if expFile, ok := expFiles[fileName]; ok {
-						expFile.Date = strings.Split(fileModDate, ".")[0]
-						t, _ := time.Parse("2006-01-02 15:04:05", expFile.Date)
-						expFile.DateTime = t
-						expFiles[fileName] = expFile
-					}
-
-				}
-			}
-
-		}
-
-	}
-
 }

@@ -9,6 +9,12 @@ module.exports = {
         changeOrigin: true,
         logLevel: 'debug',
         ws: true
+      },
+      '/version': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        logLevel: 'debug',
+        ws: true
       }
     }
   }

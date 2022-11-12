@@ -13,11 +13,11 @@ import (
 	"path"
 	"strings"
 
-	"phenix/internal/mm/mmcli"
 	"phenix/store"
 	"phenix/tmpl"
 	"phenix/types"
 	v1 "phenix/types/version/v1"
+	"phenix/util/mm/mmcli"
 	"phenix/util/notes"
 	"phenix/util/shell"
 
@@ -529,22 +529,28 @@ func InjectMiniExe(exe, disk, svc string) error {
 			return fmt.Errorf("only miniccc.exe and protonuke.exe are supported for Windows")
 		}
 
-		// We're not creating a default Windows Startup file for protonuke to start
-		// it as a service at boot since its command line arguments are dynamic.
-		// Users or apps wishing to leverage protonuke on Windows hosts need to
-		// inject their own Windows Startup file or use miniccc to start protonuke.
-
 		switch base {
 		case "miniccc":
-			if err := tmpl.RestoreAsset(tmp, fmt.Sprintf("%s/%s-scheduler.cmd", base, base)); err != nil {
-				return fmt.Errorf("restoring %s scheduler for Windows: %w", base, err)
-			}
+			if svc == "startup" {
+				if err := tmpl.RestoreAsset(tmp, fmt.Sprintf("%s/%s-scheduler.cmd", base, base)); err != nil {
+					return fmt.Errorf("restoring %s startup scheduler for Windows: %w", base, err)
+				}
 
-			injects = []string{
-				tmp + fmt.Sprintf(`/%s/%s-scheduler.cmd:"/ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/%s-scheduler.cmd"`, base, base, base),
-				exe + fmt.Sprintf(":/minimega/%s.exe", base),
+				injects = []string{
+					tmp + fmt.Sprintf(`/%s/%s-scheduler.cmd:"/ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/%s-scheduler.cmd"`, base, base, base),
+					exe + fmt.Sprintf(":/minimega/%s.exe", base),
+				}
+			} else {
+				injects = []string{
+					exe + fmt.Sprintf(":/minimega/%s.exe", base),
+				}
 			}
 		case "protonuke":
+			// We're not creating a default Windows Startup file for protonuke to
+			// start it as a service at boot since its command line arguments are
+			// dynamic. Users or apps wishing to leverage protonuke on Windows hosts
+			// need to inject their own Windows Startup file or use miniccc to start
+			// protonuke.
 			injects = []string{
 				exe + fmt.Sprintf(":/minimega/%s.exe", base),
 			}
