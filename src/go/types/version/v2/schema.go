@@ -366,7 +366,6 @@ components:
                 required:
                 - destination
                 - next
-                - cost
                 properties:
                   destination:
                     type: string
@@ -407,7 +406,7 @@ components:
                           required:
                           - network
                           properties:
-                            network: 
+                            network:
                               type: string
                               example: 10.1.25.0/24
             rulesets:
