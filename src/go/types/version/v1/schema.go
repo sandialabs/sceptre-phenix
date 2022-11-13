@@ -334,7 +334,6 @@ components:
                 required:
                 - destination
                 - next
-                - cost
                 properties:
                   destination:
                     type: string
@@ -377,7 +376,7 @@ components:
                           required:
                           - network
                           properties:
-                            network: 
+                            network:
                               type: string
                               minLength: 1
                               example: 10.1.25.0/24
