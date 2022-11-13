@@ -334,7 +334,6 @@ components:
                 required:
                 - destination
                 - next
-                - cost
                 properties:
                   destination:
                     type: string
@@ -348,6 +347,7 @@ components:
                     type: integer
                     default: 1
                     example: 1
+                    nullable: true
             ospf:
               type: object
               required:
@@ -377,7 +377,7 @@ components:
                           required:
                           - network
                           properties:
-                            network: 
+                            network:
                               type: string
                               minLength: 1
                               example: 10.1.25.0/24
