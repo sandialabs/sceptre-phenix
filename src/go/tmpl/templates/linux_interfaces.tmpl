@@ -21,6 +21,9 @@ if command -v 'ip' &>/dev/null; then
             {{ end }}
         {{ end }}
     {{ end }}
+    {{ range $route := .Network.Routes }}
+    ip route add {{ $route.Destination }} via {{ $route.Next }}
+    {{ end }}
 else
     # Fallback to ifconfig
     {{ range $idx, $iface := .Network.Interfaces }}
@@ -37,5 +40,8 @@ else
     route add default gw {{ $iface.Gateway }} dev "$dev"
             {{ end }}
         {{ end }}
+    {{ end }}
+    {{ range $route := .Network.Routes }}
+    route add -net {{ $route.Destination }} gw {{ $route.Next }}
     {{ end }}
 fi

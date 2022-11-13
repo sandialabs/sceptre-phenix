@@ -89,6 +89,10 @@ $wmi.SetGateways('{{ $iface.Gateway }}', 1) | Out-Null
         {{ end }}
     {{ end }}
 {{ end }}
+{{ range $route := .Node.Network.Routes }}
+$idx = Find-NetRoute -RemoteIPAddress '{{ $route.Next }}' | Select -First 1  -ExpandProperty InterfaceIndex
+New-NetRoute -DestinationPrefix '{{ $route.Destination }}' -InterfaceIndex $idx -NextHop {{ $route.Next }}
+{{ end }}
 
 {{ if .Metadata.domain_controller }}
 $adapters = Get-NetAdapter | sort -Property ifIndex
