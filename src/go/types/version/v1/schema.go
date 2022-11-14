@@ -347,6 +347,7 @@ components:
                     type: integer
                     default: 1
                     example: 1
+                    nullable: true
             ospf:
               type: object
               required:
