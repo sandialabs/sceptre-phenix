@@ -1,44 +1,48 @@
 name: Publish phenix Docker images
 on:
   push:
-    branches: ['**']
+    branches: [main]
+  pull_request:
+    branches: [main]
   repository_dispatch:
     types: [apps-update]
 jobs:
   push-to-ghcr:
     name: Push phenix Docker image to GitHub Packages
     runs-on: ubuntu-latest
-    if: ${{ github.ref_name == 'main' || contains(github.event.head_commit.message, 'BUILD DOCKER IMAGES') }}
     permissions:
       packages: write
       contents: read
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Get short SHA
-        id: short
         run: |
-          echo "::set-output name=sha::$(git rev-parse --short HEAD)"
-          echo "::set-output name=branch::$(echo ${GITHUB_REF#refs/heads/})"
+          echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          if [[ "${{ github.event_name }}" = "pull_request" ]]; then
+            echo "branch=PR-$(echo ${{ github.event.pull_request.number }})" >> $GITHUB_ENV
+          else
+            echo "branch=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_ENV
+          fi
       - name: Log in to GitHub Docker Registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build container image
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           context: .
           file: docker/Dockerfile
           build-args: |
-            PHENIX_COMMIT=${{ steps.short.outputs.sha }}
-            PHENIX_TAG=${{ steps.short.outputs.branch }}
+            PHENIX_COMMIT=${{ env.sha }}
+            PHENIX_TAG=${{ env.branch }}
             APPS_REPO=${{ github.event_name == 'repository_dispatch' && github.event.client_payload.repo || 'sandia-minimega/phenix-apps' }}
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/phenix:${{ steps.short.outputs.sha }}
-            ghcr.io/${{ github.repository }}/phenix:${{ steps.short.outputs.branch }}
+            ghcr.io/${{ github.repository }}/phenix:${{ env.sha }}
+            ghcr.io/${{ github.repository }}/phenix:${{ env.branch }}
   push-jit-to-ghcr:
     name: Push phenix JIT Docker image to GitHub Packages
     needs: push-to-ghcr
@@ -49,27 +53,30 @@ jobs:
       contents: read
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Get short SHA
-        id: short
         run: |
-          echo "::set-output name=sha::$(git rev-parse --short HEAD)"
-          echo "::set-output name=branch::$(echo ${GITHUB_REF#refs/heads/})"
+          echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          if [[ "${{ github.event_name }}" = "pull_request" ]]; then
+            echo "branch=PR-$(echo ${{ github.event.pull_request.number }})" >> $GITHUB_ENV
+          else
+            echo "branch=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_ENV
+          fi
       - name: Log in to GitHub Docker Registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build container image
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           context: docker/jit
           file: docker/jit/Dockerfile
           build-args: |
             PHENIX_REPO=${{ github.repository }}
-            PHENIX_TAG=${{ steps.short.outputs.branch }}
+            PHENIX_TAG=${{ env.branch }}
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/phenix-jit-ui:${{ steps.short.outputs.sha }}
-            ghcr.io/${{ github.repository }}/phenix-jit-ui:${{ steps.short.outputs.branch }}
+            ghcr.io/${{ github.repository }}/phenix-jit-ui:${{ env.sha }}
+            ghcr.io/${{ github.repository }}/phenix-jit-ui:${{ env.branch }}
