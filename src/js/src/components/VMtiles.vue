@@ -63,13 +63,7 @@ side will pass.
                 </p>
                 <figure class="image">
                   <template v-if="v.running">
-                    <a :href="'/api/v1/experiments/' 
-                       + v.experiment 
-                       + '/vms/' 
-                       + v.name 
-                       + '/vnc?token=' 
-                       + $store.state.token" 
-                       target="_blank">
+                    <a :href="vncLoc(v)" target="_blank">
                       <img :src="v.screenshot">
                     </a>
                   </template>
@@ -88,13 +82,7 @@ side will pass.
                 </p>
                 <figure class="image">
                   <template v-if="v.running && v.experiment === exp">
-                    <a :href="'/api/v1/experiments/' 
-                       + v.experiment 
-                       + '/vms/' 
-                       + v.name 
-                       + '/vnc?token=' 
-                       + $store.state.token" 
-                       target="_blank">
+                    <a :href="vncLoc(v)" target="_blank">
                       <img :src="v.screenshot">
                     </a>
                   </template>
@@ -210,8 +198,12 @@ side will pass.
           return vm.name;
         }
 
-        return vm.experiment + "_" + vm.name;
-      }
+        return vm.experiment + "/" + vm.name;
+      },
+
+      vncLoc (vm) {
+        return this.$router.resolve({name: 'vnc', params: {id: vm.experiment, name: vm.name, token: this.$store.getters.token}}).href;
+      },
     },
     
     data () {
