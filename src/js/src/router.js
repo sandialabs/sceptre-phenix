@@ -2,10 +2,12 @@ import Vue    from 'vue'
 import Router from 'vue-router'
 
 import Configs       from './components/Configs.vue'
+import Disabled      from './components/Disabled.vue'
 import Experiment    from './components/Experiment.vue'
 import Experiments   from './components/Experiments.vue'
 import Hosts         from './components/Hosts.vue'
 import Log           from './components/Log.vue'
+import ProxySignUp   from './components/ProxySignUp.vue'
 import Scorch        from './components/Scorch.vue'
 import ScorchRuns    from './components/ScorchRuns.vue'
 import SignIn        from './components/SignIn.vue'
@@ -24,6 +26,7 @@ const router = new Router({
   routes: [
     {path: '/',                  name: 'home',        redirect:  {name: 'experiments'}},
     {path: '/configs',           name: 'configs',     component: Configs},
+    {path: '/disabled',          name: 'disabled',    component: Disabled},
     {path: '/experiments',       name: 'experiments', component: Experiments},
     {path: '/experiment/:id',    name: 'experiment',  component: Experiment},
     {path: '/hosts',             name: 'hosts',       component: Hosts},
@@ -46,11 +49,13 @@ const router = new Router({
     {path: '/api/v1/experiments/:id/files/:name\\?path=:path&token=:token', name: 'file'},
     {path: '/api/v1/experiments/:id/vms/:name/vnc?token=:token',            name: 'vnc'},
 
+    {path: '/proxysignup', name: 'proxysignup', component: ProxySignUp, props: true},
+
     {path: '*', redirect: {name: 'signin'}}
   ]
 })
 
-router.beforeEach( ( to, from, next ) => {
+router.beforeEach( async ( to, from, next ) => {
   if ( process.env.VUE_APP_AUTH === 'disabled' ) {
     if ( !store.getters.auth ) {
       store.commit( 'LOGIN', { 'user': { 'token': 'authorized', 'role': 'Global Admin' }, 'remember': false } )
@@ -60,18 +65,51 @@ router.beforeEach( ( to, from, next ) => {
     return
   }
 
-  let pub = ['/signup', '/signin']
+  if ( to.name === 'disabled' ) {
+    next()
+    return
+  }
 
-  if ( pub.includes( to.path ) ) {
+  if ( to.name === 'signin' && process.env.VUE_APP_AUTH === 'enabled' ) {
+    next()
+    return
+  }
+
+  if ( to.name === 'proxysignup' && process.env.VUE_APP_AUTH === 'proxy' ) {
     next()
     return
   }
 
   if ( store.getters.auth ) {
+    if ( store.getters.role === 'Disabled' ) {
+      router.replace( '/disabled' );
+    }
+
+    // No need to go to the signin route if already authorized.
+    if ( to.name === 'signin' ) {
+      router.replace( '/' );
+    }
+
     next()
   } else {
     store.commit( 'NEXT', to )
-    next( {name: 'signin'} )
+
+    if ( process.env.VUE_APP_AUTH === 'proxy' ) {
+      try {
+        let resp = await Vue.http.get('login');
+        let user = await resp.json();
+
+        store.commit( 'LOGIN', { "user": user, "remember": false } );
+      } catch (resp) {
+        if ( resp.status === 404 ) {
+          next( {name: 'proxysignup', params: {'username': resp.body.trim()}} )
+        } else {
+          // TODO: ???
+        }
+      }
+    } else {
+      next( {name: 'signin'} )
+    }
   }
 })
 

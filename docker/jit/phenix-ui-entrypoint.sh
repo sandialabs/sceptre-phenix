@@ -4,7 +4,7 @@ base=${PHENIX_BASE_PATH:-/}
 auth=${PHENIX_WEB_AUTH:-disabled}
 
 echo    "phenix web UI base path:      $base (set via PHENIX_BASE_PATH)"
-echo -e "phenix web UI authentication: $auth (set via PHENIX_WEB_AUTH=[enabled|disabled])\n"
+echo -e "phenix web UI authentication: $auth (set via PHENIX_WEB_AUTH=[enabled|disabled|proxy])\n"
 
 if [[ "$1" == *"help"* ]]; then
   exec phenix ui --help

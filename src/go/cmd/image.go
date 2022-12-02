@@ -221,6 +221,40 @@ func newImageCreateFromCmd() *cobra.Command {
 	return cmd
 }
 
+func newImageEditCmd() *cobra.Command {
+	desc := `Edit an image
+
+  This subcommand is used to edit an image using your default editor.
+	`
+
+	cmd := &cobra.Command{
+		Use:   "edit <image name>",
+		Short: "Edit an image",
+		Long:  desc,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			img := fmt.Sprintf("image/%s", args[0])
+
+			_, err := config.Edit(img, false)
+			if err != nil {
+				if config.IsConfigNotModified(err) {
+					fmt.Printf("The %s image was not updated\n", args[0])
+					return nil
+				}
+
+				err := util.HumanizeError(err, "Unable to edit the %s image", args[0])
+				return err.Humanized()
+			}
+
+			fmt.Printf("The %s image was updated\n", args[0])
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
 func newImageBuildCmd() *cobra.Command {
 	desc := `Build a virtual disk image
 
@@ -528,6 +562,7 @@ func init() {
 	imageCmd.AddCommand(newImageListCmd())
 	imageCmd.AddCommand(newImageCreateCmd())
 	imageCmd.AddCommand(newImageCreateFromCmd())
+	imageCmd.AddCommand(newImageEditCmd())
 	imageCmd.AddCommand(newImageBuildCmd())
 	imageCmd.AddCommand(newImageDeleteCmd())
 	imageCmd.AddCommand(newImageAppendCmd())

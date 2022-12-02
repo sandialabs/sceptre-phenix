@@ -1087,8 +1087,8 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 	}
 
 	broker.Broadcast(
-		broker.NewRequestPolicy("vms", "patch", fmt.Sprintf("%s_%s", exp, name)),
-		broker.NewResource("experiment/vm", fmt.Sprintf("%s/%s", exp, name), "update"),
+		broker.NewRequestPolicy("vms", "patch", fmt.Sprintf("%s_%s", expName, name)),
+		broker.NewResource("experiment/vm", fmt.Sprintf("%s/%s", expName, name), "update"),
 		body,
 	)
 
@@ -1893,7 +1893,7 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		exp  = vars["exp"]
 	)
 
-	if !role.Allowed("exp/captureSubnet", "create", fmt.Sprintf("%s", exp)) {
+	if !role.Allowed("exp/captureSubnet", "create", exp) {
 		log.Warn("starting subnet capture for experiment %s is not allowed for %s", exp, ctx.Value("user").(string))
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
@@ -1944,7 +1944,7 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		exp  = vars["exp"]
 	)
 
-	if !role.Allowed("exp/captureSubnet", "create", fmt.Sprintf("%s", exp)) {
+	if !role.Allowed("exp/captureSubnet", "create", exp) {
 		log.Warn("starting subnet capture for experiment %s is not allowed for %s", exp, ctx.Value("user").(string))
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
@@ -1973,7 +1973,7 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vms, err := vm.StopCaptureSubnet(exp, req.Subnet, req.Vms)
+	vms, _ := vm.StopCaptureSubnet(exp, req.Subnet, req.Vms)
 
 	body, err = marshaler.Marshal(&proto.VMNameList{Vms: vms})
 	if err != nil {
@@ -2278,7 +2278,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 
 	cb := func(s float64) { status <- s }
 
-	if filename, err = vm.CommitToDisk(expName, name, filename, cb); err != nil {
+	if _, err = vm.CommitToDisk(expName, name, filename, cb); err != nil {
 		broker.Broadcast(
 			broker.NewRequestPolicy("vms/commit", "create", fullName),
 			broker.NewResource("experiment/vm/commit", expName+"/"+name, "errorCommitting"),
@@ -2318,7 +2318,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 	body, _ = marshaler.Marshal(payload)
 
 	broker.Broadcast(
-		broker.NewRequestPolicy("vms/commit", "create", fmt.Sprintf("%s_%s", exp, name)),
+		broker.NewRequestPolicy("vms/commit", "create", fmt.Sprintf("%s_%s", expName, name)),
 		broker.NewResource("experiment/vm/commit", expName+"/"+name, "commit"),
 		body,
 	)
@@ -2430,7 +2430,7 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 
 	cb := func(s string) { status <- s }
 
-	if filename, err = vm.MemorySnapshot(exp, name, filename, cb); err != nil {
+	if _, err = vm.MemorySnapshot(exp, name, filename, cb); err != nil {
 		broker.Broadcast(
 			broker.NewRequestPolicy("vms/memorySnapshot", "create", fullName),
 			broker.NewResource("experiment/vm/memorySnapshot", exp+"/"+name, "errorCommitting"),
@@ -3276,6 +3276,13 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if o.proxyAuthHeader != "" {
+		if user := r.Header.Get(o.proxyAuthHeader); user != req.GetUsername() {
+			http.Error(w, "proxy user mismatch", http.StatusUnauthorized)
+			return
+		}
+	}
+
 	u := rbac.NewUser(req.GetUsername(), req.GetPassword())
 
 	u.Spec.FirstName = req.GetFirstName()
@@ -3302,6 +3309,7 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 		Username:  u.Username(),
 		FirstName: u.FirstName(),
 		LastName:  u.LastName(),
+		Role:      u.RoleName(),
 		Token:     signed,
 	}
 
@@ -3317,25 +3325,43 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 func Login(w http.ResponseWriter, r *http.Request) {
 	log.Debug("Login HTTP handler called")
 
-	var user, pass string
+	var (
+		user, pass string
+		proxied    bool
+	)
 
 	switch r.Method {
 	case "GET":
-		query := r.URL.Query()
+		if o.proxyAuthHeader == "" {
+			query := r.URL.Query()
 
-		user = query.Get("user")
-		if user == "" {
-			http.Error(w, "no username provided", http.StatusBadRequest)
-			return
+			user = query.Get("user")
+			if user == "" {
+				http.Error(w, "no username provided", http.StatusBadRequest)
+				return
+			}
+
+			pass = query.Get("pass")
+			if pass == "" {
+				http.Error(w, "no password provided", http.StatusBadRequest)
+				return
+			}
+		} else {
+			user = r.Header.Get(o.proxyAuthHeader)
+
+			if user == "" {
+				http.Error(w, "proxy authentication failed", http.StatusUnauthorized)
+				return
+			}
+
+			proxied = true
 		}
-
-		pass = query.Get("pass")
-		if pass == "" {
-			http.Error(w, "no password provided", http.StatusBadRequest)
-			return
-		}
-
 	case "POST":
+		if o.proxyAuthHeader != "" {
+			http.Error(w, "proxy auth enabled -- must login via GET request", http.StatusBadRequest)
+			return
+		}
+
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "no data provided in POST", http.StatusBadRequest)
@@ -3364,13 +3390,15 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	u, err := rbac.GetUser(user)
 	if err != nil {
-		http.Error(w, "cannot find user", http.StatusBadRequest)
+		http.Error(w, user, http.StatusNotFound)
 		return
 	}
 
-	if err := u.ValidatePassword(pass); err != nil {
-		http.Error(w, "invalid creds", http.StatusUnauthorized)
-		return
+	if !proxied {
+		if err := u.ValidatePassword(pass); err != nil {
+			http.Error(w, "invalid creds", http.StatusUnauthorized)
+			return
+		}
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
@@ -3431,20 +3459,24 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /errors/{uuid}
-func GetError(w http.ResponseWriter, r *http.Request) {
+func GetError(w http.ResponseWriter, r *http.Request) error {
 	log.Debug("GetError HTTP handler called")
 
-	event := store.Event{ID: mux.Vars(r)["uuid"]}
+	var (
+		uuid  = mux.Vars(r)["uuid"]
+		event = store.Event{ID: uuid}
+	)
 
 	if err := store.GetEvent(&event); err != nil {
-		http.Error(w, "", http.StatusBadRequest)
-		return
+		return weberror.NewWebError(err, "error %s not found", uuid)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 
 	body, _ := json.Marshal(event)
 	w.Write(body)
+
+	return nil
 }
 
 // POST /console

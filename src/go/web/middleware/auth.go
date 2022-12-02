@@ -13,7 +13,34 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func AuthMiddleware(jwtKey string) mux.MiddlewareFunc {
+func fromPhenixAuthTokenHeader(r *http.Request) (string, error) {
+	authHeader := r.Header.Get("X-phenix-auth-token")
+	if authHeader == "" {
+		return "", nil // No error, just no token
+	}
+
+	authHeaderParts := strings.Split(authHeader, " ")
+	if len(authHeaderParts) != 2 || strings.ToLower(authHeaderParts[0]) != "bearer" {
+		return "", fmt.Errorf("X-phenix-auth-token header format must be 'Bearer {token}'")
+	}
+
+	return authHeaderParts[1], nil
+}
+
+func NoAuth(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		role, _ := rbac.RoleFromConfig("global-admin")
+
+		ctx := r.Context()
+
+		ctx = context.WithValue(ctx, "user", "global-admin")
+		ctx = context.WithValue(ctx, "role", *role)
+
+		h.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 	tokenMiddleware := jwtmiddleware.New(
 		jwtmiddleware.Options{
 			// Setting this to true since some resource paths don't require
@@ -22,10 +49,13 @@ func AuthMiddleware(jwtKey string) mux.MiddlewareFunc {
 			// value being present, which is only set if valid credentials
 			// were presented.
 			CredentialsOptional: true,
-			// Most calls to the API will include the JWT in the auth header. However,
-			// calls for screenshots and VNC will need the JWT in the URL since they'll
-			// be in browser links and image tags.
-			Extractor: jwtmiddleware.FromFirst(jwtmiddleware.FromAuthHeader, jwtmiddleware.FromParameter("token")),
+			// Most calls to the API will include the JWT in the X-phenix-auth-token
+			// header. However, calls for screenshots and VNC will need the JWT in the
+			// URL since they'll be in browser links and image tags.
+			// Note that we're not using the default Authorization header to allow for
+			// proxy authentication via basic auth (or other means of proxy
+			// authentication that might end up overwriting the Authorization header).
+			Extractor: jwtmiddleware.FromFirst(fromPhenixAuthTokenHeader, jwtmiddleware.FromParameter("token")),
 			ValidationKeyGetter: func(_ *jwt.Token) (interface{}, error) {
 				return []byte(jwtKey), nil
 			},
@@ -52,11 +82,6 @@ func AuthMiddleware(jwtKey string) mux.MiddlewareFunc {
 				return
 			}
 
-			if strings.HasSuffix(r.URL.Path, "/vnc/ws") {
-				h.ServeHTTP(w, r)
-				return
-			}
-
 			ctx := r.Context()
 
 			userToken := ctx.Value("user")
@@ -68,6 +93,14 @@ func AuthMiddleware(jwtKey string) mux.MiddlewareFunc {
 
 			token := userToken.(*jwt.Token)
 			claim := token.Claims.(jwt.MapClaims)
+
+			if proxyAuthHeader != "" {
+				if user := r.Header.Get(proxyAuthHeader); user != claim["sub"].(string) {
+					log.Error("proxy user mismatch -- proxy: %s, token: %s", user, claim["sub"].(string))
+					http.Error(w, "proxy user mismatch", http.StatusUnauthorized)
+					return
+				}
+			}
 
 			user, err := rbac.GetUser(claim["sub"].(string))
 			if err != nil {
@@ -84,10 +117,6 @@ func AuthMiddleware(jwtKey string) mux.MiddlewareFunc {
 
 			role, err := user.Role()
 			if err != nil {
-				fmt.Println(err)
-				// TODO: we will get an error here if the user doesn't yet have a role
-				// assigned. Need to figure out how we could redirect the client to a
-				// page that talks about needing to wait for an admin to assign a role.
 				http.Error(w, "user role error", http.StatusUnauthorized)
 				return
 			}
@@ -95,19 +124,6 @@ func AuthMiddleware(jwtKey string) mux.MiddlewareFunc {
 			ctx = context.WithValue(ctx, "user", user.Username())
 			ctx = context.WithValue(ctx, "role", role)
 			ctx = context.WithValue(ctx, "jwt", token.Raw)
-
-			h.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-
-	noAuthMiddleware := func(h http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			role, _ := rbac.RoleFromConfig("global-admin")
-
-			ctx := r.Context()
-
-			ctx = context.WithValue(ctx, "user", "global-admin")
-			ctx = context.WithValue(ctx, "role", *role)
 
 			h.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -133,7 +149,7 @@ func AuthMiddleware(jwtKey string) mux.MiddlewareFunc {
 
 	if jwtKey == "" {
 		log.Info("no JWT signing key provided -- disabling auth")
-		return func(h http.Handler) http.Handler { return noAuthMiddleware(h) }
+		return func(h http.Handler) http.Handler { return NoAuth(h) }
 	} else if strings.HasPrefix(jwtKey, "dev|") {
 		log.Debug("development JWT key provided -- enabling dev auth")
 		return func(h http.Handler) http.Handler { return devAuthMiddleware(h) }

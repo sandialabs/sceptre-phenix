@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"html/template"
 	"net/http"
 	"strings"
@@ -40,7 +41,10 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	config := newVNCBannerConfig(exp, name)
+	// The `token` variable will be an empty string if authentication is disabled,
+	// which is okay and will not cause any issues here.
+	token, _ := ctx.Value("jwt").(string)
+	config := newVNCBannerConfig(token, exp, name)
 
 	if banner, ok := vm.Annotations["vncBanner"]; ok {
 		switch banner := banner.(type) {
@@ -56,7 +60,7 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 			log.Error("unexpected interface type for vncBanner annotation")
 		}
 	} else {
-		config.finalize(name)
+		config.finalize(fmt.Sprintf("EXP: %s - VM: %s", exp, name))
 	}
 
 	// set no-cache headers
@@ -112,6 +116,7 @@ type bannerConfig struct {
 
 type vncConfig struct {
 	BasePath string
+	Token    string
 	ExpName  string
 	VMName   string
 
@@ -119,9 +124,10 @@ type vncConfig struct {
 	BottomBanner bannerConfig `mapstructure:"bottomBanner"`
 }
 
-func newVNCBannerConfig(exp, vm string) *vncConfig {
+func newVNCBannerConfig(token, exp, vm string) *vncConfig {
 	return &vncConfig{
 		BasePath: o.basePath,
+		Token:    token,
 		ExpName:  exp,
 		VMName:   vm,
 		TopBanner: bannerConfig{

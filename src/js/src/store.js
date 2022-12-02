@@ -31,10 +31,12 @@ export default new Vuex.Store({
 
       if ( state.role === "VM Viewer" ) {
         router.replace( {name: 'vmtiles'} );
-      } else if ( state.next ) {
+      } else if ( state.role === "Disabled" ) {
+        router.replace( {name: 'disabled'} );
+      } else if ( state.next && state.next.name !== 'signin' ) {
         router.replace( state.next );
         state.next = null;
-      } else if ( router.currentRoute.path === "/signin" ) {
+      } else {
         router.replace( {name: 'home'} )
       }
     },

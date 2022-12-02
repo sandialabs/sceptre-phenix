@@ -51,14 +51,17 @@ func newUiCmd() *cobra.Command {
 
 			opts := []web.ServerOption{
 				web.ServeOnEndpoint(viper.GetString("ui.listen-endpoint")),
+				web.ServeOnUnixSocket(viper.GetString("ui.unix-socket-endpoint")),
 				web.ServeBasePath(viper.GetString("ui.base-path")),
 				web.ServeWithJWTKey(viper.GetString("ui.jwt-signing-key")),
 				web.ServeWithJWTLifetime(viper.GetDuration("ui.jwt-lifetime")),
+				web.ServeWithUsers(viper.GetStringSlice("ui.users")),
 				web.ServeWithTLS(viper.GetString("ui.tls-key"), viper.GetString("ui.tls-cert")),
 				web.ServePhenixLogs(viper.GetString("ui.logs.phenix-path")),
 				web.ServeMinimegaLogs(viper.GetString("ui.logs.minimega-path")),
 				web.ServeWithFeatures(viper.GetStringSlice("ui.features")),
 				web.ServeMinimegaPath(viper.GetString("ui.minimega-path")),
+				web.ServeWithProxyAuthHeader(viper.GetString("ui.proxy-auth-header")),
 			}
 
 			if MustGetBool(cmd.Flags(), "log-requests") {
@@ -82,9 +85,12 @@ func newUiCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringP("listen-endpoint", "e", "0.0.0.0:3000", "endpoint to listen on")
+	cmd.Flags().String("unix-socket-endpoint", "", "unix socket path to listen on (no auth, only exposes workflow API)")
 	cmd.Flags().StringP("base-path", "b", "/", "base path to use for UI (must run behind proxy if not '/')")
 	cmd.Flags().StringP("jwt-signing-key", "k", "", "Secret key used to sign JWT for authentication")
 	cmd.Flags().Duration("jwt-lifetime", 24*time.Hour, "Lifetime of JWT authentication tokens")
+	cmd.Flags().String("proxy-auth-header", "", "header containing username when using proxy authentication")
+	cmd.Flags().StringSlice("users", nil, "pipe-delimited list of initial users to add")
 	cmd.Flags().String("tls-key", "", "path to TLS key file")
 	cmd.Flags().String("tls-cert", "", "path to TLS cert file")
 	cmd.Flags().Bool("unbundled", false, "serve local public files instead of bundled")
@@ -96,9 +102,12 @@ func newUiCmd() *cobra.Command {
 	cmd.Flags().String("minimega-path", "", "path to minimega executable (for console access)")
 
 	viper.BindPFlag("ui.listen-endpoint", cmd.Flags().Lookup("listen-endpoint"))
+	viper.BindPFlag("ui.unix-socket-endpoint", cmd.Flags().Lookup("unix-socket-endpoint"))
 	viper.BindPFlag("ui.base-path", cmd.Flags().Lookup("base-path"))
 	viper.BindPFlag("ui.jwt-signing-key", cmd.Flags().Lookup("jwt-signing-key"))
 	viper.BindPFlag("ui.jwt-lifetime", cmd.Flags().Lookup("jwt-lifetime"))
+	viper.BindPFlag("ui.proxy-auth-header", cmd.Flags().Lookup("proxy-auth-header"))
+	viper.BindPFlag("ui.users", cmd.Flags().Lookup("users"))
 	viper.BindPFlag("ui.tls-key", cmd.Flags().Lookup("tls-key"))
 	viper.BindPFlag("ui.tls-cert", cmd.Flags().Lookup("tls-cert"))
 	viper.BindPFlag("ui.log-level", cmd.Flags().Lookup("log-level"))
@@ -109,8 +118,12 @@ func newUiCmd() *cobra.Command {
 	viper.BindPFlag("ui.minimega-path", cmd.Flags().Lookup("minimega-path"))
 
 	viper.BindEnv("ui.listen-endpoint")
+	viper.BindEnv("ui.unix-socket-endpoint")
 	viper.BindEnv("ui.base-path")
 	viper.BindEnv("ui.jwt-signing-key")
+	viper.BindEnv("ui.jwt-lifetime")
+	viper.BindEnv("ui.proxy-auth-header")
+	viper.BindEnv("ui.users")
 	viper.BindEnv("ui.tls-key")
 	viper.BindEnv("ui.tls-cert")
 	viper.BindEnv("ui.log-level")

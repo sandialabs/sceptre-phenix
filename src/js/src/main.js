@@ -100,12 +100,10 @@ Vue.http.interceptors.push(
     // If a token is present in the store (meaning a user is logged in), add the
     // token to the request's header.
     if ( store.state.token ) {
-      request.headers.set( 'Authorization', 'bearer ' + store.state.token )
+      request.headers.set( 'X-phenix-auth-token', 'bearer ' + store.state.token )
     }
 
     return response => {
-      // If we ever get a 401 (Unauthorized) we should automatically redirect
-      // the user to the login screen.
       if ( response.status === 401 ) {
         store.commit( 'LOGOUT' )
         router.replace( {name: 'signin'} )

@@ -7,11 +7,12 @@ import (
 	"phenix/web/util"
 )
 
-// GET /version
+// GET /features
 func GetFeatures(w http.ResponseWriter, r *http.Request) {
-	features := o.features
-	if features == nil {
-		features = make([]string, 0)
+	features := make([]string, 0)
+
+	for f := range o.features {
+		features = append(features, f)
 	}
 
 	body, _ := json.Marshal(util.WithRoot("features", features))

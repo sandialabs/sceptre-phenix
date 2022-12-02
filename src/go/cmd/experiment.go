@@ -190,6 +190,45 @@ func newExperimentCreateCmd() *cobra.Command {
 	return cmd
 }
 
+func newExperimentEditCmd() *cobra.Command {
+	desc := `Edit an experiment
+
+  This subcommand is used to edit an experiment using your default editor.
+	`
+
+	cmd := &cobra.Command{
+		Use:   "edit <experiment name>",
+		Short: "Edit an experiment",
+		Long:  desc,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var (
+				force = MustGetBool(cmd.Flags(), "force")
+				exp   = fmt.Sprintf("experiment/%s", args[0])
+			)
+
+			_, err := config.Edit(exp, force)
+			if err != nil {
+				if config.IsConfigNotModified(err) {
+					fmt.Printf("The %s experiment was not updated\n", args[0])
+					return nil
+				}
+
+				err := util.HumanizeError(err, "Unable to edit the %s experiment", args[0])
+				return err.Humanized()
+			}
+
+			fmt.Printf("The %s experiment was updated\n", args[0])
+
+			return nil
+		},
+	}
+
+	cmd.Flags().Bool("force", false, "override checks")
+
+	return cmd
+}
+
 func newExperimentDeleteCmd() *cobra.Command {
 	desc := `Delete an experiment
 
@@ -678,6 +717,7 @@ func init() {
 	experimentCmd.AddCommand(newExperimentAppsCmd())
 	experimentCmd.AddCommand(newExperimentSchedulersCmd())
 	experimentCmd.AddCommand(newExperimentCreateCmd())
+	experimentCmd.AddCommand(newExperimentEditCmd())
 	experimentCmd.AddCommand(newExperimentDeleteCmd())
 	experimentCmd.AddCommand(newExperimentScheduleCmd())
 	experimentCmd.AddCommand(newExperimentStartCmd())

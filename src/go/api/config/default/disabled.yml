@@ -1,0 +1,7 @@
+apiVersion: phenix.sandia.gov/v1
+kind: Role
+metadata:
+  name: disabled
+spec:
+  roleName: Disabled
+  policies: []

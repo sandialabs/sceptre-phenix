@@ -124,7 +124,12 @@ func (this User) LastName() string {
 
 func (this User) RoleName() string {
 	if this.Spec.Role == nil {
-		return ""
+		disabled, err := RoleFromConfig("disabled")
+		if err != nil {
+			return ""
+		}
+
+		return disabled.Spec.Name
 	}
 
 	return this.Spec.Role.Name
@@ -239,7 +244,12 @@ func (this User) Save() error {
 
 func (this User) Role() (Role, error) {
 	if this.Spec.Role == nil {
-		return Role{}, fmt.Errorf("user has no role assigned")
+		disabled, err := RoleFromConfig("disabled")
+		if err != nil {
+			return Role{}, fmt.Errorf("getting disabled role: %w", err)
+		}
+
+		return *disabled, nil
 	}
 
 	return Role{Spec: this.Spec.Role}, nil

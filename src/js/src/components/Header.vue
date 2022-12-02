@@ -42,7 +42,10 @@ are only available to Global Administrator or Global Viewer.
         </div>
       </div>
       <div class="navbar-end">
-        <div v-if="auth" class="navbar-item">
+        <div v-if="proxyAuth" class="navbar-item">
+            <a role="button" class="button navbar-item is-light" @click="logout">Reauthorize</a>
+        </div>
+        <div v-else-if="auth" class="navbar-item">
             <a role="button" class="button navbar-item is-light" @click="logout">Logout</a>
         </div>
       </div>
@@ -67,6 +70,10 @@ are only available to Global Administrator or Global Viewer.
     computed: {
       auth () {
         return this.$store.getters.auth;
+      },
+
+      proxyAuth () {
+        return process.env.VUE_APP_AUTH === 'proxy';
       }
     },
     
@@ -78,6 +85,14 @@ are only available to Global Administrator or Global Viewer.
           response => {
             if ( response.status == 204 ) {
               this.$store.commit( 'LOGOUT' );
+
+              if ( this.proxyAuth ) {
+                this.$buefy.toast.open({
+                  message: 'Your account has been reauthorized',
+                  type: 'is-success',
+                  duration: 4000
+                });
+              }
             }
           }
         );

@@ -8,10 +8,10 @@ import (
 type ServerOption func(*serverOptions)
 
 type serverOptions struct {
-	endpoint  string
-	jwtKey    string
-	users     []string
-	allowCORS bool
+	endpoint   string
+	unixSocket string
+	users      []string
+	allowCORS  bool
 
 	tlsKeyPath string
 	tlsCrtPath string
@@ -26,9 +26,12 @@ type serverOptions struct {
 	basePath     string
 	minimegaPath string
 
+	jwtKey      string
 	jwtLifetime time.Duration
 
-	features []string
+	proxyAuthHeader string
+
+	features map[string]bool
 }
 
 func newServerOptions(opts ...ServerOption) serverOptions {
@@ -37,7 +40,7 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 		users:       []string{"admin@foo.com:foobar:Global Admin"},
 		basePath:    "/",
 		jwtLifetime: 24 * time.Hour,
-		features:    make([]string, 0),
+		features:    make(map[string]bool),
 	}
 
 	for _, opt := range opts {
@@ -72,18 +75,19 @@ func (this serverOptions) tlsEnabled() bool {
 }
 
 func (this serverOptions) featured(f string) bool {
-	for _, feature := range this.features {
-		if strings.EqualFold(feature, f) {
-			return true
-		}
-	}
-
-	return false
+	_, ok := this.features[f]
+	return ok
 }
 
 func ServeOnEndpoint(e string) ServerOption {
 	return func(o *serverOptions) {
 		o.endpoint = e
+	}
+}
+
+func ServeOnUnixSocket(s string) ServerOption {
+	return func(o *serverOptions) {
+		o.unixSocket = s
 	}
 }
 
@@ -93,9 +97,11 @@ func ServeWithJWTKey(k string) ServerOption {
 	}
 }
 
-func ServeWithUsers(u string) ServerOption {
+func ServeWithUsers(u []string) ServerOption {
 	return func(o *serverOptions) {
-		o.users = strings.Split(u, "|")
+		if len(u) > 0 {
+			o.users = u
+		}
 	}
 }
 
@@ -154,12 +160,24 @@ func ServeWithJWTLifetime(l time.Duration) ServerOption {
 	}
 }
 
+func ServeWithProxyAuthHeader(h string) ServerOption {
+	return func(o *serverOptions) {
+		o.proxyAuthHeader = h
+	}
+}
+
 func ServeWithFeatures(f []string) ServerOption {
 	return func(o *serverOptions) {
 		if f == nil {
-			o.features = make([]string, 0)
+			for k, v := range o.features {
+				if !v {
+					delete(o.features, k)
+				}
+			}
 		} else {
-			o.features = f
+			for _, feature := range f {
+				o.features[feature] = false
+			}
 		}
 	}
 }

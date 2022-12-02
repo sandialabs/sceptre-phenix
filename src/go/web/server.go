@@ -2,11 +2,11 @@ package web
 
 import (
 	"context"
-	"fmt"
+	"net"
 	"net/http"
+	"os"
 	"strings"
 
-	"phenix/api/config"
 	"phenix/web/broker"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -19,69 +19,69 @@ import (
 	"github.com/gorilla/mux"
 )
 
+type route struct {
+	path    string
+	handler http.Handler
+	methods []string
+}
+
 var o serverOptions
 
-func Start(opts ...ServerOption) error {
-	// Ensure all users can also update their account. Note that this will NOT
-	// allow them to change their role.
-	users, err := rbac.GetUsers()
-	if err != nil {
-		panic(err)
-	}
+func ConfigureUsers(users []string) error {
+	setUserRole := func(user *rbac.User, rname string, resources ...string) {
+		if role, err := rbac.RoleFromConfig(rname); err == nil {
+			role.SetResourceNames(resources...)
 
-	for _, user := range users {
-		role, err := user.Role()
-		if err != nil {
-			panic(err)
-		}
-
-		if !role.Allowed("users", "patch", user.Username()) {
+			// allow user to get their own user details
 			role.AddPolicy(
 				[]string{"users"},
 				[]string{user.Username()},
-				[]string{"patch"},
+				[]string{"get"},
 			)
 
-			user.SetRole(&role)
+			user.SetRole(role)
+		} else {
+			log.Error("getting %s role for user %s: %v", rname, user.Username(), err)
 		}
 	}
 
-	o = newServerOptions(opts...)
-
-	for _, u := range o.users {
+	for _, u := range users {
 		creds := strings.Split(u, ":")
 		uname := creds[0]
 		pword := creds[1]
 		rname := creds[2]
 
-		if _, err := config.Get("user/"+uname, false); err == nil {
+		// User already exists.
+		// Confirm existing user has specified role and update if necessary.
+		if user, err := rbac.GetUser(uname); err == nil {
+			if user.RoleName() != rname {
+				log.Debug("updating role for existing user %s from %s to %s", user.Username(), user.RoleName(), rname)
+
+				setUserRole(user, rname, creds[3:]...)
+			}
+
 			continue
 		}
 
+		log.Debug("creating default user %s with role %s", uname, rname)
+
 		user := rbac.NewUser(uname, pword)
 
-		role, err := rbac.RoleFromConfig(rname)
-		if err != nil {
-			return fmt.Errorf("getting %s role: %w", rname, err)
-		}
-
-		role.SetResourceNames(creds[3:]...)
-
-		// allow user to get their own user details
-		role.AddPolicy(
-			[]string{"users"},
-			[]string{uname},
-			[]string{"get", "patch"},
-		)
-
-		user.SetRole(role)
-
-		log.Debug("creating default user - %+v", user)
+		setUserRole(user, rname, creds[3:]...)
 	}
 
-	router := mux.NewRouter().StrictSlash(true)
+	return nil
+}
 
-	var assets http.FileSystem
+func Start(opts ...ServerOption) error {
+	o = newServerOptions(opts...)
+
+	ConfigureUsers(o.users)
+
+	var (
+		router = mux.NewRouter().StrictSlash(true)
+		assets http.FileSystem
+	)
 
 	if o.unbundled {
 		assets = http.Dir("web/public")
@@ -221,13 +221,22 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/login", Login).Methods("GET", "POST", "OPTIONS")
 	api.HandleFunc("/logout", Logout).Methods("GET", "OPTIONS")
 	api.Handle("/history", weberror.ErrorHandler(GetHistory)).Methods("POST", "OPTIONS")
-	api.HandleFunc("/errors/{uuid}", GetError).Methods("GET", "OPTIONS")
 	api.HandleFunc("/ws", broker.ServeWS).Methods("GET")
-	api.Handle("/workflow/apply/{branch}", weberror.ErrorHandler(ApplyWorkflow)).Methods("POST", "OPTIONS")
-	api.Handle("/workflow/configs/{branch}", weberror.ErrorHandler(WorkflowUpsertConfig)).Methods("POST", "OPTIONS")
 	api.HandleFunc("/console", CreateConsole).Methods("POST", "OPTIONS")
 	api.HandleFunc("/console/{pid}/ws", WsConsole).Methods("GET", "OPTIONS")
 	api.HandleFunc("/console/{pid}/size", ResizeConsole).Methods("POST", "OPTIONS").Queries("cols", "{cols:[0-9]+}", "rows", "{rows:[0-9]+}")
+
+	workflowRoutes := []route{
+		{"/workflow/apply/{branch}", weberror.ErrorHandler(ApplyWorkflow), []string{"POST"}},
+		{"/workflow/configs/{branch}", weberror.ErrorHandler(WorkflowUpsertConfig), []string{"POST"}},
+	}
+
+	errorRoutes := []route{
+		{"/errors/{uuid}", weberror.ErrorHandler(GetError), []string{"GET"}},
+	}
+
+	addRoutesToRouter(api, workflowRoutes...)
+	addRoutesToRouter(api, errorRoutes...)
 
 	if o.allowCORS {
 		log.Info("CORS is enabled on HTTP API endpoints")
@@ -243,7 +252,7 @@ func Start(opts ...ServerOption) error {
 		api.Use(middleware.LogRequests)
 	}
 
-	api.Use(middleware.AuthMiddleware(o.jwtKey))
+	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader))
 
 	log.Info("Starting websockets broker")
 
@@ -260,11 +269,47 @@ func Start(opts ...ServerOption) error {
 	log.Info("Using base path '%s'", o.basePath)
 	log.Info("Using JWT lifetime of %v", o.jwtLifetime)
 
+	if o.unixSocket != "" {
+		var (
+			router = mux.NewRouter().StrictSlash(true)
+			api    = router.PathPrefix("/api/v1").Subrouter()
+		)
+
+		addRoutesToRouter(api, workflowRoutes...)
+		addRoutesToRouter(api, errorRoutes...)
+
+		api.Use(middleware.NoAuth)
+
+		os.Remove(o.unixSocket)
+
+		log.Info("Starting Unix socket server at '%s'", o.unixSocket)
+
+		server := http.Server{Handler: router}
+		listener, err := net.Listen("unix", o.unixSocket)
+		if err != nil {
+			return err
+		}
+
+		go func() {
+			if err := server.Serve(listener); err != nil {
+				log.Error("serving Unix socket: %v", err)
+			}
+		}()
+	}
+
 	if o.tlsEnabled() {
 		log.Info("Starting HTTPS server on %s", o.endpoint)
 		return http.ListenAndServeTLS(o.endpoint, o.tlsCrtPath, o.tlsKeyPath, router)
 	} else {
 		log.Info("Starting HTTP server on %s", o.endpoint)
 		return http.ListenAndServe(o.endpoint, router)
+	}
+}
+
+func addRoutesToRouter(router *mux.Router, routes ...route) {
+	for _, r := range routes {
+		// OPTIONS method needed for CORS
+		methods := append(r.methods, "OPTIONS")
+		router.Handle(r.path, r.handler).Methods(methods...)
 	}
 }

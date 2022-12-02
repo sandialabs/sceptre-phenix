@@ -60,7 +60,12 @@ const UI = {
 
         // Translate the DOM
         l10n.translateDOM();
+
         // PHENIX EDIT
+        // Hard code noVNC version
+        Array.from(document.getElementsByClassName('noVNC_version')).forEach(el => el.innerText = '1.3.0');
+
+        /*
         fetch('/novnc/package.json')
             .then((response) => {
                 if (!response.ok) {
@@ -77,6 +82,7 @@ const UI = {
                     .concat(Array.from(document.getElementsByClassName('noVNC_version_separator')))
                     .forEach(el => el.style.display = 'none');
             });
+        */
 
         // Adapt the interface for touch screen devices
         if (isTouchDevice) {

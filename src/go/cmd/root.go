@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strings"
 
 	"phenix/api/config"
@@ -11,7 +12,9 @@ import (
 	"phenix/store"
 	"phenix/util"
 	"phenix/util/common"
+	"phenix/web"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -72,15 +75,56 @@ func Execute() {
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
+	uid, home := getCurrentUserInfo()
+	var homePath string
+
+	if uid != "0" {
+		homePath = fmt.Sprintf("%s/.config/phenix", home)
+	}
+
+	viper.SetEnvPrefix("PHENIX")
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_", ".", "_"))
+	viper.AutomaticEnv() // read in environment variables that match
+
+	viper.SetConfigName("config")
+
+	// Config paths - first look in current directory, then home directory (if
+	// discoverable), then finally global config directory.
+	viper.AddConfigPath(".")
+
+	if homePath != "" {
+		viper.AddConfigPath(homePath)
+	}
+
+	viper.AddConfigPath("/etc/phenix")
+
+	// If a config file is found, read it in.
+	viper.ReadInConfig()
+
+	viper.SetConfigName("users")
+	viper.AddConfigPath(".")
+
+	if homePath != "" {
+		viper.AddConfigPath(homePath)
+	}
+
+	viper.AddConfigPath("/etc/phenix")
+
+	// If a users config file is found, merge it in.
+	if err := viper.MergeInConfig(); err == nil {
+		viper.WatchConfig()
+
+		viper.OnConfigChange(func(e fsnotify.Event) {
+			if strings.TrimSuffix(filepath.Base(e.Name), filepath.Ext(e.Name)) == "users" {
+				web.ConfigureUsers(viper.GetStringSlice("ui.users"))
+			}
+		})
+	}
 
 	rootCmd.PersistentFlags().StringVar(&phenixBase, "base-dir.phenix", "/phenix", "base phenix directory")
 	rootCmd.PersistentFlags().StringVar(&minimegaBase, "base-dir.minimega", "/tmp/minimega", "base minimega directory")
 	rootCmd.PersistentFlags().StringVar(&hostnameSuffixes, "hostname-suffixes", "-minimega,-phenix", "hostname suffixes to strip")
-	// rootCmd.PersistentFlags().Int("log.verbosity", 0, "log verbosity (0 - 10)")
 	rootCmd.PersistentFlags().Bool("log.error-stderr", true, "log fatal errors to STDERR")
-
-	uid, home := getCurrentUserInfo()
 
 	if uid == "0" {
 		os.MkdirAll("/etc/phenix", 0755)
@@ -98,33 +142,6 @@ func init() {
 	}
 
 	viper.BindPFlags(rootCmd.PersistentFlags())
-}
-
-func initConfig() {
-	viper.SetConfigName("config")
-
-	// Config paths - first look in current directory, then home directory (if
-	// discoverable), then finally global config directory.
-	viper.AddConfigPath(".")
-
-	uid, home := getCurrentUserInfo()
-
-	// The default config path added below is the same config path that should be
-	// used for the root user, so don't worry about handling uid = 0 here.
-	if uid != "0" {
-		viper.AddConfigPath(home + "/.config/phenix")
-	}
-
-	viper.AddConfigPath("/etc/phenix")
-
-	viper.SetEnvPrefix("PHENIX")
-	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_", ".", "_"))
-	viper.AutomaticEnv() // read in environment variables that match
-
-	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		fmt.Println("Using config file:", viper.ConfigFileUsed())
-	}
 }
 
 func getCurrentUserInfo() (string, string) {
