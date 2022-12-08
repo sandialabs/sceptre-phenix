@@ -49,7 +49,7 @@ ARG PHENIX_TAG
 
 RUN COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} make bin/phenix
 
-RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.0/vmdb2 -P bin/ \
+RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.1/vmdb2 -P bin/ \
   && chmod +x bin/vmdb2
 
 ARG APPS_REPO=sandia-minimega/phenix-apps
@@ -68,7 +68,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 # tshark needed for scorch tcpdump component
 RUN apt update \
   && echo 'wireshark-common wireshark-common/install-setuid boolean false' | debconf-set-selections \
-  && apt install -y cpio debootstrap git iproute2 iputils-ping locales nano python3-pip tshark vim vmdb2 \
+  && apt install -y cpio debootstrap git iproute2 iputils-ping locales nano pigz python3-pip tshark vim vmdb2 \
   && locale-gen en_US.UTF-8 \
   && apt autoremove -y \
   && apt clean -y \
