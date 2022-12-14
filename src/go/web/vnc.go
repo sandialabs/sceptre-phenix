@@ -55,6 +55,8 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 		default:
 			log.Error("unexpected interface type for vncBanner annotation")
 		}
+	} else {
+		config.finalize(name)
 	}
 
 	// set no-cache headers
