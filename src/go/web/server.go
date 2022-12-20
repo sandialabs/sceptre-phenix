@@ -22,6 +22,30 @@ import (
 var o serverOptions
 
 func Start(opts ...ServerOption) error {
+	// Ensure all users can also update their account. Note that this will NOT
+	// allow them to change their role.
+	users, err := rbac.GetUsers()
+	if err != nil {
+		panic(err)
+	}
+
+	for _, user := range users {
+		role, err := user.Role()
+		if err != nil {
+			panic(err)
+		}
+
+		if !role.Allowed("users", "patch", user.Username()) {
+			role.AddPolicy(
+				[]string{"users"},
+				[]string{user.Username()},
+				[]string{"patch"},
+			)
+
+			user.SetRole(&role)
+		}
+	}
+
 	o = newServerOptions(opts...)
 
 	for _, u := range o.users {
@@ -47,7 +71,7 @@ func Start(opts ...ServerOption) error {
 		role.AddPolicy(
 			[]string{"users"},
 			[]string{uname},
-			[]string{"get"},
+			[]string{"get", "patch"},
 		)
 
 		user.SetRole(role)
@@ -192,6 +216,7 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/users/{username}", GetUser).Methods("GET", "OPTIONS")
 	api.HandleFunc("/users/{username}", UpdateUser).Methods("PATCH", "OPTIONS")
 	api.HandleFunc("/users/{username}", DeleteUser).Methods("DELETE", "OPTIONS")
+	api.HandleFunc("/users/{username}/tokens", CreateUserToken).Methods("POST", "OPTIONS")
 	api.HandleFunc("/signup", Signup).Methods("POST", "OPTIONS")
 	api.HandleFunc("/login", Login).Methods("GET", "POST", "OPTIONS")
 	api.HandleFunc("/logout", Logout).Methods("GET", "OPTIONS")

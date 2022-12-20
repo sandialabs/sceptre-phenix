@@ -14,7 +14,7 @@ import (
 )
 
 /*
-version: v0
+version: v1
 kind: User
 metadata:
 	name: <username>
@@ -90,7 +90,7 @@ func GetUsers() ([]*User, error) {
 			return nil, fmt.Errorf("decoding user config: %w", err)
 		}
 
-		users[i] = &User{Spec: &u}
+		users[i] = &User{Spec: &u, config: &c}
 	}
 
 	return users, nil
@@ -149,6 +149,26 @@ func (this User) UpdateLastName(name string) error {
 
 	if err := this.Save(); err != nil {
 		return fmt.Errorf("updating user last name: %w", err)
+	}
+
+	return nil
+}
+
+func (this User) UpdatePassword(old, new string) error {
+	if err := this.ValidatePassword(old); err != nil {
+		return err
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(new), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("generating password hash: %w", err)
+	}
+
+	this.Spec.Password = string(hashed)
+	this.config.Spec = structs.MapDefaultCase(this.Spec, structs.CASESNAKE)
+
+	if err := this.Save(); err != nil {
+		return fmt.Errorf("updating user password: %w", err)
 	}
 
 	return nil

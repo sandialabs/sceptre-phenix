@@ -36,6 +36,9 @@ message UpdateUserRequest {
   string last_name = 3 [json_name="last_name"];
   string role_name = 4 [json_name="role_name"];
   repeated string resource_names = 5 [json_name="resource_names"];
+
+  string password = 10 [json_name="password"];
+  string new_password = 11 [json_name="new_password"];
 }
 
 message LoginRequest {

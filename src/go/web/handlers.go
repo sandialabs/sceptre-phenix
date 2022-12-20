@@ -2894,27 +2894,36 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 	log.Debug("GetUsers HTTP handler called")
 
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		ctx   = r.Context()
+		uname = ctx.Value("user").(string)
+		role  = ctx.Value("role").(rbac.Role)
 	)
-
-	if !role.Allowed("users", "list") {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-
-	users, err := rbac.GetUsers()
-	if err != nil {
-		http.Error(w, "", http.StatusInternalServerError)
-		return
-	}
 
 	var resp []*proto.User
 
-	for _, u := range users {
-		if role.Allowed("users", "list", u.Username()) {
-			resp = append(resp, util.UserToProtobuf(*u))
+	if role.Allowed("users", "list") {
+		users, err := rbac.GetUsers()
+		if err != nil {
+			http.Error(w, "", http.StatusInternalServerError)
+			return
 		}
+
+		for _, u := range users {
+			if role.Allowed("users", "list", u.Username()) {
+				resp = append(resp, util.UserToProtobuf(*u))
+			}
+		}
+	} else if role.Allowed("users", "get", uname) {
+		user, err := rbac.GetUser(uname)
+		if err != nil {
+			http.Error(w, "", http.StatusInternalServerError)
+			return
+		}
+
+		resp = append(resp, util.UserToProtobuf(*user))
+	} else {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
 	}
 
 	body, err := marshaler.Marshal(&proto.UserList{Users: resp})
@@ -2970,11 +2979,11 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	uRole.SetResourceNames(req.GetResourceNames()...)
 
-	// allow user to get their own user details
+	// allow user to get and update their own user details
 	uRole.AddPolicy(
 		[]string{"users"},
 		[]string{req.GetUsername()},
-		[]string{"get"},
+		[]string{"get", "patch"},
 	)
 
 	user.SetRole(uRole)
@@ -3086,7 +3095,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if req.RoleName != "" {
+	if req.RoleName != "" && role.Allowed("users/roles", "patch", uname) {
 		uRole, err := rbac.RoleFromConfig(req.GetRoleName())
 		if err != nil {
 			log.Error("role name not found - %s", req.GetRoleName())
@@ -3100,10 +3109,24 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		uRole.AddPolicy(
 			[]string{"users"},
 			[]string{uname},
-			[]string{"get"},
+			[]string{"get", "patch"},
 		)
 
 		u.SetRole(uRole)
+	}
+
+	if req.NewPassword != "" {
+		if req.Password == "" {
+			log.Error("new password provided without old password for user %s", uname)
+			http.Error(w, "cannot change password without password", http.StatusBadRequest)
+			return
+		}
+
+		if err := u.UpdatePassword(req.Password, req.NewPassword); err != nil {
+			log.Error("updating password for user %s: %v", uname, err)
+			http.Error(w, "unable to update password", http.StatusBadRequest)
+			return
+		}
 	}
 
 	resp := util.UserToProtobuf(*u)
@@ -3159,6 +3182,81 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 	)
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// POST /users/{username}/tokens
+func CreateUserToken(w http.ResponseWriter, r *http.Request) {
+	log.Debug("CreateUserToken HTTP handler called")
+
+	var (
+		ctx   = r.Context()
+		role  = ctx.Value("role").(rbac.Role)
+		vars  = mux.Vars(r)
+		uname = vars["username"]
+	)
+
+	if !role.Allowed("users", "patch", uname) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	u, err := rbac.GetUser(uname)
+	if err != nil {
+		http.Error(w, "unable to get user", http.StatusInternalServerError)
+		return
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var data map[string]string
+
+	if err := json.Unmarshal(body, &data); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	dur, err := time.ParseDuration(data["lifetime"])
+	if err != nil {
+		http.Error(w, "invalid token lifetime provided", http.StatusBadRequest)
+		return
+	}
+
+	exp := time.Now().Add(dur)
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": u.Username(),
+		"exp": exp.Unix(),
+	})
+
+	// Sign and get the complete encoded token as a string using the secret
+	signed, err := token.SignedString([]byte(o.jwtKey))
+	if err != nil {
+		http.Error(w, "failed to sign JWT", http.StatusInternalServerError)
+		return
+	}
+
+	note := fmt.Sprintf("manually generated - %s", time.Now().Format(time.RFC3339))
+	if desc := data["desc"]; desc != "" {
+		note = data["desc"]
+	}
+
+	if err := u.AddToken(signed, note); err != nil {
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]string{
+		"token": signed,
+		"desc":  note,
+		"exp":   exp.Format(time.RFC3339),
+	}
+
+	body, _ = json.Marshal(resp)
+	w.Write(body)
 }
 
 func Signup(w http.ResponseWriter, r *http.Request) {

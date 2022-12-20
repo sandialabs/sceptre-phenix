@@ -23,7 +23,7 @@ are only available to Global Administrator or Global Viewer.
           <menu-link v-if="auth && experimentUser()"
                        :to="{name: 'hosts'}"
                        class="navbar-item">Hosts</menu-link>
-          <menu-link v-if="auth && globalAdmin()"
+          <menu-link v-if="auth"
                        :to="{name: 'users'}"
                        class="navbar-item">Users</menu-link>
           <menu-link v-if="auth && globalAdmin()"

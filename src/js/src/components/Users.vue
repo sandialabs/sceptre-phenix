@@ -25,20 +25,20 @@
           </b-field>
           <b-field label="Role">
             <b-select v-model="user.role_name" expanded>
-              <option v-for="r in roles">
+              <option v-for="(r, i) in roles" :key="i">
                 {{ r }}
               </option>
             </b-select>
           </b-field>
-          <b-tooltip label="resource names can include wildcards for broad  
-                  assignment (ex. *inv*); they can also include `!` to not   
-                  allow access to a resource (ex. !*inv*)" 
-                  type="is-light is-right" 
-                  multilined>            
+          <b-tooltip label="resource names can include wildcards for broad
+                  assignment (ex. *inv*); they can also include `!` to not
+                  allow access to a resource (ex. !*inv*)"
+                  type="is-light is-right"
+                  multilined>
           <b-field label="Resource Name(s)"></b-field>
           <b-icon icon="question-circle" style="color:#383838"></b-icon>
           </b-tooltip>
-            <b-input type="text" v-model="user.resource_names"></b-input>
+          <b-input type="text" v-model="user.resource_names"></b-input>
         </section>
         <footer class="modal-card-foot buttons is-right">
           <button class="button is-light" @click="createUser">Create User</button>
@@ -57,19 +57,59 @@
           <b-field label="Last Name">
             <b-input type="text" v-model="user.last_name"></b-input>
           </b-field>
-          <b-field label="Role">
+          <b-field label="Password">
+            <b-input type="password" v-model="user.password"></b-input>
+          </b-field>
+          <b-field label="New Password">
+            <b-input type="password" minlength="8" maxlength="32" v-model="user.new_password"></b-input>
+          </b-field>
+          <b-field v-if="adminUser()" label="Role">
             <b-select v-model="user.role_name" expanded>
-              <option v-for="r in roles">
+              <option v-for="(r, i) in roles" :key="i">
                 {{ r }}
               </option>
             </b-select>
           </b-field>
-          <b-field label="Resource Name(s)">
+          <b-field v-if="adminUser()" label="Resource Name(s)">
             <b-input type="text" v-model="user.resource_names"></b-input>
           </b-field>
         </section>
         <footer class="modal-card-foot buttons is-right">
           <button class="button is-light" @click="updateUser">Update User</button>
+        </footer>
+      </div>
+    </b-modal>
+    <b-modal :active.sync="isNewTokenActive" :on-cancel="resetLocalUser" has-modal-card>
+      <div class="modal-card" style="width:25em">
+        <header class="modal-card-head">
+          <p class="modal-card-title">New token for {{ user.username }}</p>
+        </header>
+        <section class="modal-card-body">
+          <template v-if="user.token">
+            <b-field label="Token">
+              <b-input type="text" ref="clone" v-model="user.token" readonly></b-input>
+            </b-field>
+            <b-button size="is-small" icon-left="copy" @click="copy">
+            </b-button>
+            <b-field label="Expires">
+              <b-input type="text" v-model="user.token_exp" readonly></b-input>
+            </b-field>
+          </template>
+          <template v-else>
+            <b-field label="Description">
+              <b-input type="text" v-model="user.token_desc" autofocus></b-input>
+            </b-field>
+            <b-field label="Lifetime">
+              <b-input type="text" v-model="user.token_lifetime"></b-input>
+            </b-field>
+            <b-tooltip label="use Golang time duration strings here" 
+              type="is-light is-right">
+              <b-icon icon="question-circle" style="color:#383838"></b-icon>
+            </b-tooltip>
+          </template>
+        </section>
+        <footer v-if="!user.token" class="modal-card-foot buttons is-right">
+          <button class="button is-light" @click="createNewToken">Create Token</button>
         </footer>
       </div>
     </b-modal>
@@ -95,7 +135,7 @@
           :default-sort-direction="table.defaultSortDirection"
           default-sort="username">
           <b-table-column field="username" label="User" sortable v-slot="props">
-            <template v-if="adminUser()">
+            <template>
               <b-tooltip label="change user settings" type="is-dark">
                 <div class="field">
                   <div @click="editUser( props.row.username )">
@@ -103,9 +143,6 @@
                   </div>
                 </div>
               </b-tooltip>
-            </template>
-            <template v-else>
-              {{ props.row.username }}
             </template>
           </b-table-column>
           <b-table-column field="first_name" label="First Name" v-slot="props">
@@ -117,8 +154,11 @@
           <b-table-column field="role" label="Role" sortable v-slot="props">
             {{ props.row.role_name ? props.row.role_name : "Not yet assigned" }}
           </b-table-column>
-          <b-table-column v-if="adminUser()" label="Delete" width="50" centered v-slot="props">
-            <button class="button is-light is-small" @click="deleteUser( props.row.username )">
+          <b-table-column label="Actions" width="100" centered v-slot="props">
+            <button class="button is-light is-small action" @click="newToken( props.row.username )">
+              <b-icon icon="key"></b-icon>
+            </button>
+            <button v-if="adminUser()" class="button is-light is-small action" @click="deleteUser( props.row.username )">
               <b-icon icon="trash"></b-icon>
             </button>
           </b-table-column>
@@ -411,9 +451,12 @@
         this.$http.patch( 
           'users/' + user.username, user 
         ).then(
-          response => {
+          _ => {
+            delete user.password;
+            delete user.new_password;
+
             let users = this.users;
-                  
+
             for ( let i = 0; i < users.length; i++ ) {
               if ( users[ i ].username == user.username ) {
                 users[ i ] = user;
@@ -477,6 +520,33 @@
         })
       },
 
+      newToken (username) {
+        this.user.username = username;
+        this.isNewTokenActive = true;
+      },
+
+      async createNewToken () {
+        this.isWaiting = true;
+
+        try {
+          let data = {'desc': this.user.token_desc, 'lifetime': this.user.token_lifetime};
+
+          let resp  = await this.$http.post(`users/${this.user.username}/tokens`, data);
+          let token = await resp.json();
+
+          this.user.token     = token.token;
+          this.user.token_exp = token.exp;
+        } catch (err) {
+          this.errorNotification(err);
+        } finally {
+          this.isWaiting = false;
+        }
+      },
+
+      copy () {
+        navigator.clipboard.writeText(this.$refs.clone.value);
+      },
+
       resetLocalUser () {
         this.user = {};
       }
@@ -505,8 +575,19 @@
         userExists: false,
         isCreateActive: false,
         isEditActive: false,
+        isNewTokenActive: false,
         isWaiting: true
       }
     }
   }
 </script>
+
+<style scoped>
+  button.action {
+    margin-right: 5px;
+  }
+
+  a.action {
+    margin-right: 5px;
+  }
+</style>
