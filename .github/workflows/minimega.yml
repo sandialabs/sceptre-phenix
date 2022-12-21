@@ -2,8 +2,6 @@ name: Publish minimega Docker image
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 jobs:
   push-to-ghcr:
     name: Push minimega Docker image to GitHub Packages
@@ -17,11 +15,7 @@ jobs:
       - name: Get short SHA
         run: |
           echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          if [[ "${{ github.event_name }}" = "pull_request" ]]; then
-            echo "branch=PR-$(echo ${{ github.event.pull_request.number }})" >> $GITHUB_ENV
-          else
-            echo "branch=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_ENV
-          fi
+          echo "branch=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_ENV
       - name: Log in to GitHub Docker Registry
         uses: docker/login-action@v2
         with:
