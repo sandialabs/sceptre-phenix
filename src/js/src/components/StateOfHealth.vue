@@ -1,6 +1,6 @@
 <template>
   <div>
-    <b-modal :active.sync="detailsModal.active" :on-cancel="resetDetailsModal" has-modal-card>
+    <b-modal :active.sync="detailsModal.active" :on-cancel="resetDetailsModal" has-modal-card full-screen>
       <div class="modal-card">
         <header class="modal-card-head">
           <p class="modal-card-title">{{ detailsModal.vm }} VM Details</p>
@@ -18,17 +18,15 @@
               <b-table
                 :data="detailsModal.soh.networking"
                 default-sort="timestamp">
-                <template slot-scope="props">
-                  <b-table-column field="timestamp" label="Timestamp" sortable>
-                    {{ props.row.timestamp }}
-                  </b-table-column>
-                  <b-table-column field="success" label="Success" sortable>
-                    {{ props.row.success }}
-                  </b-table-column>
-                  <b-table-column field="error" label="Error" sortable>
-                    {{ props.row.error }}
-                  </b-table-column>
-                </template>
+                <b-table-column field="timestamp" label="Timestamp" sortable v-slot="props">
+                  {{ props.row.timestamp }}
+                </b-table-column>
+                <b-table-column field="success" label="Success" sortable v-slot="props">
+                  {{ props.row.success }}
+                </b-table-column>
+                <b-table-column field="error" label="Error" sortable v-slot="props">
+                  {{ props.row.error }}
+                </b-table-column>
               </b-table>
               <br>
             </div>
@@ -36,12 +34,15 @@
               <p class="title is-5">Reachability</p>
               <b-table
                 :data="detailsModal.soh.reachability"
-                default-sort="hostname">
-                <b-table-column field="hostname" label="Host" sortable v-slot="props">
-                  {{ props.row.hostname }}
-                </b-table-column>
+                default-sort="timestamp">
                 <b-table-column field="timestamp" label="Timestamp" sortable v-slot="props">
                   {{ props.row.timestamp }}
+                </b-table-column>
+                <b-table-column field="target" label="Target" sortable v-slot="props">
+                  {{ props.row.metadata.target }}
+                </b-table-column>
+                <b-table-column field="success" label="Success" sortable v-slot="props">
+                  {{ props.row.success }}
                 </b-table-column>
                 <b-table-column field="error" label="Error" sortable v-slot="props">
                   {{ props.row.error }}
@@ -70,12 +71,12 @@
               <p class="title is-5">Listeners</p>
               <b-table
                 :data="detailsModal.soh.listeners"
-                default-sort="listener">
-                <b-table-column field="listener" label="Listener" sortable v-slot="props">
-                  {{ props.row.listener }}
-                </b-table-column>
+                default-sort="timestamp">
                 <b-table-column field="timestamp" label="Timestamp" sortable v-slot="props">
                   {{ props.row.timestamp }}
+                </b-table-column>
+                <b-table-column field="port" label="Port" sortable v-slot="props">
+                  {{ props.row.metadata.port }}
                 </b-table-column>
                 <b-table-column field="success" label="Success" sortable v-slot="props">
                   {{ props.row.success }}
@@ -919,6 +920,14 @@ export default {
 
 <style scoped>
   label.radio:hover {
+    color: whitesmoke;
+  }
+
+  .modal-card-head {
+    background-color: #686868;
+  }
+
+  .modal-card-title {
     color: whitesmoke;
   }
 </style>
