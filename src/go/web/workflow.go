@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 
@@ -46,7 +46,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 
 	switch {
 	case typ == "application/json": // default to JSON if not set
-		body, err := ioutil.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to read request data")
 			return err.SetStatus(http.StatusInternalServerError)
@@ -57,7 +57,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to parse phenix workflow config")
 		}
 	case typ == "application/x-yaml":
-		body, err := ioutil.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
 			return err.SetStatus(http.StatusInternalServerError)
@@ -123,6 +123,8 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			experiment.CreateWithScenario(wf.ExperimentScenario()),
 			experiment.CreateWithVLANAliases(wf.VLANMappings()),
 			experiment.CreateWithSchedules(wf.Schedules),
+			experiment.CreateWithVLANMin(wf.VLANMin()),
+			experiment.CreateWithVLANMax(wf.VLANMax()),
 		}
 
 		if err := experiment.Create(ctx, opts...); err != nil {
@@ -318,7 +320,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 
 	switch {
 	case typ == "application/json": // default to JSON if not set
-		body, err := ioutil.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to read request data")
 			return err.SetStatus(http.StatusInternalServerError)
@@ -329,7 +331,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to parse JSON config")
 		}
 	case typ == "application/x-yaml":
-		body, err := ioutil.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
 			return err.SetStatus(http.StatusInternalServerError)
@@ -452,6 +454,11 @@ type workflow struct {
 	Scenario  string            `mapstructure:"scenario"`
 	VLANs     map[string]int    `mapstructure:"vlans"`
 	Schedules map[string]string `mapstructue:"schedules"`
+
+	VLANRange *struct {
+		Min int `mapstructure:"min"`
+		Max int `mapstructure:"max"`
+	} `mapstructure:"vlanRange"`
 }
 
 func (this workflow) AutoUpdate() bool {
@@ -508,4 +515,20 @@ func (this workflow) ScheduleMappings() map[string]string {
 	}
 
 	return this.Schedules
+}
+
+func (this workflow) VLANMin() int {
+	if this.VLANRange == nil {
+		return 0
+	}
+
+	return this.VLANRange.Min
+}
+
+func (this workflow) VLANMax() int {
+	if this.VLANRange == nil {
+		return 0
+	}
+
+	return this.VLANRange.Max
 }
