@@ -277,6 +277,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		exp.Spec.SetSchedule(schedules)
+		exp.Spec.SetVLANRange(wf.VLANMin(), wf.VLANMax(), true)
 
 		if err := exp.WriteToStore(false); err != nil {
 			err := weberror.NewWebError(err, "unable to write updated experiment %s", expName)
