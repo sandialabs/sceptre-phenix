@@ -5,43 +5,49 @@ service NetworkManager stop
 
 # Check if ip command exists
 if command -v 'ip' &>/dev/null; then
-    {{ range $idx, $iface := .Network.Interfaces }}
+{{ range $idx, $iface := .Network.Interfaces }}
     dev=$(ip -oneline -4 link show | grep -iv 'LOOPBACK' | awk 'NR=={{ addInt $idx 1 }} {split($2, devname, ":"); print devname[1]}')
     ip link set dev "$dev" down
     ip addr flush dev "$dev"
 
-        {{ if eq $iface.Proto "dhcp" }}
+    {{ if eq $iface.Proto "dhcp" }}
     ip link set dev "$dev" up
     dhclient "$dev"
-        {{ else }}
+    {{ else }}
     ip addr add {{ $iface.Address }}/{{ $iface.Mask }} dev "$dev"
     ip link set dev "$dev" up
-            {{ if ne $iface.Gateway "" }}
+        {{ if ne $iface.Gateway "" }}
     ip route add default via {{ $iface.Gateway }} dev "$dev"
-            {{ end }}
         {{ end }}
     {{ end }}
-    {{ range $route := .Network.Routes }}
-    ip route add {{ $route.Destination }} via {{ $route.Next }}
+    {{ if ne $iface.DNS "" }}
+        echo "nameserver {{ $iface.DNS }}" >> /etc/resolv.conf
     {{ end }}
+{{ end }}
+{{ range $route := .Network.Routes }}
+    ip route add {{ $route.Destination }} via {{ $route.Next }}
+{{ end }}
 else
     # Fallback to ifconfig
-    {{ range $idx, $iface := .Network.Interfaces }}
+{{ range $idx, $iface := .Network.Interfaces }}
     dev=$(ifconfig -s -a | grep -ivE '^lo|Iface' | awk 'NR=={{ addInt $idx 1 }} { print $1 }')
     ifconfig "$dev" down
 
-        {{ if eq $iface.Proto "dhcp" }}
+    {{ if eq $iface.Proto "dhcp" }}
     ifconfig "$dev" up
     dhclient "$dev"
-        {{ else }}
+    {{ else }}
     ifconfig "$dev" {{ $iface.Address }} netmask {{ cidrToMask (print $iface.Address "/" $iface.Mask) }}
     ifconfig "$dev" up
-            {{ if ne $iface.Gateway "" }}
+        {{ if ne $iface.Gateway "" }}
     route add default gw {{ $iface.Gateway }} dev "$dev"
-            {{ end }}
         {{ end }}
     {{ end }}
-    {{ range $route := .Network.Routes }}
-    route add -net {{ $route.Destination }} gw {{ $route.Next }}
+    {{ if ne $iface.DNS "" }}
+    echo "nameserver {{ $iface.DNS }}" >> /etc/resolv.conf
     {{ end }}
+{{ end }}
+{{ range $route := .Network.Routes }}
+    route add -net {{ $route.Destination }} gw {{ $route.Next }}
+{{ end }}
 fi

@@ -105,6 +105,7 @@ type NodeNetworkInterface interface {
 	Address() string
 	Mask() int
 	Gateway() string
+	DNS() string
 	RulesetIn() string
 	RulesetOut() string
 
@@ -122,6 +123,7 @@ type NodeNetworkInterface interface {
 	SetAddress(string)
 	SetMask(int)
 	SetGateway(string)
+	SetDNS(string)
 	SetRulesetIn(string)
 	SetRulesetOut(string)
 }

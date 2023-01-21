@@ -93,6 +93,7 @@ type Interface struct {
 	AddressF    string `json:"address" yaml:"address" structs:"address" mapstructure:"address"`
 	MaskF       int    `json:"mask" yaml:"mask" structs:"mask" mapstructure:"mask"`
 	GatewayF    string `json:"gateway" yaml:"gateway" structs:"gateway" mapstructure:"gateway"`
+	DNSF        string `json:"dns" yaml:"dns" structs:"dns" mapstructure:"dns"`
 	RulesetInF  string `json:"ruleset_in" yaml:"ruleset_in" structs:"ruleset_in" mapstructure:"ruleset_in"`
 	RulesetOutF string `json:"ruleset_out" yaml:"ruleset_out" structs:"ruleset_out" mapstructure:"ruleset_out"`
 }
@@ -157,6 +158,10 @@ func (this Interface) Gateway() string {
 	return this.GatewayF
 }
 
+func (this Interface) DNS() string {
+	return this.DNSF
+}
+
 func (this Interface) RulesetIn() string {
 	return this.RulesetInF
 }
@@ -219,6 +224,10 @@ func (this *Interface) SetMask(mask int) {
 
 func (this *Interface) SetGateway(gw string) {
 	this.GatewayF = gw
+}
+
+func (this *Interface) SetDNS(dns string) {
+	this.DNSF = dns
 }
 
 func (this *Interface) SetRulesetIn(rule string) {
