@@ -581,6 +581,14 @@ components:
           type: string
           format: ipv4
           example: 192.168.1.1
+        dns:
+          nullable: true
+          oneOf:
+          - type: string
+          - type: array
+          example:
+          - 192.168.1.1
+          - 192.168.1.2
     iface_rulesets:
       type: object
       properties:

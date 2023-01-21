@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"text/template"
 )
 
@@ -55,6 +56,9 @@ func GenerateFromTemplate(name string, data interface{}, w io.Writer) error {
 			default:
 				return false
 			}
+		},
+		"stringsJoin": func(s []string, sep string) string {
+			return strings.Join(s, sep)
 		},
 	}
 
