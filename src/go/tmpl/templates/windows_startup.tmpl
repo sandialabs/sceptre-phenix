@@ -88,11 +88,11 @@ $wmi[{{ $idx }}].SetGateways('{{ $iface.Gateway }}', 1) | Out-Null
 $wmi.SetGateways('{{ $iface.Gateway }}', 1) | Out-Null
         {{ end }}
     {{ end }}
-    {{ if ne $iface.DNS "" }}
+    {{ if $iface.DNS }}
         {{ if gt $length 1 }}
-$wmi[{{ $idx }}].SetDNSServerSearchOrder(@('{{ $iface.DNS }}')) | Out-Null
+$wmi[{{ $idx }}].SetDNSServerSearchOrder(@('{{ "'" + stringsJoin $iface.DNS "', '" + "'"}}')) | Out-Null
         {{ else }}
-$wmi.SetDNSServerSearchOrder(@('{{ $iface.DNS }}')) | Out-Null
+$wmi.SetDNSServerSearchOrder(@('{{ "'" + stringsJoin $iface.DNS "', '" + "'"}}')) | Out-Null
         {{ end }}
     {{ end }}
 {{ end }}

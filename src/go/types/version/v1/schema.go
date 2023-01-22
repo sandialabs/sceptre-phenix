@@ -559,10 +559,12 @@ components:
           minLength: 7
           example: 192.168.1.1
         dns:
-          type: string
+          type: array
           format: ipv4
           minLength: 7
           example: 192.168.1.1
+          - 192.168.1.1
+          - 192.168.1.2
     iface_rulesets:
       type: object
       properties:

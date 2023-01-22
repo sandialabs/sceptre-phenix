@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	ifaces "phenix/types/interfaces"
+	"phenix/util"
 )
 
 type Network struct {
@@ -77,25 +78,27 @@ func (this *Network) InterfaceAddress(name string) string {
 	return ""
 }
 
+type StringArray util.StringArray
+
 type Interface struct {
-	NameF       string `json:"name" yaml:"name" structs:"name" mapstructure:"name"`
-	TypeF       string `json:"type" yaml:"type" structs:"type" mapstructure:"type"`
-	ProtoF      string `json:"proto" yaml:"proto" structs:"proto" mapstructure:"proto"`
-	UDPPortF    int    `json:"udp_port" yaml:"udp_port" structs:"udp_port" mapstructure:"udp_port"`
-	BaudRateF   int    `json:"baud_rate" yaml:"baud_rate" structs:"baud_rate" mapstructure:"baud_rate"`
-	DeviceF     string `json:"device" yaml:"device" structs:"device" mapstructure:"device"`
-	VLANF       string `json:"vlan" yaml:"vlan" structs:"vlan" mapstructure:"vlan"`
-	BridgeF     string `json:"bridge" yaml:"bridge" structs:"bridge" mapstructure:"bridge"`
-	AutostartF  bool   `json:"autostart" yaml:"autostart" structs:"autostart" mapstructure:"autostart"`
-	MACF        string `json:"mac" yaml:"mac" structs:"mac" mapstructure:"mac"`
-	DriverF     string `json:"driver" yaml:"driver" structs:"driver" mapstructure:"driver"`
-	MTUF        int    `json:"mtu" yaml:"mtu" structs:"mtu" mapstructure:"mtu"`
-	AddressF    string `json:"address" yaml:"address" structs:"address" mapstructure:"address"`
-	MaskF       int    `json:"mask" yaml:"mask" structs:"mask" mapstructure:"mask"`
-	GatewayF    string `json:"gateway" yaml:"gateway" structs:"gateway" mapstructure:"gateway"`
-	DNSF        string `json:"dns" yaml:"dns" structs:"dns" mapstructure:"dns"`
-	RulesetInF  string `json:"ruleset_in" yaml:"ruleset_in" structs:"ruleset_in" mapstructure:"ruleset_in"`
-	RulesetOutF string `json:"ruleset_out" yaml:"ruleset_out" structs:"ruleset_out" mapstructure:"ruleset_out"`
+	NameF       string      `json:"name" yaml:"name" structs:"name" mapstructure:"name"`
+	TypeF       string      `json:"type" yaml:"type" structs:"type" mapstructure:"type"`
+	ProtoF      string      `json:"proto" yaml:"proto" structs:"proto" mapstructure:"proto"`
+	UDPPortF    int         `json:"udp_port" yaml:"udp_port" structs:"udp_port" mapstructure:"udp_port"`
+	BaudRateF   int         `json:"baud_rate" yaml:"baud_rate" structs:"baud_rate" mapstructure:"baud_rate"`
+	DeviceF     string      `json:"device" yaml:"device" structs:"device" mapstructure:"device"`
+	VLANF       string      `json:"vlan" yaml:"vlan" structs:"vlan" mapstructure:"vlan"`
+	BridgeF     string      `json:"bridge" yaml:"bridge" structs:"bridge" mapstructure:"bridge"`
+	AutostartF  bool        `json:"autostart" yaml:"autostart" structs:"autostart" mapstructure:"autostart"`
+	MACF        string      `json:"mac" yaml:"mac" structs:"mac" mapstructure:"mac"`
+	DriverF     string      `json:"driver" yaml:"driver" structs:"driver" mapstructure:"driver"`
+	MTUF        int         `json:"mtu" yaml:"mtu" structs:"mtu" mapstructure:"mtu"`
+	AddressF    string      `json:"address" yaml:"address" structs:"address" mapstructure:"address"`
+	MaskF       int         `json:"mask" yaml:"mask" structs:"mask" mapstructure:"mask"`
+	GatewayF    string      `json:"gateway" yaml:"gateway" structs:"gateway" mapstructure:"gateway"`
+	DNSF        StringArray `json:"dns" yaml:"dns" structs:"dns" mapstructure:"dns"`
+	RulesetInF  string      `json:"ruleset_in" yaml:"ruleset_in" structs:"ruleset_in" mapstructure:"ruleset_in"`
+	RulesetOutF string      `json:"ruleset_out" yaml:"ruleset_out" structs:"ruleset_out" mapstructure:"ruleset_out"`
 }
 
 func (this Interface) Name() string {
@@ -158,7 +161,7 @@ func (this Interface) Gateway() string {
 	return this.GatewayF
 }
 
-func (this Interface) DNS() string {
+func (this Interface) DNS() StringArray {
 	return this.DNSF
 }
 
@@ -226,8 +229,10 @@ func (this *Interface) SetGateway(gw string) {
 	this.GatewayF = gw
 }
 
-func (this *Interface) SetDNS(dns string) {
-	this.DNSF = dns
+func (this *Interface) SetDNS(dns StringArray) {
+	for _, value := range dns {
+		this.DNSF = append(this.DNSF, value)
+	}
 }
 
 func (this *Interface) SetRulesetIn(rule string) {

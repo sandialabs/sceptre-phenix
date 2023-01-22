@@ -20,8 +20,8 @@ if command -v 'ip' &>/dev/null; then
     ip route add default via {{ $iface.Gateway }} dev "$dev"
         {{ end }}
     {{ end }}
-    {{ if ne $iface.DNS "" }}
-        echo "nameserver {{ $iface.DNS }}" >> /etc/resolv.conf
+    {{ range $server := $iface.DNS }}
+        echo "nameserver {{ $server }}" >> /etc/resolv.conf
     {{ end }}
 {{ end }}
 {{ range $route := .Network.Routes }}
@@ -43,8 +43,8 @@ else
     route add default gw {{ $iface.Gateway }} dev "$dev"
         {{ end }}
     {{ end }}
-    {{ if ne $iface.DNS "" }}
-    echo "nameserver {{ $iface.DNS }}" >> /etc/resolv.conf
+    {{ range $server := $iface.DNS }}
+        echo "nameserver {{ $server }}" >> /etc/resolv.conf
     {{ end }}
 {{ end }}
 {{ range $route := .Network.Routes }}
