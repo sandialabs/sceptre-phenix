@@ -334,10 +334,7 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 			continue
 		}
 
-		var (
-			commit bool
-			cmd    = mmcli.NewNamespacedCommand(exp.Metadata.Name)
-		)
+		cmd := mmcli.NewNamespacedCommand(exp.Metadata.Name)
 
 		for idx, iface := range node.Network().Interfaces() {
 			switch strings.ToLower(iface.Proto()) {
@@ -425,8 +422,6 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 							return fmt.Errorf("applying firewall chain to interface for router %s: %w", node.General().Hostname(), err)
 						}
 
-						commit = true
-
 						break
 					}
 				}
@@ -443,8 +438,6 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 						if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 							return fmt.Errorf("applying firewall chain to interface for router %s: %w", node.General().Hostname(), err)
 						}
-
-						commit = true
 
 						break
 					}
@@ -515,11 +508,9 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 			}
 		}
 
-		if commit {
-			cmd.Command = fmt.Sprintf("router %s commit", node.General().Hostname())
-			if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-				return fmt.Errorf("committing config for router %s: %w", node.General().Hostname(), err)
-			}
+		cmd.Command = fmt.Sprintf("router %s commit", node.General().Hostname())
+		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+			return fmt.Errorf("committing config for router %s: %w", node.General().Hostname(), err)
 		}
 	}
 
