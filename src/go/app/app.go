@@ -166,9 +166,13 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 		err     error
 	)
 
-	if options.Stage == ACTIONPOSTSTART {
+	if options.Stage == ACTIONPRESTART {
 		// Reset status.apps for experiment. Note that this will get rid of any app
-		// status from previous experiment deployments.
+		// status from previous experiment deployments. We do this in the pre-start
+		// stage instead of the post-start stage to ensure there's no lingering app
+		// status from previous deployments if we have to wait for the post-start
+		// stage to run due to delayed start VMs. The state-of-health app was the
+		// main driver for this.
 		exp.Status.ResetAppStatus()
 	}
 
