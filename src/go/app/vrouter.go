@@ -31,7 +31,7 @@ type IPSecConfig struct {
 	Sites      []struct {
 		Local        string `mapstructure:"local"`
 		Peer         string `mapstructure:"peer"`
-		PresharedKey string `mapstructure:"-"`
+		PresharedKey string `mapstructure:"secret"`
 		Tunnels      []struct {
 			Local  string `mapstructure:"local"`
 			Remote string `mapstructure:"remote"`
@@ -670,20 +670,22 @@ func (this *Vrouter) processIPSec(md map[string]interface{}, nets []ifaces.NodeN
 			return nil, fmt.Errorf("no router interface found for local address %s", site.Local)
 		}
 
-		k := site.Local + "-" + site.Peer
-
-		if key, ok := this.ipsecPresharedKeys[k]; ok {
-			site.PresharedKey = key
-		} else {
-			k := site.Peer + "-" + site.Local
+		if site.PresharedKey == "" {
+			k := site.Local + "-" + site.Peer
 
 			if key, ok := this.ipsecPresharedKeys[k]; ok {
 				site.PresharedKey = key
 			} else {
-				key := generateSecret(32)
+				k := site.Peer + "-" + site.Local
 
-				this.ipsecPresharedKeys[k] = key
-				site.PresharedKey = key
+				if key, ok := this.ipsecPresharedKeys[k]; ok {
+					site.PresharedKey = key
+				} else {
+					key := generateSecret(32)
+
+					this.ipsecPresharedKeys[k] = key
+					site.PresharedKey = key
+				}
 			}
 		}
 
