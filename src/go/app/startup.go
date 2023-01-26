@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"phenix/tmpl"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
+	"phenix/util"
 	"phenix/util/common"
 	"phenix/util/mm"
 )
@@ -33,7 +35,7 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 		startupDir = exp.Spec.BaseDir() + "/startup"
 		imageDir   = common.PhenixBase + "/images/"
 
-		// detect duplicate IPs (IP --> hostname)
+		// detect duplicate IPs within a VLAN (VLAN|IP --> hostname)
 		ips = make(map[string]string)
 	)
 
@@ -58,12 +60,29 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 		// check for duplicate IPs
 		if node.Network() != nil && node.Network().Interfaces() != nil {
 			for _, iface := range node.Network().Interfaces() {
-				if h, ok := ips[iface.Address()]; ok {
-					return fmt.Errorf("duplicate IP detected: %s and %s both have %s configured", h, node.General().Hostname(), iface.Address())
+				if iface.Address() == "" {
+					continue
 				}
-				if iface.Address() != "" {
-					ips[iface.Address()] = node.General().Hostname()
+
+				ip := net.ParseIP(iface.Address())
+				if ip == nil {
+					return fmt.Errorf("invalid IP %s provided for %s", iface.Address(), node.General().Hostname())
 				}
+
+				key := iface.Address()
+
+				if util.PrivateIP(ip) {
+					key = fmt.Sprintf("%s|%s", iface.VLAN(), iface.Address())
+					if h, ok := ips[key]; ok {
+						return fmt.Errorf("duplicate private IP detected on VLAN %s: %s and %s both have %s configured", iface.VLAN(), h, node.General().Hostname(), iface.Address())
+					}
+				} else {
+					if h, ok := ips[key]; ok {
+						return fmt.Errorf("duplicate public IP detected: %s and %s both have %s configured", h, node.General().Hostname(), iface.Address())
+					}
+				}
+
+				ips[key] = node.General().Hostname()
 			}
 		}
 
