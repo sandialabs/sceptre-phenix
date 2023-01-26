@@ -60,8 +60,14 @@ func newUiCmd() *cobra.Command {
 				web.ServePhenixLogs(viper.GetString("ui.logs.phenix-path")),
 				web.ServeMinimegaLogs(viper.GetString("ui.logs.minimega-path")),
 				web.ServeWithFeatures(viper.GetStringSlice("ui.features")),
-				web.ServeMinimegaPath(viper.GetString("ui.minimega-path")),
 				web.ServeWithProxyAuthHeader(viper.GetString("ui.proxy-auth-header")),
+			}
+
+			if viper.GetString("ui.minimega-path") != "" {
+				fmt.Fprintln(os.Stderr, "--minimega-path is deprecated; use --minimega-console instead")
+				opts = append(opts, web.ServeMinimegaConsole(true))
+			} else if viper.GetBool("ui.minimega-console") {
+				opts = append(opts, web.ServeMinimegaConsole(true))
 			}
 
 			if MustGetBool(cmd.Flags(), "log-requests") {
@@ -99,7 +105,8 @@ func newUiCmd() *cobra.Command {
 	cmd.Flags().String("logs.phenix-path", "", "path to phenix log file to publish to UI")
 	cmd.Flags().String("logs.minimega-path", "", "path to minimega log file to publish to UI")
 	cmd.Flags().StringSlice("features", nil, "list of features to enable (options: vm-mount)")
-	cmd.Flags().String("minimega-path", "", "path to minimega executable (for console access)")
+	cmd.Flags().String("minimega-path", "", "path to minimega executable (for console access) - DEPRECATED (use --minimega-console instead)")
+	cmd.Flags().Bool("minimega-console", false, "enable minimega console access in UI")
 
 	viper.BindPFlag("ui.listen-endpoint", cmd.Flags().Lookup("listen-endpoint"))
 	viper.BindPFlag("ui.unix-socket-endpoint", cmd.Flags().Lookup("unix-socket-endpoint"))
@@ -116,6 +123,7 @@ func newUiCmd() *cobra.Command {
 	viper.BindPFlag("ui.logs.minimega-path", cmd.Flags().Lookup("logs.minimega-path"))
 	viper.BindPFlag("ui.features", cmd.Flags().Lookup("features"))
 	viper.BindPFlag("ui.minimega-path", cmd.Flags().Lookup("minimega-path"))
+	viper.BindPFlag("ui.minimega-console", cmd.Flags().Lookup("minimega-console"))
 
 	viper.BindEnv("ui.listen-endpoint")
 	viper.BindEnv("ui.unix-socket-endpoint")
@@ -132,6 +140,7 @@ func newUiCmd() *cobra.Command {
 	viper.BindEnv("ui.logs.minimega-path")
 	viper.BindEnv("ui.features")
 	viper.BindEnv("ui.minimega-path")
+	viper.BindEnv("ui.minimega-console")
 
 	cmd.Flags().Bool("log-requests", false, "Log API requests")
 	cmd.Flags().Bool("log-full", false, "Log API requests and responses")

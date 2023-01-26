@@ -22,9 +22,9 @@ type serverOptions struct {
 	phenixLogs   string
 	minimegaLogs string
 
-	unbundled    bool
-	basePath     string
-	minimegaPath string
+	unbundled       bool
+	basePath        string
+	minimegaConsole bool
 
 	jwtKey      string
 	jwtLifetime time.Duration
@@ -148,9 +148,9 @@ func ServeBasePath(p string) ServerOption {
 	}
 }
 
-func ServeMinimegaPath(p string) ServerOption {
+func ServeMinimegaConsole(c bool) ServerOption {
 	return func(o *serverOptions) {
-		o.minimegaPath = p
+		o.minimegaConsole = c
 	}
 }
 

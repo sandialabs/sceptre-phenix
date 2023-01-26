@@ -3481,9 +3481,9 @@ func GetError(w http.ResponseWriter, r *http.Request) error {
 
 // POST /console
 func CreateConsole(w http.ResponseWriter, r *http.Request) {
-	if o.minimegaPath == "" {
-		log.Error("request made for minimega console, but minimega-path CLI option not set")
-		http.Error(w, "'minimega-path' CLI arg not set", http.StatusMethodNotAllowed)
+	if !o.minimegaConsole {
+		log.Error("request made for minimega console, but console not enabled")
+		http.Error(w, "'minimega-console' CLI arg not enabled", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -3494,7 +3494,13 @@ func CreateConsole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// create a new console
-	cmd := exec.Command(o.minimegaPath, "-attach")
+	phenix, err := os.Executable()
+	if err != nil {
+		log.Error("unable to get full path to phenix")
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+	cmd := exec.Command(phenix, "mm", "--attach")
 
 	tty, err := pty.Start(cmd)
 	if err != nil {

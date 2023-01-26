@@ -6,9 +6,3 @@ RUN apt update && apt install -y iptables \
   && apt clean -y \
   && rm -rf /var/lib/apt/lists/* \
   && rm -rf /var/cache/apt/archives/*
-
-COPY ./minimega-entrypoint.sh /minimega-entrypoint.sh
-RUN  chmod +x /minimega-entrypoint.sh
-
-ENTRYPOINT ["/minimega-entrypoint.sh"]
-CMD ["/start-minimega.sh"]
