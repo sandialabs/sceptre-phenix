@@ -54,12 +54,15 @@
               <p class="title is-5">Processes</p>
               <b-table
                 :data="detailsModal.soh.processes"
-                default-sort="process">
-                <b-table-column field="process" label="Process" sortable v-slot="props">
-                  {{ props.row.process }}
-                </b-table-column>
+                default-sort="timestamp">
                 <b-table-column field="timestamp" label="Timestamp" sortable v-slot="props">
                   {{ props.row.timestamp }}
+                </b-table-column>
+                <b-table-column field="process" label="Process" sortable v-slot="props">
+                  {{ props.row.metadata.proc }}
+                </b-table-column>
+                <b-table-column field="success" label="Success" sortable v-slot="props">
+                  {{ props.row.success }}
                 </b-table-column>
                 <b-table-column field="error" label="Error" sortable v-slot="props">
                   {{ props.row.error }}
