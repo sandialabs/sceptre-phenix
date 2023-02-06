@@ -1112,16 +1112,34 @@ func (this SOH) procTest(ctx context.Context, wg *mm.StateGroup, ns string, node
 }
 
 func (this SOH) portTest(ctx context.Context, wg *mm.StateGroup, ns string, node ifaces.NodeSpec, port string) {
-	exec := fmt.Sprintf("ss -lntu state all 'sport = %s'", port)
-
-	if strings.EqualFold(node.Hardware().OSType(), "windows") {
-		exec = fmt.Sprintf(`powershell -command "netstat -an | select-string -pattern 'listening' | select-string -pattern '%s'"`, port)
-	}
-
 	var (
 		host = node.General().Hostname()
 		meta = map[string]interface{}{"host": host, "port": port}
 	)
+
+	exec := "ss -lntu state all"
+
+	if strings.EqualFold(node.Hardware().OSType(), "windows") {
+		exec = fmt.Sprintf(`powershell -command "netstat -an | select-string -pattern 'listening' | select-string -pattern '%s'"`, port)
+	} else {
+		target := strings.Split(port, ":")
+
+		switch len(target) {
+		case 1:
+			exec = fmt.Sprintf("%s 'sport = %s'", exec, target[0])
+		case 2:
+			if target[0] == "" { // :<port>
+				exec = fmt.Sprintf("%s 'sport = %s'", exec, target[1])
+			} else if target[1] == "" { // <ip>: (why?!)
+				exec = fmt.Sprintf("%s 'src = %s'", exec, target[0])
+			} else { // <ip>:<port>
+				exec = fmt.Sprintf("%s 'src = %s and sport = %s'", exec, target[0], target[1])
+			}
+		default:
+			wg.AddError(fmt.Errorf("invalid port %s provided", port), meta)
+			return
+		}
+	}
 
 	retries := 5
 	expected := func(resp string) error {
