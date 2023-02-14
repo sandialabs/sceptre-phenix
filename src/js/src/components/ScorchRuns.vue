@@ -2,8 +2,8 @@
   <div class="content">
     <div v-for="(run, id) in runs" :key="id"> 
       <hr>
-      <scorch-run :exp="exp.name" :run="id" :loop="run.loop" :running="run.running" :nodes="run.nodes"
-                  :viewer="componentDetail" :controller="scorchControl" :rewinder="loopHistory" />
+      <scorch-run :exp="exp.name" :run="id" :name="run.name" :loop="run.loop" :running="run.running"
+                  :nodes="run.nodes" :viewer="componentDetail" :controller="scorchControl" :rewinder="loopHistory" />
     </div>
     <hr>
     <scorch-key />
@@ -100,7 +100,10 @@
 
                 for ( let i = 0; i < pipelines.length; i++ ) {
                   let running = i == runningID;
-                  this.runs.push( { running, loop: 0, nodes: pipelines[i].pipeline } );
+                  let name    = pipelines[i].name;
+                  let nodes   = pipelines[i].pipeline;
+
+                  this.runs.push( { name, running, nodes, loop: 0 } );
                 }
               }, err => {
                 this.errorNotification(err);

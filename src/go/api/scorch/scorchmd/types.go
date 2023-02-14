@@ -88,6 +88,14 @@ func (this ScorchMetadata) ComponentSpecs() ComponentSpecMap {
 	return this.components
 }
 
+func (this ScorchMetadata) RunName(id int) string {
+	if len(this.Runs) > id {
+		return this.Runs[id].Name
+	}
+
+	return ""
+}
+
 func (this ScorchMetadata) FilebeatEnabled(id int) bool {
 	run := this.Runs[id]
 	return (run.Filebeat == nil && this.Filebeat.Enabled) || (run.Filebeat != nil && run.Filebeat.Enabled)
@@ -120,6 +128,7 @@ func (this ScorchMetadata) UseExpNameAsIndexName(id int) bool {
 type Loop struct {
 	Filebeat  *FilebeatSpec `mapstructure:"filebeat"`
 	Count     int           `mapstructure:"count"`
+	Name      string        `mapstructure:"name"`
 	Configure []string      `mapstructure:"configure"`
 	Start     []string      `mapstructure:"start"`
 	Stop      []string      `mapstructure:"stop"`

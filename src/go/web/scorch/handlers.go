@@ -594,6 +594,15 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 	mu.Lock()
 	defer mu.Unlock()
 
+	// TODO (btr): we some how got stuck here at least once where a scorch run was
+	// started, then the experiment was killed, but the scorch run key stayed in
+	// the cancelers map. I'm still not entirely sure how this could happen, but
+	// if the mutex lock isn't blocked then we could do something like trigger
+	// reaping of scorch runs for experiments that have been stopped. We could
+	// also base the cancel context for a scorch run off the cancel context for
+	// the experiment, but in order to do this we'll need to refactor code to
+	// avoid an import loop.
+
 	if _, ok := cancelers[key]; ok {
 		return weberror.NewWebError(nil, "Scorch run already executing for experiment %s", name)
 	}

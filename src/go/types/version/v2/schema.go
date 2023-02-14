@@ -459,6 +459,7 @@ components:
                           enum:
                           - tcp
                           - udp
+                          - tcp_udp
                           - icmp
                           - esp
                           - ah

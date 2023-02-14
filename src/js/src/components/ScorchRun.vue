@@ -43,6 +43,9 @@
         type: Number,
         default: 0
       },
+      name: {
+        type: String
+      },
       loop: {
         type: Number,
         default: 0
@@ -74,11 +77,17 @@
 
     methods: {
       runName () {
-        if (this.loop == 0) {
-          return this.exp + ' - Run ' + this.run;
+        let name = this.run;
+
+        if (this.name) {
+          name = this.name;
         }
 
-        return this.exp + ' - Run ' + this.run + ' (loop ' + this.loop + ')'
+        if (this.loop == 0) {
+          return `${this.exp} - Run ${name}`;
+        }
+
+        return `${this.exp} - Run ${name} (loop ${this.loop})`
       },
 
       runRef () {

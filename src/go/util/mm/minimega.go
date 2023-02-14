@@ -214,6 +214,7 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 			cmd.Command = "disk info " + disk
 
 			// Only expect one row returned
+			// TODO (btr): check length to avoid a panic.
 			resp := mmcli.RunTabular(cmd)[0]
 
 			if resp["backingfile"] == "" {

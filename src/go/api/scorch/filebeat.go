@@ -105,12 +105,18 @@ func mergeFilebeatConfig(md scorchmd.ScorchMetadata, expName, expDir, startTime 
 
 	c["fields_under_root"] = true
 
-	c["fields"] = map[string]interface{}{
+	fields := map[string]interface{}{
 		"s_time":            startTime,
 		"scorch.experiment": expName,
 		"scorch.run_id":     runID,
 		"scorch.runtime":    startTime,
 	}
+
+	if name := md.RunName(runID); name != "" {
+		fields["scorch.run_name"] = name
+	}
+
+	c["fields"] = fields
 
 	c["processors"] = []map[string]interface{}{
 		{

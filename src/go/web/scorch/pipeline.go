@@ -64,6 +64,7 @@ type pipeline struct {
 	// all nodes, ordered
 	Pipeline []*node   `json:"pipeline"`
 	Loop     *pipeline `json:"loop,omitempty"`
+	Name     string    `json:"name,omitempty"`
 
 	exp    string
 	runID  int
@@ -340,7 +341,7 @@ func (this *pipeline) updateNodeStatus(stage string, name string, status string)
 	return true
 }
 
-func newPipeline(exp string, run, loop int) *pipeline {
+func newPipeline(exp, name string, run, loop int) *pipeline {
 	var (
 		config  = &node{Name: "configure", Status: "unknown", Exp: exp, Run: run, Loop: loop, idx: 0}
 		start   = &node{Name: "start", Status: "unknown", Exp: exp, Run: run, Loop: loop, idx: 1}
@@ -351,6 +352,7 @@ func newPipeline(exp string, run, loop int) *pipeline {
 
 	return &pipeline{
 		Pipeline: []*node{config, start, stop, cleanup, done},
+		Name:     name,
 
 		exp:    exp,
 		runID:  run,
@@ -388,7 +390,10 @@ func getPipeline(name string, run, loop int) (*pipeline, error) {
 		return nil, fmt.Errorf("unable to decode scorch metadata: %w", err)
 	}
 
-	exe := md.Runs[run]
+	var (
+		exe     = md.Runs[run]
+		runName = exe.Name
+	)
 
 	for i := 1; i <= loop; i++ {
 		if exe.Loop == nil {
@@ -398,7 +403,7 @@ func getPipeline(name string, run, loop int) (*pipeline, error) {
 		exe = exe.Loop
 	}
 
-	pl := newPipeline(name, run, loop)
+	pl := newPipeline(name, runName, run, loop)
 
 	if len(exe.Configure) == 0 {
 		pl.addComponentToStage("configure", pl.start)
