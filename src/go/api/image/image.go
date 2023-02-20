@@ -38,11 +38,13 @@ var (
 
 // SetDefaults will set default settings to image values if none are set by the
 // user. The default values are:
-//   -- Image size at `5G`
-//   -- The variant is `minbase`
-//   -- The release is `bionic` (Ubuntu 18.04.4 LTS)
-//   -- The mirror is `http://us.archive.ubuntu.com/ubuntu/`
-//   -- The image format is `raw`
+//
+//	-- Image size at `5G`
+//	-- The variant is `minbase`
+//	-- The release is `bionic` (Ubuntu 18.04.4 LTS)
+//	-- The mirror is `http://us.archive.ubuntu.com/ubuntu/`
+//	-- The image format is `raw`
+//
 // This will also remove empty strings in packages and overlays; if overlays are
 // used, the default `/phenix/images` directory is added to the overlay name.
 // Based on the variant value, specific constants will be included during the
@@ -87,15 +89,15 @@ func SetDefaults(img *v1.Image) error {
 		if img.Release == "kali" || img.Release == "kali-rolling" {
 			img.Packages = append(img.Packages, PACKAGES_KALI...)
 		} else {
-			img.Packages = append(img.Packages, PACKAGES_BIONIC...)
+			img.Packages = append(img.Packages, PACKAGES_UBUNTU...)
 		}
 	case "mingui":
-		img.Packages = append(img.Packages, PACKAGES_MINGUI...)
 		if img.Release == "kali" || img.Release == "kali-rolling" {
 			img.Packages = append(img.Packages, PACKAGES_KALI...)
 			img.Packages = append(img.Packages, PACKAGES_MINGUI_KALI...)
 		} else {
-			img.Packages = append(img.Packages, PACKAGES_BIONIC...)
+			img.Packages = append(img.Packages, PACKAGES_UBUNTU...)
+			img.Packages = append(img.Packages, PACKAGES_MINGUI...)
 			if img.Release == "xenial" {
 				img.Packages = append(img.Packages, "qupzilla")
 			} else {

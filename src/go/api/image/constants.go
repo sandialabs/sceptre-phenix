@@ -111,28 +111,32 @@ var PACKAGES_DEFAULT = []string{
 var PACKAGES_KALI = []string{
 	"linux-image-amd64",
 	"linux-headers-amd64",
+	"default-jre",
+	"kali-linux-core",
+	"kali-tools-top10",
+	"python3-cffi-backend",
 }
 
-var PACKAGES_BIONIC = []string{
+var PACKAGES_UBUNTU = []string{
 	"linux-image-generic",
 	"linux-headers-generic",
 }
 
 var PACKAGES_MINGUI = []string{
 	"xorg",
-	"xserver-xorg-input-all",
+	"xinit",
 	"dbus-x11",
+	"xserver-xorg",
+	"xserver-xorg-input-all",
 	"xserver-xorg-video-qxl",
 	"xserver-xorg-video-vesa",
-	"xinit",
-	"xfce4-terminal",
 	"xfce4",
-	"python3-cffi-backend",
+	"xfce4-terminal",
 }
 
 var PACKAGES_MINGUI_KALI = []string{
-	"ca-certificates-java",
-	"openjdk-11-jre-headless",
+	"xorg",
+	"xfce4-terminal",
 	"kali-desktop-xfce",
 }
 
