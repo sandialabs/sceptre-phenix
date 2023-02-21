@@ -220,33 +220,39 @@ func CreateFromConfig(name, saveas string, overlays, packages, scripts []string)
 // the process of getting an existing image configuration, decoding it,
 // generating the `vmdb` verbosconfiguration file, or executing the `vmdb` command.
 func Build(ctx context.Context, name string, verbosity int, cache bool, dryrun bool, output string) error {
-	c, _ := store.NewConfig("image/" + name)
-
-	if err := store.Get(c); err != nil {
-		return fmt.Errorf("getting image config %s from store: %w", name, err)
-	}
-
 	var img v1.Image
+	var filename string
 
-	if err := mapstructure.Decode(c.Spec, &img); err != nil {
-		return fmt.Errorf("decoding image spec: %w", err)
-	}
+	if strings.Contains(name, ".vmdb") {
+		filename = name
+		name = strings.TrimSuffix(path.Base(filename), path.Ext(filename))
+	} else {
+		c, _ := store.NewConfig("image/" + name)
 
-	if verbosity >= V_VVVERBOSE {
-		img.VerboseLogs = true
-	}
+		if err := store.Get(c); err != nil {
+			return fmt.Errorf("getting image config %s from store: %w", name, err)
+		}
 
-	img.Cache = cache
+		if err := mapstructure.Decode(c.Spec, &img); err != nil {
+			return fmt.Errorf("decoding image spec: %w", err)
+		}
 
-	// The Kali package repos use `kali-rolling` as the release name.
-	if img.Release == "kali" {
-		img.Release = "kali-rolling"
-	}
+		if verbosity >= V_VVVERBOSE {
+			img.VerboseLogs = true
+		}
 
-	filename := output + "/" + name + ".vmdb"
+		img.Cache = cache
 
-	if err := tmpl.CreateFileFromTemplate("vmdb.tmpl", img, filename); err != nil {
-		return fmt.Errorf("generate vmdb config from template: %w", err)
+		// The Kali package repos use `kali-rolling` as the release name.
+		if img.Release == "kali" {
+			img.Release = "kali-rolling"
+		}
+
+		filename = output + "/" + name + ".vmdb"
+
+		if err := tmpl.CreateFileFromTemplate("vmdb.tmpl", img, filename); err != nil {
+			return fmt.Errorf("generate vmdb config from template: %w", err)
+		}
 	}
 
 	if !dryrun && !shell.CommandExists("vmdb2") {
