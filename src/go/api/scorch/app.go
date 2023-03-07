@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"phenix/api/scorch/scorchexe"
@@ -16,6 +17,7 @@ import (
 	"phenix/app"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
+	"phenix/util"
 	"phenix/util/shell"
 	"phenix/web/scorch"
 
@@ -93,54 +95,39 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	var (
-		runID     = scorchexe.MustRunID(ctx)
-		startTime = time.Now().UTC().Format("Mon Jan 02 15:04:05 -0700 2006")
+		runID  = scorchexe.MustRunID(ctx)
+		runDir = filepath.Join(exp.FilesDir(), "scorch", fmt.Sprintf("run-%d", runID))
+		start  = time.Now().UTC()
 	)
 
 	if runID < 0 || runID >= len(this.md.Runs) {
 		return fmt.Errorf("invalid Scorch run ID for experiment %s", exp.Metadata.Name)
 	}
 
-	update := scorch.ComponentUpdate{
-		Exp:   exp.Metadata.Name,
-		Run:   runID,
-		Loop:  0,
-		Stage: string(ACTIONDONE),
+	if err := os.RemoveAll(runDir); err != nil {
+		return fmt.Errorf("removing existing contents of run directory at %s: %w", runDir, err)
 	}
 
+	var cmd *exec.Cmd
+
 	if this.md.FilebeatEnabled(runID) {
-		inputs, err := createFilebeatConfig(this.md, exp.Spec.ExperimentName(), exp.FilesDir(), startTime, runID)
+		inputs, err := createFilebeatConfig(this.md, exp.Spec.ExperimentName(), runID, runDir, start)
 		if err != nil {
 			return fmt.Errorf("creating Filebeat config: %w", err)
 		}
 
 		if inputs > 0 {
-			cmd, err := this.startFilebeat(ctx, exp.FilesDir(), runID)
+			cmd, err = this.startFilebeat(ctx, runID, runDir)
 			if err != nil {
 				return fmt.Errorf("starting Filebeat: %w", err)
 			}
-
-			defer func() {
-				update.Status = "running"
-				scorch.UpdatePipeline(update)
-
-				this.stopFilebeat(ctx, cmd)
-
-				update.Status = "success"
-				scorch.UpdatePipeline(update)
-			}()
 		}
-	} else {
-		defer func() {
-			update.Status = "success"
-			scorch.UpdatePipeline(update)
-		}()
 	}
 
 	var (
 		errors error
 		run    = this.md.Runs[runID]
-		opts   = []Option{Experiment(*exp), RunID(runID), StartTime(time.Now().UTC().Format("Mon Jan 02 15:04:05 -0700 2006"))}
+		opts   = []Option{Experiment(*exp), RunID(runID), StartTime(start.Format(time.RubyDate))}
 	)
 
 	for i := 0; i < run.Count; i++ {
@@ -152,6 +139,29 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 		}
 	}
 
+	update := scorch.ComponentUpdate{
+		Exp:   exp.Metadata.Name,
+		Run:   runID,
+		Loop:  0,
+		Stage: string(ACTIONDONE),
+	}
+
+	update.Status = "running"
+	scorch.UpdatePipeline(update)
+
+	if cmd != nil {
+		this.stopFilebeat(ctx, cmd)
+	}
+
+	archive := filepath.Join(exp.FilesDir(), fmt.Sprintf("scorch-run-%d_%s.tgz", runID, start.Format(time.RFC3339)))
+
+	if err := util.CreateArchive(runDir, archive); err != nil {
+		errors = multierror.Append(errors, fmt.Errorf("archiving data generated for run %d: %w", runID, err))
+	}
+
+	update.Status = "success"
+	scorch.UpdatePipeline(update)
+
 	return errors
 }
 
@@ -159,7 +169,7 @@ func (Scorch) Cleanup(context.Context, *types.Experiment) error {
 	return nil
 }
 
-func (this Scorch) startFilebeat(ctx context.Context, baseDir string, runID int) (*exec.Cmd, error) {
+func (this Scorch) startFilebeat(ctx context.Context, runID int, runDir string) (*exec.Cmd, error) {
 	var (
 		cmd    *exec.Cmd
 		stdOut bytes.Buffer
@@ -174,9 +184,8 @@ func (this Scorch) startFilebeat(ctx context.Context, baseDir string, runID int)
 
 	if this.md.Filebeat.Enabled && shell.CommandExists("filebeat") {
 		var (
-			base = fmt.Sprintf("%s/scorch/run-%d/filebeat", baseDir, runID)
-			data = fmt.Sprintf("%s/data", base)
-			cfg  = fmt.Sprintf("%s/filebeat.yml", base)
+			data = filepath.Join(runDir, "filebeat", "data")
+			cfg  = filepath.Join(runDir, "filebeat", "filebeat.yml")
 		)
 
 		// We include the httpprof server so we can query for running harvesters

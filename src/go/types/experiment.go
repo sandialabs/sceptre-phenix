@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"phenix/store"
@@ -112,7 +113,7 @@ func (this Experiment) DryRun() bool {
 }
 
 func (this Experiment) FilesDir() string {
-	return fmt.Sprintf("%s/images/%s/files", common.PhenixBase, this.Metadata.Name)
+	return filepath.Join(common.PhenixBase, "images", this.Metadata.Name, "files")
 }
 
 func RunningExperiments() ([]*Experiment, error) {
