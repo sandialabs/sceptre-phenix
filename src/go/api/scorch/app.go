@@ -108,7 +108,10 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 		return fmt.Errorf("removing existing contents of run directory at %s: %w", runDir, err)
 	}
 
-	var cmd *exec.Cmd
+	var (
+		cmd  *exec.Cmd
+		port int
+	)
 
 	if this.md.FilebeatEnabled(runID) {
 		inputs, err := createFilebeatConfig(this.md, exp.Spec.ExperimentName(), runID, runDir, start)
@@ -117,7 +120,7 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 		}
 
 		if inputs > 0 {
-			cmd, err = this.startFilebeat(ctx, runID, runDir)
+			cmd, port, err = this.startFilebeat(ctx, runID, runDir)
 			if err != nil {
 				return fmt.Errorf("starting Filebeat: %w", err)
 			}
@@ -150,7 +153,7 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 	scorch.UpdatePipeline(update)
 
 	if cmd != nil {
-		this.stopFilebeat(ctx, cmd)
+		this.stopFilebeat(ctx, cmd, port)
 	}
 
 	archive := filepath.Join(exp.FilesDir(), fmt.Sprintf("scorch-run-%d_%s.tgz", runID, start.Format(time.RFC3339)))
@@ -169,9 +172,10 @@ func (Scorch) Cleanup(context.Context, *types.Experiment) error {
 	return nil
 }
 
-func (this Scorch) startFilebeat(ctx context.Context, runID int, runDir string) (*exec.Cmd, error) {
+func (this Scorch) startFilebeat(ctx context.Context, runID int, runDir string) (*exec.Cmd, int, error) {
 	var (
 		cmd    *exec.Cmd
+		port   int
 		stdOut bytes.Buffer
 		stdErr bytes.Buffer
 	)
@@ -188,16 +192,23 @@ func (this Scorch) startFilebeat(ctx context.Context, runID int, runDir string) 
 			cfg  = filepath.Join(runDir, "filebeat", "filebeat.yml")
 		)
 
+		var err error
+		port, err = util.GetFreePort("127.0.0.1")
+		if err != nil {
+			return nil, 0, fmt.Errorf("unable to determine free port for Filebeat httpprof: %w", err)
+		}
+
 		// We include the httpprof server so we can query for running harvesters
 		// when stopping Filebeat below.
-		cmd = exec.CommandContext(ctx, "filebeat", "-c", cfg, "--path.data", data, "--httpprof", "127.0.0.1:5066")
+		httpprof := fmt.Sprintf("127.0.0.1:%d", port)
+		cmd = exec.CommandContext(ctx, "filebeat", "-c", cfg, "--path.data", data, "--httpprof", httpprof)
 
 		cmd.Stdin = nil
 		cmd.Stdout = &stdOut
 		cmd.Stderr = &stdErr
 
 		if err := cmd.Start(); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		// Give Filebeat time to start up or die.
@@ -205,15 +216,15 @@ func (this Scorch) startFilebeat(ctx context.Context, runID int, runDir string) 
 
 		if !shell.ProcessExists(cmd.Process.Pid) {
 			if err := cmd.Wait(); err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 		}
 	}
 
-	return cmd, nil
+	return cmd, port, nil
 }
 
-func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd) {
+func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 	if cmd == nil {
 		return
 	}
@@ -231,7 +242,7 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd) {
 	time.Sleep(7 * time.Second)
 
 	var (
-		max  = time.NewTimer(1 * time.Minute)
+		max  = time.NewTimer(5 * time.Minute)
 		tick = time.NewTicker(5 * time.Second)
 
 		metrics filebeatMetrics
@@ -246,14 +257,14 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd) {
 			cmd.Process.Signal(os.Interrupt)
 			return
 		case <-max.C:
-			log.Warn("max amount of time for Filebeat to harvest inputs reached")
+			log.Warn("max amount of time (%v) for Filebeat to harvest inputs reached", max)
 
 			cmd.Process.Signal(os.Interrupt)
 			cmd.Wait()
 
 			return
 		case <-tick.C:
-			resp, err := http.Get("http://localhost:5066/debug/vars")
+			resp, err := http.Get(fmt.Sprintf("http://localhost:%d/debug/vars", port))
 			if err != nil {
 				log.Error("unable to get number of active harvesters from Filebeat: %v", err)
 
