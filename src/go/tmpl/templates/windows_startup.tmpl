@@ -131,12 +131,32 @@ if ($host_name -eq "{{ .Node.General.Hostname }}") {
     $path = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
     Set-ItemProperty -Path $path -Name DefaultUserName -Value "{{ index .Metadata "auto_logon" "username" }}"
     Set-ItemProperty -Path $path -Name DefaultPassword -Value "{{ index .Metadata "auto_logon" "password" }}"
+        {{ if index .Metadata "auto_logon" "local" }}
+    Set-ItemProperty -Path $path -Name DefaultDomainName -Value "."
+        {{ else }}
     Set-ItemProperty -Path $path -Name DefaultDomainName -Value $domain
+        {{ end }}
     Set-ItemProperty -Path $path -Name AutoAdminLogon -Value 1
     {{ end }}
 
     echo 'Domain joined. Restarting...'
     Phenix-SetStartupStatus('joined-domain')
+    Restart-Computer -Force
+{{ else if .Metadata.auto_logon }}
+    if (Phenix-StartupStatusIs('auto-logon')) {
+        echo 'Startup script complete!'
+        Phenix-SetStartupStatus('done')
+        exit
+    }
+
+    echo 'Adding auto logon'
+    $path = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+    Set-ItemProperty -Path $path -Name DefaultUserName -Value "{{ index .Metadata "auto_logon" "username" }}"
+    Set-ItemProperty -Path $path -Name DefaultPassword -Value "{{ index .Metadata "auto_logon" "password" }}"
+    Set-ItemProperty -Path $path -Name DefaultDomainName -Value "."
+    Set-ItemProperty -Path $path -Name AutoAdminLogon -Value 1
+
+    Phenix-SetStartupStatus('auto-logon')
     Restart-Computer -Force
 {{ else }}
     echo 'Startup script complete!'
