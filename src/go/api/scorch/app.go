@@ -156,10 +156,12 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 		this.stopFilebeat(ctx, cmd, port)
 	}
 
-	archive := filepath.Join(exp.FilesDir(), fmt.Sprintf("scorch-run-%d_%s.tgz", runID, start.Format(time.RFC3339)))
+	if _, err := os.Stat(runDir); err == nil {
+		archive := filepath.Join(exp.FilesDir(), fmt.Sprintf("scorch-run-%d_%s.tgz", runID, start.Format(time.RFC3339)))
 
-	if err := util.CreateArchive(runDir, archive); err != nil {
-		errors = multierror.Append(errors, fmt.Errorf("archiving data generated for run %d: %w", runID, err))
+		if err := util.CreateArchive(runDir, archive); err != nil {
+			errors = multierror.Append(errors, fmt.Errorf("archiving data generated for run %d: %w", runID, err))
+		}
 	}
 
 	update.Status = "success"
