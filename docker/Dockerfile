@@ -87,6 +87,9 @@ RUN python3 -m pip install \
 # HACK to get around minimega.py lack of updates
 RUN sed -i '164s/cmd if v/cmd if v is not None/' /usr/local/lib/python3.8/dist-packages/minimega.py
 
+RUN wget -O glow.tgz https://github.com/charmbracelet/glow/releases/download/v1.5.0/glow_1.5.0_Linux_x86_64.tar.gz \
+  && tar -xzf glow.tgz glow && mv glow /usr/local/bin/glow && rm glow.tgz
+
 # needed to build Kali images with phenix
 RUN wget -O kali.deb https://http.kali.org/kali/pool/main/k/kali-archive-keyring/kali-archive-keyring_2022.1_all.deb \
 	&& dpkg -i kali.deb && rm kali.deb

@@ -14,13 +14,14 @@ import (
 	"golang.org/x/term"
 )
 
-func terminal(ctx context.Context, cmd string, args []string, envs ...string) error {
+func terminal(ctx context.Context, dir, cmd string, args []string, envs ...string) error {
 	printer := color.New(color.FgGreen)
 
 	printer.Printf("Breakpoint: returning control to shell...\n\n")
 
 	c := exec.CommandContext(ctx, cmd, args...)
 	c.Env = append(c.Env, envs...)
+	c.Dir = dir
 
 	tty, err := pty.Start(c)
 	if err != nil {

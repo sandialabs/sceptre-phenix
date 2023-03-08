@@ -3,6 +3,8 @@ package scorch
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"phenix/api/scorch/scorchmd"
 	"phenix/app"
@@ -17,7 +19,8 @@ import (
 )
 
 type BreakMetadata struct {
-	Tap *tap.Tap `mapstructure:"tap"`
+	Tap    *tap.Tap `mapstructure:"tap"`
+	Readme string   `mapstructure:"readme"`
 }
 
 type Break struct {
@@ -94,21 +97,39 @@ func (this Break) breakPoint(ctx context.Context, stage Action) error {
 		args []string
 	)
 
-	if md.Tap == nil {
-		cmd = "/bin/bash"
+	dir, err := os.MkdirTemp("", "*")
+	if err != nil {
+		return fmt.Errorf("creating temporary directory for break component: %w", err)
+	}
+
+	defer os.RemoveAll(dir)
+
+	if md.Readme == "" {
+		if md.Tap == nil {
+			cmd = "/bin/bash"
+		} else {
+			// create shell in the network namespace created for the tap
+			cmd = "ip"
+			args = []string{"netns", "exec", md.Tap.Name, "/bin/bash"}
+		}
 	} else {
-		// create shell in the network namespace created for the tap
-		cmd = "ip"
-		args = []string{"netns", "exec", md.Tap.Name, "/bin/bash"}
+		readme := filepath.Join(dir, "README")
+
+		if err := os.WriteFile(readme, []byte(md.Readme), 0644); err != nil {
+			return fmt.Errorf("writing break component README to file: %w", err)
+		}
+
+		cmd = "/usr/local/bin/glow"
+		args = []string{"README"}
 	}
 
 	if app.IsContextTriggerCLI(ctx) {
 		// this blocks until terminal is exited
-		if err := terminal(ctx, cmd, args); err != nil {
+		if err := terminal(ctx, dir, cmd, args); err != nil {
 			return fmt.Errorf("starting bash terminal: %w", err)
 		}
 	} else if app.IsContextTriggerUI(ctx) {
-		done, err := scorch.CreateWebTerminal(ctx, exp, this.options.Run, this.options.Loop, string(stage), this.options.Name, cmd, args)
+		done, err := scorch.CreateWebTerminal(ctx, exp, this.options.Run, this.options.Loop, string(stage), this.options.Name, dir, cmd, args)
 		if err != nil {
 			return fmt.Errorf("triggering web terminal: %w", err)
 		}

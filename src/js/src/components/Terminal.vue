@@ -46,7 +46,7 @@
       this.setupTerminal()
 
       if (this.resizePath === undefined) {
-        this.term.resize(80, 40);  
+        this.term.resize(80, 30);
       } else {
         this.term.on('resize', (size) => {
           var url = this.resizePath + '?cols=' + size.cols + '&rows=' + size.rows;

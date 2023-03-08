@@ -83,7 +83,7 @@
       </b-table-column>
     </b-table>
     <b-loading :is-full-page="true" :active.sync="isWaiting" :can-cancel="false"></b-loading>
-    <b-modal :active.sync="terminal.modal" :on-cancel="resetTerminal" has-modal-card>
+    <b-modal :active.sync="terminal.modal" :can-cancel="terminal.ro" :on-cancel="resetTerminal" has-modal-card>
       <div class="modal-card" style="width:60em">
         <header class="modal-card-head">
           <p class="modal-card-title">{{ terminalName() }}</p>
@@ -92,10 +92,12 @@
           <vue-terminal :wsPath="terminal.loc"></vue-terminal>
         </section>
         <footer class="modal-card-foot buttons is-right">
-          <b-tooltip label="this will close but not exit the terminal" type="is-light is-left" :delay="1000">  
-            <button class="button is-light" @click="resetTerminal">Close</button>
-          </b-tooltip>
-          <div v-if="!terminal.ro">
+          <div v-if="terminal.ro">
+            <b-tooltip label="this will close but not exit the terminal" type="is-light is-left" :delay="1000">
+              <button class="button is-light" @click="resetTerminal">Close</button>
+            </b-tooltip>
+          </div>
+          <div v-else>
             <b-tooltip label="this will EXIT the terminal" type="is-danger is-left" :delay="1000">
               <button class="button is-danger" @click="exitTerminal">Exit</button>
             </b-tooltip>
@@ -327,19 +329,21 @@
         return name;
       },
 
-      resetTerminal () {
-        this.terminal = {
-          modal: false,
-          exp:   '',
-          loc:   '',
-          exit:  '',
-          ro:    false
+      resetTerminal (force = false) {
+        if (force || this.terminal.ro) {
+          this.terminal = {
+            modal: false,
+            exp:   '',
+            loc:   '',
+            exit:  '',
+            ro:    false
+          }
         }
       },
 
-      exitTerminal () {
-        this.$http.post(this.terminal.exit);
-        this.resetTerminal();
+      async exitTerminal () {
+        await this.$http.post(this.terminal.exit);
+        this.resetTerminal(true);
         this.experimentTerminal(this.terminal.exp, false);
         delete(this.terminals[this.terminal.exp]);
       },

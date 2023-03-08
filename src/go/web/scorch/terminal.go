@@ -54,13 +54,14 @@ var (
 
 var ErrTerminalNotFound = fmt.Errorf("web terminal not found")
 
-func CreateWebTerminal(ctx context.Context, exp string, run, loop int, stage, name, cmd string, args []string, envs ...string) (chan struct{}, error) {
-	log.Debug("CreateTerminal function called")
+func CreateWebTerminal(ctx context.Context, exp string, run, loop int, stage, name, dir, cmd string, args []string, envs ...string) (chan struct{}, error) {
+	log.Debug("CreateWebTerminal function called")
 
 	term := newWebTerm(exp, run, loop, stage, name)
 
 	c := exec.CommandContext(ctx, cmd, args...)
 	c.Env = append(c.Env, envs...)
+	c.Dir = dir
 
 	tty, err := pty.Start(c)
 	if err != nil {
@@ -101,9 +102,10 @@ func CreateWebTerminal(ctx context.Context, exp string, run, loop int, stage, na
 func KillTerminal(term WebTerm) error {
 	close(term.Done)
 
-	// The calling function needs to be holding the webTermMu lock!
+	webTermMu.Lock()
 	delete(webTermsPid, term.Pid)
 	delete(webTermsExp, term.key)
+	webTermMu.Unlock()
 
 	broker.Broadcast(
 		nil, // TODO
