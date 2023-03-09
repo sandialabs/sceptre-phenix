@@ -79,10 +79,11 @@ ENV LANG   en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
 
 ARG APPS_REPO=sandia-minimega/phenix-apps
+ARG APPS_BRANCH=main
 RUN python3 -m pip install \
   --trusted-host pypi.org \
   --trusted-host files.pythonhosted.org \
-  "git+https://github.com/${APPS_REPO}.git@main#egg=phenix-apps&subdirectory=src/python"
+  "git+https://github.com/${APPS_REPO}.git@${APPS_BRANCH}#egg=phenix-apps&subdirectory=src/python"
 
 # HACK to get around minimega.py lack of updates
 RUN sed -i '164s/cmd if v/cmd if v is not None/' /usr/local/lib/python3.8/dist-packages/minimega.py
@@ -101,5 +102,10 @@ RUN wget -O filebeat.deb https://artifacts.elastic.co/downloads/beats/filebeat/f
 COPY --from=gobuilder /phenix/bin/phenix   /usr/local/bin/phenix
 COPY --from=gobuilder /phenix/bin/vmdb2    /usr/bin/vmdb2
 COPY --from=gobuilder /go/bin/phenix-app-* /usr/local/bin
+
+# Update GitHub workflow configs and docker-compose config to change the version
+# of minimega required for use with phenix.
+ARG   MINIMEGA_REVISION=local-dev
+LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandia-minimega/phenix/minimega:${MINIMEGA_REVISION}"
 
 CMD ["phenix", "help"]

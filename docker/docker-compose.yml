@@ -21,6 +21,7 @@ services:
     - --hostname-suffixes=-minimega,-phenix
 #   - --logs.phenix-path=/var/log/phenix/phenix.log
 #   - --logs.minimega-path=/var/log/phenix/minimega.log
+    - --minimega-console
     image: phenix
     container_name: phenix
     privileged: true
@@ -43,6 +44,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.minimega
+      args:
+        MINIMEGA_REVISION: 422268b
     image: minimega
     container_name: minimega
     privileged: true

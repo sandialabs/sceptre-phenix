@@ -27,7 +27,11 @@ jobs:
         with:
           context: docker
           file: docker/Dockerfile.minimega
+          build-args: |
+            MINIMEGA_REVISION=422268b
+            PHENIX_REVISION=${{ env.sha }}
           push: true
           tags: |
+            ghcr.io/${{ github.repository }}/minimega:422268b
             ghcr.io/${{ github.repository }}/minimega:${{ env.sha }}
             ghcr.io/${{ github.repository }}/minimega:${{ env.branch }}
