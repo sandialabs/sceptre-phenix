@@ -45,7 +45,7 @@ services:
       context: .
       dockerfile: Dockerfile.minimega
       args:
-        MINIMEGA_REVISION: 422268b
+        MINIMEGA_REVISION: aaa0507
     image: minimega
     container_name: minimega
     privileged: true

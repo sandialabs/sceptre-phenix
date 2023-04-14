@@ -103,9 +103,9 @@ COPY --from=gobuilder /phenix/bin/phenix   /usr/local/bin/phenix
 COPY --from=gobuilder /phenix/bin/vmdb2    /usr/bin/vmdb2
 COPY --from=gobuilder /go/bin/phenix-app-* /usr/local/bin
 
-# Update GitHub workflow configs and docker-compose config to change the version
-# of minimega required for use with phenix.
-ARG   MINIMEGA_REVISION=local-dev
-LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandia-minimega/phenix/minimega:${MINIMEGA_REVISION}"
+# Update GitHub workflow config to change the minimum version of minimega
+# required for use with phenix.
+ARG   MINIMEGA_MIN_REVISION=local-dev
+LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandia-minimega/phenix/minimega:${MINIMEGA_MIN_REVISION}"
 
 CMD ["phenix", "help"]
