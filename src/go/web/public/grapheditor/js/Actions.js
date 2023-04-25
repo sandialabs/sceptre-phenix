@@ -69,7 +69,7 @@ Actions.prototype.init = function()
             let urlParams = new URLSearchParams(window.location.search);
 
             if (urlParams.has('token')) {
-                headers['Authorization'] = 'bearer ' + urlParams.get('token');
+                headers['X-phenix-auth-token'] = 'bearer ' + urlParams.get('token');
             }
 
             $.ajax({
@@ -114,7 +114,7 @@ Actions.prototype.init = function()
                 let urlParams = new URLSearchParams(window.location.search);
 
                 if (urlParams.has('token')) {
-                    headers['Authorization'] = 'bearer ' + urlParams.get('token');
+                    headers['X-phenix-auth-token'] = 'bearer ' + urlParams.get('token');
                 }
 
                 if (topoSelect.value) {
@@ -122,6 +122,7 @@ Actions.prototype.init = function()
                         url: `${window.PHENIX_API_PATH}/builder/topologies/${topoSelect.value}`,
                         type: 'get',
                         dataType: 'text',
+                        headers,
                         success: function (data) {
                             var doc = mxUtils.parseXml(data);
                             editor.graph.setSelectionCells(editor.graph.importGraphModel(doc.documentElement));

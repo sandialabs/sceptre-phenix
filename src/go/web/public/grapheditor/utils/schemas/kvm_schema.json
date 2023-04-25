@@ -7,6 +7,44 @@
     "hardware"
   ],
   "properties": {
+    "annotations": {
+      "title": "Annotations",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "labels": {
+      "title": "Labels",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "type": {
       "$id": "#/nodes/properties/type",
       "type": "string",
@@ -256,6 +294,7 @@
         "routes": {
           "$id": "#/nodes/properties/network/properties/routes",
           "type": "array",
+          "title": "Routes",
           "items": {
             "$id": "#/nodes/properties/network/properties/routes/items",
             "type": "object",
@@ -302,7 +341,7 @@
         "ospf": {
           "$id": "#/nodes/properties/network/properties/ospf",
           "type": "object",
-          "title": "Ospf",
+          "title": "OSPF",
           "nullable": true,
           "required": [
             "router_id",
@@ -312,7 +351,7 @@
             "router_id": {
               "$id": "#/nodes/properties/network/properties/ospf/properties/router_id",
               "type": "string",
-              "title": "Router_id",
+              "title": "Router ID",
               "examples": [
                 "0.0.0.1"
               ],
@@ -334,7 +373,7 @@
                   "area_id": {
                     "$id": "#/nodes/properties/network/properties/ospf/properties/areas/items/properties/area_id",
                     "type": "integer",
-                    "title": "Area_id",
+                    "title": "Area ID",
                     "default": 1,
                     "examples": [
                       0
@@ -344,7 +383,7 @@
                   "area_networks": {
                     "$id": "#/nodes/properties/network/properties/ospf/properties/areas/items/properties/area_networks",
                     "type": "array",
-                    "title": "Area_networks",
+                    "title": "Area Networks",
                     "items": {
                       "$id": "#/nodes/properties/network/properties/ospf/properties/areas/items/properties/area_networks/items",
                       "type": "object",
@@ -367,6 +406,18 @@
                   }
                 }
               }
+            },
+            "dead_interval": {
+              "title": "Dead Interval",
+              "type": "integer"
+            },
+            "hello_interval": {
+              "title": "Hello Interval",
+              "type": "integer"
+            },
+            "retransmission_interval": {
+              "title": "Retransmission Interval",
+              "type": "integer"
             }
           }
         },

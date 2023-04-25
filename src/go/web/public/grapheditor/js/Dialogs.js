@@ -2357,6 +2357,26 @@ var viewJSONDialog = function(ui)
 
             var node = JSON.parse(cell.getAttribute('schemaVars'));
             if (node.device != 'switch') {
+                if (node.annotations) {
+                    var annotations = {};
+
+                    node.annotations.forEach(a => {
+                        annotations[a.key] = a.value;
+                    });
+
+                    node.annotations = annotations;
+                }
+
+                if (node.labels) {
+                    var labels = {};
+
+                    node.labels.forEach(l => {
+                        labels[l.key] = l.value;
+                    });
+
+                    node.labels = labels;
+                }
+
                 nodeArray.push(node);
             }
         }
@@ -2467,7 +2487,7 @@ var viewJSONDialog = function(ui)
             let urlParams = new URLSearchParams(window.location.search);
 
             if (urlParams.has('token')) {
-                headers['Authorization'] = 'bearer ' + urlParams.get('token');
+                headers['X-phenix-auth-token'] = 'bearer ' + urlParams.get('token');
             }
 
             $.ajax({
@@ -2505,7 +2525,7 @@ var viewJSONDialog = function(ui)
 
         var textarea = document.createElement('textarea');
         textarea.setAttribute('readonly', 'readonly');
-        textarea.value = JSON.stringify(json, null, 2);
+        textarea.value = jsyaml.dump(json);
         textarea.setAttribute('id', 'jsonString');
         textarea.setAttribute('wrap', 'off');
         textarea.setAttribute('spellcheck', 'false');
@@ -2614,7 +2634,7 @@ var viewJSONDialog = function(ui)
                 let urlParams = new URLSearchParams(window.location.search);
 
                 if (urlParams.has('token')) {
-                    headers['Authorization'] = 'bearer ' + urlParams.get('token');
+                    headers['X-phenix-auth-token'] = 'bearer ' + urlParams.get('token');
                 }
 
                 var xml = mxUtils.getXml(ui.editor.getGraphXml());
