@@ -618,6 +618,7 @@ components:
           type: string
           enum:
           - dhcp
+          - manual
           default: dhcp
           example: dhcp
     serial_iface:

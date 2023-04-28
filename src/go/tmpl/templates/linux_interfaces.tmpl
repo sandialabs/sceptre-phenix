@@ -10,7 +10,9 @@ if command -v 'ip' &>/dev/null; then
     ip link set dev "$dev" down
     ip addr flush dev "$dev"
 
-    {{ if eq $iface.Proto "dhcp" }}
+    {{ if eq $iface.Proto "manual" }}
+    ip link set dev "$dev" up
+    {{ else if eq $iface.Proto "dhcp" }}
     ip link set dev "$dev" up
     dhclient "$dev"
     {{ else }}
@@ -33,7 +35,9 @@ else
     dev=$(ifconfig -s -a | grep -ivE '^lo|Iface' | awk 'NR=={{ addInt $idx 1 }} { print $1 }')
     ifconfig "$dev" down
 
-    {{ if eq $iface.Proto "dhcp" }}
+    {{ if eq $iface.Proto "manual" }}
+    ifconfig "$dev" up
+    {{ else if eq $iface.Proto "dhcp" }}
     ifconfig "$dev" up
     dhclient "$dev"
     {{ else }}

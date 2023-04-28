@@ -72,15 +72,16 @@ Do {
 } While ($wmi -eq $null)
 {{ $length := len .Node.Network.Interfaces }}
 {{ range $idx, $iface := .Node.Network.Interfaces }}
-    {{ $mask := $iface.NetworkMask }}
+    {{ if eq $iface.Proto "static" }}
 Do {
-    {{ if gt $length 1 }}
-    $status = $wmi[{{ $idx }}].EnableStatic('{{ $iface.Address }}', '{{ $mask }}')
-    {{ else }}
-    $status = $wmi.EnableStatic('{{ $iface.Address }}', '{{ $mask }}')
-    {{ end }}
+        {{ if gt $length 1 }}
+    $status = $wmi[{{ $idx }}].EnableStatic('{{ $iface.Address }}', '{{ $iface.NetworkMask }}')
+        {{ else }}
+    $status = $wmi.EnableStatic('{{ $iface.Address }}', '{{ $iface.NetworkMask }}')
+        {{ end }}
     Start-Sleep -Milliseconds 500
 } While ($status.ReturnValue -eq 2147786788)
+    {{ end }}
     {{ if ne $iface.Gateway "" }}
         {{ if gt $length 1 }}
 $wmi[{{ $idx }}].SetGateways('{{ $iface.Gateway }}', 1) | Out-Null
