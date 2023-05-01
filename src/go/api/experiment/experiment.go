@@ -248,18 +248,6 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 	exp.Spec.VLANs().SetAliases(o.vlanAliases)
 	exp.Spec.SetSchedule(o.schedules)
 
-	exp.Spec.Init()
-
-	if err := exp.Spec.VerifyScenario(ctx); err != nil {
-		return fmt.Errorf("verifying experiment scenario: %w", err)
-	}
-
-	if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCONFIG)); err != nil {
-		return fmt.Errorf("applying apps to experiment: %w", err)
-	}
-
-	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
-
 	if _, err := config.Create(config.CreateFromConfig(c), config.CreateWithValidation()); err != nil {
 		return fmt.Errorf("creating experiment config: %w", err)
 	}

@@ -32,12 +32,14 @@ components:
           example: http://us.archive.ubuntu.com/ubuntu/
         overlays:
           type: array
+          nullable: true
           items:
             type: string
           example:
           - /phenix/vmdb/overlays/example-overlay
         packages:
           type: array
+          nullable: true
           items:
             type: string
           example:
@@ -52,6 +54,7 @@ components:
           example: focal
         script_order:
           type: array
+          nullable: true
           items:
             type: string
           example:
@@ -166,6 +169,7 @@ components:
                   setting2: universe key
               hosts:
                 type: array
+                nullable: true
                 items:
                   type: object
                   required:
@@ -353,6 +357,7 @@ components:
           properties:
             interfaces:
               type: array
+              nullable: true
               items:
                 type: object
                 oneOf:
@@ -361,6 +366,7 @@ components:
                 - $ref: '#/components/schemas/serial_iface'
             routes:
               type: array
+              nullable: true
               items:
                 type: object
                 required:
@@ -412,6 +418,7 @@ components:
                               example: 10.1.25.0/24
             rulesets:
               type: array
+              nullable: true
               items:
                 type: object
                 required:
@@ -492,6 +499,7 @@ components:
                               example: 3389
         injections:
           type: array
+          nullable: true
           items:
             type: object
             required:
