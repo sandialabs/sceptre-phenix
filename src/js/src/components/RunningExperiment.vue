@@ -2390,13 +2390,12 @@
         vms.forEach((vm, _) => {
           body = { "cpus": parseInt(vm.cpus), "ram": parseInt(vm.ram), "disk": vm.disk };
           postUrl  = 'experiments/' + this.$route.params.id + '/vms/' + vm.name + '/redeploy';
-          name = vm.name;
 
           if ( vm.inject ) {
             body["injects"] = true;
           }
 
-          this.redeployModal.actionsQueue.push({name: vm.name, url: url, body: body});
+          this.redeployModal.actionsQueue.push({name: vm.name, url: postUrl, body: body});
         })
 
         this.$http.post(postUrl, body).then(
