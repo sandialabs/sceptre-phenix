@@ -1204,6 +1204,26 @@ func (Minimega) MeshShellResponse(host, command string) (string, error) {
 	return "", fmt.Errorf("error running MeshShellResponse()")
 }
 
+func (Minimega) MeshBackground(host, command string) error {
+	cmd := mmcli.NewCommand()
+
+	if host == "" {
+		host = Headnode()
+	}
+
+	if IsHeadnode(host) {
+		cmd.Command = fmt.Sprintf("background %s", command)
+	} else {
+		cmd.Command = fmt.Sprintf("mesh send %s background %s", host, command)
+	}
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("backgrounding shell command (host %s) %s: %w", host, command, err)
+	}
+
+	return nil
+}
+
 func (Minimega) MeshSend(ns, host, command string) error {
 	var cmd *mmcli.Command
 
