@@ -14,7 +14,7 @@ import (
 
 var (
 	idFormat  = "%s_serial_%s_%d"
-	lfFormat  = "%s_serial_%s_%s_%d"
+	lfFormat  = "/tmp/%s_serial_%s_%s_%d.log"
 	optFormat = "-chardev socket,id=%[1]s,path=/tmp/%[1]s,server,nowait -device pci-serial,chardev=%[1]s"
 
 	defaultStartPort = 40500
@@ -197,9 +197,9 @@ func (Serial) PostStart(ctx context.Context, exp *types.Experiment) error {
 				)
 
 				if srcHost == dstHost { // single socat process on host connecting unix sockets
-					socat := fmt.Sprintf("socat -lf%s -d -d -d -d UNIX-CONNECT:/tmp/%s UNIX-CONNECT:/tmp/%s &", logFile, srcID, dstID)
+					socat := fmt.Sprintf("socat -lf%s -d -d -d -d UNIX-CONNECT:/tmp/%s UNIX-CONNECT:/tmp/%s", logFile, srcID, dstID)
 
-					if err := mm.MeshShell(srcHost, socat); err != nil {
+					if err := mm.MeshBackground(srcHost, socat); err != nil {
 						return fmt.Errorf("starting socat on %s: %w", srcHost, err)
 					}
 				} else { // single socat process on each host connected via TCP
@@ -209,15 +209,15 @@ func (Serial) PostStart(ctx context.Context, exp *types.Experiment) error {
 						port = defaultStartPort + i
 					}
 
-					srcSocat := fmt.Sprintf("socat -lf%s -d -d -d -d UNIX-CONNECT:/tmp/%s TCP-LISTEN:%d &", logFile, srcID, port)
+					srcSocat := fmt.Sprintf("socat -lf%s -d -d -d -d UNIX-CONNECT:/tmp/%s TCP-LISTEN:%d", logFile, srcID, port)
 
-					if err := mm.MeshShell(srcHost, srcSocat); err != nil {
+					if err := mm.MeshBackground(srcHost, srcSocat); err != nil {
 						return fmt.Errorf("starting socat on %s: %w", srcHost, err)
 					}
 
-					dstSocat := fmt.Sprintf("socat -lf%s -d -d -d -d UNIX-CONNECT:/tmp/%s TCP-CONNECT:%s:%d &", logFile, dstID, srcHost, port)
+					dstSocat := fmt.Sprintf("socat -lf%s -d -d -d -d UNIX-CONNECT:/tmp/%s TCP-CONNECT:%s:%d", logFile, dstID, srcHost, port)
 
-					if err := mm.MeshShell(dstHost, dstSocat); err != nil {
+					if err := mm.MeshBackground(dstHost, dstSocat); err != nil {
 						return fmt.Errorf("starting socat on %s: %w", dstHost, err)
 					}
 				}
@@ -246,6 +246,10 @@ func appendQEMUFlags(exp string, node ifaces.NodeSpec, idx int) error {
 
 	if advanced := node.Advanced(); advanced != nil {
 		if v, ok := advanced["qemu-append"]; ok {
+			if strings.Contains(v, options) {
+				return nil
+			}
+
 			qemuAppend = []string{v}
 		}
 	}

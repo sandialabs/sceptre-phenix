@@ -562,6 +562,14 @@ export default {
       return colors[ node.status ];
     },
 
+    updateEdgeColor( edge ) {
+      if ( edge.type == "serial" ) {
+        return '#A020F0' // purple
+      }
+
+      return '#999';
+    },
+
     generateGraph () {
       if ( this.nodes == null ) {
         return;
@@ -594,11 +602,11 @@ export default {
       );
 
       const link = g.append( "g" )
-        .attr( "stroke", "#999" )
-        .attr( "stroke-opacity", 0.6 )
         .selectAll( "line" )
         .data( links )
         .join( "line" )
+        .attr( "stroke-opacity", 0.6 )
+        .attr( "stroke", this.updateEdgeColor )
         .attr( "stroke-width", d => Math.sqrt( d.value ) );
 
       const defs = svg.append( "svg:defs" );
