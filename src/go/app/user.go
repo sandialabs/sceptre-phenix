@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
+	"strings"
+
 	"phenix/scheduler"
 	"phenix/types"
 	"phenix/util"
@@ -13,8 +16,6 @@ import (
 	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/util/shell"
-	"strconv"
-	"strings"
 )
 
 const (
