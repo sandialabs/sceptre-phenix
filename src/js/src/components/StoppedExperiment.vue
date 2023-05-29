@@ -358,6 +358,8 @@
 </template>
 
 <script>
+  import _ from 'lodash';
+
   export default {
     beforeDestroy () {
       this.$options.sockets.onmessage = null;

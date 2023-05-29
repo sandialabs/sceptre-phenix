@@ -590,19 +590,19 @@
                 <div class="level">  
                   <div class="level-item"> 
                     {{ column.label }}             
-                    &nbsp;       
-                    <b-tooltip label="Start Subnet Packet Capture" type="is-dark" :active="isSubnetPresent()"> 
-                        <button :disabled="!isSubnetPresent() || displayedVMsCapturing()" class="button is-light is-small" @click="captureSubnet()" style="width: .1em;">                  
-                        <b-icon icon="play-circle" ></b-icon>  	
-                        </button>  
-                    </b-tooltip>  
-                    &nbsp;&nbsp;   
-                    <b-tooltip label="Stop Subnet Packet Capture" type="is-dark" :active="((isSubnetPresent() || capturesSearched()) && displayedVMsCapturing())">             
-                      <button  :disabled="!((isSubnetPresent() || capturesSearched()) && displayedVMsCapturing())" class="button is-light is-small" @click="stopCaptureSubnet()" style="width: .1em;">  
-                        <b-icon icon="stop-circle" ></b-icon>  	  	
-                      </button> 
-                    </b-tooltip>                   
-                  </div>  
+                    &nbsp;
+                    <b-tooltip label="Start Subnet Packet Capture" type="is-dark" :active="isSubnetPresent()">
+                        <b-button :disabled="!isSubnetPresent() || displayedVMsCapturing()" class="button is-light is-small" @click="captureSubnet()" style="width: .1em;">
+                        <b-icon icon="play-circle" ></b-icon>
+                        </b-button>
+                    </b-tooltip>
+                    &nbsp;&nbsp;
+                    <b-tooltip label="Stop Subnet Packet Capture" type="is-dark" :active="((isSubnetPresent() || capturesSearched()) && displayedVMsCapturing())">
+                      <b-button  :disabled="!((isSubnetPresent() || capturesSearched()) && displayedVMsCapturing())" class="button is-light is-small" @click="stopCaptureSubnet()" style="width: .1em;">
+                        <b-icon icon="stop-circle" ></b-icon>
+                      </b-button>
+                    </b-tooltip>
+                  </div>
                 </div>
               </template>
               <template v-slot:default="props">
@@ -745,6 +745,8 @@
 <script>
   import { mapState }        from 'vuex';
   import VmMountBrowserModal from './VMMountBrowserModal.vue';
+
+  import _ from 'lodash';
 
   export  default {
     async beforeDestroy () {
@@ -2728,7 +2730,6 @@
             break;
           case this.vmActions.pause:
             this.pauseVm(this.vmSelectedArray);
-            break;
             break;
           case this.vmActions.kill:
             this.killVm(this.vmSelectedArray);
