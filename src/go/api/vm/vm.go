@@ -943,7 +943,7 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 
 	var (
 		// Get current disk snapshot on the compute node (based on VM ID).
-		snap = "/tmp/minimega/" + status[0]["id"] + "/disk-0.qcow2"
+		snap = fmt.Sprintf("%s/%s/disk-0.qcow2", common.MinimegaBase, status[0]["id"])
 		node = status[0]["host"]
 	)
 
