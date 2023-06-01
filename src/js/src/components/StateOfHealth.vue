@@ -587,7 +587,23 @@ export default {
       }
 
       const nodes = this.nodes.map( d => Object.create( d ) );
-      const links = this.edges.map( d => Object.create( d ) );
+      // const links = this.edges.map( d => Object.create( d ) );
+
+      const links = this.edges.filter( (d) => {
+        switch ( this.showEdgeType ) {
+          case 'all': {
+            return true;
+          }
+
+          case 'network': {
+            return d.type !== 'serial';
+          }
+
+          case 'serial': {
+            return d.type === 'serial';
+          }
+        }
+      }, this);
 
       const width = 600;
       const height = 400;
@@ -1050,9 +1066,10 @@ export default {
       sohInitialized: false,
       sohRunning: false,
       flows: false,
+      volume: [],
       nodes: [],
       edges: [],
-      volume: [],
+      showEdgeType: 'all',
       radioButton: '',
       vlan: VLAN,
       detailsModal: {
