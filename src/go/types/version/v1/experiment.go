@@ -302,22 +302,42 @@ func (this ExperimentStatus) StartTime() string {
 }
 
 func (this ExperimentStatus) AppStatus() map[string]any {
+	if this.AppsF == nil {
+		return make(map[string]any)
+	}
+
 	return this.AppsF
 }
 
 func (this ExperimentStatus) AppFrequency() map[string]string {
+	if this.FrequencyF == nil {
+		return make(map[string]string)
+	}
+
 	return this.FrequencyF
 }
 
 func (this ExperimentStatus) AppRunning() map[string]bool {
+	if this.RunningF == nil {
+		return make(map[string]bool)
+	}
+
 	return this.RunningF
 }
 
 func (this ExperimentStatus) VLANs() map[string]int {
+	if this.VLANsF == nil {
+		return make(map[string]int)
+	}
+
 	return this.VLANsF
 }
 
 func (this ExperimentStatus) Schedules() map[string]string {
+	if this.SchedulesF == nil {
+		return make(map[string]string)
+	}
+
 	return this.SchedulesF
 }
 
@@ -365,10 +385,18 @@ func (this *ExperimentStatus) SetAppRunning(a string, r bool) {
 }
 
 func (this *ExperimentStatus) SetVLANs(v map[string]int) {
+	if this.VLANsF == nil {
+		this.VLANsF = make(map[string]int)
+	}
+
 	this.VLANsF = v
 }
 
 func (this *ExperimentStatus) SetSchedule(s map[string]string) {
+	if this.SchedulesF == nil {
+		this.SchedulesF = make(map[string]string)
+	}
+
 	this.SchedulesF = s
 }
 

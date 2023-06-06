@@ -92,6 +92,18 @@ func init() {
 	})
 }
 
+// Hook is a function to be called during the different lifecycle stages of an
+// experiment. The first argument is the experiment stage (create, start, stop,
+// delete), and the second argument is the experiment, name.
+type Hook func(string, string)
+
+var hooks = make(map[string][]Hook)
+
+// RegisterHook registers a Hook for the given experiment stage.
+func RegisterHook(stage string, hook Hook) {
+	hooks[stage] = append(hooks[stage], hook)
+}
+
 // List collects experiments, each in a struct that references the latest
 // versioned experiment spec and status. It returns a slice of experiments and
 // any errors encountered while gathering and decoding them.
@@ -250,6 +262,10 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 
 	if _, err := config.Create(config.CreateFromConfig(c), config.CreateWithValidation()); err != nil {
 		return fmt.Errorf("creating experiment config: %w", err)
+	}
+
+	for _, hook := range hooks["create"] {
+		hook("create", o.name)
 	}
 
 	return nil
@@ -543,6 +559,10 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		return fmt.Errorf("updating experiment config: %w", err)
 	}
 
+	for _, hook := range hooks["start"] {
+		hook("start", o.name)
+	}
+
 	return nil
 }
 
@@ -585,6 +605,10 @@ func Stop(name string) error {
 
 	if err := store.Update(c); err != nil {
 		errors = multierror.Append(errors, fmt.Errorf("updating experiment config: %w", err))
+	}
+
+	for _, hook := range hooks["stop"] {
+		hook("stop", name)
 	}
 
 	return errors
@@ -744,6 +768,10 @@ func Delete(name string) error {
 
 	if err := os.RemoveAll(exp.Spec.BaseDir()); err != nil {
 		errors = multierror.Append(errors, fmt.Errorf("deleting experiment base directory: %w", err))
+	}
+
+	for _, hook := range hooks["delete"] {
+		hook("delete", name)
 	}
 
 	return errors
