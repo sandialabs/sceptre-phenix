@@ -40,6 +40,28 @@ func NewExperiment(md store.ConfigMetadata) *Experiment {
 	}
 }
 
+func (this *Experiment) Reload() error {
+	c, err := store.NewConfig("experiment/" + this.Metadata.Name)
+	if err != nil {
+		return fmt.Errorf("getting experiment: %w", err)
+	}
+
+	if err := store.Get(c); err != nil {
+		return fmt.Errorf("getting experiment %s from store: %w", this.Metadata.Name, err)
+	}
+
+	exp, err := DecodeExperimentFromConfig(*c)
+	if err != nil {
+		return fmt.Errorf("decoding experiment %s: %w", this.Metadata.Name, err)
+	}
+
+	this.Metadata = exp.Metadata
+	this.Spec = exp.Spec
+	this.Status = exp.Status
+
+	return nil
+}
+
 func (this Experiment) WriteToStore(statusOnly bool) error {
 	name := this.Metadata.Name
 

@@ -281,9 +281,11 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				err = a.Running(ctx, exp)
 				if err != nil {
 					pubsub.Publish("trigger-app", Publication{Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "error", Error: err})
+				} else {
+					pubsub.Publish("trigger-app", Publication{Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "success"})
 				}
 
-				pubsub.Publish("trigger-app", Publication{Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "success"})
+				exp.Reload() // reload experiment from store in case status was updated during run
 
 				exp.Status.SetAppRunning(app.Name(), false)
 
