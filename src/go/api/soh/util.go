@@ -302,22 +302,22 @@ func (this *SOH) decodeMetadata(exp *types.Experiment) error {
 	return nil
 }
 
-func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
-	if this.md.SkipNetworkConfig {
+func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map[string]bool) {
+	if this.md.SkipNetworkConfig || !checks["network-config"] {
 		return
 	}
 
 	var (
-		icmpDisabled   bool
-		customDisabled bool
+		icmpDisabled   = strings.EqualFold(this.md.Reachability, "off") || !checks["reachability"]
+		customDisabled = len(this.md.CustomReachability) == 0 || !checks["custom-reachability"]
 	)
 
-	if icmpDisabled = strings.EqualFold(this.md.Reachability, "off"); icmpDisabled {
+	if icmpDisabled {
 		printer := color.New(color.FgYellow)
 		printer.Println("  ICMP reachability test is disabled")
 	}
 
-	if customDisabled = len(this.md.CustomReachability) == 0; customDisabled {
+	if customDisabled {
 		printer := color.New(color.FgYellow)
 		printer.Println("  No custom reachability tests configured")
 	}
@@ -332,71 +332,55 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
 
 	wg := new(mm.StateGroup)
 
-	for host := range this.reachabilityHosts {
-		// Assume we're not skipping this host by default.
-		var skipHost error
+	if !icmpDisabled {
+		for host := range this.reachabilityHosts {
+			// Assume we're not skipping this host by default.
+			var skipHost error
 
-		if _, ok := this.c2Hosts[host]; !ok {
-			// This host is known to not have C2 active, so don't test from it.
-			skipHost = fmt.Errorf("C2 not active on host")
-		}
-
-		if _, ok := this.failedNetwork[host]; ok {
-			// This host failed the network config test, so don't test from it.
-			skipHost = fmt.Errorf("networking not configured on host")
-		}
-
-		for _, ips := range this.vlans {
-			// Each host should try to ping a single random host in each VLAN.
-			if strings.EqualFold(this.md.Reachability, "sample") {
-				var targeted bool
-
-				// Range over IPs to prevent this for-loop from going on forever if
-				// all IPs in VLAN failed network connectivity test.
-				for range ips {
-					idx := rand.Intn(len(ips))
-					targetIP := ips[idx]
-
-					targetHost := this.addrHosts[targetIP]
-
-					if _, ok := this.failedNetwork[targetHost]; ok {
-						continue
-					}
-
-					targeted = true
-
-					if skipHost != nil {
-						wg.AddError(skipHost, map[string]interface{}{"host": host, "target": targetIP})
-					} else {
-						printer.Printf("  Pinging %s (%s) from host %s\n", targetHost, targetIP, host)
-						this.pingTest(ctx, wg, ns, this.nodes[host], targetIP)
-					}
-
-					break
-				}
-
-				if !targeted {
-					// Choose random host in VLAN to create error for.
-					idx := rand.Intn(len(ips))
-					targetIP := ips[idx]
-
-					// This target host failed the network config test, so don't try
-					// to do any reachability to it.
-					var (
-						err  = fmt.Errorf("networking not configured on target")
-						meta = map[string]interface{}{"host": host, "target": targetIP}
-					)
-
-					wg.AddError(err, meta)
-				}
+			if _, ok := this.c2Hosts[host]; !ok {
+				// This host is known to not have C2 active, so don't test from it.
+				skipHost = fmt.Errorf("C2 not active on host")
 			}
 
-			// Each host should try to ping every host in each VLAN.
-			if strings.EqualFold(this.md.Reachability, "full") {
-				for _, targetIP := range ips {
-					targetHost := this.addrHosts[targetIP]
+			if _, ok := this.failedNetwork[host]; ok {
+				// This host failed the network config test, so don't test from it.
+				skipHost = fmt.Errorf("networking not configured on host")
+			}
 
-					if _, ok := this.failedNetwork[targetHost]; ok {
+			for _, ips := range this.vlans {
+				// Each host should try to ping a single random host in each VLAN.
+				if strings.EqualFold(this.md.Reachability, "sample") {
+					var targeted bool
+
+					// Range over IPs to prevent this for-loop from going on forever if
+					// all IPs in VLAN failed network connectivity test.
+					for range ips {
+						idx := rand.Intn(len(ips))
+						targetIP := ips[idx]
+
+						targetHost := this.addrHosts[targetIP]
+
+						if _, ok := this.failedNetwork[targetHost]; ok {
+							continue
+						}
+
+						targeted = true
+
+						if skipHost != nil {
+							wg.AddError(skipHost, map[string]interface{}{"host": host, "target": targetIP})
+						} else {
+							printer.Printf("  Pinging %s (%s) from host %s\n", targetHost, targetIP, host)
+							this.pingTest(ctx, wg, ns, this.nodes[host], targetIP)
+						}
+
+						break
+					}
+
+					if !targeted {
+						// Choose random host in VLAN to create error for.
+						idx := rand.Intn(len(ips))
+						targetIP := ips[idx]
+
 						// This target host failed the network config test, so don't try
 						// to do any reachability to it.
 						var (
@@ -405,54 +389,69 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
 						)
 
 						wg.AddError(err, meta)
-						continue
 					}
+				}
 
-					if skipHost != nil {
-						wg.AddError(skipHost, map[string]interface{}{"host": host, "target": targetIP})
-					} else {
-						printer.Printf("  Pinging %s from host %s\n", targetIP, host)
-						this.pingTest(ctx, wg, ns, this.nodes[host], targetIP)
+				// Each host should try to ping every host in each VLAN.
+				if strings.EqualFold(this.md.Reachability, "full") {
+					for _, targetIP := range ips {
+						targetHost := this.addrHosts[targetIP]
+
+						if _, ok := this.failedNetwork[targetHost]; ok {
+							// This target host failed the network config test, so don't try
+							// to do any reachability to it.
+							var (
+								err  = fmt.Errorf("networking not configured on target")
+								meta = map[string]interface{}{"host": host, "target": targetIP}
+							)
+
+							wg.AddError(err, meta)
+							continue
+						}
+
+						if skipHost != nil {
+							wg.AddError(skipHost, map[string]interface{}{"host": host, "target": targetIP})
+						} else {
+							printer.Printf("  Pinging %s from host %s\n", targetIP, host)
+							this.pingTest(ctx, wg, ns, this.nodes[host], targetIP)
+						}
 					}
 				}
 			}
 		}
 	}
 
-	for _, reach := range this.md.CustomReachability {
-		host := reach.Src
+	if !customDisabled {
+		for _, reach := range this.md.CustomReachability {
+			host := reach.Src
 
-		if _, ok := this.c2Hosts[host]; !ok {
-			// This host is known to not have C2 active, so don't test from it.
-			wg.AddError(fmt.Errorf("C2 not active on host"), map[string]interface{}{"host": host, "target": reach.Dst})
-			continue
-		}
-
-		if _, ok := this.failedNetwork[host]; ok {
-			// This host failed the network config test, so don't test from it.
-			wg.AddError(fmt.Errorf("networking not configured on host"), map[string]interface{}{"host": host, "target": reach.Dst})
-			continue
-		}
-
-		target := reach.Dst
-
-		if fields := strings.Split(reach.Dst, "|"); len(fields) > 1 {
-			target = this.hostIPs[fields[0]][fields[1]]
-
-			if target == "" {
-				wg.AddError(fmt.Errorf("unknown target provided"), map[string]interface{}{"host": host, "target": reach.Dst})
+			if _, ok := this.c2Hosts[host]; !ok {
+				// This host is known to not have C2 active, so don't test from it.
+				wg.AddError(fmt.Errorf("C2 not active on host"), map[string]interface{}{"host": host, "target": reach.Dst})
 				continue
 			}
+
+			if _, ok := this.failedNetwork[host]; ok {
+				// This host failed the network config test, so don't test from it.
+				wg.AddError(fmt.Errorf("networking not configured on host"), map[string]interface{}{"host": host, "target": reach.Dst})
+				continue
+			}
+
+			target := reach.Dst
+
+			if fields := strings.Split(reach.Dst, "|"); len(fields) > 1 {
+				target = this.hostIPs[fields[0]][fields[1]]
+			}
+
+			printer.Printf("  Connecting to %s://%s:%d from host %s\n", reach.Proto, target, reach.Port, host)
+
+			wait, err := time.ParseDuration(reach.Wait)
+			if err != nil && reach.Wait != "" {
+				printer.Printf("    invalid wait time of %s provided, using default\n", reach.Wait)
+			}
+
+			connTest(ctx, wg, ns, host, target, reach.Proto, reach.Port, wait, reach.Packet)
 		}
-
-		printer.Printf("  Connecting to %s://%s:%d from host %s\n", reach.Proto, target, reach.Port, host)
-
-		wait, err := time.ParseDuration(reach.Wait)
-		if err != nil && reach.Wait != "" {
-			printer.Printf("    invalid wait time of %s provided, using default\n", reach.Wait)
-		}
-
-		connTest(ctx, wg, ns, host, target, reach.Proto, reach.Port, wait, reach.Packet)
 	}
 
 	cancel := periodicallyNotify(ctx, "waiting for reachability tests to complete...", 5*time.Second)

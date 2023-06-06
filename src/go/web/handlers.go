@@ -505,7 +505,14 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
 	)
 
 	go func() {
-		apps := strings.Split(appsFilter, ",")
+		var (
+			md   = make(map[string]any)
+			apps = strings.Split(appsFilter, ",")
+		)
+
+		for k, v := range query {
+			md[k] = v
+		}
 
 		for _, a := range apps {
 			k := fmt.Sprintf("%s/%s", name, a)
@@ -513,6 +520,7 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
 			// We don't want to use the HTTP request's context here.
 			ctx, cancel := context.WithCancel(context.Background())
 			ctx = app.SetContextTriggerUI(ctx)
+			ctx = app.SetContextMetadata(ctx, md)
 			cancelers[k] = append(cancelers[k], cancel)
 
 			if err := experiment.TriggerRunning(ctx, name, a); err != nil {

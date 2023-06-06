@@ -174,8 +174,32 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 
 	// *** WAIT FOR NODES TO HAVE NETWORKING CONFIGURED *** //
 
+	md := app.GetContextMetadata(ctx)
 	ns := exp.Spec.ExperimentName()
 	wg := new(mm.StateGroup)
+
+	var checks map[string]bool
+
+	if val, ok := md["checks"]; ok {
+		checks = make(map[string]bool)
+
+		if slice, ok := val.([]string); ok {
+			for _, check := range slice {
+				checks[check] = true
+			}
+		}
+	} else { // default to all checks
+		checks = map[string]bool{
+			"network-config":      true,
+			"reachability":        true,
+			"custom-reachability": true,
+			"processes":           true,
+			"ports":               true,
+			"custom":              true,
+			"cpu-load":            true,
+			"flows":               true,
+		}
+	}
 
 	for _, node := range exp.Spec.Topology().Nodes() {
 		if node.External() {
@@ -201,7 +225,7 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 		// mapping the first time C2 is proven to not be working.
 		this.c2Hosts[host] = struct{}{}
 
-		if this.md.SkipNetworkConfig {
+		if this.md.SkipNetworkConfig || !checks["network-config"] {
 			continue
 		}
 
@@ -279,7 +303,7 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 		}
 	}
 
-	if this.md.SkipNetworkConfig {
+	if this.md.SkipNetworkConfig || !checks["network-config"] {
 		printer = color.New(color.FgYellow)
 		printer.Println("  Skipping initial network configuration tests per config")
 	}
@@ -334,46 +358,58 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 
 	// *** RUN ACTUAL STATE OF HEALTH CHECKS *** //
 
-	this.waitForReachabilityTest(ctx, ns)
-	this.writeResults(exp)
+	if checks["network-config"] && (checks["reachability"] || checks["custom-reachability"]) {
+		this.waitForReachabilityTest(ctx, ns, checks)
+		this.writeResults(exp)
 
-	if ctx.Err() != nil {
-		return ctx.Err()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 	}
 
-	this.waitForProcTest(ctx, ns)
-	this.writeResults(exp)
+	if checks["processes"] {
+		this.waitForProcTest(ctx, ns)
+		this.writeResults(exp)
 
-	if ctx.Err() != nil {
-		return ctx.Err()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 	}
 
-	this.waitForPortTest(ctx, ns)
-	this.writeResults(exp)
+	if checks["ports"] {
+		this.waitForPortTest(ctx, ns)
+		this.writeResults(exp)
 
-	if ctx.Err() != nil {
-		return ctx.Err()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 	}
 
-	this.waitForCustomTest(ctx, ns)
-	this.writeResults(exp)
+	if checks["custom"] {
+		this.waitForCustomTest(ctx, ns)
+		this.writeResults(exp)
 
-	if ctx.Err() != nil {
-		return ctx.Err()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 	}
 
-	this.waitForCPULoad(ctx, ns)
-	this.writeResults(exp)
+	if checks["cpu-load"] {
+		this.waitForCPULoad(ctx, ns)
+		this.writeResults(exp)
 
-	if ctx.Err() != nil {
-		return ctx.Err()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 	}
 
-	this.getFlows(ctx, exp)
-	this.writeResults(exp)
+	if checks["flows"] {
+		this.getFlows(ctx, exp)
+		this.writeResults(exp)
 
-	if ctx.Err() != nil {
-		return ctx.Err()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 	}
 
 	// TODO: this does not include errors from above function calls
