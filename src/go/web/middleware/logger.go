@@ -2,21 +2,20 @@ package middleware
 
 import (
 	"net/http"
-
-	log "github.com/activeshadow/libminimega/minilog"
+	"phenix/util/plog"
 )
 
 func LogFull(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Info("Request: %+v", r)
+		plog.Info("HTTP request", "request", r)
 		h.ServeHTTP(w, r)
-		log.Info("Response: %+v", w)
+		plog.Info("HTTP response", "response", w)
 	})
 }
 
 func LogRequests(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Info("Request: %s %s", r.Method, r.RequestURI)
+		plog.Info("HTTP request", "method", r.Method, "url", r.RequestURI)
 		h.ServeHTTP(w, r)
 	})
 }

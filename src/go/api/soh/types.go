@@ -27,11 +27,13 @@ type Edge struct {
 }
 
 type Network struct {
-	Started   bool     `json:"started"`
-	Nodes     []Node   `json:"nodes"`
-	Edges     []Edge   `json:"edges"`
-	Hosts     []string `json:"hosts"`
-	HostFlows [][]int  `json:"host_flows"`
+	ExpStarted     bool     `json:"started"`
+	SOHInitialized bool     `json:"soh_initialized"`
+	SOHRunning     bool     `json:"soh_running"`
+	Nodes          []Node   `json:"nodes"`
+	Edges          []Edge   `json:"edges"`
+	Hosts          []string `json:"hosts"`
+	HostFlows      [][]int  `json:"host_flows"`
 }
 
 type State struct {

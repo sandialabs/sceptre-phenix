@@ -8,10 +8,10 @@ import (
 
 	"phenix/api/vm"
 	"phenix/util/mm"
+	"phenix/util/plog"
 	"phenix/web/rbac"
 	"phenix/web/util"
 
-	log "github.com/activeshadow/libminimega/minilog"
 	assetfs "github.com/elazarl/go-bindata-assetfs"
 	"github.com/gorilla/mux"
 	"github.com/mitchellh/mapstructure"
@@ -20,7 +20,7 @@ import (
 
 // GET /experiments/{exp}/vms/{name}/vnc
 func GetVNC(w http.ResponseWriter, r *http.Request) {
-	log.Debug("GetVNC HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "GetVNC")
 
 	var (
 		ctx  = r.Context()
@@ -52,12 +52,12 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 			config.finalize(banner)
 		case map[string]interface{}:
 			if err := mapstructure.Decode(banner, &config); err != nil {
-				log.Error("decoding vncBanner annotation for VM %s: %v", name, err)
+				plog.Error("decoding vncBanner annotation for VM", "vm", name, "err", err)
 			} else {
 				config.finalize()
 			}
 		default:
-			log.Error("unexpected interface type for vncBanner annotation")
+			plog.Error("unexpected interface type for vncBanner annotation")
 		}
 	} else {
 		config.finalize(fmt.Sprintf("EXP: %s - VM: %s", exp, name))
@@ -86,7 +86,7 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 
 // GET /experiments/{exp}/vms/{name}/vnc/ws
 func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) {
-	log.Debug("GetVNCWebSocket HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "GetVNCWebSocket")
 
 	var (
 		vars = mux.Vars(r)
@@ -96,7 +96,7 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(name))
 	if err != nil {
-		log.Error("getting VNC endpoint: %v", err)
+		plog.Error("getting VNC endpoint", "err", err)
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}

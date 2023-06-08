@@ -2687,7 +2687,7 @@
       },
 
       getApps () {
-        let defaultApps = ['ntp', 'serial', 'startup', 'vrouter'];
+        let defaultApps = ['ntp', 'serial', 'startup', 'vrouter', 'scorch'];
 
         this.appsModal.triggerable = this.experiment.apps.filter(a => !defaultApps.includes(a));
         this.appsModal.active = true;

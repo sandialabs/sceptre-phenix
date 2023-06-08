@@ -6,8 +6,7 @@ import (
 	"net/http"
 
 	"phenix/store"
-
-	log "github.com/activeshadow/libminimega/minilog"
+	"phenix/util/plog"
 )
 
 type WebError struct {
@@ -84,7 +83,7 @@ func (this ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		web.Event.Metadata = nil
 
 		body, _ := json.Marshal(web)
-		log.Errorln(string(body))
+		plog.Error(string(body))
 
 		w.Header().Set("Content-Type", "application/json")
 

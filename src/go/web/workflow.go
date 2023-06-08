@@ -13,19 +13,19 @@ import (
 	"phenix/store"
 	"phenix/types"
 	"phenix/types/version"
+	"phenix/util/plog"
 	"phenix/web/broker"
 	"phenix/web/cache"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
 
-	log "github.com/activeshadow/libminimega/minilog"
 	"github.com/gorilla/mux"
 	"github.com/mitchellh/mapstructure"
 )
 
 // POST /workflow/apply/{branch}
 func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("ApplyWorkflow HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "ApplyWorkflow")
 
 	var (
 		ctx   = r.Context()
@@ -328,7 +328,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 
 // POST /workflow/configs/{branch}
 func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("WorkflowUpsertConfig HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "WorkflowUpsertConfig")
 
 	var (
 		ctx   = r.Context()
@@ -454,7 +454,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 
 	body, err := json.Marshal(cfg)
 	if err != nil {
-		log.Error("marshaling config %s - %v", cfg.FullName(), err)
+		plog.Error("marshaling config", "config", cfg.FullName(), "err", err)
 		return nil
 	}
 

@@ -21,11 +21,11 @@ import (
 	ifaces "phenix/types/interfaces"
 	"phenix/util"
 	"phenix/util/mm/mmcli"
+	"phenix/util/plog"
 	"phenix/util/shell"
 	"phenix/version"
 	"phenix/web/scorch"
 
-	log "github.com/activeshadow/libminimega/minilog"
 	"github.com/activeshadow/structs"
 	"github.com/hashicorp/go-multierror"
 	"github.com/mitchellh/mapstructure"
@@ -241,7 +241,7 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 
 	if !shell.ProcessExists(cmd.Process.Pid) {
 		if err := cmd.Wait(); err != nil {
-			log.Error("the Filebeat process terminated early (logs may be missing): %v", err)
+			plog.Error("the Filebeat process terminated early (logs may be missing)", "err", err)
 		}
 
 		return
@@ -267,7 +267,7 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 			cmd.Process.Signal(os.Interrupt)
 			return
 		case <-max.C:
-			log.Warn("max amount of time (%v) for Filebeat to harvest inputs reached", max)
+			plog.Warn("max amount of time for Filebeat to harvest inputs reached", "max", max)
 
 			cmd.Process.Signal(os.Interrupt)
 			cmd.Wait()
@@ -276,7 +276,7 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 		case <-tick.C:
 			resp, err := http.Get(fmt.Sprintf("http://localhost:%d/debug/vars", port))
 			if err != nil {
-				log.Error("unable to get number of active harvesters from Filebeat: %v", err)
+				plog.Error("unable to get number of active harvesters from Filebeat", "err", err)
 
 				cmd.Process.Signal(os.Interrupt)
 				cmd.Wait()
@@ -286,7 +286,7 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
-				log.Error("unable to get number of active harvesters from Filebeat: %v", err)
+				plog.Error("unable to get number of active harvesters from Filebeat", "err", err)
 
 				cmd.Process.Signal(os.Interrupt)
 				cmd.Wait()
@@ -297,7 +297,7 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 			prev := metrics
 
 			if err := json.Unmarshal(body, &metrics); err != nil {
-				log.Error("unmarshaling Filebeat harvester metrics: %v", err)
+				plog.Error("unmarshaling Filebeat harvester metrics", "err", err)
 				continue
 			}
 
@@ -323,7 +323,7 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 			// actually be generated, and 2) the input paths defined in the Filebeat
 			// config have wildcards in them for run loops and counts.
 			if metrics.Done() {
-				log.Info("Filebeat has completed harvesting inputs")
+				plog.Info("Filebeat has completed harvesting inputs")
 
 				cmd.Process.Signal(os.Interrupt)
 				cmd.Wait()

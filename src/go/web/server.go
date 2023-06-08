@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"phenix/util/plog"
 	"phenix/web/broker"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -14,7 +15,6 @@ import (
 	"phenix/web/util"
 	"phenix/web/weberror"
 
-	log "github.com/activeshadow/libminimega/minilog"
 	assetfs "github.com/elazarl/go-bindata-assetfs"
 	"github.com/gorilla/mux"
 )
@@ -41,7 +41,7 @@ func ConfigureUsers(users []string) error {
 
 			user.SetRole(role)
 		} else {
-			log.Error("getting %s role for user %s: %v", rname, user.Username(), err)
+			plog.Error("getting role for user", "user", user.Username(), "role", rname, "err", err)
 		}
 	}
 
@@ -55,7 +55,7 @@ func ConfigureUsers(users []string) error {
 		// Confirm existing user has specified role and update if necessary.
 		if user, err := rbac.GetUser(uname); err == nil {
 			if user.RoleName() != rname {
-				log.Debug("updating role for existing user %s from %s to %s", user.Username(), user.RoleName(), rname)
+				plog.Debug("updating role for existing user", "user", user.Username(), "old", user.RoleName(), "new", rname)
 
 				setUserRole(user, rname, creds[3:]...)
 			}
@@ -63,7 +63,7 @@ func ConfigureUsers(users []string) error {
 			continue
 		}
 
-		log.Debug("creating default user %s with role %s", uname, rname)
+		plog.Debug("creating default user", "user", uname, "role", rname)
 
 		user := rbac.NewUser(uname, pword)
 
@@ -85,7 +85,7 @@ func Start(opts ...ServerOption) error {
 
 	if o.unbundled {
 		assets = http.Dir("web/public")
-		log.Info("Serving unbundled assets")
+		plog.Info("serving unbundled assets")
 	} else {
 		assets = &assetfs.AssetFS{
 			Asset:     Asset,
@@ -99,7 +99,7 @@ func Start(opts ...ServerOption) error {
 	router.HandleFunc("/builder", GetBuilder).Methods("GET")
 	router.HandleFunc("/builder/save", SaveBuilderTopology).Methods("POST")
 
-	log.Info("Setting up assets")
+	plog.Info("setting up assets")
 
 	router.PathPrefix("/docs/").Handler(
 		http.FileServer(assets),
@@ -210,7 +210,6 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/topologies/{topo}/scenarios", GetScenarios).Methods("GET", "OPTIONS")
 	api.HandleFunc("/disks", GetDisks).Methods("GET", "OPTIONS")
 	api.HandleFunc("/hosts", GetClusterHosts).Methods("GET", "OPTIONS")
-	api.HandleFunc("/logs", GetLogs).Methods("GET", "OPTIONS")
 	api.HandleFunc("/users", GetUsers).Methods("GET", "OPTIONS")
 	api.HandleFunc("/users", CreateUser).Methods("POST", "OPTIONS")
 	api.HandleFunc("/users/{username}", GetUser).Methods("GET", "OPTIONS")
@@ -240,35 +239,35 @@ func Start(opts ...ServerOption) error {
 	addRoutesToRouter(api, errorRoutes...)
 
 	if o.allowCORS {
-		log.Info("CORS is enabled on HTTP API endpoints")
+		plog.Info("CORS is enabled on HTTP API endpoints")
 		api.Use(middleware.AllowCORS)
 	}
 
 	switch o.logMiddleware {
 	case "full":
-		log.Info("full HTTP logging is enabled")
+		plog.Info("full HTTP logging is enabled")
 		api.Use(middleware.LogFull)
 	case "requests":
-		log.Info("requests-only HTTP logging is enabled")
+		plog.Info("requests-only HTTP logging is enabled")
 		api.Use(middleware.LogRequests)
 	}
 
 	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader))
 
-	log.Info("Starting websockets broker")
+	plog.Info("starting websockets broker")
 
 	go broker.Start()
 
-	log.Info("Starting scorch processors")
+	plog.Info("starting scorch processors")
 
 	go scorch.Start(o.basePath)
 
-	log.Info("Starting log publisher")
+	plog.Info("starting log publisher")
 
-	go PublishLogs(context.Background(), o.phenixLogs, o.minimegaLogs)
+	go PublishMinimegaLogs(context.Background(), o.minimegaLogs)
 
-	log.Info("Using base path '%s'", o.basePath)
-	log.Info("Using JWT lifetime of %v", o.jwtLifetime)
+	plog.Info("using base path", "path", o.basePath)
+	plog.Info("using JWT lifetime", "lifetime", o.jwtLifetime)
 
 	if o.unixSocket != "" {
 		var (
@@ -283,7 +282,7 @@ func Start(opts ...ServerOption) error {
 
 		os.Remove(o.unixSocket)
 
-		log.Info("Starting Unix socket server at '%s'", o.unixSocket)
+		plog.Info("starting Unix socket server", "path", o.unixSocket)
 
 		server := http.Server{Handler: router}
 		listener, err := net.Listen("unix", o.unixSocket)
@@ -293,16 +292,16 @@ func Start(opts ...ServerOption) error {
 
 		go func() {
 			if err := server.Serve(listener); err != nil {
-				log.Error("serving Unix socket: %v", err)
+				plog.Error("serving Unix socket", "err", err)
 			}
 		}()
 	}
 
 	if o.tlsEnabled() {
-		log.Info("Starting HTTPS server on %s", o.endpoint)
+		plog.Info("starting HTTPS server", "endpoint", o.endpoint)
 		return http.ListenAndServeTLS(o.endpoint, o.tlsCrtPath, o.tlsKeyPath, router)
 	} else {
-		log.Info("Starting HTTP server on %s", o.endpoint)
+		plog.Info("Starting HTTP server", "endpoint", o.endpoint)
 		return http.ListenAndServe(o.endpoint, router)
 	}
 }

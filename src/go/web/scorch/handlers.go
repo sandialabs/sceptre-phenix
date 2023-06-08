@@ -16,12 +16,12 @@ import (
 	"phenix/api/scorch/scorchexe"
 	"phenix/api/scorch/scorchmd"
 	"phenix/app"
+	"phenix/util/plog"
 	"phenix/web/broker"
 	"phenix/web/rbac"
 	"phenix/web/util"
 	"phenix/web/weberror"
 
-	log "github.com/activeshadow/libminimega/minilog"
 	"github.com/gofrs/uuid"
 	"github.com/gorilla/mux"
 	"golang.org/x/net/websocket"
@@ -61,7 +61,7 @@ var (
 
 // GET /experiments/{name}/scorch/terminals
 func GetTerminals(w http.ResponseWriter, r *http.Request) {
-	log.Debug("GetTerminal HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "GetTerminal")
 
 	var (
 		vars = mux.Vars(r)
@@ -76,7 +76,7 @@ func GetTerminals(w http.ResponseWriter, r *http.Request) {
 
 // GET /experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}
 func ConnectTerminal(w http.ResponseWriter, r *http.Request) {
-	log.Debug("ConnectTerminal HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "ConnectTerminal")
 
 	var (
 		vars  = mux.Vars(r)
@@ -109,7 +109,7 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) {
 
 // GET /experiments/{name}/scorch/terminals/{pid}/ws/{id}
 func StreamTerminal(w http.ResponseWriter, r *http.Request) {
-	log.Debug("StreamTerminal HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "StreamTerminal")
 
 	exp := mux.Vars(r)["name"]
 	pid, _ := strconv.Atoi(mux.Vars(r)["pid"])
@@ -140,28 +140,28 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) {
 
 	t.RO = rwTerm[pid] != id
 
-	log.Debug("starting web terminal streamer for PID %d", pid)
+	plog.Debug("starting web terminal streamer", "pid", pid)
 
 	websocket.Handler(terminalWsHandler(t)).ServeHTTP(w, r)
 }
 
 // POST /experiments/{name}/scorch/terminals/{pid}/exit/{id}
 func ExitTerminal(w http.ResponseWriter, r *http.Request) {
-	log.Debug("ExitTerminal HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "ExitTerminal")
 
 	exp := mux.Vars(r)["name"]
 	pid, _ := strconv.Atoi(mux.Vars(r)["pid"])
 	id := mux.Vars(r)["id"]
 
 	if rwTerm[pid] != id {
-		log.Error("terminal client with ID %s doesn't own R/W rights to PTY %d", id, pid)
+		plog.Error("terminal client doesn't own R/W rights to PTY", "id", id, "pid", pid)
 		http.Error(w, "terminal client not allowed to exit terminal", http.StatusForbidden)
 		return
 	}
 
 	t, err := GetTerminalByPID(pid)
 	if err != nil {
-		log.Error("web terminal for PID %d not found", pid)
+		plog.Error("web terminal for PID not found", "pid", pid)
 		http.Error(w, "web terminal not found", http.StatusNotFound)
 		return
 	}
@@ -172,7 +172,7 @@ func ExitTerminal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := KillTerminal(t); err != nil {
-		log.Error("killing terminal for PID %d: %v", pid, err)
+		plog.Error("killing terminal for PID", "pid", pid, "err", err)
 		http.Error(w, "error exiting terminal", http.StatusNotFound)
 		return
 	}
@@ -188,7 +188,7 @@ func terminalWsHandler(t WebTerm) func(*websocket.Conn) {
 	return func(ws *websocket.Conn) {
 		_, err := os.FindProcess(t.Pid)
 		if err != nil {
-			log.Error("unable to find process: %v", t.Pid)
+			plog.Error("unable to find process", "pid", t.Pid)
 			return
 		}
 
@@ -350,7 +350,7 @@ func initTerminal(exp string, run, loop int, stage, cmp string) (WebTerm, error)
 
 // GET /experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}
 func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("GetScorchComponentOutput HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "GetScorchComponentOutput")
 
 	var (
 		vars  = mux.Vars(r)
@@ -412,7 +412,7 @@ func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
 
 // GET /experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}/ws
 func StreamComponentOutput(w http.ResponseWriter, r *http.Request) {
-	log.Debug("StreamScorchComponentOutput HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "StreamScorchComponentOutput")
 
 	var (
 		vars  = mux.Vars(r)
@@ -435,7 +435,7 @@ func StreamComponentOutput(w http.ResponseWriter, r *http.Request) {
 
 	key := fmt.Sprintf("%s|%d|%d|%s|%s", exp, run, loop, stage, cmp)
 
-	log.Debug("starting scorch component streamer for %s", key)
+	plog.Debug("starting scorch component streamer", "key", key)
 
 	websocket.Handler(scorchComponentWsHandler(key)).ServeHTTP(w, r)
 }
@@ -454,7 +454,7 @@ func scorchComponentWsHandler(key string) func(*websocket.Conn) {
 
 // GET /experiments/{name}/scorch/pipelines
 func GetPipelines(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("GetPipelines HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "GetPipelines")
 
 	var (
 		ctx  = r.Context()
@@ -524,7 +524,7 @@ func GetPipelines(w http.ResponseWriter, r *http.Request) error {
 
 // GET /experiments/{name}/scorch/pipelines/{run}/{loop}
 func GetPipeline(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("GetPipeline HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "GetPipeline")
 
 	var (
 		ctx  = r.Context()
@@ -565,7 +565,7 @@ func GetPipeline(w http.ResponseWriter, r *http.Request) error {
 
 // POST /experiments/{name}/scorch/pipelines/{run}
 func StartPipeline(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("StartPipeline HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "StartPipeline")
 
 	var (
 		ctx  = r.Context()
@@ -603,7 +603,7 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 	ctx = app.SetContextTriggerUI(ctx)
 
 	go func() {
-		log.Debug("executing Scorch run %d for experiment %s", run, name)
+		plog.Debug("executing Scorch run for experiment", "exp", name, "run", run)
 
 		key := fmt.Sprintf("%s/%d", name, run)
 
@@ -615,7 +615,7 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 
 		if err := scorchexe.Execute(ctx, exp, run); err != nil {
 			if !errors.Is(err, context.Canceled) {
-				log.Error("executing Scorch run %d for experiment %s: %v", run, name, err)
+				plog.Error("executing Scorch run for experiment", "exp", name, "run", run, "err", err)
 
 				broker.Broadcast(
 					broker.NewRequestPolicy("experiments/trigger", "create", name),
@@ -624,7 +624,7 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 				)
 			}
 		} else {
-			log.Debug("Scorch run %d for experiment %s executed successfully", run, name)
+			plog.Debug("Scorch run for experiment executed successfully", "exp", name, "run", run)
 
 			broker.Broadcast(
 				broker.NewRequestPolicy("experiments/trigger", "create", name),
@@ -649,7 +649,7 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 
 // DELETE /experiments/{name}/scorch/pipelines/{run}
 func CancelPipeline(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("CancelPipeline HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "CancelPipeline")
 
 	var (
 		ctx  = r.Context()
@@ -669,7 +669,7 @@ func CancelPipeline(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if cancel := scorchexe.GetCanceler(name, run); cancel != nil {
-		log.Debug("canceling Scorch run %d for experiment %s", run, name)
+		plog.Debug("canceling Scorch run for experiment", "exp", name, "run", run)
 
 		cancel()
 

@@ -2,8 +2,6 @@ package scorch
 
 import (
 	"fmt"
-
-	log "github.com/activeshadow/libminimega/minilog"
 )
 
 type ComponentUpdate struct {
@@ -61,8 +59,6 @@ func processComponents() {
 	for {
 		select {
 		case update := <-componentUpdates:
-			log.Debug("Component Update: %+v", update)
-
 			// track updates by exp/run/loop/stage/component
 			key := fmt.Sprintf("%s|%d|%d|%s|%s", update.Exp, update.Run, update.Loop, update.Stage, update.CmpName)
 

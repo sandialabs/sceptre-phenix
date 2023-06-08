@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"regexp"
+	"strings"
 	"time"
 
 	"phenix/web/broker"
@@ -11,125 +12,82 @@ import (
 	"github.com/hpcloud/tail"
 )
 
-var logLineRegex = regexp.MustCompile(`\A(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2})\s* (DEBUG|INFO|WARN|WARNING|ERROR|FATAL) .*?: (.*)\z`)
+var mmLogRegex = regexp.MustCompile(`\A(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2})\s* (DEBUG|INFO|WARN|WARNING|ERROR|FATAL) .*?: (.*)\z`)
 
-type LogKind int
-
-const (
-	_ LogKind = iota
-	LOG_PHENIX
-	LOG_MINIMEGA
-)
-
-type logLine struct {
-	kind LogKind
-	line string
-}
-
-func PublishLogs(ctx context.Context, phenix, minimega string) {
-	if phenix == "" && minimega == "" {
+func PublishMinimegaLogs(ctx context.Context, minimega string) {
+	if minimega == "" {
 		return
 	}
 
-	logs := make(chan logLine)
+	logs := make(chan string)
 
-	if phenix != "" {
-		phenixLogs, err := tail.TailFile(phenix, tail.Config{Follow: true, ReOpen: true, Poll: true})
-		if err != nil {
-			panic("setting up tail for phenix logs: " + err.Error())
-		}
-
-		go func() {
-			for l := range phenixLogs.Lines {
-				logs <- logLine{kind: LOG_PHENIX, line: l.Text}
-			}
-		}()
+	mmLogs, err := tail.TailFile(minimega, tail.Config{Follow: true, ReOpen: true, Poll: true})
+	if err != nil {
+		panic("setting up tail for minimega logs: " + err.Error())
 	}
 
-	if minimega != "" {
-		mmLogs, err := tail.TailFile(minimega, tail.Config{Follow: true, ReOpen: true, Poll: true})
-		if err != nil {
-			panic("setting up tail for minimega logs: " + err.Error())
+	go func() {
+		for l := range mmLogs.Lines {
+			logs <- l.Text
 		}
+	}()
 
-		go func() {
-			for l := range mmLogs.Lines {
-				logs <- logLine{kind: LOG_MINIMEGA, line: l.Text}
-			}
-		}()
-	}
-
-	// Used to detect multi-line logs in tailed log files.
-	var (
-		mmBody     map[string]interface{}
-		phenixBody map[string]interface{}
-	)
+	// used to detect multi-line minimega logs
+	var body map[string]interface{}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case l := <-logs:
-			parts := logLineRegex.FindStringSubmatch(l.line)
+		case log := <-logs:
+			parts := mmLogRegex.FindStringSubmatch(log)
 
-			switch l.kind {
-			case LOG_PHENIX:
-				if len(parts) == 4 {
-					ts, err := time.ParseInLocation("2006/01/02 15:04:05", parts[1], time.Local)
-					if err != nil {
-						continue
-					}
-
-					phenixBody = map[string]interface{}{
-						"source":    "phenix",
-						"timestamp": parts[1],
-						"epoch":     ts.Unix(),
-						"level":     parts[2],
-						"log":       parts[3],
-					}
-				} else if phenixBody != nil {
-					phenixBody["log"] = l.line
-				} else {
+			if len(parts) == 4 {
+				ts, err := time.ParseInLocation("2006/01/02 15:04:05", parts[1], time.Local)
+				if err != nil {
 					continue
 				}
 
-				marshalled, _ := json.Marshal(phenixBody)
-
-				broker.Broadcast(
-					nil,
-					broker.NewResource("log", "phenix", "update"),
-					marshalled,
-				)
-			case LOG_MINIMEGA:
-				if len(parts) == 4 {
-					ts, err := time.ParseInLocation("2006/01/02 15:04:05", parts[1], time.Local)
-					if err != nil {
-						continue
-					}
-
-					mmBody = map[string]interface{}{
-						"source":    "minimega",
-						"timestamp": parts[1],
-						"epoch":     ts.Unix(),
-						"level":     parts[2],
-						"log":       parts[3],
-					}
-				} else if mmBody != nil {
-					mmBody["log"] = l.line
-				} else {
-					continue
+				body = map[string]interface{}{
+					"source":    "minimega",
+					"timestamp": parts[1],
+					"epoch":     ts.Unix(),
+					"level":     parts[2],
+					"log":       parts[3],
 				}
-
-				marshalled, _ := json.Marshal(mmBody)
-
-				broker.Broadcast(
-					nil,
-					broker.NewResource("log", "minimega", "update"),
-					marshalled,
-				)
-			default:
+			} else if body != nil {
+				body["log"] = log
+			} else {
 				continue
 			}
+
+			marshalled, _ := json.Marshal(body)
+
+			broker.Broadcast(
+				nil,
+				broker.NewResource("log", "minimega", "update"),
+				marshalled,
+			)
 		}
 	}
+}
+
+func PublishPhenixLog(ts time.Time, level, log string) {
+	tstamp := ts.Local().Format("2006/01/02 15:04:05")
+
+	body := map[string]interface{}{
+		"source":    "phenix",
+		"timestamp": tstamp,
+		"epoch":     ts.Unix(),
+		"level":     strings.ToUpper(level),
+		"log":       log,
+	}
+
+	marshalled, _ := json.Marshal(body)
+
+	broker.Broadcast(
+		nil,
+		broker.NewResource("log", "phenix", "update"),
+		marshalled,
+	)
 }

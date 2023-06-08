@@ -4,7 +4,8 @@ import (
 	"io"
 	"net"
 
-	log "github.com/activeshadow/libminimega/minilog"
+	"phenix/util/plog"
+
 	"golang.org/x/net/websocket"
 )
 
@@ -19,17 +20,17 @@ func ConnectWSHandler(endpoint string) func(*websocket.Conn) {
 		// connect to the remote host
 		remote, err := net.Dial("tcp", endpoint)
 		if err != nil {
-			log.Errorln(err)
+			plog.Error("dialing websocket", "err", err)
 			return
 		}
 
 		defer remote.Close()
 
-		log.Info("ws client connected to %v", endpoint)
+		plog.Info("websocket client connected", "endpoint", endpoint)
 
 		go io.Copy(ws, remote)
 		io.Copy(remote, ws)
 
-		log.Info("ws client disconnected from %v", endpoint)
+		plog.Info("websocket client disconnected", "endpoint", endpoint)
 	}
 }

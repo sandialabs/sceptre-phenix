@@ -8,6 +8,23 @@ type (
 	triggerCLI struct{}
 )
 
+func AddContextMetadata(ctx context.Context, key string, val any) context.Context {
+	var (
+		v  = ctx.Value(metadata{})
+		md map[string]any
+	)
+
+	if v == nil {
+		md = make(map[string]any)
+	} else {
+		md = v.(map[string]any)
+	}
+
+	md[key] = val
+
+	return context.WithValue(ctx, metadata{}, md)
+}
+
 func SetContextMetadata(ctx context.Context, md map[string]any) context.Context {
 	return context.WithValue(ctx, metadata{}, md)
 }

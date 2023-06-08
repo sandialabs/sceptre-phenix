@@ -17,10 +17,7 @@ type serverOptions struct {
 	tlsCrtPath string
 
 	logMiddleware string
-
-	publishLogs  bool
-	phenixLogs   string
-	minimegaLogs string
+	minimegaLogs  string
 
 	unbundled       bool
 	basePath        string
@@ -45,10 +42,6 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 
 	for _, opt := range opts {
 		opt(&o)
-	}
-
-	if o.phenixLogs != "" || o.minimegaLogs != "" {
-		o.publishLogs = true
 	}
 
 	if !strings.HasPrefix(o.basePath, "/") {
@@ -121,12 +114,6 @@ func ServeWithTLS(k, c string) ServerOption {
 func ServeWithMiddlewareLogging(l string) ServerOption {
 	return func(o *serverOptions) {
 		o.logMiddleware = l
-	}
-}
-
-func ServePhenixLogs(p string) ServerOption {
-	return func(o *serverOptions) {
-		o.phenixLogs = p
 	}
 }
 

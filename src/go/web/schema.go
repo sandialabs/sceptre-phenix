@@ -6,10 +6,10 @@ import (
 	"phenix/types/version"
 	v1 "phenix/types/version/v1"
 	v2 "phenix/types/version/v2"
+	"phenix/util/plog"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
 
-	log "github.com/activeshadow/libminimega/minilog"
 	"github.com/gorilla/mux"
 	jsoniter "github.com/json-iterator/go"
 	"gopkg.in/yaml.v2"
@@ -19,7 +19,7 @@ var jsoner = jsoniter.ConfigCompatibleWithStandardLibrary
 
 // GET /schemas/{version}
 func GetSchemaSpec(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("GetSchemaSpec HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "GetSchemaSpec")
 
 	var (
 		ctx  = r.Context()
@@ -84,7 +84,7 @@ func GetSchemaSpec(w http.ResponseWriter, r *http.Request) error {
 
 // GET /schemas/{kind}/{version}
 func GetSchema(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("GetSchema HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "GetSchema")
 
 	var (
 		ctx  = r.Context()

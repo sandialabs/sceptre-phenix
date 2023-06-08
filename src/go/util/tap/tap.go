@@ -5,8 +5,8 @@ import (
 
 	"phenix/util"
 	"phenix/util/mm"
+	"phenix/util/plog"
 
-	log "github.com/activeshadow/libminimega/minilog"
 	"github.com/hashicorp/go-multierror"
 	"inet.af/netaddr"
 )
@@ -110,21 +110,21 @@ func (this *Tap) connect(host string, subnet netaddr.IPPrefix) error {
 		right = subnet.IP().Next().Next()
 	)
 
-	log.Info("creating veth pair for tap %s on host %s", this.Name, host)
+	plog.Info("creating veth pair for tap on host", "tap", this.Name, "host", host)
 
 	cmd := fmt.Sprintf("ip link add %s type veth peer name %s_right", this.Name, this.Name[:9])
 	if err := mm.MeshShell(host, cmd); err != nil {
 		return fmt.Errorf("creating veth pair for tap %s on host %s: %w", this.Name, host, err)
 	}
 
-	log.Info("attaching veth interface to network namespace %s on host %s", this.Name, host)
+	plog.Info("attaching veth interface to network namespace on host", "ns", this.Name, "host", host)
 
 	cmd = fmt.Sprintf("ip link set dev %s_right netns %s", this.Name[:9], this.Name)
 	if err := mm.MeshShell(host, cmd); err != nil {
 		return fmt.Errorf("attaching veth interface to network namespace %s on host %s: %w", this.Name, host, err)
 	}
 
-	log.Info("enabling and configuring veth interface in network namespace %s on host %s", this.Name, host)
+	plog.Info("enabling and configuring veth interface in network namespace on host", "ns", this.Name, "host", host)
 
 	cmd = fmt.Sprintf("ip netns exec %s ip link set %s_right name eth0", this.Name, this.Name[:9])
 	if err := mm.MeshShell(host, cmd); err != nil {
@@ -146,14 +146,14 @@ func (this *Tap) connect(host string, subnet netaddr.IPPrefix) error {
 		return fmt.Errorf("setting default route for network namespace %s on host %s: %w", this.Name, host, err)
 	}
 
-	log.Info("configuring iptables in network namespace %s on host %s", this.Name, host)
+	plog.Info("configuring iptables in network namespace on host", "ns", this.Name, "host", host)
 
 	cmd = fmt.Sprintf("ip netns exec %s iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE", this.Name)
 	if err := mm.MeshShell(host, cmd); err != nil {
 		return fmt.Errorf("configuring iptables masquerading in network namespace %s on host %s: %w", this.Name, host, err)
 	}
 
-	log.Info("configuring iptables in the system namespace on host %s", host)
+	plog.Info("configuring iptables in the system namespace on host", "host", host)
 
 	cmd = fmt.Sprintf("iptables -t nat -A POSTROUTING -s %s ! -o %s -j MASQUERADE", right, this.Name)
 	if err := mm.MeshShell(host, cmd); err != nil {
@@ -170,7 +170,7 @@ func (this *Tap) connect(host string, subnet netaddr.IPPrefix) error {
 		return fmt.Errorf("configuring iptables forwarding in system namespace on host %s: %w", host, err)
 	}
 
-	log.Info("enabling and configuring veth interface in the system namespace on host %s", host)
+	plog.Info("enabling and configuring veth interface in the system namespace on host", "host", host)
 
 	cmd = fmt.Sprintf("ip addr add %s/30 dev %s", left, this.Name)
 	if err := mm.MeshShell(host, cmd); err != nil {
@@ -200,7 +200,7 @@ func (this Tap) disconnect(host string) error {
 		errs  error
 	)
 
-	log.Info("deleting iptables configs in the system namespace on host %s", host)
+	plog.Info("deleting iptables configs in the system namespace on host", "host", host)
 
 	cmd := fmt.Sprintf("iptables -t nat -D POSTROUTING -s %s ! -o %s -j MASQUERADE", right, this.Name)
 	if err := mm.MeshShell(host, cmd); err != nil {

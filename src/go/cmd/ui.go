@@ -3,19 +3,17 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"phenix/util"
-	"phenix/util/common"
+	"phenix/util/plog"
 	"phenix/web"
 
-	log "github.com/activeshadow/libminimega/minilog"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
-func newUiCmd() *cobra.Command {
+func newUICmd() *cobra.Command {
 	desc := `Run the phenix UI server
 
   Starts the UI server on the IP:port provided.`
@@ -28,27 +26,6 @@ func newUiCmd() *cobra.Command {
 				return fmt.Errorf("initializing web package: %w", err)
 			}
 
-			level, err := log.ParseLevel(viper.GetString("ui.log-level"))
-			if err != nil {
-				return err
-			}
-
-			if viper.GetBool("ui.log-verbose") {
-				log.AddLogger("stderr", os.Stderr, level, true)
-			}
-
-			if path := viper.GetString("ui.logs.phenix-path"); path != "" {
-				os.MkdirAll(filepath.Dir(path), 0755)
-
-				logfile, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
-				if err != nil {
-					return err
-				}
-
-				log.AddLogger("file", logfile, level, false)
-				common.LogFile = path
-			}
-
 			opts := []web.ServerOption{
 				web.ServeOnEndpoint(viper.GetString("ui.listen-endpoint")),
 				web.ServeOnUnixSocket(viper.GetString("ui.unix-socket-endpoint")),
@@ -57,10 +34,30 @@ func newUiCmd() *cobra.Command {
 				web.ServeWithJWTLifetime(viper.GetDuration("ui.jwt-lifetime")),
 				web.ServeWithUsers(viper.GetStringSlice("ui.users")),
 				web.ServeWithTLS(viper.GetString("ui.tls-key"), viper.GetString("ui.tls-cert")),
-				web.ServePhenixLogs(viper.GetString("ui.logs.phenix-path")),
 				web.ServeMinimegaLogs(viper.GetString("ui.logs.minimega-path")),
 				web.ServeWithFeatures(viper.GetStringSlice("ui.features")),
 				web.ServeWithProxyAuthHeader(viper.GetString("ui.proxy-auth-header")),
+			}
+
+			if viper.GetString("ui.log-level") != "" {
+				plog.Warn("The --log-level option for the ui subcommand is DEPRECATED. Use the root phenix --log.level option instead.")
+			}
+
+			if viper.GetBool("ui.log-verbose") {
+				plog.Warn("The --log-verbose option for the ui subcommand is DEPRECATED. Logging is now enabled by default.")
+			}
+
+			if path := viper.GetString("ui.logs.phenix-path"); path != "" {
+				plog.Warn("The --logs.phenix-path option is DEPRECATED. Use --logs.publish-to-ui ui subcommand option instead.")
+
+				if viper.GetString("ui.logs.publish-to-ui") == "" {
+					// assume INFO log level
+					plog.AddHandler("ui-default", plog.NewUIHandler("info", web.PublishPhenixLog))
+				}
+			}
+
+			if level := viper.GetString("ui.logs.publish-to-ui"); level != "" {
+				plog.AddHandler("ui-default", plog.NewUIHandler(level, web.PublishPhenixLog))
 			}
 
 			if viper.GetString("ui.minimega-path") != "" {
@@ -100,10 +97,11 @@ func newUiCmd() *cobra.Command {
 	cmd.Flags().String("tls-key", "", "path to TLS key file")
 	cmd.Flags().String("tls-cert", "", "path to TLS cert file")
 	cmd.Flags().Bool("unbundled", false, "serve local public files instead of bundled")
-	cmd.Flags().String("log-level", "info", "log level for UI logs")
-	cmd.Flags().Bool("log-verbose", true, "write UI logs to STDERR")
-	cmd.Flags().String("logs.phenix-path", "", "path to phenix log file to publish to UI")
+	cmd.Flags().String("log-level", "", "log level for UI logs - DEPRECATED (use root --log-level option instead)")
+	cmd.Flags().Bool("log-verbose", false, "write UI logs to STDERR - DEPRECATED (now enabled by default)")
+	cmd.Flags().String("logs.phenix-path", "", "path to phenix log file to publish to UI - DEPRECATED (use --logs.publish-to-ui instead)")
 	cmd.Flags().String("logs.minimega-path", "", "path to minimega log file to publish to UI")
+	cmd.Flags().String("logs.publish-to-ui", "", "log level to publish to UI")
 	cmd.Flags().StringSlice("features", nil, "list of features to enable (options: vm-mount)")
 	cmd.Flags().String("minimega-path", "", "path to minimega executable (for console access) - DEPRECATED (use --minimega-console instead)")
 	cmd.Flags().Bool("minimega-console", false, "enable minimega console access in UI")
@@ -121,6 +119,7 @@ func newUiCmd() *cobra.Command {
 	viper.BindPFlag("ui.log-verbose", cmd.Flags().Lookup("log-verbose"))
 	viper.BindPFlag("ui.logs.phenix-path", cmd.Flags().Lookup("logs.phenix-path"))
 	viper.BindPFlag("ui.logs.minimega-path", cmd.Flags().Lookup("logs.minimega-path"))
+	viper.BindPFlag("ui.logs.publish-to-ui", cmd.Flags().Lookup("logs.publish-to-ui"))
 	viper.BindPFlag("ui.features", cmd.Flags().Lookup("features"))
 	viper.BindPFlag("ui.minimega-path", cmd.Flags().Lookup("minimega-path"))
 	viper.BindPFlag("ui.minimega-console", cmd.Flags().Lookup("minimega-console"))
@@ -138,6 +137,7 @@ func newUiCmd() *cobra.Command {
 	viper.BindEnv("ui.log-verbose")
 	viper.BindEnv("ui.logs.phenix-path")
 	viper.BindEnv("ui.logs.minimega-path")
+	viper.BindEnv("ui.logs.publish-to-ui")
 	viper.BindEnv("ui.features")
 	viper.BindEnv("ui.minimega-path")
 	viper.BindEnv("ui.minimega-console")
@@ -152,5 +152,5 @@ func newUiCmd() *cobra.Command {
 }
 
 func init() {
-	rootCmd.AddCommand(newUiCmd())
+	rootCmd.AddCommand(newUICmd())
 }

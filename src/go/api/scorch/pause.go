@@ -101,6 +101,7 @@ func (this Pause) pause(ctx context.Context, stage Action) error {
 		Exp:     this.options.Exp.Spec.ExperimentName(),
 		CmpName: this.options.Name,
 		CmpType: this.options.Type,
+		Run:     this.options.Run,
 		Loop:    this.options.Loop,
 		Count:   this.options.Count,
 		Stage:   string(stage),

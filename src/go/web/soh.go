@@ -5,15 +5,15 @@ import (
 	"net/http"
 
 	"phenix/api/soh"
+	"phenix/util/plog"
 	"phenix/web/rbac"
 
-	log "github.com/activeshadow/libminimega/minilog"
 	"github.com/gorilla/mux"
 )
 
 // GET /experiments/{exp}/soh[?statusFilter=<status filter>]
 func GetExperimentSoH(w http.ResponseWriter, r *http.Request) {
-	log.Debug("GetExperimentSoH HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "GetExperimentSoH")
 
 	var (
 		ctx  = r.Context()

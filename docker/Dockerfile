@@ -38,7 +38,7 @@ WORKDIR /phenix/src/go/web/public/docs
 RUN npx redoc-cli build openapi.yml -o index.html --title 'phenix API'
 
 
-FROM golang:1.18.5 AS gobuilder
+FROM golang:1.20.5 AS gobuilder
 
 RUN apt update \
   && apt install -y protobuf-compiler xz-utils

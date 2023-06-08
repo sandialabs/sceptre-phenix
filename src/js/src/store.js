@@ -13,6 +13,9 @@ export default new Vuex.Store({
     next:     null,
 
     features: [],
+    logs:     [],
+
+    logs_max: 5000,
   },
 
   mutations: {
@@ -62,6 +65,26 @@ export default new Vuex.Store({
 
     'FEATURES' ( state, features ) {
       state.features = features;
+    },
+
+    'LOG' ( state, log ) {
+      let count = state.logs.unshift(log);
+
+      if ( count > state.logs_max ) {
+        state.logs.length = state.logs_max;
+      }
+    },
+
+    'LOGS' ( state, logs ) {
+      let count = state.logs.unshift(...logs.reverse());
+
+      if ( count > state.logs_max ) {
+        state.logs.length = state.logs_max;
+      }
+    },
+
+    'MAX_LOGS' ( state, max ) {
+      state.logs_max = max;
     }
   },
   
@@ -84,6 +107,10 @@ export default new Vuex.Store({
 
     features: state => {
       return state.features;
+    },
+
+    logs: state => {
+      return state.logs.toReversed();
     }
   }
 });

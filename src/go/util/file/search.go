@@ -7,21 +7,19 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	log "github.com/activeshadow/libminimega/minilog"
 )
 
 var (
-	dateRe                     = regexp.MustCompile(`[<>=]{1,2}[ ]?\d{4}[-]\d{2}(?:[\d-]+(?:[ ][\d:]+)?)?`)
-	sizeRe                     = regexp.MustCompile(`[<>=]{1,2}[ ]?\d+(?:[ ]?(?:b|kb|mb|gb))?`)
-	categoryRe                 = regexp.MustCompile(`^(?:packet|elf|vm)`)
-	comparisonOps              = regexp.MustCompile(`[<>=]{1,2}`)
-	fileSizeSpec               = regexp.MustCompile(`(?:b|kb|mb|gb)`)
-	boolOps                    = regexp.MustCompile(`^(?:and|or|not)$`)
-	groups                     = regexp.MustCompile(`(?:[(][^ ])|(?:[^ ][)])`)
-	keywordEscape              = regexp.MustCompile(`['"]([^'"]+)['"]`)
-	defaultSearchFields        = []string{"Name", "Category"}
-	spaceReplacement    string = "-sp-32-sp-"
+	dateRe              = regexp.MustCompile(`[<>=]{1,2}[ ]?\d{4}[-]\d{2}(?:[\d-]+(?:[ ][\d:]+)?)?`)
+	sizeRe              = regexp.MustCompile(`[<>=]{1,2}[ ]?\d+(?:[ ]?(?:b|kb|mb|gb))?`)
+	categoryRe          = regexp.MustCompile(`^(?:packet|elf|vm)`)
+	comparisonOps       = regexp.MustCompile(`[<>=]{1,2}`)
+	fileSizeSpec        = regexp.MustCompile(`(?:b|kb|mb|gb)`)
+	boolOps             = regexp.MustCompile(`^(?:and|or|not)$`)
+	groups              = regexp.MustCompile(`(?:[(][^ ])|(?:[^ ][)])`)
+	keywordEscape       = regexp.MustCompile(`['"]([^'"]+)['"]`)
+	defaultSearchFields = []string{"Name", "Category"}
+	spaceReplacement    = "-sp-32-sp-"
 )
 
 type Stack struct {
@@ -132,7 +130,6 @@ func BuildTree(searchFilter string) *ExpressionTree {
 	}
 
 	postFix, err := postfix(stringParts)
-	log.Debug("Postfix:%v", postFix)
 
 	if err != nil {
 		return nil

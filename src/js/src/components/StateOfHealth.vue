@@ -173,9 +173,23 @@
               <b-button @click="resetNetwork" type="is-light">Refresh Network</b-button>
             </div>
             <div class="column">
-              <b-tooltip :label="triggerTooltip" type="is-light">
-                <b-button @click="execSoH" type="is-light" :disabled="!running || triggered">Manual Refresh</b-button>
-              </b-tooltip>
+              <div v-if="!running">
+                <b-button type="is-light" disabled>Exp Not Running</b-button>
+              </div>
+              <div v-else-if="sohRunning">
+                <div v-if="sohInitialized">
+                  <b-button type="is-light" disabled>SOH Is Running</b-button>
+                </div>
+                <div v-else>
+                  <b-button type="is-light" disabled>SOH Is Initializing</b-button>
+                </div>
+              </div>
+              <div v-else-if="!sohInitialized">
+                <b-button type="is-light" disabled>SOH Not Initialized</b-button>
+              </div>
+              <div v-else>
+                <b-button @click="execSoH" type="is-light">Run SOH</b-button>
+              </div>
             </div>
             <div class="column" />
           </div>
@@ -384,31 +398,47 @@ export default {
               this.resetNetwork();
               break;
             }
+
             case 'start': {
               this.resetNetwork();
               break;
             }
-            case 'triggering': {
-              this.triggered = true;
-              this.triggerTooltip = "Refresh in progress..."
-              break;
-            }
-            case 'trigger': {
-              this.resetNetwork();
-              this.triggered = false;
-              this.triggerTooltip = '';
-              break;
-            }
-            case 'errorTriggering': {
-              this.$buefy.toast.open ({
-                message: 'Triggering State of Health update failed.',
-                type: 'is-danger',
-              });
+          }
+        }
 
-              this.triggered = false;
-              this.triggerTooltip = '';
+        case 'experiment/apps': {
+          if ( msg.resource.name != this.$route.params.id ) {
+            return;
+          }
 
-              break;
+          switch ( msg.resource.action ) {
+            case 'triggered': {
+              if (msg.result && msg.result.app && msg.result.app === 'soh') {
+                this.sohRunning = true;
+                break;
+              }
+            }
+
+            case 'triggerSuccess': {
+              if (msg.result && msg.result.app && msg.result.app === 'soh') {
+                this.resetNetwork();
+                this.sohRunning = false;
+
+                break;
+              }
+            }
+
+            case 'triggerError': {
+              if (msg.result && msg.result.app && msg.result.app === 'soh') {
+                this.$buefy.toast.open ({
+                  message: 'Triggering State of Health update failed.',
+                  type: 'is-danger',
+                });
+
+                this.sohRunning = false;
+
+                break;
+              }
             }
           }
         }
@@ -471,7 +501,10 @@ export default {
         let resp = await this.$http.get( url );
         let state = await resp.json();
 
-        this.running = state.started;
+        this.running        = state.started;
+        this.sohInitialized = state.soh_initialized;
+        this.sohRunning     = state.soh_running;
+
         this.nodes = state.nodes;
         this.edges = state.edges;
 
@@ -913,6 +946,8 @@ export default {
   data() {
     return {
       running: false,
+      sohInitialized: false,
+      sohRunning: false,
       messages: false,
       flows: false,
       nodes: [],
@@ -927,8 +962,6 @@ export default {
         soh: null
       },
       chordData: null,
-      triggered: false,
-      triggerTooltip: '',
     };
   }
 }

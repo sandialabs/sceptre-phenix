@@ -2,20 +2,19 @@ package web
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	"phenix/store"
+	"phenix/util/plog"
 	"phenix/web/rbac"
 	"phenix/web/util"
 	"phenix/web/weberror"
-
-	log "github.com/activeshadow/libminimega/minilog"
 )
 
 // POST /history
 func GetHistory(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("GetHistory HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "GetHistory")
 
 	var (
 		ctx  = r.Context()
@@ -27,7 +26,7 @@ func GetHistory(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to parse request")
 		return err.SetStatus(http.StatusInternalServerError)

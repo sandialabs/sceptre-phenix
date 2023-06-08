@@ -15,12 +15,11 @@ import (
 	"phenix/types"
 	"phenix/util/mm"
 	"phenix/util/notes"
+	"phenix/util/plog"
 	"phenix/web/broker"
 	"phenix/web/cache"
 	"phenix/web/util"
 	"phenix/web/weberror"
-
-	log "github.com/activeshadow/libminimega/minilog"
 )
 
 var (
@@ -66,7 +65,7 @@ func startExperiment(name string) ([]byte, error) {
 			status <- result{nil, err}
 		} else {
 			for _, note := range notes.Info(ctx, false) {
-				log.Info(note)
+				plog.Info(note)
 			}
 
 			done := make(chan struct{})
@@ -76,7 +75,7 @@ func startExperiment(name string) ([]byte, error) {
 			go func() {
 				for {
 					for _, note := range notes.Info(ctx, false) {
-						log.Info(note)
+						plog.Info(note)
 					}
 
 					select {
@@ -90,7 +89,7 @@ func startExperiment(name string) ([]byte, error) {
 
 			go func() {
 				for err := range ch {
-					log.Warn("delayed error starting experiment %s: %v", name, err)
+					plog.Warn("delayed error starting experiment", "exp", name, "err", err)
 
 					var delayErr experiment.DelayedVMError
 
@@ -148,7 +147,7 @@ func startExperiment(name string) ([]byte, error) {
 			vms, err := vm.List(name)
 			if err != nil {
 				// TODO
-				log.Error("listing VMs in experiment %s - %v", name, err)
+				plog.Error("listing VMs in experiment", "exp", name, "err", err)
 			}
 
 			body, err := marshaler.Marshal(util.ExperimentToProtobuf(*s.exp, "", vms))
@@ -167,7 +166,7 @@ func startExperiment(name string) ([]byte, error) {
 		default:
 			p, err := mm.GetLaunchProgress(name, count)
 			if err != nil {
-				log.Error("getting progress for experiment %s - %v", name, err)
+				plog.Error("getting progress for experiment", "exp", name, "err", err)
 				continue
 			}
 
@@ -175,7 +174,7 @@ func startExperiment(name string) ([]byte, error) {
 				progress = p
 			}
 
-			log.Info("percent deployed: %v", progress*100.0)
+			plog.Info("percent deployed", "percent", progress*100.0)
 
 			status := map[string]interface{}{
 				"percent": progress,

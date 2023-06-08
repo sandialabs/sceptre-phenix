@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"phenix/util/plog"
 	"phenix/web/rbac"
 	"strings"
 
-	log "github.com/activeshadow/libminimega/minilog"
 	jwtmiddleware "github.com/cescoferraro/go-jwt-middleware"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
@@ -61,7 +61,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 			},
 			SigningMethod: jwt.SigningMethodHS256,
 			ErrorHandler: func(w http.ResponseWriter, r *http.Request, e string) {
-				log.Error("Error validating auth token: %s", e)
+				plog.Error("validating auth token", "err", e)
 
 				// TODO: remove token from user spec?
 
@@ -86,7 +86,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 
 			userToken := ctx.Value("user")
 			if userToken == nil {
-				log.Error("Rejecting unauthorized request for %s: Missing user token", r.URL.Path)
+				plog.Error("rejecting unauthorized request - missing user token", "path", r.URL.Path)
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
@@ -96,7 +96,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 
 			if proxyAuthHeader != "" {
 				if user := r.Header.Get(proxyAuthHeader); user != claim["sub"].(string) {
-					log.Error("proxy user mismatch -- proxy: %s, token: %s", user, claim["sub"].(string))
+					plog.Error("proxy user mismatch", "user", user, "token", claim["sub"].(string))
 					http.Error(w, "proxy user mismatch", http.StatusUnauthorized)
 					return
 				}
@@ -148,10 +148,10 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 	}
 
 	if jwtKey == "" {
-		log.Info("no JWT signing key provided -- disabling auth")
+		plog.Info("no JWT signing key provided -- disabling auth")
 		return func(h http.Handler) http.Handler { return NoAuth(h) }
 	} else if strings.HasPrefix(jwtKey, "dev|") {
-		log.Debug("development JWT key provided -- enabling dev auth")
+		plog.Debug("development JWT key provided -- enabling dev auth")
 		return func(h http.Handler) http.Handler { return devAuthMiddleware(h) }
 	}
 

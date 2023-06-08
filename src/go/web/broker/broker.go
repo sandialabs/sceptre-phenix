@@ -3,7 +3,6 @@ package broker
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"phenix/api/vm"
@@ -26,19 +25,35 @@ func Start() {
 	for {
 		select {
 		case pub := <-triggerSub:
-			trigger := pub.(app.Publication)
+			var (
+				trigger = pub.(app.Publication)
+				state   string
+			)
 
-			typ := fmt.Sprintf("apps/%s", trigger.App)
+			switch trigger.State {
+			case "start":
+				state = "triggered"
+			case "error":
+				state = "triggerError"
+			case "success":
+				state = "triggerSuccess"
+			default:
+				continue
+			}
 
-			policy := NewRequestPolicy("experiments/trigger", "create", trigger.Experiment)
-			resource := NewResource(typ, trigger.Experiment, trigger.State)
+			var (
+				policy   = NewRequestPolicy("experiments/trigger", "create", trigger.Experiment)
+				resource = NewResource("experiment/apps", trigger.Experiment, state)
+				result   = map[string]any{"app": trigger.App}
+			)
 
 			if trigger.State == "error" {
-				result, _ := json.Marshal(map[string]interface{}{"error": trigger.Error.Error()})
-				broadcast <- Publish{RequestPolicy: policy, Resource: resource, Result: result}
-			} else {
-				broadcast <- Publish{RequestPolicy: policy, Resource: resource, Result: nil}
+				result["error"] = trigger.Error.Error()
 			}
+
+			payload, _ := json.Marshal(result)
+
+			broadcast <- Publish{RequestPolicy: policy, Resource: resource, Result: payload}
 		case pub := <-delayedSub:
 			delayed := pub.(string)
 			names := strings.Split(delayed, "/")

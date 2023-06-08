@@ -100,7 +100,7 @@
     <script>
     <!-- PHENIX EDIT init script: just add correct path and autoconnect param to hash. noVNC will grab parameters from there -->
     {{- if .Token }}
-        window.location.hash = `autoconnect=true&path=${window.location.pathname.substr(1)}/ws?token={{ .Token }}`
+        window.location.hash = `autoconnect=true&path=${window.location.pathname.substr(1)}/ws?token=` + "{{ .Token }}"
     {{- else }}
         window.location.hash = `autoconnect=true&path=${window.location.pathname.substr(1)}/ws`
     {{- end }}

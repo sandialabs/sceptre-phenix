@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	log "github.com/activeshadow/libminimega/minilog"
+	"phenix/util/plog"
 )
 
 var (
@@ -97,7 +97,6 @@ func BuildTree(searchFilter string) *ExpressionTree {
 	}
 
 	postFix, err := postfix(stringParts)
-	log.Debug("Postfix:%v", postFix)
 
 	if err != nil {
 		return nil
@@ -290,7 +289,6 @@ func getSearchFields(term string) []string {
 }
 
 func (node *ExpressionTree) match(vm *VM) bool {
-
 	for _, field := range node.searchFields {
 		switch field {
 		case "IPv4":
@@ -298,7 +296,7 @@ func (node *ExpressionTree) match(vm *VM) bool {
 				_, refNet, err := net.ParseCIDR(node.term)
 
 				if err != nil {
-					log.Debug("Unable to parse network:%v", node.term)
+					plog.Debug("unable to parse network", "network", node.term)
 					continue
 				}
 
@@ -307,7 +305,7 @@ func (node *ExpressionTree) match(vm *VM) bool {
 					address := net.ParseIP(network)
 
 					if address == nil {
-						log.Debug("Unable to parse address:%v", network)
+						plog.Debug("unable to parse address", "address", network)
 						continue
 					}
 

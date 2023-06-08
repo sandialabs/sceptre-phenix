@@ -59,36 +59,14 @@
 </template>
 
 <script>
+  import { mapState } from 'vuex';
+
   export default {
-    beforeDestroy () {
-      this.$options.sockets.onmessage = null;
-      this.logs = [];
-    },
-
-    created () {
-      try {
-        this.getLogs();
-        this.$options.sockets.onmessage = this.handler;
-      } catch ( response ) {
-        if ( response.status == 501)  {
-          this.disabled = true
-        } else {
-          // this.$buefy.toast.open({
-          //   message: 'Getting logs for the past ' + this.duration + ' failed with ' + resp.status + ' status.',
-          //   type: 'is-danger',
-          //   duration: 4000
-          // });
-
-          this.errorNotification(response); // this may need to be updated
-        }
-      }
-    },
-    
     computed: {
       filteredLogs: function() {
         let logs = this.logs;
-        let dur = this.getSeconds(this.duration);
-        let now = Date.now() / 1000;
+        let dur  = this.getSeconds(this.duration);
+        let now  = Date.now() / 1000;
 
         let windowed = [];
 
@@ -167,39 +145,16 @@
         } else {
           return true;
         }
-      }
+      },
+
+      ...mapState({
+        logs: 'logs'
+      })
     },
 
     methods: {
-      async getLogs () {
-        let resp = await this.$http.get( 'logs?since=' + this.duration );
-        let state = await resp.json();
-
-        // Note that sometimes this function gets called more
-        // than once, and sometimes `state` ends up being
-        // null, perhaps due to multipart responses?
-        if ( state ) {
-          this.logs.push( ...state.logs );
-        }
-      },
-
-      handler ( event ) {
-        event.data.split( /\r?\n/ ).forEach( m => {
-          let msg = JSON.parse( m );
-          this.handle( msg );
-        });
-      },
-    
-      handle ( msg ) {     
-        if ( msg.resource.type == 'log' ) {
-          this.logs.push( msg.result );
-        }
-      },
-
       assignDuration ( value ) {
         this.duration = value;
-
-        this.getLogs();
       },
     
       decorator ( severity ) {
@@ -247,7 +202,6 @@
           perPage: 10
         },
         disabled: false,
-        logs: [],
         searchLog: '',
         duration: '5m'
       }

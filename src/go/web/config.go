@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -17,19 +17,19 @@ import (
 	"phenix/store"
 	"phenix/types"
 	"phenix/types/version"
+	"phenix/util/plog"
 	"phenix/web/broker"
 	"phenix/web/rbac"
 	"phenix/web/util"
 	"phenix/web/weberror"
 
-	log "github.com/activeshadow/libminimega/minilog"
 	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v3"
 )
 
 // GET /configs
 func GetConfigs(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("GetConfigs HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "GetConfigs")
 
 	var (
 		ctx   = r.Context()
@@ -79,7 +79,7 @@ func GetConfigs(w http.ResponseWriter, r *http.Request) error {
 
 // POST /configs/download
 func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("DownloadConfigs HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "DownloadConfigs")
 
 	var (
 		ctx  = r.Context()
@@ -91,7 +91,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to read request")
 		return err.SetStatus(http.StatusInternalServerError)
@@ -190,7 +190,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 
 // POST /configs
 func CreateConfig(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("CreateConfig HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "CreateConfig")
 
 	var (
 		ctx  = r.Context()
@@ -209,7 +209,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	switch {
 	case typ == "application/json": // default to JSON if not set
-		body, err := ioutil.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
 			return err.SetStatus(http.StatusInternalServerError)
@@ -217,7 +217,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 		opts = append(opts, config.CreateFromJSON(body))
 	case typ == "application/x-yaml":
-		body, err := ioutil.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
 			return err.SetStatus(http.StatusInternalServerError)
@@ -237,7 +237,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 		switch filepath.Ext(handler.Filename) {
 		case ".json":
-			body, err := ioutil.ReadAll(file)
+			body, err := io.ReadAll(file)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
 				return err.SetStatus(http.StatusInternalServerError)
@@ -245,7 +245,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 			opts = append(opts, config.CreateFromJSON(body))
 		case ".yaml", ".yml":
-			body, err := ioutil.ReadAll(file)
+			body, err := io.ReadAll(file)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
 				return err.SetStatus(http.StatusInternalServerError)
@@ -292,7 +292,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	body, err := json.Marshal(c)
 	if err != nil {
-		log.Error("marshaling config %s - %v", c.FullName(), err)
+		plog.Error("marshaling config", "config", c.FullName(), "err", err)
 		return nil
 	}
 
@@ -307,7 +307,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 // GET /configs/{kind}/{name}
 func GetConfig(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("GetConfig HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "GetConfig")
 
 	var (
 		ctx  = r.Context()
@@ -371,7 +371,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 
 // PUT /configs/{kind}/{name}
 func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("UpdateConfig HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "UpdateConfig")
 
 	var (
 		ctx  = r.Context()
@@ -392,7 +392,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	switch {
 	case typ == "application/json": // default to JSON if not set
-		body, err := ioutil.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
 			return err.SetStatus(http.StatusInternalServerError)
@@ -404,7 +404,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 	case typ == "application/x-yaml":
-		body, err := ioutil.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
 			return err.SetStatus(http.StatusInternalServerError)
@@ -428,7 +428,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 
 		switch filepath.Ext(handler.Filename) {
 		case ".json":
-			body, err := ioutil.ReadAll(file)
+			body, err := io.ReadAll(file)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
 				return err.SetStatus(http.StatusInternalServerError)
@@ -440,7 +440,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 		case ".yaml", ".yml":
-			body, err := ioutil.ReadAll(file)
+			body, err := io.ReadAll(file)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
 				return err.SetStatus(http.StatusInternalServerError)
@@ -497,7 +497,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	body, err := json.Marshal(c)
 	if err != nil {
-		log.Error("marshaling config %s - %v", c.FullName(), err)
+		plog.Error("marshaling config", "config", c.FullName(), "err", err)
 		return nil
 	}
 
@@ -512,7 +512,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 
 // DELETE /configs/{kind}/{name}
 func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
-	log.Debug("DeleteConfig HTTP handler called")
+	plog.Debug("HTTP handler called", "handler", "DeleteConfig")
 
 	var (
 		ctx  = r.Context()

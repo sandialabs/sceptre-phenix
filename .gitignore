@@ -5,3 +5,5 @@
 .vscode
 
 bin
+
+staticcheck.conf

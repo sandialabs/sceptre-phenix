@@ -43,13 +43,16 @@ type Component interface {
 	Cleanup(context.Context) error
 }
 
-var components = make(map[string]Component)
+var components map[string]Component
 
 func init() {
-	components["break"] = new(Break)
-	components["pause"] = new(Pause)
-	components["tap"] = new(Tap)
-	components["user-shell"] = new(UserComponent)
+	components = map[string]Component{
+		"break":      new(Break),
+		"pause":      new(Pause),
+		"soh":        new(SOH),
+		"tap":        new(Tap),
+		"user-shell": new(UserComponent),
+	}
 }
 
 func GetComponent(name string) Component {

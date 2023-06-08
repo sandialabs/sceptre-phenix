@@ -12,6 +12,7 @@ import (
 	"phenix/store"
 	"phenix/util"
 	"phenix/util/common"
+	"phenix/util/plog"
 	"phenix/web"
 
 	"github.com/fsnotify/fsnotify"
@@ -39,7 +40,11 @@ var rootCmd = &cobra.Command{
 			endpoint = viper.GetString("store.endpoint")
 			errFile  = viper.GetString("log.error-file")
 			errOut   = viper.GetBool("log.error-stderr")
+			logLevel = viper.GetString("log.level")
 		)
+
+		plog.NewPhenixHandler()
+		plog.SetLevelText(logLevel)
 
 		common.ErrorFile = errFile
 		common.StoreEndpoint = endpoint
@@ -125,6 +130,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&minimegaBase, "base-dir.minimega", "/tmp/minimega", "base minimega directory")
 	rootCmd.PersistentFlags().StringVar(&hostnameSuffixes, "hostname-suffixes", "-minimega,-phenix", "hostname suffixes to strip")
 	rootCmd.PersistentFlags().Bool("log.error-stderr", true, "log fatal errors to STDERR")
+	rootCmd.PersistentFlags().String("log.level", "info", "level to log messages at")
 
 	if uid == "0" {
 		os.MkdirAll("/etc/phenix", 0755)

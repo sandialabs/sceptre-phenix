@@ -37,7 +37,9 @@ func Get(expName, statusFilter string) (*Network, error) {
 	status := make(map[string]*HostState)
 
 	if exp.Running() {
-		network.Started = true
+		network.ExpStarted = true
+		network.SOHInitialized = Initialized(exp)
+		network.SOHRunning = Running(exp)
 
 		if app, ok := exp.Status.AppStatus()["soh"]; ok {
 			data, ok := app.(map[string]interface{})
