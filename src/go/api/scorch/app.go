@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"phenix/api/scorch/scorchexe"
@@ -18,7 +19,9 @@ import (
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/util"
+	"phenix/util/mm/mmcli"
 	"phenix/util/shell"
+	"phenix/version"
 	"phenix/web/scorch"
 
 	log "github.com/activeshadow/libminimega/minilog"
@@ -154,6 +157,10 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 
 	if cmd != nil {
 		this.stopFilebeat(ctx, cmd, port)
+	}
+
+	if err := this.recordInfo(runID, runDir, exp.Metadata.Name, start); err != nil {
+		errors = multierror.Append(errors, err)
 	}
 
 	if _, err := os.Stat(runDir); err == nil {
@@ -324,6 +331,45 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 			}
 		}
 	}
+}
+
+func (this Scorch) recordInfo(runID int, runDir, name string, startTime time.Time) error {
+	c := mmcli.NewCommand()
+	c.Command = "version"
+
+	mmVersion, err := mmcli.SingleResponse(mmcli.Run(c))
+	if err != nil {
+		return fmt.Errorf("getting minimega version: %w", err)
+	}
+
+	info := []string{
+		"Experiment Name: %s",
+		"Experiment Commit Hash: %s",
+		"Scorch Run Name: %s",
+		"Start Time: %s",
+		"End Time: %s",
+		"Phenix Version: %s %s %s",
+		"Minimega Version: %s",
+	}
+
+	body := fmt.Sprintf(
+		strings.Join(info, "\n"),
+		name, "TODO", this.md.RunName(runID),
+		startTime.Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339),
+		version.Commit, version.Tag, version.Date, mmVersion,
+	)
+
+	fileName := fmt.Sprintf("info-scorch-run-%d_%s.txt", runID, startTime.Format(time.RFC3339))
+
+	if err := os.MkdirAll(runDir, 0755); err != nil {
+		return fmt.Errorf("creating %s directory for scorch run %d: %w", runDir, runID, err)
+	}
+
+	if err := os.WriteFile(filepath.Join(runDir, fileName), []byte(body), 0644); err != nil {
+		return fmt.Errorf("writing scorch information file (%s): %w", fileName, err)
+	}
+
+	return nil
 }
 
 func executor(ctx context.Context, components scorchmd.ComponentSpecMap, exe *scorchmd.Loop, opts ...Option) error {
