@@ -18,7 +18,9 @@ import (
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/util"
+	"phenix/util/mm/mmcli"
 	"phenix/util/shell"
+	"phenix/version"
 	"phenix/web/scorch"
 
 	log "github.com/activeshadow/libminimega/minilog"
@@ -154,6 +156,22 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 
 	if cmd != nil {
 		this.stopFilebeat(ctx, cmd, port)
+	}
+
+	// Record info about this experiment
+	c := mmcli.NewCommand()
+	c.Command = "version"
+	resp, err := mmcli.SingleResponse(mmcli.Run(c))
+
+	info := fmt.Sprintf("Experiment Name: %s\nExperiment Commit Hash: pending\nScorch Run Name: %s\nStart Time: %v\nEnd Time: %v\nPhenix Version: %s %s %s \nMinimega Version: %s",
+		exp.Metadata.Name, this.md.RunName(runID), start, time.Now().UTC(), version.Commit, version.Tag, version.Date, resp)
+	if _, err := os.Stat(runDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(runDir, 0755); err != nil {
+			errors = multierror.Append(errors, fmt.Errorf("creating %s directory for scorch run %d: %w", runDir, runID, err))
+		}
+	}
+	if err := os.WriteFile(filepath.Join(runDir, fmt.Sprintf("info-scorch-run-%d_%s.txt", runID, start.Format(time.RFC3339))), []byte(info), 0666); err != nil {
+		errors = multierror.Append(errors, fmt.Errorf("writing info-scorch-run-%d_%s.txt file: %w", err))
 	}
 
 	if _, err := os.Stat(runDir); err == nil {
