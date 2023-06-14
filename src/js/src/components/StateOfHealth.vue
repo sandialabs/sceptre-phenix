@@ -139,7 +139,7 @@
       </div>
     </b-modal>
     <hr>
-    <div class="columns is-centered"> 
+    <div class="columns is-centered">
       <div class="column is-1">
         <router-link class="button is-dark" :to="{ name: 'experiment', params: { id: this.$route.params.id }}">
           <b-tooltip label="return to the experiment component" type="is-light is-right" :delay="1000">
@@ -190,6 +190,18 @@
               <div v-else>
                 <b-button @click="execSoH" type="is-light">Run SOH</b-button>
               </div>
+            </div>
+            <div>
+              <b-tooltip label="menu for selecting networks (all, network, serial)" type="is-light" multilined>
+                <b-dropdown v-model="showEdgetType" class="is-right" aria-role="list">
+                  <button class="button is-light" slot="trigger">
+                    <b-icon icon="bars"></b-icon>
+                  </button>
+                  <b-dropdown-item v-for="( n, index ) in networks" :key="index" :value="n">
+                    <font color="#202020">{{ n }}</font>
+                  </b-dropdown-item>
+                </b-dropdown>
+              </b-tooltip>
             </div>
             <div class="column" />
           </div>
@@ -472,7 +484,7 @@ export default {
                   d3.selectAll('circle').attr( "fill", this.updateNodeColor );
                 }
               }
-              
+
               break;
             }
             case 'delete': {
@@ -482,7 +494,7 @@ export default {
                   d3.selectAll('circle').attr( "fill", this.updateNodeColor );
                 }
               }
-              
+
               break;
             }
           }
@@ -514,7 +526,7 @@ export default {
             { names: state.hosts }
           )
           this.flows = true;
-        } 
+        }
       } catch (err) {
         this.errorNotification(err);
       } finally {
@@ -762,7 +774,7 @@ export default {
       }
 
       let circle = d3.select( e.target );
-      
+
       circle
         .transition()
         .attr( "r", 15 )
@@ -790,7 +802,7 @@ export default {
         this.detailsModal.vm = n.label;
         this.detailsModal.status = n.status;
         this.detailsModal.soh = n.soh;
-      }    
+      }
     },
 
     color ( d ) {
@@ -804,18 +816,18 @@ export default {
         event.subject.fx = event.subject.x;
         event.subject.fy = event.subject.y;
       }
-      
+
       function dragged ( event ) {
         event.subject.fx = event.x;
         event.subject.fy = event.y;
       }
-      
+
       function dragended ( event ) {
         if ( !event.active ) simulation.alphaTarget( 0 );
         event.subject.fx = null;
         event.subject.fy = null;
       }
-      
+
       return d3.drag()
         .on( "start", dragstarted )
         .on( "drag", dragged )
@@ -833,16 +845,16 @@ export default {
 
       const innerRadius = Math.min(width, height) * .35;
       const outerRadius = innerRadius * 1.018;
-      
+
       const chord = d3.chord()
         .padAngle(10 / innerRadius)
         .sortSubgroups(d3.descending)
         .sortChords(d3.descending);
-      
+
       const arc = d3.arc()
         .innerRadius(innerRadius)
         .outerRadius(outerRadius);
-      
+
       const ribbon = d3.ribbon()
         .radius(innerRadius - 1)
         .padAngle(1 / innerRadius);
@@ -869,7 +881,7 @@ export default {
         .selectAll("g")
         .data(chords.groups)
         .join("g");
-      
+
       group.append("path")
         .attr("fill", d => color(names[d.index]))
         .attr("stroke", d => color(names[d.index]))
@@ -912,7 +924,7 @@ export default {
             ? `↑ ${names[d.index]}`
             : `${names[d.index]} ↓`;
         });
-      
+
       svg.append("g")
         .attr("fill-opacity", 0.8)
         .selectAll("path")
@@ -978,6 +990,11 @@ export default {
       nodes: [],
       edges: [],
       showEdgeType: 'all',
+      networks: [
+       'all',
+       'network',
+       'serial'
+      ],
       radioButton: '',
       vlan: VLAN,
       detailsModal: {
