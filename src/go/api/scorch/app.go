@@ -158,20 +158,8 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 		this.stopFilebeat(ctx, cmd, port)
 	}
 
-	// Record info about this experiment
-	c := mmcli.NewCommand()
-	c.Command = "version"
-	resp, err := mmcli.SingleResponse(mmcli.Run(c))
-
-	info := fmt.Sprintf("Experiment Name: %s\nExperiment Commit Hash: pending\nScorch Run Name: %s\nStart Time: %v\nEnd Time: %v\nPhenix Version: %s %s %s \nMinimega Version: %s",
-		exp.Metadata.Name, this.md.RunName(runID), start, time.Now().UTC(), version.Commit, version.Tag, version.Date, resp)
-	if _, err := os.Stat(runDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(runDir, 0755); err != nil {
-			errors = multierror.Append(errors, fmt.Errorf("creating %s directory for scorch run %d: %w", runDir, runID, err))
-		}
-	}
-	if err := os.WriteFile(filepath.Join(runDir, fmt.Sprintf("info-scorch-run-%d_%s.txt", runID, start.Format(time.RFC3339))), []byte(info), 0666); err != nil {
-		errors = multierror.Append(errors, fmt.Errorf("writing info-scorch-run-%d_%s.txt file: %w", err))
+	if err := this.recordInfo(runID, runDir, exp.Metadata.Name, start, version.Commit, version.Tag, version.Date); err != nil {
+		errors = multierror.Append(errors, err)
 	}
 
 	if _, err := os.Stat(runDir); err == nil {
@@ -342,6 +330,38 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 			}
 		}
 	}
+}
+
+func (this Scorch) recordInfo(runID int, runDir string, name string, startTime time.Time, versionCommit string, versionTag string, versionDate string) error {
+	// runID, runDir, exp.Metadata.Name, start, version.Commit, version.Tag version.Date
+
+	var (
+		c    *mmcli.Command
+		resp string
+		err  error
+		info string
+	)
+
+	c = mmcli.NewCommand()
+	c.Command = "version"
+	if resp, err = mmcli.SingleResponse(mmcli.Run(c)); err != nil {
+		return fmt.Errorf("running minimega verssion %w", err)
+	}
+
+	info = fmt.Sprintf("Experiment Name: %s\nExperiment Commit Hash: pending\nScorch Run Name: %s\nStart Time: %v\nEnd Time: %v\nPhenix Version: %s %s %s \nMinimega Version: %s",
+		name, this.md.RunName(runID), startTime, time.Now().UTC(), versionCommit, versionTag, versionDate, resp)
+
+	if _, err = os.Stat(runDir); os.IsNotExist(err) {
+		if err = os.MkdirAll(runDir, 0755); err != nil {
+			return fmt.Errorf("creating %s directory for scorch run %d: %w", runDir, runID, err)
+		}
+	}
+
+	if err := os.WriteFile(filepath.Join(runDir, fmt.Sprintf("info-scorch-run-%d_%s.txt", runID, startTime.Format(time.RFC3339))), []byte(info), 0666); err != nil {
+		return fmt.Errorf("writing info-scorch-run-%d_%s.txt file: %w", runID, startTime, err)
+	}
+
+	return nil
 }
 
 func executor(ctx context.Context, components scorchmd.ComponentSpecMap, exe *scorchmd.Loop, opts ...Option) error {
