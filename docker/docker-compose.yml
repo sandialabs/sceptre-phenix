@@ -14,13 +14,12 @@ services:
       context: ../
       dockerfile: docker/Dockerfile
       args:
+        MM_MIN_REV: 2bd71c0
         PHENIX_WEB_AUTH: disabled
     command:
     - phenix
     - ui
     - --hostname-suffixes=-minimega,-phenix
-#   - --logs.phenix-path=/var/log/phenix/phenix.log
-#   - --logs.minimega-path=/var/log/phenix/minimega.log
     - --minimega-console
     image: phenix
     container_name: phenix
@@ -45,7 +44,7 @@ services:
       context: .
       dockerfile: Dockerfile.minimega
       args:
-        MINIMEGA_REVISION: 8aaffa1
+        MM_REV: 2bd71c0
     image: minimega
     container_name: minimega
     privileged: true

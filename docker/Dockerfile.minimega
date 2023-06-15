@@ -1,10 +1,10 @@
 # Update GitHub workflow configs and docker-compose config to change the version
 # of minimega required for use with phenix.
-ARG  MINIMEGA_REVISION
-FROM ghcr.io/activeshadow/minimega/minimega:${MINIMEGA_REVISION}
+ARG  MM_REV
+FROM ghcr.io/activeshadow/minimega/minimega:${MM_REV}
 
 ARG   MINIMEGA_REVISION
-LABEL org.opencontainers.image.base.name="ghcr.io/activeshadow/minimega/minimega:${MINIMEGA_REVISION}"
+LABEL org.opencontainers.image.base.name="ghcr.io/activeshadow/minimega/minimega:${MM_REV}"
 ARG   PHENIX_REVISION=local-dev
 LABEL gov.sandia.phenix.revision="${PHENIX_REVISION}"
 
