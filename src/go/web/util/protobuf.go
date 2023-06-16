@@ -115,6 +115,7 @@ func VMToProtobuf(exp string, vm mm.VM, topology ifaces.TopologySpec) *proto.VM 
 
 	if vm := topology.FindNodeByName(vm.Name); vm != nil {
 		v.DelayedStart = vm.Delayed()
+		v.External = vm.External()
 	}
 
 	return v

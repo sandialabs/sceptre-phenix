@@ -241,6 +241,8 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		// interfaces just in case the topology includes updates changing VLAN alias
 		// names.
 		for _, node := range exp.Spec.Topology().Nodes() {
+			// TODO: only consider nodes schedulable by minimega? Or should HIL nodes
+			// be taken into account here still as well?
 			if node.Network() == nil {
 				continue
 			}
@@ -268,6 +270,10 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		// Reset VM schedules using information from topology nodes just in case the
 		// topology includes updates changing node hostnames.
 		for _, node := range exp.Spec.Topology().Nodes() {
+			if node.External() {
+				continue
+			}
+
 			hostname := node.General().Hostname()
 
 			// Use cluster host from workflow config if specified.

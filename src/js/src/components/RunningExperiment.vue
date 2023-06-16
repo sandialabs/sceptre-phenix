@@ -3,7 +3,7 @@
     <b-modal :active.sync="expModal.active" :on-cancel="resetExpModal" has-modal-card>
       <div class="modal-card" style="width:30em">
         <header class="modal-card-head">
-          <p class="modal-card-title">{{ expModal.vm.name ? expModal.vm.name : "unknown" }} VM</p>
+          <p class="modal-card-title">{{ expModal.vm.name ? expModal.vm.name : "unknown" }}</p>
         </header>
         <section class="modal-card-body">
           <p>Host: {{ expModal.vm.host }}</p>
@@ -511,7 +511,7 @@
                 </div>
               </section>
             </template>
-            <b-table-column  field="multiselect" label="">              
+            <b-table-column field="multiselect" label="">              
               <template v-slot:header="{ column }">
                 <b-tooltip label="Select/Unselect All" type="is-dark">
                 <b-checkbox @input="selectAllVMs" v-model="checkAll" type="is-primary"/>
@@ -520,7 +520,7 @@
               <template v-slot:default="props">
                 <template v-if="!props.row.busy">
                   <div>
-                    <b-checkbox v-model="vmSelectedArray" :native-value=props.row.name type="is-primary"/>
+                    <b-checkbox :disabled="props.row.external" v-model="vmSelectedArray" :native-value=props.row.name type="is-primary"/>
                   </div>
                 </template>
                 <template v-else>
@@ -528,8 +528,8 @@
                 </template>
               </template>
             </b-table-column>
-            <b-table-column field="name"  label="VM Name" width="150" sortable centered v-slot="props">
-              <template v-if="roleAllowed('vms', 'get', experiment.name + '/' + props.row.name)">
+            <b-table-column field="name" label="Node" width="150" sortable centered v-slot="props">
+              <template v-if="!props.row.external && roleAllowed('vms', 'get', experiment.name + '/' + props.row.name)">
                 <b-tooltip  label="start/stop/redeploy the vm" type="is-dark">
                   <span class="tag is-medium" :class="decorator( props.row.state, props.row.busy )">
                     <div  class="field">
@@ -539,6 +539,13 @@
                     </div>
                   </span>
                 </b-tooltip>
+              </template>
+              <template v-else-if="props.row.external">
+                <span class="tag is-medium">
+                  <div class="field">
+                    {{ props.row.name }}
+                  </div>
+                </span>
               </template>
               <template v-else>
                 <b-tooltip  label="get info for the vm" type="is-dark">
@@ -553,11 +560,14 @@
               </template>
               <section v-if="props.row.busy">
                 <p  />
-                <b-progress size="is-small" type="is-warning" show-value  :value=props.row.percent format="percent"></b-progress>
+                <b-progress size="is-small" type="is-warning" show-value :value=props.row.percent format="percent"></b-progress>
               </section>
             </b-table-column>
             <b-table-column field="screenshot"  label="Screenshot" centered v-slot="props">
-              <template v-if="props.row.running && !props.row.busy && !props.row.screenshot">
+              <template v-if="props.row.external">
+                <img src="@/assets/external.png" width="200" height="150">
+              </template>
+              <template v-else-if="props.row.running && !props.row.busy && !props.row.screenshot">
                 <a  :href="vncLoc(props.row)" target="_blank">
                   <img src="@/assets/not-available.png" width="200" height="150">
                 </a>
@@ -584,8 +594,13 @@
             <b-table-column v-if="isDelayed()" field="delayed"  label="Delay" centered v-slot="props">
               <b-tag type="is-info" v-if="props.row.delayed_start && props.row.state == 'BUILDING'">{{ props.row.delayed_start }}</b-tag>
             </b-table-column> 
-            <b-table-column field="host"  label="Host" width="150" sortable v-slot="props">
-              {{ props.row.host }}
+            <b-table-column field="host" label="Host" width="150" sortable v-slot="props">
+              <template v-if="props.row.external">
+                EXTERNAL
+              </template>
+              <template v-else>
+                {{ props.row.host }}
+              </template>
             </b-table-column>   
             <b-table-column field="ipv4"  label="IPv4" width="150">
               <template v-slot:header= "{ column }"> 
@@ -663,7 +678,12 @@
               </template>
             </b-table-column>
             <b-table-column field="uptime"  label="Uptime" width="165" v-slot="props">
-              {{ props.row.uptime | uptime }}
+              <template v-if="props.row.external">
+                unknown 
+              </template>
+              <template v-else>
+                {{ props.row.uptime | uptime }}
+              </template>
             </b-table-column>
           </b-table>
           <br>
@@ -802,7 +822,7 @@
           this.diskImageModal.nameErrType = 'is-danger';
           this.diskImageModal.nameErrMsg  = 'image names can only contain alphanumeric, dash, and underscore; we will add the file extension';
           return false;
-     	}
+       }
       },*/ 
  
       isMultiVmSelected ()  {        
@@ -834,7 +854,7 @@
 
       searchVMs: _.debounce(function ( term ) {
         if ( term == null ) {
-			    term = '';
+          term = '';
         }
         this.search.filter = term;        
         if (this.activeTab == 0){
@@ -1016,7 +1036,7 @@
               case  'shutdown': {
                 break;
               }
-			  
+        
               case  'redeployed': {
                 this.$buefy.toast.open({
                   message:  'Redeployed ' + vm[ 1 ],
@@ -1100,7 +1120,7 @@
                   if  ( vms[i].name == vm[ 1 ] ) {
                     vms[i].busy = true;
                     vms[i].percent = 0;
-					
+          
                     let disk = msg.result.disk;
                 
                     this.$buefy.toast.open({
@@ -1387,9 +1407,9 @@
           let resp  = await this.$http.get('experiments/' + this.$route.params.id);
           let state = await resp.json();
 
-          this.experiment = state;
-          this.search.vms = state.vms.map(  vm => { return vm.name } );
-          this.table.total  = state.vm_count;          
+          this.experiment  = state;
+          this.search.vms  = state.vms.map( vm => { return vm.name } );
+          this.table.total = state.vm_count;          
 
           this.updateTable(); 
         } catch (err) {
@@ -1693,7 +1713,7 @@
                   nameErrMsg:""
                 });
             }
-		      }
+          }
         })
         
         this.diskImageModal.active = true;
@@ -1704,8 +1724,8 @@
         vm.forEach((arg,) => {
           vmList = vmList + arg.name + ", ";
         })
-	      vmList = vmList.slice(0,-2)
-	      this.$buefy.dialog.confirm({
+        vmList = vmList.slice(0,-2)
+        this.$buefy.dialog.confirm({
           title: 'Create Disk Images',
           message: 'This will create a backing image for the VMs ' + vmList,
           cancelText: 'Cancel',
@@ -1719,7 +1739,7 @@
             let url = "";
             let name = "";
             let body = "";
-	          vm.forEach((arg,) => {
+            vm.forEach((arg,) => {
               url = 'experiments/' + this.$route.params.id + '/vms/' + arg.name + '/commit';
               body = { "filename": arg.filename  + '.qc2' };
               name = arg.name;
@@ -1732,7 +1752,7 @@
                 }
               );
             })
-	        }
+          }
         })
         
         this.diskImageModal.active = true;
@@ -2094,7 +2114,7 @@
           })
         }       
       },
-	  
+    
       pauseVm (name)  {
         if (! Array.isArray(name)) {
           name  = [name];
@@ -2756,34 +2776,37 @@
   
       selectAllVMs () {            
         var visibleItems = this.$refs["vmTable"].visibleData
-        //If there are no visible items, there is nothing to select
-        if(visibleItems.length == 0) {
-          return 
-        }    
-        
-        //If everything is selected, the unselect everything
-        else if(this.vmSelectedArray.length == visibleItems.length) {
+
+        if (visibleItems.length == 0) {
+          // if there are no visible items, there is nothing to select
+          return;
+        } else if (this.vmSelectedArray.length == visibleItems.length) {
+          // if everything is selected, the unselect everything
           this.unSelectAllVMs();
-          return
+          return;
         }
         
-        // If the select all checkbox is not checked, then unselect everything        
-        if(!this.checkAll) {
+        // if the select all checkbox is not checked, then unselect everything
+        if (!this.checkAll) {
           this.unSelectAllVMs();
-          return
+          return;
+        }        
+        
+        // add all visible items
+        this.vmSelectedArray = [];
+        
+        for (var i = 0; i < visibleItems.length; i++){
+          let item = visibleItems[i];
+
+          if (!item.external) {
+            this.vmSelectedArray.push(item.name)
+          }
         }
-        
-        //Add all visible items
-        this.vmSelectedArray=[]
-        
-        for(var i=0; i<visibleItems.length; i++){
-            this.vmSelectedArray.push(visibleItems[i].name)
-        }  
       },
         
       unSelectAllVMs () {
-        this.checkAll = false;
-        this.vmSelectedArray=[]
+        this.checkAll           = false;
+        this.vmSelectedArray    = [];
         this.showModifyStateBar = false;
       },
       

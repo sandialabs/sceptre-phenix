@@ -107,7 +107,9 @@ func (this *ExperimentSpec) Init() error {
 	}
 
 	if this.TopologyF != nil {
-		this.TopologyF.SetDefaults()
+		if err := this.TopologyF.Init(); err != nil {
+			return fmt.Errorf("initializing topology: %w", err)
+		}
 
 		for _, n := range this.TopologyF.NodesF {
 			if n.NetworkF == nil {

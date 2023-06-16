@@ -44,6 +44,10 @@ func (roundRobin) Schedule(spec ifaces.ExperimentSpec) error {
 	// TODO: sort VMs by scheduled,memory (??)
 
 	for _, node := range spec.Topology().Nodes() {
+		if node.External() {
+			continue
+		}
+
 		if _, ok := spec.Schedules()[node.General().Hostname()]; !ok {
 			spec.Schedules()[node.General().Hostname()] = cluster[0].Name
 

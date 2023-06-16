@@ -339,7 +339,6 @@ func getAllFiles(path, expName string, details map[string]ImageDetails) error {
 
 // Retrieves all the unique image names defined in the topology
 func getTopologyFiles(expName string, details map[string]ImageDetails) error {
-
 	// Retrieve the experiment
 	exp, err := experiment.Get(expName)
 	if err != nil {
@@ -348,17 +347,16 @@ func getTopologyFiles(expName string, details map[string]ImageDetails) error {
 
 	for _, node := range exp.Spec.Topology().Nodes() {
 		for _, drive := range node.Hardware().Drives() {
-
 			cmd := mmcli.NewCommand()
 			cmd.Command = "file list " + drive.Image()
 
 			for _, row := range mmcli.RunTabular(cmd) {
-
 				if row["dir"] != "" {
 					continue
 				}
 
 				baseName := filepath.Base(row["name"])
+
 				// Avoid adding the same image twice
 				if _, ok := details[baseName]; ok {
 					continue
@@ -372,15 +370,12 @@ func getTopologyFiles(expName string, details map[string]ImageDetails) error {
 
 				var err error
 
-				image.Size, err = strconv.Atoi(row["size"])
-				if err != nil {
+				if image.Size, err = strconv.Atoi(row["size"]); err != nil {
 					return fmt.Errorf("getting size of file: %w", err)
 				}
 
 				details[image.Name] = image
-
 			}
-
 		}
 	}
 
@@ -388,7 +383,6 @@ func getTopologyFiles(expName string, details map[string]ImageDetails) error {
 }
 
 func getExperimentNames() (map[string]struct{}, error) {
-
 	experiments, err := experiment.List()
 	if err != nil {
 		return nil, err

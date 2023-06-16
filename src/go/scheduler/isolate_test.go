@@ -49,6 +49,11 @@ func TestIsolateSchedulerManual(t *testing.T) {
 		t.FailNow()
 	}
 
+	if count := len(spec.SchedulesF); count != 4 {
+		t.Logf("expected 4 scheduled VMs, got %d", count)
+		t.FailNow()
+	}
+
 	for vm, host := range spec.SchedulesF {
 		if host != "compute0" {
 			t.Logf("expected %s -> compute0, got %s -> %s", vm, vm, host)
@@ -90,6 +95,11 @@ func TestIsolateSchedulerFits(t *testing.T) {
 
 	if err := Schedule("isolate-experiment", spec); err != nil {
 		t.Log(err)
+		t.FailNow()
+	}
+
+	if count := len(spec.SchedulesF); count != 4 {
+		t.Logf("expected 4 scheduled VMs, got %d", count)
 		t.FailNow()
 	}
 
@@ -138,6 +148,11 @@ func TestIsolateSchedulerUnoccupied(t *testing.T) {
 		t.FailNow()
 	}
 
+	if count := len(spec.SchedulesF); count != 4 {
+		t.Logf("expected 4 scheduled VMs, got %d", count)
+		t.FailNow()
+	}
+
 	for vm, host := range spec.SchedulesF {
 		if host != "compute2" {
 			t.Logf("expected %s -> compute2, got %s -> %s", vm, vm, host)
@@ -181,6 +196,11 @@ func TestIsolateSchedulerAllOccupied(t *testing.T) {
 
 	if err := Schedule("isolate-experiment", spec); err == nil {
 		t.Log("expected error")
+		t.FailNow()
+	}
+
+	if count := len(spec.SchedulesF); count != 0 {
+		t.Logf("expected 0 scheduled VMs, got %d", count)
 		t.FailNow()
 	}
 }

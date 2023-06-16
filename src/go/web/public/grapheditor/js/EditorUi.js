@@ -81,6 +81,10 @@ EditorUi = function(editor, container, lightbox)
     loadFile(window.UTILS_PATH + '/schemas/vars_schema.json', 'application/json', 'vars', setSchema);
     // set diagraming schema
     loadFile(window.UTILS_PATH + '/schemas/diagraming_schema.json', 'application/json', 'diagraming', setSchema);
+    // set default external schema
+    loadFile(window.UTILS_PATH + '/schemas/external_schema.json', 'application/json', 'external', setSchema);
+    // set default external schema
+    loadFile(window.UTILS_PATH + '/schemas/topo_schema.json', 'application/json', 'topo', setSchema);
 
     // get minimega param->schema mapping
     loadFile(window.UTILS_PATH + '/schemas/param_map.json', 'application/json', null, loadParams);

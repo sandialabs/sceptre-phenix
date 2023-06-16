@@ -46,6 +46,22 @@ func (this *TopologySpec) BootableNodes() []ifaces.NodeSpec {
 	return bootable
 }
 
+func (this *TopologySpec) SchedulableNodes(platform string) []ifaces.NodeSpec {
+	if this == nil {
+		return nil
+	}
+
+	var schedulable []ifaces.NodeSpec
+
+	for _, n := range this.NodesF {
+		if !n.External() {
+			schedulable = append(schedulable, n)
+		}
+	}
+
+	return schedulable
+}
+
 func (this TopologySpec) FindNodeByName(name string) ifaces.NodeSpec {
 	for _, node := range this.NodesF {
 		if node.GeneralF.HostnameF == name {

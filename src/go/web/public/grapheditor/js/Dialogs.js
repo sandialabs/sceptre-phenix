@@ -1619,7 +1619,8 @@ function checkValue(graph, cell, ui) {
         if (cell.getStyle().includes("firewall")) {device = "firewall"; nodeType = "Firewall";}
         if (cell.getStyle().includes("desktop"))  {device = "desktop";  nodeType = "VirtualMachine";}
         if (cell.getStyle().includes("server"))   {device = "server";   nodeType = "VirtualMachine";}
-        if (cell.getStyle().includes("mobile"))   {device = "mobile";   nodeType = "VirtualMachine";}
+
+        if (cell.getStyle().includes("external")) {nodeType = "HIL";}
     } catch {
         // console.log('no style');
     }
@@ -1678,14 +1679,10 @@ function checkValue(graph, cell, ui) {
 
             // The `kvm` schema is used for all node types.
             let type = 'kvm';
-            // if (cell.getStyle().includes("container"))
-            // {
-            //     type = 'container';
-            // }
-            // else
-            // {
-            //     type = 'kvm';
-            // }
+
+            if (cell.getStyle().includes("external")) {
+                type = 'external';
+            }
 
             const schema = ui.schemas[type]; // get schema to load default values
 
@@ -1716,8 +1713,10 @@ function checkValue(graph, cell, ui) {
             value.setAttribute('label', `${device}_device_${host_count}`);
             host_count++;
 
-            if (typeof schemaVars.hardware === 'undefined') schemaVars.hardware = {};
-            schemaVars.hardware.os_type = 'linux';
+            if (type === 'kvm') {
+                if (typeof schemaVars.hardware === 'undefined') schemaVars.hardware = {};
+                schemaVars.hardware.os_type = 'linux';
+            }
 
         } else {
             // only set default vlan value if device is switch
@@ -1795,8 +1794,10 @@ function lookforvlan(graph, cell, toSwitch=null){
 
     try {
         schemaVars.network.interfaces;
+
         var vlans = []; // holds true edges
         var edges = cell.edges; // cell edges
+
         if (edges) {
             for(var i = 0; i < edges.length; i++){
                 // checkValue(graph, edges[i]);
@@ -1807,8 +1808,10 @@ function lookforvlan(graph, cell, toSwitch=null){
                             return obj.vlan !== vlan;
                         });
                     }
+
                     continue;
                 }
+
                 var vlan = JSON.parse(edges[i].getAttribute('schemaVars')).name;
                 if (vlan != '') vlans.push(vlan);
             }
@@ -1832,7 +1835,7 @@ function lookforvlan(graph, cell, toSwitch=null){
             // being added to a switch get fully configured as DHCP. Until a VM
             // is manually configured and changes applied, the interface type
             // field being checked below will be missing.
-            if ( !iface.hasOwnProperty('type') ) {
+            if ( !schemaVars.external && !iface.hasOwnProperty('type') ) {
                 iface['type']  = 'ethernet';
                 iface['proto'] = 'dhcp';
             }
@@ -2029,6 +2032,7 @@ function lookforvlan(graph, cell, toSwitch=null){
                             
                         }
                     }
+
                     // set device vlan to edge vlan on a new interface if doesn't exist
                     if (newVlan) {
                         var newEth = 'eth' + matchIdx;
@@ -2040,6 +2044,7 @@ function lookforvlan(graph, cell, toSwitch=null){
                     else {
                         targetSchemaVars.network.interfaces[matchIdx].vlan = edgeSchemaVars.name;
                     }   
+
                     targetvalue.setAttribute('schemaVars', JSON.stringify(targetSchemaVars));
                     graph.getModel().setValue(ec, targetvalue);
                 }
@@ -2049,6 +2054,7 @@ function lookforvlan(graph, cell, toSwitch=null){
             schemaVars.network.interfaces[connectedVlanIdx].vlan = edgeSchemaVars.name;
             schemaVars.network.interfaces[connectedVlanIdx].name = eth;
             connectedVlanIdx++;
+
             value.setAttribute('schemaVars', JSON.stringify(schemaVars));
             graph.getModel().setValue(cell, value);
 
@@ -2377,6 +2383,9 @@ var viewJSONDialog = function(ui)
                     node.labels = labels;
                 }
 
+                delete node.device;
+                delete node.schema;
+
                 nodeArray.push(node);
             }
         }
@@ -2392,10 +2401,7 @@ var viewJSONDialog = function(ui)
         }
     });
 
-    // hack combining node and edge schema programmatically
-    // TODO: enforce comprehensive JSON schema for in-view editing
-    const combinedSchema = JSON.parse('{"type": "object", "title": "Topo", "properties": { "nodes" : ' + JSON.stringify(ui.schemas['node']) + ', "vlans": ' + JSON.stringify(ui.schemas['vlan']) + '}}'); 
-    // console.log(combinedSchema);
+    const topoSchema = ui.schemas['topo'];
 
     // const schema = {}; // set schema
     let json = {};
@@ -2429,7 +2435,7 @@ var viewJSONDialog = function(ui)
     var loadConfig = function () {
 
         this.config = {
-            schema: combinedSchema,
+            schema: topoSchema,
             startval: json,
             ajax: true,
             mode: 'text',
@@ -2542,7 +2548,7 @@ var viewJSONDialog = function(ui)
 
         nameInput.addEventListener('input', function (e) {
             json.metadata.name = this.value;
-            textarea.value = JSON.stringify(json, null, 2);
+            textarea.value = jsyaml.dump(json);
         });
 
         var textareaScript = document.createElement('script');

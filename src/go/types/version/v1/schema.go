@@ -139,7 +139,9 @@ components:
         nodes:
           type: array
           items:
-            $ref: "#/components/schemas/Node"
+            oneOf:
+            - $ref: '#/components/schemas/minimega_node'
+            - $ref: '#/components/schemas/external_node'
     Scenario:
       type: object
       required:
@@ -193,7 +195,7 @@ components:
             type: string
           example:
             ADServer: compute1
-    Node:
+    minimega_node:
       type: object
       required:
       - type
@@ -202,13 +204,6 @@ components:
       properties:
         type:
           type: string
-          enum:
-          - Firewall
-          - Printer
-          - Router
-          - Server
-          - Switch
-          - VirtualMachine
           default: VirtualMachine
           example: VirtualMachine
         general:
@@ -520,6 +515,106 @@ components:
             type: string
           example:
           - exec df -h
+    external_node:
+      type: object
+      required:
+      - external
+      - type
+      - general
+      properties:
+        external:
+          type: boolean
+        type:
+          type: string
+          default: HIL
+          example: HIL
+        general:
+          type: object
+          required:
+          - hostname
+          properties:
+            hostname:
+              type: string
+              example: ADServer
+            description:
+              type: string
+              example: Active Directory Server
+            vm_type:
+              type: string
+              enum:
+              - vm
+              - container
+              - ""
+              default: vm
+              example: vm
+        hardware:
+          type: object
+          nullable: true
+          required:
+          - os_type
+          properties:
+            cpu:
+              type: string
+              default: Broadwell
+              example: Broadwell
+            vcpus:
+              oneOf:
+              - type: integer
+              - type: string
+              default: 1
+              example: 4
+            memory:
+              oneOf:
+              - type: integer
+              - type: string
+              default: 1024
+              example: 8192
+            os_type:
+              type: string
+              default: linux
+              example: windows
+        network:
+          type: object
+          nullable: true
+          required:
+          - interfaces
+          properties:
+            interfaces:
+              type: array
+              items:
+                type: object
+                required:
+                - name
+                properties:
+                  name:
+                    type: string
+                    example: eth0
+                  proto:
+                    type: string
+                    enum:
+                    - static
+                    - dhcp
+                    - manual
+                    - ""
+                    default: dhcp
+                    example: static
+                  address:
+                    type: string
+                    format: ipv4
+                    example: 192.168.1.100
+                  mask:
+                    type: integer
+                    minimum: 0
+                    maximum: 32
+                    default: 24
+                    example: 24
+                  gateway:
+                    type: string
+                    format: ipv4
+                    example: 192.168.1.1
+                  vlan:
+                    type: string
+                    example: EXP-1
     iface:
       type: object
       required:
@@ -581,6 +676,8 @@ components:
           oneOf:
           - type: string
           - type: array
+            items:
+              type: string
           example:
           - 192.168.1.1
           - 192.168.1.2

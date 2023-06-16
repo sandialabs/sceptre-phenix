@@ -184,9 +184,13 @@ func (NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
 			continue
 		}
 
+		if node.External() {
+			continue
+		}
+
 		ntpFile := ntpDir + "/" + node.General().Hostname() + "_ntp"
 
-		if strings.ToLower(node.Type()) == "router" {
+		if strings.EqualFold(node.Type(), "router") {
 			if err := tmpl.CreateFileFromTemplate("ntp_linux.tmpl", serverAddr, ntpFile); err != nil {
 				return fmt.Errorf("generating Router NTP script: %w", err)
 			}

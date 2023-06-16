@@ -91,13 +91,17 @@ Sidebar.prototype.init = function()
         this.addSearchPalette(true);
         this.addGeneralPalette(true);
         this.addImagePalette('networking_vm', mxResources.get('networking_vm'), dir + '/virtual_machines/', '_vm.png',
-                ['router_blue','router_grey', 'router_red','firewall_blue','firewall_grey', 'firewall_red','switch_blue','switch_grey', 'switch_red']);
+                ['router_blue', 'router_grey', 'firewall_blue', 'firewall_grey', 'switch_blue', 'switch_grey']);
         this.addImagePalette('hosts_vm', mxResources.get('hosts_vm'), dir + '/virtual_machines/', '_vm.png',
-                ['desktop_blue','desktop_grey', 'desktop_red','server_blue','server_grey', 'server_red']); // removed 'mobile_blue','mobile_grey', 'mobile_red',
+                ['desktop_blue', 'desktop_grey', 'server_blue', 'server_grey']); // removed 'mobile_blue','mobile_grey', 'mobile_red',
         // this.addImagePalette('networking_c', mxResources.get('networking_c'), dir + '/containers/', '_container.png',
         //         ['router_blue','router_grey', 'router_red','firewall_blue','firewall_grey', 'firewall_red','switch_blue','switch_grey', 'switch_red']);
         // this.addImagePalette('hosts_c', mxResources.get('hosts_c'), dir + '/containers/', '_container.png',
         //         ['desktop_blue','desktop_grey', 'desktop_red','mobile_blue','mobile_grey', 'mobile_red','server_blue','server_grey', 'server_red']);
+        this.addImagePalette('networking_external', mxResources.get('networking_external'), dir + '/virtual_machines/', '_vm.png',
+                ['router_external', 'firewall_external', 'switch_external']);
+        this.addImagePalette('hosts_external', mxResources.get('hosts_external'), dir + '/virtual_machines/', '_vm.png',
+                ['desktop_external', 'server_external']);
 };
 
 /**

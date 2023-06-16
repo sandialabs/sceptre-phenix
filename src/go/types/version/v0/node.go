@@ -70,6 +70,10 @@ func (Node) Commands() []string {
 	return nil
 }
 
+func (this Node) External() bool {
+	return false
+}
+
 func (this *Node) SetInjections(injections []ifaces.NodeInjection) {
 	injects := make([]*Injection, len(injections))
 

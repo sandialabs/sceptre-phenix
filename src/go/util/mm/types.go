@@ -225,6 +225,7 @@ type VM struct {
 	Interfaces map[string]string `json:"-"`
 
 	// Used internally for showing VM details.
+	Type        string                 `json:"-"`
 	OSType      string                 `json:"-"`
 	Metadata    map[string]interface{} `json:"-"`
 	Labels      map[string]string      `json:"-"`

@@ -5,6 +5,7 @@ import "time"
 type TopologySpec interface {
 	Nodes() []NodeSpec
 	BootableNodes() []NodeSpec
+	SchedulableNodes(string) []NodeSpec
 
 	FindNodeByName(string) NodeSpec
 	FindNodesWithLabels(...string) []NodeSpec
@@ -30,6 +31,7 @@ type NodeSpec interface {
 	Advanced() map[string]string
 	Overrides() map[string]string
 	Commands() []string
+	External() bool
 
 	SetInjections([]NodeInjection)
 

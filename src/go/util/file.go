@@ -18,7 +18,6 @@ var (
 
 // Returns the full path relative to the minimega files directory
 func GetMMFullPath(path string) string {
-
 	// If there is no leading file seperator, assume a relative
 	// path to the minimega files directory
 	if !strings.HasPrefix(path, "/") {
@@ -31,7 +30,6 @@ func GetMMFullPath(path string) string {
 
 // Tries to extract the minimega files directory from a process listing
 func getMMFilesDirectory() string {
-
 	defaultMMFilesDirectory := fmt.Sprintf("%s/images", common.PhenixBase)
 
 	cmd := "ps"

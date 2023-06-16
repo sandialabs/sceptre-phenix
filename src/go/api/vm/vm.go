@@ -64,29 +64,44 @@ func List(expName string) ([]mm.VM, error) {
 	}
 
 	for idx, node := range exp.Spec.Topology().Nodes() {
+		var (
+			disk string
+			dnb  bool
+		)
+
+		if drives := node.Hardware().Drives(); len(drives) > 0 {
+			disk = drives[0].Image()
+		}
+
+		if node.General().DoNotBoot() != nil {
+			dnb = *node.General().DoNotBoot()
+		}
+
 		vm := mm.VM{
 			ID:         idx,
 			Name:       node.General().Hostname(),
 			Experiment: exp.Spec.ExperimentName(),
 			CPUs:       node.Hardware().VCPU(),
 			RAM:        node.Hardware().Memory(),
-			Disk:       util.GetMMFullPath(node.Hardware().Drives()[0].Image()),
+			Disk:       disk,
 			Interfaces: make(map[string]string),
-			DoNotBoot:  *node.General().DoNotBoot(),
-			OSType:     node.Type(),
-		}
-
-		if node.Type() == "VirtualMachine" {
-			vm.OSType = string(node.Hardware().OSType())
+			DoNotBoot:  dnb,
+			Type:       node.Type(),
+			OSType:     node.Hardware().OSType(),
 		}
 
 		for _, iface := range node.Network().Interfaces() {
 			vm.IPv4 = append(vm.IPv4, iface.Address()) // empty for DHCP
-			vm.Networks = append(vm.Networks, iface.VLAN())
-			vm.Interfaces[iface.VLAN()] = iface.Address() // empty for DHCP
+
+			if iface.VLAN() != "" { // might be empty for external nodes
+				vm.Networks = append(vm.Networks, iface.VLAN())
+				vm.Interfaces[iface.VLAN()] = iface.Address() // empty for DHCP
+			}
 		}
 
-		if details, ok := running[vm.Name]; ok {
+		if node.External() {
+			vm.State = "EXTERNAL"
+		} else if details, ok := running[vm.Name]; ok {
 			vm.Host = details.Host
 			vm.State = details.State
 			vm.Running = details.Running

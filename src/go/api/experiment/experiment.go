@@ -41,7 +41,9 @@ func init() {
 		case "create":
 			exp.Spec.SetExperimentName(c.Metadata.Name)
 
-			exp.Spec.Init()
+			if err := exp.Spec.Init(); err != nil {
+				return fmt.Errorf("initializing experiment: %w", err)
+			}
 
 			if err := exp.Spec.VerifyScenario(context.TODO()); err != nil {
 				return fmt.Errorf("verifying experiment scenario: %w", err)
@@ -58,7 +60,9 @@ func init() {
 				return fmt.Errorf("cannot update running experiment")
 			}
 
-			exp.Spec.Init()
+			if err := exp.Spec.Init(); err != nil {
+				return fmt.Errorf("re-initializing experiment (after update): %w", err)
+			}
 
 			if exp.Spec.ExperimentName() != c.Metadata.Name {
 				if strings.Contains(exp.Spec.BaseDir(), exp.Spec.ExperimentName()) {
@@ -391,6 +395,10 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		)
 
 		for _, node := range bootable {
+			if node.External() {
+				continue
+			}
+
 			hostname := node.General().Hostname()
 
 			if node.Delay().User() {
@@ -841,6 +849,10 @@ func deleteC2AndSnapshots(exp *types.Experiment) error {
 	}
 
 	for _, node := range exp.Spec.Topology().Nodes() {
+		if node.External() {
+			continue
+		}
+
 		hostname := node.General().Hostname()
 		snapshot := fmt.Sprintf("%s_%s_%s_snapshot", headnode, expName, hostname)
 

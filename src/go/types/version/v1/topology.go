@@ -1,7 +1,10 @@
 package v1
 
 import (
+	"fmt"
 	ifaces "phenix/types/interfaces"
+
+	"github.com/hashicorp/go-multierror"
 )
 
 type TopologySpec struct {
@@ -44,6 +47,22 @@ func (this *TopologySpec) BootableNodes() []ifaces.NodeSpec {
 	}
 
 	return bootable
+}
+
+func (this *TopologySpec) SchedulableNodes(platform string) []ifaces.NodeSpec {
+	if this == nil {
+		return nil
+	}
+
+	var schedulable []ifaces.NodeSpec
+
+	for _, n := range this.NodesF {
+		if !n.External() {
+			schedulable = append(schedulable, n)
+		}
+	}
+
+	return schedulable
 }
 
 func (this TopologySpec) FindNodeByName(name string) ifaces.NodeSpec {
@@ -125,12 +144,15 @@ func (this TopologySpec) HasCommands() bool {
 }
 
 func (this *TopologySpec) Init() error {
-	this.SetDefaults()
-	return nil
-}
+	var errs error
 
-func (this *TopologySpec) SetDefaults() {
 	for _, n := range this.NodesF {
-		n.SetDefaults()
+		if err := n.validate(); err != nil {
+			errs = multierror.Append(errs, fmt.Errorf("validating node %s: %w", n.GeneralF.HostnameF, err))
+		}
+
+		n.setDefaults()
 	}
+
+	return errs
 }

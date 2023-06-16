@@ -1,0 +1,236 @@
+{
+  "type": "object",
+  "title": "Node",
+  "required": [
+    "external",
+    "type",
+    "general"
+  ],
+  "properties": {
+    "external": {
+      "title": "External Node",
+      "type": "boolean",
+      "default": true,
+      "readonly": true
+    },
+    "annotations": {
+      "title": "Annotations",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "labels": {
+      "title": "Labels",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "type": {
+      "$id": "#/nodes/properties/type",
+      "type": "string",
+      "title": "Type",
+      "default": "HIL",
+      "examples": ["HIL"],
+      "readonly": false,
+      "pattern": "^(.*)$"
+    },
+    "general": {
+      "$id": "#/nodes/properties/general",
+      "type": "object",
+      "title": "General",
+      "required": [
+        "hostname"
+      ],
+      "properties": {
+        "hostname": {
+          "$id": "#/nodes/properties/general/properties/hostname",
+          "type": "string",
+          "title": "Hostname",
+          "minLength": 1,
+          "examples": [
+            "ADServer"
+          ],
+          "pattern": "^[\\w-]+$"
+        },
+        "description": {
+          "$id": "#/nodes/properties/general/properties/description",
+          "type": "string",
+          "title": "description",
+          "examples": [
+            "Active Directory Server"
+          ],
+          "pattern": "^(.*)$"
+        },
+        "vm_type": {
+          "$id": "#/nodes/properties/general/properties/vm_type",
+          "type": "string",
+          "title": "vm_type",
+          "enum": [
+            "vm",
+            "container"
+          ],
+          "default": "vm",
+          "examples": [
+            "vm"
+          ]
+        }
+      }
+    },
+    "hardware": {
+      "$id": "#/nodes/properties/hardware",
+      "type": "object",
+      "title": "Hardware",
+      "required": [
+        "os_type"
+      ],
+      "properties": {
+        "cpu": {
+          "$id": "#/nodes/properties/hardware/properties/cpu",
+          "type": "string",
+          "title": "cpu",
+          "default": "Broadwell",
+          "examples": [
+            "Broadwell"
+          ],
+          "pattern": "^(.*)$"
+        },
+        "vcpus": {
+          "$id": "#/properties/hardware/properties/vcpus",
+          "type": "string",
+          "title": "vcpus",
+          "default": "$DEFAULT_VCPU",
+          "examples": [
+            4
+          ]
+        },
+        "memory": {
+          "$id": "#/properties/hardware/properties/memory",
+          "type": "string",
+          "title": "memory",
+          "default": "$DEFAULT_MEMORY",
+          "examples": [
+            8192
+          ]
+        },
+        "os_type": {
+          "$id": "#/nodes/properties/hardware/properties/os_type",
+          "type": "string",
+          "title": "os_type",
+          "enum": [
+            "centos",
+            "linux",
+            "minirouter",
+            "rhel",
+            "vyatta",
+            "vyos",
+            "windows"
+          ],
+          "default": "linux",
+          "examples": [
+            "windows"
+          ],
+          "pattern": "^(.*)$"
+        }
+      }
+    },
+    "network": {
+      "$id": "#/nodes/properties/network",
+      "type": "object",
+      "title": "Network",
+      "required": [
+        "interfaces"
+      ],
+      "properties": {
+        "interfaces": {
+          "$id": "#/nodes/properties/network/properties/interfaces",
+          "type": "array",
+          "title": "Interfaces",
+          "items": {
+            "$id": "#/nodes/properties/network/properties/interfaces/items",
+            "type": "object",
+            "title": "Interface",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "title": "Interface Name",
+                "example": "eth0"
+              },
+              "proto": {
+                "type": "string",
+                "title": "proto",
+                "enum": [
+                  "static",
+                  "dhcp",
+                  "manual"
+                ],
+                "default": "dhcp",
+                "examples": [
+                  "dhcp"
+                ]
+              },
+              "address": {
+                "type": "string",
+                "title": "IP Address",
+                "example": "192.168.1.100"
+              },
+              "mask": {
+                "type": "integer",
+                "title": "mask",
+                "default": 24,
+                "minimum": 0,
+                "maximum": 32,
+                "examples": [
+                  24
+                ]
+              },
+              "gateway": {
+                "type": "string",
+                "title": "gateway",
+                "format": "ipv4",
+                "examples": [
+                  "192.168.1.1"
+                ]
+              },
+              "vlan": {
+                "type": "string",
+                "title": "VLAN",
+                "examples": [
+                  "EXP-1"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
