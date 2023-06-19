@@ -192,7 +192,7 @@
               </div>
             </div>
             <div>
-              <b-tooltip label="menu for selecting networks (all, network, serial)" type="is-light" multilined>
+              <b-tooltip label="menu for selecting networks" type="is-light" multilined>
                 <b-dropdown v-model="showEdgetType" class="is-right" aria-role="list">
                   <button class="button is-light" slot="trigger">
                     <b-icon icon="bars"></b-icon>
