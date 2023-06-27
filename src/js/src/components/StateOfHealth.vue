@@ -192,16 +192,12 @@
               </div>
             </div>
             <div>
-              <b-tooltip label="menu for selecting networks" type="is-light" multilined>
-                <b-dropdown v-model="showEdgetType" class="is-right" aria-role="list">
-                  <button class="button is-light" slot="trigger">
-                    <b-icon icon="bars"></b-icon>
-                  </button>
-                  <b-dropdown-item v-for="( n, index ) in networks" :key="index" :value="n">
-                    <font color="#202020">{{ n }}</font>
-                  </b-dropdown-item>
-                </b-dropdown>
-              </b-tooltip>
+              <b-dropdown v-model="showEdgeType" aria-role="list" :triggers="['hover']">
+                <b-button label="Link Type" type="is-light" slot="trigger" />
+                <b-dropdown-item v-for="( n, index ) in networks" :key="index" :value="n" aria-role="listitem">
+                  <font color="#202020">{{ n }}</font>
+                </b-dropdown-item>
+              </b-dropdown>
             </div>
             <div class="column" />
           </div>
@@ -582,14 +578,17 @@ export default {
       return '#999';
     },
 
+    setEdge( type ) {
+      this.showEdgeType = type;
+      this.resetNetwork();
+    },
+
     generateGraph () {
       if ( this.nodes == null ) {
         return;
       }
 
-      const nodes = this.nodes.map( d => Object.create( d ) );
-      // const links = this.edges.map( d => Object.create( d ) );
-
+      const nodes = this.nodes;
       const links = this.edges.filter( (d) => {
         switch ( this.showEdgeType ) {
           case 'all': {
@@ -606,7 +605,7 @@ export default {
         }
       }, this);
 
-      const width = 600;
+      const width  = 600;
       const height = 400;
 
       const simulation = d3.forceSimulation( nodes )
@@ -976,6 +975,10 @@ export default {
         this.generateGraph();
         this.generateChord();
       }
+    },
+
+    showEdgeType: function () {
+      this.generateGraph();
     }
   },
 
@@ -1020,5 +1023,9 @@ export default {
 
   .modal-card-title {
     color: whitesmoke;
+  }
+
+  .dropdown-item.is-active {
+    background-color: whitesmoke;
   }
 </style>
