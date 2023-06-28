@@ -1,0 +1,18 @@
+apiVersion: phenix.sandia.gov/v1
+kind: Role
+metadata:
+  name: vm-admin
+spec:
+  roleName: VM Admin
+  policies:
+    - resources:
+        - experiments
+        - experiments/*
+      verbs:
+        - list
+        - get
+    - resources:
+        - vms
+        - vms/*
+      verbs:
+        - '*'

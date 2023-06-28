@@ -63,7 +63,7 @@
           response => { 
             return response.json().then(
               user => {
-                this.$store.commit( 'LOGIN', { "user": user, "remember": false } );
+                this.$store.commit( 'LOGIN', { "loginResponse": user, "remember": false } );
               }
             )
           }, err => {

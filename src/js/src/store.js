@@ -16,10 +16,10 @@ export default new Vuex.Store({
   },
 
   mutations: {
-    'LOGIN' ( state, { user, remember } ) {
-      state.username = user.username;
-      state.token    = user.token;
-      state.role     = user.role;
+    'LOGIN' ( state, { loginResponse, remember } ) {
+      state.username = loginResponse.user.username;
+      state.token    = loginResponse.token;
+      state.role     = loginResponse.user.role;
       state.auth     = true;
 
       if ( remember ) {

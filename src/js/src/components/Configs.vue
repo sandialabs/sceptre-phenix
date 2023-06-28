@@ -26,7 +26,7 @@
           </div>
         </section>
         <footer class="modal-card-foot x-modal-dark buttons is-right">
-          <button class="button is-success" @click="action( 'edit', { 'kind': viewer.kind, 'metadata': { 'name': viewer.name } } )">
+          <button v-if="roleAllowed('configs', 'update', viewer.name)" class="button is-success" @click="action( 'edit', { 'kind': viewer.kind, 'metadata': { 'name': viewer.name } } )">
             Edit Config
           </button>
           <button class="button is-info" @click="action( 'dl', { 'kind': viewer.kind, 'metadata': { 'name': viewer.name } } )">
@@ -132,13 +132,13 @@
         <div class="level-right">
           <div class="level-item">
             <b-field position="is-center">
-              <div v-if="globalUser() && configSelected.length > 0">
-                <b-tooltip label="download selected configs" type="is-light is-top">
+              <div v-if="configSelected.length > 0">
+                <b-tooltip v-if="configSelected.every(c => roleAllowed('configs', 'get', c.metadata.name))" label="download selected configs" type="is-light is-top">
                   <button class="button is-light" id="main" @click="action( 'dl', configSelected )">
                     <b-icon icon="download"></b-icon>
                   </button>
                 </b-tooltip>
-                <b-tooltip label="delete selected configs" type="is-light is-top">
+                <b-tooltip v-if="configSelected.every(c => roleAllowed('configs', 'delete', c.metadata.name))" label="delete selected configs" type="is-light is-top">
                   <button class="button is-light" id="main" @click="action( 'del', configSelected )">
                     <b-icon icon="trash"></b-icon>
                   </button>
@@ -170,7 +170,7 @@
                 </b-tooltip>
               </p>
               &nbsp; &nbsp;
-              <p v-if="globalUser()" class="control">
+              <p v-if="roleAllowed('configs', 'create')" class="control">
                 <b-tooltip label="create a new config" type="is-light is-top">
                   <button class="button is-light" id="main" @click="createEditor">
                     <b-icon icon="plus"></b-icon>
@@ -210,7 +210,7 @@
             {{ props.row.kind }}
           </b-table-column>
           <b-table-column field="name" label="Name" width="400" sortable v-slot="props">
-            <template v-if="adminUser()">
+            <template v-if="roleAllowed('configs', 'get', props.row.metadata.name)">
               <b-tooltip label="view config" type="is-dark">
                 <div class="field">
                   <div @click="viewConfig( props.row )">
@@ -230,14 +230,14 @@
           <b-table-column field="updated" label="Last Updated" v-slot="props">
             {{ props.row.metadata.updated }}
           </b-table-column>
-          <b-table-column v-if="globalUser()" label="Actions" centered v-slot="props">
-            <button class="button is-light is-small action" @click="action( 'edit', props.row )">
+          <b-table-column label="Actions" centered v-slot="props">
+            <button v-if="roleAllowed('configs', 'update', props.row.metadata.name)" class="button is-light is-small action" @click="action( 'edit', props.row )">
               <b-icon icon="edit"></b-icon>
             </button>
-            <button class="button is-light is-small action" @click="action( 'dl', props.row )">
+            <button v-if="roleAllowed('configs', 'get', props.row.metadata.name)" class="button is-light is-small action" @click="action( 'dl', props.row )">
               <b-icon icon="download"></b-icon>
             </button>
-            <button class="button is-light is-small action" @click="action( 'del', props.row )">
+            <button v-if="roleAllowed('configs', 'delete', props.row.metadata.name)" class="button is-light is-small action" @click="action( 'del', props.row )">
               <b-icon icon="trash"></b-icon>
             </button>
           </b-table-column>
@@ -619,7 +619,7 @@
         this.$http.get( 'configs' ).then(
           response => {
             response.json().then( state => {
-              this.configs = state.configs;
+              this.configs = state.configs === null ? [] : state.configs;
               this.isWaiting = false;
             });
           }, err => {
@@ -628,18 +628,7 @@
           }
         );
       },
-      
-      globalUser () {
-        return [ 'Global Admin' ].includes( this.$store.getters.role );
-      },
-      
-      adminUser () {
-        return [ 'Global Admin', 'Experiment Admin' ].includes( this.$store.getters.role );
-      },
-      
-      experimentUser () {
-        return [ 'Global Admin', 'Experiment Admin', 'Experiment User' ].includes( this.$store.getters.role );
-      },
+
 
       changePaginate () {
         var user = localStorage.getItem( 'user' );

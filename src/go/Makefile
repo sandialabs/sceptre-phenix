@@ -85,7 +85,7 @@ util/shell/mock.go: util/shell/shell.go bin/mockgen
 	$(GOBIN)/mockgen -self_package phenix/util/shell -destination util/shell/mock.go -package shell phenix/util/shell Shell
 
 .PHONY: generate-protobuf
-generate-protobuf: web/proto/experiment.pb.go web/proto/host.pb.go web/proto/log.pb.go web/proto/user.pb.go web/proto/vm.pb.go
+generate-protobuf: web/proto/experiment.pb.go web/proto/host.pb.go web/proto/log.pb.go web/proto/user.pb.go web/proto/role.pb.go web/proto/vm.pb.go
 
 web/proto/experiment.pb.go: web/proto/*.proto bin/protoc-gen-go
 	protoc -I . -I web/proto --go_out=paths=source_relative:. ./web/proto/experiment.proto
@@ -98,6 +98,9 @@ web/proto/log.pb.go: web/proto/*.proto bin/protoc-gen-go
 
 web/proto/user.pb.go: web/proto/*.proto bin/protoc-gen-go
 	protoc -I . -I web/proto --go_out=paths=source_relative:. ./web/proto/user.proto
+
+web/proto/role.pb.go: web/proto/*.proto bin/protoc-gen-go
+	protoc -I . -I web/proto --go_out=paths=source_relative:. ./web/proto/role.proto
 
 web/proto/vm.pb.go: web/proto/*.proto bin/protoc-gen-go
 	protoc -I . -I web/proto --go_out=paths=source_relative:. ./web/proto/vm.proto

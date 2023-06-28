@@ -14,29 +14,29 @@ are only available to Global Administrator or Global Viewer.
     <nav class="navbar is-light" role="navigation" aria-label="main navigation">
       <div id="navbarBasicExample" class="navbar-menu">
         <div class="navbar-start">
-          <menu-link v-if="auth && experimentUser()"
+          <menu-link v-if="auth && roleAllowed('experiments', 'list')"
                        :to="{name: 'experiments'}"
                        class="navbar-item">Experiments</menu-link>
-          <menu-link v-if="auth && experimentUser()"
+          <menu-link v-if="auth && roleAllowed('configs', 'list')"
                        :to="{name: 'configs'}"
                        class="navbar-item">Configs</menu-link>
-          <menu-link v-if="auth && experimentUser()"
+          <menu-link v-if="auth && roleAllowed('hosts', 'list')"
                        :to="{name: 'hosts'}"
                        class="navbar-item">Hosts</menu-link>
           <menu-link v-if="auth"
                        :to="{name: 'users'}"
                        class="navbar-item">Users</menu-link>
-          <menu-link v-if="auth && globalAdmin()"
+          <menu-link v-if="auth && roleAllowed('logs', 'list')"
                        :to="{name: 'log'}"
                        class="navbar-item">Log</menu-link>
-          <menu-link v-if="auth && experimentUser()"
+          <menu-link v-if="auth && roleAllowed('experiments', 'list')"
                        :to="{name: 'scorch'}"
                        class="navbar-item">Scorch</menu-link>
-          <menu-link v-if="auth && globalAdmin()"
+          <menu-link v-if="auth && roleAllowed('experiments', 'list')"
                         :to="builderLoc()"
                         external
                         class="navbar-item">Builder</menu-link>
-          <menu-link v-if="auth && globalAdmin()"
+          <menu-link v-if="auth && roleAllowed('miniconsole', 'post')"
                         :to="{name: 'console'}"
                         class="navbar-item">Console</menu-link>
         </div>
@@ -96,18 +96,6 @@ are only available to Global Administrator or Global Viewer.
             }
           }
         );
-      },
-      
-      globalAdmin () {
-        return [ 'Global Admin' ].includes( this.$store.getters.role );
-      },
-      
-      adminUser () {
-        return [ 'Global Admin', 'Experiment Admin' ].includes( this.$store.getters.role );
-      },
-      
-      experimentUser () {
-        return [ 'Global Admin', 'Experiment Admin', 'Experiment User', 'Experiment Viewer' ].includes( this.$store.getters.role );
       },
 
       homeLoc () {

@@ -29,7 +29,7 @@
       </b-table>
     </section>
     <footer class="modal-card-foot">
-      <b-field v-show="this.isExpUser" class="file is-info" style="margin-bottom: 0;">
+      <b-field v-show="roleAllowed('vms/mount', 'patch', targetExp + '/' + targetVm)" class="file is-info" style="margin-bottom: 0;">
         <b-upload @input="handleUpload" class="file-label" :class="{disabled: currentUploadProgress !== null}" 
                   :disabled="currentUploadProgress !== null">
             <span class="file-cta">
@@ -52,7 +52,6 @@ export default {
   props: [
     'targetExp',
     'targetVm',
-    "isExpUser"
   ],
 
   data() {

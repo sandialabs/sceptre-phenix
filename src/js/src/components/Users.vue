@@ -25,7 +25,7 @@
           </b-field>
           <b-field label="Role">
             <b-select v-model="user.role_name" expanded>
-              <option v-for="(r, i) in roles" :key="i">
+              <option v-for="(r, i) in roleNames" :key="i">
                 {{ r }}
               </option>
             </b-select>
@@ -63,14 +63,14 @@
           <b-field label="New Password">
             <b-input type="password" minlength="8" maxlength="32" v-model="user.new_password"></b-input>
           </b-field>
-          <b-field v-if="adminUser()" label="Role">
+          <b-field v-if="roleAllowed('users', 'create')" label="Role">
             <b-select v-model="user.role_name" expanded>
-              <option v-for="(r, i) in roles" :key="i">
+              <option v-for="(r, i) in roleNames" :key="i">
                 {{ r }}
               </option>
             </b-select>
           </b-field>
-          <b-field v-if="adminUser()" label="Resource Name(s)">
+          <b-field v-if="roleAllowed('users', 'create')" label="Resource Name(s)">
             <b-input type="text" v-model="user.resource_names"></b-input>
           </b-field>
         </section>
@@ -116,7 +116,7 @@
     <template>
       <hr>
       <b-field grouped position="is-right">
-        <p v-if="adminUser()" class="control">
+        <p v-if="roleAllowed('users', 'create')" class="control">
           <b-tooltip label="create a new user" type="is-light is-left">
             <button class="button is-light" @click="isCreateActive = true">
               <b-icon icon="plus"></b-icon>
@@ -158,7 +158,7 @@
             <button class="button is-light is-small action" @click="newToken( props.row.username )">
               <b-icon icon="key"></b-icon>
             </button>
-            <button v-if="adminUser()" class="button is-light is-small action" @click="deleteUser( props.row.username )">
+            <button v-if="roleAllowed('users', 'delete', props.row.username)" class="button is-light is-small action" @click="deleteUser( props.row.username )">
               <b-icon icon="trash"></b-icon>
             </button>
           </b-table-column>
@@ -284,6 +284,8 @@
           response => {
             response.json().then(
               state => {
+                // pull role name into user object since this UI doesn't care about the role itself
+                state.users.forEach(u => u.role_name = u.role.name)
                 this.users = state.users;
                 this.isWaiting = false;
               }
@@ -293,14 +295,22 @@
             this.isWaiting = false;
           }
         );
-      },
-      
-      adminUser () {
-        return [ 'Global Admin', 'Experiment Admin' ].includes( this.$store.getters.role );
-      },
-      
-      experimentUser () {
-        return [ 'Global Admin', 'Experiment Admin', 'Experiment User' ].includes( this.$store.getters.role );
+        // this is only used when creating/editing a user for the role dropdown
+        if (this.roleAllowed('roles', 'list')) {
+          this.$http.get( 'roles' ).then(
+            response => {
+              response.json().then(
+                state => {
+                  this.roleNames = state.roles.map(r => r.name);
+                  this.isWaiting = false;
+                }
+              );
+            }, err => {
+              this.errorNotification(err);            
+              this.isWaiting = false;
+            }
+          );
+        }
       },
 
       changePaginate () {
@@ -425,7 +435,7 @@
       },
 
       updateUser () {
-        if ( this.$store.getters.username == this.user.username && this.$store.getters.role != this.user.role_name ) {
+        if ( this.$store.getters.username == this.user.username && this.$store.getters.role.name != this.user.role_name ) {
           this.$buefy.toast.open({
             message: 'You cannot change the role of the user you are currently logged in as.',
             type: 'is-danger',
@@ -563,13 +573,7 @@
           currentPage: 1,
           perPage: 10
         },
-        roles: [
-          'Global Admin',
-          'Experiment Admin',
-          'Experiment User',
-          'Experiment Viewer',
-          'VM Viewer'
-        ],
+        roleNames: [],
         users: [],
         user: {},
         userExists: false,

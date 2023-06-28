@@ -28,7 +28,7 @@
           </p>          
       </section>
       <footer class="modal-card-foot buttons is-right">
-        <div v-if="adminUser() && !showModifyStateBar">
+        <div v-if="roleAllowed('vms/start', 'update', expModal.fullName) && !showModifyStateBar">
           <template v-if="!expModal.vm.running">
             <b-tooltip label="start" type="is-light">
               <b-button class="button is-success" icon-left="play" @click="startVm( expModal.vm.name )">
@@ -42,74 +42,75 @@
             </b-tooltip>
           </template>
         </div>
-        <div v-if="features.includes('vm-mount') && (experimentViewer() || experimentUser()) && !showModifyStateBar && expModal.vm.running">
+        <div v-if="features.includes('vm-mount') && roleAllowed('vms/mount', 'post', expModal.fullName) && !showModifyStateBar && expModal.vm.running">
           &nbsp;
           <b-tooltip :label="!expModal.vm.ccActive ? 'mount vm (requires active cc)' : 'mount vm'" type="is-light">
             <b-button class="button is-light" icon-left="hdd" @click="showMountDialog(expModal.vm.name)" :disabled="!expModal.vm.ccActive">
             </b-button>
           </b-tooltip>
         </div>
-        <div v-if="experimentUser() && !showModifyStateBar && expModal.vm.running">
+        <div v-if="roleAllowed('vms/memorySnapshot', 'create', expModal.fullName) && !showModifyStateBar && expModal.vm.running">
           &nbsp;
           <b-tooltip label="create memory snapshot" type="is-light">
             <b-button class="button is-light" icon-left="database" @click="queueMemorySnapshotVMs(expModal.vm.name)">
             </b-button>
           </b-tooltip>
         </div>
-        <div v-if="experimentUser() && !showModifyStateBar && expModal.vm.running">
+        <div v-if="roleAllowed('vms/commit', 'create', expModal.fullName) && !showModifyStateBar && expModal.vm.running">
           &nbsp;
           <b-tooltip label="create backing image" type="is-light">
             <b-button class="button is-light" icon-left="save" @click="diskImage(expModal.vm.name)">
             </b-button>
           </b-tooltip>
         </div>
-        <div v-if="experimentUser() && !showModifyStateBar && expModal.vm.running">
+        <div v-if="roleAllowed('vms/snapshot', 'create', expModal.fullName) && !showModifyStateBar && expModal.vm.running">
           &nbsp;
           <b-tooltip label="create vm snapshot" type="is-light">
             <b-button class="button is-light" icon-left="camera" @click="captureSnapshot(expModal.vm.name)">
             </b-button>
           </b-tooltip>
         </div>
-        <div v-if="experimentUser() && !showModifyStateBar && expModal.vm.running">
+        <div v-if="roleAllowed('vms/screenshot', 'get', expModal.fullName) && !showModifyStateBar && expModal.vm.running">
           &nbsp;
           <b-tooltip label="record screenshot" type="is-light">
             <b-button class="button is-light" icon-left="video" @click="notImplemented()">
             </b-button>
           </b-tooltip>
         </div>
-        <div v-if="experimentUser() && !showModifyStateBar">
+        <!-- STATE BAR -->
+        <div v-if="!showModifyStateBar">
           &nbsp;
           <b-tooltip label="modify state" type="is-light">
             <b-button class="button is-light" icon-left="edit" @click="showModifyStateBar = true">
             </b-button>
           </b-tooltip>
         </div>
-        <div v-if="experimentUser() && showModifyStateBar">
+        <div v-if="showModifyStateBar">
           &nbsp;
-          <b-tooltip label="redeploy" type="is-light">
+          <b-tooltip v-if="roleAllowed('vms/redeploy', 'update', expModal.fullName)" label="redeploy" type="is-light">
             <b-button class="button is-success" icon-left="history" @click="redeploy(expModal.vm.name)">
             </b-button>
           </b-tooltip>
           &nbsp;
-          <b-tooltip label="reset disk state" type="is-light">
+          <b-tooltip v-if="roleAllowed('vms/reset', 'update', expModal.fullName)" label="reset disk state" type="is-light">
             <b-button class="button is-success" icon-left="undo-alt" @click="resetVmState(expModal.vm.name)">
             </b-button>
           </b-tooltip>
       
           &nbsp;
-          <b-tooltip label="restart" type="is-light">
+          <b-tooltip v-if="roleAllowed('vms/restart', 'update', expModal.fullName)" label="restart" type="is-light">
             <b-button class="button is-success" icon-left="sync-alt" @click="restartVm(expModal.vm.name)">
             </b-button>
           </b-tooltip>
       
           &nbsp;
-          <b-tooltip label="shutdown" type="is-light">
+          <b-tooltip v-if="roleAllowed('vms/shutdown', 'update', expModal.fullName)" label="shutdown" type="is-light">
             <b-button class="button is-danger" icon-left="power-off" @click="shutdownVm(expModal.vm.name)">
             </b-button>
           </b-tooltip>
       
           &nbsp;
-          <b-tooltip label="kill" type="is-light">
+          <b-tooltip v-if="roleAllowed('vms', 'delete', expModal.fullName)" label="kill" type="is-light">
             <b-button class="button is-danger" icon-left="skull-crossbones" @click="killVm(expModal.vm.name)">
             </b-button>
           </b-tooltip>
@@ -309,7 +310,7 @@
           </div>
         </section>
         <footer class="modal-card-foot buttons is-right">
-          <div v-if="adminUser()">
+          <div v-if="roleAllowed('experiments/trigger', 'create', experiment.name)">
             <b-tooltip label="start selected apps" type="is-light is-left">
               <b-button v-if="appsModal.apps.length > 0" class="button is-success" @click="startApps(appsModal.apps)">Trigger Apps</b-button>
               <b-button v-else disabled class="button is-success">Trigger Apps</b-button>
@@ -357,8 +358,8 @@
       <div class="level-right">
         <!-- Multi-VM options shown next to search -->
         <div class="level-item" style="margin-bottom: -.3em;">
-        <b-field v-if="isMultiVmSelected && (experimentUser() || experimentViewer())" position="is-center">
-          <div v-if="adminUser() && !showModifyStateBar">
+        <b-field v-if="isMultiVmSelected" position="is-center">
+          <div v-if="vmSelectedArray.every(vm => roleAllowed('vms/start', 'update', experiment.name + '/' + vm)) && !showModifyStateBar">
             <b-tooltip label="start" type="is-light">
               <b-button class="button is-success" icon-left="play" @click="processMultiVmAction(vmActions.start)">
               </b-button>
@@ -369,7 +370,7 @@
               </b-button>
             </b-tooltip>
           </div>
-          <div v-if="experimentUser() && !showModifyStateBar">
+          <div v-if="vmSelectedArray.every(vm => roleAllowed('vms/memorySnapshot', 'create', experiment.name + '/' + vm)) && !showModifyStateBar">
             &nbsp;
             <b-tooltip label="create memory snapshot" type="is-light">
               <b-button class="button is-light" icon-left="database"
@@ -377,60 +378,61 @@
               </b-button>
             </b-tooltip>
           </div>
-          <div v-if="experimentUser() && !showModifyStateBar">
+          <div v-if="vmSelectedArray.every(vm => roleAllowed('vms/commit', 'create', experiment.name + '/' + vm)) && !showModifyStateBar">
             &nbsp;
             <b-tooltip label="create backing image" type="is-light">
               <b-button class="button is-light" icon-left="save" @click="processMultiVmAction(vmActions.createBacking)">
               </b-button>
             </b-tooltip>
           </div>
-          <div v-if="experimentUser() && !showModifyStateBar">
+          <div v-if="vmSelectedArray.every(vm => roleAllowed('vms/snapshots', 'update', experiment.name + '/' + vm)) && !showModifyStateBar">
             &nbsp;
             <b-tooltip label="create vm snapshot" type="is-light">
               <b-button class="button is-light" icon-left="camera" @click="processMultiVmAction(vmActions.captureSnapshot)">
               </b-button>
             </b-tooltip>
           </div>
-          <div v-if="experimentUser() && !showModifyStateBar">
+          <div v-if="vmSelectedArray.every(vm => roleAllowed('vms/screenshot', 'update', experiment.name + '/' + vm)) && !showModifyStateBar">
             &nbsp;
             <b-tooltip label="record screenshot" type="is-light">
+              <!-- not implemented -->
               <b-button class="button is-light" icon-left="video" @click="processMultiVmAction(vmActions.recordScreenshots)">
               </b-button>
             </b-tooltip>
           </div>
-          <div v-if="experimentUser() && !showModifyStateBar">
+          <div v-if="!showModifyStateBar">
             &nbsp;
             <b-tooltip label="modify state" type="is-light">
               <b-button class="button is-light" icon-left="edit" @click="showModifyStateBar = true">
               </b-button>
             </b-tooltip>
           </div>
-          <div v-if="experimentUser() && showModifyStateBar">
+          <div v-if="showModifyStateBar">
             &nbsp;
-            <b-tooltip label="redeploy" type="is-light">
+            <b-tooltip v-if="vmSelectedArray.every(vm => roleAllowed('vms/redeploy', 'update', experiment.name + '/' + vm))" label="redeploy" type="is-light">
               <b-button class="button is-success" icon-left="history" @click="processMultiVmAction(vmActions.redeploy)">
               </b-button>
             </b-tooltip>
             &nbsp;
-            <b-tooltip label="reset disk state" type="is-light">
+            <b-tooltip v-if="vmSelectedArray.every(vm => roleAllowed('vms/reset', 'update', experiment.name + '/' + vm))" label="reset disk state" type="is-light">
               <b-button class="button is-success" icon-left="undo-alt" @click="processMultiVmAction(vmActions.resetState)">
               </b-button>
             </b-tooltip>
         
             &nbsp;
-            <b-tooltip label="restart" type="is-light">
+            <b-tooltip v-if="vmSelectedArray.every(vm => roleAllowed('vms/restart', 'update', experiment.name + '/' + vm))" label="restart" type="is-light">
               <b-button class="button is-success" icon-left="sync-alt" @click="processMultiVmAction(vmActions.restart)">
               </b-button>
             </b-tooltip>
         
             &nbsp;
-            <b-tooltip label="shutdown" type="is-light">
+            <b-tooltip v-if="vmSelectedArray.every(vm => roleAllowed('vms/shutdown', 'update', experiment.name + '/' + vm))"  label="shutdown" type="is-light">
               <b-button class="button is-danger" icon-left="power-off" @click="processMultiVmAction(vmActions.shutdown)">
               </b-button>
             </b-tooltip>
         
             &nbsp;
-            <b-tooltip label="kill" type="is-light">
+            <b-tooltip v-if="vmSelectedArray.every(vm => roleAllowed('vms', 'delete', experiment.name + '/' + vm))" label="kill" type="is-light">
               <b-button class="button is-danger" icon-left="skull-crossbones" @click="processMultiVmAction(vmActions.kill)">
               </b-button>
             </b-tooltip>
@@ -446,7 +448,7 @@
        </div>
         &nbsp;&nbsp;
        <div class="level-item"  style="margin-bottom: -1em;">
-        <b-field v-if="experimentUser() || experimentViewer()" position="is-right">
+        <b-field v-if="roleAllowed('experiments/files', 'list', experiment.name)" position="is-right">
           <template v-if="this.activeTab == 1">
             <b-tooltip label="search on a specific category" type="is-light">
               <b-select :value="filesTable.category" @input="( value ) => assignCategory( value )" placeholder="All Categories">
@@ -471,13 +473,13 @@
           </p>
           &nbsp; &nbsp;
           <p  class="control">
-            <b-button v-if="adminUser()" class="button is-danger" slot="trigger" icon-right="stop" @click="stop"></b-button>
+            <b-button v-if="roleAllowed('experiments/stop', 'update', experiment.name)" class="button is-danger" slot="trigger" icon-right="stop" @click="stop"></b-button>
             &nbsp;
-            <router-link v-if="adminUser()" class="button is-light" :to="{ name: 'soh', params: { id: this.$route.params.id }}">
+            <router-link v-if="roleAllowed('experiments', 'get', experiment.name)" class="button is-light" :to="{ name: 'soh', params: { id: this.$route.params.id }}">
               <b-icon icon="heartbeat"></b-icon>
             </router-link>
             &nbsp;
-            <router-link v-if="adminUser()" class="button is-light" :to="{ name: 'scorch', params: { id: this.$route.params.id }}">
+            <router-link v-if="roleAllowed('experiments', 'get', experiment.name)" class="button is-light" :to="{ name: 'scorch', params: { id: this.$route.params.id }}">
               <b-icon icon="fire"></b-icon>
             </router-link>
           </p>
@@ -527,7 +529,7 @@
               </template>
             </b-table-column>
             <b-table-column field="name"  label="VM Name" width="150" sortable centered v-slot="props">
-              <template v-if="experimentUser()">
+              <template v-if="roleAllowed('vms', 'get', experiment.name + '/' + props.row.name)">
                 <b-tooltip  label="start/stop/redeploy the vm" type="is-dark">
                   <span class="tag is-medium" :class="decorator( props.row.state, props.row.busy )">
                     <div  class="field">
@@ -606,7 +608,7 @@
                 </div>
               </template>
               <template v-slot:default="props">
-                <template  v-if="experimentUser() && props.row.running && !props.row.busy"> 
+                <template  v-if="roleAllowed('vms/captures', 'create', experiment.name + '/' + props.row.name) && props.row.running && !props.row.busy"> 
                   <b-tooltip :label="updateCaptureLabel(props.row)" type="is-dark">
                   <div class="field">
                     <div  v-for="(ip,index) in props.row.ipv4"
@@ -624,7 +626,7 @@
               </template>
             </b-table-column>
             <b-table-column field="network" label="Network" v-slot="props">
-              <template v-if="experimentUser() && props.row.running && !props.row.busy">                  
+              <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name) && props.row.running && !props.row.busy">                  
                 <b-tooltip  label="change vlan(s)" type="is-dark">
                   <div class="field">
                     <div  v-for="( n, index ) in props.row.networks" 
@@ -644,7 +646,7 @@
               </template>
             </b-table-column>
             <b-table-column field="taps"  label="Taps" v-slot="props">
-              <template v-if="experimentUser() && props.row.running && !props.row.busy">
+              <template v-if="roleAllowed('vms/captures', 'create', experiment.name + '/' + props.row.name) && props.row.running && !props.row.busy">
                 <b-tooltip  :label="updateCaptureLabel(props.row)" type="is-dark">
                   <div class="field">
                     <div  v-for="( t, index ) in props.row.taps" 
@@ -816,18 +818,6 @@
     },
 
     methods: {
-      adminUser ()  {
-        return [ 'Global Admin', 'Experiment Admin' ].includes( this.$store.getters.role );
-      },
-
-      experimentUser  () {
-        return [ 'Global Admin', 'Experiment Admin', 'Experiment User' ].includes( this.$store.getters.role );
-      },
-
-      experimentViewer  () {
-        return [ 'Experiment Viewer' ].includes( this.$store.getters.role );
-      },
-
       changePaginate () {
         var user = localStorage.getItem( 'user' );
         localStorage.setItem( user + '.lastPaginate', this.table.isPaginated );
@@ -1581,6 +1571,7 @@
             }
           );
           this.expModal.vm  = vm;
+          this.expModal.fullName = this.experiment.name + '/' + vm.name;
           this.expModal.active  = true;
         
       },
@@ -1735,7 +1726,7 @@
             
               this.$http.post(url,body,{ timeout: 0 }).then(
                 response => {
-                   console.log('backing image for vm ' + name + ' failed with ' + response.status);
+                   console.log('backing image for vm ' + name + ' returned status ' + response.status);
                 }, err => {
                   this.errorNotification(err);
                 }
@@ -2645,6 +2636,7 @@
       resetExpModal ()  {        
         this.expModal = {
           active: false,
+          fullName: '',
           vm: [],
           snapshots:  false
         }
@@ -2871,7 +2863,7 @@
           trapFocus:    true,
           hasModalCard: true,
           canCancel:    [],
-          props:        {"targetVm": vm, "targetExp": this.$route.params.id, "isExpUser": this.experimentUser()}
+          props:        {"targetVm": vm, "targetExp": this.$route.params.id}
         })
       }
     },
@@ -2907,6 +2899,7 @@
         expModal: {
           active: false,
           vm: [],
+          fullName: '',
           snapshots:  false
         },
         vlanModal: {
@@ -2957,7 +2950,6 @@
         files: [],
         disks: [],
         vlan: null,
-        expName: null,
         isWaiting: true,
         showModifyStateBar:false,
         checkAll:false,

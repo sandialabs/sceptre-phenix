@@ -35,7 +35,7 @@
         </section>
       </template>
       <b-table-column field="name" label="Experiment" width="400" sortable v-slot="props">
-        <template v-if="adminUser()">
+        <template v-if="roleAllowed('experiments', 'get', props.row.name)">
           <b-tooltip label="view SCORCH components" type="is-dark">
             <router-link class="navbar-item" :to="{ name: 'scorchruns', params: { id: props.row.name } }">
               {{ props.row.name }}
@@ -52,7 +52,7 @@
             <b-progress size="is-medium" type="is-warning" show-value :value=props.row.percent format="percent"></b-progress>
           </section>
         </template>
-        <template v-else-if="adminUser()">
+        <template v-else-if="roleAllowed('experiments/start', 'update', props.row.name)">
           <b-tooltip :label="expControlLabel( props.row )" type="is-dark">
             <span class="tag is-medium" :class="expStatusDecorator( props.row.status )">
               <div class="field" @click="expControl( props.row )">
@@ -67,17 +67,19 @@
           </span>
         </template>
       </b-table-column>
-      <b-table-column v-if="globalUser()" label="Scorch Status" width="100" centered v-slot="props">
-        <b-tooltip :label="scorchControlLabel( props.row )" type="is-dark">
+      <b-table-column label="Scorch Status" width="100" centered v-slot="props">
+        <template v-if="roleAllowed('experiments/trigger', 'create', props.row.name)">
+          <b-tooltip :label="scorchControlLabel( props.row )" type="is-dark">
           <span class="tag is-medium" :class="scorchStatusDecorator( props.row )">
             <div class="field" @click="scorchControl( props.row, -1)">
               {{ scorchStatus( props.row ) }}
             </div>
           </span>
         </b-tooltip>
+        </template>
       </b-table-column>
-      <b-table-column v-if="globalUser()" label="Terminal" width="100" centered v-slot="props">
-        <button class="button is-small is-white" @click="showExperimentTerminal( props.row.name )" :disabled="!props.row.terminal">
+      <b-table-column label="Terminal" width="100" centered v-slot="props">
+        <button v-if="roleAllowed('experiments', 'get', props.row.name)" class="button is-small is-white" @click="showExperimentTerminal( props.row.name )" :disabled="!props.row.terminal">
           <b-icon icon="terminal"></b-icon>
         </button>
       </b-table-column>
@@ -164,14 +166,6 @@
     },
 
     methods: {
-      globalUser () {
-        return [ 'Global Admin' ].includes( this.$store.getters.role );
-      },
-      
-      adminUser () {
-        return [ 'Global Admin', 'Experiment Admin' ].includes( this.$store.getters.role );
-      },
-
       async updateExperiments () {
         try {
           let resp  = await this.$http.get( 'experiments' );

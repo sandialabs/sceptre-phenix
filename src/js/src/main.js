@@ -11,6 +11,7 @@ import router from './router'
 import store  from './store'
 
 import { errorNotification } from './components/utils.js'
+import { roleAllowed } from './rbac'
 
 import { fas }             from '@fortawesome/free-solid-svg-icons'
 import { library }         from '@fortawesome/fontawesome-svg-core'
@@ -92,6 +93,11 @@ Vue.filter( 'fileSize', function (fileSize) {
 
 Vue.prototype.errorNotification = errorNotification;
 Vue.errorNotification = errorNotification;
+const roleAllowedWrapper = (resource, verb, ...names) => {
+  return roleAllowed(store.getters.role, resource, verb, ...names)
+}
+Vue.prototype.roleAllowed = roleAllowedWrapper;
+Vue.roleAllowed = roleAllowedWrapper;
 
 Vue.http.options.root = `${process.env.BASE_URL}api/v1/`
 

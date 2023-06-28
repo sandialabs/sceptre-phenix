@@ -206,7 +206,7 @@ func (this *Client) read() {
 					}
 				}
 
-				if this.role.Allowed("vms", "list", fmt.Sprintf("%s_%s", expName, vm.Name)) {
+				if this.role.Allowed("vms", "list", fmt.Sprintf("%s/%s", expName, vm.Name)) {
 					if vm.Running {
 						screenshot, err := util.GetScreenshot(expName, vm.Name, "200")
 						if err != nil {

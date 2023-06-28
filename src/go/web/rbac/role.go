@@ -14,15 +14,6 @@ import (
 	"github.com/mitchellh/mapstructure"
 )
 
-var NAME_TO_ROLE_CONFIG = map[string]string{
-	"Global Admin":      "global-admin",
-	"Global Viewer":     "global-viewer",
-	"Experiment Admin":  "experiment-admin",
-	"Experiment User":   "experiment-user",
-	"Experiment Viewer": "experiment-viewer",
-	"VM Viewer":         "vm-viewer",
-}
-
 var (
 	ErrResourceNameExists  = fmt.Errorf("resource name for role exists")
 	ErrResourceNameInvalid = fmt.Errorf("invalid resource name for role")
@@ -35,30 +26,53 @@ type Role struct {
 	mappedPolicies map[string][]Policy
 }
 
-func RoleFromConfig(name string) (*Role, error) {
-	if rname, ok := NAME_TO_ROLE_CONFIG[name]; ok {
-		name = rname
+func GetRoles() ([]*Role, error) {
+	configs, err := config.List("role")
+	if err != nil {
+		return nil, fmt.Errorf("getting role configs: %w", err)
 	}
 
-	c, err := config.Get("role/"+name, false)
+	roles := make([]*Role, len(configs))
+
+	for i, c := range configs {
+		var u v1.RoleSpec
+		if err := mapstructure.Decode(c.Spec, &u); err != nil {
+			return nil, fmt.Errorf("decoding roles config: %w", err)
+		}
+
+		roles[i] = &Role{Spec: &u, config: &c}
+	}
+
+	return roles, nil
+}
+
+// Get a role based on its name from config.
+// Works for both the roleName (e.g., "Global Admin") and metadata name (e.g., "global-admin")
+func RoleFromConfig(name string) (*Role, error) {
+	roles, err := config.List("role")
 	if err != nil {
 		return nil, fmt.Errorf("getting role from store: %w", err)
 	}
 
-	var role v1.RoleSpec
+	for _, roleConfig := range roles {
+		if roleConfig.Metadata.Name == name || roleConfig.Spec["roleName"] == name {
+			var role v1.RoleSpec
 
-	if err := mapstructure.Decode(c.Spec, &role); err != nil {
-		return nil, fmt.Errorf("decoding role: %w", err)
+			if err := mapstructure.Decode(roleConfig.Spec, &role); err != nil {
+				return nil, fmt.Errorf("decoding role: %w", err)
+			}
+		
+			return &Role{Spec: &role, config: &roleConfig}, nil
+		}
 	}
-
-	return &Role{Spec: &role, config: c}, nil
+	return nil, fmt.Errorf("could not find role in store: %w", err)	
 }
 
 func (this Role) Save() error {
 	this.config.Spec = structs.MapDefaultCase(this.Spec, structs.CASESNAKE)
 
 	if err := store.Update(this.config); err != nil {
-		return fmt.Errorf("updating user in store: %w", err)
+		return fmt.Errorf("updating role in store: %w", err)
 	}
 
 	return nil

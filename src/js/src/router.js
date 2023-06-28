@@ -58,7 +58,16 @@ const router = new Router({
 router.beforeEach( async ( to, from, next ) => {
   if ( process.env.VUE_APP_AUTH === 'disabled' ) {
     if ( !store.getters.auth ) {
-      store.commit( 'LOGIN', { 'user': { 'token': 'authorized', 'role': 'Global Admin' }, 'remember': false } )
+      let globalAdmin = {
+        name: "Global Admin",
+        policies: [{
+          "resources": ["*", "*/*"],
+          "resourceNames": ["*", "*/*"],
+          "verbs": ["*"]
+        }]
+      }
+
+      store.commit( 'LOGIN', { 'loginResponse': { 'token': 'authorized', 'user': {'role': globalAdmin}}, 'remember': false } )
     }
 
     next()
@@ -97,9 +106,9 @@ router.beforeEach( async ( to, from, next ) => {
     if ( process.env.VUE_APP_AUTH === 'proxy' ) {
       try {
         let resp = await Vue.http.get('login');
-        let user = await resp.json();
+        let loginResponse = await resp.json();
 
-        store.commit( 'LOGIN', { "user": user, "remember": false } );
+        store.commit( 'LOGIN', { loginResponse, "remember": false } );
       } catch (resp) {
         if ( resp.status === 404 ) {
           next( {name: 'proxysignup', params: {'username': resp.body.trim()}} )

@@ -7,7 +7,7 @@ FROM ghcr.io/${PHENIX_REPO}/phenix:${PHENIX_TAG}
 ARG PHENIX_REPO
 ARG PHENIX_TAG
 
-ENV NODE_VERSION 12.18.3
+ENV NODE_VERSION 14.21.3
 
 RUN wget -O node.txz https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz \
   && tar -xJf node.txz -C /usr/local --strip-components=1 --no-same-owner && rm node.txz \

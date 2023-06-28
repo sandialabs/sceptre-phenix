@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+option go_package = "web/proto";
+
+message Policy {
+    repeated string resources = 1;
+    repeated string resource_names = 2;
+    repeated string verbs = 3;
+}
+
+message Role {
+  string name = 1;
+  repeated Policy policies = 3;
+}
+
+message RoleList {
+    repeated Role roles = 1;
+}

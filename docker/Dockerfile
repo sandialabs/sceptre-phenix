@@ -5,7 +5,7 @@ ARG  MM_MIN_REV=2bd71c0
 FROM ghcr.io/activeshadow/minimega/minimega:${MM_MIN_REV} AS minimega
 
 
-FROM node:12.18.3 AS jsbuilder
+FROM node:14.21.3 AS jsbuilder
 
 RUN npm install -g @vue/cli redoc-cli
 

@@ -81,13 +81,13 @@ It requires a valid email (user ID) and password.
           response => {
             response.json().then(
               user => {
-                this.$store.commit( 'LOGIN', { "user": user, "remember": this.rememberMe } );
+                this.$store.commit( 'LOGIN', { "loginResponse": user, "remember": this.rememberMe } );
               }
             )
           }, response => {
             if ( response.status == 401 ) {
               this.$buefy.toast.open({
-                message: 'The email and/or password is incorrect',
+                message: 'The username and/or password is incorrect',
                 type: 'is-warning',
                 duration: 4000
               });

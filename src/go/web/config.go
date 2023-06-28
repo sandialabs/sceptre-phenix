@@ -55,7 +55,7 @@ func GetConfigs(w http.ResponseWriter, r *http.Request) error {
 	var allowed []store.Config
 
 	for _, cfg := range configs {
-		if !role.Allowed("config", "list", cfg.FullName()) {
+		if !role.Allowed("configs", "list", cfg.FullName()) {
 			continue
 		}
 

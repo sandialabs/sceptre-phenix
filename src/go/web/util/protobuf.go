@@ -1,14 +1,13 @@
 package util
 
 import (
-	"sort"
-
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/util/mm"
 	"phenix/web/cache"
 	"phenix/web/proto"
 	"phenix/web/rbac"
+	"sort"
 )
 
 func ExperimentToProtobuf(exp types.Experiment, status cache.Status, vms []mm.VM) *proto.Experiment {
@@ -150,44 +149,62 @@ func ExperimentScheduleToProtobuf(exp types.Experiment) *proto.ExperimentSchedul
 }
 
 func UserToProtobuf(u rbac.User) *proto.User {
+	role, _ := u.Role()
 	user := &proto.User{
 		Username:  u.Username(),
 		FirstName: u.FirstName(),
 		LastName:  u.LastName(),
-		RoleName:  u.RoleName(),
-	}
-
-	if r := u.Spec.Role; r != nil {
-		rnamemap := make(map[string]struct{})
-
-		for _, p := range r.Policies {
-			var skip bool
-
-			for _, pn := range p.Resources {
-				if pn == "disks" || pn == "hosts" || pn == "users" {
-					skip = true
-					break
-				}
-			}
-
-			if skip {
-				continue
-			}
-
-			for _, n := range p.ResourceNames {
-				rnamemap[n] = struct{}{}
-			}
-		}
-
-		var rnames []string
-		for n := range rnamemap {
-			rnames = append(rnames, n)
-		}
-
-		sort.Strings(rnames)
-
-		user.ResourceNames = rnames
+		ResourceNames: resourceNamesForRole(role),
+		Role:  RoleToProtobuf(role),
 	}
 
 	return user
+}
+
+func resourceNamesForRole(r rbac.Role) []string {
+	rnamemap := make(map[string]struct{})
+	for _, p := range r.Spec.Policies {
+		var skip bool
+
+		for _, pn := range p.Resources {
+			if pn == "disks" || pn == "hosts" || pn == "users" {
+				skip = true
+				break
+			}
+		}
+
+		if skip {
+			continue
+		}
+
+		for _, n := range p.ResourceNames {
+			rnamemap[n] = struct{}{}
+		}
+	}
+
+	var rnames []string
+	for n := range rnamemap {
+		rnames = append(rnames, n)
+	}
+	sort.Strings(rnames)
+	
+	return rnames
+}
+
+func RoleToProtobuf(r rbac.Role) *proto.Role {
+	policies := make([]*proto.Policy, len(r.Spec.Policies))
+	for i, p := range r.Spec.Policies {
+		policies[i] = &proto.Policy{
+			Resources: p.Resources,
+			ResourceNames: p.ResourceNames,
+			Verbs: p.Verbs,
+		}
+	}
+
+	role := &proto.Role{
+		Name:  r.Spec.Name,
+		Policies: policies,
+	}
+
+	return role
 }

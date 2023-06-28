@@ -76,7 +76,7 @@
             <h1 class="title">
               There are no experiments!
             </h1>
-              <b-button v-if="adminUser()" type="is-success" outlined @click="updateTopologies(); createModal.active = true">Create One Now!</b-button>
+              <b-button v-if="roleAllowed('experiments', 'create')" type="is-success" outlined @click="updateTopologies(); createModal.active = true">Create One Now!</b-button>
           </div>
         </div>
       </section>
@@ -99,7 +99,7 @@
           </button>
         </p>
         &nbsp; &nbsp;
-        <p v-if="globalUser()" class="control">
+        <p v-if="roleAllowed('experiments', 'create')" class="control">
           <b-tooltip label="create a new experiment" type="is-light is-left" multilined>
             <button class="button is-light" @click="updateTopologies(); createModal.active = true">
               <b-icon icon="plus"></b-icon>
@@ -140,7 +140,7 @@
                 <b-progress size="is-medium" type="is-warning" show-value :value=props.row.percent format="percent"></b-progress>
               </section>
             </template>
-            <template v-else-if="adminUser()">                
+            <template v-else-if="roleAllowed('experiments', 'update', props.row.name)">                
                 <b-tooltip :label="getExpControlLabel(props.row.name,props.row.status)" type="is-dark">
                   <span class="tag is-medium" :class="decorator( props.row.status )">
                     <div class="field">
@@ -172,14 +172,14 @@
           <b-table-column field="vlan_range" label="VLANs" width="100" centered v-slot="props">
             {{ props.row.vlan_min }} - {{ props.row.vlan_max}} ({{ props.row.vlan_count }})
           </b-table-column>
-          <b-table-column v-if="globalUser()" label="Actions" width="150" centered v-slot="props">
-            <button class="button is-light is-small action" :disabled="updating( props.row.status )" @click="del( props.row.name, props.row.running )">
+          <b-table-column label="Actions" width="150" centered v-slot="props">
+            <button v-if="roleAllowed('experiments', 'delete', props.row.name)" class="button is-light is-small action" :disabled="updating( props.row.status )" @click="del( props.row.name, props.row.running )">
               <b-icon icon="trash"></b-icon>
             </button>
-            <router-link class="button is-light is-small action" :disabled="updating( props.row.status )" :to="{ name: 'soh', params: { id: props.row.name }}">
+            <router-link v-if="roleAllowed('experiments', 'get', props.row.name)" class="button is-light is-small action" :disabled="updating( props.row.status )" :to="{ name: 'soh', params: { id: props.row.name }}">
               <b-icon icon="heartbeat"></b-icon>
             </router-link>
-            <router-link class="button is-light is-small action" :disabled="updating( props.row.status )" :to="{ name: 'scorch', params: { id: props.row.name }}">
+            <router-link v-if="roleAllowed('experiments', 'get', props.row.name)" class="button is-light is-small action" :disabled="updating( props.row.status )" :to="{ name: 'scorch', params: { id: props.row.name }}">
               <b-icon icon="fire"></b-icon>
             </router-link>
           </b-table-column>
@@ -430,18 +430,6 @@
             this.errorNotification(err);
           }
         );
-      },
-
-      globalUser () {
-        return [ 'Global Admin' ].includes( this.$store.getters.role );
-      },
-      
-      adminUser () {
-        return [ 'Global Admin', 'Experiment Admin' ].includes( this.$store.getters.role );
-      },
-      
-      experimentUser () {
-        return [ 'Global Admin', 'Experiment Admin', 'Experiment User' ].includes( this.$store.getters.role );
       },
 
       changePaginate () {

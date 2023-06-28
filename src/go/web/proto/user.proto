@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "web/proto/role.proto";
 option go_package = "web/proto";
 
 message SignupUserRequest {
@@ -13,8 +14,8 @@ message User {
   string username = 1;
   string first_name = 2 [json_name="first_name"];
   string last_name = 3 [json_name="last_name"];
-  string role_name = 4 [json_name="role_name"];
   repeated string resource_names = 5 [json_name="resource_names"];
+  Role role = 4 [json_name="role"];
 }
 
 message UserList {
@@ -47,9 +48,6 @@ message LoginRequest {
 }
 
 message LoginResponse {
-  string username = 1;
-  string first_name = 2 [json_name="first_name"];
-  string last_name = 3 [json_name="last_name"];
-  string token = 4;
-  string role = 5;
+  User user = 1;
+  string token = 2;
 }

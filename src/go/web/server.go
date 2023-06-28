@@ -217,6 +217,7 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/users/{username}", UpdateUser).Methods("PATCH", "OPTIONS")
 	api.HandleFunc("/users/{username}", DeleteUser).Methods("DELETE", "OPTIONS")
 	api.HandleFunc("/users/{username}/tokens", CreateUserToken).Methods("POST", "OPTIONS")
+	api.HandleFunc("/roles", GetRoles).Methods("GET", "OPTIONS")
 	api.HandleFunc("/signup", Signup).Methods("POST", "OPTIONS")
 	api.HandleFunc("/login", Login).Methods("GET", "POST", "OPTIONS")
 	api.HandleFunc("/logout", Logout).Methods("GET", "OPTIONS")

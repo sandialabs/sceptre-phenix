@@ -73,17 +73,17 @@
         </b-taglist>
       </div>
     </div>
-    <b-field v-if="experimentUser() || experimentViewer()" position="is-right">
+    <b-field v-if="roleAllowed('experiments', 'get', experiment.name)" position="is-right">
       <template v-if="selectedRows.length != 0">
         <b-tooltip label="Set to Boot" type="is-light">
           <p class="control">
-            <b-button v-if="adminUser()" class="button is-light" slot="trigger" icon-right="bolt" style="color: #c46200;" @click="setBoot( false )" />
+            <b-button v-if="selectedRows.every(vm => roleAllowed('vms', 'patch', experiment.name + '/' + vm.name))" class="button is-light" slot="trigger" icon-right="bolt" style="color: #c46200;" @click="setBoot( false )" />
           </p>
         </b-tooltip>
         &nbsp; &nbsp;
         <b-tooltip label="Set to Do Not Boot" type="is-light">
           <p class="control">
-            <b-button v-if="adminUser()" class="button is-light" slot="trigger" icon-right="bolt" style="color: #ffffff;" @click="setBoot( true )" />
+            <b-button v-if="selectedRows.every(vm => roleAllowed('vms', 'patch', experiment.name + '/' + vm.name))" class="button is-light" slot="trigger" icon-right="bolt" style="color: #ffffff;" @click="setBoot( true )" />
           </p>
         </b-tooltip>
         &nbsp; &nbsp;
@@ -118,7 +118,7 @@
       </p>
       &nbsp; &nbsp;
       <p class="control">
-        <b-button v-if="adminUser()" class="button is-success" slot="trigger" icon-right="play" @click="start"></b-button>
+        <b-button v-if="roleAllowed('experiments/start', 'update', experiment.name)" class="button is-success" slot="trigger" icon-right="play" @click="start"></b-button>
       </p>
       &nbsp; &nbsp;
       <p class="control">
@@ -133,7 +133,7 @@
           </b-dropdown>
         </b-tooltip>
         &nbsp;
-        <router-link v-if="adminUser()" class="button is-light" :to="{ name: 'soh', params: { id: this.$route.params.id }}">
+        <router-link v-if="roleAllowed('experiments', 'get', experiment.name)" class="button is-light" :to="{ name: 'soh', params: { id: this.$route.params.id }}">
           <b-icon icon="heartbeat"></b-icon>
         </router-link>
       </p>  
@@ -177,7 +177,7 @@
                 </template>                  
               </b-table-column>
               <b-table-column field="name" label="VM" sortable v-slot="props">
-                <template v-if="adminUser()">
+                <template v-if="roleAllowed('vms', 'get', experiment.name + '/' + props.row.name)">
                   <b-tooltip label="get info on the vm" type="is-dark">
                     <div class="field">
                       <div @click="expModal.active = true; expModal.vm = props.row">
@@ -191,7 +191,7 @@
                 </template>
               </b-table-column>
               <b-table-column field="host" label="Host" width="200" sortable v-slot="props">
-                <template v-if="adminUser()">
+                <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
                   <b-tooltip label="assign the vm to a specific host" type="is-dark">
                     <b-field>
                       <b-select :value="props.row.host" expanded @input="( value ) => assignHost( props.row.name, value )">
@@ -221,7 +221,7 @@
                 </div>
               </b-table-column>
               <b-table-column field="cpus" label="CPUs" sortable centered v-slot="props">
-                <template v-if="adminUser()">
+                <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
                   <b-tooltip label="menu for assigning vm(s) cpus" type="is-dark">
                     <b-select :value="props.row.cpus" expanded @input="( value ) => assignCpu( props.row.name, value )">
                       <option value="1">1</option>
@@ -236,7 +236,7 @@
                 </template>
               </b-table-column>
               <b-table-column field="ram" label="Memory" sortable centered v-slot="props">
-                <template v-if="adminUser()">
+                <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
                   <b-tooltip label="menu for assigning vm(s) memory" type="is-dark">
                     <b-select :value="props.row.ram" expanded @input="( value ) => assignRam( props.row.name, value )">
                       <option value="512">512 MB</option>
@@ -255,7 +255,7 @@
                 </template>
               </b-table-column>
               <b-table-column field="disk" label="Disk" v-slot="props">
-                <template v-if="adminUser()">
+                <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
                   <b-tooltip :label="getDiskToolTip(props.row.disk)" type="is-dark">
                     <b-select :value="props.row.disk" expanded @input="( value ) => assignDisk( props.row.name, value )">
                       <option
@@ -271,12 +271,14 @@
                   {{ getBaseName(props.row.disk) }}
                 </template>
               </b-table-column>
-              <b-table-column v-if="experimentUser()" label="Boot" centered v-slot="props">
-                <b-tooltip :label="getBootLabel( props.row.name, props.row.dnb )" type="is-dark">
-                  <div @click="updateDnb( props.row.name, !props.row.dnb )">
-                    <font-awesome-icon :class="bootDecorator( props.row.dnb )" icon="bolt" />
-                  </div>
-                </b-tooltip>
+              <b-table-column label="Boot" centered v-slot="props">
+                <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
+                  <b-tooltip :label="getBootLabel( props.row.name, props.row.dnb )" type="is-dark">
+                    <div @click="updateDnb( props.row.name, !props.row.dnb )">
+                      <font-awesome-icon :class="bootDecorator( props.row.dnb )" icon="bolt" />
+                    </div>
+                  </b-tooltip>
+                </template>
               </b-table-column>
           </b-table>
           <br>
@@ -367,7 +369,7 @@
 
     async created () {
       this.$options.sockets.onmessage = this.handler;
-      this.updateExperiment( this.adminUser() );
+      this.updateExperiment();
     },
 
     computed: {
@@ -434,17 +436,6 @@
     },
 
     methods: {
-      adminUser () {
-        return [ 'Global Admin', 'Experiment Admin' ].includes( this.$store.getters.role );
-      },
-
-      experimentUser () {
-        return [ 'Global Admin', 'Experiment Admin', 'Experiment User' ].includes( this.$store.getters.role );
-      },
-
-      experimentViewer () {
-        return [ 'Experiment Viewer' ].includes( this.$store.getters.role );
-      },
 
       searchVMs: _.debounce(function(  term ) {
         if (term === null) {
@@ -566,7 +557,7 @@
         }
       },
       
-      updateExperiment ( hostsAndDisks = false ) {
+      updateExperiment () {
         let params = '?show_dnb=true&filter=' + this.searchName
         params = params + '&sortCol=' + this.table.sortColumn
         params = params + '&sortDir=' + this.table.defaultSortDirection
@@ -593,8 +584,10 @@
                 this.searchHistory = this.getUniqueItems(this.searchHistory)
               }
 
-              if ( hostsAndDisks ) {
+              if ( this.roleAllowed('hosts', 'list') ) {
                 this.updateHosts()
+              }
+              if ( this.roleAllowed('disks', 'list') ) {
                 this.updateDisks()
               }
             });
