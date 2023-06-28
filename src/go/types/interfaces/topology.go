@@ -110,6 +110,7 @@ type NodeNetworkInterface interface {
 	Mask() int
 	Gateway() string
 	DNS() []string
+	QinQ() bool
 	RulesetIn() string
 	RulesetOut() string
 
@@ -128,6 +129,7 @@ type NodeNetworkInterface interface {
 	SetMask(int)
 	SetGateway(string)
 	SetDNS([]string)
+	SetQinQ(bool)
 	SetRulesetIn(string)
 	SetRulesetOut(string)
 }

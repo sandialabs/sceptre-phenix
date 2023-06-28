@@ -127,6 +127,7 @@ type Interface struct {
 	MaskF       int      `json:"mask" yaml:"mask" structs:"mask" mapstructure:"mask"`
 	GatewayF    string   `json:"gateway" yaml:"gateway" structs:"gateway" mapstructure:"gateway"`
 	DNSF        []string `json:"dns" yaml:"dns" structs:"dns" mapstructure:"dns"`
+	QinQF       bool     `json:"qinq" yaml:"qinq" structs:"qinq" mapstructure:"qinq"`
 	RulesetInF  string   `json:"ruleset_in" yaml:"ruleset_in" structs:"ruleset_in" mapstructure:"ruleset_in"`
 	RulesetOutF string   `json:"ruleset_out" yaml:"ruleset_out" structs:"ruleset_out" mapstructure:"ruleset_out"`
 }
@@ -195,6 +196,10 @@ func (this Interface) DNS() []string {
 	return this.DNSF
 }
 
+func (this Interface) QinQ() bool {
+	return this.QinQF
+}
+
 func (this Interface) RulesetIn() string {
 	return this.RulesetInF
 }
@@ -261,6 +266,10 @@ func (this *Interface) SetGateway(gw string) {
 
 func (this *Interface) SetDNS(dns []string) {
 	this.DNSF = dns
+}
+
+func (this *Interface) SetQinQ(q bool) {
+	this.QinQF = q
 }
 
 func (this *Interface) SetRulesetIn(rule string) {
@@ -537,6 +546,10 @@ func (this Network) InterfaceConfig() string {
 
 		if iface.DriverF != "" {
 			config = append(config, iface.DriverF)
+		}
+
+		if iface.QinQF {
+			config = append(config, "qinq")
 		}
 
 		configs[i] = strings.Join(config, ",")

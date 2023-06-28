@@ -577,6 +577,9 @@ components:
         driver:
           type: string
           example: e1000
+        qinq:
+          type: boolean
+          default: false
     iface_address:
       type: object
       required:

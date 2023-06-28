@@ -72,7 +72,7 @@ Do {
 } While ($wmi -eq $null)
 {{ $length := len .Node.Network.Interfaces }}
 {{ range $idx, $iface := .Node.Network.Interfaces }}
-    {{ if eq $iface.Proto "static" }}
+    {{ if and (eq $iface.Proto "static") (not $iface.QinQ) }}
 Do {
         {{ if gt $length 1 }}
     $status = $wmi[{{ $idx }}].EnableStatic('{{ $iface.Address }}', '{{ $iface.NetworkMask }}')

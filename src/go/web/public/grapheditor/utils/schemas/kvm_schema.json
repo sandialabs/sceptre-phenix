@@ -765,7 +765,8 @@
               "type": "string",
               "title": "proto",
               "enum": [
-                "dhcp"
+                "dhcp",
+                "manual"
               ],
               "default": "dhcp",
               "examples": [
@@ -919,6 +920,11 @@
           "examples": [
             "e1000"
           ]
+        },
+        "qinq": {
+          "type": "boolean",
+          "title": "qinq",
+          "default": false
         }
       },
       "required": [
