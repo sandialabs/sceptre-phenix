@@ -1,4 +1,4 @@
-# phenix ![status](https://img.shields.io/badge/status-alpha-red.svg) ![Docker Cloud Automated build](https://img.shields.io/docker/cloud/automated/activeshadow/phenix) ![Docker Package Build Status](https://github.com/sandia-minimega/phenix/actions/workflows/docker.yml/badge.svg?branch=main)
+# phenix ![status](https://img.shields.io/badge/status-alpha-red.svg) ![Docker Cloud Automated build](https://img.shields.io/docker/cloud/automated/activeshadow/phenix) ![Docker Package Build Status](https://github.com/sandialabs/sceptre-phenix/actions/workflows/docker.yml/badge.svg?branch=main)
 
 Welcome to `phenix`!
 
@@ -15,7 +15,7 @@ to build phenix (assuming you have Docker installed). Simply run
 A Docker image is also hosted in this repo under Packages and can be pulled via:
 
 ```
-$> docker pull ghcr.io/sandia-minimega/phenix/phenix:main
+$> docker pull ghcr.io/sandialabs/sceptre-phenix/phenix:main
 ```
 
 The Docker image is updated automatically each time a commit is pushed to the

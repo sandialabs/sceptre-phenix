@@ -59,7 +59,7 @@ RUN COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} make bin/phenix
 RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.1/vmdb2 -P bin/ \
   && chmod +x bin/vmdb2
 
-ARG APPS_REPO=sandia-minimega/phenix-apps
+ARG APPS_REPO=sandialabs/sceptre-phenix-apps
 ARG APPS_BRANCH=main
 
 RUN git clone --branch ${APPS_BRANCH} https://github.com/${APPS_REPO}.git /phenix-apps
@@ -91,7 +91,7 @@ ENV LC_ALL en_US.UTF-8
 COPY --from=minimega /opt/minimega/lib /tmp/minimega
 RUN  python3 -m pip install /tmp/minimega
 
-ARG APPS_REPO=sandia-minimega/phenix-apps
+ARG APPS_REPO=sandialabs/sceptre-phenix-apps
 ARG APPS_BRANCH=main
 
 RUN python3 -m pip install \
@@ -118,6 +118,6 @@ COPY --from=gobuilder /go/bin/phenix-app-* /usr/local/bin
 # Update GitHub workflow config to change the minimum version of minimega
 # required for use with phenix.
 ARG   MM_MIN_REV=2bd71c0
-LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandia-minimega/phenix/minimega:${MM_MIN_REV}"
+LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandialabs/sceptre-phenix/minimega:${MM_MIN_REV}"
 
 CMD ["phenix", "help"]
