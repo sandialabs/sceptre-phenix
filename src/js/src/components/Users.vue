@@ -99,10 +99,10 @@
             <b-field label="Description">
               <b-input type="text" v-model="user.token_desc" autofocus></b-input>
             </b-field>
-            <b-field label="Lifetime">
+            <b-field label="Lifetime (days)">
               <b-input type="text" v-model="user.token_lifetime"></b-input>
             </b-field>
-            <b-tooltip label="use Golang time duration strings here" 
+            <b-tooltip label="number of days this token should be valid"
               type="is-light is-right">
               <b-icon icon="question-circle" style="color:#383838"></b-icon>
             </b-tooltip>

@@ -17,7 +17,7 @@ import (
 	"phenix/api/scorch/scorchmd"
 	"phenix/app"
 	"phenix/util/plog"
-	"phenix/web/broker"
+	"phenix/util/pubsub"
 	"phenix/web/rbac"
 	"phenix/web/util"
 	"phenix/web/weberror"
@@ -607,30 +607,25 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 
 		key := fmt.Sprintf("%s/%d", name, run)
 
-		broker.Broadcast(
-			broker.NewRequestPolicy("experiments/trigger", "create", name),
-			broker.NewResource("apps/scorch", key, "start"),
-			nil,
-		)
+		pubsub.Publish("trigger-app", app.TriggerPublication{
+			Experiment: name, App: "scorch", Resource: key, State: "start",
+		})
 
 		if err := scorchexe.Execute(ctx, exp, run); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				plog.Error("executing Scorch run for experiment", "exp", name, "run", run, "err", err)
 
-				broker.Broadcast(
-					broker.NewRequestPolicy("experiments/trigger", "create", name),
-					broker.NewResource("apps/scorch", key, "error"),
-					[]byte(fmt.Sprintf(`{"error": "failed to execute Scorch run %d for experiment %s"}`, run, name)),
-				)
+				pubsub.Publish("trigger-app", app.TriggerPublication{
+					Experiment: name, App: "scorch", Resource: key, State: "error",
+					Error: fmt.Errorf("failed to execute Scorch run %d for experiment %s", run, name),
+				})
 			}
 		} else {
 			plog.Debug("Scorch run for experiment executed successfully", "exp", name, "run", run)
 
-			broker.Broadcast(
-				broker.NewRequestPolicy("experiments/trigger", "create", name),
-				broker.NewResource("apps/scorch", key, "success"),
-				nil,
-			)
+			pubsub.Publish("trigger-app", app.TriggerPublication{
+				Experiment: name, App: "scorch", Resource: key, State: "success",
+			})
 		}
 
 		// Ensure context is canceled to avoid leakage. It's okay to call the
@@ -675,11 +670,9 @@ func CancelPipeline(w http.ResponseWriter, r *http.Request) error {
 
 		key := fmt.Sprintf("%s/%d", name, run)
 
-		broker.Broadcast(
-			broker.NewRequestPolicy("experiments/trigger", "delete", name),
-			broker.NewResource("apps/scorch", key, "success"),
-			nil,
-		)
+		pubsub.Publish("trigger-app", app.TriggerPublication{
+			Experiment: name, Verb: "delete", App: "scorch", Resource: key, State: "success",
+		})
 	}
 
 	w.WriteHeader(http.StatusNoContent)

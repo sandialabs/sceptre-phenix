@@ -15,6 +15,7 @@ import StateOfHealth from './components/StateOfHealth.vue'
 import Users         from './components/Users.vue'
 import VMtiles       from './components/VMtiles.vue'
 import MiniConsole   from './components/MiniConsole.vue'
+import Tunneler      from './components/Tunneler.vue'
 
 import store from './store'
 
@@ -38,6 +39,7 @@ const router = new Router({
     {path: '/users',             name: 'users',       component: Users},
     {path: '/vmtiles',           name: 'vmtiles',     component: VMtiles},
     {path: '/console',           name: 'console',     component: MiniConsole},
+    {path: '/tunneler',          name: 'tunneler',    component: Tunneler},
 
     {path: '/builder?token=:token', name: 'builder'},
     {path: '/version',              name: 'version'},
@@ -49,6 +51,10 @@ const router = new Router({
     {path: '/api/v1/experiments/:id/files/:name\\?path=:path&token=:token', name: 'file'},
     {path: '/api/v1/experiments/:id/vms/:name/vnc?token=:token',            name: 'vnc'},
 
+    {path: '/downloads/tunneler/phenix-tunneler-linux-amd64',       name: 'linux-tunneler'},
+    {path: '/downloads/tunneler/phenix-tunneler-darwin-arm64',      name: 'macos-tunneler'},
+    {path: '/downloads/tunneler/phenix-tunneler-windows-amd64.exe', name: 'windows-tunneler'},
+
     {path: '/proxysignup', name: 'proxysignup', component: ProxySignUp, props: true},
 
     {path: '*', redirect: {name: 'signin'}}
@@ -58,7 +64,7 @@ const router = new Router({
 router.beforeEach( async ( to, from, next ) => {
   if ( process.env.VUE_APP_AUTH === 'disabled' ) {
     if ( !store.getters.auth ) {
-      let globalAdmin = {
+      let role = {
         name: "Global Admin",
         policies: [{
           "resources": ["*", "*/*"],
@@ -67,7 +73,15 @@ router.beforeEach( async ( to, from, next ) => {
         }]
       }
 
-      store.commit( 'LOGIN', { 'loginResponse': { 'token': 'authorized', 'user': {'role': globalAdmin}}, 'remember': false } )
+      let loginResponse = {
+        'token': 'authorized',
+        'user': {
+          'username': 'global-admin',
+          role,
+        }
+      }
+
+      store.commit( 'LOGIN', { loginResponse, 'remember': false } )
     }
 
     next()

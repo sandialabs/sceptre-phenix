@@ -1,7 +1,7 @@
 name: Publish minimega Docker image
 on:
   push:
-    branches: [main]
+    branches: ['**']
 jobs:
   push-to-ghcr:
     name: Push minimega Docker image to GitHub Packages
@@ -28,10 +28,10 @@ jobs:
           context: docker
           file: docker/Dockerfile.minimega
           build-args: |
-            MM_REV=2bd71c0
+            MM_REV=2b2b341
             PHENIX_REVISION=${{ env.sha }}
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/minimega:2bd71c0
+            ghcr.io/${{ github.repository }}/minimega:2b2b341
             ghcr.io/${{ github.repository }}/minimega:${{ env.sha }}
             ghcr.io/${{ github.repository }}/minimega:${{ env.branch }}

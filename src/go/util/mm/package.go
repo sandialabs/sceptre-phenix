@@ -60,6 +60,18 @@ func DisconnectVMInterface(opts ...Option) error {
 	return DefaultMM.DisconnectVMInterface(opts...)
 }
 
+func CreateTunnel(opts ...Option) error {
+	return DefaultMM.CreateTunnel(opts...)
+}
+
+func GetTunnels(opts ...Option) []map[string]string {
+	return DefaultMM.GetTunnels(opts...)
+}
+
+func CloseTunnel(opts ...Option) error {
+	return DefaultMM.CloseTunnel(opts...)
+}
+
 func StartVMCapture(opts ...Option) error {
 	return DefaultMM.StartVMCapture(opts...)
 }

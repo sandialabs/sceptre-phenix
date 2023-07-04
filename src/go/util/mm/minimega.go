@@ -502,6 +502,58 @@ func (Minimega) DisconnectVMInterface(opts ...Option) error {
 	return nil
 }
 
+func (Minimega) CreateTunnel(opts ...Option) error {
+	o := NewOptions(opts...)
+
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = fmt.Sprintf("cc tunnel %s %d %s %d", o.vm, o.srcPort, o.dstHost, o.dstPort)
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("creating tunnel to %s (%d:%s:%d): %w", o.vm, o.srcPort, o.dstHost, o.dstPort, err)
+	}
+
+	return nil
+}
+
+func (Minimega) GetTunnels(opts ...Option) []map[string]string {
+	o := NewOptions(opts...)
+
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = "cc tunnel list all"
+
+	if o.vm != "" {
+		cmd.Command = fmt.Sprintf("cc tunnel list %s", o.vm)
+	}
+
+	if o.dstHost != "" {
+		cmd.Filters = append(cmd.Filters, fmt.Sprintf("dst=%s", o.dstHost))
+	}
+
+	if o.dstPort != 0 {
+		cmd.Filters = append(cmd.Filters, fmt.Sprintf("'dst port'=%d", o.dstPort))
+	}
+
+	return mmcli.RunTabular(cmd)
+}
+
+func (Minimega) CloseTunnel(opts ...Option) error {
+	tunnels := GetTunnels(opts...)
+
+	o := NewOptions(opts...)
+	var errs error
+
+	for _, row := range tunnels {
+		cmd := mmcli.NewNamespacedCommand(o.ns)
+		cmd.Command = fmt.Sprintf("cc tunnel close %s %s", o.vm, row["id"])
+
+		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+			errs = multierror.Append(errs, fmt.Errorf("closing tunnel to %s (%s:%d): %w", o.vm, o.dstHost, o.dstPort, err))
+		}
+	}
+
+	return errs
+}
+
 func (Minimega) StartVMCapture(opts ...Option) error {
 	o := NewOptions(opts...)
 

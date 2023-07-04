@@ -38,7 +38,7 @@ WORKDIR /phenix/src/go/web/public/docs
 RUN npx redoc-cli build openapi.yml -o index.html --title 'phenix API'
 
 
-FROM golang:1.20.5 AS gobuilder
+FROM golang:1.20.7 AS gobuilder
 
 RUN apt update \
   && apt install -y protobuf-compiler xz-utils
@@ -65,6 +65,7 @@ ARG PHENIX_COMMIT
 ARG PHENIX_TAG
 
 RUN COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} make bin/phenix
+RUN make -C src/go phenix-tunneler
 
 ARG APPS_REPO=sandialabs/sceptre-phenix-apps
 ARG APPS_BRANCH=main
@@ -134,9 +135,13 @@ RUN wget -O filebeat.deb https://artifacts.elastic.co/downloads/beats/filebeat/f
 COPY --from=gobuilder /phenix/bin/phenix   /usr/local/bin/phenix
 COPY --from=gobuilder /go/bin/phenix-app-* /usr/local/bin
 
+COPY --from=gobuilder /phenix/src/go/bin/phenix-tunneler-* /opt/phenix/downloads/tunneler/
+
 # Update GitHub workflow config to change the minimum version of minimega
 # required for use with phenix.
-ARG   MM_MIN_REV=2bd71c0
+ARG   MM_MIN_REV=2b2b341
 LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandialabs/sceptre-phenix/minimega:${MM_MIN_REV}"
+
+WORKDIR /opt/phenix
 
 CMD ["phenix", "help"]

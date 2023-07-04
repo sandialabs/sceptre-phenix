@@ -19,6 +19,8 @@ import (
 	"phenix/web/rbac"
 	"phenix/web/weberror"
 
+	bt "phenix/web/broker/brokertypes"
+
 	"github.com/gorilla/mux"
 	"github.com/mitchellh/mapstructure"
 )
@@ -459,8 +461,8 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	broker.Broadcast(
-		broker.NewRequestPolicy("configs", "list", cfg.FullName()),
-		broker.NewResource("config", cfg.FullName(), "create"),
+		bt.NewRequestPolicy("configs", "list", cfg.FullName()),
+		bt.NewResource("config", cfg.FullName(), "create"),
 		body,
 	)
 

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"os"
 	"strings"
 	"time"
 )
@@ -50,6 +51,10 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 
 	if !strings.HasSuffix(o.basePath, "/") {
 		o.basePath = o.basePath + "/"
+	}
+
+	if _, err := os.Stat("downloads/tunneler"); err == nil {
+		o.features["tunneler-download"] = true
 	}
 
 	return o

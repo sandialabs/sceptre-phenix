@@ -8,6 +8,8 @@ import (
 	"phenix/api/experiment"
 	"phenix/api/scorch/scorchmd"
 	"phenix/web/broker"
+
+	bt "phenix/web/broker/brokertypes"
 )
 
 /*
@@ -520,7 +522,7 @@ func broadcastPipeline(exp string, run, loop int, pl *pipeline) {
 	name := fmt.Sprintf("%s/%d/%d", exp, run, loop)
 	body, _ := json.Marshal(pl)
 
-	resource := broker.NewResource("apps/scorch", name, "pipeline-update")
+	resource := bt.NewResource("apps/scorch", name, "pipeline-update")
 	broker.Broadcast(nil, resource, body)
 }
 

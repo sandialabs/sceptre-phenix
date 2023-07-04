@@ -11,6 +11,7 @@ are only available to Global Administrator or Global Viewer.
     <a :href="homeLoc()">
       <img src="@/assets/phenix-banner.png" width="240">
     </a>
+
     <nav class="navbar is-light" role="navigation" aria-label="main navigation">
       <div id="navbarBasicExample" class="navbar-menu">
         <div class="navbar-start">
@@ -39,17 +40,20 @@ are only available to Global Administrator or Global Viewer.
           <menu-link v-if="auth && roleAllowed('miniconsole', 'post')"
                         :to="{name: 'console'}"
                         class="navbar-item">Console</menu-link>
-        </div>
-      </div>
-      <div class="navbar-end">
-        <div v-if="proxyAuth" class="navbar-item">
-            <a role="button" class="button navbar-item is-light" @click="logout">Reauthorize</a>
-        </div>
-        <div v-else-if="auth" class="navbar-item">
-            <a role="button" class="button navbar-item is-light" @click="logout">Logout</a>
+          <menu-link v-if="auth && tunneler"
+                        :to="{name: 'tunneler'}"
+                        class="navbar-item">Tunneler</menu-link>
         </div>
       </div>
 
+      <div class="navbar-end">
+        <div v-if="proxyAuth" class="navbar-item">
+          <a role="button" class="button navbar-item is-light" @click="logout">Reauthorize</a>
+        </div>
+        <div v-else-if="auth" class="navbar-item">
+          <a role="button" class="button navbar-item is-light" @click="logout">Logout</a>
+        </div>
+      </div>
     </nav>
   </div>
 </template>
@@ -74,6 +78,10 @@ are only available to Global Administrator or Global Viewer.
 
       proxyAuth () {
         return process.env.VUE_APP_AUTH === 'proxy';
+      },
+
+      tunneler () {
+        return this.$store.getters.features.includes('tunneler-download');
       }
     },
     

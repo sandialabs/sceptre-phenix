@@ -9,6 +9,8 @@ import (
 
 	"phenix/web/broker"
 
+	bt "phenix/web/broker/brokertypes"
+
 	"github.com/hpcloud/tail"
 )
 
@@ -65,7 +67,7 @@ func PublishMinimegaLogs(ctx context.Context, minimega string) {
 
 			broker.Broadcast(
 				nil,
-				broker.NewResource("log", "minimega", "update"),
+				bt.NewResource("log", "minimega", "update"),
 				marshalled,
 			)
 		}
@@ -87,7 +89,7 @@ func PublishPhenixLog(ts time.Time, level, log string) {
 
 	broker.Broadcast(
 		nil,
-		broker.NewResource("log", "phenix", "update"),
+		bt.NewResource("log", "phenix", "update"),
 		marshalled,
 	)
 }

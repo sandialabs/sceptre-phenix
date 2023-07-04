@@ -11,6 +11,7 @@ import (
 
 	"phenix/util/plog"
 	"phenix/web/broker"
+	bt "phenix/web/broker/brokertypes"
 
 	"github.com/creack/pty"
 )
@@ -90,7 +91,7 @@ func CreateWebTerminal(ctx context.Context, exp string, run, loop int, stage, na
 
 	broker.Broadcast(
 		nil, // TODO
-		broker.NewResource("apps/scorch", exp, "terminal-create"),
+		bt.NewResource("apps/scorch", exp, "terminal-create"),
 		body,
 	)
 
@@ -107,7 +108,7 @@ func KillTerminal(term WebTerm) error {
 
 	broker.Broadcast(
 		nil, // TODO
-		broker.NewResource("apps/scorch", term.Exp, "terminal-exit"),
+		bt.NewResource("apps/scorch", term.Exp, "terminal-exit"),
 		nil,
 	)
 

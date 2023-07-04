@@ -23,6 +23,8 @@ import (
 	"phenix/web/util"
 	"phenix/web/weberror"
 
+	bt "phenix/web/broker/brokertypes"
+
 	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v3"
 )
@@ -297,8 +299,8 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	broker.Broadcast(
-		broker.NewRequestPolicy("configs", "list", c.FullName()),
-		broker.NewResource("config", c.FullName(), "create"),
+		bt.NewRequestPolicy("configs", "list", c.FullName()),
+		bt.NewResource("config", c.FullName(), "create"),
 		body,
 	)
 
@@ -502,8 +504,8 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	broker.Broadcast(
-		broker.NewRequestPolicy("configs", "list", c.FullName()),
-		broker.NewResource("config", name, "update"), // use old name in broadcast so client knows what to update
+		bt.NewRequestPolicy("configs", "list", c.FullName()),
+		bt.NewResource("config", name, "update"), // use old name in broadcast so client knows what to update
 		body,
 	)
 
@@ -533,8 +535,8 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 	w.WriteHeader(http.StatusNoContent)
 
 	broker.Broadcast(
-		broker.NewRequestPolicy("configs", "list", name),
-		broker.NewResource("config", name, "delete"),
+		bt.NewRequestPolicy("configs", "list", name),
+		bt.NewResource("config", name, "delete"),
 		nil,
 	)
 

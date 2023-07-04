@@ -22,6 +22,10 @@ type MM interface {
 	ConnectVMInterface(...Option) error
 	DisconnectVMInterface(...Option) error
 
+	CreateTunnel(...Option) error
+	GetTunnels(...Option) []map[string]string
+	CloseTunnel(...Option) error
+
 	StartVMCapture(...Option) error
 	StopVMCapture(...Option) error
 	GetExperimentCaptures(...Option) []Capture

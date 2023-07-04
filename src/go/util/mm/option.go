@@ -26,6 +26,11 @@ type options struct {
 	captureFile  string
 
 	screenshotSize string
+
+	// tunnels
+	srcPort int
+	dstPort int
+	dstHost string
 }
 
 func NewOptions(opts ...Option) options {
@@ -113,6 +118,24 @@ func CaptureFile(f string) Option {
 func ScreenshotSize(s string) Option {
 	return func(o *options) {
 		o.screenshotSize = s
+	}
+}
+
+func TunnelSourcePort(p int) Option {
+	return func(o *options) {
+		o.srcPort = p
+	}
+}
+
+func TunnelDestinationPort(p int) Option {
+	return func(o *options) {
+		o.dstPort = p
+	}
+}
+
+func TunnelDestinationHost(h string) Option {
+	return func(o *options) {
+		o.dstHost = h
 	}
 }
 

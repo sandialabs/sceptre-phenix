@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"phenix/types"
-	ifaces "phenix/types/interfaces"
 	"phenix/util/notes"
 	"phenix/util/plog"
 	"phenix/util/pubsub"
 	"phenix/util/shell"
+
+	ifaces "phenix/types/interfaces"
 )
 
 // Action represents the different experiment lifecycle hooks.
@@ -21,9 +22,11 @@ type Action string
 // AppFactory is a function that returns a new app struct.
 type AppFactory func() App
 
-type Publication struct {
+type TriggerPublication struct {
 	Experiment string
+	Verb       string
 	App        string
+	Resource   string
 	State      string
 	Error      error
 }
@@ -178,7 +181,7 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 	// Publish triggered app events so web broker can propogate the publish out to
 	// web clients. This was initially setup to help convey SOH status in the UI.
 	publish := func(app, state string, err error) {
-		pubsub.Publish("trigger-app", Publication{
+		pubsub.Publish("trigger-app", TriggerPublication{
 			Experiment: exp.Metadata.Name,
 			App:        app,
 			State:      state,
@@ -400,14 +403,21 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 								plog.Error("[✗] error updating store with experiment", "exp", exp.Metadata.Name, "err", err)
 							}
 
-							pubsub.Publish("trigger-app", Publication{Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "start"})
+							pubsub.Publish("trigger-app", TriggerPublication{
+								Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "start",
+							})
 
 							if err := a.Running(ctx, exp); err != nil {
-								pubsub.Publish("trigger-app", Publication{Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "error", Error: err})
+								pubsub.Publish("trigger-app", TriggerPublication{
+									Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "error", Error: err,
+								})
+
 								plog.Error("[✗] error periodically running app", "app", app.Name(), "err", err)
 							}
 
-							pubsub.Publish("trigger-app", Publication{Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "success"})
+							pubsub.Publish("trigger-app", TriggerPublication{
+								Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "success",
+							})
 
 							exp.Status.SetAppRunning(app.Name(), false)
 

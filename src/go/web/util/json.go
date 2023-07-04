@@ -1,5 +1,5 @@
 package util
 
-func WithRoot(key string, obj interface{}) map[string]interface{} {
-	return map[string]interface{}{key: obj}
+func WithRoot(key string, obj any) map[string]any {
+	return map[string]any{key: obj}
 }

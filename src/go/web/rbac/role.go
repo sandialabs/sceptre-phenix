@@ -8,6 +8,7 @@ import (
 
 	"phenix/api/config"
 	"phenix/store"
+
 	v1 "phenix/types/version/v1"
 
 	"github.com/activeshadow/structs"
@@ -61,11 +62,11 @@ func RoleFromConfig(name string) (*Role, error) {
 			if err := mapstructure.Decode(roleConfig.Spec, &role); err != nil {
 				return nil, fmt.Errorf("decoding role: %w", err)
 			}
-		
+
 			return &Role{Spec: &role, config: &roleConfig}, nil
 		}
 	}
-	return nil, fmt.Errorf("could not find role in store: %w", err)	
+	return nil, fmt.Errorf("could not find role in store: %w", err)
 }
 
 func (this Role) Save() error {

@@ -1,7 +1,7 @@
 <template>
   <div class="content">
     <b-modal :active.sync="expModal.active" :on-cancel="resetExpModal" has-modal-card>
-      <div class="modal-card" style="width:30em">
+      <div class="modal-card" style="width:35em">
         <header class="modal-card-head">
           <p class="modal-card-title">{{ expModal.vm.name ? expModal.vm.name : "unknown" }}</p>
         </header>
@@ -12,7 +12,7 @@
           <p>Memory: {{ expModal.vm.ram | ram }}</p>
           <p>Disk: {{ expModal.vm.disk }}</p>
           <p>Uptime: {{ expModal.vm.uptime | uptime }}</p>
-          <p>Delay: {{ expModal.vm.delayed_start }}</p>
+          <p v-if="expModal.vm.delayed_start">Delay: {{ expModal.vm.delayed_start }}</p>
           <p>Network(s): {{ expModal.vm.networks | stringify | lowercase }}</p>
           <p>Taps: {{ expModal.vm.taps | stringify | lowercase }}</p>
           <p>CC Active: {{ expModal.vm.ccActive }}</p>
@@ -21,11 +21,21 @@
             <br>
             <p v-for="( snap, index ) in expModal.snapshots" :key="index">
               <b-tooltip label="restore this snapshot" type="is-light is-right">
-                <b-icon icon="play-circle"  style="color:#686868" @click.native="restoreSnapshot( expModal.vm.name, snap )"></b-icon>
+                <b-icon icon="play-circle" style="color:#686868" @click.native="restoreSnapshot( expModal.vm.name, snap )"></b-icon>
               </b-tooltip>
               {{ snap }}
             </p>
           </p>          
+          <p v-if="expModal.forwards.length !== 0">
+            Port Forwards:
+            <br>
+            <p v-for="( forward, index ) in expModal.forwards" :key="index">
+              {{ forward.desc }} ({{ forward.owner }})
+              <b-tooltip v-if="forward.canDelete" label="delete this port forward" type="is-light is-right">
+                <b-icon icon="trash" size="is-small" style="color:#686868" @click.native="deletePortForward(expModal.vm.name, forward)"></b-icon>
+              </b-tooltip>
+            </p>
+          </p>
       </section>
       <footer class="modal-card-foot buttons is-right">
         <div v-if="roleAllowed('vms/start', 'update', expModal.fullName) && !showModifyStateBar">
@@ -46,6 +56,13 @@
           &nbsp;
           <b-tooltip :label="!expModal.vm.ccActive ? 'mount vm (requires active cc)' : 'mount vm'" type="is-light">
             <b-button class="button is-light" icon-left="hdd" @click="showMountDialog(expModal.vm.name)" :disabled="!expModal.vm.ccActive">
+            </b-button>
+          </b-tooltip>
+        </div>
+        <div v-if="roleAllowed('vms/forwards', 'create', expModal.fullName) && !showModifyStateBar && expModal.vm.running">
+          &nbsp;
+          <b-tooltip label="create port forward" type="is-light">
+            <b-button class="button is-light" icon-left="arrow-right" @click="showPortForwardDialog(expModal.vm.name)" :disabled="!expModal.vm.ccActive">
             </b-button>
           </b-tooltip>
         </div>
@@ -121,6 +138,27 @@
             </b-button>
           </b-tooltip>
         </div>
+      </footer>
+    </div>
+  </b-modal>
+  <b-modal :active.sync="portForwardModal.active" :on-cancel="resetPortForwardModal" has-modal-card>
+    <div class="modal-card" style="width:30em">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Create New Port Forward</p>
+      </header>
+      <section class="modal-card-body">
+        <b-field label="Source Port">
+          <b-input type="text" v-model="portForwardModal.srcPort"></b-input>
+        </b-field>
+        <b-field label="Destination Host">
+          <b-input type="text" v-model="portForwardModal.dstHost"></b-input>
+        </b-field>
+        <b-field label="Destination Port">
+          <b-input type="text" v-model="portForwardModal.dstPort"></b-input>
+        </b-field>
+      </section>
+      <footer class="modal-card-foot buttons is-right">
+        <button class="button is-success" @click="createPortForward()">Create</button>
       </footer>
     </div>
   </b-modal>
@@ -1402,7 +1440,7 @@
         return false;
       },
 
-      async updateExperiment  () {
+      async updateExperiment () {
         try {
           let resp  = await this.$http.get('experiments/' + this.$route.params.id);
           let state = await resp.json();
@@ -1543,60 +1581,72 @@
         this.updateFiles();
       },
 
-      getInfo ( vm  ) {
+      async fetchVMDetails(vm) {
+        let url  = `experiments/${this.$route.params.id}/vms/${vm.name}`;
+        let resp = await this.$http.get(url);
+
+        return await resp.json();
+      },
+
+      async fetchVMSnapshots(vm) {
+        let url  = `experiments/${this.$route.params.id}/vms/${vm.name}/snapshots`;
+        let resp = await this.$http.get(url);
+
+        return await resp.json();
+      },
+
+      async fetchVMForwards(vm) {
+        let url  = `experiments/${this.$route.params.id}/vms/${vm.name}/forwards`;
+        let resp = await this.$http.get(url);
+
+        return await resp.json();
+      },
+
+      async getInfo (vm) {
         if(vm.busy){
           this.$buefy.dialog.alert({
             title: 'VM Busy',
             message: ['VM',vm.name,'is currently busy and not available for another action'].join(' '),
             confirmText: 'Ok'
           })       
+
           return
         }
-        
-          this.$http.get(
-            'experiments/' + this.$route.params.id + '/vms/' + vm.name + '/snapshots'
-          ).then(
-            response => { 
-              return  response.json().then(
-                json => {
-                  if  ( json.snapshots.length > 0 ) {
-                    this.expModal.snapshots = json.snapshots;
-                  }
-                }
-              )
-            }, err => {
-              this.errorNotification(err);
-              this.isWaiting = false;
-            }
-          );
 
-          // get updated details for this vm
-          this.$http.get(
-            'experiments/' + this.$route.params.id + '/vms/' + vm.name
-          ).then(
-            response => { 
-              return  response.json().then(
-                json => {
-                  this.expModal.vm = json;
-                }
-              )
-            }, response => {
-              this.$buefy.toast.open({
-                message: 'Getting updated info for the ' + vm.name + ' VM failed with ' + response.status + ' status.',
-                type: 'is-danger',
-                duration: 4000
-              });
+        try {
+          const [details, snapshots, forwards] = await Promise.all([
+            this.fetchVMDetails(vm),
+            this.fetchVMSnapshots(vm),
+            this.fetchVMForwards(vm),
+          ])
 
-              this.isWaiting  = false;
+          this.expModal.vm = details;
+
+          if (snapshots.snapshots && snapshots.snapshots.length > 0) {
+            this.expModal.snapshots = snapshots.snapshots;
+          }
+
+          this.expModal.forwards = [];
+
+          if (forwards.listeners) {
+            for (let i = 0; i < forwards.listeners.length; i++) {
+              let l = forwards.listeners[i];
+
+              l.desc = `${l.srcPort} --> ${l.dstHost}:${l.dstPort}`;
+              l.canDelete = this.$store.getters.username === l.owner;
+
+              this.expModal.forwards.push(l);
             }
-          );
-          this.expModal.vm  = vm;
+          }
+
           this.expModal.fullName = this.experiment.name + '/' + vm.name;
-          this.expModal.active  = true;
-        
+          this.expModal.active   = true;
+        } catch (err) {
+          this.errorNotification(err);
+        }
       },
 
-      snapshots ( vm  ) {
+      snapshots ( vm ) {
         this.$http.get(
           'experiments/'  + this.$route.params.id + '/vms/' + vm.name + '/snapshots'
         ).then(
@@ -1615,7 +1665,7 @@
         );
       },
 
-      captureSnapshot ( name  ) {
+      captureSnapshot ( name ) {
         if (! Array.isArray(name)) {
           name  = [name];
         }
@@ -2658,7 +2708,8 @@
           active: false,
           fullName: '',
           vm: [],
-          snapshots:  false
+          snapshots: false,
+          forwards: []
         }
         this.showModifyStateBar = false;
       },
@@ -2880,6 +2931,7 @@
 
       showMountDialog(vm) {
         this.resetExpModal()
+
         this.$buefy.modal.open({
           parent:       this,
           component:    VmMountBrowserModal,
@@ -2888,6 +2940,77 @@
           canCancel:    [],
           props:        {"targetVm": vm, "targetExp": this.$route.params.id}
         })
+      },
+
+      showPortForwardDialog(vm) {
+        this.portForwardModal.vmName = vm;
+        this.portForwardModal.active = true;
+      },
+
+      resetPortForwardModal() {
+        this.portForwardModal = {
+          active:  false,
+          vmName:  null,
+          srcPort: null,
+          dstHost: '127.0.0.1',
+          dstPort: null
+        }
+      },
+
+      async createPortForward() {
+        let url    = `experiments/${this.$route.params.id}/vms/${this.portForwardModal.vmName}/forwards`;
+        let params = `?src=${this.portForwardModal.srcPort}&host=${this.portForwardModal.dstHost}&dst=${this.portForwardModal.dstPort}`
+
+        try {
+          await this.$http.post(url + params);
+
+          let resp = await this.$http.get(url);
+          let json = await resp.json();
+
+          this.expModal.forwards = [];
+
+          if (json.listeners) {
+            for (let i = 0; i < json.listeners.length; i++) {
+              let l = json.listeners[i];
+
+              l.desc = `${l.srcPort} --> ${l.dstHost}:${l.dstPort}`;
+              l.canDelete = this.$store.getters.username === l.owner;
+
+              this.expModal.forwards.push(l);
+            }
+          }
+        } catch (err) {
+          this.errorNotification(err);
+        } finally {
+          this.resetPortForwardModal();
+        }
+      },
+
+      async deletePortForward(vm, forward) {
+        let url    = `experiments/${this.$route.params.id}/vms/${vm}/forwards`;
+        let params = `?host=${forward.dstHost}&dst=${forward.dstPort}`
+
+        try {
+          await this.$http.delete(url + params);
+
+          let resp = await this.$http.get(url);
+          let json = await resp.json();
+
+          this.expModal.forwards = [];
+
+          if (json.listeners) {
+            for (let i = 0; i < json.listeners.length; i++) {
+              let l = json.listeners[i];
+
+              l.desc = `${l.srcPort} --> ${l.dstHost}:${l.dstPort}`;
+              l.canDelete = this.$store.getters.username === l.owner;
+
+              this.expModal.forwards.push(l);
+            }
+          }
+        } catch (err) {
+          this.errorNotification(err);
+        }
       }
     },
     
@@ -2923,7 +3046,15 @@
           active: false,
           vm: [],
           fullName: '',
-          snapshots:  false
+          snapshots: false,
+          forwards: []
+        },
+        portForwardModal: {
+          active:  false,
+          vmName:  null,
+          srcPort: null,
+          dstHost: '127.0.0.1',
+          dstPort: null
         },
         vlanModal: {
           active: false,

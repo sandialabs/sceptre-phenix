@@ -211,12 +211,10 @@ func (this User) DeleteToken(token string) error {
 }
 
 func (this User) ValidateToken(token string) error {
-	for enc := range this.Spec.Tokens {
-		t, _ := base64.StdEncoding.DecodeString(enc)
+	enc := base64.StdEncoding.EncodeToString([]byte(token))
 
-		if token == string(t) {
-			return nil
-		}
+	if _, ok := this.Spec.Tokens[enc]; ok {
+		return nil
 	}
 
 	return fmt.Errorf("token not found for user")

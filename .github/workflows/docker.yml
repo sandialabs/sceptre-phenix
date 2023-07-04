@@ -30,7 +30,7 @@ jobs:
           context: .
           file: docker/Dockerfile
           build-args: |
-            MM_MIN_REV=2bd71c0
+            MM_MIN_REV=2b2b341
             PHENIX_COMMIT=${{ env.sha }}
             PHENIX_TAG=${{ env.branch }}
             APPS_REPO=${{ github.event_name == 'repository_dispatch' && github.event.client_payload.repo || 'sandialabs/sceptre-phenix-apps' }}

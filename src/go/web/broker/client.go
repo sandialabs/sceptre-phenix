@@ -17,6 +17,8 @@ import (
 	"phenix/web/rbac"
 	"phenix/web/util"
 
+	bt "phenix/web/broker/brokertypes"
+
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -129,7 +131,7 @@ func (this *Client) read() {
 				return
 			}
 
-			var req Request
+			var req bt.Request
 			if err := json.Unmarshal(msg, &req); err != nil {
 				plog.Error("cannot unmarshal request JSON", "err", err)
 				continue
@@ -260,8 +262,8 @@ func (this *Client) read() {
 				continue
 			}
 
-			this.publish <- Publish{
-				Resource: NewResource("experiment/vms", expName, "list"),
+			this.publish <- bt.Publish{
+				Resource: bt.NewResource("experiment/vms", expName, "list"),
 				Result:   body,
 			}
 		}
@@ -386,8 +388,8 @@ func (this *Client) screenshots() {
 						continue
 					}
 
-					this.publish <- Publish{
-						Resource: NewResource("experiment/vm/screenshot", fmt.Sprintf("%s/%s", exp, vm), "update"),
+					this.publish <- bt.Publish{
+						Resource: bt.NewResource("experiment/vm/screenshot", fmt.Sprintf("%s/%s", exp, vm), "update"),
 						Result:   marshalled,
 					}
 				}

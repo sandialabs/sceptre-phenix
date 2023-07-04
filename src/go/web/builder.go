@@ -25,6 +25,8 @@ import (
 	"phenix/web/util"
 	"phenix/web/weberror"
 
+	bt "phenix/web/broker/brokertypes"
+
 	assetfs "github.com/elazarl/go-bindata-assetfs"
 	"github.com/gorilla/mux"
 )
@@ -117,8 +119,8 @@ func CreateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	broker.Broadcast(
-		broker.NewRequestPolicy("configs", "list", config.FullName()),
-		broker.NewResource("config", config.FullName(), "create"),
+		bt.NewRequestPolicy("configs", "list", config.FullName()),
+		bt.NewResource("config", config.FullName(), "create"),
 		body,
 	)
 
@@ -193,8 +195,8 @@ func CreateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 	body, _ = json.Marshal(config)
 
 	broker.Broadcast(
-		broker.NewRequestPolicy("configs", "list", config.FullName()),
-		broker.NewResource("config", config.FullName(), "create"),
+		bt.NewRequestPolicy("configs", "list", config.FullName()),
+		bt.NewResource("config", config.FullName(), "create"),
 		body,
 	)
 
@@ -207,8 +209,8 @@ func CreateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	broker.Broadcast(
-		broker.NewRequestPolicy("experiments", "get", req.Name),
-		broker.NewResource("experiment", req.Name, "create"),
+		bt.NewRequestPolicy("experiments", "get", req.Name),
+		bt.NewResource("experiment", req.Name, "create"),
 		body,
 	)
 
@@ -282,8 +284,8 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	broker.Broadcast(
-		broker.NewRequestPolicy("configs", "list", topo.FullName()),
-		broker.NewResource("config", topo.FullName(), "update"),
+		bt.NewRequestPolicy("configs", "list", topo.FullName()),
+		bt.NewResource("config", topo.FullName(), "update"),
 		body,
 	)
 
@@ -416,8 +418,8 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	broker.Broadcast(
-		broker.NewRequestPolicy("configs", "list", config.FullName()),
-		broker.NewResource("config", config.FullName(), action),
+		bt.NewRequestPolicy("configs", "list", config.FullName()),
+		bt.NewResource("config", config.FullName(), action),
 		body,
 	)
 
@@ -430,8 +432,8 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	broker.Broadcast(
-		broker.NewRequestPolicy("experiments", "get", req.Name),
-		broker.NewResource("experiment", req.Name, action),
+		bt.NewRequestPolicy("experiments", "get", req.Name),
+		bt.NewResource("experiment", req.Name, action),
 		body,
 	)
 

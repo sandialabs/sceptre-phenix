@@ -9,6 +9,7 @@ import (
 
 	"phenix/util/plog"
 	"phenix/web/broker"
+	"phenix/web/forward"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/scorch"
@@ -92,6 +93,11 @@ func Start(opts ...ServerOption) error {
 			AssetDir:  AssetDir,
 			AssetInfo: AssetInfo,
 		}
+	}
+
+	if o.featured("tunneler-download") {
+		plog.Info("Serving phēnix tunneler downloads")
+		router.HandleFunc("/downloads/tunneler/{name}", forward.GetTunneler).Methods("GET")
 	}
 
 	router.HandleFunc("/features", GetFeatures).Methods("GET")
@@ -195,6 +201,11 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/experiments/{exp}/vms/{name}/snapshots/{snapshot}", RestoreVM).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/commit", CommitVM).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/memorySnapshot", CreateVMMemorySnapshot).Methods("POST", "OPTIONS")
+
+	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards", forward.GetPortForwards).Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards", forward.CreatePortForward).Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards", forward.DeletePortForward).Methods("DELETE", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards/{host}/{port}/ws", forward.GetPortForwardWebSocket).Methods("GET", "OPTIONS")
 
 	if o.featured("vm-mount") {
 		api.HandleFunc("/experiments/{exp}/vms/{name}/mount", MountVM).Methods("POST", "OPTIONS")
