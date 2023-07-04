@@ -1,4 +1,4 @@
-ARG PHENIX_REPO=sandia-minimega/phenix
+ARG PHENIX_REPO=sandialabs/sceptre-phenix
 ARG PHENIX_TAG=main
 
 FROM ghcr.io/${PHENIX_REPO}/phenix:${PHENIX_TAG}

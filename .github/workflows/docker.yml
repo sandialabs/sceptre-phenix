@@ -33,7 +33,7 @@ jobs:
             MM_MIN_REV=2bd71c0
             PHENIX_COMMIT=${{ env.sha }}
             PHENIX_TAG=${{ env.branch }}
-            APPS_REPO=${{ github.event_name == 'repository_dispatch' && github.event.client_payload.repo || 'sandia-minimega/phenix-apps' }}
+            APPS_REPO=${{ github.event_name == 'repository_dispatch' && github.event.client_payload.repo || 'sandialabs/sceptre-phenix-apps' }}
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/phenix:${{ env.sha }}

@@ -5,7 +5,7 @@ info:
   title: phenix
   termsOfService: http://swagger.io/terms/
   contact:
-    url: https://github.com/sandia-minimega/phenix
+    url: https://github.com/sandialabs/sceptre-phenix
   license:
     name: GNU General Public License v3.0
 tags:
