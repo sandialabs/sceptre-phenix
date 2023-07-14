@@ -16,6 +16,7 @@ import (
 	"phenix/api/scorch/scorchexe"
 	"phenix/api/scorch/scorchmd"
 	"phenix/app"
+	"phenix/store"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/util"
@@ -159,7 +160,7 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 		this.stopFilebeat(ctx, cmd, port)
 	}
 
-	if err := this.recordInfo(runID, runDir, exp.Metadata.Name, start); err != nil {
+	if err := this.recordInfo(runID, runDir, exp.Metadata, start); err != nil {
 		errors = multierror.Append(errors, err)
 	}
 
@@ -333,7 +334,7 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 	}
 }
 
-func (this Scorch) recordInfo(runID int, runDir, name string, startTime time.Time) error {
+func (this Scorch) recordInfo(runID int, runDir string, md store.ConfigMetadata, startTime time.Time) error {
 	c := mmcli.NewCommand()
 	c.Command = "version"
 
@@ -344,7 +345,7 @@ func (this Scorch) recordInfo(runID int, runDir, name string, startTime time.Tim
 
 	info := []string{
 		"Experiment Name: %s",
-		"Experiment Commit Hash: %s",
+		"Experiment Tags: %s",
 		"Scorch Run Name: %s",
 		"Start Time: %s",
 		"End Time: %s",
@@ -354,9 +355,13 @@ func (this Scorch) recordInfo(runID int, runDir, name string, startTime time.Tim
 
 	body := fmt.Sprintf(
 		strings.Join(info, "\n"),
-		name, "TODO", this.md.RunName(runID),
-		startTime.Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339),
-		version.Commit, version.Tag, version.Date, mmVersion,
+		md.Name,
+		md.Annotations["phenix.workflow/tags"],
+		this.md.RunName(runID),
+		startTime.Format(time.RFC3339),
+		time.Now().UTC().Format(time.RFC3339),
+		version.Commit, version.Tag, version.Date,
+		mmVersion,
 	)
 
 	fileName := fmt.Sprintf("info-scorch-run-%d_%s.txt", runID, startTime.Format(time.RFC3339))

@@ -71,6 +71,9 @@ func (this Experiment) WriteToStore(statusOnly bool) error {
 		return fmt.Errorf("getting experiment %s from store: %w", name, err)
 	}
 
+	// limit metadata updates to annotations so name doesn't accidentally get changed
+	c.Metadata.Annotations = this.Metadata.Annotations
+
 	if !statusOnly {
 		c.Spec = structs.MapDefaultCase(this.Spec, structs.CASESNAKE)
 	}

@@ -46,6 +46,9 @@ repository named `.phenix.yml`) should be applied. Applying the phenix workflow
 config file will trigger existing experiments to be updated and restarted,
 depending on settings within the workflow config file.
 
+Optional tags can be passed as URL querries when the workflow config is applied.
+These tags are stored as a string `key1=value1,key2=value2`.
+
 ### Add/Update Topology or Scenario Config
 
 ```
@@ -59,7 +62,7 @@ curl -XPOST -H "Content-Type: application/x-yaml" \
 ```
 curl -XPOST -H "Content-Type: application/x-yaml" \
   --data-binary @{/path/to/config/file.yml} \
-  http://localhost:3000/api/v1/workflow/apply/{branch name}
+  http://localhost:3000/api/v1/workflow/apply/{branch name}[?tag=key1=value1&tag=key2=value2]
 ```
 
 ### phenix Workflow Config File Documentation
