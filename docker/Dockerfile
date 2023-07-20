@@ -84,7 +84,7 @@ RUN apt update \
 ENV LANG   en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
 
-RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.1/vmdb2 -P /usr/bin/ \
+RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.1/vmdb2 -O /usr/bin/vmdb2 \
   && chmod +x /usr/bin/vmdb2
 
 # do this before installing phenix-apps so minimega package is latest version
