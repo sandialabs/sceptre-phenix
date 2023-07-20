@@ -1048,7 +1048,7 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 
 	snap = fmt.Sprintf("%s/images/%s/tmp/%s.qc2", common.PhenixBase, expName, vmName)
 
-	shell := exec.Command("qemu-img", "rebase", "-b", out, snap)
+	shell := exec.Command("qemu-img", "rebase", "-f", "qcow2", "-b", out, "-F", "qcow2", snap)
 
 	res, err := shell.CombinedOutput()
 	if err != nil {
