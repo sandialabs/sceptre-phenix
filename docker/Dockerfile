@@ -7,6 +7,16 @@ FROM ghcr.io/activeshadow/minimega/minimega:${MM_MIN_REV} AS minimega
 
 FROM node:14.21.3 AS jsbuilder
 
+ARG INSTALL_CERTS=
+RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
+  IFS=',' read -r -a arr <<< $INSTALL_CERTS; \
+  for i in ${!arr[@]}; do \
+    wget ${arr[$i]} -e use_proxy=no \
+      -O /usr/local/share/ca-certificates/custom$i.crt; \
+  done && \
+  update-ca-certificates; \ 
+  yarn config set cafile /etc/ssl/certs/ca-certificates.crt; fi"]
+
 RUN npm install -g @vue/cli redoc-cli
 
 COPY ./src/js /phenix/src/js
@@ -83,6 +93,16 @@ RUN apt update \
 
 ENV LANG   en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
+
+ARG INSTALL_CERTS=
+RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
+  IFS=',' read -r -a arr <<< $INSTALL_CERTS; \
+  for i in ${!arr[@]}; do \
+    wget ${arr[$i]} -e use_proxy=no \
+      -O /usr/local/share/ca-certificates/custom$i.crt; \
+  done && \
+  update-ca-certificates; \
+  fi"]
 
 RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.1/vmdb2 -O /usr/bin/vmdb2 \
   && chmod +x /usr/bin/vmdb2
