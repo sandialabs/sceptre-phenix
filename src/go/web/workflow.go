@@ -370,7 +370,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	var (
-		name      = strings.ToLower(fmt.Sprintf("%s/%s", cfg.Kind, cfg.Metadata.Name))
+		name      = fmt.Sprintf("%s/%s", cfg.Kind, cfg.Metadata.Name)
 		tester, _ = store.NewConfig(name)
 		exists    = true
 	)
