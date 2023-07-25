@@ -27,6 +27,14 @@ import (
 	"golang.org/x/net/websocket"
 )
 
+func init() {
+	experiment.RegisterHook("stop", func(stage, name string) {
+		for _, cancel := range scorchexe.GetExperimentCancelers(name) {
+			cancel()
+		}
+	})
+}
+
 type termClient struct {
 	id   string
 	ws   *websocket.Conn
@@ -47,8 +55,6 @@ var (
 	history = make(map[int]bytes.Buffer)
 
 	termClientIDs = make(map[string]chan struct{})
-
-	cancelers = make(map[string]context.CancelFunc)
 
 	mu sync.Mutex
 )
@@ -588,32 +594,18 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to get experiment %s from store", name)
 	}
 
-	key := fmt.Sprintf("%s/%d", name, run)
-
-	// protect `cancelers` map
-	mu.Lock()
-	defer mu.Unlock()
-
-	// TODO (btr): we some how got stuck here at least once where a scorch run was
-	// started, then the experiment was killed, but the scorch run key stayed in
-	// the cancelers map. I'm still not entirely sure how this could happen, but
-	// if the mutex lock isn't blocked then we could do something like trigger
-	// reaping of scorch runs for experiments that have been stopped. We could
-	// also base the cancel context for a scorch run off the cancel context for
-	// the experiment, but in order to do this we'll need to refactor code to
-	// avoid an import loop.
-
-	if _, ok := cancelers[key]; ok {
+	if scorchexe.HasCanceler(name, run) {
 		return weberror.NewWebError(nil, "Scorch run already executing for experiment %s", name)
 	}
 
 	// We don't want to use the HTTP request's context here.
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx = scorchexe.AddCanceler(context.Background(), name, run)
 	ctx = app.SetContextTriggerUI(ctx)
-	cancelers[key] = cancel
 
 	go func() {
 		log.Debug("executing Scorch run %d for experiment %s", run, name)
+
+		key := fmt.Sprintf("%s/%d", name, run)
 
 		broker.Broadcast(
 			broker.NewRequestPolicy("experiments/trigger", "create", name),
@@ -641,15 +633,12 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 			)
 		}
 
-		// protect `cancelers` map
-		mu.Lock()
-		defer mu.Unlock()
-
 		// Ensure context is canceled to avoid leakage. It's okay to call the
 		// `cancel` function multiple times. It's a no-op after the first time it's
 		// called.
-		cancel()
-		delete(cancelers, key)
+		if cancel := scorchexe.GetCanceler(name, run); cancel != nil {
+			cancel()
+		}
 	}()
 
 	w.WriteHeader(http.StatusNoContent)
@@ -679,17 +668,12 @@ func CancelPipeline(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	key := fmt.Sprintf("%s/%d", name, run)
-
-	// protect `cancelers` map
-	mu.Lock()
-	defer mu.Unlock()
-
-	if cancel, ok := cancelers[key]; ok {
+	if cancel := scorchexe.GetCanceler(name, run); cancel != nil {
 		log.Debug("canceling Scorch run %d for experiment %s", run, name)
 
 		cancel()
-		delete(cancelers, key)
+
+		key := fmt.Sprintf("%s/%d", name, run)
 
 		broker.Broadcast(
 			broker.NewRequestPolicy("experiments/trigger", "delete", name),

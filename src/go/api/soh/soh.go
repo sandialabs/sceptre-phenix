@@ -67,26 +67,14 @@ func Get(expName, statusFilter string) (*Network, error) {
 	// Internally use to track connections, VM's state, and whether or not the
 	// VM is in minimega
 	var (
-		interfaces      = make(map[string]int)
-		ifaceCount      = len(vms) + 1
-		edgeCount       int
-		runningCount    int
-		notRunningCount int
-		notDeployCount  int
-		notBootCount    int
+		interfaces = make(map[string]int)
+		ifaceCount = len(vms) + 1
+		edgeCount  int
 	)
 
 	// Traverse the experiment VMs and create topology
 	for _, vm := range vms {
 		var vmState string
-
-		if vm.Running {
-			vmState = "running"
-			runningCount++
-		} else {
-			vmState = "notrunning"
-			notRunningCount++
-		}
 
 		/*
 			An empty `vm.State` means the VM was not found in minimega. If the VM
@@ -94,12 +82,18 @@ func Get(expName, statusFilter string) (*Network, error) {
 			it's likely that someone has flushed it since deployment.
 		*/
 		if vm.State == "" {
-			if vm.DoNotBoot == true {
+			if vm.DoNotBoot {
 				vmState = "notboot"
-				notBootCount++
 			} else {
 				vmState = "notdeploy"
-				notDeployCount++
+			}
+		} else if vm.State == "EXTERNAL" {
+			vmState = "external"
+		} else {
+			if vm.Running {
+				vmState = "running"
+			} else {
+				vmState = "notrunning"
 			}
 		}
 
@@ -113,6 +107,10 @@ func Get(expName, statusFilter string) (*Network, error) {
 			Image:  vm.OSType,
 			Fonts:  font,
 			Status: vmState,
+		}
+
+		if vm.Type == "Router" || vm.Type == "Firewall" {
+			node.Image = vm.Type
 		}
 
 		if soh, ok := status[vm.Name]; ok {
@@ -139,7 +137,7 @@ func Get(expName, statusFilter string) (*Network, error) {
 				node := Node{
 					ID:     ifaceCount,
 					Label:  vmIface,
-					Image:  "Switch",
+					Image:  "switch",
 					Fonts:  font,
 					Status: "ignore",
 				}
@@ -149,7 +147,7 @@ func Get(expName, statusFilter string) (*Network, error) {
 			}
 
 			// If already exists get interface's id and connect the node
-			id, _ := interfaces[vmIface]
+			id := interfaces[vmIface]
 
 			// create and edge for the node and interface
 			edge := Edge{
@@ -163,12 +161,6 @@ func Get(expName, statusFilter string) (*Network, error) {
 			edgeCount++
 		}
 	}
-
-	network.RunningCount = runningCount
-	network.NotRunningCount = notRunningCount
-	network.NotBootCount = notBootCount
-	network.NotDeployCount = notDeployCount
-	network.TotalCount = runningCount + notRunningCount + notBootCount + notDeployCount
 
 	return network, err
 }

@@ -56,9 +56,6 @@ ARG PHENIX_TAG
 
 RUN COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} make bin/phenix
 
-RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.1/vmdb2 -P bin/ \
-  && chmod +x bin/vmdb2
-
 ARG APPS_REPO=sandialabs/sceptre-phenix-apps
 ARG APPS_BRANCH=main
 
@@ -69,7 +66,7 @@ WORKDIR /phenix-apps/src/go
 RUN CGO_ENABLED=0 GOOS=linux go install -trimpath ./...
 
 
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -87,6 +84,9 @@ RUN apt update \
 ENV LANG   en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
 
+RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.1/vmdb2 -O /usr/bin/vmdb2 \
+  && chmod +x /usr/bin/vmdb2
+
 # do this before installing phenix-apps so minimega package is latest version
 COPY --from=minimega /opt/minimega/lib /tmp/minimega
 RUN  python3 -m pip install /tmp/minimega
@@ -99,20 +99,19 @@ RUN python3 -m pip install \
   --trusted-host files.pythonhosted.org \
   "git+https://github.com/${APPS_REPO}.git@${APPS_BRANCH}#egg=phenix-apps&subdirectory=src/python"
 
-# used by scorch
-RUN wget -O glow.tgz https://github.com/charmbracelet/glow/releases/download/v1.5.0/glow_1.5.0_Linux_x86_64.tar.gz \
-  && tar -xzf glow.tgz glow && mv glow /usr/local/bin/glow && rm glow.tgz
-
 # needed to build Kali images with phenix
 RUN wget -O kali.deb https://http.kali.org/kali/pool/main/k/kali-archive-keyring/kali-archive-keyring_2022.1_all.deb \
 	&& dpkg -i kali.deb && rm kali.deb
+
+# used by scorch
+RUN wget -O glow.tgz https://github.com/charmbracelet/glow/releases/download/v1.5.0/glow_1.5.0_Linux_x86_64.tar.gz \
+  && tar -xzf glow.tgz glow && mv glow /usr/local/bin/glow && rm glow.tgz
 
 # used by scorch
 RUN wget -O filebeat.deb https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.17.5-amd64.deb \
 	&& dpkg -i filebeat.deb && rm filebeat.deb
 
 COPY --from=gobuilder /phenix/bin/phenix   /usr/local/bin/phenix
-COPY --from=gobuilder /phenix/bin/vmdb2    /usr/bin/vmdb2
 COPY --from=gobuilder /go/bin/phenix-app-* /usr/local/bin
 
 # Update GitHub workflow config to change the minimum version of minimega

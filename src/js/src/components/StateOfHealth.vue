@@ -3,13 +3,13 @@
     <b-modal :active.sync="detailsModal.active" :on-cancel="resetDetailsModal" has-modal-card full-screen>
       <div class="modal-card">
         <header class="modal-card-head">
-          <p class="modal-card-title">{{ detailsModal.vm }} VM Details</p>
+          <p class="modal-card-title">{{ detailsModal.vm }} Details</p>
         </header>
         <section class="modal-card-body">
           <template v-if="detailsModal.soh">
-            <p>The following state of health has been reported for the {{ detailsModal.vm }} VM.</p>
+            <p>The following state of health has been reported for {{ detailsModal.vm }}.</p>
             <br>
-            <div>
+            <div v-if="detailsModal.soh.cpuLoad">
               <p class="title is-5">CPU Load: {{ detailsModal.soh.cpuLoad }}</p>
             </div>
             <br>
@@ -37,6 +37,9 @@
                 default-sort="timestamp">
                 <b-table-column field="timestamp" label="Timestamp" sortable v-slot="props">
                   {{ props.row.timestamp }}
+                </b-table-column>
+                <b-table-column field="host" label="Source" sortable v-slot="props">
+                  {{ props.row.metadata.host }}
                 </b-table-column>
                 <b-table-column field="target" label="Target" sortable v-slot="props">
                   {{ props.row.metadata.target }}
@@ -112,11 +115,11 @@
             </div>
           </template>
           <template v-else>
-            <p>There is no state of health data available for the {{ detailsModal.vm }} VM.</p>
+            <p>There is no state of health data available for {{ detailsModal.vm }}.</p>
           </template>
         </section>
         <footer class="modal-card-foot buttons is-right">
-          <template v-if="detailsModal.status == 'running'">
+          <template v-if="detailsModal.status.toLowerCase() == 'running'">
             <a :href="vncLoc(detailsModal.vm)" target="_blank">
               <b-tooltip label="open vnc for a running vm" type="is-light is-left" :delay="800">
                 <b-button type="is-success">
@@ -231,7 +234,7 @@
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: #005493" />
+                  <b-icon icon="circle" style="color: black" />
                 </div>
                 <div class="column">
                   <span style="color: whitesmoke;">Not booted</span>
@@ -251,10 +254,10 @@
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: black" />
+                  <b-icon icon="circle" style="color: #005493" />
                 </div>
                 <div class="column">
-                  <span style="color: whitesmoke;">Experiment stopped</span>
+                  <span style="color: whitesmoke;">External</span>
                 </div>
               </div>
             </div>
@@ -487,7 +490,7 @@ export default {
     },
 
     updateNodeImage( node ) {
-      return "url(#" + node.image + ")";
+      return "url(#" + node.image.toLowerCase() + ")";
     },
 
     updateNodeBorder( node ) {
@@ -499,23 +502,28 @@ export default {
     },
 
     updateNodeColor( node ) {
+      const colors = {
+        "running":    "#4F8F00", // green
+        "notrunning": "#941100", // red
+        "notboot":    "black",
+        "notdeploy":  "#FFD479", // yellow
+        "external":   "#005493", // blue
+      }
+
+      if (node.status === "external") {
+        return colors[node.status];
+      }
+
       if ( !this.running ) {
-          if ( node.status == "ignore" ) {
-          return "url(#Switch)";
+          if ( node.status.toLowerCase() == "ignore" ) {
+          return "url(#switch)";
         }
 
         return;
       }
 
-      if ( node.status == "ignore" ) {
-        return "url(#Switch)";
-      }
-
-      const colors = {
-        "running":    "#4F8F00", // green
-        "notrunning": "#941100", // red
-        "notboot":    "#005493", // blue
-        "notdeploy":  "#FFD479", // yellow
+      if ( node.status.toLowerCase() == "ignore" ) {
+        return "url(#switch)";
       }
 
       return colors[ node.status ];
@@ -607,7 +615,7 @@ export default {
         .attr( "y", 0 );
 
       defs.append( "svg:pattern" )
-        .attr( "id", "Router" )
+        .attr( "id", "router" )
         .attr( "width", 50 )
         .attr( "height", 50 )
         .append( "svg:image" )
@@ -618,7 +626,7 @@ export default {
         .attr( "y", 0 );
 
       defs.append( "svg:pattern" )
-        .attr( "id", "Firewall" )
+        .attr( "id", "firewall" )
         .attr( "width", 50 )
         .attr( "height", 50 )
         .append( "svg:image" )
@@ -629,7 +637,7 @@ export default {
         .attr( "y", 0 );
 
       defs.append( "svg:pattern" )
-        .attr( "id", "Printer" )
+        .attr( "id", "printer" )
         .attr( "width", 50 )
         .attr( "height", 50 )
         .append( "svg:image" )
@@ -640,7 +648,7 @@ export default {
         .attr( "y", 0 );
 
       defs.append( "svg:pattern" )
-        .attr( "id", "Switch" )
+        .attr( "id", "switch" )
         .attr( "width", 50 )
         .attr( "height", 50 )
         .append( "svg:image" )
@@ -692,7 +700,7 @@ export default {
     },
 
     entered ( e, n ) {
-      if ( n.image == "Switch" ) {
+      if ( !n.image || n.image.toLowerCase() == "switch" ) {
         return;
       }
 
@@ -714,7 +722,11 @@ export default {
     },
 
     clicked ( e, n ) {
-      if ( n.status == 'notboot' ) {
+      if ( n.image.toLowerCase() == "switch" ) {
+        return;
+      }
+
+      if ( n.status.toLowerCase() == 'notboot' ) {
         this.detailsModal.active = true;
       } else {
         this.detailsModal.active = true;
@@ -868,6 +880,7 @@ export default {
       this.detailsModal = {
         active: false,
         vm: '',
+        status: '',
         soh: null
       }
     },

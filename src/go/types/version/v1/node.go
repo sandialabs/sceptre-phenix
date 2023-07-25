@@ -22,6 +22,7 @@ type Node struct {
 	OverridesF   map[string]string      `json:"overrides" yaml:"overrides" structs:"overrides" mapstructure:"overrides"`
 	DelayF       *Delay                 `json:"delay" yaml:"delay" structs:"delay" mapstructure:"delay"`
 	CommandsF    []string               `json:"commands" yaml:"commands" structs:"commands" mapstructure:"commands"`
+	ExternalF    *bool                  `json:"external" yaml:"external" structs:"external" mapstructure:"external"`
 }
 
 func (this Node) Annotations() map[string]interface{} {
@@ -76,6 +77,19 @@ func (this Node) Overrides() map[string]string {
 
 func (this Node) Commands() []string {
 	return this.CommandsF
+}
+
+func (this Node) External() bool {
+	// The topology schema uses the `external` key as a way to determine which of
+	// the two node schemas to apply to a configuration. The value is ignored, but
+	// the key must be provided in order to use the less stringent node schema.
+	// Here, if the key is provided, even if the value is false, we consider it to
+	// be an external node.
+	//
+	// NOTE: the `Node.validate` function should error out if external was
+	// intentionally set to false by a user.
+
+	return this.ExternalF != nil
 }
 
 func (this *Node) SetInjections(injections []ifaces.NodeInjection) {
@@ -245,19 +259,35 @@ type General struct {
 	DoNotBootF   *bool  `json:"do_not_boot" yaml:"do_not_boot" structs:"do_not_boot" mapstructure:"do_not_boot"`
 }
 
-func (this General) Hostname() string {
+func (this *General) Hostname() string {
+	if this == nil {
+		return ""
+	}
+
 	return this.HostnameF
 }
 
-func (this General) Description() string {
+func (this *General) Description() string {
+	if this == nil {
+		return ""
+	}
+
 	return this.DescriptionF
 }
 
-func (this General) VMType() string {
+func (this *General) VMType() string {
+	if this == nil {
+		return ""
+	}
+
 	return this.VMTypeF
 }
 
-func (this General) Snapshot() *bool {
+func (this *General) Snapshot() *bool {
+	if this == nil {
+		return nil
+	}
+
 	if this.SnapshotF == nil {
 		snapshot := false
 		return &snapshot
@@ -266,7 +296,11 @@ func (this General) Snapshot() *bool {
 	return this.SnapshotF
 }
 
-func (this General) DoNotBoot() *bool {
+func (this *General) DoNotBoot() *bool {
+	if this == nil {
+		return nil
+	}
+
 	if this.DoNotBootF == nil {
 		dnb := false
 		return &dnb
@@ -287,19 +321,35 @@ type Hardware struct {
 	DrivesF []*Drive `json:"drives" yaml:"drives" structs:"drives" mapstructure:"drives"`
 }
 
-func (this Hardware) CPU() string {
+func (this *Hardware) CPU() string {
+	if this == nil {
+		return ""
+	}
+
 	return this.CPUF
 }
 
-func (this Hardware) VCPU() int {
+func (this *Hardware) VCPU() int {
+	if this == nil {
+		return 0
+	}
+
 	return this.VCPUF
 }
 
-func (this Hardware) Memory() int {
+func (this *Hardware) Memory() int {
+	if this == nil {
+		return 0
+	}
+
 	return this.MemoryF
 }
 
-func (this Hardware) OSType() string {
+func (this *Hardware) OSType() string {
+	if this == nil {
+		return ""
+	}
+
 	return this.OSTypeF
 }
 
@@ -391,7 +441,23 @@ func (this Injection) Permissions() string {
 	return this.PermissionsF
 }
 
-func (this *Node) SetDefaults() {
+func (this Node) validate() error {
+	if this.ExternalF == nil {
+		return nil
+	}
+
+	if external := *this.ExternalF; !external {
+		return fmt.Errorf("the external key should not be included for internal nodes (even if set to false)")
+	}
+
+	return nil
+}
+
+func (this *Node) setDefaults() {
+	if this.External() {
+		return
+	}
+
 	if this.GeneralF.VMTypeF == "" {
 		this.GeneralF.VMTypeF = "kvm"
 	}

@@ -3,7 +3,7 @@
     <b-modal :active.sync="expModal.active" has-modal-card>
       <div class="modal-card" style="width:25em">
         <header class="modal-card-head">
-          <p class="modal-card-title">VM {{ expModal.vm.name ? expModal.vm.name : "unknown" }}</p>
+          <p class="modal-card-title">{{ expModal.vm.name ? expModal.vm.name : "unknown" }}</p>
         </header>
         <section class="modal-card-body">
           <p>Host: {{ expModal.vm.host }}</p>
@@ -164,7 +164,7 @@
                   </div>
                 </section>
               </template>
-              <b-table-column  field="multiselect" label="" >              
+              <b-table-column field="multiselect" label="" >              
                 <template v-slot:header="{ column }">
                   <b-tooltip label="Select/Unselect All" type="is-dark">
                   <b-checkbox @input="selectAllVMs" v-model="checkAll" type="is-primary"/>
@@ -172,12 +172,12 @@
                 </template>
                 <template v-slot:default="props">
                   <div>
-                    <b-checkbox v-model="selectedRows" :native-value=props.row.name type="is-primary"/>
+                    <b-checkbox :disabled="props.row.external" v-model="selectedRows" :native-value=props.row.name type="is-primary"/>
                   </div>
                 </template>                  
               </b-table-column>
-              <b-table-column field="name" label="VM" sortable v-slot="props">
-                <template v-if="roleAllowed('vms', 'get', experiment.name + '/' + props.row.name)">
+              <b-table-column field="name" label="Node" sortable v-slot="props">
+                <template v-if="!props.row.external && roleAllowed('vms', 'get', experiment.name + '/' + props.row.name)">
                   <b-tooltip label="get info on the vm" type="is-dark">
                     <div class="field">
                       <div @click="expModal.active = true; expModal.vm = props.row">
@@ -191,7 +191,7 @@
                 </template>
               </b-table-column>
               <b-table-column field="host" label="Host" width="200" sortable v-slot="props">
-                <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
+                <template v-if="!props.row.external && roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
                   <b-tooltip label="assign the vm to a specific host" type="is-dark">
                     <b-field>
                       <b-select :value="props.row.host" expanded @input="( value ) => assignHost( props.row.name, value )">
@@ -211,17 +211,20 @@
                     </b-field>
                   </b-tooltip>
                 </template>
+                <template v-else-if="props.row.external">
+                  EXTERNAL 
+                </template>
                 <template v-else>
                   {{ props.row.host }}
                 </template>
               </b-table-column>
               <b-table-column field="ipv4" label="IPv4" v-slot="props">
                 <div v-for="(ip,index) in props.row.ipv4" :key="index">
-                  {{ ip }}
+                  {{ ip || 'unknown' }}
                 </div>
               </b-table-column>
               <b-table-column field="cpus" label="CPUs" sortable centered v-slot="props">
-                <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
+                <template v-if="!props.row.external && roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
                   <b-tooltip label="menu for assigning vm(s) cpus" type="is-dark">
                     <b-select :value="props.row.cpus" expanded @input="( value ) => assignCpu( props.row.name, value )">
                       <option value="1">1</option>
@@ -232,11 +235,11 @@
                   </b-tooltip>
                 </template>
                 <template v-else>
-                  {{ props.row.cpus }}
+                  {{ props.row.cpus || 'unknown' }}
                 </template>
               </b-table-column>
               <b-table-column field="ram" label="Memory" sortable centered v-slot="props">
-                <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
+                <template v-if="!props.row.external && roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
                   <b-tooltip label="menu for assigning vm(s) memory" type="is-dark">
                     <b-select :value="props.row.ram" expanded @input="( value ) => assignRam( props.row.name, value )">
                       <option value="512">512 MB</option>
@@ -251,11 +254,11 @@
                   </b-tooltip>
                 </template>
                 <template v-else>
-                  {{ props.row.ram }}
+                  {{ props.row.ram || 'unknown' }}
                 </template>
               </b-table-column>
               <b-table-column field="disk" label="Disk" v-slot="props">
-                <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
+                <template v-if="!props.row.external && roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
                   <b-tooltip :label="getDiskToolTip(props.row.disk)" type="is-dark">
                     <b-select :value="props.row.disk" expanded @input="( value ) => assignDisk( props.row.name, value )">
                       <option
@@ -268,14 +271,14 @@
                   </b-tooltip>
                 </template>
                 <template v-else>
-                  {{ getBaseName(props.row.disk) }}
+                  {{ getBaseName(props.row.disk) || 'unknown' }}
                 </template>
               </b-table-column>
               <b-table-column label="Boot" centered v-slot="props">
                 <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
-                  <b-tooltip :label="getBootLabel( props.row.name, props.row.dnb )" type="is-dark">
-                    <div @click="updateDnb( props.row.name, !props.row.dnb )">
-                      <font-awesome-icon :class="bootDecorator( props.row.dnb )" icon="bolt" />
+                  <b-tooltip :label="getBootLabel( props.row )" type="is-dark">
+                    <div @click="updateDnb( props.row )">
+                      <font-awesome-icon :class="bootDecorator( props.row )" icon="bolt" />
                     </div>
                   </b-tooltip>
                 </template>
@@ -451,8 +454,12 @@
         
       },250),
 
-      bootDecorator ( dnb ) {
-        if ( dnb ) {
+      bootDecorator ( vm ) {
+        if (vm.external) {
+          return 'dnb';
+        }
+
+        if ( vm.dnb ) {
           return 'dnb';
         } else {
           return 'boot';
@@ -1002,60 +1009,36 @@
         })
       },
 
-      updateDnb ( name, dnb ) {
-        if ( dnb ) {
-          this.isWaiting = true;
-          
-          let update = { "dnb": dnb };
-
-          this.$http.patch(
-            'experiments/' + this.$route.params.id + '/vms/' + name, update
-          ).then(
-            response => {
-              let vms = this.experiment.vms;
-            
-              for ( let i = 0; i < vms.length; i++ ) {
-                if ( vms[ i ].name == response.body.name ) {
-                  vms[ i ] = response.body;
-                  break;
-                }
-              }
-          
-              this.experiment.vms = [ ...vms ];
-          
-              this.isWaiting = false;              
-            }, err => {
-              this.errorNotification(err);              
-              this.isWaiting = false;
-            }
-          )
-        } else {
-          this.isWaiting = true;
-          
-          let update = { "dnb": dnb };
-
-          this.$http.patch(
-            'experiments/' + this.$route.params.id + '/vms/' + name, update
-          ).then(
-            response => {
-              let vms = this.experiment.vms;
-            
-              for ( let i = 0; i < vms.length; i++ ) {
-                if ( vms[ i ].name == response.body.name ) {
-                  vms[ i ] = response.body;
-                  break;
-                }
-              }
-          
-              this.experiment.vms = [ ...vms ];
-          
-              this.isWaiting = false;              
-            }, err => {                  
-              this.errorNotification(err);              
-              this.isWaiting = false;
-            }
-          )
+      updateDnb ( vm ) {
+        if (vm.external) {
+          return;
         }
+
+        this.isWaiting = true;
+        
+        let update = { "dnb": !vm.dnb };
+
+        this.$http.patch(
+          'experiments/' + this.$route.params.id + '/vms/' + vm.name, update
+        ).then(
+          response => {
+            let vms = this.experiment.vms;
+          
+            for ( let i = 0; i < vms.length; i++ ) {
+              if ( vms[ i ].name == response.body.name ) {
+                vms[ i ] = response.body;
+                break;
+              }
+            }
+        
+            this.experiment.vms = [ ...vms ];
+        
+            this.isWaiting = false;              
+          }, err => {
+            this.errorNotification(err);              
+            this.isWaiting = false;
+          }
+        )
       },
 
       updateSchedule () {
@@ -1098,76 +1081,62 @@
         })
       },
 
-      getUniqueItems(inputArray){
-
+      getUniqueItems(inputArray) {
         let arrayHash = {};
         
-        for(let i = 0; i<inputArray.length;i++)
-        {
+        for(let i = 0; i<inputArray.length;i++) {
           // Skip really short items
-          if (inputArray[i].length < 4){
-            if (!inputArray[i].includes('dnb')){
+          if (inputArray[i].length < 4) {
+            if (!inputArray[i].includes('dnb')) {
               continue
             }
-            
           }
 
-          if(arrayHash[inputArray[i]] === undefined )
-          {
+          if(arrayHash[inputArray[i]] === undefined) {
             arrayHash[inputArray[i]] = true;
-          
           }
-        
         }
         
         return Object.keys(arrayHash).sort();
-
       },
       
-      getBootLabel (vmName,dnb) {
-        return dnb ? "Boot " + vmName : "Do Not Boot " + vmName;
-      },
-
-      visibleItems () {        
-        return this.$refs["vmTable"].visibleData.length > 0
+      getBootLabel (vm) {
+        return vm.dnb ? `Boot ${vm.name}` : `Do Not Boot ${vm.name}`;
       },
       
       selectAllVMs () {            
-        
         var visibleItems = this.$refs["vmTable"].visibleData
-        //If there are no visible items, there is nothing to select
-        if(visibleItems.length == 0)
-        {
-          return 
-        }    
-        
-        //If everything is selected, the unselect everything
-        else if(this.selectedRows.length == visibleItems.length)
-        {
+
+        if (visibleItems.length == 0) {
+          // if there are no visible items, there is nothing to select
+          return;
+        } else if (this.selectedRows.length == visibleItems.length) {
+          // if everything is selected, the unselect everything
           this.unSelectAllVMs();
-          return
-          
+          return;
         }
         
-        // If the select all checkbox is not checked, then unselect everything        
-        if(!this.checkAll) {
+        // if the select all checkbox is not checked, then unselect everything
+        if (!this.checkAll) {
           this.unSelectAllVMs();
-          return
+          return;
         }        
         
-        //Add all visible items
-        this.selectedRows=[]
+        // add all visible items
+        this.selectedRows = [];
         
-        for(var i=0; i<visibleItems.length; i++){
-            this.selectedRows.push(visibleItems[i].name)
-        }                
+        for (var i = 0; i < visibleItems.length; i++){
+          let item = visibleItems[i];
+
+          if (!item.external) {
+            this.selectedRows.push(item.name)
+          }
+        }
       },
         
       unSelectAllVMs(){
-        
-        this.checkAll = false;
-        this.selectedRows=[]        
-        
+        this.checkAll     = false;
+        this.selectedRows = [];
       },
 
       setBoot( dnb ) {

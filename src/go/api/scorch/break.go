@@ -135,8 +135,7 @@ func (this Break) breakPoint(ctx context.Context, stage Action) error {
 		}
 
 		select {
-		case <-ctx.Done():
-			// don't return ctx error here so we can clean up tap and internet access below
+		case <-ctx.Done(): // this blocks until the context is canceled
 		case <-done: // this blocks until web terminal is exited
 		}
 	}

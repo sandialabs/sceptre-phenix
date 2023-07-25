@@ -178,7 +178,9 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	wg := new(mm.StateGroup)
 
 	for _, node := range exp.Spec.Topology().Nodes() {
-		if !strings.EqualFold(node.Type(), "VirtualMachine") {
+		if node.External() {
+			// track IP addresses so custom reachability tests still work
+			this.gatherNodeIPs(node)
 			continue
 		}
 
@@ -268,16 +270,7 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 				continue
 			}
 
-			this.addrHosts[iface.Address()] = host
-			this.vlans[iface.VLAN()] = append(this.vlans[iface.VLAN()], iface.Address())
-
-			ips, ok := this.hostIPs[host]
-			if !ok {
-				ips = make(map[string]string)
-			}
-
-			ips[iface.Name()] = iface.Address()
-			this.hostIPs[host] = ips
+			this.gatherNodeIPs(node)
 
 			cidr := fmt.Sprintf("%s/%d", iface.Address(), iface.Mask())
 			printer.Printf("  Waiting for IP %s on host %s to be set...\n", cidr, host)
@@ -503,6 +496,30 @@ func (this *SOH) getFlows(ctx context.Context, exp *types.Experiment) {
 
 	this.packetCapture["hosts"] = hosts
 	this.packetCapture["flows"] = flows
+}
+
+func (this *SOH) gatherNodeIPs(node ifaces.NodeSpec) {
+	host := node.General().Hostname()
+
+	for _, iface := range node.Network().Interfaces() {
+		if iface.Address() == "" {
+			continue
+		}
+
+		this.addrHosts[iface.Address()] = host
+
+		if iface.VLAN() != "" {
+			this.vlans[iface.VLAN()] = append(this.vlans[iface.VLAN()], iface.Address())
+		}
+
+		ips, ok := this.hostIPs[host]
+		if !ok {
+			ips = make(map[string]string)
+		}
+
+		ips[iface.Name()] = iface.Address()
+		this.hostIPs[host] = ips
+	}
 }
 
 func (this SOH) writeResults(exp *types.Experiment) {

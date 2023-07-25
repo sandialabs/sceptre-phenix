@@ -59,6 +59,10 @@ func (subnetCompute) Schedule(spec ifaces.ExperimentSpec) error {
 	cluster.SortByCommittedMem(true)
 
 	for _, node := range spec.Topology().Nodes() {
+		if node.External() {
+			continue
+		}
+
 		if _, ok := spec.Schedules()[node.General().Hostname()]; ok {
 			continue
 		}

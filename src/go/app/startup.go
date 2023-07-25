@@ -44,20 +44,7 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	for _, node := range exp.Spec.Topology().Nodes() {
-		// Check if user provided an absolute path to image. If not, prepend path
-		// with default image path.
-		imagePath := node.Hardware().Drives()[0].Image()
-
-		if !filepath.IsAbs(imagePath) {
-			imagePath = imageDir + imagePath
-		}
-
-		// check if the disk image is present, if not set do not boot to true
-		if _, err := os.Stat(imagePath); os.IsNotExist(err) {
-			node.General().SetDoNotBoot(true)
-		}
-
-		// check for duplicate IPs
+		// check for duplicate IPs (including any non-minimega topology nodes)
 		if node.Network() != nil && node.Network().Interfaces() != nil {
 			for _, iface := range node.Network().Interfaces() {
 				if iface.Address() == "" {
@@ -86,12 +73,29 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 			}
 		}
 
-		// if type is router, skip it and continue
-		if node.Type() == "Router" {
+		if node.External() {
 			continue
 		}
 
-		switch node.Hardware().OSType() {
+		// Check if user provided an absolute path to image. If not, prepend path
+		// with default image path.
+		imagePath := node.Hardware().Drives()[0].Image()
+
+		if !filepath.IsAbs(imagePath) {
+			imagePath = imageDir + imagePath
+		}
+
+		// check if the disk image is present, if not set do not boot to true
+		if _, err := os.Stat(imagePath); os.IsNotExist(err) {
+			node.General().SetDoNotBoot(true)
+		}
+
+		// if type is router, skip it and continue
+		if strings.EqualFold(node.Type(), "Router") {
+			continue
+		}
+
+		switch strings.ToLower(node.Hardware().OSType()) {
 		case "linux", "rhel", "centos":
 			var (
 				hostnameFile = startupDir + "/" + node.General().Hostname() + "-hostname.sh"
@@ -194,6 +198,10 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 	for _, node := range exp.Spec.Topology().Nodes() {
+		if node.External() {
+			continue
+		}
+
 		if strings.EqualFold(node.Hardware().OSType(), "windows") {
 			// Windows 10 doesn't automatically run scripts in the startup folder
 			if ver, ok := node.GetAnnotation("windows-version"); ok && (ver == "10" || ver == 10) {

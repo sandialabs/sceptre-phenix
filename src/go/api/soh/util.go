@@ -49,8 +49,11 @@ func (this *SOH) deployCapture(exp *types.Experiment, dryrun bool) error {
 		node := exp.Spec.Topology().FindNodeByName(nodeToMonitor)
 
 		if node == nil {
-			// TODO: yell loudly
-			continue
+			return fmt.Errorf("node %s to monitor via packet capture does not exist", nodeToMonitor)
+		}
+
+		if node.External() {
+			return fmt.Errorf("node %s to monitor via packet capture is not running in minimega", nodeToMonitor)
 		}
 
 		currentIP = nextIP(currentIP)
@@ -435,6 +438,11 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
 
 		if fields := strings.Split(reach.Dst, "|"); len(fields) > 1 {
 			target = this.hostIPs[fields[0]][fields[1]]
+
+			if target == "" {
+				wg.AddError(fmt.Errorf("unknown target provided"), map[string]interface{}{"host": host, "target": reach.Dst})
+				continue
+			}
 		}
 
 		printer.Printf("  Connecting to %s://%s:%d from host %s\n", reach.Proto, target, reach.Port, host)
@@ -461,14 +469,19 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
 			target = state.Meta["target"].(string)
 		)
 
+		// Convert target IP to hostname.
+		hostname := this.addrHosts[target]
+
+		if hostname != "" { // might be empty if target IP not in topology
+			state.Meta["target"] = hostname
+		}
+
+		state.Meta["ip"] = target
+
 		s := State{
 			Metadata:  state.Meta,
 			Timestamp: time.Now().Format(time.RFC3339),
 		}
-
-		// Convert target IP to hostname.
-		hostname := this.addrHosts[target]
-		s.Metadata["hostname"] = hostname
 
 		if err := state.Err; err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
@@ -498,6 +511,16 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string) {
 
 		state.Reachability = append(state.Reachability, s)
 		this.status[host] = state
+
+		if hostname != "" { // might be empty if target IP not in topology
+			state, ok = this.status[hostname]
+			if !ok {
+				state = HostState{Hostname: hostname}
+			}
+
+			state.Reachability = append(state.Reachability, s)
+			this.status[hostname] = state
+		}
 	}
 }
 

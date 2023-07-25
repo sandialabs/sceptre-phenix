@@ -1,4 +1,8 @@
 {{- range . }}
+  {{- if .External }}
+    {{ continue }}
+  {{- end }}
+
   {{- if .Commands }}
 ## VM: {{ .General.Hostname }} ##
 cc filter name={{ .General.Hostname }}

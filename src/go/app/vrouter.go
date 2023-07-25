@@ -150,6 +150,10 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 
 	// loop through nodes
 	for _, node := range exp.Spec.Topology().Nodes() {
+		if node.External() {
+			continue
+		}
+
 		if !strings.EqualFold(node.Type(), "router") && !strings.EqualFold(node.Type(), "firewall") {
 			continue
 		}
@@ -322,6 +326,10 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	for _, node := range exp.Spec.Topology().Nodes() {
+		if node.External() {
+			continue
+		}
+
 		if !strings.EqualFold(node.Type(), "router") && !strings.EqualFold(node.Type(), "firewall") {
 			continue
 		}

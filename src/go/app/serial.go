@@ -24,6 +24,10 @@ func (Serial) Name() string {
 func (Serial) Configure(ctx context.Context, exp *types.Experiment) error {
 	// loop through nodes
 	for _, node := range exp.Spec.Topology().Nodes() {
+		if node.External() {
+			continue
+		}
+
 		// We only care about configuring serial interfaces on Linux VMs.
 		// TODO: handle rhel and centos OS types.
 		if node.Hardware().OSType() != "linux" {
@@ -66,6 +70,10 @@ func (Serial) Configure(ctx context.Context, exp *types.Experiment) error {
 func (Serial) PreStart(ctx context.Context, exp *types.Experiment) error {
 	// loop through nodes
 	for _, node := range exp.Spec.Topology().Nodes() {
+		if node.External() {
+			continue
+		}
+
 		// We only care about configuring serial interfaces on Linux VMs.
 		// TODO: handle rhel and centos OS types.
 		if node.Hardware().OSType() != "linux" {

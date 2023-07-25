@@ -21,6 +21,7 @@ message VM {
   string state = 16;
   repeated string tags = 17;
   bool cc_active = 18;
+  bool external = 19;
 
   string delayed_start = 20 [json_name="delayed_start"];
 }

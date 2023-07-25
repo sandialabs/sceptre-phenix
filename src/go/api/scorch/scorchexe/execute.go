@@ -51,6 +51,8 @@ func Execute(ctx context.Context, exp *types.Experiment, run int) error {
 		errors = multierror.Append(errors, fmt.Errorf("running Scorch for experiment %s: %w", exp.Metadata.Name, err))
 	}
 
+	exp.Reload() // reload experiment from store in case status was updated during run
+
 	exp.Status.SetAppRunning("scorch", false)
 	exp.Status.SetAppStatus("scorch", nil)
 

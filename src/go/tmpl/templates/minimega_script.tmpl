@@ -19,6 +19,10 @@ ns add-host localhost
 {{- $basedir := .BaseDir }}
 
 {{- range .Topology.Nodes }}
+    {{- if .External }}
+        {{ continue }}
+    {{- end }}
+
 {{/* added space to place hostname above relevant block */}}
 ## VM: {{ .General.Hostname }} ##
     {{- if (derefBool .General.DoNotBoot) }}

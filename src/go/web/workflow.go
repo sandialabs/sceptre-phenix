@@ -32,12 +32,18 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		role  = ctx.Value("role").(rbac.Role)
 		vars  = mux.Vars(r)
 		scope = vars["branch"]
+		q     = r.URL.Query()
+		tags  = ""
 	)
 
 	if !role.Allowed("workflow", "create") {
 		err := weberror.NewWebError(nil, "applying phenix workflow is not allowed for user %s", ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
+
+	// currently querries only are used to pass tags. However, this
+	// is extensible for future fields as well.
+	tags = strings.Join(q["tag"], ",")
 
 	var (
 		typ = r.Header.Get("Content-Type")
@@ -115,6 +121,10 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		defer cache.UnlockExperiment(expName)
 
 		annotations := map[string]string{"phenix.workflow/branch": scope}
+
+		if tags != "" {
+			annotations["phenix.workflow/tags"] = tags
+		}
 
 		opts := []experiment.CreateOption{
 			experiment.CreateWithName(expName),
@@ -232,6 +242,13 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			exp.Metadata.Annotations["scenario"] = scenarioName
 		}
 
+		// default is to not override existing tags if no new tags are passed
+		// TODO: perhaps sorting tags and only updating those that are passed
+		// while leaving old tags that have not been overriden
+		if tags != "" {
+			exp.Metadata.Annotations["phenix.workflow/tags"] = tags
+		}
+
 		var (
 			aliases   = make(map[string]int)
 			wfAliases = wf.VLANMappings()
@@ -241,6 +258,8 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		// interfaces just in case the topology includes updates changing VLAN alias
 		// names.
 		for _, node := range exp.Spec.Topology().Nodes() {
+			// TODO: only consider nodes schedulable by minimega? Or should HIL nodes
+			// be taken into account here still as well?
 			if node.Network() == nil {
 				continue
 			}
@@ -268,6 +287,10 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		// Reset VM schedules using information from topology nodes just in case the
 		// topology includes updates changing node hostnames.
 		for _, node := range exp.Spec.Topology().Nodes() {
+			if node.External() {
+				continue
+			}
+
 			hostname := node.General().Hostname()
 
 			// Use cluster host from workflow config if specified.

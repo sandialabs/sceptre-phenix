@@ -27,17 +27,11 @@ type Edge struct {
 }
 
 type Network struct {
-	Started         bool     `json:"started"`
-	Nodes           []Node   `json:"nodes"`
-	Edges           []Edge   `json:"edges"`
-	NetworkEvents   string   `json:"networkEvents"`
-	RunningCount    int      `json:"running_count"`
-	NotRunningCount int      `json:"notrunning_count"`
-	NotDeployCount  int      `json:"notdeploy_count"`
-	NotBootCount    int      `json:"notboot_count"`
-	TotalCount      int      `json:"total_count"`
-	Hosts           []string `json:"hosts"`
-	HostFlows       [][]int  `json:"host_flows"`
+	Started   bool     `json:"started"`
+	Nodes     []Node   `json:"nodes"`
+	Edges     []Edge   `json:"edges"`
+	Hosts     []string `json:"hosts"`
+	HostFlows [][]int  `json:"host_flows"`
 }
 
 type State struct {

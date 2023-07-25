@@ -26,11 +26,11 @@ type (
 )
 
 type Config struct {
-	Version  string                 `json:"apiVersion" yaml:"apiVersion"`
-	Kind     string                 `json:"kind" yaml:"kind"`
-	Metadata ConfigMetadata         `json:"metadata" yaml:"metadata"`
-	Spec     map[string]interface{} `json:"spec,omitempty" yaml:"spec,omitempty"`
-	Status   map[string]interface{} `json:"status,omitempty" yaml:"status,omitempty"`
+	Version  string         `json:"apiVersion" yaml:"apiVersion"`
+	Kind     string         `json:"kind" yaml:"kind"`
+	Metadata ConfigMetadata `json:"metadata" yaml:"metadata"`
+	Spec     map[string]any `json:"spec,omitempty" yaml:"spec,omitempty"`
+	Status   map[string]any `json:"status,omitempty" yaml:"status,omitempty"`
 }
 
 type ConfigMetadata struct {
@@ -217,7 +217,7 @@ type Event struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
-func NewEvent(format string, args ...interface{}) *Event {
+func NewEvent(format string, args ...any) *Event {
 	return &Event{
 		ID:        uuid.Must(uuid.NewV4()).String(),
 		Timestamp: time.Now(),
@@ -227,7 +227,7 @@ func NewEvent(format string, args ...interface{}) *Event {
 	}
 }
 
-func NewInfoEvent(format string, args ...interface{}) *Event {
+func NewInfoEvent(format string, args ...any) *Event {
 	event := NewEvent(format, args...)
 	event.Type = EventTypeInfo
 

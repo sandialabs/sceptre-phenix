@@ -41,7 +41,9 @@ func init() {
 		case "create":
 			exp.Spec.SetExperimentName(c.Metadata.Name)
 
-			exp.Spec.Init()
+			if err := exp.Spec.Init(); err != nil {
+				return fmt.Errorf("initializing experiment: %w", err)
+			}
 
 			if err := exp.Spec.VerifyScenario(context.TODO()); err != nil {
 				return fmt.Errorf("verifying experiment scenario: %w", err)
@@ -58,7 +60,9 @@ func init() {
 				return fmt.Errorf("cannot update running experiment")
 			}
 
-			exp.Spec.Init()
+			if err := exp.Spec.Init(); err != nil {
+				return fmt.Errorf("re-initializing experiment (after update): %w", err)
+			}
 
 			if exp.Spec.ExperimentName() != c.Metadata.Name {
 				if strings.Contains(exp.Spec.BaseDir(), exp.Spec.ExperimentName()) {
@@ -90,6 +94,18 @@ func init() {
 
 		return nil
 	})
+}
+
+// Hook is a function to be called during the different lifecycle stages of an
+// experiment. The first argument is the experiment stage (create, start, stop,
+// delete), and the second argument is the experiment, name.
+type Hook func(string, string)
+
+var hooks = make(map[string][]Hook)
+
+// RegisterHook registers a Hook for the given experiment stage.
+func RegisterHook(stage string, hook Hook) {
+	hooks[stage] = append(hooks[stage], hook)
 }
 
 // List collects experiments, each in a struct that references the latest
@@ -252,6 +268,10 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 		return fmt.Errorf("creating experiment config: %w", err)
 	}
 
+	for _, hook := range hooks["create"] {
+		hook("create", o.name)
+	}
+
 	return nil
 }
 
@@ -375,6 +395,10 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		)
 
 		for _, node := range bootable {
+			if node.External() {
+				continue
+			}
+
 			hostname := node.General().Hostname()
 
 			if node.Delay().User() {
@@ -453,15 +477,14 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		exp.Status.SetVLANs(vlans)
 	}
 
-	if o.dryrun {
-		exp.Status.SetStartTime(time.Now().Format(time.RFC3339) + "-DRYRUN")
-	} else {
-		// Grab the actual start time now, but don't set it in the experiment status
-		// until the end of this block since app code that runs as part of the
-		// post-start stage may persist the status to the store.
-		start := time.Now().Format(time.RFC3339)
+	start := time.Now().Format(time.RFC3339)
 
-		if o.errChan == nil {
+	if o.dryrun {
+		start += "-DRYRUN"
+	}
+
+	if o.errChan == nil {
+		if !o.dryrun {
 			if exp.Spec.Topology().HasCommands() {
 				if err := mm.ReadScriptFromFile(ccScript); err != nil {
 					errors := multierror.Append(nil, fmt.Errorf("reading minimega cc script: %w", err))
@@ -483,22 +506,26 @@ func Start(ctx context.Context, opts ...StartOption) error {
 
 				return errors
 			}
+		}
 
-			if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
-				errors := multierror.Append(nil, fmt.Errorf("applying apps to experiment: %w", err))
+		if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
+			errors := multierror.Append(nil, fmt.Errorf("applying apps to experiment: %w", err))
 
-				if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCLEANUP), app.DryRun(o.dryrun)); err != nil {
-					errors = multierror.Append(errors, fmt.Errorf("cleaning up app experiments: %w", err))
-				}
-
-				if err := mm.ClearNamespace(exp.Spec.ExperimentName()); err != nil {
-					errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
-				}
-
-				return errors
+			if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCLEANUP), app.DryRun(o.dryrun)); err != nil {
+				errors = multierror.Append(errors, fmt.Errorf("cleaning up app experiments: %w", err))
 			}
-		} else {
-			go func() {
+
+			if err := mm.ClearNamespace(exp.Spec.ExperimentName()); err != nil {
+				errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
+			}
+
+			return errors
+		}
+	} else {
+		go func() {
+			defer close(o.errChan)
+
+			if !o.dryrun {
 				if exp.Spec.Topology().HasCommands() {
 					if err := mm.ReadScriptFromFile(ccScript); err != nil {
 						o.errChan <- fmt.Errorf("reading minimega cc script: %w", err)
@@ -507,7 +534,6 @@ func Start(ctx context.Context, opts ...StartOption) error {
 							o.errChan <- fmt.Errorf("stopping experiment: %w", err)
 						}
 
-						close(o.errChan)
 						return
 					}
 				}
@@ -518,22 +544,22 @@ func Start(ctx context.Context, opts ...StartOption) error {
 					if err := Stop(exp.Spec.ExperimentName()); err != nil {
 						o.errChan <- fmt.Errorf("stopping experiment: %w", err)
 					}
-				} else {
-					if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
-						o.errChan <- fmt.Errorf("applying apps to experiment: %w", err)
 
-						if err := Stop(exp.Spec.ExperimentName()); err != nil {
-							o.errChan <- fmt.Errorf("stopping experiment: %w", err)
-						}
-					}
+					return
 				}
+			}
 
-				close(o.errChan)
-			}()
-		}
+			if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
+				o.errChan <- fmt.Errorf("applying apps to experiment: %w", err)
 
-		exp.Status.SetStartTime(start)
+				if err := Stop(exp.Spec.ExperimentName()); err != nil {
+					o.errChan <- fmt.Errorf("stopping experiment: %w", err)
+				}
+			}
+		}()
 	}
+
+	exp.Status.SetStartTime(start)
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 	c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
@@ -541,6 +567,10 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	if err := store.Update(c); err != nil {
 		mm.ClearNamespace(exp.Spec.ExperimentName())
 		return fmt.Errorf("updating experiment config: %w", err)
+	}
+
+	for _, hook := range hooks["start"] {
+		hook("start", o.name)
 	}
 
 	return nil
@@ -585,6 +615,10 @@ func Stop(name string) error {
 
 	if err := store.Update(c); err != nil {
 		errors = multierror.Append(errors, fmt.Errorf("updating experiment config: %w", err))
+	}
+
+	for _, hook := range hooks["stop"] {
+		hook("stop", name)
 	}
 
 	return errors
@@ -746,6 +780,10 @@ func Delete(name string) error {
 		errors = multierror.Append(errors, fmt.Errorf("deleting experiment base directory: %w", err))
 	}
 
+	for _, hook := range hooks["delete"] {
+		hook("delete", name)
+	}
+
 	return errors
 }
 
@@ -813,6 +851,10 @@ func deleteC2AndSnapshots(exp *types.Experiment) error {
 	}
 
 	for _, node := range exp.Spec.Topology().Nodes() {
+		if node.External() {
+			continue
+		}
+
 		hostname := node.General().Hostname()
 		snapshot := fmt.Sprintf("%s_%s_%s_snapshot", headnode, expName, hostname)
 
