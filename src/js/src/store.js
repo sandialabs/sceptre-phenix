@@ -8,7 +8,7 @@ export default new Vuex.Store({
   state: {
     username: localStorage.getItem( 'phenix.user' ),
     token:    localStorage.getItem( 'phenix.token' ),
-    role:     localStorage.getItem( 'phenix.role' ),
+    role:     JSON.parse(localStorage.getItem( 'phenix.role' )),
     auth:     localStorage.getItem( 'phenix.auth' ) === 'true',
     next:     null,
 
@@ -25,7 +25,7 @@ export default new Vuex.Store({
       if ( remember ) {
         localStorage.setItem( 'phenix.user',  state.username );
         localStorage.setItem( 'phenix.token', state.token );
-        localStorage.setItem( 'phenix.role',  state.role );
+        localStorage.setItem( 'phenix.role',  JSON.stringify(state.role) );
         localStorage.setItem( 'phenix.auth',  state.auth );
       }
 
