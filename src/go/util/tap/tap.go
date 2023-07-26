@@ -19,11 +19,11 @@ func (this *Tap) Init(opts ...Option) {
 	}
 }
 
-func (this *Tap) Create(host string) error {
+func (this *Tap) Create(host string) (netaddr.IPPrefix, error) {
 	if err := this.create(host); err != nil {
 		// attempt to clean up any progress already made
 		this.delete(host)
-		return fmt.Errorf("creating host tap for VLAN %s: %w", this.VLAN, err)
+		return netaddr.IPPrefix{}, fmt.Errorf("creating host tap for VLAN %s: %w", this.VLAN, err)
 	}
 
 	if this.External.Enabled {
@@ -31,21 +31,21 @@ func (this *Tap) Create(host string) error {
 
 		pair, err := util.UnusedSubnet(this.o.subnet, used)
 		if err != nil {
-			return fmt.Errorf("getting unused pair of IPs for VLAN %s host tap external connectivity: %w", this.VLAN, err)
+			return netaddr.IPPrefix{}, fmt.Errorf("getting unused pair of IPs for VLAN %s host tap external connectivity: %w", this.VLAN, err)
 		}
-
-		this.o.used = append(this.o.used, pair)
 
 		if err := this.connect(host, pair); err != nil {
 			// attempt to clean up progress we already made
 			this.disconnect(host)
 			this.delete(host)
 
-			return fmt.Errorf("connecting host tap for VLAN %s for external access: %w", this.VLAN, err)
+			return netaddr.IPPrefix{}, fmt.Errorf("connecting host tap for VLAN %s for external access: %w", this.VLAN, err)
 		}
+
+		return pair, nil
 	}
 
-	return nil
+	return netaddr.IPPrefix{}, nil
 }
 
 func (this Tap) Delete(host string) error {

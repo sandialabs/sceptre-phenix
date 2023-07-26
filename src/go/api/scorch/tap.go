@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"phenix/api/scorch/scorchmd"
+	"phenix/app"
 	"phenix/types"
 	"phenix/util"
 	"phenix/util/mm"
@@ -40,7 +41,7 @@ func (this Tap) Start(ctx context.Context) error {
 		return fmt.Errorf("decoding tap component metadata: %w", err)
 	}
 
-	pairs := this.discoverUsedPairs()
+	pairs := discoverUsedPairs()
 	t.Init(tap.Experiment(exp), tap.UsedPairs(pairs))
 
 	// backwards compatibility (doesn't support external access firewall rules)
@@ -53,7 +54,7 @@ func (this Tap) Start(ctx context.Context) error {
 	// (dictated by max length of Linux interface names)
 	t.Name = fmt.Sprintf("%s-tapcomp", util.RandomString(7))
 
-	if err := t.Create(mm.Headnode()); err != nil {
+	if _, err := t.Create(mm.Headnode()); err != nil {
 		return fmt.Errorf("setting up tap: %w", err)
 	}
 
@@ -94,7 +95,7 @@ func (Tap) Cleanup(context.Context) error {
 	return nil
 }
 
-func (Tap) discoverUsedPairs() []netaddr.IPPrefix {
+func discoverUsedPairs() []netaddr.IPPrefix {
 	var pairs []netaddr.IPPrefix
 
 	running, err := types.RunningExperiments()
@@ -103,9 +104,18 @@ func (Tap) discoverUsedPairs() []netaddr.IPPrefix {
 	}
 
 	for _, exp := range running {
-		var status scorchmd.ScorchStatus
-		if err := exp.Status.ParseAppStatus("scorch", &status); err == nil {
-			for _, tap := range status.Taps {
+		var scorch scorchmd.ScorchStatus
+		if err := exp.Status.ParseAppStatus("scorch", &scorch); err == nil {
+			for _, tap := range scorch.Taps {
+				if pair, err := netaddr.ParseIPPrefix(tap.Subnet); err == nil {
+					pairs = append(pairs, pair)
+				}
+			}
+		}
+
+		var tap app.TapAppStatus
+		if err := exp.Status.ParseAppStatus("tap", &tap); err == nil {
+			for _, tap := range tap.Taps {
 				if pair, err := netaddr.ParseIPPrefix(tap.Subnet); err == nil {
 					pairs = append(pairs, pair)
 				}

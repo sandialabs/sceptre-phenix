@@ -8,14 +8,12 @@ import (
 
 	"phenix/api/scorch/scorchmd"
 	"phenix/app"
-	"phenix/types"
 	"phenix/util"
 	"phenix/util/mm"
 	"phenix/util/tap"
 	"phenix/web/scorch"
 
 	"github.com/mitchellh/mapstructure"
-	"inet.af/netaddr"
 )
 
 type BreakMetadata struct {
@@ -62,7 +60,7 @@ func (this Break) breakPoint(ctx context.Context, stage Action) error {
 	}
 
 	if md.Tap != nil {
-		pairs := this.discoverUsedPairs()
+		pairs := discoverUsedPairs()
 		md.Tap.Init(tap.Experiment(exp), tap.UsedPairs(pairs))
 
 		// backwards compatibility (doesn't support external access firewall rules)
@@ -75,7 +73,7 @@ func (this Break) breakPoint(ctx context.Context, stage Action) error {
 		// (dictated by max length of Linux interface names)
 		md.Tap.Name = fmt.Sprintf("%s-tapbrk", util.RandomString(8))
 
-		if err := md.Tap.Create(mm.Headnode()); err != nil {
+		if _, err := md.Tap.Create(mm.Headnode()); err != nil {
 			return fmt.Errorf("setting up tap for break: %w", err)
 		}
 
@@ -141,26 +139,4 @@ func (this Break) breakPoint(ctx context.Context, stage Action) error {
 	}
 
 	return ctx.Err()
-}
-
-func (Break) discoverUsedPairs() []netaddr.IPPrefix {
-	var pairs []netaddr.IPPrefix
-
-	running, err := types.RunningExperiments()
-	if err != nil {
-		return nil
-	}
-
-	for _, exp := range running {
-		var status scorchmd.ScorchStatus
-		if err := exp.Status.ParseAppStatus("scorch", &status); err == nil {
-			for _, tap := range status.Taps {
-				if pair, err := netaddr.ParseIPPrefix(tap.Subnet); err == nil {
-					pairs = append(pairs, pair)
-				}
-			}
-		}
-	}
-
-	return pairs
 }

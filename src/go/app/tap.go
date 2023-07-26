@@ -74,8 +74,6 @@ func (this *Tap) PostStart(ctx context.Context, exp *types.Experiment) error {
 
 	status := TapAppStatus{Host: host}
 
-	// TODO: prepopulate `pairs` with taps from other experiments
-
 	for _, t := range amd.Taps {
 		if slices.Contains(vlans, t.VLAN) {
 			return fmt.Errorf("tap already created for VLAN %s", t.VLAN)
@@ -86,8 +84,15 @@ func (this *Tap) PostStart(ctx context.Context, exp *types.Experiment) error {
 		// Tap name is random, yet descriptive to the fact that it's a "tapapp" tap.
 		t.Name = fmt.Sprintf("%s-tapapp", util.RandomString(8))
 
-		if err := t.Create(host); err != nil {
+		pair, err := t.Create(host)
+		if err != nil {
 			return fmt.Errorf("creating host tap for VLAN %s: %w", t.VLAN, err)
+		}
+
+		if !pair.IsZero() {
+			// Include pair just created for this tap to list of used pairs in case
+			// more than one tap is being created for this experiment.
+			pairs = append(pairs, pair)
 		}
 
 		status.Taps = append(status.Taps, t)
