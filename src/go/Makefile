@@ -5,9 +5,10 @@ COMMIT := $(or $(COMMIT),$(shell git log -1 --format="%h"))
 TAG    := $(or $(TAG),$(shell git log -1 --format="%h"))
 DATE   := $(shell date -u)
 
-SOURCES   := $(shell find . \( -name '*.go' \))
-CONFIGS   := $(shell find api/config/default \( -name '*' \))
-TEMPLATES := $(shell find tmpl/templates \( -name '*' \))
+SOURCES   := $(shell find . -name '*.go')
+UISOURCES := $(shell find web -name '*.go' -not -path 'web/rbac/known_policy.go')
+CONFIGS   := $(shell find api/config/default -name '*')
+TEMPLATES := $(shell find tmpl/templates -name '*')
 
 THISFILE := $(lastword $(MAKEFILE_LIST))
 THISDIR  := $(shell dirname $(realpath $(THISFILE)))
@@ -35,6 +36,7 @@ clean:
 	$(RM) web/public/favicon.ico
 	$(RM) web/public/index.html
 	$(RM) -r web/public/assets
+	$(RM) web/rbac/known_policy.go
 
 .PHONY: install-build-deps
 install-build-deps: bin/go-bindata bin/mockgen bin/protoc-gen-go
@@ -105,10 +107,16 @@ web/proto/role.pb.go: web/proto/*.proto bin/protoc-gen-go
 web/proto/vm.pb.go: web/proto/*.proto bin/protoc-gen-go
 	protoc -I . -I web/proto --go_out=paths=source_relative:. ./web/proto/vm.proto
 
-bin/phenix: $(GOSOURCES) generate-bindata generate-protobuf
+.PHONY: go-generate
+go-generate: web/rbac/known_policy.go
+
+web/rbac/known_policy.go: $(UISOURCES)
+	go generate web/rbac/known_policy_gen.go
+
+bin/phenix: $(SOURCES) generate-bindata generate-protobuf go-generate
 	mkdir -p bin
 	CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -X 'phenix/version.Tag=$(TAG)' -X 'phenix/version.Date=$(DATE)' -s -w" -trimpath -o bin/phenix main.go
 
-bin/phenix-debug: $(GOSOURCES) generate-bindata generate-protobuf
+bin/phenix-debug: $(SOURCES) generate-bindata generate-protobuf go-generate
 	mkdir -p bin
 	CGO_ENABLED=0 GOOS=linux go build -gcflags "all=-N -l" -trimpath -o bin/phenix-debug main.go

@@ -1,12 +1,16 @@
 package cmd
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"phenix/api/experiment"
 	"phenix/util"
+	"phenix/web/rbac"
 
+	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 )
 
@@ -63,10 +67,61 @@ func newUtilAppJsonCmd() *cobra.Command {
 	return cmd
 }
 
+func newUtilRoleTableCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "role-table",
+		Short: "Print a table for permissions and roles",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			roles, _ := rbac.GetRoles()
+
+			header := []string{"", ""}
+			for _, r := range roles {
+				header = append(header, r.Spec.Name)
+			}
+
+			data := [][]string{}
+			for _, p := range rbac.Permissions {
+				row := []string{p.Resource, p.Verb}
+				for _, r := range roles {
+					if r.Allowed(p.Resource, p.Verb) {
+						row = append(row, "Y")
+					} else {
+						row = append(row, "")
+					}
+				}
+				data = append(data, row)
+			}
+
+			if MustGetBool(cmd.Flags(), "pretty") {
+				table := tablewriter.NewWriter(os.Stdout)
+				table.SetHeader(header)
+				table.AppendBulk(data)
+				table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
+				table.SetCenterSeparator("|")
+				table.Render()
+			} else {
+				w := csv.NewWriter(os.Stdout)
+				w.Write(header)
+				for _, r := range data {
+					w.Write(r)
+				}
+				w.Flush()
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolP("pretty", "p", false, "Pretty print the table output in markdown")
+
+	return cmd
+}
+
 func init() {
 	utilCmd := newUtilCmd()
 
 	utilCmd.AddCommand(newUtilAppJsonCmd())
+	utilCmd.AddCommand(newUtilRoleTableCmd())
 
 	rootCmd.AddCommand(utilCmd)
 }
