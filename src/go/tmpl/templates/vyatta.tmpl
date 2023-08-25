@@ -224,7 +224,11 @@ protocols {
 {{ range $route := $node.Network.Routes }}
         route {{ $route.Destination }} {
             next-hop {{ $route.Next }} {
+    {{ if $route.Cost }}
                 distance {{ $route.Cost }}
+    {{ else }}
+                distance 1
+    {{ end }}
             }
         }
 {{ end }}
