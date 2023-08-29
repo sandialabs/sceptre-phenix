@@ -177,6 +177,7 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 		experiment.CreateWithScenario(req.Scenario),
 		experiment.CreateWithVLANMin(int(req.VlanMin)),
 		experiment.CreateWithVLANMax(int(req.VlanMax)),
+		experiment.CreatedWithDisabledApplications(req.DisabledApps),
 	}
 
 	if req.WorkflowBranch != "" {

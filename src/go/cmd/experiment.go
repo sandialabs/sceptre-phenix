@@ -114,7 +114,8 @@ func newExperimentCreateCmd() *cobra.Command {
 	example := `
   phenix experiment create <experiment name> -t <topology name or /path/to/filename>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename>
-  phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> -d </path/to/dir/>`
+  phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> -d </path/to/dir/>
+  phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario naem or /path/to/filename> --disabled-apps "app1,app2"`
 
 	cmd := &cobra.Command{
 		Use:     "create <experiment name>",
@@ -157,6 +158,15 @@ func newExperimentCreateCmd() *cobra.Command {
 				scenario = c.Metadata.Name
 			}
 
+			disabledApps, err := cmd.Flags().GetStringSlice("disabled-apps")
+			if err != nil {
+				err := util.HumanizeError(err, "Bad list of disabled-apps provided: %v", disabledApps)
+				return err.Humanized()
+			}
+			for idx := range disabledApps {
+				disabledApps[idx] = strings.TrimSpace(disabledApps[idx])
+			}
+
 			opts := []experiment.CreateOption{
 				experiment.CreateWithName(args[0]),
 				experiment.CreateWithTopology(topology),
@@ -164,6 +174,7 @@ func newExperimentCreateCmd() *cobra.Command {
 				experiment.CreateWithBaseDirectory(MustGetString(cmd.Flags(), "base-dir")),
 				experiment.CreateWithVLANMin(MustGetInt(cmd.Flags(), "vlan-min")),
 				experiment.CreateWithVLANMax(MustGetInt(cmd.Flags(), "vlan-max")),
+				experiment.CreatedWithDisabledApplications(disabledApps),
 			}
 
 			ctx := notes.Context(context.Background(), false)
@@ -187,7 +198,7 @@ func newExperimentCreateCmd() *cobra.Command {
 	cmd.Flags().StringP("base-dir", "d", "", "Base directory to use for experiment (optional)")
 	cmd.Flags().Int("vlan-min", 0, "VLAN pool minimum")
 	cmd.Flags().Int("vlan-max", 0, "VLAN pool maximum")
-
+	cmd.Flags().StringSlice("disabled-apps", []string{}, "Comma separated ist of apps to disable")
 	return cmd
 }
 

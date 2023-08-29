@@ -35,8 +35,10 @@
           <b-taglist>
             <b-tag v-for="( a, index ) in createModal.scenarios[ createModal.scenario ]" 
                   :key="index" 
-                  type="is-light">
-              {{ a }}  
+                  type="is-light"
+                  :class="{'is-success': !a.disabled}"
+                  @click="clickScenario(index)">
+              {{ a.name }}
             </b-tag>
           </b-taglist>
           <b-collapse class="card" animation="slide" :open="false">
@@ -567,6 +569,11 @@
       },
       
       create () {      
+        var disabledApps = this.createModal.scenarios[this.createModal.scenario].filter(
+          (item) => item.disabled
+        ).map(
+            (item) => item.name)
+
         const experimentData = {
           name: this.createModal.name,
           topology: this.createModal.topology,
@@ -574,6 +581,7 @@
           vlan_min: +this.createModal.vlan_min,
           vlan_max: +this.createModal.vlan_max,
           workflow_branch: this.createModal.branch,
+          disabled_apps: disabledApps
         }
         
         if ( !this.createModal.name ) {
@@ -624,7 +632,16 @@
           response => {
             response.json().then( state => {
               if ( state.scenarios != null && Object.keys( state.scenarios ).length != 0 ) {
-                this.createModal.scenarios = state.scenarios;
+                let scenarioObj = {}
+                for (const [name, apps] of Object.entries(state.scenarios)) {
+                  let appList = []
+                  for (var appIdx = 0; appIdx < apps.length; appIdx ++){
+                    appList.push({"name": apps[appIdx], "disabled": false})
+                  }
+                  scenarioObj[name] = appList
+                }
+
+                this.createModal.scenarios = scenarioObj;
                 this.createModal.showScenarios = true;
               }
             });
@@ -632,6 +649,10 @@
             this.errorNotification(err);
           }
         );
+      },
+      clickScenario (id) {
+        let listOfApps = this.createModal.scenarios[this.createModal.scenario]
+        listOfApps[id].disabled = !listOfApps[id].disabled
       },
 
       resetCreateModal () {

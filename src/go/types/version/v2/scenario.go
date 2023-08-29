@@ -46,6 +46,7 @@ type ScenarioApp struct {
 	MetadataF        map[string]any     `json:"metadata,omitempty" yaml:"metadata,omitempty" structs:"metadata" mapstructure:"metadata"`
 	HostsF           []*ScenarioAppHost `json:"hosts,omitempty" yaml:"hosts,omitempty" structs:"hosts" mapstructure:"hosts"`
 	RunPeriodicallyF string             `json:"runPeriodically,omitempty" yaml:"runPeriodically,omitempty" structs:"runPeriodically" mapstructure:"runPeriodically"`
+	DisabledF        bool               `json:"disabled,omitempty" yaml:"disabled,omitempty" structs:"disabled" mapstructure:"disabled"`
 }
 
 func (this ScenarioApp) Name() string {
@@ -78,6 +79,10 @@ func (this ScenarioApp) RunPeriodically() string {
 	return this.RunPeriodicallyF
 }
 
+func (this ScenarioApp) Disabled() bool {
+	return this.DisabledF
+}
+
 func (this *ScenarioApp) SetAssetDir(dir string) {
 	this.AssetDirF = dir
 }
@@ -98,6 +103,10 @@ func (this *ScenarioApp) SetHosts(hosts []ifaces.ScenarioAppHost) {
 
 func (this *ScenarioApp) SetRunPeriodically(d string) {
 	this.RunPeriodicallyF = d
+}
+
+func (this *ScenarioApp) SetDisabled(d bool) {
+	this.DisabledF = d
 }
 
 func (this ScenarioApp) ParseMetadata(md any) error {

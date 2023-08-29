@@ -11,6 +11,7 @@ import (
 	v2 "phenix/types/version/v2"
 
 	"github.com/mitchellh/mapstructure"
+	"golang.org/x/exp/slices"
 )
 
 func init() {
@@ -62,6 +63,21 @@ func DecodeScenarioFromConfig(c store.Config) (ifaces.ScenarioSpec, error) {
 	spec, ok := iface.(ifaces.ScenarioSpec)
 	if !ok {
 		return nil, fmt.Errorf("invalid spec in config")
+	}
+
+	return spec, nil
+}
+
+func MakeCustomScenarioFromConfig(c store.Config, disabledApps []string) (ifaces.ScenarioSpec, error) {
+	//Get base spec from config, going to use this to create a custom config
+	spec, err := DecodeScenarioFromConfig(c)
+	if err != nil {
+		return nil, fmt.Errorf("Error make custom scenario: %w", err)
+	}
+
+	//if app name in disabled app list, set to disabled
+	for _, app := range spec.Apps() {
+		app.SetDisabled(slices.Contains(disabledApps, app.Name()))
 	}
 
 	return spec, nil

@@ -244,6 +244,11 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				continue
 			}
 
+			// Skip app if disabled, unless stage is ACTIONRUNNING
+			if app.Disabled() && options.Stage != ACTIONRUNNING {
+				continue
+			}
+
 			a := GetApp(app.Name())
 			a.Init(Name(app.Name()), DryRun(options.DryRun))
 

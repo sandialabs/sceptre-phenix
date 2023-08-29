@@ -12,11 +12,13 @@ type ScenarioApp interface {
 	Metadata() map[string]any
 	Hosts() []ScenarioAppHost
 	RunPeriodically() string
+	Disabled() bool
 
 	SetAssetDir(string)
 	SetMetadata(map[string]any)
 	SetHosts([]ScenarioAppHost)
 	SetRunPeriodically(string)
+	SetDisabled(bool)
 
 	ParseMetadata(any) error
 	ParseHostMetadata(string, any) error
