@@ -1,3 +1,18 @@
+{{ $dc := index .Node.Annotations "phenix/domain-controller" }}
+
+{{ if toBool $dc }}
+while ($true) {
+    try {
+        Get-ADDomain | Out-Null
+        Write-Host "[+] Domain Controller services ready!"
+        break
+    } catch {
+        Write-Host "[-] Waiting for Domain Controller services to be ready..."
+        Start-Sleep -Seconds 20
+    }
+}
+{{ end }}
+
 function Phenix-SetStartupStatus($status) {
     echo "Marking phenix startup as $status in registry..."
 
