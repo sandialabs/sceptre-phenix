@@ -213,6 +213,10 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 			cmd = mmcli.NewCommand()
 			cmd.Command = "disk info " + disk
 
+			if !IsHeadnode(row["host"]) {
+				cmd.Command = fmt.Sprintf("mesh send %s %s", row["host"], cmd.Command)
+			}
+
 			// Only expect one row returned
 			// TODO (btr): check length to avoid a panic.
 			resp := mmcli.RunTabular(cmd)[0]
