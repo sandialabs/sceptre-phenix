@@ -32,9 +32,9 @@ export default new Vuex.Store({
         localStorage.setItem( 'phenix.auth',  state.auth );
       }
 
-      if ( state.role === "VM Viewer" ) {
+      if ( state.role.name === "VM Viewer" ) {
         router.replace( {name: 'vmtiles'} );
-      } else if ( state.role === "Disabled" ) {
+      } else if ( state.role.name === "Disabled" ) {
         router.replace( {name: 'disabled'} );
       } else if ( state.next && state.next.name !== 'signin' ) {
         router.replace( state.next );

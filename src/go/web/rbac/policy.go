@@ -18,10 +18,6 @@ func (this Policy) resourceNameAllowed(name string) bool {
 		negate := strings.HasPrefix(n, "!")
 		n = strings.Replace(n, "!", "", 1)
 
-		if strings.Contains(name, "/") && !strings.Contains(n, "/") {
-			n = "*/" + n
-		}
-
 		if matched, _ := filepath.Match(n, name); matched {
 			if negate {
 				return false

@@ -25,7 +25,18 @@ const router = new Router({
   mode: 'history',
   base: process.env.BASE_URL,
   routes: [
-    {path: '/',                  name: 'home',        redirect:  {name: 'experiments'}},
+    {
+      path: '/',
+      name: 'home',
+      redirect: () => {
+        if (store.getters.auth && store.getters.role.name === "VM Viewer") {
+          return {'name': 'vmtiles'}
+        }
+
+        return {name: 'experiments'}
+      }
+    },
+
     {path: '/configs',           name: 'configs',     component: Configs},
     {path: '/disabled',          name: 'disabled',    component: Disabled},
     {path: '/experiments',       name: 'experiments', component: Experiments},
@@ -104,7 +115,7 @@ router.beforeEach( async ( to, from, next ) => {
   }
 
   if ( store.getters.auth ) {
-    if ( store.getters.role === 'Disabled' ) {
+    if ( store.getters.role.name === 'Disabled' ) {
       router.replace( '/disabled' );
     }
 
