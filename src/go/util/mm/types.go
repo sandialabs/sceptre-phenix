@@ -217,6 +217,7 @@ type VM struct {
 	CCActive   bool      `json:"ccActive"`
 	Uptime     float64   `json:"uptime"`
 	Screenshot string    `json:"screenshot,omitempty"`
+	CdRom      string    `json:"cdRom"`
 	Tags       []string  `json:"tags"`
 
 	// Used internally to track network <--> IP relationship, since

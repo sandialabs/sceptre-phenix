@@ -19,11 +19,12 @@ message VM {
   bool busy = 14;
   string experiment = 15;
   string state = 16;
-  repeated string tags = 17;
-  bool cc_active = 18;
-  bool external = 19;
+  string cd_rom = 17;
+  repeated string tags = 18;
+  bool cc_active = 19;
+  bool external = 20;
 
-  string delayed_start = 20 [json_name="delayed_start"];
+  string delayed_start = 21 [json_name="delayed_start"];
 }
 
 message VMList {

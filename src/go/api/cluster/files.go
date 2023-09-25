@@ -12,13 +12,14 @@ import (
 	"phenix/util/mm/mmcli"
 )
 
-type ImageKind int
+type ImageKind uint8
 type CopyStatus func(float64)
 
 const (
-	_ ImageKind = iota
+	UNKNOWN ImageKind = 1 << iota
 	VM_IMAGE
 	CONTAINER_IMAGE
+	ISO_IMAGE
 )
 
 type ImageDetails struct {
@@ -29,6 +30,7 @@ type ImageDetails struct {
 }
 
 var DefaultClusterFiles ClusterFiles = new(MMClusterFiles)
+var mmFilesDirectory = util.GetMMFilesDirectory()
 
 type ClusterFiles interface {
 	// Get list of VM disk images, container filesystems, or both.
@@ -85,8 +87,8 @@ func (MMClusterFiles) GetImages(expName string, kind ImageKind) ([]ImageDetails,
 	// Using a map here to weed out duplicates.
 	details := make(map[string]ImageDetails)
 
-	// Add all the files relative to the minimega files directory
-	if err := getAllFiles("", expName, details); err != nil {
+	// Add all the files from the minimega files directory
+	if err := getAllFiles(details); err != nil {
 		return nil, err
 	}
 
@@ -101,6 +103,11 @@ func (MMClusterFiles) GetImages(expName string, kind ImageKind) ([]ImageDetails,
 	var images []ImageDetails
 
 	for name := range details {
+		// Only return image types that were requested
+		if kind & details[name].Kind == 0 {
+			continue
+		}
+
 		images = append(images, details[name])
 	}
 
@@ -263,17 +270,11 @@ func (MMClusterFiles) DeleteFile(path string) error {
 	return nil
 }
 
-// Get all image files relative to the minimega files directory
-func getAllFiles(path, expName string, details map[string]ImageDetails) error {
-
-	expNames, err := getExperimentNames()
-
-	if err != nil {
-		return err
-	}
+// Get all image files from the minimega files directory
+func getAllFiles(details map[string]ImageDetails) error {
 
 	// First get file listings from mesh, then from headnode.
-	commands := []string{"mesh send all file list " + path, "file list " + path}
+	commands := []string{"mesh send all file list", "file list"}
 
 	// First, get file listings from cluster nodes.
 	cmd := mmcli.NewCommand()
@@ -283,25 +284,13 @@ func getAllFiles(path, expName string, details map[string]ImageDetails) error {
 
 		for _, row := range mmcli.RunTabular(cmd) {
 
-			// Enumerate files for any sudirectories found
+			// Only look in the base directory
 			if row["dir"] != "" {
-				// Only explore experiment subdirectories relevant to the experiment
-				if _, ok := expNames[row["name"]]; ok {
-
-					// Make sure the experiment exists
-					if _, ok := expNames[expName]; !ok {
-						continue
-					}
-
-					if !strings.Contains(row["name"], expName) {
-						continue
-					}
-				}
-
-				getAllFiles(row["name"], expName, details)
+				continue
 			}
 
 			baseName := filepath.Base(row["name"])
+
 			// Avoid adding the same image twice
 			if _, ok := details[baseName]; ok {
 				continue
@@ -318,6 +307,8 @@ func getAllFiles(path, expName string, details map[string]ImageDetails) error {
 				image.Kind = CONTAINER_IMAGE
 			} else if strings.HasSuffix(image.Name, ".hdd") {
 				image.Kind = VM_IMAGE
+			} else if strings.HasSuffix(image.Name, ".iso") {
+				image.Kind = ISO_IMAGE
 			} else {
 				continue
 			}
@@ -345,10 +336,22 @@ func getTopologyFiles(expName string, details map[string]ImageDetails) error {
 		return fmt.Errorf("unable to retrieve %v", expName)
 	}
 
+	
 	for _, node := range exp.Spec.Topology().Nodes() {
 		for _, drive := range node.Hardware().Drives() {
 			cmd := mmcli.NewCommand()
-			cmd.Command = "file list " + drive.Image()
+
+			if len(drive.Image()) == 0 {
+				continue
+			}
+
+			relMMPath,_ := filepath.Rel(mmFilesDirectory,drive.Image())
+
+			if len(relMMPath) == 0 {
+				relMMPath = drive.Image()
+			}
+
+			cmd.Command = "file list " + relMMPath
 
 			for _, row := range mmcli.RunTabular(cmd) {
 				if row["dir"] != "" {
@@ -364,7 +367,7 @@ func getTopologyFiles(expName string, details map[string]ImageDetails) error {
 
 				image := ImageDetails{
 					Name:     baseName,
-					FullPath: util.GetMMFullPath(drive.Image()),
+					FullPath: util.GetMMFullPath(row["name"]),
 					Kind:     VM_IMAGE,
 				}
 

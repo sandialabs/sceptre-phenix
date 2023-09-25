@@ -105,6 +105,7 @@ func VMToProtobuf(exp string, vm mm.VM, topology ifaces.TopologySpec) *proto.VM 
 		Busy:       vm.Busy,
 		Experiment: exp,
 		State:      vm.State,
+		CdRom:      vm.CdRom,
 		Tags:       vm.Tags,
 		CcActive:   vm.CCActive,
 	}
@@ -152,11 +153,11 @@ func ExperimentScheduleToProtobuf(exp types.Experiment) *proto.ExperimentSchedul
 func UserToProtobuf(u rbac.User) *proto.User {
 	role, _ := u.Role()
 	user := &proto.User{
-		Username:  u.Username(),
-		FirstName: u.FirstName(),
-		LastName:  u.LastName(),
+		Username:      u.Username(),
+		FirstName:     u.FirstName(),
+		LastName:      u.LastName(),
 		ResourceNames: resourceNamesForRole(role),
-		Role:  RoleToProtobuf(role),
+		Role:          RoleToProtobuf(role),
 	}
 
 	return user
@@ -188,7 +189,7 @@ func resourceNamesForRole(r rbac.Role) []string {
 		rnames = append(rnames, n)
 	}
 	sort.Strings(rnames)
-	
+
 	return rnames
 }
 
@@ -196,14 +197,14 @@ func RoleToProtobuf(r rbac.Role) *proto.Role {
 	policies := make([]*proto.Policy, len(r.Spec.Policies))
 	for i, p := range r.Spec.Policies {
 		policies[i] = &proto.Policy{
-			Resources: p.Resources,
+			Resources:     p.Resources,
 			ResourceNames: p.ResourceNames,
-			Verbs: p.Verbs,
+			Verbs:         p.Verbs,
 		}
 	}
 
 	role := &proto.Role{
-		Name:  r.Spec.Name,
+		Name:     r.Spec.Name,
 		Policies: policies,
 	}
 

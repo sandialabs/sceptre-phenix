@@ -87,10 +87,11 @@
             </b-button>
           </b-tooltip>
         </div>
-        <div v-if="roleAllowed('vms/screenshot', 'get', expModal.fullName) && !showModifyStateBar && expModal.vm.running">
+        <div v-if="roleAllowed('vms/cdrom', 'update', expModal.fullName) && roleAllowed('vms/cdrom', 'delete', expModal.fullName)
+         && !showModifyStateBar && expModal.vm.running">
           &nbsp;
-          <b-tooltip label="record screenshot" type="is-light">
-            <b-button class="button is-light" icon-left="video" @click="notImplemented()">
+          <b-tooltip :label="getOpticalDiscLabel()" type="is-light">
+            <b-button class="button is-light" icon-left="compact-disc" @click="showChangeDisc(expModal.vm)">
             </b-button>
           </b-tooltip>
         </div>
@@ -374,6 +375,38 @@
         </footer>
       </div>
     </b-modal>
+    <b-modal :active.sync="opticalDiscModal.active" has-modal-card :on-cancel="resetOpticalDiscModal" ref="opticalDisc">
+      <div align="left" class="modal-card" style="width:auto">
+        <header class="modal-card-head">
+          <p  class="modal-card-title">Change Optical Disc for {{opticalDiscModal.vmName}} </p>
+        </header>
+        <section class="modal-card-body pt-3">   
+              <font color="#202020">             
+              <b-field label="Optical Disc:">
+              <b-tooltip :label="getDiskToolTip(opticalDiscModal.disc, 'select ISO')" type="is-dark">
+              <b-select :value="opticalDiscModal.disc" @input="( value ) =>  opticalDiscModal.disc = value">
+                <option
+                  v-for="(  d, index ) in disks"
+                    :key="index"
+                    :value="d">
+                    {{ getBaseName(d) }}
+                </option>
+              </b-select>
+              </b-tooltip>
+              </b-field>
+              </font>            
+        </section>        
+        <footer class="modal-card-foot buttons is-right">
+          <button class="button"  type="button" 
+              @click="closeModal('opticalDisc')">
+              Cancel
+          </button>  
+          <button class="button is-success"  @click="changeOpticalDisc(opticalDiscModal.vmName,opticalDiscModal.disc)">
+            {{ getOpticalDiscLabel() }}
+          </button>
+        </footer>
+      </div>
+    </b-modal>
     <hr>
     <div class="level is-vcentered">
       <div class="level-item">
@@ -429,15 +462,7 @@
               <b-button class="button is-light" icon-left="camera" @click="processMultiVmAction(vmActions.captureSnapshot)">
               </b-button>
             </b-tooltip>
-          </div>
-          <div v-if="vmSelectedArray.every(vm => roleAllowed('vms/screenshot', 'update', experiment.name + '/' + vm)) && !showModifyStateBar">
-            &nbsp;
-            <b-tooltip label="record screenshot" type="is-light">
-              <!-- not implemented -->
-              <b-button class="button is-light" icon-left="video" @click="processMultiVmAction(vmActions.recordScreenshots)">
-              </b-button>
-            </b-tooltip>
-          </div>
+          </div>          
           <div v-if="!showModifyStateBar">
             &nbsp;
             <b-tooltip label="modify state" type="is-light">
@@ -1074,6 +1099,41 @@
               case  'shutdown': {
                 break;
               }
+
+              case 'cdrom-inserted': {
+                this.$buefy.toast.open({
+                  message: 'The optical disc for ' + vm[ 1 ] + ' was successfully inserted.',
+                  type: 'is-success',
+                  duration: 4000
+                });
+
+                // Refresh the VM
+                for ( let i = 0; i < vms.length; i++ ) {
+                  if ( vms[i].name == vm[ 1 ] ) {
+                    this.getInfo(vms[i]);
+                    break;
+                  }
+                }
+                
+                break;
+              }
+
+              case 'cdrom-ejected': {
+                this.$buefy.toast.open({
+                  message: 'The optical disc for ' + vm[ 1 ] + ' was successfully ejected.',
+                  type: 'is-success',
+                  duration: 4000
+                });
+
+                // Refresh the VM
+                for ( let i = 0; i < vms.length; i++ ) {
+                  if ( vms[i].name == vm[ 1 ] ) {
+                    this.getInfo(vms[i]);
+                    break;
+                  }
+                }
+                break;
+              }
         
               case  'redeployed': {
                 this.$buefy.toast.open({
@@ -1458,10 +1518,10 @@
         }
       },
     
-      updateDisks ()  {
+      updateDisks (diskType="")  {
         this.disks = [];
       
-        this.$http.get( 'disks' ).then(
+        this.$http.get( `disks?diskType=${diskType}` ).then(
           response  => {
             response.json().then(
               state =>  {
@@ -2702,6 +2762,30 @@
           }
         })
       },
+
+      changeOpticalDisc (vmName,isoPath) {
+        this.opticalDiscModal.active = false;  
+
+        let url = `experiments/${this.$route.params.id}/vms/${vmName}/cdrom`
+
+        if (this.getOpticalDiscLabel().indexOf('eject') != -1) {
+          this.$http.delete(url).then(
+            null, err => {
+              this.errorNotification(err);
+            }
+          );
+        } else {
+          url += `?isoPath=${isoPath}`
+
+          this.$http.post(url).then(
+            null, err => {
+              this.errorNotification(err);
+            }
+          );
+        }
+
+        this.resetOpticalDiscModal;        
+      },
       
       resetExpModal ()  {        
         this.expModal = {
@@ -2769,7 +2853,20 @@
         this.fileViewerModal.title = null;
         this.fileViewerModal.contents = null;
       },
-      
+
+      resetOpticalDiscModal () {
+        this.opticalDiscModal.active = false;
+        this.opticalDiscModal.disc = ""; 
+        this.opticalDiscModal.vmName = null;       
+      },
+
+      showChangeDisc(vm) {
+        this.updateDisks("ISO")
+        this.opticalDiscModal.vmName = vm.name;
+        this.opticalDiscModal.active = true;        
+        this.opticalDiscModal.disc = vm.cdRom;                
+      },
+
       validate (modalVMQueue) {  
         var regexp = /^[a-zA-Z0-9-_]+$/;
         for ( let i = 0; i < modalVMQueue.vm.length; i++ ) {
@@ -2895,8 +2992,29 @@
         return diskName.substring(diskName.lastIndexOf("/")+1);       
       },
 
-      getDiskToolTip(fullPath) {       
-        return this.disks.indexOf(fullPath) == -1 ? "menu for assigning vm(s) disk" : fullPath
+      getOpticalDiscLabel () {    
+
+        if (this.expModal.vm.cdRom === undefined) {
+          return "insert optical disc"
+        }
+
+        // If there is an existing disc in the VM, see 
+        // if the disc was changed
+        if (this.expModal.vm.cdRom.length > 0 && this.opticalDiscModal.disc.length > 0) {
+
+          return String(this.expModal.vm.cdRom) != String(this.opticalDiscModal.disc) ? "change optical disc" : "eject optical disc"            
+        }
+        else if (this.expModal.vm.cdRom.length > 0) {
+          return "eject optical disc"
+        }
+        else {
+          return "insert optical disc"
+        }   
+              
+      },
+
+      getDiskToolTip(fullPath,defaultMessage="menu for assigning vm(s) disk") {       
+        return this.disks.indexOf(fullPath) == -1 ? defaultMessage : fullPath
       },
 
       isSubnetPresent () { 
@@ -3098,6 +3216,11 @@
           active: false,
           title: null,
           contents: null
+        },
+        opticalDiscModal: {
+          active: false,
+          disc: "",
+          vmName: null          
         },
         apps: null,
         experiment: [],

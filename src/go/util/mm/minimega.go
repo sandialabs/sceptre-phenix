@@ -139,7 +139,7 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "vm info"
-	cmd.Columns = []string{"uuid", "host", "name", "state", "uptime", "vlan", "tap", "ip", "memory", "vcpus", "disks", "snapshot", "tags"}
+	cmd.Columns = []string{"uuid", "host", "name", "state", "uptime", "vlan", "tap", "ip", "memory", "vcpus", "disks", "snapshot", "cdrom", "tags"}
 
 	if o.vm != "" {
 		cmd.Filters = []string{"name=" + o.vm}
@@ -155,6 +155,7 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 			State:    row["state"],
 			Running:  row["state"] == "RUNNING",
 			CCActive: activeC2[row["uuid"]],
+			CdRom: row["cdrom"],
 		}
 
 		s := row["vlan"]

@@ -2646,10 +2646,12 @@ func GetDisks(w http.ResponseWriter, r *http.Request) {
 	plog.Debug("HTTP handler called", "handler", "GetDisks")
 
 	var (
-		ctx     = r.Context()
-		role    = ctx.Value("role").(rbac.Role)
-		query   = r.URL.Query()
-		expName = query.Get("expName")
+		ctx             = r.Context()
+		role            = ctx.Value("role").(rbac.Role)
+		query           = r.URL.Query()
+		expName         = query.Get("expName")
+		diskType        = query.Get("diskType")
+		defaultDiskType = cluster.VM_IMAGE | cluster.CONTAINER_IMAGE
 	)
 
 	if !role.Allowed("disks", "list") {
@@ -2657,7 +2659,13 @@ func GetDisks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	disks, err := cluster.GetImages(expName, cluster.VM_IMAGE)
+	if len(diskType) > 0 {
+		if strings.Contains(diskType, "ISO") {
+			defaultDiskType = cluster.ISO_IMAGE
+		}
+	}
+
+	disks, err := cluster.GetImages(expName, defaultDiskType)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -2906,6 +2914,76 @@ func WsConsole(w http.ResponseWriter, r *http.Request) {
 		plog.Debug("killed minimega console", "pid", pid)
 
 	}).ServeHTTP(w, r)
+}
+
+// POST /experiments/{exp}/vms/{name}/cdrom
+func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) {
+	plog.Debug("HTTP handler called", "handler", "ChangeOpticalDisc")
+
+	var (
+		ctx      = r.Context()
+		role     = ctx.Value("role").(rbac.Role)
+		query    = r.URL.Query()
+		vars     = mux.Vars(r)
+		exp      = vars["exp"]
+		name     = vars["name"]
+		isoPath  = query.Get("isoPath")
+		fullName = exp + "/" + name
+	)
+
+	if !role.Allowed("vms/cdrom", "update", fullName) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	if err := vm.ChangeOpticalDisc(exp, name, isoPath); err != nil {
+		plog.Error("changing disc for VM", "exp", exp, "vm", name, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	broker.Broadcast(
+		bt.NewRequestPolicy("vms/cdrom", "update", fullName),
+		bt.NewResource("experiment/vm", fullName, "cdrom-inserted"),
+		nil,
+	)
+
+	w.WriteHeader(http.StatusNoContent)
+
+}
+
+// DELETE /experiments/{exp}/vms/{name}/cdrom
+func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) {
+	plog.Debug("HTTP handler called", "handler", "EjectOpticalDisc")
+
+	var (
+		ctx      = r.Context()
+		role     = ctx.Value("role").(rbac.Role)
+		vars     = mux.Vars(r)
+		exp      = vars["exp"]
+		name     = vars["name"]
+		fullName = exp + "/" + name
+	)
+
+	if !role.Allowed("vms/cdrom", "delete", fullName) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	if err := vm.EjectOpticalDisc(exp, name); err != nil {
+		plog.Error("ejecting disc for VM", "exp", exp, "vm", name, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	broker.Broadcast(
+		bt.NewRequestPolicy("vms/cdrom", "delete", fullName),
+		bt.NewResource("experiment/vm", fullName, "cdrom-ejected"),
+		nil,
+	)
+
+	w.WriteHeader(http.StatusNoContent)
+
 }
 
 func parseDuration(v string, d *time.Duration) error {

@@ -190,6 +190,8 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/experiments/{exp}/vms/{name}/stop", StopVM).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/shutdown", ShutdownVM).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/redeploy", RedeployVM).Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/cdrom", ChangeOpticalDisc).Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/cdrom", EjectOpticalDisc).Methods("DELETE", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/screenshot.png", GetScreenshot).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/vnc", GetVNC).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/vnc/ws", GetVNCWebSocket).Methods("GET", "OPTIONS")

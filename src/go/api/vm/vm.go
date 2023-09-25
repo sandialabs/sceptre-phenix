@@ -109,6 +109,7 @@ func List(expName string) ([]mm.VM, error) {
 			vm.Taps = details.Taps
 			vm.IPv4 = details.IPv4
 			vm.Captures = details.Captures
+			vm.CdRom = details.CdRom
 			vm.Tags = details.Tags
 			vm.Uptime = details.Uptime
 			vm.CPUs = details.CPUs
@@ -229,6 +230,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 	vm.Taps = details[0].Taps
 	vm.IPv4 = details[0].IPv4
 	vm.Captures = details[0].Captures
+	vm.CdRom = details[0].CdRom
 	vm.Tags = details[0].Tags
 	vm.Uptime = details[0].Uptime
 	vm.CPUs = details[0].CPUs
@@ -1459,3 +1461,55 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 	return matchedVMs, nil
 
 }
+
+// Changes the optical disc in the first drive
+func ChangeOpticalDisc(expName, vmName, isoPath string) error {
+
+	if expName == "" {
+		return fmt.Errorf("no experiment name provided")
+	}
+
+	if vmName == "" {
+		return fmt.Errorf("no VM name provided")
+	}
+
+	if isoPath == "" {
+		return fmt.Errorf("no optical disc path provided")
+	}
+
+	
+	cmd := mmcli.NewNamespacedCommand(expName)	
+	cmd.Command = fmt.Sprintf("vm cdrom change %s %s",vmName,isoPath)
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("changing optical disc for VM %s: %w", vmName, err)
+	}
+	
+
+	
+	return nil
+}
+
+// Ejects the optical disc in the first drive
+func EjectOpticalDisc(expName, vmName string) error {
+
+	if expName == "" {
+		return fmt.Errorf("no experiment name provided")
+	}
+
+	if vmName == "" {
+		return fmt.Errorf("no VM name provided")
+	}
+
+		
+	cmd := mmcli.NewNamespacedCommand(expName)	
+	cmd.Command = fmt.Sprintf("vm cdrom eject %s",vmName)
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("ejecting optical disc for VM %s: %w", vmName, err)
+	}
+
+	
+	return nil
+}
+

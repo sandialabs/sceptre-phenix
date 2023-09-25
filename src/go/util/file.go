@@ -13,7 +13,7 @@ import (
 
 var (
 	filePathRe       = regexp.MustCompile(`filepath=([^ ]+)`)
-	mmFilesDirectory = getMMFilesDirectory()
+	mmFilesDirectory = GetMMFilesDirectory()
 )
 
 // Returns the full path relative to the minimega files directory
@@ -29,7 +29,7 @@ func GetMMFullPath(path string) string {
 }
 
 // Tries to extract the minimega files directory from a process listing
-func getMMFilesDirectory() string {
+func GetMMFilesDirectory() string {
 	defaultMMFilesDirectory := fmt.Sprintf("%s/images", common.PhenixBase)
 
 	cmd := "ps"
