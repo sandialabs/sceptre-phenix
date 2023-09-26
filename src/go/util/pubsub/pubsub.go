@@ -4,21 +4,21 @@ import "sync"
 
 var (
 	mu   sync.RWMutex
-	subs = make(map[string][]chan interface{})
+	subs = make(map[string][]chan any)
 )
 
-func Subscribe(topic string) chan interface{} {
+func Subscribe(topic string) chan any {
 	mu.Lock()
 	defer mu.Unlock()
 
-	ch := make(chan interface{})
+	ch := make(chan any)
 
 	subs[topic] = append(subs[topic], ch)
 
 	return ch
 }
 
-func Publish(topic string, msg interface{}) {
+func Publish(topic string, msg any) {
 	mu.RLock()
 	defer mu.RUnlock()
 

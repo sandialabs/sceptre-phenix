@@ -22,6 +22,15 @@ type Action string
 // AppFactory is a function that returns a new app struct.
 type AppFactory func() App
 
+type CreateTunnel struct {
+	Experiment string
+	VM         string
+	Sport      string
+	Dhost      string
+	Dport      string
+	User       string
+}
+
 type TriggerPublication struct {
 	Experiment string
 	Verb       string

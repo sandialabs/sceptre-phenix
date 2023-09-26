@@ -14,6 +14,10 @@ import (
 	"phenix/util"
 	"phenix/util/common"
 	"phenix/util/mm"
+	"phenix/util/plog"
+	"phenix/util/pubsub"
+
+	"github.com/mitchellh/mapstructure"
 )
 
 type Startup struct{}
@@ -214,6 +218,37 @@ func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 
 				if err != nil {
 					return fmt.Errorf("execute C2 command to run Windows startup script: %w", err)
+				}
+			}
+		}
+
+		if annotation, ok := node.GetAnnotation("phenix/startup-autotunnel"); ok {
+			var tunnels map[string]string
+
+			if err := mapstructure.Decode(annotation, &tunnels); err != nil {
+				plog.Error("parsing startup-autotunnel config", "exp", exp.Metadata.Name, "vm", node.General().Hostname(), "err", err)
+			} else {
+				if err := mm.IsC2ClientActive(mm.C2NS(exp.Metadata.Name), mm.C2VM(node.General().Hostname())); err != nil {
+					plog.Error("cc client not active", "exp", exp.Metadata.Name, "vm", node.General().Hostname())
+				} else {
+					for sport, dst := range tunnels {
+						tunnel := CreateTunnel{
+							Experiment: exp.Metadata.Name,
+							VM:         node.General().Hostname(),
+							Sport:      sport,
+							Dport:      dst,
+							User:       "bot",
+						}
+
+						if strings.Contains(dst, ":") {
+							tokens := strings.Split(dst, ":")
+
+							tunnel.Dhost = tokens[0]
+							tunnel.Dport = tokens[1]
+						}
+
+						pubsub.Publish("create-tunnel", tunnel)
+					}
 				}
 			}
 		}

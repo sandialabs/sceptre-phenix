@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"phenix/api/experiment"
+	"phenix/app"
 	"phenix/util/mm"
 	"phenix/util/plog"
+	"phenix/util/pubsub"
 	"phenix/web/broker"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -42,12 +44,97 @@ func init() {
 	})
 
 	go func() {
-		for range time.Tick(10 * time.Second) {
-			forwardsMu.Lock()
-			reapForwards()
-			forwardsMu.Unlock()
+		var (
+			ticker       = time.NewTicker(10 * time.Second)
+			createTunnel = pubsub.Subscribe("create-tunnel")
+		)
+
+		for {
+			select {
+			case <-ticker.C:
+				forwardsMu.Lock()
+				reapForwards()
+				forwardsMu.Unlock()
+			case pub := <-createTunnel:
+				tunnel := pub.(app.CreateTunnel)
+
+				if err := createPortForward(tunnel.Experiment, tunnel.VM, tunnel.Sport, tunnel.Dhost, tunnel.Dport, tunnel.User); err != nil {
+					plog.Error("adding port forward", "exp", tunnel.Experiment, "vm", tunnel.VM, "sport", tunnel.Sport, "host", tunnel.Dhost, "dport", tunnel.Dport, "err", err)
+				}
+			}
 		}
 	}()
+}
+
+func createPortForward(exp, vm, src, host, dst, user string) error {
+	if host == "" {
+		host = "127.0.0.1"
+	}
+
+	info := mm.GetVMInfo(mm.NS(exp), mm.VMName(vm))
+	if len(info) == 0 {
+		return fmt.Errorf("vm %s not found for experiment %s", vm, exp)
+	}
+
+	localSrc, err := strconv.Atoi(src)
+	if err != nil {
+		return fmt.Errorf("parsing source port %s for forward: %w", src, err)
+	}
+
+	remoteDst, err := strconv.Atoi(dst)
+	if err != nil {
+		return fmt.Errorf("parsing destination port %s for forward: %w", dst, err)
+	}
+
+	listener := ft.Listener{
+		Exp: exp,
+		VM:  vm,
+
+		SrcPort: localSrc,
+		DstHost: host,
+		DstPort: remoteDst,
+		Owner:   user,
+
+		ClusterHost: info[0].Host,
+	}
+
+	forwardsMu.Lock()
+	defer forwardsMu.Unlock()
+
+	reapForwards()
+
+	if _, ok := forwards[listener.ToKey()]; ok {
+		return fmt.Errorf("forward already exists for user %s", user)
+	}
+
+	remoteSrc := 50000 + rand.Intn(15000)
+
+	for {
+		err = mm.CreateTunnel(mm.NS(exp), mm.VMName(vm), mm.TunnelSourcePort(remoteSrc), mm.TunnelDestinationPort(remoteDst), mm.TunnelDestinationHost(host))
+		if err != nil {
+			if strings.Contains(err.Error(), "bind: address already in use") {
+				remoteSrc = 50000 + rand.Intn(15000) // retry with a different port
+				continue
+			} else {
+				return fmt.Errorf("creating tunnel: %w", err)
+			}
+		}
+
+		break
+	}
+
+	listener.ClusterPort = remoteSrc
+	forwards[listener.ToKey()] = listener
+
+	body, _ := json.Marshal(listener)
+
+	broker.Broadcast(
+		bt.NewRequestPolicy("vms/forwards", "create", fmt.Sprintf("%s/%s", exp, vm)),
+		bt.NewResource("experiment/vm/forward", fmt.Sprintf("%s/%s", exp, vm), "create"),
+		body,
+	)
+
+	return nil
 }
 
 // GET /experiments/{exp}/vms/{name}/forwards
@@ -117,88 +204,12 @@ func CreatePortForward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if host == "" {
-		host = "127.0.0.1"
-	}
+	if err := createPortForward(exp, vm, src, host, dst, user); err != nil {
+		plog.Error("creating port forward", "exp", exp, "vm", vm, "src", src, "host", host, "dst", dst, "user", user, "err", err)
 
-	info := mm.GetVMInfo(mm.NS(exp), mm.VMName(vm))
-	if len(info) == 0 {
-		http.Error(w, "vm not found", http.StatusNotFound)
+		http.Error(w, "unable to create tunnel to vm", http.StatusBadRequest)
 		return
 	}
-
-	localSrc, err := strconv.Atoi(src)
-	if err != nil {
-		plog.Error("parsing source port for forward", "port", src, "err", err)
-
-		http.Error(w, "invalid source port", http.StatusBadRequest)
-		return
-	}
-
-	remoteDst, err := strconv.Atoi(dst)
-	if err != nil {
-		plog.Error("parsing destination port for forward", "port", dst, "err", err)
-
-		http.Error(w, "invalid destination port", http.StatusBadRequest)
-		return
-	}
-
-	listener := ft.Listener{
-		Exp: exp,
-		VM:  vm,
-
-		SrcPort: localSrc,
-		DstHost: host,
-		DstPort: remoteDst,
-		Owner:   user,
-
-		ClusterHost: info[0].Host,
-	}
-
-	forwardsMu.Lock()
-	defer forwardsMu.Unlock()
-
-	reapForwards()
-
-	if _, ok := forwards[listener.ToKey()]; ok {
-		http.Error(w, "forward already exists for user", http.StatusBadRequest)
-		return
-	}
-
-	remoteSrc := 50000 + rand.Intn(15000)
-
-	for {
-		err = mm.CreateTunnel(mm.NS(exp), mm.VMName(vm), mm.TunnelSourcePort(remoteSrc), mm.TunnelDestinationPort(remoteDst), mm.TunnelDestinationHost(host))
-		if err != nil {
-			if strings.Contains(err.Error(), "bind: address already in use") {
-				remoteSrc = 50000 + rand.Intn(15000) // retry with a different port
-				continue
-			} else {
-				plog.Error("creating tunnel", "err", err)
-
-				http.Error(w, "unable to create tunnel to vm", http.StatusInternalServerError)
-				return
-			}
-		}
-
-		break
-	}
-
-	listener.ClusterPort = remoteSrc
-	forwards[listener.ToKey()] = listener
-
-	// TODO: when an experiment is stopped, grab all keys starting with `<exp>:`
-	// and broadcast a `delete` action for the forward so tunnelers can stop their
-	// local listeners. Do something similar when specific tunnels are stopped by
-	// a user.
-
-	body, _ := json.Marshal(listener)
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("vms/forwards", "create", fmt.Sprintf("%s/%s", exp, vm)),
-		bt.NewResource("experiment/vm/forward", fmt.Sprintf("%s/%s", exp, vm), "create"),
-		body,
-	)
 
 	w.WriteHeader(http.StatusNoContent)
 }
