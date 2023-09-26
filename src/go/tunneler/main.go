@@ -73,7 +73,9 @@ var serveCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		origin = args[0]
 
-		username, err := cmd.Flags().GetString("username")
+		var err error
+
+		username, err = cmd.Flags().GetString("username")
 		if err != nil {
 			return fmt.Errorf("unable to get --username flag")
 		}
