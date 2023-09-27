@@ -223,32 +223,44 @@ func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 		}
 
 		if annotation, ok := node.GetAnnotation("phenix/startup-autotunnel"); ok {
-			var tunnels map[string]string
+			var tunnels []string
 
 			if err := mapstructure.Decode(annotation, &tunnels); err != nil {
-				plog.Error("parsing startup-autotunnel config", "exp", exp.Metadata.Name, "vm", node.General().Hostname(), "err", err)
+				plog.Error("parsing phenix/startup-autotunnel annotation", "exp", exp.Metadata.Name, "vm", node.General().Hostname(), "err", err)
 			} else {
-				if err := mm.IsC2ClientActive(mm.C2NS(exp.Metadata.Name), mm.C2VM(node.General().Hostname())); err != nil {
-					plog.Error("cc client not active", "exp", exp.Metadata.Name, "vm", node.General().Hostname())
-				} else {
-					for sport, dst := range tunnels {
+				if err := mm.IsC2ClientActive(mm.C2NS(exp.Metadata.Name), mm.C2VM(node.General().Hostname())); err == nil {
+					for _, config := range tunnels {
 						tunnel := CreateTunnel{
 							Experiment: exp.Metadata.Name,
 							VM:         node.General().Hostname(),
-							Sport:      sport,
-							Dport:      dst,
 							User:       "bot",
 						}
 
-						if strings.Contains(dst, ":") {
-							tokens := strings.Split(dst, ":")
+						tokens := strings.Split(config, ":")
 
-							tunnel.Dhost = tokens[0]
+						switch len(tokens) {
+						case 1:
+							tunnel.Sport = tokens[0]
+							tunnel.Dhost = "127.0.0.1"
+							tunnel.Dport = tokens[0]
+						case 2:
+							tunnel.Sport = tokens[0]
+							tunnel.Dhost = "127.0.0.1"
 							tunnel.Dport = tokens[1]
+						case 3:
+							tunnel.Sport = tokens[0]
+							tunnel.Dhost = tokens[1]
+							tunnel.Dport = tokens[2]
+						default:
+							plog.Error("invalid phenix/startup-autotunnel annotation", "value", config)
 						}
 
-						pubsub.Publish("create-tunnel", tunnel)
+						if tunnel.Sport != "" {
+							pubsub.Publish("create-tunnel", tunnel)
+						}
 					}
+				} else {
+					plog.Error("cc client not active", "exp", exp.Metadata.Name, "vm", node.General().Hostname())
 				}
 			}
 		}
