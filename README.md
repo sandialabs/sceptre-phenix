@@ -4,22 +4,25 @@ Welcome to `phenix`!
 
 ## Building
 
-To build locally, you will need Golang v1.18, Node v14.2, Yarn 1.22, and Protoc
-3.14 installed. Once installed (if not already), simply run `make bin/phenix`.
+### Local build
+To build locally, you will need Golang v1.18, Node v14.2, Yarn 1.22, and Protoc 3.14 installed.
 
-If you don't want to install Golang and/or Node locally, you can also use Docker
-to build phenix (assuming you have Docker installed). Simply run
-`./docker-build.sh` and once built, the phenix binary will be available at
-`bin/phenix`. See `./docker-build.sh -h` for usage details.
-
-A Docker image is also hosted in this repo under Packages and can be pulled via:
-
+Once installed (if not already), simply run:
+```bash
+make bin/phenix
 ```
-$> docker pull ghcr.io/sandialabs/sceptre-phenix/phenix:main
-```
+
+If you don't want to install Golang and/or Node locally, you can also use Docker to build phenix (assuming you have Docker installed). Simply run `./hack/build/docker-build.sh` and once built, the phenix binary will be available at `bin/phenix`. Run `./hack/build/docker-build.sh -h` for usage details.
+
+### Docker build
+Docker is the recommended way to build and deploy phenix.
 
 The Docker image is updated automatically each time a commit is pushed to the
-`main` branch.
+`main` branch. To pull the latest image:
+
+```shell
+docker pull ghcr.io/sandialabs/sceptre-phenix/phenix:main
+```
 
 > **NOTE**: currently the `main` image available on GHCR defaults to
 > having UI authentication disabled. If you want to enable authentication,
@@ -51,7 +54,7 @@ These tags are stored as a string `key1=value1,key2=value2`.
 
 ### Add/Update Topology or Scenario Config
 
-```
+```bash
 curl -XPOST -H "Content-Type: application/x-yaml" \
   --data-binary @{/path/to/config/file.yml} \
   http://localhost:3000/api/v1/workflow/configs/{branch name}
@@ -59,7 +62,7 @@ curl -XPOST -H "Content-Type: application/x-yaml" \
 
 ### Apply phenix Workflow Config
 
-```
+```bash
 curl -XPOST -H "Content-Type: application/x-yaml" \
   --data-binary @{/path/to/config/file.yml} \
   http://localhost:3000/api/v1/workflow/apply/{branch name}[?tag=key1=value1&tag=key2=value2]
@@ -69,7 +72,7 @@ curl -XPOST -H "Content-Type: application/x-yaml" \
 
 Below is an example phenix workflow config file.
 
-```
+```yaml
 apiVersion: phenix.sandia.gov/v0
 kind: Workflow
 metadata: {}

@@ -7,3 +7,5 @@
 bin
 
 staticcheck.conf
+
+.venv
