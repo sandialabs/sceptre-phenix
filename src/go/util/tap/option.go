@@ -12,13 +12,14 @@ type options struct {
 }
 
 func NewOptions(opts ...Option) options {
-	o := options{
-		netns:  true,
-		subnet: netaddr.MustParseIPPrefix("10.213.47.0/30"),
-	}
+	o := options{netns: true}
 
 	for _, opt := range opts {
 		opt(&o)
+	}
+
+	if o.subnet.IsZero() {
+		o.subnet = netaddr.MustParseIPPrefix("10.213.47.0/30")
 	}
 
 	return o

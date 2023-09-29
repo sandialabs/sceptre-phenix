@@ -79,7 +79,13 @@ func (this *Tap) PostStart(ctx context.Context, exp *types.Experiment) error {
 			return fmt.Errorf("tap already created for VLAN %s", t.VLAN)
 		}
 
-		t.Init(tap.Experiment(exp.Metadata.Name), tap.UsedPairs(pairs))
+		opts := []tap.Option{tap.Experiment(exp.Metadata.Name), tap.UsedPairs(pairs)}
+
+		if subnet, err := netaddr.ParseIPPrefix(t.Subnet); err == nil {
+			opts = append(opts, tap.PairSubnet(subnet))
+		}
+
+		t.Init(opts...)
 
 		// Tap name is random, yet descriptive to the fact that it's a "tapapp" tap.
 		t.Name = fmt.Sprintf("%s-tapapp", util.RandomString(8))
