@@ -228,39 +228,44 @@ func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 			if err := mapstructure.Decode(annotation, &tunnels); err != nil {
 				plog.Error("parsing phenix/startup-autotunnel annotation", "exp", exp.Metadata.Name, "vm", node.General().Hostname(), "err", err)
 			} else {
-				if err := mm.IsC2ClientActive(mm.C2NS(exp.Metadata.Name), mm.C2VM(node.General().Hostname())); err == nil {
-					for _, config := range tunnels {
-						tunnel := CreateTunnel{
-							Experiment: exp.Metadata.Name,
-							VM:         node.General().Hostname(),
-							User:       "bot",
-						}
-
-						tokens := strings.Split(config, ":")
-
-						switch len(tokens) {
-						case 1:
-							tunnel.Sport = tokens[0]
-							tunnel.Dhost = "127.0.0.1"
-							tunnel.Dport = tokens[0]
-						case 2:
-							tunnel.Sport = tokens[0]
-							tunnel.Dhost = "127.0.0.1"
-							tunnel.Dport = tokens[1]
-						case 3:
-							tunnel.Sport = tokens[0]
-							tunnel.Dhost = tokens[1]
-							tunnel.Dport = tokens[2]
-						default:
-							plog.Error("invalid phenix/startup-autotunnel annotation", "value", config)
-						}
-
-						if tunnel.Sport != "" {
-							pubsub.Publish("create-tunnel", tunnel)
-						}
+				for _, config := range tunnels {
+					tunnel := CreateTunnel{
+						Experiment: exp.Metadata.Name,
+						VM:         node.General().Hostname(),
+						User:       "bot",
 					}
-				} else {
-					plog.Error("cc client not active", "exp", exp.Metadata.Name, "vm", node.General().Hostname())
+
+					tokens := strings.Split(config, ":")
+
+					switch len(tokens) {
+					case 1:
+						tunnel.Sport = tokens[0]
+						tunnel.Dhost = "127.0.0.1"
+						tunnel.Dport = tokens[0]
+					case 2:
+						tunnel.Sport = tokens[0]
+						tunnel.Dhost = "127.0.0.1"
+						tunnel.Dport = tokens[1]
+					case 3:
+						tunnel.Sport = tokens[0]
+						tunnel.Dhost = tokens[1]
+						tunnel.Dport = tokens[2]
+					default:
+						plog.Error("invalid phenix/startup-autotunnel annotation", "value", config)
+					}
+
+					if tunnel.Sport != "" {
+						go func(exp, vm string, msg CreateTunnel) {
+							switch strings.ToUpper(msg.Dport) {
+							case "VNC": // doesn't require miniccc agent
+								pubsub.Publish("create-tunnel", msg)
+							default:
+								if err := mm.IsC2ClientActive(mm.C2NS(exp), mm.C2VM(vm)); err == nil {
+									pubsub.Publish("create-tunnel", msg)
+								}
+							}
+						}(exp.Metadata.Name, node.General().Hostname(), tunnel)
+					}
 				}
 			}
 		}

@@ -13,6 +13,8 @@ type Listener struct {
 
 	ClusterHost string `json:"-"`
 	ClusterPort int    `json:"-"`
+
+	QEMU bool `json:"-"`
 }
 
 func (this Listener) ToKey() string {

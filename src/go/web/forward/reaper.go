@@ -11,6 +11,10 @@ import (
 )
 
 func forwardExists(l ft.Listener) bool {
+	if l.QEMU {
+		return true
+	}
+
 	tunnels := mm.GetTunnels(
 		mm.NS(l.Exp),
 		mm.VMName(l.VM),

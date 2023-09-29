@@ -67,35 +67,48 @@ func init() {
 }
 
 func createPortForward(exp, vm, src, host, dst, user string) error {
+	var err error
+
+	listener := ft.Listener{Exp: exp, VM: vm, Owner: user}
+
 	if host == "" {
-		host = "127.0.0.1"
+		listener.DstHost = "127.0.0.1"
+	} else {
+		listener.DstHost = host
 	}
 
-	info := mm.GetVMInfo(mm.NS(exp), mm.VMName(vm))
-	if len(info) == 0 {
-		return fmt.Errorf("vm %s not found for experiment %s", vm, exp)
-	}
-
-	localSrc, err := strconv.Atoi(src)
+	listener.SrcPort, err = strconv.Atoi(src)
 	if err != nil {
 		return fmt.Errorf("parsing source port %s for forward: %w", src, err)
 	}
 
-	remoteDst, err := strconv.Atoi(dst)
-	if err != nil {
-		return fmt.Errorf("parsing destination port %s for forward: %w", dst, err)
-	}
+	switch strings.ToUpper(dst) {
+	case "VNC":
+		endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(vm))
+		if err != nil {
+			return fmt.Errorf("getting VNC endpoint for vm %s in experiment %s: %w", vm, exp, err)
+		}
 
-	listener := ft.Listener{
-		Exp: exp,
-		VM:  vm,
+		tokens := strings.Split(endpoint, ":")
 
-		SrcPort: localSrc,
-		DstHost: host,
-		DstPort: remoteDst,
-		Owner:   user,
+		listener.ClusterHost = tokens[0]
+		listener.ClusterPort, _ = strconv.Atoi(tokens[1])
 
-		ClusterHost: info[0].Host,
+		listener.DstPort = 5900
+
+		listener.QEMU = true
+	default:
+		info := mm.GetVMInfo(mm.NS(exp), mm.VMName(vm))
+		if len(info) == 0 {
+			return fmt.Errorf("vm %s not found for experiment %s", vm, exp)
+		}
+
+		listener.ClusterHost = info[0].Host
+
+		listener.DstPort, err = strconv.Atoi(dst)
+		if err != nil {
+			return fmt.Errorf("parsing destination port %s for forward: %w", dst, err)
+		}
 	}
 
 	forwardsMu.Lock()
@@ -107,23 +120,24 @@ func createPortForward(exp, vm, src, host, dst, user string) error {
 		return fmt.Errorf("forward already exists for user %s", user)
 	}
 
-	remoteSrc := 50000 + rand.Intn(15000)
+	if listener.ClusterPort == 0 {
+		listener.ClusterPort = 50000 + rand.Intn(15000)
 
-	for {
-		err = mm.CreateTunnel(mm.NS(exp), mm.VMName(vm), mm.TunnelSourcePort(remoteSrc), mm.TunnelDestinationPort(remoteDst), mm.TunnelDestinationHost(host))
-		if err != nil {
-			if strings.Contains(err.Error(), "bind: address already in use") {
-				remoteSrc = 50000 + rand.Intn(15000) // retry with a different port
-				continue
-			} else {
-				return fmt.Errorf("creating tunnel: %w", err)
+		for {
+			err = mm.CreateTunnel(mm.NS(exp), mm.VMName(vm), mm.TunnelSourcePort(listener.ClusterPort), mm.TunnelDestinationPort(listener.DstPort), mm.TunnelDestinationHost(host))
+			if err != nil {
+				if strings.Contains(err.Error(), "bind: address already in use") {
+					listener.ClusterPort = 50000 + rand.Intn(15000) // retry with a different port
+					continue
+				} else {
+					return fmt.Errorf("creating tunnel: %w", err)
+				}
 			}
-		}
 
-		break
+			break
+		}
 	}
 
-	listener.ClusterPort = remoteSrc
 	forwards[listener.ToKey()] = listener
 
 	body, _ := json.Marshal(listener)
@@ -271,12 +285,14 @@ func DeletePortForward(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err := mm.CloseTunnel(mm.NS(exp), mm.VMName(vm), mm.TunnelDestinationPort(remoteDst), mm.TunnelDestinationHost(host))
-		if err != nil {
-			plog.Error("closing tunnel", "err", err)
+		if !l.QEMU {
+			err := mm.CloseTunnel(mm.NS(exp), mm.VMName(vm), mm.TunnelDestinationPort(remoteDst), mm.TunnelDestinationHost(host))
+			if err != nil {
+				plog.Error("closing tunnel", "err", err)
 
-			http.Error(w, "unable to close tunnel to vm", http.StatusInternalServerError)
-			return
+				http.Error(w, "unable to close tunnel to vm", http.StatusInternalServerError)
+				return
+			}
 		}
 
 		deleteForward(l)
