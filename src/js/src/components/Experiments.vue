@@ -568,11 +568,14 @@
         }
       },
       
-      create () {      
-        var disabledApps = this.createModal.scenarios[this.createModal.scenario].filter(
-          (item) => item.disabled
-        ).map(
-            (item) => item.name)
+      create () {
+        var disabledApps = []
+        if (this.createModal.scenario != null){
+          disabledApps = this.createModal.scenarios[this.createModal.scenario].filter(
+            (item) => item.disabled
+          ).map(
+              (item) => item.name)
+        }
 
         const experimentData = {
           name: this.createModal.name,
