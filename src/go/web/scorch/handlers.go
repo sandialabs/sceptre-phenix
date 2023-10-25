@@ -390,7 +390,7 @@ func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
 			return nil
 		}
 
-		body, _ := json.Marshal(util.WithRoot("stream", fmt.Sprintf("/api/v1/experiments/%s/scorch/components/%d/%d/%s/%s/ws", exp, run, loop, stage, cmp)))
+		body, _ := json.Marshal(util.WithRoot("stream", fmt.Sprintf("%sapi/v1/experiments/%s/scorch/components/%d/%d/%s/%s/ws", basePath, exp, run, loop, stage, cmp)))
 
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(body)

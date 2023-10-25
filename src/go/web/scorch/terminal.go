@@ -70,7 +70,7 @@ func CreateWebTerminal(ctx context.Context, exp string, run, loop int, stage, na
 	term.Pty = tty
 	term.Pid = c.Process.Pid
 
-	plog.Info("spawned newterminal", "cmd", cmd, "pid", term.Pid)
+	plog.Info("spawned new terminal", "cmd", cmd, "pid", term.Pid)
 
 	webTermMu.Lock()
 	webTermsPid[term.Pid] = term
