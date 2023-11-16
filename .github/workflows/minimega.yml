@@ -28,10 +28,10 @@ jobs:
           context: docker
           file: docker/Dockerfile.minimega
           build-args: |
-            MM_REV=2b2b341
+            MM_REV=48a8fe5
             PHENIX_REVISION=${{ env.sha }}
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/minimega:2b2b341
+            ghcr.io/${{ github.repository }}/minimega:48a8fe5
             ghcr.io/${{ github.repository }}/minimega:${{ env.sha }}
             ghcr.io/${{ github.repository }}/minimega:${{ env.branch }}
