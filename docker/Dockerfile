@@ -15,7 +15,7 @@ RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
     wget ${arr[$i]} -e use_proxy=no \
       -O /usr/local/share/ca-certificates/custom$i.crt; \
   done && \
-  update-ca-certificates; \ 
+  update-ca-certificates; \
   yarn config set cafile /etc/ssl/certs/ca-certificates.crt; fi"]
 
 RUN npm install -g @vue/cli redoc-cli
@@ -125,7 +125,7 @@ RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
   update-ca-certificates; \
   fi"]
 
-RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.1/vmdb2 -O /usr/bin/vmdb2 \
+RUN wget https://github.com/glattercj/vmdb2/releases/latest/download/vmdb2 -O /usr/bin/vmdb2 \
   && chmod +x /usr/bin/vmdb2
 
 # needed to build Kali images with phenix
