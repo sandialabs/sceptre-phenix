@@ -24,6 +24,10 @@ function Phenix-SetStartupStatus($status) {
 }
 
 function Phenix-StartupStatusIsSet {
+    If (-NOT (Test-Path 'HKLM:\Software\phenix')) {
+        return $false
+    }
+
     $key = Get-Item -LiteralPath 'HKLM:\Software\phenix' -ErrorAction SilentlyContinue
 
     if ($key) {
@@ -40,6 +44,10 @@ function Phenix-StartupStatusIsSet {
 }
 
 function Phenix-StartupStatusIs($status) {
+    If (-NOT (Test-Path 'HKLM:\Software\phenix')) {
+        return $false
+    }
+
     $key = Get-Item -LiteralPath 'HKLM:\Software\phenix' -ErrorAction SilentlyContinue
 
     if ($key) {
