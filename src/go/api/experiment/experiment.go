@@ -270,6 +270,8 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 	exp.Spec.VLANs().SetAliases(o.vlanAliases)
 	exp.Spec.SetSchedule(o.schedules)
 
+	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
+
 	if _, err := config.Create(config.CreateFromConfig(c), config.CreateWithValidation()); err != nil {
 		return fmt.Errorf("creating experiment config: %w", err)
 	}
