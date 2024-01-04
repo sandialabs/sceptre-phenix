@@ -82,7 +82,9 @@ func SetDefaults(img *v1.Image) error {
 
 	img.Scripts = make(map[string]string)
 
-	img.Packages = append(img.Packages, PACKAGES_DEFAULT...)
+	if !img.SkipDefaultPackages {
+		img.Packages = append(img.Packages, PACKAGES_DEFAULT...)
+	}
 
 	switch img.Variant {
 	case "minbase":

@@ -15,18 +15,19 @@ const (
 )
 
 type Image struct {
-	Variant     string            `json:"variant" yaml:"variant"`
-	Release     string            `json:"release" yaml:"release"`
-	Format      Format            `json:"format" yaml:"format"`
-	Ramdisk     bool              `json:"ramdisk" yaml:"ramdisk"`
-	Compress    bool              `json:"compress" yaml:"compress"`
-	Size        string            `json:"size" yaml:"size"`
-	Mirror      string            `json:"mirror" yaml:"mirror"`
-	DebAppend   string            `json:"deb_append" yaml:"deb_append" structs:"deb_append" mapstructure:"deb_append"`
-	Packages    []string          `json:"packages" yaml:"packages"`
-	Overlays    []string          `json:"overlays" yaml:"overlays"`
-	Scripts     map[string]string `json:"scripts" yaml:"scripts"`
-	ScriptOrder []string          `json:"script_order" yaml:"script_order" structs:"script_order" mapstructure:"script_order"`
+	Variant             string            `json:"variant" yaml:"variant"`
+	Release             string            `json:"release" yaml:"release"`
+	Format              Format            `json:"format" yaml:"format"`
+	Ramdisk             bool              `json:"ramdisk" yaml:"ramdisk"`
+	Compress            bool              `json:"compress" yaml:"compress"`
+	Size                string            `json:"size" yaml:"size"`
+	Mirror              string            `json:"mirror" yaml:"mirror"`
+	DebAppend           string            `json:"deb_append" yaml:"deb_append" structs:"deb_append" mapstructure:"deb_append"`
+	SkipDefaultPackages bool              `json:"skip_default_packages" yaml:"skip_default_packages"`
+	Packages            []string          `json:"packages" yaml:"packages"`
+	Overlays            []string          `json:"overlays" yaml:"overlays"`
+	Scripts             map[string]string `json:"scripts" yaml:"scripts"`
+	ScriptOrder         []string          `json:"script_order" yaml:"script_order" structs:"script_order" mapstructure:"script_order"`
 
 	IncludeMiniccc   bool `json:"include_miniccc" yaml:"include_miniccc" structs:"include_miniccc" mapstructure:"include_miniccc"`
 	IncludeProtonuke bool `json:"include_protonuke" yaml:"include_protonuke" structs:"include_protonuke" mapstructure:"include_protonuke"`

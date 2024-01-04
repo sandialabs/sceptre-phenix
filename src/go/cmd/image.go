@@ -122,6 +122,7 @@ func newImageCreateCmd() *cobra.Command {
 			img.DebAppend = MustGetString(cmd.Flags(), "debootstrap-append")
 			img.IncludeMiniccc = MustGetBool(cmd.Flags(), "include-miniccc")
 			img.IncludeProtonuke = MustGetBool(cmd.Flags(), "include-protonuke")
+			img.SkipDefaultPackages = MustGetBool(cmd.Flags(), "skip-default-pkgs")
 
 			if overlays := MustGetString(cmd.Flags(), "overlays"); overlays != "" {
 				img.Overlays = strings.Split(overlays, ",")
@@ -159,6 +160,7 @@ func newImageCreateCmd() *cobra.Command {
 	cmd.Flags().BoolP("compress", "c", false, "Compress image after creation (does not apply to raw image)")
 	cmd.Flags().BoolP("ramdisk", "R", false, "Create a kernel/initrd pair in addition to a disk image")
 	cmd.Flags().StringP("overlays", "O", "", "List of overlay names (include full path; separated by comma)")
+	cmd.Flags().Bool("skip-default-pkgs", false, "Skip default packages typically included in all builds")
 	cmd.Flags().StringP("packages", "P", "", "List of packages to include in addition to those provided by variant (separated by comma)")
 	cmd.Flags().StringP("scripts", "T", "", "List of scripts to include in addition to the defaults (include full path; separated by comma)")
 	cmd.Flags().StringP("debootstrap-append", "d", "", `Additional arguments to debootstrap "(default: --components=main,restricted,universe,multiverse)"`)
