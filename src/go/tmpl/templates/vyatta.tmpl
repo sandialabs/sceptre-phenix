@@ -16,12 +16,18 @@ interfaces {
         {{ if and (ge $iface.MTU 68) (le $iface.MTU 16000) }}
         mtu {{ $iface.MTU }}
         {{ end }}
-        {{ if eq $iface.Proto "OSPF" }}
+        {{ if eq $iface.Proto "ospf" }}
         ip {
             ospf {
+            {{ if $node.Network.OSPF.DeadInterval }}
                 dead-interval {{ $node.Network.OSPF.DeadInterval }}
+            {{ end }}
+            {{ if $node.Network.OSPF.HelloInterval }}
                 hello-interval {{ $node.Network.OSPF.HelloInterval }}
+            {{ end }}
+            {{ if $node.Network.OSPF.RetransmissionInterval }}
                 retransmit-interval {{ $node.Network.OSPF.RetransmissionInterval }}
+            {{ end }}
                 transmit-delay 1
             }
         }
