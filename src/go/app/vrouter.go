@@ -192,6 +192,14 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 			"", "",
 		)
 
+		if ntpAddr == "" {
+			var err error
+
+			if ntpAddr, err = configureNTP(exp, node.General().Hostname()); err != nil {
+				return fmt.Errorf("configuring NTP for host %s: %w", node.General().Hostname(), err)
+			}
+		}
+
 		data := map[string]interface{}{
 			"node":     node,
 			"ntp-addr": ntpAddr,
@@ -745,6 +753,47 @@ func (this *Vrouter) processNAT(md map[string]interface{}, nets []ifaces.NodeNet
 	}
 
 	return sources, destinations, nil
+}
+
+func configureNTP(exp *types.Experiment, hostname string) (string, error) {
+	// Check to see if a scenario exists for this experiment and if it contains
+	// a "ntp" app. If so, use it to configure NTP for the experiment.
+	for _, app := range exp.Apps() {
+		if app.Name() == "ntp" {
+			var amd NTPAppMetadata
+			mapstructure.Decode(app.Metadata(), &amd)
+
+			// Might be an empty string, but that's okay... for now.
+			defaultSource := amd.DefaultSource.IPAddress(exp)
+
+			for _, host := range app.Hosts() {
+				if host.Hostname() != hostname {
+					continue
+				}
+
+				var hmd NTPAppHostMetadata
+				mapstructure.Decode(host.Metadata(), &hmd)
+
+				source := hmd.Source.IPAddress(exp)
+
+				if hmd.Client == "ntp" {
+					if source == "" {
+						if defaultSource == "" {
+							return "", fmt.Errorf("no NTP source configured for host %s (and no default source configured)", host.Hostname())
+						}
+
+						source = defaultSource
+					}
+
+					return source, nil
+				} else {
+					return "", fmt.Errorf("the only valid NTP client for vrouters is 'ntp' (%s was provided)", hmd.Client)
+				}
+			}
+		}
+	}
+
+	return "", nil
 }
 
 func addChainRules(cmd *mmcli.Command, node string, ruleset ifaces.NodeNetworkRuleset) error {
