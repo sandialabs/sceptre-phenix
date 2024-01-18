@@ -11,7 +11,9 @@ vlans add {{ $alias }} {{ $id }}
   {{- end }}
 {{- end }}
 
-{{- if .RunLocal }}
+{{- if eq .DeployMode "all" }}
+ns add-host localhost
+{{- else if eq .DeployMode "only-headnode" }}
 ns del-host all
 ns add-host localhost
 {{- end }}

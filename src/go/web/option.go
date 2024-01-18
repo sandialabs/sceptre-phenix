@@ -1,7 +1,13 @@
 package web
 
 import (
+	"encoding/json"
+	"net/http"
 	"os"
+	"phenix/util/common"
+	"phenix/util/plog"
+	"phenix/web/rbac"
+	"phenix/web/weberror"
 	"strings"
 	"time"
 )
@@ -9,10 +15,9 @@ import (
 type ServerOption func(*serverOptions)
 
 type serverOptions struct {
-	endpoint   string
-	unixSocket string
-	users      []string
-	allowCORS  bool
+	endpoint  string
+	users     []string
+	allowCORS bool
 
 	tlsKeyPath string
 	tlsCrtPath string
@@ -80,12 +85,6 @@ func (this serverOptions) featured(f string) bool {
 func ServeOnEndpoint(e string) ServerOption {
 	return func(o *serverOptions) {
 		o.endpoint = e
-	}
-}
-
-func ServeOnUnixSocket(s string) ServerOption {
-	return func(o *serverOptions) {
-		o.unixSocket = s
 	}
 }
 
@@ -172,4 +171,34 @@ func ServeWithFeatures(f []string) ServerOption {
 			}
 		}
 	}
+}
+
+// GET /options
+func GetOptions(w http.ResponseWriter, r *http.Request) error {
+	plog.Debug("HTTP handler called", "handler", "GetOptions")
+
+	var (
+		ctx  = r.Context()
+		role = ctx.Value("role").(rbac.Role)
+	)
+
+	if !role.Allowed("options", "list") {
+		err := weberror.NewWebError(nil, "listing options not allowed for %s", ctx.Value("user").(string))
+		return err.SetStatus(http.StatusForbidden)
+	}
+
+	options := map[string]any{
+		"deploy-mode": common.DeployMode,
+	}
+
+	body, err := json.Marshal(options)
+	if err != nil {
+		err := weberror.NewWebError(err, "unable to process options")
+		return err.SetStatus(http.StatusInternalServerError)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(body)
+
+	return nil
 }

@@ -26,6 +26,7 @@ import (
 	"phenix/api/vm"
 	"phenix/app"
 	"phenix/store"
+	"phenix/util/common"
 	"phenix/util/mm"
 	"phenix/util/notes"
 	"phenix/util/plog"
@@ -171,6 +172,12 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 
 	defer cache.UnlockExperiment(req.Name)
 
+	deployMode, err := common.ParseDeployMode(req.DeployMode)
+	if err != nil {
+		plog.Warn("error parsing experiment deploy mode ('%s') - using default of '%s'", req.DeployMode, common.DeployMode)
+		deployMode = common.DeployMode
+	}
+
 	opts := []experiment.CreateOption{
 		experiment.CreateWithName(req.Name),
 		experiment.CreateWithTopology(req.Topology),
@@ -178,6 +185,7 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 		experiment.CreateWithVLANMin(int(req.VlanMin)),
 		experiment.CreateWithVLANMax(int(req.VlanMax)),
 		experiment.CreatedWithDisabledApplications(req.DisabledApps),
+		experiment.CreateWithDeployMode(deployMode),
 	}
 
 	if req.WorkflowBranch != "" {

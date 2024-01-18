@@ -18,10 +18,13 @@ type createOptions struct {
 	vlanAliases  map[string]int
 	schedules    map[string]string
 	baseDir      string
+	deployMode   common.DeploymentMode
 }
 
 func newCreateOptions(opts ...CreateOption) createOptions {
-	var o createOptions
+	o := createOptions{
+		deployMode: common.DeployMode,
+	}
 
 	for _, opt := range opts {
 		opt(&o)
@@ -91,6 +94,12 @@ func CreateWithSchedules(s map[string]string) CreateOption {
 func CreateWithBaseDirectory(b string) CreateOption {
 	return func(o *createOptions) {
 		o.baseDir = b
+	}
+}
+
+func CreateWithDeployMode(m common.DeploymentMode) CreateOption {
+	return func(o *createOptions) {
+		o.deployMode = m
 	}
 }
 

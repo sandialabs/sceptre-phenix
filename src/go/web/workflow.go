@@ -13,6 +13,7 @@ import (
 	"phenix/store"
 	"phenix/types"
 	"phenix/types/version"
+	"phenix/util/common"
 	"phenix/util/plog"
 	"phenix/web/broker"
 	"phenix/web/cache"
@@ -137,6 +138,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			experiment.CreateWithSchedules(wf.Schedules),
 			experiment.CreateWithVLANMin(wf.VLANMin()),
 			experiment.CreateWithVLANMax(wf.VLANMax()),
+			experiment.CreateWithDeployMode(wf.ExperimentDeployMode()),
 		}
 
 		if err := experiment.Create(ctx, opts...); err != nil {
@@ -302,6 +304,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		exp.Spec.SetSchedule(schedules)
+		exp.Spec.SetDeployMode(string(wf.ExperimentDeployMode()))
 		exp.Spec.SetVLANRange(wf.VLANMin(), wf.VLANMax(), true)
 
 		if err := exp.WriteToStore(false); err != nil {
@@ -476,10 +479,11 @@ type workflow struct {
 		Restart *bool  `mapstructure:"restart"`
 	} `mapstructure:"auto"`
 
-	Topology  string            `mapstructure:"topology"`
-	Scenario  string            `mapstructure:"scenario"`
-	VLANs     map[string]int    `mapstructure:"vlans"`
-	Schedules map[string]string `mapstructue:"schedules"`
+	Topology   string            `mapstructure:"topology"`
+	Scenario   string            `mapstructure:"scenario"`
+	VLANs      map[string]int    `mapstructure:"vlans"`
+	Schedules  map[string]string `mapstructue:"schedules"`
+	DeployMode string            `mapstructure:"deployMode"`
 
 	VLANRange *struct {
 		Min int `mapstructure:"min"`
@@ -541,6 +545,15 @@ func (this workflow) ScheduleMappings() map[string]string {
 	}
 
 	return this.Schedules
+}
+
+func (this workflow) ExperimentDeployMode() common.DeploymentMode {
+	mode, err := common.ParseDeployMode(this.DeployMode)
+	if err != nil { // this will happen if deploy mode isn't provided in workflow config
+		return common.DeployMode
+	}
+
+	return mode
 }
 
 func (this workflow) VLANMin() int {

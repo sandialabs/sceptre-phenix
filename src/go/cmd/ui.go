@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"phenix/util"
+	"phenix/util/common"
 	"phenix/util/plog"
 	"phenix/web"
 
@@ -28,7 +29,6 @@ func newUICmd() *cobra.Command {
 
 			opts := []web.ServerOption{
 				web.ServeOnEndpoint(viper.GetString("ui.listen-endpoint")),
-				web.ServeOnUnixSocket(viper.GetString("ui.unix-socket-endpoint")),
 				web.ServeBasePath(viper.GetString("ui.base-path")),
 				web.ServeWithJWTKey(viper.GetString("ui.jwt-signing-key")),
 				web.ServeWithJWTLifetime(viper.GetDuration("ui.jwt-lifetime")),
@@ -37,6 +37,12 @@ func newUICmd() *cobra.Command {
 				web.ServeMinimegaLogs(viper.GetString("ui.logs.minimega-path")),
 				web.ServeWithFeatures(viper.GetStringSlice("ui.features")),
 				web.ServeWithProxyAuthHeader(viper.GetString("ui.proxy-auth-header")),
+			}
+
+			if endpoint := viper.GetString("ui.unix-socket-endpoint"); endpoint != "" {
+				plog.Warn("The --ui.unix-socket-endpoint option for the ui subcommand is DEPRECATED. Use the root phenix --unix-socket option instead.")
+
+				common.UnixSocket = endpoint
 			}
 
 			if viper.GetString("ui.log-level") != "" {
@@ -88,7 +94,7 @@ func newUICmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringP("listen-endpoint", "e", "0.0.0.0:3000", "endpoint to listen on")
-	cmd.Flags().String("unix-socket-endpoint", "", "unix socket path to listen on (no auth, only exposes workflow API)")
+	cmd.Flags().String("unix-socket-endpoint", "", "unix socket path to listen on - DEPRECATED (use root --unix-socket option instead)")
 	cmd.Flags().StringP("base-path", "b", "/", "base path to use for UI (must run behind proxy if not '/')")
 	cmd.Flags().StringP("jwt-signing-key", "k", "", "Secret key used to sign JWT for authentication")
 	cmd.Flags().Duration("jwt-lifetime", 24*time.Hour, "Lifetime of JWT authentication tokens")

@@ -79,7 +79,7 @@ type ExperimentSpec struct {
 	ScenarioF       *v2.ScenarioSpec  `json:"scenario" yaml:"scenario" structs:"scenario" mapstructure:"scenario"`
 	VLANsF          *VLANSpec         `json:"vlans" yaml:"vlans" structs:"vlans" mapstructure:"vlans"`
 	SchedulesF      map[string]string `json:"schedules" yaml:"schedules" structs:"schedules" mapstructure:"schedules"`
-	RunLocalF       bool              `json:"runLocal" yaml:"runLocal" structs:"runLocal" mapstructure:"runLocal"`
+	DeployModeF     string            `json:"deployMode" yaml:"deployMode" structs:"deployMode" mapstructure:"deployMode"`
 }
 
 func (this *ExperimentSpec) Init() error {
@@ -167,8 +167,12 @@ func (this ExperimentSpec) Schedules() map[string]string {
 	return this.SchedulesF
 }
 
-func (this ExperimentSpec) RunLocal() bool {
-	return this.RunLocalF
+func (this ExperimentSpec) DeployMode() string {
+	return this.DeployModeF
+}
+
+func (this *ExperimentSpec) SetDeployMode(mode string) {
+	this.DeployModeF = mode
 }
 
 func (this *ExperimentSpec) SetExperimentName(name string) {

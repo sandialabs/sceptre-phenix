@@ -1,7 +1,12 @@
 package cmd
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -32,19 +37,56 @@ var rootCmd = &cobra.Command{
 	Use:   "phenix",
 	Short: "A cli application for phēnix",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		common.UnixSocket = viper.GetString("unix-socket")
+
+		// check for global options set by UI server
+		if common.UnixSocket != "" {
+			cli := http.Client{
+				Transport: &http.Transport{
+					DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+						return net.Dial("unix", common.UnixSocket)
+					},
+				},
+			}
+
+			if resp, err := cli.Get("http://unix/api/v1/options"); err == nil {
+				defer resp.Body.Close()
+
+				if body, err := io.ReadAll(resp.Body); err == nil {
+					var options map[string]any
+					json.Unmarshal(body, &options)
+
+					if mode, _ := options["deploy-mode"].(string); mode != "" {
+						if deployMode, err := common.ParseDeployMode(mode); err == nil {
+							common.DeployMode = deployMode
+						}
+					}
+				}
+			}
+		}
+
+		plog.NewPhenixHandler()
+		plog.SetLevelText(viper.GetString("log.level"))
+
 		common.PhenixBase = viper.GetString("base-dir.phenix")
 		common.MinimegaBase = viper.GetString("base-dir.minimega")
 		common.HostnameSuffixes = viper.GetString("hostname-suffixes")
+
+		// if deploy mode option is set locally by user, use it instead of global from UI
+		if opt := viper.GetString("deploy-mode"); opt != "" {
+			mode, err := common.ParseDeployMode(opt)
+			if err != nil {
+				return fmt.Errorf("parsing deploy mode: %w", err)
+			}
+
+			common.DeployMode = mode
+		}
 
 		var (
 			endpoint = viper.GetString("store.endpoint")
 			errFile  = viper.GetString("log.error-file")
 			errOut   = viper.GetBool("log.error-stderr")
-			logLevel = viper.GetString("log.level")
 		)
-
-		plog.NewPhenixHandler()
-		plog.SetLevelText(logLevel)
 
 		common.ErrorFile = errFile
 		common.StoreEndpoint = endpoint
@@ -131,6 +173,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&hostnameSuffixes, "hostname-suffixes", "-minimega,-phenix", "hostname suffixes to strip")
 	rootCmd.PersistentFlags().Bool("log.error-stderr", true, "log fatal errors to STDERR")
 	rootCmd.PersistentFlags().String("log.level", "info", "level to log messages at")
+	rootCmd.PersistentFlags().String("deploy-mode", "", "deploy mode for minimega VMs (options: all | no-headnode | only-headnode)")
+	rootCmd.PersistentFlags().String("unix-socket", "/tmp/phenix.sock", "phēnix unix socket to listen on (ui subcommand) or connect to")
 
 	if uid == "0" {
 		os.MkdirAll("/etc/phenix", 0755)

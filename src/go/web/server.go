@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"phenix/util/common"
 	"phenix/util/plog"
 	"phenix/web/broker"
 	"phenix/web/forward"
@@ -248,6 +249,10 @@ func Start(opts ...ServerOption) error {
 		{"/errors/{uuid}", weberror.ErrorHandler(GetError), []string{"GET"}},
 	}
 
+	optionRoutes := []route{
+		{"/options", weberror.ErrorHandler(GetOptions), []string{"GET"}},
+	}
+
 	addRoutesToRouter(api, workflowRoutes...)
 	addRoutesToRouter(api, errorRoutes...)
 
@@ -282,7 +287,7 @@ func Start(opts ...ServerOption) error {
 	plog.Info("using base path", "path", o.basePath)
 	plog.Info("using JWT lifetime", "lifetime", o.jwtLifetime)
 
-	if o.unixSocket != "" {
+	if common.UnixSocket != "" {
 		var (
 			router = mux.NewRouter().StrictSlash(true)
 			api    = router.PathPrefix("/api/v1").Subrouter()
@@ -290,15 +295,16 @@ func Start(opts ...ServerOption) error {
 
 		addRoutesToRouter(api, workflowRoutes...)
 		addRoutesToRouter(api, errorRoutes...)
+		addRoutesToRouter(api, optionRoutes...)
 
 		api.Use(middleware.NoAuth)
 
-		os.Remove(o.unixSocket)
+		os.Remove(common.UnixSocket)
 
-		plog.Info("starting Unix socket server", "path", o.unixSocket)
+		plog.Info("starting Unix socket server", "path", common.UnixSocket)
 
 		server := http.Server{Handler: router}
-		listener, err := net.Listen("unix", o.unixSocket)
+		listener, err := net.Listen("unix", common.UnixSocket)
 		if err != nil {
 			return err
 		}

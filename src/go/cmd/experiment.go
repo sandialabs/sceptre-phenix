@@ -245,7 +245,7 @@ func newExperimentDeleteCmd() *cobra.Command {
 	desc := `Delete an experiment
 
   Used to delete an exisitng experiment; experiment must be stopped.
-  Using 'all' instead of a specific experiment name will include all 
+  Using 'all' instead of a specific experiment name will include all
   stopped experiments`
 
 	cmd := &cobra.Command{
@@ -301,8 +301,8 @@ func newExperimentDeleteCmd() *cobra.Command {
 
 func newExperimentScheduleCmd() *cobra.Command {
 	desc := `Schedule an experiment
-	
-  Apply an algorithm to a given experiment. Run 'phenix experiment schedulers' 
+
+  Apply an algorithm to a given experiment. Run 'phenix experiment schedulers'
   to return a list of algorithms`
 
 	cmd := &cobra.Command{
@@ -333,10 +333,10 @@ func newExperimentScheduleCmd() *cobra.Command {
 func newExperimentStartCmd() *cobra.Command {
 	desc := `Start an experiment
 
-  Used to start a stopped experiment, using 'all' instead of a specific 
-  experiment name will include all stopped experiments; dry-run will do 
+  Used to start a stopped experiment, using 'all' instead of a specific
+  experiment name will include all stopped experiments; dry-run will do
 	everything but call out to minimega.
-	
+
 	NOTE: passing the --honor-run-periodically flag will prevent the CLI from
 	returning. If Ctrl+c is pressed, the experiment will continue to run but
 	the running stage will no longer continue to be triggered for any apps
@@ -398,7 +398,7 @@ func newExperimentStartCmd() *cobra.Command {
 
 				notes.PrettyPrint(ctx, false)
 
-				plog.Info("experiment started", "exp", exp.Metadata.Name, "dryrun", dryrun)
+				plog.Info("experiment started", "exp", exp.Metadata.Name, "dryrun", dryrun, "deploy-mode", exp.Spec.DeployMode())
 
 				if periodic {
 					plog.Info("honor-run-periodically flag was passed")
@@ -431,7 +431,7 @@ func newExperimentStartCmd() *cobra.Command {
 func newExperimentStopCmd() *cobra.Command {
 	desc := `Stop an experiment
 
-  Used to stop a running experiment, using 'all' instead of a specific 
+  Used to stop a running experiment, using 'all' instead of a specific
   experiment name will include all running experiments.`
 
 	cmd := &cobra.Command{
@@ -487,8 +487,8 @@ func newExperimentStopCmd() *cobra.Command {
 func newExperimentRestartCmd() *cobra.Command {
 	desc := `Restart an experiment
 
-  Used to restart a running experiment, using 'all' instead of a specific 
-  experiment name will include all running experiments; dry-run will do 
+  Used to restart a running experiment, using 'all' instead of a specific
+  experiment name will include all running experiments; dry-run will do
   everything but call out to minimega.`
 
 	cmd := &cobra.Command{
@@ -539,7 +539,7 @@ func newExperimentRestartCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				plog.Info("experiment restarted", "exp", exp.Metadata.Name)
+				plog.Info("experiment restarted", "exp", exp.Metadata.Name, "dryrun", dryrun, "deploy-mode", exp.Spec.DeployMode())
 			}
 
 			return nil

@@ -52,6 +52,13 @@
             </template>
             <div class="card-content">
               <div class="content">
+                <b-field label="Deployment Mode">
+                  <b-select v-model="createModal.deploy_mode" expanded>
+                    <option v-for="( mode, index ) in ['', 'no-headnode', 'only-headnode', 'all']" :key="index" :value="mode">
+                      {{ mode }}
+                    </option>
+                  </b-select>
+                </b-field>
                 <b-field label="VLAN Range">
                   <b-field>
                     <b-numberinput min="0" max="4094" type="is-light" size="is-small" controls-alignment="right" controls-position="compact" placeholder="min" v-model="createModal.vlan_min" />
@@ -584,6 +591,7 @@
           vlan_min: +this.createModal.vlan_min,
           vlan_max: +this.createModal.vlan_max,
           workflow_branch: this.createModal.branch,
+          deploy_mode: this.createModal.deploy_mode,
           disabled_apps: disabledApps
         }
         
@@ -669,7 +677,8 @@
           scenarios: {},
           scenario: null,
           vlan_min: null,
-          vlan_max: null
+          vlan_max: null,
+          deploy_mode: null
         }
       },
       
@@ -764,7 +773,8 @@
           scenario: null,
           vlan_min: null,
           vlan_max: null,
-          branch: null
+          branch: null,
+          deploy_mode: null,
         },
         experiments: [],
         topologies: [],

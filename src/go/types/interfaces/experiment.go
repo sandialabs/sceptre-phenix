@@ -23,7 +23,7 @@ type ExperimentSpec interface {
 	Scenario() ScenarioSpec
 	VLANs() VLANSpec
 	Schedules() map[string]string
-	RunLocal() bool
+	DeployMode() string
 
 	SetExperimentName(string)
 	SetBaseDir(string)
@@ -32,6 +32,7 @@ type ExperimentSpec interface {
 	SetSchedule(map[string]string)
 	SetTopology(TopologySpec)
 	SetScenario(ScenarioSpec)
+	SetDeployMode(string)
 
 	VerifyScenario(context.Context) error
 	ScheduleNode(string, string) error

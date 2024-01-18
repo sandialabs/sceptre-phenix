@@ -207,9 +207,10 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 		},
 	}
 
-	specMap := map[string]interface{}{
+	specMap := map[string]any{
 		"experimentName": o.name,
 		"baseDir":        o.baseDir,
+		"deployMode":     o.deployMode,
 		"topology":       topo,
 	}
 

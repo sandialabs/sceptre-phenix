@@ -70,6 +70,7 @@ message CreateExperimentRequest {
 	uint32 vlan_max = 5 [json_name="vlan_max"];
 	string workflow_branch = 6 [json_name="workflow_branch"];
 	repeated string disabled_apps = 7 [json_name="disabled_apps"];
+	string deploy_mode = 8 [json_name="deploy_mode"];
 }
 
 message SnapshotRequest {
