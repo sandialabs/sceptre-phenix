@@ -182,10 +182,6 @@ func CreateFromConfig(name, saveas string, overlays, packages, scripts []string)
 		return fmt.Errorf("decoding image spec: %w", err)
 	}
 
-	if err := SetDefaults(&img); err != nil {
-		return fmt.Errorf("setting image defaults: %w", err)
-	}
-
 	c.Metadata.Name = saveas
 
 	if len(overlays) > 0 {
