@@ -75,6 +75,7 @@ func (this VLANSpec) Validate() error {
 type ExperimentSpec struct {
 	ExperimentNameF string            `json:"experimentName,omitempty" yaml:"experimentName,omitempty" structs:"experimentName" mapstructure:"experimentName"`
 	BaseDirF        string            `json:"baseDir" yaml:"baseDir" structs:"baseDir" mapstructure:"baseDir"`
+	DefaultBridgeF  string            `json:"defaultBridge" yaml:"defaultBridge" structs:"defaultBridge" mapstructure:"defaultBridge"`
 	TopologyF       *TopologySpec     `json:"topology" yaml:"topology" structs:"topology" mapstructure:"topology"`
 	ScenarioF       *v2.ScenarioSpec  `json:"scenario" yaml:"scenario" structs:"scenario" mapstructure:"scenario"`
 	VLANsF          *VLANSpec         `json:"vlans" yaml:"vlans" structs:"vlans" mapstructure:"vlans"`
@@ -85,6 +86,10 @@ type ExperimentSpec struct {
 func (this *ExperimentSpec) Init() error {
 	if this.BaseDirF == "" {
 		this.BaseDirF = common.PhenixBase + "/experiments/" + this.ExperimentNameF
+	}
+
+	if this.DefaultBridgeF == "" {
+		this.DefaultBridgeF = "phenix"
 	}
 
 	if !filepath.IsAbs(this.BaseDirF) {
@@ -107,7 +112,7 @@ func (this *ExperimentSpec) Init() error {
 	}
 
 	if this.TopologyF != nil {
-		if err := this.TopologyF.Init(); err != nil {
+		if err := this.TopologyF.Init(this.DefaultBridgeF); err != nil {
 			return fmt.Errorf("initializing topology: %w", err)
 		}
 
@@ -133,6 +138,10 @@ func (this ExperimentSpec) ExperimentName() string {
 
 func (this ExperimentSpec) BaseDir() string {
 	return this.BaseDirF
+}
+
+func (this ExperimentSpec) DefaultBridge() string {
+	return this.DefaultBridgeF
 }
 
 func (this ExperimentSpec) Topology() ifaces.TopologySpec {
@@ -181,6 +190,10 @@ func (this *ExperimentSpec) SetExperimentName(name string) {
 
 func (this *ExperimentSpec) SetBaseDir(dir string) {
 	this.BaseDirF = dir
+}
+
+func (this *ExperimentSpec) SetDefaultBridge(bridge string) {
+	this.DefaultBridgeF = bridge
 }
 
 func (this *ExperimentSpec) SetVLANAlias(a string, i int, f bool) error {

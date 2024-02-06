@@ -149,6 +149,30 @@ func Init() error {
 		return fmt.Errorf("parsing config files in %s: %w", base, err)
 	}
 
+	// Call any hooks registered for the `startup` stage.
+	configs, err := store.List(AllKinds...)
+	if err != nil {
+		return fmt.Errorf("getting list of configs from store: %w", err)
+	}
+
+	for _, config := range configs {
+		var updated bool
+
+		for _, hook := range hooks[config.Kind] {
+			if err := hook("startup", &config); err != nil {
+				return fmt.Errorf("calling startup config hook: %w", err)
+			}
+
+			updated = true
+		}
+
+		if updated {
+			if err := store.Update(&config); err != nil {
+				return fmt.Errorf("updating config in store: %w", err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -342,6 +366,8 @@ func Edit(name string, force bool) (*store.Config, error) {
 		}
 
 		expName = exp.Spec.ExperimentName()
+
+		// Don't allow users to edit the experiment name field.
 		delete(c.Spec, "experimentName")
 	}
 

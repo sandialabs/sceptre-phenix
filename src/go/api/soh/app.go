@@ -97,7 +97,7 @@ func (this *SOH) Configure(ctx context.Context, exp *types.Experiment) error {
 				return fmt.Errorf("building Elastic server node: %w", err)
 			}
 
-			exp.Spec.Topology().Init()
+			exp.Spec.Topology().Init(exp.Spec.DefaultBridge())
 		}
 	}
 

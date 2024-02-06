@@ -2,6 +2,7 @@ package experiment
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -31,6 +32,11 @@ import (
 	"github.com/mitchellh/mapstructure"
 )
 
+var (
+	ErrExperimentNotFound   = errors.New("experiment not found")
+	ErrExperimentNotRunning = errors.New("experiment not running")
+)
+
 func init() {
 	config.RegisterConfigHook("Experiment", func(stage string, c *store.Config) error {
 		exp, err := types.DecodeExperimentFromConfig(*c)
@@ -39,11 +45,38 @@ func init() {
 		}
 
 		switch stage {
+		case "startup":
+			// Experiments created before the default bridge option was added need to
+			// be updated to have a default `phenix` bridge.
+			if exp.Spec.DefaultBridge() == "" {
+				exp.Spec.SetDefaultBridge("phenix")
+
+				if err := exp.Spec.Init(); err != nil {
+					return fmt.Errorf("re-initializing experiment with default bridge: %w", err)
+				}
+
+				c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
+			}
 		case "create":
 			exp.Spec.SetExperimentName(c.Metadata.Name)
 
 			if err := exp.Spec.Init(); err != nil {
 				return fmt.Errorf("initializing experiment: %w", err)
+			}
+
+			existing, _ := types.Experiments(false)
+			for _, other := range existing {
+				if other.Metadata.Name == exp.Metadata.Name {
+					continue
+				}
+
+				if exp.Spec.DefaultBridge() == "phenix" {
+					continue
+				}
+
+				if other.Spec.DefaultBridge() == exp.Spec.DefaultBridge() {
+					return fmt.Errorf("experiment %s already using default bridge %s", other.Metadata.Name, other.Spec.DefaultBridge())
+				}
 			}
 
 			if err := exp.Spec.VerifyScenario(context.TODO()); err != nil {
@@ -63,6 +96,21 @@ func init() {
 
 			if err := exp.Spec.Init(); err != nil {
 				return fmt.Errorf("re-initializing experiment (after update): %w", err)
+			}
+
+			existing, _ := types.Experiments(false)
+			for _, other := range existing {
+				if other.Metadata.Name == exp.Metadata.Name {
+					continue
+				}
+
+				if exp.Spec.DefaultBridge() == "phenix" {
+					continue
+				}
+
+				if other.Spec.DefaultBridge() == exp.Spec.DefaultBridge() {
+					return fmt.Errorf("experiment %s already using default bridge %s", other.Metadata.Name, other.Spec.DefaultBridge())
+				}
 			}
 
 			if exp.Spec.ExperimentName() != c.Metadata.Name {
@@ -183,6 +231,10 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 		return fmt.Errorf("no topology name provided")
 	}
 
+	if len(o.defaultBridge) > 15 {
+		return fmt.Errorf("default bridge name must be 15 characters or less")
+	}
+
 	var (
 		kind       = "Experiment"
 		apiVersion = version.StoredVersion[kind]
@@ -211,6 +263,7 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 		"experimentName": o.name,
 		"baseDir":        o.baseDir,
 		"deployMode":     o.deployMode,
+		"defaultBridge":  o.defaultBridge,
 		"topology":       topo,
 	}
 

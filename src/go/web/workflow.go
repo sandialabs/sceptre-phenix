@@ -139,6 +139,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			experiment.CreateWithVLANMin(wf.VLANMin()),
 			experiment.CreateWithVLANMax(wf.VLANMax()),
 			experiment.CreateWithDeployMode(wf.ExperimentDeployMode()),
+			experiment.CreateWithDefaultBridge(wf.DefaultBridgeName()),
 		}
 
 		if err := experiment.Create(ctx, opts...); err != nil {
@@ -303,6 +304,16 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 
+		if len(wf.DefaultBridgeName()) > 15 {
+			err := weberror.NewWebError(
+				fmt.Errorf("default bridge name must be 15 characters or less"),
+				"unable to set default bridge for experiment %s", expName,
+			)
+
+			return err.SetStatus(http.StatusBadRequest)
+		}
+
+		exp.Spec.SetDefaultBridge(wf.DefaultBridgeName())
 		exp.Spec.SetSchedule(schedules)
 		exp.Spec.SetDeployMode(string(wf.ExperimentDeployMode()))
 		exp.Spec.SetVLANRange(wf.VLANMin(), wf.VLANMax(), true)
@@ -489,6 +500,8 @@ type workflow struct {
 		Min int `mapstructure:"min"`
 		Max int `mapstructure:"max"`
 	} `mapstructure:"vlanRange"`
+
+	DefaultBridge string `mapstructure:"defaultBridge"`
 }
 
 func (this workflow) AutoUpdate() bool {
@@ -570,4 +583,12 @@ func (this workflow) VLANMax() int {
 	}
 
 	return this.VLANRange.Max
+}
+
+func (this workflow) DefaultBridgeName() string {
+	if this.DefaultBridge == "" {
+		return "phenix"
+	}
+
+	return this.DefaultBridge
 }

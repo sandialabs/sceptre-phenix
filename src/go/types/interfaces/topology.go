@@ -16,7 +16,7 @@ type TopologySpec interface {
 
 	HasCommands() bool
 
-	Init() error
+	Init(string) error
 }
 
 type NodeSpec interface {

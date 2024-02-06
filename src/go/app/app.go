@@ -338,7 +338,7 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 
 	if options.Stage == ACTIONCONFIG || options.Stage == ACTIONPRESTART {
 		// just in case one of the apps added some nodes to the topology...
-		exp.Spec.Topology().Init()
+		exp.Spec.Topology().Init(exp.Spec.DefaultBridge())
 	}
 
 	return nil

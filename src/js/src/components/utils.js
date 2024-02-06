@@ -15,7 +15,11 @@ let errorNotification = async (error) => {
       let cause = msg.metadata.cause.replace(/\n/g, '<br>').replace(/\t/g, '&emsp;');
       message   = `${message}<br><b>Cause:</b> ${cause}`;
     }
-  } else { message = `<b>Error:</b> ${error.bodyText}` }
+  } else if (error.bodyText) {
+    message = `<b>Error:</b> ${error.bodyText}`;
+  } else {
+    message = "<b>Unknown Error Occurred</b>";
+  }
 
   Notification.open({
     type:       'is-danger',

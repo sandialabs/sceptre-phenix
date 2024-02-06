@@ -59,6 +59,9 @@
                     </option>
                   </b-select>
                 </b-field>
+                <b-field label="Default Bridge Name">
+                  <b-input type="text" v-model="createModal.bridge" />
+                </b-field>
                 <b-field label="VLAN Range">
                   <b-field>
                     <b-numberinput min="0" max="4094" type="is-light" size="is-small" controls-alignment="right" controls-position="compact" placeholder="min" v-model="createModal.vlan_min" />
@@ -592,7 +595,8 @@
           vlan_max: +this.createModal.vlan_max,
           workflow_branch: this.createModal.branch,
           deploy_mode: this.createModal.deploy_mode,
-          disabled_apps: disabledApps
+          disabled_apps: disabledApps,
+          default_bridge: this.createModal.bridge
         }
         
         if ( !this.createModal.name ) {
@@ -775,6 +779,7 @@
           vlan_max: null,
           branch: null,
           deploy_mode: null,
+          bridge: null,
         },
         experiments: [],
         topologies: [],

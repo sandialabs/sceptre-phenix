@@ -85,7 +85,7 @@ func (this *Tap) PostStart(ctx context.Context, exp *types.Experiment) error {
 			opts = append(opts, tap.PairSubnet(subnet))
 		}
 
-		t.Init(opts...)
+		t.Init(exp.Spec.DefaultBridge(), opts...)
 
 		// Tap name is random, yet descriptive to the fact that it's a "tapapp" tap.
 		t.Name = fmt.Sprintf("%s-tapapp", util.RandomString(8))
@@ -126,7 +126,7 @@ func (this *Tap) Cleanup(ctx context.Context, exp *types.Experiment) error {
 	)
 
 	for _, t := range status.Taps {
-		t.Init(tap.Experiment(exp.Metadata.Name))
+		t.Init(exp.Spec.DefaultBridge(), tap.Experiment(exp.Metadata.Name))
 
 		if err := t.Delete(host); err != nil {
 			errs = multierror.Append(errs, fmt.Errorf("deleting host tap for VLAN %s: %w", t.VLAN, err))
@@ -139,7 +139,7 @@ func (this *Tap) Cleanup(ctx context.Context, exp *types.Experiment) error {
 func (this Tap) discoverUsedPairs() []netaddr.IPPrefix {
 	var pairs []netaddr.IPPrefix
 
-	running, err := types.RunningExperiments()
+	running, err := types.Experiments(true)
 	if err != nil {
 		return nil
 	}

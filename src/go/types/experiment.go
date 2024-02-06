@@ -141,7 +141,7 @@ func (this Experiment) FilesDir() string {
 	return filepath.Join(common.PhenixBase, "images", this.Metadata.Name, "files")
 }
 
-func RunningExperiments() ([]*Experiment, error) {
+func Experiments(running bool) ([]*Experiment, error) {
 	configs, err := store.List("Experiment")
 	if err != nil {
 		return nil, fmt.Errorf("getting list of experiment configs from store: %w", err)
@@ -155,9 +155,11 @@ func RunningExperiments() ([]*Experiment, error) {
 			return nil, fmt.Errorf("decoding experiment %s from config: %w", c.Metadata.Name, err)
 		}
 
-		if exp.Running() {
-			experiments = append(experiments, exp)
+		if running && !exp.Running() {
+			continue
 		}
+
+		experiments = append(experiments, exp)
 	}
 
 	return experiments, nil

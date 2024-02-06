@@ -42,7 +42,7 @@ func (this Tap) Start(ctx context.Context) error {
 	}
 
 	pairs := discoverUsedPairs()
-	t.Init(tap.Experiment(exp), tap.UsedPairs(pairs))
+	t.Init(this.options.Exp.Spec.DefaultBridge(), tap.Experiment(exp), tap.UsedPairs(pairs))
 
 	// backwards compatibility (doesn't support external access firewall rules)
 	if v, ok := t.Other["internetAccess"]; ok {
@@ -81,7 +81,7 @@ func (this Tap) Stop(ctx context.Context) error {
 
 	t, ok := status.Taps[this.options.Name]
 	if ok {
-		t.Init(tap.Experiment(exp))
+		t.Init(this.options.Exp.Spec.DefaultBridge(), tap.Experiment(exp))
 
 		if err := t.Delete(mm.Headnode()); err != nil {
 			return fmt.Errorf("deleting host tap for VLAN %s: %w", t.VLAN, err)
@@ -98,7 +98,7 @@ func (Tap) Cleanup(context.Context) error {
 func discoverUsedPairs() []netaddr.IPPrefix {
 	var pairs []netaddr.IPPrefix
 
-	running, err := types.RunningExperiments()
+	running, err := types.Experiments(true)
 	if err != nil {
 		return nil
 	}

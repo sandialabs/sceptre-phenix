@@ -61,7 +61,7 @@ func (this Break) breakPoint(ctx context.Context, stage Action) error {
 
 	if md.Tap != nil {
 		pairs := discoverUsedPairs()
-		md.Tap.Init(tap.Experiment(exp), tap.UsedPairs(pairs))
+		md.Tap.Init(this.options.Exp.Spec.DefaultBridge(), tap.Experiment(exp), tap.UsedPairs(pairs))
 
 		// backwards compatibility (doesn't support external access firewall rules)
 		if v, ok := md.Tap.Other["internetAccess"]; ok {

@@ -19,6 +19,7 @@ type ExperimentSpec interface {
 
 	ExperimentName() string
 	BaseDir() string
+	DefaultBridge() string
 	Topology() TopologySpec
 	Scenario() ScenarioSpec
 	VLANs() VLANSpec
@@ -27,6 +28,7 @@ type ExperimentSpec interface {
 
 	SetExperimentName(string)
 	SetBaseDir(string)
+	SetDefaultBridge(string)
 	SetVLANAlias(string, int, bool) error
 	SetVLANRange(int, int, bool) error
 	SetSchedule(map[string]string)

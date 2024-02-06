@@ -143,7 +143,7 @@ func (this TopologySpec) HasCommands() bool {
 	return false
 }
 
-func (this *TopologySpec) Init() error {
+func (this *TopologySpec) Init(bridge string) error {
 	var errs error
 
 	for _, n := range this.NodesF {
@@ -151,7 +151,7 @@ func (this *TopologySpec) Init() error {
 			errs = multierror.Append(errs, fmt.Errorf("validating node %s: %w", n.GeneralF.HostnameF, err))
 		}
 
-		n.setDefaults()
+		n.setDefaults(bridge)
 	}
 
 	return errs

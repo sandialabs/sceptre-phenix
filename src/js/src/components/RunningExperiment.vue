@@ -512,6 +512,12 @@
         &nbsp;&nbsp;
        <div class="level-item"  style="margin-bottom: -1em;">
         <b-field v-if="roleAllowed('experiments/files', 'list', experiment.name)" position="is-right">
+          <b-tooltip :label="netflow.tooltip" type="is-light">
+            <button :class="`button ${netflow.capturing ? 'is-danger' : 'is-success'}`" @click="handleNetflow(!netflow.capturing)">
+              <b-icon icon="circle-nodes"></b-icon>
+            </button>
+          </b-tooltip>
+          &nbsp; &nbsp;
           <template v-if="this.activeTab == 1">
             <b-tooltip label="search on a specific category" type="is-light">
               <b-select :value="filesTable.category" @input="( value ) => assignCategory( value )" placeholder="All Categories">
@@ -821,6 +827,11 @@
             </div>
           </b-field>
         </b-tab-item>
+        <b-tab-item label="Netflow" icon="circle-nodes" v-if="netflow.data">
+          <div class="control">
+            <textarea class="textarea" style="font-family:'Courier New'" readonly rows="40" v-model="netflow.data"></textarea>
+          </div>
+        </b-tab-item>
       </b-tabs>
     </div>
     <b-loading :is-full-page="true" :active.sync="isWaiting" :can-cancel="false"></b-loading>
@@ -836,11 +847,21 @@
   export  default {
     async beforeDestroy () {
       this.$options.sockets.onmessage = null;
+
+      if (this.socket) {
+        this.socket.close();
+        this.socket = null;
+      }
     },
 
     async created () {
       this.$options.sockets.onmessage = this.handler;
       this.updateExperiment();
+
+      try {
+        await this.$http.get(`experiments/${this.$route.params.id}/netflow`);
+        this.handleNetflow(true, false);
+      } catch { }
     },
 
     computed: {
@@ -3129,6 +3150,63 @@
         } catch (err) {
           this.errorNotification(err);
         }
+      },
+
+      handleNetflow(start, create = true) {
+        if (start) {
+          let created = true;
+
+          if (create) {
+            this.$http.post(`experiments/${this.$route.params.id}/netflow`).then(
+              _ => { }, err => {
+                this.errorNotification(err);
+                created = false;
+              }
+            );
+          }
+
+          if (created) {
+            this.netflow.capturing  = true;
+            this.netflow.tooltip    = "Stop Netflow Capture";
+            this.netflow.data      += '### CAPTURE START ###\n';
+
+            let path = `${process.env.BASE_URL}api/v1/experiments/${this.$route.params.id}/netflow/ws`;
+
+            if (this.$store.getters.token) {
+              path += `?token=${this.$store.getters.token}`;
+            }
+
+            let proto = location.protocol == "https:" ? "wss://" : "ws://";
+            let url   = proto + location.host + path;
+
+            this.socket = new WebSocket(url);
+            this.socket.addEventListener("message", (event) => {
+              event.data.split(/\r?\n/).forEach(data => {
+                if (data) {
+                  let msg  = JSON.parse(data);
+                  let flow = `${msg['src']}:${msg['sport']}\t\t-->\t${msg['dst']}:${msg['dport']}\t\t${msg['proto']}\t${msg['packets']}\t${msg['bytes']}\n`;
+
+                  this.netflow.data += flow;
+                }
+              });
+            });
+          }
+        } else {
+          this.$http.delete(`experiments/${this.$route.params.id}/netflow`).then(
+            _ => {
+              this.netflow.capturing  = false;
+              this.netflow.tooltip    = "Start Netflow Capture";
+              this.netflow.data      += '### CAPTURE STOP ###\n';
+
+              if (this.socket) {
+                this.socket.close();
+                this.socket = null;
+              }
+            }, err => {
+              this.errorNotification(err);
+            }
+          );
+        }
       }
     },
     
@@ -3247,7 +3325,13 @@
         searchHistory: [],
         searchHistoryLength:10,
         searchPlaceholder:"Find a VM",
-        activeTab:0        
+        activeTab:0,
+        netflow: {
+          tooltip: "Start Netflow Capture",
+          capturing: false,
+          socket: null,
+          data: ''
+        }
       }
     }
   }

@@ -1,8 +1,9 @@
 package web
 
 import (
-	"phenix/web/rbac"
 	"sort"
+
+	"phenix/web/rbac"
 )
 
 type SignupRequest struct {

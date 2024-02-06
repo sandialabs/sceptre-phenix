@@ -130,6 +130,8 @@ type Interface struct {
 	QinQF       bool     `json:"qinq" yaml:"qinq" structs:"qinq" mapstructure:"qinq"`
 	RulesetInF  string   `json:"ruleset_in" yaml:"ruleset_in" structs:"ruleset_in" mapstructure:"ruleset_in"`
 	RulesetOutF string   `json:"ruleset_out" yaml:"ruleset_out" structs:"ruleset_out" mapstructure:"ruleset_out"`
+
+	BridgeSetInTopo *bool `json:"-" yaml:"-" structs:"bridge_set_in_topo,omitempty" mapstructure:"bridge_set_in_topo,omitempty"`
 }
 
 func (this Interface) Name() string {
@@ -525,10 +527,24 @@ func (this NAT) Out() string {
 	return this.OutF
 }
 
-func (this *Network) SetDefaults() {
+func (this *Network) SetDefaults(bridge string) {
 	for idx, iface := range this.InterfacesF {
-		if iface.BridgeF == "" {
-			iface.BridgeF = "phenix"
+		if iface.BridgeF == bridge {
+			continue
+		}
+
+		if iface.BridgeSetInTopo == nil {
+			var setInTopo bool
+
+			if iface.BridgeF != "" && iface.BridgeF != "phenix" {
+				setInTopo = true
+			}
+
+			iface.BridgeSetInTopo = &setInTopo
+		}
+
+		if setInTopo := *iface.BridgeSetInTopo; !setInTopo {
+			iface.BridgeF = bridge
 			this.InterfacesF[idx] = iface
 		}
 	}

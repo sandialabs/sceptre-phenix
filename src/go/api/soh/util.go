@@ -136,7 +136,7 @@ func (this *SOH) buildElasticServerNode(exp *types.Experiment, ip string, cidr i
 	iface.SetAddress(ip)
 	iface.SetMask(cidr)
 	iface.SetProto("static")
-	iface.SetBridge("phenix")
+	iface.SetBridge(exp.Spec.DefaultBridge())
 
 	data := struct {
 		Hostname       string
@@ -181,7 +181,7 @@ func (this *SOH) buildPacketBeatNode(exp *types.Experiment, target ifaces.NodeSp
 			"address": ip,
 			"mask":    cidr,
 			"proto":   "static",
-			"bridge":  "phenix",
+			"bridge":  exp.Spec.DefaultBridge(),
 		},
 	}
 
@@ -193,7 +193,7 @@ func (this *SOH) buildPacketBeatNode(exp *types.Experiment, target ifaces.NodeSp
 					"type":   "ethernet",
 					"vlan":   iface.VLAN(),
 					"proto":  "static",
-					"bridge": "phenix",
+					"bridge": exp.Spec.DefaultBridge(),
 				}
 
 				nets = append(nets, monitorIface)

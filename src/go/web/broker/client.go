@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"phenix/api/experiment"
 	"phenix/api/vm"
+	"phenix/util/cache"
 	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/web/proto"
@@ -21,6 +23,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/encoding/protojson"
+	"inet.af/netaddr"
 )
 
 var marshaler = protojson.MarshalOptions{EmitUnpopulated: true}
@@ -139,6 +142,107 @@ func (this *Client) read() {
 
 			switch req.Resource.Type {
 			case "experiment/vms":
+			case "experiment/topology":
+				// TODO: check RBAC permissions?
+
+				switch req.Resource.Action {
+				case "search":
+					var query map[string]string
+
+					if err := json.Unmarshal(req.Payload, &query); err != nil {
+						plog.Error("cannot unmarshal request payload", "err", err)
+						continue
+					}
+
+					// TODO: handle multiple query terms (how? AND or OR?)
+					// Do the same as in web/experiment.go@SearchExperimentTopology
+					term := query["term"]
+					if term == "" {
+						term = "hostname"
+					}
+
+					value := query["value"]
+					if value == "" {
+						plog.Error("missing search value for term", "term", term)
+						continue
+					}
+
+					cacheKey := fmt.Sprintf("experiment|%s|search", req.Resource.Name)
+
+					val, ok := cache.Get(cacheKey)
+					if !ok {
+						// warm the cache (again?)
+						if _, err := vm.Topology(req.Resource.Name, nil); err != nil {
+							plog.Error("getting experiment topology", "exp", req.Resource.Name, "err", err)
+							continue
+						}
+
+						val, _ = cache.Get(cacheKey)
+					}
+
+					var (
+						search = val.(vm.TopologySearch)
+						nodes  []int
+					)
+
+					switch strings.ToLower(term) {
+					case "hostname":
+						if node, ok := search.Hostname[value]; ok {
+							nodes = []int{node}
+						}
+					case "disk":
+						nodes = search.Disk[value]
+					case "node-type":
+						nodes = search.Type[value]
+					case "os-type":
+						nodes = search.OSType[value]
+					case "label":
+						nodes = search.Label[value]
+					case "annotation":
+						nodes = search.Annotation[value]
+					case "vlan":
+						nodes = search.VLAN[value]
+					case "ip":
+						if net, err := netaddr.ParseIPPrefix(value); err == nil {
+							for k, v := range search.IP {
+								ip, err := netaddr.ParseIP(k)
+								if err != nil {
+									continue
+								}
+
+								if net.Contains(ip) {
+									nodes = append(nodes, v...)
+								}
+							}
+						} else {
+							nodes = search.IP[value]
+						}
+					}
+
+					results := map[string]any{
+						"term":  term,
+						"value": value,
+						"results": map[string]any{
+							"nodes": nodes,
+						},
+					}
+
+					body, err := json.Marshal(results)
+					if err != nil {
+						plog.Error("marshaling search results for WebSocket client", "err", err)
+						continue
+					}
+
+					this.publish <- bt.Publish{
+						Resource: bt.NewResource("experiment/topology", req.Resource.Name, "search"),
+						Result:   body,
+					}
+
+					continue
+				default:
+					plog.Error("unexpected WebSocket request resource action for experiment/topology resource type", "action", req.Resource.Action)
+					continue
+				}
 			default:
 				plog.Error("unexpected WebSocket request resource type", "type", req.Resource.Type)
 				continue

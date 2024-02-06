@@ -8,17 +8,18 @@ import (
 type CreateOption func(*createOptions)
 
 type createOptions struct {
-	name         string
-	annotations  map[string]string
-	topology     string
-	scenario     string
-	disabledApps []string
-	vlanMin      int
-	vlanMax      int
-	vlanAliases  map[string]int
-	schedules    map[string]string
-	baseDir      string
-	deployMode   common.DeploymentMode
+	name          string
+	annotations   map[string]string
+	topology      string
+	scenario      string
+	disabledApps  []string
+	vlanMin       int
+	vlanMax       int
+	vlanAliases   map[string]int
+	schedules     map[string]string
+	baseDir       string
+	deployMode    common.DeploymentMode
+	defaultBridge string
 }
 
 func newCreateOptions(opts ...CreateOption) createOptions {
@@ -32,6 +33,10 @@ func newCreateOptions(opts ...CreateOption) createOptions {
 
 	if o.baseDir == "" {
 		o.baseDir = common.PhenixBase + "/experiments/" + o.name
+	}
+
+	if o.defaultBridge == "" {
+		o.defaultBridge = "phenix"
 	}
 
 	return o
@@ -100,6 +105,12 @@ func CreateWithBaseDirectory(b string) CreateOption {
 func CreateWithDeployMode(m common.DeploymentMode) CreateOption {
 	return func(o *createOptions) {
 		o.deployMode = m
+	}
+}
+
+func CreateWithDefaultBridge(b string) CreateOption {
+	return func(o *createOptions) {
+		o.defaultBridge = b
 	}
 }
 

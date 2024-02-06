@@ -453,7 +453,7 @@ func (this Node) validate() error {
 	return nil
 }
 
-func (this *Node) setDefaults() {
+func (this *Node) setDefaults(bridge string) {
 	if this.External() {
 		return
 	}
@@ -497,7 +497,7 @@ func (this *Node) setDefaults() {
 	}
 
 	if this.NetworkF != nil {
-		this.NetworkF.SetDefaults()
+		this.NetworkF.SetDefaults(bridge)
 	}
 }
 

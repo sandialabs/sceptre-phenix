@@ -11,11 +11,11 @@ import (
 	"inet.af/netaddr"
 )
 
-func (this *Tap) Init(opts ...Option) {
+func (this *Tap) Init(bridge string, opts ...Option) {
 	this.o = NewOptions(opts...)
 
 	if this.Bridge == "" {
-		this.Bridge = "phenix"
+		this.Bridge = bridge
 	}
 }
 

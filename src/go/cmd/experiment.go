@@ -175,6 +175,7 @@ func newExperimentCreateCmd() *cobra.Command {
 				experiment.CreateWithVLANMin(MustGetInt(cmd.Flags(), "vlan-min")),
 				experiment.CreateWithVLANMax(MustGetInt(cmd.Flags(), "vlan-max")),
 				experiment.CreatedWithDisabledApplications(disabledApps),
+				experiment.CreateWithDefaultBridge(MustGetString(cmd.Flags(), "default-bridge")),
 			}
 
 			ctx := notes.Context(context.Background(), false)
@@ -196,6 +197,7 @@ func newExperimentCreateCmd() *cobra.Command {
 	cmd.MarkFlagRequired("topology")
 	cmd.Flags().StringP("scenario", "s", "", "Name of an existing scenario to use (optional)")
 	cmd.Flags().StringP("base-dir", "d", "", "Base directory to use for experiment (optional)")
+	cmd.Flags().StringP("default-bridge", "b", "phenix", "Default bridge name to use for experiment (optional)")
 	cmd.Flags().Int("vlan-min", 0, "VLAN pool minimum")
 	cmd.Flags().Int("vlan-max", 0, "VLAN pool maximum")
 	cmd.Flags().StringSlice("disabled-apps", []string{}, "Comma separated ist of apps to disable")

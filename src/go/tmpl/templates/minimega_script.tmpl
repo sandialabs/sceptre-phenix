@@ -1,6 +1,10 @@
 namespace {{ .ExperimentName }}
 ns queueing true
 
+{{- if ne .DefaultBridge "phenix" }}
+ns bridge {{ .DefaultBridge }} gre
+{{- end }}
+
 {{- if and (ne .VLANs.Min 0) (ne .VLANs.Max 0) }}
 vlans range {{ .VLANs.Min }} {{ .VLANs.Max }}
 {{- end }}

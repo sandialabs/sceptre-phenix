@@ -25,7 +25,7 @@ Vue.config.productionTip = false
 
 Vue.use(Buefy, {
   defaultIconComponent: 'font-awesome-icon',
-	defaultIconPack:      'fa'
+	defaultIconPack:      'fas'
 })
 
 Vue.use( VueResource )

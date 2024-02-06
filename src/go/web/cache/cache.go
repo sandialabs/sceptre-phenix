@@ -2,6 +2,8 @@ package cache
 
 import (
 	"time"
+
+	gocache "github.com/patrickmn/go-cache"
 )
 
 type Status string
@@ -20,12 +22,9 @@ const (
 	StatusCommitting   Status = "committing"
 )
 
-var DefaultCache Cache = NewGoCache()
-
-type Cache interface {
+type WebCache interface {
 	Get(string) ([]byte, bool)
 	Set(string, []byte) error
-
 	SetWithExpire(string, []byte, time.Duration) error
 
 	Lock(string, Status, time.Duration) Status
@@ -33,26 +32,62 @@ type Cache interface {
 	Unlock(string)
 }
 
-func Get(key string) ([]byte, bool) {
-	return DefaultCache.Get(key)
+type GoWebCache struct {
+	c *gocache.Cache
 }
 
-func Set(key string, val []byte) error {
-	return DefaultCache.Set(key, val)
+func NewGoWebCache() *GoWebCache {
+	return &GoWebCache{c: gocache.New(gocache.NoExpiration, 30*time.Second)}
 }
 
-func SetWithExpire(key string, val []byte, exp time.Duration) error {
-	return DefaultCache.SetWithExpire(key, val, exp)
+func (this GoWebCache) Get(key string) ([]byte, bool) {
+	v, ok := this.c.Get(key)
+	if !ok {
+		return nil, false
+	}
+
+	return v.([]byte), true
 }
 
-func Lock(key string, status Status, exp time.Duration) Status {
-	return DefaultCache.Lock(key, status, exp)
+func (this *GoWebCache) Set(key string, val []byte) error {
+	this.c.Set(key, val, -1)
+	return nil
 }
 
-func Locked(key string) Status {
-	return DefaultCache.Locked(key)
+func (this *GoWebCache) SetWithExpire(key string, val []byte, exp time.Duration) error {
+	this.c.Set(key, val, exp)
+	return nil
 }
 
-func Unlock(key string) {
-	DefaultCache.Unlock(key)
+func (this *GoWebCache) Lock(key string, status Status, exp time.Duration) Status {
+	key = "LOCK|" + key
+
+	if err := this.c.Add(key, status, exp); err != nil {
+		v, ok := this.c.Get(key)
+
+		// This *might* happen if the key expires or is deleted between
+		// calling `Add` and `Get`.
+		if !ok {
+			return ""
+		}
+
+		return v.(Status)
+	}
+
+	return ""
+}
+
+func (this *GoWebCache) Locked(key string) Status {
+	key = "LOCK|" + key
+
+	v, ok := this.c.Get(key)
+	if !ok {
+		return ""
+	}
+
+	return v.(Status)
+}
+
+func (this *GoWebCache) Unlock(key string) {
+	this.c.Delete("LOCK|" + key)
 }
