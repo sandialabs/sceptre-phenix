@@ -63,11 +63,17 @@ type NodeGeneral interface {
 type NodeHardware interface {
 	CPU() string
 	VCPU() int
+	Core() int
+	Thread() int
+	Socket() int
 	Memory() int
 	OSType() string
 	Drives() []NodeDrive
 
 	SetVCPU(int)
+	SetCore(int)
+	SetThread(int)
+	SetSocket(int)
 	SetMemory(int)
 
 	AddDrive(string, int) NodeDrive

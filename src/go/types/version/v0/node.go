@@ -197,6 +197,9 @@ func (this *General) SetDoNotBoot(b bool) {
 type Hardware struct {
 	CPUF    string   `json:"cpu" yaml:"cpu" structs:"cpu" mapstructure:"cpu"`
 	VCPUF   int      `json:"vcpus,string" yaml:"vcpus" structs:"vcpus" mapstructure:"vcpus"`
+	CoreF   int      `json:"cores" yaml:"cores" structs:"cores" mapstructure:"cores"`
+	ThreadF int      `json:"threads" yaml:"threads" structs:"threads" mapstructure:"threads"`
+	SocketF int      `json:"sockets" yaml:"sockets" structs:"sockets" mapstructure:"sockets"`
 	MemoryF int      `json:"memory,string" yaml:"memory" structs:"memory" mapstructure:"memory"`
 	OSTypeF string   `json:"os_type" yaml:"os_type" structs:"os_type" mapstructure:"os_type"`
 	DrivesF []*Drive `json:"drives" yaml:"drives" structs:"drives" mapstructure:"drives"`
@@ -208,6 +211,18 @@ func (this Hardware) CPU() string {
 
 func (this Hardware) VCPU() int {
 	return this.VCPUF
+}
+
+func (this Hardware) Core() int {
+	return this.CoreF
+}
+
+func (this Hardware) Thread() int {
+	return this.ThreadF
+}
+
+func (this Hardware) Socket() int {
+	return this.SocketF
 }
 
 func (this Hardware) Memory() int {
@@ -230,6 +245,18 @@ func (this Hardware) Drives() []ifaces.NodeDrive {
 
 func (this *Hardware) SetVCPU(v int) {
 	this.VCPUF = v
+}
+
+func (this *Hardware) SetCore(c int) {
+	this.CoreF = c
+}
+
+func (this *Hardware) SetThread(t int) {
+	this.ThreadF = t
+}
+
+func (this *Hardware) SetSocket(s int) {
+	this.SocketF = s
 }
 
 func (this *Hardware) SetMemory(m int) {

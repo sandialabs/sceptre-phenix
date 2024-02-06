@@ -42,6 +42,9 @@ clear vm config
 vm config schedule {{ index $.Schedules .General.Hostname }}
         {{- end }}
 vm config vcpus {{ .Hardware.VCPU }}
+vm config cores {{ .Hardware.Core }}
+vm config threads {{ .Hardware.Thread }}
+vm config sockets {{ .Hardware.Socket }}
 vm config cpu {{ .Hardware.CPU }}
 vm config memory {{ .Hardware.Memory }}
 vm config snapshot {{ derefBool .General.Snapshot }}
