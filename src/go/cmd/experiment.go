@@ -115,7 +115,7 @@ func newExperimentCreateCmd() *cobra.Command {
   phenix experiment create <experiment name> -t <topology name or /path/to/filename>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> -d </path/to/dir/>
-  phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario naem or /path/to/filename> --disabled-apps "app1,app2"`
+  phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> --disabled-apps "app1,app2"`
 
 	cmd := &cobra.Command{
 		Use:     "create <experiment name>",
