@@ -155,7 +155,7 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 			State:    row["state"],
 			Running:  row["state"] == "RUNNING",
 			CCActive: activeC2[row["uuid"]],
-			CdRom: row["cdrom"],
+			CdRom:    row["cdrom"],
 		}
 
 		s := row["vlan"]
@@ -674,7 +674,7 @@ func (this Minimega) GetVMCaptures(opts ...Option) []Capture {
 	return keep
 }
 
-func (Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
+func (this Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
 	// Get headnode details
 	hosts, err := processNamespaceHosts("minimega")
 	if err != nil {
@@ -705,12 +705,20 @@ func (Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
 		// This will happen if the headnode is included as a compute node
 		// (ie. when there's only one node in the cluster).
 		if host.Name == head.Name {
+			// Add disk info
+			head.DiskUsage.Phenix = this.getDiskUsage(head.Name, common.PhenixBase)
+			head.DiskUsage.Minimega = this.getDiskUsage(head.Name, common.MinimegaBase)
+
 			head.Schedulable = true
 			continue
 		}
 
 		host.Name = common.TrimHostnameSuffixes(host.Name)
 		host.Schedulable = true
+
+		// Add disk info
+		host.DiskUsage.Phenix = this.getDiskUsage(host.Name, common.PhenixBase)
+		host.DiskUsage.Minimega = this.getDiskUsage(host.Name, common.MinimegaBase)
 
 		cluster = append(cluster, host)
 	}
@@ -1123,6 +1131,33 @@ func (Minimega) MeshShell(host, command string) error {
 	return nil
 }
 
+func (Minimega) MeshShellResponse(host, command string) (string, error) {
+	cmd := mmcli.NewCommand()
+
+	if host == "" {
+		host = Headnode()
+	}
+
+	if IsHeadnode(host) {
+		cmd.Command = fmt.Sprintf("shell %s", command)
+	} else {
+		cmd.Command = fmt.Sprintf("mesh send %s shell %s", host, command)
+	}
+
+	for resps := range mmcli.Run(cmd) {
+		for _, resp := range resps.Resp {
+			if resp.Error != "" {
+				plog.Warn("error running shell command: ", "cmd", cmd)
+				continue
+			}
+
+			return strings.TrimSpace(resp.Response), nil
+		}
+	}
+
+	return "", fmt.Errorf("error running MeshShellResponse()")
+}
+
 func (Minimega) MeshSend(ns, host, command string) error {
 	var cmd *mmcli.Command
 
@@ -1295,4 +1330,20 @@ func processNamespaceHosts(namespace string) (Hosts, error) {
 	}
 
 	return hosts, nil
+}
+
+// Run shell command to get disk usage for `path` on `host`
+func (this Minimega) getDiskUsage(host string, path string) float64 {
+	diskUsage := 0.0
+
+	cmd := fmt.Sprintf(`bash -c "echo $(df %s | awk '{print $(NF-1)}' | tail -1)"`, path)
+	resp, err := this.MeshShellResponse(host, cmd)
+
+	if (resp == "") || (err != nil) {
+		return diskUsage
+	}
+
+	diskUsage, _ = strconv.ParseFloat(strings.TrimSuffix(resp, "%"), 64)
+
+	return diskUsage
 }

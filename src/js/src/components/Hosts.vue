@@ -44,6 +44,15 @@ available for experiments, the number of VMs, and host uptime.
         <b-table-column field="mem_total" label="RAM Total" width="100" centered v-slot="props">
           {{ props.row.memtotal | ram }}
         </b-table-column>
+        <b-table-column field="disk_used" label="Disk Used (% phenix/minimega base)" width="200" centered v-slot="props">
+          <span class="tag" :class="decorator(props.row.diskusage.diskphenix, 100.0)">
+            {{ props.row.diskusage.diskphenix }}
+          </span>
+          /
+          <span class="tag" :class="decorator(props.row.diskusage.diskminimega, 100.0)">
+            {{ props.row.diskusage.diskminimega }}
+          </span>
+        </b-table-column>
         <b-table-column field="bandwidth" label="Bandwidth (MB/sec)" width="200" centered v-slot="props">
           {{ props.row.bandwidth }}
         </b-table-column>

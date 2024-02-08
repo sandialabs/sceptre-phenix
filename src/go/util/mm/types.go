@@ -122,21 +122,27 @@ type Cluster struct {
 }
 
 type Host struct {
-	Name        string   `json:"name"`
-	CPUs        int      `json:"cpus"`
-	CPUCommit   int      `json:"cpucommit"`
-	Load        []string `json:"load"`
-	MemUsed     int      `json:"memused"`
-	MemTotal    int      `json:"memtotal"`
-	MemCommit   int      `json:"memcommit"`
-	Tx          float64  `json:"tx"`
-	Rx          float64  `json:"rx"`
-	Bandwidth   string   `json:"bandwidth"`
-	NetCommit   int      `json:"netcommit"`
-	VMs         int      `json:"vms"`
-	Uptime      float64  `json:"uptime"`
-	Schedulable bool     `json:"schedulable"`
-	Headnode    bool     `json:"headnode"`
+	Name        string    `json:"name"`
+	CPUs        int       `json:"cpus"`
+	CPUCommit   int       `json:"cpucommit"`
+	Load        []string  `json:"load"`
+	MemUsed     int       `json:"memused"`
+	MemTotal    int       `json:"memtotal"`
+	MemCommit   int       `json:"memcommit"`
+	Tx          float64   `json:"tx"`
+	Rx          float64   `json:"rx"`
+	Bandwidth   string    `json:"bandwidth"`
+	DiskUsage   DiskUsage `json:"diskusage"`
+	NetCommit   int       `json:"netcommit"`
+	VMs         int       `json:"vms"`
+	Uptime      float64   `json:"uptime"`
+	Schedulable bool      `json:"schedulable"`
+	Headnode    bool      `json:"headnode"`
+}
+
+type DiskUsage struct {
+	Phenix   float64 `json:"diskphenix"`
+	Minimega float64 `json:"diskminimega"`
 }
 
 type VMs []VM
