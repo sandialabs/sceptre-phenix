@@ -155,7 +155,7 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 			State:    row["state"],
 			Running:  row["state"] == "RUNNING",
 			CCActive: activeC2[row["uuid"]],
-			CdRom: row["cdrom"],
+			CdRom:    row["cdrom"],
 		}
 
 		s := row["vlan"]
@@ -508,10 +508,21 @@ func (Minimega) DisconnectVMInterface(opts ...Option) error {
 }
 
 func (Minimega) CreateTunnel(opts ...Option) error {
+	host, err := GetVMHost(opts...)
+	if err != nil {
+		return fmt.Errorf("unable to determine what host the VM is scheduled on: %w", err)
+	}
+
 	o := NewOptions(opts...)
 
+	var cmdPrefix string
+
+	if !IsHeadnode(host) {
+		cmdPrefix = fmt.Sprintf("mesh send %s namespace %s", host, o.ns)
+	}
+
 	cmd := mmcli.NewNamespacedCommand(o.ns)
-	cmd.Command = fmt.Sprintf("cc tunnel %s %d %s %d", o.vm, o.srcPort, o.dstHost, o.dstPort)
+	cmd.Command = fmt.Sprintf("%s cc tunnel %s %d %s %d", cmdPrefix, o.vm, o.srcPort, o.dstHost, o.dstPort)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("creating tunnel to %s (%d:%s:%d): %w", o.vm, o.srcPort, o.dstHost, o.dstPort, err)
@@ -544,12 +555,25 @@ func (Minimega) GetTunnels(opts ...Option) []map[string]string {
 func (Minimega) CloseTunnel(opts ...Option) error {
 	tunnels := GetTunnels(opts...)
 
+	host, err := GetVMHost(opts...)
+	if err != nil {
+		return fmt.Errorf("unable to determine what host the VM is scheduled on: %w", err)
+	}
+
 	o := NewOptions(opts...)
-	var errs error
+
+	var (
+		cmdPrefix string
+		errs      error
+	)
+
+	if !IsHeadnode(host) {
+		cmdPrefix = fmt.Sprintf("mesh send %s namespace %s", host, o.ns)
+	}
 
 	for _, row := range tunnels {
 		cmd := mmcli.NewNamespacedCommand(o.ns)
-		cmd.Command = fmt.Sprintf("cc tunnel close %s %s", o.vm, row["id"])
+		cmd.Command = fmt.Sprintf("%s cc tunnel close %s %s", cmdPrefix, o.vm, row["id"])
 
 		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 			errs = multierror.Append(errs, fmt.Errorf("closing tunnel to %s (%s:%d): %w", o.vm, o.dstHost, o.dstPort, err))

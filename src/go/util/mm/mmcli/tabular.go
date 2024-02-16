@@ -3,7 +3,6 @@
 package mmcli
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/activeshadow/libminimega/minicli"
@@ -65,7 +64,6 @@ func RunTabular(cmd *Command) []map[string]string {
 	for resps := range Run(cmd) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
-				fmt.Println(resp.Error)
 				continue
 			}
 
