@@ -132,6 +132,10 @@ func MeshShell(host, cmd string) error {
 	return DefaultMM.MeshShell(host, cmd)
 }
 
+func MeshBackground(host, cmd string) error {
+	return DefaultMM.MeshBackground(host, cmd)
+}
+
 func MeshSend(ns, host, command string) error {
 	return DefaultMM.MeshSend(ns, host, command)
 }

@@ -154,8 +154,14 @@ func (this UserApp) shellOut(ctx context.Context, action Action, exp *types.Expe
 	}
 
 	switch action {
-	case ACTIONCONFIG, ACTIONPRESTART:
+	case ACTIONCONFIG:
 		exp.SetSpec(result.Spec)
+	case ACTIONPRESTART:
+		exp.SetSpec(result.Spec)
+
+		if metadata, ok := result.Status.AppStatus()[this.options.Name]; ok {
+			exp.Status.SetAppStatus(this.options.Name, metadata)
+		}
 	case ACTIONPOSTSTART, ACTIONRUNNING:
 		if metadata, ok := result.Status.AppStatus()[this.options.Name]; ok {
 			exp.Status.SetAppStatus(this.options.Name, metadata)

@@ -44,5 +44,6 @@ type MM interface {
 
 	TapVLAN(...TapOption) error
 	MeshShell(string, string) error
+	MeshBackground(string, string) error
 	MeshSend(string, string, string) error
 }
