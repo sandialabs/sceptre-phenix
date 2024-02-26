@@ -1,7 +1,7 @@
 # Update GitHub workflow config to change the minimum version of minimega
 # required for use with phenix. This build stage is needed for making sure the
 # latest version of the minimega Python module is installed.
-ARG  MM_MIN_REV=48a8fe5
+ARG  MM_MIN_REV=c8e20a3
 FROM ghcr.io/activeshadow/minimega/minimega:${MM_MIN_REV} AS minimega
 
 
@@ -129,7 +129,7 @@ RUN wget https://github.com/glattercj/vmdb2/releases/latest/download/vmdb2 -O /u
   && chmod +x /usr/bin/vmdb2
 
 # needed to build Kali images with phenix
-RUN wget -O kali.deb https://http.kali.org/kali/pool/main/k/kali-archive-keyring/kali-archive-keyring_2022.1_all.deb \
+RUN wget -O kali.deb https://http.kali.org/kali/pool/main/k/kali-archive-keyring/kali-archive-keyring_2024.1_all.deb \
   && dpkg -i kali.deb \
   && rm kali.deb
 
@@ -170,7 +170,7 @@ COPY --from=gobuilder /phenix/src/go/bin/phenix-tunneler-* /opt/phenix/downloads
 
 # Update GitHub workflow config to change the minimum version of minimega
 # required for use with phenix.
-ARG   MM_MIN_REV=48a8fe5
+ARG   MM_MIN_REV=c8e20a3
 LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandialabs/sceptre-phenix/minimega:${MM_MIN_REV}"
 
 WORKDIR /opt/phenix
