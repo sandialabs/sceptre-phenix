@@ -138,6 +138,10 @@
         </footer>
       </div>
     </b-modal>
+    <div id="context-menu" v-if="d3ContextMenuNode !== null">
+        <b-button @click="clicked(null, d3ContextMenuNode); hideContextMenu()">View SOH</b-button>
+        <b-button @click="method1('arg')">View Tags</b-button>
+    </div>
     <hr>
     <div class="columns is-centered"> 
       <div class="column is-1">
@@ -705,6 +709,7 @@ export default {
         .on( 'mouseenter', this.entered )
         .on( 'mouseleave', this.exited )
         .on( 'click', this.clicked )
+        .on( 'contextmenu', this.showContextMenu )
         .call( this.drag( simulation ) );
 
       const label = g.selectAll( "text" )
@@ -730,6 +735,37 @@ export default {
           .attr( "x", d => d.x + 4 )
           .attr( "y", d => d.y + 8 );
       });
+
+      const chartComponent = document.getElementById("graph");
+      chartComponent.addEventListener("contextmenu", this.setContextMenuCoords);
+      d3.select("body").on( 'click', this.hideContextMenu);
+    },
+
+    showContextMenu ( d, n ) {
+      d.preventDefault();
+      this.d3ContextMenuNode = n;
+    },
+
+    hideContextMenu () {
+      this.d3ContextMenuNode = null;
+    },
+
+    /**
+     * NOTE: The D3 event listeners are fired before the addEventListener functions are fired. 
+     * So the context-menu elements will exist in the DOM by the time this method is executed.
+     */
+     setContextMenuCoords(event) {
+      event.preventDefault();
+      console.log("COORDS")
+
+      const ctxMenu = document.getElementById("context-menu");
+      // If the user right-clicked somewhere other than on rect element that was appended to someGroup, then the ctxMenu will not exist. The following conditional check is to prevent errors when the user right-clicks outside of the rect element.
+      if (ctxMenu) {
+        const leftShift = ctxMenu.getBoundingClientRect().width / 3;
+        ctxMenu.style.left = (event.pageX - leftShift) + "px";
+        ctxMenu.style.top = event.pageY + "px";
+        console.log(ctxMenu.style.left, ctxMenu.style.top)
+      }
     },
 
     entered ( e, n ) {
@@ -754,7 +790,7 @@ export default {
         .attr( "fill", () => this.updateNodeColor( n ) );
     },
 
-    clicked ( e, n ) {
+    clicked ( _, n ) {
       if ( n.image.toLowerCase() == "switch" ) {
         return;
       }
@@ -940,7 +976,8 @@ export default {
         this.generateGraph();
         this.generateChord();
       }
-    }
+    },
+    showContextMenu: (bool) => { console.log("CONTEXT: " + bool); }
   },
 
   data() {
@@ -950,6 +987,7 @@ export default {
       sohRunning: false,
       messages: false,
       flows: false,
+      d3ContextMenuNode: null,
       nodes: [],
       edges: [],
       volume: [],
@@ -978,5 +1016,16 @@ export default {
 
   .modal-card-title {
     color: whitesmoke;
+  }
+
+  #context-menu {
+    position: absolute;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+
+    .button {
+      border-radius: 0px;
+    }
   }
 </style>
