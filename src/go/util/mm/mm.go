@@ -19,6 +19,8 @@ type MM interface {
 	GetVMHost(...Option) (string, error)
 	GetVMState(...Option) (string, error)
 
+	SetVMTags(...Option) error
+
 	ConnectVMInterface(...Option) error
 	DisconnectVMInterface(...Option) error
 

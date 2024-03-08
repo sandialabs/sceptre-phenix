@@ -89,6 +89,10 @@ func (this *Node) SetType(t string) {
 	this.TypeF = t
 }
 
+func (this *Node) SetLabels(m map[string]string) {
+	this.LabelsF = m
+}
+
 func (this *Node) AddAnnotation(k string, i interface{}) {
 	if this.AnnotationsF == nil {
 		this.AnnotationsF = make(map[string]interface{})

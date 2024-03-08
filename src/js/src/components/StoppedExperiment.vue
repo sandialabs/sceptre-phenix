@@ -275,20 +275,35 @@
                 </template>
               </b-table-column>
               <b-table-column field="inject_partition" label="Partition" sortable centered v-slot="props">
-                  <template v-if="!props.row.external && roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
-                    <b-tooltip label="menu for assigning inject partition" type="is-dark">
-                      <b-select :value="props.row.inject_partition" expanded @input="( value ) => assignPartition( props.row.name, value )">
-                        <option v-for="n in 10" :value="n">{{ n }}</option>
-                      </b-select>
-                    </b-tooltip>
-                  </template>
-                  <template v-else>
-                    {{ props.row.inject_partition }}
-                  </template>
+                <template v-if="!props.row.external && roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
+                  <b-tooltip label="menu for assigning inject partition" type="is-dark">
+                    <b-select :value="props.row.inject_partition" expanded @input="( value ) => assignPartition( props.row.name, value )">
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4">4</option>
+                    </b-select>
+                  </b-tooltip>
+                </template>
+                <template v-else>
+                  {{ props.row.inject_partition }}
+                </template>
+              </b-table-column>
+              <b-table-column label="Labels" centered v-slot="props">
+                <template>
+                  <b-tooltip label="View/Edit Labels" type="is-dark">
+                    <div @click="showTagsModal( props.row )" class="is-clickable">
+                      <font-awesome-layers full-width>
+                        <font-awesome-icon  icon="tag" />
+                        <font-awesome-layers-text counter :value="tagCount(props.row.tags)" />
+                      </font-awesome-layers>
+                    </div>
+                  </b-tooltip>
+                </template>
               </b-table-column>
               <b-table-column label="Boot" centered v-slot="props">
                 <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
-                  <b-tooltip :label="getBootLabel( props.row )" type="is-dark">
+                  <b-tooltip :label="getBootLabel( props.row )" type="is-dark" class="is-clickable">
                     <div @click="updateDnb( props.row )">
                       <font-awesome-icon :class="bootDecorator( props.row )" icon="bolt" />
                     </div>
@@ -389,6 +404,7 @@
 
 <script>
   import _ from 'lodash';
+  import VmLabelsModal from './VMLabelsModal.vue';
 
   export default {
     beforeDestroy () {
@@ -1093,6 +1109,16 @@
         })
       },
 
+      showTagsModal ( vm ) {
+        this.$buefy.modal.open({
+          parent:       this,
+          component:    VmLabelsModal,
+          trapFocus:    true,
+          hasModalCard: true,
+          props:        {"vmName": vm.name, "experiment": this.$route.params.id, "tags": vm.tags}
+        })
+      },
+
       updateDnb ( vm ) {
         if (vm.external) {
           return;
@@ -1439,5 +1465,9 @@
 
   div.autocomplete >>> a.dropdown-item {
     color: #383838 !important;
+  }
+
+  .fa-layers-counter { /* counter on tag icon */
+    transform: scale(.7) translateX(50%) translateY(-50%);
   }
 </style>

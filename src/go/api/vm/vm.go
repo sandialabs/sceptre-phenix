@@ -97,6 +97,7 @@ func List(expName string) ([]mm.VM, error) {
 			Type:            node.Type(),
 			OSType:          node.Hardware().OSType(),
 			Snapshot:        snapshot,
+			Tags:            node.Labels(),
 		}
 
 		for _, iface := range node.Network().Interfaces() {
@@ -198,10 +199,11 @@ func Get(expName, vmName string) (*mm.VM, error) {
 			Interfaces:      make(map[string]string),
 			DoNotBoot:       *node.General().DoNotBoot(),
 			OSType:          string(node.Hardware().OSType()),
+			Snapshot:        *node.General().Snapshot(),
 			Metadata:        make(map[string]interface{}),
 			Labels:          node.Labels(),
+			Tags:            node.Labels(),
 			Annotations:     node.Annotations(),
-			Snapshot:        *node.General().Snapshot(),
 		}
 
 		for _, iface := range node.Network().Interfaces() {
@@ -285,22 +287,6 @@ func Update(opts ...UpdateOption) error {
 		return fmt.Errorf("experiment or VM name not provided")
 	}
 
-	running := experiment.Running(o.exp)
-
-	if running && o.iface == nil {
-		return fmt.Errorf("only interface connections can be updated while experiment is running")
-	}
-
-	// The only setting that can be updated while an experiment is running is the
-	// VLAN an interface is connected to.
-	if running {
-		if o.iface.vlan == "" {
-			return Disonnect(o.exp, o.vm, o.iface.index)
-		} else {
-			return Connect(o.exp, o.vm, o.iface.index, o.iface.vlan)
-		}
-	}
-
 	exp, err := experiment.Get(o.exp)
 	if err != nil {
 		return fmt.Errorf("unable to get experiment %s: %w", o.exp, err)
@@ -309,6 +295,50 @@ func Update(opts ...UpdateOption) error {
 	vm := exp.Spec.Topology().FindNodeByName(o.vm)
 	if vm == nil {
 		return fmt.Errorf("unable to find VM %s in experiment %s", o.vm, o.exp)
+	}
+
+	// if appending, copy over old labels (keep newer version if present)
+	if o.tags != nil && o.appendTags {
+		for k, v := range vm.Labels() {
+			if _, ok := (*o.tags)[k]; !ok {
+				(*o.tags)[k] = v
+			}
+		}
+	}
+
+	running := experiment.Running(o.exp)
+
+	// The only settings that can be updated while an experiment is running is the
+	// VLAN an interface is connected to and the vm's tags
+	if running {
+		if o.iface == nil && o.tags == nil {
+			return fmt.Errorf("only interface connections and tags can be updated while experiment is running")
+		}
+
+		if o.iface != nil {
+			if o.iface.vlan == "" {
+				if err := Disonnect(o.exp, o.vm, o.iface.index); err != nil {
+					return err
+				}
+			} else {
+				if err := Connect(o.exp, o.vm, o.iface.index, o.iface.vlan); err != nil {
+					return err
+				}
+			}
+		}
+
+		if o.tags != nil {
+			// update both the live minimega tags and the experiment spec labels
+			if err := mm.SetVMTags(mm.NS(o.exp), mm.VMName(o.vm), mm.Tags(*o.tags)); err != nil {
+				return err
+			}
+
+			vm.SetLabels(*o.tags)
+			if err := experiment.Save(experiment.SaveWithName(o.exp), experiment.SaveWithSpec(exp.Spec)); err != nil {
+				return fmt.Errorf("unable to save experiment with updated VM: %w", err)
+			}
+		}
+		return nil
 	}
 
 	if o.cpu != 0 {
@@ -329,6 +359,10 @@ func Update(opts ...UpdateOption) error {
 
 	if o.dnb != nil {
 		vm.General().SetDoNotBoot(*o.dnb)
+	}
+
+	if o.tags != nil {
+		vm.SetLabels(*o.tags)
 	}
 
 	if o.host != nil {
@@ -397,7 +431,7 @@ func Restart(expName, vmName string) error {
 	state, err := mm.GetVMState(mm.NS(expName), mm.VMName(vmName))
 
 	if err != nil {
-		return fmt.Errorf("Retrieving state for VM %s in experiment %s: %w", vmName, expName, err)
+		return fmt.Errorf("retrieving state for VM %s in experiment %s: %w", vmName, expName, err)
 	}
 
 	//Using "system_reset" on a VM that is in the "QUIT" state fails
@@ -407,7 +441,7 @@ func Restart(expName, vmName string) error {
 	}
 
 	cmd := mmcli.NewNamespacedCommand(expName)
-	qmp := fmt.Sprintf(`{ "execute": "system_reset" }`)
+	qmp := `{ "execute": "system_reset" }`
 	cmd.Command = fmt.Sprintf("vm qmp %s '%s'", vmName, qmp)
 
 	_, err = mmcli.SingleResponse(mmcli.Run(cmd))
@@ -542,7 +576,7 @@ func ResetDiskState(expName, vmName string) error {
 		cmd.Command = "vm kill " + vmName
 
 		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-			return fmt.Errorf("Killing VM %s in experiment %s: %w", vmName, expName, err)
+			return fmt.Errorf("killing VM %s in experiment %s: %w", vmName, expName, err)
 		}
 
 	}
@@ -725,7 +759,7 @@ func Snapshot(expName, vmName, out string, cb func(string)) error {
 		fp   = fmt.Sprintf("%s/%s", common.MinimegaBase, status[0]["id"])
 	)
 
-	qmp := fmt.Sprintf(`{ "execute": "query-block" }`)
+	qmp := `{ "execute": "query-block" }`
 	cmd.Command = fmt.Sprintf("vm qmp %s '%s'", vmName, qmp)
 
 	res, err := mmcli.SingleResponse(mmcli.Run(cmd))
@@ -756,7 +790,7 @@ func Snapshot(expName, vmName, out string, cb func(string)) error {
 		return fmt.Errorf("starting disk snapshot for VM %s: %w", vmName, err)
 	}
 
-	qmp = fmt.Sprintf(`{ "execute": "query-block-jobs" }`)
+	qmp = `{ "execute": "query-block-jobs" }`
 	cmd.Command = fmt.Sprintf(`vm qmp %s '%s'`, vmName, qmp)
 
 	for {
@@ -1253,7 +1287,7 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 
 	}
 
-	qmp = fmt.Sprintf(`{ "execute": "query-dump" }`)
+	qmp = `{ "execute": "query-dump" }`
 	cmd.Command = fmt.Sprintf("vm qmp %s '%s'", vmName, qmp)
 
 	var (
@@ -1279,7 +1313,7 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 			if cb != nil {
 				cb("failed")
 			}
-			return "", fmt.Errorf("no status available for %s: %s", vmName, v)
+			return "", fmt.Errorf("no status available for %s: %v", vmName, v)
 
 		}
 
@@ -1287,7 +1321,7 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 			if cb != nil {
 				cb("failed")
 			}
-			return "failed", fmt.Errorf("failed to create memory snapshot for %s: %s", vmName, v)
+			return "failed", fmt.Errorf("failed to create memory snapshot for %s: %v", vmName, v)
 
 		}
 
@@ -1339,13 +1373,13 @@ func CaptureSubnet(expName, subnet string, vmList []string) ([]mm.Capture, error
 	vms, err := List(expName)
 
 	if err != nil {
-		return nil, fmt.Errorf("Getting vm list for %s failed", expName)
+		return nil, fmt.Errorf("getting vm list for %s failed", expName)
 	}
 
 	_, refNet, err := net.ParseCIDR(subnet)
 
 	if err != nil {
-		return nil, fmt.Errorf("Unable to parse %s", subnet)
+		return nil, fmt.Errorf("unable to parse %s", subnet)
 	}
 
 	// Use empty struct for code consistency and
@@ -1444,7 +1478,7 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 	vms, err := List(expName)
 
 	if err != nil {
-		return nil, fmt.Errorf("Getting vm list for %s failed", expName)
+		return nil, fmt.Errorf("getting vm list for %s failed", expName)
 	}
 
 	_, refNet, err := net.ParseCIDR(subnet)

@@ -15,11 +15,13 @@ import { roleAllowed } from './rbac'
 
 import { fas }             from '@fortawesome/free-solid-svg-icons'
 import { library }         from '@fortawesome/fontawesome-svg-core'
-import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+import { FontAwesomeIcon, FontAwesomeLayers, FontAwesomeLayersText } from '@fortawesome/vue-fontawesome'
 
 library.add(fas)
 
 Vue.component( 'font-awesome-icon', FontAwesomeIcon )
+Vue.component( 'font-awesome-layers', FontAwesomeLayers )
+Vue.component( 'font-awesome-layers-text', FontAwesomeLayersText )
 
 Vue.config.productionTip = false
 
@@ -91,13 +93,13 @@ Vue.filter( 'fileSize', function (fileSize) {
   }
 })
 
-Vue.prototype.errorNotification = errorNotification;
-Vue.errorNotification = errorNotification;
-const roleAllowedWrapper = (resource, verb, ...names) => {
-  return roleAllowed(store.getters.role, resource, verb, ...names)
-}
-Vue.prototype.roleAllowed = roleAllowedWrapper;
-Vue.roleAllowed = roleAllowedWrapper;
+Vue.mixin({
+  methods: {
+    roleAllowed: (resource, verb, ...names) => roleAllowed(store.getters.role, resource, verb, ...names),
+    errorNotification: errorNotification,
+    tagCount: (tags) => Object.keys(tags).filter(entry => !entry.startsWith("__") || entry.startsWith("__notes_")).length
+  }
+})
 
 Vue.http.options.root = `${process.env.BASE_URL}api/v1/`
 

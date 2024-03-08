@@ -8,16 +8,18 @@ type iface struct {
 }
 
 type updateOptions struct {
-	exp       string
-	vm        string
-	cpu       int
-	mem       int
-	disk      string
-	partition int
-	dnb       *bool
-	iface     *iface
-	host      *string
-	snapshot  *bool
+	exp        string
+	vm         string
+	cpu        int
+	mem        int
+	disk       string
+	partition  int
+	dnb        *bool
+	iface      *iface
+	host       *string
+	snapshot   *bool
+	appendTags bool
+	tags       *map[string]string
 }
 
 func newUpdateOptions(opts ...UpdateOption) updateOptions {
@@ -78,15 +80,22 @@ func UpdateWithDNB(b bool) UpdateOption {
 	}
 }
 
+func UpdateWithHost(h string) UpdateOption {
+	return func(o *updateOptions) {
+		o.host = &h
+	}
+}
+
 func UpdateWithSnapshot(b bool) UpdateOption {
 	return func(o *updateOptions) {
 		o.snapshot = &b
 	}
 }
 
-func UpdateWithHost(h string) UpdateOption {
+func UpdateWithTags(t map[string]string, appendTags bool) UpdateOption {
 	return func(o *updateOptions) {
-		o.host = &h
+		o.appendTags = appendTags
+		o.tags = &t
 	}
 }
 

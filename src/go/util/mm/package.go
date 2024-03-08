@@ -52,6 +52,10 @@ func GetVMState(opts ...Option) (string, error) {
 	return DefaultMM.GetVMState(opts...)
 }
 
+func SetVMTags(opts ...Option) error {
+	return DefaultMM.SetVMTags(opts...)
+}
+
 func ConnectVMInterface(opts ...Option) error {
 	return DefaultMM.ConnectVMInterface(opts...)
 }

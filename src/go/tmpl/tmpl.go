@@ -60,6 +60,9 @@ func GenerateFromTemplate(name string, data interface{}, w io.Writer) error {
 		"stringsJoin": func(s []string, sep string) string {
 			return strings.Join(s, sep)
 		},
+		"escapeNewline": func(s string) string {
+			return strings.ReplaceAll(s, "\n", "\\n")
+		},
 	}
 
 	tmpl := template.Must(template.New(name).Funcs(funcs).Parse(string(MustAsset(name))))

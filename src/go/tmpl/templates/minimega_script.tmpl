@@ -63,7 +63,7 @@ vm config {{ $config }} {{ $value }}
 vm config qemu-override "{{ $match }}" "{{ $replacement }}"
         {{- end }}
         {{- range $label, $value := .Labels }}
-vm config tags {{ $label }} {{ $value }}
+vm config tags "{{ $label }}" "{{ escapeNewline $value }}"
         {{- end }}
 vm launch {{ .General.VMType }} {{ .General.Hostname }}
     {{- end }}

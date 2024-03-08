@@ -37,6 +37,7 @@ type NodeSpec interface {
 
 	SetInjections([]NodeInjection)
 	SetType(string)
+	SetLabels(map[string]string)
 
 	AddAnnotation(string, interface{})
 	AddTimerDelay(delay string)

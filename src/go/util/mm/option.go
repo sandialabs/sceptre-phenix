@@ -17,6 +17,8 @@ type options struct {
 	disk   string
 	bridge string
 
+	tags map[string]string
+
 	injectPart int
 	injects    []string
 
@@ -77,6 +79,12 @@ func Disk(d string) Option {
 func Bridge(b string) Option {
 	return func(o *options) {
 		o.bridge = b
+	}
+}
+
+func Tags(t map[string]string) Option {
+	return func(o *options) {
+		o.tags = t
 	}
 }
 
