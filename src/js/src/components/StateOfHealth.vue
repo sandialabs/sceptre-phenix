@@ -504,6 +504,7 @@ export default {
       try {
         let resp = await this.$http.get( url );
         let state = await resp.json();
+        console.log(state)
 
         this.running        = state.started;
         this.sohInitialized = state.soh_initialized;
@@ -802,6 +803,7 @@ export default {
         this.detailsModal.vm = n.label;
         this.detailsModal.status = n.status;
         this.detailsModal.soh = n.soh;
+        console.log(this.nodes)
       }    
     },
 

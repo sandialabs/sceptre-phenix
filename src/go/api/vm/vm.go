@@ -88,6 +88,7 @@ func List(expName string) ([]mm.VM, error) {
 			DoNotBoot:  dnb,
 			Type:       node.Type(),
 			OSType:     node.Hardware().OSType(),
+			Tags: 		node.Labels(),
 		}
 
 		for _, iface := range node.Network().Interfaces() {

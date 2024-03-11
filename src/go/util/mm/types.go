@@ -221,7 +221,7 @@ type VM struct {
 	Uptime     float64   `json:"uptime"`
 	Screenshot string    `json:"screenshot,omitempty"`
 	CdRom      string    `json:"cdRom"`
-	Tags       []string  `json:"tags"`
+	Tags       map[string]string  `json:"tags"`
 
 	// Used internally to track network <--> IP relationship, since
 	// network ordering from minimega may not be the same as network
@@ -255,8 +255,10 @@ func (this VM) Copy() VM {
 	vm.Captures = make([]Capture, len(this.Captures))
 	copy(vm.Captures, this.Captures)
 
-	vm.Tags = make([]string, len(this.Tags))
-	copy(vm.Tags, this.Tags)
+	vm.Tags = make(map[string]string, len(this.Tags))
+	for k,v := range this.Tags {
+		vm.Tags[k] = v
+	}
 
 	return vm
 }

@@ -274,9 +274,21 @@
                   {{ getBaseName(props.row.disk) || 'unknown' }}
                 </template>
               </b-table-column>
+              <b-table-column label="Tags" centered v-slot="props">
+                <template>
+                  <b-tooltip label="View/Edit Tags" type="is-dark">
+                    <div @click="showTagsModal( props.row )" class="is-clickable">
+                      <font-awesome-layers full-width>
+                        <font-awesome-icon  icon="tag" />
+                        <font-awesome-layers-text counter :value="Object.keys(props.row.tags).length" />
+                      </font-awesome-layers>
+                    </div>
+                  </b-tooltip>
+                </template>
+              </b-table-column>
               <b-table-column label="Boot" centered v-slot="props">
                 <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
-                  <b-tooltip :label="getBootLabel( props.row )" type="is-dark">
+                  <b-tooltip :label="getBootLabel( props.row )" type="is-dark" class="is-clickable">
                     <div @click="updateDnb( props.row )">
                       <font-awesome-icon :class="bootDecorator( props.row )" icon="bolt" />
                     </div>
@@ -364,6 +376,7 @@
 
 <script>
   import _ from 'lodash';
+  import VmTagsModal from './VMTagsModal.vue';
 
   export default {
     beforeDestroy () {
@@ -1009,6 +1022,17 @@
         })
       },
 
+      showTagsModal ( vm ) {
+        console.log(vm)
+        this.$buefy.modal.open({
+          parent:       this,
+          component:    VmTagsModal,
+          trapFocus:    true,
+          hasModalCard: true,
+          props:        {"vmName": vm.name, "experiment": this.$route.params.id, "tags": vm.tags}
+        })
+      },
+
       updateDnb ( vm ) {
         if (vm.external) {
           return;
@@ -1298,5 +1322,9 @@
 
   div.autocomplete >>> a.dropdown-item {
     color: #383838 !important;
+  }
+
+  .fa-layers-counter { /* counter on tag icon */
+    transform: scale(.6) translateX(50%) translateY(-50%);
   }
 </style>
