@@ -102,6 +102,10 @@ func (this *Node) SetInjections(injections []ifaces.NodeInjection) {
 	this.InjectionsF = injects
 }
 
+func (this *Node) SetLabels(m map[string]string) {
+	this.LabelsF = m
+}
+
 func (this *Node) AddLabel(k, v string) {
 	if this.LabelsF == nil {
 		this.LabelsF = make(map[string]string)

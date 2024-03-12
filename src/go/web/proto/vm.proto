@@ -70,6 +70,9 @@ message UpdateVMRequest {
   oneof cluster_host {
     string host = 8;
   }
+
+  // implicitly optional by leaving empty
+  map<string, string> tags = 9;
 }
 
 message UpdateVMRequestList {

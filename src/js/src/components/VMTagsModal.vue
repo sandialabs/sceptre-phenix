@@ -77,7 +77,23 @@
         this.workingTags.push({"key": "", "value": ""})
       },
       saveTags() {
+        var finalTags = {}
+        for (const row of this.workingTags) {
+          if (row.key == "" || row.key in finalTags)
+            continue
+          finalTags[row.key] = row.value
+        }
         console.log(this.workingTags)
+
+
+        let update = { "tags": finalTags };
+
+            this.$http.patch('experiments/' + this.$route.params.id + '/vms/' + this.vmName, update)
+                .then(response => {
+                  console.log("RESPONSE")
+                  console.log(response)
+                  this.$emit('close')
+            });
       }
     }
   }

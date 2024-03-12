@@ -480,6 +480,27 @@ func (Minimega) GetVMState(opts ...Option) (string, error) {
 	return status[0]["state"], nil
 }
 
+func (Minimega) SetVMTags(opts ...Option) error {
+	o := NewOptions(opts...)
+
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = fmt.Sprintf("clear vm tag %s ", o.vm)
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("failed to clear tags for vm %s: %w", o.vm, err)
+	}
+
+	for k,v := range o.tags {
+		cmd.Command = fmt.Sprintf("vm tag %s \"%s\" \"%s\"", o.vm, k, v)
+
+		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+			return fmt.Errorf("failed to set tag for vm %s: %s=%s %w", o.vm, k, v, err)
+		}
+	}
+
+	return nil
+}
+
 func (Minimega) ConnectVMInterface(opts ...Option) error {
 	o := NewOptions(opts...)
 

@@ -16,6 +16,8 @@ type options struct {
 	mem  int
 	disk string
 
+	tags map[string]string
+
 	injectPart int
 	injects    []string
 
@@ -70,6 +72,12 @@ func Mem(m int) Option {
 func Disk(d string) Option {
 	return func(o *options) {
 		o.disk = d
+	}
+}
+
+func Tags(t map[string]string) Option {
+	return func(o *options) {
+		o.tags = t
 	}
 }
 

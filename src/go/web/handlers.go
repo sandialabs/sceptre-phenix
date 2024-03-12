@@ -1043,6 +1043,10 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		opts = append(opts, vm.UpdateWithInterface(int(req.Interface.Index), req.Interface.Vlan))
 	}
 
+	if len(req.Tags) != 0 {
+		opts = append(opts, vm.UpdateWithTags(req.Tags))
+	}
+
 	switch req.Boot.(type) {
 	case *proto.UpdateVMRequest_DoNotBoot:
 		opts = append(opts, vm.UpdateWithDNB(req.GetDoNotBoot()))

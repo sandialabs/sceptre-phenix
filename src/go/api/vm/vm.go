@@ -191,6 +191,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 			OSType:      string(node.Hardware().OSType()),
 			Metadata:    make(map[string]interface{}),
 			Labels:      node.Labels(),
+			Tags:		 node.Labels(),
 			Annotations: node.Annotations(),
 		}
 
@@ -277,18 +278,33 @@ func Update(opts ...UpdateOption) error {
 
 	running := experiment.Running(o.exp)
 
-	if running && o.iface == nil {
-		return fmt.Errorf("only interface connections can be updated while experiment is running")
-	}
-
-	// The only setting that can be updated while an experiment is running is the
-	// VLAN an interface is connected to.
+	// The only settings that can be updated while an experiment is running is the
+	// VLAN an interface is connected to and the vm's tags
 	if running {
-		if o.iface.vlan == "" {
-			return Disonnect(o.exp, o.vm, o.iface.index)
-		} else {
-			return Connect(o.exp, o.vm, o.iface.index, o.iface.vlan)
+		if o.iface == nil && o.tags == nil {
+			return fmt.Errorf("only interface connections and tags can be updated while experiment is running")
 		}
+
+		if o.iface != nil {
+			if o.iface.vlan == "" {
+				if err := Disonnect(o.exp, o.vm, o.iface.index); err != nil {
+					return err
+				}
+			} else {
+				if err := Connect(o.exp, o.vm, o.iface.index, o.iface.vlan); err != nil {
+					return err
+				}
+			}
+		}
+
+		if o.tags != nil {
+			// TODO: update node labels here too?
+			if err := mm.SetVMTags(mm.NS(o.exp), mm.VMName(o.vm), mm.Tags(*o.tags)); err != nil {
+				return err
+			}
+		}
+
+
 	}
 
 	exp, err := experiment.Get(o.exp)
@@ -315,6 +331,10 @@ func Update(opts ...UpdateOption) error {
 
 	if o.dnb != nil {
 		vm.General().SetDoNotBoot(*o.dnb)
+	}
+
+	if o.tags != nil {
+		vm.SetLabels(*o.tags)
 	}
 
 	if o.host != nil {
