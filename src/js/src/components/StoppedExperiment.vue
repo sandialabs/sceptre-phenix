@@ -1325,6 +1325,6 @@
   }
 
   .fa-layers-counter { /* counter on tag icon */
-    transform: scale(.6) translateX(50%) translateY(-50%);
+    transform: scale(.7) translateX(50%) translateY(-50%);
   }
 </style>

@@ -83,17 +83,15 @@
             continue
           finalTags[row.key] = row.value
         }
-        console.log(this.workingTags)
-
 
         let update = { "tags": finalTags };
 
-            this.$http.patch('experiments/' + this.$route.params.id + '/vms/' + this.vmName, update)
-                .then(response => {
-                  console.log("RESPONSE")
-                  console.log(response)
-                  this.$emit('close')
-            });
+        this.$http.patch('experiments/' + this.$route.params.id + '/vms/' + this.vmName, update)
+            .then(response => {
+              if (response.ok) {
+                this.$emit('close')
+              }
+        });
       }
     }
   }
