@@ -1,26 +1,42 @@
 <template>
-    <form action="">
-    <div class="modal-card">
+    <div class="modal-card" style="width: 70vw">
       <header class="modal-card-head">
         <p class="modal-card-title mr-6">{{this.vmName}} Tags</p>
       </header>
       <section class="modal-card-body">
       
         <b-table :data="workingTags" class="fixed-table">
-          <b-table-column field="key" label="Key" v-slot="props">
-              {{ props.row.key }}
+          <b-table-column field="key" label="Key" v-slot="props" width="192px">
+              <template v-if="canEdit()">
+                <b-input v-model="props.row.key"/>
+              </template>
+              <template v-else>
+                {{ props.row.key }}
+              </template>
           </b-table-column>
           <b-table-column field="value" label="Value" v-slot="props">
-            {{ props.row.value }}
+            <template v-if="canEdit()">
+                <b-input v-model="props.row.value"/>
+              </template>
+              <template v-else>
+                {{ props.row.value }}
+              </template>
           </b-table-column>
+          <b-table-column v-slot="props" v-if="canEdit()" width="32px">
+            <div @click="deleteTag( props.row )" class="is-clickable">
+              <font-awesome-icon icon="trash" />
+            </div>
+          </b-table-column>
+          <template #footer v-if="canEdit()">
+            <b-button icon-right="plus" type="is-text" size="is-small" expanded @click="addTag()"/>
+          </template>
         </b-table>
       </section>
       <footer class="modal-card-foot buttons is-right">
         <b-button label="Close" @click="$emit('close')" />
-        <b-button v-if="canEdit()" label="Save" type="is-primary" />
+        <b-button v-if="canEdit()" label="Save" type="is-primary" @click="saveTags()"/>
       </footer>
     </div>
-  </form>
   </template>
   
   <script>
@@ -53,6 +69,15 @@
     methods: {
       canEdit() {
         return this.roleAllowed('vms', 'patch', this.experiment + "/" + this.vmName)
+      },
+      deleteTag(row) {
+        this.workingTags = this.workingTags.filter(e => e !== row)
+      },
+      addTag() {
+        this.workingTags.push({"key": "", "value": ""})
+      },
+      saveTags() {
+        console.log(this.workingTags)
       }
     }
   }
@@ -62,6 +87,14 @@
     .fixed-table {
       height: 75vh;
       overflow: auto;
+    }
+
+    .b-table {
+      .table {
+        td {
+          vertical-align: middle;
+        }
+      }
     }
   
   </style>
