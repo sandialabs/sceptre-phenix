@@ -754,6 +754,18 @@
                 {{ props.row.uptime | uptime }}
               </template>
             </b-table-column>
+            <b-table-column label="Tags" centered v-slot="props">
+                <template>
+                  <b-tooltip label="View/Edit Tags" type="is-dark">
+                    <div @click="showTagsModal( props.row )" class="is-clickable">
+                      <font-awesome-layers full-width>
+                        <font-awesome-icon  icon="tag" />
+                        <font-awesome-layers-text counter :value="Object.keys(props.row.tags).length" />
+                      </font-awesome-layers>
+                    </div>
+                  </b-tooltip>
+                </template>
+              </b-table-column>
           </b-table>
           <br>
           <b-field v-if="paginationNeeded" grouped position="is-right">
@@ -841,6 +853,8 @@
 <script>
   import { mapState }        from 'vuex';
   import VmMountBrowserModal from './VMMountBrowserModal.vue';
+  import VmTagsModal from './VMTagsModal.vue';
+
 
   import _ from 'lodash';
 
@@ -1001,6 +1015,17 @@
         this.filesTable.defaultSortDirection = order;
         this.updateFiles();
       }, 
+
+      showTagsModal ( vm ) {
+        console.log(vm)
+        this.$buefy.modal.open({
+          parent:       this,
+          component:    VmTagsModal,
+          trapFocus:    true,
+          hasModalCard: true,
+          props:        {"vmName": vm.name, "experiment": this.$route.params.id, "tags": vm.tags}
+        })
+      },
 
       handler ( event ) {
         event.data.split( /\r?\n/ ).forEach( m => {
@@ -3338,7 +3363,10 @@
 </script>
 
 <style scoped>
-div.autocomplete >>> a.dropdown-item {
-  color:  #383838 !important;
-}
+  div.autocomplete >>> a.dropdown-item {
+    color:  #383838 !important;
+  }
+  .fa-layers-counter { /* counter on tag icon */
+    transform: scale(.7) translateX(50%) translateY(-50%);
+  }
 </style>

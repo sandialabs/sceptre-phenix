@@ -62,7 +62,10 @@
       for (const [key, value] of Object.entries(this.tags)) {
         this.workingTags.push({"key": key, "value": value})
       }
-      console.log(this.workingTags)
+      // start with blank space
+      if (this.workingTags.length == 0) {
+        this.addTag()
+      }
     },
   
   
@@ -86,12 +89,20 @@
 
         let update = { "tags": finalTags };
 
+        if (_.isEqual(finalTags, this.tags)) {
+          console.log("No change made. Closing")
+          this.$emit('close')
+          return;
+        }
+
         this.$http.patch('experiments/' + this.$route.params.id + '/vms/' + this.vmName, update)
             .then(response => {
               if (response.ok) {
                 this.$emit('close')
               }
-        });
+            }, err => {
+              this.errorNotification(err)
+            });
       }
     }
   }

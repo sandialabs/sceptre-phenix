@@ -140,7 +140,7 @@
     </b-modal>
     <div id="context-menu" v-if="d3ContextMenuNode !== null">
         <b-button @click="clicked(null, d3ContextMenuNode); hideContextMenu()">View SOH</b-button>
-        <b-button @click="method1('arg')">View Tags</b-button>
+        <b-button @click="showTagsModal(d3ContextMenuNode)">View Tags</b-button>
     </div>
     <hr>
     <div class="columns is-centered"> 
@@ -360,6 +360,7 @@
 
 <script>
 import * as d3 from "d3";
+import VmTagsModal from './VMTagsModal.vue';
 
 import Linux    from "@/assets/linux.svg";
 import CentOS   from "@/assets/centos.svg";
@@ -768,6 +769,23 @@ export default {
         console.log(ctxMenu.style.left, ctxMenu.style.top)
       }
     },
+
+    showTagsModal ( vm ) {
+        console.log(vm)
+        this.$http.get('experiments/' + this.$route.params.id + '/vms/' + vm.label).then(resp => {
+          console.log(resp)
+          this.$buefy.modal.open({
+            parent:       this,
+            component:    VmTagsModal,
+            trapFocus:    true,
+            hasModalCard: true,
+            props:        {"vmName": resp.body.name, "experiment": this.$route.params.id, "tags": resp.body.tags}
+          })
+        }, err => {
+          this.errorNotification(err);
+        });
+
+      },
 
     entered ( e, n ) {
       if ( !n.image || n.image.toLowerCase() == "switch" ) {
