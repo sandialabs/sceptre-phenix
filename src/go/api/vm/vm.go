@@ -298,13 +298,12 @@ func Update(opts ...UpdateOption) error {
 		}
 
 		if o.tags != nil {
-			// TODO: update node labels here too?
+			// only update live tags, not labels
 			if err := mm.SetVMTags(mm.NS(o.exp), mm.VMName(o.vm), mm.Tags(*o.tags)); err != nil {
 				return err
 			}
 		}
-
-
+		return nil
 	}
 
 	exp, err := experiment.Get(o.exp)

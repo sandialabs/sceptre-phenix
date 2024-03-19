@@ -274,9 +274,9 @@
                   {{ getBaseName(props.row.disk) || 'unknown' }}
                 </template>
               </b-table-column>
-              <b-table-column label="Tags" centered v-slot="props">
+              <b-table-column label="Labels" centered v-slot="props">
                 <template>
-                  <b-tooltip label="View/Edit Tags" type="is-dark">
+                  <b-tooltip label="View/Edit Labels" type="is-dark">
                     <div @click="showTagsModal( props.row )" class="is-clickable">
                       <font-awesome-layers full-width>
                         <font-awesome-icon  icon="tag" />
@@ -1029,7 +1029,7 @@
           component:    VmTagsModal,
           trapFocus:    true,
           hasModalCard: true,
-          props:        {"vmName": vm.name, "experiment": this.$route.params.id, "tags": vm.tags}
+          props:        {"vmName": vm.name, "experiment": this.$route.params.id, "tags": vm.tags, "isLabels": true}
         })
       },
 
