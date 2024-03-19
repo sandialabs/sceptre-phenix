@@ -91,7 +91,7 @@
           finalTags[row.key] = row.value
         }
 
-        let update = { "tags": finalTags };
+        let update = { "tagsUpdated": true, "tags": finalTags };
 
         if (_.isEqual(finalTags, this.tags)) {
           console.log("No change made. Closing")

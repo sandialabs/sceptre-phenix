@@ -1043,7 +1043,7 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		opts = append(opts, vm.UpdateWithInterface(int(req.Interface.Index), req.Interface.Vlan))
 	}
 
-	if len(req.Tags) != 0 {
+	if req.TagsUpdated {
 		opts = append(opts, vm.UpdateWithTags(req.Tags))
 	}
 

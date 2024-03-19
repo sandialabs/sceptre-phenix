@@ -71,8 +71,9 @@ message UpdateVMRequest {
     string host = 8;
   }
 
-  // implicitly optional by leaving empty
-  map<string, string> tags = 9;
+  // flag set indicates that map should be read
+  bool tagsUpdated = 9;
+  map<string, string> tags = 10;
 }
 
 message UpdateVMRequestList {
