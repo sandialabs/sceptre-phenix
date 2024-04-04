@@ -1,5 +1,5 @@
 <template>
-    <div class="modal-card" style="width: 70vw">
+    <div class="modal-card" style="width: auto;">
       <header class="modal-card-head">
         <p class="modal-card-title mr-6">{{this.vmName}} {{ this.isLabels ? "Labels" : "Tags" }}</p>
       </header>
@@ -14,7 +14,7 @@
                 {{ props.row.key }}
               </template>
           </b-table-column>
-          <b-table-column field="value" label="Value" v-slot="props">
+          <b-table-column field="value" label="Value" v-slot="props" width="512px">
             <template v-if="canEdit()">
                 <b-input v-model="props.row.value"/>
               </template>

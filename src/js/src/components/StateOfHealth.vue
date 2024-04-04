@@ -761,11 +761,13 @@ export default {
       console.log("COORDS")
 
       const ctxMenu = document.getElementById("context-menu");
+      const graph = document.getElementById("graph")
       // If the user right-clicked somewhere other than on rect element that was appended to someGroup, then the ctxMenu will not exist. The following conditional check is to prevent errors when the user right-clicks outside of the rect element.
-      if (ctxMenu) {
+      if (ctxMenu && graph) {
         const leftShift = ctxMenu.getBoundingClientRect().width / 3;
-        ctxMenu.style.left = (event.pageX - leftShift) + "px";
+        ctxMenu.style.left = (event.pageX + leftShift - graph.getBoundingClientRect().left) + "px";
         ctxMenu.style.top = event.pageY + "px";
+        console.log(leftShift)
         console.log(ctxMenu.style.left, ctxMenu.style.top)
       }
     },
