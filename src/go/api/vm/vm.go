@@ -276,6 +276,16 @@ func Update(opts ...UpdateOption) error {
 		return fmt.Errorf("experiment or VM name not provided")
 	}
 
+	exp, err := experiment.Get(o.exp)
+	if err != nil {
+		return fmt.Errorf("unable to get experiment %s: %w", o.exp, err)
+	}
+
+	vm := exp.Spec.Topology().FindNodeByName(o.vm)
+	if vm == nil {
+		return fmt.Errorf("unable to find VM %s in experiment %s", o.vm, o.exp)
+	}
+
 	running := experiment.Running(o.exp)
 
 	// The only settings that can be updated while an experiment is running is the
@@ -298,22 +308,17 @@ func Update(opts ...UpdateOption) error {
 		}
 
 		if o.tags != nil {
-			// only update live tags, not labels
+			// update both the live minimega tags and the experiment spec labels
 			if err := mm.SetVMTags(mm.NS(o.exp), mm.VMName(o.vm), mm.Tags(*o.tags)); err != nil {
 				return err
 			}
+			
+			vm.SetLabels(*o.tags)
+			if err := experiment.Save(experiment.SaveWithName(o.exp), experiment.SaveWithSpec(exp.Spec)); err != nil {
+				return fmt.Errorf("unable to save experiment with updated VM: %w", err)
+			}
 		}
 		return nil
-	}
-
-	exp, err := experiment.Get(o.exp)
-	if err != nil {
-		return fmt.Errorf("unable to get experiment %s: %w", o.exp, err)
-	}
-
-	vm := exp.Spec.Topology().FindNodeByName(o.vm)
-	if vm == nil {
-		return fmt.Errorf("unable to find VM %s in experiment %s", o.vm, o.exp)
 	}
 
 	if o.cpu != 0 {

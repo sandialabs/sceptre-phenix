@@ -1,7 +1,7 @@
 <template>
     <div class="modal-card" style="width: auto;">
       <header class="modal-card-head">
-        <p class="modal-card-title mr-6">{{this.vmName}} {{ this.isLabels ? "Labels" : "Tags" }}</p>
+        <p class="modal-card-title mr-6">{{this.vmName}} Labels</p>
       </header>
       <section class="modal-card-body">
       
@@ -45,11 +45,7 @@
     props: {
       vmName: String,
       experiment: String,
-      tags: Object,
-      isLabels: {
-        type: Boolean,
-        default: false
-      }
+      tags: Object
     },
   
     data() {

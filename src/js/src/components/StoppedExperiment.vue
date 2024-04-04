@@ -376,7 +376,7 @@
 
 <script>
   import _ from 'lodash';
-  import VmTagsModal from './VMTagsModal.vue';
+  import VmLabelsModal from './VMLabelsModal.vue';
 
   export default {
     beforeDestroy () {
@@ -1026,10 +1026,10 @@
         console.log(vm)
         this.$buefy.modal.open({
           parent:       this,
-          component:    VmTagsModal,
+          component:    VmLabelsModal,
           trapFocus:    true,
           hasModalCard: true,
-          props:        {"vmName": vm.name, "experiment": this.$route.params.id, "tags": vm.tags, "isLabels": true}
+          props:        {"vmName": vm.name, "experiment": this.$route.params.id, "tags": vm.tags}
         })
       },
 

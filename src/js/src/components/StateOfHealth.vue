@@ -360,7 +360,7 @@
 
 <script>
 import * as d3 from "d3";
-import VmTagsModal from './VMTagsModal.vue';
+import VmLabelsModal from './VMLabelsModal.vue';
 
 import Linux    from "@/assets/linux.svg";
 import CentOS   from "@/assets/centos.svg";
@@ -778,7 +778,7 @@ export default {
           console.log(resp)
           this.$buefy.modal.open({
             parent:       this,
-            component:    VmTagsModal,
+            component:    VmLabelsModal,
             trapFocus:    true,
             hasModalCard: true,
             props:        {"vmName": resp.body.name, "experiment": this.$route.params.id, "tags": resp.body.tags}
