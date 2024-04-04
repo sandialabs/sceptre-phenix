@@ -754,9 +754,9 @@
                 {{ props.row.uptime | uptime }}
               </template>
             </b-table-column>
-            <b-table-column label="Tags" centered v-slot="props">
+            <b-table-column label="Labels" centered v-slot="props">
                 <template>
-                  <b-tooltip label="View/Edit Tags" type="is-dark">
+                  <b-tooltip label="View/Edit Labels" type="is-dark">
                     <div @click="showTagsModal( props.row )" class="is-clickable">
                       <font-awesome-layers full-width>
                         <font-awesome-icon  icon="tag" />

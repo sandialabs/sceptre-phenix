@@ -140,7 +140,7 @@
     </b-modal>
     <div id="context-menu" v-if="d3ContextMenuNode !== null">
         <b-button @click="clicked(null, d3ContextMenuNode); hideContextMenu()">View SOH</b-button>
-        <b-button @click="showTagsModal(d3ContextMenuNode)">View Tags</b-button>
+        <b-button @click="showTagsModal(d3ContextMenuNode)">View Labels</b-button>
     </div>
     <hr>
     <div class="columns is-centered"> 
