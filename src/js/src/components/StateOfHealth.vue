@@ -708,6 +708,7 @@ export default {
         .attr( "fill", this.updateNodeColor )
         .attr( "width", 5 )
         .attr( "height", 5 )
+        .attr("style", (n) => n.styleoverride)
         .on( 'mouseenter', this.entered )
         .on( 'mouseleave', this.exited )
         .on( 'click', this.clicked )
@@ -773,6 +774,7 @@ export default {
     },
 
     showTagsModal ( vm ) {
+        const self = this
         console.log(vm)
         this.$http.get('experiments/' + this.$route.params.id + '/vms/' + vm.label).then(resp => {
           console.log(resp)
@@ -781,7 +783,12 @@ export default {
             component:    VmLabelsModal,
             trapFocus:    true,
             hasModalCard: true,
-            props:        {"vmName": resp.body.name, "experiment": this.$route.params.id, "tags": resp.body.tags}
+            props:        {"vmName": resp.body.name, "experiment": this.$route.params.id, "tags": resp.body.tags},
+            events: {
+              saved() {
+                self.resetNetwork();
+              }
+            }
           })
         }, err => {
           this.errorNotification(err);

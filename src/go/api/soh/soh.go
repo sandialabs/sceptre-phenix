@@ -17,12 +17,6 @@ func Get(expName, statusFilter string) (*Network, error) {
 	// Create an empty network
 	network := new(Network)
 
-	// Create structure to format nodes' font
-	font := Font{
-		Color: "whitesmoke",
-		Align: "center",
-	}
-
 	exp, err := experiment.Get(expName)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get experiment %s: %w", expName, err)
@@ -104,11 +98,11 @@ func Get(expName, statusFilter string) (*Network, error) {
 		}
 
 		node := Node{
-			ID:     vm.ID,
-			Label:  vm.Name,
-			Image:  vm.OSType,
-			Fonts:  font,
-			Status: vmState,
+			ID:            vm.ID,
+			Label:         vm.Name,
+			Image:         vm.OSType,
+			StyleOverride: vm.Tags["soh-style"],
+			Status:        vmState,
 		}
 
 		if vm.Type == "Router" || vm.Type == "Firewall" {
@@ -137,11 +131,11 @@ func Get(expName, statusFilter string) (*Network, error) {
 				interfaces[vmIface] = ifaceCount
 
 				node := Node{
-					ID:     ifaceCount,
-					Label:  vmIface,
-					Image:  "switch",
-					Fonts:  font,
-					Status: "ignore",
+					ID:            ifaceCount,
+					Label:         vmIface,
+					Image:         "switch",
+					StyleOverride: vm.Tags["soh-style"],
+					Status:        "ignore",
 				}
 
 				network.Nodes = append(network.Nodes, node)

@@ -110,6 +110,7 @@
         this.$http.patch('experiments/' + this.$route.params.id + '/vms/' + this.vmName, update)
             .then(response => {
               if (response.ok) {
+                this.$emit('saved')
                 this.$emit('close')
               }
             }, err => {
