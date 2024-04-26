@@ -4,7 +4,9 @@
         <p class="modal-card-title mr-6">{{this.vmName}} Labels</p>
       </header>
       <section class="modal-card-body">
-      
+        <b-field label="Notes">
+            <b-input type="textarea" v-model="notes"></b-input>
+        </b-field>
         <b-table :data="workingTags" class="fixed-table">
           <b-table-column field="key" label="Key" v-slot="props" width="192px">
               <template v-if="canEdit()">
@@ -40,7 +42,7 @@
   </template>
   
   <script>
-  
+  const NOTES_KEY = "_notes"
   export default {
     props: {
       vmName: String,
@@ -50,7 +52,8 @@
   
     data() {
       return {
-        workingTags: []
+        workingTags: [],
+        notes: "",
       }
     },
   
@@ -60,7 +63,12 @@
     beforeMount() {
       // copy tags object into an array of key,values for ui use
       for (const [key, value] of Object.entries(this.tags)) {
-        this.workingTags.push({"key": key, "value": value})
+        if (key === NOTES_KEY) {
+          this.notes = value
+        }
+        else {
+          this.workingTags.push({"key": key, "value": value})
+        }
       }
       // start with blank space
       if (this.workingTags.length == 0) {
@@ -85,6 +93,10 @@
           if (row.key == "" || row.key in finalTags)
             continue
           finalTags[row.key] = row.value
+        }
+
+        if (this.notes.length !== 0) {
+          finalTags[NOTES_KEY] = this.notes
         }
 
         let update = { "tagsUpdated": true, "tags": finalTags };
