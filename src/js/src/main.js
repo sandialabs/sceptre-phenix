@@ -93,13 +93,13 @@ Vue.filter( 'fileSize', function (fileSize) {
   }
 })
 
-Vue.prototype.errorNotification = errorNotification;
-Vue.errorNotification = errorNotification;
-const roleAllowedWrapper = (resource, verb, ...names) => {
-  return roleAllowed(store.getters.role, resource, verb, ...names)
-}
-Vue.prototype.roleAllowed = roleAllowedWrapper;
-Vue.roleAllowed = roleAllowedWrapper;
+Vue.mixin({
+  methods: {
+    roleAllowed: (resource, verb, ...names) => roleAllowed(store.getters.role, resource, verb, ...names),
+    errorNotification: errorNotification,
+    tagCount: (tags) => Object.keys(tags).filter(entry => !entry.startsWith("__") || entry.startsWith("__notes_")).length
+  }
+})
 
 Vue.http.options.root = `${process.env.BASE_URL}api/v1/`
 

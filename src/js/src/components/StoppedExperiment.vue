@@ -280,7 +280,7 @@
                     <div @click="showTagsModal( props.row )" class="is-clickable">
                       <font-awesome-layers full-width>
                         <font-awesome-icon  icon="tag" />
-                        <font-awesome-layers-text counter :value="Object.keys(props.row.tags).length" />
+                        <font-awesome-layers-text counter :value="tagCount(props.row.tags)" />
                       </font-awesome-layers>
                     </div>
                   </b-tooltip>

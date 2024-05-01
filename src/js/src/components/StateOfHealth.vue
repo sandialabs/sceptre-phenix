@@ -1,20 +1,29 @@
 <template>
   <div>
-    <b-modal :active.sync="detailsModal.active" :on-cancel="resetDetailsModal" has-modal-card full-screen>
+    <b-modal :active.sync="detailsModal.active" :on-cancel="resetDetailsModal" has-modal-card>
       <div class="modal-card">
         <header class="modal-card-head">
           <p class="modal-card-title">{{ detailsModal.vm }} Details</p>
         </header>
         <section class="modal-card-body">
+          <p class="title is-4">Notes</p>
+          <div class="content">
+            <ul>
+              <li v-for="k in Object.keys(detailsModal.tags).filter(k => k.startsWith('__notes_'))">
+                <p>{{ detailsModal.tags[k] }}</p>
+              </li>
+            </ul>
+          </div>
+          <hr>
+          <p class="title is-4">State of Health</p>
           <template v-if="detailsModal.soh">
-            <p>The following state of health has been reported for {{ detailsModal.vm }}.</p>
             <br>
             <div v-if="detailsModal.soh.cpuLoad">
-              <p class="title is-5">CPU Load: {{ detailsModal.soh.cpuLoad }}</p>
+              <p class="title is-6">CPU Load: {{ detailsModal.soh.cpuLoad }}</p>
             </div>
             <br>
             <div v-if="detailsModal.soh.networking">
-              <p class="title is-5">Networking</p>
+              <p class="title is-6">Networking</p>
               <b-table
                 :data="detailsModal.soh.networking"
                 default-sort="timestamp">
@@ -31,7 +40,7 @@
               <br>
             </div>
             <div v-if="detailsModal.soh.reachability">
-              <p class="title is-5">Reachability</p>
+              <p class="title is-6">Reachability</p>
               <b-table
                 :data="detailsModal.soh.reachability"
                 default-sort="timestamp">
@@ -54,7 +63,7 @@
               <br>
             </div>
             <div v-if="detailsModal.soh.processes">
-              <p class="title is-5">Processes</p>
+              <p class="title is-6">Processes</p>
               <b-table
                 :data="detailsModal.soh.processes"
                 default-sort="timestamp">
@@ -74,7 +83,7 @@
               <br>
             </div>
             <div v-if="detailsModal.soh.listeners">
-              <p class="title is-5">Listeners</p>
+              <p class="title is-6">Listeners</p>
               <b-table
                 :data="detailsModal.soh.listeners"
                 default-sort="timestamp">
@@ -94,7 +103,7 @@
               <br>
             </div>
             <div v-if="detailsModal.soh.customTests">
-              <p class="title is-5">Custom User Tests</p>
+              <p class="title is-6">Custom User Tests</p>
               <b-table
                 :data="detailsModal.soh.customTests"
                 default-sort="test">
@@ -119,9 +128,19 @@
           </template>
         </section>
         <footer class="modal-card-foot buttons is-right">
+          <template v-if="roleAllowed('vms', 'patch', this.$route.params.id + '/' + detailsModal.vm)">
+            <b-tooltip label="edit notes/labels" type="is-light is-left" :delay="400">
+              <b-button class="button is-light" icon-left="tag" @click="showTagsModal(detailsModal.vm, detailsModal.tags)"/>
+            </b-tooltip>
+          </template>
+          <template v-if="roleAllowed('vms', 'patch', this.$route.params.id + '/' + detailsModal.vm)">
+            <b-tooltip label="customize style" type="is-light is-left" :delay="400">
+              <b-button class="button is-light" icon-left="paintbrush" @click="queueMemorySnapshotVMs(expModal.vm.name)"/>
+            </b-tooltip>
+          </template>
           <template v-if="detailsModal.status.toLowerCase() == 'running'">
             <a :href="vncLoc(detailsModal.vm)" target="_blank">
-              <b-tooltip label="open vnc for a running vm" type="is-light is-left" :delay="800">
+              <b-tooltip label="open vnc for a running vm" type="is-light is-left" :delay="400">
                 <b-button type="is-success">
                   <b-icon icon="tv" />
                 </b-button>
@@ -129,7 +148,7 @@
             </a>
           </template>
           <template v-else>
-            <b-tooltip label="vnc is only available on a running vm" type="is-light is-left" :delay="600">
+            <b-tooltip label="vnc is only available on a running vm" type="is-light is-left" :delay="400">
               <b-button type="is-danger" disabled>
                 <b-icon icon="tv" />
               </b-button>
@@ -138,10 +157,7 @@
         </footer>
       </div>
     </b-modal>
-    <div id="context-menu" v-if="d3ContextMenuNode !== null">
-        <b-button @click="clicked(null, d3ContextMenuNode); hideContextMenu()">View SOH</b-button>
-        <b-button @click="showTagsModal(d3ContextMenuNode)">View Labels</b-button>
-    </div>
+    <!-- END MODAL -->
     <hr>
     <div class="columns is-centered"> 
       <div class="column is-1">
@@ -521,6 +537,13 @@ export default {
           )
           this.flows = true;
         } 
+
+        const detailsNode = this.nodes.find(n => n.label === this.detailsModal.vm)
+        if (detailsNode) {
+          this.detailsModal.status = detailsNode.status;
+          this.detailsModal.soh = detailsNode.soh;
+          this.detailsModal.tags = detailsNode.tags;
+        }
       } catch (err) {
         this.errorNotification(err);
       } finally {
@@ -708,11 +731,10 @@ export default {
         .attr( "fill", this.updateNodeColor )
         .attr( "width", 5 )
         .attr( "height", 5 )
-        .attr("style", (n) => n.styleoverride)
+        // .attr("style", (n) => n.styleoverride)
         .on( 'mouseenter', this.entered )
         .on( 'mouseleave', this.exited )
         .on( 'click', this.clicked )
-        .on( 'contextmenu', this.showContextMenu )
         .call( this.drag( simulation ) );
 
       const label = g.selectAll( "text" )
@@ -738,63 +760,23 @@ export default {
           .attr( "x", d => d.x + 4 )
           .attr( "y", d => d.y + 8 );
       });
-
-      const chartComponent = document.getElementById("graph");
-      chartComponent.addEventListener("contextmenu", this.setContextMenuCoords);
-      d3.select("body").on( 'click', this.hideContextMenu);
     },
 
-    showContextMenu ( d, n ) {
-      d.preventDefault();
-      this.d3ContextMenuNode = n;
+    showTagsModal ( vm, tags ) {
+      const self = this
+      this.$buefy.modal.open({
+        parent:       this,
+        component:    VmLabelsModal,
+        trapFocus:    true,
+        hasModalCard: true,
+        props:        {"vmName": vm, "experiment": this.$route.params.id, "tags": tags},
+        events: {
+          saved() {
+            self.resetNetwork();
+          }
+        }
+      })
     },
-
-    hideContextMenu () {
-      this.d3ContextMenuNode = null;
-    },
-
-    /**
-     * NOTE: The D3 event listeners are fired before the addEventListener functions are fired. 
-     * So the context-menu elements will exist in the DOM by the time this method is executed.
-     */
-     setContextMenuCoords(event) {
-      event.preventDefault();
-      console.log("COORDS")
-
-      const ctxMenu = document.getElementById("context-menu");
-      const graph = document.getElementById("graph")
-      // If the user right-clicked somewhere other than on rect element that was appended to someGroup, then the ctxMenu will not exist. The following conditional check is to prevent errors when the user right-clicks outside of the rect element.
-      if (ctxMenu && graph) {
-        const leftShift = ctxMenu.getBoundingClientRect().width / 3;
-        ctxMenu.style.left = (event.pageX + leftShift - graph.getBoundingClientRect().left) + "px";
-        ctxMenu.style.top = event.pageY + "px";
-        console.log(leftShift)
-        console.log(ctxMenu.style.left, ctxMenu.style.top)
-      }
-    },
-
-    showTagsModal ( vm ) {
-        const self = this
-        console.log(vm)
-        this.$http.get('experiments/' + this.$route.params.id + '/vms/' + vm.label).then(resp => {
-          console.log(resp)
-          this.$buefy.modal.open({
-            parent:       this,
-            component:    VmLabelsModal,
-            trapFocus:    true,
-            hasModalCard: true,
-            props:        {"vmName": resp.body.name, "experiment": this.$route.params.id, "tags": resp.body.tags},
-            events: {
-              saved() {
-                self.resetNetwork();
-              }
-            }
-          })
-        }, err => {
-          this.errorNotification(err);
-        });
-
-      },
 
     entered ( e, n ) {
       if ( !n.image || n.image.toLowerCase() == "switch" ) {
@@ -830,7 +812,7 @@ export default {
         this.detailsModal.vm = n.label;
         this.detailsModal.status = n.status;
         this.detailsModal.soh = n.soh;
-        console.log(this.nodes)
+        this.detailsModal.tags = n.tags;
       }    
     },
 
@@ -979,7 +961,8 @@ export default {
         active: false,
         vm: '',
         status: '',
-        soh: null
+        soh: null,
+        tags: {}
       }
     },
 
@@ -1006,7 +989,6 @@ export default {
         this.generateChord();
       }
     },
-    showContextMenu: (bool) => { console.log("CONTEXT: " + bool); }
   },
 
   data() {
@@ -1016,7 +998,6 @@ export default {
       sohRunning: false,
       messages: false,
       flows: false,
-      d3ContextMenuNode: null,
       nodes: [],
       edges: [],
       volume: [],
@@ -1026,7 +1007,8 @@ export default {
         active: false,
         vm: '',
         status: '',
-        soh: null
+        soh: null,
+        tags: {}
       },
       chordData: null,
     };
@@ -1047,14 +1029,11 @@ export default {
     color: whitesmoke;
   }
 
-  #context-menu {
-    position: absolute;
-    z-index: 100;
-    display: flex;
-    flex-direction: column;
+  li::marker {
+    color: black;
+  }
 
-    .button {
-      border-radius: 0px;
-    }
+  ul {
+    column-count: 1;
   }
 </style>

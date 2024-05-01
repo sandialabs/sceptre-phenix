@@ -3,14 +3,32 @@
       <header class="modal-card-head">
         <p class="modal-card-title mr-6">{{this.vmName}} Labels</p>
       </header>
-      <section class="modal-card-body">
-        <b-field label="Notes">
-            <b-input type="textarea" v-model="notes"></b-input>
-        </b-field>
-        <b-table :data="workingTags" class="fixed-table">
+      <section class="modal-card-body fixed-height">
+        <p class="title is-4">Notes</p>
+        <b-table :data="workingNotes" ref="notesTable">
+          <b-table-column field="value" label="Value" v-slot="props">
+              <template v-if="canEdit()">
+                <b-input v-model="props.row.value" v-on:keyup.native.enter="addNote()" :ref="`note${props.index}`"/>
+              </template>
+              <template v-else>
+                {{ props.row.value }}
+              </template>
+          </b-table-column>
+          <b-table-column v-slot="props" v-if="canEdit()" width="32px">
+            <div @click="deleteNote( props.row )" class="is-clickable">
+              <font-awesome-icon icon="trash" />
+            </div>
+          </b-table-column>
+          <template #footer v-if="canEdit()">
+            <b-button icon-right="plus" type="is-text" size="is-small" expanded @click="addNote()"/>
+          </template>
+        </b-table>
+        <hr>
+        <p class="title is-4">Labels</p>
+        <b-table :data="workingTags">
           <b-table-column field="key" label="Key" v-slot="props" width="192px">
               <template v-if="canEdit()">
-                <b-input v-model="props.row.key"/>
+                <b-input v-model="props.row.key" v-on:keyup.native.enter="addTag()" :ref="`tagKey${props.index}`"/>
               </template>
               <template v-else>
                 {{ props.row.key }}
@@ -18,7 +36,7 @@
           </b-table-column>
           <b-table-column field="value" label="Value" v-slot="props" width="512px">
             <template v-if="canEdit()">
-                <b-input v-model="props.row.value"/>
+                <b-input v-model="props.row.value" v-on:keyup.native.enter="addTag()"/>
               </template>
               <template v-else>
                 {{ props.row.value }}
@@ -36,13 +54,13 @@
       </section>
       <footer class="modal-card-foot buttons is-right">
         <b-button label="Close" @click="$emit('close')" />
-        <b-button v-if="canEdit()" label="Save" type="is-primary" @click="saveTags()"/>
+        <b-button v-if="canEdit()" label="Save" type="is-primary" @click="save()"/>
       </footer>
     </div>
   </template>
   
   <script>
-  const NOTES_KEY = "_notes"
+  const NOTES_KEY = "__notes_"
   export default {
     props: {
       vmName: String,
@@ -53,7 +71,7 @@
     data() {
       return {
         workingTags: [],
-        notes: "",
+        workingNotes: [],
       }
     },
   
@@ -63,8 +81,10 @@
     beforeMount() {
       // copy tags object into an array of key,values for ui use
       for (const [key, value] of Object.entries(this.tags)) {
-        if (key === NOTES_KEY) {
-          this.notes = value
+        if (key.startsWith("__")) {
+          if (key.startsWith(NOTES_KEY)) {
+            this.workingNotes.push({"key": key, "value": value})
+          }
         }
         else {
           this.workingTags.push({"key": key, "value": value})
@@ -74,20 +94,35 @@
       if (this.workingTags.length == 0) {
         this.addTag()
       }
+      if (this.workingNotes.length == 0) {
+        this.addNote()
+      }
     },
   
   
     methods: {
       canEdit() {
-        return this.roleAllowed('vms', 'patch', this.experiment + "/" + this.vmName)
+        return this.roleAllowed('vms', 'patch', this.$route.params.id + "/" + this.vmName)
       },
       deleteTag(row) {
         this.workingTags = this.workingTags.filter(e => e !== row)
       },
       addTag() {
         this.workingTags.push({"key": "", "value": ""})
+        this.$nextTick(() => {
+          this.$refs[`tagKey${this.workingTags.length - 1}`].focus()
+        })
       },
-      saveTags() {
+      deleteNote(row) {
+        this.workingNotes = this.workingNotes.filter(e => e !== row)
+      },
+      addNote() {
+        this.workingNotes.push({"key": NOTES_KEY + new Date().toISOString(), "value": ""})
+        this.$nextTick(() => {
+          this.$refs[`note${this.workingNotes.length - 1}`].focus()
+        })
+      },
+      save() {
         var finalTags = {}
         for (const row of this.workingTags) {
           if (row.key == "" || row.key in finalTags)
@@ -95,8 +130,10 @@
           finalTags[row.key] = row.value
         }
 
-        if (this.notes.length !== 0) {
-          finalTags[NOTES_KEY] = this.notes
+        for (const row of this.workingNotes) {
+          if (row.key == "" || row.key in finalTags)
+            continue
+          finalTags[row.key] = row.value
         }
 
         let update = { "tagsUpdated": true, "tags": finalTags };
@@ -122,7 +159,7 @@
   </script>
     
   <style lang="scss">
-    .fixed-table {
+    .fixed-height {
       height: 75vh;
       overflow: auto;
     }

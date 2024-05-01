@@ -98,11 +98,11 @@ func Get(expName, statusFilter string) (*Network, error) {
 		}
 
 		node := Node{
-			ID:            vm.ID,
-			Label:         vm.Name,
-			Image:         vm.OSType,
-			StyleOverride: vm.Tags["soh-style"],
-			Status:        vmState,
+			ID:     vm.ID,
+			Label:  vm.Name,
+			Image:  vm.OSType,
+			Tags:   vm.Tags,
+			Status: vmState,
 		}
 
 		if vm.Type == "Router" || vm.Type == "Firewall" {
@@ -131,11 +131,11 @@ func Get(expName, statusFilter string) (*Network, error) {
 				interfaces[vmIface] = ifaceCount
 
 				node := Node{
-					ID:            ifaceCount,
-					Label:         vmIface,
-					Image:         "switch",
-					StyleOverride: vm.Tags["soh-style"],
-					Status:        "ignore",
+					ID:     ifaceCount,
+					Label:  vmIface,
+					Image:  "switch",
+					Tags:   vm.Tags,
+					Status: "ignore",
 				}
 
 				network.Nodes = append(network.Nodes, node)
