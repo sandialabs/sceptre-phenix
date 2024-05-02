@@ -23,8 +23,9 @@ message VM {
   repeated string tags = 18;
   bool cc_active = 19;
   bool external = 20;
-
   string delayed_start = 21 [json_name="delayed_start"];
+  bool snapshot = 22 [json_name="snapshot"];
+  uint32 inject_partition = 23 [json_name="inject_partition"];
 }
 
 message VMList {
@@ -70,6 +71,12 @@ message UpdateVMRequest {
   oneof cluster_host {
     string host = 8;
   }
+
+  oneof snapshot_option {
+    bool snapshot = 9 [json_name="snapshot"];
+  }
+
+  uint32 inject_partition = 10 [json_name="inject_partition"];
 }
 
 message UpdateVMRequestList {

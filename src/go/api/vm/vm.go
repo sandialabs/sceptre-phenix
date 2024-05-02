@@ -65,29 +65,37 @@ func List(expName string) ([]mm.VM, error) {
 
 	for idx, node := range exp.Spec.Topology().Nodes() {
 		var (
-			disk string
-			dnb  bool
+			disk            string
+			dnb             bool
+			snapshot        bool
+			injectPartition int
 		)
 
 		if drives := node.Hardware().Drives(); len(drives) > 0 {
-			disk = drives[0].Image()
+			disk = util.GetMMFullPath(drives[0].Image())
+			injectPartition = *drives[0].InjectPartition()
 		}
 
 		if node.General().DoNotBoot() != nil {
 			dnb = *node.General().DoNotBoot()
 		}
+		if node.General().Snapshot() != nil {
+			snapshot = *node.General().Snapshot()
+		}
 
 		vm := mm.VM{
-			ID:         idx,
-			Name:       node.General().Hostname(),
-			Experiment: exp.Spec.ExperimentName(),
-			CPUs:       node.Hardware().VCPU(),
-			RAM:        node.Hardware().Memory(),
-			Disk:       disk,
-			Interfaces: make(map[string]string),
-			DoNotBoot:  dnb,
-			Type:       node.Type(),
-			OSType:     node.Hardware().OSType(),
+			ID:              idx,
+			Name:            node.General().Hostname(),
+			Experiment:      exp.Spec.ExperimentName(),
+			CPUs:            node.Hardware().VCPU(),
+			RAM:             node.Hardware().Memory(),
+			Disk:            disk,
+			InjectPartition: injectPartition,
+			Interfaces:      make(map[string]string),
+			DoNotBoot:       dnb,
+			Type:            node.Type(),
+			OSType:          node.Hardware().OSType(),
+			Snapshot:        snapshot,
 		}
 
 		for _, iface := range node.Network().Interfaces() {
@@ -179,18 +187,20 @@ func Get(expName, vmName string) (*mm.VM, error) {
 		}
 
 		vm = &mm.VM{
-			ID:          idx,
-			Name:        node.General().Hostname(),
-			Experiment:  exp.Spec.ExperimentName(),
-			CPUs:        node.Hardware().VCPU(),
-			RAM:         node.Hardware().Memory(),
-			Disk:        util.GetMMFullPath(node.Hardware().Drives()[0].Image()),
-			Interfaces:  make(map[string]string),
-			DoNotBoot:   *node.General().DoNotBoot(),
-			OSType:      string(node.Hardware().OSType()),
-			Metadata:    make(map[string]interface{}),
-			Labels:      node.Labels(),
-			Annotations: node.Annotations(),
+			ID:              idx,
+			Name:            node.General().Hostname(),
+			Experiment:      exp.Spec.ExperimentName(),
+			CPUs:            node.Hardware().VCPU(),
+			RAM:             node.Hardware().Memory(),
+			Disk:            util.GetMMFullPath(node.Hardware().Drives()[0].Image()),
+			InjectPartition: *node.Hardware().Drives()[0].InjectPartition(),
+			Interfaces:      make(map[string]string),
+			DoNotBoot:       *node.General().DoNotBoot(),
+			OSType:          string(node.Hardware().OSType()),
+			Metadata:        make(map[string]interface{}),
+			Labels:          node.Labels(),
+			Annotations:     node.Annotations(),
+			Snapshot:        *node.General().Snapshot(),
 		}
 
 		for _, iface := range node.Network().Interfaces() {
@@ -312,6 +322,10 @@ func Update(opts ...UpdateOption) error {
 		vm.Hardware().Drives()[0].SetImage(o.disk)
 	}
 
+	if o.partition != 0 {
+		vm.Hardware().Drives()[0].SetInjectPartition(&o.partition)
+	}
+
 	if o.dnb != nil {
 		vm.General().SetDoNotBoot(*o.dnb)
 	}
@@ -322,6 +336,10 @@ func Update(opts ...UpdateOption) error {
 		} else {
 			exp.Spec.ScheduleNode(o.vm, *o.host)
 		}
+	}
+
+	if o.snapshot != nil {
+		vm.General().SetSnapshot(*o.snapshot)
 	}
 
 	err = experiment.Save(experiment.SaveWithName(o.exp), experiment.SaveWithSpec(exp.Spec))

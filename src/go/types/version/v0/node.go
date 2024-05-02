@@ -18,6 +18,7 @@ type Node struct {
 	HardwareF    *Hardware              `json:"hardware" yaml:"hardware" structs:"hardware" mapstructure:"hardware"`
 	NetworkF     *Network               `json:"network" yaml:"network" structs:"network" mapstructure:"network"`
 	InjectionsF  []*Injection           `json:"injections" yaml:"injections" structs:"injections" mapstructure:"injections"`
+
 }
 
 func (this Node) Annotations() map[string]interface{} {
@@ -168,6 +169,7 @@ type General struct {
 	VMTypeF      string `json:"vm_type" yaml:"vm_type" structs:"vm_type" mapstructure:"vm_type"`
 	SnapshotF    *bool  `json:"snapshot" yaml:"snapshot" structs:"snapshot" mapstructure:"snapshot"`
 	DoNotBootF   *bool  `json:"do_not_boot" yaml:"do_not_boot" structs:"do_not_boot" mapstructure:"do_not_boot"`
+
 }
 
 func (this General) Hostname() string {
@@ -184,6 +186,9 @@ func (this General) VMType() string {
 
 func (this General) Snapshot() *bool {
 	return this.SnapshotF
+}
+func (this *General) SetSnapshot(b bool)  {
+	this.SnapshotF = &b
 }
 
 func (this General) DoNotBoot() *bool {
@@ -277,6 +282,10 @@ func (this Drive) InjectPartition() *int {
 
 func (this *Drive) SetImage(i string) {
 	this.ImageF = i
+}
+
+func (this *Drive) SetInjectPartition(p *int) {
+	this.InjectPartitionF = p
 }
 
 type Injection struct {

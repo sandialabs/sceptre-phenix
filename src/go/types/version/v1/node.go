@@ -296,6 +296,10 @@ func (this *General) Snapshot() *bool {
 	return this.SnapshotF
 }
 
+func (this *General) SetSnapshot(b bool) {
+	this.SnapshotF = &b
+}
+
 func (this *General) DoNotBoot() *bool {
 	if this == nil {
 		return nil
@@ -416,6 +420,10 @@ func (this Drive) InjectPartition() *int {
 
 func (this *Drive) SetImage(i string) {
 	this.ImageF = i
+}
+
+func (this *Drive) SetInjectPartition(p *int) {
+	this.InjectPartitionF = p
 }
 
 type Injection struct {
