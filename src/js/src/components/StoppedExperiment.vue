@@ -283,6 +283,19 @@
                   </b-tooltip>
                 </template>
               </b-table-column>
+              <b-table-column label="Persistence" centered v-slot="props">
+                <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
+                  <b-tooltip :label="getSnapshotLabel( props.row.name )" type="is-dark">
+                    <div>
+                      <b-select :value="props.row.snapshot" expanded @input="( value ) => updateSnapshot( props.row.name, value )">
+                      <option value=true>Non-Persistent</option>
+                      <option value=false>Persistent</option>
+                    </b-select>
+                   
+                    </div>
+                  </b-tooltip>
+                </template>
+              </b-table-column>
           </b-table>
           <br>
           <b-field v-if="paginationNeeded" grouped position="is-right">
@@ -463,6 +476,24 @@
           return 'dnb';
         } else {
           return 'boot';
+        }
+      },
+      getSnapshotStatus ( vm, persistanceLabel ) {
+        if (vm.external) {
+          return true;
+        }
+
+        if ( vm.snapshot && persistanceLabel ) {
+          return true;
+        } else if (vm.snapshot && !persistanceLabel) {
+          return false;
+        }
+        else if (!vm.snapshot && persistanceLabel){
+          return false;
+        }
+        else {
+
+          return true;
         }
       },
 
@@ -1041,44 +1072,98 @@
         )
       },
 
-      updateSchedule () {
-        this.$buefy.dialog.confirm({
-          title: 'Assign a Host Schedule',
-          message: 'This will schedule host(s) with the ' 
-                   + this.algorithm 
-                   + ' algorithm for the ' 
-                   + this.$route.params.id 
-                   + ' experiment.',
-          cancelText: 'Cancel',
-          confirmText: 'Assign Schedule',
-          type: 'is-success',
-          hasIcon: true,
-          onConfirm: () => {
-            this.isWaiting = true;
+      updateSnapshot( name, persistence ) {
+    let persistenceMessage = ""
+    if (persistence == "true"){
+      persistenceMessage = "Non-Persistent"
+    }
+    else {
+      persistenceMessage = "Persistent"
+    }
+    if (persistence == "true"){
+        persistence = true
+    }
+    else {
+      persistence = false
+    }
+    this.$buefy.dialog.confirm({
+      title: 'Assign Image Persistence',
+      message: 'This will assign the ' + name + ' VM\'s disk to be ' +  persistenceMessage,
+      cancelText: 'Cancel',
+      confirmText: 'Confirm',
+      type: 'is-success',
+      hasIcon: true,
+      onConfirm: () => {
+        this.isWaiting = true;
+        
+        let update = { "snapshot": persistence};
 
-            this.$http.post(
-              'experiments/' + this.$route.params.id + '/schedule', { "algorithm": this.algorithm }
-            ).then(
-              response => {
-                let vms = this.experiment.vms;
-                
-                for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[ i ].name == response.body.name ) {
-                    vms[ i ] = response.body;
-                    break;
-                  }
-                }
-              
-                this.experiment.vms = [ ...vms ];
-              
-                this.isWaiting = false;              
-              }, err => {
-                this.errorNotification(err);                
-                this.isWaiting = false;
+        this.$http.patch(
+          'experiments/' + this.$route.params.id + '/vms/' + name, update
+        ).then(
+          response => {
+            let vms = this.experiment.vms;
+            
+            for ( let i = 0; i < vms.length; i++ ) {
+              if ( vms[ i ].name == response.body.name ) {
+                vms[ i ] = response.body;
+                break;
               }
-            )
+            }
+          
+            this.experiment.vms = [ ...vms ];
+          
+            this.isWaiting = false;              
+          }, err => {
+            this.errorNotification(err);                
+            this.isWaiting = false;
           }
-        })
+        )
+      },
+      onCancel: () => {
+        // force table to be rerendered so selected value resets
+        this.table.key += 1;
+      }
+    })
+  },
+        updateSchedule () {
+          this.$buefy.dialog.confirm({
+            title: 'Assign a Host Schedule',
+            message: 'This will schedule host(s) with the ' 
+                    + this.algorithm 
+                    + ' algorithm for the ' 
+                    + this.$route.params.id 
+                    + ' experiment.',
+            cancelText: 'Cancel',
+            confirmText: 'Assign Schedule',
+            type: 'is-success',
+            hasIcon: true,
+            onConfirm: () => {
+              this.isWaiting = true;
+
+              this.$http.post(
+                'experiments/' + this.$route.params.id + '/schedule', { "algorithm": this.algorithm }
+              ).then(
+                response => {
+                  let vms = this.experiment.vms;
+                  
+                  for ( let i = 0; i < vms.length; i++ ) {
+                    if ( vms[ i ].name == response.body.name ) {
+                      vms[ i ] = response.body;
+                      break;
+                    }
+                  }
+                
+                  this.experiment.vms = [ ...vms ];
+                
+                  this.isWaiting = false;              
+                }, err => {
+                  this.errorNotification(err);                
+                  this.isWaiting = false;
+                }
+              )
+            }
+          })
       },
 
       getUniqueItems(inputArray) {
@@ -1102,6 +1187,9 @@
       
       getBootLabel (vm) {
         return vm.dnb ? `Boot ${vm.name}` : `Do Not Boot ${vm.name}`;
+      },
+      getSnapshotLabel (vm) {
+        return vm.snapshot ? `${vm.name}'s disk will persist'` : `${vm.name}'s disk will not persist`;
       },
       
       selectAllVMs () {            

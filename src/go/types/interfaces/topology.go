@@ -55,6 +55,7 @@ type NodeGeneral interface {
 	Description() string
 	VMType() string
 	Snapshot() *bool
+	SetSnapshot(bool)
 	DoNotBoot() *bool
 
 	SetDoNotBoot(bool)

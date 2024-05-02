@@ -40,7 +40,6 @@ var Permissions = []Permission{
 {{- end }}
 }
 `
-
 var packageTemplate = template.Must(template.New("").Parse(code))
 
 func main() {

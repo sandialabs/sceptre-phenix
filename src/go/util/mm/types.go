@@ -228,6 +228,7 @@ type VM struct {
 	Screenshot string    `json:"screenshot,omitempty"`
 	CdRom      string    `json:"cdRom"`
 	Tags       []string  `json:"tags"`
+	Snapshot   bool		 `json:"snapshot"`
 
 	// Used internally to track network <--> IP relationship, since
 	// network ordering from minimega may not be the same as network

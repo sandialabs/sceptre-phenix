@@ -296,6 +296,10 @@ func (this *General) Snapshot() *bool {
 	return this.SnapshotF
 }
 
+func (this *General) SetSnapshot(b bool) {
+	this.SnapshotF = &b
+}
+
 func (this *General) DoNotBoot() *bool {
 	if this == nil {
 		return nil

@@ -67,6 +67,7 @@ func List(expName string) ([]mm.VM, error) {
 		var (
 			disk string
 			dnb  bool
+			snapshot bool
 		)
 
 		if drives := node.Hardware().Drives(); len(drives) > 0 {
@@ -75,6 +76,9 @@ func List(expName string) ([]mm.VM, error) {
 
 		if node.General().DoNotBoot() != nil {
 			dnb = *node.General().DoNotBoot()
+		}
+		if node.General().Snapshot() != nil {
+			snapshot = *node.General().Snapshot()
 		}
 
 		vm := mm.VM{
@@ -88,6 +92,7 @@ func List(expName string) ([]mm.VM, error) {
 			DoNotBoot:  dnb,
 			Type:       node.Type(),
 			OSType:     node.Hardware().OSType(),
+			Snapshot: 	snapshot,
 		}
 
 		for _, iface := range node.Network().Interfaces() {
@@ -191,6 +196,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 			Metadata:    make(map[string]interface{}),
 			Labels:      node.Labels(),
 			Annotations: node.Annotations(),
+			Snapshot: 	 *node.General().Snapshot(),
 		}
 
 		for _, iface := range node.Network().Interfaces() {
@@ -323,6 +329,11 @@ func Update(opts ...UpdateOption) error {
 			exp.Spec.ScheduleNode(o.vm, *o.host)
 		}
 	}
+
+	if o.snapshot != nil{
+		vm.General().SetSnapshot(*o.snapshot)
+	}
+
 
 	err = experiment.Save(experiment.SaveWithName(o.exp), experiment.SaveWithSpec(exp.Spec))
 	if err != nil {
@@ -784,7 +795,7 @@ func Snapshot(expName, vmName, out string, cb func(string)) error {
 	cmd.Columns = []string{"name", "status", "complete (%)"}
 	cmd.Filters = []string{"name=" + vmName}
 	//Adding a 1 second delay before calling "vm migrate"
-	//for a status update appears to prevent the status call
+	//for a status F appears to prevent the status call
 	//from crashing minimega
 	time.Sleep(1 * time.Second)
 	for {
