@@ -286,6 +286,17 @@ func Update(opts ...UpdateOption) error {
 		return fmt.Errorf("unable to find VM %s in experiment %s", o.vm, o.exp)
 	}
 
+	// if appending, copy over old labels (keep newer version if present)
+	fmt.Printf("%v", *o.tags)
+	if o.tags != nil && o.appendTags {
+		for k, v := range vm.Labels() {
+			if _, ok := (*o.tags)[k]; !ok {
+				(*o.tags)[k] = v
+			}
+		}
+	}
+	fmt.Printf("END: %v", *o.tags)
+
 	running := experiment.Running(o.exp)
 
 	// The only settings that can be updated while an experiment is running is the

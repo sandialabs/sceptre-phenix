@@ -54,6 +54,14 @@ message VMRedeployRequest {
   bool injects = 5;
 }
 
+enum TagUpdateMode {
+  NONE = 0;
+  // sets all tags
+  SET = 1;
+  // adds (or replaces if already present) tags
+  ADD = 2;
+}
+
 message UpdateVMRequest {
   string exp = 1;
   string name = 2;
@@ -71,8 +79,7 @@ message UpdateVMRequest {
     string host = 8;
   }
 
-  // flag set indicates that map should be read
-  bool tagsUpdated = 9;
+  TagUpdateMode tag_update_mode = 9;
   map<string, string> tags = 10;
 }
 

@@ -16,6 +16,7 @@ type updateOptions struct {
 	dnb   *bool
 	iface *iface
 	host  *string
+	appendTags bool
 	tags  *map[string]string
 }
 
@@ -71,8 +72,9 @@ func UpdateWithDNB(b bool) UpdateOption {
 	}
 }
 
-func UpdateWithTags(t map[string]string) UpdateOption {
+func UpdateWithTags(t map[string]string, appendTags bool) UpdateOption {
 	return func(o *updateOptions) {
+		o.appendTags = appendTags
 		o.tags = &t
 	}
 }

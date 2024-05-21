@@ -135,7 +135,7 @@
           </template>
           <template v-if="roleAllowed('vms', 'patch', this.$route.params.id + '/' + detailsModal.vm)">
             <b-tooltip label="customize style" type="is-light is-left" :delay="400">
-              <b-button class="button is-light" icon-left="paintbrush" @click="queueMemorySnapshotVMs(expModal.vm.name)"/>
+              <b-button class="button is-light" icon-left="paintbrush" @click="showStyleModal(detailsModal.vm)"/>
             </b-tooltip>
           </template>
           <template v-if="detailsModal.status.toLowerCase() == 'running'">
@@ -158,6 +158,54 @@
       </div>
     </b-modal>
     <!-- END MODAL -->
+    <!-- STYLE MODAL -->
+    <b-modal :active.sync="styleModal.active" :on-cancel="resetStyleModal" has-modal-card>
+      <div class="modal-card">
+        <header class="modal-card-head">
+          <p class="modal-card-title">{{ detailsModal.vm }} Style</p>
+        </header>
+        <section class="modal-card-body">
+          <div class="columns is-vcentered">
+            <div class="column is-three-quarters">
+              <p class="title is-6 mb-2">Fill Color</p>
+              <b-field grouped>
+                <b-switch :left-label="true" v-model="styleModal.overrideFill">Override</b-switch>
+                <b-colorpicker :append-to-body="true" :disabled="!styleModal.overrideFill" v-model="styleModal.fill" />
+              </b-field>
+
+              <p class="title is-6 mb-2">Stroke Color</p>
+              <b-field grouped>
+                <b-switch :left-label="true" v-model="styleModal.overrideStroke">Override</b-switch>
+                <b-colorpicker :append-to-body="true" :disabled="!styleModal.overrideStroke" v-model="styleModal.stroke"/>
+              </b-field>
+
+              <p class="title is-6 mb-2">Stroke Style</p>
+              <b-field grouped>
+                <b-switch :left-label="true" v-model="styleModal.overrideStrokeStyle">Override</b-switch>
+                <b-select :disabled="!styleModal.overrideStrokeStyle" v-model="styleModal.strokeStyle">
+                  <option value="solid">Solid</option>
+                  <option value="dashed">Dashed</option>
+                  <option value="dotted">Dotted</option>
+                </b-select> 
+              </b-field>
+            </div>
+            <div class="column has-text-centered">
+              <p>Preview:</p>
+              <svg height="64" width="64" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="8" cy="8" r="5" stroke-width="1.5" transform="scale(4)" :fill="styleModal.baseFill" :stroke="styleModal.baseStroke" :style="styleModalCustomStyle"></circle>
+              </svg>
+            </div>
+          </div>
+
+        </section>
+        <footer class="modal-card-foot buttons is-right">
+          <b-button label="Close" @click="resetStyleModal()" />
+          <b-button v-if="roleAllowed('vms', 'patch', this.$route.params.id + '/' + styleModal.vm)" label="Save" type="is-primary" @click="saveStyle()"/>
+        
+        </footer>
+      </div>
+    </b-modal>
+    <!-- END STYLE MODAL -->
     <hr>
     <div class="columns is-centered"> 
       <div class="column is-1">
@@ -375,6 +423,7 @@
 </template>
 
 <script>
+const SOH_STYLE_LABEL_KEY = "__sohStyle";
 import * as d3 from "d3";
 import VmLabelsModal from './VMLabelsModal.vue';
 
@@ -731,7 +780,7 @@ export default {
         .attr( "fill", this.updateNodeColor )
         .attr( "width", 5 )
         .attr( "height", 5 )
-        // .attr("style", (n) => n.styleoverride)
+        .attr("style", (n) => n.tags[SOH_STYLE_LABEL_KEY] || '')
         .on( 'mouseenter', this.entered )
         .on( 'mouseleave', this.exited )
         .on( 'click', this.clicked )
@@ -978,6 +1027,69 @@ export default {
 
     vncLoc (vm) {
       return this.$router.resolve({name: 'vnc', params: {id: this.$route.params.id, name: vm, token: this.$store.getters.token}}).href;
+    },
+
+    // STYLE MODAL
+    showStyleModal (vm) {
+      const styleNode = this.nodes.find(n => n.label === this.detailsModal.vm)
+      this.styleModal.vm = vm
+      this.styleModal.baseFill = this.updateNodeColor(styleNode)
+      this.styleModal.baseStroke = this.updateNodeBorder(styleNode)
+      this.styleModal.fill = this.updateNodeColor(styleNode)
+      this.styleModal.stroke = this.updateNodeBorder(styleNode)
+      this.styleModal.strokeStyle = "solid";
+
+      // parse css in label back to values
+      let tempElem = document.createElement("div");
+      tempElem.style = styleNode.tags[SOH_STYLE_LABEL_KEY] || '';
+      if (tempElem.style["fill"] !== '') {
+        this.styleModal.overrideFill = true;
+        this.styleModal.fill = tempElem.style["fill"];
+      }
+      if (tempElem.style["stroke"] !== '') {
+        this.styleModal.overrideStroke = true;
+        this.styleModal.stroke = tempElem.style["stroke"];
+      }
+      if (tempElem.style["stroke-dasharray"] !== '') {
+        this.styleModal.overrideStrokeStyle = true;
+        let dashVal = tempElem.style["stroke-dasharray"]
+        if (dashVal === "0") {
+          this.styleModal.strokeStyle = "solid";
+        }
+        else if (dashVal.startsWith("0,")) {
+          this.styleModal.strokeStyle = "dotted"
+        }
+        else {
+          this.styleModal.strokeStyle = "dashed";
+        }
+      }
+
+      this.styleModal.active = true
+    },
+
+    saveStyle() {
+      let update = { "tagUpdateMode": "ADD", "tags": {[SOH_STYLE_LABEL_KEY]: this.styleModalCustomStyle } };
+
+      this.$http.patch('experiments/' + this.$route.params.id + '/vms/' + this.styleModal.vm, update)
+          .then(_ => {
+            this.resetStyleModal()
+            this.resetNetwork()
+          }, err => this.errorNotification(err));
+    },
+
+    resetStyleModal() {
+      this.styleModal = {
+        active: false,
+        vm: '',
+        baseFill: '',
+        baseStroke: '',
+        overrideFill: false,
+        fill: '',
+        overrideStroke: false,
+        stroke: '',
+        overrideStrokeStyle: false,
+        strokeStyle: ''
+      }
     }
   },
 
@@ -1010,8 +1122,40 @@ export default {
         soh: null,
         tags: {}
       },
+      styleModal: {
+        active: false,
+        vm: '',
+        baseFill: '',
+        baseStroke: '',
+        overrideFill: false,
+        fill: '',
+        overrideStroke: false,
+        stroke: '',
+        overrideStrokeStyle: false,
+        strokeStyle: ''
+      },
       chordData: null,
     };
+  },
+  computed: {
+    styleModalCustomStyle: function() {
+      var css = "";
+      if (this.styleModal.overrideFill)
+        css += `fill: ${this.styleModal.fill}; `;
+      if (this.styleModal.overrideStroke)
+        css += `stroke: ${this.styleModal.stroke}; `;
+      if (this.styleModal.overrideStrokeStyle) {
+        if (this.styleModal.strokeStyle == "solid") 
+          css += `stroke-dasharray: 0; `;
+        // these numbers are based on the circles diameter pi * 10
+        else if (this.styleModal.strokeStyle == "dashed")
+          css += `stroke-dasharray: 3 2.236; `;
+        else if (this.styleModal.strokeStyle == "dotted")
+        css += `stroke-dasharray: 0 2.094; stroke-linecap: round; `;
+      }
+      console.log(css)
+      return css;
+    }
   }
 }
 </script>
