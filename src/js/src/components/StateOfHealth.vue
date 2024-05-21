@@ -780,7 +780,7 @@ export default {
         .attr( "fill", this.updateNodeColor )
         .attr( "width", 5 )
         .attr( "height", 5 )
-        .attr("style", (n) => n.tags[SOH_STYLE_LABEL_KEY] || '')
+        .attr("style", (n) => n.image.toLowerCase() == "switch" ? '' : (n.tags[SOH_STYLE_LABEL_KEY] || ''))
         .on( 'mouseenter', this.entered )
         .on( 'mouseleave', this.exited )
         .on( 'click', this.clicked )
@@ -809,22 +809,6 @@ export default {
           .attr( "x", d => d.x + 4 )
           .attr( "y", d => d.y + 8 );
       });
-    },
-
-    showTagsModal ( vm, tags ) {
-      const self = this
-      this.$buefy.modal.open({
-        parent:       this,
-        component:    VmLabelsModal,
-        trapFocus:    true,
-        hasModalCard: true,
-        props:        {"vmName": vm, "experiment": this.$route.params.id, "tags": tags},
-        events: {
-          saved() {
-            self.resetNetwork();
-          }
-        }
-      })
     },
 
     entered ( e, n ) {
@@ -1029,6 +1013,22 @@ export default {
       return this.$router.resolve({name: 'vnc', params: {id: this.$route.params.id, name: vm, token: this.$store.getters.token}}).href;
     },
 
+    showTagsModal ( vm, tags ) {
+      const self = this
+      this.$buefy.modal.open({
+        parent:       this,
+        component:    VmLabelsModal,
+        trapFocus:    true,
+        hasModalCard: true,
+        props:        {"vmName": vm, "experiment": this.$route.params.id, "tags": tags},
+        events: {
+          saved() {
+            self.resetNetwork();
+          }
+        }
+      })
+    },
+
     // STYLE MODAL
     showStyleModal (vm) {
       const styleNode = this.nodes.find(n => n.label === this.detailsModal.vm)
@@ -1175,6 +1175,11 @@ export default {
 
   li::marker {
     color: black;
+  }
+
+  .switch {
+    color: gray
+    ;
   }
 
   ul {
