@@ -64,6 +64,8 @@ func init() {
 				return fmt.Errorf("initializing experiment: %w", err)
 			}
 
+			exp.Spec.SetUseGREMesh(exp.Spec.UseGREMesh() || common.UseGREMesh)
+
 			existing, _ := types.Experiments(false)
 			for _, other := range existing {
 				if other.Metadata.Name == exp.Metadata.Name {
@@ -97,6 +99,8 @@ func init() {
 			if err := exp.Spec.Init(); err != nil {
 				return fmt.Errorf("re-initializing experiment (after update): %w", err)
 			}
+
+			exp.Spec.SetUseGREMesh(exp.Spec.UseGREMesh() || common.UseGREMesh)
 
 			existing, _ := types.Experiments(false)
 			for _, other := range existing {
@@ -323,6 +327,7 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 	exp.Spec.SetVLANRange(o.vlanMin, o.vlanMax, false)
 	exp.Spec.VLANs().SetAliases(o.vlanAliases)
 	exp.Spec.SetSchedule(o.schedules)
+	exp.Spec.SetUseGREMesh(o.useGREMesh)
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 
@@ -780,6 +785,13 @@ func Reconfigure(name string) error {
 
 	if err := config.Update(c.FullName(), c); err != nil {
 		return fmt.Errorf("updating experiment config: %w", err)
+	}
+
+	// Try deleting the minimega bridge associated with this experiment if we're
+	// not using the GRE mesh, just in case we were using it prior. Ignore any
+	// errors since they will occur if GRE wasn't being used.
+	if !exp.Spec.UseGREMesh() {
+		mm.MeshSend(name, "", fmt.Sprintf("ns del-bridge %s", exp.Spec.DefaultBridge()))
 	}
 
 	return nil

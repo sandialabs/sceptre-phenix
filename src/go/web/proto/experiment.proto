@@ -72,6 +72,7 @@ message CreateExperimentRequest {
 	repeated string disabled_apps = 7 [json_name="disabled_apps"];
 	string deploy_mode = 8 [json_name="deploy_mode"];
 	string default_bridge = 9 [json_name="default_bridge"];
+	bool use_gre_mesh = 10 [json_name="use_gre_mesh"];
 }
 
 message SnapshotRequest {

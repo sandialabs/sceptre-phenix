@@ -26,6 +26,8 @@ var (
 
 	StoreEndpoint    string
 	HostnameSuffixes string
+
+	UseGREMesh bool
 )
 
 func TrimHostnameSuffixes(str string) string {
@@ -44,7 +46,20 @@ func ParseDeployMode(mode string) (DeploymentMode, error) {
 		return DEPLOY_MODE_ONLY_HEADNODE, nil
 	case "all":
 		return DEPLOY_MODE_ALL, nil
+	case "": // default to current setting
+		return DeployMode, nil
 	}
 
 	return DEPLOY_MODE_UNSET, fmt.Errorf("unknown deploy mode provided: %s", mode)
+}
+
+func SetDeployMode(mode string) error {
+	parsed, err := ParseDeployMode(mode)
+	if err != nil {
+		return fmt.Errorf("setting deploy mode: %w", err)
+	}
+
+	DeployMode = parsed
+
+	return nil
 }

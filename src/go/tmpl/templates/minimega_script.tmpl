@@ -1,10 +1,6 @@
 namespace {{ .ExperimentName }}
 ns queueing true
 
-{{- if ne .DefaultBridge "phenix" }}
-ns bridge {{ .DefaultBridge }} gre
-{{- end }}
-
 {{- if and (ne .VLANs.Min 0) (ne .VLANs.Max 0) }}
 vlans range {{ .VLANs.Min }} {{ .VLANs.Max }}
 {{- end }}
@@ -20,6 +16,10 @@ ns add-host localhost
 {{- else if eq .DeployMode "only-headnode" }}
 ns del-host all
 ns add-host localhost
+{{- end }}
+
+{{- if or (ne .DefaultBridge "phenix") .UseGREMesh }}
+ns bridge {{ .DefaultBridge }} gre
 {{- end }}
 
 {{- $basedir := .BaseDir }}

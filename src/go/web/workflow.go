@@ -140,6 +140,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			experiment.CreateWithVLANMax(wf.VLANMax()),
 			experiment.CreateWithDeployMode(wf.ExperimentDeployMode()),
 			experiment.CreateWithDefaultBridge(wf.DefaultBridgeName()),
+			experiment.CreateWithGREMesh(wf.UseGREMesh),
 		}
 
 		if err := experiment.Create(ctx, opts...); err != nil {
@@ -317,6 +318,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		exp.Spec.SetSchedule(schedules)
 		exp.Spec.SetDeployMode(string(wf.ExperimentDeployMode()))
 		exp.Spec.SetVLANRange(wf.VLANMin(), wf.VLANMax(), true)
+		exp.Spec.SetUseGREMesh(wf.UseGREMesh)
 
 		if err := exp.WriteToStore(false); err != nil {
 			err := weberror.NewWebError(err, "unable to write updated experiment %s", expName)
@@ -495,6 +497,7 @@ type workflow struct {
 	VLANs      map[string]int    `mapstructure:"vlans"`
 	Schedules  map[string]string `mapstructue:"schedules"`
 	DeployMode string            `mapstructure:"deployMode"`
+	UseGREMesh bool              `mapstructure:"useGREMesh"`
 
 	VLANRange *struct {
 		Min int `mapstructure:"min"`

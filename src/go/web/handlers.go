@@ -187,6 +187,7 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 		experiment.CreatedWithDisabledApplications(req.DisabledApps),
 		experiment.CreateWithDeployMode(deployMode),
 		experiment.CreateWithDefaultBridge(req.DefaultBridge),
+		experiment.CreateWithGREMesh(req.UseGreMesh),
 	}
 
 	if req.WorkflowBranch != "" {

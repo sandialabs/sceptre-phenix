@@ -16,6 +16,7 @@ type TopologySpec interface {
 
 	HasCommands() bool
 
+	// accepts name of default bridge
 	Init(string) error
 }
 

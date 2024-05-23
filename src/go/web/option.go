@@ -188,7 +188,8 @@ func GetOptions(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	options := map[string]any{
-		"deploy-mode": common.DeployMode,
+		"deploy-mode":  common.DeployMode,
+		"use-gre-mesh": common.UseGREMesh,
 	}
 
 	body, err := json.Marshal(options)

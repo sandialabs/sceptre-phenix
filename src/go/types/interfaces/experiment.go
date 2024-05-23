@@ -25,6 +25,7 @@ type ExperimentSpec interface {
 	VLANs() VLANSpec
 	Schedules() map[string]string
 	DeployMode() string
+	UseGREMesh() bool
 
 	SetExperimentName(string)
 	SetBaseDir(string)
@@ -35,6 +36,7 @@ type ExperimentSpec interface {
 	SetTopology(TopologySpec)
 	SetScenario(ScenarioSpec)
 	SetDeployMode(string)
+	SetUseGREMesh(bool)
 
 	VerifyScenario(context.Context) error
 	ScheduleNode(string, string) error

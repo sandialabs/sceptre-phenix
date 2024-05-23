@@ -19,12 +19,14 @@ type createOptions struct {
 	schedules     map[string]string
 	baseDir       string
 	deployMode    common.DeploymentMode
+	useGREMesh    bool
 	defaultBridge string
 }
 
 func newCreateOptions(opts ...CreateOption) createOptions {
 	o := createOptions{
 		deployMode: common.DeployMode,
+		useGREMesh: common.UseGREMesh,
 	}
 
 	for _, opt := range opts {
@@ -105,6 +107,13 @@ func CreateWithBaseDirectory(b string) CreateOption {
 func CreateWithDeployMode(m common.DeploymentMode) CreateOption {
 	return func(o *createOptions) {
 		o.deployMode = m
+	}
+}
+
+func CreateWithGREMesh(g bool) CreateOption {
+	return func(o *createOptions) {
+		// Keep use GRE mesh enabled if enabled globally.
+		o.useGREMesh = o.useGREMesh || g
 	}
 }
 

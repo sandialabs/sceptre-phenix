@@ -81,6 +81,7 @@ type ExperimentSpec struct {
 	VLANsF          *VLANSpec         `json:"vlans" yaml:"vlans" structs:"vlans" mapstructure:"vlans"`
 	SchedulesF      map[string]string `json:"schedules" yaml:"schedules" structs:"schedules" mapstructure:"schedules"`
 	DeployModeF     string            `json:"deployMode" yaml:"deployMode" structs:"deployMode" mapstructure:"deployMode"`
+	UseGREMeshF     bool              `json:"useGREMesh" yaml:"useGREMesh" structs:"useGREMesh" mapstructure:"useGREMesh"`
 }
 
 func (this *ExperimentSpec) Init() error {
@@ -196,6 +197,10 @@ func (this *ExperimentSpec) SetDefaultBridge(bridge string) {
 	this.DefaultBridgeF = bridge
 }
 
+func (this ExperimentSpec) UseGREMesh() bool {
+	return this.UseGREMeshF
+}
+
 func (this *ExperimentSpec) SetVLANAlias(a string, i int, f bool) error {
 	if this.VLANsF == nil {
 		this.VLANsF = &VLANSpec{AliasesF: make(map[string]int)}
@@ -254,6 +259,10 @@ func (this *ExperimentSpec) SetTopology(topo ifaces.TopologySpec) {
 
 func (this *ExperimentSpec) SetScenario(scenario ifaces.ScenarioSpec) {
 	this.ScenarioF = scenario.(*v2.ScenarioSpec)
+}
+
+func (this *ExperimentSpec) SetUseGREMesh(g bool) {
+	this.UseGREMeshF = g
 }
 
 func (this ExperimentSpec) VerifyScenario(ctx context.Context) error {
