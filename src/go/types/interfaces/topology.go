@@ -80,6 +80,7 @@ type NodeDrive interface {
 	CacheMode() string
 	InjectPartition() *int
 
+	SetInjectPartition(*int)
 	SetImage(string)
 }
 

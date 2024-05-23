@@ -13,6 +13,7 @@ type updateOptions struct {
 	cpu   int
 	mem   int
 	disk  string
+	partition int
 	dnb   *bool
 	iface *iface
 	host  *string
@@ -56,6 +57,12 @@ func UpdateWithMem(m int) UpdateOption {
 func UpdateWithDisk(d string) UpdateOption {
 	return func(o *updateOptions) {
 		o.disk = d
+	}
+}
+
+func UpdateWithPartition(p int) UpdateOption {
+	return func(o *updateOptions) {
+		o.partition = p
 	}
 }
 

@@ -1031,12 +1031,15 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	plog.Warn("%v", req)
+
 	opts := []vm.UpdateOption{
 		vm.UpdateExperiment(expName),
 		vm.UpdateVM(name),
 		vm.UpdateWithCPU(int(req.Cpus)),
 		vm.UpdateWithMem(int(req.Ram)),
 		vm.UpdateWithDisk(req.Disk),
+		vm.UpdateWithPartition(int(req.InjectPartition)),
 	}
 
 	if req.Interface != nil {

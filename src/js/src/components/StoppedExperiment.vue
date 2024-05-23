@@ -223,7 +223,7 @@
                   {{ ip || 'unknown' }}
                 </div>
               </b-table-column>
-              <b-table-column field="cpus" label="CPUs" sortable centered v-slot="props">
+              <b-table-column field="cpus" label="CPUs" width="100" sortable centered v-slot="props">
                 <template v-if="!props.row.external && roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
                   <b-tooltip label="menu for assigning vm(s) cpus" type="is-dark">
                     <b-select :value="props.row.cpus" expanded @input="( value ) => assignCpu( props.row.name, value )">
@@ -238,7 +238,7 @@
                   {{ props.row.cpus || 'unknown' }}
                 </template>
               </b-table-column>
-              <b-table-column field="ram" label="Memory" sortable centered v-slot="props">
+              <b-table-column field="ram" label="Memory" width="112" sortable centered v-slot="props">
                 <template v-if="!props.row.external && roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
                   <b-tooltip label="menu for assigning vm(s) memory" type="is-dark">
                     <b-select :value="props.row.ram" expanded @input="( value ) => assignRam( props.row.name, value )">
@@ -273,6 +273,18 @@
                 <template v-else>
                   {{ getBaseName(props.row.disk) || 'unknown' }}
                 </template>
+              </b-table-column>
+              <b-table-column field="inject_partition" label="Partition" sortable centered v-slot="props">
+                  <template v-if="!props.row.external && roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
+                    <b-tooltip label="menu for assigning inject partition" type="is-dark">
+                      <b-select :value="props.row.inject_partition" expanded @input="( value ) => assignPartition( props.row.name, value )">
+                        <option v-for="n in 10" :value="n">{{ n }}</option>
+                      </b-select>
+                    </b-tooltip>
+                  </template>
+                  <template v-else>
+                    {{ props.row.inject_partition }}
+                  </template>
               </b-table-column>
               <b-table-column label="Boot" centered v-slot="props">
                 <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
@@ -1010,6 +1022,47 @@
             this.isWaiting = true;
             
             let update = { "disk": disk };
+
+            this.$http.patch(
+              'experiments/' + this.$route.params.id + '/vms/' + name, update
+            ).then(
+              response => {
+                let vms = this.experiment.vms;
+                
+                for ( let i = 0; i < vms.length; i++ ) {
+                  if ( vms[ i ].name == response.body.name ) {
+                    vms[ i ] = response.body;
+                    break;
+                  }
+                }
+              
+                this.experiment.vms = [ ...vms ];
+              
+                this.isWaiting = false;              
+              }, err => {
+                this.errorNotification(err);                
+                this.isWaiting = false;
+              }
+            )
+          },
+          onCancel: () => {
+            // force table to be rerendered so selected value resets
+            this.table.key += 1;
+          }
+        })
+      },
+      assignPartition ( name, partition ) {
+        this.$buefy.dialog.confirm({
+          title: 'Assign an Image Partition',
+          message: 'This will assign the image partition ' + partition + ' to the ' + name + ' VM.',
+          cancelText: 'Cancel',
+          confirmText: 'Assign Partition',
+          type: 'is-success',
+          hasIcon: true,
+          onConfirm: () => {
+            this.isWaiting = true;
+            
+            let update = { "inject_partition": partition };
 
             this.$http.patch(
               'experiments/' + this.$route.params.id + '/vms/' + name, update

@@ -422,6 +422,10 @@ func (this *Drive) SetImage(i string) {
 	this.ImageF = i
 }
 
+func (this *Drive) SetInjectPartition(p *int) {
+	this.InjectPartitionF = p
+}
+
 type Injection struct {
 	SrcF         string `json:"src" yaml:"src" structs:"src" mapstructure:"src"`
 	DstF         string `json:"dst" yaml:"dst" structs:"dst" mapstructure:"dst"`
