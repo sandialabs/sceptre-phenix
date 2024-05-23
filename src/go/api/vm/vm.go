@@ -72,7 +72,7 @@ func List(expName string) ([]mm.VM, error) {
 		)
 
 		if drives := node.Hardware().Drives(); len(drives) > 0 {
-			disk = drives[0].Image()
+			disk = util.GetMMFullPath(drives[0].Image())
 			injectPartition = *drives[0].InjectPartition()
 		}
 
