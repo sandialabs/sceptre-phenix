@@ -1031,8 +1031,6 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plog.Warn("%v", req)
-
 	opts := []vm.UpdateOption{
 		vm.UpdateExperiment(expName),
 		vm.UpdateVM(name),

@@ -8,16 +8,16 @@ type iface struct {
 }
 
 type updateOptions struct {
-	exp   string
-	vm    string
-	cpu   int
-	mem   int
-	disk  string
+	exp       string
+	vm        string
+	cpu       int
+	mem       int
+	disk      string
 	partition int
-	dnb   *bool
-	iface *iface
-	host  *string
-	snapshot *bool
+	dnb       *bool
+	iface     *iface
+	host      *string
+	snapshot  *bool
 }
 
 func newUpdateOptions(opts ...UpdateOption) updateOptions {
