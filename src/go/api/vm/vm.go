@@ -287,7 +287,6 @@ func Update(opts ...UpdateOption) error {
 	}
 
 	// if appending, copy over old labels (keep newer version if present)
-	fmt.Printf("%v", *o.tags)
 	if o.tags != nil && o.appendTags {
 		for k, v := range vm.Labels() {
 			if _, ok := (*o.tags)[k]; !ok {
@@ -295,7 +294,6 @@ func Update(opts ...UpdateOption) error {
 			}
 		}
 	}
-	fmt.Printf("END: %v", *o.tags)
 
 	running := experiment.Running(o.exp)
 

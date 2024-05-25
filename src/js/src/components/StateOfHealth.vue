@@ -10,7 +10,7 @@
           <div class="content">
             <ul>
               <li v-for="k in Object.keys(detailsModal.tags).filter(k => k.startsWith('__notes_'))">
-                <p>{{ detailsModal.tags[k] }}</p>
+                <p style="white-space: pre-line;">{{ detailsModal.tags[k] }}</p>
               </li>
             </ul>
           </div>
@@ -780,7 +780,7 @@ export default {
         .attr( "fill", this.updateNodeColor )
         .attr( "width", 5 )
         .attr( "height", 5 )
-        .attr("style", (n) => n.image.toLowerCase() == "switch" ? '' : (n.tags[SOH_STYLE_LABEL_KEY] || ''))
+        .attr("style", (n) => n.image.toLowerCase() == "switch" || !n.tags ? '' : (n.tags[SOH_STYLE_LABEL_KEY] || ''))
         .on( 'mouseenter', this.entered )
         .on( 'mouseleave', this.exited )
         .on( 'click', this.clicked )

@@ -8,7 +8,7 @@
         <b-table :data="workingNotes" ref="notesTable">
           <b-table-column field="value" label="Value" v-slot="props">
               <template v-if="canEdit()">
-                <b-input v-model="props.row.value" v-on:keyup.native.enter="addNote()" :ref="`note${props.index}`"/>
+                <textarea class="textarea has-fixed-size" rows="1" v-model="props.row.value" @input="resizeNoteTextArea(`note${props.index}`)" @keypress="(evt) => noteKeyHandler(evt, `note${props.index}`)" :ref="`note${props.index}`"></textarea>
               </template>
               <template v-else>
                 {{ props.row.value }}
@@ -97,6 +97,12 @@
       if (this.workingNotes.length == 0) {
         this.addNote()
       }
+
+      this.$nextTick(() => {
+        for(let i = 0; i < this.workingNotes.length; i++) {
+          this.resizeNoteTextArea(`note${i}`)
+        }
+      })
     },
   
   
@@ -121,6 +127,22 @@
         this.$nextTick(() => {
           this.$refs[`note${this.workingNotes.length - 1}`].focus()
         })
+      },
+      resizeNoteTextArea(ref) {
+        const textArea = this.$refs[ref]
+        textArea.style.height = "auto";
+        this.$nextTick(() => {
+          textArea.style.height = textArea.scrollHeight + 'px';
+        })
+      },
+      noteKeyHandler(evt, ref) {
+        if (evt.key === "Enter" && evt.shiftKey) {
+          this.addNote()
+          evt.preventDefault()
+        }
+        else {
+          this.resizeNoteTextArea(ref)
+        }
       },
       save() {
         var finalTags = {}
@@ -158,7 +180,7 @@
   }
   </script>
     
-  <style lang="scss">
+  <style lang="scss" scoped>
     .fixed-height {
       height: 75vh;
       overflow: auto;
@@ -170,6 +192,10 @@
           vertical-align: middle;
         }
       }
+    }
+
+    textarea {
+      overflow-y: hidden;
     }
   
   </style>
