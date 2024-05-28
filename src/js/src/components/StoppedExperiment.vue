@@ -297,7 +297,7 @@
               </b-table-column>
               <b-table-column label="Persistence" centered v-slot="props">
                 <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
-                  <b-tooltip :label="getSnapshotLabel( props.row.name )" type="is-dark">
+                  <b-tooltip :label="getSnapshotLabel( props.row )" type="is-dark">
                     <div>
                       <b-select :value="props.row.snapshot" expanded @input="( value ) => updateSnapshot( props.row.name, value )">
                       <option value=true>Non-Persistent</option>
@@ -1242,7 +1242,7 @@
         return vm.dnb ? `Boot ${vm.name}` : `Do Not Boot ${vm.name}`;
       },
       getSnapshotLabel (vm) {
-        return vm.snapshot ? `${vm.name}'s disk will persist'` : `${vm.name}'s disk will not persist`;
+        return vm.snapshot ? `${vm.name}'s disk will not persist` : `${vm.name}'s disk will persist`;
       },
       
       selectAllVMs () {            
