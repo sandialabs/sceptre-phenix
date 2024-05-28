@@ -802,7 +802,7 @@ func Snapshot(expName, vmName, out string, cb func(string)) error {
 	cmd.Columns = []string{"name", "status", "complete (%)"}
 	cmd.Filters = []string{"name=" + vmName}
 	//Adding a 1 second delay before calling "vm migrate"
-	//for a status F appears to prevent the status call
+	//for a status update appears to prevent the status call
 	//from crashing minimega
 	time.Sleep(1 * time.Second)
 	for {
