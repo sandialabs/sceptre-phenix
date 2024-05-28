@@ -1,7 +1,7 @@
 <template>
   <div>
-    <b-modal :active.sync="detailsModal.active" :on-cancel="resetDetailsModal" has-modal-card>
-      <div class="modal-card">
+    <b-modal :active.sync="detailsModal.active" :on-cancel="resetDetailsModal" has-modal-card :width="1280">
+      <div class="modal-card" style="width: auto;">
         <header class="modal-card-head">
           <p class="modal-card-title">{{ detailsModal.vm }} Details</p>
         </header>
@@ -302,7 +302,7 @@
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: #941100" />
+                  <b-icon icon="circle" style="color: #670b00" />
                 </div>
                 <div class="column">
                   <span style="color: whitesmoke;">Not running</span>
@@ -615,7 +615,7 @@ export default {
     updateNodeColor( node ) {
       const colors = {
         "running":    "#4F8F00", // green
-        "notrunning": "#941100", // red
+        "notrunning": "#670b00", // red
         "notboot":    "black",
         "notdeploy":  "#FFD479", // yellow
         "external":   "#005493", // blue
