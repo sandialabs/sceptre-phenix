@@ -1037,6 +1037,7 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		vm.UpdateWithCPU(int(req.Cpus)),
 		vm.UpdateWithMem(int(req.Ram)),
 		vm.UpdateWithDisk(req.Disk),
+		vm.UpdateWithPartition(int(req.InjectPartition)),
 	}
 
 	if req.Interface != nil {
@@ -1051,6 +1052,11 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 	switch req.ClusterHost.(type) {
 	case *proto.UpdateVMRequest_Host:
 		opts = append(opts, vm.UpdateWithHost(req.GetHost()))
+	}
+	
+	switch req.SnapshotOption.(type) {
+	case *proto.UpdateVMRequest_Snapshot:
+		opts = append(opts, vm.UpdateWithSnapshot(req.GetSnapshot()))
 	}
 
 	if err := vm.Update(opts...); err != nil {
@@ -1148,6 +1154,11 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 		switch vmRequest.ClusterHost.(type) {
 		case *proto.UpdateVMRequest_Host:
 			opts = append(opts, vm.UpdateWithHost(vmRequest.GetHost()))
+		}
+
+		switch vmRequest.SnapshotOption.(type) {
+		case *proto.UpdateVMRequest_Snapshot:
+			opts = append(opts, vm.UpdateWithSnapshot(vmRequest.GetSnapshot()))
 		}
 
 		if err := vm.Update(opts...); err != nil {

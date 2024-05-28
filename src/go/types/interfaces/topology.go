@@ -55,6 +55,7 @@ type NodeGeneral interface {
 	Description() string
 	VMType() string
 	Snapshot() *bool
+	SetSnapshot(bool)
 	DoNotBoot() *bool
 
 	SetDoNotBoot(bool)
@@ -79,6 +80,7 @@ type NodeDrive interface {
 	CacheMode() string
 	InjectPartition() *int
 
+	SetInjectPartition(*int)
 	SetImage(string)
 }
 
