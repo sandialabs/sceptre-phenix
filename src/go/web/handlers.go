@@ -1043,9 +1043,9 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		opts = append(opts, vm.UpdateWithInterface(int(req.Interface.Index), req.Interface.Vlan))
 	}
 
-	if req.TagUpdateMode == proto.TagUpdateMode_SET  {
+	if req.TagUpdateMode == proto.TagUpdateMode_SET {
 		opts = append(opts, vm.UpdateWithTags(req.Tags, false))
-	} else if req.TagUpdateMode == proto.TagUpdateMode_ADD  {
+	} else if req.TagUpdateMode == proto.TagUpdateMode_ADD {
 		opts = append(opts, vm.UpdateWithTags(req.Tags, true))
 	}
 

@@ -88,7 +88,7 @@ func List(expName string) ([]mm.VM, error) {
 			DoNotBoot:  dnb,
 			Type:       node.Type(),
 			OSType:     node.Hardware().OSType(),
-			Tags: 		node.Labels(),
+			Tags:       node.Labels(),
 		}
 
 		for _, iface := range node.Network().Interfaces() {
@@ -191,7 +191,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 			OSType:      string(node.Hardware().OSType()),
 			Metadata:    make(map[string]interface{}),
 			Labels:      node.Labels(),
-			Tags:		 node.Labels(),
+			Tags:        node.Labels(),
 			Annotations: node.Annotations(),
 		}
 
@@ -321,7 +321,7 @@ func Update(opts ...UpdateOption) error {
 			if err := mm.SetVMTags(mm.NS(o.exp), mm.VMName(o.vm), mm.Tags(*o.tags)); err != nil {
 				return err
 			}
-			
+
 			vm.SetLabels(*o.tags)
 			if err := experiment.Save(experiment.SaveWithName(o.exp), experiment.SaveWithSpec(exp.Spec)); err != nil {
 				return fmt.Errorf("unable to save experiment with updated VM: %w", err)
@@ -1511,16 +1511,13 @@ func ChangeOpticalDisc(expName, vmName, isoPath string) error {
 		return fmt.Errorf("no optical disc path provided")
 	}
 
-	
-	cmd := mmcli.NewNamespacedCommand(expName)	
-	cmd.Command = fmt.Sprintf("vm cdrom change %s %s",vmName,isoPath)
+	cmd := mmcli.NewNamespacedCommand(expName)
+	cmd.Command = fmt.Sprintf("vm cdrom change %s %s", vmName, isoPath)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("changing optical disc for VM %s: %w", vmName, err)
 	}
-	
 
-	
 	return nil
 }
 
@@ -1535,15 +1532,12 @@ func EjectOpticalDisc(expName, vmName string) error {
 		return fmt.Errorf("no VM name provided")
 	}
 
-		
-	cmd := mmcli.NewNamespacedCommand(expName)	
-	cmd.Command = fmt.Sprintf("vm cdrom eject %s",vmName)
+	cmd := mmcli.NewNamespacedCommand(expName)
+	cmd.Command = fmt.Sprintf("vm cdrom eject %s", vmName)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("ejecting optical disc for VM %s: %w", vmName, err)
 	}
 
-	
 	return nil
 }
-

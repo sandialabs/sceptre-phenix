@@ -187,7 +187,6 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 		var tags map[string]string
 		json.Unmarshal([]byte(s), &tags)
 		vm.Tags = tags
-		
 
 		// Make sure the VM name is set prior to calling `GetVMCaptures`, as the VM
 		// name is not always set when calling `GetVMInfo`.
@@ -490,7 +489,7 @@ func (Minimega) SetVMTags(opts ...Option) error {
 		return fmt.Errorf("failed to clear tags for vm %s: %w", o.vm, err)
 	}
 
-	for k,v := range o.tags {
+	for k, v := range o.tags {
 		cmd.Command = fmt.Sprintf("vm tag %s \"%s\" \"%s\"", o.vm, k, v)
 
 		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {

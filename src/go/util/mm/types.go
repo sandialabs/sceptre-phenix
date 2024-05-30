@@ -200,28 +200,28 @@ func (this VMs) Paginate(page, size int) VMs {
 }
 
 type VM struct {
-	ID         int       `json:"id"`
-	Name       string    `json:"name"`
-	Type       string    `json:"type"`
-	Experiment string    `json:"experiment"`
-	Host       string    `json:"host"`
-	IPv4       []string  `json:"ipv4"`
-	CPUs       int       `json:"cpus"`
-	RAM        int       `json:"ram"`
-	Disk       string    `json:"disk"`
-	OSType     string    `json:"osType"`
-	DoNotBoot  bool      `json:"dnb"`
-	Networks   []string  `json:"networks"`
-	Taps       []string  `json:"taps"`
-	Captures   []Capture `json:"captures"`
-	State      string    `json:"state"`
-	Running    bool      `json:"running"`
-	Busy       bool      `json:"busy"`
-	CCActive   bool      `json:"ccActive"`
-	Uptime     float64   `json:"uptime"`
-	Screenshot string    `json:"screenshot,omitempty"`
-	CdRom      string    `json:"cdRom"`
-	Tags       map[string]string  `json:"tags"`
+	ID         int               `json:"id"`
+	Name       string            `json:"name"`
+	Type       string            `json:"type"`
+	Experiment string            `json:"experiment"`
+	Host       string            `json:"host"`
+	IPv4       []string          `json:"ipv4"`
+	CPUs       int               `json:"cpus"`
+	RAM        int               `json:"ram"`
+	Disk       string            `json:"disk"`
+	OSType     string            `json:"osType"`
+	DoNotBoot  bool              `json:"dnb"`
+	Networks   []string          `json:"networks"`
+	Taps       []string          `json:"taps"`
+	Captures   []Capture         `json:"captures"`
+	State      string            `json:"state"`
+	Running    bool              `json:"running"`
+	Busy       bool              `json:"busy"`
+	CCActive   bool              `json:"ccActive"`
+	Uptime     float64           `json:"uptime"`
+	Screenshot string            `json:"screenshot,omitempty"`
+	CdRom      string            `json:"cdRom"`
+	Tags       map[string]string `json:"tags"`
 
 	// Used internally to track network <--> IP relationship, since
 	// network ordering from minimega may not be the same as network
@@ -256,7 +256,7 @@ func (this VM) Copy() VM {
 	copy(vm.Captures, this.Captures)
 
 	vm.Tags = make(map[string]string, len(this.Tags))
-	for k,v := range this.Tags {
+	for k, v := range this.Tags {
 		vm.Tags[k] = v
 	}
 
