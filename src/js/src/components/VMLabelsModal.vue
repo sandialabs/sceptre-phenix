@@ -180,7 +180,7 @@
   }
   </script>
     
-  <style lang="scss" scoped>
+  <style scoped>
     .fixed-height {
       height: 75vh;
       overflow: auto;
