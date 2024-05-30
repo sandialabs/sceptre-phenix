@@ -570,7 +570,6 @@ export default {
       try {
         let resp = await this.$http.get( url );
         let state = await resp.json();
-        console.log(state)
 
         this.running        = state.started;
         this.sohInitialized = state.soh_initialized;
@@ -1153,7 +1152,6 @@ export default {
         else if (this.styleModal.strokeStyle == "dotted")
         css += `stroke-dasharray: 0 2.094; stroke-linecap: round; `;
       }
-      console.log(css)
       return css;
     }
   }

@@ -1017,7 +1017,6 @@
       }, 
 
       showTagsModal ( vm ) {
-        console.log(vm)
         this.$buefy.modal.open({
           parent:       this,
           component:    VmLabelsModal,
