@@ -88,6 +88,7 @@ func List(expName string) ([]mm.VM, error) {
 			DoNotBoot:  dnb,
 			Type:       node.Type(),
 			OSType:     node.Hardware().OSType(),
+			Tags:       node.Labels(),
 		}
 
 		for _, iface := range node.Network().Interfaces() {
@@ -190,6 +191,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 			OSType:      string(node.Hardware().OSType()),
 			Metadata:    make(map[string]interface{}),
 			Labels:      node.Labels(),
+			Tags:        node.Labels(),
 			Annotations: node.Annotations(),
 		}
 
@@ -274,22 +276,6 @@ func Update(opts ...UpdateOption) error {
 		return fmt.Errorf("experiment or VM name not provided")
 	}
 
-	running := experiment.Running(o.exp)
-
-	if running && o.iface == nil {
-		return fmt.Errorf("only interface connections can be updated while experiment is running")
-	}
-
-	// The only setting that can be updated while an experiment is running is the
-	// VLAN an interface is connected to.
-	if running {
-		if o.iface.vlan == "" {
-			return Disonnect(o.exp, o.vm, o.iface.index)
-		} else {
-			return Connect(o.exp, o.vm, o.iface.index, o.iface.vlan)
-		}
-	}
-
 	exp, err := experiment.Get(o.exp)
 	if err != nil {
 		return fmt.Errorf("unable to get experiment %s: %w", o.exp, err)
@@ -298,6 +284,50 @@ func Update(opts ...UpdateOption) error {
 	vm := exp.Spec.Topology().FindNodeByName(o.vm)
 	if vm == nil {
 		return fmt.Errorf("unable to find VM %s in experiment %s", o.vm, o.exp)
+	}
+
+	// if appending, copy over old labels (keep newer version if present)
+	if o.tags != nil && o.appendTags {
+		for k, v := range vm.Labels() {
+			if _, ok := (*o.tags)[k]; !ok {
+				(*o.tags)[k] = v
+			}
+		}
+	}
+
+	running := experiment.Running(o.exp)
+
+	// The only settings that can be updated while an experiment is running is the
+	// VLAN an interface is connected to and the vm's tags
+	if running {
+		if o.iface == nil && o.tags == nil {
+			return fmt.Errorf("only interface connections and tags can be updated while experiment is running")
+		}
+
+		if o.iface != nil {
+			if o.iface.vlan == "" {
+				if err := Disonnect(o.exp, o.vm, o.iface.index); err != nil {
+					return err
+				}
+			} else {
+				if err := Connect(o.exp, o.vm, o.iface.index, o.iface.vlan); err != nil {
+					return err
+				}
+			}
+		}
+
+		if o.tags != nil {
+			// update both the live minimega tags and the experiment spec labels
+			if err := mm.SetVMTags(mm.NS(o.exp), mm.VMName(o.vm), mm.Tags(*o.tags)); err != nil {
+				return err
+			}
+
+			vm.SetLabels(*o.tags)
+			if err := experiment.Save(experiment.SaveWithName(o.exp), experiment.SaveWithSpec(exp.Spec)); err != nil {
+				return fmt.Errorf("unable to save experiment with updated VM: %w", err)
+			}
+		}
+		return nil
 	}
 
 	if o.cpu != 0 {
@@ -314,6 +344,10 @@ func Update(opts ...UpdateOption) error {
 
 	if o.dnb != nil {
 		vm.General().SetDoNotBoot(*o.dnb)
+	}
+
+	if o.tags != nil {
+		vm.SetLabels(*o.tags)
 	}
 
 	if o.host != nil {
@@ -1477,16 +1511,13 @@ func ChangeOpticalDisc(expName, vmName, isoPath string) error {
 		return fmt.Errorf("no optical disc path provided")
 	}
 
-	
-	cmd := mmcli.NewNamespacedCommand(expName)	
-	cmd.Command = fmt.Sprintf("vm cdrom change %s %s",vmName,isoPath)
+	cmd := mmcli.NewNamespacedCommand(expName)
+	cmd.Command = fmt.Sprintf("vm cdrom change %s %s", vmName, isoPath)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("changing optical disc for VM %s: %w", vmName, err)
 	}
-	
 
-	
 	return nil
 }
 
@@ -1501,15 +1532,12 @@ func EjectOpticalDisc(expName, vmName string) error {
 		return fmt.Errorf("no VM name provided")
 	}
 
-		
-	cmd := mmcli.NewNamespacedCommand(expName)	
-	cmd.Command = fmt.Sprintf("vm cdrom eject %s",vmName)
+	cmd := mmcli.NewNamespacedCommand(expName)
+	cmd.Command = fmt.Sprintf("vm cdrom eject %s", vmName)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("ejecting optical disc for VM %s: %w", vmName, err)
 	}
 
-	
 	return nil
 }
-

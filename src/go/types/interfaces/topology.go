@@ -35,6 +35,7 @@ type NodeSpec interface {
 
 	SetInjections([]NodeInjection)
 
+	SetLabels(map[string]string)
 	AddLabel(string, string)
 	AddHardware(string, int, int) NodeHardware
 	AddNetworkInterface(string, string, string) NodeNetworkInterface
