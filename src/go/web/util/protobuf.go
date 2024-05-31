@@ -1,13 +1,14 @@
 package util
 
 import (
+	"sort"
+
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/util/mm"
 	"phenix/web/cache"
 	"phenix/web/proto"
 	"phenix/web/rbac"
-	"sort"
 )
 
 func ExperimentToProtobuf(exp types.Experiment, status cache.Status, vms []mm.VM) *proto.Experiment {

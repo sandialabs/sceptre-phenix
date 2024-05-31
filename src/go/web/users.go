@@ -35,19 +35,28 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		for _, user := range users {
-			if role.Allowed("users", "list", user.Username()) {
-				resp = append(resp, userFromRBAC(*user))
+		for _, rbacUser := range users {
+			if role.Allowed("users", "list", rbacUser.Username()) {
+				user := userFromRBAC(*rbacUser)
+
+				if rbacUser.Username() == uname {
+					user.ProxyToken = rbacUser.GetProxyToken()
+				}
+
+				resp = append(resp, user)
 			}
 		}
 	} else if role.Allowed("users", "get", uname) {
-		user, err := rbac.GetUser(uname)
+		rbacUser, err := rbac.GetUser(uname)
 		if err != nil {
 			http.Error(w, "", http.StatusInternalServerError)
 			return
 		}
 
-		resp = append(resp, userFromRBAC(*user))
+		user := userFromRBAC(*rbacUser)
+		user.ProxyToken = rbacUser.GetProxyToken()
+
+		resp = append(resp, user)
 	} else {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
@@ -138,28 +147,33 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 	plog.Debug("HTTP handler called", "GetUser")
 
 	var (
-		ctx   = r.Context()
-		role  = ctx.Value("role").(rbac.Role)
-		vars  = mux.Vars(r)
-		uname = vars["username"]
+		ctx      = r.Context()
+		uname    = ctx.Value("user").(string)
+		role     = ctx.Value("role").(rbac.Role)
+		vars     = mux.Vars(r)
+		username = vars["username"]
 	)
 
-	if !role.Allowed("users", "get", uname) {
+	if !role.Allowed("users", "get", username) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
-	user, err := rbac.GetUser(uname)
+	rbacUser, err := rbac.GetUser(username)
 	if err != nil {
 		http.Error(w, "unable to get user", http.StatusInternalServerError)
 		return
 	}
 
-	resp := userFromRBAC(*user)
+	user := userFromRBAC(*rbacUser)
 
-	body, err := json.Marshal(resp)
+	if rbacUser.Username() == uname {
+		user.ProxyToken = rbacUser.GetProxyToken()
+	}
+
+	body, err := json.Marshal(user)
 	if err != nil {
-		plog.Error("marshaling user", "user", user.Username(), "err", err)
+		plog.Error("marshaling user", "user", rbacUser.Username(), "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -11,6 +11,7 @@ import (
 	"phenix/util/plog"
 	"phenix/web/rbac"
 	"phenix/web/util"
+	jwtutil "phenix/web/util/jwt"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
@@ -33,7 +34,28 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if o.proxyAuthHeader != "" {
+	var (
+		ctx   = r.Context()
+		token *jwt.Token
+	)
+
+	// Will only be present when this function is called if proxy JWT is enabled.
+	if userToken := ctx.Value("user"); userToken != nil {
+		token = userToken.(*jwt.Token)
+		claims := token.Claims.(*jwt.MapClaims)
+
+		jwtUser, err := jwtutil.UsernameFromClaims(*claims)
+		if err != nil {
+			plog.Error("proxy user missing from JWT", "path", r.URL.Path, "err", err)
+			http.Error(w, "proxy user missing", http.StatusUnauthorized)
+			return
+		}
+
+		if req.Username != jwtUser {
+			http.Error(w, "proxy user mismatch", http.StatusUnauthorized)
+			return
+		}
+	} else if o.proxyAuthHeader != "" {
 		if user := r.Header.Get(o.proxyAuthHeader); user != req.Username {
 			http.Error(w, "proxy user mismatch", http.StatusUnauthorized)
 			return
@@ -45,26 +67,37 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 	u.Spec.FirstName = req.FirstName
 	u.Spec.LastName = req.LastName
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": u.Username(),
-		"exp": time.Now().Add(o.jwtLifetime).Unix(),
-	})
+	var raw string
 
-	// Sign and get the complete encoded token as a string using the secret
-	signed, err := token.SignedString([]byte(o.jwtKey))
-	if err != nil {
-		http.Error(w, "failed to sign JWT", http.StatusInternalServerError)
-		return
-	}
+	if token == nil { // not using proxy JWT
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+			"sub": u.Username(),
+			"exp": time.Now().Add(o.jwtLifetime).Unix(),
+		})
 
-	if err := u.AddToken(signed, time.Now().Format(time.RFC3339)); err != nil {
-		http.Error(w, "", http.StatusInternalServerError)
-		return
+		// Sign and get the complete encoded token as a string using the secret
+		raw, err = token.SignedString([]byte(o.jwtKey))
+		if err != nil {
+			http.Error(w, "failed to sign JWT", http.StatusInternalServerError)
+			return
+		}
+
+		if err := u.AddToken(raw, time.Now().Format(time.RFC3339)); err != nil {
+			http.Error(w, "", http.StatusInternalServerError)
+			return
+		}
+	} else { // using proxy JWT
+		raw = token.Raw
+
+		if err := u.AddToken(raw, "proxied"); err != nil {
+			http.Error(w, "", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	resp := LoginResponse{
 		User:  userFromRBAC(*u),
-		Token: signed,
+		Token: raw,
 	}
 
 	body, err = json.Marshal(resp)
@@ -84,68 +117,92 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		proxied    bool
 	)
 
-	switch r.Method {
-	case "GET":
-		if o.proxyAuthHeader == "" {
-			var ok bool
+	var (
+		ctx   = r.Context()
+		token *jwt.Token
+	)
 
-			user, pass, ok = r.BasicAuth()
+	// Will only be present when this function is called if proxy JWT is enabled.
+	if userToken := ctx.Value("user"); userToken != nil {
+		token = userToken.(*jwt.Token)
 
-			if !ok {
-				query := r.URL.Query()
+		var (
+			claims = token.Claims.(*jwt.MapClaims)
+			err    error
+		)
 
-				user = query.Get("user")
+		user, err = jwtutil.UsernameFromClaims(*claims)
+		if err != nil {
+			plog.Error("proxy user missing from JWT", "path", r.URL.Path, "token", token.Raw, "err", err)
+			http.Error(w, "proxy user missing", http.StatusUnauthorized)
+			return
+		}
+
+		proxied = true
+	} else {
+		switch r.Method {
+		case "GET":
+			if o.proxyAuthHeader == "" {
+				var ok bool
+
+				user, pass, ok = r.BasicAuth()
+
+				if !ok {
+					query := r.URL.Query()
+
+					user = query.Get("user")
+					if user == "" {
+						http.Error(w, "no username provided", http.StatusBadRequest)
+						return
+					}
+
+					pass = query.Get("pass")
+					if pass == "" {
+						http.Error(w, "no password provided", http.StatusBadRequest)
+						return
+					}
+				}
+			} else {
+				user = r.Header.Get(o.proxyAuthHeader)
+
 				if user == "" {
-					http.Error(w, "no username provided", http.StatusBadRequest)
+					http.Error(w, "proxy authentication failed", http.StatusUnauthorized)
 					return
 				}
 
-				pass = query.Get("pass")
-				if pass == "" {
-					http.Error(w, "no password provided", http.StatusBadRequest)
-					return
-				}
+				proxied = true
 			}
-		} else {
-			user = r.Header.Get(o.proxyAuthHeader)
-
-			if user == "" {
-				http.Error(w, "proxy authentication failed", http.StatusUnauthorized)
+		case "POST":
+			if o.proxyAuthHeader != "" {
+				http.Error(w, "proxy auth enabled -- must login via GET request", http.StatusBadRequest)
 				return
 			}
 
-			proxied = true
-		}
-	case "POST":
-		if o.proxyAuthHeader != "" {
-			http.Error(w, "proxy auth enabled -- must login via GET request", http.StatusBadRequest)
-			return
-		}
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, "no data provided in POST", http.StatusBadRequest)
+				return
+			}
 
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "no data provided in POST", http.StatusBadRequest)
-			return
-		}
+			var req LoginRequest
+			if err := json.Unmarshal(body, &req); err != nil {
+				http.Error(w, "invalid data provided in POST", http.StatusBadRequest)
+				return
+			}
 
-		var req LoginRequest
-		if err := json.Unmarshal(body, &req); err != nil {
-			http.Error(w, "invalid data provided in POST", http.StatusBadRequest)
-			return
-		}
+			if user = req.Username; user == "" {
+				http.Error(w, "invalid username provided in POST", http.StatusBadRequest)
+				return
+			}
 
-		if user = req.Username; user == "" {
-			http.Error(w, "invalid username provided in POST", http.StatusBadRequest)
+			if pass = req.Password; pass == "" {
+				http.Error(w, "invalid password provided in POST", http.StatusBadRequest)
+				return
+			}
+		default:
+			http.Error(w, "invalid method", http.StatusBadRequest)
 			return
 		}
-
-		if pass = req.Password; pass == "" {
-			http.Error(w, "invalid password provided in POST", http.StatusBadRequest)
-			return
-		}
-	default:
-		http.Error(w, "invalid method", http.StatusBadRequest)
-		return
 	}
 
 	u, err := rbac.GetUser(user)
@@ -161,21 +218,32 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": u.Username(),
-		"exp": time.Now().Add(o.jwtLifetime).Unix(),
-	})
+	var signed string
 
-	// Sign and get the complete encoded token as a string using the secret
-	signed, err := token.SignedString([]byte(o.jwtKey))
-	if err != nil {
-		http.Error(w, "failed to sign JWT", http.StatusInternalServerError)
-		return
-	}
+	if token == nil {
+		token = jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+			"sub": u.Username(),
+			"exp": time.Now().Add(o.jwtLifetime).Unix(),
+		})
 
-	if err := u.AddToken(signed, time.Now().Format(time.RFC3339)); err != nil {
-		http.Error(w, "", http.StatusInternalServerError)
-		return
+		// Sign and get the complete encoded token as a string using the secret
+		signed, err = token.SignedString([]byte(o.jwtKey))
+		if err != nil {
+			http.Error(w, "failed to sign JWT", http.StatusInternalServerError)
+			return
+		}
+
+		if err := u.AddToken(signed, time.Now().Format(time.RFC3339)); err != nil {
+			http.Error(w, "", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		signed = token.Raw
+
+		if err := u.AddToken(signed, "proxied"); err != nil {
+			http.Error(w, "", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	resp := LoginResponse{

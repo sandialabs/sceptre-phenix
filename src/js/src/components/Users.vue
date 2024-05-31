@@ -109,6 +109,10 @@
           </template>
         </section>
         <footer v-if="!user.token" class="modal-card-foot buttons is-right">
+          <template v-if="user.proxy_token">
+            <button v-if="isProxyTokenCopied" class="button is-light" disabled>Proxy Token Copied!</button>
+            <button v-else class="button is-light" @click="copyProxyToken(user.proxy_token)">Copy Proxy Token</button>
+          </template>
           <button class="button is-light" @click="createNewToken">Create Token</button>
         </footer>
       </div>
@@ -295,6 +299,7 @@
             this.isWaiting = false;
           }
         );
+
         // this is only used when creating/editing a user for the role dropdown
         if (this.roleAllowed('roles', 'list')) {
           this.$http.get( 'roles' ).then(
@@ -532,6 +537,16 @@
 
       newToken (username) {
         this.user.username = username;
+
+        let users = this.users;
+        for (let i = 0; i < users.length; i++) {
+          if (users[i].username == username) {
+            this.user.proxy_token = users[i].proxy_token;
+            break;
+          }
+        }
+
+        this.isProxyTokenCopied = false;
         this.isNewTokenActive = true;
       },
 
@@ -551,6 +566,11 @@
         } finally {
           this.isWaiting = false;
         }
+      },
+
+      copyProxyToken (token) {
+        navigator.clipboard.writeText(atob(token));
+        this.isProxyTokenCopied = true;
       },
 
       copy () {
@@ -580,6 +600,7 @@
         isCreateActive: false,
         isEditActive: false,
         isNewTokenActive: false,
+        isProxyTokenCopied: false,
         isWaiting: true
       }
     }

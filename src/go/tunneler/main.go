@@ -15,6 +15,7 @@ import (
 
 	bt "phenix/web/broker/brokertypes"
 	ft "phenix/web/forward/forwardtypes"
+	jwtutil "phenix/web/util/jwt"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/olekukonko/tablewriter"
@@ -91,23 +92,32 @@ var serveCmd = &cobra.Command{
 		}
 
 		if token != "" {
+			cookie, err := cmd.Flags().GetString("use-cookie")
+			if err != nil {
+				return fmt.Errorf("unable to get --use-cookie flag")
+			}
+
 			var claims jwt.MapClaims
 
-			_, _, err := new(jwt.Parser).ParseUnverified(token, &claims)
+			_, _, err = new(jwt.Parser).ParseUnverified(token, &claims)
 			if err != nil {
 				return fmt.Errorf("parsing phenix auth token for username: %w", err)
 			}
 
-			sub, ok := claims["sub"].(string)
-			if !ok {
-				return fmt.Errorf("username missing from phenix auth token")
+			username, err = jwtutil.UsernameFromClaims(claims)
+			if err != nil {
+				return fmt.Errorf("username missing from token")
 			}
 
-			if username != "" && sub != username {
-				return fmt.Errorf("provided username does not match token subject")
+			if err := jwtutil.ValidateExpirationClaim(claims); err != nil {
+				return fmt.Errorf("validating token expiration: %w", err)
 			}
 
 			headers.Set("X-phenix-auth-token", "Bearer "+token)
+
+			if cookie != "" {
+				headers.Set("Cookie", fmt.Sprintf("%s=%s", cookie, token))
+			}
 		} else if username != "" {
 			fmt.Printf("Password for %s: ", username)
 
@@ -388,6 +398,7 @@ var deactivateCmd = &cobra.Command{
 func main() {
 	serveCmd.Flags().StringP("username", "u", "", "username to log into phēnix with")
 	serveCmd.Flags().StringP("auth-token", "t", "", "phēnix API token (skip login process)")
+	serveCmd.Flags().StringP("use-cookie", "c", "", "name of cookie to use for auth token")
 
 	rootCmd.AddCommand(listCmd, activateCmd, deactivateCmd, moveCmd, serveCmd)
 

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"phenix/util/plog"
 	"phenix/web/rbac"
+	jwtutil "phenix/web/util/jwt"
 	"strings"
 
 	jwtmiddleware "github.com/cescoferraro/go-jwt-middleware"
@@ -70,6 +71,33 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 		},
 	)
 
+	validTokenMiddleware := func(h http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			raw, err := fromPhenixAuthTokenHeader(r)
+			if err != nil {
+				plog.Error("getting raw JWT from X-phenix-auth-token header", "err", err)
+
+				http.Error(w, "missing phenix auth token header", http.StatusBadRequest)
+				return
+			}
+
+			var claims jwt.MapClaims
+
+			token, _, err := new(jwt.Parser).ParseUnverified(raw, &claims)
+			if err != nil {
+				plog.Error("parsing valid JWT", "token", raw, "err", err)
+
+				http.Error(w, "parsing auth token", http.StatusBadRequest)
+				return
+			}
+
+			ctx := r.Context()
+			ctx = context.WithValue(ctx, "user", token)
+
+			h.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+
 	userMiddleware := func(h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.HasSuffix(r.URL.Path, "/signup") {
@@ -91,18 +119,27 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 				return
 			}
 
-			token := userToken.(*jwt.Token)
-			claim := token.Claims.(jwt.MapClaims)
+			var (
+				token  = userToken.(*jwt.Token)
+				claims = token.Claims.(*jwt.MapClaims)
+			)
+
+			jwtUser, err := jwtutil.UsernameFromClaims(*claims)
+			if err != nil {
+				plog.Error("rejecting unauthorized request", "path", r.URL.Path, "err", err)
+				http.Error(w, "Forbidden", http.StatusUnauthorized)
+				return
+			}
 
 			if proxyAuthHeader != "" {
-				if user := r.Header.Get(proxyAuthHeader); user != claim["sub"].(string) {
-					plog.Error("proxy user mismatch", "user", user, "token", claim["sub"].(string))
+				if user := r.Header.Get(proxyAuthHeader); user != jwtUser {
+					plog.Error("proxy user mismatch", "user", user, "token", jwtUser)
 					http.Error(w, "proxy user mismatch", http.StatusUnauthorized)
 					return
 				}
 			}
 
-			user, err := rbac.GetUser(claim["sub"].(string))
+			user, err := rbac.GetUser(jwtUser)
 			if err != nil {
 				http.Error(w, "user error", http.StatusUnauthorized)
 				return
@@ -150,6 +187,9 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 	if jwtKey == "" {
 		plog.Info("no JWT signing key provided -- disabling auth")
 		return func(h http.Handler) http.Handler { return NoAuth(h) }
+	} else if jwtKey == "proxy-jwt" {
+		plog.Info("using JWTs from proxy")
+		return func(h http.Handler) http.Handler { return validTokenMiddleware(userMiddleware(h)) }
 	} else if strings.HasPrefix(jwtKey, "dev|") {
 		plog.Debug("development JWT key provided -- enabling dev auth")
 		return func(h http.Handler) http.Handler { return devAuthMiddleware(h) }

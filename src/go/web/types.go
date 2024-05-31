@@ -55,6 +55,7 @@ type User struct {
 	LastName      string   `json:"last_name"`
 	ResourceNames []string `json:"resource_names"`
 	Role          Role     `json:"role"`
+	ProxyToken    string   `json:"proxy_token,omitempty"`
 }
 
 type Policy struct {
@@ -70,6 +71,7 @@ type Role struct {
 
 func userFromRBAC(u rbac.User) User {
 	role, _ := u.Role()
+
 	user := User{
 		Username:      u.Username(),
 		FirstName:     u.FirstName(),
