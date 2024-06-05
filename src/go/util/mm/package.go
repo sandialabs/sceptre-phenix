@@ -92,6 +92,10 @@ func GetClusterHosts(schedOnly bool) (Hosts, error) {
 	return DefaultMM.GetClusterHosts(schedOnly)
 }
 
+func GetNamespaceHosts(ns string) (Hosts, error) {
+	return DefaultMM.GetNamespaceHosts(ns)
+}
+
 func Headnode() string {
 	return DefaultMM.Headnode()
 }

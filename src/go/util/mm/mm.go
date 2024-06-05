@@ -32,6 +32,7 @@ type MM interface {
 	GetVMCaptures(...Option) []Capture
 
 	GetClusterHosts(bool) (Hosts, error)
+	GetNamespaceHosts(string) (Hosts, error)
 	Headnode() string
 	IsHeadnode(string) bool
 	GetVLANs(...Option) (map[string]int, error)

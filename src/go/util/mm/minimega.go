@@ -729,10 +729,6 @@ func (this Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
 		// This will happen if the headnode is included as a compute node
 		// (ie. when there's only one node in the cluster).
 		if host.Name == head.Name {
-			// Add disk info
-			head.DiskUsage.Phenix = this.getDiskUsage(head.Name, common.PhenixBase)
-			head.DiskUsage.Minimega = this.getDiskUsage(head.Name, common.MinimegaBase)
-
 			head.Schedulable = true
 			continue
 		}
@@ -760,6 +756,28 @@ func (this Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
 	cluster = append(cluster, head)
 
 	return cluster, nil
+}
+
+func (this Minimega) GetNamespaceHosts(ns string) (Hosts, error) {
+	var hosts []Host
+
+	// Get namespace nodes details
+	processed, err := processNamespaceHosts(ns)
+	if err != nil {
+		return nil, fmt.Errorf("processing namespace nodes details: %w", err)
+	}
+
+	for _, host := range processed {
+		host.Name = common.TrimHostnameSuffixes(host.Name)
+
+		// Add disk info
+		host.DiskUsage.Phenix = this.getDiskUsage(host.Name, common.PhenixBase)
+		host.DiskUsage.Minimega = this.getDiskUsage(host.Name, common.MinimegaBase)
+
+		hosts = append(hosts, host)
+	}
+
+	return hosts, nil
 }
 
 func (Minimega) Headnode() string {

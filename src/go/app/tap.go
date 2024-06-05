@@ -59,9 +59,9 @@ func (this *Tap) PostStart(ctx context.Context, exp *types.Experiment) error {
 		return fmt.Errorf("decoding %s app metadata: %w", this.Name(), err)
 	}
 
-	hosts, err := mm.GetClusterHosts(true)
+	hosts, err := mm.GetNamespaceHosts(exp.Metadata.Name)
 	if err != nil {
-		return fmt.Errorf("getting list of cluster hosts: %w", err)
+		return fmt.Errorf("getting list of experiment hosts: %w", err)
 	}
 
 	rand.Seed(time.Now().UnixNano())
