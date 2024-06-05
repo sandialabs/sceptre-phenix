@@ -261,6 +261,7 @@ func Start(opts ...ServerOption) error {
 
 	addRoutesToRouter(api, workflowRoutes...)
 	addRoutesToRouter(api, errorRoutes...)
+	addRoutesToRouter(api, optionRoutes...)
 
 	if o.allowCORS {
 		plog.Info("CORS is enabled on HTTP API endpoints")

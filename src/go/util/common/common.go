@@ -5,7 +5,16 @@ import (
 	"strings"
 )
 
-type DeploymentMode string
+type (
+	BridgingMode   string
+	DeploymentMode string
+)
+
+const (
+	BRIDGE_MODE_UNSET  BridgingMode = ""
+	BRIDGE_MODE_MANUAL BridgingMode = "manual"
+	BRIDGE_MODE_AUTO   BridgingMode = "auto"
+)
 
 const (
 	DEPLOY_MODE_UNSET         DeploymentMode = ""
@@ -18,6 +27,7 @@ var (
 	PhenixBase   = "/phenix"
 	MinimegaBase = "/tmp/minimega"
 
+	BridgeMode = BRIDGE_MODE_MANUAL
 	DeployMode = DEPLOY_MODE_NO_HEADNODE
 
 	LogFile    = "/var/log/phenix/phenix.log"
@@ -36,6 +46,30 @@ func TrimHostnameSuffixes(str string) string {
 	}
 
 	return str
+}
+
+func ParseBridgeMode(mode string) (BridgingMode, error) {
+	switch strings.ToLower(mode) {
+	case "manual":
+		return BRIDGE_MODE_MANUAL, nil
+	case "auto":
+		return BRIDGE_MODE_AUTO, nil
+	case "": // default to current setting
+		return BridgeMode, nil
+	}
+
+	return BRIDGE_MODE_UNSET, fmt.Errorf("unknown bridge mode provided: %s", mode)
+}
+
+func SetBridgeMode(mode string) error {
+	parsed, err := ParseBridgeMode(mode)
+	if err != nil {
+		return fmt.Errorf("setting bridge mode: %w", err)
+	}
+
+	BridgeMode = parsed
+
+	return nil
 }
 
 func ParseDeployMode(mode string) (DeploymentMode, error) {

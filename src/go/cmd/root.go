@@ -39,9 +39,15 @@ var rootCmd = &cobra.Command{
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		common.UnixSocket = viper.GetString("unix-socket")
 
-		// Initialize use GRE mesh with option set locally by user. Later it will be
-		// forcefully enabled if it's enabled at the server. This must be done
-		// before getting options from the server (unlike deploy mode option).
+		// Initialize bridge mode and use GRE mesh options with values set locally
+		// by user. Later they will be forcefully enabled if they're enabled at the
+		// server. This must be done before getting options from the server (unlike
+		// deploy mode option).
+
+		if err := common.SetBridgeMode(viper.GetString("bridge-mode")); err != nil {
+			return fmt.Errorf("setting user-specified bridge mode: %w", err)
+		}
+
 		common.UseGREMesh = viper.GetBool("use-gre-mesh")
 
 		// check for global options set by UI server
@@ -61,7 +67,17 @@ var rootCmd = &cobra.Command{
 					var options map[string]any
 					json.Unmarshal(body, &options)
 
-					mode, _ := options["deploy-mode"].(string)
+					mode, _ := options["bridge-mode"].(string)
+
+					// Only override value locally set by user (above) if auto mode is set
+					// on the server.
+					if mode == string(common.BRIDGE_MODE_AUTO) {
+						if err := common.SetBridgeMode(mode); err != nil {
+							return fmt.Errorf("setting server-specified bridge mode: %w", err)
+						}
+					}
+
+					mode, _ = options["deploy-mode"].(string)
 					if err := common.SetDeployMode(mode); err != nil {
 						return fmt.Errorf("setting server-specified deploy mode: %w", err)
 					}
@@ -178,6 +194,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&hostnameSuffixes, "hostname-suffixes", "-minimega,-phenix", "hostname suffixes to strip")
 	rootCmd.PersistentFlags().Bool("log.error-stderr", true, "log fatal errors to STDERR")
 	rootCmd.PersistentFlags().String("log.level", "info", "level to log messages at")
+	rootCmd.PersistentFlags().String("bridge-mode", "", "bridge naming mode for experiments ('auto' uses experiment name for bridge; 'manual' uses user-specified bridge name, or 'phenix' if not specified) (options: manual | auto)")
 	rootCmd.PersistentFlags().String("deploy-mode", "", "deploy mode for minimega VMs (options: all | no-headnode | only-headnode)")
 	rootCmd.PersistentFlags().Bool("use-gre-mesh", false, "use GRE tunnels between mesh nodes for VLAN trunking")
 	rootCmd.PersistentFlags().String("unix-socket", "/tmp/phenix.sock", "phēnix unix socket to listen on (ui subcommand) or connect to")

@@ -64,6 +64,18 @@ func init() {
 				return fmt.Errorf("initializing experiment: %w", err)
 			}
 
+			if common.BridgeMode == common.BRIDGE_MODE_AUTO {
+				if len(c.Metadata.Name) > 15 {
+					return fmt.Errorf("experiment name must be 15 characters or less when using auto bridge mode")
+				}
+
+				exp.Spec.SetDefaultBridge(c.Metadata.Name)
+			}
+
+			if len(exp.Spec.DefaultBridge()) > 15 {
+				return fmt.Errorf("default bridge name must be 15 characters or less")
+			}
+
 			exp.Spec.SetUseGREMesh(exp.Spec.UseGREMesh() || common.UseGREMesh)
 
 			existing, _ := types.Experiments(false)
@@ -98,6 +110,19 @@ func init() {
 
 			if err := exp.Spec.Init(); err != nil {
 				return fmt.Errorf("re-initializing experiment (after update): %w", err)
+			}
+
+			// Just in case the updated experiment reset the default bridge.
+			if common.BridgeMode == common.BRIDGE_MODE_AUTO {
+				if len(c.Metadata.Name) > 15 {
+					return fmt.Errorf("experiment name must be 15 characters or less when using auto bridge mode")
+				}
+
+				exp.Spec.SetDefaultBridge(c.Metadata.Name)
+			}
+
+			if len(exp.Spec.DefaultBridge()) > 15 {
+				return fmt.Errorf("default bridge name must be 15 characters or less")
 			}
 
 			exp.Spec.SetUseGREMesh(exp.Spec.UseGREMesh() || common.UseGREMesh)

@@ -55,6 +55,7 @@ const router = new Router({
     {path: '/builder?token=:token', name: 'builder'},
     {path: '/version',              name: 'version'},
     {path: '/features',             name: 'features'},
+    {path: '/api/v1/options',       name: 'options'},
 
     {path: '/api/v1/console/:pid/ws',   name: 'console-ws'},
     {path: '/api/v1/console/:pid/size', name: 'console-size'},

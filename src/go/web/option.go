@@ -188,6 +188,7 @@ func GetOptions(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	options := map[string]any{
+		"bridge-mode":  common.BridgeMode,
 		"deploy-mode":  common.DeployMode,
 		"use-gre-mesh": common.UseGREMesh,
 	}

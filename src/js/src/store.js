@@ -13,6 +13,7 @@ export default new Vuex.Store({
     next:     null,
 
     features: [],
+    options:  {},
     logs:     [],
 
     logs_max: 5000,
@@ -67,6 +68,10 @@ export default new Vuex.Store({
       state.features = features;
     },
 
+    'OPTIONS' ( state, options ) {
+      state.options = options;
+    },
+
     'LOG' ( state, log ) {
       let count = state.logs.unshift(log);
 
@@ -107,6 +112,10 @@ export default new Vuex.Store({
 
     features: state => {
       return state.features;
+    },
+
+    options: state => {
+      return state.options;
     },
 
     logs: state => {

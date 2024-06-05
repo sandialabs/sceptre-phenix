@@ -59,7 +59,9 @@
                     </option>
                   </b-select>
                 </b-field>
-                <b-field label="Default Bridge Name">
+                <b-field v-if="bridgeMode!='auto'" label="Default Bridge Name"
+                  :type="createModal.bridgeErrType"
+                  :message="createModal.bridgeErrMsg">
                   <b-input type="text" v-model="createModal.bridge" />
                 </b-field>
                 <b-field label="VLAN Range">
@@ -273,6 +275,10 @@
         } else {
           return true;
         }
+      },
+
+      bridgeMode () {
+        return this.$store.getters.options['bridge-mode'];
       }
     },
     
@@ -674,6 +680,8 @@
         this.createModal = {
           active: false,
           name: null,
+          bridgeErrType: null,
+          bridgeErrMsg: null,
           nameErrType: null,
           nameErrMsg: null,
           topology: null,
@@ -687,25 +695,34 @@
       },
       
       validate () {
-        if ( !this.createModal.name ) {
+        if (!this.createModal.name) {
           return false;
+        }
+
+        if (this.bridgeMode === "auto") {
+          if (this.createModal.name && this.createModal.name.length > 15) {
+            this.createModal.nameErrType = 'is-danger';
+            this.createModal.nameErrMsg  = 'experiment name must be 15 characters or less when using auto bridge mode';
+            return false;
+          }
         }
 
         for ( let i = 0; i < this.experiments.length; i++ ) {
           if ( this.experiments[i].name == this.createModal.name ) {
             this.createModal.nameErrType = 'is-danger';
             this.createModal.nameErrMsg  = 'experiment with this name already exists';
-            return false
+            return false;
           }
         }
 
         if ( /\s/.test( this.createModal.name ) ) {
           this.createModal.nameErrType = 'is-danger';
           this.createModal.nameErrMsg  = 'experiment names cannot have a space';
-          return false
+          return false;
         } else if ( this.createModal.name == "create" ) {
           this.createModal.nameErrType = 'is-danger';
           this.createModal.nameErrMsg  = 'experiment names cannot be create!';
+          return false;
         } else {
           this.createModal.nameErrType = null;
           this.createModal.nameErrMsg  = null;
@@ -727,12 +744,13 @@
           return false;
         }
 
-        if ( this.createModal.vlan_max < 0 ) {
+        if ( this.createModal.bridge && this.createModal.bridge.length > 15) {
+          this.createModal.bridgeErrType = 'is-danger';
+          this.createModal.bridgeErrMsg  = 'default bridge name must be 15 characters or less';
           return false;
-        }
-
-        if ( this.createModal.vlan_max > 4094 ) {
-          return false;
+        } else {
+          this.createModal.bridgeErrType = null;
+          this.createModal.bridgeErrMsg  = null;
         }
 
         return true;
@@ -769,6 +787,8 @@
         createModal: {
           active: false,
           name: null,
+          bridgeErrType: null,
+          bridgeErrMsg: null,
           nameErrType: null,
           nameErrMsg: null,
           topology: null,
