@@ -5,8 +5,7 @@
         <div class="container" style="text-align: center">
           <h1 class="title">
             Your account is currently disabled. This is most likely due to you
-            being a new user and thus an admin needing to go in and configure a
-            user role for you.
+            being a new user. An admin needs to configure a user role for you.
           </h1>
         </div>
       </div>

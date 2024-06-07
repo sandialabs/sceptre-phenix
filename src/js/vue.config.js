@@ -5,19 +5,19 @@ module.exports = {
   devServer: {
     proxy: {
       '/api/v1': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:9090',
         changeOrigin: true,
         logLevel: 'debug',
         ws: true
       },
       '/version': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:9090',
         changeOrigin: true,
         logLevel: 'debug',
         ws: true
       },
       '/features': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:9090',
         changeOrigin: true,
         logLevel: 'debug',
         ws: true

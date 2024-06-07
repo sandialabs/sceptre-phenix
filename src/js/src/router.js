@@ -92,41 +92,39 @@ router.beforeEach( async ( to, from, next ) => {
         }
       }
 
-      store.commit( 'LOGIN', { loginResponse, 'remember': false } )
+      store.commit( 'LOGIN', { loginResponse, 'remember': false } );
     }
 
-    next()
-    return
+    next();
+    return;
   }
 
   if ( to.name === 'disabled' ) {
-    next()
-    return
+    next();
+    return;
   }
 
   if ( to.name === 'signin' && process.env.VUE_APP_AUTH === 'enabled' ) {
-    next()
-    return
+    next();
+    return;
   }
 
   if ( to.name === 'proxysignup' && process.env.VUE_APP_AUTH === 'proxy' ) {
-    next()
-    return
+    next();
+    return;
   }
 
   if ( store.getters.auth ) {
     if ( store.getters.role.name === 'Disabled' ) {
-      router.replace( '/disabled' );
+      router.replace('/disabled');
+    } else if ( to.name === 'signin' ) {
+      // No need to go to the signin route if already authorized.
+      router.replace('/');
+    } else {
+      next();
     }
-
-    // No need to go to the signin route if already authorized.
-    if ( to.name === 'signin' ) {
-      router.replace( '/' );
-    }
-
-    next()
   } else {
-    store.commit( 'NEXT', to )
+    store.commit( 'NEXT', to );
 
     if ( process.env.VUE_APP_AUTH === 'proxy' ) {
       try {
@@ -142,7 +140,7 @@ router.beforeEach( async ( to, from, next ) => {
         }
       }
     } else {
-      next( {name: 'signin'} )
+      next( {name: 'signin'} );
     }
   }
 })
