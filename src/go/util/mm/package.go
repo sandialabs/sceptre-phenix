@@ -60,6 +60,10 @@ func DisconnectVMInterface(opts ...Option) error {
 	return DefaultMM.DisconnectVMInterface(opts...)
 }
 
+func CreateBridge(opts ...Option) error {
+	return DefaultMM.CreateBridge(opts...)
+}
+
 func CreateTunnel(opts ...Option) error {
 	return DefaultMM.CreateTunnel(opts...)
 }

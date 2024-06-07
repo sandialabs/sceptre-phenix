@@ -552,6 +552,26 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			}
 		}
 
+		// Creating experiment bridge after launching VMs to ensure the bridge
+		// already exists in minimega (and OVS) before creating GRE tunnels between
+		// them. This cannot be done as part of the minimega script template since
+		// the VM taps (and thus bridges) do not get created until the overall
+		// minimega namespace is launched.
+		if exp.Spec.UseGREMesh() || exp.Spec.DefaultBridge() != "phenix" {
+			if err := mm.CreateBridge(mm.NS(exp.Metadata.Name), mm.Bridge(exp.Spec.DefaultBridge())); err != nil {
+				if !o.mmErrAsWarn {
+					mm.ClearNamespace(exp.Spec.ExperimentName())
+					return fmt.Errorf("creating experiment bridge: %w", err)
+				}
+
+				if merr, ok := err.(*multierror.Error); ok {
+					notes.AddWarnings(ctx, false, merr.Errors...)
+				} else {
+					notes.AddWarnings(ctx, false, err)
+				}
+			}
+		}
+
 		schedule := make(map[string]string)
 
 		for _, vm := range mm.GetVMInfo(mm.NS(exp.Spec.ExperimentName())) {

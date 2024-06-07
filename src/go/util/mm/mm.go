@@ -22,6 +22,8 @@ type MM interface {
 	ConnectVMInterface(...Option) error
 	DisconnectVMInterface(...Option) error
 
+	CreateBridge(...Option) error
+
 	CreateTunnel(...Option) error
 	GetTunnels(...Option) []map[string]string
 	CloseTunnel(...Option) error

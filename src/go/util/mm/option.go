@@ -10,11 +10,12 @@ import (
 type Option func(*options)
 
 type options struct {
-	ns   string
-	vm   string
-	cpu  int
-	mem  int
-	disk string
+	ns     string
+	vm     string
+	cpu    int
+	mem    int
+	disk   string
+	bridge string
 
 	injectPart int
 	injects    []string
@@ -70,6 +71,12 @@ func Mem(m int) Option {
 func Disk(d string) Option {
 	return func(o *options) {
 		o.disk = d
+	}
+}
+
+func Bridge(b string) Option {
+	return func(o *options) {
+		o.bridge = b
 	}
 }
 

@@ -507,6 +507,19 @@ func (Minimega) DisconnectVMInterface(opts ...Option) error {
 	return nil
 }
 
+func (Minimega) CreateBridge(opts ...Option) error {
+	o := NewOptions(opts...)
+
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = fmt.Sprintf("ns bridge %s gre", o.bridge)
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("creating bridge %s with GRE mesh between namespace hosts: %w", o.bridge, err)
+	}
+
+	return nil
+}
+
 func (Minimega) CreateTunnel(opts ...Option) error {
 	host, err := GetVMHost(opts...)
 	if err != nil {

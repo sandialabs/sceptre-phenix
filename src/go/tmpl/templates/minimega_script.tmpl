@@ -18,10 +18,6 @@ ns del-host all
 ns add-host localhost
 {{- end }}
 
-{{- if or (ne .DefaultBridge "phenix") .UseGREMesh }}
-ns bridge {{ .DefaultBridge }} gre
-{{- end }}
-
 {{- $basedir := .BaseDir }}
 
 {{- range .Topology.Nodes }}
