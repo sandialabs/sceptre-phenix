@@ -42,9 +42,9 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 	// Will only be present when this function is called if proxy JWT is enabled.
 	if userToken := ctx.Value("user"); userToken != nil {
 		token = userToken.(*jwt.Token)
-		claims := token.Claims.(*jwt.MapClaims)
+		claims := token.Claims.(jwt.MapClaims)
 
-		jwtUser, err := jwtutil.UsernameFromClaims(*claims)
+		jwtUser, err := jwtutil.UsernameFromClaims(claims)
 		if err != nil {
 			plog.Error("proxy user missing from JWT", "path", r.URL.Path, "err", err)
 			http.Error(w, "proxy user missing", http.StatusUnauthorized)
@@ -127,11 +127,11 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		token = userToken.(*jwt.Token)
 
 		var (
-			claims = token.Claims.(*jwt.MapClaims)
+			claims = token.Claims.(jwt.MapClaims)
 			err    error
 		)
 
-		user, err = jwtutil.UsernameFromClaims(*claims)
+		user, err = jwtutil.UsernameFromClaims(claims)
 		if err != nil {
 			plog.Error("proxy user missing from JWT", "path", r.URL.Path, "token", token.Raw, "err", err)
 			http.Error(w, "proxy user missing", http.StatusUnauthorized)

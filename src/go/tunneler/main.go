@@ -97,12 +97,12 @@ var serveCmd = &cobra.Command{
 				return fmt.Errorf("unable to get --use-cookie flag")
 			}
 
-			var claims jwt.MapClaims
-
-			_, _, err = new(jwt.Parser).ParseUnverified(token, &claims)
+			token, _, err := new(jwt.Parser).ParseUnverified(token, jwt.MapClaims{})
 			if err != nil {
 				return fmt.Errorf("parsing phenix auth token for username: %w", err)
 			}
+
+			claims := token.Claims.(jwt.MapClaims)
 
 			username, err = jwtutil.UsernameFromClaims(claims)
 			if err != nil {
@@ -113,10 +113,10 @@ var serveCmd = &cobra.Command{
 				return fmt.Errorf("validating token expiration: %w", err)
 			}
 
-			headers.Set("X-phenix-auth-token", "Bearer "+token)
+			headers.Set("X-phenix-auth-token", fmt.Sprintf("Bearer %s", token.Raw))
 
 			if cookie != "" {
-				headers.Set("Cookie", fmt.Sprintf("%s=%s", cookie, token))
+				headers.Set("Cookie", fmt.Sprintf("%s=%s", cookie, token.Raw))
 			}
 		} else if username != "" {
 			fmt.Printf("Password for %s: ", username)

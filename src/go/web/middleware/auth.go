@@ -81,9 +81,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 				return
 			}
 
-			var claims jwt.MapClaims
-
-			token, _, err := new(jwt.Parser).ParseUnverified(raw, &claims)
+			token, _, err := new(jwt.Parser).ParseUnverified(raw, jwt.MapClaims{})
 			if err != nil {
 				plog.Error("parsing valid JWT", "token", raw, "err", err)
 
@@ -121,10 +119,10 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 
 			var (
 				token  = userToken.(*jwt.Token)
-				claims = token.Claims.(*jwt.MapClaims)
+				claims = token.Claims.(jwt.MapClaims)
 			)
 
-			jwtUser, err := jwtutil.UsernameFromClaims(*claims)
+			jwtUser, err := jwtutil.UsernameFromClaims(claims)
 			if err != nil {
 				plog.Error("rejecting unauthorized request", "path", r.URL.Path, "err", err)
 				http.Error(w, "Forbidden", http.StatusUnauthorized)
