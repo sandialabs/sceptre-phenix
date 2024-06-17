@@ -940,9 +940,27 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		}
 	}
 
-	base, err := getBaseImage(expName, vmName)
+	disk, err := getVMImage(expName, vmName)
 	if err != nil {
-		return "", fmt.Errorf("getting base image for VM %s in experiment %s: %w", vmName, expName, err)
+		return "", fmt.Errorf("getting disk image for VM %s in experiment %s: %w", vmName, expName, err)
+	}
+
+	if !filepath.IsAbs(disk) {
+		disk = common.PhenixBase + "/images/" + disk
+	}
+
+	if !filepath.IsAbs(out) {
+		out = common.PhenixBase + "/images/" + out
+	}
+
+	base, err := getBackingImage(disk)
+	if err != nil {
+		return "", fmt.Errorf("getting backing image for VM %s in experiment %s: %w", vmName, expName, err)
+	}
+
+	snapshots, err := getImageSnapshots(disk)
+	if err != nil {
+		return "", fmt.Errorf("getting disk snapshots for VM %s in experiment %s: %w", vmName, expName, err)
 	}
 
 	// Get status of VM (scheduled host, VM state).
@@ -963,14 +981,6 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		snap = fmt.Sprintf("%s/%s/disk-0.qcow2", common.MinimegaBase, status[0]["id"])
 		node = status[0]["host"]
 	)
-
-	if !filepath.IsAbs(base) {
-		base = common.PhenixBase + "/images/" + base
-	}
-
-	if !filepath.IsAbs(out) {
-		out = common.PhenixBase + "/images/" + out
-	}
 
 	wait, ctx := errgroup.WithContext(context.Background())
 
@@ -1005,6 +1015,37 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		if err := Shutdown(expName, vmName); err != nil {
 			return "", fmt.Errorf("stopping VM: %w", err)
 		}
+	}
+
+	// Make a copy of any snapshots pointed at by the VM disk image in the
+	// experiment topology so they can be rebased onto the base backing image for
+	// the VM.
+
+	for idx, snapshot := range snapshots {
+		var (
+			id   = idx
+			file = snapshot
+		)
+
+		wait.Go(func() error {
+			copier := newCopier()
+
+			tmp := fmt.Sprintf("%s/images/%s/tmp/snapshot-%d.qc2", common.PhenixBase, expName, id)
+
+			if err := os.MkdirAll(filepath.Dir(tmp), 0755); err != nil {
+				return fmt.Errorf("creating experiment tmp directory: %w", err)
+			}
+
+			if err := copier.copy(ctx, file, tmp); err != nil {
+				os.Remove(tmp)
+				return fmt.Errorf("making copy of snapshot %s: %w", file, err)
+			}
+
+			// update snapshots entry to point at new copy of snapshot
+			snapshots[id] = tmp
+
+			return nil
+		})
 	}
 
 	// Copy minimega snapshot disk on remote machine to a location (still on
@@ -1048,13 +1089,27 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		return "", fmt.Errorf("preparing images for rebase/commit: %w", err)
 	}
 
-	snap = fmt.Sprintf("%s/images/%s/tmp/%s.qc2", common.PhenixBase, expName, vmName)
+	// Add the final boss (the minimega snapshot disk) to the end of the list of
+	// snapshots to rebase onto the copy of the original backing image. If the
+	// image pointed at by the VM config in the topology was not a snapshot, then
+	// this will be the only snapshot in the list.
+	snapshots = append(snapshots, fmt.Sprintf("%s/images/%s/tmp/%s.qc2", common.PhenixBase, expName, vmName))
 
-	shell := exec.Command("qemu-img", "rebase", "-f", "qcow2", "-b", out, "-F", "qcow2", snap)
+	for idx, snapshot := range snapshots {
+		// first parent should be copy of original backing image
+		parent := out
 
-	res, err := shell.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("rebasing snapshot (%s): %w", string(res), err)
+		if idx != 0 {
+			parent = snapshots[idx-1]
+		}
+
+		shell := exec.Command("qemu-img", "rebase", "-f", "qcow2", "-b", parent, "-F", "qcow2", snapshot)
+
+		res, err := shell.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("rebasing snapshot (%s): %w", string(res), err)
+		}
+
 	}
 
 	done := make(chan struct{})
@@ -1091,9 +1146,9 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		}()
 	}
 
-	shell = exec.Command("qemu-img", "commit", snap)
+	shell := exec.Command("qemu-img", "commit", "-b", out, snapshots[len(snapshots)-1])
 
-	res, err = shell.CombinedOutput()
+	res, err := shell.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("committing snapshot (%s): %w", string(res), err)
 	}
@@ -1477,16 +1532,13 @@ func ChangeOpticalDisc(expName, vmName, isoPath string) error {
 		return fmt.Errorf("no optical disc path provided")
 	}
 
-	
-	cmd := mmcli.NewNamespacedCommand(expName)	
-	cmd.Command = fmt.Sprintf("vm cdrom change %s %s",vmName,isoPath)
+	cmd := mmcli.NewNamespacedCommand(expName)
+	cmd.Command = fmt.Sprintf("vm cdrom change %s %s", vmName, isoPath)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("changing optical disc for VM %s: %w", vmName, err)
 	}
-	
 
-	
 	return nil
 }
 
@@ -1501,15 +1553,12 @@ func EjectOpticalDisc(expName, vmName string) error {
 		return fmt.Errorf("no VM name provided")
 	}
 
-		
-	cmd := mmcli.NewNamespacedCommand(expName)	
-	cmd.Command = fmt.Sprintf("vm cdrom eject %s",vmName)
+	cmd := mmcli.NewNamespacedCommand(expName)
+	cmd.Command = fmt.Sprintf("vm cdrom eject %s", vmName)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("ejecting optical disc for VM %s: %w", vmName, err)
 	}
 
-	
 	return nil
 }
-

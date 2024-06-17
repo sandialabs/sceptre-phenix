@@ -2,6 +2,7 @@ package vm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -12,12 +13,19 @@ import (
 	"time"
 
 	"phenix/api/experiment"
+	"phenix/util/common"
+	"phenix/util/mm"
 )
+
+type qemuBackingChain struct {
+	Filename    string `json:"filename"`
+	BackingFile string `json:"backing-filename"`
+}
 
 var diskNameWithTstampRegex = regexp.MustCompile(`(.*)_\d{14}`)
 
 func GetNewDiskName(expName, vmName string) (string, error) {
-	base, err := getBaseImage(expName, vmName)
+	base, err := getVMImage(expName, vmName)
 	if err != nil {
 		return "", fmt.Errorf("getting base disk image: %w", err)
 	}
@@ -39,7 +47,7 @@ func GetNewDiskName(expName, vmName string) (string, error) {
 	return name, nil
 }
 
-func getBaseImage(expName, vmName string) (string, error) {
+func getVMImage(expName, vmName string) (string, error) {
 	exp, err := experiment.Get(expName)
 	if err != nil {
 		return "", fmt.Errorf("getting experiment %s: %w", expName, err)
@@ -50,7 +58,77 @@ func getBaseImage(expName, vmName string) (string, error) {
 		return "", fmt.Errorf("getting vm %s for experiment %s", vmName, expName)
 	}
 
+	// base image from topology
 	return vm.Hardware().Drives()[0].Image(), nil
+}
+
+func getBackingImage(path string) (string, error) {
+	if !filepath.IsAbs(path) {
+		path = common.PhenixBase + "/images/" + path
+	}
+
+	chain, err := getImageBackingChain(path)
+	if err != nil {
+		return "", fmt.Errorf("getting image backing chain for %s: %w", path, err)
+	}
+
+	// backing image should always be last image in chain
+	path = chain[len(chain)-1].Filename
+
+	stats, err := os.Lstat(path)
+	if err != nil {
+		return "", fmt.Errorf("getting file stats for %s: %w", path, err)
+	}
+
+	// base image path is a symlink
+	if stats.Mode()&os.ModeSymlink != 0 {
+		origPath := path
+
+		path, err = os.Readlink(path)
+		if err != nil {
+			return "", fmt.Errorf("getting symlink target for %s: %w", origPath, err)
+		}
+	}
+
+	return path, nil
+}
+
+func getImageSnapshots(path string) ([]string, error) {
+	chain, err := getImageBackingChain(path)
+	if err != nil {
+		return nil, fmt.Errorf("getting image backing chain for %s: %w", path, err)
+	}
+
+	if len(chain) <= 1 {
+		return nil, nil
+	}
+
+	var snapshots []string
+
+	// range chain in reverse to get snapshots in correct order for rebasing
+	// skip last entry since it will be the base image (not a snapshot)
+	for i := len(chain) - 2; i >= 0; i-- {
+		snapshots = append(snapshots, chain[i].Filename)
+	}
+
+	return snapshots, nil
+}
+
+func getImageBackingChain(path string) ([]qemuBackingChain, error) {
+	cmd := fmt.Sprintf("qemu-img info --backing-chain %s --output json", path)
+
+	resp, err := mm.MeshShellResponse("", cmd)
+	if err != nil {
+		return nil, fmt.Errorf("getting image info for %s: %w", path, err)
+	}
+
+	var chain []qemuBackingChain
+
+	if err := json.Unmarshal([]byte(resp), &chain); err != nil {
+		return nil, fmt.Errorf("parsing image info for %s: %w", path, err)
+	}
+
+	return chain, nil
 }
 
 type copier struct {
