@@ -124,7 +124,7 @@ bin/phenix-debug: $(SOURCES) generate-bindata generate-protobuf go-generate
 	CGO_ENABLED=0 GOOS=linux go build -gcflags "all=-N -l" -trimpath -o bin/phenix-debug main.go
 
 .PHONY: phenix-tunneler
-phenix-tunneler: bin/phenix-tunneler-linux-amd64 bin/phenix-tunneler-darwin-arm64 bin/phenix-tunneler-windows-amd64.exe
+phenix-tunneler: bin/phenix-tunneler-linux-amd64 bin/phenix-tunneler-darwin-arm64 bin/phenix-tunneler-darwin-amd64 bin/phenix-tunneler-windows-amd64.exe
 
 bin/phenix-tunneler-linux-amd64: $(TUNNELSOURCES)
 	mkdir -p bin
@@ -133,6 +133,10 @@ bin/phenix-tunneler-linux-amd64: $(TUNNELSOURCES)
 bin/phenix-tunneler-darwin-arm64: $(TUNNELSOURCES)
 	mkdir -p bin
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -a -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -s -w" -trimpath -o bin/phenix-tunneler-darwin-arm64 $(TUNNELSOURCES)
+
+bin/phenix-tunneler-darwin-amd64: $(TUNNELSOURCES)
+	mkdir -p bin
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -a -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -s -w" -trimpath -o bin/phenix-tunneler-darwin-amd64 $(TUNNELSOURCES)
 
 bin/phenix-tunneler-windows-amd64.exe: $(TUNNELSOURCES)
 	mkdir -p bin

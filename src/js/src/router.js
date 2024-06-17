@@ -64,7 +64,8 @@ const router = new Router({
     {path: '/api/v1/experiments/:id/vms/:name/vnc?token=:token',            name: 'vnc'},
 
     {path: '/downloads/tunneler/phenix-tunneler-linux-amd64',       name: 'linux-tunneler'},
-    {path: '/downloads/tunneler/phenix-tunneler-darwin-arm64',      name: 'macos-tunneler'},
+    {path: '/downloads/tunneler/phenix-tunneler-darwin-arm64',      name: 'macos-arm-tunneler'},
+    {path: '/downloads/tunneler/phenix-tunneler-darwin-amd64',      name: 'macos-intel-tunneler'},
     {path: '/downloads/tunneler/phenix-tunneler-windows-amd64.exe', name: 'windows-tunneler'},
 
     {path: '/proxysignup', name: 'proxysignup', component: ProxySignUp, props: true},

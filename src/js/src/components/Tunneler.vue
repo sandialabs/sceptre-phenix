@@ -70,7 +70,8 @@
       return {
         data: [
           {'name': 'Linux',   'arch': 'amd64', 'link': this.$router.resolve({ name: 'linux-tunneler'}).href},
-          {'name': 'MacOS',   'arch': 'arm64', 'link': this.$router.resolve({ name: 'macos-tunneler'}).href},
+          {'name': 'MacOS',   'arch': 'arm64', 'link': this.$router.resolve({ name: 'macos-arm-tunneler'}).href},
+          {'name': 'MacOS',   'arch': 'amd64', 'link': this.$router.resolve({ name: 'macos-intel-tunneler'}).href},
           {'name': 'Windows', 'arch': 'amd64', 'link': this.$router.resolve({ name: 'windows-tunneler'}).href}
         ]
       }
