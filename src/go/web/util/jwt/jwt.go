@@ -32,7 +32,7 @@ func ValidateExpirationClaim(claims jwt.MapClaims) error {
 
 	expires := time.Unix(int64(epoch), 0)
 
-	if time.Now().After(expires) {
+	if time.Now().UTC().After(expires) {
 		return fmt.Errorf("token expired at %v", expires)
 	}
 
