@@ -90,6 +90,8 @@ Vue.filter( 'fileSize', function (fileSize) {
     return (fileSize/Math.pow(10,6)).toFixed(2) + ' MB'
   } else if (fileSize >= Math.pow(10,9)) {
     return (fileSize/Math.pow(10,9)).toFixed(2) + ' GB'
+  } else {
+    return fileSize
   }
 })
 
