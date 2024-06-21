@@ -262,6 +262,7 @@ clue what this stuff does.
 
   $body-background-color: #333;
   $table-background-color: #484848;
+  $table-row-hover-background-color: #777777;
   
   $button-text-color: whitesmoke;
 
