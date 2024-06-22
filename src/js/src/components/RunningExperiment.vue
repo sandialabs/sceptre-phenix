@@ -1541,21 +1541,19 @@
     
       updateDisks (diskType="")  {
         this.disks = [];
-      
-        this.$http.get( `disks?diskType=${diskType}` ).then(
+        this.isWaiting = true
+
+        this.$http.get( `disks?diskType=${diskType}` ).then(          
           response  => {
-            response.json().then(
+            response.json().then(              
               state =>  {
-                if ( state.disks.length == 0 ) {
-                  this.isWaiting  = true;
-                } else {
+                this.isWaiting = false
+
                   for ( let i = 0;  i < state.disks.length; i++ ) {
                     this.disks.push( state.disks[i] );
-                  }
+                  }   
                   
-                  this.isWaiting  = false;
                 }
-              }
             );
           },  err => {
             console.log('Getting the disks failed with ' + err.status);
