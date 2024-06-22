@@ -671,23 +671,23 @@
       },
       
       updateDisks () {
+        this.isWaiting = true
+
         this.$http.get( 'disks' + '?expName=' + this.$route.params.id ).then(
           response => {
             response.json().then(
               state => {
-                if ( state.disks.length == 0 ) {
-                  this.isWaiting = true;
-                } else {
-                  for ( let i = 0; i < state.disks.length; i++ ) {
-                    this.disks.push( state.disks[ i ] );
-                  }
+                this.isWaiting = false
 
-                  this.disks.sort()
-                  this.isWaiting = false;
+                for ( let i = 0;  i < state.disks.length; i++ ) {
+                  this.disks.push( state.disks[i] );
                 }
+
+                this.disks.sort()
               }
             );
           }, err => {
+            this.isWaiting = false
             this.errorNotification(err);
           }
         );
