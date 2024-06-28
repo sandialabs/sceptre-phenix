@@ -7,6 +7,7 @@ import (
 
 	"phenix/api/experiment"
 	"phenix/api/vm"
+	"phenix/app"
 
 	"github.com/mitchellh/mapstructure"
 )
@@ -15,7 +16,10 @@ var vlanAliasRegex = regexp.MustCompile(`(.*) \(\d*\)`)
 
 func Get(expName, statusFilter string) (*Network, error) {
 	// Create an empty network
-	network := new(Network)
+	network := &Network{
+		Nodes: []Node{},
+		Edges: []Edge{},
+	}
 
 	// Create structure to format nodes' font
 	font := Font{
@@ -69,6 +73,7 @@ func Get(expName, statusFilter string) (*Network, error) {
 	// Internally use to track connections, VM's state, and whether or not the
 	// VM is in minimega
 	var (
+		vmIDs      = make(map[string]int)
 		interfaces = make(map[string]int)
 		ifaceCount = len(vms) + 1
 		edgeCount  int
@@ -76,6 +81,8 @@ func Get(expName, statusFilter string) (*Network, error) {
 
 	// Traverse the experiment VMs and create topology
 	for _, vm := range vms {
+		vmIDs[vm.Name] = vm.ID
+
 		var vmState string
 
 		/*
@@ -161,6 +168,32 @@ func Get(expName, statusFilter string) (*Network, error) {
 
 			network.Edges = append(network.Edges, edge)
 			edgeCount++
+		}
+	}
+
+	// Check to see if a scenario exists for this experiment and if it contains a
+	// "serial" app. If so, add edges for all the serial connections.
+	for _, a := range exp.Apps() {
+		if a.Name() == "serial" {
+			var config app.SerialConfig
+
+			if err := a.ParseMetadata(&config); err != nil {
+				continue // TODO: handle this better? Like warn the user perhaps?
+			}
+
+			for _, conn := range config.Connections {
+				// create edge for serial connection
+				edge := Edge{
+					ID:     edgeCount,
+					Source: vmIDs[conn.Src],
+					Target: vmIDs[conn.Dst],
+					Length: 150,
+					Type:   "serial",
+				}
+
+				network.Edges = append(network.Edges, edge)
+				edgeCount++
+			}
 		}
 	}
 

@@ -9,7 +9,8 @@ ARG   PHENIX_REVISION=local-dev
 LABEL gov.sandia.phenix.revision="${PHENIX_REVISION}"
 
 # iptables needed in minimega container for scorch and tap apps
-RUN apt update && apt install -y iptables \
+# socat needed in minimega container for serial app
+RUN apt update && apt install -y iptables socat \
   && apt autoremove -y \
   && apt clean -y \
   && rm -rf /var/lib/apt/lists/* \
