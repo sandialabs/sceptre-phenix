@@ -165,7 +165,7 @@ func (this *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	if _, err := os.Stat(runDir); err == nil {
-		archive := filepath.Join(exp.FilesDir(), fmt.Sprintf("scorch-run-%d_%s.tgz", runID, start.Format(time.RFC3339)))
+		archive := filepath.Join(exp.FilesDir(), fmt.Sprintf("scorch-run-%d_%s.tgz", runID, start.Format("2006-01-02T15-04-05Z0700")))
 
 		if err := util.CreateArchive(runDir, archive); err != nil {
 			errors = multierror.Append(errors, fmt.Errorf("archiving data generated for run %d: %w", runID, err))
@@ -364,7 +364,7 @@ func (this Scorch) recordInfo(runID int, runDir string, md store.ConfigMetadata,
 		mmVersion,
 	)
 
-	fileName := fmt.Sprintf("info-scorch-run-%d_%s.txt", runID, startTime.Format(time.RFC3339))
+	fileName := fmt.Sprintf("info-scorch-run-%d_%s.txt", runID, startTime.Format("2006-01-02T15-04-05Z0700"))
 
 	if err := os.MkdirAll(runDir, 0755); err != nil {
 		return fmt.Errorf("creating %s directory for scorch run %d: %w", runDir, runID, err)
