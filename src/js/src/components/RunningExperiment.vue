@@ -1289,20 +1289,19 @@
                 for ( let i = 0; i < vms.length; i++ ) {
                   if  ( vms[i].name == vm[ 1 ] ) {
                     vms[i].busy = false;
-                    vms[i] = msg.result.vm;                    
-                      let disk  = msg.result.disk;
-                  
-                      this.$buefy.toast.open({
-                        message: 'A memory snapshot was created with name ' + disk + ' for the ' + vm[ 1 ] + ' VM was successfully created.',
-                        type: 'is-success',
-                        duration: 4000
-                      });
-                      this.experiment.vms = [ ...vms ];
-                      break;
-                    }
+                    let disk  = msg.result.disk;
+                
+                    this.$buefy.toast.open({
+                      message: 'A memory snapshot was created with name ' + disk + ' for the ' + vm[ 1 ] + ' VM was successfully created.',
+                      type: 'is-success',
+                      duration: 4000
+                    });
+                    this.experiment.vms = [ ...vms ];
+                    break;
                   }
-                  break;
                 }
+                break;
+              }
               case  'committing': {
 
                 for ( let i = 0; i < vms.length; i++ ) {
