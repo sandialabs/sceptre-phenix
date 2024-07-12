@@ -17,7 +17,6 @@ import (
 	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/web/rbac"
-	"phenix/web/util"
 
 	"github.com/gorilla/mux"
 )
@@ -121,6 +120,7 @@ func UnmountVM(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /experiments/{exp}/vms/{name}/mount/files?path=
+// Note: error may be returned inside json body as Readdir can return an error with entries
 func GetMountFiles(w http.ResponseWriter, r *http.Request) {
 	var (
 		vars     = mux.Vars(r)
@@ -202,15 +202,6 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) {
 
 	select {
 	case <-done:
-		if err != nil {
-			errString := fmt.Sprintf("Error getting files in %s: %v", combinedPath, err)
-
-			plog.Error(errString)
-			http.Error(w, errString, http.StatusInternalServerError)
-
-			return
-		}
-
 		var files file.Files
 
 		for _, e := range dirEntries {
@@ -222,7 +213,13 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) {
 			files = append(files, file)
 		}
 
-		body, _ := json.Marshal(util.WithRoot("files", files))
+		resp := map[string]any {"error": "", "files": files }
+		if err != nil {
+			plog.Error(fmt.Sprintf("Error getting files in %s. Still read %d entries: %v", combinedPath, len(dirEntries), err))
+			resp["error"] = strings.Replace(fmt.Sprintf("%v", err), basePath, "", -1)
+		}
+
+		body, _ := json.Marshal(resp)
 		w.Write(body)
 	case <-time.After(2 * time.Second):
 		err := fmt.Sprintf("timeout getting files in %s", combinedPath)

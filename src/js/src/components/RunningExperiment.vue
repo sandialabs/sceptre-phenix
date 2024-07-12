@@ -552,6 +552,7 @@
               <b-icon icon="fire"></b-icon>
             </router-link>
           </p>
+        </b-field>
        </div>
       </div>
     </div>
