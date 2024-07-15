@@ -1,0 +1,170 @@
+apiVersion: phenix.sandia.gov/v1
+kind: Image
+metadata:
+  name: caldera
+spec:
+  format: qcow2
+  release: bookworm
+  mirror: http://ftp.us.debian.org/debian/
+  deb_append: ' --components=main,restricted,universe,multiverse'
+  packages:
+  - curl
+  - dbus
+  - ifupdown
+  - init
+  - initramfs-tools
+  - iproute2
+  - iputils-ping
+  - isc-dhcp-client
+  - less
+  - linux-headers-amd64
+  - linux-image-amd64
+  - net-tools
+  - netbase
+  - openssh-server
+  - tcpdump
+  - vim
+  - wget
+  script_order:
+  - POSTBUILD_NO_ROOT_PASSWD
+  - POSTBUILD_PHENIX_HOSTNAME
+  - POSTBUILD_PHENIX_BASE
+  - INSTALL_CALDERA
+  - POSTBUILD_APT_CLEANUP
+  scripts:
+    INSTALL_CALDERA: |
+      export DEBIAN_FRONTEND=noninteractive
+
+      # Installing xfce4 here to avoid issues that occur if it's included in the base install.
+      apt update && apt install -y \
+        ca-certificates firefox-esr git nodejs npm python3-dev python3-pip xfce4 xfce4-terminal
+
+      wget -O /tmp/go.tgz https://golang.org/dl/go1.24.0.linux-amd64.tar.gz \
+        && tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz \
+        && ln -s /usr/local/go/bin/* /usr/local/bin \
+        && export GOROOT=/usr/local/go
+
+      mkdir -p /go/src /go/bin
+      chmod -R 777 /go
+
+      git clone --recursive --branch 5.1.0 https://github.com/mitre/caldera.git /opt/caldera
+      cd /opt/caldera && python3 -m pip install --break-system-packages -r requirements.txt
+
+      git submodule add -b facts https://github.com/activeshadow/caldera-modbus.git plugins/modbus
+      git submodule add -b main https://github.com/activeshadow/caldera-dnp3.git plugins/dnp3
+      git submodule add -b main https://github.com/activeshadow/caldera-ot.git plugins/ot
+      git submodule add -b main https://github.com/activeshadow/caldera-phenix.git plugins/phenix
+
+      cat > /etc/systemd/system/caldera.service <<EOF
+      [Unit]
+      Description=CALDERA Framework
+
+      [Service]
+      WorkingDirectory=/opt/caldera
+      ExecStart=/usr/bin/python3 server.py --insecure --build --log INFO
+
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+
+      mkdir -p /etc/systemd/system/multi-user.target.wants
+      ln -s /etc/systemd/system/caldera.service /etc/systemd/system/multi-user.target.wants/caldera.service
+
+      # Default screen resolution to 1600x900
+      mkdir -p /root/.config/xfce4/xfconf/xfce-perchannel-xml
+      cat > /root/.config/xfce4/xfconf/xfce-perchannel-xml/displays.xml <<EOF
+      <?xml version="1.0" encoding="UTF-8"?>
+      <channel name="displays" version="1.0">
+        <property name="ActiveProfile" type="string" value="Default"/>
+        <property name="Default" type="empty">
+          <property name="Virtual-1" type="string" value="Virtual-1">
+            <property name="Active" type="bool" value="true"/>
+            <property name="EDID" type="string" value=""/>
+            <property name="Resolution" type="string" value="1600x900"/>
+            <property name="RefreshRate" type="double" value="60.000000"/>
+            <property name="Rotation" type="int" value="0"/>
+            <property name="Reflection" type="string" value="0"/>
+            <property name="Primary" type="bool" value="true"/>
+            <property name="Scale" type="empty">
+              <property name="X" type="double" value="1.000000"/>
+              <property name="Y" type="double" value="1.000000"/>
+            </property>
+            <property name="Position" type="empty">
+              <property name="X" type="int" value="0"/>
+              <property name="Y" type="int" value="0"/>
+            </property>
+          </property>
+        </property>
+        <property name="Fallback" type="empty">
+          <property name="Virtual-1" type="string" value="Virtual-1">
+            <property name="Active" type="bool" value="true"/>
+            <property name="EDID" type="string" value=""/>
+            <property name="Resolution" type="string" value="1600x900"/>
+            <property name="RefreshRate" type="double" value="60.000000"/>
+            <property name="Rotation" type="int" value="0"/>
+            <property name="Reflection" type="string" value="0"/>
+            <property name="Primary" type="bool" value="true"/>
+            <property name="Scale" type="empty">
+              <property name="X" type="double" value="1.000000"/>
+              <property name="Y" type="double" value="1.000000"/>
+            </property>
+            <property name="Position" type="empty">
+              <property name="X" type="int" value="0"/>
+              <property name="Y" type="int" value="0"/>
+            </property>
+          </property>
+        </property>
+      </channel>
+      EOF
+    POSTBUILD_APT_CLEANUP: |
+      apt clean || apt-get clean || echo "unable to clean apt cache"
+    POSTBUILD_NO_ROOT_PASSWD: |
+      sed -i 's/nullok_secure/nullok/' /etc/pam.d/common-auth
+      sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+      sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+      sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+      sed -i 's/PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+      passwd -d root
+    POSTBUILD_PHENIX_BASE: |
+      cat > /etc/systemd/system/phenix.service <<EOF
+      [Unit]
+      Description=phenix startup service
+      After=network.target systemd-hostnamed.service
+      [Service]
+      Environment=LD_LIBRARY_PATH=/usr/local/lib
+      ExecStart=/usr/local/bin/phenix-start.sh
+      RemainAfterExit=true
+      StandardOutput=journal
+      Type=oneshot
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+      mkdir -p /etc/systemd/system/multi-user.target.wants
+      ln -s /etc/systemd/system/phenix.service /etc/systemd/system/multi-user.target.wants/phenix.service
+      mkdir -p /usr/local/bin
+      cat > /usr/local/bin/phenix-start.sh <<EOF
+      #!/bin/bash
+      for file in /etc/phenix/startup/*; do
+        echo \$file
+        bash \$file
+      done
+      EOF
+      chmod +x /usr/local/bin/phenix-start.sh
+      mkdir -p /etc/phenix/startup
+    POSTBUILD_PHENIX_HOSTNAME: |
+      echo "phenix" > /etc/hostname
+      sed -i 's/127.0.1.1 .*/127.0.1.1 phenix/' /etc/hosts
+      cat > /etc/motd <<EOF
+
+      ██████╗ ██╗  ██╗███████╗███╗  ██╗██╗██╗  ██╗
+      ██╔══██╗██║  ██║██╔════╝████╗ ██║██║╚██╗██╔╝
+      ██████╔╝███████║█████╗  ██╔██╗██║██║ ╚███╔╝
+      ██╔═══╝ ██╔══██║██╔══╝  ██║╚████║██║ ██╔██╗
+      ██║     ██║  ██║███████╗██║ ╚███║██║██╔╝╚██╗
+      ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚══╝╚═╝╚═╝  ╚═╝
+
+      EOF
+      echo "\nBuilt with phenix image on $(date)\n\n" >> /etc/motd
+  size: 50G
+  variant: minbase
+
