@@ -316,6 +316,16 @@ func Start(opts ...ServerOption) error {
 			return err
 		}
 
+		if o.unixSocketGid != -1 {
+			plog.Info("setting Unix socket group permissions", "gid", o.unixSocketGid)
+			if err = os.Chown(common.UnixSocket, -1, o.unixSocketGid); err != nil {
+				return err
+			}
+			if err := os.Chmod(common.UnixSocket, 0775); err != nil {
+				return err
+			}
+		}
+
 		go func() {
 			if err := server.Serve(listener); err != nil {
 				plog.Error("serving Unix socket", "err", err)

@@ -37,6 +37,7 @@ func newUICmd() *cobra.Command {
 				web.ServeMinimegaLogs(viper.GetString("ui.logs.minimega-path")),
 				web.ServeWithFeatures(viper.GetStringSlice("ui.features")),
 				web.ServeWithProxyAuthHeader(viper.GetString("ui.proxy-auth-header")),
+				web.ServeWithUnixSocketGid(viper.GetInt("unix-socket-gid")),
 			}
 
 			if endpoint := viper.GetString("ui.unix-socket-endpoint"); endpoint != "" {
@@ -153,6 +154,11 @@ func newUICmd() *cobra.Command {
 
 	cmd.Flags().MarkHidden("log-requests")
 	cmd.Flags().MarkHidden("log-full")
+
+	cmd.Flags().Int("unix-socket-gid", -1, "group id to allow writes to the unix socket")
+	cmd.Flags().MarkHidden("unix-socket-gid")
+	viper.BindPFlag("unix-socket-gid", cmd.Flags().Lookup("unix-socket-gid"))
+	viper.BindEnv("unix-socket-gid")
 
 	return cmd
 }

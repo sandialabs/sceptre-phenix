@@ -35,6 +35,8 @@ type serverOptions struct {
 	proxyAuthHeader string
 
 	features map[string]bool
+
+	unixSocketGid int
 }
 
 func newServerOptions(opts ...ServerOption) serverOptions {
@@ -170,6 +172,12 @@ func ServeWithFeatures(f []string) ServerOption {
 				o.features[feature] = false
 			}
 		}
+	}
+}
+
+func ServeWithUnixSocketGid(g int) ServerOption {
+	return func(o *serverOptions) {
+		o.unixSocketGid = g
 	}
 }
 
