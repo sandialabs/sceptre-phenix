@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"phenix/api/experiment"
-	"phenix/util"
 	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/util/mm"
@@ -72,13 +71,14 @@ func List(expName string) ([]mm.VM, error) {
 		)
 
 		if drives := node.Hardware().Drives(); len(drives) > 0 {
-			disk = util.GetMMFullPath(drives[0].Image())
+			disk = mm.GetMMFullPath(drives[0].Image())
 			injectPartition = *drives[0].InjectPartition()
 		}
 
 		if node.General().DoNotBoot() != nil {
 			dnb = *node.General().DoNotBoot()
 		}
+
 		if node.General().Snapshot() != nil {
 			snapshot = *node.General().Snapshot()
 		}
@@ -192,7 +192,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 			Experiment:      exp.Spec.ExperimentName(),
 			CPUs:            node.Hardware().VCPU(),
 			RAM:             node.Hardware().Memory(),
-			Disk:            util.GetMMFullPath(node.Hardware().Drives()[0].Image()),
+			Disk:            mm.GetMMFullPath(node.Hardware().Drives()[0].Image()),
 			InjectPartition: *node.Hardware().Drives()[0].InjectPartition(),
 			Interfaces:      make(map[string]string),
 			DoNotBoot:       *node.General().DoNotBoot(),

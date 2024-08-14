@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"phenix/api/experiment"
-	"phenix/util"
 	"phenix/util/mm"
 	"phenix/util/mm/mmcli"
 )
@@ -30,7 +29,7 @@ type ImageDetails struct {
 }
 
 var DefaultClusterFiles ClusterFiles = new(MMClusterFiles)
-var mmFilesDirectory = util.GetMMFilesDirectory()
+var mmFilesDirectory = mm.GetMMFilesDirectory()
 
 type ClusterFiles interface {
 	// Get list of VM disk images, container filesystems, or both.
@@ -298,7 +297,7 @@ func getAllFiles(details map[string]ImageDetails) error {
 
 			image := ImageDetails{
 				Name:     baseName,
-				FullPath: util.GetMMFullPath(row["name"]),
+				FullPath: mm.GetMMFullPath(row["name"]),
 			}
 
 			if strings.HasSuffix(image.Name, ".qc2") || strings.HasSuffix(image.Name, ".qcow2") {
@@ -367,7 +366,7 @@ func getTopologyFiles(expName string, details map[string]ImageDetails) error {
 
 				image := ImageDetails{
 					Name:     baseName,
-					FullPath: util.GetMMFullPath(row["name"]),
+					FullPath: mm.GetMMFullPath(row["name"]),
 					Kind:     VM_IMAGE,
 				}
 

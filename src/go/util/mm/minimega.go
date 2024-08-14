@@ -821,6 +821,12 @@ func (this Minimega) IsHeadnode(node string) bool {
 	return node == this.Headnode()
 }
 
+func (this Minimega) GetMMArgs() map[string]string {
+	cmd := mmcli.NewCommand()
+	cmd.Command = "args"
+	return mmcli.RunTabular(cmd)[0]
+}
+
 func (Minimega) GetVLANs(opts ...Option) (map[string]int, error) {
 	o := NewOptions(opts...)
 
