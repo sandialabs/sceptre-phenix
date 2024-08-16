@@ -557,7 +557,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		// them. This cannot be done as part of the minimega script template since
 		// the VM taps (and thus bridges) do not get created until the overall
 		// minimega namespace is launched.
-		if exp.Spec.UseGREMesh() || exp.Spec.DefaultBridge() != "phenix" {
+		if exp.Spec.UseGREMesh() {
 			if err := mm.CreateBridge(mm.NS(exp.Metadata.Name), mm.Bridge(exp.Spec.DefaultBridge())); err != nil {
 				if !o.mmErrAsWarn {
 					mm.ClearNamespace(exp.Spec.ExperimentName())

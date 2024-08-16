@@ -3,7 +3,7 @@
 ARG  MM_REV
 FROM ghcr.io/activeshadow/minimega/minimega:${MM_REV}
 
-ARG   MINIMEGA_REVISION
+ARG   MM_REV
 LABEL org.opencontainers.image.base.name="ghcr.io/activeshadow/minimega/minimega:${MM_REV}"
 ARG   PHENIX_REVISION=local-dev
 LABEL gov.sandia.phenix.revision="${PHENIX_REVISION}"
