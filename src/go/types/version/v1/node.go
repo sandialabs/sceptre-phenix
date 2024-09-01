@@ -102,6 +102,34 @@ func (this *Node) SetInjections(injections []ifaces.NodeInjection) {
 	this.InjectionsF = injects
 }
 
+func (this *Node) SetType(t string) {
+	this.TypeF = t
+}
+
+func (this *Node) AddAnnotation(k string, i interface{}) {
+	if this.AnnotationsF == nil {
+		this.AnnotationsF = make(map[string]interface{})
+	}
+
+	this.AnnotationsF[k] = i
+}
+
+func (this *Node) AddTimerDelay(delay string) {
+	this.DelayF.TimerF = delay
+}
+
+func (this *Node) AddUserDelay(delay bool) {
+	this.DelayF.UserF = delay
+}
+
+func (this *Node) AddC2Delay(hostname string, useuuid bool) {
+	this.DelayF = new(Delay)
+	d := new(C2Delay)
+	d.HostnameF = hostname
+	d.UseUUIDF = useuuid
+	this.DelayF.C2F = append(this.DelayF.C2F, *d)
+}
+
 func (this *Node) AddLabel(k, v string) {
 	if this.LabelsF == nil {
 		this.LabelsF = make(map[string]string)
@@ -150,6 +178,37 @@ func (this *Node) AddNetworkRoute(dest, next string, cost int) {
 	}
 
 	this.NetworkF.RoutesF = append(this.NetworkF.RoutesF, r)
+}
+
+func (this *Node) AddNetworkNAT(nats []map[string][]string) {
+	for _, nat := range nats {
+		n := new(NAT)
+		for out, ins := range nat {
+			n.OutF = out
+			for _, in := range ins {
+				n.InF = append(n.InF, in)
+			}
+		}
+		this.NetworkF.NATF = append(this.NetworkF.NATF, *n)
+	}
+}
+
+func (this *Node) AddNetworkOSPF(routerID string, dead, hello, retrans int, areas map[int][]string) {
+	this.NetworkF.OSPFF = new(OSPF)
+	this.NetworkF.OSPFF.RouterIDF = routerID
+	this.NetworkF.OSPFF.DeadIntervalF = &dead
+	this.NetworkF.OSPFF.HelloIntervalF = &hello
+	this.NetworkF.OSPFF.RetransmissionIntervalF = &retrans
+
+	for id, networks := range areas {
+		area := new(Area)
+		area.AreaIDF = &id
+		for _, net := range networks {
+			areaNetwork := AreaNetwork{NetworkF: net}
+			area.AreaNetworksF = append(area.AreaNetworksF, areaNetwork)
+		}
+		this.NetworkF.OSPFF.AreasF = append(this.NetworkF.OSPFF.AreasF, *area)
+	}
 }
 
 func (this *Node) AddInject(src, dst, perms, desc string) {

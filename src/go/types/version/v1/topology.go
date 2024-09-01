@@ -105,6 +105,21 @@ func (this TopologySpec) FindDelayedNodes() []ifaces.NodeSpec {
 	return nodes
 }
 
+func (this TopologySpec) FindNodesWithVLAN(vlan string) []ifaces.NodeSpec {
+	var nodes []ifaces.NodeSpec
+
+	for _, n := range this.NodesF {
+		for _, i := range n.NetworkF.InterfacesF {
+			if i.VLAN() == vlan {
+				nodes = append(nodes, n)
+				break
+			}
+		}
+	}
+
+	return nodes
+}
+
 func (this *TopologySpec) AddNode(typ, hostname string) ifaces.NodeSpec {
 	n := &Node{
 		TypeF: typ,

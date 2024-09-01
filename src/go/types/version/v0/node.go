@@ -85,6 +85,24 @@ func (this *Node) SetInjections(injections []ifaces.NodeInjection) {
 	this.InjectionsF = injects
 }
 
+func (this *Node) SetType(t string) {
+	this.TypeF = t
+}
+
+func (this *Node) AddAnnotation(k string, i interface{}) {
+	if this.AnnotationsF == nil {
+		this.AnnotationsF = make(map[string]interface{})
+	}
+
+	this.AnnotationsF[k] = i
+}
+
+func (this *Node) AddTimerDelay(string) {}
+
+func (this *Node) AddUserDelay(bool) {}
+
+func (this *Node) AddC2Delay(string, bool) {}
+
 func (this *Node) AddLabel(k, v string) {
 	this.LabelsF[k] = v
 }
@@ -129,6 +147,26 @@ func (this *Node) AddNetworkRoute(dest, next string, cost int) {
 	}
 
 	this.NetworkF.RoutesF = append(this.NetworkF.RoutesF, r)
+}
+
+func (this *Node) AddNetworkNAT([]map[string][]string) {}
+
+func (this *Node) AddNetworkOSPF(routerID string, dead, hello, retrans int, areas map[int][]string) {
+	this.NetworkF.OSPFF = new(OSPF)
+	this.NetworkF.OSPFF.RouterIDF = routerID
+	this.NetworkF.OSPFF.DeadIntervalF = &dead
+	this.NetworkF.OSPFF.HelloIntervalF = &hello
+	this.NetworkF.OSPFF.RetransmissionIntervalF = &retrans
+
+	for id, networks := range areas {
+		area := new(Area)
+		area.AreaIDF = &id
+		for _, net := range networks {
+			areaNetwork := AreaNetwork{NetworkF: net}
+			area.AreaNetworksF = append(area.AreaNetworksF, areaNetwork)
+		}
+		this.NetworkF.OSPFF.AreasF = append(this.NetworkF.OSPFF.AreasF, *area)
+	}
 }
 
 func (this *Node) AddInject(src, dst, perms, desc string) {
