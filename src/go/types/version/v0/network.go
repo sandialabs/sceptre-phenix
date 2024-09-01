@@ -77,6 +77,26 @@ func (this *Network) InterfaceAddress(name string) string {
 	return ""
 }
 
+func (this *Network) InterfaceVLAN(vlan string) string {
+	for _, iface := range this.InterfacesF {
+		if iface.VLAN() == vlan {
+			return iface.NameF
+		}
+	}
+
+	return ""
+}
+
+func (this *Network) InterfaceMask(name string) int {
+	for _, iface := range this.InterfacesF {
+		if strings.EqualFold(iface.NameF, name) {
+			return iface.MaskF
+		}
+	}
+
+	return 0
+}
+
 type Interface struct {
 	NameF       string   `json:"name" yaml:"name" structs:"name" mapstructure:"name"`
 	TypeF       string   `json:"type" yaml:"type" structs:"type" mapstructure:"type"`

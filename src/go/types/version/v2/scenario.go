@@ -39,6 +39,16 @@ func (this *ScenarioSpec) App(name string) ifaces.ScenarioApp {
 	return nil
 }
 
+func (this *ScenarioSpec) AddApp(name string) ifaces.ScenarioApp {
+	a := &ScenarioApp{
+		NameF: name,
+	}
+
+	this.AppsF = append(this.AppsF, a)
+
+	return a
+}
+
 type ScenarioApp struct {
 	NameF            string             `json:"name" yaml:"name" structs:"name" mapstructure:"name"`
 	FromScenarioF    string             `json:"fromScenario,omitempty" yaml:"fromScenario,omitempty" structs:"fromScenario" mapstructure:"fromScenario"`
@@ -101,6 +111,16 @@ func (this *ScenarioApp) SetHosts(hosts []ifaces.ScenarioAppHost) {
 	this.HostsF = h
 }
 
+func (this *ScenarioApp) AddHost(hostname string) ifaces.ScenarioAppHost {
+	h := &ScenarioAppHost{
+		HostnameF: hostname,
+	}
+
+	this.HostsF = append(this.HostsF, h)
+
+	return h
+}
+
 func (this *ScenarioApp) SetRunPeriodically(d string) {
 	this.RunPeriodicallyF = d
 }
@@ -146,6 +166,10 @@ func (this ScenarioAppHost) Hostname() string {
 
 func (this ScenarioAppHost) Metadata() map[string]any {
 	return this.MetadataF
+}
+
+func (this *ScenarioAppHost) SetMetadata(md map[string]interface{}) {
+	this.MetadataF = md
 }
 
 func (this ScenarioAppHost) ParseMetadata(md any) error {

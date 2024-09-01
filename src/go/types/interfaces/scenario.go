@@ -3,6 +3,8 @@ package ifaces
 type ScenarioSpec interface {
 	Apps() []ScenarioApp
 	App(string) ScenarioApp
+
+	AddApp(string) ScenarioApp
 }
 
 type ScenarioApp interface {
@@ -17,6 +19,7 @@ type ScenarioApp interface {
 	SetAssetDir(string)
 	SetMetadata(map[string]any)
 	SetHosts([]ScenarioAppHost)
+	AddHost(string) ScenarioAppHost
 	SetRunPeriodically(string)
 	SetDisabled(bool)
 
@@ -28,5 +31,6 @@ type ScenarioAppHost interface {
 	Hostname() string
 	Metadata() map[string]any
 
+	SetMetadata(map[string]any)
 	ParseMetadata(any) error
 }
