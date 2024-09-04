@@ -218,14 +218,19 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 				cmd.Command = fmt.Sprintf("mesh send %s %s", row["host"], cmd.Command)
 			}
 
-			// Only expect one row returned
-			// TODO (btr): check length to avoid a panic.
-			resp := mmcli.RunTabular(cmd)[0]
+			resp := mmcli.RunTabular(cmd)
 
-			if resp["backingfile"] == "" {
-				vm.Disk = resp["image"]
+			if len(resp) == 0 {
+				vm.Disk = disk
 			} else {
-				vm.Disk = resp["backingfile"]
+				// Only expect one row returned
+				info := resp[0]
+
+				if info["backingfile"] == "" {
+					vm.Disk = info["image"]
+				} else {
+					vm.Disk = info["backingfile"]
+				}
 			}
 		} else {
 			// Attempting to get disk info when not using a snapshot will cause a
