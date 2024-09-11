@@ -29,7 +29,13 @@ func GetMMFullPath(path string) string {
 func GetMMFilesDirectory() string {
 	defaultMMFilesDirectory := fmt.Sprintf("%s/images", common.PhenixBase)
 
-	path, ok := GetMMArgs()["filepath"]
+	args, err := GetMMArgs()
+	if err != nil {
+		plog.Warn("Could not get mm files directory from minimega")
+		return defaultMMFilesDirectory
+	}
+
+	path, ok := args["filepath"]
 	if !ok {
 		plog.Warn("Could not get mm files directory from minimega")
 		return defaultMMFilesDirectory

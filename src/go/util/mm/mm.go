@@ -37,7 +37,7 @@ type MM interface {
 	GetNamespaceHosts(string) (Hosts, error)
 	Headnode() string
 	IsHeadnode(string) bool
-	GetMMArgs() map[string]string
+	GetMMArgs() (map[string]string, error)
 	GetVLANs(...Option) (map[string]int, error)
 
 	IsC2ClientActive(...C2Option) error

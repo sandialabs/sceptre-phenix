@@ -108,7 +108,7 @@ func IsHeadnode(node string) bool {
 	return DefaultMM.IsHeadnode(node)
 }
 
-func GetMMArgs() map[string]string {
+func GetMMArgs() (map[string]string, error) {
 	return DefaultMM.GetMMArgs()
 }
 
