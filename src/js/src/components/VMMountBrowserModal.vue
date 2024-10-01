@@ -27,6 +27,7 @@
           <div class="has-text-centered">No Files in Directory</div>
         </template>
       </b-table>
+      <p class="has-text-danger">{{ error }}</p>
     </section>
     <footer class="modal-card-foot">
       <b-field v-show="roleAllowed('vms/mount', 'patch', targetExp + '/' + targetVm)" class="file is-info" style="margin-bottom: 0;">
@@ -56,6 +57,7 @@ export default {
 
   data() {
     return {
+      error: "",
       files: [],
       filesLoading: false,
       currentPath: "/",
@@ -107,8 +109,9 @@ export default {
       this.filesLoading = true;
       this.$http.get(`experiments/${this.targetExp}/vms/${this.targetVm}/files`, { 
           params: { 'path': this.currentPath } 
-        }).then(success => {
-          this.files = success.body.files === null ? [] : success.body.files
+        }).then(resp => {
+          this.error = resp.body.error
+          this.files = resp.body.files === null ? [] : resp.body.files
           this.filesLoading = false;
         }, err => {
           this.filesLoading = false;
@@ -170,7 +173,7 @@ export default {
   
 <style lang="scss">
   .fixed-table {
-    height: 75vh;
+    height: 70vh;
     overflow: auto;
   }
   .disabled > .file-cta {

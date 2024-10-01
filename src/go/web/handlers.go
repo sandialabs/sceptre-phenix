@@ -2449,10 +2449,12 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	marshalled, _ := json.Marshal(util.WithRoot("disk", filename))
+
 	broker.Broadcast(
 		bt.NewRequestPolicy("vms/memorySnapshot", "create", fmt.Sprintf("%s/%s", exp, name)),
 		bt.NewResource("experiment/vm/memorySnapshot", exp+"/"+name, "commit"),
-		nil,
+		marshalled,
 	)
 
 	w.WriteHeader(http.StatusNoContent)

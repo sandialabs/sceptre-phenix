@@ -15,11 +15,11 @@ import (
 	"time"
 
 	"phenix/api/experiment"
-	"phenix/util"
 	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/util/mm"
 	"phenix/util/mm/mmcli"
+	"phenix/util/plog"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -72,13 +72,14 @@ func List(expName string) ([]mm.VM, error) {
 		)
 
 		if drives := node.Hardware().Drives(); len(drives) > 0 {
-			disk = util.GetMMFullPath(drives[0].Image())
+			disk = mm.GetMMFullPath(drives[0].Image())
 			injectPartition = *drives[0].InjectPartition()
 		}
 
 		if node.General().DoNotBoot() != nil {
 			dnb = *node.General().DoNotBoot()
 		}
+
 		if node.General().Snapshot() != nil {
 			snapshot = *node.General().Snapshot()
 		}
@@ -192,7 +193,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 			Experiment:      exp.Spec.ExperimentName(),
 			CPUs:            node.Hardware().VCPU(),
 			RAM:             node.Hardware().Memory(),
-			Disk:            util.GetMMFullPath(node.Hardware().Drives()[0].Image()),
+			Disk:            mm.GetMMFullPath(node.Hardware().Drives()[0].Image()),
 			InjectPartition: *node.Hardware().Drives()[0].InjectPartition(),
 			Interfaces:      make(map[string]string),
 			DoNotBoot:       *node.General().DoNotBoot(),
@@ -892,53 +893,57 @@ func Restore(expName, vmName, snap string) error {
 
 	snap = fmt.Sprintf("%s/files/%s", expName, snap)
 
+	details := mm.GetVMInfo(mm.NS(expName), mm.VMName(vmName))
+	if len(details) == 0 {
+		return fmt.Errorf("error getting vm details")
+	}
+
 	cmd := mmcli.NewNamespacedCommand(expName)
 	cmd.Command = fmt.Sprintf("vm config clone %s", vmName)
-
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("cloning config for VM %s: %w", vmName, err)
 	}
 
-	cmd.Command = fmt.Sprintf("vm config migrate %s.SNAP", snap)
+	// Have to copy over UUID separate from clone. 
+	// Needs to stay the same for miniccc agent to connect
+	plog.Info("Setting UUID", "uuid", details[0].UUID)
+	cmd.Command = fmt.Sprintf("vm config uuid %s", details[0].UUID)
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("setting uuid for VM %s: %w", vmName, err)
+	}
 
+	cmd.Command = fmt.Sprintf("vm config migrate %s.SNAP", snap)
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("configuring migrate file for VM %s: %w", vmName, err)
 	}
 
 	cmd.Command = fmt.Sprintf("vm config disk %s.qc2,writeback", snap)
-
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("configuring disk file for VM %s: %w", vmName, err)
 	}
 
 	cmd.Command = fmt.Sprintf("vm kill %s", vmName)
-
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("killing VM %s: %w", vmName, err)
 	}
 
-	// TODO: explicitly flush killed VM by name once we start using that version
-	// of minimega.
-	cmd.Command = "vm flush"
 
+	cmd.Command = fmt.Sprintf("vm flush %s", vmName)
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("flushing VMs: %w", err)
 	}
 
 	cmd.Command = fmt.Sprintf("vm launch kvm %s", vmName)
-
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("relaunching VM %s: %w", vmName, err)
 	}
 
 	cmd.Command = "vm launch"
-
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("scheduling VM %s: %w", vmName, err)
 	}
 
 	cmd.Command = fmt.Sprintf("vm start %s", vmName)
-
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("starting VM %s: %w", vmName, err)
 	}
