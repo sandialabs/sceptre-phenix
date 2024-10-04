@@ -1045,6 +1045,12 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		opts = append(opts, vm.UpdateWithInterface(int(req.Interface.Index), req.Interface.Vlan))
 	}
 
+	if req.TagUpdateMode == proto.TagUpdateMode_SET {
+		opts = append(opts, vm.UpdateWithTags(req.Tags, false))
+	} else if req.TagUpdateMode == proto.TagUpdateMode_ADD {
+		opts = append(opts, vm.UpdateWithTags(req.Tags, true))
+	}
+
 	switch req.Boot.(type) {
 	case *proto.UpdateVMRequest_DoNotBoot:
 		opts = append(opts, vm.UpdateWithDNB(req.GetDoNotBoot()))

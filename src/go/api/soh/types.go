@@ -5,18 +5,13 @@ import (
 	"time"
 )
 
-type Font struct {
-	Color string `json:"color"`
-	Align string `json:"align"`
-}
-
 type Node struct {
-	ID     int        `json:"id"`
-	Label  string     `json:"label"`
-	Image  string     `json:"image"`
-	Fonts  Font       `json:"font"`
-	Status string     `json:"status"`
-	SOH    *HostState `json:"soh"`
+	ID     int               `json:"id"`
+	Label  string            `json:"label"`
+	Image  string            `json:"image"`
+	Tags   map[string]string `json:"tags"`
+	Status string            `json:"status"`
+	SOH    *HostState        `json:"soh"`
 }
 
 type Edge struct {

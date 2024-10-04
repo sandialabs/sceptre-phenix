@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -183,12 +184,9 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 		}
 
 		s = row["tags"]
-		s = strings.TrimPrefix(s, "{")
-		s = strings.TrimSuffix(s, "}")
-
-		if s != "" {
-			vm.Tags = strings.Split(s, ",")
-		}
+		var tags map[string]string
+		json.Unmarshal([]byte(s), &tags)
+		vm.Tags = tags
 
 		// Make sure the VM name is set prior to calling `GetVMCaptures`, as the VM
 		// name is not always set when calling `GetVMInfo`.
@@ -484,6 +482,27 @@ func (Minimega) GetVMState(opts ...Option) (string, error) {
 	}
 
 	return status[0]["state"], nil
+}
+
+func (Minimega) SetVMTags(opts ...Option) error {
+	o := NewOptions(opts...)
+
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = fmt.Sprintf("clear vm tag %s ", o.vm)
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("failed to clear tags for vm %s: %w", o.vm, err)
+	}
+
+	for k, v := range o.tags {
+		cmd.Command = fmt.Sprintf("vm tag %s \"%s\" \"%s\"", o.vm, k, v)
+
+		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+			return fmt.Errorf("failed to set tag for vm %s: %s=%s %w", o.vm, k, v, err)
+		}
+	}
+
+	return nil
 }
 
 func (Minimega) ConnectVMInterface(opts ...Option) error {
