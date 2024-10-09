@@ -10,6 +10,7 @@ type TopologySpec interface {
 	FindNodeByName(string) NodeSpec
 	FindNodesWithLabels(...string) []NodeSpec
 	FindDelayedNodes() []NodeSpec
+	FindNodesWithVLAN(string) []NodeSpec
 
 	AddNode(string, string) NodeSpec
 	RemoveNode(string)
@@ -35,11 +36,55 @@ type NodeSpec interface {
 	External() bool
 
 	SetInjections([]NodeInjection)
+	SetType(string)
 
+	AddAnnotation(string, interface{})
+	AddTimerDelay(delay string)
+	AddUserDelay(delay bool)
+	AddC2Delay(hostname string, useuuid bool)
 	AddLabel(string, string)
 	AddHardware(string, int, int) NodeHardware
 	AddNetworkInterface(string, string, string) NodeNetworkInterface
 	AddNetworkRoute(string, string, int)
+	// Add NAT section to Node Network
+	//
+	// Example code:
+	//
+	//   newNat := map[string][]string{
+	//   	"eth0": {"eth1"},
+	//   }
+	//   nats := []map[string][]string{}
+	//   nats = append(nats, newNat)
+	//   node.AddNetworkNAT(nats)
+	//
+	// Example result:
+	//
+	//   nat:
+	//     - in:
+	//       - eth1
+	//       out: eth0
+	AddNetworkNAT(nats []map[string][]string)
+	// Add OSPF section to Node Network
+	//
+	// Example code:
+	//
+	//   area := map[int][]string{
+	//   	0: {"75.75.0.0/16"},
+	//   }
+	//   node.AddNetworkOSPF("75.75.75.5", 60, 10, 5, area)
+	//
+	// Example result:
+	//
+	//   ospf:
+	//     router_id: 75.75.75.5
+	//     dead_interval: 60
+	//     hello_interval: 10
+	//     retransmission_interval: 5
+	//     areas:
+	//       - area_id: 0
+	//         area_networks:
+	//       	 - network: 75.75.0.0/16
+	AddNetworkOSPF(routerID string, dead, hello, retrans int, areas map[int][]string)
 	AddInject(string, string, string, string)
 
 	SetAdvanced(map[string]string)
@@ -96,6 +141,8 @@ type NodeNetwork interface {
 	AddRuleset(NodeNetworkRuleset)
 
 	InterfaceAddress(string) string
+	InterfaceVLAN(string) string
+	InterfaceMask(string) int
 }
 
 type NodeNetworkInterface interface {
