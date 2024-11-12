@@ -1,0 +1,3 @@
+#!/bin/bash
+
+echo "{{ .domain_controller.password }}" | realm join --user={{ .domain_controller.username }} {{ .domain_controller.domain }}
