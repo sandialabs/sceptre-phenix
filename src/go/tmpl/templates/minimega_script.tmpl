@@ -31,10 +31,13 @@ ns add-host localhost
 ## DoNotBoot: {{ derefBool .General.DoNotBoot }} ##
     {{- else }}
         {{- if (derefBool .General.Snapshot) -}}
-        {{ $firstDrive := index .Hardware.Drives 0 }}
-disk snapshot {{ $firstDrive.Image }} {{ $.SnapshotName .General.Hostname }} 
+            {{ $firstDrive := index .Hardware.Drives 0 }}
+disk snapshot {{ $firstDrive.Image }} {{ $.SnapshotName .General.Hostname }}
             {{- if gt (len .Injections) 0 }}
 disk inject {{ $.SnapshotName .General.Hostname }}:{{ $firstDrive.GetInjectPartition }} files {{ .FileInjects $basedir }}
+            {{- end }}
+            {{- if gt (len .Deletions) 0 }}
+disk inject {{ $.SnapshotName .General.Hostname }}:{{ $firstDrive.GetInjectPartition }} delete files {{ .FileDeletions }}
             {{- end }}
         {{- end }}
 clear vm config

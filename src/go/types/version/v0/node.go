@@ -18,7 +18,7 @@ type Node struct {
 	HardwareF    *Hardware              `json:"hardware" yaml:"hardware" structs:"hardware" mapstructure:"hardware"`
 	NetworkF     *Network               `json:"network" yaml:"network" structs:"network" mapstructure:"network"`
 	InjectionsF  []*Injection           `json:"injections" yaml:"injections" structs:"injections" mapstructure:"injections"`
-
+	DeletionsF   []*Deletion            `json:"deletions" yaml:"deletions" structs:"deletions" mapstructure:"deletions"`
 }
 
 func (this Node) Annotations() map[string]interface{} {
@@ -55,6 +55,16 @@ func (this Node) Injections() []ifaces.NodeInjection {
 	return injects
 }
 
+func (this Node) Deletions() []ifaces.NodeDeletion {
+	deletions := make([]ifaces.NodeDeletion, len(this.DeletionsF))
+
+	for i, j := range this.DeletionsF {
+		deletions[i] = j
+	}
+
+	return deletions
+}
+
 func (this Node) Delay() ifaces.NodeDelay {
 	return new(Delay)
 }
@@ -83,6 +93,16 @@ func (this *Node) SetInjections(injections []ifaces.NodeInjection) {
 	}
 
 	this.InjectionsF = injects
+}
+
+func (this *Node) SetDeletions(deletions []ifaces.NodeDeletion) {
+	deletionList := make([]*Deletion, len(deletions))
+
+	for i, j := range deletions {
+		deletionList[i] = j.(*Deletion)
+	}
+
+	this.DeletionsF = deletionList
 }
 
 func (this *Node) SetType(t string) {
@@ -182,6 +202,13 @@ func (this *Node) AddInject(src, dst, perms, desc string) {
 	})
 }
 
+func (this *Node) AddDeletion(path, desc string) {
+	this.DeletionsF = append(this.DeletionsF, &Deletion{
+		PathF:        path,
+		DescriptionF: desc,
+	})
+}
+
 func (Node) SetAdvanced(map[string]string) {}
 func (Node) AddAdvanced(string, string)    {}
 func (Node) AddOverride(string, string)    {}
@@ -211,7 +238,6 @@ type General struct {
 	VMTypeF      string `json:"vm_type" yaml:"vm_type" structs:"vm_type" mapstructure:"vm_type"`
 	SnapshotF    *bool  `json:"snapshot" yaml:"snapshot" structs:"snapshot" mapstructure:"snapshot"`
 	DoNotBootF   *bool  `json:"do_not_boot" yaml:"do_not_boot" structs:"do_not_boot" mapstructure:"do_not_boot"`
-
 }
 
 func (this General) Hostname() string {
@@ -229,7 +255,7 @@ func (this General) VMType() string {
 func (this General) Snapshot() *bool {
 	return this.SnapshotF
 }
-func (this *General) SetSnapshot(b bool)  {
+func (this *General) SetSnapshot(b bool) {
 	this.SnapshotF = &b
 }
 
@@ -353,6 +379,19 @@ func (this Injection) Permissions() string {
 	return this.PermissionsF
 }
 
+type Deletion struct {
+	PathF        string `json:"path" yaml:"path" structs:"path" mapstructure:"path"`
+	DescriptionF string `json:"description" yaml:"description" structs:"description" mapstructure:"description"`
+}
+
+func (this Deletion) Path() string {
+	return this.PathF
+}
+
+func (this Deletion) Description() string {
+	return this.DescriptionF
+}
+
 type Delay struct{}
 
 func (this Delay) Timer() time.Duration {
@@ -421,6 +460,16 @@ func (this Node) FileInjects(baseDir string) string {
 	}
 
 	return strings.Join(injects, " ")
+}
+
+func (this Node) FileDeletions() string {
+        deletions := make([]string, len(this.DeletionsF))
+
+        for i, deletion := range this.DeletionsF {
+                deletions[i] = fmt.Sprintf(`"%s"`, deletion.PathF)
+        }
+
+        return strings.Join(deletions, ",")
 }
 
 func (this Node) RouterName() string {

@@ -29,6 +29,7 @@ type NodeSpec interface {
 	Hardware() NodeHardware
 	Network() NodeNetwork
 	Injections() []NodeInjection
+	Deletions() []NodeDeletion
 	Delay() NodeDelay
 	Advanced() map[string]string
 	Overrides() map[string]string
@@ -36,6 +37,7 @@ type NodeSpec interface {
 	External() bool
 
 	SetInjections([]NodeInjection)
+	SetDeletions([]NodeDeletion)
 	SetType(string)
 	SetLabels(map[string]string)
 
@@ -87,6 +89,7 @@ type NodeSpec interface {
 	//       	 - network: 75.75.0.0/16
 	AddNetworkOSPF(routerID string, dead, hello, retrans int, areas map[int][]string)
 	AddInject(string, string, string, string)
+	AddDeletion(string, string)
 
 	SetAdvanced(map[string]string)
 	AddAdvanced(string, string)
@@ -252,6 +255,11 @@ type NodeInjection interface {
 	Dst() string
 	Description() string
 	Permissions() string
+}
+
+type NodeDeletion interface {
+	Path() string
+	Description() string
 }
 
 type NodeDelay interface {

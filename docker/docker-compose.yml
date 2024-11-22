@@ -14,7 +14,7 @@ services:
       context: ../
       dockerfile: docker/Dockerfile
       args:
-        MM_MIN_REV: da0b90c
+        MM_MIN_REV: 9f867b3
         PHENIX_WEB_AUTH: disabled
         APPS_REPO: github.com/activeshadow/phenix-apps
         APPS_BRANCH: caldera
@@ -46,7 +46,7 @@ services:
       context: .
       dockerfile: Dockerfile.minimega
       args:
-        MM_REV: da0b90c
+        MM_REV: 9f867b3
     image: minimega
     container_name: minimega
     privileged: true

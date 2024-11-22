@@ -18,6 +18,7 @@ type Node struct {
 	HardwareF    *Hardware              `json:"hardware" yaml:"hardware" structs:"hardware" mapstructure:"hardware"`
 	NetworkF     *Network               `json:"network" yaml:"network" structs:"network" mapstructure:"network"`
 	InjectionsF  []*Injection           `json:"injections" yaml:"injections" structs:"injections" mapstructure:"injections"`
+	DeletionsF   []*Deletion            `json:"deletions" yaml:"deletions" structs:"deletions" mapstructure:"deletions"`
 	AdvancedF    map[string]string      `json:"advanced" yaml:"advanced" structs:"advanced" mapstructure:"advanced"`
 	OverridesF   map[string]string      `json:"overrides" yaml:"overrides" structs:"overrides" mapstructure:"overrides"`
 	DelayF       *Delay                 `json:"delay" yaml:"delay" structs:"delay" mapstructure:"delay"`
@@ -57,6 +58,16 @@ func (this Node) Injections() []ifaces.NodeInjection {
 	}
 
 	return injects
+}
+
+func (this Node) Deletions() []ifaces.NodeDeletion {
+	deletions := make([]ifaces.NodeDeletion, len(this.DeletionsF))
+
+	for i, j := range this.DeletionsF {
+		deletions[i] = j
+	}
+
+	return deletions
 }
 
 func (this Node) Delay() ifaces.NodeDelay {
@@ -100,6 +111,16 @@ func (this *Node) SetInjections(injections []ifaces.NodeInjection) {
 	}
 
 	this.InjectionsF = injects
+}
+
+func (this *Node) SetDeletions(deletions []ifaces.NodeDeletion) {
+	deletionList := make([]*Deletion, len(deletions))
+
+	for i, j := range deletions {
+		deletionList[i] = j.(*Deletion)
+	}
+
+	this.DeletionsF = deletionList
 }
 
 func (this *Node) SetType(t string) {
@@ -238,6 +259,30 @@ func (this *Node) AddInject(src, dst, perms, desc string) {
 			SrcF:         src,
 			DstF:         dst,
 			PermissionsF: perms,
+			DescriptionF: desc,
+		})
+	}
+}
+
+func (this *Node) AddDeletion(path, desc string) {
+	if _, ok := this.LabelsF["disable-injects"]; ok {
+		return
+	}
+
+	var exists bool
+
+	for _, deletion := range this.DeletionsF {
+		if deletion.PathF == path {
+			deletion.DescriptionF = desc
+
+			exists = true
+			break
+		}
+	}
+
+	if !exists {
+		this.DeletionsF = append(this.DeletionsF, &Deletion{
+			PathF:        path,
 			DescriptionF: desc,
 		})
 	}
@@ -512,6 +557,19 @@ func (this Injection) Permissions() string {
 	return this.PermissionsF
 }
 
+type Deletion struct {
+	PathF        string `json:"path" yaml:"path" structs:"path" mapstructure:"path"`
+	DescriptionF string `json:"description" yaml:"description" structs:"description" mapstructure:"description"`
+}
+
+func (this Deletion) Path() string {
+	return this.PathF
+}
+
+func (this Deletion) Description() string {
+	return this.DescriptionF
+}
+
 func (this Node) validate() error {
 	if this.ExternalF == nil {
 		return nil
@@ -634,6 +692,16 @@ func (this Node) FileInjects(baseDir string) string {
 	}
 
 	return strings.Join(injects, " ")
+}
+
+func (this Node) FileDeletions() string {
+	deletions := make([]string, len(this.DeletionsF))
+
+	for i, deletion := range this.DeletionsF {
+		deletions[i] = fmt.Sprintf(`"%s"`, deletion.PathF)
+	}
+
+	return strings.Join(deletions, ",")
 }
 
 func (this Node) RouterName() string {
