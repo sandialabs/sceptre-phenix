@@ -6,7 +6,8 @@ FROM ghcr.io/activeshadow/minimega/minimega:${MM_MIN_REV} AS minimega
 
 
 # ** jsbuilder **
-FROM node:14.21.3 AS jsbuilder
+#FROM node:14.21.3 AS jsbuilder
+FROM node:18.0.0 AS jsbuilder
 
 ARG INSTALL_CERTS=
 RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
@@ -16,7 +17,7 @@ RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
       -O /usr/local/share/ca-certificates/custom$i.crt; \
   done && \
   update-ca-certificates; \
-  yarn config set cafile /etc/ssl/certs/ca-certificates.crt; fi"]
+  yarn config set cafile /etc/ssl/certs/ca-certificates.crt; fi" ignore-engines true]
 
 RUN npm install -g @vue/cli redoc-cli
 

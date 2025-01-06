@@ -27,6 +27,7 @@ ns add-host localhost
 
 {{/* added space to place hostname above relevant block */}}
 ## VM: {{ .General.Hostname }} ##
+{{- if eq .General.VMType "kvm" }}
     {{- if (derefBool .General.DoNotBoot) }}
 ## DoNotBoot: {{ derefBool .General.DoNotBoot }} ##
     {{- else }}
@@ -63,8 +64,16 @@ vm config {{ $config }} {{ $value }}
 vm config qemu-override "{{ $match }}" "{{ $replacement }}"
         {{- end }}
         {{- range $label, $value := .Labels }}
+
 vm config tags {{ $label }} {{ $value }}
         {{- end }}
+
+{{- else if eq .General.VMType "rkvm" }}
+clear vm config
+vm config hostname {{ .General.Hostname }}
+vm config vnc_host {{ .General.VncHost }}
+vm config vnc_port {{ .General.VncPort }}
+{{- end }}
 vm launch {{ .General.VMType }} {{ .General.Hostname }}
     {{- end }}
 {{- end }}

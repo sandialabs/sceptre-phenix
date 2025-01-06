@@ -85,7 +85,8 @@ ENV PATH \$GOPATH/bin:/usr/local/go/bin:\$PATH
 RUN mkdir -p \$GOPATH/src \$GOPATH/bin \
   && chmod -R 777 \$GOPATH
 
-ENV NODE_VERSION 12.18.3
+#ENV NODE_VERSION 12.18.3
+ENV NODE_VERSION 18.0.0
 
 RUN wget -O node.txz https://nodejs.org/dist/v\${NODE_VERSION}/node-v\${NODE_VERSION}-linux-x64.tar.xz \
   && tar -xJf node.txz -C /usr/local --strip-components=1 --no-same-owner && rm node.txz \

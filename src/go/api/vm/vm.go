@@ -110,7 +110,11 @@ func List(expName string) ([]mm.VM, error) {
 		if node.External() {
 			vm.State = "EXTERNAL"
 		} else if details, ok := running[vm.Name]; ok {
-			vm.Host = details.Host
+			if vm.Type == "rkvm" {
+				vm.Host = details.VncHost
+			} else {
+				vm.Host = details.Host
+			}
 			vm.State = details.State
 			vm.Running = details.Running
 			vm.Networks = details.Networks
@@ -201,6 +205,8 @@ func Get(expName, vmName string) (*mm.VM, error) {
 			Labels:          node.Labels(),
 			Annotations:     node.Annotations(),
 			Snapshot:        *node.General().Snapshot(),
+			VncHost:         node.General().VncHost(),
+			VncPort:         node.General().VncPort(),
 		}
 
 		for _, iface := range node.Network().Interfaces() {
@@ -232,8 +238,11 @@ func Get(expName, vmName string) (*mm.VM, error) {
 	if len(details) != 1 {
 		return vm, nil
 	}
-
-	vm.Host = details[0].Host
+	if vm.Type == "rkvm" {
+		vm.Host = details[0].VncHost
+	} else {
+		vm.Host = details[0].Host
+	}
 	vm.State = details[0].State
 	vm.Running = details[0].Running
 	vm.Networks = details[0].Networks
