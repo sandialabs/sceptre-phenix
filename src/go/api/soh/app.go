@@ -180,7 +180,7 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 
 	if val, ok := md["c2Timeout"]; ok {
 		if duration, ok := val.(string); ok {
-			if timeout, err := time.ParseDuration(duration); err != nil {
+			if timeout, err := time.ParseDuration(duration); err == nil {
 				this.md.c2Timeout = timeout
 			}
 		}
