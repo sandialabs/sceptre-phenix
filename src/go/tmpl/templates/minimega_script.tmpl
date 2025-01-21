@@ -67,13 +67,14 @@ vm config qemu-override "{{ $match }}" "{{ $replacement }}"
 
 vm config tags {{ $label }} {{ $value }}
         {{- end }}
+vm launch {{ .General.VMType }} {{ .General.Hostname }}
+    {{- end }}
 
 {{- else if eq .General.VMType "rkvm" }}
 clear vm config
 vm config hostname {{ .General.Hostname }}
 vm config vnc_host {{ .General.VncHost }}
 vm config vnc_port {{ .General.VncPort }}
-{{- end }}
 vm launch {{ .General.VMType }} {{ .General.Hostname }}
     {{- end }}
 {{- end }}

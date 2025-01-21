@@ -231,7 +231,7 @@ type VM struct {
 	Tags            []string  `json:"tags"`
 	Snapshot        bool      `json:"snapshot"`
 	VncHost         string    `json:"vnc_host"`
-	VncPort         int       `json:"vmc_port"`
+	VncPort         int       `json:"vnc_port"`
 
 	// Used internally to track network <--> IP relationship, since
 	// network ordering from minimega may not be the same as network

@@ -254,6 +254,7 @@ components:
               enum:
               - kvm
               - container
+              - rkvm
               - ""
               default: kvm
               example: kvm
@@ -266,6 +267,16 @@ components:
               type: boolean
               default: false
               example: false
+              nullable: true
+            vnc_host:
+              type: string
+              format: ipv4 
+              example: 192.168.1.2
+              nullable: true
+            vnc_port:
+              type: integer
+              default: 5900
+              example: 5900
               nullable: true
         hardware:
           type: object
