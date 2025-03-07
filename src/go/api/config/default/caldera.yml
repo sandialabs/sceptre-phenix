@@ -44,10 +44,9 @@ spec:
         && ln -s /usr/local/go/bin/* /usr/local/bin \
         && export GOROOT=/usr/local/go
 
-      mkdir -p /go/src /go/bin
-      chmod -R 777 /go
-
-      git clone --recursive --branch 5.1.0 https://github.com/mitre/caldera.git /opt/caldera
+      git clone --recursive --branch 5.2.0 https://github.com/mitre/caldera.git /opt/caldera
+      cd /opt/caldera/plugins/magma && rm -f package-lock.json ; npm install ; npm run build
+      cd /opt/caldera/plugins/sandcat && go install
       cd /opt/caldera && python3 -m pip install --break-system-packages -r requirements.txt
 
       git submodule add -b facts https://github.com/activeshadow/caldera-modbus.git plugins/modbus
@@ -55,13 +54,26 @@ spec:
       git submodule add -b main https://github.com/activeshadow/caldera-ot.git plugins/ot
       git submodule add -b main https://github.com/activeshadow/caldera-phenix.git plugins/phenix
 
+      # Installing here to prevent Caldera from trying to reach out during startup.
+      git clone --depth 1 https://github.com/redcanaryco/atomic-red-team.git /opt/caldera/plugins/atomic/data/atomic-red-team
+
+      # Installing here to prevent Caldera from trying to reach out during startup.
+      go install github.com/jlaffaye/ftp@latest
+      go install github.com/google/go-github/github@latest
+      go install golang.org/x/oauth2@latest
+      go install gopkg.in/natefinch/npipe.v2@latest
+      go install github.com/aws/aws-sdk-go@latest
+      go install github.com/aws/aws-sdk-go/aws@latest
+      go install github.com/miekg/dns@latest
+
       cat > /etc/systemd/system/caldera.service <<EOF
       [Unit]
       Description=CALDERA Framework
 
       [Service]
       WorkingDirectory=/opt/caldera
-      ExecStart=/usr/bin/python3 server.py --insecure --build --log INFO
+      Environment=GOROOT=/root/go
+      ExecStart=/usr/bin/python3 server.py --insecure --log INFO
 
       [Install]
       WantedBy=multi-user.target
