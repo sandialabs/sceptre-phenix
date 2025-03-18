@@ -7,6 +7,7 @@ x-common: &common
     options:
       max-file: "5"
       max-size: "10m"
+
 services:
   phenix:
     build:
@@ -16,10 +17,12 @@ services:
         MM_MIN_REV: 9f867b3
         PHENIX_WEB_AUTH: disabled
     command:
-    - phenix
-    - ui
-    - --hostname-suffixes=-minimega,-phenix
-    - --minimega-console
+      - phenix
+      - ui
+      - --hostname-suffixes=-minimega,-phenix
+      - --logs.minimega-path=/var/log/phenix/minimega.log
+      - --logs.publish-to-ui=info
+      - --minimega-console
     image: phenix
     container_name: phenix
     privileged: true
@@ -34,6 +37,8 @@ services:
       - /phenix:/phenix:shared
       - ./tmp/minimega:/tmp/minimega
       - ./tmp/phenix:/tmp/phenix
+    environment:
+      MM_FILEPATH: /phenix/images
     depends_on:
       - minimega
     healthcheck:
