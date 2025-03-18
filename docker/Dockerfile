@@ -148,6 +148,10 @@ RUN wget -O filebeat.deb https://artifacts.elastic.co/downloads/beats/filebeat/f
 ARG PIP_INDEX="https://pypi.org/"
 ARG PIP_INDEX_URL="https://pypi.org/simple"
 
+# Upgrade pip. Ubuntu 22 python3-pip package is pip 22
+# 23+ is needed to effectively support pyproject.toml
+RUN python3 -m pip install --no-cache-dir --upgrade pip
+
 # Do this before installing phenix-apps so minimega package is latest version
 COPY --from=minimega /opt/minimega/lib /tmp/minimega
 RUN python3 -m pip install --no-cache-dir /tmp/minimega
