@@ -21,7 +21,8 @@ services:
       - ui
       - --hostname-suffixes=-minimega,-phenix
       - --logs.minimega-path=/var/log/phenix/minimega.log
-      - --logs.publish-to-ui=info
+      # NOTE: setting this to INFO or below may lead to UI lag in certain scenarios
+      - --logs.publish-to-ui=error
       - --minimega-console
     image: phenix
     container_name: phenix
@@ -38,6 +39,12 @@ services:
       - ./tmp/minimega:/tmp/minimega
       - ./tmp/phenix:/tmp/phenix
     environment:
+      # MM_FILEPATH is the base path for minimega
+      # Used for disk images (.qc2) and also where
+      # miniccc responses get saved to. For example,
+      # for an experiment named "foo", the miniccc
+      # responses will be saved to the directory
+      # /phenix/images/foo/miniccc_responses
       MM_FILEPATH: /phenix/images
     depends_on:
       - minimega
@@ -65,6 +72,7 @@ services:
     healthcheck:
       test: mm version
     environment:
+      # Ensure this matches MM_FILEPATH in phenix service (defined above)
       MM_FILEPATH: /phenix/images
       MM_LOGFILE: /var/log/phenix/minimega.log
       MM_LOGLEVEL: info
