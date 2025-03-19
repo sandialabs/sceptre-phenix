@@ -40,7 +40,7 @@ RUN npx redoc-cli build openapi.yml -o index.html --title 'phenix API'
 
 
 # ** gobuilder **
-FROM golang:1.20.7 AS gobuilder
+FROM golang:1.24.1 AS gobuilder
 
 RUN apt update \
   && apt install -y protobuf-compiler xz-utils
@@ -83,7 +83,7 @@ RUN CGO_ENABLED=0 GOOS=linux go install -trimpath ./...
 
 
 # ** Build the phenix image **
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # General image metadata
 # Reference: https://github.com/opencontainers/image-spec/blob/main/annotations.md
@@ -150,7 +150,7 @@ ARG PIP_INDEX_URL="https://pypi.org/simple"
 
 # Do this before installing phenix-apps so minimega package is latest version
 COPY --from=minimega /opt/minimega/lib /tmp/minimega
-RUN python3 -m pip install --no-cache-dir /tmp/minimega
+RUN python3 -m pip install --break-system-packages --no-cache-dir /tmp/minimega
 
 # Allow installing from a fork of sceptre-phenix-apps that could
 # exist on GitHub or elsewhere.
@@ -158,8 +158,7 @@ ARG APPS_REPO=github.com/sandialabs/sceptre-phenix-apps
 ARG APPS_BRANCH=main
 
 # Install phenix user apps
-RUN python3 -m pip install \
-  --no-cache-dir \
+RUN python3 -m pip install --break-system-packages --no-cache-dir \
   "git+https://${APPS_REPO}.git@${APPS_BRANCH}#egg=phenix-apps&subdirectory=src/python"
 
 # Copy binaries from gobuilder stage
