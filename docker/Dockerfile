@@ -15,11 +15,7 @@ RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
     wget ${arr[$i]} -e use_proxy=no \
       -O /usr/local/share/ca-certificates/custom$i.crt; \
   done && \
-<<<<<<< HEAD
   update-ca-certificates; \
-=======
-  update-ca-certificates; \ 
->>>>>>> a5ce04e (adding INSTALL_CERTS to each stage of build)
   yarn config set cafile /etc/ssl/certs/ca-certificates.crt; fi"]
 
 RUN npm install -g @vue/cli redoc-cli
