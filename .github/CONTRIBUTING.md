@@ -1,4 +1,4 @@
-ontributing to SCEPTRE Phenix
+Contributing to SCEPTRE Phenix
 
 Thank you for your interest in contributing to SCEPTRE Phenix! We welcome contributions from everyone and appreciate your efforts to improve our project. This guide will help you understand how to contribute effectively.
 
@@ -30,7 +30,7 @@ Thank you for your interest in contributing to SCEPTRE Phenix! We welcome contri
         ```bash
         git fetch upstream
         ```
-    * Merge the changes from the upstream main brnach into your local main branch
+    * Merge the changes from the upstream main branch into your local main branch
         ```bash
         git checkout main
         git merge upstream/main
