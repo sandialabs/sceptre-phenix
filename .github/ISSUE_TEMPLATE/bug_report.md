@@ -33,3 +33,6 @@ If applicable, add screenshots to help explain your problem.
 
 ### Additional Context
 Add any other context about the problem here, such as logs or error messages.
+
+### Checklist
+- [ ] I have included no proprietary/sensitive information in my issue.

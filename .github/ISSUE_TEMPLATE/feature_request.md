@@ -25,3 +25,6 @@ Have you considered any alternative solutions or approaches? If so, please descr
 
 ### Additional Context
 Add any other context or screenshots about the feature request here.
+
+### Checklist
+- [ ] I have included no proprietary/sensitive information in my issue.
