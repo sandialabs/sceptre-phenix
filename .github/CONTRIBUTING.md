@@ -2,6 +2,8 @@ Contributing to SCEPTRE Phenix
 
 Thank you for your interest in contributing to SCEPTRE Phenix! We welcome contributions from everyone and appreciate your efforts to improve our project. This guide will help you understand how to contribute effectively.
 
+> Note: A failure to follow this guide will result in delay of PRs until there is compliance. 
+
 ## Table of Contents
 
 - [Getting Started](#getting-started)
@@ -56,7 +58,7 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
 
 ### Submitting Code
 
-1. **Create a Branch**: Create a new branch for your feature or bug fix using [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) notation. The branch name should follow this format:
+1. **Create a Branch**: Create a new branch (on your fork of the repository) for your feature or bug fix using [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) notation. The branch name should follow this format:
     ```bash
     type/description
     ```
