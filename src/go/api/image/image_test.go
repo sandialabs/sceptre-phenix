@@ -10,11 +10,8 @@ import (
 
 func TestImageTemplate(t *testing.T) {
 	img := v1.Image{
-		Variant:     "minbase",
-		Release:     "bionic",
-		Format:      "qcow2",
+		Release:     "noble",
 		Size:        "10G",
-		Mirror:      "http://us.archive.ubuntu.com",
 		Packages:    []string{"wireshark"},
 		VerboseLogs: true,
 	}
@@ -31,7 +28,7 @@ func TestImageTemplate(t *testing.T) {
 		t.FailNow()
 	}
 
-	if !strings.Contains(buf.String(), `options: "--include wireshark`) {
+	if !strings.Contains(buf.String(), `- wireshark`) {
 		t.Log("missing packages in options")
 		t.FailNow()
 	}
