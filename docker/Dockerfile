@@ -104,7 +104,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 # tshark needed for scorch tcpdump component
 RUN apt update \
   && echo 'wireshark-common wireshark-common/install-setuid boolean false' | debconf-set-selections \
-  && apt install -y cpio debootstrap git iproute2 iputils-ping locales nano pigz python3-pip tshark vim vmdb2 \
+  && apt install -y cmdtest cpio debootstrap git iproute2 iputils-ping kpartx locales nano parted psmisc python3 python3-jinja2 python3-pip python3-yaml qemu-utils tshark vim wget xz-utils zerofree \
   && locale-gen en_US.UTF-8 \
   && apt autoremove -y \
   && apt clean -y \
@@ -125,8 +125,8 @@ RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
   update-ca-certificates; \
   fi"]
 
-RUN wget https://github.com/glattercj/vmdb2/releases/latest/download/vmdb2 -O /usr/bin/vmdb2 \
-  && chmod +x /usr/bin/vmdb2
+RUN git clone https://gitlab.com/glattercj/vmdb2 /opt/vmdb2
+RUN ln -s /opt/vmdb2/vmdb2 /usr/bin/vmdb2
 
 # needed to build Kali images with phenix
 RUN wget https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg

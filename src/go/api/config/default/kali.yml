@@ -1,79 +1,127 @@
 apiVersion: phenix.sandia.gov/v1
 kind: Image
 metadata:
-  name: kali
+    name: PHENIX-kali
 spec:
-  compress: true
-  deb_append: ' --components=main,contrib,non-free'
-  format: qcow2
-  mirror: http://http.kali.org/kali
-  overlays: null
-  packages:
-  - initramfs-tools
-  - net-tools
-  - isc-dhcp-client
-  - openssh-server
-  - init
-  - iputils-ping
-  - vim
-  - less
-  - netbase
-  - curl
-  - ifupdown
-  - dbus
-  - linux-image-amd64
-  - linux-headers-amd64
-  - xserver-xorg
-  ramdisk: false
-  release: kali
-  script_order:
-  - POSTBUILD_APT_KALI
-  - POSTBUILD_APT_CLEANUP
-  - POSTBUILD_NO_ROOT_PASSWD
-  - POSTBUILD_PHENIX_HOSTNAME
-  - POSTBUILD_PHENIX_BASE
-  scripts:
-    POSTBUILD_APT_CLEANUP: |
-      apt clean || apt-get clean || echo "unable to clean apt cache"
-    POSTBUILD_APT_KALI: |
-      export DEBIAN_FRONTEND=noninteractive
-      apt -y install kali-linux-core kali-desktop-xfce kali-tools-top10
-    POSTBUILD_NO_ROOT_PASSWD: |
-      sed -i 's/nullok_secure/nullok/' /etc/pam.d/common-auth
-      sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
-      sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
-      sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
-      sed -i 's/PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
-      passwd -d root
-    POSTBUILD_PHENIX_BASE: |
-      cat > /etc/systemd/system/phenix.service <<EOF
-      [Unit]
-      Description=phenix startup service
-      After=network.target systemd-hostnamed.service
-      [Service]
-      Environment=LD_LIBRARY_PATH=/usr/local/lib
-      ExecStart=/usr/local/bin/phenix-start.sh
-      RemainAfterExit=true
-      StandardOutput=journal
-      Type=oneshot
-      [Install]
-      WantedBy=multi-user.target
-      EOF
-      mkdir -p /etc/systemd/system/multi-user.target.wants
-      ln -s /etc/systemd/system/phenix.service /etc/systemd/system/multi-user.target.wants/phenix.service
-      mkdir -p /usr/local/bin
-      cat > /usr/local/bin/phenix-start.sh <<EOF
-      #!/bin/bash
-      for file in /etc/phenix/startup/*; do
-        echo \$file
-        bash \$file
-      done
-      EOF
-      chmod +x /usr/local/bin/phenix-start.sh
-      mkdir -p /etc/phenix/startup
-    POSTBUILD_PHENIX_HOSTNAME: |
-      echo "kali-phenix" > /etc/hostname
-      sed -i 's/127.0.1.1 .*/127.0.1.1 kali-phenix/' /etc/hosts
-      echo "\nBuilt with kali image on $(date)\n\n" >> /etc/motd
-  size: 10G
-  variant: minbase
+    components:
+        - main
+        - contrib
+        - non-free
+        - non-free-firmware
+    compress: true
+    format: qcow2
+    mirror: http://http.kali.org/kali
+    name: PHENIX-kali
+    no_virtuals: false
+    overlays: null
+    packages:
+        - kali-tools-top10
+        - curl
+        - ethtool
+        - ncat
+        - net-tools
+        - openssh-server
+        - rsync
+        - ssh
+        - tcpdump
+        - tmux
+        - vim
+        - wget
+        - linux-image-amd64
+        - linux-headers-amd64
+        - default-jdk
+        - kali-desktop-xfce
+        - wmctrl
+        - xdotool
+    ramdisk: false
+    release: kali-rolling
+    script_order:
+        - POSTBUILD_KALI_GUI
+        - POSTBUILD_APT_CLEANUP
+        - POSTBUILD_NO_ROOT_PASSWD
+        - POSTBUILD_PHENIX_HOSTNAME
+        - POSTBUILD_PHENIX_BASE
+    scripts:
+        POSTBUILD_APT_CLEANUP: |
+            # --------------------------------------------------- Cleanup ----------------------------------------------------
+            apt clean || apt-get clean || echo "unable to clean apt cache"
+        POSTBUILD_KALI_GUI: |
+            # ----------------------------------------------------- GUI ------------------------------------------------------
+            # Autologin root and resolution
+            cat > /etc/lightdm/lightdm.conf <<EOF
+            [Seat:*]
+            autologin-user=root
+            autologin-user-timeout=0
+            display-setup-script=/root/.init.sh
+            EOF
+            sed -i '/quiet_success/s/^/#/' /etc/pam.d/lightdm-autologin
+            cat > /root/.init.sh <<EOF
+            #!/bin/sh
+            xrandr --newmode $(cvt 1600 900 | grep Modeline | sed 's/Modeline //g')
+            xrandr --addmode Virtual-1 "1600x900_60.00"
+            xrandr --output Virtual-1 --mode "1600x900_60.00"
+            EOF
+            chmod +x /root/.init.sh
+        POSTBUILD_NO_ROOT_PASSWD: |
+            # ---------------------------------------------- No Root Password ------------------------------------------------
+            sed -i 's/nullok_secure/nullok/' /etc/pam.d/common-auth
+            sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+            sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+            sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+            sed -i 's/PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+            passwd -d root
+        POSTBUILD_PHENIX_BASE: |
+            # ----------------------------------------------------- Base -----------------------------------------------------
+            cat > /etc/systemd/system/miniccc.service <<EOF
+            [Unit]
+            Description=miniccc
+            [Service]
+            ExecStart=/opt/minimega/bin/miniccc -v=false -serial /dev/virtio-ports/cc -logfile /var/log/miniccc.log
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            cat > /etc/systemd/system/phenix.service <<EOF
+            [Unit]
+            Description=phenix startup service
+            After=network.target systemd-hostnamed.service
+            [Service]
+            Environment=LD_LIBRARY_PATH=/usr/local/lib
+            ExecStart=/usr/local/bin/phenix-start.sh
+            RemainAfterExit=true
+            StandardOutput=journal
+            Type=oneshot
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            mkdir -p /etc/systemd/system/multi-user.target.wants
+            ln -s /etc/systemd/system/miniccc.service /etc/systemd/system/multi-user.target.wants/miniccc.service
+            ln -s /etc/systemd/system/phenix.service /etc/systemd/system/multi-user.target.wants/phenix.service
+            mkdir -p /usr/local/bin
+            cat > /usr/local/bin/phenix-start.sh <<EOF
+            #!/bin/bash
+            for file in /etc/phenix/startup/*; do
+                echo \$file
+                bash \$file
+            done
+            EOF
+            chmod +x /usr/local/bin/phenix-start.sh
+            mkdir -p /etc/phenix/startup
+        POSTBUILD_PHENIX_HOSTNAME: |
+            # -------------------------------------------------- Hostname ----------------------------------------------------
+            echo "phenix" > /etc/hostname
+            sed -i 's/127.0.1.1 .*/127.0.1.1 phenix/' /etc/hosts
+            cat > /etc/motd <<EOF
+
+            ██████╗ ██╗  ██╗███████╗███╗  ██╗██╗██╗  ██╗
+            ██╔══██╗██║  ██║██╔════╝████╗ ██║██║╚██╗██╔╝
+            ██████╔╝███████║█████╗  ██╔██╗██║██║ ╚███╔╝
+            ██╔═══╝ ██╔══██║██╔══╝  ██║╚████║██║ ██╔██╗
+            ██║     ██║  ██║███████╗██║ ╚███║██║██╔╝╚██╗
+            ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚══╝╚═╝╚═╝  ╚═╝
+
+            EOF
+            echo "\nBuilt with phenix image on $(date)\n\n" >> /etc/motd
+    size: 50G
+    skip_default_packages: false
+    variant: mingui
+
