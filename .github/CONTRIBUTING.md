@@ -132,7 +132,7 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
     git push origin feat/add-user-authentication --force
     ```
     
-6. **Open a Pull Request**: Go to the original repository and open a pull request. Provide a clear description of your changes and reference any related issues.
+6. **Open a Pull Request**: Go to the original repository and open a [pull request](https://github.com/sandialabs/sceptre-phenix/pulls). Provide a clear description of your changes and reference any related issues.
 
 ## License
 By contributing to this project, you agree that your contributions will be licensed under the [GNU](https://github.com/sandialabs/sceptre-phenix/blob/main/LICENSE) License.
