@@ -129,6 +129,7 @@ func Start(opts ...ServerOption) error {
 	)
 
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plog.Warn("Unknown route requested", "route", r.RequestURI, "method", r.Method)
 		switch a := assets.(type) {
 		case *assetfs.AssetFS:
 			util.NewBinaryFileSystem(a).ServeFile(w, r, "index.html")
@@ -150,6 +151,7 @@ func Start(opts ...ServerOption) error {
 	api.Handle("/configs/download", weberror.ErrorHandler(DownloadConfigs)).Methods("POST", "OPTIONS")
 	api.Handle("/schemas/{version}", weberror.ErrorHandler(GetSchemaSpec)).Methods("GET", "OPTIONS")
 	api.Handle("/schemas/{kind}/{version}", weberror.ErrorHandler(GetSchema)).Methods("GET", "OPTIONS")
+
 	api.HandleFunc("/experiments", GetExperiments).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments", CreateExperiment).Methods("POST", "OPTIONS")
 	api.Handle("/experiments/builder", weberror.ErrorHandler(CreateExperimentFromBuilder)).Methods("POST", "OPTIONS")
@@ -224,11 +226,21 @@ func Start(opts ...ServerOption) error {
 		api.HandleFunc("/experiments/{exp}/vms/{name}/files/upload", UploadMountFile).Methods("PUT", "OPTIONS").Queries("path", "{path}")
 	}
 
+	api.HandleFunc("/disks", GetDisks).Methods("GET", "OPTIONS")
+	api.HandleFunc("/disks/snapshot", SnapshotDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}", "new", "{new}")
+	api.HandleFunc("/disks/rebase", RebaseDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}", "backing", "{backing}", "unsafe", "{unsafe}")
+	api.HandleFunc("/disks/resize", ResizeDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}", "size", "{size}")
+	api.HandleFunc("/disks/commit", CommitDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}")
+	api.HandleFunc("/disks/clone", CloneDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}", "new", "{new}")
+	api.HandleFunc("/disks", DeleteDisk).Methods("DELETE", "OPTIONS").Queries("disk", "{disk}")
+	api.HandleFunc("/disks/rename", RenameDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}", "new", "{new}")
+	api.HandleFunc("/disks", UploadDisk).Methods("POST", "OPTIONS")
+	api.HandleFunc("/disks/download", DownloadDisk).Methods("GET", "OPTIONS").Queries("disk", "{disk}")
+
 	api.HandleFunc("/vms", GetAllVMs).Methods("GET", "OPTIONS")
 	api.HandleFunc("/applications", GetApplications).Methods("GET", "OPTIONS")
 	api.HandleFunc("/topologies", GetTopologies).Methods("GET", "OPTIONS")
 	api.HandleFunc("/topologies/{topo}/scenarios", GetScenarios).Methods("GET", "OPTIONS")
-	api.HandleFunc("/disks", GetDisks).Methods("GET", "OPTIONS")
 	api.HandleFunc("/hosts", GetClusterHosts).Methods("GET", "OPTIONS")
 	api.HandleFunc("/users", GetUsers).Methods("GET", "OPTIONS")
 	api.HandleFunc("/users", CreateUser).Methods("POST", "OPTIONS")

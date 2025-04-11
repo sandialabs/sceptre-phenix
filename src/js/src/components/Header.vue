@@ -21,6 +21,9 @@ are only available to Global Administrator or Global Viewer.
           <menu-link v-if="auth && roleAllowed('configs', 'list')"
                        :to="{name: 'configs'}"
                        class="navbar-item">Configs</menu-link>
+          <menu-link v-if="auth && roleAllowed('disks', 'list')"
+                       :to="{name: 'disks'}"
+                       class="navbar-item">Disks</menu-link>
           <menu-link v-if="auth && roleAllowed('hosts', 'list')"
                        :to="{name: 'hosts'}"
                        class="navbar-item">Hosts</menu-link>
