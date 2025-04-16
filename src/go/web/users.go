@@ -2,10 +2,12 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
 	"phenix/api/config"
+	"phenix/api/settings"
 	"phenix/util/plog"
 	"phenix/web/broker"
 	"phenix/web/rbac"
@@ -98,6 +100,13 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal(body, &req); err != nil {
 		plog.Error("unmashaling request body", "err", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	if !settings.IsPasswordValid(req.Password) {
+		plog.Error("password does not meet requirements", "requester", ctx.Value("user").(string))
+		errStr := fmt.Sprintf("password does not meet the requirements:\n%s", settings.GetPasswordSettingsHTML())
+		http.Error(w, errStr, http.StatusBadRequest)
 		return
 	}
 
@@ -255,6 +264,13 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		if req.Password == "" {
 			plog.Error("new password provided without old password", "user", uname)
 			http.Error(w, "cannot change password without password", http.StatusBadRequest)
+			return
+		}
+
+		if !settings.IsPasswordValid(req.NewPassword) {
+			plog.Error("new password does not meet requirements", "requester", ctx.Value("user").(string))
+			errStr := fmt.Sprintf("new password does not meet the requirements:\n%s", settings.GetPasswordSettingsHTML())
+			http.Error(w, errStr, http.StatusBadRequest)
 			return
 		}
 
