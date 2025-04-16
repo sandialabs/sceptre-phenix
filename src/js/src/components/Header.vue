@@ -46,6 +46,9 @@ are only available to Global Administrator or Global Viewer.
           <menu-link v-if="auth && tunneler"
                         :to="{name: 'tunneler'}"
                         class="navbar-item">Tunneler</menu-link>
+          <menu-link v-if="auth && roleAllowed('settings', 'edit')"
+                        :to="{name: 'settings'}"
+                        class="navbar-item">Settings</menu-link>
         </div>
       </div>
 

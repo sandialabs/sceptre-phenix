@@ -17,7 +17,9 @@
           <b-field label="Last Name">
             <b-input type="text" v-model="user.last_name"></b-input>
           </b-field>
-          <b-field label="Password">
+          <b-field label="Password"
+            :message="createModalErrorMessage"
+            :type="createModalErrorLevel">
             <b-input type="password" minlength="8" maxlength="32" v-model="user.password"></b-input>
           </b-field>
           <b-field label="Confirm Password">
@@ -41,7 +43,9 @@
           <b-input type="text" v-model="user.resource_names"></b-input>
         </section>
         <footer class="modal-card-foot buttons is-right">
-          <button class="button is-light" @click="createUser">Create User</button>
+          <button class="button is-light"
+             :disabled="!createPasswordOk"
+            @click="createUser">Create User</button>
         </footer>
       </div>
     </b-modal>
@@ -60,7 +64,9 @@
           <b-field label="Password">
             <b-input type="password" v-model="user.password"></b-input>
           </b-field>
-          <b-field label="New Password">
+          <b-field label="New Password"
+            :message="updateModalErrorMessage"
+            :type="updateModalErrorLevel">
             <b-input type="password" minlength="8" maxlength="32" v-model="user.new_password"></b-input>
           </b-field>
           <b-field v-if="roleAllowed('users', 'create')" label="Role">
@@ -75,7 +81,9 @@
           </b-field>
         </section>
         <footer class="modal-card-foot buttons is-right">
-          <button class="button is-light" @click="updateUser">Update User</button>
+          <button class="button is-light"
+             :disabled="!updatePasswordOk"
+            @click="updateUser">Update User</button>
         </footer>
       </div>
     </b-modal>
@@ -118,7 +126,6 @@
       </div>
     </b-modal>
     <template>
-      <hr>
       <b-field grouped position="is-right">
         <p v-if="roleAllowed('users', 'create')" class="control">
           <b-tooltip label="create a new user" type="is-light is-left">
@@ -158,12 +165,15 @@
           <b-table-column field="role" label="Role" sortable v-slot="props">
             {{ props.row.role_name ? props.row.role_name : "Not yet assigned" }}
           </b-table-column>
-          <b-table-column label="Actions" width="100" centered v-slot="props">
+          <b-table-column label="Actions" width="150" centered v-slot="props">
             <button class="button is-light is-small action" @click="newToken( props.row.username )">
               <b-icon icon="key"></b-icon>
             </button>
             <button v-if="roleAllowed('users', 'delete', props.row.username)" class="button is-light is-small action" @click="deleteUser( props.row.username )">
               <b-icon icon="trash"></b-icon>
+            </button>
+            <button v-if="roleAllowed('users', 'patch', props.row.username)" class="button is-light is-small action" @click="editUser(props.row.username)">
+              <b-icon icon="pencil"></b-icon>
             </button>
           </b-table-column>
         </b-table>
@@ -189,11 +199,12 @@
     async created () {
       this.$options.sockets.onmessage = this.handler;
       this.updateUsers();
+      this.getPasswordRequirements();
     },
 
     computed: {
       paginationNeeded () {
-        var user = localStorage.getItem( 'user' );
+        var user = this.$store.getters.username;
 
         if ( localStorage.getItem( user + '.lastPaginate' ) ) {
           this.table.isPaginated = localStorage.getItem( user + '.lastPaginate' )  == 'true';
@@ -205,7 +216,31 @@
         } else {
           return true;
         }
-      }
+      },
+      createModalErrorMessage() {
+        return this.get_password_error(this.user.password)
+      },
+      updateModalErrorMessage() {
+        return this.get_password_error(this.user.new_password)
+      },
+      createPasswordOk() {
+        return this.createModalErrorMessage == null
+      },
+      updatePasswordOk() {
+        return this.updateModalErrorMessage == null
+      },
+      createModalErrorLevel() {
+        if (this.createModalErrorMessage != null){
+          return 'is-danger'
+        }
+        return null
+      },
+      updateModalErrorLevel() {
+        if (this.updateModalErrorMessage != null){
+          return 'is-danger'
+        }
+        return null
+      },
     },
 
     methods: {
@@ -230,9 +265,9 @@
 
             user.resource_names = user.resource_names.join( ' ' );
             users.push( user );
-      
+
             this.users = [ ...users ];
-          
+
             this.$buefy.toast.open({
               message: 'The ' + msg.resource.name + ' user was created.',
               type: 'is-success'
@@ -252,9 +287,9 @@
                 break;
               }
             }
-          
+
             this.users = [ ...users ];
-          
+
             this.$buefy.toast.open({
               message: 'The ' + msg.resource.name + ' user was updated.',
               type: 'is-success'
@@ -319,7 +354,7 @@
       },
 
       changePaginate () {
-        var user = localStorage.getItem( 'user' );
+        var user = this.$store.getters.username;
         localStorage.setItem( user + '.lastPaginate', this.table.isPaginated );
       },
 
@@ -371,6 +406,16 @@
           return;
         }
 
+        if (! this.createPasswordOk) {
+          this.$buefy.toast.open({
+            message: 'Password does not meet requirements',
+            type:'is-warning',
+            duration: 4000
+          })
+          return;
+        }
+
+
         if ( !this.user.confirmPassword ) {
           this.$buefy.toast.open({
             message: 'You must include a password confirmation',
@@ -391,8 +436,6 @@
           return;
         }
 
-        delete this.user.confirmPassword;
-
         if ( !this.user.role_name ) {
           this.$buefy.toast.open({
             message: 'You must select a role',
@@ -403,13 +446,13 @@
           return;
         }
 
+        delete this.user.confirmPassword;
+
         if ( this.user.resource_names ) {
           this.user.resource_names = this.user.resource_names.split( ' ' );
         }
 
         this.isWaiting = true;
-        
-        let name = this.user.username;
         
         this.$http.post(
           'users', this.user
@@ -579,9 +622,39 @@
 
       resetLocalUser () {
         this.user = {};
-      }
+      },
+      get_password_error(password) {
+        if (password == undefined || password.length == 0 ){
+          return null
+        }
+        if (password.length < this.passwordReqs.min_length) {
+          return "Password must be longer than " + this.passwordReqs.min_length + " characters."
+        }
+        if (! /[a-z]/.test(password) && this.passwordReqs.lowercase_req) {
+          return "Password must contain a lowercase letter"
+        }
+        if (! /[A-Z]/.test(password) && this.passwordReqs.uppercase_req) {
+          return "Password must contain an uppercase letter"
+        }
+        if (! /\d/.test(password) && this.passwordReqs.number_req) {
+          return "Password must contain a number"
+        }
+        if (! /\W/.test(password) && this.passwordReqs.symbol_req) {
+          return "Password must contain a symbol"
+        }
+        return null
+      },
+      getPasswordRequirements(){
+        this.$http.get('settings/password').then(
+          response => {
+            response.json().then( state => {
+              console.log(state);
+              this.passwordReqs = state
+            });
+          }
+        )
+      },
     },
-
     data () {
       return {
         table: {
@@ -600,6 +673,13 @@
         isCreateActive: false,
         isEditActive: false,
         isNewTokenActive: false,
+        passwordReqs: {
+          number_req: false,
+          symbol_req: false,
+          lowercase_req: false,
+          uppercase_req: false,
+          min_length: 8,
+        },
         isProxyTokenCopied: false,
         isWaiting: true
       }

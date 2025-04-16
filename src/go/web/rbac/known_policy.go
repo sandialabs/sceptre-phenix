@@ -51,6 +51,7 @@ var Permissions = []Permission{
 	{"roles", "list"},
 	{"scenarios", "list"},
 	{"schemas", "get"},
+	{"settings", "update"},
 	{"topologies", "list"},
 	{"users", "create"},
 	{"users", "delete"},

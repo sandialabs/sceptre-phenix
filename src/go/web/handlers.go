@@ -21,6 +21,7 @@ import (
 	"phenix/api/config"
 	"phenix/api/experiment"
 	"phenix/api/scenario"
+	"phenix/api/settings"
 	"phenix/api/vm"
 	"phenix/app"
 	"phenix/store"
@@ -1058,7 +1059,7 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 	case *proto.UpdateVMRequest_Host:
 		opts = append(opts, vm.UpdateWithHost(req.GetHost()))
 	}
-	
+
 	switch req.SnapshotOption.(type) {
 	case *proto.UpdateVMRequest_Snapshot:
 		opts = append(opts, vm.UpdateWithSnapshot(req.GetSnapshot()))
@@ -2975,4 +2976,86 @@ func parseInt(v string, d *int) error {
 	var err error
 	*d, err = strconv.Atoi(v)
 	return err
+}
+
+// GET /settings
+func GetSettings(w http.ResponseWriter, r *http.Request) {
+	plog.Debug("HTTP Handler called", "handler", "GetSettings")
+
+	settings, err := settings.GetSettings()
+	if err != nil {
+		plog.Error("getting proto settings", "err:", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	body, err := json.Marshal(settings)
+	if err != nil {
+		plog.Error("marshaling settings", "err:", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+	w.Write(body)
+}
+
+// POST /settings
+func SetSettings(w http.ResponseWriter, r *http.Request) {
+	plog.Debug("HTTP handler called", "handler", "SetSettings")
+
+	var (
+		ctx  = r.Context()
+		role = ctx.Value("role").(rbac.Role)
+	)
+
+	if !role.Allowed("settings", "update") {
+		plog.Warn("setting settings not allowed", "user", ctx.Value("user").(string))
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		plog.Error("reading request body", "err", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	s := &settings.Settings{}
+	err = json.Unmarshal(body, s)
+	if err != nil {
+		plog.Error("Unmarshaling request body", "err", err)
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	err = settings.UpdateAllSettings(*s)
+	if err != nil {
+		plog.Error("Updating all settings", "err", err)
+		http.Error(w, "Error updating settings", http.StatusInternalServerError)
+		return
+	}
+	plog.Info("settings changed", "user", ctx.Value("user").(string))
+}
+
+// GET /settings/password
+func GetPasswordRequirements(w http.ResponseWriter, r *http.Request) {
+	plog.Debug("HTTP handler called", "handler", "GetPasswordRequirements")
+	settings.SetDefaults()
+
+	passwordReqs, err := settings.GetPasswordSettings()
+	if err != nil {
+		plog.Error("Getting password settings:", "err", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	body, err := json.Marshal(passwordReqs)
+	if err != nil {
+		plog.Error("Marshalling password reqs:", "err", err)
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	w.Write(body)
 }
