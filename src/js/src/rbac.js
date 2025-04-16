@@ -6,6 +6,8 @@ let roleAllowed = (role, resource, verb, ...names) => {
     if (role === null) {
       return false
     }
+    // remove any undefined or empty names
+    names = names.filter((n) => n)
 
     let k = [role.name, resource, verb, names].join("$")
     if (cache.has(k)) {

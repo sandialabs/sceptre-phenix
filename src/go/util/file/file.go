@@ -15,12 +15,6 @@ import (
 var DefaultClusterFiles ClusterFiles = new(MMClusterFiles)
 
 type ClusterFiles interface {
-	// Get list of VM disk images, container filesystems, or both.
-	// Assumes disk images have `.qc2` or `.qcow2` extension.
-	// Assumes container filesystems have `_rootfs.tgz` suffix.
-	// Alternatively, we could force the use of subdirectories w/ known names
-	// (such as `base-images` and `container-fs`).
-	GetImages(kind ImageKind) ([]ImageDetails, error)
 
 	GetExperimentFiles(exp, filter string) (Files, error)
 
@@ -39,9 +33,6 @@ type ClusterFiles interface {
 	DeleteFile(path string) error
 }
 
-func GetImages(kind ImageKind) ([]ImageDetails, error) {
-	return DefaultClusterFiles.GetImages(kind)
-}
 
 func GetExperimentFiles(exp, filter string) (Files, error) {
 	return DefaultClusterFiles.GetExperimentFiles(exp, filter)
@@ -65,58 +56,6 @@ func DeleteFile(path string) error {
 
 type MMClusterFiles struct{}
 
-func (MMClusterFiles) GetImages(kind ImageKind) ([]ImageDetails, error) {
-	// Using a map here to weed out duplicates.
-	details := make(map[string]ImageDetails)
-
-	// First get file listings from mesh, then from headnode.
-	commands := []string{"mesh send all file list", "file list"}
-
-	// First, get file listings from cluster nodes.
-
-	cmd := mmcli.NewCommand()
-
-	for _, command := range commands {
-		cmd.Command = command
-
-		for _, row := range mmcli.RunTabular(cmd) {
-			// Only looking in the base directory for now.
-			if row["dir"] != "" {
-				continue
-			}
-
-			image := ImageDetails{
-				Name:     row["name"],
-				FullPath: "/" + row["name"],
-			}
-
-			if strings.HasSuffix(image.Name, ".qc2") || strings.HasSuffix(image.Name, ".qcow2") {
-				image.Kind = VM_IMAGE
-			} else if strings.HasSuffix(image.Name, "_rootfs.tgz") {
-				image.Kind = CONTAINER_IMAGE
-			} else {
-				continue
-			}
-
-			var err error
-
-			image.Size, err = strconv.Atoi(row["size"])
-			if err != nil {
-				return nil, fmt.Errorf("getting size of file: %w", err)
-			}
-
-			details[image.Name] = image
-		}
-	}
-
-	var images []ImageDetails
-
-	for name := range details {
-		images = append(images, details[name])
-	}
-
-	return images, nil
-}
 
 func (MMClusterFiles) GetExperimentFiles(exp, filter string) (Files, error) {
 	var (
