@@ -242,3 +242,30 @@ func PrintTableOfSubnetCaptures(writer io.Writer, captures []mm.Capture) {
 
 	table.Render()
 }
+
+func PrintTableOfSettings(writer io.Writer, settings []types.Setting) {
+	var (
+		table = tablewriter.NewWriter(writer)
+		cols  = []string{"Name", "Category", "Value"}
+	)
+
+	table.SetHeader(cols)
+
+	table.SetColumnAlignment([]int{
+		tablewriter.ALIGN_DEFAULT,
+		tablewriter.ALIGN_DEFAULT,
+		tablewriter.ALIGN_RIGHT,
+	})
+
+	for _, setting := range settings {
+		row := []string{
+			setting.Spec.Name,
+			setting.Spec.Category,
+			setting.Spec.Value,
+		}
+
+		table.Append(row)
+	}
+
+	table.Render()
+}

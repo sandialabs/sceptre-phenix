@@ -14,19 +14,19 @@ It requires a valid email (user ID) and password.
           <b-field label="User Name" 
             :type="{ 'is-danger' : userExists }" 
             :message="{ 'User already exists' : userExists }">
-            <b-input type="text" v-model="username" minlength="4" maxlength="32" autofocus></b-input>
+            <b-input type="text" v-model="newUser.username" minlength="4" maxlength="32" autofocus></b-input>
           </b-field>
           <b-field label="First Name">
-            <b-input type="text" v-model="first_name"></b-input>
+            <b-input type="text" v-model="newUser.first_name"></b-input>
           </b-field>
           <b-field label="Last Name">
-            <b-input type="text" v-model="last_name"></b-input>
+            <b-input type="text" v-model="newUser.last_name"></b-input>
           </b-field>
           <b-field label="Password">
-            <b-input type="password" minlength="8" maxlength="32" v-model="password"></b-input>
+            <b-input type="password" minlength="8" maxlength="32" v-model="newUser.password"></b-input>
           </b-field>
           <b-field label="Confirm Password">
-            <b-input type="password" minlength="8" maxlength="32" v-model="confirmPassword" @keyup.native.enter="create"></b-input>
+            <b-input type="password" minlength="8" maxlength="32" v-model="newUser.confirmPassword" @keyup.native.enter="create"></b-input>
           </b-field>
         </section>
         <footer class="modal-card-foot buttons is-right">
@@ -118,7 +118,7 @@ It requires a valid email (user ID) and password.
       },
       
       create () {
-        if ( !this.username ) {
+        if ( !this.newUser.username ) {
           this.$buefy.toast.open({
             message: 'You must include an username',
             type: 'is-warning',
@@ -128,7 +128,7 @@ It requires a valid email (user ID) and password.
           return {}
         }
         
-        if ( !this.first_name ) {
+        if ( !this.newUser.first_name ) {
           this.$buefy.toast.open({
             message: 'You must include a first name',
             type: 'is-warning',
@@ -138,7 +138,7 @@ It requires a valid email (user ID) and password.
           return {}
         }
         
-        if ( !this.last_name ) {
+        if ( !this.newUser.last_name ) {
           this.$buefy.toast.open({
             message: 'You must include a last name',
             type: 'is-warning',
@@ -148,7 +148,7 @@ It requires a valid email (user ID) and password.
           return {}
         }
         
-        if ( !this.password ) {
+        if ( !this.newUser.password ) {
           this.$buefy.toast.open({
             message: 'You must include a password',
             type: 'is-warning',
@@ -158,7 +158,7 @@ It requires a valid email (user ID) and password.
           return {}
         }
         
-        if ( !this.confirmPassword ) {
+        if ( !this.newUser.confirmPassword ) {
           this.$buefy.toast.open({
             message: 'You must include a password confirmation',
             type: 'is-warning',
@@ -168,7 +168,7 @@ It requires a valid email (user ID) and password.
           return {}
         }
         
-        if ( this.password != this.confirmPassword ) {
+        if ( this.newUser.password != this.newUser.confirmPassword ) {
           this.$buefy.toast.open({
             message: 'Your passwords do not match',
             type: 'is-warning',
@@ -180,22 +180,28 @@ It requires a valid email (user ID) and password.
         
         this.$http.post(
           'signup', {
-            "username": this.username,
-            "password": this.password,
-            "first_name": this.first_name,
-            "last_name": this.last_name
+            "username": this.newUser.username,
+            "password": this.newUser.password,
+            "first_name": this.newUser.first_name,
+            "last_name": this.newUser.last_name
           }
         ).then(
           response => { 
             return response.json().then(
               user => {
                 this.$store.commit( 'SIGN_UP', user );
+                this.newUser = {
+                  username: null,
+                  password: null,
+                  confirmPassword: null,
+                  first_name: null,
+                  last_name: null,
+                }
               }
             )
           }, err => {
             this.errorNotification(err);
-            this.username = null;
-            this.password = null;
+            this.newUser.confirmPassword = null
           }
         );
 
@@ -208,11 +214,15 @@ It requires a valid email (user ID) and password.
         signUpModal: false,
         username: null,
         password: null,
-        confirmPassword: null,
-        first_name: null,
-        last_name: null,
         rememberMe: false,
-        userExists: false
+        userExists: false,
+        newUser: {
+          username: null,
+          password: null,
+          confirmPassword: null,
+          first_name: null,
+          last_name: null,
+        },
       }
     }
   }
