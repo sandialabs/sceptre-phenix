@@ -122,6 +122,8 @@ type vncConfig struct {
 
 	TopBanner    bannerConfig `mapstructure:"topBanner"`
 	BottomBanner bannerConfig `mapstructure:"bottomBanner"`
+
+	Disabled bool `mapstructure:"disabled"`
 }
 
 func newVNCBannerConfig(token, exp, vm string) *vncConfig {
@@ -148,11 +150,13 @@ func (this *vncConfig) finalize(banner ...string) {
 		return
 	}
 
-	if len(this.TopBanner.BannerLines) > 0 {
-		this.TopBanner.Banner = template.HTML(strings.Join(this.TopBanner.BannerLines, "<br/>"))
-	}
+	if !this.Disabled {
+		if len(this.TopBanner.BannerLines) > 0 {
+			this.TopBanner.Banner = template.HTML(strings.Join(this.TopBanner.BannerLines, "<br/>"))
+		}
 
-	if len(this.BottomBanner.BannerLines) > 0 {
-		this.BottomBanner.Banner = template.HTML(strings.Join(this.BottomBanner.BannerLines, "<br/>"))
+		if len(this.BottomBanner.BannerLines) > 0 {
+			this.BottomBanner.Banner = template.HTML(strings.Join(this.BottomBanner.BannerLines, "<br/>"))
+		}
 	}
 }
