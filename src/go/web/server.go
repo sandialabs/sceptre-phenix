@@ -128,6 +128,8 @@ func Start(opts ...ServerOption) error {
 		http.FileServer(assets),
 	)
 
+	router.Handle("/favicon.ico", http.FileServer(assets))
+
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch a := assets.(type) {
 		case *assetfs.AssetFS:

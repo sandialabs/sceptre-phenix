@@ -23,7 +23,6 @@
       </section>
     </template>
     <template v-else>
-      <hr>
       <b-field position="is-right">
         <b-tooltip label="change duration of log reporting" type="is-light">
           <b-select :value="this.duration" @input="( value ) => assignDuration( value )">
