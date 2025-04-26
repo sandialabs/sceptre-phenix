@@ -29,10 +29,12 @@ Adding a new setting:
 
 type Settings struct {
 	PasswordSettings PasswordSettings `json:"password_settings"`
+	LoggingSettings  LoggingSettings  `json:"logging_settings"`
+
 }
 
 func GetSettings() (*Settings, error) {
-	plog.Debug("Getting all settings")
+	plog.Debug(plog.TypeSystem, "Getting all settings")
 	settings := &Settings{}
 	var err error
 
@@ -45,16 +47,26 @@ func GetSettings() (*Settings, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Error getting password settings: %v", err)
 	}
+	settings.LoggingSettings, err = GetLoggingSettingsFromList(settingList)
+	if err != nil {
+		return nil, fmt.Errorf("Error getting logging settings: %v", err)
+	}
+
 
 	return settings, nil
 }
 
 func UpdateAllSettings(newSettings Settings) error {
-	plog.Debug("Updating all settings")
+	plog.Debug(plog.TypeSystem, "Updating all settings")
 
 	if err := UpdatePasswordSettings(newSettings.PasswordSettings); err != nil {
 		return fmt.Errorf("Error updating password settings: %w", err)
 	}
+
+	if err := UpdateLoggingSettings(newSettings.LoggingSettings); err != nil {
+		return fmt.Errorf("Error updating logging settings: %w", err)
+	}
+
 
 	return nil
 }
@@ -64,7 +76,7 @@ func GetStoreName(category, name string) string {
 }
 
 func Update(category, name, value string) (bool, error) {
-	plog.Debug("Updating setting", "category", category, "name", name, "value", value)
+	plog.Debug(plog.TypeSystem, "Updating setting", "category", category, "name", name, "value", value)
 	oldSetting, err := GetSetting(category, name)
 	if err != nil {
 		return false, fmt.Errorf("Error getting existing setting: %v", err)
@@ -96,7 +108,7 @@ func Update(category, name, value string) (bool, error) {
 
 // Same as update but verify the value is of the correct type
 func UpdateWithVerification(category, name, value string) error {
-	plog.Debug("Updating setting with verification", "category", category, "name", name, "value", value)
+	plog.Debug(plog.TypeSystem, "Updating setting with verification", "category", category, "name", name, "value", value)
 	oldSetting, err := GetSetting(category, name)
 	if err != nil {
 		return fmt.Errorf("Error getting existing setting: %v", err)
@@ -132,7 +144,7 @@ func UpdateWithVerification(category, name, value string) error {
 }
 
 func verify(settingType v2.SettingValueType, value string) (bool, error) {
-	plog.Debug("Verifying setting", "type", settingType, "value", value)
+	plog.Debug(plog.TypeSystem, "Verifying setting", "type", settingType, "value", value)
 	switch settingType {
 	case v2.SettingValueBool:
 		_, err := strconv.ParseBool(value)
@@ -154,7 +166,7 @@ func verify(settingType v2.SettingValueType, value string) (bool, error) {
 }
 
 func List() ([]types.Setting, error) {
-	plog.Debug("Listing all settings")
+	plog.Debug(plog.TypeSystem, "Listing all settings")
 	configs, err := store.List("Setting")
 	if err != nil {
 		return nil, fmt.Errorf("getting list of settings from store: %w", err)
@@ -180,7 +192,7 @@ func List() ([]types.Setting, error) {
 }
 
 func GetSetting(category, name string) (*types.Setting, error) {
-	plog.Debug("Getting setting", "category", category, "name", name)
+	plog.Debug(plog.TypeSystem, "Getting setting", "category", category, "name", name)
 
 	combined := fmt.Sprintf("%s.%s", category, name)
 	c, _ := store.NewConfig("setting/" + combined)
