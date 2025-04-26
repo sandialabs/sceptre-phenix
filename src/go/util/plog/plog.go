@@ -19,7 +19,7 @@ var (
 	level = new(slog.LevelVar)
 
 	// list of log attribute keys to remove from the default logger
-	ignore = map[string]struct{}{ScorchSohKey: {}}
+	logKeysIgnored = map[string]struct{}{ScorchSohKey: {}}
 )
 
 // main phenix slog.Handler
@@ -38,7 +38,7 @@ func NewPhenixHandler() {
 		Level:   level,
 		NoColor: !isatty.IsTerminal(os.Stderr.Fd()),
 		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
-			if _, ok := ignore[a.Key]; ok {
+			if _, ok := logKeysIgnored[a.Key]; ok {
 				return slog.Attr{}
 			}
 

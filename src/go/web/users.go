@@ -2,10 +2,12 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
 	"phenix/api/config"
+	"phenix/api/settings"
 	"phenix/util/plog"
 	"phenix/web/broker"
 	"phenix/web/rbac"
@@ -18,7 +20,7 @@ import (
 
 // GET /users
 func GetUsers(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "GetUsers")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetUsers")
 
 	var (
 		ctx   = r.Context()
@@ -58,13 +60,14 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 
 		resp = append(resp, user)
 	} else {
+		plog.Warn(plog.TypeSecurity, "getting users not allowed", "user", uname)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
 	body, err := json.Marshal(util.WithRoot("users", resp))
 	if err != nil {
-		plog.Error("marshaling users", "err", err)
+		plog.Error(plog.TypeSystem, "marshaling users", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -74,7 +77,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 
 // POST /users
 func CreateUser(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "CreateUser")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreateUser")
 
 	var (
 		ctx  = r.Context()
@@ -82,22 +85,29 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("users", "create") {
-		plog.Warn("creating users not allowed", "user", ctx.Value("user").(string))
+		plog.Warn(plog.TypeSecurity, "creating users not allowed", "requester", ctx.Value("user").(string))
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		plog.Error("reading request body", "err", err)
+		plog.Error(plog.TypeSystem, "reading request body", "err", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
 	var req CreateUserRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		plog.Error("unmashaling request body", "err", err)
+		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	if !settings.IsPasswordValid(req.Password) {
+		plog.Error(plog.TypeSystem, "password does not meet requirements", "requester", ctx.Value("user").(string))
+		errStr := fmt.Sprintf("password does not meet the requirements:\n%s", settings.GetPasswordSettingsHTML())
+		http.Error(w, errStr, http.StatusBadRequest)
 		return
 	}
 
@@ -108,7 +118,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	uRole, err := rbac.RoleFromConfig(req.RoleName)
 	if err != nil {
-		plog.Error("role not found", "role", req.RoleName)
+		plog.Error(plog.TypeSystem, "role not found", "role", req.RoleName)
 		http.Error(w, "role not found", http.StatusBadRequest)
 		return
 	}
@@ -128,7 +138,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	body, err = json.Marshal(resp)
 	if err != nil {
-		plog.Error("marshaling user", "user", user.Username(), "err", err)
+		plog.Error(plog.TypeSystem, "marshaling user", "user", user.Username(), "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -139,12 +149,13 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
+	plog.Info(plog.TypeSecurity, "user created", "requested", ctx.Value("user").(string), "user", req.Username)
 	w.Write(body)
 }
 
 // GET /users/{username}
 func GetUser(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "GetUser")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "GetUser")
 
 	var (
 		ctx      = r.Context()
@@ -155,6 +166,7 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("users", "get", username) {
+		plog.Warn(plog.TypeSecurity, "getting users not allowed", "requester", ctx.Value("user").(string))
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -173,7 +185,7 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 
 	body, err := json.Marshal(user)
 	if err != nil {
-		plog.Error("marshaling user", "user", rbacUser.Username(), "err", err)
+		plog.Error(plog.TypeSystem, "marshaling user", "user", rbacUser.Username(), "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -183,7 +195,7 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 
 // PATCH /users/{username}
 func UpdateUser(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "UpdateUser")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "UpdateUser")
 
 	var (
 		ctx   = r.Context()
@@ -193,6 +205,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("users", "patch", uname) {
+		plog.Warn(plog.TypeSecurity, "updating users not allowed", "requester", ctx.Value("user").(string), "user", uname)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -217,24 +230,26 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	if req.FirstName != "" {
 		if err := u.UpdateFirstName(req.FirstName); err != nil {
-			plog.Error("updating first name for user", "user", uname, "err", err)
+			plog.Error(plog.TypeSystem, "updating first name for user", "user", uname, "err", err)
 			http.Error(w, "unable to update user", http.StatusInternalServerError)
 			return
 		}
+		plog.Info(plog.TypeSecurity, "user's first name updated", "requester", ctx.Value("user").(string), "user", uname, "firstname", req.FirstName)
 	}
 
 	if req.LastName != "" {
 		if err := u.UpdateLastName(req.LastName); err != nil {
-			plog.Error("updating last name for user", "user", uname, "err", err)
+			plog.Error(plog.TypeSystem, "updating last name for user", "user", uname, "err", err)
 			http.Error(w, "unable to update user", http.StatusInternalServerError)
 			return
 		}
+		plog.Info(plog.TypeSecurity, "user's last name updated", "requester", ctx.Value("user").(string), "user", uname, "lastname", req.LastName)
 	}
 
 	if req.RoleName != "" && role.Allowed("users/roles", "patch", uname) {
 		uRole, err := rbac.RoleFromConfig(req.RoleName)
 		if err != nil {
-			plog.Error("role not found", "role", req.RoleName)
+			plog.Error(plog.TypeSystem, "role not found", "role", req.RoleName)
 			http.Error(w, "role not found", http.StatusBadRequest)
 			return
 		}
@@ -249,27 +264,37 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		)
 
 		u.SetRole(uRole)
+		plog.Info(plog.TypeSecurity, "user's role updated", "requester", ctx.Value("user").(string), "user", uname, "role", req.RoleName)
 	}
 
 	if req.NewPassword != "" {
 		if req.Password == "" {
-			plog.Error("new password provided without old password", "user", uname)
+			plog.Error(plog.TypeSecurity, "new password provided without old password", "user", uname)
 			http.Error(w, "cannot change password without password", http.StatusBadRequest)
 			return
 		}
 
+		if !settings.IsPasswordValid(req.NewPassword) {
+			plog.Error(plog.TypeSecurity, "new password does not meet requirements", "requester", ctx.Value("user").(string))
+			errStr := fmt.Sprintf("new password does not meet the requirements:\n%s", settings.GetPasswordSettingsHTML())
+			http.Error(w, errStr, http.StatusBadRequest)
+			return
+		}
+
 		if err := u.UpdatePassword(req.Password, req.NewPassword); err != nil {
-			plog.Error("updating password for user", "user", uname, "err", err)
+			plog.Error(plog.TypeSecurity, "updating password for user", "user", uname, "err", err)
 			http.Error(w, "unable to update password", http.StatusBadRequest)
 			return
 		}
+		plog.Info(plog.TypeSecurity, "user's password updated", "requester", ctx.Value("user").(string), "user", uname)
+
 	}
 
 	resp := userFromRBAC(*u)
 
 	body, err = json.Marshal(resp)
 	if err != nil {
-		plog.Error("marshaling user", "user", uname, "err", err)
+		plog.Error(plog.TypeSystem, "marshaling user", "user", uname, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -285,7 +310,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 // DELETE /users/{username}
 func DeleteUser(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "DeleteUser")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "DeleteUser")
 
 	var (
 		ctx   = r.Context()
@@ -301,12 +326,13 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !role.Allowed("users", "delete", uname) {
+		plog.Warn(plog.TypeSecurity, "deleting users not allowed", "requester", ctx.Value("user").(string), "user", uname)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
 	if err := config.Delete("user/" + uname); err != nil {
-		plog.Error("deleting user", "user", uname, "err", err)
+		plog.Error(plog.TypeSystem, "deleting user", "user", uname, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -316,6 +342,6 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 		bt.NewResource("user", uname, "delete"),
 		nil,
 	)
-
+	plog.Info(plog.TypeSecurity, "user deleted", "user", uname, "requester", ctx.Value("user").(string) )
 	w.WriteHeader(http.StatusNoContent)
 }

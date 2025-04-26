@@ -31,7 +31,7 @@ import (
 
 // GET /configs
 func GetConfigs(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug("HTTP handler called", "handler", "GetConfigs")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetConfigs")
 
 	var (
 		ctx   = r.Context()
@@ -41,6 +41,7 @@ func GetConfigs(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("configs", "list") {
+		plog.Warn(plog.TypeSecurity, "listing configs not allowed", "user", ctx.Value("user").(string))
 		err := weberror.NewWebError(nil, "listing configs not allowed for %s", ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
@@ -81,7 +82,7 @@ func GetConfigs(w http.ResponseWriter, r *http.Request) error {
 
 // POST /configs/download
 func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug("HTTP handler called", "handler", "DownloadConfigs")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "DownloadConfigs")
 
 	var (
 		ctx  = r.Context()
@@ -89,6 +90,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("configs", "get") {
+		plog.Warn(plog.TypeSecurity, "downloading config not allowed", "user", ctx.Value("user").(string))
 		err := weberror.NewWebError(nil, "downloading configs not allowed for %s", ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
@@ -111,6 +113,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 		name := configs[0]
 
 		if !role.Allowed("configs", "get", name) {
+			plog.Warn(plog.TypeSecurity, "downloading config not allowed", "user", ctx.Value("user").(string), "config", name)
 			err := weberror.NewWebError(nil, "downloading config %s not allowed for %s", name, ctx.Value("user").(string))
 			return err.SetStatus(http.StatusForbidden)
 		}
@@ -136,6 +139,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("Content-Disposition", "attachment; filename="+fn)
+		plog.Info(plog.TypeAction, "downloaded config", "user", ctx.Value("user").(string), "config", name)
 		http.ServeContent(w, r, "", time.Now(), bytes.NewReader(body))
 
 		return nil
@@ -186,13 +190,13 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 	if err := zipper.Close(); err != nil {
 		// TODO
 	}
-
+	plog.Info(plog.TypeAction, "downloaded configs", "user", ctx.Value("user").(string), "configs", strings.Join(configs, ","))
 	return nil
 }
 
 // POST /configs
 func CreateConfig(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug("HTTP handler called", "handler", "CreateConfig")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreateConfig")
 
 	var (
 		ctx  = r.Context()
@@ -200,6 +204,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("configs", "create") {
+		plog.Warn(plog.TypeSecurity, "creating config not allowed", "user", ctx.Value("user").(string))
 		err := weberror.NewWebError(nil, "creating configs not allowed for %s", ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
@@ -294,7 +299,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	body, err := json.Marshal(c)
 	if err != nil {
-		plog.Error("marshaling config", "config", c.FullName(), "err", err)
+		plog.Error(plog.TypeSystem, "marshaling config", "config", c.FullName(), "err", err)
 		return nil
 	}
 
@@ -304,12 +309,13 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
+	plog.Info(plog.TypeAction, "created config", "user", ctx.Value("user").(string), "config", c.FullName())
 	return nil
 }
 
 // GET /configs/{kind}/{name}
 func GetConfig(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug("HTTP handler called", "handler", "GetConfig")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetConfig")
 
 	var (
 		ctx  = r.Context()
@@ -319,6 +325,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("configs", "get", name) {
+		plog.Warn(plog.TypeSecurity, "getting config not allowed", "user", ctx.Value("user").(string), "config", name)
 		err := weberror.NewWebError(nil, "getting config %s not allowed for %s", name, ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
@@ -373,7 +380,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 
 // PUT /configs/{kind}/{name}
 func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug("HTTP handler called", "handler", "UpdateConfig")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "UpdateConfig")
 
 	var (
 		ctx  = r.Context()
@@ -383,6 +390,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("configs", "update", name) {
+		plog.Warn(plog.TypeSecurity, "updating config not allowed", "user", ctx.Value("user").(string), "config", name)
 		err := weberror.NewWebError(nil, "updating config %s not allowed for %s", name, ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
@@ -499,7 +507,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	body, err := json.Marshal(c)
 	if err != nil {
-		plog.Error("marshaling config", "config", c.FullName(), "err", err)
+		plog.Error(plog.TypeSystem, "marshaling config", "config", c.FullName(), "err", err)
 		return nil
 	}
 
@@ -508,13 +516,13 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		bt.NewResource("config", name, "update"), // use old name in broadcast so client knows what to update
 		body,
 	)
-
+	plog.Info(plog.TypeAction, "updated config", "user", ctx.Value("user").(string), "config", name)
 	return nil
 }
 
 // DELETE /configs/{kind}/{name}
 func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug("HTTP handler called", "handler", "DeleteConfig")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "DeleteConfig")
 
 	var (
 		ctx  = r.Context()
@@ -524,6 +532,7 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("configs", "delete", name) {
+		plog.Warn(plog.TypeSecurity, "deleting config not allowed", "user", ctx.Value("user").(string), "config", name)
 		err := weberror.NewWebError(nil, "deleting config %s not allowed for %s", name, ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
@@ -539,6 +548,6 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 		bt.NewResource("config", name, "delete"),
 		nil,
 	)
-
+	plog.Info(plog.TypeAction, "deleted config", "user", ctx.Value("user").(string), "config", name)
 	return nil
 }

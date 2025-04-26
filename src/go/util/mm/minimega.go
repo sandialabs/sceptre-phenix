@@ -1128,7 +1128,7 @@ func (this Minimega) TapVLAN(opts ...TapOption) error {
 	o := NewTapOptions(opts...)
 
 	if o.untap {
-		plog.Info("deleting tap from host", "tap", o.name, "host", o.host)
+		plog.Info(plog.TypeSystem, "deleting tap from host", "tap", o.name, "host", o.host)
 
 		var errs error
 
@@ -1138,7 +1138,7 @@ func (this Minimega) TapVLAN(opts ...TapOption) error {
 		}
 
 		if o.netns != "" {
-			plog.Info("deleting network namespace from host", "ns", o.netns, "host", o.host)
+			plog.Info(plog.TypeSystem, "deleting network namespace from host", "ns", o.netns, "host", o.host)
 
 			cmd := fmt.Sprintf("ip netns delete %s", o.netns)
 			if err := this.MeshShell(o.host, cmd); err != nil {
@@ -1149,7 +1149,7 @@ func (this Minimega) TapVLAN(opts ...TapOption) error {
 		return errs
 	}
 
-	plog.Info("creating tap on host", "tap", o.name, "vlan", o.vlan, "bridge", o.bridge, "host", o.host)
+	plog.Info(plog.TypeSystem, "creating tap on host", "tap", o.name, "vlan", o.vlan, "bridge", o.bridge, "host", o.host)
 
 	var cmd string
 
@@ -1170,21 +1170,21 @@ func (this Minimega) TapVLAN(opts ...TapOption) error {
 	}
 
 	if o.netns != "" {
-		plog.Info("creating network namespace for tap on host", "tap", o.name, "host", o.host)
+		plog.Info(plog.TypeSystem, "creating network namespace for tap on host", "tap", o.name, "host", o.host)
 
 		cmd := fmt.Sprintf("ip netns add %s", o.name)
 		if err := this.MeshShell(o.host, cmd); err != nil {
 			return fmt.Errorf("creating network namespace on host %s: %w", o.host, err)
 		}
 
-		plog.Info("moving tap to network namespace on host", "tap", o.name, "host", o.host)
+		plog.Info(plog.TypeSystem, "moving tap to network namespace on host", "tap", o.name, "host", o.host)
 
 		cmd = fmt.Sprintf("ip link set dev %s netns %s", o.name, o.name)
 		if err := this.MeshShell(o.host, cmd); err != nil {
 			return fmt.Errorf("moving tap to network namespace on host %s: %w", o.host, err)
 		}
 
-		plog.Info("bringing tap up in network namespace on host", "tap", o.name, "host", o.host)
+		plog.Info(plog.TypeSystem, "bringing tap up in network namespace on host", "tap", o.name, "host", o.host)
 
 		cmd = fmt.Sprintf("ip netns exec %s ip link set dev %s up", o.name, o.name)
 		if err := this.MeshShell(o.host, cmd); err != nil {
@@ -1192,7 +1192,7 @@ func (this Minimega) TapVLAN(opts ...TapOption) error {
 		}
 
 		if o.ip != "" {
-			plog.Info("setting IP address for tap in network namespace on host", "tap", o.name, "host", o.host)
+			plog.Info(plog.TypeSystem, "setting IP address for tap in network namespace on host", "tap", o.name, "host", o.host)
 
 			cmd := fmt.Sprintf("ip netns exec %s ip addr add %s dev %s", o.name, o.ip, o.name)
 			if err := this.MeshShell(o.host, cmd); err != nil {
@@ -1240,7 +1240,7 @@ func (Minimega) MeshShellResponse(host, command string) (string, error) {
 	for resps := range mmcli.Run(cmd) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
-				plog.Warn("error running shell command: ", "cmd", cmd)
+				plog.Warn(plog.TypeSystem, "error running shell command: ", "cmd", cmd)
 				continue
 			}
 
