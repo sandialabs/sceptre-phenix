@@ -632,33 +632,10 @@
                 <b-progress size="is-small" type="is-warning" show-value :value="props.row.percent" format="percent"></b-progress>
               </section>
             </b-table-column>
-            <b-table-column field="screenshot"  label="Screenshot" centered v-slot="props">
-              <template v-if="props.row.external">
-                <img src="@/assets/external.png" width="200" height="150">
-              </template>
-              <template v-else-if="props.row.running && !props.row.busy && !props.row.screenshot">
-                <a  :href="vncLoc(props.row)" target="_blank">
-                  <img src="@/assets/not-available.png" width="200" height="150">
-                </a>
-              </template>
-              <template v-else-if="props.row.delayed_start && props.row.state == 'BUILDING'">
-                <a  :href="vncLoc(props.row)" target="_blank">
-                  <img src="@/assets/delayed.png" width="200" height="150">
-                </a>
-              </template>
-              <template v-else-if="props.row.running && !props.row.busy && props.row.screenshot">
-                <a  :href="vncLoc(props.row)" target="_blank">
-                  <img :src="props.row.screenshot">
-                </a>
-              </template>
-              <template v-else-if="props.row.busy">
-                <b-tooltip  label="Screenshot not available while busy with action" type="is-dark">
-                <img  src="@/assets/not-available.png" width="200" height="150">
-                </b-tooltip>
-              </template>
-              <template v-else>
-                <img  src="@/assets/not-running.png" width="200" height="150">
-              </template>
+            <b-table-column field="screenshot"  label="Screenshot" centered v-slot="props" width="200">
+              <a  :href="vncLoc(props.row)" target="_blank">
+                <img :src="getVmScreenshot(props.row)" width="200" height="150">
+              </a>
             </b-table-column>
             <b-table-column v-if="isDelayed()" field="delayed"  label="Delay" centered v-slot="props">
               <b-tag type="is-info" v-if="props.row.delayed_start && props.row.state == 'BUILDING'">{{ props.row.delayed_start }}</b-tag>
@@ -839,6 +816,28 @@
             </div>
           </b-field>
         </b-tab-item>
+        <b-tab-item label="VNC" icon="arrow-pointer">
+          <b-field label="Zoom Level" style="width: 300px; margin-left: 32px;" horizontal>
+            <b-slider :min="2" :max="16" :custom-formatter="val => (0.25 + (val - 1) * .25) + 'x'" v-model="vncZoom">
+              <template v-for="val in [4, 8, 12, 16]">
+                    <b-slider-tick :value="val" >{{ (0.25 + (val - 1) * .25) + 'x' }}</b-slider-tick>
+                </template>
+            </b-slider>
+          </b-field>
+          <div style="display: flex; flex-direction: row; flex-wrap:wrap; align-items: flex-end; justify-content: center; gap: 4px;">
+            <template v-if="experiment.vms && experiment.vms.length">
+              <div v-for="vm in experiment.vms" >
+                  <a :href="vncLoc(vm)" target="_blank">
+                    <img :src="getVmScreenshot(vm)" :width="vncWidth" style="display: block;" >
+                  </a> 
+                  <a style="color: whitesmoke; display:block; background-color: grey; text-align: center; padding: 2px 0px;" @click="getInfo(vm)">{{ vm.name }}</a>
+              </div>
+            </template>
+            <template v-else>
+              Your search turned up empty!
+            </template>
+          </div>
+        </b-tab-item>
         <b-tab-item label="Netflow" icon="circle-nodes" v-if="netflow.data">
           <div class="control">
             <textarea class="textarea" style="font-family:'Courier New'" readonly rows="40" v-model="netflow.data"></textarea>
@@ -860,6 +859,7 @@
 
   export  default {
     async beforeDestroy () {
+      this.setVncScreenshotRes(200) // reset screenshot size
       this.$options.sockets.onmessage = null;
 
       if (this.socket) {
@@ -932,7 +932,18 @@
 
       ...mapState({
         features: 'features'
-      })
+      }),
+
+      vncWidth() {
+        return this.activeTab == 2 ? this.vncZoom * 50 : 200;
+      },
+    },
+    watch: {
+      vncWidth: {
+        handler(w) {
+          this.setVncScreenshotRes(w)
+        }
+      }
     },
 
     methods: {
@@ -1594,7 +1605,7 @@
         this.search.filter = ""
 
         
-        if (this.activeTab == 0){
+        if (this.activeTab == 0 || this.activeTab == 2){
           this.searchPlaceholder = "Find a VM"         
           this.updateExperiment()          
         }
@@ -1605,6 +1616,40 @@
 
       },
 
+      getVmScreenshot (vm) {
+        if (vm.external) {
+          return require("@/assets/not-available.png")
+        }
+        if (vm.running && !vm.busy && !vm.screenshot) {
+          return require("@/assets/not-available.png")
+        }
+        else if (vm.delayed_start && vm.state == 'BUILDING') {
+          return require("@/assets/delayed.png")
+        }
+        else if (vm.running && !vm.busy && vm.screenshot) {
+          return vm.screenshot
+        }
+        else if (vm.busy) {
+          return require("@/assets/not-available.png")
+        }
+        else {
+          return require("@/assets/not-running.png")
+        }
+      },
+
+      setVncScreenshotRes(width) {
+        let msg = {
+            resource: {
+              type: 'metadata/screenshot',
+              action: 'resize'
+            },
+            request: {
+              size: width + ''
+            }
+          };
+
+          this.$socket.send(JSON.stringify(msg));
+      },
 
       updateFiles ()  {
 
@@ -3352,7 +3397,8 @@
           capturing: false,
           socket: null,
           data: ''
-        }
+        },
+        vncZoom: 4
       }
     }
   }
@@ -3364,5 +3410,12 @@
   }
   .fa-layers-counter { /* counter on tag icon */
     transform: scale(.7) translateX(50%) translateY(-50%);
+  }
+
+  >>> .label {
+    color: white;
+  }
+  >>> .field-label {
+    flex-grow: 3;
   }
 </style>
