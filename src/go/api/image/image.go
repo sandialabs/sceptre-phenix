@@ -18,17 +18,16 @@ import (
 	"phenix/types"
 	v1 "phenix/types/version/v1"
 	"phenix/util/mm/mmcli"
-	"phenix/util/notes"
 	"phenix/util/shell"
 
 	"github.com/activeshadow/structs"
 	"github.com/mitchellh/mapstructure"
+	"golang.org/x/exp/slices"
 )
 
 const (
 	V_VERBOSE   int = 1
 	V_VVERBOSE  int = 2
-	V_VVVERBOSE int = 4
 )
 
 var (
@@ -36,75 +35,61 @@ var (
 	ErrProtonukeNotFound = fmt.Errorf("protonuke executable not found")
 )
 
-// SetDefaults will set default settings to image values if none are set by the
-// user. The default values are:
-//
-//	-- Image size at `5G`
-//	-- The variant is `minbase`
-//	-- The release is `bionic` (Ubuntu 18.04.4 LTS)
-//	-- The mirror is `http://us.archive.ubuntu.com/ubuntu/`
-//	-- The image format is `raw`
-//
-// This will also remove empty strings in packages and overlays; if overlays are
-// used, the default `/phenix/images` directory is added to the overlay name.
-// Based on the variant value, specific constants will be included during the
-// create sub-command. The values are passed from the `constants.go` file. An
-// error will be returned if the variant value is not valid (acceptable values
-// are `minbase` or `mingui`).
-func SetDefaults(img *v1.Image) error {
-	if img.Size == "" {
-		img.Size = "5G"
+// SetupImage sets a correct mirror based on the Release name if it wasn't
+// set by the user and also sets some default packages. Based on the variant
+// value, specific constants will be included during the create sub-command.
+// The values are passed from the `constants.go` file. An error will be
+// returned if the variant value is not valid (acceptable values are `minbase`
+// or `mingui`).
+func SetupImage(img *v1.Image) error {
+	debian 	:= []string{"jessie", "stretch", "buster", "bullseye", "bookworm"}
+	kali 	:= []string{"kali-dev", "kali-rolling", "kali-last-snapshot", "kali-bleeding-edge"}
+
+	// If mirror is the default value, make sure it is correct based on the Release
+	if img.Mirror == "http://us.archive.ubuntu.com/ubuntu" {
+		if slices.Contains(debian, img.Release) {
+			img.Mirror = "http://ftp.us.debian.org/debian"
+		} else if slices.Contains(kali, img.Release) {
+			img.Mirror = "http://http.kali.org/kali"
+		}
 	}
 
-	if img.Variant == "" {
-		img.Variant = "minbase"
-	}
-
-	if img.Release == "" {
-		img.Release = "bionic"
-	}
-
-	if img.Mirror == "" {
-		img.Mirror = "http://us.archive.ubuntu.com/ubuntu/"
-	}
-
-	if img.Format == "" {
-		img.Format = "raw"
-	}
-
-	if !strings.Contains(img.DebAppend, "--components=") {
-		if img.Release == "kali" || img.Release == "kali-rolling" {
-			img.DebAppend += " --components=" + strings.Join(PACKAGES_COMPONENTS_KALI, ",")
+	// If not specified, set default package components
+	if len(img.Components) == 0 {
+		if slices.Contains(kali, img.Release) {
+			img.Components = append(img.Components, KALI_COMPONENTS...)
 		} else {
-			img.DebAppend += " --components=" + strings.Join(PACKAGES_COMPONENTS, ",")
+			img.Components = append(img.Components, DEBIAN_COMPONENTS...)
 		}
 	}
 
 	img.Scripts = make(map[string]string)
 
 	if !img.SkipDefaultPackages {
-		img.Packages = append(img.Packages, PACKAGES_DEFAULT...)
+		img.Packages = append(img.Packages, DEFAULT_PACKAGES...)
 	}
 
 	switch img.Variant {
 	case "minbase":
-		if img.Release == "kali" || img.Release == "kali-rolling" {
-			img.Packages = append(img.Packages, PACKAGES_KALI...)
-		} else {
-			img.Packages = append(img.Packages, PACKAGES_UBUNTU...)
+		if slices.Contains(kali, img.Release) {
+			img.Packages = append(img.Packages, KALI_PACKAGES...)
+		} else if slices.Contains(debian, img.Release) {
+			img.Packages = append(img.Packages, DEBIAN_PACKAGES...)
+		} else { // "xenial", "bionic", "focal", "jammy", "noble" ...
+			img.Packages = append(img.Packages, UBUNTU_PACKAGES...)
 		}
 	case "mingui":
-		if img.Release == "kali" || img.Release == "kali-rolling" {
-			img.Packages = append(img.Packages, PACKAGES_KALI...)
-			img.Packages = append(img.Packages, PACKAGES_MINGUI_KALI...)
-		} else {
-			img.Packages = append(img.Packages, PACKAGES_UBUNTU...)
-			img.Packages = append(img.Packages, PACKAGES_MINGUI...)
-			if img.Release == "xenial" {
-				img.Packages = append(img.Packages, "qupzilla")
-			} else {
-				img.Packages = append(img.Packages, "falkon")
-			}
+		if slices.Contains(kali, img.Release) {
+			img.Packages = append(img.Packages, KALI_PACKAGES...)
+			img.Packages = append(img.Packages, KALI_MINGUI_PACKAGES...)
+			addScriptToImage(img, "POSTBUILD_KALI_GUI", POSTBUILD_KALI_GUI)
+		} else if slices.Contains(debian, img.Release) {
+			img.Packages = append(img.Packages, DEBIAN_PACKAGES...)
+			img.Packages = append(img.Packages, DEBIAN_MINGUI_PACKAGES...)
+			addScriptToImage(img, "POSTBUILD_GUI", POSTBUILD_GUI)
+		} else { // "xenial", "bionic", "focal", "jammy", "noble" ...
+			img.Packages = append(img.Packages, UBUNTU_PACKAGES...)
+			img.Packages = append(img.Packages, UBUNTU_MINGUI_PACKAGES...)
 			addScriptToImage(img, "POSTBUILD_GUI", POSTBUILD_GUI)
 		}
 	default:
@@ -134,23 +119,23 @@ func SetDefaults(img *v1.Image) error {
 }
 
 // Create collects image values from user input at command line, creates an
-// image configuration, and then persists it to the store. SetDefaults is used
-// to set default values if the user did not include any in the image create
-// sub-command. This sub-command requires an image `name`. It will return any
-// errors encoutered while creating the configuration.
-func Create(name string, img *v1.Image) error {
-	if name == "" {
+// image configuration, and then persists it to the store. SetupImage is used
+// to set default packages and constants. This sub-command requires an image
+// `name`. It will return any errors encoutered while creating the
+// configuration.
+func Create(img *v1.Image) error {
+	if img.Name == "" {
 		return fmt.Errorf("image name is required to create an image")
 	}
 
-	if err := SetDefaults(img); err != nil {
-		return fmt.Errorf("setting image defaults: %w", err)
+	if err := SetupImage(img); err != nil {
+		return fmt.Errorf("setting up image: %w", err)
 	}
 
 	c := store.Config{
 		Version:  "phenix.sandia.gov/v1",
 		Kind:     "Image",
-		Metadata: store.ConfigMetadata{Name: name},
+		Metadata: store.ConfigMetadata{Name: img.Name},
 		Spec:     structs.MapDefaultCase(img, structs.CASESNAKE),
 	}
 
@@ -235,10 +220,6 @@ func Build(ctx context.Context, name string, verbosity int, cache bool, dryrun b
 			return fmt.Errorf("decoding image spec: %w", err)
 		}
 
-		if verbosity >= V_VVVERBOSE {
-			img.VerboseLogs = true
-		}
-
 		img.Cache = cache
 
 		// The Kali package repos use `kali-rolling` as the release name.
@@ -268,7 +249,7 @@ func Build(ctx context.Context, name string, verbosity int, cache bool, dryrun b
 	}
 
 	if verbosity >= V_VVERBOSE {
-		args = append(args, "--log", "stderr")
+		args = append(args, "--log", output + "/" + name + ".log")
 	}
 
 	if dryrun {
@@ -299,14 +280,6 @@ func Build(ctx context.Context, name string, verbosity int, cache bool, dryrun b
 
 		if err := cmd.Wait(); err != nil {
 			return fmt.Errorf("building image with vmdb2: %w", err)
-		}
-
-		if img.IncludeMiniccc {
-			notes.AddWarnings(ctx, false, fmt.Errorf("inject_miniccc setting is DEPRECATED - use 'image inject-miniexe' subcommand after image is built"))
-		}
-
-		if img.IncludeProtonuke {
-			notes.AddWarnings(ctx, false, fmt.Errorf("inject_protonuke setting is DEPRECATED - use 'image inject-miniexe' subcommand after image is built"))
 		}
 	}
 

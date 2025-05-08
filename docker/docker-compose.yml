@@ -23,10 +23,10 @@ services:
     image: phenix
     container_name: phenix
     privileged: true
+    pid: host
     <<: *common
     volumes:
       - /dev:/dev
-      - /proc:/proc
       - /etc/localtime:/etc/localtime:ro
       - /var/log/phenix:/var/log/phenix
       - /etc/phenix:/etc/phenix

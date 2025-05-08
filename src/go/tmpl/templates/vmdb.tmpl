@@ -1,8 +1,9 @@
+# {{ .Name }} build
 steps:
   - mkimg: {{ `"{{ output }}"` }}
     size: {{ .Size }}
     format: {{ .Format }}
-    compress: "{{ .Compress }}"
+    compress: {{ .Compress }}
   - mklabel: msdos
     device: {{ `"{{ output }}"` }}
   - mkpart: primary
@@ -16,33 +17,43 @@ steps:
   - mount: root
   - unpack-rootfs: root
   - debootstrap: {{ .Release }}
-    mirror: {{ .Mirror }}
-    options: "{{ .PackageList }} {{ .DebAppend }} {{ .Verbose }}"
     target: root
+    mirror: {{ .Mirror }}
+{{- if gt (len .Components) 0 }}
+    components:
+  {{- range $component := .Components }}
+      - {{ $component }}
+  {{- end }}
+{{- end }}
     unless: rootfs_unpacked
-  {{- if .Cache  }}
+{{- if not .NoVirtuals  }}
+  - virtual-filesystems: root
+{{- end }}
+{{- if gt (len .Packages) 0 }}
+  - apt: install
+    tag: root
+    packages:
+  {{- range $package := .Packages }}
+      - {{ $package }}
+  {{- end }}
+    unless: rootfs_unpacked
+{{- end }}
+{{- if .Cache  }}
   - cache-rootfs: root
     unless: rootfs_unpacked
-  {{- end }}
-  {{- if .Overlays }}
-  - overlay: root
-    paths:
-      {{- range $overlay := .Overlays }}
-      - {{ $overlay }}
-      {{- end }}
-  {{- end }}
-  {{- if .Scripts }}
+{{- end }}
+{{- range $overlay := .Overlays }}
+  - copy-dir: /
+    src: {{ $overlay }}
+{{- end }}
+{{- if .Scripts }}
   - chroot: root
     shell: |
 {{ .PostBuild }}
-  {{- end }}
+{{- end }}
   - fstab: root
   - grub: bios
     tag: root
-  {{- if .Ramdisk }}
+{{- if .Ramdisk }}
   - ramdisk: root
-  {{- end }}
-  - shell: |
-      echo Disk usage of this installation:
-      du -sh "$ROOT"
-    root-fs: root
+{{- end }}
