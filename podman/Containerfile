@@ -78,8 +78,7 @@ ENV LANG   en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
 
 # needed to build Kali images with phenix
-RUN wget -O kali.deb http://http.kali.org/kali/pool/main/k/kali-archive-keyring/kali-archive-keyring_2020.2_all.deb \
-	&& dpkg -i kali.deb && rm kali.deb
+RUN wget https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
 
 # used by scorch
 RUN wget -O filebeat.deb https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.14.2-amd64.deb \

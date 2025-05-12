@@ -129,9 +129,7 @@ RUN wget https://github.com/glattercj/vmdb2/releases/latest/download/vmdb2 -O /u
   && chmod +x /usr/bin/vmdb2
 
 # needed to build Kali images with phenix
-RUN wget -O kali.deb https://http.kali.org/kali/pool/main/k/kali-archive-keyring/kali-archive-keyring_2024.1_all.deb \
-  && dpkg -i kali.deb \
-  && rm kali.deb
+RUN wget https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
 
 # used by scorch
 RUN wget -O glow.tgz https://github.com/charmbracelet/glow/releases/download/v1.5.0/glow_1.5.0_Linux_x86_64.tar.gz \
