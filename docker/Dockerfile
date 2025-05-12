@@ -156,7 +156,7 @@ ARG APPS_REPO=github.com/sandialabs/sceptre-phenix-apps
 ARG APPS_BRANCH=main
 
 # Install phenix user apps
-RUN python3 -m pip install --break-system-packages --no-cache-dir \
+RUN python3 -m pip install --break-system-packages --ignore-installed --no-cache-dir \
   "git+https://${APPS_REPO}.git@${APPS_BRANCH}#egg=phenix-apps&subdirectory=src/python"
 
 # Copy binaries from gobuilder stage
