@@ -268,6 +268,7 @@ components:
               - vyatta
               - vyos
               - windows
+              - other
               default: linux
               example: windows
             drives:
