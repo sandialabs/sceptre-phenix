@@ -723,6 +723,8 @@ func Snapshots(expName, vmName string) ([]string, error) {
 	return names, nil
 }
 
+// Takes a snapshot of the current state of the VM (disk and memory)
+// snapshots can later be restored
 func Snapshot(expName, vmName, out string, cb func(string)) error {
 	vm, err := Get(expName, vmName)
 	if err != nil {
@@ -986,6 +988,12 @@ func Restore(expName, vmName, snap string) error {
 
 }
 
+// Creates a new disk with the current state of a running vm
+// 1. creates a copy of the base image (e.g., the image used in the topology) named "out"
+// 2. stops the vm
+// 3. next rebases the snapshot (the running image phenix uses <vm>/disk-0.qcow2) to utilize the copy
+// 4. commits the snapshot so that it writes the current disk to "out"
+// 5. starts the vm
 func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error) {
 	// Determine name of new disk image, if not provided.
 	if out == "" {
@@ -1225,6 +1233,8 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 
 }
 
+// Create an ELF memory snapshot for a running virtual machine
+//  that is compatible with memory forensic toolkits Volatility and Google's Rekall.
 func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error) {
 
 	_, err := Get(expName, vmName)
