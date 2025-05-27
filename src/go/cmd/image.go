@@ -79,21 +79,11 @@ func newImageCreateCmd() *cobra.Command {
 	When specifying the --size option, the following units can be used:
 
 	M - Megabytes
-	G - Gigabytes
-
-	When specifying the --include-miniccc or --include-protonuke options,
-	the directory to install the miniccc and/or protonuke executable into
-	should be provided. For example:
-
-	--include-miniccc=/usr/local/bin
-
-	When building the image, the build subcommand will look for the miniccc
-	and/or protonuke executable in /usr/local/share/minimega/bin on the host
-	building the image.`
+	G - Gigabytes`
 
 	example := `
   phenix image create <image name>
-  phenix image create --size 2G --variant mingui --release xenial --format qcow2 --compress --overlays foobar --packages foo --scripts bar <image name>`
+  phenix image create --size 2G --variant mingui --release noble --compress --overlays foobar --packages foo --scripts bar <image name>`
 
 	cmd := &cobra.Command{
 		Use:     "create <image name>",
@@ -111,7 +101,7 @@ func newImageCreateCmd() *cobra.Command {
 				return fmt.Errorf("Must provide an image name as the only argument (check that you are using commas where required for flags)")
 			}
 
-			name := args[0]
+			img.Name = args[0]
 			img.Size = MustGetString(cmd.Flags(), "size")
 			img.Variant = MustGetString(cmd.Flags(), "variant")
 			img.Release = MustGetString(cmd.Flags(), "release")
@@ -119,9 +109,7 @@ func newImageCreateCmd() *cobra.Command {
 			img.Format = v1.Format(MustGetString(cmd.Flags(), "format"))
 			img.Compress = MustGetBool(cmd.Flags(), "compress")
 			img.Ramdisk = MustGetBool(cmd.Flags(), "ramdisk")
-			img.DebAppend = MustGetString(cmd.Flags(), "debootstrap-append")
-			img.IncludeMiniccc = MustGetBool(cmd.Flags(), "include-miniccc")
-			img.IncludeProtonuke = MustGetBool(cmd.Flags(), "include-protonuke")
+			img.NoVirtuals = MustGetBool(cmd.Flags(), "no-virtuals")
 			img.SkipDefaultPackages = MustGetBool(cmd.Flags(), "skip-default-pkgs")
 
 			if overlays := MustGetString(cmd.Flags(), "overlays"); overlays != "" {
@@ -130,6 +118,10 @@ func newImageCreateCmd() *cobra.Command {
 
 			if packages := MustGetString(cmd.Flags(), "packages"); packages != "" {
 				img.Packages = strings.Split(packages, ",")
+			}
+
+			if components := MustGetString(cmd.Flags(), "components"); components != "" {
+				img.Components = strings.Split(components, ",")
 			}
 
 			if scripts := MustGetString(cmd.Flags(), "scripts"); scripts != "" {
@@ -141,31 +133,30 @@ func newImageCreateCmd() *cobra.Command {
 				return fmt.Errorf("Must provide a valid unit for disk size option (e.g., '500M' or '10G')")
 			}
 
-			if err := image.Create(name, &img); err != nil {
-				err := util.HumanizeError(err, "Unable to create the "+name+" image")
+			if err := image.Create(&img); err != nil {
+				err := util.HumanizeError(err, "Unable to create the "+img.Name+" image")
 				return err.Humanized()
 			}
 
-			fmt.Printf("The configuration for the %s image was created\n", name)
+			fmt.Printf("The configuration for the %s image was created\n", img.Name)
 
 			return nil
 		},
 	}
 
-	cmd.Flags().StringP("size", "s", "5G", "Image size to use")
+	cmd.Flags().StringP("size", "s", "10G", "Image size to use")
 	cmd.Flags().StringP("variant", "v", "minbase", "Image variant to use")
-	cmd.Flags().StringP("release", "r", "bionic", "OS release codename")
-	cmd.Flags().StringP("mirror", "m", "http://us.archive.ubuntu.com/ubuntu/", "Debootstrap mirror (must match release)")
-	cmd.Flags().StringP("format", "f", "raw", "Format of disk image")
+	cmd.Flags().StringP("release", "r", "jammy", "OS release codename")
+	cmd.Flags().StringP("mirror", "m", "http://us.archive.ubuntu.com/ubuntu", "Debootstrap mirror (must match release)")
+	cmd.Flags().StringP("components", "l", "", "List of components from the mirror to download packages from (separated by comma)")
+	cmd.Flags().StringP("format", "f", "qcow2", "Format of disk image")
 	cmd.Flags().BoolP("compress", "c", false, "Compress image after creation (does not apply to raw image)")
 	cmd.Flags().BoolP("ramdisk", "R", false, "Create a kernel/initrd pair in addition to a disk image")
 	cmd.Flags().StringP("overlays", "O", "", "List of overlay names (include full path; separated by comma)")
 	cmd.Flags().Bool("skip-default-pkgs", false, "Skip default packages typically included in all builds")
 	cmd.Flags().StringP("packages", "P", "", "List of packages to include in addition to those provided by variant (separated by comma)")
 	cmd.Flags().StringP("scripts", "T", "", "List of scripts to include in addition to the defaults (include full path; separated by comma)")
-	cmd.Flags().StringP("debootstrap-append", "d", "", `Additional arguments to debootstrap "(default: --components=main,restricted,universe,multiverse)"`)
-	cmd.Flags().Bool("include-miniccc", false, `Include the miniccc executable at /opt/minimega/bin in the image`)
-	cmd.Flags().Bool("include-protonuke", false, `Include the protonuke executable at /opt/minimega/bin in the image`)
+	cmd.Flags().Bool("no-virtuals", false, `Don't add virtual filesystem mounts to chroot before executing scripts when running vmdb2 (default is 'false')`)
 
 	return cmd
 }
@@ -265,7 +256,7 @@ func newImageBuildCmd() *cobra.Command {
 
 	example := `
   phenix image build <configuration name>
-  phenix image build --very-very-verbose --output </path/to/dir/>`
+  phenix image build --very-verbose --output </path/to/dir/>`
 
 	cmd := &cobra.Command{
 		Use:     "build <configuration name>",
@@ -305,10 +296,6 @@ func newImageBuildCmd() *cobra.Command {
 				verbosity = verbosity | image.V_VVERBOSE
 			}
 
-			if MustGetBool(cmd.Flags(), "very-very-verbose") {
-				verbosity = verbosity | image.V_VVVERBOSE
-			}
-
 			ctx := notes.Context(context.Background(), false)
 
 			if err := image.Build(ctx, name, verbosity, cache, dryrun, output); err != nil {
@@ -326,8 +313,7 @@ func newImageBuildCmd() *cobra.Command {
 
 	// panic: "vv" shorthand is more than one ASCII character
 	cmd.Flags().BoolP("verbose", "v", false, "Enable verbose output")
-	cmd.Flags().BoolP("very-verbose", "w", false, "Enable very verbose output")
-	cmd.Flags().BoolP("very-very-verbose", "x", false, "Enable very verbose output plus additional verbose output from debootstrap")
+	cmd.Flags().BoolP("very-verbose", "x", false, "Enable very verbose output, additionally writes output log file to <image name>.log")
 	cmd.Flags().BoolP("cache", "c", false, "Cache rootfs as tar archive")
 	cmd.Flags().BoolP("dry-run", "", false, "Do everything but actually call out to vmdb2")
 	cmd.Flags().StringP("output", "o", "", "Specify the output directory for the disk image to be saved to")
