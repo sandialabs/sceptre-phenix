@@ -3,6 +3,7 @@ import Router from 'vue-router'
 
 import Configs       from './components/Configs.vue'
 import Disabled      from './components/Disabled.vue'
+import Disks         from './components/Disks.vue'
 import Experiment    from './components/Experiment.vue'
 import Experiments   from './components/Experiments.vue'
 import Hosts         from './components/Hosts.vue'
@@ -39,6 +40,7 @@ const router = new Router({
 
     {path: '/configs',           name: 'configs',     component: Configs},
     {path: '/disabled',          name: 'disabled',    component: Disabled},
+    {path: '/disks',             name: 'disks',       component: Disks},
     {path: '/experiments',       name: 'experiments', component: Experiments},
     {path: '/experiment/:id',    name: 'experiment',  component: Experiment},
     {path: '/hosts',             name: 'hosts',       component: Hosts},
