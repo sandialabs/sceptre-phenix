@@ -46,6 +46,7 @@ var (
 		ReadBufferSize:  4096,
 		WriteBufferSize: 4096,
 	}
+	screenshotSize = "200"
 )
 
 type Client struct {
@@ -78,7 +79,7 @@ func (this *Client) Go() {
 
 	go this.write()
 	go this.read()
-	go this.screenshots()
+	go this.setScreenshotsTicker()
 }
 
 func (this *Client) Stop() {
@@ -142,6 +143,19 @@ func (this *Client) read() {
 
 			switch req.Resource.Type {
 			case "experiment/vms":
+			case "metadata/screenshot":
+				var payload map[string]string
+				if err := json.Unmarshal(req.Payload, &payload); err != nil {
+					plog.Error("cannot unmarshal WebSocket request payload JSON", "err", err)
+					continue
+				}
+				size, ok := payload["size"]
+				if ok {
+					plog.Debug("updated screenshot resolution", "size", size)
+					screenshotSize = size
+					this.updateScreenshots()
+				}
+				continue
 			case "experiment/topology":
 				// TODO: check RBAC permissions?
 
@@ -314,7 +328,7 @@ func (this *Client) read() {
 
 				if this.role.Allowed("vms", "list", fmt.Sprintf("%s/%s", expName, vm.Name)) {
 					if vm.Running {
-						screenshot, err := util.GetScreenshot(expName, vm.Name, "200")
+						screenshot, err := util.GetScreenshot(expName, vm.Name, screenshotSize)
 						if err != nil {
 							plog.Error("getting screenshot for WebSocket client", "err", err)
 						} else {
@@ -448,55 +462,59 @@ func (this *Client) publisher(msg interface{}) error {
 	return nil
 }
 
-func (this *Client) screenshots() {
+func (client *Client) setScreenshotsTicker() {
 	ticker := time.NewTicker(5 * time.Second)
 
 	defer ticker.Stop()
-	defer this.Stop()
+	defer client.Stop()
 
 	for {
 		select {
-		case <-this.done:
+		case <-client.done:
 			return
 		case <-ticker.C:
-			names := make(map[string][]string)
+			client.updateScreenshots()
+		}
+	}
+}
 
-			this.vmMu.RLock()
+func (client *Client) updateScreenshots() {
+	names := make(map[string][]string)
 
-			for _, v := range this.vms {
-				names[v.exp] = append(names[v.exp], v.name)
+	client.vmMu.RLock()
+
+	for _, v := range client.vms {
+		names[v.exp] = append(names[v.exp], v.name)
+	}
+
+	client.vmMu.RUnlock()
+
+	for exp, vms := range names {
+		for _, vm := range vms {
+			screenshot, err := util.GetScreenshot(exp, vm, screenshotSize)
+			if err != nil {
+				if errors.Is(err, mm.ErrVMNotFound) {
+					continue
+				}
+
+				if errors.Is(err, mm.ErrScreenshotNotFound) {
+					continue
+				}
+
+				plog.Error("getting screenshot for WebSocket client", "err", err)
+				continue
 			}
 
-			this.vmMu.RUnlock()
+			encoded := "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+			marshalled, err := json.Marshal(util.WithRoot("screenshot", encoded))
+			if err != nil {
+				plog.Error("marshaling VM screenshot for WebSocket client", "vm", vm, "err", err)
+				continue
+			}
 
-			for exp, vms := range names {
-				for _, vm := range vms {
-					screenshot, err := util.GetScreenshot(exp, vm, "200")
-					if err != nil {
-						if errors.Is(err, mm.ErrVMNotFound) {
-							continue
-						}
-
-						if errors.Is(err, mm.ErrScreenshotNotFound) {
-							continue
-						}
-
-						plog.Error("getting screenshot for WebSocket client", "err", err)
-						continue
-					}
-
-					encoded := "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
-					marshalled, err := json.Marshal(util.WithRoot("screenshot", encoded))
-					if err != nil {
-						plog.Error("marshaling VM screenshot for WebSocket client", "vm", vm, "err", err)
-						continue
-					}
-
-					this.publish <- bt.Publish{
-						Resource: bt.NewResource("experiment/vm/screenshot", fmt.Sprintf("%s/%s", exp, vm), "update"),
-						Result:   marshalled,
-					}
-				}
+			client.publish <- bt.Publish{
+				Resource: bt.NewResource("experiment/vm/screenshot", fmt.Sprintf("%s/%s", exp, vm), "update"),
+				Result:   marshalled,
 			}
 		}
 	}
