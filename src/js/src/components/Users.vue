@@ -118,7 +118,6 @@
       </div>
     </b-modal>
     <template>
-      <hr>
       <b-field grouped position="is-right">
         <p v-if="roleAllowed('users', 'create')" class="control">
           <b-tooltip label="create a new user" type="is-light is-left">
