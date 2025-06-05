@@ -22,11 +22,13 @@ func SetLevelText(l string) {
 }
 
 func TextToLevel(level string) slog.Level {
-	var l slog.Level
 	if strings.ToUpper(level) == "NONE" {
-		l = slog.LevelError + 1
-		return l
+		return slog.LevelError + 1
 	}
+	if strings.ToUpper(level) == "WARNING" { // python using warning rather than warn
+		return slog.LevelWarn
+	}
+	var l slog.Level
 	if err := l.UnmarshalText([]byte(level)); err != nil {
 		l = slog.LevelInfo
 	}
