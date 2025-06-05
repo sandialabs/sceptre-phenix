@@ -30,8 +30,6 @@ var (
 	BridgeMode = BRIDGE_MODE_MANUAL
 	DeployMode = DEPLOY_MODE_NO_HEADNODE
 
-	LogFile    = "/var/log/phenix/phenix.log"
-	ErrorFile  = "/var/log/phenix/error.log"
 	UnixSocket = "/tmp/phenix.sock"
 
 	StoreEndpoint    string

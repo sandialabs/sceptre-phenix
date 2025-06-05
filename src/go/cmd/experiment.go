@@ -49,7 +49,7 @@ func newExperimentListCmd() *cobra.Command {
 			}
 
 			if len(exps) == 0 {
-				plog.Warn("no experiments available")
+				plog.Warn(plog.TypeSystem, "no experiments available")
 			} else {
 				printer.PrintTableOfExperiments(os.Stdout, exps...)
 			}
@@ -69,7 +69,7 @@ func newExperimentAppsCmd() *cobra.Command {
 			apps := app.List()
 
 			if len(apps) == 0 {
-				plog.Warn("no apps available")
+				plog.Warn(plog.TypeSystem, "no apps available")
 				return nil
 			}
 
@@ -90,7 +90,7 @@ func newExperimentSchedulersCmd() *cobra.Command {
 			schedulers := scheduler.List()
 
 			if len(schedulers) == 0 {
-				plog.Warn("no schedulers available")
+				plog.Warn(plog.TypeSystem, "no schedulers available")
 				return nil
 			}
 
@@ -187,7 +187,7 @@ func newExperimentCreateCmd() *cobra.Command {
 
 			notes.PrettyPrint(ctx, false)
 
-			plog.Info("experiment created", "exp", args[0])
+			plog.Info(plog.TypeSystem, "experiment created", "exp", args[0])
 
 			return nil
 		},
@@ -281,7 +281,7 @@ func newExperimentDeleteCmd() *cobra.Command {
 
 			for _, exp := range experiments {
 				if exp.Running() {
-					plog.Warn("not deleting running experiment", "exp", exp.Metadata.Name)
+					plog.Warn(plog.TypeSystem, "not deleting running experiment", "exp", exp.Metadata.Name)
 					continue
 				}
 
@@ -291,7 +291,7 @@ func newExperimentDeleteCmd() *cobra.Command {
 					continue
 				}
 
-				plog.Info("experiment deleted", "exp", exp.Metadata.Name)
+				plog.Info(plog.TypeSystem, "experiment deleted", "exp", exp.Metadata.Name)
 			}
 
 			return nil
@@ -323,7 +323,7 @@ func newExperimentScheduleCmd() *cobra.Command {
 				return err.Humanized()
 			}
 
-			plog.Info("experiment scheduled", "exp", args[0], "algorithm", args[1])
+			plog.Info(plog.TypeSystem, "experiment scheduled", "exp", args[0], "algorithm", args[1])
 
 			return nil
 		},
@@ -381,7 +381,7 @@ func newExperimentStartCmd() *cobra.Command {
 
 			for _, exp := range experiments {
 				if exp.Running() {
-					plog.Warn("not starting already running experiment", "exp", exp.Metadata.Name)
+					plog.Warn(plog.TypeSystem, "not starting already running experiment", "exp", exp.Metadata.Name)
 					continue
 				}
 
@@ -400,13 +400,13 @@ func newExperimentStartCmd() *cobra.Command {
 
 				notes.PrettyPrint(ctx, false)
 
-				plog.Info("experiment started", "exp", exp.Metadata.Name, "dryrun", dryrun, "deploy-mode", exp.Spec.DeployMode())
+				plog.Info(plog.TypeSystem, "experiment started", "exp", exp.Metadata.Name, "dryrun", dryrun, "deploy-mode", exp.Spec.DeployMode())
 
 				if periodic {
-					plog.Info("honor-run-periodically flag was passed")
+					plog.Info(plog.TypeSystem, "honor-run-periodically flag was passed")
 
 					if err := app.PeriodicallyRunApps(ctx, &wg, &exp); err != nil {
-						plog.Error("scheduling experiment apps to run periodically", "err", err)
+						plog.Error(plog.TypeSystem, "scheduling experiment apps to run periodically", "err", err)
 					}
 				}
 			}
@@ -467,7 +467,7 @@ func newExperimentStopCmd() *cobra.Command {
 
 			for _, exp := range experiments {
 				if !exp.Running() {
-					plog.Warn("not stopping already stopped experiment", "exp", exp.Metadata.Name)
+					plog.Warn(plog.TypeSystem, "not stopping already stopped experiment", "exp", exp.Metadata.Name)
 					continue
 				}
 
@@ -476,7 +476,7 @@ func newExperimentStopCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				plog.Info("experiment stopped", "exp", exp.Metadata.Name)
+				plog.Info(plog.TypeSystem, "experiment stopped", "exp", exp.Metadata.Name)
 			}
 
 			return nil
@@ -527,7 +527,7 @@ func newExperimentRestartCmd() *cobra.Command {
 
 			for _, exp := range experiments {
 				if !exp.Running() {
-					plog.Warn("not restarting stopped experiment", "exp", exp.Metadata.Name)
+					plog.Warn(plog.TypeSystem, "not restarting stopped experiment", "exp", exp.Metadata.Name)
 					continue
 				}
 
@@ -541,7 +541,7 @@ func newExperimentRestartCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				plog.Info("experiment restarted", "exp", exp.Metadata.Name, "dryrun", dryrun, "deploy-mode", exp.Spec.DeployMode())
+				plog.Info(plog.TypeSystem, "experiment restarted", "exp", exp.Metadata.Name, "dryrun", dryrun, "deploy-mode", exp.Spec.DeployMode())
 			}
 
 			return nil
@@ -592,7 +592,7 @@ func newExperimentReconfigureCmd() *cobra.Command {
 
 			for _, exp := range experiments {
 				if exp.Running() {
-					plog.Warn("not reconfiguring running experiment", "exp", exp.Metadata.Name)
+					plog.Warn(plog.TypeSystem, "not reconfiguring running experiment", "exp", exp.Metadata.Name)
 					continue
 				}
 
@@ -601,7 +601,7 @@ func newExperimentReconfigureCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				plog.Info("experiment reconfigured", "exp", exp.Metadata.Name)
+				plog.Info(plog.TypeSystem, "experiment reconfigured", "exp", exp.Metadata.Name)
 			}
 
 			return nil
@@ -655,7 +655,7 @@ func newExperimentTriggerRunningCmd() *cobra.Command {
 
 			for _, exp := range experiments {
 				if !exp.Running() {
-					plog.Warn("not triggering the running stage for apps in stopped experiment", "exp", exp.Metadata.Name)
+					plog.Warn(plog.TypeSystem, "not triggering the running stage for apps in stopped experiment", "exp", exp.Metadata.Name)
 					continue
 				}
 
@@ -664,7 +664,7 @@ func newExperimentTriggerRunningCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				plog.Info("running stage triggered for apps", "exp", exp.Metadata.Name)
+				plog.Info(plog.TypeSystem, "running stage triggered for apps", "exp", exp.Metadata.Name)
 			}
 
 			return nil
@@ -709,7 +709,7 @@ func newExperimentScorchCmd() *cobra.Command {
 				return err.Humanized()
 			}
 
-			plog.Info("scorch run triggered", "exp", exp.Metadata.Name, "run", run)
+			plog.Info(plog.TypeSystem, "scorch run triggered", "exp", exp.Metadata.Name, "run", run)
 
 			return nil
 		},

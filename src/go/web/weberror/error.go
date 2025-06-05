@@ -5,88 +5,84 @@ import (
 	"fmt"
 	"net/http"
 
-	"phenix/store"
 	"phenix/util/plog"
 )
 
 type WebError struct {
-	*store.Event
-
-	Cause  error  `json:"-"`
-	Status int    `json:"-"`
-	URL    string `json:"url"`
-
-	UserMetadata map[string]string `json:"metadata,omitempty"`
+	Cause          string            `json:"cause"`
+	Status         int               `json:"-"`
+	Message        string            `json:"message"`
+	SystemMetadata map[string]string `json:"sys_metadata,omitempty"` // logged, but not return to user
+	UserMetadata   map[string]string `json:"metadata,omitempty"`     // logged and returned to user
 }
 
 func NewWebError(cause error, format string, args ...interface{}) *WebError {
-	event := store.NewErrorEvent(fmt.Errorf(format, args...))
+	causeStr := ""
 
 	if cause != nil {
-		event = event.WithMetadata("cause", cause.Error())
+		causeStr = cause.Error()
 	}
 
 	err := &WebError{
-		Event:  event,
-		Cause:  cause,
-		Status: http.StatusBadRequest,
-		URL:    "/api/v1/errors/" + event.ID,
+		Message: fmt.Sprintf(format, args...),
+		Cause:   causeStr,
+		Status:  http.StatusBadRequest,
 	}
 
 	return err
 }
 
-func (this *WebError) WithMetadata(k, v string, user bool) *WebError {
-	this.Event.WithMetadata(k, v)
+func (err *WebError) WithMetadata(k, v string, user bool) *WebError {
+	if err.SystemMetadata == nil {
+		err.SystemMetadata = make(map[string]string)
+	}
+
+	err.SystemMetadata[k] = v
 
 	if user {
-		if this.UserMetadata == nil {
-			this.UserMetadata = make(map[string]string)
+		if err.UserMetadata == nil {
+			err.UserMetadata = make(map[string]string)
 		}
 
-		this.UserMetadata[k] = v
+		err.UserMetadata[k] = v
 	}
 
-	return this
+	return err
 }
 
-func (this *WebError) SetInformational() *WebError {
-	this.Event.Type = store.EventTypeInfo
-	return this
+func (err *WebError) SetStatus(status int) *WebError {
+	err.Status = status
+	return err
 }
 
-func (this *WebError) SetStatus(status int) *WebError {
-	this.Status = status
-	return this
-}
-
-func (this WebError) Error() string {
-	if this.Cause == nil {
-		return this.Event.Message
+func (err WebError) Error() string {
+	if err.Cause == "" {
+		return err.Message
 	}
 
-	return fmt.Sprintf("%s: %v", this.Event.Message, this.Cause)
+	return fmt.Sprintf("%s: %v", err.Message, err.Cause)
 }
 
 type ErrorHandler func(http.ResponseWriter, *http.Request) error
 
-func (this ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if err := this(w, r); err != nil {
+func (err ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if err := err(w, r); err != nil {
 		web, ok := err.(*WebError)
 		if !ok {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
-		go store.AddEvent(*web.Event)
+		var attrs []any
+		for key, value := range web.SystemMetadata {
+			attrs = append(attrs, key, value)
+		}
+		plog.Error(plog.TypeSystem, web.Error(), attrs...)
 
-		web.Event.Metadata = nil
-
+		web.SystemMetadata = nil
 		body, _ := json.Marshal(web)
-		plog.Error(string(body))
 
 		w.Header().Set("Content-Type", "application/json")
-
 		w.WriteHeader(web.Status)
 		w.Write(body)
 	}

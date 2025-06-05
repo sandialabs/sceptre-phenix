@@ -67,7 +67,7 @@ func startExperiment(name string) ([]byte, error) {
 			status <- result{nil, err}
 		} else {
 			for _, note := range notes.Info(ctx, false) {
-				plog.Info(note)
+				plog.Info(plog.TypeSystem, note)
 			}
 
 			done := make(chan struct{})
@@ -77,7 +77,7 @@ func startExperiment(name string) ([]byte, error) {
 			go func() {
 				for {
 					for _, note := range notes.Info(ctx, false) {
-						plog.Info(note)
+						plog.Info(plog.TypeSystem, note)
 					}
 
 					select {
@@ -91,7 +91,7 @@ func startExperiment(name string) ([]byte, error) {
 
 			go func() {
 				for err := range ch {
-					plog.Warn("delayed error starting experiment", "exp", name, "err", err)
+					plog.Warn(plog.TypeSystem, "delayed error starting experiment", "exp", name, "err", err)
 
 					var delayErr experiment.DelayedVMError
 
@@ -149,7 +149,7 @@ func startExperiment(name string) ([]byte, error) {
 			vms, err := vm.List(name)
 			if err != nil {
 				// TODO
-				plog.Error("listing VMs in experiment", "exp", name, "err", err)
+				plog.Error(plog.TypeSystem, "listing VMs in experiment", "exp", name, "err", err)
 			}
 
 			body, err := marshaler.Marshal(util.ExperimentToProtobuf(*s.exp, "", vms))
@@ -168,7 +168,7 @@ func startExperiment(name string) ([]byte, error) {
 		default:
 			p, err := mm.GetLaunchProgress(name, count)
 			if err != nil {
-				plog.Error("getting progress for experiment", "exp", name, "err", err)
+				plog.Error(plog.TypeSystem, "getting progress for experiment", "exp", name, "err", err)
 				continue
 			}
 
@@ -176,7 +176,7 @@ func startExperiment(name string) ([]byte, error) {
 				progress = p
 			}
 
-			plog.Info("percent deployed", "percent", progress*100.0)
+			plog.Debug(plog.TypeSystem, "percent deployed", "percent", progress*100.0, "exp", name)
 
 			status := map[string]interface{}{
 				"percent": progress,

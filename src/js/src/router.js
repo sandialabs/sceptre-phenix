@@ -16,6 +16,7 @@ import Users         from './components/Users.vue'
 import VMtiles       from './components/VMtiles.vue'
 import MiniConsole   from './components/MiniConsole.vue'
 import Tunneler      from './components/Tunneler.vue'
+import Settings      from './components/Settings.vue'
 
 import store from './store'
 
@@ -51,6 +52,7 @@ const router = new Router({
     {path: '/vmtiles',           name: 'vmtiles',     component: VMtiles},
     {path: '/console',           name: 'console',     component: MiniConsole},
     {path: '/tunneler',          name: 'tunneler',    component: Tunneler},
+    {path: '/settings',          name: 'settings',    component: Settings},
 
     {path: '/builder?token=:token', name: 'builder'},
     {path: '/version',              name: 'version'},
