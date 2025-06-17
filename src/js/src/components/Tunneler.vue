@@ -1,6 +1,5 @@
 <template>
   <div class="content">
-    <hr />
     <div id="quick-start">
       <h1>Quick Start</h1>
       <p>

@@ -5,10 +5,10 @@ component.
 
 <template>
   <div>
-    <hr>
-    <div>
+    <hr class="mb-4">
+    <div class="container is-fluid">
       <small>
-        <p style="float: left; color: whitesmoke">Copyright &copy; <b>2019-2022 Sandia National Laboratories</b>. All Rights Reserved.</p>
+        <p style="float: left; color: whitesmoke; padding-bottom: 16px;">Copyright &copy; <b>2019-2025 Sandia National Laboratories</b>. All Rights Reserved.</p>
         <p style="float: right; color: whitesmoke">{{ version }}</p>
       </small>
     </div>
