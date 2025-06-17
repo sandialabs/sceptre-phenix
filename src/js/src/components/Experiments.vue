@@ -96,7 +96,6 @@
       </section>
     </template>
     <template v-else>
-      <hr>
       <b-field position="is-right">
         <b-autocomplete v-model="searchName"
                         placeholder="Find an Experiment"
@@ -138,7 +137,7 @@
               </div>
             </section>
           </template>
-          <b-table-column field="name" label="Name" width="200" sortable v-slot="props">
+          <b-table-column field="name" label="Name" sortable v-slot="props">
             <template v-if="updating( props.row.status )">
               {{ props.row.name }}
             </template>
@@ -171,22 +170,22 @@
               </span>
             </template>
           </b-table-column>
-          <b-table-column field="topology" label="Topology" width="200" v-slot="props">
+          <b-table-column field="topology" label="Topology" v-slot="props">
             {{ props.row.topology | lowercase }}
           </b-table-column>
-          <b-table-column field="scenario" label="Scenario" width="200" v-slot="props">
+          <b-table-column field="scenario" label="Scenario" v-slot="props">
             {{ props.row.scenario | lowercase }}
           </b-table-column>
-          <b-table-column field="start_time" label="Start Time" width="250" sortable v-slot="props">
+          <b-table-column field="start_time" label="Start Time" sortable v-slot="props">
             {{ props.row.start_time }}
           </b-table-column>
-          <b-table-column field="vm_count" label="VMs" width="100" centered sortable v-slot="props">
+          <b-table-column field="vm_count" label="VMs" width="50" centered sortable v-slot="props">
             {{ props.row.vm_count }}
           </b-table-column>
-          <b-table-column field="vlan_range" label="VLANs" width="100" centered v-slot="props">
+          <b-table-column field="vlan_range" label="VLANs" centered v-slot="props">
             {{ props.row.vlan_min }} - {{ props.row.vlan_max}} ({{ props.row.vlan_count }})
           </b-table-column>
-          <b-table-column label="Actions" width="150" centered v-slot="props">
+          <b-table-column label="Actions" width="125" centered v-slot="props">
             <button v-if="roleAllowed('experiments', 'delete', props.row.name)" class="button is-light is-small action" :disabled="updating( props.row.status )" @click="del( props.row.name, props.row.running )">
               <b-icon icon="trash"></b-icon>
             </button>

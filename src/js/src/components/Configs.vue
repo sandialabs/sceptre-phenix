@@ -61,7 +61,6 @@
       </div>
     </b-modal>
     <template v-if="editor.use">
-      <hr>
       <section class="hero is-light is-bold is-small">
         <div class="columns">
           <div class="column is-1" />
@@ -126,7 +125,6 @@
       </section>
     </template>
     <template v-else>
-      <hr>
       <div class="level">
         <div class="level-left" />
         <div class="level-right">
