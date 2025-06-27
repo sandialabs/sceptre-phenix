@@ -111,10 +111,6 @@ login and returns a user to Experiments component if successful.
                 duration: 5000
               });
             }
-
-            if ( msg.resource.type == 'log' ) {
-              this.$store.commit( 'LOG', msg.result );
-            }
           }
         });
       }

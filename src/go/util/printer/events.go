@@ -1,60 +1,62 @@
 package printer
 
-import (
-	"io"
 
-	"phenix/store"
+// TODO: update or delete
+// import (
+// 	"io"
 
-	"github.com/olekukonko/tablewriter"
-)
+// 	"phenix/store"
 
-// PrintTableOfEvents writes the given events to the given writer as an ASCII
-// table.
-func PrintTableOfEvents(writer io.Writer, events store.Events, showID bool) {
-	table := tablewriter.NewWriter(writer)
-	table.SetAutoMergeCellsByColumnIndex([]int{0, 1, 2})
-	table.SetAutoWrapText(false)
-	table.SetRowLine(true)
+// 	"github.com/olekukonko/tablewriter"
+// )
 
-	if showID {
-		table.SetHeader([]string{"ID", "Timestamp", "Type", "Source", "Message"})
-	} else {
-		table.SetHeader([]string{"Timestamp", "Type", "Source", "Message"})
-	}
+// // PrintTableOfEvents writes the given events to the given writer as an ASCII
+// // table.
+// func PrintTableOfEvents(writer io.Writer, events store.Events, showID bool) {
+// 	table := tablewriter.NewWriter(writer)
+// 	table.SetAutoMergeCellsByColumnIndex([]int{0, 1, 2})
+// 	table.SetAutoWrapText(false)
+// 	table.SetRowLine(true)
 
-	for _, e := range events {
-		ts := e.Timestamp.Format("01/02/2006 15:04 MST")
+// 	if showID {
+// 		table.SetHeader([]string{"ID", "Timestamp", "Type", "Source", "Message"})
+// 	} else {
+// 		table.SetHeader([]string{"Timestamp", "Type", "Source", "Message"})
+// 	}
 
-		if showID {
-			table.Append([]string{e.ID, ts, string(e.Type), e.Source, e.Message})
-		} else {
-			table.Append([]string{ts, string(e.Type), e.Source, e.Message})
-		}
-	}
+// 	for _, e := range events {
+// 		ts := e.Timestamp.Format("01/02/2006 15:04 MST")
 
-	table.Render()
-}
+// 		if showID {
+// 			table.Append([]string{e.ID, ts, string(e.Type), e.Source, e.Message})
+// 		} else {
+// 			table.Append([]string{ts, string(e.Type), e.Source, e.Message})
+// 		}
+// 	}
 
-func PrintEventTable(writer io.Writer, event store.Event) {
-	table := tablewriter.NewWriter(writer)
-	table.SetAutoWrapText(false)
-	table.SetRowLine(true)
+// 	table.Render()
+// }
 
-	table.SetHeader([]string{"Key", "Value"})
+// func PrintEventTable(writer io.Writer, event store.Event) {
+// 	table := tablewriter.NewWriter(writer)
+// 	table.SetAutoWrapText(false)
+// 	table.SetRowLine(true)
 
-	table.Append([]string{"ID", event.ID})
-	table.Append([]string{"Timestamp", event.Timestamp.Format("01/02/2006 15:04 MST")})
-	table.Append([]string{"Type", string(event.Type)})
-	table.Append([]string{"Source", event.Source})
-	table.Append([]string{"Message", event.Message})
+// 	table.SetHeader([]string{"Key", "Value"})
 
-	if event.Metadata != nil {
-		table.Append([]string{"Metadata", ""})
+// 	table.Append([]string{"ID", event.ID})
+// 	table.Append([]string{"Timestamp", event.Timestamp.Format("01/02/2006 15:04 MST")})
+// 	table.Append([]string{"Type", string(event.Type)})
+// 	table.Append([]string{"Source", event.Source})
+// 	table.Append([]string{"Message", event.Message})
 
-		for k, v := range event.Metadata {
-			table.Append([]string{k, v})
-		}
-	}
+// 	if event.Metadata != nil {
+// 		table.Append([]string{"Metadata", ""})
 
-	table.Render()
-}
+// 		for k, v := range event.Metadata {
+// 			table.Append([]string{k, v})
+// 		}
+// 	}
+
+// 	table.Render()
+// }

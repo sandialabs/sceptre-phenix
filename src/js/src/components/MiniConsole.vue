@@ -1,6 +1,5 @@
 <template>
   <div>
-    <hr>
     <template v-if="pid == 0">
       <section class="hero is-light is-bold is-large">
         <div class="hero-body">

@@ -145,7 +145,7 @@ func (this SOH) check(ctx context.Context, stage Action) error {
 	handlerName := fmt.Sprintf("%s-%d-%s", exp.Metadata.Name, this.options.Run, this.options.Name)
 	plog.AddHandler(handlerName, plog.NewScorchSohHandler(handlerName, md.LogLevel, updateComponent))
 
-	ctx = plog.ContextWithLogger(ctx, plog.With(plog.ScorchSohKey, handlerName))
+	ctx = plog.ContextWithLogger(ctx, plog.With(plog.ScorchSohKey, handlerName), plog.TypeScorch)
 	ctx = notes.Context(ctx, false)
 
 	appErr := app.ApplyApps(ctx, exp, options...)
@@ -172,10 +172,10 @@ func (this SOH) check(ctx context.Context, stage Action) error {
 	)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		plog.Error("creating directory for state of health results", "path", path, "err", err)
+		plog.Error(plog.TypeSoh, "creating directory for state of health results", "path", path, "err", err)
 		updateComponent(fmt.Sprintf("Writing state of health results to file failed: %v\n", err))
 	} else if err := os.WriteFile(path, body, 0644); err != nil {
-		plog.Error("writing state of health results", "path", path, "err", err)
+		plog.Error(plog.TypeSoh, "writing state of health results", "path", path, "err", err)
 		updateComponent(fmt.Sprintf("Writing state of health results to file failed: %v\n", err))
 	} else {
 		updateComponent(fmt.Sprintf("State of health results written to %s\n", path))

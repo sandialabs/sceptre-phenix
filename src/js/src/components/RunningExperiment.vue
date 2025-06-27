@@ -407,7 +407,6 @@
         </footer>
       </div>
     </b-modal>
-    <hr>
     <div class="level is-vcentered">
       <div class="level-item">
         <span style="font-weight: bold; font-size: x-large;">Experiment: {{ this.$route.params.id }}</span>&nbsp;
@@ -597,7 +596,7 @@
                 </template>
               </template>
             </b-table-column>
-            <b-table-column field="name" label="Node" width="150" sortable centered v-slot="props">
+            <b-table-column field="name" label="Node" sortable centered v-slot="props">
               <template v-if="!props.row.external && roleAllowed('vms', 'get', experiment.name + '/' + props.row.name)">
                 <b-tooltip  label="start/stop/redeploy the vm" type="is-dark">
                   <span class="tag is-medium" :class="decorator( props.row.state, props.row.busy )">
@@ -640,7 +639,7 @@
             <b-table-column v-if="isDelayed()" field="delayed"  label="Delay" centered v-slot="props">
               <b-tag type="is-info" v-if="props.row.delayed_start && props.row.state == 'BUILDING'">{{ props.row.delayed_start }}</b-tag>
             </b-table-column> 
-            <b-table-column field="host" label="Host" width="150" sortable v-slot="props">
+            <b-table-column field="host" label="Host" sortable v-slot="props">
               <template v-if="props.row.external">
                 EXTERNAL
               </template>
@@ -648,7 +647,7 @@
                 {{ props.row.host }}
               </template>
             </b-table-column>   
-            <b-table-column field="ipv4"  label="IPv4" width="150">
+            <b-table-column field="ipv4"  label="IPv4">
               <template v-slot:header= "{ column }"> 
                 <div class="level">  
                   <div class="level-item"> 
@@ -723,7 +722,7 @@
                 {{  props.row.taps | stringify | lowercase }}
               </template>
             </b-table-column>
-            <b-table-column field="uptime"  label="Uptime" width="165" v-slot="props">
+            <b-table-column field="uptime"  label="Uptime" v-slot="props">
               <template v-if="props.row.external">
                 unknown 
               </template>
@@ -3407,6 +3406,14 @@
 <style scoped>
   div.autocomplete >>> a.dropdown-item {
     color:  #383838 !important;
+  }
+
+  .b-table {
+    .table {
+      td {
+        vertical-align: top;
+      }
+    }
   }
   .fa-layers-counter { /* counter on tag icon */
     transform: scale(.7) translateX(50%) translateY(-50%);

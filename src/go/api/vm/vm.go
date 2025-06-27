@@ -19,7 +19,6 @@ import (
 	"phenix/util/file"
 	"phenix/util/mm"
 	"phenix/util/mm/mmcli"
-	"phenix/util/plog"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -942,7 +941,6 @@ func Restore(expName, vmName, snap string) error {
 
 	// Have to copy over UUID separate from clone. 
 	// Needs to stay the same for miniccc agent to connect
-	plog.Info("Setting UUID", "uuid", details[0].UUID)
 	cmd.Command = fmt.Sprintf("vm config uuid %s", details[0].UUID)
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("setting uuid for VM %s: %w", vmName, err)

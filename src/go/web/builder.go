@@ -41,7 +41,7 @@ type builder struct {
 
 // GET /builder
 func GetBuilder(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "GetBuilder")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetBuilder")
 
 	if o.unbundled {
 		tmpl := template.Must(template.New("builder.html").ParseFiles("web/public/builder.html"))
@@ -61,7 +61,7 @@ func GetBuilder(w http.ResponseWriter, r *http.Request) {
 
 // POST /experiments/builder
 func CreateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug("HTTP handler called", "handler", "CreateExperimentFromBuilder")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreateExperimentFromBuilder")
 
 	var (
 		ctx  = r.Context()
@@ -69,6 +69,7 @@ func CreateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("experiments", "create") {
+		plog.Warn(plog.TypeSecurity, "creating experiment from builder not allowed", "user", ctx.Value("user").(string))
 		err := weberror.NewWebError(nil, "creating experiments not allowed for %s", ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
@@ -177,7 +178,7 @@ func CreateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 
 	if warns := notes.Warnings(ctx, true); warns != nil {
 		for _, warn := range warns {
-			plog.Warn("%v", warn)
+			plog.Warn(plog.TypeSystem, warn.Error())
 		}
 	}
 
@@ -214,12 +215,13 @@ func CreateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
+	plog.Info(plog.TypeAction, "created experiment from builder", "user", ctx.Value("user").(string), "experiment", req.Name)
 	return nil
 }
 
 // PUT /experiments/builder
 func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug("HTTP handler called", "handler", "UpdateExperimentFromBuilder")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "UpdateExperimentFromBuilder")
 
 	var (
 		ctx  = r.Context()
@@ -227,6 +229,7 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("experiments", "update") {
+		plog.Warn(plog.TypeSecurity, "updating experiment from builder not allowed", "user", ctx.Value("user").(string))
 		err := weberror.NewWebError(nil, "updating experiments not allowed for %s", ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
@@ -394,7 +397,7 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 
 		if warns := notes.Warnings(ctx, false); warns != nil {
 			for _, warn := range warns {
-				plog.Warn("%v", warn)
+				plog.Warn(plog.TypeSystem, warn.Error())
 			}
 		}
 	}
@@ -437,12 +440,13 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
+	plog.Info(plog.TypeAction, "experiment updated from builder", "user", ctx.Value("user").(string), "experiment", req.Name)
 	return nil
 }
 
 // POST /builder/save
 func SaveBuilderTopology(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "SaveBuilderTopology")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "SaveBuilderTopology")
 
 	name := r.FormValue("filename")
 	if name == "" {
@@ -454,8 +458,6 @@ func SaveBuilderTopology(w http.ResponseWriter, r *http.Request) {
 		format = "xml"
 	}
 
-	plog.Info("saving builder file", "file", name, "format", format)
-
 	data, err := url.QueryUnescape(r.FormValue("xml"))
 	if err != nil {
 		msg := "unable to decode builder topology XML"
@@ -465,12 +467,13 @@ func SaveBuilderTopology(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	plog.Info(plog.TypeAction, "downloading builder file", "file", name, "format", format)
 	http.ServeContent(w, r, "", time.Now(), bytes.NewReader([]byte(data)))
 }
 
 // GET /builder/topologies
 func GetBuilderTopologies(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug("HTTP handler called", "handler", "GetBuilderTopologies")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetBuilderTopologies")
 
 	var (
 		ctx  = r.Context()
@@ -478,6 +481,7 @@ func GetBuilderTopologies(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("configs", "list") {
+		plog.Warn(plog.TypeSecurity, "getting builder topologies not allowed", "user", ctx.Value("user").(string))
 		err := weberror.NewWebError(nil, "listing topologies not allowed for %s", ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
@@ -511,7 +515,7 @@ func GetBuilderTopologies(w http.ResponseWriter, r *http.Request) error {
 
 // GET /builder/topologies/{name}
 func GetBuilderTopology(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug("HTTP handler called", "handler", "GetBuilderTopology")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetBuilderTopology")
 
 	var (
 		ctx  = r.Context()
@@ -521,6 +525,7 @@ func GetBuilderTopology(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("configs", "list", name) {
+		plog.Warn(plog.TypeSecurity, "getting builder topology not allowed", "user", ctx.Value("user").(string), "topo", vars["name"])
 		err := weberror.NewWebError(nil, "getting topology %s not allowed for %s", vars["name"], ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}

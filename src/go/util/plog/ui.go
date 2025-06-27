@@ -12,10 +12,10 @@ import (
 type uiHandler struct {
 	level    slog.Level
 	attrs    []slog.Attr
-	callback func(time.Time, string, string)
+	callback func(time time.Time, level string, logtype string, message string)
 }
 
-func NewUIHandler(level string, cb func(time.Time, string, string)) slog.Handler {
+func NewUIHandler(level string, cb func(time time.Time, level string, logtype string, message string)) slog.Handler {
 	var l slog.Level
 
 	if err := l.UnmarshalText([]byte(level)); err != nil {
@@ -36,22 +36,25 @@ func (this uiHandler) Enabled(_ context.Context, l slog.Level) bool {
 // Handle implements the slog.Handler interface for the ui handler.
 func (this uiHandler) Handle(_ context.Context, r slog.Record) error {
 	attrs := []string{r.Message}
+	logtype := string(TypeSystem)
 
 	for _, attr := range this.attrs {
-		if _, ok := ignore[attr.Key]; !ok {
+		if _, ok := logKeysIgnored[attr.Key]; !ok {
 			attrs = append(attrs, fmt.Sprintf("%s=%v", attr.Key, attr.Value.Any()))
 		}
 	}
 
 	r.Attrs(func(attr slog.Attr) bool {
-		if _, ok := ignore[attr.Key]; !ok {
+		if attr.Key == "type" {
+			logtype = attr.Value.String()
+		} else if _, ok := logKeysIgnored[attr.Key]; !ok {
 			attrs = append(attrs, fmt.Sprintf("%s=%v", attr.Key, attr.Value.Any()))
 		}
 
 		return true
 	})
 
-	this.callback(r.Time.UTC(), r.Level.String(), strings.Join(attrs, " "))
+	this.callback(r.Time.UTC(), r.Level.String(), logtype, strings.Join(attrs, " "))
 
 	return nil
 }
