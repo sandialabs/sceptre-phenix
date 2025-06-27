@@ -1,8 +1,8 @@
 # Update GitHub workflow config to change the minimum version of minimega
 # required for use with phenix. This build stage is needed for making sure the
 # latest version of the minimega Python module is installed.
-ARG  MM_MIN_REV=9f867b3
-FROM ghcr.io/activeshadow/minimega/minimega:${MM_MIN_REV} AS minimega
+ARG  MM_MIN_REV=6cf6cfb
+FROM ghcr.io/sandia-minimega/minimega:${MM_MIN_REV} AS minimega
 
 
 # ** jsbuilder **
@@ -167,7 +167,7 @@ COPY --from=gobuilder /phenix/src/go/bin/phenix-tunneler-* /opt/phenix/downloads
 
 # Update GitHub workflow config to change the minimum version of minimega
 # required for use with phenix.
-ARG   MM_MIN_REV=9f867b3
+ARG   MM_MIN_REV=6cf6cfb
 LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandialabs/sceptre-phenix/minimega:${MM_MIN_REV}"
 
 WORKDIR /opt/phenix
