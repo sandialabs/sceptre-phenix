@@ -128,6 +128,8 @@ func Start(opts ...ServerOption) error {
 		http.FileServer(assets),
 	)
 
+	router.Handle("/favicon.ico", http.FileServer(assets))
+
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		plog.Warn("Unknown route requested", "route", r.RequestURI, "method", r.Method)
 		switch a := assets.(type) {

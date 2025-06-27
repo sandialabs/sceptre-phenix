@@ -56,21 +56,18 @@
         </footer>
       </div>
     </b-modal>
-    <hr>
     <div class="level is-vcentered">
-      <div class="level-item">
-        <span style="font-weight: bold; font-size: x-large;">Experiment: {{ this.$route.params.id }}</span>&nbsp;
+      <div class="level-left is-block">
+        <span style="font-weight: bold; font-size: x-large;">Experiment: {{ this.$route.params.id }}</span><br>
+        <span v-if="experiment.scenario" style="font-weight: bold;">Scenario: {{ experiment.scenario }}</span>
       </div>
-      <div class="level-item" v-if="experiment.scenario">
-        <span style="font-weight: bold;">Scenario: {{ experiment.scenario }}</span>&nbsp;
-      </div>
-      <div class="level-item" v-if="experiment.scenario">
+      <div class="level-right" v-if="experiment.scenario" style="max-width: 50%;">
         <span style="font-weight: bold;">Apps:</span>&nbsp;
-        <b-taglist>
+        <div style="display: flex; flex-wrap: wrap; gap: 4px;">
           <b-tag v-for="( a, index ) in experiment.apps" :key="index" type="is-light">
             {{ a }}  
           </b-tag>
-        </b-taglist>
+        </div>
       </div>
     </div>
     <b-field v-if="roleAllowed('experiments', 'get', experiment.name)" position="is-right">
@@ -1469,5 +1466,13 @@
 
   .fa-layers-counter { /* counter on tag icon */
     transform: scale(.7) translateX(50%) translateY(-50%);
+  }
+
+  >>> .tabs ul {
+    margin-left: 0px !important;
+  }
+
+  >>> .b-tabs .tab-content {
+    padding: 1rem 0 0 0;
   }
 </style>
