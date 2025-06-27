@@ -70,7 +70,7 @@ func CreateWebTerminal(ctx context.Context, exp string, run, loop int, stage, na
 	term.Pty = tty
 	term.Pid = c.Process.Pid
 
-	plog.Info("spawned new terminal", "cmd", cmd, "pid", term.Pid)
+	plog.Info(plog.TypeSystem, "spawned new terminal", "cmd", cmd, "pid", term.Pid)
 
 	webTermMu.Lock()
 	webTermsPid[term.Pid] = term
@@ -122,7 +122,7 @@ func KillTerminal(term WebTerm) error {
 	proc.Kill()
 	proc.Wait()
 
-	plog.Debug("process killed", "pid", term.Pid)
+	plog.Debug(plog.TypeSystem, "process killed", "pid", term.Pid)
 
 	return nil
 }

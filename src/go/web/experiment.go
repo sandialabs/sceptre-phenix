@@ -32,7 +32,7 @@ type edge struct {
 
 // GET /experiments/{name}/topology[?ignore=MGMT]
 func GetExperimentTopology(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "GetExperimentTopology")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetExperimentTopology")
 
 	var (
 		ctx  = r.Context()
@@ -45,6 +45,7 @@ func GetExperimentTopology(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("experiments/topology", "get", name) {
+		plog.Warn(plog.TypeSecurity, "getting experiment topology not allowed", "user", ctx.Value("user").(string), "experiment", name)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -64,7 +65,7 @@ func GetExperimentTopology(w http.ResponseWriter, r *http.Request) {
 
 // GET /experiments/{name}/topology/search?hostname=xyz&vlan=abc
 func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "SearchExperimentTopology")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "SearchExperimentTopology")
 
 	var (
 		ctx  = r.Context()
@@ -76,6 +77,7 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("experiments/topology", "get", name) {
+		plog.Warn(plog.TypeSecurity, "searching experiment topology not allowed", "user", ctx.Value("user").(string), "experiment", name)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

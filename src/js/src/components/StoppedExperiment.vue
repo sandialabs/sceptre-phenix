@@ -56,7 +56,6 @@
         </footer>
       </div>
     </b-modal>
-    <hr>
     <div class="level is-vcentered">
       <div class="level-item">
         <span style="font-weight: bold; font-size: x-large;">Experiment: {{ this.$route.params.id }}</span>&nbsp;

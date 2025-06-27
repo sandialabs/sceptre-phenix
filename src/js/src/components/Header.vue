@@ -7,12 +7,13 @@ are only available to Global Administrator or Global Viewer.
  -->
 
 <template>
-  <div>
-    <a :href="homeLoc()">
-      <img src="@/assets/phenix-banner.png" width="240">
-    </a>
-
+  <div class="pb-4">
     <nav class="navbar is-light" role="navigation" aria-label="main navigation">
+      <div class="navbar-brand">
+        <a :href="homeLoc()" class="navbar-item">
+          <img src="@/assets/phenix-banner.png" style="max-height: 3rem;">
+        </a>
+      </div>
       <div id="navbarBasicExample" class="navbar-menu">
         <div class="navbar-start">
           <menu-link v-if="auth && roleAllowed('experiments', 'list')"
@@ -32,7 +33,7 @@ are only available to Global Administrator or Global Viewer.
                        class="navbar-item">Users</menu-link>
           <menu-link v-if="auth && roleAllowed('logs', 'list')"
                        :to="{name: 'log'}"
-                       class="navbar-item">Log</menu-link>
+                       class="navbar-item">Logs</menu-link>
           <menu-link v-if="auth && roleAllowed('experiments', 'list')"
                        :to="{name: 'scorch'}"
                        class="navbar-item">Scorch</menu-link>

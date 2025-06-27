@@ -39,30 +39,30 @@ var (
 func MountVM(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	role := r.Context().Value("role").(rbac.Role)
+	mapKey := mm.GetLocalMountPath(vars["exp"], vars["name"])
 
 	if !role.Allowed("vms/mount", "post", fmt.Sprintf("%s/%s", vars["exp"], vars["name"])) {
+		plog.Warn(plog.TypeSecurity, "mounting vm not allowed", "user", r.Context().Value("user").(string), "mount", mapKey)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-
-	mapKey := mm.GetLocalMountPath(vars["exp"], vars["name"])
 
 	activeMountsMu.Lock()
 	defer activeMountsMu.Unlock()
 
 	mountInfo, exists := activeMounts[mapKey]
 	if exists {
-		plog.Info("adding additional user to mount", "mount", mapKey, "count", mountInfo.users)
+		plog.Info(plog.TypeAction, "adding additional user to mount", "mount", mapKey, "count", mountInfo.users, "user", r.Context().Value("user").(string))
 
 		mountInfo.users += 1
 	} else {
-		plog.Info("creating mount", "mount", mapKey)
+		plog.Info(plog.TypeAction, "vm mounted", "exp", vars["exp"], "vm", vars["vm"],  "path", mapKey, "user", r.Context().Value("user").(string))
 
 		_, err := mm.ExecC2Command(mm.C2NS(vars["exp"]), mm.C2VM(vars["name"]), mm.C2Mount(), mm.C2IDClientsByUUID(), mm.C2Timeout(5*time.Second))
 
 		// if already mounted, that's ok, but still add to map
 		if err != nil && !strings.Contains(err.Error(), "already connected") {
-			plog.Error("creating mount", "mount", mapKey, "err", err)
+			plog.Error(plog.TypeSystem, "creating mount", "mount", mapKey, "err", err)
 			http.Error(w, fmt.Sprintf("Error mounting: %s", err), http.StatusInternalServerError)
 
 			return
@@ -78,13 +78,13 @@ func MountVM(w http.ResponseWriter, r *http.Request) {
 func UnmountVM(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	role := r.Context().Value("role").(rbac.Role)
+	mapKey := mm.GetLocalMountPath(vars["exp"], vars["name"])
 
 	if !role.Allowed("vms/mount", "delete", fmt.Sprintf("%s/%s", vars["exp"], vars["name"])) {
+		plog.Warn(plog.TypeSecurity, "unmounting vm not allowed", "user", r.Context().Value("user").(string), "mount", mapKey)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-
-	mapKey := mm.GetLocalMountPath(vars["exp"], vars["name"])
 
 	activeMountsMu.Lock()
 	defer activeMountsMu.Unlock()
@@ -94,7 +94,7 @@ func UnmountVM(w http.ResponseWriter, r *http.Request) {
 		mountInfo.users -= 1
 
 		if mountInfo.users == 0 {
-			plog.Info("unmounting", "mount", mapKey)
+			plog.Info(plog.TypeAction, "unmounting", "mount", mapKey, "user", r.Context().Value("user").(string))
 
 			mountInfo.lock.Lock()
 
@@ -102,7 +102,7 @@ func UnmountVM(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				mountInfo.lock.Unlock()
 
-				plog.Error("unmounting", "mount", mapKey, "err", err)
+				plog.Error(plog.TypeSystem, "unmounting", "mount", mapKey, "err", err)
 				http.Error(w, fmt.Sprintf("Error unmounting: %s", err), http.StatusInternalServerError)
 
 				return
@@ -110,10 +110,10 @@ func UnmountVM(w http.ResponseWriter, r *http.Request) {
 
 			delete(activeMounts, mapKey)
 		} else {
-			plog.Info("call to unmount but skipping since users remain", "mount", mapKey, "count", mountInfo.users)
+			plog.Info(plog.TypeAction, "call to unmount but skipping since users remain", "mount", mapKey, "count", mountInfo.users, "user", r.Context().Value("user").(string))
 		}
 	} else {
-		plog.Warn("tried to unmount VM whose lock was not in map", "vm", vars["name"])
+		plog.Warn(plog.TypeSystem, "tried to unmount VM whose lock was not in map", "vm", vars["name"])
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -129,12 +129,10 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/mount", "list", fmt.Sprintf("%s/%s", vars["exp"], vars["name"])) {
+		plog.Warn(plog.TypeSecurity, "getting vm mount files not allowed not allowed", "user", r.Context().Value("user").(string), "mount", basePath)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-
-	plog.Info("getting files from mount", "mount", basePath)
-
 	activeMountsMu.RLock()
 	mountInfo, exists := activeMounts[basePath]
 	activeMountsMu.RUnlock()
@@ -148,6 +146,7 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) {
 	defer mountInfo.lock.RUnlock()
 
 	combinedPath := filepath.Join(basePath, vars["path"])
+	plog.Info(plog.TypeAction, "getting files from mount", "path", combinedPath, "user", r.Context().Value("user").(string))
 
 	var (
 		info fs.FileInfo
@@ -163,11 +162,8 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) {
 	select {
 	case <-done:
 		if err != nil {
-			errString := fmt.Sprintf("Error getting path %s: %v", combinedPath, err)
-
-			plog.Error(errString)
-			http.Error(w, errString, http.StatusInternalServerError)
-
+			plog.Error(plog.TypeSystem, "error getting mount path","path", combinedPath)
+			http.Error(w, fmt.Sprintf("Error getting path %s: %v", combinedPath, err), http.StatusInternalServerError)
 			return
 		}
 
@@ -176,19 +172,15 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case <-time.After(2 * time.Second):
-		err := fmt.Sprintf("timeout getting path %s", combinedPath)
-
-		plog.Error(err)
-		http.Error(w, err, http.StatusInternalServerError)
+		plog.Error(plog.TypeSystem, "timeout getting mount path", "path", combinedPath)
+		http.Error(w, fmt.Sprintf("timeout getting path %s", combinedPath), http.StatusInternalServerError)
 
 		return
 	}
 
 	if !strings.HasPrefix(combinedPath, basePath) {
-		errString := fmt.Sprintf("Error getting path %s: Path is not within mount", combinedPath)
-
-		plog.Error(errString)
-		http.Error(w, errString, http.StatusBadRequest)
+		plog.Error(plog.TypeSecurity, "user attempted getting path outside of mount", "path", combinedPath, "user", r.Context().Value("user").(string))
+		http.Error(w, fmt.Sprintf("Error getting path %s: Path is not within mount", combinedPath), http.StatusBadRequest)
 		return
 	}
 
@@ -215,7 +207,7 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) {
 
 		resp := map[string]any {"error": "", "files": files }
 		if err != nil {
-			plog.Error(fmt.Sprintf("Error getting files in %s. Still read %d entries: %v", combinedPath, len(dirEntries), err))
+			plog.Error(plog.TypeSystem, fmt.Sprintf("Error getting files in %s. Still read %d entries: %v", combinedPath, len(dirEntries), err))
 			resp["error"] = strings.Replace(fmt.Sprintf("%v", err), basePath, "", -1)
 		}
 
@@ -224,7 +216,7 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) {
 	case <-time.After(2 * time.Second):
 		err := fmt.Sprintf("timeout getting files in %s", combinedPath)
 
-		plog.Error(err)
+		plog.Error(plog.TypeSystem, "timeout getting files", "err", err, "path", combinedPath)
 		http.Error(w, err, http.StatusInternalServerError)
 	}
 }
@@ -236,6 +228,7 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) {
 
 	role := r.Context().Value("role").(rbac.Role)
 	if !role.Allowed("vms/mount", "get", fmt.Sprintf("%s/%s", vars["exp"], vars["name"])) {
+		plog.Warn(plog.TypeSecurity, "downloading vm mount files not allowed not allowed", "user", r.Context().Value("user").(string), "mount", basePath)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -256,17 +249,13 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) {
 	fileInfo, err := os.Stat(combinedPath)
 
 	if err != nil {
-		errString := fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error())
-
-		plog.Error(errString)
-		http.Error(w, errString, http.StatusInternalServerError)
+		plog.Error(plog.TypeSystem, "error getting path", "err", err.Error(), "path", combinedPath)
+		http.Error(w, fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()), http.StatusInternalServerError)
 		return
 	}
 	if !strings.HasPrefix(combinedPath, basePath) {
-		errString := fmt.Sprintf("Error getting path %s: Path is not within mount", combinedPath)
-
-		plog.Error(errString)
-		http.Error(w, errString, http.StatusBadRequest)
+		plog.Error(plog.TypeSecurity, "user attempted downloading file outside of mount", "path", combinedPath, "user", r.Context().Value("user").(string))
+		http.Error(w, fmt.Sprintf("Error getting path %s: Path is not within mount", combinedPath), http.StatusBadRequest)
 		return
 	}
 	if fileInfo.IsDir() {
@@ -274,7 +263,7 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plog.Info("download for file", "file", fileInfo.Name())
+	plog.Info(plog.TypeAction, "download for file", "file", combinedPath, "user", r.Context().Value("user").(string))
 
 	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(fileInfo.Name()))
 	w.Header().Set("Content-Type", "application/octet-stream")
@@ -288,6 +277,7 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) {
 
 	role := r.Context().Value("role").(rbac.Role)
 	if !role.Allowed("vms/mount", "patch", fmt.Sprintf("%s/%s", vars["exp"], vars["name"])) {
+		plog.Warn(plog.TypeSecurity, "uploading vm mount files not allowed not allowed", "user", r.Context().Value("user").(string), "mount", basePath)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -306,24 +296,20 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) {
 
 	combinedPath := filepath.Join(basePath, vars["path"])
 	if _, err := os.Stat(combinedPath); err != nil {
-		errString := fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error())
-
-		plog.Error(errString)
-		http.Error(w, errString, http.StatusInternalServerError)
+		plog.Error(plog.TypeSystem, "error getting path", "err", err.Error(), "path", combinedPath)
+		http.Error(w, fmt.Sprintf("Error getting path %s: %s", combinedPath, err.Error()), http.StatusInternalServerError)
 		return
 	}
 
 	if !strings.HasPrefix(combinedPath, basePath) {
-		errString := fmt.Sprintf("Error getting path %s: Path is not within mount", combinedPath)
-
-		plog.Error(errString)
-		http.Error(w, errString, http.StatusBadRequest)
+		plog.Error(plog.TypeSecurity, "user attempted uploading file outside of mount", "path", combinedPath, "user", r.Context().Value("user").(string))
+		http.Error(w, fmt.Sprintf("Error getting path %s: Path is not within mount", combinedPath), http.StatusBadRequest)
 		return
 	}
 
 	clientFile, handler, err := r.FormFile("file")
 	if err != nil {
-		plog.Error(err.Error())
+		plog.Error(plog.TypeSystem, "error uploading file", "err", err.Error(), "dest_path", combinedPath)
 		http.Error(w, fmt.Sprintf("Error uploading: %s", err.Error()), http.StatusInternalServerError)
 	}
 
@@ -331,7 +317,7 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) {
 
 	localFile, err := os.OpenFile(filepath.Join(combinedPath, handler.Filename), os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
-		plog.Error(err.Error())
+		plog.Error(plog.TypeSystem, "error uploading file", "err", err.Error(), "dest_path", combinedPath)
 		http.Error(w, fmt.Sprintf("Error uploading: %s", err.Error()), http.StatusInternalServerError)
 	}
 

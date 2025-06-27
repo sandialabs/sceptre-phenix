@@ -33,6 +33,34 @@
             :controls="false">
           </b-numberinput>
         </b-field>
+        <h3>File Logging Settings</h3>
+        <b-field>
+          Max log file size (MiB)
+          <b-numberinput v-model="settings_obj.logging_settings.max_file_size"
+            :controls="false"
+            step="1"
+            class="custom-small" >
+          </b-numberinput>
+        </b-field>
+        <b-field>
+          Max number of file rotations (0 for infinite)
+          <b-numberinput v-model="settings_obj.logging_settings.max_file_rotations"
+            :controls="false"
+            step="1"
+            class="custom-small"
+            min="0">
+          </b-numberinput>
+        </b-field>
+        <b-field>
+          Max rotated log file age (0 for infinite)
+          <b-numberinput v-model="settings_obj.logging_settings.max_file_age"
+            :controls="false"
+            step="1"
+            class="custom-small"
+            min="0">
+          </b-numberinput>
+        </b-field>
+
         <hr>
         <b-button @click="sendSettingsToServer">Save Changes</b-button>
       </form>
