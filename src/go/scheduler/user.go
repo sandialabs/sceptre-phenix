@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	ifaces "phenix/types/interfaces"
 	"phenix/util/common"
 	"phenix/util/mm"
+	"phenix/util/plog"
 	"phenix/util/shell"
 )
 
@@ -61,20 +63,27 @@ func (this userScheduler) shellOut(spec ifaces.ExperimentSpec) error {
 		return fmt.Errorf("marshaling experiment spec to JSON: %w", err)
 	}
 
+	logPipePath := filepath.Join(common.PhenixBase, "experiments", spec.ExperimentName(), "scheduler_pipes", this.options.Name)
+	done, err := plog.ReadProcessLogs(logPipePath, plog.TypeSystem, "scheduler", this.options.Name, "exp", spec.ExperimentName())
+	defer close(done)
+	if err != nil {
+		return err
+	}
+
 	opts := []shell.Option{
 		shell.Command(cmdName),
 		shell.Stdin(data),
 		shell.Env( // TODO: update to reflect options provided by user
 			"PHENIX_LOG_LEVEL=DEBUG",
-			"PHENIX_LOG_FILE=/tmp/phenix-apps.log",
+			"PHENIX_LOG_FILE="+logPipePath,
 			"PHENIX_DIR="+common.PhenixBase,
 		),
 	}
 
 	stdOut, stdErr, err := shell.ExecCommand(context.Background(), opts...)
 	if err != nil {
-		// FIXME: improve on this
-		fmt.Printf(string(stdErr))
+		plog.Warn(plog.TypeSystem, "scheduler returned stderr", "stderr", string(stdErr), "scheduler", this.options.Name, "exp", exp)
+
 
 		return fmt.Errorf("user scheduler %s command %s failed: %w", this.options.Name, cmdName, err)
 	}

@@ -224,13 +224,13 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 		if err != nil {
 			publish(a.Name(), "error", err)
 
-			plog.Error(fmt.Sprintf("[✗] '%s' default app (%s)", a.Name(), options.Stage))
+			plog.Error(plog.TypePhenixApp, fmt.Sprintf("[✗] '%s' default app (%s)", a.Name(), options.Stage))
 			return fmt.Errorf("applying default app %s for action %s: %w", a.Name(), options.Stage, err)
 		}
 
 		publish(a.Name(), "success", nil)
 
-		plog.Info(fmt.Sprintf("[✓] '%s' default app (%s)", a.Name(), options.Stage))
+		plog.Info(plog.TypePhenixApp, fmt.Sprintf("[✓] '%s' default app (%s)", a.Name(), options.Stage))
 	}
 
 	if exp.Spec.Scenario() != nil {
@@ -282,7 +282,7 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 			case ACTIONRUNNING:
 				if len(options.Filter) > 0 {
 					if _, ok := options.Filter[app.Name()]; !ok {
-						plog.Warn(fmt.Sprintf("Skipping '%s' experiment app (%s)", app.Name(), options.Stage))
+						plog.Warn(plog.TypePhenixApp, fmt.Sprintf("Skipping '%s' experiment app (%s)", app.Name(), options.Stage))
 						continue
 					}
 				}
@@ -322,17 +322,17 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				publish(a.Name(), "error", err)
 
 				if errors.Is(err, ErrUserAppNotFound) {
-					plog.Warn(fmt.Sprintf("[?] '%s' user app (%s)", a.Name(), options.Stage))
+					plog.Warn(plog.TypePhenixApp, fmt.Sprintf("[?] '%s' user app (%s)", a.Name(), options.Stage))
 					continue
 				}
 
-				plog.Error(fmt.Sprintf("[✗] '%s' user app (%s)", a.Name(), options.Stage))
+				plog.Error(plog.TypePhenixApp, fmt.Sprintf("[✗] '%s' user app (%s)", a.Name(), options.Stage))
 				return fmt.Errorf("applying user app %s for action %s: %w", a.Name(), options.Stage, err)
 			}
 
 			publish(a.Name(), "success", nil)
 
-			plog.Info(fmt.Sprintf("[✓] '%s' user app (%s)", a.Name(), options.Stage))
+			plog.Info(plog.TypePhenixApp, fmt.Sprintf("[✓] '%s' user app (%s)", a.Name(), options.Stage))
 		}
 	}
 
@@ -358,11 +358,11 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 			if app.RunPeriodically() != "" {
 				duration, err := time.ParseDuration(app.RunPeriodically())
 				if err != nil {
-					plog.Error("[✗] invalid periodic duration for app", "app", app.Name(), "duration", app.RunPeriodically())
+					plog.Error(plog.TypePhenixApp, "[✗] invalid periodic duration for app", "app", app.Name(), "duration", app.RunPeriodically())
 					continue
 				}
 
-				plog.Info("[✓] scheduling 'running' stage for app", "app", app.Name(), "duration", app.RunPeriodically())
+				plog.Info(plog.TypePhenixApp, "[✓] scheduling 'running' stage for app", "app", app.Name(), "duration", app.RunPeriodically())
 
 				wg.Add(1)
 
@@ -373,7 +373,7 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 					exp.Status.SetAppRunning(app.Name(), false)
 
 					if err := exp.WriteToStore(true); err != nil {
-						plog.Error("[✗] error updating store with experiment", "exp", exp.Metadata.Name, "err", err)
+						plog.Error(plog.TypePhenixApp, "[✗] error updating store with experiment", "exp", exp.Metadata.Name, "err", err)
 					}
 
 					timer := time.NewTimer(duration)
@@ -389,7 +389,7 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 							exp.Status.SetAppRunning(app.Name(), false)
 
 							if err := exp.WriteToStore(true); err != nil {
-								plog.Error("[✗] error updating store with experiment", "exp", exp.Metadata.Name, "err", err)
+								plog.Error(plog.TypePhenixApp, "[✗] error updating store with experiment", "exp", exp.Metadata.Name, "err", err)
 							}
 
 							return
@@ -397,7 +397,7 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 							// Check to make sure this app wasn't triggered manually between
 							// periodic runs.
 							if running := exp.Status.AppRunning()[app.Name()]; running {
-								plog.Info("[✓] app is currently already executing its running stage -- skipping", "app", app.Name())
+								plog.Info(plog.TypePhenixApp, "[✓] app is currently already executing its running stage -- skipping", "app", app.Name())
 								continue
 							}
 
@@ -414,7 +414,7 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 							exp.Status.SetAppRunning(app.Name(), true)
 
 							if err := exp.WriteToStore(true); err != nil {
-								plog.Error("[✗] error updating store with experiment", "exp", exp.Metadata.Name, "err", err)
+								plog.Error(plog.TypePhenixApp, "[✗] error updating store with experiment", "exp", exp.Metadata.Name, "err", err)
 							}
 
 							pubsub.Publish("trigger-app", TriggerPublication{
@@ -426,7 +426,7 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 									Experiment: exp.Spec.ExperimentName(), App: app.Name(), State: "error", Error: err,
 								})
 
-								plog.Error("[✗] error periodically running app", "app", app.Name(), "err", err)
+								plog.Error(plog.TypePhenixApp, "[✗] error periodically running app", "app", app.Name(), "err", err)
 							}
 
 							pubsub.Publish("trigger-app", TriggerPublication{
@@ -436,7 +436,7 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 							exp.Status.SetAppRunning(app.Name(), false)
 
 							if err := exp.WriteToStore(true); err != nil {
-								plog.Error("[✗] error updating store with experiment", "exp", exp.Metadata.Name, "err", err)
+								plog.Error(plog.TypePhenixApp, "[✗] error updating store with experiment", "exp", exp.Metadata.Name, "err", err)
 							}
 
 							timer.Reset(duration)

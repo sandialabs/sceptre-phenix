@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	"phenix/util"
 	"phenix/util/common"
 	"phenix/util/mm"
+	"phenix/util/plog"
 	"phenix/util/shell"
 )
 
@@ -99,6 +101,13 @@ func (this UserApp) shellOut(ctx context.Context, action Action, exp *types.Expe
 		return fmt.Errorf("marshaling experiment to JSON: %w", err)
 	}
 
+	logPipePath := filepath.Join(common.PhenixBase, "experiments", exp.Metadata.Name, "app_pipes", this.options.Name)
+	done, err := plog.ReadProcessLogs(logPipePath, plog.TypePhenixApp, "app", this.options.Name, "action", action, "exp", exp.Metadata.Name)
+	defer close(done)
+	if err != nil {
+		return err
+	}
+
 	opts := []shell.Option{
 		shell.Command(cmdName),
 		shell.Args(string(action)),
@@ -108,7 +117,7 @@ func (this UserApp) shellOut(ctx context.Context, action Action, exp *types.Expe
 			"PHENIX_DIR="+common.PhenixBase,
 			"PHENIX_FILES_DIR="+exp.FilesDir(),
 			"PHENIX_LOG_LEVEL="+util.GetEnv("PHENIX_LOG_LEVEL", "DEBUG"),
-			"PHENIX_LOG_FILE="+util.GetEnv("PHENIX_LOG_FILE", common.LogFile),
+			"PHENIX_LOG_FILE="+logPipePath,
 			"PHENIX_DRYRUN="+strconv.FormatBool(this.options.DryRun),
 			"PHENIX_STORE_ENDPOINT="+common.StoreEndpoint,
 		),
@@ -133,9 +142,7 @@ func (this UserApp) shellOut(ctx context.Context, action Action, exp *types.Expe
 			}
 		}
 
-		// FIXME: improve on this
-		fmt.Println(string(stdErr))
-
+		plog.Warn(plog.TypePhenixApp, "app returned stderr", "stderr", string(stdErr), "app", this.options.Name, "action", action, "exp", exp)
 		return fmt.Errorf("user app %s command %s failed: %w", this.options.Name, cmdName, err)
 	}
 
@@ -167,6 +174,6 @@ func (this UserApp) shellOut(ctx context.Context, action Action, exp *types.Expe
 			exp.Status.SetAppStatus(this.options.Name, metadata)
 		}
 	}
-
 	return nil
 }
+

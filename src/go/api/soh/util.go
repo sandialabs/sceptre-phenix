@@ -306,8 +306,7 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks 
 	if this.md.SkipNetworkConfig || !checks["network-config"] {
 		return false
 	}
-
-	logger := plog.LoggerFromContext(ctx)
+	logger := plog.LoggerFromContext(ctx, plog.TypeSoh)
 
 	var (
 		icmpDisabled   = strings.EqualFold(this.md.Reachability, "off") || !checks["reachability"]
@@ -523,7 +522,7 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks 
 
 func (this *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 	var (
-		logger = plog.LoggerFromContext(ctx)
+		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
 		wg     = new(mm.StateGroup)
 	)
 
@@ -607,7 +606,7 @@ func (this *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 
 func (this *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 	var (
-		logger = plog.LoggerFromContext(ctx)
+		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
 		wg     = new(mm.StateGroup)
 	)
 
@@ -691,7 +690,7 @@ func (this *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 
 func (this *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 	var (
-		logger = plog.LoggerFromContext(ctx)
+		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
 		wg     = new(mm.StateGroup)
 	)
 
@@ -775,7 +774,7 @@ func (this *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 
 func (this *SOH) waitForCPULoad(ctx context.Context, ns string) bool {
 	var (
-		logger = plog.LoggerFromContext(ctx)
+		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
 		wg     = new(mm.StateGroup)
 	)
 
@@ -1431,7 +1430,7 @@ func trim(str string) []string {
 
 func periodicallyNotify(ctx context.Context, msg string, d time.Duration) context.CancelFunc {
 	var (
-		logger       = plog.LoggerFromContext(ctx)
+		logger       = plog.LoggerFromContext(ctx, plog.TypeSoh)
 		cctx, cancel = context.WithCancel(ctx)
 		ticker       = time.NewTicker(d)
 	)

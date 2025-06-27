@@ -168,7 +168,7 @@ func (SOH) Cleanup(ctx context.Context, exp *types.Experiment) error {
 }
 
 func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
-	logger := plog.LoggerFromContext(ctx)
+	logger := plog.LoggerFromContext(ctx, plog.TypeSoh)
 
 	logger.Info("starting SOH checks")
 

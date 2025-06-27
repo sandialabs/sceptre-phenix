@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strconv"
 
-	"phenix/store"
 	"phenix/util"
 	"phenix/util/common"
+	"phenix/util/plog"
 	"phenix/util/shell"
 	"phenix/web/scorch"
 )
@@ -93,6 +94,13 @@ func (this UserComponent) run(ctx context.Context, stage Action, cmd string, dat
 		Status:  "running",
 	}
 
+	logPipePath := filepath.Join(common.PhenixBase, "experiments", this.options.Exp.Spec.ExperimentName(), "scorch_pipes", this.options.Name)
+	done, err := plog.ReadProcessLogs(logPipePath, plog.TypeScorch, "component", this.options.Name, "stage", stage, "exp", this.options.Exp.Spec.ExperimentName())
+	defer close(done)
+	if err != nil {
+		return err
+	}
+
 	stdout := make(chan []byte)
 
 	opts := []shell.Option{
@@ -104,7 +112,7 @@ func (this UserComponent) run(ctx context.Context, stage Action, cmd string, dat
 			"PHENIX_DIR="+common.PhenixBase,
 			"PHENIX_FILES_DIR="+this.options.Exp.FilesDir(),
 			"PHENIX_LOG_LEVEL="+util.GetEnv("PHENIX_LOG_LEVEL", "DEBUG"),
-			"PHENIX_LOG_FILE="+util.GetEnv("PHENIX_LOG_FILE", common.LogFile),
+			"PHENIX_LOG_FILE="+logPipePath,
 			"PHENIX_DRYRUN="+strconv.FormatBool(this.options.Exp.DryRun()),
 			"PHENIX_SCORCH_STARTTIME="+this.options.StartTime,
 		),
@@ -119,23 +127,22 @@ func (this UserComponent) run(ctx context.Context, stage Action, cmd string, dat
 
 	stdoutBytes, stderrBytes, err := shell.ExecCommand(ctx, opts...)
 	if err != nil {
-		// FIXME: improve on this
-		fmt.Println(string(stderrBytes))
+		plog.Warn(plog.TypeScorch, "component returned stderr", "stderr", string(stderrBytes), "component", this.options.Name, "stage", stage, "exp", this.options.Exp.Spec.ExperimentName())
+
 
 		return fmt.Errorf("external user component %s (command %s) failed: %w", this.options.Type, cmd, err)
 	}
 
 	if len(stdoutBytes) != 0 {
-		event := store.NewHistoryEvent(string(stdoutBytes)).
-			WithMetadata("experiment", this.options.Exp.Spec.ExperimentName()).
-			WithMetadata("app", "scorch").
-			WithMetadata("component", this.options.Name).
-			WithMetadata("stage", string(stage)).
-			WithMetadata("run", strconv.Itoa(this.options.Run)).
-			WithMetadata("loop", strconv.Itoa(this.options.Loop)).
-			WithMetadata("count", strconv.Itoa(this.options.Count))
-
-		store.AddEvent(*event)
+		plog.Info(plog.TypePhenixApp, string(stdoutBytes), 
+				"experiment", this.options.Exp.Spec.ExperimentName(),
+				"app", "scorch",
+				"component", this.options.Name,
+				"stage", string(stage),
+				"run", strconv.Itoa(this.options.Run),
+				"loop", strconv.Itoa(this.options.Loop),
+				"count", strconv.Itoa(this.options.Count),
+			)
 	}
 
 	return nil

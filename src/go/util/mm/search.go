@@ -296,7 +296,7 @@ func (node *ExpressionTree) match(vm *VM) bool {
 				_, refNet, err := net.ParseCIDR(node.term)
 
 				if err != nil {
-					plog.Debug("unable to parse network", "network", node.term)
+					plog.Debug(plog.TypeSystem, "unable to parse network", "network", node.term)
 					continue
 				}
 
@@ -305,7 +305,7 @@ func (node *ExpressionTree) match(vm *VM) bool {
 					address := net.ParseIP(network)
 
 					if address == nil {
-						plog.Debug("unable to parse address", "address", network)
+						plog.Debug(plog.TypeSystem, "unable to parse address", "address", network)
 						continue
 					}
 

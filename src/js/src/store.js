@@ -72,25 +72,6 @@ export default new Vuex.Store({
       state.options = options;
     },
 
-    'LOG' ( state, log ) {
-      let count = state.logs.unshift(log);
-
-      if ( count > state.logs_max ) {
-        state.logs.length = state.logs_max;
-      }
-    },
-
-    'LOGS' ( state, logs ) {
-      let count = state.logs.unshift(...logs.reverse());
-
-      if ( count > state.logs_max ) {
-        state.logs.length = state.logs_max;
-      }
-    },
-
-    'MAX_LOGS' ( state, max ) {
-      state.logs_max = max;
-    }
   },
   
   getters: {
@@ -117,9 +98,5 @@ export default new Vuex.Store({
     options: state => {
       return state.options;
     },
-
-    logs: state => {
-      return state.logs.toReversed();
-    }
   }
 });
