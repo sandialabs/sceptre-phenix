@@ -13,7 +13,7 @@ import (
 
 // GET /experiments/{exp}/soh[?statusFilter=<status filter>]
 func GetExperimentSoH(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "GetExperimentSoH")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetExperimentSoH")
 
 	var (
 		ctx  = r.Context()
@@ -26,6 +26,7 @@ func GetExperimentSoH(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms", "list") {
+		plog.Warn(plog.TypeSecurity, "getting experiment soh not allowed", "user", ctx.Value("user").(string), "exp", exp)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

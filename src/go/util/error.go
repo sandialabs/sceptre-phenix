@@ -3,57 +3,18 @@ package util
 import (
 	"errors"
 	"fmt"
-	"io"
-	"log"
-	"os"
+	"phenix/util/plog"
+
 	"strings"
 
 	"github.com/gofrs/uuid"
 )
 
-var (
-	logFile io.WriteCloser
-	logger  *log.Logger
-)
 
-func InitFatalLogWriter(path string, stderr bool) error {
-	var writers []io.Writer
-
-	if path != "" {
-		var err error
-
-		logFile, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return fmt.Errorf("unable to open log error file for appending: %w", err)
-		}
-
-		writers = append(writers, logFile)
-	}
-
-	if stderr {
-		writers = append(writers, os.Stderr)
-	}
-
-	if writers != nil {
-		logger = log.New(io.MultiWriter(writers...), "phenix ", log.LstdFlags)
-	}
-
-	return nil
-}
-
-func CloseLogWriter() {
-	if logFile != nil {
-		logFile.Close()
-	}
-}
 
 func LogErrorGetID(err error) string {
 	uuid := uuid.Must(uuid.NewV4()).String()
-
-	if logger != nil {
-		logger.Printf("[%s] %v", uuid, err)
-	}
-
+	plog.Error(plog.TypeSystem, err.Error(), "uuid", uuid)
 	return uuid
 }
 

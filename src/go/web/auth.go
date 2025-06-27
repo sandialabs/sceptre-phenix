@@ -19,18 +19,18 @@ import (
 )
 
 func Signup(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "Signup")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "Signup")
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		plog.Error("reading request body", "err", err)
+		plog.Error(plog.TypeSystem, "reading request body", "err", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
 	var req SignupRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		plog.Error("unmashaling request body", "err", err)
+		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
@@ -47,7 +47,7 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 
 		jwtUser, err := jwtutil.UsernameFromClaims(claims)
 		if err != nil {
-			plog.Error("proxy user missing from JWT", "path", r.URL.Path, "err", err)
+			plog.Error(plog.TypeSecurity, "proxy user missing from JWT", "path", r.URL.Path, "err", err)
 			http.Error(w, "proxy user missing", http.StatusUnauthorized)
 			return
 		}
@@ -64,7 +64,7 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !settings.IsPasswordValid(req.Password) {
-		plog.Error("password does not meet requirements")
+		plog.Error(plog.TypeSystem, "password does not meet requirements")
 		errStr := fmt.Sprintf("password does not meet the requirements:\n%s", settings.GetPasswordSettingsHTML())
 		http.Error(w, errStr, http.StatusBadRequest)
 		return
@@ -119,11 +119,12 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	plog.Info(plog.TypeSecurity, "created user", "user", u.Username(), "role", u.RoleName(), "first_name", u.FirstName(), "last_name", u.LastName())
 	w.Write(body)
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "Login")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "Login")
 
 	var (
 		user, pass string
@@ -146,7 +147,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 		user, err = jwtutil.UsernameFromClaims(claims)
 		if err != nil {
-			plog.Error("proxy user missing from JWT", "path", r.URL.Path, "token", token.Raw, "err", err)
+			plog.Error(plog.TypeSecurity, "proxy user missing from JWT", "path", r.URL.Path, "token", token.Raw, "err", err)
 			http.Error(w, "proxy user missing", http.StatusUnauthorized)
 			return
 		}
@@ -179,6 +180,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 				user = r.Header.Get(o.proxyAuthHeader)
 
 				if user == "" {
+					plog.Error(plog.TypeSecurity, "proxy authentication failed")
 					http.Error(w, "proxy authentication failed", http.StatusUnauthorized)
 					return
 				}
@@ -220,12 +222,15 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	u, err := rbac.GetUser(user)
 	if err != nil {
+		plog.Error(plog.TypeSecurity, "attempted login with unknown username", "username", user)
+
 		http.Error(w, user, http.StatusNotFound)
 		return
 	}
 
 	if !proxied {
 		if err := u.ValidatePassword(pass); err != nil {
+			plog.Error(plog.TypeSecurity, "attempted login with invalid credentials", "user", user)
 			http.Error(w, "invalid creds", http.StatusUnauthorized)
 			return
 		}
@@ -242,11 +247,13 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		// Sign and get the complete encoded token as a string using the secret
 		signed, err = token.SignedString([]byte(o.jwtKey))
 		if err != nil {
+			plog.Error(plog.TypeSecurity, "failed to sign JWT")
 			http.Error(w, "failed to sign JWT", http.StatusInternalServerError)
 			return
 		}
 
 		if err := u.AddToken(signed, time.Now().Format(time.RFC3339)); err != nil {
+			plog.Error(plog.TypeSecurity, "error adding token", "err", err)
 			http.Error(w, "", http.StatusInternalServerError)
 			return
 		}
@@ -254,6 +261,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		signed = token.Raw
 
 		if err := u.AddToken(signed, "proxied"); err != nil {
+			plog.Error(plog.TypeSecurity, "error adding token", "err", err)
 			http.Error(w, "", http.StatusInternalServerError)
 			return
 		}
@@ -270,11 +278,12 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	plog.Info(plog.TypeSecurity, "user signed in", "user", u.Username())
 	w.Write(body)
 }
 
 func Logout(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "Logout")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "Logout")
 
 	var (
 		ctx   = r.Context()
@@ -284,6 +293,7 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 
 	u, err := rbac.GetUser(user)
 	if err != nil {
+		plog.Error(plog.TypeSecurity, "attempted logout with unknown username", "username", user)
 		http.Error(w, "cannot find user", http.StatusBadRequest)
 		return
 	}
@@ -293,12 +303,13 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	plog.Info(plog.TypeSecurity, "user logged out", "user", u.Username())
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // POST /users/{username}/tokens
 func CreateUserToken(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "CreateUserToken")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreateUserToken")
 
 	var (
 		ctx   = r.Context()
@@ -308,12 +319,14 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("users", "patch", uname) {
+		plog.Warn(plog.TypeSecurity, "user forbidden to perform action", "username", uname, "action", fmt.Sprintf("users/patch/%s", uname))
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
 	u, err := rbac.GetUser(uname)
 	if err != nil {
+		plog.Error(plog.TypeSecurity, "attempted to create token with unknown username", "username", uname)
 		http.Error(w, "unable to get user", http.StatusInternalServerError)
 		return
 	}
@@ -335,6 +348,7 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		days, err := strconv.Atoi(req.Lifetime)
 		if err != nil {
+			plog.Error(plog.TypeSystem, "invalid token lifetime provided", "username", uname, "duration", req.Lifetime)
 			http.Error(w, "invalid token lifetime provided", http.StatusBadRequest)
 			return
 		}
@@ -362,6 +376,7 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := u.AddToken(signed, note); err != nil {
+		plog.Error(plog.TypeSecurity, "error adding token", "err", err)
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
@@ -373,12 +388,13 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	body, _ = json.Marshal(resp)
+	plog.Info(plog.TypeSecurity, "create token for user", "user", u.Username())
 	w.Write(body)
 }
 
 // GET /roles
 func GetRoles(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("ListRoles HTTP handler called")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetRoles")
 
 	var (
 		ctx  = r.Context()
@@ -386,6 +402,7 @@ func GetRoles(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("roles", "list") {
+		plog.Error(plog.TypeSecurity, "listing roles not allowed", "username", ctx.Value("user").(string))
 		http.Error(w, "forbidden to list roles", http.StatusForbidden)
 		return
 	}
@@ -394,7 +411,7 @@ func GetRoles(w http.ResponseWriter, r *http.Request) {
 
 	roles, err := rbac.GetRoles()
 	if err != nil {
-		plog.Error("retrieving roles", "err", err)
+		plog.Error(plog.TypeSystem, "retrieving roles", "err", err)
 		http.Error(w, "error retrieving roles", http.StatusInternalServerError)
 		return
 	}
@@ -405,7 +422,7 @@ func GetRoles(w http.ResponseWriter, r *http.Request) {
 
 	body, err := json.Marshal(util.WithRoot("roles", resp))
 	if err != nil {
-		plog.Error("marshaling roles", "err", err)
+		plog.Error(plog.TypeSystem, "marshaling roles", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

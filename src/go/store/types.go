@@ -5,14 +5,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
-	"sort"
 	"strings"
-	"time"
 
 	"phenix/types/version"
-	"phenix/util"
 
-	"github.com/gofrs/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -195,76 +191,4 @@ func ConfigFullName(name ...string) string {
 	}
 
 	return ""
-}
-
-type EventType string
-
-const (
-	EventTypeNotSet  EventType = ""
-	EventTypeInfo    EventType = "info"
-	EventTypeError   EventType = "error"
-	EventTypeUnknown EventType = "unknown"
-	EventTypeHistory EventType = "history"
-)
-
-type Event struct {
-	ID        string    `json:"id"`
-	Timestamp time.Time `json:"timestamp"`
-	Type      EventType `json:"type"`
-	Source    string    `json:"source"`
-	Message   string    `json:"message"`
-
-	Metadata map[string]string `json:"metadata,omitempty"`
-}
-
-func NewEvent(format string, args ...any) *Event {
-	return &Event{
-		ID:        uuid.Must(uuid.NewV4()).String(),
-		Timestamp: time.Now(),
-		Type:      EventTypeUnknown,
-		Source:    util.MustHostname(),
-		Message:   fmt.Sprintf(format, args...),
-	}
-}
-
-func NewInfoEvent(format string, args ...any) *Event {
-	event := NewEvent(format, args...)
-	event.Type = EventTypeInfo
-
-	return event
-}
-
-func NewErrorEvent(err error) *Event {
-	event := NewEvent(err.Error())
-	event.Type = EventTypeError
-
-	return event
-}
-
-func NewHistoryEvent(history string) *Event {
-	event := NewEvent(history)
-	event.Type = EventTypeHistory
-
-	return event
-}
-
-func (this *Event) WithMetadata(k, v string) *Event {
-	if this.Metadata == nil {
-		this.Metadata = make(map[string]string)
-	}
-
-	this.Metadata[k] = v
-	return this
-}
-
-type Events []Event
-
-func (this Events) SortByTimestamp(asc bool) {
-	sort.Slice(this, func(i, j int) bool {
-		if asc {
-			return this[i].Timestamp.Before(this[j].Timestamp)
-		}
-
-		return this[i].Timestamp.After(this[j].Timestamp)
-	})
 }

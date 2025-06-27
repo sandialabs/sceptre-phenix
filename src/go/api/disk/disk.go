@@ -176,7 +176,7 @@ func resolveImage(path string) []Details {
 		}
 	}
 	if !knownFormat {
-		plog.Debug("file didn't match know image extensions: %s", "path", path)
+		plog.Debug(plog.TypeSystem, "file didn't match know image extensions: %s", "path", path)
 		return imageDetails
 	}
 
@@ -213,7 +213,7 @@ func resolveImage(path string) []Details {
 		var err error
 		image.InUse, err = strconv.ParseBool(row["inuse"])
 		if err != nil {
-			plog.Warn("could not determine if image in use", "image", path)
+			plog.Warn(plog.TypeSystem, "could not determine if image in use", "image", path)
 		}
 
 		imageDetails = append(imageDetails, image)
