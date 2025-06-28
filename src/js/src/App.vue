@@ -9,11 +9,15 @@
   import AppFooter from '@/components/AppFooter.vue';
   import { onUnmounted, onMounted } from 'vue';
   import axios from 'axios';
-  import { usePhenixStore } from './stores/phenix';
+  import { usePhenixStore } from '@/stores/phenix';
   import { storeToRefs } from 'pinia';
   import { watch } from 'vue';
 
+  import {TimeoutTool} from '@/utils/timeout.js'
+  
+
   const store = usePhenixStore();
+  const timeout = new TimeoutTool()
 
   axios
     .get('/features')
@@ -28,6 +32,8 @@
     // connect websockets once user has authenticated (or auth disabled)
     if (import.meta.env.VITE_AUTH === 'disabled' || store.auth) {
       connectWebsocket();
+      timeoutTool.fetchAndStart()
+
     } else {
       const { auth } = storeToRefs(store);
       watch(auth, async (newAuth) => {
@@ -35,6 +41,10 @@
           connectWebsocket();
         } else if (!newAuth && isWsConnected()) {
           disconnectWebsocket();
+        }
+
+        if (newAuth) {
+          timeoutTool.fetchAndStart()
         }
       });
     }
@@ -46,7 +56,7 @@
 </script>
 
 <template>
-  <div>
+  <div @click="timeout.resetTimer" @keydown="timeout.resetTimer">
     <app-header></app-header>
     <main class="row container is-fullhd px-4">
       <div class="col-xs-12">
