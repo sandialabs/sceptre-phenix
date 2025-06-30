@@ -1307,7 +1307,7 @@ func (this SOH) customTest(ctx context.Context, wg *mm.StateGroup, ns string, no
 
 	cmd := &mm.C2ParallelCommand{
 		Wait:    wg,
-		Options: []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2SendFile(script), mm.C2Command(command)},
+		Options: opts,
 		Meta:    meta,
 	}
 
