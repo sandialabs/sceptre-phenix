@@ -21,7 +21,7 @@ import (
 
 // GET /disks
 func GetDisks(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "GetDisks")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetDisks")
 
 	var (
 		ctx             = r.Context()
@@ -33,6 +33,7 @@ func GetDisks(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("disks", "list") {
+		plog.Warn(plog.TypeSecurity, "listing disks not allowed", "user", ctx.Value("user").(string))
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -97,11 +98,13 @@ func CommitDisk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !role.Allowed("disks", "update", info.BackingImages[0]) {
+		plog.Warn(plog.TypeSecurity, "committing disk not allowed", "user", r.Context().Value("user").(string), "from_disk", path, "to_disk", info.BackingImages[0])
 		http.Error(w, fmt.Sprintf("forbidden for %s", info.BackingImages[0]), http.StatusForbidden)
 		return
 	}
 
 	if !role.Allowed("disks", "update", filepath.Base(path)) {
+		plog.Warn(plog.TypeSecurity, "committing disk not allowed", "user", r.Context().Value("user").(string), "from_disk", path, "to_disk", info.BackingImages[0])
 		http.Error(w, fmt.Sprintf("forbidden for %s", path), http.StatusForbidden)
 		return
 	}
@@ -113,6 +116,7 @@ func CommitDisk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	plog.Info(plog.TypeAction, "committed disk", "user", r.Context().Value("user").(string), "from_disk", path, "to_disk", info.BackingImages[0])
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -126,6 +130,7 @@ func SnapshotDisk(w http.ResponseWriter, r *http.Request) {
 	newPath := normalizeDstDisk(path, mux.Vars(r)["new"])
 
 	if !role.Allowed("disks", "create", filepath.Base(newPath)) {
+		plog.Warn(plog.TypeSecurity, "snapshotting disk not allowed", "user", r.Context().Value("user").(string), "from_disk", path, "to_disk", newPath)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -137,6 +142,7 @@ func SnapshotDisk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	plog.Info(plog.TypeAction, "snapshotted disk", "user", r.Context().Value("user").(string), "from_disk", path, "to_disk", newPath)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -154,6 +160,7 @@ func RebaseDisk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !role.Allowed("disks", "update", filepath.Base(path)) {
+		plog.Warn(plog.TypeSecurity, "rebasing disk not allowed", "user", r.Context().Value("user").(string), "disk", path)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -165,6 +172,7 @@ func RebaseDisk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	plog.Info(plog.TypeAction, "rebased disk", "user", r.Context().Value("user").(string), "disk", path, "onto", backing, "unsafe", unsafe)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -176,6 +184,7 @@ func ResizeDisk(w http.ResponseWriter, r *http.Request) {
 	size := mux.Vars(r)["size"]
 
 	if !role.Allowed("disks", "update", filepath.Base(path)) {
+		plog.Warn(plog.TypeSecurity, "resizing disk not allowed", "user", r.Context().Value("user").(string), "disk", path)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -187,6 +196,7 @@ func ResizeDisk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	plog.Info(plog.TypeAction, "resized disk", "user", r.Context().Value("user").(string), "disk", path, "size", size)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -199,6 +209,7 @@ func CloneDisk(w http.ResponseWriter, r *http.Request) {
 	newPath := normalizeDstDisk(path, mux.Vars(r)["new"])
 
 	if !role.Allowed("disks", "create") {
+		plog.Warn(plog.TypeSecurity, "cloning disk not allowed", "user", r.Context().Value("user").(string), "from_disk", path, "to_disk", newPath)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -210,6 +221,7 @@ func CloneDisk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	plog.Info(plog.TypeAction, "cloned disk", "user", r.Context().Value("user").(string), "from_disk", path, "to_disk", newPath)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -222,6 +234,7 @@ func RenameDisk(w http.ResponseWriter, r *http.Request) {
 	newPath := normalizeDstDisk(path, mux.Vars(r)["new"])
 
 	if !role.Allowed("disks", "update", filepath.Base(path)) {
+		plog.Warn(plog.TypeSecurity, "renaming disk not allowed", "user", r.Context().Value("user").(string), "from_disk", path, "to_disk", newPath)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -232,7 +245,7 @@ func RenameDisk(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
+	plog.Info(plog.TypeAction, "renamed disk", "user", r.Context().Value("user").(string), "from_disk", path, "to_disk", newPath)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -243,6 +256,7 @@ func DeleteDisk(w http.ResponseWriter, r *http.Request) {
 	path := mux.Vars(r)["disk"]
 
 	if !role.Allowed("disks", "delete", filepath.Base(path)) {
+		plog.Warn(plog.TypeSecurity, "deleting disk not allowed", "user", r.Context().Value("user").(string), "disk", path)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -253,7 +267,7 @@ func DeleteDisk(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
+	plog.Info(plog.TypeAction, "deleted disk", "user", r.Context().Value("user").(string), "disk", path)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -263,12 +277,13 @@ func UploadDisk(w http.ResponseWriter, r *http.Request) {
 	clientFile, handler, err := r.FormFile("file")
 
 	if !role.Allowed("disks", "upload") {
+		plog.Warn(plog.TypeSecurity, "uploading disk not allowed", "user", r.Context().Value("user").(string))
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
 	if err != nil {
-		plog.Error(err.Error())
+		plog.Error(plog.TypeSystem, err.Error())
 		http.Error(w, fmt.Sprintf("Error uploading: %s", err.Error()), http.StatusInternalServerError)
 	}
 
@@ -276,13 +291,14 @@ func UploadDisk(w http.ResponseWriter, r *http.Request) {
 
 	localFile, err := os.OpenFile(mm.GetMMFullPath(handler.Filename), os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
-		plog.Error(err.Error())
+		plog.Error(plog.TypeSystem, err.Error())
 		http.Error(w, fmt.Sprintf("Error uploading: %s", err.Error()), http.StatusInternalServerError)
 	}
 
 	defer localFile.Close()
 
 	io.Copy(localFile, clientFile)
+	plog.Info(plog.TypeAction, "uploaded disk", "user", r.Context().Value("user").(string), "disk", localFile.Name())
 }
 
 // GET /disks?disk={disk}
@@ -297,12 +313,13 @@ func DownloadDisk(w http.ResponseWriter, r *http.Request) {
 		path = filepath.Join(fileDir, path)
 	} else if !strings.HasPrefix(path, fileDir) {
 		errString := fmt.Sprintf("Error getting path %s: Path is not within files directory", path)
-		plog.Error(errString)
+		plog.Error(plog.TypeSystem, errString)
 		http.Error(w, errString, http.StatusBadRequest)
 		return
 	}
 
 	if !role.Allowed("disks", "get", filepath.Base(path)) {
+		plog.Warn(plog.TypeSecurity, "downloading disk not allowed", "user", r.Context().Value("user").(string), "disk", path)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -310,7 +327,7 @@ func DownloadDisk(w http.ResponseWriter, r *http.Request) {
 	fileInfo, err := os.Stat(path)
 	if err != nil {
 		errString := fmt.Sprintf("Error getting path %s: %s", path, err.Error())
-		plog.Error(errString)
+		plog.Error(plog.TypeSystem, errString)
 		http.Error(w, errString, http.StatusInternalServerError)
 		return
 	}
@@ -320,7 +337,7 @@ func DownloadDisk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plog.Info("download for file", "file", fileInfo.Name())
+	plog.Info(plog.TypeSystem, "download for file", "file", fileInfo.Name())
 
 	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(fileInfo.Name()))
 	w.Header().Set("Content-Type", "application/octet-stream")

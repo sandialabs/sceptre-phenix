@@ -25,7 +25,7 @@ type PasswordSettings struct {
 }
 
 func GetPasswordSettings() (PasswordSettings, error) {
-	plog.Debug("Getting all password settings")
+	plog.Debug(plog.TypeSystem, "Getting all password settings")
 
 	settings, err := List()
 	if err != nil {
@@ -78,7 +78,7 @@ func GetPasswordSettingsFromList(settings []types.Setting) (PasswordSettings, er
 }
 
 func UpdatePasswordSettings(newSettings PasswordSettings) error {
-	plog.Debug("Updating password settings")
+	plog.Debug(plog.TypeSystem, "Updating password settings")
 
 	var err error
 	_, err = Update("Password", "NumberReq", strconv.FormatBool(newSettings.NumberReq))
@@ -107,15 +107,15 @@ func UpdatePasswordSettings(newSettings PasswordSettings) error {
 		return fmt.Errorf("Error updating Settings.MinLength: %w", err)
 	}
 
-	plog.Debug("Updated password settings successfully")
+	plog.Debug(plog.TypeSystem, "Updated password settings successfully")
 	return nil
 }
 
 func IsPasswordValid(password string) bool {
-	plog.Debug("Checking if password is valid")
+	plog.Debug(plog.TypeSystem, "Checking if password is valid")
 	ps, err := GetPasswordSettings()
 	if err != nil {
-		plog.Error("Error checking IsPasswordValid: ", "err", err)
+		plog.Error(plog.TypeSystem, "Error checking IsPasswordValid: ", "err", err)
 		return false
 	}
 	if len(password) < int(ps.MinLength) {

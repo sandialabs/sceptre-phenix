@@ -1,33 +1,27 @@
 import Vue from 'vue';
 
-import {NotificationProgrammatic as Notification} from 'buefy';
+import { NotificationProgrammatic as Notification } from 'buefy';
 
 let errorNotification = async (error) => {
-  let message = null;
+  console.log(error)
+  let message = message = "<b>Unknown Error Occurred</b>";
 
-  if (error.headers.get('content-type') == 'application/json') {
-    let resp = await Vue.http.get(error.body.url);
-    let msg  = resp.body;
+  if (error.body.message) {
+    message = `<h2><b>Error:</b> ${error.body.message}</h2>`;
+  }
 
-    message = `<h2><b>Error:</b> ${msg.message}</h2>`;
-
-    if (msg.metadata) {
-      let cause = msg.metadata.cause.replace(/\n/g, '<br>').replace(/\t/g, '&emsp;');
-      message   = `${message}<br><b>Cause:</b> ${cause}`;
-    }
-  } else if (error.bodyText) {
-    message = `<b>Error:</b> ${error.bodyText}`;
-  } else {
-    message = "<b>Unknown Error Occurred</b>";
+  if (error.body.cause) {
+    let cause = error.body.cause.replace(/\n/g, '<br>').replace(/\t/g, '&emsp;');
+    message = `${message}<br><b>Cause:</b> ${cause}`;
   }
 
   Notification.open({
-    type:       'is-danger',
-    hasIcon:    true,
-    position:   'is-top',
+    type: 'is-danger',
+    hasIcon: true,
+    position: 'is-top',
     indefinite: true,
-    message:    message
+    message: message
   })
 };
 
-export {errorNotification};
+export { errorNotification };

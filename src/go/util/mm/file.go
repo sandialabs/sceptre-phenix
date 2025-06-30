@@ -31,13 +31,13 @@ func GetMMFilesDirectory() string {
 
 	args, err := GetMMArgs()
 	if err != nil {
-		plog.Warn("Could not get mm files directory from minimega")
+		plog.Warn(plog.TypeSystem, "Could not get mm files directory from minimega")
 		return defaultMMFilesDirectory
 	}
 
 	path, ok := args["filepath"]
 	if !ok {
-		plog.Warn("Could not get mm files directory from minimega")
+		plog.Warn(plog.TypeSystem, "Could not get mm files directory from minimega")
 		return defaultMMFilesDirectory
 	}
 

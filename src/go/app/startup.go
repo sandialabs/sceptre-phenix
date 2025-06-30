@@ -252,7 +252,7 @@ func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 			var tunnels []string
 
 			if err := mapstructure.Decode(annotation, &tunnels); err != nil {
-				plog.Error("parsing phenix/startup-autotunnel annotation", "exp", exp.Metadata.Name, "vm", node.General().Hostname(), "err", err)
+				plog.Error(plog.TypeSystem, "parsing phenix/startup-autotunnel annotation", "exp", exp.Metadata.Name, "vm", node.General().Hostname(), "err", err)
 			} else {
 				for _, config := range tunnels {
 					tunnel := CreateTunnel{
@@ -277,7 +277,7 @@ func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 						tunnel.Dhost = tokens[1]
 						tunnel.Dport = tokens[2]
 					default:
-						plog.Error("invalid phenix/startup-autotunnel annotation", "value", config)
+						plog.Error(plog.TypeSystem, "invalid phenix/startup-autotunnel annotation", "value", config)
 					}
 
 					if tunnel.Sport != "" {

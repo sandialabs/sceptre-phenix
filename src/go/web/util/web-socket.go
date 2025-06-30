@@ -20,17 +20,17 @@ func ConnectWSHandler(endpoint string) func(*websocket.Conn) {
 		// connect to the remote host
 		remote, err := net.Dial("tcp", endpoint)
 		if err != nil {
-			plog.Error("dialing websocket", "err", err)
+			plog.Error(plog.TypeSystem, "dialing websocket", "err", err)
 			return
 		}
 
 		defer remote.Close()
 
-		plog.Info("websocket client connected", "endpoint", endpoint)
+		plog.Info(plog.TypeSystem, "websocket client connected", "endpoint", endpoint)
 
 		go io.Copy(ws, remote)
 		io.Copy(remote, ws)
 
-		plog.Info("websocket client disconnected", "endpoint", endpoint)
+		plog.Info(plog.TypeSystem, "websocket client disconnected", "endpoint", endpoint)
 	}
 }

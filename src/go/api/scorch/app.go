@@ -241,7 +241,7 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 
 	if !shell.ProcessExists(cmd.Process.Pid) {
 		if err := cmd.Wait(); err != nil {
-			plog.Error("the Filebeat process terminated early (logs may be missing)", "err", err)
+			plog.Error(plog.TypePhenixApp, "the Filebeat process terminated early (logs may be missing)", "err", err, "app", "scorch")
 		}
 
 		return
@@ -267,7 +267,7 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 			cmd.Process.Signal(os.Interrupt)
 			return
 		case <-max.C:
-			plog.Warn("max amount of time for Filebeat to harvest inputs reached", "max", max)
+			plog.Warn(plog.TypePhenixApp, "max amount of time for Filebeat to harvest inputs reached", "max", max, "app", "scorch")
 
 			cmd.Process.Signal(os.Interrupt)
 			cmd.Wait()
@@ -276,7 +276,7 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 		case <-tick.C:
 			resp, err := http.Get(fmt.Sprintf("http://localhost:%d/debug/vars", port))
 			if err != nil {
-				plog.Error("unable to get number of active harvesters from Filebeat", "err", err)
+				plog.Error(plog.TypePhenixApp, "unable to get number of active harvesters from Filebeat", "err", err, "app", "scorch")
 
 				cmd.Process.Signal(os.Interrupt)
 				cmd.Wait()
@@ -286,7 +286,7 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
-				plog.Error("unable to get number of active harvesters from Filebeat", "err", err)
+				plog.Error(plog.TypePhenixApp, "unable to get number of active harvesters from Filebeat", "err", err, "app", "scorch")
 
 				cmd.Process.Signal(os.Interrupt)
 				cmd.Wait()
@@ -297,7 +297,7 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 			prev := metrics
 
 			if err := json.Unmarshal(body, &metrics); err != nil {
-				plog.Error("unmarshaling Filebeat harvester metrics", "err", err)
+				plog.Error(plog.TypePhenixApp, "unmarshaling Filebeat harvester metrics", "err", err, "app", "scorch")
 				continue
 			}
 
@@ -323,7 +323,7 @@ func (this Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 			// actually be generated, and 2) the input paths defined in the Filebeat
 			// config have wildcards in them for run loops and counts.
 			if metrics.Done() {
-				plog.Info("Filebeat has completed harvesting inputs")
+				plog.Info(plog.TypePhenixApp, "Filebeat has completed harvesting inputs", "app", "scorch")
 
 				cmd.Process.Signal(os.Interrupt)
 				cmd.Wait()
@@ -385,7 +385,7 @@ func executor(ctx context.Context, components scorchmd.ComponentSpecMap, exe *sc
 		loopPrefix = fmt.Sprintf("[RUN: %d - LOOP: %d - COUNT: %d]", options.Run, options.Loop, options.Count)
 	)
 
-	logger := plog.LoggerFromContext(ctx)
+	logger := plog.LoggerFromContext(ctx, plog.TypeScorch)
 
 	if options.Loop == 0 {
 		scorch.DeletePipeline(exp, options.Run, -1, true)

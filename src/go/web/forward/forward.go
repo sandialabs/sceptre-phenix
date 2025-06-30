@@ -59,7 +59,7 @@ func init() {
 				tunnel := pub.(app.CreateTunnel)
 
 				if err := createPortForward(tunnel.Experiment, tunnel.VM, tunnel.Sport, tunnel.Dhost, tunnel.Dport, tunnel.User); err != nil {
-					plog.Error("adding port forward", "exp", tunnel.Experiment, "vm", tunnel.VM, "sport", tunnel.Sport, "host", tunnel.Dhost, "dport", tunnel.Dport, "err", err)
+					plog.Error(plog.TypeSystem, "adding port forward", "exp", tunnel.Experiment, "vm", tunnel.VM, "sport", tunnel.Sport, "host", tunnel.Dhost, "dport", tunnel.Dport, "err", err)
 				}
 			}
 		}
@@ -153,7 +153,7 @@ func createPortForward(exp, vm, src, host, dst, user string) error {
 
 // GET /experiments/{exp}/vms/{name}/forwards
 func GetPortForwards(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "GetPortForwards")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetPortForwards")
 
 	var (
 		ctx  = r.Context()
@@ -166,7 +166,7 @@ func GetPortForwards(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/forwards", "list", fmt.Sprintf("%s/%s", exp, vm)) {
-		plog.Warn("listing port forwards not allowed", "user", user, "exp", exp, "vm", vm)
+		plog.Warn(plog.TypeSecurity, "listing port forwards not allowed", "user", user, "exp", exp, "vm", vm)
 
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
@@ -194,7 +194,7 @@ func GetPortForwards(w http.ResponseWriter, r *http.Request) {
 
 // POST /experiments/{exp}/vms/{name}/forwards?src=<int>&host=<ip>&dst=<int>
 func CreatePortForward(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "CreatePortForward")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreatePortForward")
 
 	var (
 		ctx  = r.Context()
@@ -212,14 +212,14 @@ func CreatePortForward(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/forwards", "create", fmt.Sprintf("%s/%s", exp, vm)) {
-		plog.Warn("creating port forwards not allowed", "user", user, "exp", exp, "vm", vm)
+		plog.Warn(plog.TypeSecurity, "creating port forwards not allowed", "user", user, "exp", exp, "vm", vm)
 
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
 	if err := createPortForward(exp, vm, src, host, dst, user); err != nil {
-		plog.Error("creating port forward", "exp", exp, "vm", vm, "src", src, "host", host, "dst", dst, "user", user, "err", err)
+		plog.Error(plog.TypeSystem, "creating port forward", "exp", exp, "vm", vm, "src", src, "host", host, "dst", dst, "user", user, "err", err)
 
 		http.Error(w, "unable to create tunnel to vm", http.StatusBadRequest)
 		return
@@ -230,7 +230,7 @@ func CreatePortForward(w http.ResponseWriter, r *http.Request) {
 
 // DELETE /experiments/{exp}/vms/{name}/forwards?host=<ip>&dst=<int>
 func DeletePortForward(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "DeletePortForward")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "DeletePortForward")
 
 	var (
 		ctx  = r.Context()
@@ -247,8 +247,7 @@ func DeletePortForward(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/forwards", "delete", fmt.Sprintf("%s/%s", exp, vm)) {
-		plog.Warn("deleting port forwards not allowed", "user", user, "exp", exp, "vm", vm)
-
+		plog.Warn(plog.TypeSecurity, "deleting port forwards not allowed", "user", user, "exp", exp, "vm", vm)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -265,7 +264,7 @@ func DeletePortForward(w http.ResponseWriter, r *http.Request) {
 
 	remoteDst, err := strconv.Atoi(dst)
 	if err != nil {
-		plog.Error("parsing destination port for forward", "port", dst, "err", err)
+		plog.Error(plog.TypeSystem, "parsing destination port for forward", "port", dst, "err", err)
 
 		http.Error(w, "invalid destination port", http.StatusBadRequest)
 		return
@@ -288,7 +287,7 @@ func DeletePortForward(w http.ResponseWriter, r *http.Request) {
 		if !l.QEMU {
 			err := mm.CloseTunnel(mm.NS(exp), mm.VMName(vm), mm.TunnelDestinationPort(remoteDst), mm.TunnelDestinationHost(host))
 			if err != nil {
-				plog.Error("closing tunnel", "err", err)
+				plog.Error(plog.TypeSystem, "closing tunnel", "err", err)
 
 				http.Error(w, "unable to close tunnel to vm", http.StatusInternalServerError)
 				return
@@ -306,7 +305,7 @@ func DeletePortForward(w http.ResponseWriter, r *http.Request) {
 
 // GET /experiments/{exp}/vms/{name}/forwards/{host}/{port}/ws
 func GetPortForwardWebSocket(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "GetPortForwardWebSocket")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetPortForwardWebSocket")
 
 	var (
 		ctx  = r.Context()
@@ -321,8 +320,7 @@ func GetPortForwardWebSocket(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/forwards", "get", fmt.Sprintf("%s/%s", exp, vm)) {
-		plog.Warn("accessing port forwards not allowed", "user", user, "exp", exp, "vm", vm)
-
+		plog.Warn(plog.TypeSecurity, "accessing port forwards not allowed", "user", user, "exp", exp, "vm", vm)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -355,7 +353,7 @@ func GetPortForwardWebSocket(w http.ResponseWriter, r *http.Request) {
 	if len(matches) == 0 {
 		forwardsMu.Unlock()
 
-		plog.Error("listener not found for forward", "key", key)
+		plog.Error(plog.TypeSystem, "listener not found for forward", "key", key)
 		http.Error(w, "unknown forward", http.StatusBadRequest)
 		return
 	}

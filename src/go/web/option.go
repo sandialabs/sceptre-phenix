@@ -183,7 +183,7 @@ func ServeWithUnixSocketGid(g int) ServerOption {
 
 // GET /options
 func GetOptions(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug("HTTP handler called", "handler", "GetOptions")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetOptions")
 
 	var (
 		ctx  = r.Context()
@@ -191,6 +191,7 @@ func GetOptions(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("options", "list") {
+		plog.Warn(plog.TypeSecurity, "listing options not allowed", "user", ctx.Value("user").(string))
 		err := weberror.NewWebError(nil, "listing options not allowed for %s", ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}

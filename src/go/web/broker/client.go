@@ -94,7 +94,7 @@ func (this *Client) stop() {
 	defer this.connMu.Unlock()
 
 	if err := this.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
-		plog.Warn("closing client connection", "err", err)
+		plog.Warn(plog.TypeSystem, "closing client connection", "err", err)
 	}
 
 	this.conn.Close()
@@ -106,13 +106,13 @@ func (this *Client) read() {
 	this.conn.SetReadLimit(maxMsgSize)
 
 	if err := this.conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
-		plog.Error("setting read deadline for client connection", "err", err)
+		plog.Error(plog.TypeSystem, "setting read deadline for client connection", "err", err)
 		return
 	}
 
 	ponger := func(string) error {
 		if err := this.conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
-			plog.Error("setting read deadline in pong handler for client connection", "err", err)
+			plog.Error(plog.TypeSystem, "setting read deadline in pong handler for client connection", "err", err)
 			return err
 		}
 
@@ -129,7 +129,7 @@ func (this *Client) read() {
 			_, msg, err := this.conn.ReadMessage()
 			if err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					plog.Debug("reading from WebSocket client", "err", err)
+					plog.Debug(plog.TypeSystem, "reading from WebSocket client", "err", err)
 				}
 
 				return
@@ -137,7 +137,7 @@ func (this *Client) read() {
 
 			var req bt.Request
 			if err := json.Unmarshal(msg, &req); err != nil {
-				plog.Error("cannot unmarshal request JSON", "err", err)
+				plog.Error(plog.TypeSystem, "cannot unmarshal request JSON", "err", err)
 				continue
 			}
 
@@ -146,12 +146,12 @@ func (this *Client) read() {
 			case "metadata/screenshot":
 				var payload map[string]string
 				if err := json.Unmarshal(req.Payload, &payload); err != nil {
-					plog.Error("cannot unmarshal WebSocket request payload JSON", "err", err)
+					plog.Error(plog.TypeSystem, "cannot unmarshal WebSocket request payload JSON", "err", err)
 					continue
 				}
 				size, ok := payload["size"]
 				if ok {
-					plog.Debug("updated screenshot resolution", "size", size)
+					plog.Debug(plog.TypeSystem, "updated screenshot resolution", "size", size)
 					screenshotSize = size
 					this.updateScreenshots()
 				}
@@ -164,7 +164,7 @@ func (this *Client) read() {
 					var query map[string]string
 
 					if err := json.Unmarshal(req.Payload, &query); err != nil {
-						plog.Error("cannot unmarshal request payload", "err", err)
+						plog.Error(plog.TypeSystem, "cannot unmarshal request payload", "err", err)
 						continue
 					}
 
@@ -177,7 +177,7 @@ func (this *Client) read() {
 
 					value := query["value"]
 					if value == "" {
-						plog.Error("missing search value for term", "term", term)
+						plog.Error(plog.TypeSystem, "missing search value for term", "term", term)
 						continue
 					}
 
@@ -187,7 +187,7 @@ func (this *Client) read() {
 					if !ok {
 						// warm the cache (again?)
 						if _, err := vm.Topology(req.Resource.Name, nil); err != nil {
-							plog.Error("getting experiment topology", "exp", req.Resource.Name, "err", err)
+							plog.Error(plog.TypeSystem, "getting experiment topology", "exp", req.Resource.Name, "err", err)
 							continue
 						}
 
@@ -243,7 +243,7 @@ func (this *Client) read() {
 
 					body, err := json.Marshal(results)
 					if err != nil {
-						plog.Error("marshaling search results for WebSocket client", "err", err)
+						plog.Error(plog.TypeSystem, "marshaling search results for WebSocket client", "err", err)
 						continue
 					}
 
@@ -254,29 +254,29 @@ func (this *Client) read() {
 
 					continue
 				default:
-					plog.Error("unexpected WebSocket request resource action for experiment/topology resource type", "action", req.Resource.Action)
+					plog.Error(plog.TypeSystem, "unexpected WebSocket request resource action for experiment/topology resource type", "action", req.Resource.Action)
 					continue
 				}
 			default:
-				plog.Error("unexpected WebSocket request resource type", "type", req.Resource.Type)
+				plog.Error(plog.TypeSystem, "unexpected WebSocket request resource type", "type", req.Resource.Type)
 				continue
 			}
 
 			switch req.Resource.Action {
 			case "list":
 			default:
-				plog.Error("unexpected WebSocket request resource action", "action", req.Resource.Action)
+				plog.Error(plog.TypeSystem, "unexpected WebSocket request resource action", "action", req.Resource.Action)
 				continue
 			}
 
 			var payload map[string]interface{}
 			if err := json.Unmarshal(req.Payload, &payload); err != nil {
-				plog.Error("cannot unmarshal WebSocket request payload JSON", "err", err)
+				plog.Error(plog.TypeSystem, "cannot unmarshal WebSocket request payload JSON", "err", err)
 				continue
 			}
 
 			if !this.role.Allowed("vms", "list") {
-				plog.Warn("client access to vms/list forbidden")
+				plog.Warn(plog.TypeSecurity, "client access to vms/list forbidden")
 				continue
 			}
 
@@ -284,13 +284,13 @@ func (this *Client) read() {
 
 			exp, err := experiment.Get(expName)
 			if err != nil {
-				plog.Error("getting experiment for WebSocket client", "exp", expName, "err", err)
+				plog.Error(plog.TypeSystem, "getting experiment for WebSocket client", "exp", expName, "err", err)
 				continue
 			}
 
 			vms, err := vm.List(expName)
 			if err != nil {
-				plog.Error("getting list of VMs for experiment", "exp", expName, "err", err)
+				plog.Error(plog.TypeSystem, "getting list of VMs for experiment", "exp", expName, "err", err)
 				continue
 			}
 
@@ -330,7 +330,7 @@ func (this *Client) read() {
 					if vm.Running {
 						screenshot, err := util.GetScreenshot(expName, vm.Name, screenshotSize)
 						if err != nil {
-							plog.Error("getting screenshot for WebSocket client", "err", err)
+							plog.Error(plog.TypeSystem, "getting screenshot for WebSocket client", "err", err)
 						} else {
 							vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
 						}
@@ -376,7 +376,7 @@ func (this *Client) read() {
 
 			body, err := marshaler.Marshal(resp)
 			if err != nil {
-				plog.Error("marshaling experiment VMs for WebSocket client", "exp", exp, "err", err)
+				plog.Error(plog.TypeSystem, "marshaling experiment VMs for WebSocket client", "exp", exp, "err", err)
 				continue
 			}
 
@@ -400,16 +400,16 @@ func (this *Client) write() {
 			return
 		case msg := <-this.publish:
 			if err := this.publisher(msg); err != nil {
-				plog.Error("publishing message to client", "err", err)
+				plog.Error(plog.TypeSystem, "publishing message to client", "err", err)
 			}
 		case <-ticker.C:
 			if err := this.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
-				plog.Error("setting write deadline for client connection", "err", err)
+				plog.Error(plog.TypeSystem, "setting write deadline for client connection", "err", err)
 				return
 			}
 
 			if err := this.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				plog.Error("pinging client connection", "err", err)
+				plog.Error(plog.TypeSystem, "pinging client connection", "err", err)
 				return
 			}
 		}
@@ -433,7 +433,7 @@ func (this *Client) publisher(msg interface{}) error {
 
 	b, err := json.Marshal(msg)
 	if err != nil {
-		plog.Error("marshaling message to be published", "err", err)
+		plog.Error(plog.TypeSystem, "marshaling message to be published", "err", err)
 		return nil
 	}
 
@@ -450,7 +450,7 @@ func (this *Client) publisher(msg interface{}) error {
 
 		b, err := json.Marshal(msg)
 		if err != nil {
-			plog.Error("marshaling message to be published", "err", err)
+			plog.Error(plog.TypeSystem, "marshaling message to be published", "err", err)
 			continue
 		}
 
@@ -501,14 +501,14 @@ func (client *Client) updateScreenshots() {
 					continue
 				}
 
-				plog.Error("getting screenshot for WebSocket client", "err", err)
+				plog.Error(plog.TypeSystem, "getting screenshot for WebSocket client", "err", err)
 				continue
 			}
 
 			encoded := "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
 			marshalled, err := json.Marshal(util.WithRoot("screenshot", encoded))
 			if err != nil {
-				plog.Error("marshaling VM screenshot for WebSocket client", "vm", vm, "err", err)
+				plog.Error(plog.TypeSystem, "marshaling VM screenshot for WebSocket client", "vm", vm, "err", err)
 				continue
 			}
 
@@ -525,7 +525,7 @@ func ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		plog.Error("upgrading connection to WebSocket", "err", err)
+		plog.Error(plog.TypeSystem, "upgrading connection to WebSocket", "err", err)
 		return
 	}
 

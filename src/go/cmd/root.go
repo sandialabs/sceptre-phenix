@@ -14,8 +14,8 @@ import (
 
 	"phenix/api/config"
 	_ "phenix/api/scorch"
+	"phenix/api/settings"
 	"phenix/store"
-	"phenix/util"
 	"phenix/util/common"
 	"phenix/util/plog"
 	"phenix/web"
@@ -30,7 +30,7 @@ var (
 	minimegaBase     string
 	hostnameSuffixes string
 	storeEndpoint    string
-	errFile          string
+	logFile          string
 )
 
 var rootCmd = &cobra.Command{
@@ -105,29 +105,36 @@ var rootCmd = &cobra.Command{
 
 		var (
 			endpoint = viper.GetString("store.endpoint")
-			errFile  = viper.GetString("log.error-file")
-			errOut   = viper.GetBool("log.error-stderr")
 		)
 
-		common.ErrorFile = errFile
 		common.StoreEndpoint = endpoint
 
 		if err := store.Init(store.Endpoint(endpoint)); err != nil {
 			return fmt.Errorf("initializing storage: %w", err)
 		}
 
-		if err := util.InitFatalLogWriter(errFile, errOut); err != nil {
-			return fmt.Errorf("unable to initialize fatal log writer: %w", err)
-		}
-
 		if err := config.Init(); err != nil {
 			return fmt.Errorf("unable to initialize default configs: %w", err)
 		}
 
+		//add log file handler after bbolt is live
+		logFile := viper.GetString("log.file.path")
+		fileHandlerOpts := plog.GetDefaultFileHandlerOpts()
+		fileLogSettings, err := settings.GetLoggingSettings()
+		if err == nil {
+			fileHandlerOpts.MaxSize = int(fileLogSettings.MaxFileSize)
+			fileHandlerOpts.MaxBackups = int(fileLogSettings.MaxFileRotations)
+			fileHandlerOpts.MaxAge = int(fileLogSettings.MaxFileAge)
+			fileHandlerOpts.Level = plog.TextToLevel(viper.GetString("log.file.level"))
+		}
+		go func() {
+			plog.AddFileHandler(logFile, fileHandlerOpts)
+		}()
+
 		return nil
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
-		util.CloseLogWriter()
+		plog.CloseFile()
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -192,26 +199,27 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&phenixBase, "base-dir.phenix", "/phenix", "base phenix directory")
 	rootCmd.PersistentFlags().StringVar(&minimegaBase, "base-dir.minimega", "/tmp/minimega", "base minimega directory")
 	rootCmd.PersistentFlags().StringVar(&hostnameSuffixes, "hostname-suffixes", "-minimega,-phenix", "hostname suffixes to strip")
-	rootCmd.PersistentFlags().Bool("log.error-stderr", true, "log fatal errors to STDERR")
+	rootCmd.PersistentFlags().Bool("log.error-stderr", true, "log fatal errors to STDERR - DEPRECATED (Determined by log.level)")
 	rootCmd.PersistentFlags().String("log.level", "info", "level to log messages at")
 	rootCmd.PersistentFlags().String("bridge-mode", "", "bridge naming mode for experiments ('auto' uses experiment name for bridge; 'manual' uses user-specified bridge name, or 'phenix' if not specified) (options: manual | auto)")
 	rootCmd.PersistentFlags().String("deploy-mode", "", "deploy mode for minimega VMs (options: all | no-headnode | only-headnode)")
 	rootCmd.PersistentFlags().Bool("use-gre-mesh", false, "use GRE tunnels between mesh nodes for VLAN trunking")
 	rootCmd.PersistentFlags().String("unix-socket", "/tmp/phenix.sock", "phēnix unix socket to listen on (ui subcommand) or connect to")
 
+	rootCmd.PersistentFlags().String("log.file.level", "info", "level to log messages at for log file (options: debug | info | warn | error | none)")
+
+	errFile := ""
+	rootCmd.PersistentFlags().StringVar(&errFile, "log.error-file", "", "log fatal errors to file - DEPRECATED (Determined by log.file.level)")
 	if uid == "0" {
 		os.MkdirAll("/etc/phenix", 0755)
 		os.MkdirAll("/var/log/phenix", 0755)
-
 		rootCmd.PersistentFlags().StringVar(&storeEndpoint, "store.endpoint", "bolt:///etc/phenix/store.bdb", "endpoint for storage service")
-		rootCmd.PersistentFlags().StringVar(&errFile, "log.error-file", "/var/log/phenix/error.log", "log fatal errors to file")
+		rootCmd.PersistentFlags().String("log.file.path", "/var/log/phenix/phenix.log", "path to log to")
 
-		common.LogFile = "/var/log/phenix/phenix.log"
 	} else {
+		os.MkdirAll(fmt.Sprintf("%s/phenix_logs/", home), 0755)
 		rootCmd.PersistentFlags().StringVar(&storeEndpoint, "store.endpoint", fmt.Sprintf("bolt://%s/.phenix.bdb", home), "endpoint for storage service")
-		rootCmd.PersistentFlags().StringVar(&errFile, "log.error-file", fmt.Sprintf("%s/.phenix.err", home), "log fatal errors to file")
-
-		common.LogFile = fmt.Sprintf("%s/.phenix.log", home)
+		rootCmd.PersistentFlags().String("log.file.path", fmt.Sprintf("%s/phenix_logs/phenix.log", home), "path to log to")
 	}
 
 	viper.BindPFlags(rootCmd.PersistentFlags())
