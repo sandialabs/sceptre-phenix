@@ -1,0 +1,113 @@
+html {
+  background-repeat: no-repeat;
+  background-image: url('@/assets/imgs/phenix.png');
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+ul {
+  columns: 2;
+  -webkit-columns: 2;
+  -moz-columns: 2;
+}
+
+textarea {
+  display: block;
+  width: 200px;
+  height: 50px;
+  padding: 8px;
+  margin: 10px;
+  border: 1px solid #ccc;
+}
+
+textarea:focus {
+  border-color: black;
+}
+
+.top {
+  text-align: right;
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: space-between;
+  margin-bottom: 0.5em;
+}
+
+.close {
+  text-align: right;
+  height: 10px;
+  width: 10px;
+  position: relative;
+  box-sizing: border-box;
+  line-height: 10px;
+  display: inline-block;
+}
+
+.close:before,
+.close:after {
+  transform: rotate(-45deg);
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin-top: -1px;
+  margin-left: -5px;
+  display: block;
+  height: 2px;
+  width: 10px;
+  background-color: black;
+  transition: all 0.25s ease-out;
+}
+
+.close:after {
+  transform: rotate(-135deg);
+}
+
+.close:hover:before,
+.close:hover:after {
+  transform: rotate(0deg);
+}
+
+a.navbar-item.router-link-exact-active,
+a.navbar-item:hover {
+  background: $scheme-main !important;
+  color: whitesmoke !important;
+}
+
+div.is-success {
+  color: $success;
+}
+
+.b-table {
+  .table {
+    td {
+      vertical-align: middle;
+    }
+  }
+}
+
+// For buttons attached to an input field
+.button.input-button {
+  background-color: $input-background-color;
+  color: $scheme-main;
+  border-color: $input-border-color $input-border-color $input-border-color
+    $scheme-main-bis;
+}
+
+// scale icons inside inputs so they don't touch the edges
+.control.has-icons-left > .icon > svg {
+  width: 75% !important;
+}
+
+// round bottom of modal-card even if not explicitly a footer
+.modal-card > :last-child {
+  border-radius: 0 0 $modal-card-foot-radius $modal-card-foot-radius;
+}
+
+// center icons used for tooltips
+.tooltip-trigger > span.icon {
+  height: 100%;
+}

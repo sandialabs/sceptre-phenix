@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 
 // const data = require('./data.js')
-import { EdgeService } from "./line";
+import { EdgeService } from '@/components/pipeline/line.js';
 
 class Pipeline {
   /**
@@ -13,7 +13,7 @@ class Pipeline {
    * @param {*} ystep
    * @param {*} lineStyle 线型，目前支持三种线型： default(默认)，line(直线)，bessel(贝塞尔曲线)
    */
-  constructor(nodes, startx, starty, xstep, ystep, lineStyle = "default") {
+  constructor(nodes, startx, starty, xstep, ystep, lineStyle = 'default') {
     this.nodes = nodes;
     this.startx = startx;
     this.starty = starty;
@@ -111,7 +111,6 @@ class Pipeline {
     return list;
   }
 
-  
   getPositionInMatrix(index) {
     for (let i = 0; i < this.matrix.length; i++) {
       for (let j = 0; j < this.matrix[i].length; j++) {
@@ -177,7 +176,7 @@ class Pipeline {
           this.width = Math.max(this.width, this.nodes[index].x + this.startx);
           this.height = Math.max(
             this.height,
-            this.nodes[index].y + this.starty
+            this.nodes[index].y + this.starty,
           );
         }
       }

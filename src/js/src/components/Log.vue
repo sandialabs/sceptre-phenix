@@ -71,9 +71,10 @@
         <div class="log-column type-column">Type</div>
         <div class="log-column column is-rest">Message</div>
       </div>
+
       <RecycleScroller ref="logScroller" :items="filteredLogs" :item-size="36" key-field="time"
         style="width: 100%; height: 75vh;">
-        <template slot-scope="{ item, index }">
+        <template v-slot="{ item, index }">
           <div class="columns row">
             <div class="log-column level-column">
               <b-tooltip :label="item.level" type="is-light" :position="index < 2 ? 'is-right' : 'is-top'">
@@ -105,6 +106,10 @@
 <script>
 import { RecycleScroller } from "vue-virtual-scroller";
 import "vue-virtual-scroller/dist/vue-virtual-scroller.css";
+
+import axiosInstance from '@/utils/axios.js';
+import { useErrorNotification } from '@/utils/errorNotif';
+import { addWsHandler, removeWsHandler } from '@/utils/websocket';
 
 const KNOWN_LEVELS = [ // in-order
   "DEBUG",
@@ -141,10 +146,15 @@ export default {
     this.knownLevels = KNOWN_LEVELS;
     this.dateModes = DATE_MODES;
     this.knownTypes = KNOWN_TYPES;
-    this.$options.sockets.onmessage = this.wsHandler;
     
     this.startDate = new Date(Date.now() - (this.dateModes[this.dateFilter] * 1000));
     this.getLogs()
+
+    addWsHandler(this.handleWs);
+  },
+
+  beforeUnmount(){
+    removeWsHandler(this.handleWs)
   },
 
   computed: {
@@ -191,21 +201,23 @@ export default {
     getLogs() {
       this.isLoading = true;
       let query = `logs?start=${this.startDate.toISOString()}` + (this.endNow ? '' : `&end=${this.endDate.toISOString()}`);
-      this.$http.get(query).then(response => {
-        response.json().then(json => {
-          this.logs = json;
-          this.$nextTick(() => {
-            this.$refs.logScroller.scrollToPosition(Number.MAX_SAFE_INTEGER)
-            this.isLoading = false;
-          })
-
-        })
-      },
-        err => {
-          this.errorNotification(err);
+      console.log(`${new Date().toISOString()} get logs ${query}`)
+      axiosInstance.get(query)
+        .then((response) => {
+        console.log(`${new Date().toISOString()} got response`)
+        const json = response.data
+        console.log(`${new Date().toISOString()} got logs and converted to json len=${json.length}`)
+        this.logs = json;
+        this.$nextTick(() => {
+          this.$refs.logScroller.scrollToPosition(Number.MAX_SAFE_INTEGER)
           this.isLoading = false;
-        }
-      )
+        })
+
+      })
+      .catch(err => {
+          useErrorNotification(err);
+          this.isLoading = false;
+        })
     },
     // triggers getLogs call when date dropdown closes
     dateDropdownChange(n) {
@@ -224,15 +236,10 @@ export default {
       }
       this.$refs.dateDropdown.isActive = false;
     },
-    wsHandler(event) {
-      event.data.split(/\r?\n/).forEach(m => {
-        if (m) {
-          let msg = JSON.parse(m);
-          if (msg.resource.type == 'log' && this.endNow && !this.isLoading) {
-            this.logs.push(msg.result)
-          }
-        }
-      });
+    handleWs(msg){
+      if (msg.resource.type == 'log' && this.endNow && !this.isLoading){
+        this.logs.push(msg.result)
+      }
     },
     getIconForLevel(level) {
       switch (level) {
@@ -274,7 +281,7 @@ export default {
   }
 }
 
-.control>>>.icon {
+.control :deep(.icon) {
   height: 1.5em !important;
   top: 50%;
   transform: translateY(-50%);
@@ -289,11 +296,11 @@ a.dropdown-item.is-active {
 }
 
 /* weird glitch with buefy where back/forward arrow had static position, but relative attrs */
-.datepicker>>>span {
+.datepicker :deep(span) {
   position: relative;
 }
 
-.datepicker>>>.is-selectable {
+.datepicker :deep(.is-selectable) {
   color: #383838 !important;
 }
 
@@ -317,11 +324,10 @@ a.dropdown-item.is-active {
    -webkit-box-orient: vertical;
 }
 
->>> .vue-recycle-scroller__item-view.hover {
+:deep(.vue-recycle-scroller__item-view.hover){
   background: #777777 !important;
 }
-
->>> .msg-column .b-tooltip .tooltip-content {
+:deep(.msg-column .b-tooltip .tooltip-content) {
   width: 102% !important;
   text-align: left;
   padding-left: 4px;
