@@ -1,27 +1,36 @@
 <template>
-  <ConfigsEditor
-    v-if="editorActive"
+  <ConfigsList v-if="!editorActive" @edit="handleEdit" @create="handleCreate" />
+  <component
+    :is="editorComponent"
+    v-else
     :mode="editorMode"
     :editorConfig="editorConfig"
     @is-done="handleDone" />
-  <ConfigsList v-else @edit="handleEdit" @create="handleCreate" />
 </template>
 <script>
   import ConfigsList from '@/components/configs/ConfigsList.vue';
-  import ConfigsEditor from '@/components/configs/ConfigsEditor.vue';
+  // import ConfigsEditor from '@/components/configs/ConfigsEditor.vue';
   import axiosInstance from '@/utils/axios.js';
 
   export default {
-    components: { ConfigsList, ConfigsEditor },
+    components: {
+      ConfigsList,
+      // ConfigsEditor
+    },
     data() {
       return {
         isWaiting: false,
         editorActive: false,
         editorMode: null,
         editorConfig: null,
+
+        editorComponent: null,
       };
     },
     created() {},
+    async mounted(){
+      this.editorComponent = (await import('@/components/configs/ConfigsEditor.vue')).default
+    },
     methods: {
       handleDone(msg) {
         if (msg !== '') {
