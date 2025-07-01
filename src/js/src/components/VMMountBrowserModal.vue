@@ -85,8 +85,8 @@
 <script setup>
   import { roleAllowed } from '@/utils/rbac.js';
   import axiosInstance from '@/utils/axios.js';
-  import { formattingMixin } from '@/mixins/formattingMixin.js';
-  import { usePhenixStore } from '@/stores/phenix';
+  import { formattingMixin } from '@/utils/formattingMixin.js';
+  import { usePhenixStore } from '@/store';
 </script>
 
 <script>

@@ -656,14 +656,14 @@
 <script setup>
   import { roleAllowed } from '@/utils/rbac.js';
   import axiosInstance from '@/utils/axios.js';
-  import { formattingMixin } from '@/mixins/formattingMixin.js';
+  import { formattingMixin } from '@/utils/formattingMixin.js';
   import { useErrorNotification } from '@/utils/errorNotif';
 </script>
 
 <script>
   import { debounce } from 'lodash-es';
   import { tagCount } from '@/utils/tagCount';
-  import { usePhenixStore } from '@/stores/phenix';
+  import { usePhenixStore } from '@/store';
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
   import VMLabelsModal from '@/components/VMLabelsModal.vue';
 

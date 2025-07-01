@@ -252,8 +252,6 @@
   import { useErrorNotification } from '@/utils/errorNotif';
 </script>
 <script>
-  import { computed, ref, watch } from 'vue';
-  import { usePhenixStore } from '@/stores/phenix.js';
   import axiosInstance from '@/utils/axios.js';
   import YAML from 'js-yaml';
 

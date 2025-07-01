@@ -115,9 +115,9 @@ available for experiments, the number of VMs, and host uptime.
 </template>
 
 <script>
-  import { usePhenixStore } from '@/stores/phenix.js';
+  import { usePhenixStore } from '@/store.js';
   import axiosInstance from '@/utils/axios.js';
-  import { formattingMixin } from '@/mixins/formattingMixin.js';
+  import { formattingMixin } from '@/utils/formattingMixin.js';
   import { useErrorNotification } from '@/utils/errorNotif';
 
   export default {

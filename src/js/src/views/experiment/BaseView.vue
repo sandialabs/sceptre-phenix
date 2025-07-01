@@ -10,7 +10,7 @@ this will only show a list of VMs that a user can view.
 </template>
 
 <script setup>
-  import { usePhenixStore } from '@/stores/phenix';
+  import { usePhenixStore } from '@/store';
   import axiosInstance from '@/utils/axios';
   import { defineAsyncComponent } from 'vue';
   import { useRoute } from 'vue-router';

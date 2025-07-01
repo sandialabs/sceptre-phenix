@@ -1,4 +1,4 @@
-import { usePhenixStore } from '@/stores/phenix.js';
+import { usePhenixStore } from '@/store.js';
 import { minimatch } from 'minimatch';
 
 let cache = new Map();

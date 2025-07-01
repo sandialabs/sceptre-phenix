@@ -1,5 +1,5 @@
 import axiosInstance from '@/utils/axios.js'
-import { usePhenixStore } from '@/stores/phenix.js';
+import { usePhenixStore } from '@/store.js';
 import { ToastProgrammatic as Toast } from 'buefy';
 
 export class TimeoutTool {

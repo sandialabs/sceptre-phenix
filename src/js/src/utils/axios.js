@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { usePhenixStore } from '@/stores/phenix.js';
+import { usePhenixStore } from '@/store.js';
 
 const axiosInstance = axios.create({
   baseURL: `/api/v1/`,

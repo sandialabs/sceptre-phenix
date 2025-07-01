@@ -277,7 +277,7 @@
   import axiosInstance from '@/utils/axios.js';
   import { uniq } from 'lodash-es';
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
-  import { usePhenixStore } from '@/stores/phenix';
+  import { usePhenixStore } from '@/store';
 
   export default {
     beforeUnmount() {

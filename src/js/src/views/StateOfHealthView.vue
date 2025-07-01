@@ -672,7 +672,7 @@
   import axiosInstance from '@/utils/axios.js';
   import { useErrorNotification } from '@/utils/errorNotif';
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
-  import { usePhenixStore } from '@/stores/phenix.js';
+  import { usePhenixStore } from '@/store.js';
 
   export default {
     async beforeDestroy() {

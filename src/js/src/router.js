@@ -1,11 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import Log from '@/components/Log.vue';
+import Log from '@/views/LogsView.vue';
 
-//placeholder
-import TestComponent from '@/components/TestComponent.vue';
 import { ToastProgrammatic as Toast } from 'buefy';
 
-import { usePhenixStore } from '@/stores/phenix.js';
+import { usePhenixStore } from '@/store.js';
 import axiosInstance from '@/utils/axios.js';
 
 const router = createRouter({
@@ -40,7 +38,7 @@ const router = createRouter({
     {
       path: '/hosts',
       name: 'hosts',
-      component: () => import('@/components/Hosts.vue'),
+      component: () => import('@/views/HostsView.vue'),
     },
     {
       path: '/configs/',
@@ -60,7 +58,7 @@ const router = createRouter({
     {
       path: '/users',
       name: 'users',
-      component: () => import('@/components/Users.vue'),
+      component: () => import('@/views/UsersView.vue'),
     },
     { path: '/log', name: 'log', component: Log },
     {
@@ -81,12 +79,12 @@ const router = createRouter({
     {
       path: '/soh/:id',
       name: 'soh',
-      component: () => import('@/components/StateOfHealth.vue'),
+      component: () => import('@/views/StateOfHealthView.vue'),
     },
     {
       path: '/settings',
       name: 'settings',
-      component: () => import('@/views/Settings.vue'),
+      component: () => import('@/views/SettingsView.vue'),
     },
     {
       path: '/tunneler',

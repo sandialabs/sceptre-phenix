@@ -360,7 +360,7 @@
 </script>
 
 <script>
-  import { formattingMixin } from '@/mixins/formattingMixin.js';
+  import { formattingMixin } from '@/utils/formattingMixin.js';
   import axiosInstance from '@/utils/axios.js';
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
 

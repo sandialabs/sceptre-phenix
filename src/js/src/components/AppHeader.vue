@@ -102,7 +102,7 @@ are only available to Global Administrator or Global Viewer.
 </template>
 
 <script setup>
-  import { usePhenixStore } from '@/stores/phenix.js';
+  import { usePhenixStore } from '@/store.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import axiosInstance from '@/utils/axios.js';
 </script>

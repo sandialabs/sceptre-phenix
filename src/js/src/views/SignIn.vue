@@ -79,7 +79,7 @@ It requires a valid username and password.
 
 <script>
   import axiosInstance from '@/utils/axios.js';
-  import { usePhenixStore } from '@/stores/phenix.js';
+  import { usePhenixStore } from '@/store.js';
   import { useErrorNotification } from '@/utils/errorNotif';
 
   export default {

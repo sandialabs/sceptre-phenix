@@ -35,7 +35,7 @@ library.add(
 )
 
 import App from './App.vue';
-import router from './router';
+import router from './router.js';
 
 const app = createApp(App);
 

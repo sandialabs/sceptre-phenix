@@ -1,5 +1,5 @@
 /// <reference types="vite/types/importMeta.d.ts" />
-import { usePhenixStore } from '@/stores/phenix.js';
+import { usePhenixStore } from '@/store.js';
 import { ToastProgrammatic as Toast } from 'buefy';
 
 let globalWs: WebSocket = null;

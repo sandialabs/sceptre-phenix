@@ -9,7 +9,7 @@
   import AppFooter from '@/components/AppFooter.vue';
   import { onUnmounted, onMounted } from 'vue';
   import axios from 'axios';
-  import { usePhenixStore } from '@/stores/phenix';
+  import { usePhenixStore } from '@/store';
   import { storeToRefs } from 'pinia';
   import { watch } from 'vue';
 

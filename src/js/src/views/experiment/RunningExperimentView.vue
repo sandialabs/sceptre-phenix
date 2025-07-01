@@ -1402,7 +1402,7 @@
 <script setup>
   import { roleAllowed } from '@/utils/rbac.js';
   import axiosInstance from '@/utils/axios.js';
-  import { formattingMixin } from '@/mixins/formattingMixin.js';
+  import { formattingMixin } from '@/utils/formattingMixin.js';
   import { useErrorNotification } from '@/utils/errorNotif';
 </script>
 
@@ -1410,7 +1410,7 @@
   import VMLabelsModal from '@/components/VMLabelsModal.vue';
   import { tagCount } from '@/utils/tagCount';
   import { addWsHandler, removeWsHandler, sendWsMsg } from '@/utils/websocket';
-  import { usePhenixStore } from '@/stores/phenix';
+  import { usePhenixStore } from '@/store';
   import VMMountBrowserModal from '@/components/VMMountBrowserModal.vue';
   import { debounce } from 'lodash-es';
 

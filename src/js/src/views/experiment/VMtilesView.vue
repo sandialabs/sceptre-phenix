@@ -125,7 +125,7 @@ side will pass.
   import { chunk, sortBy } from 'lodash-es';
   import { useErrorNotification } from '@/utils/errorNotif';
   import axiosInstance from '@/utils/axios.js';
-  import { usePhenixStore } from '@/stores/phenix';
+  import { usePhenixStore } from '@/store';
   export default {
     beforeDestroy() {
       clearInterval(this.update);
