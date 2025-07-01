@@ -92,7 +92,7 @@
     box-shadow: 0 2px 3px #ccc;
   }
   
-  .signup-form >>> .label {
+  .signup-form :deep(.label) {
     color: whitesmoke;
   }
 </style>
