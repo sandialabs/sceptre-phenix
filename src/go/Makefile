@@ -35,7 +35,7 @@ clean:
 	$(RM) web/bindata.go
 	$(RM) web/proto/*.pb.go
 	$(RM) web/public/docs/index.html
-	$(RM) web/public/favicon.ico
+	$(RM) web/public/favicon*.ico
 	$(RM) web/public/index.html
 	$(RM) -r web/public/assets
 	$(RM) web/rbac/known_policy.go

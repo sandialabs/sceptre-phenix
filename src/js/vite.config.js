@@ -7,9 +7,13 @@ import { visualizer } from 'rollup-plugin-visualizer';
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd());
+  process.env = {
+    ...process.env, 
+    ...loadEnv(mode, process.cwd()), 
+    "VITE_FAVICON": mode === "development" ? "/favicon_dev.ico" : "/favicon.ico",
+  };
   return {
-    base: env.VITE_BASE_PATH || '/',
+    base: process.env.VITE_BASE_PATH || '/',
     assetsDir: 'assets',
     plugins: [vue(), vueDevTools()],
     resolve: {
