@@ -953,7 +953,7 @@
             this.isWaiting = false;
 
             for (let i = 0; i < response.data.disks.length; i++) {
-              this.disks.push(response.data.disks[i]);
+              this.disks.push(response.data.disks[i].fullPath);
             }
 
             this.disks.sort();

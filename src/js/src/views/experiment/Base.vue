@@ -37,10 +37,10 @@ this will only show a list of VMs that a user can view.
       if (usePhenixStore().role.name === 'VM Viewer') {
         return import('./VMtilesView.vue');
       } else {
-        return import('./RunningExperimentView.vue');
+        return import('./RunningExperiment.vue');
       }
     } else {
-      return import('./StoppedExperimentView.vue');
+      return import('./StoppedExperiment.vue');
     }
   }
 </script>

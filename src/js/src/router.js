@@ -32,7 +32,7 @@ const router = createRouter({
     {
       path: '/experiment/:id',
       name: 'experiment',
-      component: () => import('@/views/experiment/BaseView.vue'),
+      component: () => import('@/views/experiment/Base.vue'),
     },
     {
       path: '/hosts',
