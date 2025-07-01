@@ -155,7 +155,6 @@
       </section>
     </template>
     <template v-else>
-      <hr />
       <b-field position="is-right" grouped>
         <b-field>
           <b-autocomplete

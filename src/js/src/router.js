@@ -1,5 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import Log from '@/views/LogsView.vue';
 
 import { ToastProgrammatic as Toast } from 'buefy';
 
@@ -28,7 +27,7 @@ const router = createRouter({
     {
       path: '/experiments',
       name: 'experiments',
-      component: () => import('@/views/ExperimentsView.vue'),
+      component: () => import('@/views/Experiments.vue'),
     },
     {
       path: '/experiment/:id',
@@ -38,12 +37,12 @@ const router = createRouter({
     {
       path: '/hosts',
       name: 'hosts',
-      component: () => import('@/views/HostsView.vue'),
+      component: () => import('@/views/Hosts.vue'),
     },
     {
       path: '/configs/',
       name: 'configs',
-      component: () => import('@/views/ConfigsView.vue'),
+      component: () => import('@/views/Configs.vue'),
     },
     {
       path: '/disks/',
@@ -58,33 +57,33 @@ const router = createRouter({
     {
       path: '/users',
       name: 'users',
-      component: () => import('@/views/UsersView.vue'),
+      component: () => import('@/views/Users.vue'),
     },
-    { path: '/log', name: 'log', component: Log },
+    { path: '/log', name: 'log', component: () => import('@/views/Logs.vue') },
     {
       path: '/console',
       name: 'console',
-      component: () => import('@/views/ConsoleView.vue'),
+      component: () => import('@/views/Console.vue'),
     },
     {
       path: '/scorch',
       name: 'scorch',
-      component: () => import('@/views/ScorchView.vue'),
+      component: () => import('@/views/Scorch.vue'),
     },
     {
       path: '/scorch/:id',
       name: 'scorchruns',
-      component: () => import('@/views/ScorchRunsView.vue'),
+      component: () => import('@/views/ScorchRuns.vue'),
     },
     {
       path: '/soh/:id',
       name: 'soh',
-      component: () => import('@/views/StateOfHealthView.vue'),
+      component: () => import('@/views/StateOfHealth.vue'),
     },
     {
       path: '/settings',
       name: 'settings',
-      component: () => import('@/views/SettingsView.vue'),
+      component: () => import('@/views/Settings.vue'),
     },
     {
       path: '/tunneler',
