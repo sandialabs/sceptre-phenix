@@ -32,7 +32,7 @@
     // connect websockets once user has authenticated (or auth disabled)
     if (import.meta.env.VITE_AUTH === 'disabled' || store.auth) {
       connectWebsocket();
-      timeoutTool.fetchAndStart()
+      timeout.fetchAndStart()
 
     } else {
       const { auth } = storeToRefs(store);
@@ -44,7 +44,7 @@
         }
 
         if (newAuth) {
-          timeoutTool.fetchAndStart()
+          timeout.fetchAndStart()
         }
       });
     }
