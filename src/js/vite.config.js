@@ -7,7 +7,7 @@ import { visualizer } from 'rollup-plugin-visualizer';
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/', //TODO
+  base: import.meta.env.VITE_BASE_PATH || '/',
   assetsDir: 'assets',
   plugins: [vue(), vueDevTools()],
   resolve: {
@@ -22,6 +22,7 @@ export default defineConfig({
       ],
     },
   },
+  // applies to npm run dev
   server: {
     proxy: {
       '/api/v1': {
