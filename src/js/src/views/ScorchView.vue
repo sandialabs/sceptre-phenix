@@ -161,7 +161,6 @@
 </script>
 <script>
   import Terminal from '@/components/MiniTerminal.vue';
-  import EventBus from '@/utils/eventBus.js';
 
   import axiosInstance from '@/utils/axios.js';
   import { useErrorNotification } from '@/utils/errorNotif';
@@ -182,11 +181,7 @@
     },
 
     mounted() {
-      EventBus.$on('page-reload', (route) => {
-        if (route.name == 'scorch') {
-          this.updateExperiments();
-        }
-      });
+      this.updateExperiments();
     },
 
     computed: {

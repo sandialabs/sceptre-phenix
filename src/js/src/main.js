@@ -49,6 +49,7 @@ app.use(router);
 app.use(Buefy, {
   defaultIconComponent: 'font-awesome-icon',
   defaultIconPack: 'fas',
+  defaultProgrammaticPromise: true,
 });
 
 app.mount('#app');

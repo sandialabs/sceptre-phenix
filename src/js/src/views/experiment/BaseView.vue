@@ -43,21 +43,4 @@ this will only show a list of VMs that a user can view.
       return import('./StoppedExperimentView.vue');
     }
   }
-
-  //   methods: {
-  //     showError(msg) {
-  //       this.$buefy.toast.open({
-  //           message: msg,
-  //           type: 'is-danger',
-  //           duration: 4000
-  //         });
-  //     },
-  //   },
-
-  //   data () {
-  //     return {
-  //       running: null
-  //     }
-  //   }
-  // }
 </script>

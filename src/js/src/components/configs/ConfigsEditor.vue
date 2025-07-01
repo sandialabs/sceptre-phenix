@@ -155,6 +155,7 @@
   import axiosInstance from '@/utils/axios.js';
 
   export default {
+    expose: [ 'confirmResetEditor' ],
     components: {
       AceEditor,
     },
@@ -216,6 +217,10 @@
             this.editor.isLoading = false;
           });
       }
+      window.addEventListener('beforeunload', this.handlePageReload);
+    },
+    unmounted() {
+      window.removeEventListener('beforeunload', this.handlePageReload)
     },
     created() {
       this.debouncedUpdateConfigTemplate = debounce(
@@ -253,6 +258,9 @@
       };
     },
     methods: {
+      handlePageReload(event) {
+        event.preventDefault();
+      },
       configSentSave() {
         if (this.mode == 'edit') {
           this.saveConfig();
@@ -309,8 +317,8 @@
             this.isWaiting = false;
           });
       },
-      confirmResetEditor() {
-        this.$buefy.dialog.confirm({
+      async confirmResetEditor() {
+        return this.$buefy.dialog.confirm({
           title: 'Edits in Progress',
           message:
             'You will lose your current edits... do you want to continue?',

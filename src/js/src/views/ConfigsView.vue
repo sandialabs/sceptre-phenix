@@ -1,6 +1,7 @@
 <template>
   <ConfigsList v-if="!editorActive" @edit="handleEdit" @create="handleCreate" />
   <component
+    ref="editor"
     :is="editorComponent"
     v-else
     :mode="editorMode"
@@ -9,8 +10,6 @@
 </template>
 <script>
   import ConfigsList from '@/components/configs/ConfigsList.vue';
-  // import ConfigsEditor from '@/components/configs/ConfigsEditor.vue';
-  import axiosInstance from '@/utils/axios.js';
 
   export default {
     components: {
@@ -27,7 +26,13 @@
         editorComponent: null,
       };
     },
-    created() {},
+    async beforeRouteLeave() {
+      if (this.editorActive) {
+        return this.$refs.editor.confirmResetEditor();
+      } else {
+        return true;
+      }
+    },
     async mounted(){
       this.editorComponent = (await import('@/components/configs/ConfigsEditor.vue')).default
     },
