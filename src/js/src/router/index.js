@@ -125,7 +125,7 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   const store = usePhenixStore();
 
-  if (import.meta.env.VITE_AUTH === 'disabled') {
+  if (import.meta.env.VITE_AUTH === 'disabled' || !import.meta.env.VITE_AUTH) {
     if (!store.auth) {
       let role = {
         name: 'Global Admin',
