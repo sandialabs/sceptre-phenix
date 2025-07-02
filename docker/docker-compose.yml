@@ -13,7 +13,7 @@ services:
       context: ../
       dockerfile: docker/Dockerfile
       args:
-        MM_MIN_REV: 9f867b3
+        MM_MIN_REV: 6cf6cfb
         PHENIX_WEB_AUTH: disabled
     command:
     - phenix
@@ -43,7 +43,7 @@ services:
       context: .
       dockerfile: Dockerfile.minimega
       args:
-        MM_REV: 9f867b3
+        MM_REV: 6cf6cfb
     image: minimega
     container_name: minimega
     privileged: true
