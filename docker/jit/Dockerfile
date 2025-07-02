@@ -14,6 +14,7 @@ RUN wget -O node.txz https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSI
   && ln -s /usr/local/bin/node /usr/local/bin/nodejs
 
 RUN npm install -g @vue/cli redoc-cli yarn
+
 RUN git clone --branch ${PHENIX_TAG} https://github.com/${PHENIX_REPO}.git /usr/local/src/phenix \
   && mkdir -p /opt/phenix/web \
   && cp -a /usr/local/src/phenix/src/go/web/public /opt/phenix/web
