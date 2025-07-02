@@ -19,7 +19,7 @@ var jsoner = jsoniter.ConfigCompatibleWithStandardLibrary
 
 // GET /schemas/{version}
 func GetSchemaSpec(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug("HTTP handler called", "handler", "GetSchemaSpec")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetSchemaSpec")
 
 	var (
 		ctx  = r.Context()
@@ -29,6 +29,7 @@ func GetSchemaSpec(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("schemas", "get") {
+		plog.Warn(plog.TypeSecurity, "getting schema spec not allowed", "user", ctx.Value("user").(string), "spec", ver)
 		err := weberror.NewWebError(nil, "getting schema spec for %s not allowed for %s", ver, ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
@@ -84,7 +85,7 @@ func GetSchemaSpec(w http.ResponseWriter, r *http.Request) error {
 
 // GET /schemas/{kind}/{version}
 func GetSchema(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug("HTTP handler called", "handler", "GetSchema")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetSchema")
 
 	var (
 		ctx  = r.Context()
@@ -95,6 +96,7 @@ func GetSchema(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("schemas", "get", kind) {
+		plog.Warn(plog.TypeSecurity, "getting schema not allowed", "user", ctx.Value("user").(string), "schema", kind)
 		err := weberror.NewWebError(nil, "getting schema %s not allowed for %s", kind, ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}

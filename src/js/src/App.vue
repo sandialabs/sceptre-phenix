@@ -6,14 +6,14 @@ login and returns a user to Experiments component if successful.
 -->
 
 <template>
-  <div class="container">
+  <div>
     <app-header></app-header>
-    <div class="row">
+    <div class="row container is-fullhd px-4">
       <div class="col-xs-12">
         <router-view></router-view>
       </div>
-    <app-footer></app-footer>
     </div>
+    <app-footer></app-footer>
   </div>
 </template>
 
@@ -75,6 +75,11 @@ login and returns a user to Experiments component if successful.
       wsConnect () {
         let path = `${process.env.BASE_URL}api/v1/ws`;
 
+        if (this.$route.path === "/signin" || this.$route.path === "/login") {
+          console.log("skipping websocket connect until login")
+          return
+        }
+
         if (this.$store.getters.token) {
           path += `?token=${this.$store.getters.token}`;
         }
@@ -82,6 +87,7 @@ login and returns a user to Experiments component if successful.
         let proto = location.protocol == "https:" ? "wss://" : "ws://";
         let url   = proto + location.host + path;
 
+        console.log("connect websocket")
         this.$connect(url);
 
         // Separate, stand-alone websocket connection to handle app-wide
@@ -111,12 +117,14 @@ login and returns a user to Experiments component if successful.
                 duration: 5000
               });
             }
-
-            if ( msg.resource.type == 'log' ) {
-              this.$store.commit( 'LOG', msg.result );
-            }
           }
         });
+      }
+    },
+    watch: {
+      '$route': function(to, _) {
+        if (!this.socket && !(to.path === "/signin" || to.path === "/login"))
+          this.wsConnect();
       }
     }
   }
@@ -257,11 +265,20 @@ clue what this stuff does.
     transform: rotate( 0deg );
   }
 
+  .b-table {
+    .table {
+      td {
+        vertical-align: middle;
+      }
+    }
+  }
+
   // Import Bulma's core
   @import "~bulma/sass/utilities/_all";
 
   $body-background-color: #333;
   $table-background-color: #484848;
+  $table-row-hover-background-color: #777777;
   
   $button-text-color: whitesmoke;
 
@@ -274,6 +291,8 @@ clue what this stuff does.
 
   $progress-text-color: black;
 
+  $fullhd: 1536px + (2 * $gap);
+
   $colors: (
     "light": ( $light, $light-invert ),
     "dark": ( $dark, $dark-invert ),
@@ -285,13 +304,16 @@ clue what this stuff does.
     "warning": ( $warning, $warning-invert ),
     "danger": ( $danger, $danger-invert )
   );
+
+  $navbar-background-color: $light;
+  $navbar-item-img-max-height: 2.5rem;
   
   // Import Bulma and Buefy styles
   @import "~bulma";
   @import "~buefy/src/scss/buefy";
 
-  a.navbar-item:hover {
-    background: #404040;
+  a.navbar-item.router-link-exact-active, a.navbar-item:hover {
+    background: #5b5b5b;
   }
 
   div.is-success {

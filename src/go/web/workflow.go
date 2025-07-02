@@ -28,7 +28,7 @@ import (
 
 // POST /workflow/apply/{branch}
 func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug("HTTP handler called", "handler", "ApplyWorkflow")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ApplyWorkflow")
 
 	var (
 		ctx   = r.Context()
@@ -40,6 +40,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("workflow", "create") {
+		plog.Warn(plog.TypeSecurity, "applying phenix workflow not allowed", "user", ctx.Value("user").(string))
 		err := weberror.NewWebError(nil, "applying phenix workflow is not allowed for user %s", ctx.Value("user").(string))
 		return err.SetStatus(http.StatusForbidden)
 	}
@@ -346,7 +347,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 
 // POST /workflow/configs/{branch}
 func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug("HTTP handler called", "handler", "WorkflowUpsertConfig")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "WorkflowUpsertConfig")
 
 	var (
 		ctx   = r.Context()
@@ -404,6 +405,8 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 
 	if exists {
 		if !role.Allowed("configs", "update", name) {
+			plog.Warn(plog.TypeSecurity, "updating config not allowed", "user", ctx.Value("user").(string))
+
 			err := weberror.NewWebError(nil, "updating config %s not allowed for %s", name, ctx.Value("user").(string))
 			return err.SetStatus(http.StatusForbidden)
 		}
@@ -472,7 +475,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 
 	body, err := json.Marshal(cfg)
 	if err != nil {
-		plog.Error("marshaling config", "config", cfg.FullName(), "err", err)
+		plog.Error(plog.TypeSystem, "marshaling config", "config", cfg.FullName(), "err", err)
 		return nil
 	}
 

@@ -22,7 +22,16 @@
 				var reader = new FileReader();
 				reader.onload = function(e)
 				{
-					window.parent.openFile.setData(e.target.result, file.name);
+					// Dynamically update path to pictures used when a file is imported.
+					var stencilPath = window.parent.STENCIL_PATH;
+					var imageEquals = "image=";
+					var vmPath = "/virtual_machines"
+					var partialPath = imageEquals + stencilPath;
+					var fullPath = partialPath + vmPath;
+					var importedXML =  e.target.result;
+					const regex = /image=/g;
+					var cleanXML = importedXML.replace(regex, fullPath)
+					window.parent.openFile.setData(cleanXML, file.name);
 				};
 				reader.onerror = function(e)
 				{

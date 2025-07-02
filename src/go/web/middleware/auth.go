@@ -62,7 +62,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 			},
 			SigningMethod: jwt.SigningMethodHS256,
 			ErrorHandler: func(w http.ResponseWriter, r *http.Request, e string) {
-				plog.Error("validating auth token", "err", e)
+				plog.Error(plog.TypeSecurity, "validating auth token", "err", e)
 
 				// TODO: remove token from user spec?
 
@@ -75,7 +75,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			raw, err := fromPhenixAuthTokenHeader(r)
 			if err != nil {
-				plog.Error("getting raw JWT from X-phenix-auth-token header", "err", err)
+				plog.Error(plog.TypeSecurity, "getting raw JWT from X-phenix-auth-token header", "err", err)
 
 				http.Error(w, "missing phenix auth token header", http.StatusBadRequest)
 				return
@@ -83,7 +83,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 
 			token, _, err := new(jwt.Parser).ParseUnverified(raw, jwt.MapClaims{})
 			if err != nil {
-				plog.Error("parsing valid JWT", "token", raw, "err", err)
+				plog.Error(plog.TypeSecurity, "parsing valid JWT", "token", raw, "err", err)
 
 				http.Error(w, "parsing auth token", http.StatusBadRequest)
 				return
@@ -112,7 +112,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 
 			userToken := ctx.Value("user")
 			if userToken == nil {
-				plog.Error("rejecting unauthorized request - missing user token", "path", r.URL.Path)
+				plog.Warn(plog.TypeSecurity, "rejecting unauthorized request - missing user token", "path", r.URL.Path)
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
@@ -124,14 +124,14 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 
 			jwtUser, err := jwtutil.UsernameFromClaims(claims)
 			if err != nil {
-				plog.Error("rejecting unauthorized request", "path", r.URL.Path, "err", err)
+				plog.Warn(plog.TypeSecurity, "rejecting unauthorized request", "path", r.URL.Path, "err", err)
 				http.Error(w, "Forbidden", http.StatusUnauthorized)
 				return
 			}
 
 			if proxyAuthHeader != "" {
 				if user := r.Header.Get(proxyAuthHeader); user != jwtUser {
-					plog.Error("proxy user mismatch", "user", user, "token", jwtUser)
+					plog.Error(plog.TypeSecurity, "proxy user mismatch", "user", user, "token", jwtUser)
 					http.Error(w, "proxy user mismatch", http.StatusUnauthorized)
 					return
 				}
@@ -183,13 +183,13 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 	}
 
 	if jwtKey == "" {
-		plog.Info("no JWT signing key provided -- disabling auth")
+		plog.Info(plog.TypeSecurity, "no JWT signing key provided -- disabling auth")
 		return func(h http.Handler) http.Handler { return NoAuth(h) }
 	} else if jwtKey == "proxy-jwt" {
-		plog.Info("using JWTs from proxy")
+		plog.Info(plog.TypeSecurity, "using JWTs from proxy")
 		return func(h http.Handler) http.Handler { return validTokenMiddleware(userMiddleware(h)) }
 	} else if strings.HasPrefix(jwtKey, "dev|") {
-		plog.Debug("development JWT key provided -- enabling dev auth")
+		plog.Debug(plog.TypeSecurity, "development JWT key provided -- enabling dev auth")
 		return func(h http.Handler) http.Handler { return devAuthMiddleware(h) }
 	}
 

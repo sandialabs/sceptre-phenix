@@ -11,7 +11,11 @@
 interfaces {
 {{ range $idx, $iface := $node.Network.Interfaces }}
     ethernet eth{{ $idx }} {
+        {{ if eq $iface.Proto "dhcp" }}
+        address dhcp
+        {{ else }}
         address {{ $iface.Address }}/{{ $iface.Mask }}
+        {{ end }}
         duplex auto
         {{ if and (ge $iface.MTU 68) (le $iface.MTU 16000) }}
         mtu {{ $iface.MTU }}

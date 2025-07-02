@@ -11,7 +11,6 @@ side will pass.
 <template>
   <div class="content">
     <template>
-      <hr>
       <b-field position="is-left">
         <p class="control">
           <template v-if="exp == null">

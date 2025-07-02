@@ -206,28 +206,30 @@ func (this VMs) Paginate(page, size int) VMs {
 }
 
 type VM struct {
-	ID         int       `json:"id"`
-	Name       string    `json:"name"`
-	Type       string    `json:"type"`
-	Experiment string    `json:"experiment"`
-	Host       string    `json:"host"`
-	IPv4       []string  `json:"ipv4"`
-	CPUs       int       `json:"cpus"`
-	RAM        int       `json:"ram"`
-	Disk       string    `json:"disk"`
-	OSType     string    `json:"osType"`
-	DoNotBoot  bool      `json:"dnb"`
-	Networks   []string  `json:"networks"`
-	Taps       []string  `json:"taps"`
-	Captures   []Capture `json:"captures"`
-	State      string    `json:"state"`
-	Running    bool      `json:"running"`
-	Busy       bool      `json:"busy"`
-	CCActive   bool      `json:"ccActive"`
-	Uptime     float64   `json:"uptime"`
-	Screenshot string    `json:"screenshot,omitempty"`
-	CdRom      string    `json:"cdRom"`
-	Tags       []string  `json:"tags"`
+	ID              int               `json:"id"`
+	Name            string            `json:"name"`
+	Type            string            `json:"type"`
+	Experiment      string            `json:"experiment"`
+	Host            string            `json:"host"`
+	IPv4            []string          `json:"ipv4"`
+	CPUs            int               `json:"cpus"`
+	RAM             int               `json:"ram"`
+	Disk            string            `json:"disk"`
+	InjectPartition int               `json:"inject_partition"`
+	OSType          string            `json:"osType"`
+	DoNotBoot       bool              `json:"dnb"`
+	Networks        []string          `json:"networks"`
+	Taps            []string          `json:"taps"`
+	Captures        []Capture         `json:"captures"`
+	State           string            `json:"state"`
+	Running         bool              `json:"running"`
+	Busy            bool              `json:"busy"`
+	CCActive        bool              `json:"ccActive"`
+	Uptime          float64           `json:"uptime"`
+	Screenshot      string            `json:"screenshot,omitempty"`
+	CdRom           string            `json:"cdRom"`
+	Tags            map[string]string `json:"tags"`
+	Snapshot        bool              `json:"snapshot"`
 
 	// Used internally to track network <--> IP relationship, since
 	// network ordering from minimega may not be the same as network
@@ -261,8 +263,10 @@ func (this VM) Copy() VM {
 	vm.Captures = make([]Capture, len(this.Captures))
 	copy(vm.Captures, this.Captures)
 
-	vm.Tags = make([]string, len(this.Tags))
-	copy(vm.Tags, this.Tags)
+	vm.Tags = make(map[string]string, len(this.Tags))
+	for k, v := range this.Tags {
+		vm.Tags[k] = v
+	}
 
 	return vm
 }

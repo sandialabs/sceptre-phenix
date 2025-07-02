@@ -37,33 +37,31 @@ func newUICmd() *cobra.Command {
 				web.ServeMinimegaLogs(viper.GetString("ui.logs.minimega-path")),
 				web.ServeWithFeatures(viper.GetStringSlice("ui.features")),
 				web.ServeWithProxyAuthHeader(viper.GetString("ui.proxy-auth-header")),
+				web.ServeWithUnixSocketGid(viper.GetInt("unix-socket-gid")),
 			}
 
 			if endpoint := viper.GetString("ui.unix-socket-endpoint"); endpoint != "" {
-				plog.Warn("The --ui.unix-socket-endpoint option for the ui subcommand is DEPRECATED. Use the root phenix --unix-socket option instead.")
+				plog.Warn(plog.TypeSystem, "The --ui.unix-socket-endpoint option for the ui subcommand is DEPRECATED. Use the root phenix --unix-socket option instead.")
 
 				common.UnixSocket = endpoint
 			}
 
 			if viper.GetString("ui.log-level") != "" {
-				plog.Warn("The --log-level option for the ui subcommand is DEPRECATED. Use the root phenix --log.level option instead.")
+				plog.Warn(plog.TypeSystem, "The --log-level option for the ui subcommand is DEPRECATED. Use the root phenix --log.level option instead.")
 			}
 
 			if viper.GetBool("ui.log-verbose") {
-				plog.Warn("The --log-verbose option for the ui subcommand is DEPRECATED. Logging is now enabled by default.")
+				plog.Warn(plog.TypeSystem, "The --log-verbose option for the ui subcommand is DEPRECATED. Logging is now enabled by default.")
 			}
 
 			if path := viper.GetString("ui.logs.phenix-path"); path != "" {
-				plog.Warn("The --logs.phenix-path option is DEPRECATED. Use --logs.publish-to-ui ui subcommand option instead.")
-
-				if viper.GetString("ui.logs.publish-to-ui") == "" {
-					// assume INFO log level
-					plog.AddHandler("ui-default", plog.NewUIHandler("info", web.PublishPhenixLog))
-				}
+				plog.Warn(plog.TypeSystem, "The --logs.phenix-path option is DEPRECATED. Use --logs.publish-to-ui ui subcommand option instead.")
 			}
 
 			if level := viper.GetString("ui.logs.publish-to-ui"); level != "" {
 				plog.AddHandler("ui-default", plog.NewUIHandler(level, web.PublishPhenixLog))
+			} else {
+				plog.AddHandler("ui-default", plog.NewUIHandler(viper.GetString("log.file.path"), web.PublishPhenixLog))
 			}
 
 			if viper.GetString("ui.minimega-path") != "" {
@@ -107,7 +105,7 @@ func newUICmd() *cobra.Command {
 	cmd.Flags().Bool("log-verbose", false, "write UI logs to STDERR - DEPRECATED (now enabled by default)")
 	cmd.Flags().String("logs.phenix-path", "", "path to phenix log file to publish to UI - DEPRECATED (use --logs.publish-to-ui instead)")
 	cmd.Flags().String("logs.minimega-path", "", "path to minimega log file to publish to UI")
-	cmd.Flags().String("logs.publish-to-ui", "", "log level to publish to UI")
+	cmd.Flags().String("logs.publish-to-ui", "", "log level to publish to UI. Defaults to file level")
 	cmd.Flags().StringSlice("features", nil, "list of features to enable (options: vm-mount)")
 	cmd.Flags().String("minimega-path", "", "path to minimega executable (for console access) - DEPRECATED (use --minimega-console instead)")
 	cmd.Flags().Bool("minimega-console", false, "enable minimega console access in UI")
@@ -148,11 +146,16 @@ func newUICmd() *cobra.Command {
 	viper.BindEnv("ui.minimega-path")
 	viper.BindEnv("ui.minimega-console")
 
-	cmd.Flags().Bool("log-requests", false, "Log API requests")
-	cmd.Flags().Bool("log-full", false, "Log API requests and responses")
+	cmd.Flags().Bool("log-requests", false, "Log HTTP requests")
+	cmd.Flags().Bool("log-full", false, "Log HTTP requests and responses. Will log sensitive data")
 
-	cmd.Flags().MarkHidden("log-requests")
+	// cmd.Flags().MarkHidden("log-requests")
 	cmd.Flags().MarkHidden("log-full")
+
+	cmd.Flags().Int("unix-socket-gid", -1, "group id to allow writes to the unix socket")
+	cmd.Flags().MarkHidden("unix-socket-gid")
+	viper.BindPFlag("unix-socket-gid", cmd.Flags().Lookup("unix-socket-gid"))
+	viper.BindEnv("unix-socket-gid")
 
 	return cmd
 }

@@ -297,7 +297,7 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 	}
 
 	if o.disabledApps != nil {
-		plog.Info(fmt.Sprintf("Got disabled applications: %v", o.disabledApps))
+		plog.Info(plog.TypePhenixApp, fmt.Sprintf("Got disabled applications: %v", o.disabledApps))
 	}
 
 	if o.scenario != "" {
@@ -317,7 +317,7 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 		}
 
 		// This will upgrade the scenario to the latest known version if needed.
-		plog.Info("Creating custom scenario")
+		plog.Info(plog.TypeSystem, "Creating custom scenario")
 		scenario, err := types.MakeCustomScenarioFromConfig(*scenarioC, o.disabledApps)
 		if err != nil {
 			return fmt.Errorf("decoding scenario from config: %w", err)
@@ -557,7 +557,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		// them. This cannot be done as part of the minimega script template since
 		// the VM taps (and thus bridges) do not get created until the overall
 		// minimega namespace is launched.
-		if exp.Spec.UseGREMesh() || exp.Spec.DefaultBridge() != "phenix" {
+		if exp.Spec.UseGREMesh() {
 			if err := mm.CreateBridge(mm.NS(exp.Metadata.Name), mm.Bridge(exp.Spec.DefaultBridge())); err != nil {
 				if !o.mmErrAsWarn {
 					mm.ClearNamespace(exp.Spec.ExperimentName())

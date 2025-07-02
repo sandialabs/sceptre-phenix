@@ -1,0 +1,255 @@
+apiVersion: phenix.sandia.gov/v1
+kind: Image
+metadata:
+    name: PHENIX-caldera
+spec:
+    components:
+        - main
+        - restricted
+        - universe
+        - multiverse
+    compress: true
+    format: qcow2
+    mirror: http://ftp.us.debian.org/debian
+    name: PHENIX-caldera
+    no_virtuals: false
+    overlays: null
+    packages:
+        - git
+        - gpg
+        - npm
+        - python3-pip
+        - curl
+        - ethtool
+        - ncat
+        - net-tools
+        - openssh-server
+        - rsync
+        - ssh
+        - tcpdump
+        - tmux
+        - vim
+        - wget
+        - dbus
+        - initramfs-tools
+        - linux-image-amd64
+        - linux-headers-amd64
+        - locales
+        - wmctrl
+        - xdotool
+        - xfce4
+        - xfce4-terminal
+    ramdisk: false
+    release: bookworm
+    script_order:
+        - POSTBUILD_GUI
+        - POSTBUILD_APT_CLEANUP
+        - POSTBUILD_NO_ROOT_PASSWD
+        - POSTBUILD_PHENIX_HOSTNAME
+        - POSTBUILD_PHENIX_BASE
+        - DOCKER
+        - FIREFOX
+        - CALDERA
+    scripts:
+        DOCKER: |
+            # --------------------------------------------------- Docker -----------------------------------------------------
+            DEBIAN_FRONTEND=noninteractive
+            if ! command -v curl &>/dev/null; then
+                apt-get update && apt-get install -y curl
+            fi
+            curl -fsSL get.docker.com | bash
+            sed -i -e 's/ulimit -Hn/ulimit -n/g' /etc/init.d/docker # Fix from https://forums.docker.com/t/etc-init-d-docker-62-ulimit-error-setting-limit-invalid-argument-problem/139424
+            DOCKER_RAMDISK=true /etc/init.d/docker start
+            # Wait for docker socket to be available
+            while [ ! -S /var/run/docker.sock ]; do sleep 1; done
+            service docker status
+        FIREFOX: |
+            # -------------------------------------------------- Firefox -----------------------------------------------------
+            DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            if ! apt search ^firefox-esr$ | grep -q firefox-esr; then
+                echo "--------GETTING PPA BEFORE INSTALLING FIREFOX!!!---------"
+                apt-get install -y software-properties-common
+                add-apt-repository ppa:mozillateam/ppa
+                apt-get update
+            fi
+            echo "--------INSTALLING FIREFOX!!!---------"
+            apt-get install -y firefox-esr
+            if ! [ -f "/usr/bin/firefox" ]; then
+                ln -s /usr/bin/firefox-esr /usr/bin/firefox
+            fi
+        CALDERA: |
+            ##############################################################################
+            # INSTALLS:
+            #   [ Caldera ]
+            #     - Cyber security framework for autonomous red team operations
+            #     - https://caldera.mitre.org/
+            #   [ Caldera Autostart ]
+            #     - Starts Caldera inside docker container
+            #     - Opens Firefox to Caldera default page and logs in using default user
+            #
+            # REQUIRES:
+            #   [ Scripts ]
+            #     - docker.sh
+            #     - firefox.sh
+            #   [ Packages ]
+            #     - git
+            #     - npm
+            #     - python3-pip
+            ##############################################################################
+            # --------------------------------------------------- Caldera ----------------------------------------------------
+            git clone https://github.com/mitre/caldera.git --branch 5.2.0 --recursive /opt/caldera
+            cd /opt/caldera
+            # Get extra plugins
+            git submodule add -b facts https://github.com/activeshadow/caldera-modbus.git plugins/modbus
+            git submodule add -b main https://github.com/activeshadow/caldera-dnp3.git plugins/dnp3
+            git submodule add -b main https://github.com/activeshadow/caldera-ot.git plugins/ot
+            git submodule add -b main https://github.com/activeshadow/caldera-phenix.git plugins/phenix
+            # Installing here to prevent Caldera from trying to reach out during startup.
+            git clone --depth 1 https://github.com/redcanaryco/atomic-red-team.git /opt/caldera/plugins/atomic/data/atomic-red-team
+            # Build UI
+            pip3 install --break-system-packages -r requirements.txt
+            cd plugins/magma/ && npm install && npm run build && cd -
+            # Build Docker image
+            sed -i -e '/download_payloads\.sh/s/^/#/' Dockerfile
+            sed -i -e 's/--log/--insecure --log/' docker-compose.yml
+            docker compose build
+            # Create service file
+            cat > /etc/systemd/system/caldera.service <<EOF
+            [Unit]
+            Description=CALDERA Framework
+            [Service]
+            ExecStart=docker compose -f /opt/caldera/docker-compose.yml up
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            systemctl daemon-reload
+            systemctl enable caldera
+            # Make the autostart
+            mkdir -p /root/.config/autostart
+            cat > /root/.config/autostart/caldera.desktop <<EOF
+            [Desktop Entry]
+            Name=Caldera
+            Type=Application
+            Exec=/root/.caldera.sh
+            Terminal=false
+            EOF
+            chmod +x /root/.config/autostart/caldera.desktop
+            cat > /root/.caldera.sh <<EOF
+            #!/bin/bash
+            # disable display power management signaling (no lock/sleep)
+            xset -dpms
+            # wait for caldera to start up
+            while [[ "\$(curl -s -o /dev/null -w ''%{http_code}'' localhost:8888)" != "200" ]]; do sleep 5; done
+            nohup firefox -new-tab localhost:8888 &
+            # wait for firefox to start
+            while ! wmctrl -lp | grep "Firefox"; do sleep 1; done
+            # wait for page to initially load
+            sleep 3
+            # get the window ID of the firefox window
+            id=$(wmctrl -lp | grep "Firefox" | awk '{print $1}')
+            # activate the firefox window
+            wmctrl -ia $id
+            # login
+            xdotool type admin
+            xdotool key Tab
+            xdotool type admin
+            xdotool key Return
+            sleep 2
+            xdotool key Escape
+        POSTBUILD_APT_CLEANUP: |
+            # --------------------------------------------------- Cleanup ----------------------------------------------------
+            apt clean || apt-get clean || echo "unable to clean apt cache"
+        POSTBUILD_GUI: |
+            # ----------------------------------------------------- GUI ------------------------------------------------------
+            apt-get purge -y gdm3 # messes with no-root-password login
+            mkdir -p /root/.config/xfce4/
+            echo "TerminalEmulator=xfce4-terminal" > /root/.config/xfce4/helpers.rc
+            mkdir -p /root/.config/autostart/
+            cat > /root/.config/autostart/init.desktop <<EOF
+            [Desktop Entry]
+            Name=Init
+            Type=Application
+            Exec=/root/.init.sh
+            Terminal=false
+            EOF
+            cat >> /root/.init.sh <<EOF
+            xfconf-query -c xsettings -p /Net/ThemeName -s "Adwaita-dark"
+            sleep 1
+            xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorVirtual-1/workspace0/last-image -s "/usr/share/backgrounds/Optical_Fibers_in_Dark_by_Elena_Stravoravdi.jpg"
+            EOF
+            chmod +x /root/.init.sh
+            # Autologin root
+            cat > /etc/lightdm/lightdm.conf <<EOF
+            [Seat:*]
+            autologin-user=root
+            autologin-user-timeout=0
+            display-setup-script=xrandr --output Virtual-1 --mode 1440x900
+            [daemon]
+            AutomaticLoginEnable=true
+            AutomaticLogin=root
+            EOF
+            sed -e '/pam_succeed_if.so/s/^#*/#/' -i /etc/pam.d/lightdm-autologin
+        POSTBUILD_NO_ROOT_PASSWD: |
+            # ---------------------------------------------- No Root Password ------------------------------------------------
+            sed -i 's/nullok_secure/nullok/' /etc/pam.d/common-auth
+            sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+            sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+            sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+            sed -i 's/PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+            passwd -d root
+        POSTBUILD_PHENIX_BASE: |
+            # ----------------------------------------------------- Base -----------------------------------------------------
+            cat > /etc/systemd/system/miniccc.service <<EOF
+            [Unit]
+            Description=miniccc
+            [Service]
+            ExecStart=/opt/minimega/bin/miniccc -v=false -serial /dev/virtio-ports/cc -logfile /var/log/miniccc.log
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            cat > /etc/systemd/system/phenix.service <<EOF
+            [Unit]
+            Description=phenix startup service
+            After=network.target systemd-hostnamed.service
+            [Service]
+            Environment=LD_LIBRARY_PATH=/usr/local/lib
+            ExecStart=/usr/local/bin/phenix-start.sh
+            RemainAfterExit=true
+            StandardOutput=journal
+            Type=oneshot
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            mkdir -p /etc/systemd/system/multi-user.target.wants
+            ln -s /etc/systemd/system/miniccc.service /etc/systemd/system/multi-user.target.wants/miniccc.service
+            ln -s /etc/systemd/system/phenix.service /etc/systemd/system/multi-user.target.wants/phenix.service
+            mkdir -p /usr/local/bin
+            cat > /usr/local/bin/phenix-start.sh <<EOF
+            #!/bin/bash
+            for file in /etc/phenix/startup/*; do
+                echo \$file
+                bash \$file
+            done
+            EOF
+            chmod +x /usr/local/bin/phenix-start.sh
+            mkdir -p /etc/phenix/startup
+        POSTBUILD_PHENIX_HOSTNAME: |
+            # -------------------------------------------------- Hostname ----------------------------------------------------
+            echo "phenix" > /etc/hostname
+            sed -i 's/127.0.1.1 .*/127.0.1.1 phenix/' /etc/hosts
+            cat > /etc/motd <<EOF
+
+            ██████╗ ██╗  ██╗███████╗███╗  ██╗██╗██╗  ██╗
+            ██╔══██╗██║  ██║██╔════╝████╗ ██║██║╚██╗██╔╝
+            ██████╔╝███████║█████╗  ██╔██╗██║██║ ╚███╔╝
+            ██╔═══╝ ██╔══██║██╔══╝  ██║╚████║██║ ██╔██╗
+            ██║     ██║  ██║███████╗██║ ╚███║██║██╔╝╚██╗
+            ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚══╝╚═╝╚═╝  ╚═╝
+
+            EOF
+            echo "\nBuilt with phenix image on $(date)\n\n" >> /etc/motd
+    size: 15G
+    skip_default_packages: false
+    variant: mingui
+

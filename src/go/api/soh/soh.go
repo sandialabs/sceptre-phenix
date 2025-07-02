@@ -17,12 +17,6 @@ func Get(expName, statusFilter string) (*Network, error) {
 	// Create an empty network
 	network := new(Network)
 
-	// Create structure to format nodes' font
-	font := Font{
-		Color: "whitesmoke",
-		Align: "center",
-	}
-
 	exp, err := experiment.Get(expName)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get experiment %s: %w", expName, err)
@@ -107,7 +101,7 @@ func Get(expName, statusFilter string) (*Network, error) {
 			ID:     vm.ID,
 			Label:  vm.Name,
 			Image:  vm.OSType,
-			Fonts:  font,
+			Tags:   vm.Tags,
 			Status: vmState,
 		}
 
@@ -140,7 +134,7 @@ func Get(expName, statusFilter string) (*Network, error) {
 					ID:     ifaceCount,
 					Label:  vmIface,
 					Image:  "switch",
-					Fonts:  font,
+					Tags:   vm.Tags,
 					Status: "ignore",
 				}
 

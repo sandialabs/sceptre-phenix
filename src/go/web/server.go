@@ -43,7 +43,7 @@ func ConfigureUsers(users []string) error {
 
 			user.SetRole(role)
 		} else {
-			plog.Error("getting role for user", "user", user.Username(), "role", rname, "err", err)
+			plog.Error(plog.TypeSecurity, "getting role for user", "user", user.Username(), "role", rname, "err", err)
 		}
 	}
 
@@ -57,7 +57,7 @@ func ConfigureUsers(users []string) error {
 		// Confirm existing user has specified role and update if necessary.
 		if user, err := rbac.GetUser(uname); err == nil {
 			if user.RoleName() != rname {
-				plog.Debug("updating role for existing user", "user", user.Username(), "old", user.RoleName(), "new", rname)
+				plog.Info(plog.TypeSecurity, "updating role for existing user", "user", user.Username(), "old", user.RoleName(), "new", rname)
 
 				setUserRole(user, rname, creds[3:]...)
 			}
@@ -65,7 +65,7 @@ func ConfigureUsers(users []string) error {
 			continue
 		}
 
-		plog.Debug("creating default user", "user", uname, "role", rname)
+		plog.Info(plog.TypeSecurity, "creating default user", "user", uname, "role", rname)
 
 		user := rbac.NewUser(uname, pword)
 
@@ -87,7 +87,7 @@ func Start(opts ...ServerOption) error {
 
 	if o.unbundled {
 		assets = http.Dir("web/public")
-		plog.Info("serving unbundled assets")
+		plog.Info(plog.TypeSystem, "serving unbundled assets")
 	} else {
 		assets = &assetfs.AssetFS{
 			Asset:     Asset,
@@ -97,7 +97,7 @@ func Start(opts ...ServerOption) error {
 	}
 
 	if o.featured("tunneler-download") {
-		plog.Info("Serving phēnix tunneler downloads")
+		plog.Info(plog.TypeSystem, "Serving phēnix tunneler downloads")
 		router.HandleFunc("/downloads/tunneler/{name}", forward.GetTunneler).Methods("GET")
 	}
 
@@ -106,7 +106,7 @@ func Start(opts ...ServerOption) error {
 	router.HandleFunc("/builder", GetBuilder).Methods("GET")
 	router.HandleFunc("/builder/save", SaveBuilderTopology).Methods("POST")
 
-	plog.Info("setting up assets")
+	plog.Info(plog.TypeSystem, "setting up assets")
 
 	router.PathPrefix("/docs/").Handler(
 		http.FileServer(assets),
@@ -128,7 +128,10 @@ func Start(opts ...ServerOption) error {
 		http.FileServer(assets),
 	)
 
+	router.Handle("/favicon.ico", http.FileServer(assets))
+
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plog.Warn(plog.TypeSystem, "Unknown route requested", "route", r.RequestURI, "method", r.Method)
 		switch a := assets.(type) {
 		case *assetfs.AssetFS:
 			util.NewBinaryFileSystem(a).ServeFile(w, r, "index.html")
@@ -150,6 +153,7 @@ func Start(opts ...ServerOption) error {
 	api.Handle("/configs/download", weberror.ErrorHandler(DownloadConfigs)).Methods("POST", "OPTIONS")
 	api.Handle("/schemas/{version}", weberror.ErrorHandler(GetSchemaSpec)).Methods("GET", "OPTIONS")
 	api.Handle("/schemas/{kind}/{version}", weberror.ErrorHandler(GetSchema)).Methods("GET", "OPTIONS")
+
 	api.HandleFunc("/experiments", GetExperiments).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments", CreateExperiment).Methods("POST", "OPTIONS")
 	api.Handle("/experiments/builder", weberror.ErrorHandler(CreateExperimentFromBuilder)).Methods("POST", "OPTIONS")
@@ -224,11 +228,21 @@ func Start(opts ...ServerOption) error {
 		api.HandleFunc("/experiments/{exp}/vms/{name}/files/upload", UploadMountFile).Methods("PUT", "OPTIONS").Queries("path", "{path}")
 	}
 
+	api.HandleFunc("/disks", GetDisks).Methods("GET", "OPTIONS")
+	api.HandleFunc("/disks/snapshot", SnapshotDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}", "new", "{new}")
+	api.HandleFunc("/disks/rebase", RebaseDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}", "backing", "{backing}", "unsafe", "{unsafe}")
+	api.HandleFunc("/disks/resize", ResizeDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}", "size", "{size}")
+	api.HandleFunc("/disks/commit", CommitDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}")
+	api.HandleFunc("/disks/clone", CloneDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}", "new", "{new}")
+	api.HandleFunc("/disks", DeleteDisk).Methods("DELETE", "OPTIONS").Queries("disk", "{disk}")
+	api.HandleFunc("/disks/rename", RenameDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}", "new", "{new}")
+	api.HandleFunc("/disks", UploadDisk).Methods("POST", "OPTIONS")
+	api.HandleFunc("/disks/download", DownloadDisk).Methods("GET", "OPTIONS").Queries("disk", "{disk}")
+
 	api.HandleFunc("/vms", GetAllVMs).Methods("GET", "OPTIONS")
 	api.HandleFunc("/applications", GetApplications).Methods("GET", "OPTIONS")
 	api.HandleFunc("/topologies", GetTopologies).Methods("GET", "OPTIONS")
 	api.HandleFunc("/topologies/{topo}/scenarios", GetScenarios).Methods("GET", "OPTIONS")
-	api.HandleFunc("/disks", GetDisks).Methods("GET", "OPTIONS")
 	api.HandleFunc("/hosts", GetClusterHosts).Methods("GET", "OPTIONS")
 	api.HandleFunc("/users", GetUsers).Methods("GET", "OPTIONS")
 	api.HandleFunc("/users", CreateUser).Methods("POST", "OPTIONS")
@@ -240,59 +254,59 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/signup", Signup).Methods("POST", "OPTIONS")
 	api.HandleFunc("/login", Login).Methods("GET", "POST", "OPTIONS")
 	api.HandleFunc("/logout", Logout).Methods("GET", "OPTIONS")
-	api.Handle("/history", weberror.ErrorHandler(GetHistory)).Methods("POST", "OPTIONS")
+	api.HandleFunc("/logs", GetLogs).Methods("GET", "OPTIONS")
 	api.HandleFunc("/ws", broker.ServeWS).Methods("GET")
 	api.HandleFunc("/console", CreateConsole).Methods("POST", "OPTIONS")
 	api.HandleFunc("/console/{pid}/ws", WsConsole).Methods("GET", "OPTIONS")
 	api.HandleFunc("/console/{pid}/size", ResizeConsole).Methods("POST", "OPTIONS").Queries("cols", "{cols:[0-9]+}", "rows", "{rows:[0-9]+}")
+
+	api.HandleFunc("/settings", GetSettings).Methods("GET", "OPTIONS")
+	api.HandleFunc("/settings", SetSettings).Methods("POST", "OPTIONS")
+	api.HandleFunc("/settings/password", GetPasswordRequirements).Methods("GET", "OPTIONS")
 
 	workflowRoutes := []route{
 		{"/workflow/apply/{branch}", weberror.ErrorHandler(ApplyWorkflow), []string{"POST"}},
 		{"/workflow/configs/{branch}", weberror.ErrorHandler(WorkflowUpsertConfig), []string{"POST"}},
 	}
 
-	errorRoutes := []route{
-		{"/errors/{uuid}", weberror.ErrorHandler(GetError), []string{"GET"}},
-	}
 
 	optionRoutes := []route{
 		{"/options", weberror.ErrorHandler(GetOptions), []string{"GET"}},
 	}
 
 	addRoutesToRouter(api, workflowRoutes...)
-	addRoutesToRouter(api, errorRoutes...)
 	addRoutesToRouter(api, optionRoutes...)
 
 	if o.allowCORS {
-		plog.Info("CORS is enabled on HTTP API endpoints")
+		plog.Info(plog.TypeSystem, "CORS is enabled on HTTP API endpoints")
 		api.Use(middleware.AllowCORS)
-	}
-
-	switch o.logMiddleware {
-	case "full":
-		plog.Info("full HTTP logging is enabled")
-		api.Use(middleware.LogFull)
-	case "requests":
-		plog.Info("requests-only HTTP logging is enabled")
-		api.Use(middleware.LogRequests)
 	}
 
 	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader))
 
-	plog.Info("starting websockets broker")
+	switch o.logMiddleware {
+	case "full":
+		plog.Info(plog.TypeSystem, "full HTTP logging is enabled")
+		api.Use(middleware.LogFull)
+	case "requests":
+		plog.Info(plog.TypeSystem, "requests-only HTTP logging is enabled")
+		api.Use(middleware.LogRequests)
+	}
+
+	plog.Info(plog.TypeSystem, "starting websockets broker")
 
 	go broker.Start()
 
-	plog.Info("starting scorch processors")
+	plog.Info(plog.TypeSystem, "starting scorch processors")
 
 	go scorch.Start(o.basePath)
 
-	plog.Info("starting log publisher")
+	plog.Info(plog.TypeSystem, "starting log publisher")
 
-	go PublishMinimegaLogs(context.Background(), o.minimegaLogs)
+	go SyncMinimegaLogs(context.Background(), o.minimegaLogs)
 
-	plog.Info("using base path", "path", o.basePath)
-	plog.Info("using JWT lifetime", "lifetime", o.jwtLifetime)
+	plog.Info(plog.TypeSystem, "using base path", "path", o.basePath)
+	plog.Info(plog.TypeSystem, "using JWT lifetime", "lifetime", o.jwtLifetime)
 
 	if common.UnixSocket != "" {
 		var (
@@ -301,14 +315,13 @@ func Start(opts ...ServerOption) error {
 		)
 
 		addRoutesToRouter(api, workflowRoutes...)
-		addRoutesToRouter(api, errorRoutes...)
 		addRoutesToRouter(api, optionRoutes...)
 
 		api.Use(middleware.NoAuth)
 
 		os.Remove(common.UnixSocket)
 
-		plog.Info("starting Unix socket server", "path", common.UnixSocket)
+		plog.Info(plog.TypeSystem, "starting Unix socket server", "path", common.UnixSocket)
 
 		server := http.Server{Handler: router}
 		listener, err := net.Listen("unix", common.UnixSocket)
@@ -316,18 +329,29 @@ func Start(opts ...ServerOption) error {
 			return err
 		}
 
+		if o.unixSocketGid != -1 {
+			plog.Info(plog.TypeSystem, "setting Unix socket group permissions", "gid", o.unixSocketGid)
+			if err = os.Chown(common.UnixSocket, -1, o.unixSocketGid); err != nil {
+				return err
+			}
+			if err := os.Chmod(common.UnixSocket, 0775); err != nil {
+				return err
+			}
+		}
+
 		go func() {
 			if err := server.Serve(listener); err != nil {
-				plog.Error("serving Unix socket", "err", err)
+				plog.Error(plog.TypeSystem, "serving Unix socket", "err", err)
 			}
 		}()
 	}
 
+	plog.Info(plog.TypeSecurity, "starting server", "tls_enabled", o.tlsEnabled())
 	if o.tlsEnabled() {
-		plog.Info("starting HTTPS server", "endpoint", o.endpoint)
+		plog.Info(plog.TypeSystem, "starting HTTPS server", "endpoint", o.endpoint)
 		return http.ListenAndServeTLS(o.endpoint, o.tlsCrtPath, o.tlsKeyPath, router)
 	} else {
-		plog.Info("Starting HTTP server", "endpoint", o.endpoint)
+		plog.Info(plog.TypeSystem, "Starting HTTP server", "endpoint", o.endpoint)
 		return http.ListenAndServe(o.endpoint, router)
 	}
 }

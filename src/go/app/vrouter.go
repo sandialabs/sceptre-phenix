@@ -171,7 +171,7 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 		}
 
 		if strings.EqualFold(node.Hardware().OSType(), "linux") {
-			fmt.Printf("  === using OS Type 'linux' for Node Type %s is depricated ===\n", node.Type())
+			fmt.Printf("  === using OS Type 'linux' for Node Type %s is deprecated ===\n", node.Type())
 			fmt.Printf("  === use 'vyatta', 'vyos', or 'minirouter' OS type instead ===\n")
 		}
 

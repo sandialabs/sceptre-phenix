@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"phenix/api/experiment"
-	"phenix/util"
 	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/util/mm"
@@ -65,29 +64,39 @@ func List(expName string) ([]mm.VM, error) {
 
 	for idx, node := range exp.Spec.Topology().Nodes() {
 		var (
-			disk string
-			dnb  bool
+			disk            string
+			dnb             bool
+			snapshot        bool
+			injectPartition int
 		)
 
 		if drives := node.Hardware().Drives(); len(drives) > 0 {
-			disk = drives[0].Image()
+			disk = mm.GetMMFullPath(drives[0].Image())
+			injectPartition = *drives[0].InjectPartition()
 		}
 
 		if node.General().DoNotBoot() != nil {
 			dnb = *node.General().DoNotBoot()
 		}
 
+		if node.General().Snapshot() != nil {
+			snapshot = *node.General().Snapshot()
+		}
+
 		vm := mm.VM{
-			ID:         idx,
-			Name:       node.General().Hostname(),
-			Experiment: exp.Spec.ExperimentName(),
-			CPUs:       node.Hardware().VCPU(),
-			RAM:        node.Hardware().Memory(),
-			Disk:       disk,
-			Interfaces: make(map[string]string),
-			DoNotBoot:  dnb,
-			Type:       node.Type(),
-			OSType:     node.Hardware().OSType(),
+			ID:              idx,
+			Name:            node.General().Hostname(),
+			Experiment:      exp.Spec.ExperimentName(),
+			CPUs:            node.Hardware().VCPU(),
+			RAM:             node.Hardware().Memory(),
+			Disk:            disk,
+			InjectPartition: injectPartition,
+			Interfaces:      make(map[string]string),
+			DoNotBoot:       dnb,
+			Type:            node.Type(),
+			OSType:          node.Hardware().OSType(),
+			Snapshot:        snapshot,
+			Tags:            node.Labels(),
 		}
 
 		for _, iface := range node.Network().Interfaces() {
@@ -179,18 +188,21 @@ func Get(expName, vmName string) (*mm.VM, error) {
 		}
 
 		vm = &mm.VM{
-			ID:          idx,
-			Name:        node.General().Hostname(),
-			Experiment:  exp.Spec.ExperimentName(),
-			CPUs:        node.Hardware().VCPU(),
-			RAM:         node.Hardware().Memory(),
-			Disk:        util.GetMMFullPath(node.Hardware().Drives()[0].Image()),
-			Interfaces:  make(map[string]string),
-			DoNotBoot:   *node.General().DoNotBoot(),
-			OSType:      string(node.Hardware().OSType()),
-			Metadata:    make(map[string]interface{}),
-			Labels:      node.Labels(),
-			Annotations: node.Annotations(),
+			ID:              idx,
+			Name:            node.General().Hostname(),
+			Experiment:      exp.Spec.ExperimentName(),
+			CPUs:            node.Hardware().VCPU(),
+			RAM:             node.Hardware().Memory(),
+			Disk:            mm.GetMMFullPath(node.Hardware().Drives()[0].Image()),
+			InjectPartition: *node.Hardware().Drives()[0].InjectPartition(),
+			Interfaces:      make(map[string]string),
+			DoNotBoot:       *node.General().DoNotBoot(),
+			OSType:          string(node.Hardware().OSType()),
+			Snapshot:        *node.General().Snapshot(),
+			Metadata:        make(map[string]interface{}),
+			Labels:          node.Labels(),
+			Tags:            node.Labels(),
+			Annotations:     node.Annotations(),
 		}
 
 		for _, iface := range node.Network().Interfaces() {
@@ -274,22 +286,6 @@ func Update(opts ...UpdateOption) error {
 		return fmt.Errorf("experiment or VM name not provided")
 	}
 
-	running := experiment.Running(o.exp)
-
-	if running && o.iface == nil {
-		return fmt.Errorf("only interface connections can be updated while experiment is running")
-	}
-
-	// The only setting that can be updated while an experiment is running is the
-	// VLAN an interface is connected to.
-	if running {
-		if o.iface.vlan == "" {
-			return Disonnect(o.exp, o.vm, o.iface.index)
-		} else {
-			return Connect(o.exp, o.vm, o.iface.index, o.iface.vlan)
-		}
-	}
-
 	exp, err := experiment.Get(o.exp)
 	if err != nil {
 		return fmt.Errorf("unable to get experiment %s: %w", o.exp, err)
@@ -298,6 +294,50 @@ func Update(opts ...UpdateOption) error {
 	vm := exp.Spec.Topology().FindNodeByName(o.vm)
 	if vm == nil {
 		return fmt.Errorf("unable to find VM %s in experiment %s", o.vm, o.exp)
+	}
+
+	// if appending, copy over old labels (keep newer version if present)
+	if o.tags != nil && o.appendTags {
+		for k, v := range vm.Labels() {
+			if _, ok := (*o.tags)[k]; !ok {
+				(*o.tags)[k] = v
+			}
+		}
+	}
+
+	running := experiment.Running(o.exp)
+
+	// The only settings that can be updated while an experiment is running is the
+	// VLAN an interface is connected to and the vm's tags
+	if running {
+		if o.iface == nil && o.tags == nil {
+			return fmt.Errorf("only interface connections and tags can be updated while experiment is running")
+		}
+
+		if o.iface != nil {
+			if o.iface.vlan == "" {
+				if err := Disonnect(o.exp, o.vm, o.iface.index); err != nil {
+					return err
+				}
+			} else {
+				if err := Connect(o.exp, o.vm, o.iface.index, o.iface.vlan); err != nil {
+					return err
+				}
+			}
+		}
+
+		if o.tags != nil {
+			// update both the live minimega tags and the experiment spec labels
+			if err := mm.SetVMTags(mm.NS(o.exp), mm.VMName(o.vm), mm.Tags(*o.tags)); err != nil {
+				return err
+			}
+
+			vm.SetLabels(*o.tags)
+			if err := experiment.Save(experiment.SaveWithName(o.exp), experiment.SaveWithSpec(exp.Spec)); err != nil {
+				return fmt.Errorf("unable to save experiment with updated VM: %w", err)
+			}
+		}
+		return nil
 	}
 
 	if o.cpu != 0 {
@@ -312,8 +352,16 @@ func Update(opts ...UpdateOption) error {
 		vm.Hardware().Drives()[0].SetImage(o.disk)
 	}
 
+	if o.partition != 0 {
+		vm.Hardware().Drives()[0].SetInjectPartition(&o.partition)
+	}
+
 	if o.dnb != nil {
 		vm.General().SetDoNotBoot(*o.dnb)
+	}
+
+	if o.tags != nil {
+		vm.SetLabels(*o.tags)
 	}
 
 	if o.host != nil {
@@ -322,6 +370,10 @@ func Update(opts ...UpdateOption) error {
 		} else {
 			exp.Spec.ScheduleNode(o.vm, *o.host)
 		}
+	}
+
+	if o.snapshot != nil {
+		vm.General().SetSnapshot(*o.snapshot)
 	}
 
 	err = experiment.Save(experiment.SaveWithName(o.exp), experiment.SaveWithSpec(exp.Spec))
@@ -378,7 +430,7 @@ func Restart(expName, vmName string) error {
 	state, err := mm.GetVMState(mm.NS(expName), mm.VMName(vmName))
 
 	if err != nil {
-		return fmt.Errorf("Retrieving state for VM %s in experiment %s: %w", vmName, expName, err)
+		return fmt.Errorf("retrieving state for VM %s in experiment %s: %w", vmName, expName, err)
 	}
 
 	//Using "system_reset" on a VM that is in the "QUIT" state fails
@@ -388,7 +440,7 @@ func Restart(expName, vmName string) error {
 	}
 
 	cmd := mmcli.NewNamespacedCommand(expName)
-	qmp := fmt.Sprintf(`{ "execute": "system_reset" }`)
+	qmp := `{ "execute": "system_reset" }`
 	cmd.Command = fmt.Sprintf("vm qmp %s '%s'", vmName, qmp)
 
 	_, err = mmcli.SingleResponse(mmcli.Run(cmd))
@@ -523,7 +575,7 @@ func ResetDiskState(expName, vmName string) error {
 		cmd.Command = "vm kill " + vmName
 
 		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-			return fmt.Errorf("Killing VM %s in experiment %s: %w", vmName, expName, err)
+			return fmt.Errorf("killing VM %s in experiment %s: %w", vmName, expName, err)
 		}
 
 	}
@@ -670,6 +722,8 @@ func Snapshots(expName, vmName string) ([]string, error) {
 	return names, nil
 }
 
+// Takes a snapshot of the current state of the VM (disk and memory)
+// snapshots can later be restored
 func Snapshot(expName, vmName, out string, cb func(string)) error {
 	vm, err := Get(expName, vmName)
 	if err != nil {
@@ -706,7 +760,7 @@ func Snapshot(expName, vmName, out string, cb func(string)) error {
 		fp   = fmt.Sprintf("%s/%s", common.MinimegaBase, status[0]["id"])
 	)
 
-	qmp := fmt.Sprintf(`{ "execute": "query-block" }`)
+	qmp := `{ "execute": "query-block" }`
 	cmd.Command = fmt.Sprintf("vm qmp %s '%s'", vmName, qmp)
 
 	res, err := mmcli.SingleResponse(mmcli.Run(cmd))
@@ -737,7 +791,7 @@ func Snapshot(expName, vmName, out string, cb func(string)) error {
 		return fmt.Errorf("starting disk snapshot for VM %s: %w", vmName, err)
 	}
 
-	qmp = fmt.Sprintf(`{ "execute": "query-block-jobs" }`)
+	qmp = `{ "execute": "query-block-jobs" }`
 	cmd.Command = fmt.Sprintf(`vm qmp %s '%s'`, vmName, qmp)
 
 	for {
@@ -874,53 +928,56 @@ func Restore(expName, vmName, snap string) error {
 
 	snap = fmt.Sprintf("%s/files/%s", expName, snap)
 
+	details := mm.GetVMInfo(mm.NS(expName), mm.VMName(vmName))
+	if len(details) == 0 {
+		return fmt.Errorf("error getting vm details")
+	}
+
 	cmd := mmcli.NewNamespacedCommand(expName)
 	cmd.Command = fmt.Sprintf("vm config clone %s", vmName)
-
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("cloning config for VM %s: %w", vmName, err)
 	}
 
-	cmd.Command = fmt.Sprintf("vm config migrate %s.SNAP", snap)
+	// Have to copy over UUID separate from clone. 
+	// Needs to stay the same for miniccc agent to connect
+	cmd.Command = fmt.Sprintf("vm config uuid %s", details[0].UUID)
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("setting uuid for VM %s: %w", vmName, err)
+	}
 
+	cmd.Command = fmt.Sprintf("vm config migrate %s.SNAP", snap)
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("configuring migrate file for VM %s: %w", vmName, err)
 	}
 
 	cmd.Command = fmt.Sprintf("vm config disk %s.qc2,writeback", snap)
-
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("configuring disk file for VM %s: %w", vmName, err)
 	}
 
 	cmd.Command = fmt.Sprintf("vm kill %s", vmName)
-
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("killing VM %s: %w", vmName, err)
 	}
 
-	// TODO: explicitly flush killed VM by name once we start using that version
-	// of minimega.
-	cmd.Command = "vm flush"
 
+	cmd.Command = fmt.Sprintf("vm flush %s", vmName)
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("flushing VMs: %w", err)
 	}
 
 	cmd.Command = fmt.Sprintf("vm launch kvm %s", vmName)
-
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("relaunching VM %s: %w", vmName, err)
 	}
 
 	cmd.Command = "vm launch"
-
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("scheduling VM %s: %w", vmName, err)
 	}
 
 	cmd.Command = fmt.Sprintf("vm start %s", vmName)
-
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("starting VM %s: %w", vmName, err)
 	}
@@ -929,6 +986,12 @@ func Restore(expName, vmName, snap string) error {
 
 }
 
+// Creates a new disk with the current state of a running vm
+// 1. creates a copy of the base image (e.g., the image used in the topology) named "out"
+// 2. stops the vm
+// 3. next rebases the snapshot (the running image phenix uses <vm>/disk-0.qcow2) to utilize the copy
+// 4. commits the snapshot so that it writes the current disk to "out"
+// 5. starts the vm
 func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error) {
 	// Determine name of new disk image, if not provided.
 	if out == "" {
@@ -940,9 +1003,27 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		}
 	}
 
-	base, err := getBaseImage(expName, vmName)
+	disk, err := getVMImage(expName, vmName)
 	if err != nil {
-		return "", fmt.Errorf("getting base image for VM %s in experiment %s: %w", vmName, expName, err)
+		return "", fmt.Errorf("getting disk image for VM %s in experiment %s: %w", vmName, expName, err)
+	}
+
+	if !filepath.IsAbs(disk) {
+		disk = common.PhenixBase + "/images/" + disk
+	}
+
+	if !filepath.IsAbs(out) {
+		out = common.PhenixBase + "/images/" + out
+	}
+
+	base, err := getBackingImage(disk)
+	if err != nil {
+		return "", fmt.Errorf("getting backing image for VM %s in experiment %s: %w", vmName, expName, err)
+	}
+
+	snapshots, err := getImageSnapshots(disk)
+	if err != nil {
+		return "", fmt.Errorf("getting disk snapshots for VM %s in experiment %s: %w", vmName, expName, err)
 	}
 
 	// Get status of VM (scheduled host, VM state).
@@ -963,14 +1044,6 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		snap = fmt.Sprintf("%s/%s/disk-0.qcow2", common.MinimegaBase, status[0]["id"])
 		node = status[0]["host"]
 	)
-
-	if !filepath.IsAbs(base) {
-		base = common.PhenixBase + "/images/" + base
-	}
-
-	if !filepath.IsAbs(out) {
-		out = common.PhenixBase + "/images/" + out
-	}
 
 	wait, ctx := errgroup.WithContext(context.Background())
 
@@ -1005,6 +1078,37 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		if err := Shutdown(expName, vmName); err != nil {
 			return "", fmt.Errorf("stopping VM: %w", err)
 		}
+	}
+
+	// Make a copy of any snapshots pointed at by the VM disk image in the
+	// experiment topology so they can be rebased onto the base backing image for
+	// the VM.
+
+	for idx, snapshot := range snapshots {
+		var (
+			id   = idx
+			file = snapshot
+		)
+
+		wait.Go(func() error {
+			copier := newCopier()
+
+			tmp := fmt.Sprintf("%s/images/%s/tmp/snapshot-%d.qc2", common.PhenixBase, expName, id)
+
+			if err := os.MkdirAll(filepath.Dir(tmp), 0755); err != nil {
+				return fmt.Errorf("creating experiment tmp directory: %w", err)
+			}
+
+			if err := copier.copy(ctx, file, tmp); err != nil {
+				os.Remove(tmp)
+				return fmt.Errorf("making copy of snapshot %s: %w", file, err)
+			}
+
+			// update snapshots entry to point at new copy of snapshot
+			snapshots[id] = tmp
+
+			return nil
+		})
 	}
 
 	// Copy minimega snapshot disk on remote machine to a location (still on
@@ -1048,13 +1152,27 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		return "", fmt.Errorf("preparing images for rebase/commit: %w", err)
 	}
 
-	snap = fmt.Sprintf("%s/images/%s/tmp/%s.qc2", common.PhenixBase, expName, vmName)
+	// Add the final boss (the minimega snapshot disk) to the end of the list of
+	// snapshots to rebase onto the copy of the original backing image. If the
+	// image pointed at by the VM config in the topology was not a snapshot, then
+	// this will be the only snapshot in the list.
+	snapshots = append(snapshots, fmt.Sprintf("%s/images/%s/tmp/%s.qc2", common.PhenixBase, expName, vmName))
 
-	shell := exec.Command("qemu-img", "rebase", "-f", "qcow2", "-b", out, "-F", "qcow2", snap)
+	for idx, snapshot := range snapshots {
+		// first parent should be copy of original backing image
+		parent := out
 
-	res, err := shell.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("rebasing snapshot (%s): %w", string(res), err)
+		if idx != 0 {
+			parent = snapshots[idx-1]
+		}
+
+		shell := exec.Command("qemu-img", "rebase", "-f", "qcow2", "-b", parent, "-F", "qcow2", snapshot)
+
+		res, err := shell.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("rebasing snapshot (%s): %w", string(res), err)
+		}
+
 	}
 
 	done := make(chan struct{})
@@ -1091,9 +1209,9 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		}()
 	}
 
-	shell = exec.Command("qemu-img", "commit", snap)
+	shell := exec.Command("qemu-img", "commit", "-b", out, snapshots[len(snapshots)-1])
 
-	res, err = shell.CombinedOutput()
+	res, err := shell.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("committing snapshot (%s): %w", string(res), err)
 	}
@@ -1113,6 +1231,8 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 
 }
 
+// Create an ELF memory snapshot for a running virtual machine
+//  that is compatible with memory forensic toolkits Volatility and Google's Rekall.
 func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error) {
 
 	_, err := Get(expName, vmName)
@@ -1175,7 +1295,7 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 
 	}
 
-	qmp = fmt.Sprintf(`{ "execute": "query-dump" }`)
+	qmp = `{ "execute": "query-dump" }`
 	cmd.Command = fmt.Sprintf("vm qmp %s '%s'", vmName, qmp)
 
 	var (
@@ -1201,7 +1321,7 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 			if cb != nil {
 				cb("failed")
 			}
-			return "", fmt.Errorf("no status available for %s: %s", vmName, v)
+			return "", fmt.Errorf("no status available for %s: %v", vmName, v)
 
 		}
 
@@ -1209,7 +1329,7 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 			if cb != nil {
 				cb("failed")
 			}
-			return "failed", fmt.Errorf("failed to create memory snapshot for %s: %s", vmName, v)
+			return "failed", fmt.Errorf("failed to create memory snapshot for %s: %v", vmName, v)
 
 		}
 
@@ -1261,13 +1381,13 @@ func CaptureSubnet(expName, subnet string, vmList []string) ([]mm.Capture, error
 	vms, err := List(expName)
 
 	if err != nil {
-		return nil, fmt.Errorf("Getting vm list for %s failed", expName)
+		return nil, fmt.Errorf("getting vm list for %s failed", expName)
 	}
 
 	_, refNet, err := net.ParseCIDR(subnet)
 
 	if err != nil {
-		return nil, fmt.Errorf("Unable to parse %s", subnet)
+		return nil, fmt.Errorf("unable to parse %s", subnet)
 	}
 
 	// Use empty struct for code consistency and
@@ -1366,7 +1486,7 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 	vms, err := List(expName)
 
 	if err != nil {
-		return nil, fmt.Errorf("Getting vm list for %s failed", expName)
+		return nil, fmt.Errorf("getting vm list for %s failed", expName)
 	}
 
 	_, refNet, err := net.ParseCIDR(subnet)
@@ -1477,16 +1597,13 @@ func ChangeOpticalDisc(expName, vmName, isoPath string) error {
 		return fmt.Errorf("no optical disc path provided")
 	}
 
-	
-	cmd := mmcli.NewNamespacedCommand(expName)	
-	cmd.Command = fmt.Sprintf("vm cdrom change %s %s",vmName,isoPath)
+	cmd := mmcli.NewNamespacedCommand(expName)
+	cmd.Command = fmt.Sprintf("vm cdrom change %s %s", vmName, isoPath)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("changing optical disc for VM %s: %w", vmName, err)
 	}
-	
 
-	
 	return nil
 }
 
@@ -1501,15 +1618,12 @@ func EjectOpticalDisc(expName, vmName string) error {
 		return fmt.Errorf("no VM name provided")
 	}
 
-		
-	cmd := mmcli.NewNamespacedCommand(expName)	
-	cmd.Command = fmt.Sprintf("vm cdrom eject %s",vmName)
+	cmd := mmcli.NewNamespacedCommand(expName)
+	cmd.Command = fmt.Sprintf("vm cdrom eject %s", vmName)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("ejecting optical disc for VM %s: %w", vmName, err)
 	}
 
-	
 	return nil
 }
-

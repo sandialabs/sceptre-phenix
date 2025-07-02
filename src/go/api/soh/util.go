@@ -306,8 +306,7 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks 
 	if this.md.SkipNetworkConfig || !checks["network-config"] {
 		return false
 	}
-
-	logger := plog.LoggerFromContext(ctx)
+	logger := plog.LoggerFromContext(ctx, plog.TypeSoh)
 
 	var (
 		icmpDisabled   = strings.EqualFold(this.md.Reachability, "off") || !checks["reachability"]
@@ -523,7 +522,7 @@ func (this *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks 
 
 func (this *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 	var (
-		logger = plog.LoggerFromContext(ctx)
+		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
 		wg     = new(mm.StateGroup)
 	)
 
@@ -607,7 +606,7 @@ func (this *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 
 func (this *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 	var (
-		logger = plog.LoggerFromContext(ctx)
+		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
 		wg     = new(mm.StateGroup)
 	)
 
@@ -691,7 +690,7 @@ func (this *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 
 func (this *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 	var (
-		logger = plog.LoggerFromContext(ctx)
+		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
 		wg     = new(mm.StateGroup)
 	)
 
@@ -775,7 +774,7 @@ func (this *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 
 func (this *SOH) waitForCPULoad(ctx context.Context, ns string) bool {
 	var (
-		logger = plog.LoggerFromContext(ctx)
+		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
 		wg     = new(mm.StateGroup)
 	)
 
@@ -1277,12 +1276,6 @@ func (this SOH) customTest(ctx context.Context, wg *mm.StateGroup, ns string, no
 	}
 
 	script := fmt.Sprintf("%s-%s", host, stringSpacePattern.ReplaceAllString(test.Name, "_"))
-	path := fmt.Sprintf("%s/images/%s/%s", common.PhenixBase, ns, script)
-
-	if err := os.WriteFile(path, []byte(test.TestScript), 0600); err != nil {
-		wg.AddError(fmt.Errorf("unable to write test script to file: %v", err), meta)
-		return
-	}
 
 	executor := test.Executor
 	if executor == "" {
@@ -1294,7 +1287,18 @@ func (this SOH) customTest(ctx context.Context, wg *mm.StateGroup, ns string, no
 		}
 	}
 
-	command := fmt.Sprintf("%s /tmp/miniccc/files/%s", executor, script)
+	if strings.HasPrefix(executor, "powershell") {
+		script += ".ps1"
+	}
+
+	path := fmt.Sprintf("%s/images/%s/%s", common.PhenixBase, ns, script)
+
+	if err := os.WriteFile(path, []byte(test.TestScript), 0600); err != nil {
+		wg.AddError(fmt.Errorf("unable to write test script to file: %v", err), meta)
+		return
+	}
+
+	command := fmt.Sprintf("%s /tmp/miniccc/files/%s/%s", executor, ns, script)
 	opts := []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2SendFile(script), mm.C2Command(command), mm.C2Timeout(this.md.c2Timeout)}
 
 	if this.md.useUUIDForC2Active(host) {
@@ -1303,7 +1307,7 @@ func (this SOH) customTest(ctx context.Context, wg *mm.StateGroup, ns string, no
 
 	cmd := &mm.C2ParallelCommand{
 		Wait:    wg,
-		Options: []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2SendFile(script), mm.C2Command(command)},
+		Options: opts,
 		Meta:    meta,
 	}
 
@@ -1431,7 +1435,7 @@ func trim(str string) []string {
 
 func periodicallyNotify(ctx context.Context, msg string, d time.Duration) context.CancelFunc {
 	var (
-		logger       = plog.LoggerFromContext(ctx)
+		logger       = plog.LoggerFromContext(ctx, plog.TypeSoh)
 		cctx, cancel = context.WithCancel(ctx)
 		ticker       = time.NewTicker(d)
 	)

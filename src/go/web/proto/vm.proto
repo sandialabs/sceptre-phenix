@@ -20,11 +20,12 @@ message VM {
   string experiment = 15;
   string state = 16;
   string cd_rom = 17;
-  repeated string tags = 18;
+  map<string, string> tags = 18;
   bool cc_active = 19;
   bool external = 20;
-
   string delayed_start = 21 [json_name="delayed_start"];
+  bool snapshot = 22 [json_name="snapshot"];
+  uint32 inject_partition = 23 [json_name="inject_partition"];
 }
 
 message VMList {
@@ -54,6 +55,14 @@ message VMRedeployRequest {
   bool injects = 5;
 }
 
+enum TagUpdateMode {
+  NONE = 0;
+  // sets all tags
+  SET = 1;
+  // adds (or replaces if already present) tags
+  ADD = 2;
+}
+
 message UpdateVMRequest {
   string exp = 1;
   string name = 2;
@@ -70,6 +79,14 @@ message UpdateVMRequest {
   oneof cluster_host {
     string host = 8;
   }
+
+  oneof snapshot_option {
+    bool snapshot = 9 [json_name="snapshot"];
+  }
+
+  uint32 inject_partition = 10 [json_name="inject_partition"];
+  TagUpdateMode tag_update_mode = 11 [json_name="tag_update_mode"];
+  map<string, string> tags = 12;
 }
 
 message UpdateVMRequestList {

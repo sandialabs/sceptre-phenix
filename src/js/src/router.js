@@ -3,6 +3,7 @@ import Router from 'vue-router'
 
 import Configs       from './components/Configs.vue'
 import Disabled      from './components/Disabled.vue'
+import Disks         from './components/Disks.vue'
 import Experiment    from './components/Experiment.vue'
 import Experiments   from './components/Experiments.vue'
 import Hosts         from './components/Hosts.vue'
@@ -16,6 +17,7 @@ import Users         from './components/Users.vue'
 import VMtiles       from './components/VMtiles.vue'
 import MiniConsole   from './components/MiniConsole.vue'
 import Tunneler      from './components/Tunneler.vue'
+import Settings      from './components/Settings.vue'
 
 import store from './store'
 
@@ -39,6 +41,7 @@ const router = new Router({
 
     {path: '/configs',           name: 'configs',     component: Configs},
     {path: '/disabled',          name: 'disabled',    component: Disabled},
+    {path: '/disks',             name: 'disks',       component: Disks},
     {path: '/experiments',       name: 'experiments', component: Experiments},
     {path: '/experiment/:id',    name: 'experiment',  component: Experiment},
     {path: '/hosts',             name: 'hosts',       component: Hosts},
@@ -51,6 +54,7 @@ const router = new Router({
     {path: '/vmtiles',           name: 'vmtiles',     component: VMtiles},
     {path: '/console',           name: 'console',     component: MiniConsole},
     {path: '/tunneler',          name: 'tunneler',    component: Tunneler},
+    {path: '/settings',          name: 'settings',    component: Settings},
 
     {path: '/builder?token=:token', name: 'builder'},
     {path: '/version',              name: 'version'},

@@ -20,7 +20,7 @@ import (
 
 // GET /experiments/{exp}/vms/{name}/vnc
 func GetVNC(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "GetVNC")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetVNC")
 
 	var (
 		ctx  = r.Context()
@@ -31,6 +31,7 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/vnc", "get", exp+"/"+name) {
+		plog.Warn(plog.TypeSecurity, "vnc access not allowed", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -52,12 +53,12 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 			config.finalize(banner)
 		case map[string]interface{}:
 			if err := mapstructure.Decode(banner, &config); err != nil {
-				plog.Error("decoding vncBanner annotation for VM", "vm", name, "err", err)
+				plog.Error(plog.TypeSystem, "decoding vncBanner annotation for VM", "vm", name, "err", err)
 			} else {
 				config.finalize()
 			}
 		default:
-			plog.Error("unexpected interface type for vncBanner annotation")
+			plog.Error(plog.TypeSystem, "unexpected interface type for vncBanner annotation")
 		}
 	} else {
 		config.finalize(fmt.Sprintf("EXP: %s - VM: %s", exp, name))
@@ -68,6 +69,7 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Pragma", "no-cache")                                   // HTTP 1.0.
 	w.Header().Set("Expires", "0")                                         // Proxies.
 
+	plog.Info(plog.TypeAction, "vnc opened", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
 	if o.unbundled {
 		tmpl := template.Must(template.New("vnc.html").ParseFiles("web/public/vnc.html"))
 		tmpl.Execute(w, config)
@@ -86,7 +88,7 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 
 // GET /experiments/{exp}/vms/{name}/vnc/ws
 func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) {
-	plog.Debug("HTTP handler called", "handler", "GetVNCWebSocket")
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetVNCWebSocket")
 
 	var (
 		vars = mux.Vars(r)
@@ -96,7 +98,7 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(name))
 	if err != nil {
-		plog.Error("getting VNC endpoint", "err", err)
+		plog.Error(plog.TypeSystem, "getting VNC endpoint", "err", err)
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
@@ -122,6 +124,8 @@ type vncConfig struct {
 
 	TopBanner    bannerConfig `mapstructure:"topBanner"`
 	BottomBanner bannerConfig `mapstructure:"bottomBanner"`
+
+	Disabled bool `mapstructure:"disabled"`
 }
 
 func newVNCBannerConfig(token, exp, vm string) *vncConfig {
@@ -148,11 +152,13 @@ func (this *vncConfig) finalize(banner ...string) {
 		return
 	}
 
-	if len(this.TopBanner.BannerLines) > 0 {
-		this.TopBanner.Banner = template.HTML(strings.Join(this.TopBanner.BannerLines, "<br/>"))
-	}
+	if !this.Disabled {
+		if len(this.TopBanner.BannerLines) > 0 {
+			this.TopBanner.Banner = template.HTML(strings.Join(this.TopBanner.BannerLines, "<br/>"))
+		}
 
-	if len(this.BottomBanner.BannerLines) > 0 {
-		this.BottomBanner.Banner = template.HTML(strings.Join(this.BottomBanner.BannerLines, "<br/>"))
+		if len(this.BottomBanner.BannerLines) > 0 {
+			this.BottomBanner.Banner = template.HTML(strings.Join(this.BottomBanner.BannerLines, "<br/>"))
+		}
 	}
 }

@@ -407,23 +407,20 @@
         </footer>
       </div>
     </b-modal>
-    <hr>
     <div class="level is-vcentered">
-      <div class="level-item">
-        <span style="font-weight: bold; font-size: x-large;">Experiment: {{ this.$route.params.id }}</span>&nbsp;
+      <div class="level-left is-block">
+        <span style="font-weight: bold; font-size: x-large;">Experiment: {{ this.$route.params.id }}</span><br>
+        <span v-if="experiment.scenario" style="font-weight: bold;">Scenario: {{ experiment.scenario }}</span>
       </div>
-      <div class="level-item" v-if="experiment.scenario">
-        <span style="font-weight: bold;">Scenario: {{ experiment.scenario }}</span>&nbsp;
-      </div>
-      <div class="level-item" v-if="experiment.apps" @click="getApps()">
+      <div class="level-right is-clickable" v-if="experiment.scenario" style="max-width: 50%;" @click="getApps()">
         <span style="font-weight: bold;">Apps:</span>&nbsp;
-        <b-taglist>
+        <div style="display: flex; flex-wrap: wrap; gap: 4px;">
           <b-tag v-for="( a, index ) in experiment.apps" :key="index" type="is-light">
             {{ a }}  
           </b-tag>
-        </b-taglist>
+        </div>
       </div>
-    </div>    
+    </div>
     <div class="level">    
       <div class="level-left"></div>
       <div class="level-right">
@@ -597,7 +594,7 @@
                 </template>
               </template>
             </b-table-column>
-            <b-table-column field="name" label="Node" width="150" sortable centered v-slot="props">
+            <b-table-column field="name" label="Node" sortable centered v-slot="props">
               <template v-if="!props.row.external && roleAllowed('vms', 'get', experiment.name + '/' + props.row.name)">
                 <b-tooltip  label="start/stop/redeploy the vm" type="is-dark">
                   <span class="tag is-medium" :class="decorator( props.row.state, props.row.busy )">
@@ -629,41 +626,18 @@
               </template>
               <section v-if="props.row.busy">
                 <p  />
-                <b-progress size="is-small" type="is-warning" show-value :value=props.row.percent format="percent"></b-progress>
+                <b-progress size="is-small" type="is-warning" show-value :value="props.row.percent" format="percent"></b-progress>
               </section>
             </b-table-column>
-            <b-table-column field="screenshot"  label="Screenshot" centered v-slot="props">
-              <template v-if="props.row.external">
-                <img src="@/assets/external.png" width="200" height="150">
-              </template>
-              <template v-else-if="props.row.running && !props.row.busy && !props.row.screenshot">
-                <a  :href="vncLoc(props.row)" target="_blank">
-                  <img src="@/assets/not-available.png" width="200" height="150">
-                </a>
-              </template>
-              <template v-else-if="props.row.delayed_start && props.row.state == 'BUILDING'">
-                <a  :href="vncLoc(props.row)" target="_blank">
-                  <img src="@/assets/delayed.png" width="200" height="150">
-                </a>
-              </template>
-              <template v-else-if="props.row.running && !props.row.busy && props.row.screenshot">
-                <a  :href="vncLoc(props.row)" target="_blank">
-                  <img :src="props.row.screenshot">
-                </a>
-              </template>
-              <template v-else-if="props.row.busy">
-                <b-tooltip  label="Screenshot not available while busy with action" type="is-dark">
-                <img  src="@/assets/not-available.png" width="200" height="150">
-                </b-tooltip>
-              </template>
-              <template v-else>
-                <img  src="@/assets/not-running.png" width="200" height="150">
-              </template>
+            <b-table-column field="screenshot"  label="Screenshot" centered v-slot="props" width="200">
+              <a  :href="vncLoc(props.row)" target="_blank">
+                <img :src="getVmScreenshot(props.row)" width="200" height="150">
+              </a>
             </b-table-column>
             <b-table-column v-if="isDelayed()" field="delayed"  label="Delay" centered v-slot="props">
               <b-tag type="is-info" v-if="props.row.delayed_start && props.row.state == 'BUILDING'">{{ props.row.delayed_start }}</b-tag>
             </b-table-column> 
-            <b-table-column field="host" label="Host" width="150" sortable v-slot="props">
+            <b-table-column field="host" label="Host" sortable v-slot="props">
               <template v-if="props.row.external">
                 EXTERNAL
               </template>
@@ -671,7 +645,7 @@
                 {{ props.row.host }}
               </template>
             </b-table-column>   
-            <b-table-column field="ipv4"  label="IPv4" width="150">
+            <b-table-column field="ipv4"  label="IPv4">
               <template v-slot:header= "{ column }"> 
                 <div class="level">  
                   <div class="level-item"> 
@@ -746,7 +720,7 @@
                 {{  props.row.taps | stringify | lowercase }}
               </template>
             </b-table-column>
-            <b-table-column field="uptime"  label="Uptime" width="165" v-slot="props">
+            <b-table-column field="uptime"  label="Uptime" v-slot="props">
               <template v-if="props.row.external">
                 unknown 
               </template>
@@ -754,6 +728,18 @@
                 {{ props.row.uptime | uptime }}
               </template>
             </b-table-column>
+            <b-table-column label="Labels" centered v-slot="props">
+                <template>
+                  <b-tooltip label="View/Edit Labels" type="is-dark">
+                    <div @click="showTagsModal( props.row )" class="is-clickable">
+                      <font-awesome-layers full-width>
+                        <font-awesome-icon  icon="tag" />
+                        <font-awesome-layers-text counter :value="tagCount(props.row.tags)" />
+                      </font-awesome-layers>
+                    </div>
+                  </b-tooltip>
+                </template>
+              </b-table-column>
           </b-table>
           <br>
           <b-field v-if="paginationNeeded" grouped position="is-right">
@@ -827,6 +813,28 @@
             </div>
           </b-field>
         </b-tab-item>
+        <b-tab-item label="VNC" icon="arrow-pointer">
+          <b-field label="Zoom Level" style="width: 300px; margin-left: 32px;" horizontal>
+            <b-slider :min="2" :max="16" :custom-formatter="val => (0.25 + (val - 1) * .25) + 'x'" v-model="vncZoom">
+              <template v-for="val in [4, 8, 12, 16]">
+                    <b-slider-tick :value="val" >{{ (0.25 + (val - 1) * .25) + 'x' }}</b-slider-tick>
+                </template>
+            </b-slider>
+          </b-field>
+          <div style="display: flex; flex-direction: row; flex-wrap:wrap; align-items: flex-end; justify-content: center; gap: 4px;">
+            <template v-if="experiment.vms && experiment.vms.length">
+              <div v-for="vm in experiment.vms" >
+                  <a :href="vncLoc(vm)" target="_blank">
+                    <img :src="getVmScreenshot(vm)" :width="vncWidth" style="display: block;" >
+                  </a> 
+                  <a style="color: whitesmoke; display:block; background-color: grey; text-align: center; padding: 2px 0px;" @click="getInfo(vm)">{{ vm.name }}</a>
+              </div>
+            </template>
+            <template v-else>
+              Your search turned up empty!
+            </template>
+          </div>
+        </b-tab-item>
         <b-tab-item label="Netflow" icon="circle-nodes" v-if="netflow.data">
           <div class="control">
             <textarea class="textarea" style="font-family:'Courier New'" readonly rows="40" v-model="netflow.data"></textarea>
@@ -841,11 +849,14 @@
 <script>
   import { mapState }        from 'vuex';
   import VmMountBrowserModal from './VMMountBrowserModal.vue';
+  import VmLabelsModal from './VMLabelsModal.vue';
+
 
   import _ from 'lodash';
 
   export  default {
     async beforeDestroy () {
+      this.setVncScreenshotRes(200) // reset screenshot size
       this.$options.sockets.onmessage = null;
 
       if (this.socket) {
@@ -918,7 +929,18 @@
 
       ...mapState({
         features: 'features'
-      })
+      }),
+
+      vncWidth() {
+        return this.activeTab == 2 ? this.vncZoom * 50 : 200;
+      },
+    },
+    watch: {
+      vncWidth: {
+        handler(w) {
+          this.setVncScreenshotRes(w)
+        }
+      }
     },
 
     methods: {
@@ -1001,6 +1023,16 @@
         this.filesTable.defaultSortDirection = order;
         this.updateFiles();
       }, 
+
+      showTagsModal ( vm ) {
+        this.$buefy.modal.open({
+          parent:       this,
+          component:    VmLabelsModal,
+          trapFocus:    true,
+          hasModalCard: true,
+          props:        {"vmName": vm.name, "experiment": this.$route.params.id, "tags": vm.tags}
+        })
+      },
 
       handler ( event ) {
         event.data.split( /\r?\n/ ).forEach( m => {
@@ -1258,11 +1290,7 @@
               }
 
               case  'progress': {
-                 //this.$buefy.toast.open({
-                 //     message: 'PROGRESS',
-                 //     duration: 200
-                 //   });
-                let percent = ( msg.result.percent * 100 ).toFixed( 0 );
+                let percent = Math.round( msg.result.percent * 100 );
 
                 for ( let i = 0; i < vms.length; i++ ) {
                   if  ( vms[i].name == vm[ 1 ] ) {
@@ -1289,20 +1317,19 @@
                 for ( let i = 0; i < vms.length; i++ ) {
                   if  ( vms[i].name == vm[ 1 ] ) {
                     vms[i].busy = false;
-                    vms[i] = msg.result.vm;                    
-                      let disk  = msg.result.disk;
-                  
-                      this.$buefy.toast.open({
-                        message: 'A memory snapshot was created with name ' + disk + ' for the ' + vm[ 1 ] + ' VM was successfully created.',
-                        type: 'is-success',
-                        duration: 4000
-                      });
-                      this.experiment.vms = [ ...vms ];
-                      break;
-                    }
+                    let disk  = msg.result.disk;
+                
+                    this.$buefy.toast.open({
+                      message: 'A memory snapshot was created with name ' + disk + ' for the ' + vm[ 1 ] + ' VM was successfully created.',
+                      type: 'is-success',
+                      duration: 4000
+                    });
+                    this.experiment.vms = [ ...vms ];
+                    break;
                   }
-                  break;
                 }
+                break;
+              }
               case  'committing': {
 
                 for ( let i = 0; i < vms.length; i++ ) {
@@ -1343,6 +1370,9 @@
           case  'experiment/vm/screenshot': {
             let vm = msg.resource.name.split( '/' );
             let vms = this.experiment.vms;
+            if (!vms) {
+              break;
+            }
 
             switch ( msg.resource.action ) {
               case  'update': {                
@@ -1416,6 +1446,9 @@
           case  'experiment/vm/snapshot': {
             let vm = msg.resource.name.split( '/' );
             let vms = this.experiment.vms;
+            if (!vms) {
+              break;
+            }
 
             switch ( msg.resource.action ) {
               case  'create': {
@@ -1454,7 +1487,7 @@
               }
 
               case  'progress': {
-                let percent = ( msg.result.percent * 100 ).toFixed( 0 );
+                let percent = Math.round(msg.result.percent * 100 );
 
                 for ( let i = 0; i < vms.length; i++ ) {
                   if  ( vms[i].name == vm[ 1 ] ) {
@@ -1541,24 +1574,20 @@
     
       updateDisks (diskType="")  {
         this.disks = [];
-      
+        this.isWaiting = true
+
         this.$http.get( `disks?diskType=${diskType}` ).then(
           response  => {
             response.json().then(
-              state =>  {
-                if ( state.disks.length == 0 ) {
-                  this.isWaiting  = true;
-                } else {
-                  for ( let i = 0;  i < state.disks.length; i++ ) {
-                    this.disks.push( state.disks[i] );
-                  }
-                  
-                  this.isWaiting  = false;
+              state => {
+                this.isWaiting = false
+
+                for ( let i = 0;  i < state.disks.length; i++ ) {
+                  this.disks.push( state.disks[i].fullPath );
                 }
               }
             );
           },  err => {
-            console.log('Getting the disks failed with ' + err.status);
             this.isWaiting = false;
             this.errorNotification(err);
           }
@@ -1573,7 +1602,7 @@
         this.search.filter = ""
 
         
-        if (this.activeTab == 0){
+        if (this.activeTab == 0 || this.activeTab == 2){
           this.searchPlaceholder = "Find a VM"         
           this.updateExperiment()          
         }
@@ -1584,6 +1613,40 @@
 
       },
 
+      getVmScreenshot (vm) {
+        if (vm.external) {
+          return require("@/assets/not-available.png")
+        }
+        if (vm.running && !vm.busy && !vm.screenshot) {
+          return require("@/assets/not-available.png")
+        }
+        else if (vm.delayed_start && vm.state == 'BUILDING') {
+          return require("@/assets/delayed.png")
+        }
+        else if (vm.running && !vm.busy && vm.screenshot) {
+          return vm.screenshot
+        }
+        else if (vm.busy) {
+          return require("@/assets/not-available.png")
+        }
+        else {
+          return require("@/assets/not-running.png")
+        }
+      },
+
+      setVncScreenshotRes(width) {
+        let msg = {
+            resource: {
+              type: 'metadata/screenshot',
+              action: 'resize'
+            },
+            request: {
+              size: width + ''
+            }
+          };
+
+          this.$socket.send(JSON.stringify(msg));
+      },
 
       updateFiles ()  {
 
@@ -3331,7 +3394,8 @@
           capturing: false,
           socket: null,
           data: ''
-        }
+        },
+        vncZoom: 4
       }
     }
   }
@@ -3341,4 +3405,32 @@
 div.autocomplete >>> a.dropdown-item {
   color:  #383838 !important;
 }
+
+.b-table {
+  .table {
+    td {
+      vertical-align: top;
+    }
+  }
+}
+
+.fa-layers-counter { /* counter on tag icon */
+  transform: scale(.7) translateX(50%) translateY(-50%);
+}
+
+>>> .tabs ul {
+  margin-left: 0px !important;
+}
+
+>>> .b-tabs .tab-content {
+  padding: 1rem 0 0 0;
+}
+
+
+  >>> .label {
+    color: white;
+  }
+  >>> .field-label {
+    flex-grow: 3;
+  }
 </style>

@@ -52,6 +52,10 @@ func GetVMState(opts ...Option) (string, error) {
 	return DefaultMM.GetVMState(opts...)
 }
 
+func SetVMTags(opts ...Option) error {
+	return DefaultMM.SetVMTags(opts...)
+}
+
 func ConnectVMInterface(opts ...Option) error {
 	return DefaultMM.ConnectVMInterface(opts...)
 }
@@ -108,6 +112,10 @@ func IsHeadnode(node string) bool {
 	return DefaultMM.IsHeadnode(node)
 }
 
+func GetMMArgs() (map[string]string, error) {
+	return DefaultMM.GetMMArgs()
+}
+
 func GetVLANs(opts ...Option) (map[string]int, error) {
 	return DefaultMM.GetVLANs(opts...)
 }
@@ -138,6 +146,10 @@ func TapVLAN(opts ...TapOption) error {
 
 func MeshShell(host, cmd string) error {
 	return DefaultMM.MeshShell(host, cmd)
+}
+
+func MeshShellResponse(host, cmd string) (string, error) {
+	return DefaultMM.MeshShellResponse(host, cmd)
 }
 
 func MeshSend(ns, host, command string) error {

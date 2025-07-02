@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -183,12 +184,9 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 		}
 
 		s = row["tags"]
-		s = strings.TrimPrefix(s, "{")
-		s = strings.TrimSuffix(s, "}")
-
-		if s != "" {
-			vm.Tags = strings.Split(s, ",")
-		}
+		var tags map[string]string
+		json.Unmarshal([]byte(s), &tags)
+		vm.Tags = tags
 
 		// Make sure the VM name is set prior to calling `GetVMCaptures`, as the VM
 		// name is not always set when calling `GetVMInfo`.
@@ -218,14 +216,19 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 				cmd.Command = fmt.Sprintf("mesh send %s %s", row["host"], cmd.Command)
 			}
 
-			// Only expect one row returned
-			// TODO (btr): check length to avoid a panic.
-			resp := mmcli.RunTabular(cmd)[0]
+			resp := mmcli.RunTabular(cmd)
 
-			if resp["backingfile"] == "" {
-				vm.Disk = resp["image"]
+			if len(resp) == 0 {
+				vm.Disk = disk
 			} else {
-				vm.Disk = resp["backingfile"]
+				// Only expect one row returned
+				info := resp[0]
+
+				if info["backingfile"] == "" {
+					vm.Disk = info["image"]
+				} else {
+					vm.Disk = info["backingfile"]
+				}
 			}
 		} else {
 			// Attempting to get disk info when not using a snapshot will cause a
@@ -479,6 +482,27 @@ func (Minimega) GetVMState(opts ...Option) (string, error) {
 	}
 
 	return status[0]["state"], nil
+}
+
+func (Minimega) SetVMTags(opts ...Option) error {
+	o := NewOptions(opts...)
+
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = fmt.Sprintf("clear vm tag %s ", o.vm)
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("failed to clear tags for vm %s: %w", o.vm, err)
+	}
+
+	for k, v := range o.tags {
+		cmd.Command = fmt.Sprintf("vm tag %s \"%s\" \"%s\"", o.vm, k, v)
+
+		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+			return fmt.Errorf("failed to set tag for vm %s: %s=%s %w", o.vm, k, v, err)
+		}
+	}
+
+	return nil
 }
 
 func (Minimega) ConnectVMInterface(opts ...Option) error {
@@ -816,6 +840,16 @@ func (this Minimega) IsHeadnode(node string) bool {
 	return node == this.Headnode()
 }
 
+func (this Minimega) GetMMArgs() (map[string]string, error) {
+	cmd := mmcli.NewCommand()
+	cmd.Command = "args"
+	rows := mmcli.RunTabular(cmd)
+	if len(rows) == 1 {
+		return rows[0], nil
+	}
+	return nil, fmt.Errorf("no args returned")
+}
+
 func (Minimega) GetVLANs(opts ...Option) (map[string]int, error) {
 	o := NewOptions(opts...)
 
@@ -1094,7 +1128,7 @@ func (this Minimega) TapVLAN(opts ...TapOption) error {
 	o := NewTapOptions(opts...)
 
 	if o.untap {
-		plog.Info("deleting tap from host", "tap", o.name, "host", o.host)
+		plog.Info(plog.TypeSystem, "deleting tap from host", "tap", o.name, "host", o.host)
 
 		var errs error
 
@@ -1104,7 +1138,7 @@ func (this Minimega) TapVLAN(opts ...TapOption) error {
 		}
 
 		if o.netns != "" {
-			plog.Info("deleting network namespace from host", "ns", o.netns, "host", o.host)
+			plog.Info(plog.TypeSystem, "deleting network namespace from host", "ns", o.netns, "host", o.host)
 
 			cmd := fmt.Sprintf("ip netns delete %s", o.netns)
 			if err := this.MeshShell(o.host, cmd); err != nil {
@@ -1115,7 +1149,7 @@ func (this Minimega) TapVLAN(opts ...TapOption) error {
 		return errs
 	}
 
-	plog.Info("creating tap on host", "tap", o.name, "vlan", o.vlan, "bridge", o.bridge, "host", o.host)
+	plog.Info(plog.TypeSystem, "creating tap on host", "tap", o.name, "vlan", o.vlan, "bridge", o.bridge, "host", o.host)
 
 	var cmd string
 
@@ -1136,21 +1170,21 @@ func (this Minimega) TapVLAN(opts ...TapOption) error {
 	}
 
 	if o.netns != "" {
-		plog.Info("creating network namespace for tap on host", "tap", o.name, "host", o.host)
+		plog.Info(plog.TypeSystem, "creating network namespace for tap on host", "tap", o.name, "host", o.host)
 
 		cmd := fmt.Sprintf("ip netns add %s", o.name)
 		if err := this.MeshShell(o.host, cmd); err != nil {
 			return fmt.Errorf("creating network namespace on host %s: %w", o.host, err)
 		}
 
-		plog.Info("moving tap to network namespace on host", "tap", o.name, "host", o.host)
+		plog.Info(plog.TypeSystem, "moving tap to network namespace on host", "tap", o.name, "host", o.host)
 
 		cmd = fmt.Sprintf("ip link set dev %s netns %s", o.name, o.name)
 		if err := this.MeshShell(o.host, cmd); err != nil {
 			return fmt.Errorf("moving tap to network namespace on host %s: %w", o.host, err)
 		}
 
-		plog.Info("bringing tap up in network namespace on host", "tap", o.name, "host", o.host)
+		plog.Info(plog.TypeSystem, "bringing tap up in network namespace on host", "tap", o.name, "host", o.host)
 
 		cmd = fmt.Sprintf("ip netns exec %s ip link set dev %s up", o.name, o.name)
 		if err := this.MeshShell(o.host, cmd); err != nil {
@@ -1158,7 +1192,7 @@ func (this Minimega) TapVLAN(opts ...TapOption) error {
 		}
 
 		if o.ip != "" {
-			plog.Info("setting IP address for tap in network namespace on host", "tap", o.name, "host", o.host)
+			plog.Info(plog.TypeSystem, "setting IP address for tap in network namespace on host", "tap", o.name, "host", o.host)
 
 			cmd := fmt.Sprintf("ip netns exec %s ip addr add %s dev %s", o.name, o.ip, o.name)
 			if err := this.MeshShell(o.host, cmd); err != nil {
@@ -1206,7 +1240,7 @@ func (Minimega) MeshShellResponse(host, command string) (string, error) {
 	for resps := range mmcli.Run(cmd) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
-				plog.Warn("error running shell command: ", "cmd", cmd)
+				plog.Warn(plog.TypeSystem, "error running shell command: ", "cmd", cmd)
 				continue
 			}
 

@@ -49,9 +49,6 @@ ARG PHENIX_COMMIT
 
 RUN VER=${PHENIX_VERSION} COMMIT=${PHENIX_COMMIT} make bin/phenix
 
-RUN wget https://github.com/glattercj/vmdb2/releases/download/v1.0/vmdb2 -P bin/ \
-  && chmod +x bin/vmdb2
-
 RUN git clone --branch main https://github.com/sandialabs/sceptre-phenix-apps.git /phenix-apps
 
 WORKDIR /phenix-apps/src/go
@@ -67,7 +64,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 # tshark needed for scorch tcpdump component
 RUN apt update \
   && echo 'wireshark-common wireshark-common/install-setuid boolean false' | debconf-set-selections \
-  && apt install -y cpio debootstrap git locales nano python3-pip tshark vim vmdb2 \
+  && apt install -y cmdtest cpio debootstrap git iproute2 iputils-ping kpartx locales nano parted psmisc python3 python3-jinja2 python3-pip python3-yaml qemu-utils tshark vim wget xz-utils zerofree \
   && locale-gen en_US.UTF-8 \
   && apt autoremove -y \
   && apt clean -y \
@@ -77,16 +74,17 @@ RUN apt update \
 ENV LANG   en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
 
+RUN git clone https://gitlab.com/glattercj/vmdb2 /opt/vmdb2
+RUN ln -s /opt/vmdb2/vmdb2 /usr/bin/vmdb2
+
 # needed to build Kali images with phenix
-RUN wget -O kali.deb http://http.kali.org/kali/pool/main/k/kali-archive-keyring/kali-archive-keyring_2020.2_all.deb \
-	&& dpkg -i kali.deb && rm kali.deb
+RUN wget https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
 
 # used by scorch
 RUN wget -O filebeat.deb https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.14.2-amd64.deb \
 	&& dpkg -i filebeat.deb && rm filebeat.deb
 
 COPY --from=gobuilder /phenix/bin/phenix   /usr/local/bin/phenix
-COPY --from=gobuilder /phenix/bin/vmdb2    /usr/bin/vmdb2
 COPY --from=gobuilder /go/bin/phenix-app-* /usr/local/bin
 
 ARG CACHEBUST=1

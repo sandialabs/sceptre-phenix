@@ -1,7 +1,7 @@
 # Update GitHub workflow config to change the minimum version of minimega
 # required for use with phenix. This build stage is needed for making sure the
 # latest version of the minimega Python module is installed.
-ARG  MM_MIN_REV=c8e20a3
+ARG  MM_MIN_REV=9f867b3
 FROM ghcr.io/activeshadow/minimega/minimega:${MM_MIN_REV} AS minimega
 
 
@@ -40,7 +40,7 @@ RUN npx redoc-cli build openapi.yml -o index.html --title 'phenix API'
 
 
 # ** gobuilder **
-FROM golang:1.20.7 AS gobuilder
+FROM golang:1.24.1 AS gobuilder
 
 RUN apt update \
   && apt install -y protobuf-compiler xz-utils
@@ -83,7 +83,7 @@ RUN CGO_ENABLED=0 GOOS=linux go install -trimpath ./...
 
 
 # ** Build the phenix image **
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # General image metadata
 # Reference: https://github.com/opencontainers/image-spec/blob/main/annotations.md
@@ -104,7 +104,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 # tshark needed for scorch tcpdump component
 RUN apt update \
   && echo 'wireshark-common wireshark-common/install-setuid boolean false' | debconf-set-selections \
-  && apt install -y cpio debootstrap git iproute2 iputils-ping locales nano pigz python3-pip tshark vim vmdb2 \
+  && apt install -y cmdtest cpio debootstrap git iproute2 iputils-ping kpartx locales nano parted psmisc python3 python3-jinja2 python3-pip python3-yaml qemu-utils tshark vim wget xz-utils zerofree \
   && locale-gen en_US.UTF-8 \
   && apt autoremove -y \
   && apt clean -y \
@@ -125,13 +125,11 @@ RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
   update-ca-certificates; \
   fi"]
 
-RUN wget https://github.com/glattercj/vmdb2/releases/latest/download/vmdb2 -O /usr/bin/vmdb2 \
-  && chmod +x /usr/bin/vmdb2
+RUN git clone https://gitlab.com/glattercj/vmdb2 /opt/vmdb2
+RUN ln -s /opt/vmdb2/vmdb2 /usr/bin/vmdb2
 
 # needed to build Kali images with phenix
-RUN wget -O kali.deb https://http.kali.org/kali/pool/main/k/kali-archive-keyring/kali-archive-keyring_2024.1_all.deb \
-  && dpkg -i kali.deb \
-  && rm kali.deb
+RUN wget https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
 
 # used by scorch
 RUN wget -O glow.tgz https://github.com/charmbracelet/glow/releases/download/v1.5.0/glow_1.5.0_Linux_x86_64.tar.gz \
@@ -150,7 +148,7 @@ ARG PIP_INDEX_URL="https://pypi.org/simple"
 
 # Do this before installing phenix-apps so minimega package is latest version
 COPY --from=minimega /opt/minimega/lib /tmp/minimega
-RUN python3 -m pip install --no-cache-dir /tmp/minimega
+RUN python3 -m pip install --break-system-packages --no-cache-dir /tmp/minimega
 
 # Allow installing from a fork of sceptre-phenix-apps that could
 # exist on GitHub or elsewhere.
@@ -158,8 +156,7 @@ ARG APPS_REPO=github.com/sandialabs/sceptre-phenix-apps
 ARG APPS_BRANCH=main
 
 # Install phenix user apps
-RUN python3 -m pip install \
-  --no-cache-dir \
+RUN python3 -m pip install --break-system-packages --ignore-installed --no-cache-dir \
   "git+https://${APPS_REPO}.git@${APPS_BRANCH}#egg=phenix-apps&subdirectory=src/python"
 
 # Copy binaries from gobuilder stage
@@ -170,7 +167,7 @@ COPY --from=gobuilder /phenix/src/go/bin/phenix-tunneler-* /opt/phenix/downloads
 
 # Update GitHub workflow config to change the minimum version of minimega
 # required for use with phenix.
-ARG   MM_MIN_REV=c8e20a3
+ARG   MM_MIN_REV=9f867b3
 LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandialabs/sceptre-phenix/minimega:${MM_MIN_REV}"
 
 WORKDIR /opt/phenix

@@ -1,4 +1,3 @@
-version: '3.7'
 x-common: &common
   init: true
   network_mode: host
@@ -14,7 +13,7 @@ services:
       context: ../
       dockerfile: docker/Dockerfile
       args:
-        MM_MIN_REV: c8e20a3
+        MM_MIN_REV: 9f867b3
         PHENIX_WEB_AUTH: disabled
     command:
     - phenix
@@ -24,10 +23,10 @@ services:
     image: phenix
     container_name: phenix
     privileged: true
+    pid: host
     <<: *common
     volumes:
       - /dev:/dev
-      - /proc:/proc
       - /etc/localtime:/etc/localtime:ro
       - /var/log/phenix:/var/log/phenix
       - /etc/phenix:/etc/phenix
@@ -44,7 +43,7 @@ services:
       context: .
       dockerfile: Dockerfile.minimega
       args:
-        MM_REV: c8e20a3
+        MM_REV: 9f867b3
     image: minimega
     container_name: minimega
     privileged: true

@@ -1,6 +1,5 @@
 <template>
   <div class="content">
-    <hr>
     <b-field position="is-right">
       <b-autocomplete
         placeholder = "Find an Experiment"

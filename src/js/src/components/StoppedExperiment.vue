@@ -56,21 +56,18 @@
         </footer>
       </div>
     </b-modal>
-    <hr>
     <div class="level is-vcentered">
-      <div class="level-item">
-        <span style="font-weight: bold; font-size: x-large;">Experiment: {{ this.$route.params.id }}</span>&nbsp;
+      <div class="level-left is-block">
+        <span style="font-weight: bold; font-size: x-large;">Experiment: {{ this.$route.params.id }}</span><br>
+        <span v-if="experiment.scenario" style="font-weight: bold;">Scenario: {{ experiment.scenario }}</span>
       </div>
-      <div class="level-item" v-if="experiment.scenario">
-        <span style="font-weight: bold;">Scenario: {{ experiment.scenario }}</span>&nbsp;
-      </div>
-      <div class="level-item" v-if="experiment.scenario">
+      <div class="level-right" v-if="experiment.scenario" style="max-width: 50%;">
         <span style="font-weight: bold;">Apps:</span>&nbsp;
-        <b-taglist>
+        <div style="display: flex; flex-wrap: wrap; gap: 4px;">
           <b-tag v-for="( a, index ) in experiment.apps" :key="index" type="is-light">
             {{ a }}  
           </b-tag>
-        </b-taglist>
+        </div>
       </div>
     </div>
     <b-field v-if="roleAllowed('experiments', 'get', experiment.name)" position="is-right">
@@ -223,7 +220,7 @@
                   {{ ip || 'unknown' }}
                 </div>
               </b-table-column>
-              <b-table-column field="cpus" label="CPUs" sortable centered v-slot="props">
+              <b-table-column field="cpus" label="CPUs" width="100" sortable centered v-slot="props">
                 <template v-if="!props.row.external && roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
                   <b-tooltip label="menu for assigning vm(s) cpus" type="is-dark">
                     <b-select :value="props.row.cpus" expanded @input="( value ) => assignCpu( props.row.name, value )">
@@ -238,7 +235,7 @@
                   {{ props.row.cpus || 'unknown' }}
                 </template>
               </b-table-column>
-              <b-table-column field="ram" label="Memory" sortable centered v-slot="props">
+              <b-table-column field="ram" label="Memory" width="112" sortable centered v-slot="props">
                 <template v-if="!props.row.external && roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
                   <b-tooltip label="menu for assigning vm(s) memory" type="is-dark">
                     <b-select :value="props.row.ram" expanded @input="( value ) => assignRam( props.row.name, value )">
@@ -274,11 +271,51 @@
                   {{ getBaseName(props.row.disk) || 'unknown' }}
                 </template>
               </b-table-column>
+              <b-table-column field="inject_partition" label="Partition" sortable centered v-slot="props">
+                <template v-if="!props.row.external && roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
+                  <b-tooltip label="menu for assigning inject partition" type="is-dark">
+                    <b-select :value="props.row.inject_partition" expanded @input="( value ) => assignPartition( props.row.name, value )">
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4">4</option>
+                    </b-select>
+                  </b-tooltip>
+                </template>
+                <template v-else>
+                  {{ props.row.inject_partition }}
+                </template>
+              </b-table-column>
+              <b-table-column label="Labels" centered v-slot="props">
+                <template>
+                  <b-tooltip label="View/Edit Labels" type="is-dark">
+                    <div @click="showTagsModal( props.row )" class="is-clickable">
+                      <font-awesome-layers full-width>
+                        <font-awesome-icon  icon="tag" />
+                        <font-awesome-layers-text counter :value="tagCount(props.row.tags)" />
+                      </font-awesome-layers>
+                    </div>
+                  </b-tooltip>
+                </template>
+              </b-table-column>
               <b-table-column label="Boot" centered v-slot="props">
                 <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
-                  <b-tooltip :label="getBootLabel( props.row )" type="is-dark">
+                  <b-tooltip :label="getBootLabel( props.row )" type="is-dark" class="is-clickable">
                     <div @click="updateDnb( props.row )">
                       <font-awesome-icon :class="bootDecorator( props.row )" icon="bolt" />
+                    </div>
+                  </b-tooltip>
+                </template>
+              </b-table-column>
+              <b-table-column label="Persistence" centered v-slot="props">
+                <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name)">
+                  <b-tooltip :label="getSnapshotLabel( props.row )" type="is-dark">
+                    <div>
+                      <b-select :value="props.row.snapshot" expanded @input="( value ) => updateSnapshot( props.row.name, value )">
+                      <option value=true>Non-Persistent</option>
+                      <option value=false>Persistent</option>
+                    </b-select>
+                   
                     </div>
                   </b-tooltip>
                 </template>
@@ -364,6 +401,7 @@
 
 <script>
   import _ from 'lodash';
+  import VmLabelsModal from './VMLabelsModal.vue';
 
   export default {
     beforeDestroy () {
@@ -463,6 +501,24 @@
           return 'dnb';
         } else {
           return 'boot';
+        }
+      },
+      getSnapshotStatus ( vm, persistanceLabel ) {
+        if (vm.external) {
+          return true;
+        }
+
+        if ( vm.snapshot && persistanceLabel ) {
+          return true;
+        } else if (vm.snapshot && !persistanceLabel) {
+          return false;
+        }
+        else if (!vm.snapshot && persistanceLabel){
+          return false;
+        }
+        else {
+
+          return true;
         }
       },
 
@@ -628,23 +684,23 @@
       },
       
       updateDisks () {
+        this.isWaiting = true
+
         this.$http.get( 'disks' + '?expName=' + this.$route.params.id ).then(
           response => {
             response.json().then(
               state => {
-                if ( state.disks.length == 0 ) {
-                  this.isWaiting = true;
-                } else {
-                  for ( let i = 0; i < state.disks.length; i++ ) {
-                    this.disks.push( state.disks[ i ] );
-                  }
+                this.isWaiting = false
 
-                  this.disks.sort()
-                  this.isWaiting = false;
+                for ( let i = 0;  i < state.disks.length; i++ ) {
+                  this.disks.push( state.disks[i].fullPath );
                 }
+
+                this.disks.sort()
               }
             );
           }, err => {
+            this.isWaiting = false
             this.errorNotification(err);
           }
         );
@@ -1008,6 +1064,57 @@
           }
         })
       },
+      assignPartition ( name, partition ) {
+        this.$buefy.dialog.confirm({
+          title: 'Assign an Image Partition',
+          message: 'This will assign the image partition ' + partition + ' to the ' + name + ' VM.',
+          cancelText: 'Cancel',
+          confirmText: 'Assign Partition',
+          type: 'is-success',
+          hasIcon: true,
+          onConfirm: () => {
+            this.isWaiting = true;
+            
+            let update = { "inject_partition": partition };
+
+            this.$http.patch(
+              'experiments/' + this.$route.params.id + '/vms/' + name, update
+            ).then(
+              response => {
+                let vms = this.experiment.vms;
+                
+                for ( let i = 0; i < vms.length; i++ ) {
+                  if ( vms[ i ].name == response.body.name ) {
+                    vms[ i ] = response.body;
+                    break;
+                  }
+                }
+              
+                this.experiment.vms = [ ...vms ];
+              
+                this.isWaiting = false;              
+              }, err => {
+                this.errorNotification(err);                
+                this.isWaiting = false;
+              }
+            )
+          },
+          onCancel: () => {
+            // force table to be rerendered so selected value resets
+            this.table.key += 1;
+          }
+        })
+      },
+
+      showTagsModal ( vm ) {
+        this.$buefy.modal.open({
+          parent:       this,
+          component:    VmLabelsModal,
+          trapFocus:    true,
+          hasModalCard: true,
+          props:        {"vmName": vm.name, "experiment": this.$route.params.id, "tags": vm.tags}
+        })
+      },
 
       updateDnb ( vm ) {
         if (vm.external) {
@@ -1041,44 +1148,98 @@
         )
       },
 
-      updateSchedule () {
-        this.$buefy.dialog.confirm({
-          title: 'Assign a Host Schedule',
-          message: 'This will schedule host(s) with the ' 
-                   + this.algorithm 
-                   + ' algorithm for the ' 
-                   + this.$route.params.id 
-                   + ' experiment.',
-          cancelText: 'Cancel',
-          confirmText: 'Assign Schedule',
-          type: 'is-success',
-          hasIcon: true,
-          onConfirm: () => {
-            this.isWaiting = true;
+      updateSnapshot( name, persistence ) {
+    let persistenceMessage = ""
+    if (persistence == "true"){
+      persistenceMessage = "Non-Persistent"
+    }
+    else {
+      persistenceMessage = "Persistent"
+    }
+    if (persistence == "true"){
+        persistence = true
+    }
+    else {
+      persistence = false
+    }
+    this.$buefy.dialog.confirm({
+      title: 'Assign Image Persistence',
+      message: 'This will assign the ' + name + ' VM\'s disk to be ' +  persistenceMessage,
+      cancelText: 'Cancel',
+      confirmText: 'Confirm',
+      type: 'is-success',
+      hasIcon: true,
+      onConfirm: () => {
+        this.isWaiting = true;
+        
+        let update = { "snapshot": persistence};
 
-            this.$http.post(
-              'experiments/' + this.$route.params.id + '/schedule', { "algorithm": this.algorithm }
-            ).then(
-              response => {
-                let vms = this.experiment.vms;
-                
-                for ( let i = 0; i < vms.length; i++ ) {
-                  if ( vms[ i ].name == response.body.name ) {
-                    vms[ i ] = response.body;
-                    break;
-                  }
-                }
-              
-                this.experiment.vms = [ ...vms ];
-              
-                this.isWaiting = false;              
-              }, err => {
-                this.errorNotification(err);                
-                this.isWaiting = false;
+        this.$http.patch(
+          'experiments/' + this.$route.params.id + '/vms/' + name, update
+        ).then(
+          response => {
+            let vms = this.experiment.vms;
+            
+            for ( let i = 0; i < vms.length; i++ ) {
+              if ( vms[ i ].name == response.body.name ) {
+                vms[ i ] = response.body;
+                break;
               }
-            )
+            }
+          
+            this.experiment.vms = [ ...vms ];
+          
+            this.isWaiting = false;              
+          }, err => {
+            this.errorNotification(err);                
+            this.isWaiting = false;
           }
-        })
+        )
+      },
+      onCancel: () => {
+        // force table to be rerendered so selected value resets
+        this.table.key += 1;
+      }
+    })
+  },
+        updateSchedule () {
+          this.$buefy.dialog.confirm({
+            title: 'Assign a Host Schedule',
+            message: 'This will schedule host(s) with the ' 
+                    + this.algorithm 
+                    + ' algorithm for the ' 
+                    + this.$route.params.id 
+                    + ' experiment.',
+            cancelText: 'Cancel',
+            confirmText: 'Assign Schedule',
+            type: 'is-success',
+            hasIcon: true,
+            onConfirm: () => {
+              this.isWaiting = true;
+
+              this.$http.post(
+                'experiments/' + this.$route.params.id + '/schedule', { "algorithm": this.algorithm }
+              ).then(
+                response => {
+                  let vms = this.experiment.vms;
+                  
+                  for ( let i = 0; i < vms.length; i++ ) {
+                    if ( vms[ i ].name == response.body.name ) {
+                      vms[ i ] = response.body;
+                      break;
+                    }
+                  }
+                
+                  this.experiment.vms = [ ...vms ];
+                
+                  this.isWaiting = false;              
+                }, err => {
+                  this.errorNotification(err);                
+                  this.isWaiting = false;
+                }
+              )
+            }
+          })
       },
 
       getUniqueItems(inputArray) {
@@ -1102,6 +1263,9 @@
       
       getBootLabel (vm) {
         return vm.dnb ? `Boot ${vm.name}` : `Do Not Boot ${vm.name}`;
+      },
+      getSnapshotLabel (vm) {
+        return vm.snapshot ? `${vm.name}'s disk will not persist` : `${vm.name}'s disk will persist`;
       },
       
       selectAllVMs () {            
@@ -1298,5 +1462,17 @@
 
   div.autocomplete >>> a.dropdown-item {
     color: #383838 !important;
+  }
+
+  .fa-layers-counter { /* counter on tag icon */
+    transform: scale(.7) translateX(50%) translateY(-50%);
+  }
+
+  >>> .tabs ul {
+    margin-left: 0px !important;
+  }
+
+  >>> .b-tabs .tab-content {
+    padding: 1rem 0 0 0;
   }
 </style>

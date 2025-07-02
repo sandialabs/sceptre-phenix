@@ -3,6 +3,7 @@
 package mmcli
 
 import (
+	"phenix/util/plog"
 	"strings"
 
 	"github.com/activeshadow/libminimega/minicli"
@@ -64,6 +65,7 @@ func RunTabular(cmd *Command) []map[string]string {
 	for resps := range Run(cmd) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
+				plog.Error(plog.TypeSystem, "error running mm cmd", "cmd", cmd.Command, "error", resp.Error)
 				continue
 			}
 
