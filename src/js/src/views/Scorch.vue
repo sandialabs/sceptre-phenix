@@ -118,7 +118,7 @@
       :active.sync="isWaiting"
       :can-cancel="false"></b-loading>
     <b-modal
-      :active.sync="terminal.modal"
+      v-model="terminal.modal"
       :can-cancel="terminal.ro"
       :on-cancel="resetTerminal"
       has-modal-card>
