@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 SOURCES := $(shell find ./src \( -name '*.js' -o -name '*.vue' \))
 
-all: clean dist/index.html
+all:
 
 clean:
 	$(RM) -r dist
