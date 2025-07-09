@@ -1,6 +1,6 @@
-FROM docker.io/library/node:12.18.3 AS jsbuilder
+FROM docker.io/library/node:22 AS jsbuilder
 
-RUN npm install -g @vue/cli redoc-cli
+RUN npm install -g @redocly/cli
 
 COPY ./src/js /phenix/src/js
 
@@ -9,8 +9,8 @@ WORKDIR /phenix/src/js
 ARG PHENIX_WEB_AUTH=disabled
 ARG PHENIX_BASE_PATH=/
 
-ENV VUE_APP_AUTH ${PHENIX_WEB_AUTH}
-ENV VUE_BASE_PATH ${PHENIX_BASE_PATH}
+ENV VITE_AUTH ${PHENIX_WEB_AUTH}
+ENV VITE_BASE_PATH ${PHENIX_BASE_PATH}
 
 RUN npm install \
   && npm run build
@@ -19,10 +19,10 @@ COPY ./src/go/web/public/docs/openapi.yml /phenix/src/go/web/public/docs/openapi
 
 WORKDIR /phenix/src/go/web/public/docs
 
-RUN npx redoc-cli bundle openapi.yml -o index.html --title 'phenix API'
+RUN npx build-docs bundle openapi.yml -o index.html --title 'phenix API'
 
 
-FROM docker.io/library/golang:1.17.2 AS gobuilder
+FROM docker.io/library/golang:1.24.1 AS gobuilder
 
 RUN apt update \
   && apt install -y protobuf-compiler xz-utils

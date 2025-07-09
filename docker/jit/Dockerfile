@@ -8,21 +8,20 @@ FROM $PHENIX_IMG
 ARG PHENIX_REPO
 ARG PHENIX_BRANCH
 
-ENV NODE_VERSION 14.21.3
+ENV NODE_VERSION 22.17.0
 
 RUN wget -O node.txz https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz \
   && tar -xJf node.txz -C /usr/local --strip-components=1 --no-same-owner && rm node.txz \
   && ln -s /usr/local/bin/node /usr/local/bin/nodejs
 
-RUN npm install -g @vue/cli redoc-cli yarn
+RUN npm install -g @redocly/cli
 RUN git clone --branch ${PHENIX_BRANCH} https://github.com/${PHENIX_REPO}.git /usr/local/src/phenix \
   && mkdir -p /opt/phenix/web \
   && cp -a /usr/local/src/phenix/src/go/web/public /opt/phenix/web
 
 WORKDIR /usr/local/src/phenix/src/js
-RUN yarn install
 WORKDIR /opt/phenix/web/public
-RUN npx redoc-cli build docs/openapi.yml -o docs/index.html --title 'phenix API'
+RUN npx @redocly/cli build docs/openapi.yml -o docs/index.html --title 'phenix API'
 
 COPY phenix-ui-entrypoint.sh /phenix-ui-entrypoint.sh
 RUN  chmod +x /phenix-ui-entrypoint.sh

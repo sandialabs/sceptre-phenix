@@ -6,7 +6,7 @@ FROM ghcr.io/sandia-minimega/minimega:${MM_MIN_REV} AS minimega
 
 
 # ** jsbuilder **
-FROM node:14.21.3 AS jsbuilder
+FROM node:22 AS jsbuilder
 
 ARG INSTALL_CERTS=
 RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
@@ -15,10 +15,9 @@ RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
     wget ${arr[$i]} -e use_proxy=no \
       -O /usr/local/share/ca-certificates/custom$i.crt; \
   done && \
-  update-ca-certificates; \
-  yarn config set cafile /etc/ssl/certs/ca-certificates.crt; fi"]
+  update-ca-certificates; fi"]
 
-RUN npm install -g @vue/cli redoc-cli
+RUN npm install -g @redocly/cli
 
 COPY ./src/js /phenix/src/js
 
@@ -27,8 +26,8 @@ WORKDIR /phenix/src/js
 ARG PHENIX_WEB_AUTH=disabled
 ARG PHENIX_BASE_PATH=/
 
-ENV VUE_APP_AUTH ${PHENIX_WEB_AUTH}
-ENV VUE_BASE_PATH ${PHENIX_BASE_PATH}
+ENV VITE_AUTH ${PHENIX_WEB_AUTH}
+ENV VITE_BASE_PATH ${PHENIX_BASE_PATH}
 
 RUN make dist/index.html
 
@@ -36,7 +35,7 @@ COPY ./src/go/web/public/docs/openapi.yml /phenix/src/go/web/public/docs/openapi
 
 WORKDIR /phenix/src/go/web/public/docs
 
-RUN npx redoc-cli build openapi.yml -o index.html --title 'phenix API'
+RUN npx @redocly/cli build-docs openapi.yml -o index.html --title 'phenix API'
 
 
 # ** gobuilder **

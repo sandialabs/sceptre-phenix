@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => {
     build: {
       rollupOptions: {
         plugins: [
-          visualizer({ open: true, filename: './analysis/bundle-analysis.html' }),
+          visualizer({ open: false, filename: './analysis/bundle-analysis.html' }),
         ],
       },
     },
