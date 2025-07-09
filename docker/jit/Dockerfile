@@ -21,7 +21,7 @@ RUN git clone --branch ${PHENIX_BRANCH} https://github.com/${PHENIX_REPO}.git /u
 
 WORKDIR /usr/local/src/phenix/src/js
 WORKDIR /opt/phenix/web/public
-RUN npx @redocly/cli build docs/openapi.yml -o docs/index.html --title 'phenix API'
+RUN npx @redocly/cli build-docs docs/openapi.yml -o docs/index.html --title 'phenix API'
 
 COPY phenix-ui-entrypoint.sh /phenix-ui-entrypoint.sh
 RUN  chmod +x /phenix-ui-entrypoint.sh
