@@ -8,7 +8,6 @@ export const usePhenixStore = defineStore('phenix', {
     role: JSON.parse(localStorage.getItem('phenix.role')),
     auth: localStorage.getItem('phenix.auth') === 'true',
     next: null,
-    logs: [],
     features: [],
   }),
   actions: {

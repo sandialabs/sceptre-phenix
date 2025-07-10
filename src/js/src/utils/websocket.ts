@@ -103,10 +103,6 @@ function globalWsMessageHandler(event: MessageEvent): void {
           duration: 5000,
         });
       }
-
-      if (msg.resource.type == 'log') {
-        //   this.$store.commit( 'LOG', msg.result ); TODO: fix
-      }
     }
   });
 }

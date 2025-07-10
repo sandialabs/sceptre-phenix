@@ -15,20 +15,4 @@ axiosInstance.interceptors.request.use((config) => {
   return config;
 });
 
-// axiosInstance.interceptors.request.use(
-//   config => {
-//     const store = usePhenixStore()
-//
-//     if (store.token) {
-//       request.headers.set( 'X-phenix-auth-token', 'bearer ' + store.state.token)
-//     }
-//
-//     return response => {
-//       if (response.status == 401) {
-//         store.logout()
-//       }
-//     }
-//   }
-// )
-//
 export default axiosInstance;
