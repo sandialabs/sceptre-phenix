@@ -54,6 +54,12 @@ steps:
   - fstab: root
   - grub: bios
     tag: root
+{{- if gt (len .Kernel) 0 }}
+    kernel-params:
+  {{- range $param := .Kernel }}
+      - {{ $param }}
+  {{- end }}
+{{- end }}
 {{- if .Ramdisk }}
   - ramdisk: root
 {{- end }}
