@@ -158,7 +158,7 @@
     },
   };
 </script>
-<style scoped >
+<style scoped>
   .custom-small {
     width: 25%;
     min-width: 150px;

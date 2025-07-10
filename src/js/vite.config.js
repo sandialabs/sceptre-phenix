@@ -8,9 +8,9 @@ import { visualizer } from 'rollup-plugin-visualizer';
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   process.env = {
-    ...process.env, 
-    ...loadEnv(mode, process.cwd()), 
-    "VITE_FAVICON": mode === "development" ? "/favicon_dev.ico" : "/favicon.ico",
+    ...process.env,
+    ...loadEnv(mode, process.cwd()),
+    VITE_FAVICON: mode === 'development' ? '/favicon_dev.ico' : '/favicon.ico',
   };
   return {
     base: process.env.VITE_BASE_PATH || '/',
@@ -24,7 +24,10 @@ export default defineConfig(({ mode }) => {
     build: {
       rollupOptions: {
         plugins: [
-          visualizer({ open: false, filename: './analysis/bundle-analysis.html' }),
+          visualizer({
+            open: false,
+            filename: './analysis/bundle-analysis.html',
+          }),
         ],
       },
     },
@@ -60,5 +63,5 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-  }
+  };
 });

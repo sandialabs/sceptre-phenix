@@ -1,4 +1,4 @@
-import axiosInstance from '@/utils/axios.js'
+import axiosInstance from '@/utils/axios.js';
 import { usePhenixStore } from '@/store.js';
 import { ToastProgrammatic as Toast } from 'buefy';
 
@@ -7,56 +7,54 @@ export class TimeoutTool {
     this.data = {
       enabled: false,
       timeout_min: 0,
-      warning_min: 0
-    }
-    this.time_set = 0 //keep track of last time set, update every 30 minutes
+      warning_min: 0,
+    };
+    this.time_set = 0; //keep track of last time set, update every 30 minutes
 
     this.logoutTimer = null;
     this.warnToast = null;
   }
 
-
   fetchAndStart() {
     let now = new Date();
 
     //don't update if we've updated in past hour
-    if (!this.data.enabled || this.time_set - now >= 60*60*1000) {
-      return
+    if (!this.data.enabled || this.time_set - now >= 60 * 60 * 1000) {
+      return;
     }
 
-    axiosInstance.get('settings/timeout')
-      .then((resp) => {
-        this.data = resp.data
-        this.time_set = new Date();
-        this.startLogoutTimer()
-      })
+    axiosInstance.get('settings/timeout').then((resp) => {
+      this.data = resp.data;
+      this.time_set = new Date();
+      this.startLogoutTimer();
+    });
   }
 
-  startLogoutTimer(){
-    const store = usePhenixStore()
+  startLogoutTimer() {
+    const store = usePhenixStore();
     if (!this.data.enabled || !store.auth) {
-      return
+      return;
     }
 
-    var timeout = this.data.timeout_min
-    const warning = this.data.warning_min
+    var timeout = this.data.timeout_min;
+    const warning = this.data.warning_min;
 
     if (timeout <= 0) {
-      timeout = 30
+      timeout = 30;
     }
 
     if (warning > 0) {
-      const diff = timeout - warning
-      this.logoutTimer = setTimeout(this.warnUser, 1000 * 60 * diff, warning)
+      const diff = timeout - warning;
+      this.logoutTimer = setTimeout(this.warnUser, 1000 * 60 * diff, warning);
     } else {
-      this.logoutTimer = setTimeout(this.logoutUser, 1000 * 60 * timeout)
+      this.logoutTimer = setTimeout(this.logoutUser, 1000 * 60 * timeout);
     }
   }
 
-  warnUser(timeLeft){
-    var message = `Still there? Inactive auto log out in ${timeLeft} minutes.`
+  warnUser(timeLeft) {
+    var message = `Still there? Inactive auto log out in ${timeLeft} minutes.`;
     if (timeLeft == 1) {
-      message = `Still there? Inactive auto log out in ${timeLeft} minute.`
+      message = `Still there? Inactive auto log out in ${timeLeft} minute.`;
     }
 
     this.warnToast = new Toast().open({
@@ -67,22 +65,21 @@ export class TimeoutTool {
 
     this.logoutTimer = setTimeout(this.logoutUser, 1000 * 60 * timeLeft);
   }
-  logoutUser(){
+  logoutUser() {
     if (this.warnToast) {
       this.warnToast.close();
       this.warnToast = null;
     }
-    axiosInstance.get('logout')
-      .then((resp) => {
-        if (resp.status == 204) {
-          const store = usePhenixStore()
-          store.logout()
-        }
-      })
+    axiosInstance.get('logout').then((resp) => {
+      if (resp.status == 204) {
+        const store = usePhenixStore();
+        store.logout();
+      }
+    });
   }
   resetTimer() {
     if (!this.data.enabled) {
-      return
+      return;
     }
     if (this.warnToast) {
       this.warnToast.close();

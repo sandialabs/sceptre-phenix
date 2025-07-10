@@ -1,10 +1,7 @@
 <template>
   <div class="content">
     <!-- CREATE -->
-    <b-modal
-      v-model="isCreateActive"
-      @close="resetLocalUser"
-      has-modal-card>
+    <b-modal v-model="isCreateActive" @close="resetLocalUser" has-modal-card>
       <div class="modal-card" style="width: 25em">
         <header class="modal-card-head">
           <p class="modal-card-title">Create a New User</p>
@@ -132,10 +129,7 @@
       </div>
     </b-modal>
     <!-- TOKEN -->
-    <b-modal
-      v-model="isNewTokenActive"
-      @close="resetLocalUser"
-      has-modal-card>
+    <b-modal v-model="isNewTokenActive" @close="resetLocalUser" has-modal-card>
       <div class="modal-card" style="width: 25em">
         <header class="modal-card-head">
           <p class="modal-card-title">New token for {{ user.username }}</p>

@@ -485,8 +485,8 @@
       },
       resetViewer() {
         this.viewer.isActive = false;
-        (this.viewer.config = { kind: null, metadata: { name: null } }),
-          (this.viewer.title = null);
+        ((this.viewer.config = { kind: null, metadata: { name: null } }),
+          (this.viewer.title = null));
         this.viewer.obj = null;
       },
       viewConfig(cfg) {

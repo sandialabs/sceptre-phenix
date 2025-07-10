@@ -76,10 +76,9 @@ are only available to Global Administrator or Global Viewer.
       <b-navbar-item
         v-if="auth && tunneler"
         tag="router-link"
-        :to="{ name: 'tunneler' }"
-        >
+        :to="{ name: 'tunneler' }">
         Tunneler
-      </b-navbar-item >
+      </b-navbar-item>
       <b-navbar-item
         v-if="auth && roleAllowed('settings', 'edit')"
         tag="router-link"

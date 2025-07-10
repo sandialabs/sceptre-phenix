@@ -1,8 +1,6 @@
 <template>
   <div ref="editor" class="editor"></div>
-  <b-loading
-    :is-full-page="false"
-    v-model="isLoading"></b-loading>
+  <b-loading :is-full-page="false" v-model="isLoading"></b-loading>
 </template>
 
 <script>
@@ -49,29 +47,41 @@
       };
     },
     async mounted() {
-
       this.isLoading = true;
 
       const aceModule = await import('ace-builds/src-noconflict/ace');
       this.ace = aceModule.default;
       this.ace.config.set('basePath', 'ace-builds/src-noconflict/');
 
-      const themeDraculaUrl = await import('ace-builds/src-noconflict/theme-dracula?url');
-      this.ace.config.setModuleUrl('ace/theme/dracula', themeDraculaUrl.default);
+      const themeDraculaUrl = await import(
+        'ace-builds/src-noconflict/theme-dracula?url'
+      );
+      this.ace.config.setModuleUrl(
+        'ace/theme/dracula',
+        themeDraculaUrl.default,
+      );
 
-      const keybindingVimUrl = await import('ace-builds/src-noconflict/keybinding-vim?url');
-      this.ace.config.setModuleUrl('ace/keybinding/vim', keybindingVimUrl.default);
+      const keybindingVimUrl = await import(
+        'ace-builds/src-noconflict/keybinding-vim?url'
+      );
+      this.ace.config.setModuleUrl(
+        'ace/keybinding/vim',
+        keybindingVimUrl.default,
+      );
       await import('ace-builds/src-noconflict/keybinding-vim');
 
       await import('ace-builds/src-noconflict/ext-language_tools');
       this.ace.require('ace/ext/language_tools');
 
-      const modeJsonUrl = await import('ace-builds/src-noconflict/mode-json?url');
+      const modeJsonUrl = await import(
+        'ace-builds/src-noconflict/mode-json?url'
+      );
       this.ace.config.setModuleUrl('ace/mode/json', modeJsonUrl.default);
 
-      const modeYamlUrl = await import('ace-builds/src-noconflict/mode-yaml?url');
+      const modeYamlUrl = await import(
+        'ace-builds/src-noconflict/mode-yaml?url'
+      );
       this.ace.config.setModuleUrl('ace/mode/yaml', modeYamlUrl.default);
-
 
       this.editor = this.ace.edit(this.$refs.editor, {
         theme: 'ace/theme/dracula',
@@ -91,7 +101,7 @@
       });
 
       this.loadVimCommands();
-      this.isLoading = false
+      this.isLoading = false;
     },
     watch: {
       value(newValue) {
@@ -106,7 +116,7 @@
       },
       vim(vimActive) {
         if (!this.editor) {
-          return
+          return;
         }
         if (vimActive) {
           this.editor.setKeyboardHandler('ace/keyboard/vim');

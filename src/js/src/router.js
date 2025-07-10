@@ -91,13 +91,18 @@ const router = createRouter({
       component: () => import('@/views/Tunneler.vue'),
     },
 
-    {path: '/proxysignup', name: 'proxysignup', component: () => import('@/views/ProxySignUp.vue'), props: true},
+    {
+      path: '/proxysignup',
+      name: 'proxysignup',
+      component: () => import('@/views/ProxySignUp.vue'),
+      props: true,
+    },
 
     //static paths
     { path: '/builder?token=:token', name: 'builder' },
     { path: '/version', name: 'version' },
-    {path: '/features',             name: 'features'},
-    {path: '/api/v1/options',       name: 'options'},
+    { path: '/features', name: 'features' },
+    { path: '/api/v1/options', name: 'options' },
 
     //file, vnc
     {
@@ -111,11 +116,22 @@ const router = createRouter({
     { path: '/api/v1/console/:pid/size', name: 'console-size' },
 
     //tunneler paths
-    {path: '/downloads/tunneler/phenix-tunneler-linux-amd64',       name: 'linux-tunneler'},
-    {path: '/downloads/tunneler/phenix-tunneler-darwin-arm64',      name: 'macos-arm-tunneler'},
-    {path: '/downloads/tunneler/phenix-tunneler-darwin-amd64',      name: 'macos-intel-tunneler'},
-    {path: '/downloads/tunneler/phenix-tunneler-windows-amd64.exe', name: 'windows-tunneler'},
-
+    {
+      path: '/downloads/tunneler/phenix-tunneler-linux-amd64',
+      name: 'linux-tunneler',
+    },
+    {
+      path: '/downloads/tunneler/phenix-tunneler-darwin-arm64',
+      name: 'macos-arm-tunneler',
+    },
+    {
+      path: '/downloads/tunneler/phenix-tunneler-darwin-amd64',
+      name: 'macos-intel-tunneler',
+    },
+    {
+      path: '/downloads/tunneler/phenix-tunneler-windows-amd64.exe',
+      name: 'windows-tunneler',
+    },
   ],
 });
 
@@ -192,15 +208,16 @@ router.beforeEach(async (to, from, next) => {
       // next(); //TODO
       // return;
 
-      axiosInstance.get('login')
+      axiosInstance
+        .get('login')
         .then((response) => {
-          store.commit('LOGIN', )
-          store.login(response.data, false)
+          store.commit('LOGIN');
+          store.login(response.data, false);
           next();
         })
         .catch((err) => {
-          next({name: 'proxysignup', params: {'username': err.body.trim()}})
-        })
+          next({ name: 'proxysignup', params: { username: err.body.trim() } });
+        });
 
       // try {
       //   let resp = await Vue.http.get('login');

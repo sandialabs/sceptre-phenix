@@ -1,9 +1,6 @@
 <template>
   <div class="content">
-    <b-modal
-      v-model="expModal.active"
-      @close="resetExpModal"
-      has-modal-card>
+    <b-modal v-model="expModal.active" @close="resetExpModal" has-modal-card>
       <div class="modal-card" style="width: 35em">
         <header class="modal-card-head">
           <p class="modal-card-title">
@@ -336,8 +333,7 @@
           <div v-if="redeployModal.vm.length > 0">
             <div v-for="(vmI, index) in redeployModal.vm" :key="index">
               <div>
-                <hr
-                  v-if="parseInt(index) > 0" />
+                <hr v-if="parseInt(index) > 0" />
                 Modify current settings and redeploy {{ vmI.name }} <br /><br />
                 CPUs:
                 <b-tooltip label="menu for assigning cpus" type="is-dark">
@@ -496,10 +492,7 @@
         </footer>
       </div>
     </b-modal>
-    <b-modal
-      v-model="appsModal.active"
-      @close="resetAppsModal"
-      has-modal-card>
+    <b-modal v-model="appsModal.active" @close="resetAppsModal" has-modal-card>
       <div class="modal-card" style="width: 25em">
         <header class="modal-card-head">
           <p class="modal-card-title">phēnix Apps</p>
@@ -3532,7 +3525,7 @@
       },
 
       resetRedeployModal() {
-        console.log("RESET")
+        console.log('RESET');
         this.redeployModal = {
           active: false,
           vm: [],

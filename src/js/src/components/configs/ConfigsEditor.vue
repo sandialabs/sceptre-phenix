@@ -155,7 +155,7 @@
   import axiosInstance from '@/utils/axios.js';
 
   export default {
-    expose: [ 'confirmResetEditor' ],
+    expose: ['confirmResetEditor'],
     components: {
       AceEditor,
     },
@@ -220,7 +220,7 @@
       window.addEventListener('beforeunload', this.handlePageReload);
     },
     unmounted() {
-      window.removeEventListener('beforeunload', this.handlePageReload)
+      window.removeEventListener('beforeunload', this.handlePageReload);
     },
     created() {
       this.debouncedUpdateConfigTemplate = debounce(

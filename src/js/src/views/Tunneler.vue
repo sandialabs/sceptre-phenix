@@ -3,8 +3,8 @@
     <div id="quick-start">
       <h1>Quick Start</h1>
       <p>
-        The phēnix-tunneler is an application phēnix users can run on their local
-        machine in order to access services in VMs locally.
+        The phēnix-tunneler is an application phēnix users can run on their
+        local machine in order to access services in VMs locally.
 
         <br />
         <br />
@@ -24,10 +24,10 @@
         <br />
         <br />
 
-        To start the phenix-tunneler server, run <code>phenix-tunneler serve
-        full-url-to-phenix</code>, passing it either the <code>--username</code>
-        or <code>--auth-token</code> option if authentication is enabled in the
-        phēnix UI.
+        To start the phenix-tunneler server, run
+        <code>phenix-tunneler serve full-url-to-phenix</code>, passing it either
+        the <code>--username</code> or <code>--auth-token</code> option if
+        authentication is enabled in the phēnix UI.
 
         <br />
         <br />
@@ -68,14 +68,30 @@
     data() {
       return {
         data: [
-          {'name': 'Linux',   'arch': 'amd64', 'link': this.$router.resolve({ name: 'linux-tunneler'}).href},
-          {'name': 'MacOS',   'arch': 'arm64', 'link': this.$router.resolve({ name: 'macos-arm-tunneler'}).href},
-          {'name': 'MacOS',   'arch': 'amd64', 'link': this.$router.resolve({ name: 'macos-intel-tunneler'}).href},
-          {'name': 'Windows', 'arch': 'amd64', 'link': this.$router.resolve({ name: 'windows-tunneler'}).href}
-        ]
-      }
-    }
-  }
+          {
+            name: 'Linux',
+            arch: 'amd64',
+            link: this.$router.resolve({ name: 'linux-tunneler' }).href,
+          },
+          {
+            name: 'MacOS',
+            arch: 'arm64',
+            link: this.$router.resolve({ name: 'macos-arm-tunneler' }).href,
+          },
+          {
+            name: 'MacOS',
+            arch: 'amd64',
+            link: this.$router.resolve({ name: 'macos-intel-tunneler' }).href,
+          },
+          {
+            name: 'Windows',
+            arch: 'amd64',
+            link: this.$router.resolve({ name: 'windows-tunneler' }).href,
+          },
+        ],
+      };
+    },
+  };
 </script>
 
 <style scoped lang="scss">

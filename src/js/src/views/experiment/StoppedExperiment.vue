@@ -310,7 +310,9 @@
                     <b-select
                       v-model="props.row.host"
                       expanded
-                      @update:modelValue="(value) => assignHost(props.row.name, value)">
+                      @update:modelValue="
+                        (value) => assignHost(props.row.name, value)
+                      ">
                       <option
                         v-for="(h, index) in hosts"
                         :key="index"
@@ -358,7 +360,9 @@
                   <b-select
                     v-model="props.row.cpus"
                     expanded
-                    @update:modelValue="(value) => assignCpu(props.row.name, value)">
+                    @update:modelValue="
+                      (value) => assignCpu(props.row.name, value)
+                    ">
                     <option value="1">1</option>
                     <option value="2">2</option>
                     <option value="3">3</option>
@@ -392,7 +396,9 @@
                   <b-select
                     v-model="props.row.ram"
                     expanded
-                    @update:modelValue="(value) => assignRam(props.row.name, value)">
+                    @update:modelValue="
+                      (value) => assignRam(props.row.name, value)
+                    ">
                     <option value="512">512 MB</option>
                     <option value="1024">1 GB</option>
                     <option value="2048">2 GB</option>
@@ -424,7 +430,9 @@
                   <b-select
                     v-model="props.row.disk"
                     expanded
-                    @update:modelValue="(value) => assignDisk(props.row.name, value)">
+                    @update:modelValue="
+                      (value) => assignDisk(props.row.name, value)
+                    ">
                     <option v-for="(d, index) in disks" :key="index" :value="d">
                       {{ getBaseName(d) }}
                     </option>
@@ -456,7 +464,9 @@
                   <b-select
                     v-model="props.row.inject_partition"
                     expanded
-                    @update:modelValue="(value) => assignPartition(props.row.name, value)">
+                    @update:modelValue="
+                      (value) => assignPartition(props.row.name, value)
+                    ">
                     <option value="1">1</option>
                     <option value="2">2</option>
                     <option value="3">3</option>
@@ -515,7 +525,9 @@
                     <b-select
                       v-model="props.row.snapshot"
                       expanded
-                      @update:modelValue="(value) => updateSnapshot(props.row.name, value)">
+                      @update:modelValue="
+                        (value) => updateSnapshot(props.row.name, value)
+                      ">
                       <option value="true">Non-Persistent</option>
                       <option value="false">Persistent</option>
                     </b-select>

@@ -33,8 +33,10 @@
         return true;
       }
     },
-    async mounted(){
-      this.editorComponent = (await import('@/components/configs/ConfigsEditor.vue')).default
+    async mounted() {
+      this.editorComponent = (
+        await import('@/components/configs/ConfigsEditor.vue')
+      ).default;
     },
     methods: {
       handleDone(msg) {

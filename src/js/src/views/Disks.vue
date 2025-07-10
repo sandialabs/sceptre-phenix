@@ -215,9 +215,7 @@
         </b-autocomplete>
 
         <p class="control">
-          <button
-            class="button input-button"
-            @click="filterString = ''">
+          <button class="button input-button" @click="filterString = ''">
             <b-icon icon="window-close"></b-icon>
           </button>
         </p>
@@ -238,9 +236,7 @@
           accept=".qcow2,.qc2,.tgz,.hdd,.iso"
           :disabled="currentUploadProgress != null">
           <span class="file-cta">
-            <b-icon
-              v-if="currentUploadProgress == null"
-              icon="upload"></b-icon>
+            <b-icon v-if="currentUploadProgress == null" icon="upload"></b-icon>
             <p v-else style="width: 32px">{{ currentUploadProgress }}%</p>
           </span>
         </b-upload>
@@ -261,7 +257,6 @@
       sortable
       hoverable
       default-sort="name">
-
       <template #empty>
         <section class="section">
           <div class="content has-text-white has-text-centered">
@@ -295,7 +290,6 @@
         v-slot="props">
         {{ props.row.size }}
       </b-table-column>
-
     </b-table>
     <br />
     <b-field v-if="paginationNeeded" grouped position="is-right">
@@ -391,9 +385,7 @@
         switch (action) {
           case 'snapshot':
             return (
-              disk.inUse ||
-              disk.kind != 'VM' ||
-              !roleAllowed('disks', 'create')
+              disk.inUse || disk.kind != 'VM' || !roleAllowed('disks', 'create')
             );
           case 'commit':
             return (
@@ -408,14 +400,10 @@
               !roleAllowed('disks', 'update', disk.name)
             );
           case 'delete':
-            return (
-              disk.inUse || !roleAllowed('disks', 'delete', disk.name)
-            );
+            return disk.inUse || !roleAllowed('disks', 'delete', disk.name);
           case 'rename':
           case 'resize':
-            return (
-              disk.inUse || !roleAllowed('disks', 'update', disk.name)
-            );
+            return disk.inUse || !roleAllowed('disks', 'update', disk.name);
           case 'clone':
             return !roleAllowed('disks', 'create');
           case 'download':

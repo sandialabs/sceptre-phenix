@@ -13,11 +13,10 @@
   import { storeToRefs } from 'pinia';
   import { watch } from 'vue';
 
-  import {TimeoutTool} from '@/utils/timeout.js'
-  
+  import { TimeoutTool } from '@/utils/timeout.js';
 
   const store = usePhenixStore();
-  const timeout = new TimeoutTool()
+  const timeout = new TimeoutTool();
 
   axios
     .get('/features')
@@ -32,8 +31,7 @@
     // connect websockets once user has authenticated (or auth disabled)
     if (import.meta.env.VITE_AUTH === 'disabled' || store.auth) {
       connectWebsocket();
-      timeout.fetchAndStart()
-
+      timeout.fetchAndStart();
     } else {
       const { auth } = storeToRefs(store);
       watch(auth, async (newAuth) => {
@@ -44,7 +42,7 @@
         }
 
         if (newAuth) {
-          timeout.fetchAndStart()
+          timeout.fetchAndStart();
         }
       });
     }

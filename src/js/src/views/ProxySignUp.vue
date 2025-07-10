@@ -10,7 +10,7 @@
       <b-field label="Last Name">
         <b-input type="text" v-model="lastName"></b-input>
       </b-field>
-      <br>
+      <br />
       <button class="button is-light" @click="onSubmit">Submit</button>
     </div>
   </div>
@@ -21,65 +21,67 @@
     props: {
       username: {
         type: String,
-        default: ''
-      }
+        default: '',
+      },
     },
 
-    created () {
-      if ( !this.username ) {
-        this.$router.replace( '/' );
+    created() {
+      if (!this.username) {
+        this.$router.replace('/');
       }
     },
 
     methods: {
-      onSubmit () {
-        if ( !this.firstName ) {
+      onSubmit() {
+        if (!this.firstName) {
           this.$buefy.toast.open({
             message: 'You must include a first name',
             type: 'is-warning',
-            duration: 4000
+            duration: 4000,
           });
-          
+
           return;
         }
-        
-        if ( !this.lastName ) {
+
+        if (!this.lastName) {
           this.$buefy.toast.open({
             message: 'You must include a last name',
             type: 'is-warning',
-            duration: 4000
+            duration: 4000,
           });
-          
+
           return;
         }
 
         let params = {
-          "username":   this.username,
-          "first_name": this.firstName,
-          "last_name":  this.lastName
-        }
-        
+          username: this.username,
+          first_name: this.firstName,
+          last_name: this.lastName,
+        };
+
         this.$http.post('signup', params).then(
-          response => { 
-            return response.json().then(
-              user => {
-                this.$store.commit( 'LOGIN', { "loginResponse": user, "remember": false } );
-              }
-            )
-          }, err => {
+          (response) => {
+            return response.json().then((user) => {
+              this.$store.commit('LOGIN', {
+                loginResponse: user,
+                remember: false,
+              });
+            });
+          },
+          (err) => {
             this.errorNotification(err);
-          }
+          },
         );
-      }
+      },
     },
 
-    data () {
+    data() {
       return {
         firstName: null,
-        lastName:  null
-      }
-    }
-  }
+        lastName: null,
+      };
+    },
+  };
 </script>
 
 <!-- This styling is used for the sign up form. -->
@@ -91,7 +93,7 @@
     padding: 20px;
     box-shadow: 0 2px 3px #ccc;
   }
-  
+
   .signup-form :deep(.label) {
     color: whitesmoke;
   }

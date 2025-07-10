@@ -27,13 +27,19 @@
               </option>
             </b-select>
           </b-field>
-          <b-field v-if="createModal.showScenarios" label="Experiment Scenario" grouped>
+          <b-field
+            v-if="createModal.showScenarios"
+            label="Experiment Scenario"
+            grouped>
             <b-select
               v-if="createModal.showScenarios"
               v-model="createModal.scenario"
               expanded
               placeholder="None">
-              <option v-for="(a, s) in createModal.scenarios" :key="s" :value="s">
+              <option
+                v-for="(a, s) in createModal.scenarios"
+                :key="s"
+                :value="s">
                 {{ s }}
               </option>
             </b-select>
@@ -42,9 +48,9 @@
                             and they are optional"
               type="is-light is-right"
               multilined>
-                <b-icon
-                  v-if="createModal.showScenarios"
-                  icon="question-circle"></b-icon>
+              <b-icon
+                v-if="createModal.showScenarios"
+                icon="question-circle"></b-icon>
             </b-tooltip>
           </b-field>
           <b-taglist>
