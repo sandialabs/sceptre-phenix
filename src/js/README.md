@@ -35,6 +35,11 @@ npm run build
 npm run format
 ```
 
+**Run tests**
+```
+npm run test
+```
+
 ## Code Details
 
 ### Structure
@@ -48,6 +53,7 @@ npm run format
   * `main.js`: Creates the Vue app
   * `router.js`: Defines routes and hooks using `vue-router` 
   * `store.js`: Defines the `pinia` store
+* `test`: unit tests
 * `*.env`: Files which define environment variables used during build
 * `index.html`: Base page loaded by browser. Loads the rest of the app
 * `vite.config.js`: Defines parameters for building
