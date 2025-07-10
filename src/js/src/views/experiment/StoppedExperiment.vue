@@ -57,7 +57,7 @@
     </b-modal>
     <b-modal
       v-model="fileViewerModal.active"
-      :on-cancel="resetFileViewerModal"
+      @close="resetFileViewerModal"
       has-modal-card>
       <div class="modal-card" style="width: 50em">
         <header class="modal-card-head x-modal-dark">
@@ -149,7 +149,7 @@
         <b-tooltip label="search on a specific category" type="is-light">
           <b-select
             v-model="filesTable.category"
-            @input="(value) => assignCategory(value)"
+            @update:modelValue="(value) => assignCategory(value)"
             placeholder="All Categories">
             <option
               v-for="(category, index) in filesTable.categories"
@@ -310,7 +310,7 @@
                     <b-select
                       v-model="props.row.host"
                       expanded
-                      @input="(value) => assignHost(props.row.name, value)">
+                      @update:modelValue="(value) => assignHost(props.row.name, value)">
                       <option
                         v-for="(h, index) in hosts"
                         :key="index"
@@ -358,7 +358,7 @@
                   <b-select
                     v-model="props.row.cpus"
                     expanded
-                    @input="(value) => assignCpu(props.row.name, value)">
+                    @update:modelValue="(value) => assignCpu(props.row.name, value)">
                     <option value="1">1</option>
                     <option value="2">2</option>
                     <option value="3">3</option>
@@ -392,7 +392,7 @@
                   <b-select
                     v-model="props.row.ram"
                     expanded
-                    @input="(value) => assignRam(props.row.name, value)">
+                    @update:modelValue="(value) => assignRam(props.row.name, value)">
                     <option value="512">512 MB</option>
                     <option value="1024">1 GB</option>
                     <option value="2048">2 GB</option>
@@ -424,7 +424,7 @@
                   <b-select
                     v-model="props.row.disk"
                     expanded
-                    @input="(value) => assignDisk(props.row.name, value)">
+                    @update:modelValue="(value) => assignDisk(props.row.name, value)">
                     <option v-for="(d, index) in disks" :key="index" :value="d">
                       {{ getBaseName(d) }}
                     </option>
@@ -456,7 +456,7 @@
                   <b-select
                     v-model="props.row.inject_partition"
                     expanded
-                    @input="(value) => assignPartition(props.row.name, value)">
+                    @update:modelValue="(value) => assignPartition(props.row.name, value)">
                     <option value="1">1</option>
                     <option value="2">2</option>
                     <option value="3">3</option>
@@ -515,7 +515,7 @@
                     <b-select
                       v-model="props.row.snapshot"
                       expanded
-                      @input="(value) => updateSnapshot(props.row.name, value)">
+                      @update:modelValue="(value) => updateSnapshot(props.row.name, value)">
                       <option value="true">Non-Persistent</option>
                       <option value="false">Persistent</option>
                     </b-select>
@@ -529,7 +529,7 @@
             <div class="control is-flex">
               <b-switch
                 v-model="table.isPaginated"
-                @input="
+                @update:modelValue="
                   updateExperiment();
                   changePaginate();
                 "
@@ -633,7 +633,7 @@
             <div class="control is-flex">
               <b-switch
                 v-model="filesTable.isPaginated"
-                @input="
+                @update:modelValue="
                   updateFiles();
                   changeFilesPaginate();
                 "

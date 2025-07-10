@@ -2,7 +2,7 @@
   <div class="content">
     <b-modal
       v-model="createModal.active"
-      :on-cancel="resetCreateModal"
+      @close="resetCreateModal"
       has-modal-card>
       <div class="modal-card" style="width: 25em">
         <header class="modal-card-head">
@@ -20,47 +20,44 @@
             <b-select
               placeholder="Select a topology"
               v-model="createModal.topology"
-              @input="getScenarios"
+              @update:modelValue="getScenarios"
               expanded>
               <option v-for="(t, index) in topologies" :key="index" :value="t">
                 {{ t }}
               </option>
             </b-select>
           </b-field>
-          <b-tooltip
-            label="a scenario is a collection of user app configurations for a topology 
-                           and they are optional"
-            type="is-light is-right"
-            multilined>
-            <b-field
+          <b-field v-if="createModal.showScenarios" label="Experiment Scenario" grouped>
+            <b-select
               v-if="createModal.showScenarios"
-              label="Experiment Scenario"></b-field>
-            <b-icon
-              v-if="createModal.showScenarios"
-              icon="question-circle"
-              style="color: #383838"></b-icon>
-          </b-tooltip>
-          <b-select
-            v-if="createModal.showScenarios"
-            v-model="createModal.scenario"
-            expanded
-            placeholder="None">
-            <option v-for="(a, s) in createModal.scenarios" :key="s" :value="s">
-              {{ s }}
-            </option>
-          </b-select>
-          <br />
+              v-model="createModal.scenario"
+              expanded
+              placeholder="None">
+              <option v-for="(a, s) in createModal.scenarios" :key="s" :value="s">
+                {{ s }}
+              </option>
+            </b-select>
+            <b-tooltip
+              label="a scenario is a collection of user app configurations for a topology 
+                            and they are optional"
+              type="is-light is-right"
+              multilined>
+                <b-icon
+                  v-if="createModal.showScenarios"
+                  icon="question-circle"></b-icon>
+            </b-tooltip>
+          </b-field>
           <b-taglist>
             <b-tag
               v-for="(a, index) in createModal.scenarios[createModal.scenario]"
               :key="index"
-              type="is-light"
+              class="is-clickable"
               :class="{ 'is-success': !a.disabled }"
               @click="clickScenario(index)">
               {{ a.name }}
             </b-tag>
           </b-taglist>
-          <b-collapse class="card" animation="slide" :open="false">
+          <b-collapse class="card" animation="slide" :model-value="false">
             <template #trigger="props">
               <div class="card-header" role="button">
                 <p class="card-header-title">Options</p>

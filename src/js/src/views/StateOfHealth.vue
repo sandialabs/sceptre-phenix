@@ -2,7 +2,7 @@
   <div>
     <b-modal
       v-model="detailsModal.active"
-      :on-cancel="resetDetailsModal"
+      @close="resetDetailsModal"
       has-modal-card
       :width="1280">
       <div class="modal-card" style="width: auto">
@@ -281,7 +281,7 @@
     <!-- STYLE MODAL -->
     <b-modal
       v-model="styleModal.active"
-      :on-cancel="resetStyleModal"
+      @close="resetStyleModal"
       has-modal-card>
       <div class="modal-card">
         <header class="modal-card-head">

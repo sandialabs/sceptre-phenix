@@ -22,7 +22,7 @@
     <b-modal
       :active.sync="terminal.modal"
       :can-cancel="terminal.ro"
-      :on-cancel="resetTerminal"
+      @close="resetTerminal"
       has-modal-card>
       <div class="modal-card" style="width: 60em">
         <header class="modal-card-head">
@@ -55,7 +55,7 @@
         </footer>
       </div>
     </b-modal>
-    <b-modal :active.sync="output.modal" :on-cancel="exitOutput" has-modal-card>
+    <b-modal :active.sync="output.modal" @close="exitOutput" has-modal-card>
       <div class="modal-card" style="width: 50em">
         <header class="modal-card-head x-modal-dark">
           <p class="modal-card-title x-config-text">{{ output.title }}</p>

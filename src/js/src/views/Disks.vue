@@ -3,7 +3,7 @@
     <!-- DETAILS MODAL -->
     <b-modal
       v-model="detailsModal.active"
-      :on-cancel="() => (detailsModal.active = false)"
+      @close="() => (detailsModal.active = false)"
       has-modal-card>
       <div class="modal-card">
         <header class="modal-card-head">
@@ -234,7 +234,7 @@
         <b-upload
           class="file-label"
           style="margin-left: 8px"
-          @input="uploadDisk"
+          @update:modelValue="uploadDisk"
           accept=".qcow2,.qc2,.tgz,.hdd,.iso"
           :disabled="currentUploadProgress != null">
           <span class="file-cta">

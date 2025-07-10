@@ -1,5 +1,5 @@
 <template>
-  <b-modal v-model="error.modal" :on-cancel="resetErrorModal" has-modal-card>
+  <b-modal v-model="error.modal" @close="resetErrorModal" has-modal-card>
     <div class="modal-card" style="width: 50em">
       <header class="modal-card-head x-modal-dark">
         <p class="modal-card-title">{{ error.title }}</p>

@@ -2,7 +2,7 @@
   <div class="content">
     <b-modal
       v-model="expModal.active"
-      :on-cancel="resetExpModal"
+      @close="resetExpModal"
       has-modal-card>
       <div class="modal-card" style="width: 35em">
         <header class="modal-card-head">
@@ -262,7 +262,7 @@
     </b-modal>
     <b-modal
       v-model="portForwardModal.active"
-      :on-cancel="resetPortForwardModal"
+      @close="resetPortForwardModal"
       has-modal-card>
       <div class="modal-card" style="width: 30em">
         <header class="modal-card-head">
@@ -325,7 +325,7 @@
     </b-modal>
     <b-modal
       v-model="redeployModal.active"
-      :on-cancel="resetRedeployModal"
+      @close="resetRedeployModal"
       has-modal-card
       ref="reDeploy">
       <div class="modal-card" style="width: auto">
@@ -337,15 +337,14 @@
             <div v-for="(vmI, index) in redeployModal.vm" :key="index">
               <div>
                 <hr
-                  v-if="parseInt(index) > 0"
-                  style="color: #595959; background-color: #595959" />
+                  v-if="parseInt(index) > 0" />
                 Modify current settings and redeploy {{ vmI.name }} <br /><br />
                 CPUs:
                 <b-tooltip label="menu for assigning cpus" type="is-dark">
                   <b-select
                     :value="vmI.cpus"
                     expanded
-                    @input="(value) => (vmI.cpus = value)">
+                    @update:modelValue="(value) => (vmI.cpus = value)">
                     <option value="1">1</option>
                     <option value="2">2</option>
                     <option value="3">3</option>
@@ -361,7 +360,7 @@
                   <b-select
                     :value="vmI.ram"
                     expanded
-                    @input="(value) => (vmI.ram = value)">
+                    @update:modelValue="(value) => (vmI.ram = value)">
                     <option value="512">512 MB</option>
                     <option value="1024">1 GB</option>
                     <option value="2048">2 GB</option>
@@ -377,7 +376,7 @@
                 <b-tooltip :label="getDiskToolTip(vmI.disk)" type="is-dark">
                   <b-select
                     :value="vmI.disk"
-                    @input="(value) => (vmI.disk = value)">
+                    @update:modelValue="(value) => (vmI.disk = value)">
                     <option v-for="(d, index) in disks" :key="index" :value="d">
                       {{ getBaseName(d) }}
                     </option>
@@ -391,7 +390,7 @@
                   <b-select
                     :value="vmI.inject"
                     expanded
-                    @input="(value) => (vmI.inject = value)">
+                    @update:modelValue="(value) => (vmI.inject = value)">
                     <option value="true">Yes</option>
                     <option value="false">No</option>
                   </b-select>
@@ -415,7 +414,7 @@
     <b-modal
       v-model="diskImageModal.active"
       has-modal-card
-      :on-cancel="resetDiskImageModal"
+      @close="resetDiskImageModal"
       ref="diskImage">
       <div class="modal-card" style="width: auto">
         <header class="modal-card-head">
@@ -456,7 +455,7 @@
     <b-modal
       v-model="memorySnapshotModal.active"
       has-modal-card
-      :on-cancel="resetMemorySnapshotModal"
+      @close="resetMemorySnapshotModal"
       ref="memorySnapshot">
       <div class="modal-card" style="width: auto">
         <header class="modal-card-head">
@@ -499,7 +498,7 @@
     </b-modal>
     <b-modal
       v-model="appsModal.active"
-      :on-cancel="resetAppsModal"
+      @close="resetAppsModal"
       has-modal-card>
       <div class="modal-card" style="width: 25em">
         <header class="modal-card-head">
@@ -542,7 +541,7 @@
     </b-modal>
     <b-modal
       v-model="fileViewerModal.active"
-      :on-cancel="resetFileViewerModal"
+      @close="resetFileViewerModal"
       has-modal-card>
       <div class="modal-card" style="width: 50em">
         <header class="modal-card-head x-modal-dark">
@@ -569,7 +568,7 @@
     <b-modal
       v-model="opticalDiscModal.active"
       has-modal-card
-      :on-cancel="resetOpticalDiscModal"
+      @close="resetOpticalDiscModal"
       ref="opticalDisc">
       <div class="modal-card" style="width: auto">
         <header class="modal-card-head">
@@ -584,7 +583,7 @@
               type="is-dark">
               <b-select
                 :value="opticalDiscModal.disc"
-                @input="(value) => (opticalDiscModal.disc = value)">
+                @update:modelValue="(value) => (opticalDiscModal.disc = value)">
                 <option v-for="(d, index) in disks" :key="index" :value="d">
                   {{ getBaseName(d) }}
                 </option>
@@ -866,7 +865,7 @@
           <b-tooltip label="search on a specific category" type="is-light">
             <b-select
               :value="filesTable.category"
-              @input="(value) => assignCategory(value)"
+              @update:modelValue="(value) => assignCategory(value)"
               placeholder="All Categories">
               <option
                 v-for="(category, index) in filesTable.categories"
@@ -1265,7 +1264,7 @@
             <div class="control is-flex">
               <b-switch
                 v-model="table.isPaginated"
-                @input="
+                @update:modelValue="
                   updateExperiment();
                   changePaginate();
                 "
@@ -1369,7 +1368,7 @@
             <div class="control is-flex">
               <b-switch
                 v-model="filesTable.isPaginated"
-                @input="
+                @update:modelValue="
                   updateFiles();
                   changeFilesPaginate();
                 "
@@ -2167,7 +2166,7 @@
             this.isWaiting = false;
 
             for (let i = 0; i < resp.data.disks.length; i++) {
-              this.disks.push(resp.data.disks[i]);
+              this.disks.push(resp.data.disks[i].fullPath);
             }
           })
           .catch((err) => {
@@ -3533,6 +3532,7 @@
       },
 
       resetRedeployModal() {
+        console.log("RESET")
         this.redeployModal = {
           active: false,
           vm: [],

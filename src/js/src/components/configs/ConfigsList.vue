@@ -1,7 +1,7 @@
 <template>
   <b-modal
     v-model="isUploaderModalActive"
-    :on-cancel="resetUploader"
+    @close="resetUploader"
     has-modal-card>
     <div class="modal-card" style="width: auto">
       <header class="modal-card-head x-modal-dark">
@@ -27,7 +27,7 @@
       </section>
     </div>
   </b-modal>
-  <b-modal v-model="viewer.isActive" :on-cancel="resetViewer" has-modal-card>
+  <b-modal v-model="viewer.isActive" @close="resetViewer" has-modal-card>
     <div class="modal-card" style="width: 50em">
       <header class="modal-card-head x-modal-dark">
         <p class="modal-card-title x-config-text">{{ viewer.title }}</p>

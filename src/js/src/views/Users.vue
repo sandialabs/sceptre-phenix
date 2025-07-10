@@ -3,7 +3,7 @@
     <!-- CREATE -->
     <b-modal
       v-model="isCreateActive"
-      :on-cancel="resetLocalUser"
+      @close="resetLocalUser"
       has-modal-card>
       <div class="modal-card" style="width: 25em">
         <header class="modal-card-head">
@@ -75,7 +75,7 @@
       </div>
     </b-modal>
     <!-- EDIT -->
-    <b-modal v-model="isEditActive" :on-cancel="resetLocalUser" has-modal-card>
+    <b-modal v-model="isEditActive" @close="resetLocalUser" has-modal-card>
       <div class="modal-card" style="width: 25em">
         <header class="modal-card-head">
           <p class="modal-card-title">User {{ user.username }}</p>
@@ -134,7 +134,7 @@
     <!-- TOKEN -->
     <b-modal
       v-model="isNewTokenActive"
-      :on-cancel="resetLocalUser"
+      @close="resetLocalUser"
       has-modal-card>
       <div class="modal-card" style="width: 25em">
         <header class="modal-card-head">
