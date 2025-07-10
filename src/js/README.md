@@ -9,6 +9,7 @@ Requires node 22. It is recommended to install node using [nvm](https://github.c
 ```
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 nvm install 22
+nvm use 22
 ```
 
 Run `npm install` afterwards to install all modules defined in `package.json`
@@ -21,7 +22,6 @@ Run `npm install` afterwards to install all modules defined in `package.json`
 ```
 npm run dev
 ```
-
 
 **Compile for Production**
 
@@ -71,4 +71,4 @@ npm run test
   * Note: currently Buefy uses Bulma 0.9.4. See docs here: https://versions.bulma.io/0.9.4/documentation/
 
 ### Notes
-* Font Awesome icons are imported individually in `main.js` to reduce bundle size. Add any new icons there
+* Font Awesome icons are imported individually in `main.js` to reduce bundle size. Add any new icons there.
