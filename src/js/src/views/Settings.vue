@@ -1,6 +1,6 @@
 <template>
   <section>
-    <div class="settings-section">
+    <div class="form-section">
       <form class="content">
         <h3>Password Settings</h3>
         <b-field>
@@ -158,16 +158,7 @@
     },
   };
 </script>
-<style scoped>
-  .settings-section {
-    padding: 10px;
-    margin: auto;
-    max-width: 800px;
-    /* todo: change to scss variables */
-    background-color: rgba(155, 155, 155, 0.66);
-    border-radius: 12px;
-    backdrop-filter: blur(5px);
-  }
+<style scoped >
   .custom-small {
     width: 25%;
     min-width: 150px;

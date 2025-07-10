@@ -111,3 +111,12 @@ div.is-success {
 .tooltip-trigger > span.icon {
   height: 100%;
 }
+
+.form-section {
+  padding: 15px;
+  margin: auto;
+  max-width: 800px;
+
+  background-color: $background-bis;
+  border-radius: 12px;
+}
