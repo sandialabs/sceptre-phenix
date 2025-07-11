@@ -312,27 +312,34 @@
             }})
           </b-table-column>
           <b-table-column label="Actions" width="150" centered v-slot="props">
-            <button
-              v-if="roleAllowed('experiments', 'delete', props.row.name)"
-              class="button is-light is-small action"
-              :disabled="updating(props.row.status)"
-              @click="del(props.row.name, props.row.running)">
-              <b-icon icon="trash"></b-icon>
-            </button>
-            <router-link
-              v-if="roleAllowed('experiments', 'get', props.row.name)"
-              class="button is-light is-small action"
-              :disabled="updating(props.row.status)"
-              :to="{ name: 'soh', params: { id: props.row.name } }">
-              <b-icon icon="heartbeat"></b-icon>
-            </router-link>
-            <router-link
-              v-if="roleAllowed('experiments', 'get', props.row.name)"
-              class="button is-light is-small action"
-              :disabled="updating(props.row.status)"
-              :to="{ name: 'scorchruns', params: { id: props.row.name } }">
-              <b-icon icon="fire"></b-icon>
-            </router-link>
+            <b-tooltip class="action" :delay="500" label="delete experiment" type="is-light" multilined>
+              <button
+                v-if="roleAllowed('experiments', 'delete', props.row.name)"
+                class="button is-light is-small"
+                :disabled="updating(props.row.status)"
+                @click="del(props.row.name, props.row.running)">
+                <b-icon icon="trash"></b-icon>
+              </button>
+            </b-tooltip>
+            <b-tooltip class="action" :delay="500" label="view soh" type="is-light" multilined>
+              <router-link
+                v-if="roleAllowed('experiments', 'get', props.row.name)"
+                class="button is-light is-small"
+                :disabled="updating(props.row.status)"
+                :to="{ name: 'soh', params: { id: props.row.name } }">
+                <b-icon icon="heartbeat"></b-icon>
+              </router-link>
+            </b-tooltip>
+            <b-tooltip class="action" :delay="500" label="view scorch" type="is-light" multilined>
+              <router-link
+                v-if="roleAllowed('experiments', 'get', props.row.name)"
+                class="button is-light is-small"
+                :disabled="updating(props.row.status)"
+                :to="{ name: 'scorchruns', params: { id: props.row.name } }">
+                <b-icon icon="fire"></b-icon>
+              </router-link>
+            </b-tooltip>
+
           </b-table-column>
         </b-table>
         <br />
@@ -655,7 +662,7 @@
 
               for (let i = 0; i < this.experiments.length; i++) {
                 if (this.experiments[i].name == name) {
-                  this.$set(this.experiments[i], 'status', 'stopped');
+                  this.experiments[i].status = "stopped"
                   break;
                 }
               }
@@ -982,9 +989,3 @@
     },
   };
 </script>
-
-<style lang="scss" scoped>
-  .action:not(:last-child) {
-    margin-right: 5px;
-  }
-</style>

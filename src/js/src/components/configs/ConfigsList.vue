@@ -61,14 +61,12 @@
     <div class="level-left" />
     <div class="level-right">
       <div class="level-item">
-        <b-field position="is-center">
-          <div v-if="selectedConfigs.length > 0">
+        <b-field position="is-right" grouped>
+          <b-field
+            v-if="selectedConfigs.length > 0 && selectedConfigs.every((c) =>
+              roleAllowed('configs', 'get', c.metadata.name),
+            )">
             <b-tooltip
-              v-if="
-                selectedConfigs.every((c) =>
-                  roleAllowed('configs', 'get', c.metadata.name),
-                )
-              "
               label="download selected configs"
               type="is-light is-top">
               <button
@@ -77,13 +75,13 @@
                 <b-icon icon="download"></b-icon>
               </button>
             </b-tooltip>
-
+          </b-field>
+          <b-field
+              v-if="selectedConfigs.length > 0 && 
+              selectedConfigs.every((c) =>
+                roleAllowed('configs', 'delete', c.metadata.name),
+              )">
             <b-tooltip
-              v-if="
-                selectedConfigs.every((c) =>
-                  roleAllowed('configs', 'delete', c.metadata.name),
-                )
-              "
               label="delete selected configs"
               type="is-light is-top">
               <button
@@ -92,10 +90,7 @@
                 <b-icon icon="trash"></b-icon>
               </button>
             </b-tooltip>
-          </div>
-        </b-field>
-
-        <b-field position="is-right" grouped>
+          </b-field>
           <b-field>
             <b-select placeholder="Filter on Kind" v-model="filterKind">
               <option v-for="(k, index) in filterOptions" :key="index" :value="k">
@@ -218,24 +213,30 @@
       </b-table-column>
 
       <b-table-column label="Actions" centered v-slot="props">
-        <button
-          v-if="roleAllowed('configs', 'update', props.row.metadata.name)"
-          class="button is-light is-small action"
-          @click="$emit('edit', props.row)">
-          <b-icon icon="edit"></b-icon>
-        </button>
-        <button
-          v-if="roleAllowed('configs', 'get', props.row.metadata.name)"
-          class="button is-light is-small action"
-          @click="download([props.row])">
-          <b-icon icon="download"></b-icon>
-        </button>
-        <button
-          v-if="roleAllowed('configs', 'delete', props.row.metadata.name)"
-          class="button is-light is-small action"
-          @click="deleteConfigs([props.row])">
-          <b-icon icon="trash"></b-icon>
-        </button>
+        <b-tooltip class="action" :delay="500" label="edit config file" type="is-light" multilined>
+          <button
+            v-if="roleAllowed('configs', 'update', props.row.metadata.name)"
+            class="button is-light is-small action"
+            @click="$emit('edit', props.row)">
+            <b-icon icon="edit"></b-icon>
+          </button>
+        </b-tooltip>
+        <b-tooltip class="action" :delay="500" label="download config" type="is-light" multilined>
+          <button
+            v-if="roleAllowed('configs', 'get', props.row.metadata.name)"
+            class="button is-light is-small action"
+            @click="download([props.row])">
+            <b-icon icon="download"></b-icon>
+          </button>
+        </b-tooltip>
+        <b-tooltip class="action" :delay="500" label="delete config" type="is-light" multilined>
+          <button
+            v-if="roleAllowed('configs', 'delete', props.row.metadata.name)"
+            class="button is-light is-small action"
+            @click="deleteConfigs([props.row])">
+            <b-icon icon="trash"></b-icon>
+          </button>
+        </b-tooltip>
       </b-table-column>
     </b-table>
     <br />
@@ -536,8 +537,5 @@
   }
   textarea {
     color: whitesmoke;
-  }
-  .action:not(:last-child) {
-    margin-right: 5px;
   }
 </style>

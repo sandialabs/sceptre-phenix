@@ -120,3 +120,8 @@ div.is-success {
   background-color: $background-bis;
   border-radius: 12px;
 }
+
+//useful for buttons side by side in table
+.action:not(:last-child) {
+  margin-right: 5px;
+}

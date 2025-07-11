@@ -223,23 +223,30 @@
           {{ props.row.role_name ? props.row.role_name : 'Not yet assigned' }}
         </b-table-column>
         <b-table-column label="Actions" width="150" centered v-slot="props">
-          <button
-            class="button is-light is-small action"
-            @click="newToken(props.row.username)">
-            <b-icon icon="key"></b-icon>
-          </button>
-          <button
-            v-if="roleAllowed('users', 'delete', props.row.username)"
-            class="button is-light is-small action"
-            @click="deleteUser(props.row.username)">
-            <b-icon icon="trash"></b-icon>
-          </button>
-          <button
-            v-if="roleAllowed('users', 'patch', props.row.username)"
-            class="button is-light is-small action"
-            @click="editUser(props.row.username)">
-            <b-icon icon="pencil"></b-icon>
-          </button>
+
+          <b-tooltip class="action" :delay="500" label="create new user token" type="is-light" multilined>
+            <button
+              class="button is-light is-small"
+              @click="newToken(props.row.username)">
+              <b-icon icon="key"></b-icon>
+            </button>
+          </b-tooltip>
+          <b-tooltip class="action" :delay="500" label="delete user" type="is-light" multilined>
+            <button
+              v-if="roleAllowed('users', 'delete', props.row.username)"
+              class="button is-light is-small"
+              @click="deleteUser(props.row.username)">
+              <b-icon icon="trash"></b-icon>
+            </button>
+          </b-tooltip>
+          <b-tooltip class="action" :delay="500" label="edit user" type="is-light" multilined>
+            <button
+              v-if="roleAllowed('users', 'patch', props.row.username)"
+              class="button is-light is-small"
+              @click="editUser(props.row.username)">
+              <b-icon icon="pencil"></b-icon>
+            </button>
+          </b-tooltip>
         </b-table-column>
       </b-table>
       <br />
@@ -697,9 +704,3 @@
     },
   };
 </script>
-
-<style scoped>
-  .action:not(:last-child) {
-    margin-right: 5px;
-  }
-</style>
