@@ -125,3 +125,8 @@ div.is-success {
 .action:not(:last-child) {
   margin-right: 5px;
 }
+
+input::placeholder, 
+textarea::placeholder {
+    opacity: 1;
+}
