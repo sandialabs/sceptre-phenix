@@ -113,11 +113,7 @@
                 type="is-light"
                 multilined>
                 <button
-                  class="button input-button"
-                  @click="
-                  searchName = '';
-                  filterKind = null;
-                  ">
+                  class="button input-button" @click="searchQuery = ''; filterKind = null;">
                   <b-icon icon="window-close"></b-icon>
                 </button>
               </b-tooltip>
@@ -310,7 +306,7 @@
     },
     computed: {
       paginationNeeded() {
-        return this.filteredConfigs > 10;
+        return this.filteredConfigs.length > 10;
       },
       filteredConfigs: function () {
         let configs = this.configs;
