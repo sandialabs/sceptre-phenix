@@ -17,6 +17,9 @@
 </template>
 
 <script>
+  import { usePhenixStore } from '@/store.js';
+  import axiosInstance from '@/utils/axios.js';
+
   export default {
     props: {
       username: {
@@ -59,19 +62,16 @@
           last_name: this.lastName,
         };
 
-        this.$http.post('signup', params).then(
-          (response) => {
+        axiosInstance.post('signup', params)
+          .then((response) => {
+            const store = usePhenixStore()
             return response.json().then((user) => {
-              this.$store.commit('LOGIN', {
-                loginResponse: user,
-                remember: false,
-              });
+              store.login(user, false)
             });
-          },
-          (err) => {
+          })
+          .catch((err) => {
             this.errorNotification(err);
-          },
-        );
+          });
       },
     },
 

@@ -312,6 +312,7 @@
 <script>
   import axiosInstance from '@/utils/axios.js';
   import { useErrorNotification } from '@/utils/errorNotif';
+  import { usePhenixStore } from '@/store.js';
 
   export default {
     async created() {
@@ -480,7 +481,7 @@
           inputAttrs: {
             type: 'text',
             placeholder: 'New size',
-            pattern: '[+-]?\d+[KMGTPE]',
+            pattern: '[+-]?\\d+[KMGTPE]',
           },
           canCancel: ['button'],
           closeOnConfirm: false,
@@ -537,11 +538,16 @@
       downloadDisk(path) {
         this.$buefy.dialog.confirm({
           message: 'Are you sure you want to download this disk?',
-          onConfirm: () =>
+          onConfirm: () =>{
+
+            const store = usePhenixStore();
+            const basePath = import.meta.env.VITE_BASE_PATH || '/';
+            console.log("confirmed!")
             window.open(
-              `${process.env.BASE_URL}api/v1/disks/download?token=${this.$store.state.token}&disk=${encodeURIComponent(path)}`,
+              `${basePath}api/v1/disks/download?token=${store.token}&disk=${encodeURIComponent(path)}`,
               '_blank',
-            ),
+            )
+          }
         });
       },
       uploadDisk(file) {
@@ -625,11 +631,6 @@
     white-space: pre !important;
   }
 
-  .modal-card-body,
-  .modal-card-body a {
-    color: black !important;
-  }
-
   dl {
     display: table;
   }
@@ -669,7 +670,7 @@
 
   .actions > button {
     text-align: start;
-    color: dimgray;
+    /* color: blue; */
     text-decoration: none;
     display: inline;
   }
@@ -682,7 +683,4 @@
     color: whitesmoke !important;
   }
 
-  div.autocomplete :deep(a.dropdown-item) {
-    color: #383838 !important;
-  }
 </style>
