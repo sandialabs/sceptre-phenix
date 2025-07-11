@@ -7,10 +7,10 @@
         icon="search"
         :data="filteredData"
         @select="(option) => (filtered = option)">
-        <template slot="empty"> No results found </template>
+        <template #empty> No results found </template>
       </b-autocomplete>
       <p class="control">
-        <button class="button" style="color: #686868" @click="searchName = ''">
+        <button class="button input-button" @click="searchName = ''">
           <b-icon icon="window-close"></b-icon>
         </button>
       </p>

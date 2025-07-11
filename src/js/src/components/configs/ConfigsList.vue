@@ -95,36 +95,40 @@
           </div>
         </b-field>
 
-        <b-field position="is-right">
-          <b-select placeholder="Filter on Kind" v-model="filterKind">
-            <option v-for="(k, index) in filterOptions" :key="index" :value="k">
-              {{ k }}
-            </option>
-          </b-select>
-          <b-autocomplete
-            v-model="searchQuery"
-            placeholder="Find a Config"
-            icon="search"
-            :data="filteredConfigs"
-            @select="(option) => (filtered = option)">
-            <template #empty> No results found </template>
-          </b-autocomplete>
-          <p class="control">
-            <b-tooltip
-              label="resets search filter and filter on kind"
-              type="is-light"
-              multilined>
-              <button
-                class="button input-button"
-                @click="
+        <b-field position="is-right" grouped>
+          <b-field>
+            <b-select placeholder="Filter on Kind" v-model="filterKind">
+              <option v-for="(k, index) in filterOptions" :key="index" :value="k">
+                {{ k }}
+              </option>
+            </b-select>
+          </b-field>
+          <b-field>
+            <b-autocomplete
+              v-model="searchQuery"
+              placeholder="Find a Config"
+              icon="search"
+              :data="filteredConfigs"
+              @select="(option) => (filtered = option)">
+              <template #empty> No results found </template>
+            </b-autocomplete>
+            <p class="control">
+              <b-tooltip
+                label="resets search filter and filter on kind"
+                type="is-light"
+                multilined>
+                <button
+                  class="button input-button"
+                  @click="
                   searchName = '';
                   filterKind = null;
-                ">
-                <b-icon icon="window-close"></b-icon>
-              </button>
-            </b-tooltip>
-          </p>
-          <p v-if="roleAllowed('configs', 'create')" class="control">
+                  ">
+                  <b-icon icon="window-close"></b-icon>
+                </button>
+              </b-tooltip>
+            </p>
+          </b-field>
+          <b-field v-if="roleAllowed('configs', 'create')">
             <b-tooltip label="create a new config" type="is-light is-top">
               <button
                 class="button is-light"
@@ -133,6 +137,8 @@
                 <b-icon icon="plus"></b-icon>
               </button>
             </b-tooltip>
+          </b-field>
+          <b-field v-if="roleAllowed('configs', 'create')">
             <b-tooltip label="upload a new config" type="is-light is-top">
               <button
                 class="button is-light"
@@ -141,7 +147,7 @@
                 <b-icon icon="upload"></b-icon>
               </button>
             </b-tooltip>
-          </p>
+          </b-field>
         </b-field>
       </div>
     </div>
@@ -524,14 +530,14 @@
   };
 </script>
 <style scoped>
-  button.action {
-    margin-right: 5px;
-  }
   .x-modal-dark :deep(textarea) {
     background-color: #686868;
     color: whitesmoke;
   }
   textarea {
     color: whitesmoke;
+  }
+  .action:not(:last-child) {
+    margin-right: 5px;
   }
 </style>
