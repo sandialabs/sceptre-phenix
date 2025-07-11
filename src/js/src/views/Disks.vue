@@ -625,11 +625,6 @@
     white-space: pre !important;
   }
 
-  .modal-card-body,
-  .modal-card-body a {
-    color: black !important;
-  }
-
   dl {
     display: table;
   }
@@ -669,7 +664,7 @@
 
   .actions > button {
     text-align: start;
-    color: dimgray;
+    /* color: blue; */
     text-decoration: none;
     display: inline;
   }
