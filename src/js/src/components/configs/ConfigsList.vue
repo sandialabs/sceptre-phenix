@@ -97,13 +97,11 @@
                 {{ k }}
               </option>
             </b-select>
-          </b-field>
-          <b-field>
             <b-autocomplete
               v-model="searchQuery"
               placeholder="Find a Config"
               icon="search"
-              :data="filteredConfigs"
+              :data="filteredConfigs.map(c => c.metadata.name)"
               @select="(option) => (filtered = option)">
               <template #empty> No results found </template>
             </b-autocomplete>
@@ -184,7 +182,7 @@
         v-slot="props">
         <template v-if="roleAllowed('configs', 'get', props.row.metadata.name)">
           <b-tooltip label="view config" type="is-dark">
-            <div class="field">
+            <div class="field is-clickable">
               <div @click="viewConfig(props.row)">
                 {{ props.row.metadata.name }}
               </div>
@@ -298,11 +296,6 @@
     },
     created() {
       this.updateConfigs();
-    },
-    watch: {
-      selectedConfigs(newSelectedConfigs) {
-        console.log('selecting from configslisttwo');
-      },
     },
     computed: {
       paginationNeeded() {

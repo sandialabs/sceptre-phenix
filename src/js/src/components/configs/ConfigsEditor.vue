@@ -20,7 +20,7 @@
     </div>
   </b-modal>
   <section class="hero is-light is-bold is-small">
-    <div class="columns">
+    <div class="columns  p-4">
       <div class="column is-1" />
       <div class="column is-2">
         <b-field
@@ -127,7 +127,7 @@
         </button>
       </div>
       <div class="column">
-        <div class="hero-body">
+        <div>
           <AceEditor
             v-model:value="config.str"
             :lang="editor.lang"
