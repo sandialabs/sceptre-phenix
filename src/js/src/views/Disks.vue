@@ -481,7 +481,7 @@
           inputAttrs: {
             type: 'text',
             placeholder: 'New size',
-            pattern: '[+-]?\d+[KMGTPE]',
+            pattern: '[+-]?\\d+[KMGTPE]',
           },
           canCancel: ['button'],
           closeOnConfirm: false,

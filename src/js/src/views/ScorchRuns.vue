@@ -81,6 +81,7 @@
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
   import axiosInstance from '@/utils/axios.js';
   import { useErrorNotification } from '@/utils/errorNotif';
+  import { usePhenixStore } from '@/store.js';
 
   import ScorchKey from '@/components/scorch/ScorchKey.vue';
   import ScorchRun from '@/components/scorch/ScorchRun.vue';
@@ -242,8 +243,9 @@
       getOutputStream(loc) {
         let path = loc;
 
-        if (this.$store.getters.token) {
-          path += `?token=${this.$store.getters.token}`;
+        const store = usePhenixStore()
+        if (store.token) {
+          path += `?token=${store.token}`;
         }
 
         let proto = window.location.protocol == 'https:' ? 'wss://' : 'ws://';

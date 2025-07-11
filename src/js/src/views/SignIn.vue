@@ -216,8 +216,6 @@ It requires a valid username and password.
             last_name: this.last_name,
           })
           .then((response) => {
-            // TODO: fix
-            this.$store.commit('SIGN_UP', response.data);
           })
           .catch((err) => {
             useErrorNotification(err);
