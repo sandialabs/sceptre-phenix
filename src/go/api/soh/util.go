@@ -871,9 +871,10 @@ func (this *SOH) waitForCPULoad(ctx context.Context, ns string) bool {
 }
 
 func (this SOH) isNetworkingConfigured(ctx context.Context, wg *mm.StateGroup, ns string, node ifaces.NodeSpec, iface ifaces.NodeNetworkInterface) {
-	retryUntil := time.Now().Add(5 * time.Minute)
+	retryUntil := time.Now().Add(this.md.c2Timeout)
 
 	var (
+		addr    = iface.Address()
 		host    = node.General().Hostname()
 		gateway = iface.Gateway()
 		meta    = map[string]interface{}{"host": host}
@@ -884,31 +885,32 @@ func (this SOH) isNetworkingConfigured(ctx context.Context, wg *mm.StateGroup, n
 	// be up (pingable). This is all done via nested commands streamed to the C2
 	// processor within `expected` functions.
 	ipExpected := func(resp string) error {
-		if strings.EqualFold(node.Hardware().OSType(), "windows") {
-			// If `resp` doesn't contain the IP address, then the IP address isn't
-			// configured yet, so keep retrying the C2 command.
-			if !strings.Contains(resp, iface.Address()) {
-				if time.Now().After(retryUntil) {
-					return fmt.Errorf("retry time expired waiting for IP to be set")
+		if addr != "" {
+			if strings.EqualFold(node.Hardware().OSType(), "windows") {
+				// If `resp` doesn't contain the IP address, then the IP address isn't
+				// configured yet, so keep retrying the C2 command.
+				if !strings.Contains(resp, addr) {
+					if time.Now().After(retryUntil) {
+						return fmt.Errorf("retry time expired waiting for IP to be set")
+					}
+
+					return mm.C2RetryError{Delay: 5 * time.Second}
 				}
+			} else {
+				cidr := fmt.Sprintf("%s/%d", addr, iface.Mask())
 
-				return mm.C2RetryError{Delay: 5 * time.Second}
-			}
-		} else {
-			cidr := fmt.Sprintf("%s/%d", iface.Address(), iface.Mask())
+				// If `resp` doesn't contain the IP address, then the IP address isn't
+				// configured yet, so keep retrying the C2 command.
+				if !strings.Contains(resp, cidr) {
+					if time.Now().After(retryUntil) {
+						return fmt.Errorf("retry time expired waiting for IP to be set")
+					}
 
-			// If `resp` doesn't contain the IP address, then the IP address isn't
-			// configured yet, so keep retrying the C2 command.
-			if !strings.Contains(resp, cidr) {
-				if time.Now().After(retryUntil) {
-					return fmt.Errorf("retry time expired waiting for IP to be set")
+					return mm.C2RetryError{Delay: 5 * time.Second}
 				}
-
-				return mm.C2RetryError{Delay: 5 * time.Second}
 			}
+			wg.AddSuccess(fmt.Sprintf("IP %s configured", addr), meta)
 		}
-
-		wg.AddSuccess(fmt.Sprintf("IP %s configured", iface.Address()), meta)
 
 		if gateway != "" {
 			// The IP address is now set, so schedule a C2 command for determining if
@@ -1298,7 +1300,7 @@ func (this SOH) customTest(ctx context.Context, wg *mm.StateGroup, ns string, no
 		return
 	}
 
-	command := fmt.Sprintf("%s /tmp/miniccc/files/%s/%s", executor, ns, script)
+	command := fmt.Sprintf("%s /tmp/miniccc/files/%s", executor, script)
 	opts := []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2SendFile(script), mm.C2Command(command), mm.C2Timeout(this.md.c2Timeout)}
 
 	if this.md.useUUIDForC2Active(host) {
