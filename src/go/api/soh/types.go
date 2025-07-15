@@ -121,6 +121,7 @@ type sohMetadata struct {
 	CustomReachability []customReachability        `mapstructure:"testCustomReachability"`
 	SkipNetworkConfig  bool                        `mapstructure:"skipInitialNetworkConfigTests"`
 	SkipHosts          []string                    `mapstructure:"skipHosts"`
+	StartupDelay       string                      `mapstructure:"startupDelay"`
 
 	// The `hostsToUseUUIDForC2Active` setting can be either a string or a slice
 	// of strings. Decoding `hostsToUseUUIDForC2Active` into `UseUUIDForC2Active`
@@ -131,8 +132,9 @@ type sohMetadata struct {
 	Other map[string]interface{} `mapstructure:",remain"`
 
 	// set after parsing
-	c2Timeout time.Duration
-	uuidHosts map[string]struct{}
+	c2Timeout    time.Duration
+	startupDelay time.Duration
+	uuidHosts    map[string]struct{}
 }
 
 func (this *sohMetadata) init() error {
@@ -162,6 +164,14 @@ func (this *sohMetadata) init() error {
 
 		if this.c2Timeout, err = time.ParseDuration(this.C2Timeout); err != nil {
 			return fmt.Errorf("parsing C2 timeout setting '%s': %w", this.C2Timeout, err)
+		}
+	}
+
+	// Default startup delay is 0 if not set
+	if this.StartupDelay != "" {
+		var err error
+		if this.startupDelay, err = time.ParseDuration(this.StartupDelay); err != nil {
+			return fmt.Errorf("parsing startup delay setting `%s`: %w", this.StartupDelay, err)
 		}
 	}
 

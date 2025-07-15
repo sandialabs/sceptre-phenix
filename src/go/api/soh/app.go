@@ -119,6 +119,8 @@ func (this *SOH) PreStart(ctx context.Context, exp *types.Experiment) error {
 }
 
 func (this *SOH) PostStart(ctx context.Context, exp *types.Experiment) error {
+	logger := plog.LoggerFromContext(ctx, plog.TypeSoh)
+
 	if err := this.decodeMetadata(exp); err != nil {
 		return err
 	}
@@ -136,6 +138,11 @@ func (this *SOH) PostStart(ctx context.Context, exp *types.Experiment) error {
 	if this.options.DryRun {
 		fmt.Printf("skipping SoH checks since this is a dry run")
 		return nil
+	}
+
+	if this.md.startupDelay > 0 {
+		logger.Info("Waiting before running SoH checks", "delay", this.md.startupDelay)
+		time.Sleep(this.md.startupDelay)
 	}
 
 	if err := this.runChecks(ctx, exp); err != nil {
