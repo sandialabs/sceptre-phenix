@@ -48,7 +48,7 @@ export function connectWebsocket(): void {
           errorToast = null;
         }
       } else if (eventType === 'onerror') {
-        console.warn('websocket error: ' + event);
+        console.warn('websocket error: ', event);
       }
     };
   });

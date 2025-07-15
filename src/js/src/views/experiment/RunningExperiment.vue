@@ -2133,7 +2133,6 @@
           let resp = await axiosInstance.get(
             'experiments/' + this.$route.params.id,
           );
-          console.log(resp.data);
           this.experiment = resp.data;
           this.search.vms = resp.data.vms.map((vm) => {
             return vm.name;
