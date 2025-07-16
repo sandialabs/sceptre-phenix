@@ -63,12 +63,13 @@
       <div class="level-item">
         <b-field position="is-right" grouped>
           <b-field
-            v-if="selectedConfigs.length > 0 && selectedConfigs.every((c) =>
-              roleAllowed('configs', 'get', c.metadata.name),
-            )">
-            <b-tooltip
-              label="download selected configs"
-              type="is-light is-top">
+            v-if="
+              selectedConfigs.length > 0 &&
+              selectedConfigs.every((c) =>
+                roleAllowed('configs', 'get', c.metadata.name),
+              )
+            ">
+            <b-tooltip label="download selected configs" type="is-light is-top">
               <button
                 class="button is-light action"
                 @click="download(selectedConfigs)">
@@ -77,13 +78,13 @@
             </b-tooltip>
           </b-field>
           <b-field
-              v-if="selectedConfigs.length > 0 && 
+            v-if="
+              selectedConfigs.length > 0 &&
               selectedConfigs.every((c) =>
                 roleAllowed('configs', 'delete', c.metadata.name),
-              )">
-            <b-tooltip
-              label="delete selected configs"
-              type="is-light is-top">
+              )
+            ">
+            <b-tooltip label="delete selected configs" type="is-light is-top">
               <button
                 class="button is-light action"
                 @click="deleteConfigs(selectedConfigs)">
@@ -93,7 +94,10 @@
           </b-field>
           <b-field>
             <b-select placeholder="Filter on Kind" v-model="filterKind">
-              <option v-for="(k, index) in filterOptions" :key="index" :value="k">
+              <option
+                v-for="(k, index) in filterOptions"
+                :key="index"
+                :value="k">
                 {{ k }}
               </option>
             </b-select>
@@ -101,7 +105,7 @@
               v-model="searchQuery"
               placeholder="Find a Config"
               icon="search"
-              :data="filteredConfigs.map(c => c.metadata.name)"
+              :data="filteredConfigs.map((c) => c.metadata.name)"
               @select="(option) => (filtered = option)">
               <template #empty> No results found </template>
             </b-autocomplete>
@@ -111,7 +115,11 @@
                 type="is-light"
                 multilined>
                 <button
-                  class="button input-button" @click="searchQuery = ''; filterKind = null;">
+                  class="button input-button"
+                  @click="
+                    searchQuery = '';
+                    filterKind = null;
+                  ">
                   <b-icon icon="window-close"></b-icon>
                 </button>
               </b-tooltip>
@@ -207,7 +215,12 @@
       </b-table-column>
 
       <b-table-column label="Actions" centered v-slot="props">
-        <b-tooltip class="action" :delay="500" label="edit config file" type="is-light" multilined>
+        <b-tooltip
+          class="action"
+          :delay="500"
+          label="edit config file"
+          type="is-light"
+          multilined>
           <button
             v-if="roleAllowed('configs', 'update', props.row.metadata.name)"
             class="button is-light is-small action"
@@ -215,7 +228,12 @@
             <b-icon icon="edit"></b-icon>
           </button>
         </b-tooltip>
-        <b-tooltip class="action" :delay="500" label="download config" type="is-light" multilined>
+        <b-tooltip
+          class="action"
+          :delay="500"
+          label="download config"
+          type="is-light"
+          multilined>
           <button
             v-if="roleAllowed('configs', 'get', props.row.metadata.name)"
             class="button is-light is-small action"
@@ -223,7 +241,12 @@
             <b-icon icon="download"></b-icon>
           </button>
         </b-tooltip>
-        <b-tooltip class="action" :delay="500" label="delete config" type="is-light" multilined>
+        <b-tooltip
+          class="action"
+          :delay="500"
+          label="delete config"
+          type="is-light"
+          multilined>
           <button
             v-if="roleAllowed('configs', 'delete', props.row.metadata.name)"
             class="button is-light is-small action"

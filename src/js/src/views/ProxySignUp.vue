@@ -62,11 +62,12 @@
           last_name: this.lastName,
         };
 
-        axiosInstance.post('signup', params)
+        axiosInstance
+          .post('signup', params)
           .then((response) => {
-            const store = usePhenixStore()
+            const store = usePhenixStore();
             return response.json().then((user) => {
-              store.login(user, false)
+              store.login(user, false);
             });
           })
           .catch((err) => {

@@ -3,10 +3,18 @@ import router from '@/router';
 
 export const usePhenixStore = defineStore('phenix', {
   state: () => ({
-    username: localStorage.getItem('phenix.user') || sessionStorage.getItem('phenix.user'),
-    token: localStorage.getItem('phenix.token') || sessionStorage.getItem('phenix.token'),
-    role: JSON.parse(localStorage.getItem('phenix.role')) || JSON.parse(sessionStorage.getItem('phenix.role')),
-    auth: localStorage.getItem('phenix.auth') === 'true' || (sessionStorage.getItem('phenix.auth') === 'true'),
+    username:
+      localStorage.getItem('phenix.user') ||
+      sessionStorage.getItem('phenix.user'),
+    token:
+      localStorage.getItem('phenix.token') ||
+      sessionStorage.getItem('phenix.token'),
+    role:
+      JSON.parse(localStorage.getItem('phenix.role')) ||
+      JSON.parse(sessionStorage.getItem('phenix.role')),
+    auth:
+      localStorage.getItem('phenix.auth') === 'true' ||
+      sessionStorage.getItem('phenix.auth') === 'true',
     next: null,
     features: [],
   }),

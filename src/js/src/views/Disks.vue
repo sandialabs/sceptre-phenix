@@ -538,16 +538,15 @@
       downloadDisk(path) {
         this.$buefy.dialog.confirm({
           message: 'Are you sure you want to download this disk?',
-          onConfirm: () =>{
-
+          onConfirm: () => {
             const store = usePhenixStore();
             const basePath = import.meta.env.VITE_BASE_PATH || '/';
-            console.log("confirmed!")
+            console.log('confirmed!');
             window.open(
               `${basePath}api/v1/disks/download?token=${store.token}&disk=${encodeURIComponent(path)}`,
               '_blank',
-            )
-          }
+            );
+          },
         });
       },
       uploadDisk(file) {
@@ -682,5 +681,4 @@
     background-color: #686868;
     color: whitesmoke !important;
   }
-
 </style>
