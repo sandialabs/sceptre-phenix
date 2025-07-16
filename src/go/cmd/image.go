@@ -128,6 +128,10 @@ func newImageCreateCmd() *cobra.Command {
 				img.ScriptPaths = strings.Split(scripts, ",")
 			}
 
+			if kernel := MustGetString(cmd.Flags(), "kernel-args"); kernel != "" {
+				img.Kernel = strings.Split(kernel, ",")
+			}
+
 			units := img.Size[len(img.Size)-1:]
 			if units != "M" && units != "G" {
 				return fmt.Errorf("Must provide a valid unit for disk size option (e.g., '500M' or '10G')")
@@ -156,7 +160,8 @@ func newImageCreateCmd() *cobra.Command {
 	cmd.Flags().Bool("skip-default-pkgs", false, "Skip default packages typically included in all builds")
 	cmd.Flags().StringP("packages", "P", "", "List of packages to include in addition to those provided by variant (separated by comma)")
 	cmd.Flags().StringP("scripts", "T", "", "List of scripts to include in addition to the defaults (include full path; separated by comma)")
-	cmd.Flags().Bool("no-virtuals", false, `Don't add virtual filesystem mounts to chroot before executing scripts when running vmdb2 (default is 'false')`)
+	cmd.Flags().Bool("no-virtuals", false, "Don't add virtual filesystem mounts to chroot before executing scripts when running vmdb2 (default is 'false')")
+	cmd.Flags().StringP("kernel-args", "k", "", "List of parameters which grub will pass to the Linux kernel (e.g. 'net.ifnames=0','consoleblank=0'); separated by comma)")
 
 	return cmd
 }
@@ -177,11 +182,11 @@ func newImageCreateFromCmd() *cobra.Command {
 			}
 
 			var (
-				name     = args[0]
-				saveas   = args[1]
-				overlays []string
-				packages []string
-				scripts  []string
+				name         = args[0]
+				saveas       = args[1]
+				overlays     []string
+				packages     []string
+				scripts      []string
 			)
 
 			if opt := MustGetString(cmd.Flags(), "overlays"); opt != "" {

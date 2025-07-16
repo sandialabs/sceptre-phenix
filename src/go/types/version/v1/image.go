@@ -30,6 +30,7 @@ type Image struct {
 	ScriptOrder         []string          `json:"script_order" yaml:"script_order" structs:"script_order" mapstructure:"script_order"`
 	Components          []string          `json:"components" yaml:"components"`
 	NoVirtuals          bool              `json:"no_virtuals" yaml:"no_virtuals" structs:"no_virtuals" mapstructure:"no_virtuals"`
+	Kernel              []string          `json:"kernel" yaml:"kernel"`
 
 	Cache       bool     `json:"-" yaml:"-" structs:"-" mapstructure:"-"`
 	ScriptPaths []string `json:"-" yaml:"-" structs:"-" mapstructure:"-"`
