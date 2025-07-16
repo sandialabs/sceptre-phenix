@@ -54,14 +54,26 @@
 </script>
 
 <template>
-  <div @click="timeout.resetTimer" @keydown="timeout.resetTimer">
+  <div id="app" @click="timeout.resetTimer" @keydown="timeout.resetTimer">
     <app-header></app-header>
-    <main class="row container is-fullhd px-4">
-      <div class="col-xs-12">
-        <router-view></router-view>
-      </div>
+    <main id="main" class="row container is-fullhd px-4">
+      <router-view></router-view>
     </main>
     <app-footer></app-footer>
   </div>
 </template>
-<style lang="scss" scoped></style>
+<style lang="scss" scoped>
+
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+#main {
+  width: 100%;
+  max-width: 1500px;
+  padding: 20px;
+}
+
+</style>
