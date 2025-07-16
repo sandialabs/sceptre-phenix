@@ -20,7 +20,7 @@
     </div>
   </b-modal>
   <section class="hero is-light is-bold is-small">
-    <div class="columns  p-4">
+    <div class="columns p-4">
       <div class="column is-1" />
       <div class="column is-2">
         <b-field

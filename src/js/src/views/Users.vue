@@ -136,11 +136,12 @@
         </header>
         <section class="modal-card-body">
           <template v-if="user.token">
-            <!-- <b-field label="Token"> -->
-            <!--   <b-input type="text" ref="clone" v-model="user.token" readonly></b-input> -->
-            <!-- </b-field> -->
-            <b-button size="is-small" icon-left="copy" @click="copy">
-            </b-button>
+            <b-field label="Token">
+              <b-input type="text" ref="clone" v-model="user.token" readonly></b-input>
+            </b-field>
+
+            <b-button size="is-small" icon-left="copy" @click="copy"> </b-button>
+
             <b-field label="Expires">
               <b-input type="text" v-model="user.token_exp" readonly></b-input>
             </b-field>
@@ -223,15 +224,24 @@
           {{ props.row.role_name ? props.row.role_name : 'Not yet assigned' }}
         </b-table-column>
         <b-table-column label="Actions" width="150" centered v-slot="props">
-
-          <b-tooltip class="action" :delay="500" label="create new user token" type="is-light" multilined>
+          <b-tooltip
+            class="action"
+            :delay="500"
+            label="create new user token"
+            type="is-light"
+            multilined>
             <button
               class="button is-light is-small"
               @click="newToken(props.row.username)">
               <b-icon icon="key"></b-icon>
             </button>
           </b-tooltip>
-          <b-tooltip class="action" :delay="500" label="delete user" type="is-light" multilined>
+          <b-tooltip
+            class="action"
+            :delay="500"
+            label="delete user"
+            type="is-light"
+            multilined>
             <button
               v-if="roleAllowed('users', 'delete', props.row.username)"
               class="button is-light is-small"
@@ -239,7 +249,12 @@
               <b-icon icon="trash"></b-icon>
             </button>
           </b-tooltip>
-          <b-tooltip class="action" :delay="500" label="edit user" type="is-light" multilined>
+          <b-tooltip
+            class="action"
+            :delay="500"
+            label="edit user"
+            type="is-light"
+            multilined>
             <button
               v-if="roleAllowed('users', 'patch', props.row.username)"
               class="button is-light is-small"
@@ -672,7 +687,7 @@
       },
 
       copy() {
-        navigator.clipboard.writeText(this.$refs.clone.value);
+        navigator.clipboard.writeText(this.user.token);
       },
 
       resetLocalUser() {

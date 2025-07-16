@@ -215,8 +215,7 @@ It requires a valid username and password.
             first_name: this.first_name,
             last_name: this.last_name,
           })
-          .then((response) => {
-          })
+          .then((response) => {})
           .catch((err) => {
             useErrorNotification(err);
             this.username = null;

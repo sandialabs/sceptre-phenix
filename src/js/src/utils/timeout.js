@@ -19,7 +19,7 @@ export class TimeoutTool {
     let now = new Date();
 
     //don't update if we've updated in past hour
-    if (!this.data.enabled || this.time_set - now >= 60 * 60 * 1000) {
+    if (this.data.enabled || this.time_set - now >= 60 * 60 * 1000) {
       return;
     }
 
@@ -45,13 +45,14 @@ export class TimeoutTool {
 
     if (warning > 0) {
       const diff = timeout - warning;
-      this.logoutTimer = setTimeout(this.warnUser, 1000 * 60 * diff, warning);
+      this.logoutTimer = setTimeout(() => this.warnUser(warning), 1000 * 60 * diff);
     } else {
-      this.logoutTimer = setTimeout(this.logoutUser, 1000 * 60 * timeout);
+      this.logoutTimer = setTimeout(() => this.logoutUser(), 1000 * 60 * timeout);
     }
   }
 
   warnUser(timeLeft) {
+
     var message = `Still there? Inactive auto log out in ${timeLeft} minutes.`;
     if (timeLeft == 1) {
       message = `Still there? Inactive auto log out in ${timeLeft} minute.`;
@@ -63,7 +64,7 @@ export class TimeoutTool {
       indefinite: true,
     });
 
-    this.logoutTimer = setTimeout(this.logoutUser, 1000 * 60 * timeLeft);
+    this.logoutTimer = setTimeout(() => this.logoutUser(), 1000 * 60 * timeLeft);
   }
   logoutUser() {
     if (this.warnToast) {

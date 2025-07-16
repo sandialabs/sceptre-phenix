@@ -92,6 +92,7 @@
   import axiosInstance from '@/utils/axios.js';
   import { useErrorNotification } from '@/utils/errorNotif';
   import { roleAllowed } from '@/utils/rbac';
+  import { isEqual } from 'lodash-es';
 
   const NOTES_KEY = '__notes_';
   export default {
@@ -192,7 +193,7 @@
 
         let update = { tag_update_mode: 'SET', tags: finalTags };
 
-        if (_.isEqual(finalTags, this.tags)) {
+        if (isEqual(finalTags, this.tags)) {
           console.log('No change made. Closing');
           this.$emit('close');
           return;
@@ -204,7 +205,7 @@
             update,
           )
           .then((response) => {
-            if (response.ok) {
+            if (response.statusText === 'OK') {
               this.$emit('saved');
               this.$emit('close');
             }

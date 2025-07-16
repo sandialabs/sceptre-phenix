@@ -243,7 +243,7 @@
       getOutputStream(loc) {
         let path = loc;
 
-        const store = usePhenixStore()
+        const store = usePhenixStore();
         if (store.token) {
           path += `?token=${store.token}`;
         }

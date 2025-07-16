@@ -34,10 +34,7 @@
             aria-role="menu-item"
             :focusable="false"
             custom>
-            <b-field
-              label="Start Time"
-              label-position="on-border"
-              style="width: 100%">
+            <b-field label="Start Time">
               <b-datetimepicker v-model="startDate" :max-datetime="endDate">
                 <template #right>
                   <b-button
@@ -50,10 +47,7 @@
             <b-field class="py-2">
               <b-switch v-model="endNow">End Now</b-switch>
             </b-field>
-            <b-field
-              label="End Time"
-              label-position="on-border"
-              style="width: 100%">
+            <b-field label="End Time">
               <b-datetimepicker
                 v-model="endDate"
                 :min-datetime="startDate"
@@ -151,17 +145,21 @@
                   style="vertical-align: middle" />
               </b-tooltip>
             </div>
+
             <div class="log-column ts-column">{{ item.timestamp }}</div>
+
             <div class="log-column type-column">
               <b-tag style="white-space: nowrap; width: 100%">
                 {{ item.type }}
               </b-tag>
             </div>
+
             <div class="log-column msg-column column is-rest">
               <!-- Bug: if at the top of the list, tooltip won't be visible. Changing position to bottom causes overlaps -->
               <b-tooltip
                 :triggers="['click']"
                 :label="item.msg"
+                position="is-top"
                 type="is-light"
                 multilined>
                 <span class="truncate">
@@ -301,6 +299,7 @@
           .then((response) => {
             console.log(`${new Date().toISOString()} got response`);
             const json = response.data;
+
             console.log(
               `${new Date().toISOString()} got logs and converted to json len=${json.length}`,
             );
@@ -386,10 +385,6 @@
     transform: translateY(-50%);
   }
 
-  a.dropdown-item {
-    color: #383838 !important;
-  }
-
   a.dropdown-item.is-active {
     background-color: #bdbdbd;
   }
@@ -400,7 +395,7 @@
   }
 
   .datepicker :deep(.is-selectable) {
-    color: #383838 !important;
+    color: white !important;
   }
 
   .row {

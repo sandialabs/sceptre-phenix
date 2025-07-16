@@ -1647,6 +1647,13 @@
                   }
                 }
 
+                this.$buefy.toast.open({
+                  message:
+                  'The VM ' + msg.result.name + ' has been successfully updated.',
+                  type: 'is-success',
+                });
+
+
                 break;
               }
 

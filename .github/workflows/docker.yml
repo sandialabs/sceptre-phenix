@@ -45,6 +45,8 @@ jobs:
             APPS_REPO=github.com/${{ github.event_name == 'repository_dispatch' && github.event.client_payload.repo || 'sandialabs/sceptre-phenix-apps' }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+    outputs:
+      image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
 
   push-jit-to-ghcr:
     name: Push phenix JIT Docker image to GitHub Packages
@@ -69,7 +71,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: ghcr.io/${{ github.repository }}/phenix
+          images: ghcr.io/${{ github.repository }}/phenix-jit-ui
           tags: |
             type=ref,event=branch
             type=sha
@@ -80,7 +82,7 @@ jobs:
           file: docker/jit/Dockerfile
           build-args: |
             PHENIX_REPO=${{ github.repository }}
-            PHENIX_IMG=${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+            PHENIX_IMG=${{ needs.push-to-ghcr.outputs.image }}
             PHENIX_BRANCH=${{ github.head_ref || github.ref_name }} 
           push: true
           tags: ${{ steps.meta.outputs.tags }}
