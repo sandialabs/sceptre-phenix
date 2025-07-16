@@ -136,11 +136,12 @@
         </header>
         <section class="modal-card-body">
           <template v-if="user.token">
-            <!-- <b-field label="Token"> -->
-            <!--   <b-input type="text" ref="clone" v-model="user.token" readonly></b-input> -->
-            <!-- </b-field> -->
-            <b-button size="is-small" icon-left="copy" @click="copy">
-            </b-button>
+            <b-field label="Token">
+              <b-input type="text" ref="clone" v-model="user.token" readonly></b-input>
+            </b-field>
+
+            <b-button size="is-small" icon-left="copy" @click="copy"> </b-button>
+
             <b-field label="Expires">
               <b-input type="text" v-model="user.token_exp" readonly></b-input>
             </b-field>
@@ -686,7 +687,7 @@
       },
 
       copy() {
-        navigator.clipboard.writeText(this.$refs.clone.value);
+        navigator.clipboard.writeText(this.user.token);
       },
 
       resetLocalUser() {
