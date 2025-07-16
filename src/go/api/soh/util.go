@@ -1293,6 +1293,10 @@ func (this SOH) customTest(ctx context.Context, wg *mm.StateGroup, ns string, no
 		}
 	}
 
+	if strings.HasPrefix(executor, "powershell") {
+		script += ".ps1"
+	}
+
 	command := fmt.Sprintf("%s /tmp/miniccc/files/%s", executor, script)
 	opts := []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2SendFile(script), mm.C2Command(command), mm.C2Timeout(this.md.c2Timeout)}
 
