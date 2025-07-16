@@ -32,7 +32,6 @@ export class TimeoutTool {
 
   startLogoutTimer() {
     const store = usePhenixStore();
-    console.log("starting logout timer", this)
     if (!this.data.enabled || !store.auth) {
       return;
     }
@@ -53,7 +52,6 @@ export class TimeoutTool {
   }
 
   warnUser(timeLeft) {
-    console.log("warning user now")
 
     var message = `Still there? Inactive auto log out in ${timeLeft} minutes.`;
     if (timeLeft == 1) {
@@ -84,7 +82,6 @@ export class TimeoutTool {
     if (!this.data.enabled) {
       return;
     }
-    console.log("resetting", this)
     if (this.warnToast) {
       this.warnToast.close();
       this.warnToast = null;
