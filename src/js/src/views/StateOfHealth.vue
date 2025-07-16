@@ -361,17 +361,16 @@
       </div>
     </b-modal>
     <!-- END STYLE MODAL -->
-    <hr />
     <div class="columns is-centered">
       <div class="column is-1">
         <router-link
-          class="button is-dark"
-          :to="{ name: 'experiment', params: { id: $route.params.id } }">
+          class="button"
+          :to="{ name: 'experiment', params: { id: $route.params.id }, state: { running: running } }">
           <b-tooltip
             label="return to the experiment component"
             type="is-light is-right"
             :delay="1000">
-            <b-icon icon="history"></b-icon>
+            <b-icon icon="arrow-left"></b-icon>
           </b-tooltip>
         </router-link>
       </div>
