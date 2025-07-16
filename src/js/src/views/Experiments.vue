@@ -335,7 +335,6 @@
               <router-link
                 v-if="roleAllowed('experiments', 'get', props.row.name)"
                 class="button is-light is-small"
-                :disabled="updating(props.row.status)"
                 :to="{ name: 'soh', params: { id: props.row.name } }">
                 <b-icon icon="heartbeat"></b-icon>
               </router-link>
@@ -349,7 +348,6 @@
               <router-link
                 v-if="roleAllowed('experiments', 'get', props.row.name)"
                 class="button is-light is-small"
-                :disabled="updating(props.row.status)"
                 :to="{ name: 'scorchruns', params: { id: props.row.name } }">
                 <b-icon icon="fire"></b-icon>
               </router-link>
@@ -629,7 +627,7 @@
         localStorage.setItem(user + '.lastPaginate', this.table.isPaginated);
       },
 
-      updating: function (status) {
+      updating(status) {
         return status === 'starting' || status === 'stopping';
       },
 
