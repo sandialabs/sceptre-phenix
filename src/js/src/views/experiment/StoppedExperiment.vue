@@ -138,7 +138,7 @@
         <hr style="width: 1px; height: 100%; margin: 0" />
       </template>
       <b-field>
-        <b-tooltip label="assign VLAN ID to alias" type="is-light">
+        <b-tooltip label="assign VLAN ID to alias" type="is-light" position="is-top">
           <b-button
             class="button is-light"
             icon-right="network-wired"
@@ -193,6 +193,7 @@
         <b-tooltip
           label="menu for scheduling hosts to the experiment"
           type="is-light"
+          position="is-top"
           multilined>
           <b-dropdown v-model="algorithm" class="is-right" aria-role="list">
             <template #trigger>

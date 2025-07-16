@@ -205,7 +205,7 @@
             update,
           )
           .then((response) => {
-            if (response.ok) {
+            if (response.statusText === 'OK') {
               this.$emit('saved');
               this.$emit('close');
             }
