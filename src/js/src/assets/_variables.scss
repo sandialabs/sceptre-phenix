@@ -47,6 +47,16 @@ $button-colors: map.merge(
   )
 );
 
+$hero-colors: map.merge(
+  $colors,
+  (
+    'light': (
+      $scheme-main,
+      $scheme-invert,
+    ),
+  )
+);
+
 $input-background-color: white;
 $input-color: #363636;
 $input-icon-color: lighten($scheme-main, 20);

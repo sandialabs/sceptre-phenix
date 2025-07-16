@@ -37,7 +37,7 @@ are only available to Global Administrator or Global Viewer.
         :to="{ name: 'hosts' }"
         >Hosts</b-navbar-item
       >
-      <b-navbar-item v-if="auth" tag="router-link" :to="{ name: 'users' }"
+      <b-navbar-item v-if="auth && !disabled" tag="router-link" :to="{ name: 'users' }"
         >Users</b-navbar-item
       >
       <b-navbar-item
@@ -52,21 +52,14 @@ are only available to Global Administrator or Global Viewer.
         :to="{ name: 'scorch' }"
         >Scorch</b-navbar-item
       >
-      <!-- <b-navbar-item  -->
-      <!--   v-if="auth && roleAllowed('experiments', 'list')" -->
-      <!--   :to="builderLoc()" -->
-      <!--   external -->
-      <!--   class="navbar-item" -->
-      <!-- >Builder</b-navbar-item> -->
-
-      <a
+      <b-navbar-item
         v-if="auth && roleAllowed('experiments', 'list')"
+        tag="a"
         :href="builderLoc()"
         target="_blank"
         class="navbar-item"
-        >Builder</a
+        >Builder</b-navbar-item
       >
-
       <b-navbar-item
         v-if="auth && roleAllowed('miniconsole', 'post')"
         tag="router-link"
@@ -85,8 +78,6 @@ are only available to Global Administrator or Global Viewer.
         :to="{ name: 'settings' }"
         >Settings</b-navbar-item
       >
-      <!-- <b-navbar-item v-if="auth && tunneler" tag="router-link"
-        :to="{ name: 'tunneler' }">Tunneler</b-navbar-item> -->
     </template>
 
     <template #end>
@@ -118,7 +109,10 @@ are only available to Global Administrator or Global Viewer.
         const phenixStore = usePhenixStore();
         return phenixStore.auth;
       },
-
+      disabled() {
+        const phenixStore = usePhenixStore();
+        return phenixStore.role.name === "Disabled";
+      },
       proxyAuth() {
         return import.meta.env.VITE_AUTH === 'proxy';
       },

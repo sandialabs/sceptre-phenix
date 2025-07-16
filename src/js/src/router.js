@@ -97,6 +97,11 @@ const router = createRouter({
       component: () => import('@/views/ProxySignUp.vue'),
       props: true,
     },
+    {
+      path: '/disabled',
+      name: 'disabled',
+      component: () => import('@/views/Disabled.vue')
+    },
 
     //static paths
     { path: '/builder?token=:token', name: 'builder' },
