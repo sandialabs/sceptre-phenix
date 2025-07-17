@@ -815,13 +815,15 @@
             this.flows = true;
           }
 
-          const detailsNode = this.nodes.find(
-            (n) => n.label === this.detailsModal.vm,
-          );
-          if (detailsNode) {
-            this.detailsModal.status = detailsNode.status;
-            this.detailsModal.soh = detailsNode.soh;
-            this.detailsModal.tags = detailsNode.tags;
+          if (this.nodes) {
+            const detailsNode = this.nodes.find(
+              (n) => n.label === this.detailsModal.vm,
+            );
+            if (detailsNode) {
+              this.detailsModal.status = detailsNode.status;
+              this.detailsModal.soh = detailsNode.soh;
+              this.detailsModal.tags = detailsNode.tags;
+            }
           }
         } catch (err) {
           useErrorNotification(err);

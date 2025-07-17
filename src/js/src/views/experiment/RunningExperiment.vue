@@ -892,28 +892,35 @@
         </b-field>
 
         <b-field>
-          <b-button
-            v-if="roleAllowed('experiments/stop', 'update', experiment.name)"
-            class="button is-danger"
-            slot="trigger"
-            icon-right="stop"
-            @click="stop"></b-button>
+          <b-tooltip label="stop the experiment" type="is-light" :delay="500">
+            <b-button
+              v-if="roleAllowed('experiments/stop', 'update', experiment.name)"
+              class="button is-danger"
+              slot="trigger"
+              icon-right="stop"
+              @click="stop">
+            </b-button>
+          </b-tooltip>
         </b-field>
         <b-field>
-          <router-link
-            v-if="roleAllowed('experiments', 'get', experiment.name)"
-            class="button is-light"
-            :to="{ name: 'soh', params: { id: $route.params.id } }">
-            <b-icon icon="heartbeat"></b-icon>
-          </router-link>
+          <b-tooltip label="view soh" type="is-light" :delay="500">
+            <router-link
+              v-if="roleAllowed('experiments', 'get', experiment.name)"
+              class="button is-light"
+              :to="{ name: 'soh', params: { id: $route.params.id } }">
+              <b-icon icon="heartbeat"></b-icon>
+            </router-link>
+          </b-tooltip>
         </b-field>
         <b-field>
-          <router-link
-            v-if="roleAllowed('experiments', 'get', experiment.name)"
-            class="button is-light"
-            :to="{ name: 'scorch', params: { id: $route.params.id } }">
-            <b-icon icon="fire"></b-icon>
-          </router-link>
+          <b-tooltip label="view scorch" type="is-light" :delay="500">
+            <router-link
+              v-if="roleAllowed('experiments', 'get', experiment.name)"
+              class="button is-light"
+              :to="{ name: 'scorch', params: { id: $route.params.id } }">
+              <b-icon icon="fire"></b-icon>
+            </router-link>
+          </b-tooltip>
         </b-field>
       </b-field>
     </b-field>
