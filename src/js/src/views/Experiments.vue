@@ -207,7 +207,6 @@
           <b-table-column
             field="name"
             label="Name"
-            width="200"
             sortable
             v-slot="props">
             <template v-if="updating(props.row.status)">
@@ -250,7 +249,7 @@
                 <span
                   class="tag is-medium"
                   :class="decorator(props.row.status)">
-                  <div class="field">
+                  <div class="field is-clickable">
                     <div
                       class="field"
                       @click="
@@ -273,21 +272,18 @@
           <b-table-column
             field="topology"
             label="Topology"
-            width="200"
             v-slot="props">
             {{ formatLowercase(props.row.topology) }}
           </b-table-column>
           <b-table-column
             field="scenario"
             label="Scenario"
-            width="200"
             v-slot="props">
             {{ formatLowercase(props.row.scenario) }}
           </b-table-column>
           <b-table-column
             field="start_time"
             label="Start Time"
-            width="250"
             sortable
             v-slot="props">
             {{ props.row.start_time }}
@@ -295,7 +291,7 @@
           <b-table-column
             field="vm_count"
             label="VMs"
-            width="100"
+            width="50"
             centered
             sortable
             v-slot="props">
@@ -304,14 +300,13 @@
           <b-table-column
             field="vlan_range"
             label="VLANs"
-            width="100"
             centered
             v-slot="props">
             {{ props.row.vlan_min }} - {{ props.row.vlan_max }} ({{
               props.row.vlan_count
             }})
           </b-table-column>
-          <b-table-column label="Actions" width="150" centered v-slot="props">
+          <b-table-column label="Actions" width="125" centered v-slot="props">
             <b-tooltip
               class="action"
               :delay="500"

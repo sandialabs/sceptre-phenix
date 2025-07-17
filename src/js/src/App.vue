@@ -73,7 +73,7 @@
 #main {
   width: 100%;
   max-width: 1500px;
-  padding: 20px;
+  padding-bottom: 20px;
 }
 
 </style>
