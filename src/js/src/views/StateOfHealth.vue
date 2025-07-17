@@ -1142,8 +1142,8 @@
         const tickStep = d3.tickStep(0, d3.sum(this.volume.flat()), 100);
         const formatValue = d3.format('.1~%');
 
-        const height = 900;
-        const width = 900;
+        const height = 400;
+        const width = 600;
 
         const innerRadius = Math.min(width, height) * 0.35;
         const outerRadius = innerRadius * 1.018;
