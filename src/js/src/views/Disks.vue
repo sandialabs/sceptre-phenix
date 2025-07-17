@@ -557,10 +557,8 @@
         axiosInstance
           .post(`disks`, formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
-            uploadProgress: (event) => {
-              this.currentUploadProgress = Math.round(
-                (event.loaded / event.total) * 100,
-              );
+            onUploadProgress: (event) => {
+                this.currentUploadProgress = Math.round((event.loaded / event.total) * 100);
             },
           })
           .then(() => {
