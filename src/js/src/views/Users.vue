@@ -517,16 +517,15 @@
 
         axiosInstance
           .post('users', this.user)
-          .then((response) => {
+          .then((_) => {
             this.isWaiting = false;
+            this.resetLocalUser();
+            this.isCreateActive = false;
           })
           .catch((err) => {
             useErrorNotification(err);
             this.isWaiting = false;
           });
-
-        this.resetLocalUser();
-        this.isCreateActive = false;
       },
       editUser(username) {
         for (let i = 0; i < this.users.length; i++) {
