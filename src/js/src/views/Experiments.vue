@@ -204,11 +204,7 @@
               </div>
             </section>
           </template>
-          <b-table-column
-            field="name"
-            label="Name"
-            sortable
-            v-slot="props">
+          <b-table-column field="name" label="Name" sortable v-slot="props">
             <template v-if="updating(props.row.status)">
               {{ props.row.name }}
             </template>
@@ -269,16 +265,10 @@
               </span>
             </template>
           </b-table-column>
-          <b-table-column
-            field="topology"
-            label="Topology"
-            v-slot="props">
+          <b-table-column field="topology" label="Topology" v-slot="props">
             {{ formatLowercase(props.row.topology) }}
           </b-table-column>
-          <b-table-column
-            field="scenario"
-            label="Scenario"
-            v-slot="props">
+          <b-table-column field="scenario" label="Scenario" v-slot="props">
             {{ formatLowercase(props.row.scenario) }}
           </b-table-column>
           <b-table-column

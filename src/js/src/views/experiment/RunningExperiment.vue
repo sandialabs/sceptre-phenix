@@ -1357,8 +1357,9 @@
               <b-button
                 class="button is-light is-small action"
                 icon-left="file-download"
-                @click="downloadFile(experiment.name, props.row.name, props.row.path)"
-              >
+                @click="
+                  downloadFile(experiment.name, props.row.name, props.row.path)
+                ">
               </b-button>
             </b-table-column>
           </b-table>
@@ -1655,10 +1656,11 @@
 
                 this.$buefy.toast.open({
                   message:
-                  'The VM ' + msg.result.name + ' has been successfully updated.',
+                    'The VM ' +
+                    msg.result.name +
+                    ' has been successfully updated.',
                   type: 'is-success',
                 });
-
 
                 break;
               }
@@ -3764,18 +3766,18 @@
         return false;
       },
 
-      downloadFile(exp_name, name, path){
-        console.log("attempting to downlad file")
+      downloadFile(exp_name, name, path) {
+        console.log('attempting to downlad file');
         const store = usePhenixStore();
         const basePath = import.meta.env.VITE_BASE_PATH || '/';
 
-        const url = `${basePath}api/v1/experiments/${exp_name}/files/${name}`
+        const url = `${basePath}api/v1/experiments/${exp_name}/files/${name}`;
         const queryParams = new URLSearchParams({
           path: path,
-          token: store.token
-        })
+          token: store.token,
+        });
 
-        window.open(`${url}?${queryParams}`, '_blank',);
+        window.open(`${url}?${queryParams}`, '_blank');
       },
 
       showMountDialog(vm) {

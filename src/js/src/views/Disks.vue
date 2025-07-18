@@ -558,7 +558,9 @@
           .post(`disks`, formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
             onUploadProgress: (event) => {
-                this.currentUploadProgress = Math.round((event.loaded / event.total) * 100);
+              this.currentUploadProgress = Math.round(
+                (event.loaded / event.total) * 100,
+              );
             },
           })
           .then(() => {

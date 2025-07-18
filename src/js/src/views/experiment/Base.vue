@@ -25,7 +25,7 @@ this will only show a list of VMs that a user can view.
       return axiosInstance
         .get('experiments/' + route.params.id)
         .then((resp) => {
-          console.log(resp)
+          console.log(resp);
           return getComponentAsync(resp.data.running);
         });
     } else {

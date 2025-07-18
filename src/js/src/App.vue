@@ -63,17 +63,15 @@
   </div>
 </template>
 <style lang="scss" scoped>
+  #app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
 
-#app {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-
-#main {
-  width: 100%;
-  max-width: 1500px;
-  padding-bottom: 20px;
-}
-
+  #main {
+    width: 100%;
+    max-width: 1500px;
+    padding-bottom: 20px;
+  }
 </style>

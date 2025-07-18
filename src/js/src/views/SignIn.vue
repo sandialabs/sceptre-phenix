@@ -6,7 +6,7 @@ It requires a valid username and password.
 <template>
   <div id="signin">
     <b-modal v-model="signUpModal" has-modal-card>
-      <div class="modal-card" >
+      <div class="modal-card">
         <header class="modal-card-head">
           <p class="modal-card-title">Create a New Account</p>
         </header>
@@ -221,10 +221,9 @@ It requires a valid username and password.
             this.signUpModal = false;
           })
           .catch((err) => {
-            console.log(err)
+            console.log(err);
             useErrorNotification(err);
           });
-
       },
     },
 

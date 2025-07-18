@@ -365,7 +365,11 @@
       <div class="column is-1">
         <router-link
           class="button"
-          :to="{ name: 'experiment', params: { id: $route.params.id }, state: { running: running } }">
+          :to="{
+            name: 'experiment',
+            params: { id: $route.params.id },
+            state: { running: running },
+          }">
           <b-tooltip
             label="return to the experiment component"
             type="is-light is-right"

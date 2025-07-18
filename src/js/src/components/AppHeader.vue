@@ -37,7 +37,10 @@ are only available to Global Administrator or Global Viewer.
         :to="{ name: 'hosts' }"
         >Hosts</b-navbar-item
       >
-      <b-navbar-item v-if="auth && !disabled" tag="router-link" :to="{ name: 'users' }"
+      <b-navbar-item
+        v-if="auth && !disabled"
+        tag="router-link"
+        :to="{ name: 'users' }"
         >Users</b-navbar-item
       >
       <b-navbar-item
@@ -111,7 +114,7 @@ are only available to Global Administrator or Global Viewer.
       },
       disabled() {
         const phenixStore = usePhenixStore();
-        return phenixStore.role.name === "Disabled";
+        return phenixStore.role.name === 'Disabled';
       },
       proxyAuth() {
         return import.meta.env.VITE_AUTH === 'proxy';

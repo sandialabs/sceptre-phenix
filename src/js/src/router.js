@@ -100,7 +100,7 @@ const router = createRouter({
     {
       path: '/disabled',
       name: 'disabled',
-      component: () => import('@/views/Disabled.vue')
+      component: () => import('@/views/Disabled.vue'),
     },
 
     //static paths

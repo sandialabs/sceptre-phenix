@@ -87,7 +87,10 @@ function globalWsMessageHandler(event: MessageEvent): void {
   event.data.split(/\r?\n/).forEach((data) => {
     if (data) {
       let msg = JSON.parse(data);
-      console.debug('websocket msg (' + wsListeners.length + ' listeners):\n', msg);
+      console.debug(
+        'websocket msg (' + wsListeners.length + ' listeners):\n',
+        msg,
+      );
 
       // dispatch to listeners
       wsListeners.forEach((listener) => listener(msg));
@@ -110,7 +113,7 @@ function globalWsMessageHandler(event: MessageEvent): void {
 // in dev, disconnect and reconnect ws after hot reloads
 if (import.meta.hot) {
   import.meta.hot.on('vite:afterUpdate', () => {
-    disconnectWebsocket()
-    connectWebsocket()
+    disconnectWebsocket();
+    connectWebsocket();
   });
 }
