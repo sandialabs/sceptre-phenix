@@ -5,10 +5,10 @@ import { ToastProgrammatic as Toast } from 'buefy';
 let globalWs: WebSocket = null;
 const wsListeners: Function[] = [];
 
-var shouldBeConnected = false;
+var shouldBeConnected: boolean = false;
 var errorToast = null;
 
-function getUrl() {
+function getUrl(): string {
   const store = usePhenixStore();
   let path = `${import.meta.env.BASE_URL}api/v1/ws`;
   if (store.token) {
@@ -63,7 +63,7 @@ export function disconnectWebsocket(): void {
   }
 }
 
-export function sendWsMsg(payload: object) {
+export function sendWsMsg(payload: object): void {
   if (globalWs !== null) {
     globalWs.send(JSON.stringify(payload));
   } else if (shouldBeConnected) {
@@ -87,7 +87,7 @@ function globalWsMessageHandler(event: MessageEvent): void {
   event.data.split(/\r?\n/).forEach((data) => {
     if (data) {
       let msg = JSON.parse(data);
-      console.debug('WS: ' + data);
+      console.debug('websocket msg (' + wsListeners.length + ' listeners):\n', msg);
 
       // dispatch to listeners
       wsListeners.forEach((listener) => listener(msg));
@@ -104,5 +104,16 @@ function globalWsMessageHandler(event: MessageEvent): void {
         });
       }
     }
+  });
+}
+
+// in dev, disconnect and reconnect for hot reloads
+if (import.meta.hot) {
+  import.meta.hot.on('vite:beforeUpdate', () => {
+    disconnectWebsocket()
+  });
+  import.meta.hot.on('vite:afterUpdate', () => {
+    connectWebsocket()
+    
   });
 }
