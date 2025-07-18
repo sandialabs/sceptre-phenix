@@ -14,7 +14,7 @@ echo "building phenix UI (this could take a while...)"
 start_time=$(date +%s)
 
 pushd /usr/local/src/phenix/src/js &> /dev/null
-VUE_BASE_PATH=$base VUE_APP_AUTH=$auth npm run build &> /tmp/phenix-ui-build.log
+VITE_BASE_PATH=$base VITE_AUTH=$auth npm run build &> /tmp/phenix-ui-build.log
 res=$?
 
 if [ $res -ne 0 ]; then

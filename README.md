@@ -5,7 +5,7 @@ Welcome to `phenix`!
 ## Building
 
 ### Local build
-To build locally, you will need Golang v1.18, Node v14.2, Yarn 1.22, and Protoc 3.14 installed.
+To build locally, you will need Golang v1.20, Node 22, and Protoc 3.14 installed.
 
 Once installed (if not already), simply run:
 ```bash

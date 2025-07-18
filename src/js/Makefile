@@ -9,4 +9,4 @@ clean:
 	$(RM) -r node_modules
 
 dist/index.html: $(SOURCES)
-	(yarn install ; yarn build)
+	(npm install ; npm run build)
