@@ -24,7 +24,9 @@
           <b-field label="Last Name">
             <b-input type="text" v-model="user.last_name"></b-input>
           </b-field>
-          <b-field label="Password">
+          <b-field label="Password"
+          :message="createModalErrors.passwordErrorMessage"
+          :type="createModalErrors.passwordErrorLevel">
             <b-input
               type="password"
               minlength="8"
@@ -65,7 +67,7 @@
           </b-field>
         </section>
         <footer class="modal-card-foot buttons is-right">
-          <button class="button is-light" @click="createUser">
+          <button class="button is-light" @click="createUser" :disabled="!check_password_validity()">
             Create User
           </button>
         </footer>
@@ -302,6 +304,7 @@
     async created() {
       addWsHandler(this.handleWs);
       this.updateUsers();
+      this.getPasswordRequirements();
     },
     computed: {
       paginationNeeded() {
@@ -396,7 +399,6 @@
         axiosInstance
           .get('users')
           .then((response) => {
-            console.log(response.data);
             var state = response.data;
             state.users.forEach((u) => (u.role_name = u.role.name));
             this.users = state.users;
@@ -473,6 +475,16 @@
             duration: 4000,
           });
 
+          return;
+        }
+
+        if ( !this.check_password_validity(this.user.password)) {
+          //check_password_validity
+          this.$buefy.toast.open({
+            message: 'Password does not meet requirements',
+            type:'is-warning',
+            duration: 4000
+          })
           return;
         }
 
@@ -693,6 +705,53 @@
       resetLocalUser() {
         this.user = {};
       },
+      check_password_validity() {
+        const password = this.user.password
+        if (password == undefined) {
+          return true
+        }
+        if (password.length == 0 ){
+          //don't want errors immediately on modal if they haven't typed in anything yet
+          this.createModalErrors.passwordErrorMessage = null
+          this.createModalErrors.passwordErrorLevel = null
+          return true
+        }
+        if (password.length < this.passwordReqs.min_length) {
+          this.createModalErrors.passwordErrorMessage = "Password must be longer than " + this.passwordReqs.min_length + " characters."
+          this.createModalErrors.passwordErrorLevel = "is-dangeer"
+          return false 
+        }
+        if (! /[a-z]/.test(password) && this.passwordReqs.lowercase_req) {
+          this.createModalErrors.passwordErrorMessage = "Password must contain a lowercase letter"
+          this.createModalErrors.passwordErrorLevel = "is-dangeer"
+          return false
+        }
+        if (! /[A-Z]/.test(password) && this.passwordReqs.uppercase_req) {
+          this.createModalErrors.passwordErrorMessage = "Password must contain an uppercase letter"
+          this.createModalErrors.passwordErrorLevel = "is-dangeer"
+          return false
+        }
+        if (! /\d/.test(password) && this.passwordReqs.number_req) {
+          this.createModalErrors.passwordErrorMessage = "Password must contain a number"
+          this.createModalErrors.passwordErrorLevel = "is-dangeer"
+          return false
+        }
+        if (! /\W/.test(password) && this.passwordReqs.symbol_req) {
+          this.createModalErrors.passwordErrorMessage = "Password must contain a symbol"
+          this.createModalErrors.passwordErrorLevel = "is-dangeer"
+          return false 
+        }
+
+        this.createModalErrors.passwordErrorMessage = null
+        this.createModalErrors.passwordErrorLevel = null
+        return true
+      },
+      getPasswordRequirements(){
+        axiosInstance.get('settings/password')
+          .then((response) => {
+            this.passwordReqs = response.data 
+          })
+      },
     },
 
     data() {
@@ -715,6 +774,19 @@
         isNewTokenActive: false,
         isProxyTokenCopied: false,
         isWaiting: true,
+
+        passwordReqs: {
+          number_req: false,
+          symbol_req: false,
+          lowercase_req: false,
+          uppercase_req: false,
+          min_length: 8,
+        },
+        createModalErrors:{ 
+          passwordErrorMessage: null,
+          passwordErrorLevel: null
+        },
+ 
       };
     },
   };
