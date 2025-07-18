@@ -111,7 +111,7 @@ const router = createRouter({
 
     //file, vnc
     {
-      path: '/api/v1/experiments/:id/files/:name?path=:path&token=:token',
+      path: '/api/v1/experiments/:id/files/:name',
       name: 'file',
     },
     { path: '/api/v1/experiments/:id/vms/:name/vnc?token=:token', name: 'vnc' },

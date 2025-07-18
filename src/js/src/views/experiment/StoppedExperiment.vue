@@ -182,12 +182,17 @@
         </p>
       </b-field>
       <b-field>
-        <b-button
-          v-if="roleAllowed('experiments/start', 'update', experiment.name)"
-          class="button is-success"
-          slot="trigger"
-          icon-right="play"
-          @click="start"></b-button>
+        <b-tooltip 
+            label="Start experiment"
+            type="is-light"
+            position="is-top" >
+          <b-button
+            v-if="roleAllowed('experiments/start', 'update', experiment.name)"
+            class="button is-success"
+            slot="trigger"
+            icon-right="play"
+            @click="start"></b-button>
+        </b-tooltip>
       </b-field>
       <b-field>
         <b-tooltip
@@ -633,11 +638,10 @@
               centered
               v-slot="props">
               <b-button
-                tag="a"
                 class="button is-light is-small action"
-                :href="fileDownloadURL(props.row.name, props.row.path)"
-                target="_blank"
-                icon-left="file-download">
+                icon-left="file-download"
+                @click="downloadFile(experiment.name, props.row.name, props.row.path)"
+              >
               </b-button>
             </b-table-column>
           </b-table>
@@ -1675,16 +1679,18 @@
           : fullPath;
       },
 
-      fileDownloadURL(name, path) {
-        return this.$router.resolve({
-          name: 'file',
-          params: {
-            id: this.$route.params.id,
-            name: name,
-            path: path,
-            token: usePhenixStore().token,
-          },
-        }).href;
+      downloadFile(exp_name, name, path){
+        console.log("attempting to downlad file")
+        const store = usePhenixStore();
+        const basePath = import.meta.env.VITE_BASE_PATH || '/';
+
+        const url = `${basePath}api/v1/experiments/${exp_name}/files/${name}`
+        const queryParams = new URLSearchParams({
+          path: path,
+          token: store.token
+        })
+
+        window.open(`${url}?${queryParams}`, '_blank',);
       },
     },
 
