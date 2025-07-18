@@ -871,7 +871,7 @@ func (this *SOH) waitForCPULoad(ctx context.Context, ns string) bool {
 }
 
 func (this SOH) isNetworkingConfigured(ctx context.Context, wg *mm.StateGroup, ns string, node ifaces.NodeSpec, iface ifaces.NodeNetworkInterface) {
-	retryUntil := time.Now().Add(10 * time.Minute)
+	retryUntil := time.Now().Add(this.md.c2Timeout)
 
 	var (
 		addr    = iface.Address()
