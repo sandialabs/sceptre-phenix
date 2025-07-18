@@ -56,7 +56,7 @@ export function connectWebsocket(): void {
 
 export function disconnectWebsocket(): void {
   shouldBeConnected = false;
-  console.log('disconnect websocket');
+  console.log('disconnected websocket');
   if (globalWs) {
     globalWs.close();
     globalWs = null;
@@ -107,13 +107,10 @@ function globalWsMessageHandler(event: MessageEvent): void {
   });
 }
 
-// in dev, disconnect and reconnect for hot reloads
+// in dev, disconnect and reconnect ws after hot reloads
 if (import.meta.hot) {
-  import.meta.hot.on('vite:beforeUpdate', () => {
-    disconnectWebsocket()
-  });
   import.meta.hot.on('vite:afterUpdate', () => {
+    disconnectWebsocket()
     connectWebsocket()
-    
   });
 }

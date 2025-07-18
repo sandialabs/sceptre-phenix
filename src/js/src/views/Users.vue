@@ -297,7 +297,7 @@
 
   export default {
     beforeUnmount() {
-      removeWsHandler(this.handleWs);
+      removeWsHandler(this.handleWs)
     },
     async created() {
       addWsHandler(this.handleWs);
@@ -335,6 +335,7 @@
             let user = msg.result;
 
             user.resource_names = user.resource_names.join(' ');
+            user.role_name = user.role.name
             users.push(user);
 
             this.users = [...users];
