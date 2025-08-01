@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"testing"
 
 	"phenix/store"
@@ -36,7 +37,7 @@ func TestListError(t *testing.T) {
 	}
 }
 
-func TestCreateScoped(t *testing.T) {
+func TestCreateEnv(t *testing.T) {
 	expected := store.Config{
 		Version: "phenix.sandia.gov/v1",
 		Kind:    "Topology",
@@ -50,7 +51,7 @@ func TestCreateScoped(t *testing.T) {
 		"apiVersion": "phenix.sandia.gov/v1",
 		"kind": "Topology",
 		"metadata": {
-			"name": "{{BRANCH_NAME}}-test-experiment"
+			"name": "${BRANCH_NAME}-test-experiment"
 		}
 	}
 	`
@@ -63,7 +64,8 @@ func TestCreateScoped(t *testing.T) {
 
 	store.DefaultStore = m
 
-	options := []CreateOption{CreateFromJSON([]byte(cfg)), CreateWithScope("foobar")}
+	os.Setenv("BRANCH_NAME", "foobar")
+	options := []CreateOption{CreateFromJSON([]byte(cfg))}
 
 	_, err := Create(options...)
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"phenix/api/config"
@@ -54,6 +55,10 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		cfg *store.Config
 	)
 
+	// set branch name in environment variable so it can be used in
+	// NewConfigFromJSON and NewConfigFromYAML
+	os.Setenv("BRANCH_NAME", scope)
+
 	switch {
 	case typ == "application/json": // default to JSON if not set
 		body, err := io.ReadAll(r.Body)
@@ -62,7 +67,8 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		cfg, err = store.NewConfigFromJSON(body, "{{BRANCH_NAME}}", scope)
+		os.Setenv("BRANCH_NAME", scope)
+		cfg, err = store.NewConfigFromJSON(body)
 		if err != nil {
 			return weberror.NewWebError(err, "unable to parse phenix workflow config")
 		}
@@ -73,7 +79,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		cfg, err = store.NewConfigFromYAML(body, "{{BRANCH_NAME}}", scope)
+		cfg, err = store.NewConfigFromYAML(body)
 		if err != nil {
 			return weberror.NewWebError(err, "unable to parse phenix workflow config")
 		}
@@ -361,6 +367,10 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		cfg *store.Config
 	)
 
+	// set branch name in environment variable so it can be used in
+	// NewConfigFromJSON and NewConfigFromYAML
+	os.Setenv("BRANCH_NAME", scope)
+
 	switch {
 	case typ == "application/json": // default to JSON if not set
 		body, err := io.ReadAll(r.Body)
@@ -369,7 +379,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		cfg, err = store.NewConfigFromJSON(body, "{{BRANCH_NAME}}", scope)
+		cfg, err = store.NewConfigFromJSON(body)
 		if err != nil {
 			return weberror.NewWebError(err, "unable to parse JSON config")
 		}
@@ -380,7 +390,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		cfg, err = store.NewConfigFromYAML(body, "{{BRANCH_NAME}}", scope)
+		cfg, err = store.NewConfigFromYAML(body)
 		if err != nil {
 			return weberror.NewWebError(err, "unable to parse YAML config")
 		}
