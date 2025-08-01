@@ -282,10 +282,6 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 
 		data := string(o.data)
 
-		for _, v := range o.scopeVariables {
-			data = strings.ReplaceAll(data, v, o.scope)
-		}
-
 		switch o.dataType {
 		case DataTypeJSON:
 			c, err = store.NewConfigFromJSON([]byte(data))

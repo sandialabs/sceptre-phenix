@@ -18,15 +18,10 @@ type createOptions struct {
 	data     []byte
 	dataType DataType
 	validate bool
-	scope    string
-
-	scopeVariables []string
 }
 
 func newCreateOptions(opts ...CreateOption) createOptions {
-	o := createOptions{
-		scopeVariables: []string{"{{BRANCH_NAME}}"},
-	}
+	var o createOptions
 
 	for _, opt := range opts {
 		opt(&o)
@@ -64,11 +59,5 @@ func CreateFromYAML(d []byte) CreateOption {
 func CreateWithValidation() CreateOption {
 	return func(o *createOptions) {
 		o.validate = true
-	}
-}
-
-func CreateWithScope(s string) CreateOption {
-	return func(o *createOptions) {
-		o.scope = s
 	}
 }

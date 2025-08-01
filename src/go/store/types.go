@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"phenix/types/version"
+	"phenix/util/common"
 
 	"gopkg.in/yaml.v3"
 )
@@ -66,6 +67,9 @@ func NewConfigFromFile(path string) (*Config, error) {
 		return nil, fmt.Errorf("cannot read config: %w", err)
 	}
 
+	// Parse environment variables in the file
+	file = []byte(common.ParseEnv(string(file)))
+
 	var c Config
 
 	switch filepath.Ext(path) {
@@ -88,19 +92,9 @@ func NewConfigFromFile(path string) (*Config, error) {
 	return &c, nil
 }
 
-func NewConfigFromJSON(body []byte, replacements ...string) (*Config, error) {
-	data := string(body)
-
-	// Starting at 1 handles the case where replacements has an odd number of
-	// entries.
-	for i := 1; i < len(replacements); i += 2 {
-		var (
-			tmpl = replacements[i-1]
-			val  = replacements[i]
-		)
-
-		data = strings.ReplaceAll(data, tmpl, val)
-	}
+func NewConfigFromJSON(body []byte) (*Config, error) {
+	// Parse environment variables in the file
+	data := common.ParseEnv(string(body))
 
 	var c Config
 
@@ -115,19 +109,9 @@ func NewConfigFromJSON(body []byte, replacements ...string) (*Config, error) {
 	return &c, nil
 }
 
-func NewConfigFromYAML(body []byte, replacements ...string) (*Config, error) {
-	data := string(body)
-
-	// Starting at 1 handles the case where replacements has an odd number of
-	// entries.
-	for i := 1; i < len(replacements); i += 2 {
-		var (
-			tmpl = replacements[i-1]
-			val  = replacements[i]
-		)
-
-		data = strings.ReplaceAll(data, tmpl, val)
-	}
+func NewConfigFromYAML(body []byte) (*Config, error) {
+	// Parse environment variables in the file
+	data := common.ParseEnv(string(body))
 
 	var c Config
 

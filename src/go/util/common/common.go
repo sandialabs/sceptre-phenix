@@ -2,6 +2,8 @@ package common
 
 import (
 	"fmt"
+	"os"
+	"regexp"
 	"strings"
 )
 
@@ -94,4 +96,32 @@ func SetDeployMode(mode string) error {
 	DeployMode = parsed
 
 	return nil
+}
+
+// ParseEnv replaces environment variable placeholders in the input string with their corresponding values.
+// Placeholders are in the format ${VAR} or ${VAR:default}, where VAR is the environment variable name,
+// and default is an optional default value to use if the variable is not set.
+// If the environment variable is not found and no default is provided, the placeholder is replaced with an empty string.
+//
+// Example:
+//
+//	os.Setenv("FOO", "bar")
+//	ParseEnv("Value: ${FOO}, Default: ${BAZ:qux}") // returns "Value: bar, Default: qux"
+func ParseEnv(input string) string {
+	re := regexp.MustCompile(`\$\{(\w+)(?::([^}]*))?\}`)
+
+	return re.ReplaceAllStringFunc(input, func(match string) string {
+		parts := re.FindStringSubmatch(match)
+		if len(parts) == 0 {
+			return match
+		}
+
+		key := parts[1]
+		defaultValue := parts[2] // May be empty if no default provided
+
+		if value, found := os.LookupEnv(key); found {
+			return value
+		}
+		return defaultValue // Return default value (empty string if no default was provided)
+	})
 }
