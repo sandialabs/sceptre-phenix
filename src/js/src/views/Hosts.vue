@@ -108,7 +108,7 @@ available for experiments, the number of VMs, and host uptime.
       </div>
     </b-field>
     <b-loading
-      :is-full-page="true"
+      :is-full-page="false"
       v-model="isWaiting"
       :can-cancel="false"></b-loading>
   </div>

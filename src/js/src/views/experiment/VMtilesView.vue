@@ -115,7 +115,7 @@ side will pass.
       </div>
     </div>
     <b-loading
-      :is-full-page="true"
+      :is-full-page="false"
       :active.sync="isWaiting"
       :can-cancel="false"></b-loading>
   </div>

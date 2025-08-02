@@ -665,7 +665,7 @@
       </b-tabs>
     </div>
     <b-loading
-      :is-full-page="true"
+      :is-full-page="false"
       v-model="isWaiting"
       :can-cancel="false"></b-loading>
   </div>

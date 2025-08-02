@@ -114,7 +114,7 @@
       </b-table-column>
     </b-table>
     <b-loading
-      :is-full-page="true"
+      :is-full-page="false"
       :active.sync="isWaiting"
       :can-cancel="false"></b-loading>
     <b-modal
