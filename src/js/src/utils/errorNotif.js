@@ -5,17 +5,32 @@ export async function useErrorNotification(error) {
   if (!('response' in error)) {
     message = error.message;
   } else if (error.response.headers.get('content-type') == 'application/json') {
-    let resp = await fetch(error.body.url);
-    let msg = resp.body;
 
-    message = `<h2><b>Error:</b> ${msg.message}</h2>`;
+    let msg = {}
 
-    if (msg.metadata) {
-      let cause = msg.metadata.cause
+    if (!('body' in error)) {
+      msg = error.response.data;
+      message = `<h2><b>Error:</b> ${msg.message}</h2>`;
+
+      let cause = msg.cause
+      .replace(/\n/g, '<br>')
+      .replace(/\t/g, '&emsp;');
+      message = `${message}<br><b>Cause:</b> ${cause}`;
+
+    } else {
+      let resp = await fetch(error.body.url);
+      msg = resp.body;
+      message = `<h2><b>Error:</b> ${msg.message}</h2>`;
+
+      if (msg.metadata) {
+        let cause = msg.metadata.cause
         .replace(/\n/g, '<br>')
         .replace(/\t/g, '&emsp;');
-      message = `${message}<br><b>Cause:</b> ${cause}`;
+        message = `${message}<br><b>Cause:</b> ${cause}`;
+      }
     }
+
+
   } else if (error.response.data) {
     message = `<b>Error:</b> ${error.response.data}`;
   } else {

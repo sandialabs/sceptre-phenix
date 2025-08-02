@@ -681,25 +681,26 @@
       async createNewToken() {
         this.isWaiting = true;
 
-        try {
-          let data = {
-            desc: this.user.token_desc,
-            lifetime: this.user.token_lifetime,
-          };
+        let data = {
+          desc: this.user.token_desc,
+          lifetime: this.user.token_lifetime,
+        };
 
-          let resp = await axiosInstance.post(
-            `users/${this.user.username}/tokens`,
-            data,
-          );
-          let token = resp.data;
+        axiosInstance.post(
+          `users/${this.user.username}/tokens`,
+          data)
+          .then((resp) => {
+            let token = resp.data;
 
-          this.user.token = token.token;
-          this.user.token_exp = token.exp;
-        } catch (err) {
-          useErrorNotification(err);
-        } finally {
-          this.isWaiting = false;
-        }
+            this.user.token = token.token;
+            this.user.token_exp = token.exp;
+          })
+          .catch((err) => {
+            useErrorNotification(err);
+          })
+          .finally(() => {
+            this.isWaiting = false;
+          })
       },
 
       copyProxyToken(token) {

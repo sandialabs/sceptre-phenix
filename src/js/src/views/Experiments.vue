@@ -650,20 +650,22 @@
           confirmText: 'Start',
           type: 'is-success',
           hasIcon: true,
-          onConfirm: async () => {
-            try {
-              await axiosInstance.post('experiments/' + name + '/start');
-              console.log('experiment started');
-            } catch (err) {
-              useErrorNotification(err);
-
-              for (let i = 0; i < this.experiments.length; i++) {
-                if (this.experiments[i].name == name) {
-                  this.experiments[i].status = 'stopped';
-                  break;
+          onConfirm: () => {
+            axiosInstance.post('experiments/' + name + '/start')
+              .then((_) => {
+                console.log('experiment started')
+              })
+              .catch((err) => {
+                console.log("experiment start fail", err)
+                for (let i = 0; i < this.experiments.length; i++) {
+                  if (this.experiments[i].name == name) {
+                    this.experiments[i].status = 'stopped';
+                    break;
+                  }
                 }
-              }
-            }
+
+                useErrorNotification(err)
+              })
           },
         });
       },
