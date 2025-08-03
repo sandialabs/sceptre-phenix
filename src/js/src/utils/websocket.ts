@@ -7,6 +7,7 @@ const wsListeners: Function[] = [];
 
 var shouldBeConnected: boolean = false;
 var errorToast = null;
+var numFailedConnects: number = 0;
 
 function getUrl(): string {
   const store = usePhenixStore();
@@ -40,9 +41,12 @@ export function connectWebsocket(): void {
 
         setTimeout(() => {
           connectWebsocket();
-        }, 1000);
+        }, (2 ** numFailedConnects) * 1000);
+        console.log(`next websocket reconnect attempt in ${2 ** numFailedConnects}s`)
+        numFailedConnects += 1;
       } else if (eventType === 'onopen') {
         console.log('connected websocket');
+        numFailedConnects = 0;
         if (errorToast !== null) {
           errorToast.close();
           errorToast = null;
