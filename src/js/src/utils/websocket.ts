@@ -39,10 +39,15 @@ export function connectWebsocket(): void {
           });
         }
 
-        setTimeout(() => {
-          connectWebsocket();
-        }, (2 ** numFailedConnects) * 1000);
-        console.log(`next websocket reconnect attempt in ${2 ** numFailedConnects}s`)
+        setTimeout(
+          () => {
+            connectWebsocket();
+          },
+          2 ** numFailedConnects * 1000,
+        );
+        console.log(
+          `next websocket reconnect attempt in ${2 ** numFailedConnects}s`,
+        );
         numFailedConnects += 1;
       } else if (eventType === 'onopen') {
         console.log('connected websocket');

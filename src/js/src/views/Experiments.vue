@@ -651,12 +651,13 @@
           type: 'is-success',
           hasIcon: true,
           onConfirm: () => {
-            axiosInstance.post('experiments/' + name + '/start')
+            axiosInstance
+              .post('experiments/' + name + '/start')
               .then((_) => {
-                console.log('experiment started')
+                console.log('experiment started');
               })
               .catch((err) => {
-                console.log("experiment start fail", err)
+                console.log('experiment start fail', err);
                 for (let i = 0; i < this.experiments.length; i++) {
                   if (this.experiments[i].name == name) {
                     this.experiments[i].status = 'stopped';
@@ -664,8 +665,8 @@
                   }
                 }
 
-                useErrorNotification(err)
-              })
+                useErrorNotification(err);
+              });
           },
         });
       },

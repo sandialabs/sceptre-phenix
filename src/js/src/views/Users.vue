@@ -686,9 +686,8 @@
           lifetime: this.user.token_lifetime,
         };
 
-        axiosInstance.post(
-          `users/${this.user.username}/tokens`,
-          data)
+        axiosInstance
+          .post(`users/${this.user.username}/tokens`, data)
           .then((resp) => {
             let token = resp.data;
 
@@ -700,7 +699,7 @@
           })
           .finally(() => {
             this.isWaiting = false;
-          })
+          });
       },
 
       copyProxyToken(token) {
