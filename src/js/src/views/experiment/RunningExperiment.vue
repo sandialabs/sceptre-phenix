@@ -2156,7 +2156,6 @@
 
           this.updateTable();
         } catch (err) {
-          console.log(`ERROR getting experiments: ${err}`);
           useErrorNotification(err);
         } finally {
           this.isWaiting = false;
@@ -3539,7 +3538,6 @@
       },
 
       resetRedeployModal() {
-        console.log('RESET');
         this.redeployModal = {
           active: false,
           vm: [],

@@ -396,7 +396,6 @@
             }
           })
           .catch((err) => {
-            console.log(err);
             useErrorNotification(err);
           });
       },

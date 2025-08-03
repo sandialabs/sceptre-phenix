@@ -541,7 +541,6 @@
           onConfirm: () => {
             const store = usePhenixStore();
             const basePath = import.meta.env.VITE_BASE_PATH || '/';
-            console.log('confirmed!');
             window.open(
               `${basePath}api/v1/disks/download?token=${store.token}&disk=${encodeURIComponent(path)}`,
               '_blank',

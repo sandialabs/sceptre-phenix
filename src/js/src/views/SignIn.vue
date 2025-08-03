@@ -221,7 +221,6 @@ It requires a valid username and password.
             this.signUpModal = false;
           })
           .catch((err) => {
-            console.log(err);
             useErrorNotification(err);
           });
       },

@@ -201,7 +201,6 @@ router.beforeEach(async (to, from, next) => {
         duration: 5000,
       });
       store.logout();
-      router.replace('/signin');
     }
 
     next();

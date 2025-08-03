@@ -1,11 +1,12 @@
+import { usePhenixStore } from '@/store.js';
 import { NotificationProgrammatic as Notification } from 'buefy';
 
 export async function useErrorNotification(error) {
   let message = null;
+  console.warn("Error", error)
   if (!('response' in error)) {
     message = error.message;
   } else if (error.response.headers.get('content-type') == 'application/json') {
-
     let msg = {}
 
     if (!('body' in error)) {
@@ -32,7 +33,13 @@ export async function useErrorNotification(error) {
 
 
   } else if (error.response.data) {
-    message = `<b>Error:</b> ${error.response.data}`;
+    // if the error is for an invalid token, log the user out
+    if (error.response.status === 401 && error.response.data.toLowerCase().includes("invalid")) {
+      usePhenixStore().logout();
+      message = "Token was invalid. Logging out"
+    } else {
+      message = `<b>Error:</b> ${error.response.data}`;
+    }
   } else {
     message = `<b>Unknown Error Occurred: ${error.response.statusText}</b>`;
   }
