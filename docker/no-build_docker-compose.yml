@@ -10,18 +10,13 @@ x-common: &common
 
 services:
   phenix:
-    build:
-      context: ../
-      dockerfile: docker/Dockerfile
-      args:
-        MM_MIN_REV: ${MM_REV:-e8ce6d1}
-        PHENIX_WEB_AUTH: disabled
+    image: ghcr.io/sandialabs/sceptre-phenix/phenix:main 
     command:
-    - phenix
-    - ui
-    - --hostname-suffixes=-minimega,-phenix
-    - --minimega-console
-    image: phenix
+      - phenix
+      - ui
+      - --hostname-suffixes=-minimega,-phenix
+      - --logs.publish-to-ui=info
+      - --minimega-console
     container_name: phenix
     privileged: true
     pid: host
@@ -35,14 +30,19 @@ services:
       - /phenix:/phenix:shared
       - ./tmp/minimega:/tmp/minimega
       - ./tmp/phenix:/tmp/phenix
+    environment:
+      MM_FILEPATH: /phenix/images
     depends_on:
       - minimega
     healthcheck:
       test: phenix version
   minimega:
-    image: ghcr.io/sandia-minimega/minimega:${MM_REV:-e8ce6d1}
+    image: ghcr.io/sandia-minimega/minimega:master
     container_name: minimega
     privileged: true
+    cap_add:
+      - ALL
+    tty: true
     <<: *common
     volumes:
       - /dev:/dev
@@ -63,26 +63,3 @@ services:
       MM_CONTEXT: ${CONTEXT:-phenix}
       MM_LOGLEVEL: info
       MM_LOGFILE: /var/log/phenix/minimega.log
-  es:
-    image: elasticsearch:7.17.5
-    container_name: es
-    <<: *common
-    volumes:
-      - /phenix/share/elasticsearch/data:/usr/share/elasticsearch/data
-    environment:
-      discovery.type: single-node
-    depends_on:
-      - volume-permissions-manager
-  kibana:
-    image: kibana:7.17.5
-    container_name: kibana
-    <<: *common
-    environment:
-      ELASTICSEARCH_HOSTS: http://localhost:9200
-    depends_on:
-      - es
-  volume-permissions-manager:
-    image: alpine:latest
-    command: sh -c "chmod -R 777 /usr/share/elasticsearch"
-    volumes:
-      - /phenix/share/elasticsearch/data:/usr/share/elasticsearch/data
