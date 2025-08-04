@@ -3,7 +3,7 @@ on:
   push:
     branches: ['**']
 env:
-  MM_REV: 6cf6cfb
+  MM_REV: e8ce6d1
 jobs:
   push-to-ghcr:
     name: Push minimega Docker image to GitHub Packages
