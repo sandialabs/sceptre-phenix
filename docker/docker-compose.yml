@@ -7,6 +7,7 @@ x-common: &common
     options:
       max-file: "5"
       max-size: "10m"
+
 services:
   phenix:
     build:
@@ -53,11 +54,15 @@ services:
       - ./tmp/minimega:/tmp/minimega
       - ./tmp/phenix:/tmp/phenix
     healthcheck:
-      test: mm version
+      test: minimega -e version
     environment:
+      MM_BASE: /tmp/minimega
       MM_FILEPATH: /phenix/images
-      MM_LOGFILE: /var/log/phenix/minimega.log
+      MM_PORT: 9000
+      MM_DEGREE: 0  # number of nodes, 0 for single-node
+      MM_CONTEXT: ${CONTEXT:-phenix}
       MM_LOGLEVEL: info
+      MM_LOGFILE: /var/log/phenix/minimega.log
   es:
     image: elasticsearch:7.17.5
     container_name: es
