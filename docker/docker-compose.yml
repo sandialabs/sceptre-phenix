@@ -14,7 +14,7 @@ services:
       context: ../
       dockerfile: docker/Dockerfile
       args:
-        MM_MIN_REV: ${MM_REV:-6cf6cfb}
+        MM_MIN_REV: ${MM_REV:-e8ce6d1}
         PHENIX_WEB_AUTH: disabled
     command:
     - phenix
@@ -40,7 +40,7 @@ services:
     healthcheck:
       test: phenix version
   minimega:
-    image: ghcr.io/sandia-minimega/minimega:${MM_REV:-6cf6cfb}
+    image: ghcr.io/sandia-minimega/minimega:${MM_REV:-e8ce6d1}
     container_name: minimega
     privileged: true
     <<: *common
