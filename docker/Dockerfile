@@ -168,7 +168,7 @@ COPY --from=gobuilder /phenix/src/go/bin/phenix-tunneler-* /opt/phenix/downloads
 # Update GitHub workflow config to change the minimum version of minimega
 # required for use with phenix.
 ARG   MM_MIN_REV=e8ce6d1
-LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandialabs/sceptre-phenix/minimega:${MM_MIN_REV}"
+LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandia-minimega/minimega:${MM_MIN_REV}"
 
 WORKDIR /opt/phenix
 
