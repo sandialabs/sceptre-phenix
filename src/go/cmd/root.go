@@ -242,7 +242,9 @@ func getCurrentUserInfo() (string, string) {
 	if u.Uid == "0" && sudo != "" {
 		u, err := user.Lookup(sudo)
 		if err != nil {
-			panic("unable to lookup sudo user: " + err.Error())
+			// fall back to sudo if we couldn't get actual user
+			fmt.Fprintf(os.Stderr, "Could not find SUDO_USER %s. Looking for optional config file in sudo home directory\n", sudo)
+			return uid, home
 		}
 
 		// `uid` and `home` will now reflect the user ID and home directory of the
