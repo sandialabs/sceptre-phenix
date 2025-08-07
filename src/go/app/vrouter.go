@@ -30,6 +30,7 @@ type IPSecConfig struct {
 	Interfaces map[string]string `mapstructure:"-"`
 	Sites      []struct {
 		Local        string `mapstructure:"local"`
+		Remote       string `mapstructure:"remote"`
 		Peer         string `mapstructure:"peer"`
 		PresharedKey string `mapstructure:"secret"`
 		Tunnels      []struct {
@@ -55,19 +56,18 @@ type Emulator struct {
 	Egress     []string `mapstructure:"egress"`
 	Name       string   `mapstructure:"name"`
 	Bandwidth  string   `mapstructure:"bandwidth"`
-	Burst      string   `mapstructure:"burst"`
-	Delay      string   `mapstructure:"delay"`
-	Corruption string   `mapstructure:"corruption"`
-	Loss       string   `mapstructure:"loss"`
-	Reordering string   `mapstructure:"reordering"`
+	Delay      int      `mapstructure:"delay"`
+	Corruption int      `mapstructure:"corruption"`
+	Loss       int      `mapstructure:"loss"`
+	Reordering int      `mapstructure:"reordering"`
 }
 
 type NATRule struct {
 	Interface          string `mapstructure:"interface"`
 	SourceAddress      string `mapstructure:"srcAddr"`
-	SourcePort         string `mapstructure:"srcPort"`
+	SourcePort         int    `mapstructure:"srcPort"`
 	DestinationAddress string `mapstructure:"destAddr"`
-	DestinationPort    string `mapstructure:"dstPort"`
+	DestinationPort    int    `mapstructure:"dstPort"`
 	Protocol           string `mapstructure:"protocol"`
 	Translation        string `mapstructure:"translation"`
 
@@ -183,7 +183,7 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 		)
 
 		if isVyos {
-			vyattaConfig = "/boot/vyos/rw/config/config.boot"
+			vyattaConfig = "/boot/vyos/rw/config/scripts/custom/vyos.script"
 		}
 
 		node.AddInject(
@@ -678,12 +678,12 @@ func (this *Vrouter) processIPSec(md map[string]interface{}, nets []ifaces.NodeN
 		}
 
 		if site.PresharedKey == "" {
-			k := site.Local + "-" + site.Peer
+			k := site.Local + "-" + site.Remote
 
 			if key, ok := this.ipsecPresharedKeys[k]; ok {
 				site.PresharedKey = key
 			} else {
-				k := site.Peer + "-" + site.Local
+				k := site.Remote + "-" + site.Local
 
 				if key, ok := this.ipsecPresharedKeys[k]; ok {
 					site.PresharedKey = key
