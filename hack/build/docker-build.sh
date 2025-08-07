@@ -66,15 +66,18 @@ fi
 
 
 docker build -t phenix:builder -f - . <<EOF
-FROM ubuntu:20.04
+
+FROM node:22
+
+SHELL ["/bin/bash", "-c"]
 
 RUN ["/bin/bash", "-c", "if (( $USER_UID != 0 )); then \
   groupadd --gid $USER_UID $USERNAME \
   && useradd -s /bin/bash --uid $USER_UID --gid $USER_UID -m $USERNAME; fi"]
 
-RUN apt update && apt install -y curl gnupg2 make protobuf-compiler wget xz-utils
+RUN apt update && apt install -y curl gnupg2 make protobuf-compiler wget xz-utils git
 
-ENV GOLANG_VERSION 1.18.5
+ENV GOLANG_VERSION 1.20.14
 
 RUN wget -O go.tgz https://golang.org/dl/go\${GOLANG_VERSION}.linux-amd64.tar.gz \
   && tar -C /usr/local -xzf go.tgz && rm go.tgz
@@ -85,17 +88,21 @@ ENV PATH \$GOPATH/bin:/usr/local/go/bin:\$PATH
 RUN mkdir -p \$GOPATH/src \$GOPATH/bin \
   && chmod -R 777 \$GOPATH
 
-ENV NODE_VERSION 12.18.3
+# use full version name here (e.g., 22.17.0 instead of 22)
+# ENV NVM_DIR /root/.nvm
 
-RUN wget -O node.txz https://nodejs.org/dist/v\${NODE_VERSION}/node-v\${NODE_VERSION}-linux-x64.tar.xz \
-  && tar -xJf node.txz -C /usr/local --strip-components=1 --no-same-owner && rm node.txz \
-  && ln -s /usr/local/bin/node /usr/local/bin/nodejs
+# RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+# RUN source \$NVM_DIR/nvm.sh \
+#     && nvm install \$NODE_VERSION \
+#     && nvm alias default \$NODE_VERSION \
+#     && nvm use default
 
-RUN npm install -g @vue/cli redoc-cli
+# RUN chmod a+x \$NVM_DIR/nvm.sh
+RUN npm install -g @redocly/cli
+# ENTRYPOINT ["bash", "-c", "source \$NVM_DIR/nvm.sh && exec \"$@\"", "--"]
 
-RUN curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add - \
-  && echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list \
-  && apt update && apt install -y yarn
+# CMD []
+
 EOF
 
 
@@ -111,8 +118,8 @@ docker run -it --rm \
   -v $ROOT_DIR:/phenix \
   -w /phenix \
   -u $USERNAME \
-  -e VUE_APP_AUTH=$auth \
-  -e VUE_BASE_PATH=$base \
+  -e VITE_AUTH=$auth \
+  -e VITE_BASE_PATH=$base \
   -e TAG=$tag \
   -e COMMIT=$commit \
   phenix:builder make bin/phenix

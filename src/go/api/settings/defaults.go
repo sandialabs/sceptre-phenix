@@ -17,6 +17,10 @@ var DEFAULT_SETTINGS = []v2.Setting{
 	{Category: "Password", Name: "UppercaseReq", Type: v2.SettingValueBool, Value: strconv.FormatBool(false)},
 	{Category: "Password", Name: "MinLength", Type: v2.SettingValueInt, Value: formatInt(8)},
 
+	{Category: "Timeout", Name: "Enabled", Type: v2.SettingValueBool, Value: strconv.FormatBool(false)},
+	{Category: "Timeout", Name: "TimeoutMin", Type: v2.SettingValueFloat, Value: formatFloat(30)},
+	{Category: "Timeout", Name: "WarningMin", Type: v2.SettingValueFloat, Value: formatFloat(3)},
+
 	{Category: "Logging", Name: "MaxFileRotations", Type: v2.SettingValueInt, Value: formatInt(0)},
 	{Category: "Logging", Name: "MaxFileSize", Type: v2.SettingValueInt, Value: formatInt(100)},
 	{Category: "Logging", Name: "MaxFileAge", Type: v2.SettingValueInt, Value: formatInt(90)},

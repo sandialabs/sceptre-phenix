@@ -1,154 +1,244 @@
-import Vue    from 'vue'
-import Router from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router';
 
-import Configs       from './components/Configs.vue'
-import Disabled      from './components/Disabled.vue'
-import Disks         from './components/Disks.vue'
-import Experiment    from './components/Experiment.vue'
-import Experiments   from './components/Experiments.vue'
-import Hosts         from './components/Hosts.vue'
-import Log           from './components/Log.vue'
-import ProxySignUp   from './components/ProxySignUp.vue'
-import Scorch        from './components/Scorch.vue'
-import ScorchRuns    from './components/ScorchRuns.vue'
-import SignIn        from './components/SignIn.vue'
-import StateOfHealth from './components/StateOfHealth.vue'
-import Users         from './components/Users.vue'
-import VMtiles       from './components/VMtiles.vue'
-import MiniConsole   from './components/MiniConsole.vue'
-import Tunneler      from './components/Tunneler.vue'
-import Settings      from './components/Settings.vue'
+import { ToastProgrammatic as Toast } from 'buefy';
 
-import store from './store'
+import { usePhenixStore } from '@/store.js';
+import axiosInstance from '@/utils/axios.js';
 
-Vue.use(Router)
-
-const router = new Router({
-  mode: 'history',
-  base: process.env.BASE_URL,
+const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/',
       name: 'home',
       redirect: () => {
-        if (store.getters.auth && store.getters.role.name === "VM Viewer") {
-          return {'name': 'vmtiles'}
+        const phenixStore = usePhenixStore();
+        if (phenixStore.auth && phenixStore.role.name === 'VM Viewer') {
+          return { name: 'vmtiles' };
         }
-
-        return {name: 'experiments'}
-      }
+        return { name: 'experiments' };
+      },
+    },
+    {
+      path: '/signin',
+      name: 'signin',
+      component: () => import('@/views/SignIn.vue'),
+    },
+    {
+      path: '/experiments',
+      name: 'experiments',
+      component: () => import('@/views/Experiments.vue'),
+    },
+    {
+      path: '/experiment/:id',
+      name: 'experiment',
+      component: () => import('@/views/experiment/Base.vue'),
+    },
+    {
+      path: '/hosts',
+      name: 'hosts',
+      component: () => import('@/views/Hosts.vue'),
+    },
+    {
+      path: '/configs/',
+      name: 'configs',
+      component: () => import('@/views/Configs.vue'),
+    },
+    {
+      path: '/disks/',
+      name: 'disks',
+      component: () => import('@/views/Disks.vue'),
+    },
+    {
+      path: '/vmtiles',
+      name: 'vmtiles',
+      component: () => import('@/views/experiment/VMtilesView.vue'),
+    },
+    {
+      path: '/users',
+      name: 'users',
+      component: () => import('@/views/Users.vue'),
+    },
+    { path: '/log', name: 'log', component: () => import('@/views/Logs.vue') },
+    {
+      path: '/console',
+      name: 'console',
+      component: () => import('@/views/Console.vue'),
+    },
+    {
+      path: '/scorch',
+      name: 'scorch',
+      component: () => import('@/views/Scorch.vue'),
+    },
+    {
+      path: '/scorch/:id',
+      name: 'scorchruns',
+      component: () => import('@/views/ScorchRuns.vue'),
+    },
+    {
+      path: '/soh/:id',
+      name: 'soh',
+      component: () => import('@/views/StateOfHealth.vue'),
+    },
+    {
+      path: '/settings',
+      name: 'settings',
+      component: () => import('@/views/Settings.vue'),
+    },
+    {
+      path: '/tunneler',
+      name: 'tunneler',
+      component: () => import('@/views/Tunneler.vue'),
     },
 
-    {path: '/configs',           name: 'configs',     component: Configs},
-    {path: '/disabled',          name: 'disabled',    component: Disabled},
-    {path: '/disks',             name: 'disks',       component: Disks},
-    {path: '/experiments',       name: 'experiments', component: Experiments},
-    {path: '/experiment/:id',    name: 'experiment',  component: Experiment},
-    {path: '/hosts',             name: 'hosts',       component: Hosts},
-    {path: '/log',               name: 'log',         component: Log},
-    {path: '/scorch/:id',        name: 'scorchruns',  component: ScorchRuns},
-    {path: '/scorch',            name: 'scorch',      component: Scorch},
-    {path: '/signin',            name: 'signin',      component: SignIn},
-    {path: '/stateofhealth/:id', name: 'soh',         component: StateOfHealth},
-    {path: '/users',             name: 'users',       component: Users},
-    {path: '/vmtiles',           name: 'vmtiles',     component: VMtiles},
-    {path: '/console',           name: 'console',     component: MiniConsole},
-    {path: '/tunneler',          name: 'tunneler',    component: Tunneler},
-    {path: '/settings',          name: 'settings',    component: Settings},
+    {
+      path: '/proxysignup',
+      name: 'proxysignup',
+      component: () => import('@/views/ProxySignUp.vue'),
+      props: true,
+    },
+    {
+      path: '/disabled',
+      name: 'disabled',
+      component: () => import('@/views/Disabled.vue'),
+    },
 
-    {path: '/builder?token=:token', name: 'builder'},
-    {path: '/version',              name: 'version'},
-    {path: '/features',             name: 'features'},
-    {path: '/api/v1/options',       name: 'options'},
+    //static paths
+    { path: '/builder?token=:token', name: 'builder' },
+    { path: '/version', name: 'version' },
+    { path: '/features', name: 'features' },
+    { path: '/api/v1/options', name: 'options' },
 
-    {path: '/api/v1/console/:pid/ws',   name: 'console-ws'},
-    {path: '/api/v1/console/:pid/size', name: 'console-size'},
+    //file, vnc
+    {
+      path: '/api/v1/experiments/:id/files/:name',
+      name: 'file',
+    },
+    { path: '/api/v1/experiments/:id/vms/:name/vnc?token=:token', name: 'vnc' },
 
-    {path: '/api/v1/experiments/:id/files/:name\\?path=:path&token=:token', name: 'file'},
-    {path: '/api/v1/experiments/:id/vms/:name/vnc?token=:token',            name: 'vnc'},
+    //console paths
+    { path: '/api/v1/console/:pid/ws', name: 'console-ws' },
+    { path: '/api/v1/console/:pid/size', name: 'console-size' },
 
-    {path: '/downloads/tunneler/phenix-tunneler-linux-amd64',       name: 'linux-tunneler'},
-    {path: '/downloads/tunneler/phenix-tunneler-darwin-arm64',      name: 'macos-arm-tunneler'},
-    {path: '/downloads/tunneler/phenix-tunneler-darwin-amd64',      name: 'macos-intel-tunneler'},
-    {path: '/downloads/tunneler/phenix-tunneler-windows-amd64.exe', name: 'windows-tunneler'},
+    //tunneler paths
+    {
+      path: '/downloads/tunneler/phenix-tunneler-linux-amd64',
+      name: 'linux-tunneler',
+    },
+    {
+      path: '/downloads/tunneler/phenix-tunneler-darwin-arm64',
+      name: 'macos-arm-tunneler',
+    },
+    {
+      path: '/downloads/tunneler/phenix-tunneler-darwin-amd64',
+      name: 'macos-intel-tunneler',
+    },
+    {
+      path: '/downloads/tunneler/phenix-tunneler-windows-amd64.exe',
+      name: 'windows-tunneler',
+    },
+  ],
+});
 
-    {path: '/proxysignup', name: 'proxysignup', component: ProxySignUp, props: true},
+router.beforeEach(async (to, from, next) => {
+  const store = usePhenixStore();
 
-    {path: '*', redirect: {name: 'signin'}}
-  ]
-})
-
-router.beforeEach( async ( to, from, next ) => {
-  if ( process.env.VUE_APP_AUTH === 'disabled' ) {
-    if ( !store.getters.auth ) {
+  if (import.meta.env.VITE_AUTH === 'disabled' || !import.meta.env.VITE_AUTH) {
+    if (!store.auth) {
       let role = {
-        name: "Global Admin",
-        policies: [{
-          "resources": ["*", "*/*"],
-          "resourceNames": ["*", "*/*"],
-          "verbs": ["*"]
-        }]
-      }
+        name: 'Global Admin',
+        policies: [
+          {
+            resources: ['*', '*/*'],
+            resourceNames: ['*', '*/*'],
+            verbs: ['*'],
+          },
+        ],
+      };
 
       let loginResponse = {
-        'token': 'authorized',
-        'user': {
-          'username': 'global-admin',
+        token: 'authorized',
+        user: {
+          username: 'global-admin',
           role,
-        }
-      }
-
-      store.commit( 'LOGIN', { loginResponse, 'remember': false } );
+        },
+      };
+      store.login(loginResponse, false);
     }
-
     next();
     return;
   }
 
-  if ( to.name === 'disabled' ) {
+  if (to.name === 'disabled') {
     next();
     return;
   }
 
-  if ( to.name === 'signin' && process.env.VUE_APP_AUTH === 'enabled' ) {
+  if (to.name === 'signin' && import.meta.env.VITE_AUTH === 'enabled') {
     next();
     return;
   }
 
-  if ( to.name === 'proxysignup' && process.env.VUE_APP_AUTH === 'proxy' ) {
+  if (to.name === 'proxysignup' && import.meta.env.VITE_AUTH === 'proxy') {
     next();
     return;
   }
 
-  if ( store.getters.auth ) {
-    if ( store.getters.role.name === 'Disabled' ) {
+  if (store.auth) {
+    if (store.role.name === 'Disabled') {
       router.replace('/disabled');
-    } else if ( to.name === 'signin' ) {
+    } else if (to.name === 'signin') {
       // No need to go to the signin route if already authorized.
       router.replace('/');
-    } else {
-      next();
+    } else if (
+      Date.now() >=
+      JSON.parse(atob(store.token.split('.')[1])).exp * 1000
+    ) {
+      // handle expired JWT by logging user out: https://stackoverflow.com/a/69058154
+      new Toast().open({
+        message: `Token is expired. Log in again`,
+        type: 'is-warning',
+        duration: 5000,
+      });
+      store.logout();
     }
+
+    next();
+    return;
   } else {
-    store.commit( 'NEXT', to );
+    store.next = to;
 
-    if ( process.env.VUE_APP_AUTH === 'proxy' ) {
-      try {
-        let resp = await Vue.http.get('login');
-        let loginResponse = await resp.json();
+    if (import.meta.env.VITE_AUTH === 'proxy') {
+      // next(); //TODO
+      // return;
 
-        store.commit( 'LOGIN', { loginResponse, "remember": false } );
-      } catch (resp) {
-        if ( resp.status === 404 ) {
-          next( {name: 'proxysignup', params: {'username': resp.body.trim()}} )
-        } else {
-          // TODO: ???
-        }
-      }
+      axiosInstance
+        .get('login')
+        .then((response) => {
+          store.commit('LOGIN');
+          store.login(response.data, false);
+          next();
+        })
+        .catch((err) => {
+          next({ name: 'proxysignup', params: { username: err.body.trim() } });
+        });
+
+      // try {
+      //   let resp = await Vue.http.get('login');
+      //   let loginResponse = await resp.json();
+      //
+      //   store.commit( 'LOGIN', { loginResponse, "remember": false } );
+      // } catch (resp) {
+      //   if ( resp.status === 404 ) {
+      //     next( {name: 'proxysignup', params: {'username': resp.body.trim()}} )
+      //   } else {
+      //     // TODO: ???
+      //   }
+      // }
     } else {
-      next( {name: 'signin'} );
+      next({ name: 'signin' });
+      return;
     }
   }
-})
-
-export default router
+});
+export default router;

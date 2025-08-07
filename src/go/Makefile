@@ -35,7 +35,7 @@ clean:
 	$(RM) web/bindata.go
 	$(RM) web/proto/*.pb.go
 	$(RM) web/public/docs/index.html
-	$(RM) web/public/favicon.ico
+	$(RM) web/public/favicon*.ico
 	$(RM) web/public/index.html
 	$(RM) -r web/public/assets
 	$(RM) web/rbac/known_policy.go
@@ -68,7 +68,7 @@ tmpl/bindata.go: $(TEMPLATES) bin/go-bindata
 	$(GOBIN)/go-bindata -pkg tmpl -prefix tmpl/templates -o tmpl/bindata.go tmpl/templates/...
 
 web/public/docs/index.html: web/public/docs/openapi.yml
-	npx redoc-cli build web/public/docs/openapi.yml -o web/public/docs/index.html --title 'phenix API'
+	npx @redocly/cli build-docs web/public/docs/openapi.yml -o web/public/docs/index.html --title 'phenix API'
 
 web/bindata.go: web/public/docs/index.html web/public/index.html web/public/vnc.html bin/go-bindata
 	$(GOBIN)/go-bindata -pkg web -prefix web/public -o web/bindata.go web/public/...

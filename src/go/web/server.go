@@ -263,12 +263,12 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/settings", GetSettings).Methods("GET", "OPTIONS")
 	api.HandleFunc("/settings", SetSettings).Methods("POST", "OPTIONS")
 	api.HandleFunc("/settings/password", GetPasswordRequirements).Methods("GET", "OPTIONS")
+	api.HandleFunc("/settings/timeout", GetTimeoutSettings).Methods("GET", "OPTIONS")
 
 	workflowRoutes := []route{
 		{"/workflow/apply/{branch}", weberror.ErrorHandler(ApplyWorkflow), []string{"POST"}},
 		{"/workflow/configs/{branch}", weberror.ErrorHandler(WorkflowUpsertConfig), []string{"POST"}},
 	}
-
 
 	optionRoutes := []route{
 		{"/options", weberror.ErrorHandler(GetOptions), []string{"GET"}},
