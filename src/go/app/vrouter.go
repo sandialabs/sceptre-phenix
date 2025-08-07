@@ -183,7 +183,7 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 		)
 
 		if isVyos {
-			vyattaConfig = "/boot/vyos/rw/config/config.boot"
+			vyattaConfig = "/boot/vyos/rw/config/scripts/custom/vyos.script"
 		}
 
 		node.AddInject(
