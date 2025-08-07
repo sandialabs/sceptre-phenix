@@ -14,7 +14,7 @@ RUN wget -O node.txz https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSI
   && tar -xJf node.txz -C /usr/local --strip-components=1 --no-same-owner && rm node.txz \
   && ln -s /usr/local/bin/node /usr/local/bin/nodejs
 
-RUN npm install -g @redocly/cli
+RUN npm install -g @redocly/cli vite
 RUN git clone --branch ${PHENIX_BRANCH} https://github.com/${PHENIX_REPO}.git /usr/local/src/phenix \
   && mkdir -p /opt/phenix/web \
   && cp -a /usr/local/src/phenix/src/go/web/public /opt/phenix/web
