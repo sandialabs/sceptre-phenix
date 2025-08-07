@@ -14,6 +14,7 @@ echo "building phenix UI (this could take a while...)"
 start_time=$(date +%s)
 
 pushd /usr/local/src/phenix/src/js &> /dev/null
+npm install &> /tmp/phenix-ui-build.log
 VITE_BASE_PATH=$base VITE_AUTH=$auth npm run build &> /tmp/phenix-ui-build.log
 res=$?
 
