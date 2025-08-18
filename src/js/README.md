@@ -1,56 +1,78 @@
-# phenixweb
+# phenix web
 
-Vue.js single-page application leveraging Vuex, vue-router, and
-vue-resource.
+Vue 3 single-page application leveraging pinia, vue-router, and axios libraries.
 
 ## Project Setup
 
-### Install Runtimes
-
-If using [asdf-vm](https://github.com/asdf-vm) to manage runtimes, run
-the following to install the correct version of Node.
+Requires node 22. It is recommended to install node using [nvm](https://github.com/nvm-sh/nvm).
 
 ```
-asdf install
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+nvm install 22
+nvm use 22
 ```
 
-### Install Project's Node dependencies
+Run `npm install` afterwards to install all modules defined in `package.json`
+
+## Useful commands
+
+**Run the development server with hot-reload:**
+
+(Be sure to have a regular build of the phenix backend running to connect to)
 
 ```
-npm install
+npm run dev
 ```
 
-### Run Development Servers
+**Compile for Production**
 
-In one terminal, compile and run Vue.js development server (with
-hot-reload):
-
-```
-npm run serve
-```
-
-We no longer use the json-server.
-
-In another terminal, run mock API server with the following command:
-
-```
-npx json-server --watch db.json
-```
-
-On macOS, this worked:
-
-```
-json-server --watch db.json
-```
-
-### Compile and Minify for Production
+(Or use `make dist/index.html`)
 
 ```
 npm run build
 ```
 
-### Lint and Fix Files
+**Format Code**
 
 ```
-npm run lint
+npm run format
 ```
+
+**Run tests**
+
+```
+npm run test
+```
+
+## Code Details
+
+### Structure
+
+- `src`
+  - `assets`: images and css
+  - `components`: UI components that are used to make full views. These should be relatively small and may be reusable
+  - `utils`: Various helper functions imported in Vue files
+  - `views`: Full UI pages, typically referenced in `router.js`. May use components
+  - `App.vue`: Base UI page that contains common elements (header, footer). Shows a single `view` page at a time
+  - `main.js`: Creates the Vue app
+  - `router.js`: Defines routes and hooks using `vue-router`
+  - `store.js`: Defines the `pinia` store
+- `test`: unit tests
+- `*.env`: Files which define environment variables used during build
+- `index.html`: Base page loaded by browser. Loads the rest of the app
+- `vite.config.js`: Defines parameters for building
+
+### Dependencies Used
+
+- Using vue3 (recently upgraded from vue2)
+- `pinia`: store for state. Replaces `vuex` in vue2. Obtain an instance by calling `usePhenixStore()`
+- `axios`: http library. Replaces `vue resource` in vue2. Make calls using `axiosInstance`
+- `vue-router`: handles routing within app
+- `vite`: build tools. Replaces `vue-cli` in vue2
+- `Buefy`: UI library. Recently upgraded to support vue3
+- `Bulma`: css library used by Buefy
+  - Note: currently Buefy uses Bulma 0.9.4. See docs here: https://versions.bulma.io/0.9.4/documentation/
+
+### Notes
+
+- Font Awesome icons are imported individually in `main.js` to reduce bundle size. Add any new icons there.

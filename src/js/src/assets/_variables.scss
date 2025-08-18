@@ -1,0 +1,69 @@
+@use 'sass:map';
+@import 'bulma/sass/utilities/_all';
+@import 'buefy/src/scss/utils/_all';
+
+$logo: #9a4420;
+// derived via: https://m2.material.io/design/color/the-color-system.html#tools-for-picking-colors
+$primary: #da622d;
+$link: #62c0d7;
+
+$scheme-main: #686868;
+$scheme-main-bis: #b1b1b1;
+$scheme-invert: findColorInvert($scheme-main);
+
+$background: #333;
+$background-bis: #484848;
+$background-ter: #5a5a5a;
+$border: white;
+$text: whitesmoke;
+$text-strong: white;
+$text-weak: whitesmoke;
+$input-color: black;
+
+$body-background-color: $background;
+$table-background-color: $background-bis;
+$card-background-color: $background-bis;
+$tag-background-color: $scheme-main;
+$navbar-background-color: $background-ter;
+$navbar-item-img-max-height: 2.5rem;
+
+$modal-card-body-background-color: $background-ter;
+$modal-card-head-background-color: $background-ter;
+$modal-background-background-color: rgba($black, 0.86);
+$modal-card-head-border-bottom: transparent;
+$modal-card-foot-border-top: 1px solid $scheme-main-bis;
+
+$button-border-color: lighten($scheme-main, 10);
+$button-hover-color: $text-strong;
+$button-text-hover-background-color: $scheme-main;
+// this line isn't ideal, but a lot of existing buttons were tagged with `is-light` so this sets them to what you would expect
+$button-colors: map.merge(
+  $colors,
+  (
+    'light': (
+      $scheme-main,
+      $scheme-invert,
+    ),
+  )
+);
+
+$hero-colors: map.merge(
+  $colors,
+  (
+    'light': (
+      $scheme-main,
+      $scheme-invert,
+    ),
+  )
+);
+
+$input-background-color: white;
+$input-color: #363636;
+$input-icon-color: lighten($scheme-main, 20);
+$input-icon-active-color: lighten($scheme-main, 10);
+$input-hover-color: lighten($link, 10); // dropdown arrows etc.
+
+$progress-text-color: black;
+$hr-background-color: whitesmoke;
+
+$fullhd: 1536px + (2 * $gap);

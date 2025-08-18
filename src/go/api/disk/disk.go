@@ -3,6 +3,7 @@ package disk
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -41,6 +42,12 @@ func (MMDiskFiles) RebaseDisk(src, dst string, unsafe bool) error {
 
 func (MMDiskFiles) ResizeDisk(src, size string) error {
 	cmd := mmcli.NewCommand()
+
+	re := regexp.MustCompile(`[+-]?\d+[KMGTPE]`)
+	if !re.MatchString(size) {
+		return fmt.Errorf("provided size does not match valid pattern")
+	}
+
 	cmd.Command = fmt.Sprintf("disk resize %s %s", src, size)
 	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
 	return err
@@ -176,7 +183,7 @@ func resolveImage(path string) []Details {
 		}
 	}
 	if !knownFormat {
-		plog.Debug(plog.TypeSystem, "file didn't match know image extensions: %s", "path", path)
+		plog.Debug(plog.TypeSystem, "file didn't match known image extensions: %s", "path", path)
 		return imageDetails
 	}
 

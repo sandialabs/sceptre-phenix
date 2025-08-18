@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "module": "NodeNext"
+  },
+  "exclude": ["node_modules", "dist"]
+}
