@@ -104,7 +104,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 # tshark needed for scorch tcpdump component
 RUN apt update \
   && echo 'wireshark-common wireshark-common/install-setuid boolean false' | debconf-set-selections \
-  && apt install -y cmdtest cpio debootstrap git iproute2 iputils-ping kpartx locales nano parted psmisc python3 python3-jinja2 python3-pip python3-yaml qemu-utils tshark vim wget xz-utils zerofree \
+  && apt install -y cmdtest cpio debootstrap git iproute2 iputils-ping kpartx locales nano parted psmisc python3 python3-jinja2 python3-pip python3-yaml qemu-utils tshark vim wget xz-utils zerofree guestfish \
   && locale-gen en_US.UTF-8 \
   && apt autoremove -y \
   && apt clean -y \
