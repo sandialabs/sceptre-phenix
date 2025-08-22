@@ -83,6 +83,6 @@ jobs:
           build-args: |
             PHENIX_REPO=${{ github.repository }}
             PHENIX_IMG=${{ needs.push-to-ghcr.outputs.image }}
-            PHENIX_BRANCH=${{ github.head_ref || github.ref_name }} 
+            PHENIX_BRANCH=${{ github.head_ref || github.ref_name }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
