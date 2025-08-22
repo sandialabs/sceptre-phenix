@@ -296,7 +296,7 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 		"topology":       topo,
 	}
 
-	if o.disabledApps != nil {
+	if o.disabledApps != nil && len(o.disabledApps) > 0 {
 		plog.Info(plog.TypePhenixApp, fmt.Sprintf("Got disabled applications: %v", o.disabledApps))
 	}
 
