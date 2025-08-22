@@ -77,7 +77,10 @@ func MakeCustomScenarioFromConfig(c store.Config, disabledApps []string) (ifaces
 
 	//if app name in disabled app list, set to disabled
 	for _, app := range spec.Apps() {
-		app.SetDisabled(slices.Contains(disabledApps, app.Name()))
+
+		if slices.Contains(disabledApps, app.Name()) {
+			app.SetDisabled(true)
+		}
 	}
 
 	return spec, nil
