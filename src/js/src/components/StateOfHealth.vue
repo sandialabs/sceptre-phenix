@@ -351,72 +351,6 @@
             <div id="chord"></div>
           </div>
         </b-tab-item>
-        <b-tab-item v-if="messages" label="SoH Messages">
-          <div class="columns is-centered is-multiline">
-            <div v-for="( n, index ) in nodes" :key="index">
-              <div class="column is-one-half">
-                <div v-if="n.soh">
-                  <h3 class="title is-3">{{ n.label }}</h3>
-                  <div>
-                    <h3 class="title is-5">CPU Load: {{ n.soh.cpuLoad }}</h3>
-                  </div>
-                  <br>
-                  <div v-if="n.soh.reachability">
-                    <h3 class="title is-5">Reachability</h3>
-                    <b-table
-                      :data="n.soh.reachability"
-                      default-sort="host">
-                      <b-table-column field="hostname" label="Host" sortable v-slot="props">
-                        {{ props.row.hostname }}
-                      </b-table-column>
-                      <b-table-column field="timestamp" label="Timestamp" sortable v-slot="props">
-                        {{ props.row.timestamp }}
-                      </b-table-column>
-                      <b-table-column field="error" label="Error" sortable v-slot="props">
-                        {{ props.row.error }}
-                      </b-table-column>
-                    </b-table>
-                    <br>
-                  </div>
-                  <div v-if="n.soh.processes">
-                    <h3 class="title is-5">Processes</h3>
-                    <b-table
-                      :data="n.soh.processes"
-                      default-sort="process">
-                      <b-table-column field="process" label="Process" sortable v-slot="props">
-                        {{ props.row.process }}
-                      </b-table-column>
-                      <b-table-column field="timestamp" label="Timestamp" sortable v-slot="props">
-                        {{ props.row.timestamp }}
-                      </b-table-column>
-                      <b-table-column field="error" label="Error" sortable v-slot="props">
-                        {{ props.row.error }}
-                      </b-table-column>
-                    </b-table>
-                    <br>
-                  </div>
-                  <div v-if="n.soh.listeners">
-                    <h3 class="title is-5">Listeners</h3>
-                    <b-table
-                      :data="n.soh.listeners"
-                      default-sort="listener">
-                      <b-table-column field="listener" label="Listener" sortable v-slot="props">
-                        {{ props.row.listener }}
-                      </b-table-column>
-                      <b-table-column field="timestamp" label="Timestamp" sortable v-slot="props">
-                        {{ props.row.timestamp }}
-                      </b-table-column>
-                      <b-table-column field="error" label="Error" sortable v-slot="props">
-                        {{ props.row.error }}
-                      </b-table-column>
-                    </b-table>
-                    <br>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </b-tab-item>
       </b-tabs>
     </div>
   </div>
@@ -1107,7 +1041,6 @@ export default {
       running: false,
       sohInitialized: false,
       sohRunning: false,
-      messages: false,
       flows: false,
       nodes: [],
       edges: [],
