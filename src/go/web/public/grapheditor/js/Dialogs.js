@@ -2132,7 +2132,7 @@ var EditDataDialog = function(ui, cell)
             show_errors: 'always',
             theme: 'bootstrap3',
             iconlib: 'spectre',
-            no_additional_properties: true,
+            no_additional_properties: false,
             disable_edit_json: true,
             display_required_only: true
         };
@@ -4297,7 +4297,7 @@ var VariablesDialog = function(ui)
             theme: 'bootstrap3',
             iconlib: 'spectre',
             disable_edit_json: true,
-            disable_properties: true
+            disable_properties: false
         };
 
         createEditor();
