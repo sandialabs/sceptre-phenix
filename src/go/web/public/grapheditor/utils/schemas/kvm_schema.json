@@ -23,7 +23,7 @@
                 "type": "array",
                 "items": {
                   "type": "object",
-                  " additionalProperties": {
+                  "additionalProperties": {
                     "type": "string"
                   }
                 }
