@@ -171,6 +171,11 @@ components:
                   setting0: true
                   setting1: 42
                   setting2: universe key
+              disabled:
+                type: boolean
+                default: false
+                example: false
+                nullable: true
               hosts:
                 type: array
                 items:
