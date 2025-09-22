@@ -54,3 +54,11 @@ func Patch(config *Config, data map[string]interface{}) error {
 func Delete(config *Config) error {
 	return DefaultStore.Delete(config)
 }
+
+func IsInitialized(component Component) bool {
+	return DefaultStore.IsInitialized(component)
+}
+
+func InitializeComponent(component Component) error {
+	return DefaultStore.InitializeComponent(component)
+}

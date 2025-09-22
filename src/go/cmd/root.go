@@ -109,15 +109,21 @@ var rootCmd = &cobra.Command{
 
 		common.StoreEndpoint = endpoint
 
-		if err := store.Init(store.Endpoint(endpoint)); err != nil {
-			return fmt.Errorf("initializing storage: %w", err)
+		// Initialize storage backend if not already done
+		if !store.IsInitialized(store.COMPONENT_STORE) {
+			if err := store.Init(store.Endpoint(endpoint)); err != nil {
+				return fmt.Errorf("initializing storage: %w", err)
+			}
 		}
 
-		if err := config.Init(); err != nil {
-			return fmt.Errorf("unable to initialize default configs: %w", err)
+		// Initialize default configs if not already done
+		if !store.IsInitialized(store.COMPONENT_CONFIGS) {
+			if err := config.Init(); err != nil {
+				return fmt.Errorf("unable to initialize default configs: %w", err)
+			}
 		}
 
-		//add log file handler after bbolt is live
+		// Add log file handler after bbolt is live
 		logFile := viper.GetString("log.file.path")
 		fileHandlerOpts := plog.GetDefaultFileHandlerOpts()
 		fileLogSettings, err := settings.GetLoggingSettings()
