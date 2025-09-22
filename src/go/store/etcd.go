@@ -44,6 +44,28 @@ func (this *Etcd) Init(opts ...Option) error {
 		return fmt.Errorf("creating new Etcd client: %w", err)
 	}
 
+	if err := this.InitializeComponent(COMPONENT_STORE); err != nil {
+		return fmt.Errorf("initializing component %s: %w", COMPONENT_STORE, err)
+	}
+
+	return nil
+}
+func (this *Etcd) IsInitialized(component Component) bool {
+	key := fmt.Sprintf("%s/%s", "phenix", string(component))
+	resp, err := this.cli.Get(context.Background(), key)
+	if err != nil {
+		return false
+	}
+
+	return string(resp.Kvs[0].Value) == "true"
+}
+
+func (this *Etcd) InitializeComponent(component Component) error {
+	key := fmt.Sprintf("%s/%s", "phenix", string(component))
+	if _, err := this.cli.Put(context.Background(), key, "true"); err != nil {
+		return fmt.Errorf("marking component %s as initialized: %w", component, err)
+	}
+
 	return nil
 }
 

@@ -35,6 +35,37 @@ func (this *BoltDB) Init(opts ...Option) error {
 
 	this.path = u.Host + u.Path
 
+	if err := this.InitializeComponent(COMPONENT_STORE); err != nil {
+		return fmt.Errorf("initializing component %s: %w", COMPONENT_STORE, err)
+	}
+
+	return nil
+}
+
+func (this *BoltDB) IsInitialized(component Component) bool {
+	if err := this.open(); err != nil {
+		return false
+	}
+	defer this.Close()
+
+	v, err := this.get("phenix", string(component))
+	if err != nil {
+		return false
+	}
+
+	return v[0] == 1
+}
+
+func (this *BoltDB) InitializeComponent(component Component) error {
+	if err := this.open(); err != nil {
+		return err
+	}
+	defer this.Close()
+
+	if err := this.put("phenix", string(component), []byte{1}); err != nil {
+		return fmt.Errorf("marking component %s as initialized: %w", component, err)
+	}
+
 	return nil
 }
 

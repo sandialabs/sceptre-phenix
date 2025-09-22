@@ -7,6 +7,15 @@ var (
 	ErrNotExist = fmt.Errorf("config does not exist")
 )
 
+type (
+	Component string
+)
+
+const (
+	COMPONENT_CONFIGS Component = "configs"
+	COMPONENT_STORE   Component = "store"
+)
+
 // Store is the interface that identifies all the required functionality for a
 // config store. Not all functions are required to be implemented. If not
 // implemented, they should return an error stating such.
@@ -36,4 +45,13 @@ type Store interface {
 
 	// Delete removes the given config from the config store.
 	Delete(*Config) error
+
+	// IsInitialized checks if the given phenix components have been
+	// initialized. This is used to avoid re-initializing the store or
+	// default configs.
+	IsInitialized(Component) bool
+
+	// InitializeComponent marks the given phenix component as initialized in
+	// the store.
+	InitializeComponent(Component) error
 }

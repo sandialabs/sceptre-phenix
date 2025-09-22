@@ -67,7 +67,6 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		os.Setenv("BRANCH_NAME", scope)
 		cfg, err = store.NewConfigFromJSON(body)
 		if err != nil {
 			return weberror.NewWebError(err, "unable to parse phenix workflow config")
