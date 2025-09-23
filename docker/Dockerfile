@@ -72,10 +72,14 @@ RUN make -C src/go phenix-tunneler
 
 # Allow installing from a fork of sceptre-phenix-apps that could
 # exist on GitHub or elsewhere.
+# We can specify one APPS_REPO and APPS_BRANCH for both Go and Python
 ARG APPS_REPO=github.com/sandialabs/sceptre-phenix-apps
 ARG APPS_BRANCH=main
+# Or the user can override Go and Python apps repos/branches separately
+ARG GO_APPS_REPO=${APPS_REPO}
+ARG GO_APPS_BRANCH=${APPS_BRANCH}
 
-RUN git clone --branch ${APPS_BRANCH} https://${APPS_REPO}.git /phenix-apps
+RUN git clone --branch ${GO_APPS_BRANCH} https://${GO_APPS_REPO}.git /phenix-apps
 
 WORKDIR /phenix-apps/src/go
 
@@ -152,12 +156,16 @@ RUN python3 -m pip install --break-system-packages --no-cache-dir /tmp/minimega
 
 # Allow installing from a fork of sceptre-phenix-apps that could
 # exist on GitHub or elsewhere.
+# We can specify one APPS_REPO and APPS_BRANCH for both Go and Python
 ARG APPS_REPO=github.com/sandialabs/sceptre-phenix-apps
 ARG APPS_BRANCH=main
+# Or the user can override Go and Python apps repos/branches separately
+ARG PY_APPS_REPO=${APPS_REPO}
+ARG PY_APPS_BRANCH=${APPS_BRANCH}
 
 # Install phenix user apps
 RUN python3 -m pip install --break-system-packages --ignore-installed --no-cache-dir \
-  "git+https://${APPS_REPO}.git@${APPS_BRANCH}#egg=phenix-apps&subdirectory=src/python"
+  "git+https://${PY_APPS_REPO}.git@${PY_APPS_BRANCH}#egg=phenix-apps&subdirectory=src/python"
 
 # Copy binaries from gobuilder stage
 COPY --from=gobuilder /phenix/bin/phenix   /usr/local/bin/phenix
