@@ -165,16 +165,16 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 			}
 
 			if strings.EqualFold(node.Type(), "Router") {
-				var routerFile = startupDir + "/" + node.General().Hostname() + "-router.sh"
+				var routerFile = startupDir + "/" + node.General().Hostname() + "-ospf.sh"
 				
 				node.AddInject(
 					routerFile,
-					"/etc/phenix/startup/5_router-start.sh",
+					"/etc/phenix/startup/5_ospf-start.sh",
 					"0755", "",
 				)
 
-				if err := tmpl.CreateFileFromTemplate("linux_router.tmpl", host.Metadata(), routerFile); err != nil {
-					return fmt.Errorf("generating linux router script: %w", err)
+				if err := tmpl.CreateFileFromTemplate("linux_ospf.tmpl", host.Metadata(), routerFile); err != nil {
+					return fmt.Errorf("generating linux ospf script: %w", err)
 				}
 
 			}
