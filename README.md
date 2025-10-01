@@ -78,11 +78,11 @@ kind: Workflow
 metadata: {}
 spec:
   auto:
-    create: {{BRANCH_NAME}}-<string>
+    create: ${BRANCH_NAME}-<string>
     update: <bool>  # defaults to true
     restart: <bool> # defaults to true
-  topology: {{BRANCH_NAME}}-<string>
-  scenario: {{BRANCH_NAME}}-<string>
+  topology: ${BRANCH_NAME}-<string>
+  scenario: ${BRANCH_NAME}-<string>
   vlans:
     <alias>: <int>
   schedules:

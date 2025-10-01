@@ -99,6 +99,10 @@ func Init() error {
 
 		var c store.Config
 
+		// Set BRANCH_NAME to parent directory name of config file being processed
+		// e.g. /phenix/configs/foo/topology.yaml -> BRANCH_NAME=foo
+		os.Setenv("BRANCH_NAME", filepath.Base(filepath.Dir(filepath.Clean(path))))
+
 		switch filepath.Ext(path) {
 		case ".yaml", ".yml":
 			body, err := os.ReadFile(path)
@@ -171,6 +175,11 @@ func Init() error {
 				return fmt.Errorf("updating config in store: %w", err)
 			}
 		}
+	}
+
+	// Mark configs as initialized in the store.
+	if err := store.InitializeComponent(store.COMPONENT_CONFIGS); err != nil {
+		return fmt.Errorf("marking configs as initialized: %w", err)
 	}
 
 	return nil
