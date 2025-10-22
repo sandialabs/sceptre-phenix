@@ -51,7 +51,85 @@ func DecodeTopologyFromConfig(c store.Config) (ifaces.TopologySpec, error) {
 		return nil, fmt.Errorf("invalid spec in config")
 	}
 
+	// Process includeTopologies if this is a v1 topology
+	if v1Spec, ok := iface.(*v1.TopologySpec); ok {
+		if err := processIncludedTopologies(v1Spec); err != nil {
+			return nil, fmt.Errorf("processing included topologies: %w", err)
+		}
+	}
+
 	return spec, nil
+}
+
+func processIncludedTopologies(spec *v1.TopologySpec) error {
+	if len(spec.IncludeTopologiesF) == 0 {
+		return nil
+	}
+
+	var allErrors error
+
+	for _, path := range spec.IncludeTopologiesF {
+		// Check if it's an absolute path to a file
+		if filepath.IsAbs(path) {
+			if err := loadTopologyFromFile(spec, path); err != nil {
+				allErrors = fmt.Errorf("%w; loading topology from %s: %v", allErrors, path, err)
+			}
+			continue
+		}
+
+		// Otherwise, try to load from store by name
+		if err := loadTopologyFromStore(spec, path); err != nil {
+			allErrors = fmt.Errorf("%w; loading topology %s from store: %v", allErrors, path, err)
+		}
+	}
+
+	return allErrors
+}
+
+func loadTopologyFromFile(spec *v1.TopologySpec, path string) error {
+	c, err := store.NewConfigFromFile(path)
+	if err != nil {
+		return fmt.Errorf("loading config from file: %w", err)
+	}
+
+	var includedSpec struct {
+		Nodes []*v1.Node `mapstructure:"nodes"`
+	}
+
+	if err := mapstructure.Decode(c.Spec, &includedSpec); err != nil {
+		return fmt.Errorf("decoding topology spec: %w", err)
+	}
+
+	// Append nodes from included topology to this topology
+	spec.NodesF = append(spec.NodesF, includedSpec.Nodes...)
+
+	return nil
+}
+
+func loadTopologyFromStore(spec *v1.TopologySpec, name string) error {
+	c := &store.Config{
+		Kind: "Topology",
+		Metadata: store.ConfigMetadata{
+			Name: name,
+		},
+	}
+
+	if err := store.Get(c); err != nil {
+		return fmt.Errorf("getting topology from store: %w", err)
+	}
+
+	var includedSpec struct {
+		Nodes []*v1.Node `mapstructure:"nodes"`
+	}
+
+	if err := mapstructure.Decode(c.Spec, &includedSpec); err != nil {
+		return fmt.Errorf("decoding topology spec: %w", err)
+	}
+
+	// Append nodes from included topology to this topology
+	spec.NodesF = append(spec.NodesF, includedSpec.Nodes...)
+
+	return nil
 }
 
 type topology struct{}

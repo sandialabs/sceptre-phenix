@@ -134,8 +134,6 @@ components:
           example: johndoe@example.com
     Topology:
       type: object
-      required:
-      - nodes
       properties:
         nodes:
           type: array
@@ -143,6 +141,14 @@ components:
             oneOf:
             - $ref: '#/components/schemas/minimega_node'
             - $ref: '#/components/schemas/external_node'
+        includeTopologies:
+          type: array
+          items:
+            type: string
+          description: Array of topology file paths or store names to include
+          example:
+          - /phenix/topologies/base-topology.yml
+          - common-nodes
     Scenario:
       type: object
       nullable: true
