@@ -51,6 +51,19 @@ type DHCPConfig struct {
 	Static       map[string]string `mapstructure:"staticAssignments"`
 }
 
+type SNMPConfig struct {
+	ListenAddr  string `mapstructure:"listenAddress"`
+	SystemName  string `mapstructure:"systemName"`
+	Location    string `mapstructure:"location"`
+	Contact     string `mapstructure:"contact"`
+	Communities []struct {
+		Name          string   `mapstructure:"name"`
+		Authorization string   `mapstructure:"authorization"`
+		Clients       []string `mapstructure:"clients"`
+		TrapTargets   []string `mapstructure:"trapTargets"`
+	} `mapstructure:"communities"`
+}
+
 type Emulator struct {
 	Ingress    []string `mapstructure:"ingress"`
 	Egress     []string `mapstructure:"egress"`
@@ -247,6 +260,13 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 							data["emulators"] = emulators
 						}
 
+						snmp, err := this.processSNMP(md)
+						if err != nil {
+							return fmt.Errorf("processing SNMP metadata for host %s: %w", host.Hostname(), err)
+						}
+
+						data["snmp"] = snmp
+
 						sources, destinations, err := this.processNAT(md, node.Network().Interfaces())
 						if err != nil {
 							return fmt.Errorf("processing NAT metadata for host %s: %w", host.Hostname(), err)
@@ -258,6 +278,8 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 						break
 					}
 				}
+
+				break
 			}
 		}
 
@@ -700,6 +722,32 @@ func (this *Vrouter) processIPSec(md map[string]interface{}, nets []ifaces.NodeN
 	}
 
 	return &ipsec, nil
+}
+
+func (Vrouter) processSNMP(md map[string]interface{}) (*SNMPConfig, error) {
+	raw, ok := md["snmp"]
+	if !ok {
+		return nil, nil
+	}
+
+	var snmp SNMPConfig
+	if err := mapstructure.Decode(raw, &snmp); err != nil {
+		return nil, fmt.Errorf("decoding SNMP config: %w", err)
+	}
+
+	for cidx := range snmp.Communities {
+		community := &snmp.Communities[cidx]
+		if community.Name == "" {
+			return nil, fmt.Errorf("snmp community at index %d must include a name", cidx)
+		}
+
+	}
+
+	if snmp.ListenAddr == "" && snmp.SystemName == "" && snmp.Location == "" && snmp.Contact == "" && len(snmp.Communities) == 0 {
+		return nil, nil
+	}
+
+	return &snmp, nil
 }
 
 func (this *Vrouter) processNAT(md map[string]interface{}, nets []ifaces.NodeNetworkInterface) ([]NATRule, []NATRule, error) {
