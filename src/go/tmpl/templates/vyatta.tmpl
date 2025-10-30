@@ -4,6 +4,7 @@
 {{- $vyos := index . "vyos" -}}
 {{- $passwd := index . "passwd" -}}
 {{- $ssh := index . "ssh" -}}
+{{- $snmp := index . "snmp" -}}
 {{- $emulators := index . "emulators" -}}
 {{- $snat := index . "snat" -}}
 {{- $dnat := index . "dnat" -}}
@@ -221,13 +222,46 @@ set vpn ipsec site-to-site peer {{ $site.Peer }} tunnel {{ $idx }} remote prefix
         {{- end }}
     {{- end }}
 # -------------------------------- Services -------------------------------
+# SSH
     {{- if $ssh }}
 set service ssh listen-address {{ $ssh }}
     {{- end }}
+# NTP
     {{- if $ntpAddr }}
 set service ntp server {{ $ntpAddr }} prefer
     {{- else }}
 delete service ntp
+    {{- end }}
+# SNMP
+    {{- if $snmp }}
+        {{- if $snmp.ListenAddr }}
+set service snmp listen-address {{ $snmp.ListenAddr }}
+        {{- end }}
+        {{- if $snmp.Contact }}
+set service snmp contact '{{ $snmp.Contact }}'
+        {{- end }}
+        {{- if $snmp.Location }}
+set service snmp location '{{ $snmp.Location }}'
+        {{- end }}
+        {{- if $snmp.SystemName }}
+set service snmp description '{{ $snmp.SystemName }}'
+        {{- end }}
+        {{- range $community := $snmp.Communities }}
+            {{- if $community.Name }}
+set service snmp community '{{ $community.Name }}'
+                {{- if $community.Authorization }}
+set service snmp community '{{ $community.Name }}' authorization {{ $community.Authorization }}
+                {{- else }}
+set service snmp community '{{ $community.Name }}' authorization ro
+                {{- end }}
+                {{- range $client := $community.Clients }}
+set service snmp community '{{ $community.Name }}' client {{ $client }}
+                {{- end }}
+                {{- range $target := $community.TrapTargets }}
+set service snmp trap-target {{ $target }} community '{{ $community.Name }}'
+                {{- end }}
+            {{- end }}
+        {{- end }}
     {{- end }}
 # --------------------------------- System --------------------------------
 set system host-name {{ $node.RouterName }}
@@ -552,11 +586,48 @@ vpn {
     {{- end }}
 }
 
-    {{- if $ssh }}
+    {{- if or $ssh $snmp }}
 service {
+        {{- if $ssh }}
     ssh {
         listen-address {{ $ssh }}
     }
+        {{- end}}
+        {{- if $snmp }}
+    snmp {
+            {{- if $snmp.ListenAddr }}
+        listen-address {{ $snmp.ListenAddr }}
+            {{- end }}
+            {{- if $snmp.Contact }}
+        contact "{{ $snmp.Contact }}"
+            {{- end }}
+            {{- if $snmp.Location }}
+        location "{{ $snmp.Location }}"
+            {{- end }}
+            {{- if $snmp.SystemName }}
+        description "{{ $snmp.SystemName }}"
+            {{- end }}
+            {{- range $community := $snmp.Communities }}
+                {{- if $community.Name }}
+        community {{ $community.Name }} {
+                    {{- if $community.Authorization }}
+            authorization {{ $community.Authorization }}
+                    {{- else }}
+            authorization ro
+                    {{- end }}
+                    {{- range $client := $community.Clients }}
+            client {{ $client }}
+                    {{- end }}
+        }
+                    {{- range $target := $community.TrapTargets }}
+        trap-target {{ $target }} {
+            community "{{ $community.Name }}"
+        }
+                    {{- end }}
+                {{- end }}
+            {{- end }}
+    }
+        {{- end}}
 }
     {{- end }}
 
