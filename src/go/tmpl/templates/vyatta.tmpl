@@ -34,22 +34,14 @@ set protocols ospf interface eth{{ $idx }} retransmit-interval {{ $node.Network.
             {{- end }}
         {{- end }}
         {{- if $iface.RulesetIn }}
-            {{- range $ruleset := $node.Network.Rulesets }}
-                {{- if eq $iface.RulesetIn $ruleset.Name }}
-                    {{- range $rule := $ruleset.Rules }}
-set firewall ipv4 name {{ $iface.RulesetIn }} rule {{ $rule.ID }} inbound-interface name eth{{ $idx }}
-                    {{- end }}
-                {{- end }}
-            {{- end }}
+set firewall ipv4 forward filter rule {{ addInt $idx 1000 }} inbound-interface name eth{{ $idx }}
+set firewall ipv4 forward filter rule {{ addInt $idx 1000 }} action jump
+set firewall ipv4 forward filter rule {{ addInt $idx 1000 }} jump-target {{ $iface.RulesetIn }}
         {{- end }}
         {{- if $iface.RulesetOut }}
-            {{- range $ruleset := $node.Network.Rulesets }}
-                {{- if eq $iface.RulesetOut $ruleset.Name }}
-                    {{- range $rule := $ruleset.Rules }}
-set firewall ipv4 name {{ $iface.RulesetOut }} rule {{ $rule.ID }} outbound-interface name eth{{ $idx }}
-                    {{- end }}
-                {{- end }}
-            {{- end }}
+set firewall ipv4 forward filter rule {{ addInt $idx 2000 }} outbound-interface name eth{{ $idx }}
+set firewall ipv4 forward filter rule {{ addInt $idx 2000 }} action jump
+set firewall ipv4 forward filter rule {{ addInt $idx 2000 }} jump-target {{ $iface.RulesetOut }}
         {{- end }}
     {{- end }}
 # ---------------------------------- SNAT ---------------------------------
