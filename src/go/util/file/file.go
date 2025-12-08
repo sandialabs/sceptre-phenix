@@ -15,7 +15,6 @@ import (
 var DefaultClusterFiles ClusterFiles = new(MMClusterFiles)
 
 type ClusterFiles interface {
-
 	GetExperimentFiles(exp, filter string) (Files, error)
 
 	// Looks in experiment directory on each cluster node for matching filenames
@@ -32,7 +31,6 @@ type ClusterFiles interface {
 
 	DeleteFile(path string) error
 }
-
 
 func GetExperimentFiles(exp, filter string) (Files, error) {
 	return DefaultClusterFiles.GetExperimentFiles(exp, filter)
@@ -55,7 +53,6 @@ func DeleteFile(path string) error {
 }
 
 type MMClusterFiles struct{}
-
 
 func (MMClusterFiles) GetExperimentFiles(exp, filter string) (Files, error) {
 	var (
@@ -119,7 +116,7 @@ func (MMClusterFiles) GetExperimentFiles(exp, filter string) (Files, error) {
 				file.Categories = append(file.Categories, "Packet Capture")
 			case ".elf":
 				file.Categories = append(file.Categories, "ELF Memory Snapshot")
-			case ".SNAP", ".snap":
+			case ".state":
 				file.Categories = append(file.Categories, "VM Memory Snapshot")
 			}
 
@@ -141,15 +138,10 @@ func (MMClusterFiles) GetExperimentFiles(exp, filter string) (Files, error) {
 
 		// Add categories for qcow images prior to filtering.
 		switch extension {
+		case ".hdd":
+			file.Categories = append(file.Categories, "VM Disk Snapshot")
 		case ".qc2", ".qcow2":
-			rootName := strings.TrimSuffix(file.Name, extension)
-			if _, ok := matches[rootName+".SNAP"]; ok {
-				file.Categories = append(file.Categories, "VM Disk Snapshot")
-			} else if _, ok := matches[rootName+".snap"]; ok {
-				file.Categories = append(file.Categories, "VM Disk Snapshot")
-			} else {
-				file.Categories = append(file.Categories, "Backing Image")
-			}
+			file.Categories = append(file.Categories, "Backing Image")
 		}
 
 		if util.StringSliceContains(plain, extension) {
@@ -191,20 +183,20 @@ func (MMClusterFiles) GetExperimentSnapshots(exp string) ([]string, error) {
 		ext := filepath.Ext(f.Name)
 
 		switch ext {
-		case ".qc2", ".qcow2":
+		case ".hdd":
 			ss := strings.TrimSuffix(f.Name, ext)
 
 			if m, ok := matches[ss]; !ok {
-				matches[ss] = "qcow"
-			} else if m == "snap" {
+				matches[ss] = "hdd"
+			} else if m == "state" {
 				matches[ss] = "both"
 			}
-		case ".SNAP", ".snap":
+		case ".state":
 			ss := strings.TrimSuffix(f.Name, ext)
 
 			if m, ok := matches[ss]; !ok {
-				matches[ss] = "snap"
-			} else if m == "qcow" {
+				matches[ss] = "state"
+			} else if m == "hdd" {
 				matches[ss] = "both"
 			}
 		}
