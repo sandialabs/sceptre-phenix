@@ -189,6 +189,7 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}", scorch.ConnectTerminal).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}/exit/{id}", scorch.ExitTerminal).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}/ws/{id}", scorch.StreamTerminal).Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}", scorch.ConnectTerminal).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/soh", GetExperimentSoH).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms", GetVMs).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms", UpdateVMs).Methods("PATCH", "OPTIONS")
@@ -268,7 +269,6 @@ func Start(opts ...ServerOption) error {
 		{"/workflow/apply/{branch}", weberror.ErrorHandler(ApplyWorkflow), []string{"POST"}},
 		{"/workflow/configs/{branch}", weberror.ErrorHandler(WorkflowUpsertConfig), []string{"POST"}},
 	}
-
 
 	optionRoutes := []route{
 		{"/options", weberror.ErrorHandler(GetOptions), []string{"GET"}},
