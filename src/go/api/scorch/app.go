@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"phenix/api/scorch/scorchexe"
@@ -343,34 +342,37 @@ func (this Scorch) recordInfo(runID int, runDir string, md store.ConfigMetadata,
 		return fmt.Errorf("getting minimega version: %w", err)
 	}
 
-	info := []string{
-		"Experiment Name: %s",
-		"Experiment Tags: %s",
-		"Scorch Run Name: %s",
-		"Start Time: %s",
-		"End Time: %s",
-		"Phenix Version: %s %s %s",
-		"Minimega Version: %s",
+	info := map[string]any{
+		"experiment": map[string]string{
+			"name": md.Name,
+			"tags": md.Annotations["phenix.workflow/tags"],
+		},
+		"run": map[string]any{
+			"name":  this.md.RunName(runID),
+			"index": runID,
+		},
+		"start": startTime.Format(time.RFC3339),
+		"end":   time.Now().UTC().Format(time.RFC3339),
+		"phenix_version": map[string]string{
+			"commit": version.Commit,
+			"tag":    version.Tag,
+			"date":   version.Date,
+		},
+		"minimega_version": mmVersion,
 	}
 
-	body := fmt.Sprintf(
-		strings.Join(info, "\n"),
-		md.Name,
-		md.Annotations["phenix.workflow/tags"],
-		this.md.RunName(runID),
-		startTime.Format(time.RFC3339),
-		time.Now().UTC().Format(time.RFC3339),
-		version.Commit, version.Tag, version.Date,
-		mmVersion,
-	)
-
-	fileName := fmt.Sprintf("info-scorch-run-%d_%s.txt", runID, startTime.Format("2006-01-02T15-04-05Z0700"))
+	fileName := fmt.Sprintf("%s-scorch-run-%d-%s.json", md.Name, runID, startTime.Format("2006-01-02T15-04-05Z0700"))
 
 	if err := os.MkdirAll(runDir, 0755); err != nil {
 		return fmt.Errorf("creating %s directory for scorch run %d: %w", runDir, runID, err)
 	}
 
-	if err := os.WriteFile(filepath.Join(runDir, fileName), []byte(body), 0644); err != nil {
+	body, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshalling scorch run info: %w", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(runDir, fileName), body, 0644); err != nil {
 		return fmt.Errorf("writing scorch information file (%s): %w", fileName, err)
 	}
 
