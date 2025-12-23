@@ -94,11 +94,7 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 			node.General().SetDoNotBoot(true)
 		}
 
-		// if type is router, skip it and continue
-		if strings.EqualFold(node.Type(), "Router") {
-			continue
-		}
-
+		
 		// Check to see if a scenario exists for this experiment and if it
 		// contains a "startup" app. If so, store it for later use
 		var startupApp ifaces.ScenarioApp
@@ -107,7 +103,7 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 				startupApp = app
 			}
 		}
-
+		
 		switch strings.ToLower(node.Hardware().OSType()) {
 		case "linux", "rhel", "centos":
 			var (
@@ -115,51 +111,52 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 				timezoneFile = startupDir + "/" + node.General().Hostname() + "-timezone.sh"
 				ifaceFile    = startupDir + "/" + node.General().Hostname() + "-interfaces.sh"
 			)
-
+			
 			node.AddInject(
 				hostnameFile,
 				"/etc/phenix/startup/1_hostname-start.sh",
 				"0755", "",
 			)
-
+			
 			node.AddInject(
 				timezoneFile,
 				"/etc/phenix/startup/2_timezone-start.sh",
 				"0755", "",
 			)
-
+			
 			node.AddInject(
 				ifaceFile,
 				"/etc/phenix/startup/3_interfaces-start.sh",
 				"0755", "",
 			)
-
+			
 			timeZone := "Etc/UTC"
-
+			
 			if err := tmpl.CreateFileFromTemplate("linux_hostname.tmpl", node.General().Hostname(), hostnameFile); err != nil {
 				return fmt.Errorf("generating linux hostname script: %w", err)
 			}
-
+			
 			if err := tmpl.CreateFileFromTemplate("linux_timezone.tmpl", timeZone, timezoneFile); err != nil {
 				return fmt.Errorf("generating linux timezone script: %w", err)
 			}
-
+			
 			if err := tmpl.CreateFileFromTemplate("linux_interfaces.tmpl", node, ifaceFile); err != nil {
 				return fmt.Errorf("generating linux interfaces script: %w", err)
 			}
-
+			
+			
 			if startupApp != nil {
 				for _, host := range startupApp.Hosts() {
 					if host.Hostname() == node.General().Hostname() {
-
+						
 						var domainFile = startupDir + "/" + node.General().Hostname() + "-domain.sh"
-
+						
 						node.AddInject(
 							domainFile,
 							"/etc/phenix/startup/4_domain-start.sh",
 							"0755", "",
 						)
-
+						
 						if err := tmpl.CreateFileFromTemplate("linux_domain.tmpl", host.Metadata(), domainFile); err != nil {
 							return fmt.Errorf("generating linux domain script: %w", err)
 						}
@@ -167,6 +164,21 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 				}
 			}
 
+			if strings.EqualFold(node.Type(), "Router") {
+				var routerFile = startupDir + "/" + node.General().Hostname() + "-ospf.sh"
+				
+				node.AddInject(
+					routerFile,
+					"/etc/phenix/startup/5_ospf-start.sh",
+					"0755", "",
+				)
+
+				if err := tmpl.CreateFileFromTemplate("linux_ospf.tmpl", host.Metadata(), routerFile); err != nil {
+					return fmt.Errorf("generating linux ospf script: %w", err)
+				}
+
+			}
+			
 		case "windows":
 			startupFile := startupDir + "/" + node.General().Hostname() + "-startup.ps1"
 

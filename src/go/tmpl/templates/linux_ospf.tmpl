@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# Enable IP Forwarding
+sysctl -w net.ipv4.conf.all.forwarding = 1
+
+#check if frr exists
+if command -v 'frr' &>/dev/null; then
+vtysh -d ospfd -c "configure terminal" -c "router ospf" -c "router-id .Network.Ospf.Router-id"
+    {{ range $area := .Network.Ospf.Areas}}
+        {{ range $network := $area.Area_networks}}
+        vtysh -d ospfd -c "configure terminal" -c "router ospf" -c "network {{ $network }} area {{ $area.Area_id }}"
+        {{ end }}
+    {{ end}}
+fi
