@@ -8,6 +8,10 @@ type TopologySpec struct {
 	NodesF []*Node `json:"nodes" yaml:"nodes" structs:"nodes" mapstructure:"nodes"`
 }
 
+func (this *TopologySpec) IncludedTopologies() []string {
+	return nil
+}
+
 func (this *TopologySpec) Nodes() []ifaces.NodeSpec {
 	if this == nil {
 		return nil

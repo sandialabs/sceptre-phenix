@@ -3,6 +3,7 @@ package ifaces
 import "time"
 
 type TopologySpec interface {
+	IncludedTopologies() []string
 	Nodes() []NodeSpec
 	BootableNodes() []NodeSpec
 	SchedulableNodes(string) []NodeSpec

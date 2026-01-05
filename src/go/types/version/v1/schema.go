@@ -133,9 +133,19 @@ components:
           example: johndoe@example.com
     Topology:
       type: object
-      required:
-      - nodes
+      anyOf:
+      - required:
+        - nodes
+      - required:
+        - includeTopologies
       properties:
+        includeTopologies:
+          type: array
+          items:
+            type: string
+          example:
+          - /phenix/topologies/enterprise/phenix-configs/topology.yml
+          - store-topo
         nodes:
           type: array
           items:
