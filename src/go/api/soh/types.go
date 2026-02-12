@@ -15,10 +15,11 @@ type Node struct {
 }
 
 type Edge struct {
-	ID     int `json:"id"`
-	Source int `json:"source"`
-	Target int `json:"target"`
-	Length int `json:"length"`
+	ID     int    `json:"id"`
+	Type   string `json:"type"`
+	Source int    `json:"source"`
+	Target int    `json:"target"`
+	Length int    `json:"length"`
 }
 
 type Network struct {
