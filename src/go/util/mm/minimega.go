@@ -200,8 +200,17 @@ func (this Minimega) GetVMInfo(opts ...Option) VMs {
 		vm.RAM, _ = strconv.Atoi(row["memory"])
 		vm.CPUs, _ = strconv.Atoi(row["vcpus"])
 
+		fields := strings.Fields(row["disks"])
+		if len(fields) == 0 {
+			// VM has no disk configured e.g., still BUILDING
+			// Still append the VM with what we have — callers handle empty Disk
+			plog.Debug(plog.TypeSystem, "VM has no disk configured", "namespace", o.ns, "vm", vm.Name)
+			vms = append(vms, vm)
+			continue
+		}
+
 		// TODO: confirm multiple disks are separated by whitespace.
-		disk := strings.Fields(row["disks"])[0]
+		disk := fields[0]
 		// diskspec can include multiple settings separated by comma. Path to disk
 		// will always be first setting.
 		disk = strings.Split(disk, ",")[0]
