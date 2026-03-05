@@ -2,6 +2,7 @@
 
 bindata.go
 mock.go
+known_policy.go
 
 web/public/assets
 web/public/favicon.ico

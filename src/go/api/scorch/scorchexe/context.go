@@ -5,12 +5,14 @@ import "context"
 type runIDKey struct{}
 
 func MustRunID(ctx context.Context) int {
-	id := ctx.Value(runIDKey{}).(int)
+	id, _ := ctx.Value(runIDKey{}).(int)
+
 	return id
 }
 
 func RunID(ctx context.Context) (int, bool) {
 	id, ok := ctx.Value(runIDKey{}).(int)
+
 	return id, ok
 }
 

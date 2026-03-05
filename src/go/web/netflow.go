@@ -5,154 +5,225 @@ import (
 	"net/http"
 	"time"
 
-	"phenix/api/experiment"
-	"phenix/util/plog"
-	"phenix/web/rbac"
-
-	putil "phenix/util"
-
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+
+	"phenix/api/experiment"
+	putil "phenix/util"
+	"phenix/util/plog"
+	"phenix/web/middleware"
+	"phenix/web/rbac"
 )
 
-// GET /experiments/{exp}/netflow
-func GetNetflow(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetNetflow")
+const (
+	netflowIDLength      = 24
+	netflowBufferSize    = 4096
+	netflowReadDeadline  = 10 * time.Second
+	netflowWriteDeadline = 5 * time.Second
+	netflowReadLimit     = 1024
+	netflowTickerRatio   = 7
+	netflowTickerDivisor = 10
+)
 
+// GetNetflow - GET /experiments/{exp}/netflow.
+func GetNetflow(w http.ResponseWriter, r *http.Request) {
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		vars    = mux.Vars(r)
+		exp     = vars["exp"]
 	)
 
 	if !role.Allowed("experiments/netflow", "get", exp) {
-		plog.Warn(plog.TypeSecurity, "getting netflow capture not allowed", "user", ctx.Value("user").(string), "exp", exp)
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting netflow capture not allowed",
+			"user",
+			user,
+			"exp",
+			exp,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	if flow := experiment.GetNetflow(exp); flow != nil {
 		w.WriteHeader(http.StatusNoContent)
+
 		return
 	}
 
 	w.WriteHeader(http.StatusNotFound)
 }
 
-// POST /experiments/{exp}/netflow
+// StartNetflow - POST /experiments/{exp}/netflow.
 func StartNetflow(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StartNetflow")
-
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		vars    = mux.Vars(r)
+		exp     = vars["exp"]
 	)
 
 	if !role.Allowed("experiments/netflow", "create", exp) {
-		plog.Warn(plog.TypeSecurity, "starting netflow capture not allowed", "user", ctx.Value("user").(string), "exp", exp)
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"starting netflow capture not allowed",
+			"user",
+			user,
+			"exp",
+			exp,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
-	if err := experiment.StartNetflow(exp); err != nil {
+	err := experiment.StartNetflow(exp)
+	if err != nil {
 		plog.Error(plog.TypeSystem, "starting netflow capture", "exp", exp, "err", err)
 
 		if errors.Is(err, experiment.ErrNetflowAlreadyStarted) {
 			http.Error(w, "neflow already started for experiment", http.StatusBadRequest)
+
 			return
 		}
 
 		if errors.Is(err, experiment.ErrExperimentNotFound) {
 			http.Error(w, "unable to find experiment", http.StatusBadRequest)
+
 			return
 		}
 
 		if errors.Is(err, experiment.ErrExperimentNotRunning) {
 			http.Error(w, "cannot start netflow on stopped experiment", http.StatusConflict)
+
 			return
 		}
 
 		if errors.Is(err, experiment.ErrNetflowPhenixBridge) {
-			http.Error(w, "cannot start netflow on experiment with default bridge set to 'phenix'", http.StatusConflict)
+			http.Error(
+				w,
+				"cannot start netflow on experiment with default bridge set to 'phenix'",
+				http.StatusConflict,
+			)
+
 			return
 		}
 
 		http.Error(w, "unable to start netflow capture", http.StatusInternalServerError)
+
 		return
 	}
 
-	plog.Info(plog.TypeAction, "netflow capture started", "user", ctx.Value("user").(string), "exp", exp)
+	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+	plog.Info(
+		plog.TypeAction,
+		"netflow capture started",
+		"user",
+		user,
+		"exp",
+		exp,
+	)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// DELETE /experiments/{exp}/netflow
+// StopNetflow - DELETE /experiments/{exp}/netflow.
 func StopNetflow(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StopNetflow")
-
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		vars    = mux.Vars(r)
+		exp     = vars["exp"]
 	)
 
 	if !role.Allowed("experiments/netflow", "delete", exp) {
-		plog.Warn(plog.TypeSecurity, "stopping netflow capture not allowed", "user", ctx.Value("user").(string), "exp", exp)
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"stopping netflow capture not allowed",
+			"user",
+			user,
+			"exp",
+			exp,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
-	if err := experiment.StopNetflow(exp); err != nil {
+	err := experiment.StopNetflow(exp)
+	if err != nil {
 		plog.Error(plog.TypeSystem, "stopping netflow capture", "exp", exp, "err", err)
 
 		if errors.Is(err, experiment.ErrNetflowNotStarted) {
 			http.Error(w, "not found", http.StatusNotFound)
+
 			return
 		}
 
 		http.Error(w, "unable to stop netflow capture", http.StatusInternalServerError)
+
 		return
 	}
 
-	plog.Info(plog.TypeAction, "netflow capture stopped", "user", ctx.Value("user").(string), "exp", exp)
+	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+	plog.Info(
+		plog.TypeAction,
+		"netflow capture stopped",
+		"user",
+		user,
+		"exp",
+		exp,
+	)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// GET /experiments/{exp}/netflow/ws
+// GetNetflowWebSocket - GET /experiments/{exp}/netflow/ws.
+//
+//nolint:funlen // handler
 func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetNetflowWebSocket")
-
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		vars    = mux.Vars(r)
+		exp     = vars["exp"]
 	)
 
 	if !role.Allowed("experiments/netflow", "get", exp) {
-		plog.Warn(plog.TypeSecurity, "getting netflow websocket not allowed", "user", ctx.Value("user").(string), "exp", exp)
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting netflow websocket not allowed",
+			"user",
+			user,
+			"exp",
+			exp,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	flow := experiment.GetNetflow(exp)
 	if flow == nil {
 		http.Error(w, "not found", http.StatusNotFound)
+
 		return
 	}
 
 	var (
 		endpoint = flow.Conn.LocalAddr().String()
 
-		id = putil.RandomString(24)
+		id = putil.RandomString(netflowIDLength)
 		cb = flow.NewChannel(id)
 
-		upgrader = websocket.Upgrader{
-			ReadBufferSize:  4096,
-			WriteBufferSize: 4096,
+		upgrader = websocket.Upgrader{ //nolint:exhaustruct // partial initialization
+			ReadBufferSize:  netflowBufferSize,
+			WriteBufferSize: netflowBufferSize,
 		}
 
 		done = make(chan struct{})
@@ -163,26 +234,29 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "upgrading connection to WebSocket", "err", err)
+
 		return
 	}
 
-	pongHandler := func(string) error {
+	pongHandler := func(string) error { //nolint:unparam // signature required
 		plog.Info(plog.TypeSystem, "received pong message from websocket client", "client", id)
 
-		conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(netflowReadDeadline))
+
 		return nil
 	}
 
-	closeHandler := func(code int, msg string) error {
+	closeHandler := func(code int, msg string) error { //nolint:unparam // signature required
 		plog.Info(plog.TypeSystem, "received close message from websocket client", "client", id)
 
 		var (
 			message  = websocket.FormatCloseMessage(code, "")
-			deadline = time.Now().Add(5 * time.Second)
+			deadline = time.Now().Add(netflowWriteDeadline)
 		)
 
 		// This will be an extra write message if we initiated the close.
-		conn.WriteControl(websocket.CloseMessage, message, deadline)
+		_ = conn.WriteControl(websocket.CloseMessage, message, deadline)
+
 		return nil
 	}
 
@@ -193,9 +267,13 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		conn.SetPongHandler(pongHandler)
 		conn.SetCloseHandler(closeHandler)
-		conn.SetReadLimit(1024)
+		conn.SetReadLimit(netflowReadLimit)
 
-		expected := []int{websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived}
+		expected := []int{
+			websocket.CloseNormalClosure,
+			websocket.CloseGoingAway,
+			websocket.CloseNoStatusReceived,
+		}
 
 		for {
 			// This will error out if:
@@ -211,7 +289,14 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 			_, _, err := conn.ReadMessage()
 			if err != nil {
 				if websocket.IsUnexpectedCloseError(err, expected...) {
-					plog.Error(plog.TypeSystem, "reading websocket message", "client", id, "err", err)
+					plog.Error(
+						plog.TypeSystem,
+						"reading websocket message",
+						"client",
+						id,
+						"err",
+						err,
+					)
 				}
 
 				return
@@ -220,7 +305,7 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	go func() { // writer (for netflow, ping, and close messages)
-		ticker := time.NewTicker((10 * time.Second * 7) / 10)
+		ticker := time.NewTicker((netflowReadDeadline * netflowTickerRatio) / netflowTickerDivisor)
 		defer ticker.Stop()
 
 		for {
@@ -229,28 +314,39 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 				return
 			case msg, open := <-cb:
 				if !open {
-					plog.Info(plog.TypeSystem, "netflow channel closed - closing websocket", "client", id)
+					plog.Info(
+						plog.TypeSystem,
+						"netflow channel closed - closing websocket",
+						"client",
+						id,
+					)
 
 					var (
-						message  = websocket.FormatCloseMessage(websocket.CloseNormalClosure, "netflow stopped")
-						deadline = time.Now().Add(5 * time.Second)
+						message = websocket.FormatCloseMessage(
+							websocket.CloseNormalClosure,
+							"netflow stopped",
+						)
+						deadline = time.Now().Add(netflowWriteDeadline)
 					)
 
 					// This will (eventually) end up causing the reader to exit when it
 					// receives the close message response from the client.
-					conn.WriteControl(websocket.CloseMessage, message, deadline)
+					_ = conn.WriteControl(websocket.CloseMessage, message, deadline)
+
 					return
 				}
 
-				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				_ = conn.SetWriteDeadline(time.Now().Add(netflowWriteDeadline))
 
-				if err := conn.WriteJSON(msg); err != nil {
+				err := conn.WriteJSON(msg)
+				if err != nil {
 					plog.Error(plog.TypeSystem, "writing netflow message", "client", id, "err", err)
 				}
 			case <-ticker.C:
-				deadline := time.Now().Add(5 * time.Second)
+				deadline := time.Now().Add(netflowWriteDeadline)
 
-				if err := conn.WriteControl(websocket.PingMessage, nil, deadline); err != nil {
+				err := conn.WriteControl(websocket.PingMessage, nil, deadline)
+				if err != nil {
 					plog.Error(plog.TypeSystem, "writing ping message", "client", id, "err", err)
 				}
 			}
@@ -259,8 +355,16 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	<-done // wait for reader to be done
 
-	conn.Close()
+	_ = conn.Close()
+
 	flow.DeleteChannel(id)
 
-	plog.Info(plog.TypeSystem, "ws client disconnected from netflow", "endpoint", endpoint, "client", id)
+	plog.Info(
+		plog.TypeSystem,
+		"ws client disconnected from netflow",
+		"endpoint",
+		endpoint,
+		"client",
+		id,
+	)
 }

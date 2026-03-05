@@ -14,7 +14,7 @@ type VLANSpec interface {
 	SetMax(int)
 }
 
-type ExperimentSpec interface {
+type ExperimentSpec interface { //nolint:interfacebloat // legacy interface
 	Init() error
 
 	ExperimentName() string
@@ -42,7 +42,7 @@ type ExperimentSpec interface {
 	ScheduleNode(string, string) error
 }
 
-type ExperimentStatus interface {
+type ExperimentStatus interface { //nolint:interfacebloat // legacy interface
 	Init() error
 
 	StartTime() string

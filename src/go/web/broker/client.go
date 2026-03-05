@@ -10,23 +10,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
+	"google.golang.org/protobuf/encoding/protojson"
+	"inet.af/netaddr"
+
 	"phenix/api/experiment"
 	"phenix/api/vm"
 	"phenix/util/cache"
 	"phenix/util/mm"
 	"phenix/util/plog"
+	bt "phenix/web/broker/brokertypes"
+	"phenix/web/middleware"
 	"phenix/web/proto"
 	"phenix/web/rbac"
 	"phenix/web/util"
-
-	bt "phenix/web/broker/brokertypes"
-
-	"github.com/gorilla/websocket"
-	"google.golang.org/protobuf/encoding/protojson"
-	"inet.af/netaddr"
 )
 
-var marshaler = protojson.MarshalOptions{EmitUnpopulated: true}
+var marshaler = protojson.MarshalOptions{EmitUnpopulated: true} //nolint:gochecknoglobals // global marshaler
 
 type vmScope struct {
 	exp  string
@@ -34,19 +34,25 @@ type vmScope struct {
 }
 
 const (
-	writeWait  = 10 * time.Second
-	pongWait   = 60 * time.Second
-	pingPeriod = (pongWait * 9) / 10
-	maxMsgSize = 2048
+	writeWait                   = 10 * time.Second
+	pongWait                    = 60 * time.Second
+	pingPeriodNumerator         = 9
+	pingPeriodDenominator       = 10
+	pingPeriod                  = (pongWait * pingPeriodNumerator) / pingPeriodDenominator
+	maxMsgSize                  = 2048
+	socketBufferSize            = 4096
+	publishChannelBuffer        = 256
+	screenshotTickerInterval    = 5 * time.Second
+	defaultBrokerScreenshotSize = "200"
 )
 
 var (
-	newline  = []byte{'\n'}
-	upgrader = websocket.Upgrader{
-		ReadBufferSize:  4096,
-		WriteBufferSize: 4096,
+	newline  = []byte{'\n'}        //nolint:gochecknoglobals // global constant
+	upgrader = websocket.Upgrader{ //nolint:gochecknoglobals,exhaustruct // global upgrader
+		ReadBufferSize:  socketBufferSize,
+		WriteBufferSize: socketBufferSize,
 	}
-	screenshotSize = "200"
+	screenshotSize = defaultBrokerScreenshotSize //nolint:gochecknoglobals // global config
 )
 
 type Client struct {
@@ -54,7 +60,7 @@ type Client struct {
 	conn   *websocket.Conn
 	connMu sync.Mutex
 
-	publish chan interface{}
+	publish chan any
 	done    chan struct{}
 	once    sync.Once
 
@@ -66,69 +72,85 @@ type Client struct {
 }
 
 func NewClient(role rbac.Role, conn *websocket.Conn) *Client {
-	return &Client{
+	return &Client{ //nolint:exhaustruct // partial initialization
 		role:    role,
 		conn:    conn,
-		publish: make(chan interface{}, 256),
+		publish: make(chan any, publishChannelBuffer),
 		done:    make(chan struct{}),
 	}
 }
 
-func (this *Client) Go() {
-	register <- this
+func (c *Client) Go() {
+	register <- c
 
-	go this.write()
-	go this.read()
-	go this.setScreenshotsTicker()
+	go c.write()
+	go c.read()
+	go c.setScreenshotsTicker()
 }
 
-func (this *Client) Stop() {
-	this.once.Do(this.stop)
+func (c *Client) Stop() {
+	c.once.Do(c.stop)
 }
 
-func (this *Client) stop() {
-	unregister <- this
-	close(this.done)
+func (c *Client) stop() {
+	unregister <- c
 
-	this.connMu.Lock()
-	defer this.connMu.Unlock()
+	close(c.done)
 
-	if err := this.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+
+	err := c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+	if err != nil {
 		plog.Warn(plog.TypeSystem, "closing client connection", "err", err)
 	}
 
-	this.conn.Close()
+	_ = c.conn.Close()
 }
 
-func (this *Client) read() {
-	defer this.Stop()
+//nolint:cyclop,funlen,gocyclo // complex logic
+func (c *Client) read() { //nolint:maintidx // complex logic
+	defer c.Stop()
 
-	this.conn.SetReadLimit(maxMsgSize)
+	c.conn.SetReadLimit(maxMsgSize)
 
-	if err := this.conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+	err := c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	if err != nil {
 		plog.Error(plog.TypeSystem, "setting read deadline for client connection", "err", err)
+
 		return
 	}
 
 	ponger := func(string) error {
-		if err := this.conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
-			plog.Error(plog.TypeSystem, "setting read deadline in pong handler for client connection", "err", err)
+		err := c.conn.SetReadDeadline(time.Now().Add(pongWait))
+		if err != nil {
+			plog.Error(
+				plog.TypeSystem,
+				"setting read deadline in pong handler for client connection",
+				"err",
+				err,
+			)
+
 			return err
 		}
 
 		return nil
 	}
 
-	this.conn.SetPongHandler(ponger)
+	c.conn.SetPongHandler(ponger)
 
 	for {
 		select {
-		case <-this.done:
+		case <-c.done:
 			return
 		default:
-			_, msg, err := this.conn.ReadMessage()
+			_, msg, err := c.conn.ReadMessage()
 			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				if websocket.IsUnexpectedCloseError(
+					err,
+					websocket.CloseGoingAway,
+					websocket.CloseAbnormalClosure,
+				) {
 					plog.Debug(plog.TypeSystem, "reading from WebSocket client", "err", err)
 				}
 
@@ -138,6 +160,7 @@ func (this *Client) read() {
 			var req bt.Request
 			if err := json.Unmarshal(msg, &req); err != nil {
 				plog.Error(plog.TypeSystem, "cannot unmarshal request JSON", "err", err)
+
 				continue
 			}
 
@@ -145,29 +168,42 @@ func (this *Client) read() {
 			case "experiment/vms":
 			case "metadata/screenshot":
 				var payload map[string]string
-				if err := json.Unmarshal(req.Payload, &payload); err != nil {
-					plog.Error(plog.TypeSystem, "cannot unmarshal WebSocket request payload JSON", "err", err)
+
+				err := json.Unmarshal(req.Payload, &payload)
+				if err != nil {
+					plog.Error(
+						plog.TypeSystem,
+						"cannot unmarshal WebSocket request payload JSON",
+						"err",
+						err,
+					)
+
 					continue
 				}
+
 				size, ok := payload["size"]
 				if ok {
 					plog.Debug(plog.TypeSystem, "updated screenshot resolution", "size", size)
 					screenshotSize = size
-					this.updateScreenshots()
+
+					c.updateScreenshots()
 				}
+
 				continue
 			case "experiment/topology":
+				//nolint:godox // TODO
 				// TODO: check RBAC permissions?
-
 				switch req.Resource.Action {
 				case "search":
 					var query map[string]string
 
 					if err := json.Unmarshal(req.Payload, &query); err != nil {
 						plog.Error(plog.TypeSystem, "cannot unmarshal request payload", "err", err)
+
 						continue
 					}
 
+					//nolint:godox // TODO
 					// TODO: handle multiple query terms (how? AND or OR?)
 					// Do the same as in web/experiment.go@SearchExperimentTopology
 					term := query["term"]
@@ -178,6 +214,7 @@ func (this *Client) read() {
 					value := query["value"]
 					if value == "" {
 						plog.Error(plog.TypeSystem, "missing search value for term", "term", term)
+
 						continue
 					}
 
@@ -187,7 +224,15 @@ func (this *Client) read() {
 					if !ok {
 						// warm the cache (again?)
 						if _, err := vm.Topology(req.Resource.Name, nil); err != nil {
-							plog.Error(plog.TypeSystem, "getting experiment topology", "exp", req.Resource.Name, "err", err)
+							plog.Error(
+								plog.TypeSystem,
+								"getting experiment topology",
+								"exp",
+								req.Resource.Name,
+								"err",
+								err,
+							)
+
 							continue
 						}
 
@@ -195,8 +240,8 @@ func (this *Client) read() {
 					}
 
 					var (
-						search = val.(vm.TopologySearch)
-						nodes  []int
+						search, _ = val.(vm.TopologySearch)
+						nodes     []int
 					)
 
 					switch strings.ToLower(term) {
@@ -219,8 +264,8 @@ func (this *Client) read() {
 					case "ip":
 						if net, err := netaddr.ParseIPPrefix(value); err == nil {
 							for k, v := range search.IP {
-								ip, err := netaddr.ParseIP(k)
-								if err != nil {
+								ip, ipErr := netaddr.ParseIP(k)
+								if ipErr != nil {
 									continue
 								}
 
@@ -243,40 +288,71 @@ func (this *Client) read() {
 
 					body, err := json.Marshal(results)
 					if err != nil {
-						plog.Error(plog.TypeSystem, "marshaling search results for WebSocket client", "err", err)
+						plog.Error(
+							plog.TypeSystem,
+							"marshaling search results for WebSocket client",
+							"err",
+							err,
+						)
+
 						continue
 					}
 
-					this.publish <- bt.Publish{
+					c.publish <- bt.Publish{ //nolint:exhaustruct // partial initialization
 						Resource: bt.NewResource("experiment/topology", req.Resource.Name, "search"),
 						Result:   body,
 					}
 
 					continue
 				default:
-					plog.Error(plog.TypeSystem, "unexpected WebSocket request resource action for experiment/topology resource type", "action", req.Resource.Action)
+					plog.Error(
+						plog.TypeSystem,
+						"unexpected WebSocket request resource action for experiment/topology resource type",
+						"action",
+						req.Resource.Action,
+					)
+
 					continue
 				}
 			default:
-				plog.Error(plog.TypeSystem, "unexpected WebSocket request resource type", "type", req.Resource.Type)
+				plog.Error(
+					plog.TypeSystem,
+					"unexpected WebSocket request resource type",
+					"type",
+					req.Resource.Type,
+				)
+
 				continue
 			}
 
 			switch req.Resource.Action {
 			case "list":
 			default:
-				plog.Error(plog.TypeSystem, "unexpected WebSocket request resource action", "action", req.Resource.Action)
+				plog.Error(
+					plog.TypeSystem,
+					"unexpected WebSocket request resource action",
+					"action",
+					req.Resource.Action,
+				)
+
 				continue
 			}
 
-			var payload map[string]interface{}
+			var payload map[string]any
 			if err := json.Unmarshal(req.Payload, &payload); err != nil {
-				plog.Error(plog.TypeSystem, "cannot unmarshal WebSocket request payload JSON", "err", err)
+				plog.Error(
+					plog.TypeSystem,
+					"cannot unmarshal WebSocket request payload JSON",
+					"err",
+					err,
+				)
+
 				continue
 			}
 
-			if !this.role.Allowed("vms", "list") {
+			if !c.role.Allowed("vms", "list") {
 				plog.Warn(plog.TypeSecurity, "client access to vms/list forbidden")
+
 				continue
 			}
 
@@ -284,13 +360,29 @@ func (this *Client) read() {
 
 			exp, err := experiment.Get(expName)
 			if err != nil {
-				plog.Error(plog.TypeSystem, "getting experiment for WebSocket client", "exp", expName, "err", err)
+				plog.Error(
+					plog.TypeSystem,
+					"getting experiment for WebSocket client",
+					"exp",
+					expName,
+					"err",
+					err,
+				)
+
 				continue
 			}
 
 			vms, err := vm.List(expName)
 			if err != nil {
-				plog.Error(plog.TypeSystem, "getting list of VMs for experiment", "exp", expName, "err", err)
+				plog.Error(
+					plog.TypeSystem,
+					"getting list of VMs for experiment",
+					"exp",
+					expName,
+					"err",
+					err,
+				)
+
 				continue
 			}
 
@@ -317,22 +409,27 @@ func (this *Client) read() {
 				if len(clientFilter) > 0 {
 					if filterTree == nil {
 						continue
-					} else {
+					} else if !filterTree.Evaluate(&vm) {
 						// If the search string could be parsed,
 						// determine if the VM should be included
-						if !filterTree.Evaluate(&vm) {
-							continue
-						}
+						continue
 					}
 				}
 
-				if this.role.Allowed("vms", "list", fmt.Sprintf("%s/%s", expName, vm.Name)) {
+				if c.role.Allowed("vms", "list", fmt.Sprintf("%s/%s", expName, vm.Name)) {
 					if vm.Running {
 						screenshot, err := util.GetScreenshot(expName, vm.Name, screenshotSize)
 						if err != nil {
-							plog.Error(plog.TypeSystem, "getting screenshot for WebSocket client", "err", err)
+							plog.Error(
+								plog.TypeSystem,
+								"getting screenshot for WebSocket client",
+								"err",
+								err,
+							)
 						} else {
-							vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+							vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
+								screenshot,
+							)
 						}
 					}
 
@@ -341,13 +438,13 @@ func (this *Client) read() {
 			}
 
 			var (
-				sort = payload["sort_column"].(string)
-				asc  = payload["sort_asc"].(bool)
-				page = int(payload["page_number"].(float64))
-				size = int(payload["page_size"].(float64))
+				sort, _ = payload["sort_column"].(string)
+				asc     = payload["sort_asc"].(bool)
+				page    = int(payload["page_number"].(float64))
+				size    = int(payload["page_size"].(float64))
 			)
 
-			payload = map[string]interface{}{"total": len(allowed)}
+			payload = map[string]any{"total": len(allowed)}
 
 			if sort != "" {
 				allowed.SortBy(sort, asc)
@@ -357,30 +454,39 @@ func (this *Client) read() {
 				allowed = allowed.Paginate(page, size)
 			}
 
-			this.vmMu.Lock()
+			c.vmMu.Lock()
 
-			this.vms = nil
+			c.vms = nil
 
 			for _, v := range allowed {
-				this.vms = append(this.vms, vmScope{exp: expName, name: v.Name})
+				c.vms = append(c.vms, vmScope{exp: expName, name: v.Name})
 			}
 
-			this.vmMu.Unlock()
+			c.vmMu.Unlock()
 
-			resp := &proto.VMList{Total: uint32(len(allowed))}
-
-			resp.Vms = make([]*proto.VM, len(allowed))
+			resp := &proto.VMList{
+				Total: uint32(len(allowed)), //nolint:gosec // integer overflow conversion int -> uint32
+				Vms:   make([]*proto.VM, len(allowed)),
+			}
 			for i, v := range allowed {
 				resp.Vms[i] = util.VMToProtobuf(expName, v, exp.Spec.Topology())
 			}
 
 			body, err := marshaler.Marshal(resp)
 			if err != nil {
-				plog.Error(plog.TypeSystem, "marshaling experiment VMs for WebSocket client", "exp", exp, "err", err)
+				plog.Error(
+					plog.TypeSystem,
+					"marshaling experiment VMs for WebSocket client",
+					"exp",
+					exp,
+					"err",
+					err,
+				)
+
 				continue
 			}
 
-			this.publish <- bt.Publish{
+			c.publish <- bt.Publish{ //nolint:exhaustruct // partial initialization
 				Resource: bt.NewResource("experiment/vms", expName, "list"),
 				Result:   body,
 			}
@@ -388,52 +494,63 @@ func (this *Client) read() {
 	}
 }
 
-func (this *Client) write() {
+func (c *Client) write() {
 	ticker := time.NewTicker(pingPeriod)
 
 	defer ticker.Stop()
-	defer this.Stop()
+	defer c.Stop()
 
 	for {
 		select {
-		case <-this.done:
+		case <-c.done:
 			return
-		case msg := <-this.publish:
-			if err := this.publisher(msg); err != nil {
+		case msg := <-c.publish:
+			err := c.publisher(msg)
+			if err != nil {
 				plog.Error(plog.TypeSystem, "publishing message to client", "err", err)
 			}
 		case <-ticker.C:
-			if err := this.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
-				plog.Error(plog.TypeSystem, "setting write deadline for client connection", "err", err)
+			err := c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err != nil {
+				plog.Error(
+					plog.TypeSystem,
+					"setting write deadline for client connection",
+					"err",
+					err,
+				)
+
 				return
 			}
 
-			if err := this.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			err = c.conn.WriteMessage(websocket.PingMessage, nil)
+			if err != nil {
 				plog.Error(plog.TypeSystem, "pinging client connection", "err", err)
+
 				return
 			}
 		}
 	}
 }
 
-func (this *Client) publisher(msg interface{}) error {
-	this.connMu.Lock()
-	defer this.connMu.Unlock()
+func (c *Client) publisher(msg any) error {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
 
-	if err := this.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+	if err := c.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
 		return fmt.Errorf("setting write deadline for client connection: %w", err)
 	}
 
-	w, err := this.conn.NextWriter(websocket.TextMessage)
+	w, err := c.conn.NextWriter(websocket.TextMessage)
 	if err != nil {
 		return fmt.Errorf("getting next writer for client connection: %w", err)
 	}
 
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 
 	b, err := json.Marshal(msg)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling message to be published", "err", err)
+
 		return nil
 	}
 
@@ -441,16 +558,17 @@ func (this *Client) publisher(msg interface{}) error {
 		return fmt.Errorf("writing message to client connection: %w", err)
 	}
 
-	for i := 0; i < len(this.publish); i++ {
+	for range len(c.publish) {
 		if _, err := w.Write(newline); err != nil {
 			return fmt.Errorf("writing newline to client connection: %w", err)
 		}
 
-		msg := <-this.publish
+		msg := <-c.publish
 
 		b, err := json.Marshal(msg)
 		if err != nil {
 			plog.Error(plog.TypeSystem, "marshaling message to be published", "err", err)
+
 			continue
 		}
 
@@ -462,32 +580,32 @@ func (this *Client) publisher(msg interface{}) error {
 	return nil
 }
 
-func (client *Client) setScreenshotsTicker() {
-	ticker := time.NewTicker(5 * time.Second)
+func (c *Client) setScreenshotsTicker() {
+	ticker := time.NewTicker(screenshotTickerInterval)
 
 	defer ticker.Stop()
-	defer client.Stop()
+	defer c.Stop()
 
 	for {
 		select {
-		case <-client.done:
+		case <-c.done:
 			return
 		case <-ticker.C:
-			client.updateScreenshots()
+			c.updateScreenshots()
 		}
 	}
 }
 
-func (client *Client) updateScreenshots() {
+func (c *Client) updateScreenshots() {
 	names := make(map[string][]string)
 
-	client.vmMu.RLock()
+	c.vmMu.RLock()
 
-	for _, v := range client.vms {
+	for _, v := range c.vms {
 		names[v.exp] = append(names[v.exp], v.name)
 	}
 
-	client.vmMu.RUnlock()
+	c.vmMu.RUnlock()
 
 	for exp, vms := range names {
 		for _, vm := range vms {
@@ -502,17 +620,27 @@ func (client *Client) updateScreenshots() {
 				}
 
 				plog.Error(plog.TypeSystem, "getting screenshot for WebSocket client", "err", err)
+
 				continue
 			}
 
 			encoded := "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+
 			marshalled, err := json.Marshal(util.WithRoot("screenshot", encoded))
 			if err != nil {
-				plog.Error(plog.TypeSystem, "marshaling VM screenshot for WebSocket client", "vm", vm, "err", err)
+				plog.Error(
+					plog.TypeSystem,
+					"marshaling VM screenshot for WebSocket client",
+					"vm",
+					vm,
+					"err",
+					err,
+				)
+
 				continue
 			}
 
-			client.publish <- bt.Publish{
+			c.publish <- bt.Publish{ //nolint:exhaustruct // partial initialization
 				Resource: bt.NewResource("experiment/vm/screenshot", fmt.Sprintf("%s/%s", exp, vm), "update"),
 				Result:   marshalled,
 			}
@@ -526,10 +654,11 @@ func ServeWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "upgrading connection to WebSocket", "err", err)
+
 		return
 	}
 
-	role := r.Context().Value("role").(rbac.Role)
+	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 
 	NewClient(role, conn).Go()
 }

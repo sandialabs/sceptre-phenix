@@ -6,54 +6,73 @@ import (
 	"net/http"
 	"strings"
 
-	"phenix/api/vm"
-	"phenix/util/mm"
-	"phenix/util/plog"
-	"phenix/web/rbac"
-	"phenix/web/util"
-
-	assetfs "github.com/elazarl/go-bindata-assetfs"
 	"github.com/gorilla/mux"
 	"github.com/mitchellh/mapstructure"
 	"golang.org/x/net/websocket"
+
+	"phenix/api/vm"
+	"phenix/util/mm"
+	"phenix/util/plog"
+	"phenix/web/middleware"
+	"phenix/web/rbac"
+	"phenix/web/util"
 )
 
-// GET /experiments/{exp}/vms/{name}/vnc
+// GetVNC - GET /experiments/{exp}/vms/{name}/vnc.
 func GetVNC(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetVNC")
 
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
-		name = vars["name"]
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		vars    = mux.Vars(r)
+		exp     = vars["exp"]
+		name    = vars["name"]
 	)
 
 	if !role.Allowed("vms/vnc", "get", exp+"/"+name) {
-		plog.Warn(plog.TypeSecurity, "vnc access not allowed", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
+		plog.Warn(
+			plog.TypeSecurity,
+			"vnc access not allowed",
+			"user",
+			ctx.Value(middleware.ContextKeyUser),
+			"exp",
+			exp,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	vm, err := vm.Get(exp, name)
 	if err != nil {
 		http.Error(w, "VM not found", http.StatusNotFound)
+
 		return
 	}
 
 	// The `token` variable will be an empty string if authentication is disabled,
 	// which is okay and will not cause any issues here.
-	token, _ := ctx.Value("jwt").(string)
+	token, _ := ctx.Value(middleware.ContextKeyJWT).(string)
 	config := newVNCBannerConfig(token, exp, name)
 
 	if banner, ok := vm.Annotations["vncBanner"]; ok {
 		switch banner := banner.(type) {
 		case string:
 			config.finalize(banner)
-		case map[string]interface{}:
-			if err := mapstructure.Decode(banner, &config); err != nil {
-				plog.Error(plog.TypeSystem, "decoding vncBanner annotation for VM", "vm", name, "err", err)
+		case map[string]any:
+			err := mapstructure.Decode(banner, &config) //nolint:musttag // struct is used for decoding
+			if err != nil {
+				plog.Error(
+					plog.TypeSystem,
+					"decoding vncBanner annotation for VM",
+					"vm",
+					name,
+					"err",
+					err,
+				)
 			} else {
 				config.finalize()
 			}
@@ -69,24 +88,32 @@ func GetVNC(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Pragma", "no-cache")                                   // HTTP 1.0.
 	w.Header().Set("Expires", "0")                                         // Proxies.
 
-	plog.Info(plog.TypeAction, "vnc opened", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
+	plog.Info(
+		plog.TypeAction,
+		"vnc opened",
+		"user",
+
+		"exp",
+		exp,
+		"vm",
+		name,
+	)
+
 	if o.unbundled {
 		tmpl := template.Must(template.New("vnc.html").ParseFiles("web/public/vnc.html"))
-		tmpl.Execute(w, config)
+		_ = tmpl.Execute(w, config)
 	} else {
-		bfs := util.NewBinaryFileSystem(
-			&assetfs.AssetFS{
-				Asset:     Asset,
-				AssetDir:  AssetDir,
-				AssetInfo: AssetInfo,
-			},
-		)
-
+		assets, err := GetAssets()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		bfs := util.NewBinaryFileSystem(assets)
 		bfs.ServeTemplate(w, "vnc.html", config)
 	}
 }
 
-// GET /experiments/{exp}/vms/{name}/vnc/ws
+// GetVNCWebSocket - GET /experiments/{exp}/vms/{name}/vnc/ws.
 func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetVNCWebSocket")
 
@@ -100,6 +127,7 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting VNC endpoint", "err", err)
 		http.Error(w, "", http.StatusBadRequest)
+
 		return
 	}
 
@@ -113,7 +141,7 @@ type bannerConfig struct {
 
 	// Use type interface{} here so it can either be a simple string or a
 	// template.HTML string (safe HTML).
-	Banner interface{} `mapstructure:"-"`
+	Banner any `mapstructure:"-"`
 }
 
 type vncConfig struct {
@@ -129,36 +157,39 @@ type vncConfig struct {
 }
 
 func newVNCBannerConfig(token, exp, vm string) *vncConfig {
-	return &vncConfig{
+	return &vncConfig{ //nolint:exhaustruct // partial initialization
 		BasePath: o.basePath,
 		Token:    token,
 		ExpName:  exp,
 		VMName:   vm,
-		TopBanner: bannerConfig{
+		TopBanner: bannerConfig{ //nolint:exhaustruct // partial initialization
 			BackgroundColor: "white",
 			TextColor:       "black",
 		},
-		BottomBanner: bannerConfig{
+		BottomBanner: bannerConfig{ //nolint:exhaustruct // partial initialization
 			BackgroundColor: "white",
 			TextColor:       "black",
 		},
 	}
 }
 
-func (this *vncConfig) finalize(banner ...string) {
+func (c *vncConfig) finalize(banner ...string) {
 	if len(banner) > 0 {
-		this.TopBanner.Banner = template.HTML(strings.Join(banner, "<br/>"))
-		this.BottomBanner.Banner = template.HTML(strings.Join(banner, "<br/>"))
+		c.TopBanner.Banner = template.HTML(strings.Join(banner, "<br/>"))    //nolint:gosec // The used method does not auto-escape HTML
+		c.BottomBanner.Banner = template.HTML(strings.Join(banner, "<br/>")) //nolint:gosec // The used method does not auto-escape HTML
+
 		return
 	}
 
-	if !this.Disabled {
-		if len(this.TopBanner.BannerLines) > 0 {
-			this.TopBanner.Banner = template.HTML(strings.Join(this.TopBanner.BannerLines, "<br/>"))
+	if !c.Disabled {
+		if len(c.TopBanner.BannerLines) > 0 {
+			//nolint:gosec // The used method does not auto-escape HTML
+			c.TopBanner.Banner = template.HTML(strings.Join(c.TopBanner.BannerLines, "<br/>"))
 		}
 
-		if len(this.BottomBanner.BannerLines) > 0 {
-			this.BottomBanner.Banner = template.HTML(strings.Join(this.BottomBanner.BannerLines, "<br/>"))
+		if len(c.BottomBanner.BannerLines) > 0 {
+			//nolint:gosec // The used method does not auto-escape HTML
+			c.BottomBanner.Banner = template.HTML(strings.Join(c.BottomBanner.BannerLines, "<br/>"))
 		}
 	}
 }

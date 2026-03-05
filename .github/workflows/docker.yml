@@ -43,6 +43,7 @@ jobs:
             PHENIX_COMMIT=${{ env.sha }}
             PHENIX_TAG=${{ fromJSON(steps.meta.outputs.json).tags[0] }}
             APPS_REPO=github.com/${{ github.event_name == 'repository_dispatch' && github.event.client_payload.repo || 'sandialabs/sceptre-phenix-apps' }}
+            APPS_BRANCH=main
           push: true
           tags: ${{ steps.meta.outputs.tags }}
     outputs:
@@ -83,6 +84,6 @@ jobs:
           build-args: |
             PHENIX_REPO=${{ github.repository }}
             PHENIX_IMG=${{ needs.push-to-ghcr.outputs.image }}
-            PHENIX_BRANCH=${{ github.head_ref || github.ref_name }} 
+            PHENIX_BRANCH=${{ github.head_ref || github.ref_name }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}

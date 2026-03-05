@@ -3,10 +3,11 @@
 package mmcli
 
 import (
-	"phenix/util/plog"
 	"strings"
 
 	"github.com/activeshadow/libminimega/minicli"
+
+	"phenix/util/plog"
 )
 
 type tabularToMapper func(*minicli.Response, []string) map[string]string
@@ -34,6 +35,7 @@ func tabularToMapCols(columns []string) tabularToMapper {
 		for _, column := range cols {
 			if strings.Contains(column, "host") {
 				res["host"] = resp.Host
+
 				continue
 			}
 
@@ -65,7 +67,15 @@ func RunTabular(cmd *Command) []map[string]string {
 	for resps := range Run(cmd) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
-				plog.Error(plog.TypeSystem, "error running mm cmd", "cmd", cmd.Command, "error", resp.Error)
+				plog.Error(
+					plog.TypeSystem,
+					"error running mm cmd",
+					"cmd",
+					cmd.Command,
+					"error",
+					resp.Error,
+				)
+
 				continue
 			}
 

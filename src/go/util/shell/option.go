@@ -20,7 +20,7 @@ type options struct {
 }
 
 func newOptions(opts ...Option) options {
-	o := options{
+	o := options{ //nolint:exhaustruct // partial initialization
 		env:      os.Environ(),
 		splitter: bufio.ScanLines,
 	}

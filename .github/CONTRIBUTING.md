@@ -2,7 +2,7 @@ Contributing to SCEPTRE Phenix
 
 Thank you for your interest in contributing to SCEPTRE Phenix! We welcome contributions from everyone and appreciate your efforts to improve our project. This guide will help you understand how to contribute effectively.
 
-> Note: A failure to follow this guide will result in delay of PRs until there is compliance. 
+> Note: A failure to follow this guide will result in delay of PRs until there is compliance.
 
 ## Table of Contents
 
@@ -54,7 +54,7 @@ If you encounter a bug or have a feature request, please open an issue in the [I
 
 ### Suggesting Enhancements
 
-We welcome suggestions for improvements! Please open an issue to discuss your ideas before implementing them. 
+We welcome suggestions for improvements! Please open an issue to discuss your ideas before implementing them.
 
 ### Submitting Code
 
@@ -76,7 +76,7 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
     git checkout -b feat/add-user-authentication
     ```
 
-2. **Make Your Changes**: Implement your changes.
+2. **Make Your Changes**: Implement your changes. Please include unit tests for any new logic or features.
 
 3. **Stage Your Changes**: Use the `git add` command to stage the changes you want to commit. You can stage specific files or all changes:
     To stage specific files:
@@ -100,7 +100,7 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
     ```bash
     git commit -m "feat(auth): add user authentication feature"
     ```
-    If you need to write a longer commit message, you can do so by running `git commit`. This will open your default text editor where you can write a detailed commit message. The first line should be a brief summary conforming to the format above, followed by a blank line, and then a more detailed explanation. 
+    If you need to write a longer commit message, you can do so by running `git commit`. This will open your default text editor where you can write a detailed commit message. The first line should be a brief summary conforming to the format above, followed by a blank line, and then a more detailed explanation.
 
     Example:
     ```bash
@@ -126,14 +126,13 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
     In the interactive rebase interface, change the word `pick` to `squash` (or `s`) for all commits you want to combine into the first commit. After saving and closing the editor, you will be prompted to create a new commit message. Write a single, comprehensive commit message that summarizes all the changes.
 
 5. **Push to Your Fork**: If you had to rebase, you may need to force push your changes to your forked repository.
-    
+
     Example:
     ```bash
     git push origin feat/add-user-authentication --force
     ```
-    
+
 6. **Open a Pull Request**: Go to the original repository and open a [pull request](https://github.com/sandialabs/sceptre-phenix/pulls). Provide a clear description of your changes and reference any related issues.
 
 ## License
 By contributing to this project, you agree that your contributions will be licensed under the [GNU](https://github.com/sandialabs/sceptre-phenix/blob/main/LICENSE) License.
-

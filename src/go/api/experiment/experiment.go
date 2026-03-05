@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/activeshadow/structs"
+	"github.com/hashicorp/go-multierror"
+	"github.com/mitchellh/mapstructure"
 
 	"phenix/api/config"
 	"phenix/app"
@@ -26,152 +29,201 @@ import (
 	"phenix/util/notes"
 	"phenix/util/plog"
 	"phenix/util/pubsub"
-
-	"github.com/activeshadow/structs"
-	"github.com/hashicorp/go-multierror"
-	"github.com/mitchellh/mapstructure"
 )
+
+const maxNameLength = 15
+const c2CheckInterval = 5 * time.Second
 
 var (
 	ErrExperimentNotFound   = errors.New("experiment not found")
 	ErrExperimentNotRunning = errors.New("experiment not running")
 )
 
-func init() {
-	config.RegisterConfigHook("Experiment", func(stage string, c *store.Config) error {
-		exp, err := types.DecodeExperimentFromConfig(*c)
+func init() { //nolint:gochecknoinits // config hook
+	config.RegisterConfigHook("Experiment", experimentConfigHook)
+}
+
+func experimentConfigHook(stage string, c *store.Config) error {
+	exp, err := types.DecodeExperimentFromConfig(*c)
+	if err != nil {
+		return fmt.Errorf("decoding experiment from config: %w", err)
+	}
+
+	switch stage {
+	case "startup":
+		return hookStartup(exp, c)
+	case "create":
+		return hookCreate(exp, c)
+	case "update":
+		return hookUpdate(exp, c)
+	case "delete":
+		return hookDelete(exp)
+	}
+
+	return nil
+}
+
+func hookStartup(exp *types.Experiment, c *store.Config) error {
+	// Experiments created before the default bridge option was added need to
+	// be updated to have a default `phenix` bridge.
+	if exp.Spec.DefaultBridge() == "" {
+		exp.Spec.SetDefaultBridge(defaultBridgeName)
+
+		err := exp.Spec.Init()
 		if err != nil {
-			return fmt.Errorf("decoding experiment from config: %w", err)
+			return fmt.Errorf("re-initializing experiment with default bridge: %w", err)
 		}
 
-		switch stage {
-		case "startup":
-			// Experiments created before the default bridge option was added need to
-			// be updated to have a default `phenix` bridge.
-			if exp.Spec.DefaultBridge() == "" {
-				exp.Spec.SetDefaultBridge("phenix")
+		c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
+	}
+	return nil
+}
 
-				if err := exp.Spec.Init(); err != nil {
-					return fmt.Errorf("re-initializing experiment with default bridge: %w", err)
-				}
+func hookCreate(exp *types.Experiment, c *store.Config) error {
+	exp.Spec.SetExperimentName(c.Metadata.Name)
 
-				c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
-			}
-		case "create":
-			exp.Spec.SetExperimentName(c.Metadata.Name)
+	err := exp.Spec.Init()
+	if err != nil {
+		return fmt.Errorf("initializing experiment: %w", err)
+	}
 
-			if err := exp.Spec.Init(); err != nil {
-				return fmt.Errorf("initializing experiment: %w", err)
-			}
-
-			if common.BridgeMode == common.BRIDGE_MODE_AUTO {
-				if len(c.Metadata.Name) > 15 {
-					return fmt.Errorf("experiment name must be 15 characters or less when using auto bridge mode")
-				}
-
-				exp.Spec.SetDefaultBridge(c.Metadata.Name)
-			}
-
-			if len(exp.Spec.DefaultBridge()) > 15 {
-				return fmt.Errorf("default bridge name must be 15 characters or less")
-			}
-
-			exp.Spec.SetUseGREMesh(exp.Spec.UseGREMesh() || common.UseGREMesh)
-
-			existing, _ := types.Experiments(false)
-			for _, other := range existing {
-				if other.Metadata.Name == exp.Metadata.Name {
-					continue
-				}
-
-				if exp.Spec.DefaultBridge() == "phenix" {
-					continue
-				}
-
-				if other.Spec.DefaultBridge() == exp.Spec.DefaultBridge() {
-					return fmt.Errorf("experiment %s already using default bridge %s", other.Metadata.Name, other.Spec.DefaultBridge())
-				}
-			}
-
-			if err := exp.Spec.VerifyScenario(context.TODO()); err != nil {
-				return fmt.Errorf("verifying experiment scenario: %w", err)
-			}
-
-			if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCONFIG)); err != nil {
-				return fmt.Errorf("applying apps to experiment: %w", err)
-			}
-
-			c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
-		case "update":
-			if exp.Running() {
-				// Halt this update if the experiment is running.
-				return fmt.Errorf("cannot update running experiment")
-			}
-
-			if err := exp.Spec.Init(); err != nil {
-				return fmt.Errorf("re-initializing experiment (after update): %w", err)
-			}
-
-			// Just in case the updated experiment reset the default bridge.
-			if common.BridgeMode == common.BRIDGE_MODE_AUTO {
-				if len(c.Metadata.Name) > 15 {
-					return fmt.Errorf("experiment name must be 15 characters or less when using auto bridge mode")
-				}
-
-				exp.Spec.SetDefaultBridge(c.Metadata.Name)
-			}
-
-			if len(exp.Spec.DefaultBridge()) > 15 {
-				return fmt.Errorf("default bridge name must be 15 characters or less")
-			}
-
-			exp.Spec.SetUseGREMesh(exp.Spec.UseGREMesh() || common.UseGREMesh)
-
-			existing, _ := types.Experiments(false)
-			for _, other := range existing {
-				if other.Metadata.Name == exp.Metadata.Name {
-					continue
-				}
-
-				if exp.Spec.DefaultBridge() == "phenix" {
-					continue
-				}
-
-				if other.Spec.DefaultBridge() == exp.Spec.DefaultBridge() {
-					return fmt.Errorf("experiment %s already using default bridge %s", other.Metadata.Name, other.Spec.DefaultBridge())
-				}
-			}
-
-			if exp.Spec.ExperimentName() != c.Metadata.Name {
-				if strings.Contains(exp.Spec.BaseDir(), exp.Spec.ExperimentName()) {
-					// If the experiment's base directory contains the current experiment
-					// name, replace it with the new name.
-					dir := strings.ReplaceAll(exp.Spec.BaseDir(), exp.Spec.ExperimentName(), c.Metadata.Name)
-					exp.Spec.SetBaseDir(dir)
-				}
-
-				exp.Spec.SetExperimentName(c.Metadata.Name)
-			}
-
-			c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
-		case "delete":
-			var errors error
-
-			// Delete any snapshot files created by this headnode for this experiment
-			// after deleting the experiment.
-			if err := deleteC2AndSnapshots(exp); err != nil {
-				errors = multierror.Append(errors, fmt.Errorf("deleting experiment snapshots and CC responses: %w", err))
-			}
-
-			if err := os.RemoveAll(exp.Spec.BaseDir()); err != nil {
-				errors = multierror.Append(errors, fmt.Errorf("deleting experiment base directory: %w", err))
-			}
-
-			return errors
+	if common.BridgeMode == common.BridgeModeAuto {
+		if len(c.Metadata.Name) > maxNameLength {
+			return errors.New(
+				"experiment name must be 15 characters or less when using auto bridge mode",
+			)
 		}
 
-		return nil
-	})
+		exp.Spec.SetDefaultBridge(c.Metadata.Name)
+	}
+
+	if len(exp.Spec.DefaultBridge()) > maxNameLength {
+		return errors.New("default bridge name must be 15 characters or less")
+	}
+
+	exp.Spec.SetUseGREMesh(exp.Spec.UseGREMesh() || common.UseGREMesh)
+
+	existing, _ := types.Experiments(false)
+	for _, other := range existing {
+		if other.Metadata.Name == exp.Metadata.Name {
+			continue
+		}
+
+		if exp.Spec.DefaultBridge() == defaultBridgeName {
+			continue
+		}
+
+		if other.Spec.DefaultBridge() == exp.Spec.DefaultBridge() {
+			return fmt.Errorf(
+				"experiment %s already using default bridge %s",
+				other.Metadata.Name,
+				other.Spec.DefaultBridge(),
+			)
+		}
+	}
+
+	err = exp.Spec.VerifyScenario(context.Background())
+	if err != nil {
+		return fmt.Errorf("verifying experiment scenario: %w", err)
+	}
+
+	err = app.ApplyApps(context.Background(), exp, app.Stage(app.ActionConfigure))
+	if err != nil {
+		return fmt.Errorf("applying apps to experiment: %w", err)
+	}
+
+	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
+	return nil
+}
+
+func hookUpdate(exp *types.Experiment, c *store.Config) error {
+	if exp.Running() {
+		// Halt this update if the experiment is running.
+		return errors.New("cannot update running experiment")
+	}
+
+	err := exp.Spec.Init()
+	if err != nil {
+		return fmt.Errorf("re-initializing experiment (after update): %w", err)
+	}
+
+	// Just in case the updated experiment reset the default bridge.
+	if common.BridgeMode == common.BridgeModeAuto {
+		if len(c.Metadata.Name) > maxNameLength {
+			return errors.New(
+				"experiment name must be 15 characters or less when using auto bridge mode",
+			)
+		}
+
+		exp.Spec.SetDefaultBridge(c.Metadata.Name)
+	}
+
+	if len(exp.Spec.DefaultBridge()) > maxNameLength {
+		return errors.New("default bridge name must be 15 characters or less")
+	}
+
+	exp.Spec.SetUseGREMesh(exp.Spec.UseGREMesh() || common.UseGREMesh)
+
+	existing, _ := types.Experiments(false)
+	for _, other := range existing {
+		if other.Metadata.Name == exp.Metadata.Name {
+			continue
+		}
+
+		if exp.Spec.DefaultBridge() == defaultBridgeName {
+			continue
+		}
+
+		if other.Spec.DefaultBridge() == exp.Spec.DefaultBridge() {
+			return fmt.Errorf(
+				"experiment %s already using default bridge %s",
+				other.Metadata.Name,
+				other.Spec.DefaultBridge(),
+			)
+		}
+	}
+
+	if exp.Spec.ExperimentName() != c.Metadata.Name {
+		if strings.Contains(exp.Spec.BaseDir(), exp.Spec.ExperimentName()) {
+			// If the experiment's base directory contains the current experiment
+			// name, replace it with the new name.
+			dir := strings.ReplaceAll(
+				exp.Spec.BaseDir(),
+				exp.Spec.ExperimentName(),
+				c.Metadata.Name,
+			)
+			exp.Spec.SetBaseDir(dir)
+		}
+
+		exp.Spec.SetExperimentName(c.Metadata.Name)
+	}
+
+	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
+	return nil
+}
+
+func hookDelete(exp *types.Experiment) error {
+	var errors error
+
+	// Delete any snapshot files created by this headnode for this experiment
+	// after deleting the experiment.
+	err := deleteC2AndSnapshots(exp)
+	if err != nil {
+		errors = multierror.Append(
+			errors,
+			fmt.Errorf("deleting experiment snapshots and CC responses: %w", err),
+		)
+	}
+
+	err = os.RemoveAll(exp.Spec.BaseDir())
+	if err != nil {
+		errors = multierror.Append(
+			errors,
+			fmt.Errorf("deleting experiment base directory: %w", err),
+		)
+	}
+
+	return errors //nolint:wrapcheck // returning multierror
 }
 
 // Hook is a function to be called during the different lifecycle stages of an
@@ -179,7 +231,7 @@ func init() {
 // delete), and the second argument is the experiment, name.
 type Hook func(string, string)
 
-var hooks = make(map[string][]Hook)
+var hooks = make(map[string][]Hook) //nolint:gochecknoglobals // package level registry
 
 // RegisterHook registers a Hook for the given experiment stage.
 func RegisterHook(stage string, hook Hook) {
@@ -201,16 +253,20 @@ func List() ([]types.Experiment, error) {
 	)
 
 	for _, c := range configs {
-		exp, err := types.DecodeExperimentFromConfig(c)
-		if err != nil {
-			errs = multierror.Append(err, fmt.Errorf("decoding experiment %s from config: %w", c.Metadata.Name, err))
+		exp, err2 := types.DecodeExperimentFromConfig(c)
+		if err2 != nil {
+			errs = multierror.Append(
+				errs,
+				fmt.Errorf("decoding experiment %s from config: %w", c.Metadata.Name, err2),
+			)
+
 			continue
 		}
 
 		experiments = append(experiments, *exp)
 	}
 
-	return experiments, errs
+	return experiments, errs //nolint:wrapcheck // returning multierror
 }
 
 // Get retrieves the experiment with the given name. It returns a pointer to a
@@ -219,7 +275,7 @@ func List() ([]types.Experiment, error) {
 // experiment.
 func Get(name string) (*types.Experiment, error) {
 	if name == "" {
-		return nil, fmt.Errorf("no experiment name provided")
+		return nil, errors.New("no experiment name provided")
 	}
 
 	c, err := store.NewConfig("experiment/" + name)
@@ -227,13 +283,14 @@ func Get(name string) (*types.Experiment, error) {
 		return nil, fmt.Errorf("getting experiment: %w", err)
 	}
 
-	if err := store.Get(c); err != nil {
+	err = store.Get(c)
+	if err != nil {
 		return nil, fmt.Errorf("getting experiment %s from store: %w", name, err)
 	}
 
-	exp, err := types.DecodeExperimentFromConfig(*c)
-	if err != nil {
-		return nil, fmt.Errorf("decoding experiment from config: %w", err)
+	exp, err2 := types.DecodeExperimentFromConfig(*c)
+	if err2 != nil {
+		return nil, fmt.Errorf("decoding experiment from config: %w", err2)
 	}
 
 	return exp, nil
@@ -249,19 +306,19 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 	o := newCreateOptions(opts...)
 
 	if o.name == "" {
-		return fmt.Errorf("no experiment name provided")
+		return errors.New("no experiment name provided")
 	}
 
 	if strings.ToLower(o.name) == "all" {
-		return fmt.Errorf("cannot use 'all' for experiment name")
+		return errors.New("cannot use 'all' for experiment name")
 	}
 
 	if o.topology == "" {
-		return fmt.Errorf("no topology name provided")
+		return errors.New("no topology name provided")
 	}
 
-	if len(o.defaultBridge) > 15 {
-		return fmt.Errorf("default bridge name must be 15 characters or less")
+	if len(o.defaultBridge) > maxNameLength {
+		return errors.New("default bridge name must be 15 characters or less")
 	}
 
 	var (
@@ -271,17 +328,18 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 
 	topoC, _ := store.NewConfig("topology/" + o.topology)
 
-	if err := store.Get(topoC); err != nil {
-		return fmt.Errorf("topology doesn't exist")
+	err := store.Get(topoC)
+	if err != nil {
+		return errors.New("topology doesn't exist")
 	}
 
 	// This will upgrade the toplogy to the latest known version if needed.
-	topo, err := types.DecodeTopologyFromConfig(*topoC)
-	if err != nil {
-		return fmt.Errorf("decoding topology from config: %w", err)
+	topo, err2 := types.DecodeTopologyFromConfig(*topoC)
+	if err2 != nil {
+		return fmt.Errorf("decoding topology from config: %w", err2)
 	}
 
-	meta := store.ConfigMetadata{
+	meta := store.ConfigMetadata{ //nolint:exhaustruct // partial initialization
 		Name: o.name,
 		Annotations: map[string]string{
 			"topology": o.topology,
@@ -296,39 +354,12 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 		"topology":       topo,
 	}
 
-	if o.disabledApps != nil && len(o.disabledApps) > 0 {
+	if len(o.disabledApps) > 0 {
 		plog.Info(plog.TypePhenixApp, fmt.Sprintf("Got disabled applications: %v", o.disabledApps))
 	}
 
-	if o.scenario != "" {
-		scenarioC, _ := store.NewConfig("scenario/" + o.scenario)
-
-		if err := store.Get(scenarioC); err != nil {
-			return fmt.Errorf("scenario doesn't exist")
-		}
-
-		topo, ok := scenarioC.Metadata.Annotations["topology"]
-		if !ok {
-			return fmt.Errorf("topology annotation missing from scenario")
-		}
-
-		if !strings.Contains(topo, o.topology) {
-			return fmt.Errorf("experiment/scenario topology mismatch for scenario %s", o.scenario)
-		}
-
-		// This will upgrade the scenario to the latest known version if needed.
-		plog.Info(plog.TypeSystem, "Creating custom scenario")
-		scenario, err := types.MakeCustomScenarioFromConfig(*scenarioC, o.disabledApps)
-		if err != nil {
-			return fmt.Errorf("decoding scenario from config: %w", err)
-		}
-
-		if err := types.MergeScenariosForTopology(scenario, o.topology); err != nil {
-			return fmt.Errorf("merging scenerios: %w", err)
-		}
-
-		meta.Annotations["scenario"] = o.scenario
-		specMap["scenario"] = scenario
+	if err = processCreateScenario(o.scenario, o.topology, o.disabledApps, &meta, specMap); err != nil {
+		return err
 	}
 
 	for k, v := range o.annotations {
@@ -337,26 +368,34 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 		}
 	}
 
-	c := &store.Config{
-		Version:  store.API_GROUP + "/" + apiVersion,
+	c := &store.Config{ //nolint:exhaustruct // partial initialization
+		Version:  store.APIGroup + "/" + apiVersion,
 		Kind:     kind,
 		Metadata: meta,
 		Spec:     specMap,
 	}
 
-	exp, err := types.DecodeExperimentFromConfig(*c)
-	if err != nil {
-		return fmt.Errorf("decoding experiment from config: %w", err)
+	exp, err2 := types.DecodeExperimentFromConfig(*c)
+	if err2 != nil {
+		return fmt.Errorf("decoding experiment from config: %w", err2)
 	}
 
-	exp.Spec.SetVLANRange(o.vlanMin, o.vlanMax, false)
+	err = exp.Spec.SetVLANRange(o.vlanMin, o.vlanMax, false)
+	if err != nil {
+		return fmt.Errorf("setting vlan range: %w", err)
+	}
+
 	exp.Spec.VLANs().SetAliases(o.vlanAliases)
 	exp.Spec.SetSchedule(o.schedules)
 	exp.Spec.SetUseGREMesh(o.useGREMesh)
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 
-	if _, err := config.Create(config.CreateFromConfig(c), config.CreateWithValidation()); err != nil {
+	_, err = config.Create(
+		config.CreateFromConfig(c),
+		config.CreateWithValidation(),
+	)
+	if err != nil {
 		return fmt.Errorf("creating experiment config: %w", err)
 	}
 
@@ -367,34 +406,83 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 	return nil
 }
 
+func processCreateScenario(
+	scenarioName, topologyName string,
+	disabledApps []string,
+	meta *store.ConfigMetadata,
+	specMap map[string]any,
+) error {
+	if scenarioName == "" {
+		return nil
+	}
+
+	scenarioC, _ := store.NewConfig("scenario/" + scenarioName)
+
+	err := store.Get(scenarioC)
+	if err != nil {
+		return errors.New("scenario doesn't exist")
+	}
+
+	topo, ok := scenarioC.Metadata.Annotations["topology"]
+	if !ok {
+		return errors.New("topology annotation missing from scenario")
+	}
+
+	if !strings.Contains(topo, topologyName) {
+		return fmt.Errorf("experiment/scenario topology mismatch for scenario %s", scenarioName)
+	}
+
+	// This will upgrade the scenario to the latest known version if needed.
+	plog.Info(plog.TypeSystem, "Creating custom scenario")
+
+	scenario, err2 := types.MakeCustomScenarioFromConfig(*scenarioC, disabledApps)
+	if err2 != nil {
+		return fmt.Errorf("decoding scenario from config: %w", err2)
+	}
+
+	err = types.MergeScenariosForTopology(scenario, topologyName)
+	if err != nil {
+		return fmt.Errorf("merging scenerios: %w", err)
+	}
+
+	meta.Annotations["scenario"] = scenarioName
+	specMap["scenario"] = scenario
+
+	return nil
+}
+
 // Schedule applies the given scheduling algorithm to the experiment with the
 // given name. It returns any errors encountered while scheduling the
 // experiment.
 func Schedule(opts ...ScheduleOption) error {
+	var err error
 	o := newScheduleOptions(opts...)
 
 	c, _ := store.NewConfig("experiment/" + o.name)
 
-	if err := store.Get(c); err != nil {
+	err = store.Get(c)
+	if err != nil {
 		return fmt.Errorf("getting experiment %s from store: %w", o.name, err)
 	}
 
-	exp, err := types.DecodeExperimentFromConfig(*c)
-	if err != nil {
-		return fmt.Errorf("decoding experiment from config: %w", err)
+	exp, err2 := types.DecodeExperimentFromConfig(*c)
+	if err2 != nil {
+		return fmt.Errorf("decoding experiment from config: %w", err2)
 	}
 
 	if exp.Running() {
 		return fmt.Errorf("experiment already running (started at: %s)", exp.Status.StartTime())
 	}
 
-	if err := scheduler.Schedule(o.algorithm, exp.Spec); err != nil {
+	err = scheduler.Schedule(o.algorithm, exp.Spec)
+	if err != nil {
 		return fmt.Errorf("running scheduler algorithm: %w", err)
 	}
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 
-	if err := store.Update(c); err != nil {
+	err = store.Update(c)
+	if err != nil {
 		return fmt.Errorf("updating experiment config: %w", err)
 	}
 
@@ -403,18 +491,21 @@ func Schedule(opts ...ScheduleOption) error {
 
 // Start starts the experiment with the given name. It returns any errors
 // encountered while starting the experiment.
+//
+//nolint:cyclop,funlen,gocyclo,maintidx // complex logic
 func Start(ctx context.Context, opts ...StartOption) error {
 	o := newStartOptions(opts...)
 
 	c, _ := store.NewConfig("experiment/" + o.name)
 
-	if err := store.Get(c); err != nil {
+	err := store.Get(c)
+	if err != nil {
 		return fmt.Errorf("getting experiment %s from store: %w", o.name, err)
 	}
 
-	exp, err := types.DecodeExperimentFromConfig(*c)
-	if err != nil {
-		return fmt.Errorf("decoding experiment from config: %w", err)
+	exp, err2 := types.DecodeExperimentFromConfig(*c)
+	if err2 != nil {
+		return fmt.Errorf("decoding experiment from config: %w", err2)
 	}
 
 	if exp.Running() {
@@ -431,21 +522,37 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		exp.Spec.VLANs().SetMax(o.vlanMax)
 	}
 
-	if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPRESTART), app.DryRun(o.dryrun)); err != nil {
+	err = app.ApplyApps(
+		ctx,
+		exp,
+		app.Stage(app.ActionPreStart),
+		app.DryRun(o.dryrun),
+	)
+	if err != nil {
 		return fmt.Errorf("applying apps to experiment: %w", err)
 	}
 
 	var (
 		mmScript = fmt.Sprintf("%s/mm_files/%s.mm", exp.Spec.BaseDir(), exp.Spec.ExperimentName())
-		ccScript = fmt.Sprintf("%s/mm_files/%s-cc.mm", exp.Spec.BaseDir(), exp.Spec.ExperimentName())
+		ccScript = fmt.Sprintf(
+			"%s/mm_files/%s-cc.mm",
+			exp.Spec.BaseDir(),
+			exp.Spec.ExperimentName(),
+		)
 	)
 
-	if err := tmpl.CreateFileFromTemplate("minimega_script.tmpl", exp.Spec, mmScript); err != nil {
+	err = tmpl.CreateFileFromTemplate("minimega_script.tmpl", exp.Spec, mmScript)
+	if err != nil {
 		return fmt.Errorf("generating minimega script: %w", err)
 	}
 
 	if exp.Spec.Topology().HasCommands() {
-		if err := tmpl.CreateFileFromTemplate("minimega_cc_script.tmpl", exp.Spec.Topology().Nodes(), ccScript); err != nil {
+		err = tmpl.CreateFileFromTemplate(
+			"minimega_cc_script.tmpl",
+			exp.Spec.Topology().Nodes(),
+			ccScript,
+		)
+		if err != nil {
 			return fmt.Errorf("generating minimega cc script: %w", err)
 		}
 	}
@@ -464,17 +571,21 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		// this after stopping an experiment just in case users need to access the
 		// snapshots for any reason, but we do clean them up when an experiment is
 		// deleted.
-		if err := deleteC2AndSnapshots(exp); err != nil {
+		err = deleteC2AndSnapshots(exp)
+		if err != nil {
 			return fmt.Errorf("deleting experiment snapshots and CC responses: %w", err)
 		}
 
-		if err := mm.ReadScriptFromFile(mmScript); err != nil {
+		err = mm.ReadScriptFromFile(mmScript)
+		if err != nil {
 			if !o.mmErrAsWarn {
-				mm.ClearNamespace(exp.Spec.ExperimentName())
+				_ = mm.ClearNamespace(exp.Spec.ExperimentName())
+
 				return fmt.Errorf("reading minimega script: %w", err)
 			}
 
-			if merr, ok := err.(*multierror.Error); ok {
+			merr := &multierror.Error{} //nolint:exhaustruct // library struct
+			if errors.As(err, &merr) {
 				notes.AddWarnings(ctx, false, merr.Errors...)
 			} else {
 				notes.AddWarnings(ctx, false, err)
@@ -494,7 +605,12 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			hostname := node.General().Hostname()
 
 			if node.Delay().User() {
-				notes.AddInfo(ctx, true, fmt.Sprintf("VM %s delayed - to be started by user", hostname))
+				notes.AddInfo(
+					ctx,
+					true,
+					fmt.Sprintf("VM %s delayed - to be started by user", hostname),
+				)
+
 				continue
 			}
 
@@ -515,7 +631,15 @@ func Start(ctx context.Context, opts ...StartOption) error {
 
 				if len(c2) > 0 {
 					c2s[hostname] = c2
-					notes.AddInfo(ctx, true, fmt.Sprintf("VM %s delayed - will be started after C2 for %v is active", hostname, hosts))
+					notes.AddInfo(
+						ctx,
+						true,
+						fmt.Sprintf(
+							"VM %s delayed - will be started after C2 for %v is active",
+							hostname,
+							hosts,
+						),
+					)
 
 					continue
 				}
@@ -524,7 +648,11 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			if d := node.Delay().Timer(); d != 0 {
 				delays[hostname] = d
 
-				notes.AddInfo(ctx, true, fmt.Sprintf("VM %s delayed - will be started after %v", hostname, d))
+				notes.AddInfo(
+					ctx,
+					true,
+					fmt.Sprintf("VM %s delayed - will be started after %v", hostname, d),
+				)
 
 				continue
 			}
@@ -539,13 +667,16 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			start = nil
 		}
 
-		if err := mm.LaunchVMs(exp.Spec.ExperimentName(), start...); err != nil {
+		err = mm.LaunchVMs(exp.Spec.ExperimentName(), start...)
+		if err != nil {
 			if !o.mmErrAsWarn {
-				mm.ClearNamespace(exp.Spec.ExperimentName())
+				_ = mm.ClearNamespace(exp.Spec.ExperimentName())
+
 				return fmt.Errorf("launching experiment VMs: %w", err)
 			}
 
-			if merr, ok := err.(*multierror.Error); ok {
+			merr := &multierror.Error{} //nolint:exhaustruct // library struct
+			if errors.As(err, &merr) {
 				notes.AddWarnings(ctx, false, merr.Errors...)
 			} else {
 				notes.AddWarnings(ctx, false, err)
@@ -558,13 +689,16 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		// the VM taps (and thus bridges) do not get created until the overall
 		// minimega namespace is launched.
 		if exp.Spec.UseGREMesh() {
-			if err := mm.CreateBridge(mm.NS(exp.Metadata.Name), mm.Bridge(exp.Spec.DefaultBridge())); err != nil {
+			err = mm.CreateBridge(mm.NS(exp.Metadata.Name), mm.Bridge(exp.Spec.DefaultBridge()))
+			if err != nil {
 				if !o.mmErrAsWarn {
-					mm.ClearNamespace(exp.Spec.ExperimentName())
+					_ = mm.ClearNamespace(exp.Spec.ExperimentName())
+
 					return fmt.Errorf("creating experiment bridge: %w", err)
 				}
 
-				if merr, ok := err.(*multierror.Error); ok {
+				merr := &multierror.Error{} //nolint:exhaustruct // library struct
+				if errors.As(err, &merr) {
 					notes.AddWarnings(ctx, false, merr.Errors...)
 				} else {
 					notes.AddWarnings(ctx, false, err)
@@ -580,9 +714,11 @@ func Start(ctx context.Context, opts ...StartOption) error {
 
 		exp.Status.SetSchedule(schedule)
 
-		vlans, err := mm.GetVLANs(mm.NS(exp.Spec.ExperimentName()))
+		var vlans map[string]int
+		vlans, err = mm.GetVLANs(mm.NS(exp.Spec.ExperimentName()))
 		if err != nil {
-			mm.ClearNamespace(exp.Spec.ExperimentName())
+			_ = mm.ClearNamespace(exp.Spec.ExperimentName())
+
 			return fmt.Errorf("processing experiment VLANs: %w", err)
 		}
 
@@ -598,36 +734,60 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	if o.errChan == nil {
 		if !o.dryrun {
 			if exp.Spec.Topology().HasCommands() {
-				if err := mm.ReadScriptFromFile(ccScript); err != nil {
-					errors := multierror.Append(nil, fmt.Errorf("reading minimega cc script: %w", err))
+				err = mm.ReadScriptFromFile(ccScript)
+				if err != nil {
+					errors := multierror.Append(
+						nil,
+						fmt.Errorf("reading minimega cc script: %w", err),
+					)
 
-					if err := mm.ClearNamespace(exp.Spec.ExperimentName()); err != nil {
-						errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
+					err = mm.ClearNamespace(exp.Spec.ExperimentName())
+					if err != nil {
+						errors = multierror.Append(
+							errors,
+							fmt.Errorf("killing experiment VMs: %w", err),
+						)
 					}
 
 					return errors
 				}
 			}
 
-			if err := handleDelayedVMs(ctx, exp.Spec.ExperimentName(), delays, c2s); err != nil {
+			err = handleDelayedVMs(ctx, exp.Spec.ExperimentName(), delays, c2s)
+			if err != nil {
 				errors := multierror.Append(nil, fmt.Errorf("handling delayed VMs: %w", err))
 
-				if err := mm.ClearNamespace(exp.Spec.ExperimentName()); err != nil {
-					errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
+				err = mm.ClearNamespace(exp.Spec.ExperimentName())
+				if err != nil {
+					errors = multierror.Append(
+						errors,
+						fmt.Errorf("killing experiment VMs: %w", err),
+					)
 				}
 
 				return errors
 			}
 		}
 
-		if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
+		err = app.ApplyApps(ctx, exp, app.Stage(app.ActionPostStart), app.DryRun(o.dryrun))
+		if err != nil {
 			errors := multierror.Append(nil, fmt.Errorf("applying apps to experiment: %w", err))
 
-			if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCLEANUP), app.DryRun(o.dryrun)); err != nil {
-				errors = multierror.Append(errors, fmt.Errorf("cleaning up app experiments: %w", err))
+			err = app.ApplyApps(
+				context.Background(),
+				exp,
+				app.Stage(app.ActionCleanup),
+				app.DryRun(o.dryrun),
+			)
+			if err != nil {
+				errors = multierror.Append(
+					errors,
+					fmt.Errorf("cleaning up app experiments: %w", err),
+				)
 			}
 
-			if err := mm.ClearNamespace(exp.Spec.ExperimentName()); err != nil {
+			err = mm.ClearNamespace(exp.Spec.ExperimentName())
+			if err != nil {
 				errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
 			}
 
@@ -639,10 +799,12 @@ func Start(ctx context.Context, opts ...StartOption) error {
 
 			if !o.dryrun {
 				if exp.Spec.Topology().HasCommands() {
-					if err := mm.ReadScriptFromFile(ccScript); err != nil {
+					err = mm.ReadScriptFromFile(ccScript)
+					if err != nil {
 						o.errChan <- fmt.Errorf("reading minimega cc script: %w", err)
 
-						if err := Stop(exp.Spec.ExperimentName()); err != nil {
+						err = Stop(exp.Spec.ExperimentName())
+						if err != nil {
 							o.errChan <- fmt.Errorf("stopping experiment: %w", err)
 						}
 
@@ -650,10 +812,12 @@ func Start(ctx context.Context, opts ...StartOption) error {
 					}
 				}
 
-				if err := handleDelayedVMs(ctx, exp.Spec.ExperimentName(), delays, c2s); err != nil {
+				err = handleDelayedVMs(ctx, exp.Spec.ExperimentName(), delays, c2s)
+				if err != nil {
 					o.errChan <- fmt.Errorf("handling delayed VMs: %w", err)
 
-					if err := Stop(exp.Spec.ExperimentName()); err != nil {
+					err = Stop(exp.Spec.ExperimentName())
+					if err != nil {
 						o.errChan <- fmt.Errorf("stopping experiment: %w", err)
 					}
 
@@ -661,10 +825,12 @@ func Start(ctx context.Context, opts ...StartOption) error {
 				}
 			}
 
-			if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONPOSTSTART), app.DryRun(o.dryrun)); err != nil {
+			err = app.ApplyApps(ctx, exp, app.Stage(app.ActionPostStart), app.DryRun(o.dryrun))
+			if err != nil {
 				o.errChan <- fmt.Errorf("applying apps to experiment: %w", err)
 
-				if err := Stop(exp.Spec.ExperimentName()); err != nil {
+				err = Stop(exp.Spec.ExperimentName())
+				if err != nil {
 					o.errChan <- fmt.Errorf("stopping experiment: %w", err)
 				}
 			}
@@ -676,8 +842,10 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 	c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
 
-	if err := store.Update(c); err != nil {
-		mm.ClearNamespace(exp.Spec.ExperimentName())
+	err = store.Update(c)
+	if err != nil {
+		_ = mm.ClearNamespace(exp.Spec.ExperimentName())
+
 		return fmt.Errorf("updating experiment config: %w", err)
 	}
 
@@ -691,31 +859,40 @@ func Start(ctx context.Context, opts ...StartOption) error {
 // Stop stops the experiment with the given name. It returns any errors
 // encountered while stopping the experiment.
 func Stop(name string) error {
+	var err error
 	c, _ := store.NewConfig("experiment/" + name)
 
-	if err := store.Get(c); err != nil {
+	err = store.Get(c)
+	if err != nil {
 		return fmt.Errorf("getting experiment %s from store: %w", name, err)
 	}
 
-	exp, err := types.DecodeExperimentFromConfig(*c)
-	if err != nil {
-		return fmt.Errorf("decoding experiment from config: %w", err)
+	exp, err2 := types.DecodeExperimentFromConfig(*c)
+	if err2 != nil {
+		return fmt.Errorf("decoding experiment from config: %w", err2)
 	}
 
 	if !exp.Running() {
-		return fmt.Errorf("experiment isn't running")
+		return errors.New("experiment isn't running")
 	}
 
 	dryrun := strings.HasSuffix(exp.Status.StartTime(), "-DRYRUN")
 
 	var errors error
 
-	if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCLEANUP), app.DryRun(dryrun)); err != nil {
+	err = app.ApplyApps(
+		context.Background(),
+		exp,
+		app.Stage(app.ActionCleanup),
+		app.DryRun(dryrun),
+	)
+	if err != nil {
 		errors = multierror.Append(errors, fmt.Errorf("cleaning up app experiments: %w", err))
 	}
 
 	if !dryrun {
-		if err := mm.ClearNamespace(exp.Spec.ExperimentName()); err != nil {
+		err = mm.ClearNamespace(exp.Spec.ExperimentName())
+		if err != nil {
 			errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
 		}
 	}
@@ -725,7 +902,8 @@ func Stop(name string) error {
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 	c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
 
-	if err := store.Update(c); err != nil {
+	err = store.Update(c)
+	if err != nil {
 		errors = multierror.Append(errors, fmt.Errorf("updating experiment config: %w", err))
 	}
 
@@ -739,13 +917,15 @@ func Stop(name string) error {
 func Status(name string) (*v1.ExperimentStatus, error) {
 	c, _ := store.NewConfig("experiment/" + name)
 
-	if err := store.Get(c); err != nil {
+	err := store.Get(c)
+	if err != nil {
 		return nil, fmt.Errorf("unable to get experiment status from store: %w", err)
 	}
 
 	var status v1.ExperimentStatus
 
-	if err := mapstructure.Decode(c.Status, &status); err != nil {
+	err = mapstructure.Decode(c.Status, &status)
+	if err != nil {
 		return nil, fmt.Errorf("unable to decode experiment status: %w", err)
 	}
 
@@ -753,14 +933,16 @@ func Status(name string) (*v1.ExperimentStatus, error) {
 }
 
 func Running(name string) bool {
+	var err error
 	c, _ := store.NewConfig("experiment/" + name)
 
-	if err := store.Get(c); err != nil {
+	err = store.Get(c)
+	if err != nil {
 		return false
 	}
 
-	exp, err := types.DecodeExperimentFromConfig(*c)
-	if err != nil {
+	exp, err2 := types.DecodeExperimentFromConfig(*c)
+	if err2 != nil {
 		return false
 	}
 
@@ -771,12 +953,13 @@ func Save(opts ...SaveOption) error {
 	o := newSaveOptions(opts...)
 
 	if o.name == "" {
-		return fmt.Errorf("experiment name required")
+		return errors.New("experiment name required")
 	}
 
 	c, _ := store.NewConfig("experiment/" + o.name)
 
-	if err := store.Get(c); err != nil {
+	err := store.Get(c)
+	if err != nil {
 		return fmt.Errorf("getting experiment %s from store: %w", o.name, err)
 	}
 
@@ -796,7 +979,8 @@ func Save(opts ...SaveOption) error {
 		c.Status = structs.MapDefaultCase(o.status, structs.CASESNAKE)
 	}
 
-	if err := store.Update(c); err != nil {
+	err = store.Update(c)
+	if err != nil {
 		return fmt.Errorf("saving experiment config: %w", err)
 	}
 
@@ -807,28 +991,32 @@ func Save(opts ...SaveOption) error {
 // is configured to use. It returns any errors encountered while reconfiguring
 // the experiment.
 func Reconfigure(name string) error {
+	var err error
 	c, _ := store.NewConfig("experiment/" + name)
 
-	if err := store.Get(c); err != nil {
+	err = store.Get(c)
+	if err != nil {
 		return fmt.Errorf("getting experiment %s from store: %w", name, err)
 	}
 
-	exp, err := types.DecodeExperimentFromConfig(*c)
-	if err != nil {
-		return fmt.Errorf("decoding experiment from config: %w", err)
+	exp, err2 := types.DecodeExperimentFromConfig(*c)
+	if err2 != nil {
+		return fmt.Errorf("decoding experiment from config: %w", err2)
 	}
 
 	if exp.Running() {
-		return fmt.Errorf("experiment is running")
+		return errors.New("experiment is running")
 	}
 
-	if err := app.ApplyApps(context.TODO(), exp, app.Stage(app.ACTIONCONFIG)); err != nil {
+	err = app.ApplyApps(context.Background(), exp, app.Stage(app.ActionConfigure))
+	if err != nil {
 		return fmt.Errorf("configuring apps for experiment: %w", err)
 	}
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 
-	if err := config.Update(c.FullName(), c); err != nil {
+	err = config.Update(c.FullName(), c)
+	if err != nil {
 		return fmt.Errorf("updating experiment config: %w", err)
 	}
 
@@ -836,7 +1024,7 @@ func Reconfigure(name string) error {
 	// not using the GRE mesh, just in case we were using it prior. Ignore any
 	// errors since they will occur if GRE wasn't being used.
 	if !exp.Spec.UseGREMesh() {
-		mm.MeshSend(name, "", fmt.Sprintf("ns del-bridge %s", exp.Spec.DefaultBridge()))
+		_ = mm.MeshSend(name, "", "ns del-bridge "+exp.Spec.DefaultBridge())
 	}
 
 	return nil
@@ -846,22 +1034,30 @@ func Reconfigure(name string) error {
 // experiment. If no apps are passed, then all experiment apps will have their
 // 'running' stage triggered.
 func TriggerRunning(ctx context.Context, name string, apps ...string) error {
+	var err error
 	c, _ := store.NewConfig("experiment/" + name)
 
-	if err := store.Get(c); err != nil {
+	err = store.Get(c)
+	if err != nil {
 		return fmt.Errorf("getting experiment %s from store: %w", name, err)
 	}
 
-	exp, err := types.DecodeExperimentFromConfig(*c)
-	if err != nil {
-		return fmt.Errorf("decoding experiment from config: %w", err)
+	exp, err2 := types.DecodeExperimentFromConfig(*c)
+	if err2 != nil {
+		return fmt.Errorf("decoding experiment from config: %w", err2)
 	}
 
 	if !exp.Running() {
-		return fmt.Errorf("experiment is not running")
+		return errors.New("experiment is not running")
 	}
 
-	if err := app.ApplyApps(ctx, exp, app.Stage(app.ACTIONRUNNING), app.FilterApp(apps...)); err != nil {
+	err = app.ApplyApps(
+		ctx,
+		exp,
+		app.Stage(app.ActionRunning),
+		app.FilterApp(apps...),
+	)
+	if err != nil {
 		return fmt.Errorf("triggering apps for experiment: %w", err)
 	}
 
@@ -870,7 +1066,7 @@ func TriggerRunning(ctx context.Context, name string, apps ...string) error {
 
 func Delete(name string) error {
 	if Running(name) {
-		return fmt.Errorf("cannot delete a running experiment")
+		return errors.New("cannot delete a running experiment")
 	}
 
 	c, err := config.Get("experiment/"+name, true)
@@ -878,36 +1074,45 @@ func Delete(name string) error {
 		return fmt.Errorf("getting experiment %s: %w", name, err)
 	}
 
-	if err := config.Delete("experiment/" + name); err != nil {
+	err = config.Delete("experiment/" + name)
+	if err != nil {
 		return fmt.Errorf("deleting experiment %s: %w", name, err)
 	}
 
-	exp, err := types.DecodeExperimentFromConfig(*c)
-	if err != nil {
-		return fmt.Errorf("decoding experiment from config: %w", err)
+	exp, err2 := types.DecodeExperimentFromConfig(*c)
+	if err2 != nil {
+		return fmt.Errorf("decoding experiment from config: %w", err2)
 	}
 
 	var errors error
 
 	// Delete any snapshot files created by this headnode for this experiment
 	// after deleting the experiment.
-	if err := deleteC2AndSnapshots(exp); err != nil {
-		errors = multierror.Append(errors, fmt.Errorf("deleting experiment snapshots and CC responses: %w", err))
+	err = deleteC2AndSnapshots(exp)
+	if err != nil {
+		errors = multierror.Append(
+			errors,
+			fmt.Errorf("deleting experiment snapshots and CC responses: %w", err),
+		)
 	}
 
-	if err := os.RemoveAll(exp.Spec.BaseDir()); err != nil {
-		errors = multierror.Append(errors, fmt.Errorf("deleting experiment base directory: %w", err))
+	err = os.RemoveAll(exp.Spec.BaseDir())
+	if err != nil {
+		errors = multierror.Append(
+			errors,
+			fmt.Errorf("deleting experiment base directory: %w", err),
+		)
 	}
 
 	for _, hook := range hooks["delete"] {
 		hook("delete", name)
 	}
 
-	return errors
+	return errors //nolint:wrapcheck // returning multierror
 }
 
 func Files(name, filter string) (file.Files, error) {
-	return file.GetExperimentFiles(name, filter)
+	return file.GetExperimentFiles(name, filter) //nolint:wrapcheck // passthrough
 }
 
 func File(name, filePath string) ([]byte, error) {
@@ -926,11 +1131,12 @@ func File(name, filePath string) ([]byte, error) {
 		if filePath == f.Path {
 			headnode, _ := os.Hostname()
 
-			file.CopyFile(fmt.Sprintf("/%s/files/%s", name, f.Path), headnode, nil)
+			_ = file.CopyFile(fmt.Sprintf("/%s/files/%s", name, f.Path), headnode, nil)
 
 			path := fmt.Sprintf("%s/images/%s/files/%s", common.PhenixBase, name, f.Path)
 
-			data, err := ioutil.ReadFile(path)
+			var data []byte
+			data, err = os.ReadFile(path)
 			if err != nil {
 				return nil, fmt.Errorf("reading contents of file: %w", err)
 			}
@@ -939,7 +1145,7 @@ func File(name, filePath string) ([]byte, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("file not found")
+	return nil, errors.New("file not found")
 }
 
 func deleteC2AndSnapshots(exp *types.Experiment) error {
@@ -957,7 +1163,6 @@ func deleteC2AndSnapshots(exp *types.Experiment) error {
 	// including the hostname we ensure that only snapshots created for
 	// experiments by this headnode get deleted. This is important when multiple
 	// headnodes exist for a single minimega cluster.
-
 	var (
 		expName  = exp.Metadata.Name
 		headnode = mm.Headnode()
@@ -965,7 +1170,8 @@ func deleteC2AndSnapshots(exp *types.Experiment) error {
 
 	c2Path := expName + "/miniccc_responses"
 
-	if err := file.DeleteFile(c2Path); err != nil {
+	err := file.DeleteFile(c2Path)
+	if err != nil {
 		return fmt.Errorf("deleting CC responses for experiment %s: %w", expName, err)
 	}
 
@@ -977,15 +1183,26 @@ func deleteC2AndSnapshots(exp *types.Experiment) error {
 		hostname := node.General().Hostname()
 		snapshot := fmt.Sprintf("%s_%s_%s_snapshot", headnode, expName, hostname)
 
-		if err := file.DeleteFile(snapshot); err != nil {
-			return fmt.Errorf("deleting snapshot file for VM %s in experiment %s: %w", hostname, expName, err)
+		err = file.DeleteFile(snapshot)
+		if err != nil {
+			return fmt.Errorf(
+				"deleting snapshot file for VM %s in experiment %s: %w",
+				hostname,
+				expName,
+				err,
+			)
 		}
 	}
 
 	return nil
 }
 
-func handleDelayedVMs(ctx context.Context, ns string, delays map[string]time.Duration, c2s map[string]map[string]bool) error {
+func handleDelayedVMs(
+	ctx context.Context,
+	ns string,
+	delays map[string]time.Duration,
+	c2s map[string]map[string]bool,
+) error {
 	if len(delays) == 0 && len(c2s) == 0 {
 		return nil
 	}
@@ -993,8 +1210,8 @@ func handleDelayedVMs(ctx context.Context, ns string, delays map[string]time.Dur
 	notes.AddInfo(ctx, true, "Waiting for delayed VMs to be started...")
 
 	var (
-		wg     sync.WaitGroup
-		errors error
+		wg      sync.WaitGroup
+		errChan = make(chan error, len(delays)+len(c2s))
 	)
 
 	for host, delay := range delays {
@@ -1002,22 +1219,8 @@ func handleDelayedVMs(ctx context.Context, ns string, delays map[string]time.Dur
 
 		go func(host string, delay time.Duration) {
 			defer wg.Done()
-
-			select {
-			case <-ctx.Done():
-				errors = multierror.Append(errors, ctx.Err())
-				return
-			case <-time.After(delay):
-				cmd := mmcli.NewNamespacedCommand(ns)
-				cmd.Command = "vm start " + host
-
-				if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-					errors = multierror.Append(errors, NewDelayedVMError(host, err, "starting VM %s", host))
-					return
-				}
-
-				notes.AddInfo(ctx, true, fmt.Sprintf("Time delayed VM %s started", host))
-				pubsub.Publish("delayed-start", fmt.Sprintf("%s/%s", ns, host))
+			if err := waitForTimeDelay(ctx, ns, host, delay); err != nil {
+				errChan <- err
 			}
 		}(host, delay)
 	}
@@ -1027,59 +1230,99 @@ func handleDelayedVMs(ctx context.Context, ns string, delays map[string]time.Dur
 
 		go func(host string, others map[string]bool) {
 			defer wg.Done()
-
-			ticker := time.NewTicker(5 * time.Second)
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-ctx.Done():
-					errors = multierror.Append(errors, ctx.Err())
-					return
-				case <-ticker.C:
-					done := true
-
-					for other, useUUID := range others {
-						opts := []mm.C2Option{mm.C2NS(ns), mm.C2VM(other), mm.C2Timeout(1 * time.Second)}
-
-						if useUUID {
-							opts = append(opts, mm.C2IDClientsByUUID())
-						}
-
-						if mm.IsC2ClientActive(opts...) != nil {
-							done = false
-							break
-						}
-					}
-
-					if done {
-						cmd := mmcli.NewNamespacedCommand(ns)
-						cmd.Command = "vm start " + host
-
-						if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-							errors = multierror.Append(errors, NewDelayedVMError(host, err, "starting VM %s", host))
-							return
-						}
-
-						notes.AddInfo(ctx, true, fmt.Sprintf("C2 delayed VM %s started", host))
-						pubsub.Publish("delayed-start", fmt.Sprintf("%s/%s", ns, host))
-
-						return
-					}
-				}
+			if err := waitForC2(ctx, ns, host, others); err != nil {
+				errChan <- err
 			}
 		}(host, others)
 	}
 
 	wg.Wait()
+	close(errChan)
 
-	if errors != nil {
-		if err := mm.ClearNamespace(ns); err != nil {
-			errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
+	var errs error
+	for err := range errChan {
+		errs = multierror.Append(errs, err)
+	}
+
+	if errs != nil {
+		err2 := mm.ClearNamespace(ns)
+		if err2 != nil {
+			errs = multierror.Append(errs, fmt.Errorf("killing experiment VMs: %w", err2))
 		}
 
-		return errors
+		return errs //nolint:wrapcheck // returning multierror
 	}
 
 	return nil
+}
+
+func waitForTimeDelay(ctx context.Context, ns, host string, delay time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(delay):
+		cmd := mmcli.NewNamespacedCommand(ns)
+		cmd.Command = "vm start " + host
+
+		err := mmcli.ErrorResponse(mmcli.Run(cmd))
+		if err != nil {
+			return NewDelayedVMError(host, err, "starting VM %s", host)
+		}
+
+		notes.AddInfo(ctx, true, fmt.Sprintf("Time delayed VM %s started", host))
+		pubsub.Publish("delayed-start", fmt.Sprintf("%s/%s", ns, host))
+	}
+
+	return nil
+}
+
+func waitForC2(
+	ctx context.Context,
+	ns, host string,
+	others map[string]bool,
+) error {
+	ticker := time.NewTicker(c2CheckInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			done := true
+
+			for other, useUUID := range others {
+				opts := []mm.C2Option{
+					mm.C2NS(ns),
+					mm.C2VM(other),
+					mm.C2Timeout(1 * time.Second),
+				}
+
+				if useUUID {
+					opts = append(opts, mm.C2IDClientsByUUID())
+				}
+
+				if mm.IsC2ClientActive(opts...) != nil {
+					done = false
+
+					break
+				}
+			}
+
+			if done {
+				cmd := mmcli.NewNamespacedCommand(ns)
+				cmd.Command = "vm start " + host
+
+				err := mmcli.ErrorResponse(mmcli.Run(cmd))
+				if err != nil {
+					return NewDelayedVMError(host, err, "starting VM %s", host)
+				}
+
+				notes.AddInfo(ctx, true, fmt.Sprintf("C2 delayed VM %s started", host))
+				pubsub.Publish("delayed-start", fmt.Sprintf("%s/%s", ns, host))
+
+				return nil
+			}
+		}
+	}
 }

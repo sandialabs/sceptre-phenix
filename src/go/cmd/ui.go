@@ -2,28 +2,32 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"time"
-
-	"phenix/util"
-	"phenix/util/common"
-	"phenix/util/plog"
-	"phenix/web"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"phenix/util"
+	"phenix/util/plog"
+	"phenix/web"
 )
 
+const defaultJWTLifetime = 24 * time.Hour
+
+var uiCmd *cobra.Command //nolint:gochecknoglobals // ui command
+
+//nolint:funlen // command definition
 func newUICmd() *cobra.Command {
 	desc := `Run the phenix UI server
 
   Starts the UI server on the IP:port provided.`
-	cmd := &cobra.Command{
+	uiCmd = &cobra.Command{
 		Use:   "ui",
 		Short: "Run the phenix UI",
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := web.Init(); err != nil {
+			err := web.Init()
+			if err != nil {
 				return fmt.Errorf("initializing web package: %w", err)
 			}
 
@@ -37,37 +41,19 @@ func newUICmd() *cobra.Command {
 				web.ServeMinimegaLogs(viper.GetString("ui.logs.minimega-path")),
 				web.ServeWithFeatures(viper.GetStringSlice("ui.features")),
 				web.ServeWithProxyAuthHeader(viper.GetString("ui.proxy-auth-header")),
-				web.ServeWithUnixSocketGid(viper.GetInt("unix-socket-gid")),
+				web.ServeWithUnixSocketGID(viper.GetInt("unix-socket-gid")),
 			}
 
-			if endpoint := viper.GetString("ui.unix-socket-endpoint"); endpoint != "" {
-				plog.Warn(plog.TypeSystem, "The --ui.unix-socket-endpoint option for the ui subcommand is DEPRECATED. Use the root phenix --unix-socket option instead.")
-
-				common.UnixSocket = endpoint
-			}
-
-			if viper.GetString("ui.log-level") != "" {
-				plog.Warn(plog.TypeSystem, "The --log-level option for the ui subcommand is DEPRECATED. Use the root phenix --log.level option instead.")
-			}
-
-			if viper.GetBool("ui.log-verbose") {
-				plog.Warn(plog.TypeSystem, "The --log-verbose option for the ui subcommand is DEPRECATED. Logging is now enabled by default.")
-			}
-
-			if path := viper.GetString("ui.logs.phenix-path"); path != "" {
-				plog.Warn(plog.TypeSystem, "The --logs.phenix-path option is DEPRECATED. Use --logs.publish-to-ui ui subcommand option instead.")
-			}
-
-			if level := viper.GetString("ui.logs.publish-to-ui"); level != "" {
+			if level := viper.GetString("ui.logs.level"); level != "" {
 				plog.AddHandler("ui-default", plog.NewUIHandler(level, web.PublishPhenixLog))
 			} else {
-				plog.AddHandler("ui-default", plog.NewUIHandler(viper.GetString("log.file.path"), web.PublishPhenixLog))
+				plog.AddHandler(
+					"ui-default",
+					plog.NewUIHandler(viper.GetString("log.level"), web.PublishPhenixLog),
+				)
 			}
 
-			if viper.GetString("ui.minimega-path") != "" {
-				fmt.Fprintln(os.Stderr, "--minimega-path is deprecated; use --minimega-console instead")
-				opts = append(opts, web.ServeMinimegaConsole(true))
-			} else if viper.GetBool("ui.minimega-console") {
+			if viper.GetBool("ui.minimega-console") {
 				opts = append(opts, web.ServeMinimegaConsole(true))
 			}
 
@@ -83,7 +69,8 @@ func newUICmd() *cobra.Command {
 				opts = append(opts, web.ServeUnbundled())
 			}
 
-			if err := web.Start(opts...); err != nil {
+			err = web.Start(opts...)
+			if err != nil {
 				return util.HumanizeError(err, "Unable to serve UI").Humanized()
 			}
 
@@ -91,75 +78,63 @@ func newUICmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringP("listen-endpoint", "e", "0.0.0.0:3000", "endpoint to listen on")
-	cmd.Flags().String("unix-socket-endpoint", "", "unix socket path to listen on - DEPRECATED (use root --unix-socket option instead)")
-	cmd.Flags().StringP("base-path", "b", "/", "base path to use for UI (must run behind proxy if not '/')")
-	cmd.Flags().StringP("jwt-signing-key", "k", "", "Secret key used to sign JWT for authentication")
-	cmd.Flags().Duration("jwt-lifetime", 24*time.Hour, "Lifetime of JWT authentication tokens")
-	cmd.Flags().String("proxy-auth-header", "", "header containing username when using proxy authentication")
-	cmd.Flags().StringSlice("users", nil, "pipe-delimited list of initial users to add")
-	cmd.Flags().String("tls-key", "", "path to TLS key file")
-	cmd.Flags().String("tls-cert", "", "path to TLS cert file")
-	cmd.Flags().Bool("unbundled", false, "serve local public files instead of bundled")
-	cmd.Flags().String("log-level", "", "log level for UI logs - DEPRECATED (use root --log-level option instead)")
-	cmd.Flags().Bool("log-verbose", false, "write UI logs to STDERR - DEPRECATED (now enabled by default)")
-	cmd.Flags().String("logs.phenix-path", "", "path to phenix log file to publish to UI - DEPRECATED (use --logs.publish-to-ui instead)")
-	cmd.Flags().String("logs.minimega-path", "", "path to minimega log file to publish to UI")
-	cmd.Flags().String("logs.publish-to-ui", "", "log level to publish to UI. Defaults to file level")
-	cmd.Flags().StringSlice("features", nil, "list of features to enable (options: vm-mount)")
-	cmd.Flags().String("minimega-path", "", "path to minimega executable (for console access) - DEPRECATED (use --minimega-console instead)")
-	cmd.Flags().Bool("minimega-console", false, "enable minimega console access in UI")
+	uiCmd.Flags().StringP("listen-endpoint", "e", "0.0.0.0:3000", "endpoint to listen on")
+	uiCmd.Flags().
+		StringP("base-path", "b", "/", "base path to use for UI (must run behind proxy if not '/')")
+	uiCmd.Flags().
+		StringP("jwt-signing-key", "k", "", "Secret key used to sign JWT for authentication")
+	uiCmd.Flags().Duration("jwt-lifetime", defaultJWTLifetime, "Lifetime of JWT authentication tokens")
+	uiCmd.Flags().
+		String("proxy-auth-header", "", "header containing username when using proxy authentication")
+	uiCmd.Flags().StringSlice("users", nil, "pipe-delimited list of initial users to add")
+	uiCmd.Flags().String("tls-key", "", "path to TLS key file")
+	uiCmd.Flags().String("tls-cert", "", "path to TLS cert file")
+	uiCmd.Flags().Bool("unbundled", false, "serve local public files instead of bundled")
+	uiCmd.Flags().String("logs.minimega-path", "", "path to minimega log file to publish to UI")
+	uiCmd.Flags().String("logs.level", "", "log level to publish to UI. Defaults to file level")
+	uiCmd.Flags().StringSlice("features", nil, "list of features to enable (options: vm-mount)")
+	uiCmd.Flags().Bool("minimega-console", false, "enable minimega console access in UI")
 
-	viper.BindPFlag("ui.listen-endpoint", cmd.Flags().Lookup("listen-endpoint"))
-	viper.BindPFlag("ui.unix-socket-endpoint", cmd.Flags().Lookup("unix-socket-endpoint"))
-	viper.BindPFlag("ui.base-path", cmd.Flags().Lookup("base-path"))
-	viper.BindPFlag("ui.jwt-signing-key", cmd.Flags().Lookup("jwt-signing-key"))
-	viper.BindPFlag("ui.jwt-lifetime", cmd.Flags().Lookup("jwt-lifetime"))
-	viper.BindPFlag("ui.proxy-auth-header", cmd.Flags().Lookup("proxy-auth-header"))
-	viper.BindPFlag("ui.users", cmd.Flags().Lookup("users"))
-	viper.BindPFlag("ui.tls-key", cmd.Flags().Lookup("tls-key"))
-	viper.BindPFlag("ui.tls-cert", cmd.Flags().Lookup("tls-cert"))
-	viper.BindPFlag("ui.log-level", cmd.Flags().Lookup("log-level"))
-	viper.BindPFlag("ui.log-verbose", cmd.Flags().Lookup("log-verbose"))
-	viper.BindPFlag("ui.logs.phenix-path", cmd.Flags().Lookup("logs.phenix-path"))
-	viper.BindPFlag("ui.logs.minimega-path", cmd.Flags().Lookup("logs.minimega-path"))
-	viper.BindPFlag("ui.logs.publish-to-ui", cmd.Flags().Lookup("logs.publish-to-ui"))
-	viper.BindPFlag("ui.features", cmd.Flags().Lookup("features"))
-	viper.BindPFlag("ui.minimega-path", cmd.Flags().Lookup("minimega-path"))
-	viper.BindPFlag("ui.minimega-console", cmd.Flags().Lookup("minimega-console"))
+	_ = viper.BindPFlag("ui.listen-endpoint", uiCmd.Flags().Lookup("listen-endpoint"))
+	_ = viper.BindPFlag("ui.base-path", uiCmd.Flags().Lookup("base-path"))
+	_ = viper.BindPFlag("ui.jwt-signing-key", uiCmd.Flags().Lookup("jwt-signing-key"))
+	_ = viper.BindPFlag("ui.jwt-lifetime", uiCmd.Flags().Lookup("jwt-lifetime"))
+	_ = viper.BindPFlag("ui.proxy-auth-header", uiCmd.Flags().Lookup("proxy-auth-header"))
+	_ = viper.BindPFlag("ui.users", uiCmd.Flags().Lookup("users"))
+	_ = viper.BindPFlag("ui.tls-key", uiCmd.Flags().Lookup("tls-key"))
+	_ = viper.BindPFlag("ui.tls-cert", uiCmd.Flags().Lookup("tls-cert"))
+	_ = viper.BindPFlag("ui.logs.minimega-path", uiCmd.Flags().Lookup("logs.minimega-path"))
+	_ = viper.BindPFlag("ui.logs.level", uiCmd.Flags().Lookup("logs.level"))
+	_ = viper.BindPFlag("ui.features", uiCmd.Flags().Lookup("features"))
+	_ = viper.BindPFlag("ui.minimega-console", uiCmd.Flags().Lookup("minimega-console"))
 
-	viper.BindEnv("ui.listen-endpoint")
-	viper.BindEnv("ui.unix-socket-endpoint")
-	viper.BindEnv("ui.base-path")
-	viper.BindEnv("ui.jwt-signing-key")
-	viper.BindEnv("ui.jwt-lifetime")
-	viper.BindEnv("ui.proxy-auth-header")
-	viper.BindEnv("ui.users")
-	viper.BindEnv("ui.tls-key")
-	viper.BindEnv("ui.tls-cert")
-	viper.BindEnv("ui.log-level")
-	viper.BindEnv("ui.log-verbose")
-	viper.BindEnv("ui.logs.phenix-path")
-	viper.BindEnv("ui.logs.minimega-path")
-	viper.BindEnv("ui.logs.publish-to-ui")
-	viper.BindEnv("ui.features")
-	viper.BindEnv("ui.minimega-path")
-	viper.BindEnv("ui.minimega-console")
+	_ = viper.BindEnv("ui.listen-endpoint")
+	_ = viper.BindEnv("ui.base-path")
+	_ = viper.BindEnv("ui.jwt-signing-key")
+	_ = viper.BindEnv("ui.jwt-lifetime")
+	_ = viper.BindEnv("ui.proxy-auth-header")
+	_ = viper.BindEnv("ui.users")
+	_ = viper.BindEnv("ui.tls-key")
+	_ = viper.BindEnv("ui.tls-cert")
+	_ = viper.BindEnv("ui.logs.minimega-path")
+	_ = viper.BindEnv("ui.logs.level")
+	_ = viper.BindEnv("ui.features")
+	_ = viper.BindEnv("ui.minimega-console")
 
-	cmd.Flags().Bool("log-requests", false, "Log HTTP requests")
-	cmd.Flags().Bool("log-full", false, "Log HTTP requests and responses. Will log sensitive data")
+	uiCmd.Flags().Bool("log-requests", false, "Log HTTP requests")
+	uiCmd.Flags().
+		Bool("log-full", false, "Log HTTP requests and responses. Will log sensitive data")
 
-	// cmd.Flags().MarkHidden("log-requests")
-	cmd.Flags().MarkHidden("log-full")
+	_ = uiCmd.Flags().MarkHidden("log-full")
 
-	cmd.Flags().Int("unix-socket-gid", -1, "group id to allow writes to the unix socket")
-	cmd.Flags().MarkHidden("unix-socket-gid")
-	viper.BindPFlag("unix-socket-gid", cmd.Flags().Lookup("unix-socket-gid"))
-	viper.BindEnv("unix-socket-gid")
+	uiCmd.Flags().Int("unix-socket-gid", -1, "group id to allow writes to the unix socket")
+	_ = uiCmd.Flags().MarkHidden("unix-socket-gid")
+	_ = viper.BindPFlag("unix-socket-gid", uiCmd.Flags().Lookup("unix-socket-gid"))
+	_ = viper.BindEnv("unix-socket-gid")
 
-	return cmd
+	return uiCmd
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // cobra command
 	rootCmd.AddCommand(newUICmd())
 }

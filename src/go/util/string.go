@@ -3,21 +3,21 @@
 package util
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 )
 
-var chars = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+var chars = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") //nolint:gochecknoglobals // global constant
 
 func RandomString(n int) string {
-	rand.Seed(time.Now().UnixNano())
+	rng := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 1)) //nolint:gosec // weak random number generator
 	b := make([]rune, n)
 
 	for i := range b {
-		b[i] = chars[rand.Intn(len(chars))]
+		b[i] = chars[rng.IntN(len(chars))]
 	}
 
 	return string(b)

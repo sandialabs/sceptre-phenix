@@ -1,11 +1,11 @@
 package image
 
-const POSTBUILD_APT_CLEANUP = `
+const PostbuildAptCleanup = `
 # --------------------------------------------------- Cleanup ----------------------------------------------------
 apt clean || apt-get clean || echo "unable to clean apt cache"
 `
 
-const POSTBUILD_NO_ROOT_PASSWD = `
+const PostbuildNoRootPasswd = `
 # ---------------------------------------------- No Root Password ------------------------------------------------
 sed -i 's/nullok_secure/nullok/' /etc/pam.d/common-auth
 sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
@@ -15,7 +15,7 @@ sed -i 's/PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_confi
 passwd -d root
 `
 
-const POSTBUILD_PHENIX_HOSTNAME = `
+const PostbuildPhenixHostname = `
 # -------------------------------------------------- Hostname ----------------------------------------------------
 echo "phenix" > /etc/hostname
 sed -i 's/127.0.1.1 .*/127.0.1.1 phenix/' /etc/hosts
@@ -32,7 +32,7 @@ EOF
 echo "\nBuilt with phenix image on $(date)\n\n" >> /etc/motd
 `
 
-const POSTBUILD_PHENIX_BASE = `
+const PostbuildPhenixBase = `
 # ----------------------------------------------------- Base -----------------------------------------------------
 cat > /etc/systemd/system/miniccc.service <<EOF
 [Unit]
@@ -70,7 +70,7 @@ chmod +x /usr/local/bin/phenix-start.sh
 mkdir -p /etc/phenix/startup
 `
 
-const POSTBUILD_GUI = `
+const PostbuildGUI = `
 # ----------------------------------------------------- GUI ------------------------------------------------------
 # Autologin root and resolution
 apt-get purge -y gdm3 # messes with no-root-password login
@@ -103,7 +103,7 @@ EOF
 sed -e '/pam_succeed_if.so/s/^#*/#/' -i /etc/pam.d/lightdm-autologin
 `
 
-const POSTBUILD_KALI_GUI = `
+const PostbuildKaliGUI = `
 # ----------------------------------------------------- GUI ------------------------------------------------------
 # Autologin root and resolution
 cat > /etc/lightdm/lightdm.conf <<EOF
@@ -122,7 +122,7 @@ EOF
 chmod +x /root/.init.sh
 `
 
-const POSTBUILD_PROTONUKE = `
+const PostbuildProtonuke = `
 # -------------------------------------------------- Protonuke ---------------------------------------------------
 cat > /etc/systemd/system/protonuke.service <<EOF
 [Unit]
@@ -139,14 +139,14 @@ mkdir -p /etc/systemd/system/multi-user.target.wants
 ln -s /etc/systemd/system/protonuke.service /etc/systemd/system/multi-user.target.wants/protonuke.service
 `
 
-const POSTBUILD_ENABLE_DHCP = `
+const PostbuildEnableDHCP = `
 # ----------------------------------------------------- DHCP -----------------------------------------------------
 echo "#!/bin/bash\ndhclient" > /etc/init.d/dhcp.sh
 chmod +x /etc/init.d/dhcp.sh
 update-rc.d dhcp.sh defaults 100
 `
 
-var DEFAULT_PACKAGES = []string{
+var DefaultPackages = []string{ //nolint:gochecknoglobals // global constant
 	"curl",
 	"ethtool",
 	"ncat",
@@ -160,14 +160,14 @@ var DEFAULT_PACKAGES = []string{
 	"wget",
 }
 
-var DEBIAN_COMPONENTS = []string{
+var DebianComponents = []string{ //nolint:gochecknoglobals // global constant
 	"main",
 	"restricted",
 	"universe",
 	"multiverse",
 }
 
-var DEBIAN_PACKAGES = []string{
+var DebianPackages = []string{ //nolint:gochecknoglobals // global constant
 	"dbus",
 	"gpg",
 	"initramfs-tools",
@@ -176,38 +176,38 @@ var DEBIAN_PACKAGES = []string{
 	"locales",
 }
 
-var DEBIAN_MINGUI_PACKAGES = []string{
+var DebianMinGUIPackages = []string{ //nolint:gochecknoglobals // global constant
 	"wmctrl",
 	"xdotool",
 	"xfce4",
 	"xfce4-terminal",
 }
 
-var KALI_COMPONENTS = []string{
+var KaliComponents = []string{ //nolint:gochecknoglobals // global constant
 	"main",
 	"contrib",
 	"non-free",
 	"non-free-firmware",
 }
 
-var KALI_PACKAGES = []string{
+var KaliPackages = []string{ //nolint:gochecknoglobals // global constant
 	"linux-image-amd64",
 	"linux-headers-amd64",
 	"default-jdk",
 }
 
-var KALI_MINGUI_PACKAGES = []string{
+var KaliMinGUIPackages = []string{ //nolint:gochecknoglobals // global constant
 	"kali-desktop-xfce",
 	"wmctrl",
 	"xdotool",
 }
 
-var UBUNTU_PACKAGES = []string{
+var UbuntuPackages = []string{ //nolint:gochecknoglobals // global constant
 	"linux-image-generic",
 	"linux-headers-generic",
 }
 
-var UBUNTU_MINGUI_PACKAGES = []string{
+var UbuntuMinGUIPackages = []string{ //nolint:gochecknoglobals // global constant
 	"wmctrl",
 	"xdotool",
 	"xubuntu-desktop",

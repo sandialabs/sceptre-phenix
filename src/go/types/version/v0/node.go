@@ -11,61 +11,61 @@ import (
 )
 
 type Node struct {
-	AnnotationsF map[string]interface{} `json:"annotations" yaml:"annotations" structs:"annotations" mapstructure:"annotations"`
-	LabelsF      map[string]string      `json:"labels" yaml:"labels" structs:"labels" mapstructure:"labels"`
-	TypeF        string                 `json:"type" yaml:"type" structs:"type" mapstructure:"type"`
-	GeneralF     *General               `json:"general" yaml:"general" structs:"general" mapstructure:"general"`
-	HardwareF    *Hardware              `json:"hardware" yaml:"hardware" structs:"hardware" mapstructure:"hardware"`
-	NetworkF     *Network               `json:"network" yaml:"network" structs:"network" mapstructure:"network"`
-	InjectionsF  []*Injection           `json:"injections" yaml:"injections" structs:"injections" mapstructure:"injections"`
-	DeletionsF   []*Deletion            `json:"deletions" yaml:"deletions" structs:"deletions" mapstructure:"deletions"`
+	AnnotationsF map[string]any    `json:"annotations" mapstructure:"annotations" structs:"annotations" yaml:"annotations"`
+	LabelsF      map[string]string `json:"labels"      mapstructure:"labels"      structs:"labels"      yaml:"labels"`
+	TypeF        string            `json:"type"        mapstructure:"type"        structs:"type"        yaml:"type"`
+	GeneralF     *General          `json:"general"     mapstructure:"general"     structs:"general"     yaml:"general"`
+	HardwareF    *Hardware         `json:"hardware"    mapstructure:"hardware"    structs:"hardware"    yaml:"hardware"`
+	NetworkF     *Network          `json:"network"     mapstructure:"network"     structs:"network"     yaml:"network"`
+	InjectionsF  []*Injection      `json:"injections"  mapstructure:"injections"  structs:"injections"  yaml:"injections"`
+	DeletionsF   []*Deletion       `json:"deletions"   mapstructure:"deletions"   structs:"deletions"   yaml:"deletions"`
 }
 
-func (this Node) Annotations() map[string]interface{} {
-	return this.AnnotationsF
+func (n Node) Annotations() map[string]any {
+	return n.AnnotationsF
 }
 
-func (this Node) Labels() map[string]string {
-	return this.LabelsF
+func (n Node) Labels() map[string]string {
+	return n.LabelsF
 }
 
-func (this Node) Type() string {
-	return this.TypeF
+func (n Node) Type() string {
+	return n.TypeF
 }
 
-func (this Node) General() ifaces.NodeGeneral {
-	return this.GeneralF
+func (n Node) General() ifaces.NodeGeneral { //nolint:ireturn // interface
+	return n.GeneralF
 }
 
-func (this Node) Hardware() ifaces.NodeHardware {
-	return this.HardwareF
+func (n Node) Hardware() ifaces.NodeHardware { //nolint:ireturn // interface
+	return n.HardwareF
 }
 
-func (this Node) Network() ifaces.NodeNetwork {
-	return this.NetworkF
+func (n Node) Network() ifaces.NodeNetwork { //nolint:ireturn // interface
+	return n.NetworkF
 }
 
-func (this Node) Injections() []ifaces.NodeInjection {
-	injects := make([]ifaces.NodeInjection, len(this.InjectionsF))
+func (n Node) Injections() []ifaces.NodeInjection {
+	injects := make([]ifaces.NodeInjection, len(n.InjectionsF))
 
-	for i, j := range this.InjectionsF {
+	for i, j := range n.InjectionsF {
 		injects[i] = j
 	}
 
 	return injects
 }
 
-func (this Node) Deletions() []ifaces.NodeDeletion {
-	deletions := make([]ifaces.NodeDeletion, len(this.DeletionsF))
+func (n Node) Deletions() []ifaces.NodeDeletion {
+	deletions := make([]ifaces.NodeDeletion, len(n.DeletionsF))
 
-	for i, j := range this.DeletionsF {
+	for i, j := range n.DeletionsF {
 		deletions[i] = j
 	}
 
 	return deletions
 }
 
-func (this Node) Delay() ifaces.NodeDelay {
+func (n Node) Delay() ifaces.NodeDelay { //nolint:ireturn // interface
 	return new(Delay)
 }
 
@@ -81,120 +81,124 @@ func (Node) Commands() []string {
 	return nil
 }
 
-func (this Node) External() bool {
+func (n Node) External() bool {
 	return false
 }
 
-func (this *Node) SetInjections(injections []ifaces.NodeInjection) {
+func (n *Node) SetInjections(injections []ifaces.NodeInjection) {
 	injects := make([]*Injection, len(injections))
 
 	for i, j := range injections {
-		injects[i] = j.(*Injection)
+		inj, _ := j.(*Injection)
+		injects[i] = inj
 	}
 
-	this.InjectionsF = injects
+	n.InjectionsF = injects
 }
 
-func (this *Node) SetDeletions(deletions []ifaces.NodeDeletion) {
+func (n *Node) SetDeletions(deletions []ifaces.NodeDeletion) {
 	deletionList := make([]*Deletion, len(deletions))
 
 	for i, j := range deletions {
-		deletionList[i] = j.(*Deletion)
+		del, _ := j.(*Deletion)
+		deletionList[i] = del
 	}
 
-	this.DeletionsF = deletionList
+	n.DeletionsF = deletionList
 }
 
-func (this *Node) SetType(t string) {
-	this.TypeF = t
+func (n *Node) SetType(t string) {
+	n.TypeF = t
 }
 
-func (this *Node) SetLabels(m map[string]string) {
-	this.LabelsF = m
+func (n *Node) SetLabels(m map[string]string) {
+	n.LabelsF = m
 }
 
-func (this *Node) AddAnnotation(k string, i interface{}) {
-	if this.AnnotationsF == nil {
-		this.AnnotationsF = make(map[string]interface{})
+func (n *Node) AddAnnotation(k string, i any) {
+	if n.AnnotationsF == nil {
+		n.AnnotationsF = make(map[string]any)
 	}
 
-	this.AnnotationsF[k] = i
+	n.AnnotationsF[k] = i
 }
 
-func (this *Node) AddTimerDelay(string) {}
+func (n *Node) AddTimerDelay(string) {}
 
-func (this *Node) AddUserDelay(bool) {}
+func (n *Node) AddUserDelay(bool) {}
 
-func (this *Node) AddC2Delay(string, bool) {}
+func (n *Node) AddC2Delay(string, bool) {}
 
-func (this *Node) AddLabel(k, v string) {
-	this.LabelsF[k] = v
+func (n *Node) AddLabel(k, v string) {
+	n.LabelsF[k] = v
 }
 
-func (this *Node) AddHardware(os string, vcpu, memory int) ifaces.NodeHardware {
-	h := &Hardware{
+func (n *Node) AddHardware(os string, vcpu, memory int) ifaces.NodeHardware { //nolint:ireturn // interface
+	h := &Hardware{ //nolint:exhaustruct // partial initialization
 		OSTypeF: os,
 		VCPUF:   vcpu,
 		MemoryF: memory,
 	}
 
-	this.HardwareF = h
+	n.HardwareF = h
 
 	return h
 }
 
-func (this *Node) AddNetworkInterface(typ, name, vlan string) ifaces.NodeNetworkInterface {
-	i := &Interface{
+func (n *Node) AddNetworkInterface(typ, name, vlan string) ifaces.NodeNetworkInterface { //nolint:ireturn // interface
+	i := &Interface{ //nolint:exhaustruct // partial initialization
 		TypeF: typ,
 		NameF: name,
 		VLANF: vlan,
 	}
 
-	if this.NetworkF == nil {
-		this.NetworkF = new(Network)
+	if n.NetworkF == nil {
+		n.NetworkF = new(Network)
 	}
 
-	this.NetworkF.InterfacesF = append(this.NetworkF.InterfacesF, i)
+	n.NetworkF.InterfacesF = append(n.NetworkF.InterfacesF, i)
 
 	return i
 }
 
-func (this *Node) AddNetworkRoute(dest, next string, cost int) {
+func (n *Node) AddNetworkRoute(dest, next string, cost int) {
 	r := Route{
 		DestinationF: dest,
 		NextF:        next,
 		CostF:        &cost,
 	}
 
-	if this.NetworkF == nil {
-		this.NetworkF = new(Network)
+	if n.NetworkF == nil {
+		n.NetworkF = new(Network)
 	}
 
-	this.NetworkF.RoutesF = append(this.NetworkF.RoutesF, r)
+	n.NetworkF.RoutesF = append(n.NetworkF.RoutesF, r)
 }
 
-func (this *Node) AddNetworkNAT([]map[string][]string) {}
+func (n *Node) AddNetworkNAT([]map[string][]string) {}
 
-func (this *Node) AddNetworkOSPF(routerID string, dead, hello, retrans int, areas map[int][]string) {
-	this.NetworkF.OSPFF = new(OSPF)
-	this.NetworkF.OSPFF.RouterIDF = routerID
-	this.NetworkF.OSPFF.DeadIntervalF = &dead
-	this.NetworkF.OSPFF.HelloIntervalF = &hello
-	this.NetworkF.OSPFF.RetransmissionIntervalF = &retrans
+func (n *Node) AddNetworkOSPF(routerID string, dead, hello, retrans int, areas map[int][]string) {
+	n.NetworkF.OSPFF = new(OSPF)
+	n.NetworkF.OSPFF.RouterIDF = routerID
+	n.NetworkF.OSPFF.DeadIntervalF = &dead
+	n.NetworkF.OSPFF.HelloIntervalF = &hello
+	n.NetworkF.OSPFF.RetransmissionIntervalF = &retrans
 
 	for id, networks := range areas {
 		area := new(Area)
 		area.AreaIDF = &id
+
 		for _, net := range networks {
 			areaNetwork := AreaNetwork{NetworkF: net}
 			area.AreaNetworksF = append(area.AreaNetworksF, areaNetwork)
 		}
-		this.NetworkF.OSPFF.AreasF = append(this.NetworkF.OSPFF.AreasF, *area)
+
+		n.NetworkF.OSPFF.AreasF = append(n.NetworkF.OSPFF.AreasF, *area)
 	}
 }
 
-func (this *Node) AddInject(src, dst, perms, desc string) {
-	this.InjectionsF = append(this.InjectionsF, &Injection{
+func (n *Node) AddInject(src, dst, perms, desc string) {
+	n.InjectionsF = append(n.InjectionsF, &Injection{
 		SrcF:         src,
 		DstF:         dst,
 		PermissionsF: perms,
@@ -202,8 +206,8 @@ func (this *Node) AddInject(src, dst, perms, desc string) {
 	})
 }
 
-func (this *Node) AddDeletion(path, desc string) {
-	this.DeletionsF = append(this.DeletionsF, &Deletion{
+func (n *Node) AddDeletion(path, desc string) {
+	n.DeletionsF = append(n.DeletionsF, &Deletion{
 		PathF:        path,
 		DescriptionF: desc,
 	})
@@ -214,14 +218,14 @@ func (Node) AddAdvanced(string, string)    {}
 func (Node) AddOverride(string, string)    {}
 func (Node) AddCommand(string)             {}
 
-func (this Node) GetAnnotation(a string) (interface{}, bool) {
-	if this.AnnotationsF == nil {
+func (n Node) GetAnnotation(a string) (any, bool) {
+	if n.AnnotationsF == nil {
 		return nil, false
 	}
 
-	for k := range this.AnnotationsF {
+	for k := range n.AnnotationsF {
 		if k == a {
-			return this.AnnotationsF[k], true
+			return n.AnnotationsF[k], true
 		}
 	}
 
@@ -233,217 +237,219 @@ func (Node) Delayed() string {
 }
 
 type General struct {
-	HostnameF    string `json:"hostname" yaml:"hostname" structs:"hostname" mapstructure:"hostname"`
-	DescriptionF string `json:"description" yaml:"description" structs:"description" mapstructure:"description"`
-	VMTypeF      string `json:"vm_type" yaml:"vm_type" structs:"vm_type" mapstructure:"vm_type"`
-	SnapshotF    *bool  `json:"snapshot" yaml:"snapshot" structs:"snapshot" mapstructure:"snapshot"`
-	DoNotBootF   *bool  `json:"do_not_boot" yaml:"do_not_boot" structs:"do_not_boot" mapstructure:"do_not_boot"`
+	HostnameF    string `json:"hostname"    mapstructure:"hostname"    structs:"hostname"    yaml:"hostname"`
+	DescriptionF string `json:"description" mapstructure:"description" structs:"description" yaml:"description"`
+	VMTypeF      string `json:"vm_type"     mapstructure:"vm_type"     structs:"vm_type"     yaml:"vm_type"`
+	SnapshotF    *bool  `json:"snapshot"    mapstructure:"snapshot"    structs:"snapshot"    yaml:"snapshot"`
+	DoNotBootF   *bool  `json:"do_not_boot" mapstructure:"do_not_boot" structs:"do_not_boot" yaml:"do_not_boot"`
 }
 
-func (this General) Hostname() string {
-	return this.HostnameF
+func (g General) Hostname() string {
+	return g.HostnameF
 }
 
-func (this General) Description() string {
-	return this.DescriptionF
+func (g General) Description() string {
+	return g.DescriptionF
 }
 
-func (this General) VMType() string {
-	return this.VMTypeF
+func (g General) VMType() string {
+	return g.VMTypeF
 }
 
-func (this General) Snapshot() *bool {
-	return this.SnapshotF
-}
-func (this *General) SetSnapshot(b bool) {
-	this.SnapshotF = &b
+func (g General) Snapshot() *bool {
+	return g.SnapshotF
 }
 
-func (this General) DoNotBoot() *bool {
-	return this.DoNotBootF
+func (g *General) SetSnapshot(b bool) {
+	g.SnapshotF = &b
 }
 
-func (this *General) SetDoNotBoot(b bool) {
-	this.DoNotBootF = &b
+func (g General) DoNotBoot() *bool {
+	return g.DoNotBootF
+}
+
+func (g *General) SetDoNotBoot(b bool) {
+	g.DoNotBootF = &b
 }
 
 type Hardware struct {
-	CPUF    string   `json:"cpu" yaml:"cpu" structs:"cpu" mapstructure:"cpu"`
-	VCPUF   int      `json:"vcpus,string" yaml:"vcpus" structs:"vcpus" mapstructure:"vcpus"`
-	MemoryF int      `json:"memory,string" yaml:"memory" structs:"memory" mapstructure:"memory"`
-	OSTypeF string   `json:"os_type" yaml:"os_type" structs:"os_type" mapstructure:"os_type"`
-	DrivesF []*Drive `json:"drives" yaml:"drives" structs:"drives" mapstructure:"drives"`
+	CPUF    string   `json:"cpu"           mapstructure:"cpu"     structs:"cpu"     yaml:"cpu"`
+	VCPUF   int      `json:"vcpus,string"  mapstructure:"vcpus"   structs:"vcpus"   yaml:"vcpus"`
+	MemoryF int      `json:"memory,string" mapstructure:"memory"  structs:"memory"  yaml:"memory"`
+	OSTypeF string   `json:"os_type"       mapstructure:"os_type" structs:"os_type" yaml:"os_type"`
+	DrivesF []*Drive `json:"drives"        mapstructure:"drives"  structs:"drives"  yaml:"drives"`
 }
 
-func (this Hardware) CPU() string {
-	return this.CPUF
+func (h Hardware) CPU() string {
+	return h.CPUF
 }
 
-func (this Hardware) VCPU() int {
-	return this.VCPUF
+func (h Hardware) VCPU() int {
+	return h.VCPUF
 }
 
-func (this Hardware) Memory() int {
-	return this.MemoryF
+func (h Hardware) Memory() int {
+	return h.MemoryF
 }
 
-func (this Hardware) OSType() string {
-	return this.OSTypeF
+func (h Hardware) OSType() string {
+	return h.OSTypeF
 }
 
-func (this Hardware) Drives() []ifaces.NodeDrive {
-	drives := make([]ifaces.NodeDrive, len(this.DrivesF))
+func (h Hardware) Drives() []ifaces.NodeDrive {
+	drives := make([]ifaces.NodeDrive, len(h.DrivesF))
 
-	for i, d := range this.DrivesF {
+	for i, d := range h.DrivesF {
 		drives[i] = d
 	}
 
 	return drives
 }
 
-func (this *Hardware) SetVCPU(v int) {
-	this.VCPUF = v
+func (h *Hardware) SetVCPU(v int) {
+	h.VCPUF = v
 }
 
-func (this *Hardware) SetMemory(m int) {
-	this.MemoryF = m
+func (h *Hardware) SetMemory(m int) {
+	h.MemoryF = m
 }
 
-func (this *Hardware) AddDrive(disk string, part int) ifaces.NodeDrive {
-	d := &Drive{
+func (h *Hardware) AddDrive(disk string, part int) ifaces.NodeDrive { //nolint:ireturn // interface
+	d := &Drive{ //nolint:exhaustruct // partial initialization
 		ImageF:           disk,
 		InjectPartitionF: &part,
 	}
 
-	this.DrivesF = append(this.DrivesF, d)
+	h.DrivesF = append(h.DrivesF, d)
 
 	return d
 }
 
 type Drive struct {
-	ImageF           string `json:"image" yaml:"image" structs:"image" mapstructure:"image"`
-	IfaceF           string `json:"interface" yaml:"interface" structs:"interface" mapstructure:"interface"`
-	CacheModeF       string `json:"cache_mode" yaml:"cache_mode" structs:"cache_mode" mapstructure:"cache_mode"`
-	InjectPartitionF *int   `json:"inject_partition,string" yaml:"inject_partition" structs:"inject_partition" mapstructure:"inject_partition"`
+	ImageF           string `json:"image"                   mapstructure:"image"            structs:"image"            yaml:"image"`
+	IfaceF           string `json:"interface"               mapstructure:"interface"        structs:"interface"        yaml:"interface"`
+	CacheModeF       string `json:"cache_mode"              mapstructure:"cache_mode"       structs:"cache_mode"       yaml:"cache_mode"`
+	InjectPartitionF *int   `json:"inject_partition,string" mapstructure:"inject_partition" structs:"inject_partition" yaml:"inject_partition"`
 }
 
-func (this Drive) Image() string {
-	return this.ImageF
+func (d Drive) Image() string {
+	return d.ImageF
 }
 
-func (this Drive) Interface() string {
-	return this.IfaceF
+func (d Drive) Interface() string {
+	return d.IfaceF
 }
 
-func (this Drive) CacheMode() string {
-	return this.CacheModeF
+func (d Drive) CacheMode() string {
+	return d.CacheModeF
 }
 
-func (this Drive) InjectPartition() *int {
-	if this.InjectPartitionF != nil {
-		return this.InjectPartitionF
+func (d Drive) InjectPartition() *int {
+	if d.InjectPartitionF != nil {
+		return d.InjectPartitionF
 	}
 
 	part := 1
+
 	return &part
 }
 
-func (this *Drive) SetImage(i string) {
-	this.ImageF = i
+func (d *Drive) SetImage(i string) {
+	d.ImageF = i
 }
 
-func (this *Drive) SetInjectPartition(p *int) {
-	this.InjectPartitionF = p
+func (d *Drive) SetInjectPartition(p *int) {
+	d.InjectPartitionF = p
 }
 
 type Injection struct {
-	SrcF         string `json:"src" yaml:"src" structs:"src" mapstructure:"src"`
-	DstF         string `json:"dst" yaml:"dst" structs:"dst" mapstructure:"dst"`
-	DescriptionF string `json:"description" yaml:"description" structs:"description" mapstructure:"description"`
-	PermissionsF string `json:"permissions" yaml:"permissions" structs:"permissions" mapstructure:"permissions"`
+	SrcF         string `json:"src"         mapstructure:"src"         structs:"src"         yaml:"src"`
+	DstF         string `json:"dst"         mapstructure:"dst"         structs:"dst"         yaml:"dst"`
+	DescriptionF string `json:"description" mapstructure:"description" structs:"description" yaml:"description"`
+	PermissionsF string `json:"permissions" mapstructure:"permissions" structs:"permissions" yaml:"permissions"`
 }
 
-func (this Injection) Src() string {
-	return this.SrcF
+func (i Injection) Src() string {
+	return i.SrcF
 }
 
-func (this Injection) Dst() string {
-	return this.DstF
+func (i Injection) Dst() string {
+	return i.DstF
 }
 
-func (this Injection) Description() string {
-	return this.DescriptionF
+func (i Injection) Description() string {
+	return i.DescriptionF
 }
 
-func (this Injection) Permissions() string {
-	return this.PermissionsF
+func (i Injection) Permissions() string {
+	return i.PermissionsF
 }
 
 type Deletion struct {
-	PathF        string `json:"path" yaml:"path" structs:"path" mapstructure:"path"`
-	DescriptionF string `json:"description" yaml:"description" structs:"description" mapstructure:"description"`
+	PathF        string `json:"path"        mapstructure:"path"        structs:"path"        yaml:"path"`
+	DescriptionF string `json:"description" mapstructure:"description" structs:"description" yaml:"description"`
 }
 
-func (this Deletion) Path() string {
-	return this.PathF
+func (d Deletion) Path() string {
+	return d.PathF
 }
 
-func (this Deletion) Description() string {
-	return this.DescriptionF
+func (d Deletion) Description() string {
+	return d.DescriptionF
 }
 
 type Delay struct{}
 
-func (this Delay) Timer() time.Duration {
+func (d Delay) Timer() time.Duration {
 	return 0
 }
 
-func (this Delay) User() bool {
+func (d Delay) User() bool {
 	return false
 }
 
-func (this Delay) C2() []ifaces.NodeC2Delay {
+func (d Delay) C2() []ifaces.NodeC2Delay {
 	return nil
 }
 
-func (this *Node) SetDefaults() {
-	if this.GeneralF.VMTypeF == "" {
-		this.GeneralF.VMTypeF = "kvm"
+func (n *Node) SetDefaults() {
+	if n.GeneralF.VMTypeF == "" {
+		n.GeneralF.VMTypeF = "kvm"
 	}
 
-	if this.GeneralF.SnapshotF == nil {
+	if n.GeneralF.SnapshotF == nil {
 		snapshot := true
-		this.GeneralF.SnapshotF = &snapshot
+		n.GeneralF.SnapshotF = &snapshot
 	}
 
-	if this.GeneralF.DoNotBootF == nil {
+	if n.GeneralF.DoNotBootF == nil {
 		dnb := false
-		this.GeneralF.DoNotBootF = &dnb
+		n.GeneralF.DoNotBootF = &dnb
 	}
 
-	if this.HardwareF.CPUF == "" {
-		this.HardwareF.CPUF = "Broadwell"
+	if n.HardwareF.CPUF == "" {
+		n.HardwareF.CPUF = "Broadwell"
 	}
 
-	if this.HardwareF.VCPUF == 0 {
-		this.HardwareF.VCPUF = 1
+	if n.HardwareF.VCPUF == 0 {
+		n.HardwareF.VCPUF = 1
 	}
 
-	if this.HardwareF.MemoryF == 0 {
-		this.HardwareF.MemoryF = 512
+	if n.HardwareF.MemoryF == 0 {
+		n.HardwareF.MemoryF = 512
 	}
 
-	if this.HardwareF.OSTypeF == "" {
-		this.HardwareF.OSTypeF = "linux"
+	if n.HardwareF.OSTypeF == "" {
+		n.HardwareF.OSTypeF = "linux"
 	}
 
-	this.NetworkF.SetDefaults()
+	n.NetworkF.SetDefaults()
 }
 
-func (this Node) FileInjects(baseDir string) string {
-	injects := make([]string, len(this.InjectionsF))
+func (n Node) FileInjects(baseDir string) string {
+	injects := make([]string, len(n.InjectionsF))
 
-	for i, inject := range this.InjectionsF {
+	for i, inject := range n.InjectionsF {
 		if strings.HasPrefix(inject.SrcF, "/") {
 			injects[i] = fmt.Sprintf(`"%s":"%s"`, inject.SrcF, inject.DstF)
 		} else {
@@ -454,7 +460,7 @@ func (this Node) FileInjects(baseDir string) string {
 			if perms, err := strconv.ParseInt(inject.PermissionsF, 8, 64); err == nil {
 				// Update file permissions on local disk before it gets injected into
 				// disk image.
-				os.Chmod(inject.SrcF, os.FileMode(perms))
+				_ = os.Chmod(inject.SrcF, os.FileMode(perms)) //nolint:gosec // integer overflow conversion int64 -> uint32
 			}
 		}
 	}
@@ -462,32 +468,32 @@ func (this Node) FileInjects(baseDir string) string {
 	return strings.Join(injects, " ")
 }
 
-func (this Node) FileDeletions() string {
-        deletions := make([]string, len(this.DeletionsF))
+func (n Node) FileDeletions() string {
+	deletions := make([]string, len(n.DeletionsF))
 
-        for i, deletion := range this.DeletionsF {
-                deletions[i] = fmt.Sprintf(`"%s"`, deletion.PathF)
-        }
-
-        return strings.Join(deletions, ",")
-}
-
-func (this Node) RouterName() string {
-	if !strings.EqualFold(this.TypeF, "router") {
-		return this.GeneralF.HostnameF
+	for i, deletion := range n.DeletionsF {
+		deletions[i] = fmt.Sprintf(`"%s"`, deletion.PathF)
 	}
 
-	name := strings.ToLower(this.GeneralF.HostnameF)
+	return strings.Join(deletions, ",")
+}
+
+func (n Node) RouterName() string {
+	if !strings.EqualFold(n.TypeF, "router") {
+		return n.GeneralF.HostnameF
+	}
+
+	name := strings.ToLower(n.GeneralF.HostnameF)
 	name = strings.ReplaceAll(name, ".", "-")
 	name = strings.ReplaceAll(name, "_", "-")
 
 	return name
 }
 
-func (this Hardware) DiskConfig(snapshot string) string {
-	configs := make([]string, len(this.DrivesF))
+func (h Hardware) DiskConfig(snapshot string) string {
+	configs := make([]string, len(h.DrivesF))
 
-	for i, d := range this.DrivesF {
+	for i, d := range h.DrivesF {
 		config := []string{d.ImageF}
 
 		if i == 0 && snapshot != "" {
@@ -508,10 +514,10 @@ func (this Hardware) DiskConfig(snapshot string) string {
 	return strings.Join(configs, " ")
 }
 
-func (this Drive) GetInjectPartition() int {
-	if this.InjectPartitionF == nil {
+func (d Drive) GetInjectPartition() int {
+	if d.InjectPartitionF == nil {
 		return 1
 	}
 
-	return *this.InjectPartitionF
+	return *d.InjectPartitionF
 }

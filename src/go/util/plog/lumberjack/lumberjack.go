@@ -50,7 +50,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -65,10 +64,10 @@ const (
 	defaultMaxSize   = 100
 )
 
-// ensure we always implement io.WriteCloser
+// ensure we always implement [io.WriteCloser].
 var _ io.WriteCloser = (*Logger)(nil)
 
-// Logger is an io.WriteCloser that writes to the specified filename.
+// Logger is an [io.WriteCloser] that writes to the specified filename.
 //
 // Logger opens or creates the logfile on first Write.  If the file exists and
 // is less than MaxSize megabytes, lumberjack will open and append to that file.
@@ -85,12 +84,12 @@ var _ io.WriteCloser = (*Logger)(nil)
 // Backups use the log file name given to Logger, in the form
 // `name-timestamp.ext` where name is the filename without the extension,
 // timestamp is the time at which the log was rotated formatted with the
-// time.Time format of `2006-01-02T15-04-05.000` and the extension is the
+// [time.Time] format of `2006-01-02T15-04-05.000` and the extension is the
 // original extension.  For example, if your Logger.Filename is
 // `/var/log/foo/server.log`, a backup created at 6:30pm on Nov 11 2016 would
 // use the filename `/var/log/foo/server-2016-11-04T18-30-00.000.log`
 //
-// Cleaning Up Old Log Files
+// # Cleaning Up Old Log Files
 //
 // Whenever a new logfile gets created, old log files may be deleted.  The most
 // recent files according to the encoded timestamp will be retained, up to a
@@ -141,24 +140,26 @@ type Logger struct {
 
 var (
 	// currentTime exists so it can be mocked out by tests.
-	currentTime = time.Now
+	currentTime = time.Now //nolint:gochecknoglobals // mockable
 
 	// os_Stat exists so it can be mocked out by tests.
-	osStat = os.Stat
+	osStat = os.Stat //nolint:gochecknoglobals // mockable
 
 	// megabyte is the conversion factor between MaxSize and bytes.  It is a
 	// variable so tests can mock it out and not need to write megabytes of data
 	// to disk.
-	megabyte = 1024 * 1024
+	megabyte = 1024 * 1024 //nolint:gochecknoglobals // mockable
 )
 
-// Write implements io.Writer.  If a write would cause the log file to be larger
+// Write implements [io.Writer].  If a write would cause the log file to be larger
 // than MaxSize, the file is closed, renamed to include a timestamp of the
 // current time, and a new log file is created using the original log file name.
 // If the length of the write is greater than MaxSize, an error is returned.
-func (l *Logger) Write(p []byte) (n int, err error) {
+func (l *Logger) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
+	var err error
 
 	writeLen := int64(len(p))
 	if writeLen > l.max() {
@@ -168,33 +169,36 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	}
 
 	if l.file == nil {
-		if err = l.openExistingOrNew(len(p)); err != nil {
+		err = l.openExistingOrNew(len(p))
+		if err != nil {
 			return 0, err
 		}
 	} else { // PHENIX MODIFICATION
-		//if file is deleted we want to create a new one
-		if _, err := os.Stat(l.Filename); err != nil {
-			l.close()
-			l.openNew()
+		// if file is deleted we want to create a new one
+		if _, statErr := os.Stat(l.Filename); statErr != nil {
+			_ = l.close()
+			_ = l.openNew()
 		}
 	}
 
 	if l.size+writeLen > l.max() {
-		if err := l.rotate(); err != nil {
+		err = l.rotate()
+		if err != nil {
 			return 0, err
 		}
 	}
 
-	n, err = l.file.Write(p)
+	n, err := l.file.Write(p)
 	l.size += int64(n)
 
 	return n, err
 }
 
-// Close implements io.Closer, and closes the current logfile.
+// Close implements [io.Closer], and closes the current logfile.
 func (l *Logger) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
 	return l.close()
 }
 
@@ -203,8 +207,10 @@ func (l *Logger) close() error {
 	if l.file == nil {
 		return nil
 	}
+
 	err := l.file.Close()
 	l.file = nil
+
 	return err
 }
 
@@ -216,6 +222,7 @@ func (l *Logger) close() error {
 func (l *Logger) Rotate() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
 	return l.rotate()
 }
 
@@ -223,38 +230,47 @@ func (l *Logger) Rotate() error {
 // (if it exists), opens a new file with the original filename, and then runs
 // post-rotation processing and removal.
 func (l *Logger) rotate() error {
-	if err := l.close(); err != nil {
+	err := l.close()
+	if err != nil {
 		return err
 	}
-	if err := l.openNew(); err != nil {
+
+	err = l.openNew()
+	if err != nil {
 		return err
 	}
+
 	l.mill()
+
 	return nil
 }
 
 // openNew opens a new log file for writing, moving any old log file out of the
 // way.  This methods assumes the file has already been closed.
 func (l *Logger) openNew() error {
-	err := os.MkdirAll(l.dir(), 0755)
+	err := os.MkdirAll(l.dir(), 0o750)
 	if err != nil {
-		return fmt.Errorf("can't make directories for new logfile: %s", err)
+		return fmt.Errorf("can't make directories for new logfile: %w", err)
 	}
 
 	name := l.filename()
-	mode := os.FileMode(0600)
-	info, err := osStat(name)
-	if err == nil {
+	mode := os.FileMode(0o600) //nolint:mnd // permissions
+
+	info, statErr := osStat(name)
+	if statErr == nil {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
 		// move the existing file
 		newname := backupName(name, l.LocalTime)
-		if err := os.Rename(name, newname); err != nil {
-			return fmt.Errorf("can't rename log file: %s", err)
+
+		err := os.Rename(name, newname)
+		if err != nil {
+			return fmt.Errorf("can't rename log file: %w", err)
 		}
 
 		// this is a no-op anywhere but linux
-		if err := chown(name, info); err != nil {
+		err = chown(name, info)
+		if err != nil {
 			return err
 		}
 	}
@@ -262,12 +278,15 @@ func (l *Logger) openNew() error {
 	// we use truncate here because this should only get called when we've moved
 	// the file ourselves. if someone else creates the file in the meantime,
 	// just wipe out the contents.
-	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	var f *os.File
+	f, err = os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
-		return fmt.Errorf("can't open new logfile: %s", err)
+		return fmt.Errorf("can't open new logfile: %w", err)
 	}
+
 	l.file = f
 	l.size = 0
+
 	return nil
 }
 
@@ -279,12 +298,14 @@ func backupName(name string, local bool) string {
 	filename := filepath.Base(name)
 	ext := filepath.Ext(filename)
 	prefix := filename[:len(filename)-len(ext)]
+
 	t := currentTime()
 	if !local {
 		t = t.UTC()
 	}
 
 	timestamp := t.Format(backupTimeFormat)
+
 	return filepath.Join(dir, fmt.Sprintf("%s-%s%s", prefix, timestamp, ext))
 }
 
@@ -295,26 +316,31 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 	l.mill()
 
 	filename := l.filename()
+
 	info, err := osStat(filename)
 	if os.IsNotExist(err) {
 		return l.openNew()
 	}
+
 	if err != nil {
-		return fmt.Errorf("error getting log file info: %s", err)
+		return fmt.Errorf("error getting log file info: %w", err)
 	}
 
 	if info.Size()+int64(writeLen) >= l.max() {
 		return l.rotate()
 	}
 
-	file, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0644)
+	var file *os.File
+	file, err = os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		// if we fail to open the old log file for some reason, just ignore
 		// it and open a new log file.
 		return l.openNew()
 	}
+
 	l.file = file
 	l.size = info.Size()
+
 	return nil
 }
 
@@ -323,7 +349,9 @@ func (l *Logger) filename() string {
 	if l.Filename != "" {
 		return l.Filename
 	}
+
 	name := filepath.Base(os.Args[0]) + "-lumberjack.log"
+
 	return filepath.Join(os.TempDir(), name)
 }
 
@@ -345,14 +373,14 @@ func (l *Logger) millRunOnce() error {
 
 	if l.MaxBackups > 0 && l.MaxBackups < len(files) {
 		preserved := make(map[string]bool)
+
 		var remaining []logInfo
+
 		for _, f := range files {
 			// Only count the uncompressed log file or the
 			// compressed log file, not both.
 			fn := f.Name()
-			if strings.HasSuffix(fn, compressSuffix) {
-				fn = fn[:len(fn)-len(compressSuffix)]
-			}
+			fn = strings.TrimSuffix(fn, compressSuffix)
 			preserved[fn] = true
 
 			if len(preserved) > l.MaxBackups {
@@ -361,13 +389,16 @@ func (l *Logger) millRunOnce() error {
 				remaining = append(remaining, f)
 			}
 		}
+
 		files = remaining
 	}
+
 	if l.MaxAge > 0 {
-		diff := time.Duration(int64(24*time.Hour) * int64(l.MaxAge))
+		diff := time.Duration(int64(24*time.Hour) * int64(l.MaxAge)) //nolint:mnd // 24 hours
 		cutoff := currentTime().Add(-1 * diff)
 
 		var remaining []logInfo
+
 		for _, f := range files {
 			if f.timestamp.Before(cutoff) {
 				remove = append(remove, f)
@@ -375,6 +406,7 @@ func (l *Logger) millRunOnce() error {
 				remaining = append(remaining, f)
 			}
 		}
+
 		files = remaining
 	}
 
@@ -392,8 +424,10 @@ func (l *Logger) millRunOnce() error {
 			err = errRemove
 		}
 	}
+
 	for _, f := range compress {
 		fn := filepath.Join(l.dir(), f.Name())
+
 		errCompress := compressLogFile(fn, fn+compressSuffix)
 		if err == nil && errCompress != nil {
 			err = errCompress
@@ -419,6 +453,7 @@ func (l *Logger) mill() {
 		l.millCh = make(chan bool, 1)
 		go l.millRun()
 	})
+
 	select {
 	case l.millCh <- true:
 	default:
@@ -426,26 +461,36 @@ func (l *Logger) mill() {
 }
 
 // oldLogFiles returns the list of backup log files stored in the same
-// directory as the current log file, sorted by ModTime
+// directory as the current log file, sorted by ModTime.
 func (l *Logger) oldLogFiles() ([]logInfo, error) {
-	files, err := ioutil.ReadDir(l.dir())
+	files, err := os.ReadDir(l.dir())
 	if err != nil {
-		return nil, fmt.Errorf("can't read log file directory: %s", err)
+		return nil, fmt.Errorf("can't read log file directory: %w", err)
 	}
+
 	logFiles := []logInfo{}
 
 	prefix, ext := l.prefixAndExt()
 
-	for _, f := range files {
+	for _, file := range files {
+		f, infoErr := file.Info()
+		if infoErr != nil {
+			continue
+		}
+
 		if f.IsDir() {
 			continue
 		}
-		if t, err := l.timeFromName(f.Name(), prefix, ext); err == nil {
-			logFiles = append(logFiles, logInfo{t, f})
+
+		if t, timeErr := l.timeFromName(f.Name(), prefix, ext); timeErr == nil {
+			logFiles = append(logFiles, logInfo{FileInfo: f, timestamp: t})
+
 			continue
 		}
-		if t, err := l.timeFromName(f.Name(), prefix, ext+compressSuffix); err == nil {
-			logFiles = append(logFiles, logInfo{t, f})
+
+		if t, timeErr := l.timeFromName(f.Name(), prefix, ext+compressSuffix); timeErr == nil {
+			logFiles = append(logFiles, logInfo{FileInfo: f, timestamp: t})
+
 			continue
 		}
 		// error parsing means that the suffix at the end was not generated
@@ -464,10 +509,13 @@ func (l *Logger) timeFromName(filename, prefix, ext string) (time.Time, error) {
 	if !strings.HasPrefix(filename, prefix) {
 		return time.Time{}, errors.New("mismatched prefix")
 	}
+
 	if !strings.HasSuffix(filename, ext) {
 		return time.Time{}, errors.New("mismatched extension")
 	}
+
 	ts := filename[len(prefix) : len(filename)-len(ext)]
+
 	return time.Parse(backupTimeFormat, ts)
 }
 
@@ -476,6 +524,7 @@ func (l *Logger) max() int64 {
 	if l.MaxSize == 0 {
 		return int64(defaultMaxSize * megabyte)
 	}
+
 	return int64(l.MaxSize) * int64(megabyte)
 }
 
@@ -486,62 +535,73 @@ func (l *Logger) dir() string {
 
 // prefixAndExt returns the filename part and extension part from the Logger's
 // filename.
-func (l *Logger) prefixAndExt() (prefix, ext string) {
+func (l *Logger) prefixAndExt() (string, string) {
 	filename := filepath.Base(l.filename())
-	ext = filepath.Ext(filename)
-	prefix = filename[:len(filename)-len(ext)] + "-"
+	ext := filepath.Ext(filename)
+	prefix := filename[:len(filename)-len(ext)] + "-"
+
 	return prefix, ext
 }
 
 // compressLogFile compresses the given log file, removing the
 // uncompressed log file if successful.
 func compressLogFile(src, dst string) (err error) {
-	f, err := os.Open(src)
+	var f *os.File
+	f, err = os.Open(src)
 	if err != nil {
-		return fmt.Errorf("failed to open log file: %v", err)
-	}
-	defer f.Close()
-
-	fi, err := osStat(src)
-	if err != nil {
-		return fmt.Errorf("failed to stat log file: %v", err)
+		return fmt.Errorf("failed to open log file: %w", err)
 	}
 
-	if err := chown(dst, fi); err != nil {
-		return fmt.Errorf("failed to chown compressed log file: %v", err)
+	defer func() { _ = f.Close() }()
+
+	var fi os.FileInfo
+	fi, err = osStat(src)
+	if err != nil {
+		return fmt.Errorf("failed to stat log file: %w", err)
+	}
+
+	if err = chown(dst, fi); err != nil {
+		return fmt.Errorf("failed to chown compressed log file: %w", err)
 	}
 
 	// If this file already exists, we presume it was created by
 	// a previous attempt to compress the log file.
-	gzf, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, fi.Mode())
+	var gzf *os.File
+	gzf, err = os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, fi.Mode())
 	if err != nil {
-		return fmt.Errorf("failed to open compressed log file: %v", err)
+		return fmt.Errorf("failed to open compressed log file: %w", err)
 	}
-	defer gzf.Close()
+
+	defer func() { _ = gzf.Close() }()
 
 	gz := gzip.NewWriter(gzf)
 
 	defer func() {
 		if err != nil {
-			os.Remove(dst)
-			err = fmt.Errorf("failed to compress log file: %v", err)
+			_ = os.Remove(dst)
+			err = fmt.Errorf("failed to compress log file: %w", err)
 		}
 	}()
 
-	if _, err := io.Copy(gz, f); err != nil {
-		return err
-	}
-	if err := gz.Close(); err != nil {
-		return err
-	}
-	if err := gzf.Close(); err != nil {
+	if _, err = io.Copy(gz, f); err != nil {
 		return err
 	}
 
-	if err := f.Close(); err != nil {
+	if err = gz.Close(); err != nil {
 		return err
 	}
-	if err := os.Remove(src); err != nil {
+
+	defer func() { _ = gzf.Close() }()
+
+	if err = gzf.Close(); err != nil {
+		return err
+	}
+
+	if err = f.Close(); err != nil {
+		return err
+	}
+
+	if err = os.Remove(src); err != nil {
 		return err
 	}
 
@@ -551,8 +611,9 @@ func compressLogFile(src, dst string) (err error) {
 // logInfo is a convenience struct to return the filename and its embedded
 // timestamp.
 type logInfo struct {
-	timestamp time.Time
 	os.FileInfo
+
+	timestamp time.Time
 }
 
 // byFormatTime sorts by newest time formatted in the name.

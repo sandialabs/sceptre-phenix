@@ -3,16 +3,19 @@ package cmd
 import (
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+
+	"github.com/olekukonko/tablewriter"
+	"github.com/spf13/cobra"
 
 	"phenix/api/experiment"
 	"phenix/util"
 	"phenix/web/rbac"
-
-	"github.com/olekukonko/tablewriter"
-	"github.com/spf13/cobra"
 )
+
+const roleHeaderPadding = 2
 
 func newUtilCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -26,20 +29,21 @@ func newUtilCmd() *cobra.Command {
 	return cmd
 }
 
-func newUtilAppJsonCmd() *cobra.Command {
+func newUtilAppJSONCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "app-json <experiment name>",
 		Short: "Print application JSON input for given experiment to STDOUT",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
-				return fmt.Errorf("There was no experiment provided")
+				return errors.New("there was no experiment provided")
 			}
 
 			name := args[0]
 
 			exp, err := experiment.Get(name)
 			if err != nil {
-				err := util.HumanizeError(err, "Unable to get the "+name+" experiment")
+				err := util.HumanizeError(err, "%s", "Unable to get the "+name+" experiment")
+
 				return err.Humanized()
 			}
 
@@ -53,10 +57,11 @@ func newUtilAppJsonCmd() *cobra.Command {
 
 			if err != nil {
 				err := util.HumanizeError(err, "Unable to convert experiment to JSON")
+
 				return err.Humanized()
 			}
 
-			fmt.Println(string(m))
+			fmt.Fprintln(os.Stdout, string(m))
 
 			return nil
 		},
@@ -74,12 +79,14 @@ func newUtilRoleTableCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			roles, _ := rbac.GetRoles()
 
-			header := []string{"", ""}
+			header := make([]string, 0, roleHeaderPadding+len(roles))
+			header = append(header, "", "")
 			for _, r := range roles {
 				header = append(header, r.Spec.Name)
 			}
 
-			data := [][]string{}
+			data := make([][]string, 0, len(rbac.Permissions))
+
 			for _, p := range rbac.Permissions {
 				row := []string{p.Resource, p.Verb}
 				for _, r := range roles {
@@ -89,6 +96,7 @@ func newUtilRoleTableCmd() *cobra.Command {
 						row = append(row, "")
 					}
 				}
+
 				data = append(data, row)
 			}
 
@@ -96,15 +104,19 @@ func newUtilRoleTableCmd() *cobra.Command {
 				table := tablewriter.NewWriter(os.Stdout)
 				table.SetHeader(header)
 				table.AppendBulk(data)
-				table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
+				table.SetBorders(
+					tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false},
+				)
 				table.SetCenterSeparator("|")
 				table.Render()
 			} else {
 				w := csv.NewWriter(os.Stdout)
-				w.Write(header)
+
+				_ = w.Write(header)
 				for _, r := range data {
-					w.Write(r)
+					_ = w.Write(r)
 				}
+
 				w.Flush()
 			}
 
@@ -117,10 +129,10 @@ func newUtilRoleTableCmd() *cobra.Command {
 	return cmd
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // cobra command
 	utilCmd := newUtilCmd()
 
-	utilCmd.AddCommand(newUtilAppJsonCmd())
+	utilCmd.AddCommand(newUtilAppJSONCmd())
 	utilCmd.AddCommand(newUtilRoleTableCmd())
 
 	rootCmd.AddCommand(utilCmd)

@@ -1,6 +1,6 @@
 package printer
 
-
+//nolint:godox // TODO
 // TODO: update or delete
 // import (
 // 	"io"

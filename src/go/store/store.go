@@ -1,10 +1,10 @@
 package store
 
-import "fmt"
+import "errors"
 
 var (
-	ErrExist    = fmt.Errorf("config already exists")
-	ErrNotExist = fmt.Errorf("config does not exist")
+	ErrExist    = errors.New("config already exists")
+	ErrNotExist = errors.New("config does not exist")
 )
 
 type (
@@ -12,8 +12,8 @@ type (
 )
 
 const (
-	COMPONENT_CONFIGS Component = "configs"
-	COMPONENT_STORE   Component = "store"
+	ComponentConfigs Component = "configs"
+	ComponentStore   Component = "store"
 )
 
 // Store is the interface that identifies all the required functionality for a
@@ -41,7 +41,7 @@ type Store interface {
 
 	// Patch modifies the given config in the store with the given data if the
 	// config already exists.
-	Patch(*Config, map[string]interface{}) error
+	Patch(*Config, map[string]any) error
 
 	// Delete removes the given config from the config store.
 	Delete(*Config) error

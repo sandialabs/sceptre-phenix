@@ -1,13 +1,16 @@
 package scheduler
 
 import (
+	"errors"
 	"fmt"
 
 	ifaces "phenix/types/interfaces"
 	"phenix/util/mm"
 )
 
-func init() {
+const maxUsageRatio = 1.0
+
+func init() { //nolint:gochecknoinits // scheduler registration
 	schedulers["isolate-experiment"] = new(isolateExperiment)
 }
 
@@ -23,7 +26,7 @@ func (isolateExperiment) Name() string {
 
 func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 	if len(spec.Topology().Nodes()) == 0 {
-		return fmt.Errorf("no VMs defined for experiment")
+		return errors.New("no VMs defined for experiment")
 	}
 
 	cluster, err := mm.GetClusterHosts(true)
@@ -58,8 +61,8 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 				cpuUsage := float64(totalCPU+host.CPUCommit) / float64(host.CPUs)
 				memUsage := float64(totalMEM+host.MemCommit) / float64(host.MemTotal)
 
-				if cpuUsage > 1 || memUsage > 1 {
-					fmt.Printf("Using host %s. It may become overloaded.", host.Name)
+				if cpuUsage > maxUsageRatio || memUsage > maxUsageRatio {
+					fmt.Printf("Using host %s. It may become overloaded.", host.Name) //nolint:forbidigo // CLI output
 				}
 
 				for _, node := range spec.Topology().Nodes() {
@@ -71,7 +74,7 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 				return nil
 			}
 
-			fmt.Printf("Host %s is currently in use; will not use.\n", host.Name)
+			fmt.Printf("Host %s is currently in use; will not use.\n", host.Name) //nolint:forbidigo // CLI output
 		}
 	}
 
@@ -85,7 +88,7 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 			cpuUsage := float64(totalCPU+host.CPUCommit) / float64(host.CPUs)
 			memUsage := float64(totalMEM+host.MemCommit) / float64(host.MemTotal)
 
-			if cpuUsage < 1 && memUsage < 1 {
+			if cpuUsage < maxUsageRatio && memUsage < maxUsageRatio {
 				for _, node := range spec.Topology().Nodes() {
 					if !node.External() {
 						spec.Schedules()[node.General().Hostname()] = host.Name
@@ -113,5 +116,5 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 
 	// if that doesn't work either, there are no unoccupied hosts
 
-	return fmt.Errorf("no unused hosts -- cannot isolate experiment")
+	return errors.New("no unused hosts -- cannot isolate experiment")
 }

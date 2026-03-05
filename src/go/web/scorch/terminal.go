@@ -3,17 +3,18 @@ package scorch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 
+	"github.com/creack/pty"
+
 	"phenix/util/plog"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
-
-	"github.com/creack/pty"
 )
 
 type WebTerm struct {
@@ -35,7 +36,7 @@ type WebTerm struct {
 }
 
 func newWebTerm(exp string, run, loop int, stage, name string) WebTerm {
-	return WebTerm{
+	return WebTerm{ //nolint:exhaustruct // partial initialization
 		Exp:   exp,
 		Run:   run,
 		Loop:  loop,
@@ -48,14 +49,21 @@ func newWebTerm(exp string, run, loop int, stage, name string) WebTerm {
 }
 
 var (
-	webTermMu   sync.Mutex
-	webTermsPid = make(map[int]WebTerm)
-	webTermsExp = make(map[string]WebTerm)
+	webTermMu   sync.Mutex                 //nolint:gochecknoglobals // global lock
+	webTermsPid = make(map[int]WebTerm)    //nolint:gochecknoglobals // global state
+	webTermsExp = make(map[string]WebTerm) //nolint:gochecknoglobals // global state
 )
 
-var ErrTerminalNotFound = fmt.Errorf("web terminal not found")
+var ErrTerminalNotFound = errors.New("web terminal not found")
 
-func CreateWebTerminal(ctx context.Context, exp string, run, loop int, stage, name, dir, cmd string, args []string, envs ...string) (chan struct{}, error) {
+func CreateWebTerminal(
+	ctx context.Context,
+	exp string,
+	run, loop int,
+	stage, name, dir, cmd string,
+	args []string,
+	envs ...string,
+) (chan struct{}, error) {
 	term := newWebTerm(exp, run, loop, stage, name)
 
 	c := exec.CommandContext(ctx, cmd, args...)
@@ -82,7 +90,7 @@ func CreateWebTerminal(ctx context.Context, exp string, run, loop int, stage, na
 	go func() {
 		select {
 		case <-ctx.Done():
-			KillTerminal(term)
+			_ = KillTerminal(term)
 		case <-term.Done:
 		}
 	}()
@@ -90,7 +98,7 @@ func CreateWebTerminal(ctx context.Context, exp string, run, loop int, stage, na
 	body, _ := json.Marshal(term)
 
 	broker.Broadcast(
-		nil, // TODO
+		nil,
 		bt.NewResource("apps/scorch", exp, "terminal-create"),
 		body,
 	)
@@ -107,7 +115,7 @@ func KillTerminal(term WebTerm) error {
 	webTermMu.Unlock()
 
 	broker.Broadcast(
-		nil, // TODO
+		nil,
 		bt.NewResource("apps/scorch", term.Exp, "terminal-exit"),
 		nil,
 	)
@@ -119,8 +127,8 @@ func KillTerminal(term WebTerm) error {
 		return fmt.Errorf("cannot find process with PID %d", term.Pid)
 	}
 
-	proc.Kill()
-	proc.Wait()
+	_ = proc.Kill()
+	_, _ = proc.Wait()
 
 	plog.Debug(plog.TypeSystem, "process killed", "pid", term.Pid)
 
@@ -162,9 +170,9 @@ func GetExperimentTerminals(exp string, run int) ([]WebTerm, error) {
 			terms = append(terms, term)
 		}
 	} else {
-		exps := strings.Split(exp, ",")
+		exps := strings.SplitSeq(exp, ",")
 
-		for _, exp := range exps {
+		for exp := range exps {
 			for _, term := range webTermsExp {
 				if term.Exp == exp && (run < 0 || term.Run == run) {
 					terms = append(terms, term)

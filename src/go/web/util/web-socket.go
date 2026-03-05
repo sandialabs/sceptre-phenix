@@ -1,12 +1,13 @@
 package util
 
 import (
+	"context"
 	"io"
 	"net"
 
-	"phenix/util/plog"
-
 	"golang.org/x/net/websocket"
+
+	"phenix/util/plog"
 )
 
 // Taken (almost) as-is from minimega/miniweb.
@@ -18,18 +19,20 @@ func ConnectWSHandler(endpoint string) func(*websocket.Conn) {
 		ws.PayloadType = websocket.BinaryFrame
 
 		// connect to the remote host
-		remote, err := net.Dial("tcp", endpoint)
+		remote, err := (&net.Dialer{}).DialContext(context.Background(), "tcp", endpoint) //nolint:exhaustruct // partial initialization
 		if err != nil {
 			plog.Error(plog.TypeSystem, "dialing websocket", "err", err)
+
 			return
 		}
 
-		defer remote.Close()
+		defer func() { _ = remote.Close() }()
 
 		plog.Info(plog.TypeSystem, "websocket client connected", "endpoint", endpoint)
 
-		go io.Copy(ws, remote)
-		io.Copy(remote, ws)
+		go func() { _, _ = io.Copy(ws, remote) }()
+
+		_, _ = io.Copy(remote, ws)
 
 		plog.Info(plog.TypeSystem, "websocket client disconnected", "endpoint", endpoint)
 	}

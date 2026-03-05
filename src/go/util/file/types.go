@@ -8,13 +8,15 @@ import (
 	"time"
 )
 
-type ImageKind int
-type CopyStatus func(float64)
+type (
+	ImageKind  int
+	CopyStatus func(float64)
+)
 
 const (
 	_ ImageKind = iota
-	VM_IMAGE
-	CONTAINER_IMAGE
+	VMImage
+	ContainerImage
 )
 
 type ImageDetails struct {
@@ -31,7 +33,7 @@ type File struct {
 	Size       int64    `json:"size"`
 	Categories []string `json:"categories"`
 	PlainText  bool     `json:"plainText"`
-	IsDir	   bool     `json:"isDir"`
+	IsDir      bool     `json:"isDir"`
 
 	// Internal use to aid in sorting
 	dateTime time.Time
@@ -39,39 +41,39 @@ type File struct {
 
 type Files []File
 
-func (this Files) SortByName(asc bool) {
-	sort.Slice(this, func(i, j int) bool {
+func (f Files) SortByName(asc bool) {
+	sort.Slice(f, func(i, j int) bool {
 		if asc {
-			return strings.ToLower(this[i].Name) < strings.ToLower(this[j].Name)
+			return strings.ToLower(f[i].Name) < strings.ToLower(f[j].Name)
 		}
 
-		return strings.ToLower(this[i].Name) > strings.ToLower(this[j].Name)
+		return strings.ToLower(f[i].Name) > strings.ToLower(f[j].Name)
 	})
 }
 
-func (this Files) SortByDate(asc bool) {
-	sort.Slice(this, func(i, j int) bool {
+func (f Files) SortByDate(asc bool) {
+	sort.Slice(f, func(i, j int) bool {
 		if asc {
-			return this[i].dateTime.Before(this[j].dateTime)
+			return f[i].dateTime.Before(f[j].dateTime)
 		}
 
-		return this[i].dateTime.After(this[j].dateTime)
+		return f[i].dateTime.After(f[j].dateTime)
 	})
 }
 
-func (this Files) SortBySize(asc bool) {
-	sort.Slice(this, func(i, j int) bool {
+func (f Files) SortBySize(asc bool) {
+	sort.Slice(f, func(i, j int) bool {
 		if asc {
-			return this[i].Size < this[j].Size
+			return f[i].Size < f[j].Size
 		}
 
-		return this[i].Size > this[j].Size
+		return f[i].Size > f[j].Size
 	})
 }
 
 /*
-func (this Files) SortByCategory(asc bool) {
-	sort.Slice(this, func(i, j int) bool {
+func (f Files) SortByCategory(asc bool) {
+	sort.Slice(f, func(i, j int) bool {
 		if asc {
 			return strings.ToLower(this[i].Category) < strings.ToLower(this[j].Category)
 		}
@@ -81,39 +83,39 @@ func (this Files) SortByCategory(asc bool) {
 }
 */
 
-func (this Files) SortBy(col string, asc bool) {
+func (f Files) SortBy(col string, asc bool) {
 	switch col {
 	case "name":
-		this.SortByName(asc)
+		f.SortByName(asc)
 	case "date":
-		this.SortByDate(asc)
+		f.SortByDate(asc)
 	case "size":
-		this.SortBySize(asc)
+		f.SortBySize(asc)
 		// case "category":
 		// this.SortByCategory(asc)
 	}
 }
 
-func (this Files) Paginate(page, size int) Files {
+func (f Files) Paginate(page, size int) Files {
 	var (
 		start = (page - 1) * size
 		end   = start + size
 	)
 
-	if start >= len(this) {
+	if start >= len(f) {
 		return Files{}
 	}
 
-	if end > len(this) {
-		end = len(this)
+	if end > len(f) {
+		end = len(f)
 	}
 
-	return this[start:end]
+	return f[start:end]
 }
 
-// create an instance of our file object using a FileInfo and path
-func MakeFile(file fs.FileInfo, basePath string) (File) {
-	f := File{}
+// MakeFile creates an instance of our file object using a FileInfo and path.
+func MakeFile(file fs.FileInfo, basePath string) File {
+	f := File{} //nolint:exhaustruct // partial initialization
 	f.Name = file.Name()
 	f.Path = filepath.Join(basePath, file.Name())
 	f.dateTime = file.ModTime()

@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,56 +20,66 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/creack/pty"
+	"github.com/gorilla/mux"
+	"golang.org/x/net/websocket"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
+
 	"phenix/api/config"
 	"phenix/api/experiment"
 	"phenix/api/scenario"
 	"phenix/api/settings"
 	"phenix/api/vm"
 	"phenix/app"
+	putil "phenix/util"
 	"phenix/util/common"
 	"phenix/util/mm"
 	"phenix/util/notes"
 	"phenix/util/plog"
 	"phenix/util/pubsub"
 	"phenix/web/broker"
+	bt "phenix/web/broker/brokertypes"
 	"phenix/web/cache"
+	"phenix/web/middleware"
 	"phenix/web/proto"
 	"phenix/web/rbac"
 	"phenix/web/util"
 	"phenix/web/weberror"
-
-	putil "phenix/util"
-	bt "phenix/web/broker/brokertypes"
-
-	"github.com/creack/pty"
-	"github.com/gorilla/mux"
-	"golang.org/x/net/websocket"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 var (
-	marshaler   = protojson.MarshalOptions{EmitUnpopulated: true}
-	unmarshaler = protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
+	marshaler   = protojson.MarshalOptions{EmitUnpopulated: true}                      //nolint:gochecknoglobals // global marshaler
+	unmarshaler = protojson.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true} //nolint:gochecknoglobals // global unmarshaler
 
-	ptys  = map[int]*os.File{}
-	ptyMu sync.Mutex
+	ptys  = map[int]*os.File{} //nolint:gochecknoglobals // global state
+	ptyMu sync.Mutex           //nolint:gochecknoglobals // global lock
 )
 
-// GET /experiments
-func GetExperiments(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetExperiments")
+const sortAsc = "asc"
+const consoleResizeSleep = 100 * time.Millisecond
+const percentDivisor = 100
+const defaultScreenshotSize = "215"
 
+// GetExperiments - GET /experiments.
+func GetExperiments(w http.ResponseWriter, r *http.Request) {
 	var (
 		ctx   = r.Context()
-		role  = ctx.Value("role").(rbac.Role)
+		role  = middleware.RoleFromContext(ctx)
 		query = r.URL.Query()
 		size  = query.Get("screenshot")
 	)
 
 	if !role.Allowed("experiments", "list") {
-		plog.Warn(plog.TypeSecurity, "listing experiments not allowed", "user", ctx.Value("user").(string))
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"listing experiments not allowed",
+			"user",
+			user,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -95,11 +107,19 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		//nolint:godox // TODO
 		// TODO: limit per-experiment VMs based on RBAC
 
 		vms, err := vm.List(exp.Spec.ExperimentName())
 		if err != nil {
-			// TODO
+			plog.Error(
+				plog.TypeSystem,
+				"listing VMs for experiment",
+				"exp",
+				exp.Spec.ExperimentName(),
+				"err",
+				err,
+			)
 		}
 
 		if exp.Running() && size != "" {
@@ -111,10 +131,13 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) {
 				screenshot, err := util.GetScreenshot(exp.Spec.ExperimentName(), v.Name, size)
 				if err != nil {
 					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+
 					continue
 				}
 
-				v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+				v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
+					screenshot,
+				)
 
 				vms[i] = v
 			}
@@ -126,76 +149,116 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) {
 	body, err := marshaler.Marshal(&proto.ExperimentList{Experiments: allowed})
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling experiments", "err", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(
+			w,
+			http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError,
+		)
+
 		return
 	}
 
-	w.Write(body)
+	_, _ = w.Write(body)
 }
 
-// POST /experiments
+// CreateExperiment - POST /experiments.
+//
+//nolint:funlen // handler
 func CreateExperiment(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreateExperiment")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 	)
 
 	if !role.Allowed("experiments", "create") {
-		plog.Warn(plog.TypeSecurity, "creating experiments not allowed", "user", ctx.Value("user").(string))
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"creating experiments not allowed",
+			"user",
+			user,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(
+			w,
+			http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError,
+		)
+
 		return
 	}
 
 	var req proto.CreateExperimentRequest
 	if err := unmarshaler.Unmarshal(body, &req); err != nil {
 		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(
+			w,
+			http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError,
+		)
+
 		return
 	}
 
-	if err := cache.LockExperimentForCreation(req.Name); err != nil {
-		plog.Error(plog.TypeSystem, "locking experiment", "exp", req.Name, "action", "creation", "err", err)
+	if err := cache.LockExperimentForCreation(req.GetName()); err != nil {
+		plog.Error(
+			plog.TypeSystem,
+			"locking experiment",
+			"exp",
+			req.GetName(),
+			"action",
+			"creation",
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusConflict)
+
 		return
 	}
 
-	defer cache.UnlockExperiment(req.Name)
+	defer cache.UnlockExperiment(req.GetName())
 
-	deployMode, err := common.ParseDeployMode(req.DeployMode)
+	deployMode, err := common.ParseDeployMode(req.GetDeployMode())
 	if err != nil {
-		plog.Warn(plog.TypeSystem, fmt.Sprintf("error parsing experiment deploy mode ('%s') - using default of '%s'", req.DeployMode, common.DeployMode))
+		plog.Warn(
+			plog.TypeSystem,
+			fmt.Sprintf(
+				"error parsing experiment deploy mode ('%s') - using default of '%s'",
+				req.GetDeployMode(),
+				common.DeployMode,
+			),
+		)
 		deployMode = common.DeployMode
 	}
 
 	opts := []experiment.CreateOption{
-		experiment.CreateWithName(req.Name),
-		experiment.CreateWithTopology(req.Topology),
-		experiment.CreateWithScenario(req.Scenario),
-		experiment.CreateWithVLANMin(int(req.VlanMin)),
-		experiment.CreateWithVLANMax(int(req.VlanMax)),
-		experiment.CreatedWithDisabledApplications(req.DisabledApps),
+		experiment.CreateWithName(req.GetName()),
+		experiment.CreateWithTopology(req.GetTopology()),
+		experiment.CreateWithScenario(req.GetScenario()),
+		experiment.CreateWithVLANMin(int(req.GetVlanMin())),
+		experiment.CreateWithVLANMax(int(req.GetVlanMax())),
+		experiment.CreatedWithDisabledApplications(req.GetDisabledApps()),
 		experiment.CreateWithDeployMode(deployMode),
-		experiment.CreateWithDefaultBridge(req.DefaultBridge),
-		experiment.CreateWithGREMesh(req.UseGreMesh),
+		experiment.CreateWithDefaultBridge(req.GetDefaultBridge()),
+		experiment.CreateWithGREMesh(req.GetUseGreMesh()),
 	}
 
-	if req.WorkflowBranch != "" {
-		annotations := map[string]string{"phenix.workflow/branch": req.WorkflowBranch}
+	if req.GetWorkflowBranch() != "" {
+		annotations := map[string]string{"phenix.workflow/branch": req.GetWorkflowBranch()}
 		opts = append(opts, experiment.CreateWithAnnotations(annotations))
 	}
 
 	if err := experiment.Create(ctx, opts...); err != nil {
-		plog.Error(plog.TypeSystem, "creating experiment", "exp", req.Name, "err", err)
+		plog.Error(plog.TypeSystem, "creating experiment", "exp", req.GetName(), "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
@@ -205,68 +268,94 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	exp, err := experiment.Get(req.Name)
+	exp, err := experiment.Get(req.GetName())
 	if err != nil {
-		plog.Error(plog.TypeSystem, "getting experiment", "exp", req.Name, "err", err)
+		plog.Error(plog.TypeSystem, "getting experiment", "exp", req.GetName(), "err", err)
 		http.Error(w, "", http.StatusInternalServerError)
+
 		return
 	}
 
-	vms, err := vm.List(req.Name)
+	vms, err := vm.List(req.GetName())
 	if err != nil {
-		plog.Error(plog.TypeSystem, "listing experiment VMs", "exp", req.Name, "err", err)
+		plog.Error(plog.TypeSystem, "listing experiment VMs", "exp", req.GetName(), "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	body, err = marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vms))
 	if err != nil {
-		plog.Error(plog.TypeSystem, "marshaling experiment", "err", req.Name, "err", err)
+		plog.Error(plog.TypeSystem, "marshaling experiment", "err", req.GetName(), "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	broker.Broadcast(
-		bt.NewRequestPolicy("experiments", "get", req.Name),
-		bt.NewResource("experiment", req.Name, "create"),
+		bt.NewRequestPolicy("experiments", "get", req.GetName()),
+		bt.NewResource("experiment", req.GetName(), "create"),
 		body,
 	)
 
-	plog.Info(plog.TypeAction, "new experiment created", "user", ctx.Value("user").(string), "experiment", req.Name)
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"new experiment created",
+		"user",
+		user,
+		"experiment",
+		req.GetName(),
+	)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// PATCH /experiments/{name}
+// UpdateExperiment - PATCH /experiments/{name}.
 func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "UpdateExperiment")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		name = vars["name"]
 	)
 
 	if !role.Allowed("experiments", "patch", name) {
-		plog.Warn(plog.TypeSecurity, "updating experiment not allowed", "user", ctx.Value("user").(string), "experiment", name)
-		err := weberror.NewWebError(nil, "updating experiment %s not allowed for %s", name, ctx.Value("user").(string))
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"updating experiment not allowed",
+			"user",
+			user,
+			"experiment",
+			name,
+		)
+		err := weberror.NewWebError(
+			nil,
+			"updating experiment %s not allowed for %s",
+			name,
+			user,
+		)
+
 		return err.SetStatus(http.StatusForbidden)
 	}
 
 	exp, err := experiment.Get(name)
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to get experiment %s details", name)
+
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
 	if exp.Running() {
 		err := weberror.NewWebError(err, "cannot update running experiment %s", name)
+
 		return err.SetStatus(http.StatusBadRequest)
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to parse update request for experiment %s", name)
+
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
@@ -274,6 +363,7 @@ func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	if err := json.Unmarshal(body, &vlans); err != nil {
 		err := weberror.NewWebError(err, "unable to parse update request for experiment %s", name)
+
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
@@ -288,23 +378,34 @@ func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
 
 		exp.Spec.VLANs().SetAliases(aliases)
 
-		if err := exp.WriteToStore(false); err != nil {
+		err := exp.WriteToStore(false)
+		if err != nil {
 			err := weberror.NewWebError(err, "unable to write updated experiment %s", name)
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 	}
 
-	plog.Info(plog.TypeAction, "experiment updated", "user", ctx.Value("user").(string), "experiment", name)
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"experiment updated",
+		"user",
+		user,
+		"experiment",
+		name,
+	)
+
 	return nil
 }
 
-// GET /experiments/{name}
+// GetExperiment - GET /experiments/{name}.
+//
+//nolint:funlen // handler
 func GetExperiment(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetExperiment")
-
 	var (
 		ctx          = r.Context()
-		role         = ctx.Value("role").(rbac.Role)
+		role         = middleware.RoleFromContext(ctx)
 		vars         = mux.Vars(r)
 		name         = vars["name"]
 		query        = r.URL.Query()
@@ -318,8 +419,22 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("experiments", "get", name) {
-		plog.Warn(plog.TypeSecurity, "getting  experiment not allowed", "user", ctx.Value("user").(string), "experiment", name)
-		err := weberror.NewWebError(nil, "getting experiment %s not allowed for %s", name, ctx.Value("user").(string))
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting  experiment not allowed",
+			"user",
+			user,
+			"experiment",
+			name,
+		)
+		err := weberror.NewWebError(
+			nil,
+			"getting experiment %s not allowed for %s",
+			name,
+			user,
+		)
+
 		return err.SetStatus(http.StatusForbidden)
 	}
 
@@ -330,7 +445,7 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	vms, err := vm.List(name)
 	if err != nil {
-		// TODO
+		plog.Error(plog.TypeSystem, "listing VMs for experiment", "exp", name, "err", err)
 	}
 
 	// This will happen if another handler is currently acting on the
@@ -352,12 +467,10 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 		if len(clientFilter) > 0 {
 			if filterTree == nil {
 				continue
-			} else {
+			} else if !filterTree.Evaluate(&vm) {
 				// If the search string could be parsed,
 				// determine if the VM should be included
-				if !filterTree.Evaluate(&vm) {
-					continue
-				}
+				continue
 			}
 		}
 
@@ -367,7 +480,9 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 				if err != nil {
 					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
 				} else {
-					vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+					vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
+						screenshot,
+					)
 				}
 			}
 
@@ -376,7 +491,7 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if sortCol != "" && sortDir != "" {
-		allowed.SortBy(sortCol, sortDir == "asc")
+		allowed.SortBy(sortCol, sortDir == sortAsc)
 	}
 
 	totalBeforePaging := len(allowed)
@@ -389,46 +504,68 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	experiment := util.ExperimentToProtobuf(*exp, status, allowed)
-	experiment.VmCount = uint32(totalBeforePaging)
-	body, err := marshaler.Marshal(experiment)
+	experiment.VmCount = uint32(totalBeforePaging) //nolint:gosec // integer overflow conversion int -> uint32
 
+	body, err := marshaler.Marshal(experiment)
 	if err != nil {
 		err := weberror.NewWebError(err, "marshaling experiment %s - %v", name, err)
+
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
-	w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+
 	return nil
 }
 
-// DELETE /experiments/{name}
+// DeleteExperiment - DELETE /experiments/{name}.
 func DeleteExperiment(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "DeleteExperiment")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		name = vars["name"]
 	)
 
 	if !role.Allowed("experiments", "delete", name) {
-		plog.Warn(plog.TypeSecurity, "deleting experiment not allowed", "user", ctx.Value("user").(string), "exp", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"deleting experiment not allowed",
+			"user",
+			user,
+			"exp",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
-	if err := cache.LockExperimentForDeletion(name); err != nil {
-		plog.Error(plog.TypeSystem, "locking experiment", "exp", name, "action", "deletion", "err", err)
+	err := cache.LockExperimentForDeletion(name)
+	if err != nil {
+		plog.Error(
+			plog.TypeSystem,
+			"locking experiment",
+			"exp",
+			name,
+			"action",
+			"deletion",
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusConflict)
+
 		return
 	}
 
 	defer cache.UnlockExperiment(name)
 
-	if err := experiment.Delete(name); err != nil {
+	err = experiment.Delete(name)
+	if err != nil {
 		plog.Error(plog.TypeSystem, "deleting experiment", "exp", name, "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
@@ -438,24 +575,46 @@ func DeleteExperiment(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
-	plog.Info(plog.TypeAction, "deleted experiment", "user", ctx.Value("user").(string), "exp", name)
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"deleted experiment",
+		"user",
+		user,
+		"exp",
+		name,
+	)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// POST /experiments/{name}/start
-func StartExperiment(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StartExperiment")
+// StartExperiment - POST /experiments/{name}/start.
+//
 
+func StartExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		name = vars["name"]
 	)
 
 	if !role.Allowed("experiments/start", "update", name) {
-		plog.Warn(plog.TypeSecurity, "starting experiment not allowed", "user", ctx.Value("user").(string), "exp", name)
-		err := weberror.NewWebError(nil, "starting experiment %s not allowed for %s", name, ctx.Value("user").(string))
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"starting experiment not allowed",
+			"user",
+			user,
+			"exp",
+			name,
+		)
+		err := weberror.NewWebError(
+			nil,
+			"starting experiment %s not allowed for %s",
+			name,
+			user,
+		)
+
 		return err.SetStatus(http.StatusForbidden)
 	}
 
@@ -464,25 +623,48 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	w.Write(body)
-	plog.Info(plog.TypeAction, "experiment started", "user", ctx.Value("user").(string), "exp", name)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"experiment started",
+		"user",
+		user,
+		"exp",
+		name,
+	)
+
 	return nil
 }
 
-// POST /experiments/{name}/stop
-func StopExperiment(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StopExperiment")
+// StopExperiment - POST /experiments/{name}/stop.
+//
 
+func StopExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		name = vars["name"]
 	)
 
 	if !role.Allowed("experiments/stop", "update", name) {
-		plog.Warn(plog.TypeSecurity, "stopping experiment not allowed", "user", ctx.Value("user").(string), "exp", name)
-		err := weberror.NewWebError(nil, "stopping experiment %s not allowed for %s", name, ctx.Value("user").(string))
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"stopping experiment not allowed",
+			"user",
+			user,
+			"exp",
+			name,
+		)
+		err := weberror.NewWebError(
+			nil,
+			"stopping experiment %s not allowed for %s",
+			name,
+			user,
+		)
+
 		return err.SetStatus(http.StatusForbidden)
 	}
 
@@ -491,18 +673,25 @@ func StopExperiment(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	w.Write(body)
-	plog.Info(plog.TypeAction, "experiment stopped", "user", ctx.Value("user").(string), "exp", name)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"experiment stopped",
+		"user",
+		user,
+		"exp",
+		name,
+	)
+
 	return nil
 }
 
-// POST /experiments/{name}/trigger[?apps=<foo,bar,baz>]
+// TriggerExperimentApps - POST /experiments/{name}/trigger[?apps=<foo,bar,baz>].
 func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "TriggerExperimentApps")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		name = vars["name"]
 
@@ -511,8 +700,17 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("experiments/trigger", "create", name) {
-		plog.Warn(plog.TypeSecurity, "triggering experiment apps not allowed", "user", ctx.Value("user").(string), "exp", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"triggering experiment apps not allowed",
+			"user",
+			user,
+			"exp",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -527,7 +725,7 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, a := range apps {
-			pubsub.Publish("trigger-app", app.TriggerPublication{
+			pubsub.Publish("trigger-app", app.TriggerPublication{ //nolint:exhaustruct // partial initialization
 				Experiment: name, App: a, State: "start",
 			})
 
@@ -537,37 +735,67 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
 			ctx, cancel := context.WithCancel(context.Background())
 			ctx = app.SetContextTriggerUI(ctx)
 			ctx = app.SetContextMetadata(ctx, md)
+
+			commonMu.Lock()
 			cancelers[k] = append(cancelers[k], cancel)
+			commonMu.Unlock()
 
-			if err := experiment.TriggerRunning(ctx, name, a); err != nil {
+			err := experiment.TriggerRunning(ctx, name, a)
+			if err != nil {
 				cancel() // avoid leakage
+				commonMu.Lock()
 				delete(cancelers, k)
+				commonMu.Unlock()
 
-				humanized := putil.HumanizeError(err, "Unable to trigger running stage for %s app in %s experiment", a, name)
-				pubsub.Publish("trigger-app", app.TriggerPublication{
+				humanized := putil.HumanizeError(
+					err,
+					"Unable to trigger running stage for %s app in %s experiment",
+					a,
+					name,
+				)
+				pubsub.Publish("trigger-app", app.TriggerPublication{ //nolint:exhaustruct // partial initialization
 					Experiment: name, App: a, State: "error", Error: humanized,
 				})
 
-				plog.Error(plog.TypeSystem, "triggering experiment app", "exp", name, "app", a, "err", err)
+				plog.Error(
+					plog.TypeSystem,
+					"triggering experiment app",
+					"exp",
+					name,
+					"app",
+					a,
+					"err",
+					err,
+				)
+
 				return
 			}
 
-			pubsub.Publish("trigger-app", app.TriggerPublication{
+			pubsub.Publish("trigger-app", app.TriggerPublication{ //nolint:exhaustruct // partial initialization
 				Experiment: name, App: a, State: "success",
 			})
 		}
 	}()
-	plog.Info(plog.TypeAction, "experiment apps triggered", "user", ctx.Value("user").(string), "exp", name, "appsFilter", appsFilter)
+
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"experiment apps triggered",
+		"user",
+		user,
+		"exp",
+		name,
+		"appsFilter",
+		appsFilter,
+	)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// DELETE /experiments/{name}/trigger[?apps=<foo,bar,baz>]
+// CancelTriggeredExperimentApps - DELETE /experiments/{name}/trigger[?apps=<foo,bar,baz>].
 func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CancelTriggeredExperimentApps")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		name = vars["name"]
 
@@ -576,55 +804,87 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("experiments/trigger", "delete", name) {
-		plog.Warn(plog.TypeSecurity, "canceling triggered experiment apps not allowed", "user", ctx.Value("user").(string), "exp", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"canceling triggered experiment apps not allowed",
+			"user",
+			user,
+			"exp",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	go func() {
-		apps := strings.Split(appsFilter, ",")
+		apps := strings.SplitSeq(appsFilter, ",")
 
-		for _, a := range apps {
+		for a := range apps {
 			k := fmt.Sprintf("%s/%s", name, a)
 
+			commonMu.Lock()
 			cancels := cancelers[k]
+			delete(cancelers, k)
+			commonMu.Unlock()
 
 			for _, cancel := range cancels {
 				cancel()
 			}
 
-			delete(cancelers, k)
-
-			pubsub.Publish("trigger-app", app.TriggerPublication{
+			pubsub.Publish("trigger-app", app.TriggerPublication{ //nolint:exhaustruct // partial initialization
 				Experiment: name, Verb: "delete", App: a, State: "success",
 			})
 		}
 	}()
-	plog.Info(plog.TypeAction, "experiment apps trigger cancelled", "user", ctx.Value("user").(string), "exp", name, "appsFilter", appsFilter)
+
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"experiment apps trigger cancelled",
+		"user",
+		user,
+		"exp",
+		name,
+		"appsFilter",
+		appsFilter,
+	)
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// GET /experiments/{name}/schedule
+// GetExperimentSchedule - GET /experiments/{name}/schedule.
 func GetExperimentSchedule(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetExperimentSchedule")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		name = vars["name"]
 	)
 
 	if !role.Allowed("experiments/schedule", "get", name) {
-		plog.Warn(plog.TypeSecurity, "getting experiment schedule not allowed", "user", ctx.Value("user").(string), "exp", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting experiment schedule not allowed",
+			"user",
+			user,
+			"exp",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	if status := cache.IsExperimentLocked(name); status != "" {
 		plog.Warn(plog.TypeSystem, "experiment locked", "exp", name, "status", status)
-		http.Error(w, fmt.Sprintf("experiment %s is cache.Locked with status %s", name, status), http.StatusConflict)
+		http.Error(
+			w,
+			fmt.Sprintf("experiment %s is cache.Locked with status %s", name, status),
+			http.StatusConflict,
+		)
 
 		return
 	}
@@ -633,39 +893,59 @@ func GetExperimentSchedule(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting experiment", "exp", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	body, err := marshaler.Marshal(util.ExperimentScheduleToProtobuf(*exp))
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling schedule for experiment", "exp", name, "err", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(
+			w,
+			http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError,
+		)
+
 		return
 	}
 
-	w.Write(body)
+	//nolint:gosec // XSS via taint analysis
+	_, _ = w.Write(body)
 }
 
-// POST /experiments/{name}/schedule
+// ScheduleExperiment - POST /experiments/{name}/schedule.
+//
+//nolint:funlen // handler
 func ScheduleExperiment(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ScheduleExperiment")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		name = vars["name"]
 	)
 
 	if !role.Allowed("experiments/schedule", "create", name) {
-		plog.Warn(plog.TypeSecurity, "creating experiment schedule not allowed", "user", ctx.Value("user").(string), "exp", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"creating experiment schedule not allowed",
+			"user",
+			user,
+			"exp",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	if status := cache.IsExperimentLocked(name); status != "" {
 		plog.Warn(plog.TypeSystem, "experiment locked", "exp", name, "status", status)
-		http.Error(w, fmt.Sprintf("experiment %s is cache.Locked with status %s", name, status), http.StatusConflict)
+		http.Error(
+			w,
+			fmt.Sprintf("experiment %s is cache.Locked with status %s", name, status),
+			http.StatusConflict,
+		)
 
 		return
 	}
@@ -674,21 +954,37 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	var req proto.UpdateScheduleRequest
+
 	err = unmarshaler.Unmarshal(body, &req)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
-	err = experiment.Schedule(experiment.ScheduleForName(name), experiment.ScheduleWithAlgorithm(req.Algorithm))
+	err = experiment.Schedule(
+		experiment.ScheduleForName(name),
+		experiment.ScheduleWithAlgorithm(req.GetAlgorithm()),
+	)
 	if err != nil {
-		plog.Error(plog.TypeSystem, "scheduling experiment", "exp", name, "algorithm", req.Algorithm, "err", err)
+		plog.Error(
+			plog.TypeSystem,
+			"scheduling experiment",
+			"exp",
+			name,
+			"algorithm",
+			req.GetAlgorithm(),
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -696,13 +992,19 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting experiment", "exp", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	body, err = marshaler.Marshal(util.ExperimentScheduleToProtobuf(*exp))
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling schedule for experiment", "exp", name, "err", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(
+			w,
+			http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError,
+		)
+
 		return
 	}
 
@@ -711,25 +1013,42 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) {
 		bt.NewResource("experiment", name, "schedule"),
 		body,
 	)
-	plog.Info(plog.TypeAction, "experiment schedule created", "user", ctx.Value("user").(string), "exp", name, "algorithm", req.Algorithm)
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"experiment schedule created",
+		"user",
+		user,
+		"exp",
+		name,
+		"algorithm",
+		req.GetAlgorithm(),
+	)
 
-	w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// GET /experiments/{name}/captures
+// GetExperimentCaptures - GET /experiments/{name}/captures.
 func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetExperimentCaptures")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		name = vars["name"]
 	)
 
 	if !role.Allowed("experiments/captures", "list", name) {
-		plog.Warn(plog.TypeSecurity, "listing experiment captures not allowed", "user", ctx.Value("user").(string), "exp", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"listing experiment captures not allowed",
+			"user",
+			user,
+			"exp",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -748,19 +1067,19 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling captures for experiment", "exp", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	w.Write(body)
+	//nolint:gosec // XSS via taint analysis
+	_, _ = w.Write(body)
 }
 
-// GET /experiments/{name}/files
+// GetExperimentFiles - GET /experiments/{name}/files.
 func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetExperimentFiles")
-
 	var (
 		ctx          = r.Context()
-		role         = ctx.Value("role").(rbac.Role)
+		role         = middleware.RoleFromContext(ctx)
 		vars         = mux.Vars(r)
 		name         = vars["name"]
 		query        = r.URL.Query()
@@ -772,8 +1091,17 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("experiments/files", "list", name) {
-		plog.Warn(plog.TypeSecurity, "listing experiment files not allowed", "user", ctx.Value("user").(string), "exp", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"listing experiment files not allowed",
+			"user",
+			user,
+			"exp",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -781,6 +1109,7 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting list of files for experiment", "exp", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -799,19 +1128,18 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling file list for experiment", "exp", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	w.Write(body)
+	_, _ = w.Write(body)
 }
 
-// GET /experiments/{name}/files/{filename}
+// GetExperimentFile - GET /experiments/{name}/files/{filename}.
 func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetExperimentFile")
-
 	var (
 		ctx   = r.Context()
-		role  = ctx.Value("role").(rbac.Role)
+		role  = middleware.RoleFromContext(ctx)
 		vars  = mux.Vars(r)
 		name  = vars["name"]
 		file  = vars["filename"]
@@ -820,8 +1148,17 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("experiments/files", "get", name) {
-		plog.Warn(plog.TypeSecurity, "getting experiment file not allowed", "user", ctx.Value("user").(string), "exp", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting experiment file not allowed",
+			"user",
+			user,
+			"exp",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -829,38 +1166,72 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, mm.ErrCaptureExists) {
 			http.Error(w, "capture still in progress", http.StatusBadRequest)
+
 			return
 		}
 
-		plog.Error(plog.TypeSystem, "getting file for experiment", "exp", name, "file", path, "err", err)
+		plog.Error(
+			plog.TypeSystem,
+			"getting file for experiment",
+			"exp",
+			name,
+			"file",
+			path,
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	if r.Header.Get("Accept") == "text/plain" {
 		w.Header().Set("Content-Type", "text/plain")
-		w.Write(contents)
+		_, _ = w.Write(contents) //nolint:gosec // XSS via taint analysis
+
 		return
 	}
 
 	w.Header().Set("Content-Disposition", "attachment; filename="+file)
-	plog.Info(plog.TypeAction, "downloaded file", "user", ctx.Value("user").(string), "exp", name, "file", path)
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"downloaded file",
+		"user",
+		user,
+		"exp",
+		name,
+		"file",
+		path,
+	)
 	http.ServeContent(w, r, "", time.Now(), bytes.NewReader(contents))
 }
 
-// GET /experiments/{name}/apps
+// GetExperimentApps - GET /experiments/{name}/apps.
 func GetExperimentApps(w http.ResponseWriter, r *http.Request) error {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetExperimentApps")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		name = mux.Vars(r)["name"]
 	)
 
 	if !role.Allowed("experiments/apps", "get", name) {
-		plog.Warn(plog.TypeSecurity, "getting experiment apps not allowed", "user", ctx.Value("user").(string), "exp", name)
-		err := weberror.NewWebError(nil, "getting experiment apps for %s not allowed for %s", name, ctx.Value("user").(string))
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting experiment apps not allowed",
+			"user",
+			user,
+			"exp",
+			name,
+		)
+		err := weberror.NewWebError(
+			nil,
+			"getting experiment apps for %s not allowed for %s",
+			name,
+			user,
+		)
+
 		return err.SetStatus(http.StatusForbidden)
 	}
 
@@ -875,25 +1246,21 @@ func GetExperimentApps(w http.ResponseWriter, r *http.Request) error {
 		apps[app.Name()] = false
 	}
 
-	for app, running := range exp.Status.AppRunning() {
-		apps[app] = running
-	}
+	maps.Copy(apps, exp.Status.AppRunning())
 
 	body, _ := json.Marshal(apps)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(body)
+	_, _ = w.Write(body)
 
 	return nil
 }
 
-// GET /experiments/{exp}/vms
+// GetVMs - GET /experiments/{exp}/vms.
 func GetVMs(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetVMs")
-
 	var (
 		ctx     = r.Context()
-		role    = ctx.Value("role").(rbac.Role)
+		role    = middleware.RoleFromContext(ctx)
 		vars    = mux.Vars(r)
 		expName = vars["exp"]
 		query   = r.URL.Query()
@@ -905,20 +1272,28 @@ func GetVMs(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms", "list") {
-		plog.Warn(plog.TypeSecurity, "getting vms file not allowed", "user", ctx.Value("user").(string))
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting vms file not allowed",
+			user,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
 	vms, err := vm.List(expName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -931,7 +1306,9 @@ func GetVMs(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
 				} else {
-					vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+					vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
+						screenshot,
+					)
 				}
 			}
 
@@ -950,9 +1327,10 @@ func GetVMs(w http.ResponseWriter, r *http.Request) {
 		allowed = allowed.Paginate(n, s)
 	}
 
-	resp := &proto.VMList{Total: uint32(len(allowed))}
-
-	resp.Vms = make([]*proto.VM, len(allowed))
+	resp := &proto.VMList{
+		Total: uint32(len(allowed)), //nolint:gosec // integer overflow conversion int -> uint32
+		Vms:   make([]*proto.VM, len(allowed)),
+	}
 	for i, v := range allowed {
 		resp.Vms[i] = util.VMToProtobuf(expName, v, exp.Spec.Topology())
 	}
@@ -960,19 +1338,18 @@ func GetVMs(w http.ResponseWriter, r *http.Request) {
 	body, err := marshaler.Marshal(resp)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// GET /experiments/{exp}/vms/{name}
+// GetVM - GET /experiments/{exp}/vms/{name}.
 func GetVM(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetVM")
-
 	var (
 		ctx     = r.Context()
-		role    = ctx.Value("role").(rbac.Role)
+		role    = middleware.RoleFromContext(ctx)
 		vars    = mux.Vars(r)
 		expName = vars["exp"]
 		name    = vars["name"]
@@ -981,20 +1358,33 @@ func GetVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms", "get", fmt.Sprintf("%s/%s", expName, name)) {
-		plog.Warn(plog.TypeSecurity, "getting vm not allowed", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting vm not allowed",
+			"user",
+			user,
+			"exp",
+			expName,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
 	vm, err := vm.Get(expName, name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1010,96 +1400,118 @@ func GetVM(w http.ResponseWriter, r *http.Request) {
 	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *vm, exp.Spec.Topology()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// PATCH /experiments/{exp}/vms/{name}
+// UpdateVM - PATCH /experiments/{exp}/vms/{name}.
+//
+//nolint:funlen // handler
 func UpdateVM(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "UpdateVM")
-
 	var (
 		ctx     = r.Context()
-		role    = ctx.Value("role").(rbac.Role)
+		role    = middleware.RoleFromContext(ctx)
 		vars    = mux.Vars(r)
 		expName = vars["exp"]
 		name    = vars["name"]
 	)
 
 	if !role.Allowed("vms", "patch", fmt.Sprintf("%s/%s", expName, name)) {
-		plog.Warn(plog.TypeSecurity, "updating vm not allowed", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
+		plog.Warn(
+			plog.TypeSecurity,
+			"updating vm not allowed",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			expName,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	var req proto.UpdateVMRequest
 	if err := unmarshaler.Unmarshal(body, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
 	opts := []vm.UpdateOption{
 		vm.UpdateExperiment(expName),
 		vm.UpdateVM(name),
-		vm.UpdateWithCPU(int(req.Cpus)),
-		vm.UpdateWithMem(int(req.Ram)),
-		vm.UpdateWithDisk(req.Disk),
-		vm.UpdateWithPartition(int(req.InjectPartition)),
+		vm.UpdateWithCPU(int(req.GetCpus())),
+		vm.UpdateWithMem(int(req.GetRam())),
+		vm.UpdateWithDisk(req.GetDisk()),
+		vm.UpdateWithPartition(int(req.GetInjectPartition())),
 	}
 
-	if req.Interface != nil {
-		opts = append(opts, vm.UpdateWithInterface(int(req.Interface.Index), req.Interface.Vlan))
+	if req.GetInterface() != nil {
+		opts = append(
+			opts,
+			vm.UpdateWithInterface(
+				int(req.GetInterface().GetIndex()),
+				req.GetInterface().GetVlan(),
+			),
+		)
 	}
 
-	if req.TagUpdateMode == proto.TagUpdateMode_SET {
-		opts = append(opts, vm.UpdateWithTags(req.Tags, false))
-	} else if req.TagUpdateMode == proto.TagUpdateMode_ADD {
-		opts = append(opts, vm.UpdateWithTags(req.Tags, true))
+	switch req.GetTagUpdateMode() {
+	case proto.TagUpdateMode_SET:
+		opts = append(opts, vm.UpdateWithTags(req.GetTags(), false))
+	case proto.TagUpdateMode_ADD:
+		opts = append(opts, vm.UpdateWithTags(req.GetTags(), true))
+	case proto.TagUpdateMode_NONE:
+		// do nothing
 	}
 
-	switch req.Boot.(type) {
-	case *proto.UpdateVMRequest_DoNotBoot:
+	if req.GetBoot() != nil {
 		opts = append(opts, vm.UpdateWithDNB(req.GetDoNotBoot()))
 	}
 
-	switch req.ClusterHost.(type) {
-	case *proto.UpdateVMRequest_Host:
+	if req.GetClusterHost() != nil {
 		opts = append(opts, vm.UpdateWithHost(req.GetHost()))
 	}
 
-	switch req.SnapshotOption.(type) {
-	case *proto.UpdateVMRequest_Snapshot:
+	if req.GetSnapshotOption() != nil {
 		opts = append(opts, vm.UpdateWithSnapshot(req.GetSnapshot()))
 	}
 
 	if err := vm.Update(opts...); err != nil {
 		plog.Error(plog.TypeSystem, "updating VM", "err", err)
 		http.Error(w, "unable to update VM", http.StatusInternalServerError)
+
 		return
 	}
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
 		http.Error(w, "unable to get experiment", http.StatusBadRequest)
+
 		return
 	}
 
 	vm, err := vm.Get(expName, name)
 	if err != nil {
 		http.Error(w, "unable to get VM", http.StatusInternalServerError)
+
 		return
 	}
 
 	if vm.Running {
-		screenshot, err := util.GetScreenshot(expName, name, "215")
+		screenshot, err := util.GetScreenshot(expName, name, defaultScreenshotSize)
 		if err != nil {
 			plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
 		} else {
@@ -1110,6 +1522,7 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 	body, err = marshaler.Marshal(util.VMToProtobuf(expName, *vm, exp.Spec.Topology()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1119,17 +1532,26 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
-	plog.Info(plog.TypeAction, "vm updated", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
-	w.Write(body)
+	plog.Info(
+		plog.TypeAction,
+		"vm updated",
+		"user",
+		middleware.UserFromContext(ctx),
+		"exp",
+		expName,
+		"vm",
+		name,
+	)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// PATCH /experiments/{exp}/vms
+// UpdateVMs - PATCH /experiments/{exp}/vms.
+//
+//nolint:funlen // handler
 func UpdateVMs(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "UpdateVMs")
-
 	var (
 		ctx     = r.Context()
-		role    = ctx.Value("role").(rbac.Role)
+		role    = middleware.RoleFromContext(ctx)
 		vars    = mux.Vars(r)
 		expName = vars["exp"]
 	)
@@ -1137,123 +1559,164 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	var req proto.UpdateVMRequestList
 	if err := unmarshaler.Unmarshal(body, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
-	resp := &proto.VMList{Total: req.Total}
-	resp.Vms = make([]*proto.VM, int(req.Total))
+	resp := &proto.VMList{Total: req.GetTotal()} //nolint:exhaustruct // partial initialization
+	resp.Vms = make([]*proto.VM, int(req.GetTotal()))
 
-	for index, vmRequest := range req.Vms {
+	for index, vmRequest := range req.GetVms() {
 		// Skip any vms that are not allowed to be updated
-		if !role.Allowed("vms", "patch", fmt.Sprintf("%s/%s", expName, vmRequest.Name)) {
-			plog.Warn(plog.TypeSecurity, "updating vm is not allowed", "user", ctx.Value("user").(string), "exp", expName, "vm", vmRequest.Name)
+		if !role.Allowed("vms", "patch", fmt.Sprintf("%s/%s", expName, vmRequest.GetName())) {
+			plog.Warn(
+				plog.TypeSecurity,
+				"updating vm is not allowed",
+				"user",
+				middleware.UserFromContext(ctx),
+				"exp",
+				expName,
+				"vm",
+				vmRequest.GetName(),
+			)
+
 			continue
 		}
 
 		opts := []vm.UpdateOption{
 			vm.UpdateExperiment(expName),
-			vm.UpdateVM(vmRequest.Name),
-			vm.UpdateWithCPU(int(vmRequest.Cpus)),
-			vm.UpdateWithMem(int(vmRequest.Ram)),
-			vm.UpdateWithDisk(vmRequest.Disk),
+			vm.UpdateVM(vmRequest.GetName()),
+			vm.UpdateWithCPU(int(vmRequest.GetCpus())),
+			vm.UpdateWithMem(int(vmRequest.GetRam())),
+			vm.UpdateWithDisk(vmRequest.GetDisk()),
 		}
 
-		if vmRequest.Interface != nil {
-			opts = append(opts, vm.UpdateWithInterface(int(vmRequest.Interface.Index), vmRequest.Interface.Vlan))
+		if vmRequest.GetInterface() != nil {
+			opts = append(
+				opts,
+				vm.UpdateWithInterface(
+					int(vmRequest.GetInterface().GetIndex()),
+					vmRequest.GetInterface().GetVlan(),
+				),
+			)
 		}
 
-		switch vmRequest.Boot.(type) {
-		case *proto.UpdateVMRequest_DoNotBoot:
+		if vmRequest.GetBoot() != nil {
 			opts = append(opts, vm.UpdateWithDNB(vmRequest.GetDoNotBoot()))
 		}
 
-		switch vmRequest.ClusterHost.(type) {
-		case *proto.UpdateVMRequest_Host:
+		if vmRequest.GetClusterHost() != nil {
 			opts = append(opts, vm.UpdateWithHost(vmRequest.GetHost()))
 		}
 
-		switch vmRequest.SnapshotOption.(type) {
-		case *proto.UpdateVMRequest_Snapshot:
+		if vmRequest.GetSnapshotOption() != nil {
 			opts = append(opts, vm.UpdateWithSnapshot(vmRequest.GetSnapshot()))
 		}
 
 		if err := vm.Update(opts...); err != nil {
 			plog.Error(plog.TypeSystem, "updating VM", "err", err)
 			http.Error(w, "unable to update VM", http.StatusInternalServerError)
+
 			return
 		}
 
 		exp, err := experiment.Get(expName)
 		if err != nil {
 			http.Error(w, "unable to get experiment", http.StatusBadRequest)
+
 			return
 		}
 
-		vm, err := vm.Get(expName, vmRequest.Name)
+		vm, err := vm.Get(expName, vmRequest.GetName())
 		if err != nil {
 			http.Error(w, "unable to get VM", http.StatusInternalServerError)
+
 			return
 		}
 
 		if vm.Running {
-			screenshot, err := util.GetScreenshot(expName, vmRequest.Name, "215")
+			screenshot, err := util.GetScreenshot(expName, vmRequest.GetName(), defaultScreenshotSize)
 			if err != nil {
 				plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
 			} else {
-				vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+				vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
+					screenshot,
+				)
 			}
 		}
 
 		resp.Vms[index] = util.VMToProtobuf(expName, *vm, exp.Spec.Topology())
-		plog.Info(plog.TypeAction, "vm updated", "user", ctx.Value("user").(string), "exp", expName, "vm", vmRequest.Name)
+		plog.Info(
+			plog.TypeAction,
+			"vm updated",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			expName,
+			"vm",
+			vmRequest.GetName(),
+		)
 	}
 
 	body, err = marshaler.Marshal(resp)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// DELETE /experiments/{exp}/vms/{name}
+// DeleteVM - DELETE /experiments/{exp}/vms/{name}.
 func DeleteVM(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "DeleteVM")
-
 	var (
 		ctx     = r.Context()
-		role    = ctx.Value("role").(rbac.Role)
+		role    = middleware.RoleFromContext(ctx)
 		vars    = mux.Vars(r)
 		expName = vars["exp"]
 		name    = vars["name"]
 	)
 
 	if !role.Allowed("vms", "delete", fmt.Sprintf("%s/%s", expName, name)) {
-		plog.Warn(plog.TypeSecurity, "deleting vm not allowed", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
+		plog.Warn(
+			plog.TypeSecurity,
+			"deleting vm not allowed",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			expName,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
 	if !exp.Running() {
 		http.Error(w, "experiment not running", http.StatusBadRequest)
+
 		return
 	}
 
 	if err := mm.KillVM(mm.NS(expName), mm.VMName(name)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1263,17 +1726,26 @@ func DeleteVM(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
-	plog.Info(plog.TypeAction, "vm deleted", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
+	plog.Info(
+		plog.TypeAction,
+		"vm deleted",
+		"user",
+		middleware.UserFromContext(ctx),
+		"exp",
+		expName,
+		"vm",
+		name,
+	)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// POST /experiments/{exp}/vms/{name}/start
+// StartVM - POST /experiments/{exp}/vms/{name}/start.
+//
+//nolint:funlen // handler
 func StartVM(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StartVM")
-
 	var (
 		ctx      = r.Context()
-		role     = ctx.Value("role").(rbac.Role)
+		role     = middleware.RoleFromContext(ctx)
 		vars     = mux.Vars(r)
 		expName  = vars["exp"]
 		name     = vars["name"]
@@ -1281,14 +1753,36 @@ func StartVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/start", "update", fullName) {
-		plog.Warn(plog.TypeSecurity, "starting vm not allowed", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
+		plog.Warn(
+			plog.TypeSecurity,
+			"starting vm not allowed",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			expName,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	if err := cache.LockVMForStarting(expName, name); err != nil {
-		plog.Error(plog.TypeSystem, "locking VM", "exp", expName, "vm", name, "action", "starting", "err", err)
+		plog.Error(
+			plog.TypeSystem,
+			"locking VM",
+			"exp",
+			expName,
+			"vm",
+			name,
+			"action",
+			"starting",
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusConflict)
+
 		return
 	}
 
@@ -1308,6 +1802,7 @@ func StartVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1320,6 +1815,7 @@ func StartVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
@@ -1332,6 +1828,7 @@ func StartVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1345,6 +1842,7 @@ func StartVM(w http.ResponseWriter, r *http.Request) {
 	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1354,17 +1852,26 @@ func StartVM(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
-	plog.Info(plog.TypeAction, "vm started", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
-	w.Write(body)
+	plog.Info(
+		plog.TypeAction,
+		"vm started",
+		"user",
+		middleware.UserFromContext(ctx),
+		"exp",
+		expName,
+		"vm",
+		name,
+	)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// POST /experiments/{exp}/vms/{name}/stop
+// StopVM - POST /experiments/{exp}/vms/{name}/stop.
+//
+//nolint:funlen // handler
 func StopVM(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StopVM")
-
 	var (
 		ctx      = r.Context()
-		role     = ctx.Value("role").(rbac.Role)
+		role     = middleware.RoleFromContext(ctx)
 		vars     = mux.Vars(r)
 		expName  = vars["exp"]
 		name     = vars["name"]
@@ -1372,14 +1879,36 @@ func StopVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/stop", "update", fullName) {
-		plog.Warn(plog.TypeSecurity, "stopping vm not allowed", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
+		plog.Warn(
+			plog.TypeSecurity,
+			"stopping vm not allowed",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			expName,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	if err := cache.LockVMForStopping(expName, name); err != nil {
-		plog.Error(plog.TypeSystem, "locking VM", "exp", expName, "vm", name, "action", "stopping", "err", err)
+		plog.Error(
+			plog.TypeSystem,
+			"locking VM",
+			"exp",
+			expName,
+			"vm",
+			name,
+			"action",
+			"stopping",
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusConflict)
+
 		return
 	}
 
@@ -1399,6 +1928,7 @@ func StopVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1411,6 +1941,7 @@ func StopVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
@@ -1423,12 +1954,14 @@ func StopVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1438,17 +1971,26 @@ func StopVM(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
-	plog.Info(plog.TypeAction, "vm stopped", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
-	w.Write(body)
+	plog.Info(
+		plog.TypeAction,
+		"vm stopped",
+		"user",
+		middleware.UserFromContext(ctx),
+		"exp",
+		expName,
+		"vm",
+		name,
+	)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// GET /experiments/{exp}/vms/{name}/restart
+// RestartVM - GET /experiments/{exp}/vms/{name}/restart.
+//
+//nolint:funlen // handler
 func RestartVM(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "RestartVM")
-
 	var (
 		ctx      = r.Context()
-		role     = ctx.Value("role").(rbac.Role)
+		role     = middleware.RoleFromContext(ctx)
 		vars     = mux.Vars(r)
 		expName  = vars["exp"]
 		name     = vars["name"]
@@ -1456,14 +1998,36 @@ func RestartVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/restart", "update", fullName) {
-		plog.Warn(plog.TypeSecurity, "restarting vm not allowed", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
+		plog.Warn(
+			plog.TypeSecurity,
+			"restarting vm not allowed",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			expName,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	if err := cache.LockVMForStarting(expName, name); err != nil {
-		plog.Error(plog.TypeSystem, "locking VM", "exp", expName, "vm", name, "action", "starting", "err", err)
+		plog.Error(
+			plog.TypeSystem,
+			"locking VM",
+			"exp",
+			expName,
+			"vm",
+			name,
+			"action",
+			"starting",
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusConflict)
+
 		return
 	}
 
@@ -1477,22 +2041,25 @@ func RestartVM(w http.ResponseWriter, r *http.Request) {
 
 	if err := vm.Restart(expName, name); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
 	v, err := vm.Get(expName, name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	screenshot, err := util.GetScreenshot(expName, name, "215")
+	screenshot, err := util.GetScreenshot(expName, name, defaultScreenshotSize)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
 	} else {
@@ -1502,6 +2069,7 @@ func RestartVM(w http.ResponseWriter, r *http.Request) {
 	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1511,17 +2079,24 @@ func RestartVM(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
-	plog.Info(plog.TypeAction, "vm restarted", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
-	w.Write(body)
+	plog.Info(
+		plog.TypeAction,
+		"vm restarted",
+		"user",
+		middleware.UserFromContext(ctx),
+		"exp",
+		expName,
+		"vm",
+		name,
+	)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// GET /experiments/{exp}/vms/{name}/shutdown
+// ShutdownVM - GET /experiments/{exp}/vms/{name}/shutdown.
 func ShutdownVM(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ShutdownVM")
-
 	var (
 		ctx      = r.Context()
-		role     = ctx.Value("role").(rbac.Role)
+		role     = middleware.RoleFromContext(ctx)
 		vars     = mux.Vars(r)
 		expName  = vars["exp"]
 		name     = vars["name"]
@@ -1529,14 +2104,36 @@ func ShutdownVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/shutdown", "update", fullName) {
-		plog.Warn(plog.TypeSecurity, "shutting down vm not allowed", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
+		plog.Warn(
+			plog.TypeSecurity,
+			"shutting down vm not allowed",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			expName,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	if err := cache.LockVMForStopping(expName, name); err != nil {
-		plog.Error(plog.TypeSystem, "locking VM", "exp", expName, "vm", name, "action", "stopping", "err", err)
+		plog.Error(
+			plog.TypeSystem,
+			"locking VM",
+			"exp",
+			expName,
+			"vm",
+			name,
+			"action",
+			"stopping",
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusConflict)
+
 		return
 	}
 
@@ -1544,18 +2141,21 @@ func ShutdownVM(w http.ResponseWriter, r *http.Request) {
 
 	if err := vm.Shutdown(expName, name); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
 	v, err := vm.Get(expName, name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1564,6 +2164,7 @@ func ShutdownVM(w http.ResponseWriter, r *http.Request) {
 	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1573,17 +2174,24 @@ func ShutdownVM(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
-	plog.Info(plog.TypeAction, "vm shutdown", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
-	w.Write(body)
+	plog.Info(
+		plog.TypeAction,
+		"vm shutdown",
+		"user",
+		middleware.UserFromContext(ctx),
+		"exp",
+		expName,
+		"vm",
+		name,
+	)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// GET /experiments/{exp}/vms/{name}/reset
+// ResetVM - GET /experiments/{exp}/vms/{name}/reset.
 func ResetVM(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ResetVM")
-
 	var (
 		ctx      = r.Context()
-		role     = ctx.Value("role").(rbac.Role)
+		role     = middleware.RoleFromContext(ctx)
 		vars     = mux.Vars(r)
 		expName  = vars["exp"]
 		name     = vars["name"]
@@ -1591,14 +2199,36 @@ func ResetVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/reset", "update", fullName) {
-		plog.Warn(plog.TypeSecurity, "resetting vm not allowed", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
+		plog.Warn(
+			plog.TypeSecurity,
+			"resetting vm not allowed",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			expName,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	if err := cache.LockVMForStopping(expName, name); err != nil {
-		plog.Error(plog.TypeSystem, "locking VM", "exp", expName, "vm", name, "action", "stopping", "err", err)
+		plog.Error(
+			plog.TypeSystem,
+			"locking VM",
+			"exp",
+			expName,
+			"vm",
+			name,
+			"action",
+			"stopping",
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusConflict)
+
 		return
 	}
 
@@ -1606,24 +2236,28 @@ func ResetVM(w http.ResponseWriter, r *http.Request) {
 
 	if err := vm.ResetDiskState(expName, name); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
 	v, err := vm.Get(expName, name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1633,17 +2267,26 @@ func ResetVM(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
-	plog.Info(plog.TypeAction, "vm reset", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
-	w.Write(body)
+	plog.Info(
+		plog.TypeAction,
+		"vm reset",
+		"user",
+		middleware.UserFromContext(ctx),
+		"exp",
+		expName,
+		"vm",
+		name,
+	)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// POST /experiments/{exp}/vms/{name}/redeploy
+// RedeployVM - POST /experiments/{exp}/vms/{name}/redeploy.
+//
+//nolint:funlen // handler
 func RedeployVM(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "RedeployVM")
-
 	var (
 		ctx      = r.Context()
-		role     = ctx.Value("role").(rbac.Role)
+		role     = middleware.RoleFromContext(ctx)
 		vars     = mux.Vars(r)
 		expName  = vars["exp"]
 		name     = vars["name"]
@@ -1653,14 +2296,36 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/redeploy", "update", fullName) {
-		plog.Warn(plog.TypeSecurity, "reploying vm not allowed", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
+		plog.Warn(
+			plog.TypeSecurity,
+			"reploying vm not allowed",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			expName,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	if err := cache.LockVMForRedeploying(expName, name); err != nil {
-		plog.Error(plog.TypeSystem, "locking VM", "exp", expName, "vm", name, "action", "redeploying", "err", err)
+		plog.Error(
+			plog.TypeSystem,
+			"locking VM",
+			"exp",
+			expName,
+			"vm",
+			name,
+			"action",
+			"redeploying",
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusConflict)
+
 		return
 	}
 
@@ -1669,20 +2334,24 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 	exp, err := experiment.Get(expName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
 	v, err := vm.Get(expName, name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	v.Busy = true
 
-	body, _ := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
+	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1698,8 +2367,9 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 		defer close(redeployed)
 
 		body, err := io.ReadAll(r.Body)
-		if err != nil && err != io.EOF {
+		if err != nil && !errors.Is(err, io.EOF) {
 			redeployed <- err
+
 			return
 		}
 
@@ -1715,16 +2385,18 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 			var req proto.VMRedeployRequest
 
 			// Update VM struct with values from POST request body.
-			if err := unmarshaler.Unmarshal(body, &req); err != nil {
+			err := unmarshaler.Unmarshal(body, &req)
+			if err != nil {
 				redeployed <- err
+
 				return
 			}
 
 			opts = []vm.RedeployOption{
-				vm.CPU(int(req.Cpus)),
-				vm.Memory(int(req.Ram)),
-				vm.Disk(req.Disk),
-				vm.Inject(req.Injects),
+				vm.CPU(int(req.GetCpus())),
+				vm.Memory(int(req.GetRam())),
+				vm.Disk(req.GetDisk()),
+				vm.Inject(req.GetInjects()),
 			}
 		}
 
@@ -1738,7 +2410,7 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 	// HACK: mandatory sleep time to make it seem like a redeploy is
 	// happening client-side, even when the redeploy is fast (like for
 	// Linux VMs).
-	time.Sleep(5 * time.Second)
+	time.Sleep(5 * time.Second) //nolint:mnd // sleep duration
 
 	err = <-redeployed
 	if err != nil {
@@ -1751,6 +2423,7 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1758,10 +2431,11 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 	v, err = vm.Get(expName, name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	screenshot, err := util.GetScreenshot(expName, name, "215")
+	screenshot, err := util.GetScreenshot(expName, name, defaultScreenshotSize)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
 	} else {
@@ -1776,17 +2450,24 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
-	plog.Info(plog.TypeAction, "vm redeployed", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
-	w.Write(body)
+	plog.Info(
+		plog.TypeAction,
+		"vm redeployed",
+		"user",
+		middleware.UserFromContext(ctx),
+		"exp",
+		expName,
+		"vm",
+		name,
+	)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// GET /experiments/{exp}/vms/{name}/screenshot.png
+// GetScreenshot - GET /experiments/{exp}/vms/{name}/screenshot.png.
 func GetScreenshot(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetScreenshot")
-
 	var (
 		ctx    = r.Context()
-		role   = ctx.Value("role").(rbac.Role)
+		role   = middleware.RoleFromContext(ctx)
 		vars   = mux.Vars(r)
 		exp    = vars["exp"]
 		name   = vars["name"]
@@ -1796,46 +2477,68 @@ func GetScreenshot(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/screenshot", "get", exp+"/"+name) {
-		plog.Warn(plog.TypeSecurity, "screenshotting vm not allowed", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
+		plog.Warn(
+			plog.TypeSecurity,
+			"screenshotting vm not allowed",
+			"user",
+
+			ctx.Value(middleware.ContextKeyUser),
+			"exp",
+			exp,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	if size == "" {
-		size = "215"
+		size = defaultScreenshotSize
 	}
 
 	screenshot, err := util.GetScreenshot(exp, name, size)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
 	if encode {
 		encoded := "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
-		w.Write([]byte(encoded))
+		_, _ = w.Write([]byte(encoded)) //nolint:gosec // XSS via taint analysis
+
 		return
 	}
 
 	w.Header().Set("Content-Type", "image/png")
-	w.Write(screenshot)
+	_, _ = w.Write(screenshot) //nolint:gosec // XSS via taint analysis
 }
 
-// GET /experiments/{exp}/vms/{name}/captures
+// GetVMCaptures - GET /experiments/{exp}/vms/{name}/captures.
 func GetVMCaptures(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetVMCaptures")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		exp  = vars["exp"]
 		name = vars["name"]
 	)
 
 	if !role.Allowed("vms/captures", "list", fmt.Sprintf("%s/%s", exp, name)) {
-		plog.Warn(plog.TypeSecurity, "getting captures for VM not allowed", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting captures for VM not allowed",
+			"user",
+			user,
+			"exp",
+			exp,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -1844,27 +2547,37 @@ func GetVMCaptures(w http.ResponseWriter, r *http.Request) {
 	body, err := marshaler.Marshal(&proto.CaptureList{Captures: util.CapturesToProtobuf(captures)})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// POST /experiments/{exp}/vms/{name}/captures
+// StartVMCapture - POST /experiments/{exp}/vms/{name}/captures.
 func StartVMCapture(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StartVMCapture")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		exp  = vars["exp"]
 		name = vars["name"]
 	)
 
 	if !role.Allowed("vms/captures", "create", fmt.Sprintf("%s/%s", exp, name)) {
-		plog.Warn(plog.TypeSecurity, "starting capture for VM not allowed", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"starting capture for VM not allowed",
+			"user",
+			user,
+			"exp",
+			exp,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -1872,20 +2585,24 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	var req proto.StartCaptureRequest
+
 	err = unmarshaler.Unmarshal(body, &req)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
-	if err := vm.StartCapture(exp, name, int(req.Interface), req.Filename); err != nil {
+	if err := vm.StartCapture(exp, name, int(req.GetInterface()), req.GetFilename()); err != nil {
 		plog.Error(plog.TypeSystem, "starting capture for VM", "exp", exp, "vm", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1895,31 +2612,61 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
-	plog.Info(plog.TypeAction, "vm capture started", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"vm capture started",
+		"user",
+		user,
+		"exp",
+		exp,
+		"vm",
+		name,
+	)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// DELETE /experiments/{exp}/vms/{name}/captures
+// StopVMCaptures - DELETE /experiments/{exp}/vms/{name}/captures.
 func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StopVMCaptures")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		exp  = vars["exp"]
 		name = vars["name"]
 	)
 
 	if !role.Allowed("vms/captures", "delete", fmt.Sprintf("%s/%s", exp, name)) {
-		plog.Warn(plog.TypeSecurity, "stopping captures for VM not allowed", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"stopping captures for VM not allowed",
+			"user",
+			user,
+			"exp",
+			exp,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
-	if err := vm.StopCaptures(exp, name); err != nil {
-		plog.Error(plog.TypeSystem, "stopping captures for VM", "exp", exp, "name", name, "err", err)
+	err := vm.StopCaptures(exp, name)
+	if err != nil {
+		plog.Error(
+			plog.TypeSystem,
+			"stopping captures for VM",
+			"exp",
+			exp,
+			"name",
+			name,
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1929,24 +2676,41 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
-	plog.Info(plog.TypeAction, "vm capture stopped", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"vm capture stopped",
+		"user",
+		user,
+		"exp",
+		exp,
+		"vm",
+		name,
+	)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// POST /experiments/{exp}/captureSubnet
+// StartCaptureSubnet - POST /experiments/{exp}/captureSubnet.
 func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StartCaptureSubnet")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		exp  = vars["exp"]
 	)
 
 	if !role.Allowed("exp/captureSubnet", "create", exp) {
-		plog.Warn(plog.TypeSecurity, "starting subnet capture for experiment not allowed", "user", ctx.Value("user").(string), "exp", exp)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"starting subnet capture for experiment not allowed",
+			"user",
+			user,
+			"exp",
+			exp,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -1954,22 +2718,25 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	var req proto.CaptureSubnetRequest
+
 	err = unmarshaler.Unmarshal(body, &req)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
-	vmCaptures, err := vm.CaptureSubnet(exp, req.Subnet, req.Vms)
-
+	vmCaptures, err := vm.CaptureSubnet(exp, req.GetSubnet(), req.GetVms())
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unable to start subnet capture", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -1977,26 +2744,43 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unable to marshal vm capture list", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
-	plog.Info(plog.TypeAction, "subnet capture started", "user", ctx.Value("user").(string), "exp", exp)
-	w.Write(body)
+
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"subnet capture started",
+		"user",
+		user,
+		"exp",
+		exp,
+	)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// POST /experiments/{exp}/stopCaptureSubnet
+// StopCaptureSubnet - POST /experiments/{exp}/stopCaptureSubnet.
 func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StopCaptureSubnet")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		exp  = vars["exp"]
 	)
 
 	if !role.Allowed("exp/captureSubnet", "create", exp) {
-		plog.Warn(plog.TypeSecurity, "stopping subnet capture for experiment not allowed", "user", ctx.Value("user").(string), "exp", exp)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"stopping subnet capture for experiment not allowed",
+			"user",
+			user,
+			"exp",
+			exp,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -2004,6 +2788,7 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -2011,13 +2796,15 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 	if err := unmarshaler.Unmarshal(body, &req); err != nil {
 		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
-	vms, err := vm.StopCaptureSubnet(exp, req.Subnet, req.Vms)
+	vms, err := vm.StopCaptureSubnet(exp, req.GetSubnet(), req.GetVms())
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unable to stop subnet capture", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -2025,54 +2812,83 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unable to marshal vm capture list", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	plog.Info(plog.TypeAction, "subnet capture stopped", "user", ctx.Value("user").(string), "exp", exp)
-	w.Write(body)
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"subnet capture stopped",
+		"user",
+		user,
+		"exp",
+		exp,
+	)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// GET /experiments/{exp}/vms/{name}/snapshots
+// GetVMSnapshots - GET /experiments/{exp}/vms/{name}/snapshots.
 func GetVMSnapshots(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetVMSnapshots")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		exp  = vars["exp"]
 		name = vars["name"]
 	)
 
 	if !role.Allowed("vms/snapshots", "list", fmt.Sprintf("%s/%s", exp, name)) {
-		plog.Warn(plog.TypeSecurity, "listing snapshots for VM not allowed", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"listing snapshots for VM not allowed",
+			"user",
+			user,
+			"exp",
+			exp,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	snapshots, err := vm.Snapshots(exp, name)
 	if err != nil {
-		plog.Error(plog.TypeSystem, "getting list of snapshots for VM", "exp", exp, "vm", name, "err", err)
+		plog.Error(
+			plog.TypeSystem,
+			"getting list of snapshots for VM",
+			"exp",
+			exp,
+			"vm",
+			name,
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	body, err := marshaler.Marshal(&proto.SnapshotList{Snapshots: snapshots})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// POST /experiments/{exp}/vms/{name}/snapshots
+// SnapshotVM - POST /experiments/{exp}/vms/{name}/snapshots.
+//
+//nolint:funlen // handler
 func SnapshotVM(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "SnapshotVM")
-
 	var (
 		ctx      = r.Context()
-		role     = ctx.Value("role").(rbac.Role)
+		role     = middleware.RoleFromContext(ctx)
 		vars     = mux.Vars(r)
 		exp      = vars["exp"]
 		name     = vars["name"]
@@ -2080,8 +2896,19 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/snapshots", "create", fullName) {
-		plog.Warn(plog.TypeSecurity, "snapshotting VM not allowed", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"snapshotting VM not allowed",
+			"user",
+			user,
+			"exp",
+			exp,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -2089,20 +2916,35 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	var req proto.SnapshotRequest
+
 	err = unmarshaler.Unmarshal(body, &req)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
 	if err := cache.LockVMForSnapshotting(exp, name); err != nil {
-		plog.Error(plog.TypeSystem, "locking VM", "exp", exp, "vm", name, "action", "snapshotting", "err", err)
+		plog.Error(
+			plog.TypeSystem,
+			"locking VM",
+			"exp",
+			exp,
+			"vm",
+			name,
+			"action",
+			"snapshotting",
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusConflict)
+
 		return
 	}
 
@@ -2128,8 +2970,8 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 			if err == nil {
 				plog.Debug(plog.TypeSystem, "snapshot percent complete", "percent", progress)
 
-				status := map[string]interface{}{
-					"percent": progress / 100,
+				status := map[string]any{
+					"percent": progress / percentDivisor,
 				}
 
 				marshalled, _ := json.Marshal(status)
@@ -2145,7 +2987,7 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 
 	cb := func(s string) { status <- s }
 
-	if err := vm.Snapshot(exp, name, req.Filename, cb); err != nil {
+	if err := vm.Snapshot(exp, name, req.GetFilename(), cb); err != nil {
 		broker.Broadcast(
 			bt.NewRequestPolicy("vms/snapshots", "create", fullName),
 			bt.NewResource("experiment/vm/snapshot", exp+"/"+name, "errorCreating"),
@@ -2154,6 +2996,7 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 
 		plog.Error(plog.TypeSystem, "snapshotting VM", "exp", exp, "vm", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -2163,17 +3006,27 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
-	plog.Info(plog.TypeAction, "vm snapshotted", "user", ctx.Value("user").(string), "exp", exp, "vm", name, "file", req.Filename)
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"vm snapshotted",
+		"user",
+		user,
+		"exp",
+		exp,
+		"vm",
+		name,
+		"file",
+		req.GetFilename(),
+	)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// POST /experiments/{exp}/vms/{name}/snapshots/{snapshot}
+// RestoreVM - POST /experiments/{exp}/vms/{name}/snapshots/{snapshot}.
 func RestoreVM(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "RestoreVM")
-
 	var (
 		ctx      = r.Context()
-		role     = ctx.Value("role").(rbac.Role)
+		role     = middleware.RoleFromContext(ctx)
 		vars     = mux.Vars(r)
 		exp      = vars["exp"]
 		name     = vars["name"]
@@ -2182,14 +3035,38 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/snapshots", "update", fullName) {
-		plog.Warn(plog.TypeSecurity, "restoring VM not allowed", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"restoring VM not allowed",
+			"user",
+			user,
+			"exp",
+			exp,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
-	if err := cache.LockVMForRestoring(exp, name); err != nil {
-		plog.Error(plog.TypeSystem, "locking VM", "exp", exp, "vm", name, "action", "restoring", "err", err)
+	err := cache.LockVMForRestoring(exp, name)
+	if err != nil {
+		plog.Error(
+			plog.TypeSystem,
+			"locking VM",
+			"exp",
+			exp,
+			"vm",
+			name,
+			"action",
+			"restoring",
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusConflict)
+
 		return
 	}
 
@@ -2201,15 +3078,21 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
-	if err := vm.Restore(exp, name, snap); err != nil {
+	err = vm.Restore(exp, name, snap)
+	if err != nil {
 		broker.Broadcast(
 			bt.NewRequestPolicy("vms/snapshots", "create", fullName),
-			bt.NewResource("experiment/vm/snapshot", fmt.Sprintf("%s/%s", exp, name), "errorRestoring"),
+			bt.NewResource(
+				"experiment/vm/snapshot",
+				fmt.Sprintf("%s/%s", exp, name),
+				"errorRestoring",
+			),
 			nil,
 		)
 
 		plog.Error(plog.TypeSystem, "restoring VM", "exp", exp, "vm", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -2219,17 +3102,27 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
-	plog.Info(plog.TypeAction, "vm restored", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"vm restored",
+		"user",
+		user,
+		"exp",
+		exp,
+		"vm",
+		name,
+	)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// POST /experiments/{exp}/vms/{name}/commit
+// CommitVM - POST /experiments/{exp}/vms/{name}/commit.
+//
+//nolint:funlen // handler
 func CommitVM(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CommitVM")
-
 	var (
 		ctx      = r.Context()
-		role     = ctx.Value("role").(rbac.Role)
+		role     = middleware.RoleFromContext(ctx)
 		vars     = mux.Vars(r)
 		expName  = vars["exp"]
 		name     = vars["name"]
@@ -2237,8 +3130,19 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/commit", "create", fullName) {
-		plog.Warn(plog.TypeSecurity, "committing VM not allowed", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"committing VM not allowed",
+			"user",
+			user,
+			"exp",
+			expName,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -2246,6 +3150,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -2257,25 +3162,40 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 	// the existing file name for the base image.
 	if len(body) != 0 {
 		var req proto.BackingImageRequest
+
 		err = unmarshaler.Unmarshal(body, &req)
 		if err != nil {
 			plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
+
 			return
 		}
 
-		if req.Filename == "" {
+		if req.GetFilename() == "" {
 			plog.Error(plog.TypeSystem, "missing filename for commit")
 			http.Error(w, "missing 'filename' key", http.StatusBadRequest)
+
 			return
 		}
 
-		filename = req.Filename
+		filename = req.GetFilename()
 	}
 
 	if err := cache.LockVMForCommitting(expName, name); err != nil {
-		plog.Error(plog.TypeSystem, "locking VM", "exp", expName, "vm", name, "action", "committing", "err", err)
+		plog.Error(
+			plog.TypeSystem,
+			"locking VM",
+			"exp",
+			expName,
+			"vm",
+			name,
+			"action",
+			"committing",
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusConflict)
+
 		return
 	}
 
@@ -2290,13 +3210,12 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 			}
 		*/
 
-		// TODO
-
 		http.Error(w, "must provide new disk name for commit", http.StatusBadRequest)
+
 		return
 	}
 
-	payload := &proto.BackingImageResponse{Disk: filename}
+	payload := &proto.BackingImageResponse{Disk: filename} //nolint:exhaustruct // partial initialization
 	body, _ = marshaler.Marshal(payload)
 
 	broker.Broadcast(
@@ -2311,7 +3230,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		for s := range status {
 			plog.Debug(plog.TypeSystem, "VM commit percent complete", "percent", s)
 
-			status := map[string]interface{}{
+			status := map[string]any{
 				"percent": s,
 			}
 
@@ -2336,6 +3255,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 
 		plog.Error(plog.TypeSystem, "committing VM", "exp", expName, "vm", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -2348,6 +3268,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		http.Error(w, err.Error(), http.StatusBadRequest)
+
 		return
 	}
 
@@ -2360,6 +3281,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -2372,17 +3294,27 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
-	plog.Info(plog.TypeAction, "vm committed", "user", ctx.Value("user").(string), "exp", expName, "vm", name)
-	w.Write(body)
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"vm committed",
+		"user",
+		user,
+		"exp",
+		expName,
+		"vm",
+		name,
+	)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// POST /experiments/{exp}/vms/{name}/memorySnapshot
+// CreateVMMemorySnapshot - POST /experiments/{exp}/vms/{name}/memorySnapshot.
+//
+//nolint:funlen // handler
 func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreateVMMemorySnapshot")
-
 	var (
 		ctx      = r.Context()
-		role     = ctx.Value("role").(rbac.Role)
+		role     = middleware.RoleFromContext(ctx)
 		vars     = mux.Vars(r)
 		exp      = vars["exp"]
 		name     = vars["name"]
@@ -2390,8 +3322,19 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/memorySnapshot", "create", fullName) {
-		plog.Warn(plog.TypeSecurity, "capturing memory snapshot of VM not allowed", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"capturing memory snapshot of VM not allowed",
+			"user",
+			user,
+			"exp",
+			exp,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -2399,6 +3342,7 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -2408,37 +3352,52 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 	// filename to use for capturing a memory snapshot.
 	if len(body) != 0 {
 		var req proto.MemorySnapshotRequest
+
 		err = unmarshaler.Unmarshal(body, &req)
 		if err != nil {
 			plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
+
 			return
 		}
 
-		if req.Filename == "" {
+		if req.GetFilename() == "" {
 			plog.Error(plog.TypeSystem, "missing filename for memory snapshot")
 			http.Error(w, "missing 'filename' key", http.StatusBadRequest)
+
 			return
 		}
 
-		filename = req.Filename
+		filename = req.GetFilename()
 	}
 
 	if err := cache.LockVMForMemorySnapshotting(exp, name); err != nil {
-		plog.Error(plog.TypeSystem, "locking VM", "exp", exp, "vm", name, "action", "memory snapshotting", "err", err)
+		plog.Error(
+			plog.TypeSystem,
+			"locking VM",
+			"exp",
+			exp,
+			"vm",
+			name,
+			"action",
+			"memory snapshotting",
+			"err",
+			err,
+		)
 		http.Error(w, err.Error(), http.StatusConflict)
+
 		return
 	}
 
 	defer cache.UnlockVM(exp, name)
 
 	if filename == "" {
-
 		http.Error(w, "must provide new disk name for memory snapshot", http.StatusBadRequest)
+
 		return
 	}
 
-	payload := &proto.MemorySnapshotResponse{Disk: filename}
+	payload := &proto.MemorySnapshotResponse{Disk: filename} //nolint:exhaustruct // partial initialization
 	body, _ = marshaler.Marshal(payload)
 
 	broker.Broadcast(
@@ -2450,7 +3409,6 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 	status := make(chan string)
 
 	go func() {
-
 		defer close(status)
 
 		for {
@@ -2461,7 +3419,7 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 
 			progress, err := strconv.ParseFloat(s, 64)
 			if err == nil {
-				status := map[string]interface{}{
+				status := map[string]any{
 					"percent": progress,
 				}
 
@@ -2489,6 +3447,7 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 
 		plog.Error(plog.TypeSystem, "memory snapshot for VM", "exp", exp, "vm", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -2500,24 +3459,39 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 		marshalled,
 	)
 
-	plog.Info(plog.TypeAction, "vm memory snapshot created", "user", ctx.Value("user").(string), "exp", exp, "vm", name)
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeAction,
+		"vm memory snapshot created",
+		"user",
+		user,
+		"exp",
+		exp,
+		"vm",
+		name,
+	)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// GET /vms
+// GetAllVMs - GET /vms.
 func GetAllVMs(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetAllVMs")
-
 	var (
 		ctx   = r.Context()
-		role  = ctx.Value("role").(rbac.Role)
+		role  = middleware.RoleFromContext(ctx)
 		query = r.URL.Query()
 		size  = query.Get("screenshot")
 	)
 
 	if !role.Allowed("vms", "list") {
-		plog.Warn(plog.TypeSecurity, "listing vms not allowed", "user", ctx.Value("user").(string))
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"listing vms not allowed",
+			"user",
+			user,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -2535,8 +3509,17 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// TODO: handle error
-		vms, _ := vm.List(exp.Spec.ExperimentName())
+		vms, err := vm.List(exp.Spec.ExperimentName())
+		if err != nil {
+			plog.Error(
+				plog.TypeSystem,
+				"listing VMs for experiment",
+				"exp",
+				exp.Spec.ExperimentName(),
+				"err",
+				err,
+			)
+		}
 
 		for _, vm := range vms {
 			id := exp.Metadata.Name + "/" + vm.Name
@@ -2555,7 +3538,9 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
 				} else {
-					vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+					vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
+						screenshot,
+					)
 				}
 			}
 
@@ -2563,33 +3548,39 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resp := &proto.VMList{Total: uint32(len(allowed)), Vms: allowed}
+	resp := &proto.VMList{Total: uint32(len(allowed)), Vms: allowed} //nolint:gosec // integer overflow conversion int -> uint32
 
 	body, err := marshaler.Marshal(resp)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// GET /applications
+// GetApplications - GET /applications.
 func GetApplications(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetApplications")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 	)
 
 	if !role.Allowed("applications", "list") {
-		plog.Warn(plog.TypeSecurity, "listing applications not allowed", "user", ctx.Value("user").(string))
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"listing applications not allowed",
+			user,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	allowed := []string{}
+
 	for _, app := range app.List() {
 		if role.Allowed("applications", "list", app) {
 			allowed = append(allowed, app)
@@ -2599,34 +3590,41 @@ func GetApplications(w http.ResponseWriter, r *http.Request) {
 	body, err := marshaler.Marshal(&proto.AppList{Applications: allowed})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// GET /topologies
+// GetTopologies - GET /topologies.
 func GetTopologies(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetTopologies")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 	)
 
 	if !role.Allowed("topologies", "list") {
-		plog.Warn(plog.TypeSecurity, "listing topologies not allowed", "user", ctx.Value("user").(string))
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"listing topologies not allowed",
+			user,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	topologies, err := config.List("topology")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	allowed := []string{}
+
 	for _, topo := range topologies {
 		if role.Allowed("topologies", "list", topo.Metadata.Name) {
 			allowed = append(allowed, topo.Metadata.Name)
@@ -2636,32 +3634,38 @@ func GetTopologies(w http.ResponseWriter, r *http.Request) {
 	body, err := marshaler.Marshal(&proto.TopologyList{Topologies: allowed})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// GET /topologies/{topo}/scenarios
+// GetScenarios - GET /topologies/{topo}/scenarios.
 func GetScenarios(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetScenarios")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 		vars = mux.Vars(r)
 		topo = vars["topo"]
 	)
 
 	if !role.Allowed("scenarios", "list") {
-		plog.Warn(plog.TypeSecurity, "listing scenarios not allowed", "user", ctx.Value("user").(string))
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"listing scenarios not allowed",
+			user,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	scenarios, err := config.List("scenario")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -2674,12 +3678,8 @@ func GetScenarios(w http.ResponseWriter, r *http.Request) {
 			found bool
 		)
 
-		for _, t := range topos {
-			// We only care about scenarios pertaining to the given topology.
-			if t == topo {
-				found = true
-				break
-			}
+		if slices.Contains(topos, topo) {
+			found = true
 		}
 
 		if !found {
@@ -2689,11 +3689,19 @@ func GetScenarios(w http.ResponseWriter, r *http.Request) {
 		if role.Allowed("scenarios", "list", s.Metadata.Name) {
 			apps, err := scenario.AppList(s.Metadata.Name)
 			if err != nil {
-				plog.Error(plog.TypeSystem, "getting apps for scenario", "scenario", s.Metadata.Name, "err", err)
+				plog.Error(
+					plog.TypeSystem,
+					"getting apps for scenario",
+					"scenario",
+					s.Metadata.Name,
+					"err",
+					err,
+				)
+
 				continue
 			}
 
-			list := make([]interface{}, len(apps))
+			list := make([]any, len(apps))
 			for i, a := range apps {
 				list[i] = a
 			}
@@ -2706,34 +3714,41 @@ func GetScenarios(w http.ResponseWriter, r *http.Request) {
 	body, err := marshaler.Marshal(&proto.ScenarioList{Scenarios: allowed})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// GET /hosts
+// GetClusterHosts - GET /hosts.
 func GetClusterHosts(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetClusterHosts")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 	)
 
 	if !role.Allowed("hosts", "list") {
-		plog.Warn(plog.TypeSecurity, "listing cluster hosts not allowed", "user", ctx.Value("user").(string))
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"listing cluster hosts not allowed",
+			user,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	hosts, err := mm.GetClusterHosts(false)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
 	allowed := []mm.Host{}
+
 	for _, host := range hosts {
 		if role.Allowed("hosts", "list", host.Name) {
 			allowed = append(allowed, host)
@@ -2743,26 +3758,32 @@ func GetClusterHosts(w http.ResponseWriter, r *http.Request) {
 	marshalled, err := json.Marshal(mm.Cluster{Hosts: allowed})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	w.Write(marshalled)
+	_, _ = w.Write(marshalled) //nolint:gosec // XSS via taint analysis
 }
 
-// POST /console
+// CreateConsole - POST /console.
 func CreateConsole(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreateConsole")
-
 	if !o.minimegaConsole {
 		plog.Error(plog.TypeSystem, "request made for minimega console, but console not enabled")
 		http.Error(w, "'minimega-console' CLI arg not enabled", http.StatusMethodNotAllowed)
+
 		return
 	}
 
-	role := r.Context().Value("role").(rbac.Role)
+	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 	if !role.Allowed("miniconsole", "post") {
-		plog.Warn(plog.TypeSecurity, "creating miniconsole not allowed", "user", r.Context().Value("user").(string))
+		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"creating miniconsole not allowed",
+			user,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -2771,13 +3792,20 @@ func CreateConsole(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unable to get full path to phenix")
 		http.Error(w, "", http.StatusInternalServerError)
+
 		return
 	}
-	cmd := exec.Command(phenix, "mm", "--attach")
+
+	cmd := exec.CommandContext(r.Context(), phenix, "mm", "--attach") //nolint:gosec // Command injection via taint analysis
 
 	tty, err := pty.Start(cmd)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("could not start terminal: %v", err), http.StatusInternalServerError)
+		http.Error(
+			w,
+			fmt.Sprintf("could not start terminal: %v", err),
+			http.StatusInternalServerError,
+		)
+
 		return
 	}
 
@@ -2790,17 +3818,30 @@ func CreateConsole(w http.ResponseWriter, r *http.Request) {
 	ptyMu.Unlock()
 
 	body, _ := json.Marshal(util.WithRoot("pid", pid))
-	plog.Info(plog.TypeAction, "miniconsole created", "user", r.Context().Value("user").(string))
-	w.Write(body)
+
+	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
+	plog.Info(
+		plog.TypeAction,
+		"miniconsole created",
+		"user",
+		user,
+	)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// POST /console/{pid}/size?cols={[0-9]+}&rows={[0-9]+}
+// ResizeConsole - POST /console/{pid}/size?cols={[0-9]+}&rows={[0-9]+}.
 func ResizeConsole(w http.ResponseWriter, r *http.Request) {
-	role := r.Context().Value("role").(rbac.Role)
+	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 
 	if !role.Allowed("miniconsole", "post") {
-		plog.Warn(plog.TypeSecurity, "resizing miniconsole not allowed", "user", r.Context().Value("user").(string))
+		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"resizing miniconsole not allowed",
+			user,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -2809,11 +3850,13 @@ func ResizeConsole(w http.ResponseWriter, r *http.Request) {
 	pid, err := strconv.Atoi(vars["pid"])
 	if err != nil {
 		http.Error(w, "invalid pid", http.StatusBadRequest)
+
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)
+
 		return
 	}
 
@@ -2822,6 +3865,7 @@ func ResizeConsole(w http.ResponseWriter, r *http.Request) {
 	tty, ok := ptys[pid]
 	if !ok {
 		http.Error(w, "pty not found", http.StatusNotFound)
+
 		return
 	}
 
@@ -2830,12 +3874,14 @@ func ResizeConsole(w http.ResponseWriter, r *http.Request) {
 	rows, err := strconv.ParseUint(r.FormValue("rows"), 10, 16)
 	if err != nil {
 		http.Error(w, "invalid rows", http.StatusBadRequest)
+
 		return
 	}
 
 	cols, err := strconv.ParseUint(r.FormValue("cols"), 10, 16)
 	if err != nil {
 		http.Error(w, "invalid cols", http.StatusBadRequest)
+
 		return
 	}
 
@@ -2844,7 +3890,7 @@ func ResizeConsole(w http.ResponseWriter, r *http.Request) {
 	ws := struct {
 		R, C, X, Y uint16
 	}{
-		R: uint16(rows), C: uint16(cols),
+		R: uint16(rows), C: uint16(cols), X: 0, Y: 0,
 	}
 
 	_, _, errno := syscall.Syscall(
@@ -2855,22 +3901,29 @@ func ResizeConsole(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if errno != 0 {
-		plog.Error(plog.TypeSystem, "unable to set winsize", "err", syscall.Errno(errno))
+		plog.Error(plog.TypeSystem, "unable to set winsize", "err", errno)
 		http.Error(w, "set winsize failed", http.StatusInternalServerError)
 	}
 
 	// make sure winsize gets processed, hopefully the user isn't typing...
-	time.Sleep(100 * time.Millisecond)
-	io.WriteString(tty, "\n")
+	time.Sleep(consoleResizeSleep)
+
+	_, _ = io.WriteString(tty, "\n")
 }
 
-// GET /console/{pid}/ws
+// WsConsole - GET /console/{pid}/ws.
 func WsConsole(w http.ResponseWriter, r *http.Request) {
-	role := r.Context().Value("role").(rbac.Role)
+	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 
 	if !role.Allowed("miniconsole", "get") {
-		plog.Warn(plog.TypeSecurity, "getting miniconsole not allowed", "user", r.Context().Value("user").(string))
+		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting miniconsole not allowed",
+			user,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -2879,11 +3932,13 @@ func WsConsole(w http.ResponseWriter, r *http.Request) {
 	pid, err := strconv.Atoi(vars["pid"])
 	if err != nil {
 		http.Error(w, "invalid pid", http.StatusBadRequest)
+
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)
+
 		return
 	}
 
@@ -2892,44 +3947,44 @@ func WsConsole(w http.ResponseWriter, r *http.Request) {
 	tty, ok := ptys[pid]
 	if !ok {
 		http.Error(w, "pty not found", http.StatusNotFound)
+
 		return
 	}
 
 	ptyMu.Unlock()
 
 	websocket.Handler(func(ws *websocket.Conn) {
-		defer tty.Close()
+		defer func() { _ = tty.Close() }()
 
 		proc, err := os.FindProcess(pid)
 		if err != nil {
 			plog.Warn(plog.TypeSystem, "unable to find process", "pid", pid)
+
 			return
 		}
 
-		go io.Copy(ws, tty)
-		io.Copy(tty, ws)
+		go func() { _, _ = io.Copy(ws, tty) }()
+
+		_, _ = io.Copy(tty, ws)
 
 		plog.Debug(plog.TypeSystem, "killing minimega console", "pid", pid)
 
-		proc.Kill()
-		proc.Wait()
+		_ = proc.Kill()
+		_, _ = proc.Wait()
 
 		ptyMu.Lock()
 		delete(ptys, pid)
 		ptyMu.Unlock()
 
 		plog.Debug(plog.TypeSystem, "killed minimega console", "pid", pid)
-
 	}).ServeHTTP(w, r)
 }
 
-// POST /experiments/{exp}/vms/{name}/cdrom
+// ChangeOpticalDisc - POST /experiments/{exp}/vms/{name}/cdrom.
 func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ChangeOpticalDisc")
-
 	var (
 		ctx      = r.Context()
-		role     = ctx.Value("role").(rbac.Role)
+		role     = middleware.RoleFromContext(ctx)
 		query    = r.URL.Query()
 		vars     = mux.Vars(r)
 		exp      = vars["exp"]
@@ -2939,14 +3994,28 @@ func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/cdrom", "update", fullName) {
-		plog.Warn(plog.TypeSecurity, "changing optical disk not allowed", "user", r.Context().Value("user").(string), "exp", exp, "vm", name, "iso", isoPath)
+		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"changing optical disk not allowed",
+			user,
+			"exp",
+			exp,
+			"vm",
+			name,
+			"iso",
+			isoPath,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
-	if err := vm.ChangeOpticalDisc(exp, name, isoPath); err != nil {
+	err := vm.ChangeOpticalDisc(exp, name, isoPath)
+	if err != nil {
 		plog.Error(plog.TypeSystem, "changing disc for VM", "exp", exp, "vm", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -2956,18 +4025,26 @@ func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
-	plog.Info(plog.TypeAction, "optical disk changed", "user", r.Context().Value("user").(string), "exp", exp, "vm", name, "iso", isoPath)
+	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
+	plog.Info(
+		plog.TypeAction,
+		"optical disk changed",
+		user,
+		"exp",
+		exp,
+		"vm",
+		name,
+		"iso",
+		isoPath,
+	)
 	w.WriteHeader(http.StatusNoContent)
-
 }
 
-// DELETE /experiments/{exp}/vms/{name}/cdrom
+// EjectOpticalDisc - DELETE /experiments/{exp}/vms/{name}/cdrom.
 func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "EjectOpticalDisc")
-
 	var (
 		ctx      = r.Context()
-		role     = ctx.Value("role").(rbac.Role)
+		role     = middleware.RoleFromContext(ctx)
 		vars     = mux.Vars(r)
 		exp      = vars["exp"]
 		name     = vars["name"]
@@ -2975,14 +4052,26 @@ func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if !role.Allowed("vms/cdrom", "delete", fullName) {
-		plog.Warn(plog.TypeSecurity, "ejecting optical disk not allowed", "user", r.Context().Value("user").(string), "exp", exp, "vm", name)
+		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"ejecting optical disk not allowed",
+			user,
+			"exp",
+			exp,
+			"vm",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
-	if err := vm.EjectOpticalDisc(exp, name); err != nil {
+	err := vm.EjectOpticalDisc(exp, name)
+	if err != nil {
 		plog.Error(plog.TypeSystem, "ejecting disc for VM", "exp", exp, "vm", name, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -2992,71 +4081,88 @@ func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
-	plog.Info(plog.TypeAction, "optical disk ejected", "user", r.Context().Value("user").(string), "exp", exp, "vm", name)
+	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
+	plog.Info(
+		plog.TypeAction,
+		"optical disk ejected",
+		user,
+		"exp",
+		exp,
+		"vm",
+		name,
+	)
 	w.WriteHeader(http.StatusNoContent)
-
 }
 
-func parseDuration(v string, d *time.Duration) error {
-	var err error
-	*d, err = time.ParseDuration(v)
-	return err
-}
-
-func parseInt(v string, d *int) error {
-	var err error
-	*d, err = strconv.Atoi(v)
-	return err
-}
-
-// GET /settings
+// GetSettings - GET /settings.
 func GetSettings(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP Handler called", "handler", "GetSettings")
-
 	settings, err := settings.GetSettings()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting proto settings", "err:", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(
+			w,
+			http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError,
+		)
+
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+
 	body, err := json.Marshal(settings)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling settings", "err:", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(
+			w,
+			http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError,
+		)
+
 		return
 	}
-	w.Write(body)
+
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// POST /settings
+// SetSettings - POST /settings.
 func SetSettings(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "SetSettings")
-
 	var (
 		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		role = middleware.RoleFromContext(ctx)
 	)
 
 	if !role.Allowed("settings", "update") {
-		plog.Warn(plog.TypeSystem, "setting settings not allowed", "user", ctx.Value("user").(string))
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSystem,
+			"setting settings not allowed",
+			user,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "reading request body", "err", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(
+			w,
+			http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError,
+		)
+
 		return
 	}
 
-	s := &settings.Settings{}
+	s := &settings.Settings{} //nolint:exhaustruct // partial initialization
+
 	err = json.Unmarshal(body, s)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Unmarshaling request body", "err", err)
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+
 		return
 	}
 
@@ -3064,29 +4170,44 @@ func SetSettings(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Updating all settings", "err", err)
 		http.Error(w, "Error updating settings", http.StatusInternalServerError)
+
 		return
 	}
-	plog.Info(plog.TypeSystem, "settings changed", "user", ctx.Value("user").(string))
+
+	user := middleware.UserFromContext(ctx)
+	plog.Info(
+		plog.TypeSystem,
+		"settings changed",
+		"user",
+		user,
+	)
 }
 
-// GET /settings/password
+// GetPasswordRequirements - GET /settings/password.
 func GetPasswordRequirements(w http.ResponseWriter, r *http.Request) {
-	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetPasswordRequirements")
-	settings.SetDefaults()
+	_ = settings.SetDefaults()
 
 	passwordReqs, err := settings.GetPasswordSettings()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Getting password settings:", "err", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(
+			w,
+			http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError,
+		)
+
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+
 	body, err := json.Marshal(passwordReqs)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Marshalling password reqs:", "err", err)
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+
 		return
 	}
-	w.Write(body)
+
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }

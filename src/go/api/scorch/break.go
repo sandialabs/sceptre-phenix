@@ -6,15 +6,17 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/mitchellh/mapstructure"
+
 	"phenix/api/scorch/scorchmd"
 	"phenix/app"
 	"phenix/util"
 	"phenix/util/mm"
 	"phenix/util/tap"
 	"phenix/web/scorch"
-
-	"github.com/mitchellh/mapstructure"
 )
+
+const tapBreakSuffixLen = 8
 
 type BreakMetadata struct {
 	Tap    *tap.Tap `mapstructure:"tap"`
@@ -25,8 +27,9 @@ type Break struct {
 	options Options
 }
 
-func (this *Break) Init(opts ...Option) error {
-	this.options = NewOptions(opts...)
+func (b *Break) Init(opts ...Option) error {
+	b.options = NewOptions(opts...)
+
 	return nil
 }
 
@@ -34,34 +37,34 @@ func (Break) Type() string {
 	return "break"
 }
 
-func (this Break) Configure(ctx context.Context) error {
-	return this.breakPoint(ctx, ACTIONCONFIG)
+func (b Break) Configure(ctx context.Context) error {
+	return b.breakPoint(ctx, ActionConfigure)
 }
 
-func (this Break) Start(ctx context.Context) error {
-	return this.breakPoint(ctx, ACTIONSTART)
+func (b Break) Start(ctx context.Context) error {
+	return b.breakPoint(ctx, ActionStart)
 }
 
-func (this Break) Stop(ctx context.Context) error {
-	return this.breakPoint(ctx, ACTIONSTOP)
+func (b Break) Stop(ctx context.Context) error {
+	return b.breakPoint(ctx, ActionStop)
 }
 
-func (this Break) Cleanup(ctx context.Context) error {
-	return this.breakPoint(ctx, ACTIONCLEANUP)
+func (b Break) Cleanup(ctx context.Context) error {
+	return b.breakPoint(ctx, ActionCleanup)
 }
 
-func (this Break) breakPoint(ctx context.Context, stage Action) error {
-	exp := this.options.Exp.Spec.ExperimentName()
+func (b Break) breakPoint(ctx context.Context, stage Action) error {
+	exp := b.options.Exp.Spec.ExperimentName()
 
 	var md BreakMetadata
 
-	if err := mapstructure.Decode(this.options.Meta, &md); err != nil {
+	if err := mapstructure.Decode(b.options.Meta, &md); err != nil {
 		return fmt.Errorf("decoding 'break' component metadata: %w", err)
 	}
 
 	if md.Tap != nil {
 		pairs := discoverUsedPairs()
-		md.Tap.Init(this.options.Exp.Spec.DefaultBridge(), tap.Experiment(exp), tap.UsedPairs(pairs))
+		md.Tap.Init(b.options.Exp.Spec.DefaultBridge(), tap.Experiment(exp), tap.UsedPairs(pairs))
 
 		// backwards compatibility (doesn't support external access firewall rules)
 		if v, ok := md.Tap.Other["internetAccess"]; ok {
@@ -71,23 +74,25 @@ func (this Break) breakPoint(ctx context.Context, stage Action) error {
 
 		// tap names cannot be longer than 15 characters
 		// (dictated by max length of Linux interface names)
-		md.Tap.Name = fmt.Sprintf("%s-tapbrk", util.RandomString(8))
+		md.Tap.Name = util.RandomString(tapBreakSuffixLen) + "-tapbrk"
 
 		if _, err := md.Tap.Create(mm.Headnode()); err != nil {
 			return fmt.Errorf("setting up tap for break: %w", err)
 		}
 
 		var status scorchmd.ScorchStatus
-		if err := this.options.Exp.Status.ParseAppStatus("scorch", &status); err != nil {
+
+		err := b.options.Exp.Status.ParseAppStatus("scorch", &status)
+		if err != nil {
 			return fmt.Errorf("getting experiment status for scorch app: %w", err)
 		}
 
-		status.Taps[this.options.Name] = md.Tap
+		status.Taps[b.options.Name] = md.Tap
 
-		this.options.Exp.Status.SetAppStatus("scorch", status)
-		this.options.Exp.WriteToStore(true)
+		b.options.Exp.Status.SetAppStatus("scorch", status)
+		_ = b.options.Exp.WriteToStore(true)
 
-		defer md.Tap.Delete(mm.Headnode())
+		defer func() { _ = md.Tap.Delete(mm.Headnode()) }()
 	}
 
 	var (
@@ -100,7 +105,7 @@ func (this Break) breakPoint(ctx context.Context, stage Action) error {
 		return fmt.Errorf("creating temporary directory for break component: %w", err)
 	}
 
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	if md.Readme == "" {
 		if md.Tap == nil {
@@ -113,7 +118,8 @@ func (this Break) breakPoint(ctx context.Context, stage Action) error {
 	} else {
 		readme := filepath.Join(dir, "README")
 
-		if err := os.WriteFile(readme, []byte(md.Readme), 0644); err != nil {
+		err = os.WriteFile(readme, []byte(md.Readme), 0o600)
+		if err != nil {
 			return fmt.Errorf("writing break component README to file: %w", err)
 		}
 
@@ -123,11 +129,23 @@ func (this Break) breakPoint(ctx context.Context, stage Action) error {
 
 	if app.IsContextTriggerCLI(ctx) {
 		// this blocks until terminal is exited
-		if err := terminal(ctx, dir, cmd, args); err != nil {
+		err = terminal(ctx, dir, cmd, args)
+		if err != nil {
 			return fmt.Errorf("starting bash terminal: %w", err)
 		}
 	} else if app.IsContextTriggerUI(ctx) {
-		done, err := scorch.CreateWebTerminal(ctx, exp, this.options.Run, this.options.Loop, string(stage), this.options.Name, dir, cmd, args)
+		var done <-chan struct{}
+		done, err = scorch.CreateWebTerminal(
+			ctx,
+			exp,
+			b.options.Run,
+			b.options.Loop,
+			string(stage),
+			b.options.Name,
+			dir,
+			cmd,
+			args,
+		)
 		if err != nil {
 			return fmt.Errorf("triggering web terminal: %w", err)
 		}

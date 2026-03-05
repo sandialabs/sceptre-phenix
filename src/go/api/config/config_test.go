@@ -1,21 +1,21 @@
-package config
+package config_test
 
 import (
-	"os"
 	"testing"
 
-	"phenix/store"
-
 	"github.com/golang/mock/gomock"
+
+	"phenix/api/config"
+	"phenix/store"
 )
 
 func TestListError(t *testing.T) {
 	configs := store.Configs(
 		[]store.Config{
-			{
+			{ //nolint:exhaustruct // test data
 				Version: "phenix.sandia.gov/v1",
 				Kind:    "Experiment",
-				Metadata: store.ConfigMetadata{
+				Metadata: store.ConfigMetadata{ //nolint:exhaustruct // test data
 					Name: "test-experiment",
 				},
 			},
@@ -26,11 +26,14 @@ func TestListError(t *testing.T) {
 	defer ctrl.Finish()
 
 	m := store.NewMockStore(ctrl)
-	m.EXPECT().List(gomock.Eq("Topology"), gomock.Eq("Scenario"), gomock.Eq("Experiment"), gomock.Eq("Image")).Return(configs, nil).AnyTimes()
+	m.EXPECT().
+		List(gomock.Eq("Topology"), gomock.Eq("Scenario"), gomock.Eq("Experiment"), gomock.Eq("Image")).
+		Return(configs, nil).
+		AnyTimes()
 
-	store.DefaultStore = m
+	store.DefaultStore = m //nolint:reassign // mocking
 
-	_, err := List("blech")
+	_, err := config.List("blech")
 	if err == nil {
 		t.Log("expected error")
 		t.FailNow()
@@ -38,10 +41,10 @@ func TestListError(t *testing.T) {
 }
 
 func TestCreateEnv(t *testing.T) {
-	expected := store.Config{
+	expected := store.Config{ //nolint:exhaustruct // test data
 		Version: "phenix.sandia.gov/v1",
 		Kind:    "Topology",
-		Metadata: store.ConfigMetadata{
+		Metadata: store.ConfigMetadata{ //nolint:exhaustruct // test data
 			Name: "foobar-test-experiment",
 		},
 	}
@@ -62,12 +65,12 @@ func TestCreateEnv(t *testing.T) {
 	m := store.NewMockStore(ctrl)
 	m.EXPECT().Create(gomock.Eq(&expected)).Return(nil).AnyTimes()
 
-	store.DefaultStore = m
+	store.DefaultStore = m //nolint:reassign // mocking
 
-	os.Setenv("BRANCH_NAME", "foobar")
-	options := []CreateOption{CreateFromJSON([]byte(cfg))}
+	t.Setenv("BRANCH_NAME", "foobar")
+	options := []config.CreateOption{config.CreateFromJSON([]byte(cfg))}
 
-	_, err := Create(options...)
+	_, err := config.Create(options...)
 	if err != nil {
 		t.Log(err)
 		t.FailNow()

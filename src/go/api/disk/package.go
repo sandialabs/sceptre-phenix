@@ -1,7 +1,7 @@
 package disk
 
-// defines disk API functions
-// all path, src, dst arguments should be either absolute paths or relative paths from the mm files directory
+// DiskFiles defines disk API functions
+// all path, src, dst arguments should be either absolute paths or relative paths from the mm files directory.
 type DiskFiles interface {
 	// Get list of VM disk images, container filesystems, or both.
 	// Assumes disk images have `.qc2` or `.qcow2` extension.
@@ -9,7 +9,7 @@ type DiskFiles interface {
 	// Alternatively, we could force the use of subdirectories w/ known names
 	// (such as `base-images` and `container-fs`).
 	// Looks in base directory, plus any images that expName references
-	// if expName is empty, will check all known experiments 
+	// if expName is empty, will check all known experiments
 	GetImages(expName string) ([]Details, error)
 	// Gets a single image
 	GetImage(path string) (Details, error)
@@ -37,7 +37,7 @@ type DiskFiles interface {
 	DeleteDisk(src string) error
 }
 
-var DefaultDiskFiles DiskFiles = new(MMDiskFiles)
+var DefaultDiskFiles DiskFiles = new(MMDiskFiles) //nolint:gochecknoglobals // default implementation
 
 func GetImages(expName string) ([]Details, error) {
 	return DefaultDiskFiles.GetImages(expName)

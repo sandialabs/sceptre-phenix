@@ -1,2 +1,2 @@
-// Utility function for trapping Unix signals.
+// Package sigterm contains a utility function for trapping Unix signals.
 package sigterm

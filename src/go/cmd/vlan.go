@@ -1,16 +1,20 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
 
+	"github.com/spf13/cobra"
+
 	"phenix/api/vlan"
 	"phenix/util"
+	"phenix/util/plog"
 	"phenix/util/printer"
-
-	"github.com/spf13/cobra"
 )
+
+const aliasArgs = 3
 
 func newVlanCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -34,6 +38,7 @@ func newVlanAliasCmd() *cobra.Command {
 				info, err := vlan.Aliases()
 				if err != nil {
 					err := util.HumanizeError(err, "Unable to display all aliases")
+
 					return err.Humanized()
 				}
 
@@ -43,12 +48,17 @@ func newVlanAliasCmd() *cobra.Command {
 
 				info, err := vlan.Aliases(vlan.Experiment(exp))
 				if err != nil {
-					err := util.HumanizeError(err, "Unable to display aliases for the "+exp+" experiment")
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to display aliases for the "+exp+" experiment",
+					)
+
 					return err.Humanized()
 				}
 
 				printer.PrintTableOfVLANAliases(os.Stdout, info)
-			case 3:
+			case aliasArgs:
 				var (
 					exp   = args[0]
 					alias = args[1]
@@ -58,17 +68,27 @@ func newVlanAliasCmd() *cobra.Command {
 
 				vid, err := strconv.Atoi(id)
 				if err != nil {
-					return fmt.Errorf("The VLAN identifier provided is not a valid integer")
+					return errors.New("the VLAN identifier provided is not a valid integer")
 				}
 
-				if err := vlan.SetAlias(vlan.Experiment(exp), vlan.Alias(alias), vlan.ID(vid), vlan.Force(force)); err != nil {
-					err := util.HumanizeError(err, "Unable to set the alias for the "+exp+" experiment")
+				if err := vlan.SetAlias(
+					vlan.Experiment(exp),
+					vlan.Alias(alias),
+					vlan.ID(vid),
+					vlan.Force(force),
+				); err != nil {
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to set the alias for the "+exp+" experiment",
+					)
+
 					return err.Humanized()
 				}
 
-				fmt.Printf("The VLAN alias %s was set for the %s experiment\n", alias, exp)
+				plog.Info(plog.TypeSystem, "vlan alias set", "alias", alias, "exp", exp)
 			default:
-				return fmt.Errorf("There were an unexpected number of arguments provided")
+				return errors.New("there were an unexpected number of arguments provided")
 			}
 
 			return nil
@@ -90,6 +110,7 @@ func newVlanRangeCmd() *cobra.Command {
 				info, err := vlan.Ranges()
 				if err != nil {
 					err := util.HumanizeError(err, "Unable to display VLAN range(s)")
+
 					return err.Humanized()
 				}
 
@@ -99,37 +120,56 @@ func newVlanRangeCmd() *cobra.Command {
 
 				info, err := vlan.Ranges(vlan.Experiment(exp))
 				if err != nil {
-					err := util.HumanizeError(err, "Unable to display VLAN range(s) for "+exp+" experiment")
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to display VLAN range(s) for "+exp+" experiment",
+					)
+
 					return err.Humanized()
 				}
 
 				printer.PrintTableOfVLANRanges(os.Stdout, info)
-			case 3:
+			case aliasArgs:
 				var (
-					exp   = args[0]
-					min   = args[1]
-					max   = args[2]
-					force = MustGetBool(cmd.Flags(), "force")
+					exp    = args[0]
+					minVal = args[1]
+					maxVal = args[2]
+					force  = MustGetBool(cmd.Flags(), "force")
 				)
 
-				vmin, err := strconv.Atoi(min)
+				vmin, err := strconv.Atoi(minVal)
 				if err != nil {
-					return fmt.Errorf("The VLAN range minimum identifier provided is not a valid integer")
+					return errors.New(
+						"the VLAN range minimum identifier provided is not a valid integer",
+					)
 				}
 
-				vmax, err := strconv.Atoi(max)
+				vmax, err := strconv.Atoi(maxVal)
 				if err != nil {
-					return fmt.Errorf("The VLAN range maximum identifier provided is not a valid integer")
+					return errors.New(
+						"the VLAN range maximum identifier provided is not a valid integer",
+					)
 				}
 
-				if err := vlan.SetRange(vlan.Experiment(exp), vlan.Min(vmin), vlan.Max(vmax), vlan.Force(force)); err != nil {
-					err := util.HumanizeError(err, "Unable to set the VLAN range for the "+exp+" experiment")
+				if err := vlan.SetRange(
+					vlan.Experiment(exp),
+					vlan.Min(vmin),
+					vlan.Max(vmax),
+					vlan.Force(force),
+				); err != nil {
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to set the VLAN range for the "+exp+" experiment",
+					)
+
 					return fmt.Errorf(err.Humanize(), 1)
 				}
 
-				fmt.Printf("The VLAN range was set for the %s experiment\n", exp)
+				plog.Info(plog.TypeSystem, "vlan range set", "exp", exp)
 			default:
-				return fmt.Errorf("There were an unexpected number of arguments provided")
+				return errors.New("there were an unexpected number of arguments provided")
 			}
 
 			return nil
@@ -141,7 +181,7 @@ func newVlanRangeCmd() *cobra.Command {
 	return cmd
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // cobra command
 	vlanCmd := newVlanCmd()
 
 	vlanCmd.AddCommand(newVlanAliasCmd())

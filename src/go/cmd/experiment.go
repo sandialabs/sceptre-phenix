@@ -9,20 +9,52 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+
 	"phenix/api/config"
 	"phenix/api/experiment"
 	"phenix/api/scorch/scorchexe"
 	"phenix/app"
 	"phenix/scheduler"
+	"phenix/store"
 	"phenix/types"
 	"phenix/util"
 	"phenix/util/notes"
 	"phenix/util/plog"
 	"phenix/util/printer"
 	"phenix/util/sigterm"
-
-	"github.com/spf13/cobra"
 )
+
+const allExperiments = "all"
+const scheduleArgs = 2
+
+func expNameCompletion(includeAll bool) func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		_ = store.Init(store.Endpoint(viper.GetString("store.endpoint")))
+
+		exps, err := experiment.List()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveError
+		}
+
+		var names []string
+		if includeAll && strings.HasPrefix(allExperiments, toComplete) {
+			names = append(names, allExperiments)
+		}
+
+		for _, e := range exps {
+			if strings.HasPrefix(e.Metadata.Name, toComplete) {
+				names = append(names, e.Metadata.Name)
+			}
+		}
+		return names, cobra.ShellCompDirectiveNoFileComp
+	}
+}
 
 func newExperimentCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -45,6 +77,7 @@ func newExperimentListCmd() *cobra.Command {
 			exps, err := experiment.List()
 			if err != nil {
 				err := util.HumanizeError(err, "Unable to list known experiments")
+
 				return err.Humanized()
 			}
 
@@ -70,10 +103,11 @@ func newExperimentAppsCmd() *cobra.Command {
 
 			if len(apps) == 0 {
 				plog.Warn(plog.TypeSystem, "no apps available")
+
 				return nil
 			}
 
-			fmt.Printf("\nApps: %s\n", strings.Join(apps, ", "))
+			fmt.Fprintf(os.Stdout, "\nApps: %s\n", strings.Join(apps, ", "))
 
 			return nil
 		},
@@ -91,10 +125,11 @@ func newExperimentSchedulersCmd() *cobra.Command {
 
 			if len(schedulers) == 0 {
 				plog.Warn(plog.TypeSystem, "no schedulers available")
+
 				return nil
 			}
 
-			fmt.Printf("\nSchedulers: %s\n", strings.Join(schedulers, ", "))
+			fmt.Fprintf(os.Stdout, "\nSchedulers: %s\n", strings.Join(schedulers, ", "))
 
 			return nil
 		},
@@ -103,6 +138,7 @@ func newExperimentSchedulersCmd() *cobra.Command {
 	return cmd
 }
 
+//nolint:funlen // command definition
 func newExperimentCreateCmd() *cobra.Command {
 	desc := `Create an experiment
 
@@ -124,7 +160,7 @@ func newExperimentCreateCmd() *cobra.Command {
 		Example: example,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
-				return fmt.Errorf("must provide an experiment name")
+				return errors.New("must provide an experiment name")
 			}
 
 			var (
@@ -133,11 +169,19 @@ func newExperimentCreateCmd() *cobra.Command {
 			)
 
 			if ext := filepath.Ext(topology); ext != "" {
-				opts := []config.CreateOption{config.CreateFromPath(topology), config.CreateWithValidation()}
+				opts := []config.CreateOption{
+					config.CreateFromPath(topology),
+					config.CreateWithValidation(),
+				}
 
 				c, err := config.Create(opts...)
 				if err != nil {
-					err := util.HumanizeError(err, "Unable to create configuration from "+topology)
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to create configuration from "+topology,
+					)
+
 					return err.Humanized()
 				}
 
@@ -147,11 +191,19 @@ func newExperimentCreateCmd() *cobra.Command {
 			// If scenario is not provided, then ext will be an empty string, so the
 			// following won't be run.
 			if ext := filepath.Ext(scenario); ext != "" {
-				opts := []config.CreateOption{config.CreateFromPath(scenario), config.CreateWithValidation()}
+				opts := []config.CreateOption{
+					config.CreateFromPath(scenario),
+					config.CreateWithValidation(),
+				}
 
 				c, err := config.Create(opts...)
 				if err != nil {
-					err := util.HumanizeError(err, "Unable to create configuration from "+scenario)
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to create configuration from "+scenario,
+					)
+
 					return err.Humanized()
 				}
 
@@ -160,9 +212,15 @@ func newExperimentCreateCmd() *cobra.Command {
 
 			disabledApps, err := cmd.Flags().GetStringSlice("disabled-apps")
 			if err != nil {
-				err := util.HumanizeError(err, "Bad list of disabled-apps provided: %v", disabledApps)
+				err := util.HumanizeError(
+					err,
+					"Bad list of disabled-apps provided: %v",
+					disabledApps,
+				)
+
 				return err.Humanized()
 			}
+
 			for idx := range disabledApps {
 				disabledApps[idx] = strings.TrimSpace(disabledApps[idx])
 			}
@@ -181,7 +239,8 @@ func newExperimentCreateCmd() *cobra.Command {
 			ctx := notes.Context(context.Background(), false)
 
 			if err := experiment.Create(ctx, opts...); err != nil {
-				err := util.HumanizeError(err, "Unable to create the "+args[0]+" experiment")
+				err := util.HumanizeError(err, "%s", "Unable to create the "+args[0]+" experiment")
+
 				return err.Humanized()
 			}
 
@@ -194,13 +253,15 @@ func newExperimentCreateCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringP("topology", "t", "", "Name of an existing topology to use")
-	cmd.MarkFlagRequired("topology")
+	_ = cmd.MarkFlagRequired("topology")
 	cmd.Flags().StringP("scenario", "s", "", "Name of an existing scenario to use (optional)")
 	cmd.Flags().StringP("base-dir", "d", "", "Base directory to use for experiment (optional)")
-	cmd.Flags().StringP("default-bridge", "b", "phenix", "Default bridge name to use for experiment (optional)")
+	cmd.Flags().
+		StringP("default-bridge", "b", "phenix", "Default bridge name to use for experiment (optional)")
 	cmd.Flags().Int("vlan-min", 0, "VLAN pool minimum")
 	cmd.Flags().Int("vlan-max", 0, "VLAN pool maximum")
 	cmd.Flags().StringSlice("disabled-apps", []string{}, "Comma separated ist of apps to disable")
+
 	return cmd
 }
 
@@ -211,28 +272,31 @@ func newExperimentEditCmd() *cobra.Command {
 	`
 
 	cmd := &cobra.Command{
-		Use:   "edit <experiment name>",
-		Short: "Edit an experiment",
-		Long:  desc,
-		Args:  cobra.ExactArgs(1),
+		Use:               "edit <experiment name>",
+		Short:             "Edit an experiment",
+		Long:              desc,
+		ValidArgsFunction: expNameCompletion(false),
+		Args:              cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				force = MustGetBool(cmd.Flags(), "force")
-				exp   = fmt.Sprintf("experiment/%s", args[0])
+				exp   = "experiment/" + args[0]
 			)
 
 			_, err := config.Edit(exp, force)
 			if err != nil {
 				if config.IsConfigNotModified(err) {
-					fmt.Printf("The %s experiment was not updated\n", args[0])
+					plog.Warn(plog.TypeSystem, "experiment not updated", "exp", args[0])
+
 					return nil
 				}
 
 				err := util.HumanizeError(err, "Unable to edit the %s experiment", args[0])
+
 				return err.Humanized()
 			}
 
-			fmt.Printf("The %s experiment was updated\n", args[0])
+			plog.Info(plog.TypeSystem, "experiment updated", "exp", args[0])
 
 			return nil
 		},
@@ -246,33 +310,36 @@ func newExperimentEditCmd() *cobra.Command {
 func newExperimentDeleteCmd() *cobra.Command {
 	desc := `Delete an experiment
 
-  Used to delete an exisitng experiment; experiment must be stopped.
+  Used to delete an existing experiment; experiment must be stopped.
   Using 'all' instead of a specific experiment name will include all
   stopped experiments`
 
 	cmd := &cobra.Command{
-		Use:   "delete <experiment name>",
-		Short: "Delete an experiment",
-		Long:  desc,
-		Args:  cobra.ExactArgs(1),
+		Use:               "delete <experiment name>",
+		Short:             "Delete an experiment",
+		Long:              desc,
+		ValidArgsFunction: expNameCompletion(true),
+		Args:              cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
 				experiments []types.Experiment
 			)
 
-			if name == "all" {
+			if name == allExperiments {
 				var err error
 
 				experiments, err = experiment.List()
 				if err != nil {
 					err := util.HumanizeError(err, "Unable to delete all experiments")
+
 					return err.Humanized()
 				}
 			} else {
 				exp, err := experiment.Get(name)
 				if err != nil {
-					err := util.HumanizeError(err, "Unable to delete the "+name+" experiment")
+					err := util.HumanizeError(err, "%s", "Unable to delete the "+name+" experiment")
+
 					return err.Humanized()
 				}
 
@@ -281,13 +348,25 @@ func newExperimentDeleteCmd() *cobra.Command {
 
 			for _, exp := range experiments {
 				if exp.Running() {
-					plog.Warn(plog.TypeSystem, "not deleting running experiment", "exp", exp.Metadata.Name)
+					plog.Warn(
+						plog.TypeSystem,
+						"not deleting running experiment",
+						"exp",
+						exp.Metadata.Name,
+					)
+
 					continue
 				}
 
-				if err := config.Delete("experiment/" + exp.Metadata.Name); err != nil {
-					err := util.HumanizeError(err, "Unable to delete the "+exp.Metadata.Name+" experiment")
-					fmt.Println(err.Humanize())
+				err := config.Delete("experiment/" + exp.Metadata.Name)
+				if err != nil {
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to delete the "+exp.Metadata.Name+" experiment",
+					)
+					plog.Error(plog.TypeSystem, err.Humanize())
+
 					continue
 				}
 
@@ -311,15 +390,37 @@ func newExperimentScheduleCmd() *cobra.Command {
 		Use:   "schedule <experiment name> <algorithm>",
 		Short: "Schedule an experiment",
 		Long:  desc,
-		Args:  cobra.ExactArgs(2),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return expNameCompletion(false)(cmd, args, toComplete)
+			}
+			if len(args) == 1 {
+				scheds := scheduler.List()
+				var matches []string
+				for _, s := range scheds {
+					if strings.HasPrefix(s, toComplete) {
+						matches = append(matches, s)
+					}
+				}
+				return matches, cobra.ShellCompDirectiveNoFileComp
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
+		Args: cobra.ExactArgs(scheduleArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := []experiment.ScheduleOption{
 				experiment.ScheduleForName(args[0]),
 				experiment.ScheduleWithAlgorithm(args[1]),
 			}
 
-			if err := experiment.Schedule(opts...); err != nil {
-				err := util.HumanizeError(err, "Unable to schedule the "+args[0]+" experiment with the "+args[1]+" algorithm")
+			err := experiment.Schedule(opts...)
+			if err != nil {
+				err := util.HumanizeError(
+					err,
+					"%s",
+					"Unable to schedule the "+args[0]+" experiment with the "+args[1]+" algorithm",
+				)
+
 				return err.Humanized()
 			}
 
@@ -332,6 +433,7 @@ func newExperimentScheduleCmd() *cobra.Command {
 	return cmd
 }
 
+//nolint:funlen // command definition
 func newExperimentStartCmd() *cobra.Command {
 	desc := `Start an experiment
 
@@ -346,10 +448,11 @@ func newExperimentStartCmd() *cobra.Command {
 	periodically.`
 
 	cmd := &cobra.Command{
-		Use:   "start <experiment name>",
-		Short: "Start an experiment",
-		Long:  desc,
-		Args:  cobra.ExactArgs(1),
+		Use:               "start <experiment name>",
+		Short:             "Start an experiment",
+		Long:              desc,
+		ValidArgsFunction: expNameCompletion(true),
+		Args:              cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
@@ -361,18 +464,20 @@ func newExperimentStartCmd() *cobra.Command {
 				wg  sync.WaitGroup
 			)
 
-			if name == "all" {
+			if name == allExperiments {
 				var err error
 
 				experiments, err = experiment.List()
 				if err != nil {
 					err := util.HumanizeError(err, "Unable to start all experiments")
+
 					return err.Humanized()
 				}
 			} else {
 				exp, err := experiment.Get(name)
 				if err != nil {
-					err := util.HumanizeError(err, "Unable to start the "+name+" experiment")
+					err := util.HumanizeError(err, "%s", "Unable to start the "+name+" experiment")
+
 					return err.Humanized()
 				}
 
@@ -381,7 +486,13 @@ func newExperimentStartCmd() *cobra.Command {
 
 			for _, exp := range experiments {
 				if exp.Running() {
-					plog.Warn(plog.TypeSystem, "not starting already running experiment", "exp", exp.Metadata.Name)
+					plog.Warn(
+						plog.TypeSystem,
+						"not starting already running experiment",
+						"exp",
+						exp.Metadata.Name,
+					)
+
 					continue
 				}
 
@@ -390,23 +501,46 @@ func newExperimentStartCmd() *cobra.Command {
 					experiment.StartWithDryRun(dryrun),
 					experiment.StartWithVLANMin(MustGetInt(cmd.Flags(), "vlan-min")),
 					experiment.StartWithVLANMax(MustGetInt(cmd.Flags(), "vlan-max")),
-					experiment.StartWithMMErrorsAsWarnings(MustGetBool(cmd.Flags(), "treat-mm-errors-as-warnings")),
+					experiment.StartWithMMErrorsAsWarnings(
+						MustGetBool(cmd.Flags(), "treat-mm-errors-as-warnings"),
+					),
 				}
 
-				if err := experiment.Start(ctx, opts...); err != nil {
-					err := util.HumanizeError(err, "Unable to start the "+exp.Metadata.Name+" experiment")
+				err := experiment.Start(ctx, opts...)
+				if err != nil {
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to start the "+exp.Metadata.Name+" experiment",
+					)
+
 					return err.Humanized()
 				}
 
 				notes.PrettyPrint(ctx, false)
 
-				plog.Info(plog.TypeSystem, "experiment started", "exp", exp.Metadata.Name, "dryrun", dryrun, "deploy-mode", exp.Spec.DeployMode())
+				plog.Info(
+					plog.TypeSystem,
+					"experiment started",
+					"exp",
+					exp.Metadata.Name,
+					"dryrun",
+					dryrun,
+					"deploy-mode",
+					exp.Spec.DeployMode(),
+				)
 
 				if periodic {
 					plog.Info(plog.TypeSystem, "honor-run-periodically flag was passed")
 
-					if err := app.PeriodicallyRunApps(ctx, &wg, &exp); err != nil {
-						plog.Error(plog.TypeSystem, "scheduling experiment apps to run periodically", "err", err)
+					err := app.PeriodicallyRunApps(ctx, &wg, &exp)
+					if err != nil {
+						plog.Error(
+							plog.TypeSystem,
+							"scheduling experiment apps to run periodically",
+							"err",
+							err,
+						)
 					}
 				}
 			}
@@ -422,8 +556,10 @@ func newExperimentStartCmd() *cobra.Command {
 	}
 
 	cmd.Flags().Bool("dry-run", false, "Do everything but actually call out to minimega")
-	cmd.Flags().Bool("honor-run-periodically", false, "Periodically trigger running stage in apps if configured in scenario")
-	cmd.Flags().Bool("treat-mm-errors-as-warnings", false, "Treat errors from minimega as warnings instead of failing")
+	cmd.Flags().
+		Bool("honor-run-periodically", false, "Periodically trigger running stage in apps if configured in scenario")
+	cmd.Flags().
+		Bool("treat-mm-errors-as-warnings", false, "Treat errors from minimega as warnings instead of failing")
 	cmd.Flags().Int("vlan-min", 0, "VLAN pool minimum")
 	cmd.Flags().Int("vlan-max", 0, "VLAN pool maximum")
 
@@ -437,28 +573,31 @@ func newExperimentStopCmd() *cobra.Command {
   experiment name will include all running experiments.`
 
 	cmd := &cobra.Command{
-		Use:   "stop <experiment name>",
-		Short: "Stop an experiment",
-		Long:  desc,
-		Args:  cobra.ExactArgs(1),
+		Use:               "stop <experiment name>",
+		Short:             "Stop an experiment",
+		Long:              desc,
+		ValidArgsFunction: expNameCompletion(true),
+		Args:              cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
 				experiments []types.Experiment
 			)
 
-			if name == "all" {
+			if name == allExperiments {
 				var err error
 
 				experiments, err = experiment.List()
 				if err != nil {
 					err := util.HumanizeError(err, "Unable to stop all experiments")
+
 					return err.Humanized()
 				}
 			} else {
 				exp, err := experiment.Get(name)
 				if err != nil {
-					err := util.HumanizeError(err, "Unable to stop the "+name+" experiment")
+					err := util.HumanizeError(err, "%s", "Unable to stop the "+name+" experiment")
+
 					return err.Humanized()
 				}
 
@@ -467,12 +606,24 @@ func newExperimentStopCmd() *cobra.Command {
 
 			for _, exp := range experiments {
 				if !exp.Running() {
-					plog.Warn(plog.TypeSystem, "not stopping already stopped experiment", "exp", exp.Metadata.Name)
+					plog.Warn(
+						plog.TypeSystem,
+						"not stopping already stopped experiment",
+						"exp",
+						exp.Metadata.Name,
+					)
+
 					continue
 				}
 
-				if err := experiment.Stop(exp.Metadata.Name); err != nil {
-					err := util.HumanizeError(err, "Problem encountered while stopping the "+exp.Metadata.Name+" experiment")
+				err := experiment.Stop(exp.Metadata.Name)
+				if err != nil {
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Problem encountered while stopping the "+exp.Metadata.Name+" experiment",
+					)
+
 					return err.Humanized()
 				}
 
@@ -486,6 +637,7 @@ func newExperimentStopCmd() *cobra.Command {
 	return cmd
 }
 
+//nolint:funlen // command definition
 func newExperimentRestartCmd() *cobra.Command {
 	desc := `Restart an experiment
 
@@ -494,10 +646,11 @@ func newExperimentRestartCmd() *cobra.Command {
   everything but call out to minimega.`
 
 	cmd := &cobra.Command{
-		Use:   "restart <experiment name>",
-		Short: "Restart an experiment",
-		Long:  desc,
-		Args:  cobra.ExactArgs(1),
+		Use:               "restart <experiment name>",
+		Short:             "Restart an experiment",
+		Long:              desc,
+		ValidArgsFunction: expNameCompletion(true),
+		Args:              cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
@@ -507,18 +660,24 @@ func newExperimentRestartCmd() *cobra.Command {
 				ctx = sigterm.CancelContext(context.Background())
 			)
 
-			if name == "all" {
+			if name == allExperiments {
 				var err error
 
 				experiments, err = experiment.List()
 				if err != nil {
 					err := util.HumanizeError(err, "Unable to restart all experiments")
+
 					return err.Humanized()
 				}
 			} else {
 				exp, err := experiment.Get(name)
 				if err != nil {
-					err := util.HumanizeError(err, "Unable to restart the "+name+" experiment")
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to restart the "+name+" experiment",
+					)
+
 					return err.Humanized()
 				}
 
@@ -527,21 +686,52 @@ func newExperimentRestartCmd() *cobra.Command {
 
 			for _, exp := range experiments {
 				if !exp.Running() {
-					plog.Warn(plog.TypeSystem, "not restarting stopped experiment", "exp", exp.Metadata.Name)
+					plog.Warn(
+						plog.TypeSystem,
+						"not restarting stopped experiment",
+						"exp",
+						exp.Metadata.Name,
+					)
+
 					continue
 				}
 
-				if err := experiment.Stop(exp.Metadata.Name); err != nil {
-					err := util.HumanizeError(err, "Unable to stop the "+exp.Metadata.Name+" experiment")
+				err := experiment.Stop(exp.Metadata.Name)
+				if err != nil {
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to stop the "+exp.Metadata.Name+" experiment",
+					)
+
 					return err.Humanized()
 				}
 
-				if err := experiment.Start(ctx, experiment.StartWithName(exp.Metadata.Name), experiment.StartWithDryRun(dryrun)); err != nil {
-					err := util.HumanizeError(err, "Unable to start the "+exp.Metadata.Name+" experiment")
+				err = experiment.Start(
+					ctx,
+					experiment.StartWithName(exp.Metadata.Name),
+					experiment.StartWithDryRun(dryrun),
+				)
+				if err != nil {
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to start the "+exp.Metadata.Name+" experiment",
+					)
+
 					return err.Humanized()
 				}
 
-				plog.Info(plog.TypeSystem, "experiment restarted", "exp", exp.Metadata.Name, "dryrun", dryrun, "deploy-mode", exp.Spec.DeployMode())
+				plog.Info(
+					plog.TypeSystem,
+					"experiment restarted",
+					"exp",
+					exp.Metadata.Name,
+					"dryrun",
+					dryrun,
+					"deploy-mode",
+					exp.Spec.DeployMode(),
+				)
 			}
 
 			return nil
@@ -562,28 +752,35 @@ func newExperimentReconfigureCmd() *cobra.Command {
   experiments.`
 
 	cmd := &cobra.Command{
-		Use:   "reconfigure <experiment name>",
-		Short: "Reconfigure an experiment",
-		Long:  desc,
-		Args:  cobra.ExactArgs(1),
+		Use:               "reconfigure <experiment name>",
+		Short:             "Reconfigure an experiment",
+		Long:              desc,
+		ValidArgsFunction: expNameCompletion(true),
+		Args:              cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
 				experiments []types.Experiment
 			)
 
-			if name == "all" {
+			if name == allExperiments {
 				var err error
 
 				experiments, err = experiment.List()
 				if err != nil {
 					err := util.HumanizeError(err, "Unable to reconfigure all experiments")
+
 					return err.Humanized()
 				}
 			} else {
 				exp, err := experiment.Get(name)
 				if err != nil {
-					err := util.HumanizeError(err, "Unable to reconfigure the "+name+" experiment")
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to reconfigure the "+name+" experiment",
+					)
+
 					return err.Humanized()
 				}
 
@@ -592,12 +789,24 @@ func newExperimentReconfigureCmd() *cobra.Command {
 
 			for _, exp := range experiments {
 				if exp.Running() {
-					plog.Warn(plog.TypeSystem, "not reconfiguring running experiment", "exp", exp.Metadata.Name)
+					plog.Warn(
+						plog.TypeSystem,
+						"not reconfiguring running experiment",
+						"exp",
+						exp.Metadata.Name,
+					)
+
 					continue
 				}
 
-				if err := experiment.Reconfigure(exp.Metadata.Name); err != nil {
-					err := util.HumanizeError(err, "Unable to reconfigure the "+exp.Metadata.Name+" experiment")
+				err := experiment.Reconfigure(exp.Metadata.Name)
+				if err != nil {
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to reconfigure the "+exp.Metadata.Name+" experiment",
+					)
+
 					return err.Humanized()
 				}
 
@@ -624,7 +833,19 @@ func newExperimentTriggerRunningCmd() *cobra.Command {
 		Use:   "trigger-running <experiment name> [<app name> ...]",
 		Short: "Trigger running stage for app(s) in experiment",
 		Long:  desc,
-		Args:  cobra.MinimumNArgs(1),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return expNameCompletion(true)(cmd, args, toComplete)
+			}
+			var matches []string
+			for _, a := range app.List() {
+				if strings.HasPrefix(a, toComplete) {
+					matches = append(matches, a)
+				}
+			}
+			return matches, cobra.ShellCompDirectiveNoFileComp
+		},
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
@@ -633,18 +854,27 @@ func newExperimentTriggerRunningCmd() *cobra.Command {
 				ctx = sigterm.CancelContext(context.Background())
 			)
 
-			if name == "all" {
+			if name == allExperiments {
 				var err error
 
 				experiments, err = experiment.List()
 				if err != nil {
-					err := util.HumanizeError(err, "Unable to trigger running stage for apps in all experiments")
+					err := util.HumanizeError(
+						err,
+						"Unable to trigger running stage for apps in all experiments",
+					)
+
 					return err.Humanized()
 				}
 			} else {
 				exp, err := experiment.Get(name)
 				if err != nil {
-					err := util.HumanizeError(err, "Unable to trigger the running stage for apps in the "+name+" experiment")
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to trigger the running stage for apps in the "+name+" experiment",
+					)
+
 					return err.Humanized()
 				}
 
@@ -655,16 +885,33 @@ func newExperimentTriggerRunningCmd() *cobra.Command {
 
 			for _, exp := range experiments {
 				if !exp.Running() {
-					plog.Warn(plog.TypeSystem, "not triggering the running stage for apps in stopped experiment", "exp", exp.Metadata.Name)
+					plog.Warn(
+						plog.TypeSystem,
+						"not triggering the running stage for apps in stopped experiment",
+						"exp",
+						exp.Metadata.Name,
+					)
+
 					continue
 				}
 
-				if err := experiment.TriggerRunning(ctx, exp.Metadata.Name, args[1:]...); err != nil {
-					err := util.HumanizeError(err, "Unable to trigger the running stage for apps in the "+exp.Metadata.Name+" experiment")
+				err := experiment.TriggerRunning(ctx, exp.Metadata.Name, args[1:]...)
+				if err != nil {
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to trigger the running stage for apps in the "+exp.Metadata.Name+" experiment",
+					)
+
 					return err.Humanized()
 				}
 
-				plog.Info(plog.TypeSystem, "running stage triggered for apps", "exp", exp.Metadata.Name)
+				plog.Info(
+					plog.TypeSystem,
+					"running stage triggered for apps",
+					"exp",
+					exp.Metadata.Name,
+				)
 			}
 
 			return nil
@@ -681,10 +928,11 @@ func newExperimentScorchCmd() *cobra.Command {
 	default, the run ID used will be 0 if not provided.`
 
 	cmd := &cobra.Command{
-		Use:   "scorch <experiment name>",
-		Short: "Start a Scorch run for experiment",
-		Long:  desc,
-		Args:  cobra.MinimumNArgs(1),
+		Use:               "scorch <experiment name>",
+		Short:             "Start a Scorch run for experiment",
+		Long:              desc,
+		ValidArgsFunction: expNameCompletion(false),
+		Args:              cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name = args[0]
@@ -694,7 +942,16 @@ func newExperimentScorchCmd() *cobra.Command {
 
 			exp, err := experiment.Get(name)
 			if err != nil {
-				err := util.HumanizeError(err, fmt.Sprintf("Unable to start Scorch run %d for %s experiment", run, exp.Metadata.Name))
+				err := util.HumanizeError(
+					err,
+					"%s",
+					fmt.Sprintf(
+						"Unable to start Scorch run %d for %s experiment",
+						run,
+						exp.Metadata.Name,
+					),
+				)
+
 				return err.Humanized()
 			}
 
@@ -705,7 +962,16 @@ func newExperimentScorchCmd() *cobra.Command {
 					return nil
 				}
 
-				err := util.HumanizeError(err, fmt.Sprintf("Unable to start Scorch run %d for %s experiment", run, exp.Metadata.Name))
+				err := util.HumanizeError(
+					err,
+					"%s",
+					fmt.Sprintf(
+						"Unable to start Scorch run %d for %s experiment",
+						run,
+						exp.Metadata.Name,
+					),
+				)
+
 				return err.Humanized()
 			}
 
@@ -720,7 +986,7 @@ func newExperimentScorchCmd() *cobra.Command {
 	return cmd
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // cobra command
 	experimentCmd := newExperimentCmd()
 
 	experimentCmd.AddCommand(newExperimentListCmd())

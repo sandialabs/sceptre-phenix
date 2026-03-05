@@ -18,6 +18,8 @@ import (
 	"github.com/hashicorp/go-multierror"
 )
 
+const killDelay = 10 * time.Second
+
 type shell struct{}
 
 func (shell) FindCommandsWithPrefix(prefix string) []string {
@@ -26,14 +28,14 @@ func (shell) FindCommandsWithPrefix(prefix string) []string {
 	args := strings.Split(os.Getenv("PATH"), ":")
 	args = append(args, "-type", "f", "-executable", "-name", prefix+"*")
 
-	cmd := exec.Command("find", args...)
+	cmd := exec.Command("find", args...) //nolint:noctx,gosec // simple find command, Command injection via taint analysis
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil
 	}
 
-	for _, c := range strings.Split(string(out), "\n") {
+	for c := range strings.SplitSeq(string(out), "\n") {
 		if c != "" {
 			base := filepath.Base(c)
 			commands = append(commands, strings.TrimPrefix(base, prefix))
@@ -44,7 +46,8 @@ func (shell) FindCommandsWithPrefix(prefix string) []string {
 }
 
 func (shell) CommandExists(cmd string) bool {
-	err := exec.Command("which", cmd).Run()
+	err := exec.Command("which", cmd).Run() //nolint:noctx // simple which command
+
 	return err == nil
 }
 
@@ -63,21 +66,24 @@ func (shell) ProcessExists(pid int) bool {
 		return false
 	}
 
-	errno, ok := err.(syscall.Errno)
+	var errno syscall.Errno
+
+	ok := errors.As(err, &errno)
 	if !ok {
 		return false
 	}
 
-	switch errno {
+	switch errno { //nolint:exhaustive // too many errors to list
 	case syscall.ESRCH:
 		return false
 	case syscall.EPERM:
 		return true
+	default:
+		return false
 	}
-
-	return false
 }
 
+//nolint:funlen // complex logic
 func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, error) {
 	o := newOptions(opts...)
 
@@ -97,7 +103,7 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 	// canceled below in order to gracefully terminate the child process. Using
 	// `exec.CommandContext` forcefully kills the child process when the context
 	// is canceled.
-	cmd := exec.Command(o.cmd, o.args...)
+	cmd := exec.CommandContext(ctx, o.cmd, o.args...) //nolint:gosec // Subprocess launched with a potential tainted input
 
 	cmd.Stdin = stdIn
 	stdout, _ := cmd.StdoutPipe()
@@ -106,7 +112,8 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, o.env...)
 
-	if err := cmd.Start(); err != nil {
+	err := cmd.Start()
+	if err != nil {
 		return nil, nil, fmt.Errorf("starting command: %w", err)
 	}
 
@@ -121,13 +128,13 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 		case <-done:
 			return
 		case <-ctx.Done():
-			cmd.Process.Signal(syscall.SIGTERM)
+			_ = cmd.Process.Signal(syscall.SIGTERM)
 
 			select {
 			case <-done:
 				return
-			case <-time.After(10 * time.Second):
-				cmd.Process.Kill()
+			case <-time.After(killDelay):
+				_ = cmd.Process.Kill()
 			}
 		}
 	}()
@@ -150,7 +157,8 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 			}
 		}
 
-		if err := scanner.Err(); err != nil {
+		err := scanner.Err()
+		if err != nil {
 			errs = multierror.Append(errs, fmt.Errorf("scanning STDOUT: %w", err))
 		}
 
@@ -177,7 +185,8 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 			}
 		}
 
-		if err := scanner.Err(); err != nil {
+		err := scanner.Err()
+		if err != nil {
 			errs = multierror.Append(errs, fmt.Errorf("scanning STDERR: %w", err))
 		}
 
@@ -188,7 +197,8 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 
 	wg.Wait()
 
-	if err := cmd.Wait(); err != nil {
+	err = cmd.Wait()
+	if err != nil {
 		errs = multierror.Append(errs, fmt.Errorf("waiting for command to complete: %w", err))
 	}
 

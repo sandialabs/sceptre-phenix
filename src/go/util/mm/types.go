@@ -3,6 +3,7 @@ package mm
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -12,10 +13,10 @@ var ErrHostNotFound = errors.New("host not found")
 
 type Hosts []Host
 
-func (this Hosts) SortByUnallocatedCPU(asc bool) {
-	sort.Slice(this, func(i, j int) bool {
-		ui := this[i].CPUs - this[i].CPUCommit
-		uj := this[j].CPUs - this[j].CPUCommit
+func (h Hosts) SortByUnallocatedCPU(asc bool) {
+	sort.Slice(h, func(i, j int) bool {
+		ui := h[i].CPUs - h[i].CPUCommit
+		uj := h[j].CPUs - h[j].CPUCommit
 
 		if asc {
 			return ui < uj
@@ -25,20 +26,20 @@ func (this Hosts) SortByUnallocatedCPU(asc bool) {
 	})
 }
 
-func (this Hosts) SortByCommittedCPU(asc bool) {
-	sort.Slice(this, func(i, j int) bool {
+func (h Hosts) SortByCommittedCPU(asc bool) {
+	sort.Slice(h, func(i, j int) bool {
 		if asc {
-			return this[i].CPUCommit < this[j].CPUCommit
+			return h[i].CPUCommit < h[j].CPUCommit
 		}
 
-		return this[i].CPUCommit > this[j].CPUCommit
+		return h[i].CPUCommit > h[j].CPUCommit
 	})
 }
 
-func (this Hosts) SortByUnallocatedMem(asc bool) {
-	sort.Slice(this, func(i, j int) bool {
-		ui := this[i].MemTotal - this[i].MemCommit
-		uj := this[j].MemTotal - this[j].MemCommit
+func (h Hosts) SortByUnallocatedMem(asc bool) {
+	sort.Slice(h, func(i, j int) bool {
+		ui := h[i].MemTotal - h[i].MemCommit
+		uj := h[j].MemTotal - h[j].MemCommit
 
 		if asc {
 			return ui < uj
@@ -48,28 +49,28 @@ func (this Hosts) SortByUnallocatedMem(asc bool) {
 	})
 }
 
-func (this Hosts) SortByCommittedMem(asc bool) {
-	sort.Slice(this, func(i, j int) bool {
+func (h Hosts) SortByCommittedMem(asc bool) {
+	sort.Slice(h, func(i, j int) bool {
 		if asc {
-			return this[i].MemCommit < this[j].MemCommit
+			return h[i].MemCommit < h[j].MemCommit
 		}
 
-		return this[i].MemCommit > this[j].MemCommit
+		return h[i].MemCommit > h[j].MemCommit
 	})
 }
 
-func (this Hosts) SortByVMs(asc bool) {
-	sort.Slice(this, func(i, j int) bool {
+func (h Hosts) SortByVMs(asc bool) {
+	sort.Slice(h, func(i, j int) bool {
 		if asc {
-			return this[i].VMs < this[j].VMs
+			return h[i].VMs < h[j].VMs
 		}
 
-		return this[i].VMs > this[j].VMs
+		return h[i].VMs > h[j].VMs
 	})
 }
 
-func (this Hosts) FindHostByName(name string) *Host {
-	for _, host := range this {
+func (h Hosts) FindHostByName(name string) *Host {
+	for _, host := range h {
 		if host.Name == name {
 			return &host
 		}
@@ -78,11 +79,11 @@ func (this Hosts) FindHostByName(name string) *Host {
 	return nil
 }
 
-func (this Hosts) IncrHostVMs(name string, incr int) error {
-	for idx, host := range this {
+func (h Hosts) IncrHostVMs(name string, incr int) error {
+	for idx, host := range h {
 		if host.Name == name {
 			host.VMs += incr
-			this[idx] = host
+			h[idx] = host
 
 			return nil
 		}
@@ -91,11 +92,11 @@ func (this Hosts) IncrHostVMs(name string, incr int) error {
 	return ErrHostNotFound
 }
 
-func (this Hosts) IncrHostCPUCommit(name string, incr int) error {
-	for idx, host := range this {
+func (h Hosts) IncrHostCPUCommit(name string, incr int) error {
+	for idx, host := range h {
 		if host.Name == name {
 			host.CPUCommit += incr
-			this[idx] = host
+			h[idx] = host
 
 			return nil
 		}
@@ -104,11 +105,11 @@ func (this Hosts) IncrHostCPUCommit(name string, incr int) error {
 	return ErrHostNotFound
 }
 
-func (this Hosts) IncrHostMemCommit(name string, incr int) error {
-	for idx, host := range this {
+func (h Hosts) IncrHostMemCommit(name string, incr int) error {
+	for idx, host := range h {
 		if host.Name == name {
 			host.MemCommit += incr
-			this[idx] = host
+			h[idx] = host
 
 			return nil
 		}
@@ -147,62 +148,62 @@ type DiskUsage struct {
 
 type VMs []VM
 
-func (this VMs) SortByName(asc bool) {
-	sort.Slice(this, func(i, j int) bool {
+func (v VMs) SortByName(asc bool) {
+	sort.Slice(v, func(i, j int) bool {
 		if asc {
-			return strings.ToLower(this[i].Name) < strings.ToLower(this[j].Name)
+			return strings.ToLower(v[i].Name) < strings.ToLower(v[j].Name)
 		}
 
-		return strings.ToLower(this[i].Name) > strings.ToLower(this[j].Name)
+		return strings.ToLower(v[i].Name) > strings.ToLower(v[j].Name)
 	})
 }
 
-func (this VMs) SortByHost(asc bool) {
-	sort.Slice(this, func(i, j int) bool {
+func (v VMs) SortByHost(asc bool) {
+	sort.Slice(v, func(i, j int) bool {
 		if asc {
-			return strings.ToLower(this[i].Host) < strings.ToLower(this[j].Host)
+			return strings.ToLower(v[i].Host) < strings.ToLower(v[j].Host)
 		}
 
-		return strings.ToLower(this[i].Host) > strings.ToLower(this[j].Host)
+		return strings.ToLower(v[i].Host) > strings.ToLower(v[j].Host)
 	})
 }
 
-func (this VMs) SortByUptime(asc bool) {
-	sort.Slice(this, func(i, j int) bool {
+func (v VMs) SortByUptime(asc bool) {
+	sort.Slice(v, func(i, j int) bool {
 		if asc {
-			return this[i].Uptime < this[j].Uptime
+			return v[i].Uptime < v[j].Uptime
 		}
 
-		return this[i].Uptime > this[j].Uptime
+		return v[i].Uptime > v[j].Uptime
 	})
 }
 
-func (this VMs) SortBy(col string, asc bool) {
+func (v VMs) SortBy(col string, asc bool) {
 	switch col {
 	case "name":
-		this.SortByName(asc)
+		v.SortByName(asc)
 	case "host":
-		this.SortByHost(asc)
+		v.SortByHost(asc)
 	case "uptime":
-		this.SortByUptime(asc)
+		v.SortByUptime(asc)
 	}
 }
 
-func (this VMs) Paginate(page, size int) VMs {
+func (v VMs) Paginate(page, size int) VMs {
 	var (
 		start = (page - 1) * size
 		end   = start + size
 	)
 
-	if start >= len(this) {
+	if start >= len(v) {
 		return VMs{}
 	}
 
-	if end > len(this) {
-		end = len(this)
+	if end > len(v) {
+		end = len(v)
 	}
 
-	return this[start:end]
+	return v[start:end]
 }
 
 type VM struct {
@@ -237,9 +238,9 @@ type VM struct {
 	Interfaces map[string]string `json:"-"`
 
 	// Used internally for showing VM details.
-	Metadata    map[string]interface{} `json:"-"`
-	Labels      map[string]string      `json:"-"`
-	Annotations map[string]interface{} `json:"-"`
+	Metadata    map[string]any    `json:"-"`
+	Labels      map[string]string `json:"-"`
+	Annotations map[string]any    `json:"-"`
 
 	// Used internally to check for active CC agent.
 	UUID string `json:"-"`
@@ -247,26 +248,24 @@ type VM struct {
 
 // Copy returns a deep copy of the VM. It only makes deep copies of fields that
 // are exported as JSON.
-func (this VM) Copy() VM {
-	vm := this
+func (v VM) Copy() VM {
+	vm := v
 
-	vm.IPv4 = make([]string, len(this.IPv4))
-	copy(vm.IPv4, this.IPv4)
+	vm.IPv4 = make([]string, len(v.IPv4))
+	copy(vm.IPv4, v.IPv4)
 
-	vm.Networks = make([]string, len(this.Networks))
-	copy(vm.Networks, this.Networks)
+	vm.Networks = make([]string, len(v.Networks))
+	copy(vm.Networks, v.Networks)
 
-	vm.Taps = make([]string, len(this.Taps))
-	copy(vm.Taps, this.Taps)
+	vm.Taps = make([]string, len(v.Taps))
+	copy(vm.Taps, v.Taps)
 
-	// This works because the Capture struct is only made up of primatives.
-	vm.Captures = make([]Capture, len(this.Captures))
-	copy(vm.Captures, this.Captures)
+	// This works because the Capture struct is only made up of primitives.
+	vm.Captures = make([]Capture, len(v.Captures))
+	copy(vm.Captures, v.Captures)
 
-	vm.Tags = make(map[string]string, len(this.Tags))
-	for k, v := range this.Tags {
-		vm.Tags[k] = v
-	}
+	vm.Tags = make(map[string]string, len(v.Tags))
+	maps.Copy(vm.Tags, v.Tags)
 
 	return vm
 }
@@ -312,7 +311,7 @@ type diskConfig struct {
 func newDiskConfig(c string) diskConfig {
 	tokens := strings.Split(c, ",")
 
-	cfg := diskConfig{
+	cfg := diskConfig{ //nolint:exhaustruct // partial initialization
 		path: tokens[0],
 		base: filepath.Base(tokens[0]),
 	}
@@ -324,14 +323,14 @@ func newDiskConfig(c string) diskConfig {
 	return cfg
 }
 
-func (this diskConfig) string(cache string) string {
+func (d diskConfig) string(cache string) string {
 	if cache != "" {
-		return fmt.Sprintf("%s,%s", this.path, cache)
+		return fmt.Sprintf("%s,%s", d.path, cache)
 	}
 
-	if this.cache != "" {
-		return fmt.Sprintf("%s,%s", this.path, this.cache)
+	if d.cache != "" {
+		return fmt.Sprintf("%s,%s", d.path, d.cache)
 	}
 
-	return this.path
+	return d.path
 }

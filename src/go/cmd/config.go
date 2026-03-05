@@ -2,36 +2,44 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"phenix/api/config"
-	"phenix/util"
-	"phenix/util/printer"
-
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+
+	"phenix/api/config"
+	"phenix/util"
+	"phenix/util/plog"
+	"phenix/util/printer"
+)
+
+const (
+	configArgParts = 2
+	FormatJSON     = "json"
+	FormatYAML     = "yaml"
 )
 
 func configKindArgsValidator(multi, allowAll bool) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		if multi {
 			if len(args) == 0 {
-				return fmt.Errorf("Must provide at least one argument")
+				return errors.New("must provide at least one argument")
 			}
 		} else {
 			if narg := len(args); narg != 1 {
-				return fmt.Errorf("Expected a single argument, received %d", narg)
+				return fmt.Errorf("expected a single argument, received %d", narg)
 			}
 		}
 
 		for _, arg := range args {
 			tokens := strings.Split(arg, "/")
 
-			if len(tokens) != 2 {
-				return fmt.Errorf("Expected an argument in the form of <config kind>/<config name>")
+			if len(tokens) != configArgParts {
+				return errors.New("expected an argument in the form of <config kind>/<config name>")
 			}
 
 			kinds := []string{"topology", "scenario", "experiment", "image", "user", "role"}
@@ -41,7 +49,11 @@ func configKindArgsValidator(multi, allowAll bool) cobra.PositionalArgs {
 			}
 
 			if kind := tokens[0]; !util.StringSliceContains(kinds, kind) {
-				return fmt.Errorf("Expects the configuration kind to be one of %v, received %s", kinds, kind)
+				return fmt.Errorf(
+					"expects the configuration kind to be one of %v, received %s",
+					kinds,
+					kind,
+				)
 			}
 		}
 
@@ -92,24 +104,71 @@ func newConfigListCmd() *cobra.Command {
 			configs, err := config.List(kinds)
 			if err != nil {
 				err := util.HumanizeError(err, "Unable to list known configurations")
+
 				return err.Humanized()
 			}
 
-			fmt.Println()
+			fmt.Fprintln(os.Stdout)
 
 			if len(configs) == 0 {
-				fmt.Println("There are no configurations available")
+				fmt.Fprintln(os.Stdout, "There are no configurations available")
 			} else {
 				printer.PrintTableOfConfigs(os.Stdout, configs)
 			}
 
-			fmt.Println()
+			fmt.Fprintln(os.Stdout)
 
 			return nil
 		},
 	}
 
 	return cmd
+}
+
+func configGetArgsCompletion(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	var comps []string
+	parts := strings.Split(toComplete, "/")
+
+	if len(parts) == 1 {
+		kinds := []string{"topology", "scenario", "experiment", "image", "user", "role"}
+		for _, k := range kinds {
+			if strings.HasPrefix(k, toComplete) {
+				comps = append(comps, k+"/")
+			}
+		}
+		return comps, cobra.ShellCompDirectiveNoSpace
+	} else if len(parts) == configArgParts {
+		kind := parts[0]
+		var listKind string
+
+		for _, k := range config.AllKinds {
+			if strings.EqualFold(k, kind) {
+				listKind = k
+				break
+			}
+		}
+
+		if listKind == "" {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		configs, err := config.List(listKind)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveError
+		}
+
+		for _, c := range configs {
+			if strings.HasPrefix(c.Metadata.Name, parts[1]) {
+				comps = append(comps, fmt.Sprintf("%s/%s", kind, c.Metadata.Name))
+			}
+		}
+	}
+
+	return comps, cobra.ShellCompDirectiveNoFileComp
 }
 
 func newConfigGetCmd() *cobra.Command {
@@ -125,17 +184,19 @@ func newConfigGetCmd() *cobra.Command {
   phenix config get experiment/foobar`
 
 	cmd := &cobra.Command{
-		Use:     "get <kind/name>",
-		Short:   "Get a configuration",
-		Long:    desc,
-		Example: example,
-		Args:    configKindArgsValidator(false, false),
+		Use:               "get <kind/name>",
+		Short:             "Get a configuration",
+		Long:              desc,
+		Example:           example,
+		Args:              configKindArgsValidator(false, false),
+		ValidArgsFunction: configGetArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			upgraded := MustGetBool(cmd.Flags(), "show-upgraded")
 
 			c, err := config.Get(args[0], upgraded)
 			if err != nil {
-				err := util.HumanizeError(err, "Unable to get the "+args[0]+" configuration")
+				err := util.HumanizeError(err, "%s", "Unable to get the "+args[0]+" configuration")
+
 				return err.Humanized()
 			}
 
@@ -147,15 +208,16 @@ func newConfigGetCmd() *cobra.Command {
 			output := MustGetString(cmd.Flags(), "output")
 
 			switch output {
-			case "yaml":
+			case FormatYAML:
 				m, err := yaml.Marshal(c)
 				if err != nil {
 					err := util.HumanizeError(err, "Unable to convert configuration to YAML")
+
 					return err.Humanized()
 				}
 
-				fmt.Println(string(m))
-			case "json":
+				fmt.Fprintln(os.Stdout, string(m))
+			case FormatJSON:
 				var (
 					m   []byte
 					err error
@@ -169,21 +231,23 @@ func newConfigGetCmd() *cobra.Command {
 
 				if err != nil {
 					err := util.HumanizeError(err, "Unable to convert configuration to JSON")
+
 					return err.Humanized()
 				}
 
-				fmt.Println(string(m))
+				fmt.Fprintln(os.Stdout, string(m))
 			default:
-				return fmt.Errorf("Unrecognized output format '%s'", output)
+				return fmt.Errorf("unrecognized output format '%s'", output)
 			}
 
 			return nil
 		},
 	}
 
-	cmd.Flags().StringP("output", "o", "yaml", "Configuration output format ('yaml' or 'json')")
+	cmd.Flags().StringP("output", "o", FormatYAML, "Configuration output format ('yaml' or 'json')")
 	cmd.Flags().BoolP("pretty", "p", false, "Pretty print the JSON output")
-	cmd.Flags().BoolP("show-upgraded", "u", false, "Show upgraded version of config (if not already latest version)")
+	cmd.Flags().
+		BoolP("show-upgraded", "u", false, "Show upgraded version of config (if not already latest version)")
 
 	return cmd
 }
@@ -201,7 +265,7 @@ func newConfigCreateCmd() *cobra.Command {
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
-				return fmt.Errorf("Must provide at least one configuration file")
+				return errors.New("must provide at least one configuration file")
 			}
 
 			skip := MustGetBool(cmd.Flags(), "skip-validation")
@@ -229,15 +293,16 @@ func newConfigCreateCmd() *cobra.Command {
 
 						if match {
 							configs = append(configs, path)
+
 							break
 						}
 					}
 
 					return nil
 				})
-
 				if err != nil {
-					err := util.HumanizeError(err, "Unable to create configuration from "+f)
+					err := util.HumanizeError(err, "%s", "Unable to create configuration from "+f)
+
 					return err.Humanized()
 				}
 
@@ -250,11 +315,23 @@ func newConfigCreateCmd() *cobra.Command {
 
 					c, err := config.Create(opts...)
 					if err != nil {
-						err := util.HumanizeError(err, "Unable to create configuration from "+f)
+						err := util.HumanizeError(
+							err,
+							"%s",
+							"Unable to create configuration from "+f,
+						)
+
 						return err.Humanized()
 					}
 
-					fmt.Printf("The %s/%s configuration was created\n", c.Kind, c.Metadata.Name)
+					plog.Info(
+						plog.TypeSystem,
+						"configuration created",
+						"kind",
+						c.Kind,
+						"name",
+						c.Metadata.Name,
+					)
 				}
 			}
 
@@ -284,21 +361,28 @@ func newConfigEditCmd() *cobra.Command {
 			_, err := config.Edit(args[0], force)
 			if err != nil {
 				if config.IsConfigNotModified(err) {
-					fmt.Printf("The %s configuration was not updated\n", args[0])
+					plog.Warn(plog.TypeSystem, "configuration not updated", "config", args[0])
+
 					return nil
 				}
 
-				err := util.HumanizeError(err, "Unable to edit the "+args[0]+" configuration provided")
+				err := util.HumanizeError(
+					err,
+					"%s",
+					"Unable to edit the "+args[0]+" configuration provided",
+				)
+
 				return err.Humanized()
 			}
 
-			fmt.Printf("The %s configuration was updated\n", args[0])
+			plog.Info(plog.TypeSystem, "configuration updated", "config", args[0])
 
 			return nil
 		},
 	}
 
-	cmd.Flags().Bool("force", false, "override checks (only applies to configs for running experiments)")
+	cmd.Flags().
+		Bool("force", false, "override checks (only applies to configs for running experiments)")
 
 	return cmd
 }
@@ -316,12 +400,14 @@ func newConfigDeleteCmd() *cobra.Command {
 		Args:  configKindArgsValidator(true, true),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, c := range args {
-				if err := config.Delete(c); err != nil {
-					err := util.HumanizeError(err, "Unable to delete the "+c+" configuration")
+				err := config.Delete(c)
+				if err != nil {
+					err := util.HumanizeError(err, "%s", "Unable to delete the "+c+" configuration")
+
 					return err.Humanized()
 				}
 
-				fmt.Printf("The %s configuration was deleted\n", c)
+				plog.Info(plog.TypeSystem, "configuration deleted", "config", c)
 			}
 
 			return nil
@@ -331,7 +417,7 @@ func newConfigDeleteCmd() *cobra.Command {
 	return cmd
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // cobra command
 	configCmd := newConfigCmd()
 
 	configCmd.AddCommand(newConfigListCmd())

@@ -2,12 +2,16 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"net"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/mitchellh/mapstructure"
+	"inet.af/netaddr"
 
 	"phenix/tmpl"
 	"phenix/types"
@@ -15,15 +19,25 @@ import (
 	"phenix/types/version"
 	"phenix/util"
 	"phenix/util/mm/mmcli"
+	"phenix/util/plog"
+)
 
-	"github.com/mitchellh/mapstructure"
-	"inet.af/netaddr"
+const (
+	appNameVrouter    = "vrouter"
+	appNameNTP        = "ntp"
+	ipsecSecretLength = 32
+)
+
+var (
+	ErrIPSecConfigNotFound = errors.New("ipsec config not found")
+	ErrSNMPConfigNotFound  = errors.New("snmp config not found")
+	ErrNTPConfigNotFound   = errors.New("ntp config not found")
 )
 
 type ACLConfig struct {
 	Ingress  map[string]string `mapstructure:"ingress"`
 	Egress   map[string]string `mapstructure:"egress"`
-	Rulesets []interface{}     `mapstructure:"rulesets"`
+	Rulesets []any             `mapstructure:"rulesets"`
 }
 
 type IPSecConfig struct {
@@ -88,22 +102,24 @@ type NATRule struct {
 	ifaceIndex int
 }
 
-func (this NATRule) InterfaceIndex() int {
-	return this.ifaceIndex
+func (r NATRule) InterfaceIndex() int {
+	return r.ifaceIndex
 }
 
-func (this NATRule) TranslationAddress() string {
-	if strings.Contains(this.Translation, ":") {
-		parts := strings.Split(this.Translation, ":")
+func (r NATRule) TranslationAddress() string {
+	if strings.Contains(r.Translation, ":") {
+		parts := strings.Split(r.Translation, ":")
+
 		return parts[0]
 	}
 
-	return this.Translation
+	return r.Translation
 }
 
-func (this NATRule) TranslationPort() string {
-	if strings.Contains(this.Translation, ":") {
-		parts := strings.Split(this.Translation, ":")
+func (r NATRule) TranslationPort() string {
+	if strings.Contains(r.Translation, ":") {
+		parts := strings.Split(r.Translation, ":")
+
 		return parts[1]
 	}
 
@@ -119,24 +135,30 @@ func (Vrouter) Init(...Option) error {
 }
 
 func (Vrouter) Name() string {
-	return "vrouter"
+	return appNameVrouter
 }
 
-func (this Vrouter) Configure(ctx context.Context, exp *types.Experiment) error {
+func (v Vrouter) Configure(ctx context.Context, exp *types.Experiment) error {
 	// Check to see if a scenario exists for this experiment and if it contains
 	// a "vrouter" app. If so, update the topology with the app's ACL configs.
 	for _, app := range exp.Apps() {
-		if app.Name() == "vrouter" {
+		if app.Name() == appNameVrouter {
 			for _, host := range app.Hosts() {
 				node := exp.Spec.Topology().FindNodeByName(host.Hostname())
 
 				if node == nil {
+					//nolint:godox // TODO
 					// TODO: handle this better? Like warn the user perhaps?
 					continue
 				}
 
-				if err := this.processACL(host.Metadata(), node.Network()); err != nil {
-					return fmt.Errorf("processing ACL metadata for host %s: %w", host.Hostname(), err)
+				err := v.processACL(host.Metadata(), node.Network())
+				if err != nil {
+					return fmt.Errorf(
+						"processing ACL metadata for host %s: %w",
+						host.Hostname(),
+						err,
+					)
 				}
 			}
 		}
@@ -145,7 +167,8 @@ func (this Vrouter) Configure(ctx context.Context, exp *types.Experiment) error 
 	return nil
 }
 
-func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error {
+//nolint:cyclop,funlen,gocyclo,maintidx // complex logic
+func (v *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error {
 	var (
 		ntpServers = exp.Spec.Topology().FindNodesWithLabels("ntp-server")
 		ntpAddr    string
@@ -156,6 +179,7 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 		for _, iface := range ntpServers[0].Network().Interfaces() {
 			if strings.EqualFold(iface.VLAN(), "mgmt") {
 				ntpAddr = iface.Address()
+
 				break
 			}
 		}
@@ -167,7 +191,8 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 			continue
 		}
 
-		if !strings.EqualFold(node.Type(), "router") && !strings.EqualFold(node.Type(), "firewall") {
+		if !strings.EqualFold(node.Type(), "router") &&
+			!strings.EqualFold(node.Type(), "firewall") {
 			continue
 		}
 
@@ -175,17 +200,31 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 		// in the post-start stage. We also don't log if `minirouter` since it is
 		// supported, just not here. Including os_type `linux` is for legacy
 		// support.
-		if !util.StringSliceContains([]string{"vyatta", "vyos", "linux"}, strings.ToLower(node.Hardware().OSType())) {
+		if !util.StringSliceContains(
+			[]string{"vyatta", "vyos", "linux"},
+			strings.ToLower(node.Hardware().OSType()),
+		) {
 			if strings.ToLower(node.Hardware().OSType()) != "minirouter" {
-				fmt.Printf("  === OS Type %s for Node Type %s unsupported ===\n", node.Hardware().OSType(), node.Type())
+				plog.Warn(
+					plog.TypePhenixApp,
+					"OS Type unsupported for Node Type",
+					"os",
+					node.Hardware().OSType(),
+					"type",
+					node.Type(),
+				)
 			}
 
 			continue
 		}
 
 		if strings.EqualFold(node.Hardware().OSType(), "linux") {
-			fmt.Printf("  === using OS Type 'linux' for Node Type %s is deprecated ===\n", node.Type())
-			fmt.Printf("  === use 'vyatta', 'vyos', or 'minirouter' OS type instead ===\n")
+			plog.Warn(
+				plog.TypePhenixApp,
+				"OS Type 'linux' for Node Type is deprecated; use 'vyatta', 'vyos', or 'minirouter' instead",
+				"type",
+				node.Type(),
+			)
 		}
 
 		var (
@@ -208,12 +247,16 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 		if ntpAddr == "" {
 			var err error
 
-			if ntpAddr, err = configureNTP(exp, node.General().Hostname()); err != nil {
+			if ntpAddr, err = configureNTP(
+				exp,
+				node.General().Hostname(),
+			); err != nil &&
+				!errors.Is(err, ErrNTPConfigNotFound) {
 				return fmt.Errorf("configuring NTP for host %s: %w", node.General().Hostname(), err)
 			}
 		}
 
-		data := map[string]interface{}{
+		data := map[string]any{
 			"node":     node,
 			"ntp-addr": ntpAddr,
 			"vyos":     isVyos,
@@ -238,14 +281,18 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 		// a "vrouter" app. If so, see if this node has an ipsec metadata entry in
 		// the scenario app configuration.
 		for _, app := range exp.Apps() {
-			if app.Name() == "vrouter" {
+			if app.Name() == appNameVrouter {
 				for _, host := range app.Hosts() {
 					if host.Hostname() == node.General().Hostname() {
 						md := host.Metadata()
 
-						ipsec, err := this.processIPSec(md, node.Network().Interfaces())
-						if err != nil {
-							return fmt.Errorf("processing IPSec metadata for host %s: %w", host.Hostname(), err)
+						ipsec, err := v.processIPSec(md, node.Network().Interfaces())
+						if err != nil && !errors.Is(err, ErrIPSecConfigNotFound) {
+							return fmt.Errorf(
+								"processing IPSec metadata for host %s: %w",
+								host.Hostname(),
+								err,
+							)
 						}
 
 						data["ipsec"] = ipsec
@@ -253,23 +300,36 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 						if e, ok := md["emulators"]; ok {
 							var emulators []Emulator
 
-							if err := mapstructure.Decode(e, &emulators); err != nil {
-								return fmt.Errorf("processing emulator metadata for host %s: %w", host.Hostname(), err)
+							err := mapstructure.Decode(e, &emulators)
+							if err != nil {
+								return fmt.Errorf(
+									"processing emulator metadata for host %s: %w",
+									host.Hostname(),
+									err,
+								)
 							}
 
 							data["emulators"] = emulators
 						}
 
-						snmp, err := this.processSNMP(md)
-						if err != nil {
-							return fmt.Errorf("processing SNMP metadata for host %s: %w", host.Hostname(), err)
+						snmp, err := v.processSNMP(md)
+						if err != nil && !errors.Is(err, ErrSNMPConfigNotFound) {
+							return fmt.Errorf(
+								"processing SNMP metadata for host %s: %w",
+								host.Hostname(),
+								err,
+							)
 						}
 
 						data["snmp"] = snmp
 
-						sources, destinations, err := this.processNAT(md, node.Network().Interfaces())
+						sources, destinations, err := v.processNAT(md, node.Network().Interfaces())
 						if err != nil {
-							return fmt.Errorf("processing NAT metadata for host %s: %w", host.Hostname(), err)
+							return fmt.Errorf(
+								"processing NAT metadata for host %s: %w",
+								host.Hostname(),
+								err,
+							)
 						}
 
 						data["snat"] = sources
@@ -290,11 +350,13 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 
 			for _, n := range node.Network().NAT() {
 				ifaceIndex := -1
+
 				var rules []NATRule
 
 				for i, iface := range node.Network().Interfaces() {
 					if iface.Name() == n.Out() {
 						ifaceIndex = i
+
 						continue
 					}
 
@@ -308,14 +370,18 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 
 					net := netaddr.IPPrefixFrom(
 						netaddr.MustParseIP(iface.Address()),
-						uint8(iface.Mask()),
+						uint8(iface.Mask()), //nolint:gosec // integer overflow conversion int -> uint8
 					)
 
-					rules = append(rules, NATRule{SourceAddress: net.Masked().String()})
+					rules = append(rules, NATRule{SourceAddress: net.Masked().String()}) //nolint:exhaustruct // partial initialization
 				}
 
 				if ifaceIndex < 0 {
-					return fmt.Errorf("NAT outbound interface %s specified for host %s not found", n.Out(), node.General().Hostname())
+					return fmt.Errorf(
+						"nat outbound interface %s specified for host %s not found",
+						n.Out(),
+						node.General().Hostname(),
+					)
 				}
 
 				// Go back and set the outbound interface index for each rule.
@@ -332,11 +398,13 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 			}
 		}
 
-		if err := os.MkdirAll(vrouterDir, 0755); err != nil {
+		err := os.MkdirAll(vrouterDir, 0o750)
+		if err != nil {
 			return fmt.Errorf("creating experiment vrouter directory path: %w", err)
 		}
 
-		if err := tmpl.CreateFileFromTemplate("vyatta.tmpl", data, vyattaFile); err != nil {
+		err = tmpl.CreateFileFromTemplate("vyatta.tmpl", data, vyattaFile)
+		if err != nil {
 			return fmt.Errorf("generating %s config: %w", node.Hardware().OSType(), err)
 		}
 	}
@@ -344,13 +412,15 @@ func (this *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error 
 	return nil
 }
 
+//nolint:cyclop,funlen,gocyclo,maintidx // complex logic
 func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 	var app ifaces.ScenarioApp
 
 	// check if experiment contains a scenario config for this app
 	for _, a := range exp.Apps() {
-		if a.Name() == "vrouter" {
+		if a.Name() == appNameVrouter {
 			app = a
+
 			break
 		}
 	}
@@ -360,7 +430,8 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 			continue
 		}
 
-		if !strings.EqualFold(node.Type(), "router") && !strings.EqualFold(node.Type(), "firewall") {
+		if !strings.EqualFold(node.Type(), "router") &&
+			!strings.EqualFold(node.Type(), "firewall") {
 			continue
 		}
 
@@ -379,38 +450,91 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 			case "static":
 				// We only want to set a default route if OSPF isn't being used.
 				if iface.Gateway() != "" {
-					cmd.Command = fmt.Sprintf("router %s gw %s", node.General().Hostname(), iface.Gateway())
-					if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-						return fmt.Errorf("configuring default gateway for router %s: %w", node.General().Hostname(), err)
+					cmd.Command = fmt.Sprintf(
+						"router %s gw %s",
+						node.General().Hostname(),
+						iface.Gateway(),
+					)
+
+					err := mmcli.ErrorResponse(mmcli.Run(cmd))
+					if err != nil {
+						return fmt.Errorf(
+							"configuring default gateway for router %s: %w",
+							node.General().Hostname(),
+							err,
+						)
 					}
 				}
 
 				// We need to set the IP address for both static and OSPF interfaces, so we fallthrough here.
 				fallthrough
 			case "ospf":
-				cmd.Command = fmt.Sprintf("router %s interface %d %s/%d", node.General().Hostname(), idx, iface.Address(), iface.Mask())
-				if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-					return fmt.Errorf("configuring interface for router %s: %w", node.General().Hostname(), err)
+				cmd.Command = fmt.Sprintf(
+					"router %s interface %d %s/%d",
+					node.General().Hostname(),
+					idx,
+					iface.Address(),
+					iface.Mask(),
+				)
+
+				err := mmcli.ErrorResponse(mmcli.Run(cmd))
+				if err != nil {
+					return fmt.Errorf(
+						"configuring interface for router %s: %w",
+						node.General().Hostname(),
+						err,
+					)
 				}
 			case "dhcp":
-				cmd.Command = fmt.Sprintf("router %s interface %d dhcp", node.General().Hostname(), idx)
-				if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-					return fmt.Errorf("configuring interface for router %s: %w", node.General().Hostname(), err)
+				cmd.Command = fmt.Sprintf(
+					"router %s interface %d dhcp",
+					node.General().Hostname(),
+					idx,
+				)
+
+				err := mmcli.ErrorResponse(mmcli.Run(cmd))
+				if err != nil {
+					return fmt.Errorf(
+						"configuring interface for router %s: %w",
+						node.General().Hostname(),
+						err,
+					)
 				}
 			}
 		}
 
 		for _, route := range node.Network().Routes() {
-			cmd.Command = fmt.Sprintf("router %s route static %s %s", node.General().Hostname(), route.Destination(), route.Next())
-			if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-				return fmt.Errorf("configuring static route for router %s: %w", node.General().Hostname(), err)
+			cmd.Command = fmt.Sprintf(
+				"router %s route static %s %s",
+				node.General().Hostname(),
+				route.Destination(),
+				route.Next(),
+			)
+
+			err := mmcli.ErrorResponse(mmcli.Run(cmd))
+			if err != nil {
+				return fmt.Errorf(
+					"configuring static route for router %s: %w",
+					node.General().Hostname(),
+					err,
+				)
 			}
 		}
 
 		if node.Network().OSPF() != nil {
-			cmd.Command = fmt.Sprintf("router %s rid %s", node.General().Hostname(), node.Network().OSPF().RouterID())
-			if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-				return fmt.Errorf("configuring router ID for router %s: %w", node.General().Hostname(), err)
+			cmd.Command = fmt.Sprintf(
+				"router %s rid %s",
+				node.General().Hostname(),
+				node.Network().OSPF().RouterID(),
+			)
+
+			err := mmcli.ErrorResponse(mmcli.Run(cmd))
+			if err != nil {
+				return fmt.Errorf(
+					"configuring router ID for router %s: %w",
+					node.General().Hostname(),
+					err,
+				)
 			}
 
 			for _, area := range node.Network().OSPF().Areas() {
@@ -437,9 +561,20 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 								aid = *area.AreaID()
 							}
 
-							cmd.Command = fmt.Sprintf("router %s route ospf %d %d", node.General().Hostname(), aid, idx)
-							if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-								return fmt.Errorf("configuring OSPF area network for router %s: %w", node.General().Hostname(), err)
+							cmd.Command = fmt.Sprintf(
+								"router %s route ospf %d %d",
+								node.General().Hostname(),
+								aid,
+								idx,
+							)
+
+							err := mmcli.ErrorResponse(mmcli.Run(cmd))
+							if err != nil {
+								return fmt.Errorf(
+									"configuring OSPF area network for router %s: %w",
+									node.General().Hostname(),
+									err,
+								)
 							}
 						}
 					}
@@ -451,13 +586,25 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 			if name := iface.RulesetIn(); name != "" {
 				for _, ruleset := range node.Network().Rulesets() {
 					if ruleset.Name() == name {
-						if err := addChainRules(cmd, node.General().Hostname(), ruleset); err != nil {
+						err := addChainRules(cmd, node.General().Hostname(), ruleset)
+						if err != nil {
 							return fmt.Errorf("processing ruleset rules: %w", err)
 						}
 
-						cmd.Command = fmt.Sprintf("router %s fw chain %s apply in %d", node.General().Hostname(), ruleset.Name(), idx)
-						if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-							return fmt.Errorf("applying firewall chain to interface for router %s: %w", node.General().Hostname(), err)
+						cmd.Command = fmt.Sprintf(
+							"router %s fw chain %s apply in %d",
+							node.General().Hostname(),
+							ruleset.Name(),
+							idx,
+						)
+
+						err = mmcli.ErrorResponse(mmcli.Run(cmd))
+						if err != nil {
+							return fmt.Errorf(
+								"applying firewall chain to interface for router %s: %w",
+								node.General().Hostname(),
+								err,
+							)
 						}
 
 						break
@@ -468,13 +615,25 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 			if name := iface.RulesetOut(); name != "" {
 				for _, ruleset := range node.Network().Rulesets() {
 					if ruleset.Name() == name {
-						if err := addChainRules(cmd, node.General().Hostname(), ruleset); err != nil {
+						err := addChainRules(cmd, node.General().Hostname(), ruleset)
+						if err != nil {
 							return fmt.Errorf("processing ruleset rules: %w", err)
 						}
 
-						cmd.Command = fmt.Sprintf("router %s fw chain %s apply out %d", node.General().Hostname(), ruleset.Name(), idx)
-						if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-							return fmt.Errorf("applying firewall chain to interface for router %s: %w", node.General().Hostname(), err)
+						cmd.Command = fmt.Sprintf(
+							"router %s fw chain %s apply out %d",
+							node.General().Hostname(),
+							ruleset.Name(),
+							idx,
+						)
+
+						err = mmcli.ErrorResponse(mmcli.Run(cmd))
+						if err != nil {
+							return fmt.Errorf(
+								"applying firewall chain to interface for router %s: %w",
+								node.General().Hostname(),
+								err,
+							)
 						}
 
 						break
@@ -494,36 +653,83 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 				if _, ok := md["dhcp"]; ok {
 					var dhcp []DHCPConfig
 
-					if err := mapstructure.Decode(md["dhcp"], &dhcp); err != nil {
+					err := mapstructure.Decode(md["dhcp"], &dhcp)
+					if err != nil {
 						return fmt.Errorf("decoding DHCP config: %w", err)
 					}
 
 					for _, d := range dhcp {
 						for _, r := range d.Ranges {
-							cmd.Command = fmt.Sprintf("router %s dhcp %s range %s %s", host.Hostname(), d.ListenAddr, r.LowAddr, r.HighAddr)
-							if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-								return fmt.Errorf("configuring DHCP range for router %s: %w", host.Hostname(), err)
+							cmd.Command = fmt.Sprintf(
+								"router %s dhcp %s range %s %s",
+								host.Hostname(),
+								d.ListenAddr,
+								r.LowAddr,
+								r.HighAddr,
+							)
+
+							err := mmcli.ErrorResponse(mmcli.Run(cmd))
+							if err != nil {
+								return fmt.Errorf(
+									"configuring DHCP range for router %s: %w",
+									host.Hostname(),
+									err,
+								)
 							}
 						}
 
 						if d.DefaultRoute != "" {
-							cmd.Command = fmt.Sprintf("router %s dhcp %s router %s", host.Hostname(), d.ListenAddr, d.DefaultRoute)
-							if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-								return fmt.Errorf("configuring DHCP default route for router %s: %w", host.Hostname(), err)
+							cmd.Command = fmt.Sprintf(
+								"router %s dhcp %s router %s",
+								host.Hostname(),
+								d.ListenAddr,
+								d.DefaultRoute,
+							)
+
+							err := mmcli.ErrorResponse(mmcli.Run(cmd))
+							if err != nil {
+								return fmt.Errorf(
+									"configuring DHCP default route for router %s: %w",
+									host.Hostname(),
+									err,
+								)
 							}
 						}
 
 						for _, ns := range d.DNS {
-							cmd.Command = fmt.Sprintf("router %s dhcp %s dns %s", host.Hostname(), d.ListenAddr, ns)
-							if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-								return fmt.Errorf("configuring DHCP DNS server for router %s: %w", host.Hostname(), err)
+							cmd.Command = fmt.Sprintf(
+								"router %s dhcp %s dns %s",
+								host.Hostname(),
+								d.ListenAddr,
+								ns,
+							)
+
+							err := mmcli.ErrorResponse(mmcli.Run(cmd))
+							if err != nil {
+								return fmt.Errorf(
+									"configuring DHCP DNS server for router %s: %w",
+									host.Hostname(),
+									err,
+								)
 							}
 						}
 
 						for mac, ip := range d.Static {
-							cmd.Command = fmt.Sprintf("router %s dhcp %s static %s %s", host.Hostname(), d.ListenAddr, mac, ip)
-							if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-								return fmt.Errorf("configuring DHCP static assignment for router %s: %w", host.Hostname(), err)
+							cmd.Command = fmt.Sprintf(
+								"router %s dhcp %s static %s %s",
+								host.Hostname(),
+								d.ListenAddr,
+								mac,
+								ip,
+							)
+
+							err := mmcli.ErrorResponse(mmcli.Run(cmd))
+							if err != nil {
+								return fmt.Errorf(
+									"configuring DHCP static assignment for router %s: %w",
+									host.Hostname(),
+									err,
+								)
 							}
 						}
 					}
@@ -532,14 +738,21 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 				if _, ok := md["dns"]; ok {
 					var dns map[string]string
 
-					if err := mapstructure.Decode(md["dns"], &dns); err != nil {
+					err := mapstructure.Decode(md["dns"], &dns)
+					if err != nil {
 						return fmt.Errorf("decoding DNS config: %w", err)
 					}
 
 					for ip, name := range dns {
 						cmd.Command = fmt.Sprintf("router %s dns %s %s", host.Hostname(), ip, name)
-						if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-							return fmt.Errorf("configuring DNS mapping for router %s: %w", host.Hostname(), err)
+
+						err := mmcli.ErrorResponse(mmcli.Run(cmd))
+						if err != nil {
+							return fmt.Errorf(
+								"configuring DNS mapping for router %s: %w",
+								host.Hostname(),
+								err,
+							)
 						}
 					}
 				}
@@ -547,7 +760,9 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 		}
 
 		cmd.Command = fmt.Sprintf("router %s commit", node.General().Hostname())
-		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+
+		err := mmcli.ErrorResponse(mmcli.Run(cmd))
+		if err != nil {
 			return fmt.Errorf("committing config for router %s: %w", node.General().Hostname(), err)
 		}
 	}
@@ -563,26 +778,30 @@ func (Vrouter) Cleanup(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (Vrouter) processACL(md map[string]interface{}, network ifaces.NodeNetwork) error {
+//nolint:funlen // complex logic
+func (Vrouter) processACL(md map[string]any, network ifaces.NodeNetwork) error {
 	if _, ok := md["acl"]; !ok {
 		return nil
 	}
 
 	var acl ACLConfig
 
-	if err := mapstructure.Decode(md["acl"], &acl); err != nil {
+	err := mapstructure.Decode(md["acl"], &acl)
+	if err != nil {
 		return fmt.Errorf("decoding ACL ingress/egress config: %w", err)
 	}
 
 	for _, rule := range acl.Rulesets {
 		iface, _ := version.GetStoredSpecForKind("Ruleset")
 
-		if err := mapstructure.Decode(rule, &iface); err != nil {
+		err := mapstructure.Decode(rule, &iface)
+		if err != nil {
 			return fmt.Errorf("decoding ACL ruleset: %w", err)
 		}
 
 		ruleset, ok := iface.(ifaces.NodeNetworkRuleset)
 		if !ok {
+			//nolint:godox // TODO
 			// TODO: handle this better? Like warn the user perhaps?
 			continue
 		}
@@ -592,6 +811,7 @@ func (Vrouter) processACL(md map[string]interface{}, network ifaces.NodeNetwork)
 		for _, r := range network.Rulesets() {
 			if ruleset.Name() == r.Name() {
 				exists = true
+
 				break
 			}
 		}
@@ -607,6 +827,7 @@ func (Vrouter) processACL(md map[string]interface{}, network ifaces.NodeNetwork)
 		for _, ruleset := range network.Rulesets() {
 			if rule == ruleset.Name() {
 				found = true
+
 				break
 			}
 		}
@@ -622,6 +843,7 @@ func (Vrouter) processACL(md map[string]interface{}, network ifaces.NodeNetwork)
 				net.SetRulesetOut(rule)
 
 				found = true
+
 				break
 			}
 		}
@@ -637,6 +859,7 @@ func (Vrouter) processACL(md map[string]interface{}, network ifaces.NodeNetwork)
 		for _, ruleset := range network.Rulesets() {
 			if rule == ruleset.Name() {
 				found = true
+
 				break
 			}
 		}
@@ -652,6 +875,7 @@ func (Vrouter) processACL(md map[string]interface{}, network ifaces.NodeNetwork)
 				net.SetRulesetIn(rule)
 
 				found = true
+
 				break
 			}
 		}
@@ -664,19 +888,22 @@ func (Vrouter) processACL(md map[string]interface{}, network ifaces.NodeNetwork)
 	return nil
 }
 
-func (this *Vrouter) processIPSec(md map[string]interface{}, nets []ifaces.NodeNetworkInterface) (*IPSecConfig, error) {
+func (v *Vrouter) processIPSec(
+	md map[string]any,
+	nets []ifaces.NodeNetworkInterface,
+) (*IPSecConfig, error) {
 	if _, ok := md["ipsec"]; !ok {
-		return nil, nil
+		return nil, ErrIPSecConfigNotFound
 	}
 
-	if this.ipsecPresharedKeys == nil {
-		this.ipsecPresharedKeys = make(map[string]string)
-		rand.Seed(time.Now().UTC().UnixNano())
+	if v.ipsecPresharedKeys == nil {
+		v.ipsecPresharedKeys = make(map[string]string)
 	}
 
 	var ipsec IPSecConfig
 
-	if err := mapstructure.Decode(md, &ipsec); err != nil {
+	err := mapstructure.Decode(md, &ipsec)
+	if err != nil {
 		return nil, fmt.Errorf("decoding IPSec config: %w", err)
 	}
 
@@ -685,12 +912,13 @@ func (this *Vrouter) processIPSec(md map[string]interface{}, nets []ifaces.NodeN
 	for idx, site := range ipsec.Sites {
 		var found bool
 
-		for idx, net := range nets {
+		for i, net := range nets {
 			if site.Local == net.Address() {
-				iface := fmt.Sprintf("eth%d", idx)
+				iface := fmt.Sprintf("eth%d", i)
 				ipsec.Interfaces[iface] = iface
 
 				found = true
+
 				break
 			}
 		}
@@ -702,17 +930,17 @@ func (this *Vrouter) processIPSec(md map[string]interface{}, nets []ifaces.NodeN
 		if site.PresharedKey == "" {
 			k := site.Local + "-" + site.Remote
 
-			if key, ok := this.ipsecPresharedKeys[k]; ok {
+			if key, ok := v.ipsecPresharedKeys[k]; ok {
 				site.PresharedKey = key
 			} else {
 				k := site.Remote + "-" + site.Local
 
-				if key, ok := this.ipsecPresharedKeys[k]; ok {
+				if key, ok := v.ipsecPresharedKeys[k]; ok {
 					site.PresharedKey = key
 				} else {
-					key := generateSecret(32)
+					key := generateSecret(ipsecSecretLength)
 
-					this.ipsecPresharedKeys[k] = key
+					v.ipsecPresharedKeys[k] = key
 					site.PresharedKey = key
 				}
 			}
@@ -724,14 +952,16 @@ func (this *Vrouter) processIPSec(md map[string]interface{}, nets []ifaces.NodeN
 	return &ipsec, nil
 }
 
-func (Vrouter) processSNMP(md map[string]interface{}) (*SNMPConfig, error) {
+func (Vrouter) processSNMP(md map[string]any) (*SNMPConfig, error) {
 	raw, ok := md["snmp"]
 	if !ok {
-		return nil, nil
+		return nil, ErrSNMPConfigNotFound
 	}
 
 	var snmp SNMPConfig
-	if err := mapstructure.Decode(raw, &snmp); err != nil {
+
+	err := mapstructure.Decode(raw, &snmp)
+	if err != nil {
 		return nil, fmt.Errorf("decoding SNMP config: %w", err)
 	}
 
@@ -740,24 +970,29 @@ func (Vrouter) processSNMP(md map[string]interface{}) (*SNMPConfig, error) {
 		if community.Name == "" {
 			return nil, fmt.Errorf("snmp community at index %d must include a name", cidx)
 		}
-
 	}
 
-	if snmp.ListenAddr == "" && snmp.SystemName == "" && snmp.Location == "" && snmp.Contact == "" && len(snmp.Communities) == 0 {
-		return nil, nil
+	if snmp.ListenAddr == "" && snmp.SystemName == "" && snmp.Location == "" &&
+		snmp.Contact == "" &&
+		len(snmp.Communities) == 0 {
+		return nil, ErrSNMPConfigNotFound
 	}
 
 	return &snmp, nil
 }
 
-func (this *Vrouter) processNAT(md map[string]interface{}, nets []ifaces.NodeNetworkInterface) ([]NATRule, []NATRule, error) {
+func (v *Vrouter) processNAT(
+	md map[string]any,
+	nets []ifaces.NodeNetworkInterface,
+) ([]NATRule, []NATRule, error) {
 	var (
 		sources      []NATRule
 		destinations []NATRule
 	)
 
 	if _, ok := md["snat"]; ok {
-		if err := mapstructure.Decode(md["snat"], &sources); err != nil {
+		err := mapstructure.Decode(md["snat"], &sources)
+		if err != nil {
 			return nil, nil, fmt.Errorf("processing SNAT metadata: %w", err)
 		}
 
@@ -768,18 +1003,20 @@ func (this *Vrouter) processNAT(md map[string]interface{}, nets []ifaces.NodeNet
 				if rule.Interface == iface.Name() {
 					rule.ifaceIndex = j
 					sources[i] = rule
+
 					break
 				}
 			}
 
 			if rule.ifaceIndex < 0 {
-				return nil, nil, fmt.Errorf("NAT outbound interface %s not found", rule.Interface)
+				return nil, nil, fmt.Errorf("nat outbound interface %s not found", rule.Interface)
 			}
 		}
 	}
 
 	if _, ok := md["dnat"]; ok {
-		if err := mapstructure.Decode(md["dnat"], &destinations); err != nil {
+		err := mapstructure.Decode(md["dnat"], &destinations)
+		if err != nil {
 			return nil, nil, fmt.Errorf("processing DNAT metadata: %w", err)
 		}
 
@@ -790,12 +1027,13 @@ func (this *Vrouter) processNAT(md map[string]interface{}, nets []ifaces.NodeNet
 				if rule.Interface == iface.Name() {
 					rule.ifaceIndex = j
 					destinations[i] = rule
+
 					break
 				}
 			}
 
 			if rule.ifaceIndex < 0 {
-				return nil, nil, fmt.Errorf("NAT inbound interface %s not found", rule.Interface)
+				return nil, nil, fmt.Errorf("nat inbound interface %s not found", rule.Interface)
 			}
 		}
 	}
@@ -807,9 +1045,10 @@ func configureNTP(exp *types.Experiment, hostname string) (string, error) {
 	// Check to see if a scenario exists for this experiment and if it contains
 	// a "ntp" app. If so, use it to configure NTP for the experiment.
 	for _, app := range exp.Apps() {
-		if app.Name() == "ntp" {
+		if app.Name() == appNameNTP {
 			var amd NTPAppMetadata
-			mapstructure.Decode(app.Metadata(), &amd)
+
+			_ = mapstructure.Decode(app.Metadata(), &amd)
 
 			// Might be an empty string, but that's okay... for now.
 			defaultSource := amd.DefaultSource.IPAddress(exp)
@@ -820,14 +1059,17 @@ func configureNTP(exp *types.Experiment, hostname string) (string, error) {
 				}
 
 				var hmd NTPAppHostMetadata
-				mapstructure.Decode(host.Metadata(), &hmd)
+				_ = mapstructure.Decode(host.Metadata(), &hmd)
 
 				source := hmd.Source.IPAddress(exp)
 
-				if hmd.Client == "ntp" {
+				if hmd.Client == appNameNTP {
 					if source == "" {
 						if defaultSource == "" {
-							return "", fmt.Errorf("no NTP source configured for host %s (and no default source configured)", host.Hostname())
+							return "", fmt.Errorf(
+								"no NTP source configured for host %s (and no default source configured)",
+								host.Hostname(),
+							)
 						}
 
 						source = defaultSource
@@ -835,13 +1077,16 @@ func configureNTP(exp *types.Experiment, hostname string) (string, error) {
 
 					return source, nil
 				} else {
-					return "", fmt.Errorf("the only valid NTP client for vrouters is 'ntp' (%s was provided)", hmd.Client)
+					return "", fmt.Errorf(
+						"the only valid NTP client for vrouters is 'ntp' (%s was provided)",
+						hmd.Client,
+					)
 				}
 			}
 		}
 	}
 
-	return "", nil
+	return "", ErrNTPConfigNotFound
 }
 
 func addChainRules(cmd *mmcli.Command, node string, ruleset ifaces.NodeNetworkRuleset) error {
@@ -861,18 +1106,40 @@ func addChainRules(cmd *mmcli.Command, node string, ruleset ifaces.NodeNetworkRu
 				src = fmt.Sprintf("%s:%d", src, port)
 			}
 
-			cmd.Command = fmt.Sprintf("router %s fw chain %s action %s %s %s %s", node, ruleset.Name(), rule.Action(), src, dst, proto)
+			cmd.Command = fmt.Sprintf(
+				"router %s fw chain %s action %s %s %s %s",
+				node,
+				ruleset.Name(),
+				rule.Action(),
+				src,
+				dst,
+				proto,
+			)
 		} else {
-			cmd.Command = fmt.Sprintf("router %s fw chain %s action %s %s %s", node, ruleset.Name(), rule.Action(), dst, proto)
+			cmd.Command = fmt.Sprintf(
+				"router %s fw chain %s action %s %s %s",
+				node,
+				ruleset.Name(),
+				rule.Action(),
+				dst,
+				proto,
+			)
 		}
 
-		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		err := mmcli.ErrorResponse(mmcli.Run(cmd))
+		if err != nil {
 			return fmt.Errorf("adding firewall rule for router %s: %w", node, err)
 		}
 
-		cmd.Command = fmt.Sprintf("router %s fw chain %s default action %s", node, ruleset.Name(), ruleset.Default())
+		cmd.Command = fmt.Sprintf(
+			"router %s fw chain %s default action %s",
+			node,
+			ruleset.Name(),
+			ruleset.Default(),
+		)
 
-		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		err = mmcli.ErrorResponse(mmcli.Run(cmd))
+		if err != nil {
 			return fmt.Errorf("setting default firewall chain action for router %s: %w", node, err)
 		}
 	}
@@ -881,12 +1148,14 @@ func addChainRules(cmd *mmcli.Command, node string, ruleset ifaces.NodeNetworkRu
 }
 
 func generateSecret(n int) string {
-	var chars = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	rng := rand.New(rand.NewPCG(uint64(time.Now().UTC().UnixNano()), 1)) //nolint:gosec // weak random number generator
+
+	chars := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
 	b := make([]rune, n)
 
 	for i := range b {
-		b[i] = chars[rand.Intn(len(chars))]
+		b[i] = chars[rng.IntN(len(chars))]
 	}
 
 	return string(b)

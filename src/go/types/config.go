@@ -1,16 +1,18 @@
 package types
 
 import (
+	"errors"
 	"fmt"
+
+	"github.com/activeshadow/structs"
 
 	"phenix/store"
 	v1 "phenix/types/version/v1"
 	v2 "phenix/types/version/v2"
-
-	"github.com/activeshadow/structs"
 )
 
-func NewConfigFromSpec(name string, spec interface{}) (*store.Config, error) {
+func NewConfigFromSpec(name string, spec any) (*store.Config, error) {
+	//nolint:godox // TODO
 	// TODO: add more case statements to this as more upgraders are added.
 	switch spec := spec.(type) {
 	case store.Config:
@@ -24,7 +26,11 @@ func NewConfigFromSpec(name string, spec interface{}) (*store.Config, error) {
 		}
 
 		c.Version = "phenix.sandia.gov/v1"
-		c.Spec = structs.MapWithOptions(spec, structs.DefaultCase(structs.CASE_SNAKE), structs.DefaultOmitEmpty())
+		c.Spec = structs.MapWithOptions(
+			spec,
+			structs.DefaultCase(structs.CASE_SNAKE),
+			structs.DefaultOmitEmpty(),
+		)
 
 		return c, nil
 	case v1.ScenarioSpec, *v1.ScenarioSpec:
@@ -34,7 +40,11 @@ func NewConfigFromSpec(name string, spec interface{}) (*store.Config, error) {
 		}
 
 		c.Version = "phenix.sandia.gov/v1"
-		c.Spec = structs.MapWithOptions(spec, structs.DefaultCase(structs.CASE_SNAKE), structs.DefaultOmitEmpty())
+		c.Spec = structs.MapWithOptions(
+			spec,
+			structs.DefaultCase(structs.CASE_SNAKE),
+			structs.DefaultOmitEmpty(),
+		)
 
 		return c, nil
 	case v2.ScenarioSpec, *v2.ScenarioSpec:
@@ -44,10 +54,14 @@ func NewConfigFromSpec(name string, spec interface{}) (*store.Config, error) {
 		}
 
 		c.Version = "phenix.sandia.gov/v2"
-		c.Spec = structs.MapWithOptions(spec, structs.DefaultCase(structs.CASE_SNAKE), structs.DefaultOmitEmpty())
+		c.Spec = structs.MapWithOptions(
+			spec,
+			structs.DefaultCase(structs.CASE_SNAKE),
+			structs.DefaultOmitEmpty(),
+		)
 
 		return c, nil
 	}
 
-	return nil, fmt.Errorf("unknown spec provided")
+	return nil, errors.New("unknown spec provided")
 }

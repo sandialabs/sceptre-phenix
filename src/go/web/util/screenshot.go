@@ -1,12 +1,15 @@
 package util
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"phenix/api/vm"
 	"phenix/web/cache"
 )
+
+const screenshotCacheDuration = 10 * time.Second
 
 func GetScreenshot(expName, vmName, size string) ([]byte, error) {
 	name := fmt.Sprintf("%s_%s", expName, vmName)
@@ -21,10 +24,10 @@ func GetScreenshot(expName, vmName, size string) ([]byte, error) {
 	}
 
 	if screenshot == nil {
-		return nil, fmt.Errorf("VM screenshot not found")
+		return nil, errors.New("vm screenshot not found")
 	}
 
-	cache.SetWithExpire(name, screenshot, 10*time.Second)
+	_ = cache.SetWithExpire(name, screenshot, screenshotCacheDuration)
 
 	return screenshot, nil
 }

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/gob"
+	"errors"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"net"
 	"os"
 	"path/filepath"
@@ -26,7 +28,7 @@ func newClient() (*client, error) {
 
 	cli := new(client)
 
-	cli.conn, err = net.Dial("unix", sockPath)
+	cli.conn, err = (&net.Dialer{}).DialContext(context.Background(), "unix", sockPath) //nolint:exhaustruct // partial initialization
 	if err != nil {
 		return nil, fmt.Errorf("dialing phenix unix socket %s: %w", sockPath, err)
 	}
@@ -37,92 +39,100 @@ func newClient() (*client, error) {
 	return cli, nil
 }
 
-func (this client) close() error {
-	return this.conn.Close()
+func (c client) close() error {
+	return c.conn.Close()
 }
 
-func (this client) getLocalListeners() (Listeners, error) {
-	msg := Message{
-		MID:  rand.Int(),
+func (c client) getLocalListeners() (Listeners, error) {
+	msg := Message{ //nolint:exhaustruct // partial initialization
+		MID:  int(rand.Uint64()), //nolint:gosec // weak random number generator
 		Type: LISTENERS,
 	}
 
-	if err := this.enc.Encode(msg); err != nil {
+	err := c.enc.Encode(msg)
+	if err != nil {
 		return nil, fmt.Errorf("sending request: %w", err)
 	}
 
-	if err := this.dec.Decode(&msg); err != nil {
+	err = c.dec.Decode(&msg)
+	if err != nil {
 		return nil, fmt.Errorf("receiving response: %w", err)
 	}
 
 	if payload, ok := msg.Payload.(Listeners); ok {
 		return payload, nil
 	} else {
-		return nil, fmt.Errorf("decoding listeners from response")
+		return nil, errors.New("decoding listeners from response")
 	}
 }
 
-func (this client) moveLocalListener(id, port int) error {
-	msg := Message{
-		MID:     rand.Int(),
+func (c client) moveLocalListener(id, port int) error {
+	msg := Message{ //nolint:exhaustruct // partial initialization
+		MID:     int(rand.Uint64()), //nolint:gosec // weak random number generator
 		Type:    MOVE,
 		Payload: []int{id, port},
 	}
 
-	if err := this.enc.Encode(msg); err != nil {
+	err := c.enc.Encode(msg)
+	if err != nil {
 		return fmt.Errorf("sending request: %w", err)
 	}
 
-	if err := this.dec.Decode(&msg); err != nil {
+	err = c.dec.Decode(&msg)
+	if err != nil {
 		return fmt.Errorf("receiving response: %w", err)
 	}
 
 	if msg.Error != "" {
-		return fmt.Errorf(msg.Error)
+		return fmt.Errorf("%s", msg.Error)
 	}
 
 	return nil
 }
 
-func (this client) activateLocalListener(id int) error {
-	msg := Message{
-		MID:     rand.Int(),
+func (c client) activateLocalListener(id int) error {
+	msg := Message{ //nolint:exhaustruct // partial initialization
+		MID:     int(rand.Uint64()), //nolint:gosec // weak random number generator
 		Type:    ACTIVATE,
 		Payload: id,
 	}
 
-	if err := this.enc.Encode(msg); err != nil {
+	err := c.enc.Encode(msg)
+	if err != nil {
 		return fmt.Errorf("sending request: %w", err)
 	}
 
-	if err := this.dec.Decode(&msg); err != nil {
+	err = c.dec.Decode(&msg)
+	if err != nil {
 		return fmt.Errorf("receiving response: %w", err)
 	}
 
 	if msg.Error != "" {
-		return fmt.Errorf(msg.Error)
+		return fmt.Errorf("%s", msg.Error)
 	}
 
 	return nil
 }
 
-func (this client) deactivateLocalListener(id int) error {
-	msg := Message{
-		MID:     rand.Int(),
+func (c client) deactivateLocalListener(id int) error {
+	msg := Message{ //nolint:exhaustruct // partial initialization
+		MID:     int(rand.Uint64()), //nolint:gosec // weak random number generator
 		Type:    DEACTIVATE,
 		Payload: id,
 	}
 
-	if err := this.enc.Encode(msg); err != nil {
+	err := c.enc.Encode(msg)
+	if err != nil {
 		return fmt.Errorf("sending request: %w", err)
 	}
 
-	if err := this.dec.Decode(&msg); err != nil {
+	err = c.dec.Decode(&msg)
+	if err != nil {
 		return fmt.Errorf("receiving response: %w", err)
 	}
 
 	if msg.Error != "" {
-		return fmt.Errorf(msg.Error)
+		return fmt.Errorf("%s", msg.Error)
 	}
 
 	return nil

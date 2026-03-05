@@ -11,34 +11,33 @@ import (
 	"os"
 	"strconv"
 
-	"phenix/version"
-
-	bt "phenix/web/broker/brokertypes"
-	ft "phenix/web/forward/forwardtypes"
-	jwtutil "phenix/web/util/jwt"
-
 	"github.com/dgrijalva/jwt-go"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 	"golang.org/x/net/websocket"
 	"golang.org/x/term"
+
+	"phenix/version"
+	bt "phenix/web/broker/brokertypes"
+	ft "phenix/web/forward/forwardtypes"
+	jwtutil "phenix/web/util/jwt"
 )
 
 var (
-	// used by server for websocket connections
-	wsEndpoint, origin string
+	// used by server for websocket connections.
+	wsEndpoint, origin string //nolint:gochecknoglobals // global state
 
-	httpCli = new(http.Client)
-	headers = make(http.Header)
+	httpCli = new(http.Client)  //nolint:gochecknoglobals // global state
+	headers = make(http.Header) //nolint:gochecknoglobals // global state
 
-	listenerIDs = make(chan int)
-	// key will be "<exp>:<vm>:<fwd host>:<dst port>"
-	listeners = make(map[string]*LocalListener)
+	listenerIDs = make(chan int) //nolint:gochecknoglobals // global state
+	// key will be "<exp>:<vm>:<fwd host>:<dst port>".
+	listeners = make(map[string]*LocalListener) //nolint:gochecknoglobals // global state
 
-	username string
+	username string //nolint:gochecknoglobals // global state
 )
 
-var rootCmd = &cobra.Command{
+var rootCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:     "phenix-tunneler",
 	Version: version.Commit,
 
@@ -61,13 +60,13 @@ by other users can be created manually using the 'activate' subcommand.
 	},
 
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		fmt.Println()
+		fmt.Println() //nolint:forbidigo // CLI output
 	},
 
 	SilenceUsage: true, // don't print help when subcommands return an error
 }
 
-var serveCmd = &cobra.Command{
+var serveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "serve <url>",
 	Short: "Start local WebSocket proxy server",
 
@@ -78,12 +77,12 @@ var serveCmd = &cobra.Command{
 
 		username, err = cmd.Flags().GetString("username")
 		if err != nil {
-			return fmt.Errorf("unable to get --username flag")
+			return errors.New("unable to get --username flag")
 		}
 
 		token, err := cmd.Flags().GetString("auth-token")
 		if err != nil {
-			return fmt.Errorf("unable to get --auth-token flag")
+			return errors.New("unable to get --auth-token flag")
 		}
 
 		u, err := url.Parse(origin)
@@ -94,7 +93,7 @@ var serveCmd = &cobra.Command{
 		if token != "" {
 			cookie, err := cmd.Flags().GetString("use-cookie")
 			if err != nil {
-				return fmt.Errorf("unable to get --use-cookie flag")
+				return errors.New("unable to get --use-cookie flag")
 			}
 
 			token, _, err := new(jwt.Parser).ParseUnverified(token, jwt.MapClaims{})
@@ -102,28 +101,31 @@ var serveCmd = &cobra.Command{
 				return fmt.Errorf("parsing phenix auth token for username: %w", err)
 			}
 
-			claims := token.Claims.(jwt.MapClaims)
+			claims, _ := token.Claims.(jwt.MapClaims)
 
 			username, err = jwtutil.UsernameFromClaims(claims)
 			if err != nil {
-				return fmt.Errorf("username missing from token")
+				return errors.New("username missing from token")
 			}
 
 			if err := jwtutil.ValidateExpirationClaim(claims); err != nil {
 				return fmt.Errorf("validating token expiration: %w", err)
 			}
 
-			headers.Set("X-phenix-auth-token", fmt.Sprintf("Bearer %s", token.Raw))
+			headers.Set("X-Phenix-Auth-Token", "Bearer "+token.Raw)
 
 			if cookie != "" {
 				headers.Set("Cookie", fmt.Sprintf("%s=%s", cookie, token.Raw))
 			}
 		} else if username != "" {
-			fmt.Printf("Password for %s: ", username)
+			fmt.Printf("Password for %s: ", username) //nolint:forbidigo // CLI output
 
 			prev, err := term.MakeRaw(0)
 			if err != nil {
-				return fmt.Errorf("unable to put terminal into raw mode for hiding password: %w", err)
+				return fmt.Errorf(
+					"unable to put terminal into raw mode for hiding password: %w",
+					err,
+				)
 			}
 
 			terminal := term.NewTerminal(os.Stdin, "")
@@ -170,11 +172,12 @@ var serveCmd = &cobra.Command{
 				return fmt.Errorf("parsing login response: %w", err)
 			}
 
-			headers.Set("X-phenix-auth-token", "Bearer "+user["token"].(string))
+			tokenStr, _ := user["token"].(string)
+			headers.Set("X-Phenix-Auth-Token", "Bearer "+tokenStr)
 		}
 
 		if username != "" {
-			fmt.Printf("phēnix user: %s\n", username)
+			fmt.Printf("phēnix user: %s\n", username) //nolint:forbidigo // CLI output
 		}
 
 		switch u.Scheme {
@@ -219,8 +222,9 @@ var serveCmd = &cobra.Command{
 		}
 
 		for _, listener := range existing {
-			if err := createLocalListener(listener); err != nil {
-				fmt.Printf("ERROR: creating local listener: %v\n", err)
+			err := createLocalListener(listener)
+			if err != nil {
+				fmt.Printf("err: creating local listener: %v\n", err) //nolint:forbidigo // CLI output
 			}
 		}
 
@@ -230,9 +234,11 @@ var serveCmd = &cobra.Command{
 
 		for {
 			var publish bt.Publish
-			if err := websocket.JSON.Receive(ws, &publish); err != nil {
+
+			err := websocket.JSON.Receive(ws, &publish)
+			if err != nil {
 				if errors.Is(err, io.EOF) {
-					return fmt.Errorf("phēnix connection terminated")
+					return errors.New("phēnix connection terminated")
 				}
 
 				continue
@@ -242,18 +248,25 @@ var serveCmd = &cobra.Command{
 				switch publish.Resource.Action {
 				case "create":
 					var listener ft.Listener
-					if err := json.Unmarshal(publish.Result, &listener); err != nil {
-						fmt.Printf("ERROR: parsing forward create: %v\n", err)
+
+					err := json.Unmarshal(publish.Result, &listener)
+					if err != nil {
+						fmt.Printf("err: parsing forward create: %v\n", err) //nolint:forbidigo // CLI output
+
 						continue
 					}
 
-					if err := createLocalListener(listener); err != nil {
-						fmt.Printf("ERROR: creating local listener: %v\n", err)
+					err = createLocalListener(listener)
+					if err != nil {
+						fmt.Printf("err: creating local listener: %v\n", err) //nolint:forbidigo // CLI output
 					}
 				case "delete":
 					var payload map[string]string
-					if err := json.Unmarshal(publish.Result, &payload); err != nil {
-						fmt.Printf("ERROR: parsing forward delete: %v\n", err)
+
+					err := json.Unmarshal(publish.Result, &payload)
+					if err != nil {
+						fmt.Printf("err: parsing forward delete: %v\n", err) //nolint:forbidigo // CLI output
+
 						continue
 					}
 
@@ -266,40 +279,51 @@ var serveCmd = &cobra.Command{
 	},
 }
 
-var listCmd = &cobra.Command{
+var listCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "list",
 	Short: "Show table of known port forwards",
 
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cli, err := newClient()
 		if err != nil {
-			return fmt.Errorf("ERROR: creating new client: %w", err)
+			return fmt.Errorf("err: creating new client: %w", err)
 		}
 
-		defer cli.close()
+		defer func() { _ = cli.close() }()
 
 		listeners, err := cli.getLocalListeners()
 		if err != nil {
-			return fmt.Errorf("ERROR: getting list of listeners: %w", err)
+			return fmt.Errorf("err: getting list of listeners: %w", err)
 		}
 
 		if len(listeners) == 0 {
-			fmt.Println("No registered listeners")
+			fmt.Println("No registered listeners") //nolint:forbidigo // CLI output
+
 			return nil
 		}
 
 		table := tablewriter.NewWriter(os.Stdout)
-		table.SetHeader([]string{"ID", "Experiment", "VM", "Remote Host", "Remote Port", "Local Port", "Active"})
+		table.SetHeader(
+			[]string{
+				"ID",
+				"Experiment",
+				"VM",
+				"Remote Host",
+				"Remote Port",
+				"Local Port",
+				"Active",
+			},
+		)
 
 		for _, listener := range listeners {
 			table.Append([]string{
-				fmt.Sprintf("%d", listener.ID),
+				strconv.Itoa(listener.ID),
 				listener.Exp,
 				listener.VM,
 				listener.DstHost,
-				fmt.Sprintf("%d", listener.DstPort),
-				fmt.Sprintf("%d", listener.SrcPort),
-				fmt.Sprintf("%t", listener.Listening),
+				strconv.Itoa(listener.DstPort),
+				strconv.Itoa(listener.SrcPort),
+				strconv.FormatBool(listener.Listening),
 			})
 		}
 
@@ -309,7 +333,7 @@ var listCmd = &cobra.Command{
 	},
 }
 
-var moveCmd = &cobra.Command{
+var moveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "move <id> <port>",
 	Short: "Move listener to a different local port",
 
@@ -329,19 +353,19 @@ var moveCmd = &cobra.Command{
 			return fmt.Errorf("creating new client: %w", err)
 		}
 
-		defer cli.close()
+		defer func() { _ = cli.close() }()
 
 		if err := cli.moveLocalListener(id, port); err != nil {
 			return fmt.Errorf("moving listener %d to port %d: %w", id, port, err)
 		}
 
-		fmt.Printf("Listener %d moved to port %d\n", id, port)
+		fmt.Printf("Listener %d moved to port %d\n", id, port) //nolint:forbidigo // CLI output
 
 		return nil
 	},
 }
 
-var activateCmd = &cobra.Command{
+var activateCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "activate <id>",
 	Short: "Activate a local forward (start listening on local port)",
 
@@ -356,19 +380,19 @@ var activateCmd = &cobra.Command{
 			return fmt.Errorf("creating new client: %w", err)
 		}
 
-		defer cli.close()
+		defer func() { _ = cli.close() }()
 
 		if err := cli.activateLocalListener(id); err != nil {
 			return fmt.Errorf("activating listener %d: %w", id, err)
 		}
 
-		fmt.Printf("Listener %d activated\n", id)
+		fmt.Printf("Listener %d activated\n", id) //nolint:forbidigo // CLI output
 
 		return nil
 	},
 }
 
-var deactivateCmd = &cobra.Command{
+var deactivateCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "deactivate <id>",
 	Short: "Dectivate a local forward (stop listening on local port)",
 
@@ -380,16 +404,16 @@ var deactivateCmd = &cobra.Command{
 
 		cli, err := newClient()
 		if err != nil {
-			return fmt.Errorf("ERROR: creating new client: %w", err)
+			return fmt.Errorf("err: creating new client: %w", err)
 		}
 
-		defer cli.close()
+		defer func() { _ = cli.close() }()
 
 		if err := cli.deactivateLocalListener(id); err != nil {
-			return fmt.Errorf("ERROR: deactivating listener %d: %w", id, err)
+			return fmt.Errorf("err: deactivating listener %d: %w", id, err)
 		}
 
-		fmt.Printf("Listener %d deactivated\n", id)
+		fmt.Printf("Listener %d deactivated\n", id) //nolint:forbidigo // CLI output
 
 		return nil
 	},
@@ -402,7 +426,8 @@ func main() {
 
 	rootCmd.AddCommand(listCmd, activateCmd, deactivateCmd, moveCmd, serveCmd)
 
-	if err := rootCmd.Execute(); err != nil {
+	err := rootCmd.Execute()
+	if err != nil {
 		os.Exit(1)
 	}
 }

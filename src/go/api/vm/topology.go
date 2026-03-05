@@ -2,13 +2,14 @@ package vm
 
 import (
 	"fmt"
+	"slices"
 
 	"phenix/api/experiment"
 	"phenix/util/cache"
 	"phenix/util/mm"
-
-	"golang.org/x/exp/slices"
 )
+
+const defaultEdgeLength = 150
 
 type topology struct {
 	Nodes   []mm.VM `json:"nodes"`
@@ -43,7 +44,7 @@ func Topology(exp string, ignore []string) (topology, error) {
 	)
 
 	if val, ok := cache.Get(cacheKey); ok {
-		search = val.(TopologySearch)
+		search, _ = val.(TopologySearch)
 		cached = true
 	}
 
@@ -79,6 +80,7 @@ func Topology(exp string, ignore []string) (topology, error) {
 			}
 
 			if !cached {
+				//nolint:godox // TODO
 				// TODO: what if these change during an experiment (e.g., via user updates)?
 				search.AddVLAN(iface, node.ID)
 				search.AddIP(vm.IPv4[i], node.ID)
@@ -86,6 +88,7 @@ func Topology(exp string, ignore []string) (topology, error) {
 
 			network, ok := networks[iface]
 			if !ok { // create new node for VLAN network switch
+				//nolint:exhaustruct // partial initialization
 				network = mm.VM{ID: nodeID, Name: iface, Type: "Switch", Networks: []string{iface}}
 				networks[iface] = network
 
@@ -93,17 +96,21 @@ func Topology(exp string, ignore []string) (topology, error) {
 				nodeID++
 			}
 
-			edges = append(edges, edge{ID: edgeID, Source: node.ID, Target: network.ID, Length: 150})
+			edges = append(
+				edges,
+				edge{ID: edgeID, Source: node.ID, Target: network.ID, Length: defaultEdgeLength},
+			)
 			edgeID++
 		}
 	}
 
 	if !cached {
+		//nolint:godox // TODO
 		// TODO: cache with expire?
-		cache.Set(cacheKey, search)
+		_ = cache.Set(cacheKey, search)
 	}
 
-	topo := topology{Nodes: nodes, Edges: edges}
+	topo := topology{Nodes: nodes, Edges: edges} //nolint:exhaustruct // partial initialization
 
 	if exp, err := experiment.Get(exp); err == nil {
 		topo.Running = exp.Running()

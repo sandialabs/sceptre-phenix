@@ -10,8 +10,8 @@ const (
 )
 
 type Setting struct {
-	Category string           `json:"category" yaml:"category"`
-	Name     string           `json:"name" yaml:"name"`
-	Value    string           `json:"value" yaml:"value"`
-	Type     SettingValueType `json:"type" yaml:"type"`
+	Category string           `json:"category" mapstructure:"category" yaml:"category"`
+	Name     string           `json:"name"     mapstructure:"name"     yaml:"name"`
+	Value    string           `json:"value"    mapstructure:"value"    yaml:"value"`
+	Type     SettingValueType `json:"type"     mapstructure:"type"     yaml:"type"`
 }

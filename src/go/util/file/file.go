@@ -12,7 +12,10 @@ import (
 	"phenix/util/mm/mmcli"
 )
 
-var DefaultClusterFiles ClusterFiles = new(MMClusterFiles)
+var DefaultClusterFiles ClusterFiles = new(MMClusterFiles) //nolint:gochecknoglobals // default implementation
+
+const snapshotBoth = "both"
+const scorchComponentIndex = 2
 
 type ClusterFiles interface {
 	GetExperimentFiles(exp, filter string) (Files, error)
@@ -33,23 +36,23 @@ type ClusterFiles interface {
 }
 
 func GetExperimentFiles(exp, filter string) (Files, error) {
-	return DefaultClusterFiles.GetExperimentFiles(exp, filter)
+	return DefaultClusterFiles.GetExperimentFiles(exp, filter) //nolint:wrapcheck // passthrough
 }
 
 func GetExperimentSnapshots(exp string) ([]string, error) {
-	return DefaultClusterFiles.GetExperimentSnapshots(exp)
+	return DefaultClusterFiles.GetExperimentSnapshots(exp) //nolint:wrapcheck // passthrough
 }
 
 func CopyFile(path, dest string, status CopyStatus) error {
-	return DefaultClusterFiles.CopyFile(path, dest, status)
+	return DefaultClusterFiles.CopyFile(path, dest, status) //nolint:wrapcheck // passthrough
 }
 
 func SyncFile(path string, status CopyStatus) error {
-	return DefaultClusterFiles.SyncFile(path, status)
+	return DefaultClusterFiles.SyncFile(path, status) //nolint:wrapcheck // passthrough
 }
 
 func DeleteFile(path string) error {
-	return DefaultClusterFiles.DeleteFile(path)
+	return DefaultClusterFiles.DeleteFile(path) //nolint:wrapcheck // passthrough
 }
 
 type MMClusterFiles struct{}
@@ -60,7 +63,7 @@ func (MMClusterFiles) GetExperimentFiles(exp, filter string) (Files, error) {
 		// the file to ensure files with the same name in different directories get
 		// included.
 		matches = make(map[string]File)
-		root    = fmt.Sprintf("%s/files/", exp)
+		root    = exp + "/files/"
 	)
 
 	// First get file listings from mesh, then from headnode.
@@ -80,7 +83,7 @@ func (MMClusterFiles) GetExperimentFiles(exp, filter string) (Files, error) {
 
 		for _, row := range mmcli.RunTabular(cmd) {
 			name := filepath.Base(row["name"])
-			file := File{Name: name, Path: strings.TrimPrefix(row["name"], root)}
+			file := File{Name: name, Path: strings.TrimPrefix(row["name"], root)} //nolint:exhaustruct // partial initialization
 
 			if _, ok := matches[file.Path]; ok {
 				continue
@@ -103,11 +106,9 @@ func (MMClusterFiles) GetExperimentFiles(exp, filter string) (Files, error) {
 					}
 
 					file.Categories = append(file.Categories, "Filebeat")
-				} else {
-					if len(directories) > 2 {
-						// Add Scorch component name as a category.
-						file.Categories = append(file.Categories, directories[2])
-					}
+				} else if len(directories) > scorchComponentIndex {
+					// Add Scorch component name as a category.
+					file.Categories = append(file.Categories, directories[scorchComponentIndex])
 				}
 			}
 
@@ -189,7 +190,7 @@ func (MMClusterFiles) GetExperimentSnapshots(exp string) ([]string, error) {
 			if m, ok := matches[ss]; !ok {
 				matches[ss] = "hdd"
 			} else if m == "state" {
-				matches[ss] = "both"
+				matches[ss] = snapshotBoth
 			}
 		case ".state":
 			ss := strings.TrimSuffix(f.Name, ext)
@@ -197,7 +198,7 @@ func (MMClusterFiles) GetExperimentSnapshots(exp string) ([]string, error) {
 			if m, ok := matches[ss]; !ok {
 				matches[ss] = "state"
 			} else if m == "hdd" {
-				matches[ss] = "both"
+				matches[ss] = snapshotBoth
 			}
 		}
 	}
@@ -205,7 +206,7 @@ func (MMClusterFiles) GetExperimentSnapshots(exp string) ([]string, error) {
 	var snapshots []string
 
 	for ss := range matches {
-		if matches[ss] == "both" {
+		if matches[ss] == snapshotBoth {
 			snapshots = append(snapshots, ss)
 		}
 	}
@@ -217,12 +218,13 @@ func (MMClusterFiles) CopyFile(path, dest string, status CopyStatus) error {
 	cmd := mmcli.NewCommand()
 
 	if mm.IsHeadnode(dest) {
-		cmd.Command = fmt.Sprintf(`file get %s`, path)
+		cmd.Command = "file get " + path
 	} else {
 		cmd.Command = fmt.Sprintf(`mesh send %s file get %s`, dest, path)
 	}
 
-	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	if err != nil {
 		return fmt.Errorf("copying file to destination: %w", err)
 	}
 
@@ -247,6 +249,7 @@ func (MMClusterFiles) CopyFile(path, dest string, status CopyStatus) error {
 				}
 
 				found = true
+
 				break
 			}
 		}
@@ -265,12 +268,13 @@ func (MMClusterFiles) SyncFile(path string, status CopyStatus) error {
 	cmd := mmcli.NewCommand()
 	cmd.Command = "mesh send all file get " + path
 
-	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	if err != nil {
 		return fmt.Errorf("syncing file to cluster nodes: %w", err)
 	}
 
 	if status != nil {
-		// TODO: use mesh to get file status transfer for file from each node.
+		_ = status
 	}
 
 	return nil
@@ -288,7 +292,8 @@ func (MMClusterFiles) DeleteFile(path string) error {
 	for _, command := range commands {
 		cmd.Command = fmt.Sprintf("%s %s", command, path)
 
-		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		err := mmcli.ErrorResponse(mmcli.Run(cmd))
+		if err != nil {
 			return fmt.Errorf("deleting file from cluster nodes: %w", err)
 		}
 	}

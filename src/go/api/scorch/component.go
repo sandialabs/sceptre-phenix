@@ -9,12 +9,12 @@ import (
 type Action string
 
 const (
-	ACTIONCONFIG  Action = "configure"
-	ACTIONSTART   Action = "start"
-	ACTIONSTOP    Action = "stop"
-	ACTIONCLEANUP Action = "cleanup"
-	ACTIONDONE    Action = "done"
-	ACTIONLOOP    Action = "loop"
+	ActionConfigure Action = "configure"
+	ActionStart     Action = "start"
+	ActionStop      Action = "stop"
+	ActionCleanup   Action = "cleanup"
+	ActionDone      Action = "done"
+	ActionLoop      Action = "loop"
 )
 
 // Component is the interface that identifies all the required functionality
@@ -43,9 +43,9 @@ type Component interface {
 	Cleanup(context.Context) error
 }
 
-var components map[string]Component
+var components map[string]Component //nolint:gochecknoglobals // global registry
 
-func init() {
+func init() { //nolint:gochecknoinits // component registration
 	components = map[string]Component{
 		"break":      new(Break),
 		"pause":      new(Pause),
@@ -55,6 +55,7 @@ func init() {
 	}
 }
 
+//nolint:ireturn // factory function returns interface
 func GetComponent(name string) Component {
 	cmp, ok := components[name]
 	if !ok {
@@ -72,19 +73,21 @@ func ExecuteComponent(ctx context.Context, opts ...Option) error {
 		cmp = components["user-shell"]
 	}
 
-	cmp.Init(opts...)
+	_ = cmp.Init(opts...)
 
 	var err error
 
 	switch options.Stage {
-	case ACTIONCONFIG:
+	case ActionConfigure:
 		err = cmp.Configure(ctx)
-	case ACTIONSTART:
+	case ActionStart:
 		err = cmp.Start(ctx)
-	case ACTIONSTOP:
+	case ActionStop:
 		err = cmp.Stop(ctx)
-	case ACTIONCLEANUP:
+	case ActionCleanup:
 		err = cmp.Cleanup(ctx)
+	case ActionDone, ActionLoop:
+		// no-op
 	}
 
 	if err != nil {

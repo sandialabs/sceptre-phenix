@@ -16,7 +16,8 @@ func Configured(exp *types.Experiment) bool {
 
 func Initialized(exp *types.Experiment) bool {
 	var status map[string]any
-	exp.Status.ParseAppStatus("soh", &status)
+
+	_ = exp.Status.ParseAppStatus("soh", &status)
 
 	// the `_` will prevent a panic
 	initialized, _ := status["initialized"].(bool)

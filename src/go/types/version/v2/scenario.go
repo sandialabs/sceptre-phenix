@@ -2,35 +2,36 @@ package v2
 
 import (
 	"fmt"
-	ifaces "phenix/types/interfaces"
 
 	"github.com/mitchellh/mapstructure"
+
+	ifaces "phenix/types/interfaces"
 )
 
 type ScenarioSpec struct {
-	AppsF []*ScenarioApp `json:"apps" yaml:"apps" structs:"apps" mapstructure:"apps"`
+	AppsF []*ScenarioApp `json:"apps" mapstructure:"apps" structs:"apps" yaml:"apps"`
 }
 
-func (this *ScenarioSpec) Apps() []ifaces.ScenarioApp {
-	if this == nil {
+func (ss *ScenarioSpec) Apps() []ifaces.ScenarioApp {
+	if ss == nil {
 		return nil
 	}
 
-	apps := make([]ifaces.ScenarioApp, len(this.AppsF))
+	apps := make([]ifaces.ScenarioApp, len(ss.AppsF))
 
-	for i, a := range this.AppsF {
+	for i, a := range ss.AppsF {
 		apps[i] = a
 	}
 
 	return apps
 }
 
-func (this *ScenarioSpec) App(name string) ifaces.ScenarioApp {
-	if this == nil {
+func (ss *ScenarioSpec) App(name string) ifaces.ScenarioApp { //nolint:ireturn // returns interface
+	if ss == nil {
 		return nil
 	}
 
-	for _, a := range this.AppsF {
+	for _, a := range ss.AppsF {
 		if a.NameF == name {
 			return a
 		}
@@ -39,146 +40,149 @@ func (this *ScenarioSpec) App(name string) ifaces.ScenarioApp {
 	return nil
 }
 
-func (this *ScenarioSpec) AddApp(name string) ifaces.ScenarioApp {
-	a := &ScenarioApp{
+func (ss *ScenarioSpec) AddApp(name string) ifaces.ScenarioApp { //nolint:ireturn // returns interface
+	a := &ScenarioApp{ //nolint:exhaustruct // partial initialization
 		NameF: name,
 	}
 
-	this.AppsF = append(this.AppsF, a)
+	ss.AppsF = append(ss.AppsF, a)
 
 	return a
 }
 
 type ScenarioApp struct {
-	NameF            string             `json:"name" yaml:"name" structs:"name" mapstructure:"name"`
-	FromScenarioF    string             `json:"fromScenario,omitempty" yaml:"fromScenario,omitempty" structs:"fromScenario" mapstructure:"fromScenario"`
-	AssetDirF        string             `json:"assetDir,omitempty" yaml:"assetDir,omitempty" structs:"assetDir" mapstructure:"assetDir"`
-	MetadataF        map[string]any     `json:"metadata,omitempty" yaml:"metadata,omitempty" structs:"metadata" mapstructure:"metadata"`
-	HostsF           []*ScenarioAppHost `json:"hosts,omitempty" yaml:"hosts,omitempty" structs:"hosts" mapstructure:"hosts"`
-	RunPeriodicallyF string             `json:"runPeriodically,omitempty" yaml:"runPeriodically,omitempty" structs:"runPeriodically" mapstructure:"runPeriodically"`
-	DisabledF        bool               `json:"disabled,omitempty" yaml:"disabled,omitempty" structs:"disabled" mapstructure:"disabled"`
+	NameF            string             `json:"name"                      mapstructure:"name"            structs:"name"            yaml:"name"`
+	FromScenarioF    string             `json:"fromScenario,omitempty"    mapstructure:"fromScenario"    structs:"fromScenario"    yaml:"fromScenario,omitempty"`
+	AssetDirF        string             `json:"assetDir,omitempty"        mapstructure:"assetDir"        structs:"assetDir"        yaml:"assetDir,omitempty"`
+	MetadataF        map[string]any     `json:"metadata,omitempty"        mapstructure:"metadata"        structs:"metadata"        yaml:"metadata,omitempty"`
+	HostsF           []*ScenarioAppHost `json:"hosts,omitempty"           mapstructure:"hosts"           structs:"hosts"           yaml:"hosts,omitempty"`
+	RunPeriodicallyF string             `json:"runPeriodically,omitempty" mapstructure:"runPeriodically" structs:"runPeriodically" yaml:"runPeriodically,omitempty"`
+	DisabledF        bool               `json:"disabled,omitempty"        mapstructure:"disabled"        structs:"disabled"        yaml:"disabled,omitempty"`
 }
 
-func (this ScenarioApp) Name() string {
-	return this.NameF
+func (sa ScenarioApp) Name() string {
+	return sa.NameF
 }
 
-func (this ScenarioApp) FromScenario() string {
-	return this.FromScenarioF
+func (sa ScenarioApp) FromScenario() string {
+	return sa.FromScenarioF
 }
 
-func (this ScenarioApp) AssetDir() string {
-	return this.AssetDirF
+func (sa ScenarioApp) AssetDir() string {
+	return sa.AssetDirF
 }
 
-func (this ScenarioApp) Metadata() map[string]interface{} {
-	return this.MetadataF
+func (sa ScenarioApp) Metadata() map[string]any {
+	return sa.MetadataF
 }
 
-func (this ScenarioApp) Hosts() []ifaces.ScenarioAppHost {
-	hosts := make([]ifaces.ScenarioAppHost, len(this.HostsF))
+func (sa ScenarioApp) Hosts() []ifaces.ScenarioAppHost {
+	hosts := make([]ifaces.ScenarioAppHost, len(sa.HostsF))
 
-	for i, h := range this.HostsF {
+	for i, h := range sa.HostsF {
 		hosts[i] = h
 	}
 
 	return hosts
 }
 
-func (this ScenarioApp) RunPeriodically() string {
-	return this.RunPeriodicallyF
+func (sa ScenarioApp) RunPeriodically() string {
+	return sa.RunPeriodicallyF
 }
 
-func (this ScenarioApp) Disabled() bool {
-	return this.DisabledF
+func (sa ScenarioApp) Disabled() bool {
+	return sa.DisabledF
 }
 
-func (this *ScenarioApp) SetAssetDir(dir string) {
-	this.AssetDirF = dir
+func (sa *ScenarioApp) SetAssetDir(dir string) {
+	sa.AssetDirF = dir
 }
 
-func (this *ScenarioApp) SetMetadata(md map[string]interface{}) {
-	this.MetadataF = md
+func (sa *ScenarioApp) SetMetadata(md map[string]any) {
+	sa.MetadataF = md
 }
 
-func (this *ScenarioApp) SetHosts(hosts []ifaces.ScenarioAppHost) {
+func (sa *ScenarioApp) SetHosts(hosts []ifaces.ScenarioAppHost) {
 	h := make([]*ScenarioAppHost, len(hosts))
 
 	for i, j := range hosts {
-		h[i] = j.(*ScenarioAppHost)
+		host, _ := j.(*ScenarioAppHost)
+		h[i] = host
 	}
 
-	this.HostsF = h
+	sa.HostsF = h
 }
 
-func (this *ScenarioApp) AddHost(hostname string) ifaces.ScenarioAppHost {
-	h := &ScenarioAppHost{
+func (sa *ScenarioApp) AddHost(hostname string) ifaces.ScenarioAppHost { //nolint:ireturn // returns interface
+	h := &ScenarioAppHost{ //nolint:exhaustruct // partial initialization
 		HostnameF: hostname,
 	}
 
-	this.HostsF = append(this.HostsF, h)
+	sa.HostsF = append(sa.HostsF, h)
 
 	return h
 }
 
-func (this *ScenarioApp) SetRunPeriodically(d string) {
-	this.RunPeriodicallyF = d
+func (sa *ScenarioApp) SetRunPeriodically(d string) {
+	sa.RunPeriodicallyF = d
 }
 
-func (this *ScenarioApp) SetDisabled(d bool) {
-	this.DisabledF = d
+func (sa *ScenarioApp) SetDisabled(d bool) {
+	sa.DisabledF = d
 }
 
-func (this ScenarioApp) ParseMetadata(md any) error {
-	if this.MetadataF == nil {
-		return fmt.Errorf("missing metadata for app %s", this.NameF)
+func (sa ScenarioApp) ParseMetadata(md any) error {
+	if sa.MetadataF == nil {
+		return fmt.Errorf("missing metadata for app %s", sa.NameF)
 	}
 
-	if err := mapstructure.Decode(this.MetadataF, md); err != nil {
-		return fmt.Errorf("decoding metadata for app %s: %w", this.NameF, err)
+	err := mapstructure.Decode(sa.MetadataF, md)
+	if err != nil {
+		return fmt.Errorf("decoding metadata for app %s: %w", sa.NameF, err)
 	}
 
 	return nil
 }
 
-func (this ScenarioApp) ParseHostMetadata(name string, md any) error {
-	if len(this.HostsF) == 0 {
-		return fmt.Errorf("missing host %s for app %s", name, this.NameF)
+func (sa ScenarioApp) ParseHostMetadata(name string, md any) error {
+	if len(sa.HostsF) == 0 {
+		return fmt.Errorf("missing host %s for app %s", name, sa.NameF)
 	}
 
-	for _, host := range this.HostsF {
+	for _, host := range sa.HostsF {
 		if host.HostnameF == name {
 			return host.ParseMetadata(md)
 		}
 	}
 
-	return fmt.Errorf("missing host %s for app %s", name, this.NameF)
+	return fmt.Errorf("missing host %s for app %s", name, sa.NameF)
 }
 
 type ScenarioAppHost struct {
-	HostnameF string         `json:"hostname" yaml:"hostname" structs:"hostname" mapstructure:"hostname"`
-	MetadataF map[string]any `json:"metadata" yaml:"metadata" structs:"metadata" mapstructure:"metadata"`
+	HostnameF string         `json:"hostname" mapstructure:"hostname" structs:"hostname" yaml:"hostname"`
+	MetadataF map[string]any `json:"metadata" mapstructure:"metadata" structs:"metadata" yaml:"metadata"`
 }
 
-func (this ScenarioAppHost) Hostname() string {
-	return this.HostnameF
+func (sah ScenarioAppHost) Hostname() string {
+	return sah.HostnameF
 }
 
-func (this ScenarioAppHost) Metadata() map[string]any {
-	return this.MetadataF
+func (sah ScenarioAppHost) Metadata() map[string]any {
+	return sah.MetadataF
 }
 
-func (this *ScenarioAppHost) SetMetadata(md map[string]interface{}) {
-	this.MetadataF = md
+func (sah *ScenarioAppHost) SetMetadata(md map[string]any) {
+	sah.MetadataF = md
 }
 
-func (this ScenarioAppHost) ParseMetadata(md any) error {
-	if this.MetadataF == nil {
-		return fmt.Errorf("missing metadata for host %s", this.HostnameF)
+func (sah ScenarioAppHost) ParseMetadata(md any) error {
+	if sah.MetadataF == nil {
+		return fmt.Errorf("missing metadata for host %s", sah.HostnameF)
 	}
 
-	if err := mapstructure.Decode(this.MetadataF, md); err != nil {
-		return fmt.Errorf("decoding metadata for host %s: %w", this.HostnameF, err)
+	err := mapstructure.Decode(sah.MetadataF, md)
+	if err != nil {
+		return fmt.Errorf("decoding metadata for host %s: %w", sah.HostnameF, err)
 	}
 
 	return nil

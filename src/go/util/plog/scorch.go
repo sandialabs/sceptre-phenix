@@ -3,10 +3,8 @@ package plog
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
-	"time"
-
-	"golang.org/x/exp/slog"
 )
 
 const ScorchSohKey = "__soh-id__"
@@ -21,31 +19,32 @@ type scorchSohHandler struct {
 func NewScorchSohHandler(name, level string, cb func(string)) slog.Handler {
 	var l slog.Level
 
-	if err := l.UnmarshalText([]byte(level)); err != nil {
+	err := l.UnmarshalText([]byte(level))
+	if err != nil {
 		l = slog.LevelInfo
 	}
 
-	return &scorchSohHandler{
+	return &scorchSohHandler{ //nolint:exhaustruct // partial initialization
 		name:     name,
 		level:    l,
 		callback: cb,
 	}
 }
 
-// Enabled implements the slog.Handler interface for the soh handler.
-func (this scorchSohHandler) Enabled(_ context.Context, l slog.Level) bool {
-	return l >= this.level
+// Enabled implements the [slog.Handler] interface for the soh handler.
+func (h scorchSohHandler) Enabled(_ context.Context, l slog.Level) bool {
+	return l >= h.level
 }
 
-// Handle implements the slog.Handler interface for the soh handler.
-func (this scorchSohHandler) Handle(_ context.Context, r slog.Record) error {
+// Handle implements the [slog.Handler] interface for the soh handler.
+func (h scorchSohHandler) Handle(_ context.Context, r slog.Record) error {
 	var (
 		attrs  = []string{r.Message}
 		update bool
 	)
 
-	for _, attr := range this.attrs {
-		if attr.Key == ScorchSohKey && attr.Value.String() == this.name {
+	for _, attr := range h.attrs {
+		if attr.Key == ScorchSohKey && attr.Value.String() == h.name {
 			update = true
 		} else {
 			attrs = append(attrs, fmt.Sprintf("%s=%v", attr.Key, attr.Value.Any()))
@@ -53,7 +52,7 @@ func (this scorchSohHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 
 	r.Attrs(func(attr slog.Attr) bool {
-		if attr.Key == ScorchSohKey && attr.Value.String() == this.name {
+		if attr.Key == ScorchSohKey && attr.Value.String() == h.name {
 			update = true
 		} else {
 			attrs = append(attrs, fmt.Sprintf("%s=%v", attr.Key, attr.Value.Any()))
@@ -63,26 +62,30 @@ func (this scorchSohHandler) Handle(_ context.Context, r slog.Record) error {
 	})
 
 	if update {
-		output := fmt.Sprintf("[%s] %s\n", r.Time.UTC().Format(time.DateTime), strings.Join(attrs, " "))
-		this.callback(output)
+		output := fmt.Sprintf(
+			"[%s] %s\n",
+			r.Time.UTC().Format(TimestampFormat),
+			strings.Join(attrs, " "),
+		)
+		h.callback(output)
 	}
 
 	return nil
 }
 
-// WithAttrs implements the slog.Handler interface for the soh handler.
-func (this *scorchSohHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+// WithAttrs implements the [slog.Handler] interface for the soh handler.
+func (h *scorchSohHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &scorchSohHandler{
-		name:     this.name,
-		level:    this.level,
-		attrs:    append(this.attrs, attrs...),
-		callback: this.callback,
+		name:     h.name,
+		level:    h.level,
+		attrs:    append(h.attrs, attrs...),
+		callback: h.callback,
 	}
 }
 
-// WithGroup implements the slog.Handler interface for the soh handler. This
+// WithGroup implements the [slog.Handler] interface for the soh handler. This
 // function is currently not implemented, and instead simply returns this same
 // handler.
-func (this *scorchSohHandler) WithGroup(name string) slog.Handler {
-	return this
+func (h *scorchSohHandler) WithGroup(name string) slog.Handler {
+	return h
 }

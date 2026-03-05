@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gorilla/mux"
+
 	"phenix/util/common"
 	"phenix/util/plog"
 	"phenix/web/broker"
@@ -14,11 +16,7 @@ import (
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/scorch"
-	"phenix/web/util"
 	"phenix/web/weberror"
-
-	assetfs "github.com/elazarl/go-bindata-assetfs"
-	"github.com/gorilla/mux"
 )
 
 type route struct {
@@ -27,12 +25,12 @@ type route struct {
 	methods []string
 }
 
-var o serverOptions
+var o serverOptions //nolint:gochecknoglobals // global options
 
 func ConfigureUsers(users []string) error {
 	setUserRole := func(user *rbac.User, rname string, resources ...string) {
 		if role, err := rbac.RoleFromConfig(rname); err == nil {
-			role.SetResourceNames(resources...)
+			_ = role.SetResourceNames(resources...)
 
 			// allow user to get their own user details
 			role.AddPolicy(
@@ -41,9 +39,18 @@ func ConfigureUsers(users []string) error {
 				[]string{"get"},
 			)
 
-			user.SetRole(role)
+			_ = user.SetRole(role)
 		} else {
-			plog.Error(plog.TypeSecurity, "getting role for user", "user", user.Username(), "role", rname, "err", err)
+			plog.Error(
+				plog.TypeSecurity,
+				"getting role for user",
+				"user",
+				user.Username(),
+				"role",
+				rname,
+				"err",
+				err,
+			)
 		}
 	}
 
@@ -57,7 +64,16 @@ func ConfigureUsers(users []string) error {
 		// Confirm existing user has specified role and update if necessary.
 		if user, err := rbac.GetUser(uname); err == nil {
 			if user.RoleName() != rname {
-				plog.Info(plog.TypeSecurity, "updating role for existing user", "user", user.Username(), "old", user.RoleName(), "new", rname)
+				plog.Info(
+					plog.TypeSecurity,
+					"updating role for existing user",
+					"user",
+					user.Username(),
+					"old",
+					user.RoleName(),
+					"new",
+					rname,
+				)
 
 				setUserRole(user, rname, creds[3:]...)
 			}
@@ -75,10 +91,11 @@ func ConfigureUsers(users []string) error {
 	return nil
 }
 
+//nolint:funlen,maintidx // server startup
 func Start(opts ...ServerOption) error {
 	o = newServerOptions(opts...)
 
-	ConfigureUsers(o.users)
+	_ = ConfigureUsers(o.users)
 
 	var (
 		router = mux.NewRouter().StrictSlash(true)
@@ -87,12 +104,13 @@ func Start(opts ...ServerOption) error {
 
 	if o.unbundled {
 		assets = http.Dir("web/public")
+
 		plog.Info(plog.TypeSystem, "serving unbundled assets")
 	} else {
-		assets = &assetfs.AssetFS{
-			Asset:     Asset,
-			AssetDir:  AssetDir,
-			AssetInfo: AssetInfo,
+		var err error
+		assets, err = GetAssets()
+		if err != nil {
+			return err
 		}
 	}
 
@@ -131,65 +149,116 @@ func Start(opts ...ServerOption) error {
 	router.Handle("/favicon.ico", http.FileServer(assets))
 
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		plog.Warn(plog.TypeSystem, "Unknown route requested", "route", r.RequestURI, "method", r.Method)
-		switch a := assets.(type) {
-		case *assetfs.AssetFS:
-			util.NewBinaryFileSystem(a).ServeFile(w, r, "index.html")
-		case http.FileSystem:
+		plog.Warn(
+			plog.TypeSystem,
+			"Unknown route requested",
+			"route",
+			r.RequestURI,
+			"method",
+			r.Method,
+		)
+
+		if o.unbundled {
 			http.ServeFile(w, r, "web/public/index.html")
+		} else {
+			f, err := assets.Open("index.html")
+			if err != nil {
+				plog.Error(plog.TypeSystem, "opening index.html from assets", "err", err)
+				http.NotFound(w, r)
+				return
+			}
+			defer f.Close()
+
+			fi, err := f.Stat()
+			if err != nil {
+				plog.Error(plog.TypeSystem, "statting index.html from assets", "err", err)
+				http.NotFound(w, r)
+				return
+			}
+
+			http.ServeContent(w, r, "index.html", fi.ModTime(), f)
 		}
 	})
 
 	api := router.PathPrefix("/api/v1").Subrouter()
 
 	// OPTIONS method needed for CORS
-	api.Handle("/builder/topologies", weberror.ErrorHandler(GetBuilderTopologies)).Methods("GET", "OPTIONS")
-	api.Handle("/builder/topologies/{name}", weberror.ErrorHandler(GetBuilderTopology)).Methods("GET", "OPTIONS")
+	api.Handle("/builder/topologies", weberror.ErrorHandler(GetBuilderTopologies)).
+		Methods("GET", "OPTIONS")
+	api.Handle("/builder/topologies/{name}", weberror.ErrorHandler(GetBuilderTopology)).
+		Methods("GET", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(GetConfigs)).Methods("GET", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(CreateConfig)).Methods("POST", "OPTIONS")
 	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(GetConfig)).Methods("GET", "OPTIONS")
-	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(UpdateConfig)).Methods("PUT", "OPTIONS")
-	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(DeleteConfig)).Methods("DELETE", "OPTIONS")
-	api.Handle("/configs/download", weberror.ErrorHandler(DownloadConfigs)).Methods("POST", "OPTIONS")
+	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(UpdateConfig)).
+		Methods("PUT", "OPTIONS")
+	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(DeleteConfig)).
+		Methods("DELETE", "OPTIONS")
+	api.Handle("/configs/download", weberror.ErrorHandler(DownloadConfigs)).
+		Methods("POST", "OPTIONS")
 	api.Handle("/schemas/{version}", weberror.ErrorHandler(GetSchemaSpec)).Methods("GET", "OPTIONS")
-	api.Handle("/schemas/{kind}/{version}", weberror.ErrorHandler(GetSchema)).Methods("GET", "OPTIONS")
+	api.Handle("/schemas/{kind}/{version}", weberror.ErrorHandler(GetSchema)).
+		Methods("GET", "OPTIONS")
 
 	api.HandleFunc("/experiments", GetExperiments).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments", CreateExperiment).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/builder", weberror.ErrorHandler(CreateExperimentFromBuilder)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/builder", weberror.ErrorHandler(UpdateExperimentFromBuilder)).Methods("PUT", "OPTIONS")
-	api.Handle("/experiments/{name}", weberror.ErrorHandler(GetExperiment)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}", weberror.ErrorHandler(UpdateExperiment)).Methods("PATCH", "OPTIONS")
+	api.Handle("/experiments/builder", weberror.ErrorHandler(CreateExperimentFromBuilder)).
+		Methods("POST", "OPTIONS")
+	api.Handle("/experiments/builder", weberror.ErrorHandler(UpdateExperimentFromBuilder)).
+		Methods("PUT", "OPTIONS")
+	api.Handle("/experiments/{name}", weberror.ErrorHandler(GetExperiment)).
+		Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}", weberror.ErrorHandler(UpdateExperiment)).
+		Methods("PATCH", "OPTIONS")
 	api.HandleFunc("/experiments/{name}", DeleteExperiment).Methods("DELETE", "OPTIONS")
-	api.Handle("/experiments/{name}/apps", weberror.ErrorHandler(GetExperimentApps)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/start", weberror.ErrorHandler(StartExperiment)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{name}/stop", weberror.ErrorHandler(StopExperiment)).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{name}/apps", weberror.ErrorHandler(GetExperimentApps)).
+		Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}/start", weberror.ErrorHandler(StartExperiment)).
+		Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{name}/stop", weberror.ErrorHandler(StopExperiment)).
+		Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/netflow", GetNetflow).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/netflow", StartNetflow).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/netflow", StopNetflow).Methods("DELETE", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/netflow/ws", GetNetflowWebSocket).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/topology", GetExperimentTopology).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/topology/search", SearchExperimentTopology).Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{name}/topology/search", SearchExperimentTopology).
+		Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/trigger", TriggerExperimentApps).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/trigger", CancelTriggeredExperimentApps).Methods("DELETE", "OPTIONS")
+	api.HandleFunc("/experiments/{name}/trigger", CancelTriggeredExperimentApps).
+		Methods("DELETE", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/schedule", GetExperimentSchedule).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/schedule", ScheduleExperiment).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/captures", GetExperimentCaptures).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/captureSubnet", StartCaptureSubnet).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/stopCaptureSubnet", StopCaptureSubnet).Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/captureSubnet", StartCaptureSubnet).
+		Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/stopCaptureSubnet", StopCaptureSubnet).
+		Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/files", GetExperimentFiles).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/files/{filename}", GetExperimentFile).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(scorch.GetComponentOutput)).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}/ws", scorch.StreamComponentOutput).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines", weberror.ErrorHandler(scorch.GetPipelines)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines/{run}/{loop}", weberror.ErrorHandler(scorch.GetPipeline)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines/{run}", weberror.ErrorHandler(scorch.StartPipeline)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines/{run}", weberror.ErrorHandler(scorch.CancelPipeline)).Methods("DELETE", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals", scorch.GetTerminals).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}", scorch.ConnectTerminal).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}/exit/{id}", scorch.ExitTerminal).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}/ws/{id}", scorch.StreamTerminal).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}", scorch.ConnectTerminal).Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{name}/files/{filename}", GetExperimentFile).
+		Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(scorch.GetComponentOutput)).
+		Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}/ws", scorch.StreamComponentOutput).
+		Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}/scorch/pipelines", weberror.ErrorHandler(scorch.GetPipelines)).
+		Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}/scorch/pipelines/{run}/{loop}", weberror.ErrorHandler(scorch.GetPipeline)).
+		Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}/scorch/pipelines/{run}", weberror.ErrorHandler(scorch.StartPipeline)).
+		Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{name}/scorch/pipelines/{run}", weberror.ErrorHandler(scorch.CancelPipeline)).
+		Methods("DELETE", "OPTIONS")
+	api.HandleFunc("/experiments/{name}/scorch/terminals", scorch.GetTerminals).
+		Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}", scorch.ConnectTerminal).
+		Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}/exit/{id}", scorch.ExitTerminal).
+		Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}/ws/{id}", scorch.StreamTerminal).
+		Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}", scorch.ConnectTerminal).
+		Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/soh", GetExperimentSoH).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms", GetVMs).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms", UpdateVMs).Methods("PATCH", "OPTIONS")
@@ -202,43 +271,76 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/experiments/{exp}/vms/{name}/stop", StopVM).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/shutdown", ShutdownVM).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/redeploy", RedeployVM).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/cdrom", ChangeOpticalDisc).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/cdrom", EjectOpticalDisc).Methods("DELETE", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/screenshot.png", GetScreenshot).Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/cdrom", ChangeOpticalDisc).
+		Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/cdrom", EjectOpticalDisc).
+		Methods("DELETE", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/screenshot.png", GetScreenshot).
+		Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/vnc", GetVNC).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/vnc/ws", GetVNCWebSocket).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/captures", GetVMCaptures).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/captures", StartVMCapture).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/captures", StopVMCaptures).Methods("DELETE", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/snapshots", GetVMSnapshots).Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/vnc/ws", GetVNCWebSocket).
+		Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/captures", GetVMCaptures).
+		Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/captures", StartVMCapture).
+		Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/captures", StopVMCaptures).
+		Methods("DELETE", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/snapshots", GetVMSnapshots).
+		Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/snapshots", SnapshotVM).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/snapshots/{snapshot}", RestoreVM).Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/snapshots/{snapshot}", RestoreVM).
+		Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/commit", CommitVM).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/memorySnapshot", CreateVMMemorySnapshot).Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/memorySnapshot", CreateVMMemorySnapshot).
+		Methods("POST", "OPTIONS")
 
-	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards", forward.GetPortForwards).Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards", forward.CreatePortForward).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards", forward.DeletePortForward).Methods("DELETE", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards/{host}/{port}/ws", forward.GetPortForwardWebSocket).Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards", forward.GetPortForwards).
+		Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards", forward.CreatePortForward).
+		Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards", forward.DeletePortForward).
+		Methods("DELETE", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/forwards/{host}/{port}/ws", forward.GetPortForwardWebSocket).
+		Methods("GET", "OPTIONS")
 
 	if o.featured("vm-mount") {
 		api.HandleFunc("/experiments/{exp}/vms/{name}/mount", MountVM).Methods("POST", "OPTIONS")
-		api.HandleFunc("/experiments/{exp}/vms/{name}/unmount", UnmountVM).Methods("DELETE", "OPTIONS")
-		api.HandleFunc("/experiments/{exp}/vms/{name}/files", GetMountFiles).Methods("GET", "OPTIONS").Queries("path", "{path}")
-		api.HandleFunc("/experiments/{exp}/vms/{name}/files/download", DownloadMountFile).Methods("GET", "OPTIONS").Queries("path", "{path}")
-		api.HandleFunc("/experiments/{exp}/vms/{name}/files/upload", UploadMountFile).Methods("PUT", "OPTIONS").Queries("path", "{path}")
+		api.HandleFunc("/experiments/{exp}/vms/{name}/unmount", UnmountVM).
+			Methods("DELETE", "OPTIONS")
+		api.HandleFunc("/experiments/{exp}/vms/{name}/files", GetMountFiles).
+			Methods("GET", "OPTIONS").
+			Queries("path", "{path}")
+		api.HandleFunc("/experiments/{exp}/vms/{name}/files/download", DownloadMountFile).
+			Methods("GET", "OPTIONS").
+			Queries("path", "{path}")
+		api.HandleFunc("/experiments/{exp}/vms/{name}/files/upload", UploadMountFile).
+			Methods("PUT", "OPTIONS").
+			Queries("path", "{path}")
 	}
 
 	api.HandleFunc("/disks", GetDisks).Methods("GET", "OPTIONS")
-	api.HandleFunc("/disks/snapshot", SnapshotDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}", "new", "{new}")
-	api.HandleFunc("/disks/rebase", RebaseDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}", "backing", "{backing}", "unsafe", "{unsafe}")
-	api.HandleFunc("/disks/resize", ResizeDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}", "size", "{size}")
+	api.HandleFunc("/disks/snapshot", SnapshotDisk).
+		Methods("POST", "OPTIONS").
+		Queries("disk", "{disk}", "new", "{new}")
+	api.HandleFunc("/disks/rebase", RebaseDisk).
+		Methods("POST", "OPTIONS").
+		Queries("disk", "{disk}", "backing", "{backing}", "unsafe", "{unsafe}")
+	api.HandleFunc("/disks/resize", ResizeDisk).
+		Methods("POST", "OPTIONS").
+		Queries("disk", "{disk}", "size", "{size}")
 	api.HandleFunc("/disks/commit", CommitDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}")
-	api.HandleFunc("/disks/clone", CloneDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}", "new", "{new}")
+	api.HandleFunc("/disks/clone", CloneDisk).
+		Methods("POST", "OPTIONS").
+		Queries("disk", "{disk}", "new", "{new}")
 	api.HandleFunc("/disks", DeleteDisk).Methods("DELETE", "OPTIONS").Queries("disk", "{disk}")
-	api.HandleFunc("/disks/rename", RenameDisk).Methods("POST", "OPTIONS").Queries("disk", "{disk}", "new", "{new}")
+	api.HandleFunc("/disks/rename", RenameDisk).
+		Methods("POST", "OPTIONS").
+		Queries("disk", "{disk}", "new", "{new}")
 	api.HandleFunc("/disks", UploadDisk).Methods("POST", "OPTIONS")
-	api.HandleFunc("/disks/download", DownloadDisk).Methods("GET", "OPTIONS").Queries("disk", "{disk}")
+	api.HandleFunc("/disks/download", DownloadDisk).
+		Methods("GET", "OPTIONS").
+		Queries("disk", "{disk}")
 
 	api.HandleFunc("/vms", GetAllVMs).Methods("GET", "OPTIONS")
 	api.HandleFunc("/applications", GetApplications).Methods("GET", "OPTIONS")
@@ -259,7 +361,9 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/ws", broker.ServeWS).Methods("GET")
 	api.HandleFunc("/console", CreateConsole).Methods("POST", "OPTIONS")
 	api.HandleFunc("/console/{pid}/ws", WsConsole).Methods("GET", "OPTIONS")
-	api.HandleFunc("/console/{pid}/size", ResizeConsole).Methods("POST", "OPTIONS").Queries("cols", "{cols:[0-9]+}", "rows", "{rows:[0-9]+}")
+	api.HandleFunc("/console/{pid}/size", ResizeConsole).
+		Methods("POST", "OPTIONS").
+		Queries("cols", "{cols:[0-9]+}", "rows", "{rows:[0-9]+}")
 
 	api.HandleFunc("/settings", GetSettings).Methods("GET", "OPTIONS")
 	api.HandleFunc("/settings", SetSettings).Methods("POST", "OPTIONS")
@@ -267,7 +371,11 @@ func Start(opts ...ServerOption) error {
 
 	workflowRoutes := []route{
 		{"/workflow/apply/{branch}", weberror.ErrorHandler(ApplyWorkflow), []string{"POST"}},
-		{"/workflow/configs/{branch}", weberror.ErrorHandler(WorkflowUpsertConfig), []string{"POST"}},
+		{
+			"/workflow/configs/{branch}",
+			weberror.ErrorHandler(WorkflowUpsertConfig),
+			[]string{"POST"},
+		},
 	}
 
 	optionRoutes := []route{
@@ -319,47 +427,69 @@ func Start(opts ...ServerOption) error {
 
 		api.Use(middleware.NoAuth)
 
-		os.Remove(common.UnixSocket)
+		_ = os.Remove(common.UnixSocket)
 
 		plog.Info(plog.TypeSystem, "starting Unix socket server", "path", common.UnixSocket)
 
-		server := http.Server{Handler: router}
-		listener, err := net.Listen("unix", common.UnixSocket)
+		server := http.Server{Handler: router} //nolint:gosec // Potential Slowloris Attack
+
+		//nolint:exhaustruct // partial initialization
+		listener, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", common.UnixSocket)
 		if err != nil {
 			return err
 		}
 
-		if o.unixSocketGid != -1 {
-			plog.Info(plog.TypeSystem, "setting Unix socket group permissions", "gid", o.unixSocketGid)
-			if err = os.Chown(common.UnixSocket, -1, o.unixSocketGid); err != nil {
+		if o.unixSocketGID != -1 {
+			plog.Info(
+				plog.TypeSystem,
+				"setting Unix socket group permissions",
+				"gid",
+				o.unixSocketGID,
+			)
+
+			err = os.Chown(common.UnixSocket, -1, o.unixSocketGID)
+			if err != nil {
 				return err
 			}
-			if err := os.Chmod(common.UnixSocket, 0775); err != nil {
+
+			err := os.Chmod(common.UnixSocket, 0o770) //nolint:gosec // unix socket permissions
+			if err != nil {
 				return err
 			}
 		}
 
 		go func() {
-			if err := server.Serve(listener); err != nil {
+			err := server.Serve(listener)
+			if err != nil {
 				plog.Error(plog.TypeSystem, "serving Unix socket", "err", err)
 			}
 		}()
 	}
 
 	plog.Info(plog.TypeSecurity, "starting server", "tls_enabled", o.tlsEnabled())
+
 	if o.tlsEnabled() {
 		plog.Info(plog.TypeSystem, "starting HTTPS server", "endpoint", o.endpoint)
-		return http.ListenAndServeTLS(o.endpoint, o.tlsCrtPath, o.tlsKeyPath, router)
+
+		//nolint:gosec // Use of net/http serve function that has no support for setting timeouts
+		return http.ListenAndServeTLS(
+			o.endpoint,
+			o.tlsCrtPath,
+			o.tlsKeyPath,
+			router,
+		)
 	} else {
 		plog.Info(plog.TypeSystem, "Starting HTTP server", "endpoint", o.endpoint)
-		return http.ListenAndServe(o.endpoint, router)
+		//nolint:gosec // Use of net/http serve function that has no support for setting timeouts
+		return http.ListenAndServe(
+			o.endpoint,
+			router,
+		)
 	}
 }
 
 func addRoutesToRouter(router *mux.Router, routes ...route) {
 	for _, r := range routes {
-		// OPTIONS method needed for CORS
-		methods := append(r.methods, "OPTIONS")
-		router.Handle(r.path, r.handler).Methods(methods...)
+		router.Handle(r.path, r.handler).Methods(r.methods...)
 	}
 }

@@ -7,7 +7,7 @@ type ScenarioSpec interface {
 	AddApp(string) ScenarioApp
 }
 
-type ScenarioApp interface {
+type ScenarioApp interface { //nolint:interfacebloat // legacy interface
 	Name() string
 	FromScenario() string
 	AssetDir() string

@@ -26,7 +26,7 @@ type Options struct {
 
 // NewOptions returns an Options struct initialized with the given option list.
 func NewOptions(opts ...Option) Options {
-	o := Options{}
+	o := Options{} //nolint:exhaustruct // partial initialization
 
 	for _, opt := range opts {
 		opt(&o)

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mitchellh/mapstructure"
+
 	"phenix/tmpl"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
@@ -16,8 +18,12 @@ import (
 	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/util/pubsub"
+)
 
-	"github.com/mitchellh/mapstructure"
+const (
+	tunnelConfigPartsPortOnly     = 1
+	tunnelConfigPartsPortHost     = 2
+	tunnelConfigPartsPortHostDest = 3
 )
 
 type Startup struct{}
@@ -30,11 +36,12 @@ func (Startup) Name() string {
 	return "startup"
 }
 
-func (this *Startup) Configure(ctx context.Context, exp *types.Experiment) error {
+func (s *Startup) Configure(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
+//nolint:cyclop,funlen,gocyclo,maintidx // complex logic
+func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 	var (
 		startupDir = exp.Spec.BaseDir() + "/startup"
 		imageDir   = common.PhenixBase + "/images/"
@@ -43,7 +50,8 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 		ips = make(map[string]string)
 	)
 
-	if err := os.MkdirAll(startupDir, 0755); err != nil {
+	err := os.MkdirAll(startupDir, 0o750)
+	if err != nil {
 		return fmt.Errorf("creating experiment startup directory path: %w", err)
 	}
 
@@ -57,7 +65,11 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 				ip := net.ParseIP(iface.Address())
 				if ip == nil {
-					return fmt.Errorf("invalid IP %s provided for %s", iface.Address(), node.General().Hostname())
+					return fmt.Errorf(
+						"invalid IP %s provided for %s",
+						iface.Address(),
+						node.General().Hostname(),
+					)
 				}
 
 				key := iface.Address()
@@ -65,11 +77,22 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 				if util.PrivateIP(ip) {
 					key = fmt.Sprintf("%s|%s", iface.VLAN(), iface.Address())
 					if h, ok := ips[key]; ok {
-						return fmt.Errorf("duplicate private IP detected on VLAN %s: %s and %s both have %s configured", iface.VLAN(), h, node.General().Hostname(), iface.Address())
+						return fmt.Errorf(
+							"duplicate private IP detected on VLAN %s: %s and %s both have %s configured",
+							iface.VLAN(),
+							h,
+							node.General().Hostname(),
+							iface.Address(),
+						)
 					}
 				} else {
 					if h, ok := ips[key]; ok {
-						return fmt.Errorf("duplicate public IP detected: %s and %s both have %s configured", h, node.General().Hostname(), iface.Address())
+						return fmt.Errorf(
+							"duplicate public IP detected: %s and %s both have %s configured",
+							h,
+							node.General().Hostname(),
+							iface.Address(),
+						)
 					}
 				}
 
@@ -102,6 +125,7 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 		// Check to see if a scenario exists for this experiment and if it
 		// contains a "startup" app. If so, store it for later use
 		var startupApp ifaces.ScenarioApp
+
 		for _, app := range exp.Apps() {
 			if app.Name() == "startup" {
 				startupApp = app
@@ -136,23 +160,29 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 			timeZone := "Etc/UTC"
 
-			if err := tmpl.CreateFileFromTemplate("linux_hostname.tmpl", node.General().Hostname(), hostnameFile); err != nil {
+			err := tmpl.CreateFileFromTemplate(
+				"linux_hostname.tmpl",
+				node.General().Hostname(),
+				hostnameFile,
+			)
+			if err != nil {
 				return fmt.Errorf("generating linux hostname script: %w", err)
 			}
 
-			if err := tmpl.CreateFileFromTemplate("linux_timezone.tmpl", timeZone, timezoneFile); err != nil {
+			err = tmpl.CreateFileFromTemplate("linux_timezone.tmpl", timeZone, timezoneFile)
+			if err != nil {
 				return fmt.Errorf("generating linux timezone script: %w", err)
 			}
 
-			if err := tmpl.CreateFileFromTemplate("linux_interfaces.tmpl", node, ifaceFile); err != nil {
+			err = tmpl.CreateFileFromTemplate("linux_interfaces.tmpl", node, ifaceFile)
+			if err != nil {
 				return fmt.Errorf("generating linux interfaces script: %w", err)
 			}
 
 			if startupApp != nil {
 				for _, host := range startupApp.Hosts() {
 					if host.Hostname() == node.General().Hostname() {
-
-						var domainFile = startupDir + "/" + node.General().Hostname() + "-domain.sh"
+						domainFile := startupDir + "/" + node.General().Hostname() + "-domain.sh"
 
 						node.AddInject(
 							domainFile,
@@ -160,14 +190,19 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 							"0755", "",
 						)
 
-						if err := tmpl.CreateFileFromTemplate("linux_domain.tmpl", host.Metadata(), domainFile); err != nil {
+						err := tmpl.CreateFileFromTemplate(
+							"linux_domain.tmpl",
+							host.Metadata(),
+							domainFile,
+						)
+						if err != nil {
 							return fmt.Errorf("generating linux domain script: %w", err)
 						}
 					}
 				}
 			}
 
-		case "windows":
+		case osWindows:
 			startupFile := startupDir + "/" + node.General().Hostname() + "-startup.ps1"
 
 			node.AddInject(
@@ -176,24 +211,30 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 				"0755", "",
 			)
 
-			if incl, ok := node.GetAnnotation("includes-phenix-startup"); !ok || incl == "false" || incl == false {
+			if incl, ok := node.GetAnnotation(
+				"includes-phenix-startup",
+			); !ok || incl == "false" ||
+				incl == false {
 				node.AddInject(
 					startupDir+"/phenix-startup.ps1",
 					"/phenix/phenix-startup.ps1",
 					"0755", "",
 				)
 
-				if err := tmpl.RestoreAsset(startupDir, "phenix-startup.ps1"); err != nil {
+				err := tmpl.RestoreAsset(startupDir, "phenix-startup.ps1")
+				if err != nil {
 					return fmt.Errorf("restoring phenix startup script: %w", err)
 				}
 
 				node.AddInject(
 					startupDir+"/startup-scheduler.cmd",
 					"ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/startup_scheduler.cmd",
-					"0755", "",
+					"0755",
+					"",
 				)
 
-				if err := tmpl.RestoreAsset(startupDir, "startup-scheduler.cmd"); err != nil {
+				err = tmpl.RestoreAsset(startupDir, "startup-scheduler.cmd")
+				if err != nil {
 					return fmt.Errorf("restoring windows startup scheduler: %w", err)
 				}
 			}
@@ -201,10 +242,10 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 			// Temporary struct to send to the Windows Startup template.
 			data := struct {
 				Node     ifaces.NodeSpec
-				Metadata map[string]interface{}
+				Metadata map[string]any
 			}{
 				Node:     node,
-				Metadata: make(map[string]interface{}),
+				Metadata: make(map[string]any),
 			}
 
 			// If startup app exists, see if this node has a metadata entry
@@ -217,7 +258,8 @@ func (this Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 				}
 			}
 
-			if err := tmpl.CreateFileFromTemplate("windows_startup.tmpl", data, startupFile); err != nil {
+			err := tmpl.CreateFileFromTemplate("windows_startup.tmpl", data, startupFile)
+			if err != nil {
 				return fmt.Errorf("generating windows startup script: %w", err)
 			}
 		}
@@ -239,9 +281,10 @@ func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 					mm.C2NS(exp.Metadata.Name),
 					mm.C2VM(node.General().Hostname()),
 					mm.C2SkipActiveClientCheck(true),
-					mm.C2Command(`powershell.exe -noprofile -executionpolicy bypass -file /phenix/phenix-startup.ps1`),
+					mm.C2Command(
+						`powershell.exe -noprofile -executionpolicy bypass -file /phenix/phenix-startup.ps1`,
+					),
 				)
-
 				if err != nil {
 					return fmt.Errorf("execute C2 command to run Windows startup script: %w", err)
 				}
@@ -251,11 +294,21 @@ func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 		if annotation, ok := node.GetAnnotation("phenix/startup-autotunnel"); ok {
 			var tunnels []string
 
-			if err := mapstructure.Decode(annotation, &tunnels); err != nil {
-				plog.Error(plog.TypeSystem, "parsing phenix/startup-autotunnel annotation", "exp", exp.Metadata.Name, "vm", node.General().Hostname(), "err", err)
+			err := mapstructure.Decode(annotation, &tunnels)
+			if err != nil {
+				plog.Error(
+					plog.TypeSystem,
+					"parsing phenix/startup-autotunnel annotation",
+					"exp",
+					exp.Metadata.Name,
+					"vm",
+					node.General().Hostname(),
+					"err",
+					err,
+				)
 			} else {
 				for _, config := range tunnels {
-					tunnel := CreateTunnel{
+					tunnel := CreateTunnel{ //nolint:exhaustruct // partial initialization
 						Experiment: exp.Metadata.Name,
 						VM:         node.General().Hostname(),
 						User:       "bot",
@@ -264,20 +317,25 @@ func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 					tokens := strings.Split(config, ":")
 
 					switch len(tokens) {
-					case 1:
+					case tunnelConfigPartsPortOnly:
 						tunnel.Sport = tokens[0]
 						tunnel.Dhost = "127.0.0.1"
 						tunnel.Dport = tokens[0]
-					case 2:
+					case tunnelConfigPartsPortHost:
 						tunnel.Sport = tokens[0]
 						tunnel.Dhost = "127.0.0.1"
 						tunnel.Dport = tokens[1]
-					case 3:
+					case tunnelConfigPartsPortHostDest:
 						tunnel.Sport = tokens[0]
 						tunnel.Dhost = tokens[1]
 						tunnel.Dport = tokens[2]
 					default:
-						plog.Error(plog.TypeSystem, "invalid phenix/startup-autotunnel annotation", "value", config)
+						plog.Error(
+							plog.TypeSystem,
+							"invalid phenix/startup-autotunnel annotation",
+							"value",
+							config,
+						)
 					}
 
 					if tunnel.Sport != "" {
@@ -286,7 +344,8 @@ func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 							case "VNC": // doesn't require miniccc agent
 								pubsub.Publish("create-tunnel", msg)
 							default:
-								if err := mm.IsC2ClientActive(mm.C2NS(exp), mm.C2VM(vm)); err == nil {
+								err := mm.IsC2ClientActive(mm.C2NS(exp), mm.C2VM(vm))
+								if err == nil {
 									pubsub.Publish("create-tunnel", msg)
 								}
 							}

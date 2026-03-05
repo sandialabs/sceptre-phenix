@@ -1,8 +1,17 @@
 package soh
 
 import (
+	"errors"
 	"fmt"
 	"time"
+)
+
+const (
+	reachabilityOff  = "off"
+	defaultC2Timeout = 5 * time.Minute
+	notifyInterval   = 5 * time.Second
+	c2RetryDelay     = 5 * time.Second
+	monitorMemory    = 512
 )
 
 type Node struct {
@@ -32,33 +41,39 @@ type Network struct {
 }
 
 type State struct {
-	Metadata  map[string]interface{} `json:"metadata" mapstructure:"metadata" structs:"metadata"`
-	Timestamp string                 `json:"timestamp" mapstructure:"timestamp" structs:"timestamp"`
-	Success   string                 `json:"success" mapstructure:"success" structs:"success"`
-	Error     string                 `json:"error" mapstructure:"error" structs:"error"`
+	Metadata  map[string]any `json:"metadata"  mapstructure:"metadata"  structs:"metadata"`
+	Timestamp string         `json:"timestamp" mapstructure:"timestamp" structs:"timestamp"`
+	Success   string         `json:"success"   mapstructure:"success"   structs:"success"`
+	Error     string         `json:"error"     mapstructure:"error"     structs:"error"`
 }
 
 type HostState struct {
-	Hostname     string  `json:"hostname" mapstructure:"hostname" structs:"hostname"`
-	CPULoad      string  `json:"cpuLoad" mapstructure:"cpuLoad" structs:"cpuLoad"`
-	Networking   []State `json:"networking,omitempty" mapstructure:"networking,omitempty" structs:"networking,omitempty"`
+	Hostname     string  `json:"hostname"               mapstructure:"hostname"               structs:"hostname"`
+	CPULoad      string  `json:"cpuLoad"                mapstructure:"cpuLoad"                structs:"cpuLoad"`
+	Networking   []State `json:"networking,omitempty"   mapstructure:"networking,omitempty"   structs:"networking,omitempty"`
 	Reachability []State `json:"reachability,omitempty" mapstructure:"reachability,omitempty" structs:"reachability,omitempty"`
-	Processes    []State `json:"processes,omitempty" mapstructure:"processes,omitempty" structs:"processes,omitempty"`
-	Listeners    []State `json:"listeners,omitempty" mapstructure:"listeners,omitempty" structs:"listeners,omitempty"`
-	CustomTests  []State `json:"customTests,omitempty" mapstructure:"customTests,omitempty" structs:"customTests,omitempty"`
+	Processes    []State `json:"processes,omitempty"    mapstructure:"processes,omitempty"    structs:"processes,omitempty"`
+	Listeners    []State `json:"listeners,omitempty"    mapstructure:"listeners,omitempty"    structs:"listeners,omitempty"`
+	CustomTests  []State `json:"customTests,omitempty"  mapstructure:"customTests,omitempty"  structs:"customTests,omitempty"`
 
 	// populated before sending to UI client
 	Errors bool `json:"errors" mapstructure:"-" structs:"-"`
 }
 
-func (this HostState) AllStates() []State {
-	var all []State
+func (h HostState) AllStates() []State {
+	all := make(
+		[]State,
+		0,
+		len(h.Networking)+len(h.Reachability)+len(h.Processes)+len(h.Listeners)+len(
+			h.CustomTests,
+		),
+	)
 
-	all = append(all, this.Networking...)
-	all = append(all, this.Reachability...)
-	all = append(all, this.Processes...)
-	all = append(all, this.Listeners...)
-	all = append(all, this.CustomTests...)
+	all = append(all, h.Networking...)
+	all = append(all, h.Reachability...)
+	all = append(all, h.Processes...)
+	all = append(all, h.Listeners...)
+	all = append(all, h.CustomTests...)
 
 	return all
 }
@@ -129,7 +144,7 @@ type sohMetadata struct {
 	// the `mapstructure:",remain"` option below as a workaround.
 	// UseUUIDForC2Active interface{} `mapstructure:"hostsToUseUUIDForC2Active"`
 
-	Other map[string]interface{} `mapstructure:",remain"`
+	Other map[string]any `mapstructure:",remain"`
 
 	// set after parsing
 	c2Timeout    time.Duration
@@ -137,80 +152,84 @@ type sohMetadata struct {
 	uuidHosts    map[string]struct{}
 }
 
-func (this *sohMetadata) init() error {
-	if this.SkipNetworkConfig {
+func (m *sohMetadata) init() error {
+	if m.SkipNetworkConfig {
 		// Default reachability test to off if skipping initial network config
 		// tests.
-		this.Reachability = "off"
+		m.Reachability = reachabilityOff
 	}
 
-	if this.Reachability == "" {
+	if m.Reachability == "" {
 		// Default to reachability test being disabled if not specified in the
 		// scenario app config.
-		this.Reachability = "off"
+		m.Reachability = reachabilityOff
 	}
 
-	if this.Reachability == "off" {
+	if m.Reachability == reachabilityOff {
 		// Default to ICMP rule injection being disabled if reachability testing is
 		// disabled.
-		this.InjectICMPAllow = false
+		m.InjectICMPAllow = false
 	}
 
-	if this.C2Timeout == "" {
+	if m.C2Timeout == "" {
 		// Default C2 timeout to 5m if not specified in the scenario app config.
-		this.c2Timeout = 5 * time.Minute
+		m.c2Timeout = defaultC2Timeout
 	} else {
 		var err error
 
-		if this.c2Timeout, err = time.ParseDuration(this.C2Timeout); err != nil {
-			return fmt.Errorf("parsing C2 timeout setting '%s': %w", this.C2Timeout, err)
+		if m.c2Timeout, err = time.ParseDuration(m.C2Timeout); err != nil {
+			return fmt.Errorf("parsing C2 timeout setting '%s': %w", m.C2Timeout, err)
 		}
 	}
 
 	// Default startup delay is 0 if not set
-	if this.StartupDelay != "" {
+	if m.StartupDelay != "" {
 		var err error
-		if this.startupDelay, err = time.ParseDuration(this.StartupDelay); err != nil {
-			return fmt.Errorf("parsing startup delay setting `%s`: %w", this.StartupDelay, err)
+		if m.startupDelay, err = time.ParseDuration(m.StartupDelay); err != nil {
+			return fmt.Errorf("parsing startup delay setting `%s`: %w", m.StartupDelay, err)
 		}
 	}
 
-	if this.AppProfileKey == "" {
-		this.AppProfileKey = "sohProfile"
+	if m.AppProfileKey == "" {
+		m.AppProfileKey = "sohProfile"
 	}
 
-	this.uuidHosts = make(map[string]struct{})
+	m.uuidHosts = make(map[string]struct{})
 
-	if useUUID, ok := this.Other["hostsToUseUUIDForC2Active"]; ok {
+	if useUUID, ok := m.Other["hostsToUseUUIDForC2Active"]; ok {
 		switch hosts := useUUID.(type) {
 		case nil: // this is okay
 		case string:
-			this.uuidHosts[hosts] = struct{}{}
-		case []interface{}:
+			m.uuidHosts[hosts] = struct{}{}
+		case []any:
 			if len(hosts) > 0 {
 				for _, host := range hosts {
-					h, ok := host.(string)
-					if !ok {
-						return fmt.Errorf("parsing 'hostsToUseUUIDForC2Active': must be a string or string slice")
+					h, ok2 := host.(string)
+					if !ok2 {
+						return errors.New(
+							"parsing 'hostsToUseUUIDForC2Active': must be a string or string slice",
+						)
 					}
 
-					this.uuidHosts[h] = struct{}{}
+					m.uuidHosts[h] = struct{}{}
 				}
 			}
 		default:
-			return fmt.Errorf("parsing 'hostsToUseUUIDForC2Active': must be a string or string slice")
+			return errors.New(
+				"parsing 'hostsToUseUUIDForC2Active': must be a string or string slice",
+			)
 		}
 	}
 
 	return nil
 }
 
-func (this sohMetadata) useUUIDForC2Active(host string) bool {
-	if _, ok := this.uuidHosts["all"]; ok {
+func (m sohMetadata) useUUIDForC2Active(host string) bool {
+	if _, ok := m.uuidHosts["all"]; ok {
 		return true
 	}
 
-	if _, ok := this.uuidHosts[host]; ok {
+	if _, ok := m.uuidHosts[host]; ok {
 		return true
 	}
 
@@ -228,15 +247,15 @@ type sohProfile struct {
 	c2Timeout time.Duration
 }
 
-func (this *sohProfile) init() error {
-	if this.C2Timeout == "" {
+func (p *sohProfile) init() error {
+	if p.C2Timeout == "" {
 		// Default C2 timeout to 5m if not specified in the SoH Profile config.
-		this.c2Timeout = 5 * time.Minute
+		p.c2Timeout = defaultC2Timeout
 	} else {
 		var err error
 
-		if this.c2Timeout, err = time.ParseDuration(this.C2Timeout); err != nil {
-			return fmt.Errorf("parsing C2 timeout setting '%s': %w", this.C2Timeout, err)
+		if p.c2Timeout, err = time.ParseDuration(p.C2Timeout); err != nil {
+			return fmt.Errorf("parsing C2 timeout setting '%s': %w", p.C2Timeout, err)
 		}
 	}
 

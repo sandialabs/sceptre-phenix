@@ -3,14 +3,14 @@ package util
 import (
 	"fmt"
 	"net"
+	"slices"
 
-	"golang.org/x/exp/slices"
 	"inet.af/netaddr"
 )
 
-var private []*net.IPNet
+var private []*net.IPNet //nolint:gochecknoglobals // global constant
 
-func init() {
+func init() { //nolint:gochecknoinits // private ip blocks
 	for _, cidr := range []string{
 		"127.0.0.0/8",    // IPv4 loopback
 		"10.0.0.0/8",     // RFC1918

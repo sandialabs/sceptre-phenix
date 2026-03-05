@@ -1,5 +1,3 @@
-SHELL := /bin/bash
-
 # Default version number to git commit hash if not set.
 COMMIT := $(or $(COMMIT),$(shell git log -1 --format="%h"))
 TAG    := $(or $(TAG),$(shell git log -1 --format="%h"))
@@ -15,6 +13,14 @@ TUNNELSOURCES := $(shell find tunneler -name '*.go' )
 THISFILE := $(lastword $(MAKEFILE_LIST))
 THISDIR  := $(shell dirname $(realpath $(THISFILE)))
 GOBIN    := $(THISDIR)/bin
+# Use golangci-lint from PATH if available (e.g. CI), otherwise use local install
+GOLANGCI_LINT ?= $(shell command -v golangci-lint 2> /dev/null || echo $(GOBIN)/golangci-lint)
+
+# Define a helper for checking command existence
+check-command = @if ! command -v $(1) > /dev/null; then \
+		echo "Error: '$(1)' not found. $(2)"; \
+		exit 1; \
+	fi
 
 # Prepend this repo's bin directory to our path since we'll want to
 # install some build tools there for use during the build process.
@@ -23,34 +29,82 @@ PATH := $(GOBIN):$(PATH)
 # Export GOBIN env variable so `go install` picks it up correctly.
 export GOBIN
 
-all:
+.PHONY: all check check-protoc clean format generate generate-mocks generate-protobuf go-generate help install install-dev lint lint-clean phenix phenix-debug phenix-tunneler test
+.DEFAULT_GOAL := help
 
-clean:
+help:
+	@echo "Build targets:"
+	@echo "  phenix             - Build the main phenix binary"
+	@echo "  phenix-debug       - Build the phenix binary with debug symbols"
+	@echo "  phenix-tunneler    - Build tunneler binaries"
+	@echo ""
+	@echo "Development targets:"
+	@echo "  all                - Run all tools (format, lint, test)"
+	@echo "  check              - Run linters without fixing (for CI)"
+	@echo "  format             - Format code (golangci-lint)"
+	@echo "  lint               - Lint code and fix issues (golangci-lint)"
+	@echo "  lint-clean         - Clean lint cache"
+	@echo "  test               - Run unit tests"
+	@echo ""
+	@echo "Code Generation targets:"
+	@echo "  generate           - Run all code generation tools"
+	@echo "  generate-mocks     - Generate mocks"
+	@echo "  generate-protobuf  - Generate protobufs"
+	@echo "  go-generate        - Run go generate"
+	@echo ""
+	@echo "Installation targets:"
+	@echo "  install            - Install Go module dependencies"
+	@echo "  install-dev        - Install development and build dependencies"
+	@echo ""
+	@echo "Cleanup targets:"
+	@echo "  clean              - Clean artifacts"
+	@echo ""
+	@echo "Help targets:"
+	@echo "  help               - Show this help message"
+
+all: format lint test
+
+check:
+	$(call check-command,$(GOLANGCI_LINT),Please run 'make install-dev' to install it.)
+	$(GOLANGCI_LINT) run -c .golangci.yml
+
+generate: generate-mocks generate-protobuf go-generate
+
+format:
+	$(call check-command,$(GOLANGCI_LINT),Please run 'make install-dev' to install it.)
+	$(GOLANGCI_LINT) fmt -c .golangci.yml
+
+lint:
+	$(call check-command,$(GOLANGCI_LINT),Please run 'make install-dev' to install it.)
+	$(GOLANGCI_LINT) run -c .golangci.yml --fix
+
+lint-clean:
+	$(call check-command,$(GOLANGCI_LINT),Please run 'make install-dev' to install it.)
+	$(GOLANGCI_LINT) cache clean
+
+test:
+	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
+	go test -v ./...
+
+clean: lint-clean
 	$(RM) bin/phenix
-	$(RM) app/mock.go
-	$(RM) util/mm/mock.go
+	$(RM) bin/phenix-debug
 	$(RM) store/mock.go
-	$(RM) tmpl/bindata.go
-	$(RM) util/shell/mock.go
-	$(RM) web/bindata.go
 	$(RM) web/proto/*.pb.go
 	$(RM) web/public/docs/index.html
 	$(RM) web/public/favicon.ico
 	$(RM) web/public/index.html
 	$(RM) -r web/public/assets
 	$(RM) web/rbac/known_policy.go
+	go clean -testcache
 
-.PHONY: install-build-deps
-install-build-deps: bin/go-bindata bin/mockgen bin/protoc-gen-go
+install:
+	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
+	go mod tidy
 
-.PHONY: remove-build-deps
-remove-build-deps:
-	$(RM) bin/go-bindata
-	$(RM) bin/mockgen
-	$(RM) bin/protoc-gen-go
-
-bin/go-bindata:
-	go install github.com/go-bindata/go-bindata/v3/go-bindata
+install-dev: bin/mockgen bin/protoc-gen-go
+	$(call check-command,curl,Please install curl (e.g. sudo apt install curl))
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(GOBIN) v2.10.1
 
 bin/mockgen:
 	go install github.com/golang/mock/mockgen
@@ -58,38 +112,22 @@ bin/mockgen:
 bin/protoc-gen-go:
 	go install google.golang.org/protobuf/cmd/protoc-gen-go
 
-.PHONY: generate-bindata
-generate-bindata: api/config/bindata.go tmpl/bindata.go web/bindata.go
-
-api/config/bindata.go: $(CONFIGS) bin/go-bindata
-	$(GOBIN)/go-bindata -pkg config -prefix api/config/default -o api/config/bindata.go api/config/default/...
-
-tmpl/bindata.go: $(TEMPLATES) bin/go-bindata
-	$(GOBIN)/go-bindata -pkg tmpl -prefix tmpl/templates -o tmpl/bindata.go tmpl/templates/...
-
 web/public/docs/index.html: web/public/docs/openapi.yml
 	npx redoc-cli build web/public/docs/openapi.yml -o web/public/docs/index.html --title 'phenix API'
 
-web/bindata.go: web/public/docs/index.html web/public/index.html web/public/vnc.html bin/go-bindata
-	$(GOBIN)/go-bindata -pkg web -prefix web/public -o web/bindata.go web/public/...
+web/public/index.html:
+	$(MAKE) -C ../js dist/index.html
+	cp -a ../js/dist/* web/public
 
-.PHONY: generate-mocks
-generate-mocks: app/mock.go store/mock.go util/mm/mock.go util/shell/mock.go
-
-app/mock.go: app/app.go bin/mockgen
-	$(GOBIN)/mockgen -self_package phenix/app -destination app/mock.go -package app phenix/app App
+generate-mocks: store/mock.go
 
 store/mock.go: store/store.go bin/mockgen
 	$(GOBIN)/mockgen -self_package phenix/store -destination store/mock.go -package store phenix/store Store
 
-util/mm/mock.go: util/mm/mm.go bin/mockgen
-	$(GOBIN)/mockgen -self_package phenix/util/mm -destination util/mm/mock.go -package mm phenix/util/mm MM
+check-protoc:
+	@command -v protoc >/dev/null 2>&1 || { echo "Error: protoc is not installed. Please install protobuf-compiler."; exit 1; }
 
-util/shell/mock.go: util/shell/shell.go bin/mockgen
-	$(GOBIN)/mockgen -self_package phenix/util/shell -destination util/shell/mock.go -package shell phenix/util/shell Shell
-
-.PHONY: generate-protobuf
-generate-protobuf: web/proto/experiment.pb.go web/proto/host.pb.go web/proto/user.pb.go web/proto/role.pb.go web/proto/vm.pb.go
+generate-protobuf: check-protoc web/proto/experiment.pb.go web/proto/host.pb.go web/proto/user.pb.go web/proto/role.pb.go web/proto/vm.pb.go
 
 web/proto/experiment.pb.go: web/proto/*.proto bin/protoc-gen-go
 	protoc -I . -I web/proto --go_out=paths=source_relative:. ./web/proto/experiment.proto
@@ -106,21 +144,22 @@ web/proto/role.pb.go: web/proto/*.proto bin/protoc-gen-go
 web/proto/vm.pb.go: web/proto/*.proto bin/protoc-gen-go
 	protoc -I . -I web/proto --go_out=paths=source_relative:. ./web/proto/vm.proto
 
-.PHONY: go-generate
 go-generate: web/rbac/known_policy.go
 
 web/rbac/known_policy.go: $(UISOURCES)
+	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
 	go generate web/rbac/known_policy_gen.go
 
-bin/phenix: $(SOURCES) generate-bindata generate-protobuf go-generate
+phenix: bin/phenix
+bin/phenix: $(SOURCES) generate
 	mkdir -p bin
 	CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -X 'phenix/version.Tag=$(TAG)' -X 'phenix/version.Date=$(DATE)' -s -w" -trimpath -o bin/phenix main.go
 
-bin/phenix-debug: $(SOURCES) generate-bindata generate-protobuf go-generate
+phenix-debug: bin/phenix-debug
+bin/phenix-debug: $(SOURCES) generate
 	mkdir -p bin
 	CGO_ENABLED=0 GOOS=linux go build -gcflags "all=-N -l" -trimpath -o bin/phenix-debug main.go
 
-.PHONY: phenix-tunneler
 phenix-tunneler: bin/phenix-tunneler-linux-amd64 bin/phenix-tunneler-darwin-arm64 bin/phenix-tunneler-darwin-amd64 bin/phenix-tunneler-windows-amd64.exe
 
 bin/phenix-tunneler-linux-amd64: $(TUNNELSOURCES)

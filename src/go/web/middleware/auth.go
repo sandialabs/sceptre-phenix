@@ -2,27 +2,76 @@ package middleware
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net/http"
-	"phenix/util/plog"
-	"phenix/web/rbac"
-	jwtutil "phenix/web/util/jwt"
 	"strings"
 
 	jwtmiddleware "github.com/cescoferraro/go-jwt-middleware"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
+
+	"phenix/util/plog"
+	"phenix/web/rbac"
+	jwtutil "phenix/web/util/jwt"
 )
 
+type ContextKey string
+
+const (
+	ContextKeyUser ContextKey = "user"
+	ContextKeyRole ContextKey = "role"
+	ContextKeyJWT  ContextKey = "jwt"
+)
+
+// RoleFromContext safely extracts the rbac.Role from the given context.
+// If the role is missing or the wrong type, it returns an empty/default rbac.Role.
+func RoleFromContext(ctx context.Context) rbac.Role {
+	val := ctx.Value(ContextKeyRole)
+
+	role, ok := val.(rbac.Role)
+	if !ok {
+		// Returns a zero-value rbac.Role if the assertion fails.
+		// This prevents the application from panicking.
+		var emptyRole rbac.Role
+		return emptyRole
+	}
+
+	return role
+}
+
+// UserFromContext safely extracts the username string from the given context.
+func UserFromContext(ctx context.Context) string {
+	val := ctx.Value(ContextKeyUser)
+
+	user, ok := val.(string)
+	if !ok {
+		return ""
+	}
+
+	return user
+}
+
+// JWTFromContext safely extracts the raw JWT string from the given context.
+func JWTFromContext(ctx context.Context) string {
+	val := ctx.Value(ContextKeyJWT)
+
+	jwt, ok := val.(string)
+	if !ok {
+		return ""
+	}
+
+	return jwt
+}
+
 func fromPhenixAuthTokenHeader(r *http.Request) (string, error) {
-	authHeader := r.Header.Get("X-phenix-auth-token")
+	authHeader := r.Header.Get("X-Phenix-Auth-Token")
 	if authHeader == "" {
 		return "", nil // No error, just no token
 	}
 
 	authHeaderParts := strings.Split(authHeader, " ")
 	if len(authHeaderParts) != 2 || strings.ToLower(authHeaderParts[0]) != "bearer" {
-		return "", fmt.Errorf("X-phenix-auth-token header format must be 'Bearer {token}'")
+		return "", errors.New("x-phenix-auth-token header format must be 'Bearer {token}'")
 	}
 
 	return authHeaderParts[1], nil
@@ -34,16 +83,17 @@ func NoAuth(h http.Handler) http.Handler {
 
 		ctx := r.Context()
 
-		ctx = context.WithValue(ctx, "user", "global-admin")
-		ctx = context.WithValue(ctx, "role", *role)
+		ctx = context.WithValue(ctx, ContextKeyUser, "global-admin")
+		ctx = context.WithValue(ctx, ContextKeyRole, *role)
 
 		h.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
+//nolint:funlen // middleware
 func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 	tokenMiddleware := jwtmiddleware.New(
-		jwtmiddleware.Options{
+		jwtmiddleware.Options{ //nolint:exhaustruct // partial initialization
 			// Setting this to true since some resource paths don't require
 			// authentication. Those that do will be caught in the
 			// userMIddleware, which will also check for a `user` context
@@ -56,14 +106,18 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 			// Note that we're not using the default Authorization header to allow for
 			// proxy authentication via basic auth (or other means of proxy
 			// authentication that might end up overwriting the Authorization header).
-			Extractor: jwtmiddleware.FromFirst(fromPhenixAuthTokenHeader, jwtmiddleware.FromParameter("token")),
-			ValidationKeyGetter: func(_ *jwt.Token) (interface{}, error) {
+			Extractor: jwtmiddleware.FromFirst(
+				fromPhenixAuthTokenHeader,
+				jwtmiddleware.FromParameter("token"),
+			),
+			ValidationKeyGetter: func(_ *jwt.Token) (any, error) {
 				return []byte(jwtKey), nil
 			},
 			SigningMethod: jwt.SigningMethodHS256,
 			ErrorHandler: func(w http.ResponseWriter, r *http.Request, e string) {
 				plog.Error(plog.TypeSecurity, "validating auth token", "err", e)
 
+				//nolint:godox // TODO
 				// TODO: remove token from user spec?
 
 				http.Error(w, e, http.StatusUnauthorized)
@@ -75,9 +129,15 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			raw, err := fromPhenixAuthTokenHeader(r)
 			if err != nil {
-				plog.Error(plog.TypeSecurity, "getting raw JWT from X-phenix-auth-token header", "err", err)
+				plog.Error(
+					plog.TypeSecurity,
+					"getting raw JWT from X-phenix-auth-token header",
+					"err",
+					err,
+				)
 
 				http.Error(w, "missing phenix auth token header", http.StatusBadRequest)
+
 				return
 			}
 
@@ -86,11 +146,12 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 				plog.Error(plog.TypeSecurity, "parsing valid JWT", "token", raw, "err", err)
 
 				http.Error(w, "parsing auth token", http.StatusBadRequest)
+
 				return
 			}
 
 			ctx := r.Context()
-			ctx = context.WithValue(ctx, "user", token)
+			ctx = context.WithValue(ctx, ContextKeyUser, token)
 
 			h.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -100,39 +161,63 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.HasSuffix(r.URL.Path, "/signup") {
 				h.ServeHTTP(w, r)
+
 				return
 			}
 
 			if strings.HasSuffix(r.URL.Path, "/login") {
 				h.ServeHTTP(w, r)
+
 				return
 			}
 
 			ctx := r.Context()
 
-			userToken := ctx.Value("user")
+			userToken := ctx.Value(ContextKeyUser)
 			if userToken == nil {
-				plog.Warn(plog.TypeSecurity, "rejecting unauthorized request - missing user token", "path", r.URL.Path)
+				plog.Warn(
+					plog.TypeSecurity,
+					"rejecting unauthorized request - missing user token",
+					"path",
+					r.URL.Path,
+				)
 				http.Error(w, "Forbidden", http.StatusForbidden)
+
 				return
 			}
 
 			var (
-				token  = userToken.(*jwt.Token)
-				claims = token.Claims.(jwt.MapClaims)
+				token, _ = userToken.(*jwt.Token)
+				claims   = token.Claims.(jwt.MapClaims)
 			)
 
 			jwtUser, err := jwtutil.UsernameFromClaims(claims)
 			if err != nil {
-				plog.Warn(plog.TypeSecurity, "rejecting unauthorized request", "path", r.URL.Path, "err", err)
+				plog.Warn(
+					plog.TypeSecurity,
+					"rejecting unauthorized request",
+					"path",
+					r.URL.Path,
+					"err",
+					err,
+				)
 				http.Error(w, "Forbidden", http.StatusUnauthorized)
+
 				return
 			}
 
 			if proxyAuthHeader != "" {
 				if user := r.Header.Get(proxyAuthHeader); user != jwtUser {
-					plog.Error(plog.TypeSecurity, "proxy user mismatch", "user", user, "token", jwtUser)
+					plog.Error(
+						plog.TypeSecurity,
+						"proxy user mismatch",
+						"user",
+						user,
+						"token",
+						jwtUser,
+					)
 					http.Error(w, "proxy user mismatch", http.StatusUnauthorized)
+
 					return
 				}
 			}
@@ -140,6 +225,7 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 			user, err := rbac.GetUser(jwtUser)
 			if err != nil {
 				http.Error(w, "user error", http.StatusUnauthorized)
+
 				return
 			}
 
@@ -147,18 +233,20 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 			// user didn't delete it because it became compromised).
 			if err := user.ValidateToken(token.Raw); err != nil {
 				http.Error(w, "user token error", http.StatusUnauthorized)
+
 				return
 			}
 
 			role, err := user.Role()
 			if err != nil {
 				http.Error(w, "user role error", http.StatusUnauthorized)
+
 				return
 			}
 
-			ctx = context.WithValue(ctx, "user", user.Username())
-			ctx = context.WithValue(ctx, "role", role)
-			ctx = context.WithValue(ctx, "jwt", token.Raw)
+			ctx = context.WithValue(ctx, ContextKeyUser, user.Username())
+			ctx = context.WithValue(ctx, ContextKeyRole, role)
+			ctx = context.WithValue(ctx, ContextKeyJWT, token.Raw)
 
 			h.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -175,21 +263,25 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 
 			role, _ := rbac.RoleFromConfig(creds[2])
 
-			ctx = context.WithValue(ctx, "user", creds[1])
-			ctx = context.WithValue(ctx, "role", *role)
+			ctx = context.WithValue(ctx, ContextKeyUser, creds[1])
+			ctx = context.WithValue(ctx, ContextKeyRole, *role)
 
 			h.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 
-	if jwtKey == "" {
+	switch {
+	case jwtKey == "":
 		plog.Info(plog.TypeSecurity, "no JWT signing key provided -- disabling auth")
-		return func(h http.Handler) http.Handler { return NoAuth(h) }
-	} else if jwtKey == "proxy-jwt" {
+
+		return NoAuth
+	case jwtKey == "proxy-jwt":
 		plog.Info(plog.TypeSecurity, "using JWTs from proxy")
+
 		return func(h http.Handler) http.Handler { return validTokenMiddleware(userMiddleware(h)) }
-	} else if strings.HasPrefix(jwtKey, "dev|") {
+	case strings.HasPrefix(jwtKey, "dev|"):
 		plog.Debug(plog.TypeSecurity, "development JWT key provided -- enabling dev auth")
+
 		return func(h http.Handler) http.Handler { return devAuthMiddleware(h) }
 	}
 

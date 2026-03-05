@@ -6,16 +6,18 @@ import (
 	gocache "github.com/patrickmn/go-cache"
 )
 
+const defaultCleanupInterval = 30 * time.Second
+
 type GoCache struct {
 	c *gocache.Cache
 }
 
 func NewGoCache() *GoCache {
-	return &GoCache{c: gocache.New(gocache.NoExpiration, 30*time.Second)}
+	return &GoCache{c: gocache.New(gocache.NoExpiration, defaultCleanupInterval)}
 }
 
-func (this GoCache) Get(key string) (any, bool) {
-	v, ok := this.c.Get(key)
+func (c GoCache) Get(key string) (any, bool) {
+	v, ok := c.c.Get(key)
 	if !ok {
 		return nil, false
 	}
@@ -23,12 +25,14 @@ func (this GoCache) Get(key string) (any, bool) {
 	return v, true
 }
 
-func (this *GoCache) Set(key string, val any) error {
-	this.c.Set(key, val, -1)
+func (c *GoCache) Set(key string, val any) error {
+	c.c.Set(key, val, -1)
+
 	return nil
 }
 
-func (this *GoCache) SetWithExpire(key string, val any, exp time.Duration) error {
-	this.c.Set(key, val, exp)
+func (c *GoCache) SetWithExpire(key string, val any, exp time.Duration) error {
+	c.c.Set(key, val, exp)
+
 	return nil
 }

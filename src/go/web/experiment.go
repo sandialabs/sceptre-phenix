@@ -6,47 +6,43 @@ import (
 	"net/http"
 	"strings"
 
-	"phenix/api/vm"
-	"phenix/util/cache"
-	"phenix/util/mm"
-	"phenix/util/plog"
-	"phenix/web/rbac"
-	"phenix/web/util"
-
 	"github.com/gorilla/mux"
 	"inet.af/netaddr"
+
+	"phenix/api/vm"
+	"phenix/util/cache"
+	"phenix/util/plog"
+	"phenix/web/middleware"
+	"phenix/web/rbac"
+	"phenix/web/util"
 )
 
-type topology struct {
-	Nodes   []mm.VM `json:"nodes"`
-	Edges   []edge  `json:"edges"`
-	Running bool    `json:"running"`
-}
-
-type edge struct {
-	ID     int `json:"id"`
-	Source int `json:"source"`
-	Target int `json:"target"`
-	Length int `json:"length"`
-}
-
-// GET /experiments/{name}/topology[?ignore=MGMT]
+// GetExperimentTopology - GET /experiments/{name}/topology[?ignore=MGMT].
 func GetExperimentTopology(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetExperimentTopology")
 
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
-		vars = mux.Vars(r)
-		name = vars["name"]
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		vars    = mux.Vars(r)
+		name    = vars["name"]
 
 		query  = r.URL.Query()
 		ignore = query["ignore"]
 	)
 
 	if !role.Allowed("experiments/topology", "get", name) {
-		plog.Warn(plog.TypeSecurity, "getting experiment topology not allowed", "user", ctx.Value("user").(string), "experiment", name)
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting experiment topology not allowed",
+			"user",
+			user,
+			"experiment",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -60,25 +56,34 @@ func GetExperimentTopology(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unable to convert topology", http.StatusInternalServerError)
 	}
 
-	w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-// GET /experiments/{name}/topology/search?hostname=xyz&vlan=abc
+// SearchExperimentTopology - GET /experiments/{name}/topology/search?hostname=xyz&vlan=abc.
 func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "SearchExperimentTopology")
 
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
-		vars = mux.Vars(r)
-		name = vars["name"]
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		vars    = mux.Vars(r)
+		name    = vars["name"]
 
 		query = r.URL.Query()
 	)
 
 	if !role.Allowed("experiments/topology", "get", name) {
-		plog.Warn(plog.TypeSecurity, "searching experiment topology not allowed", "user", ctx.Value("user").(string), "experiment", name)
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"searching experiment topology not allowed",
+			"user",
+			user,
+			"experiment",
+			name,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
@@ -88,6 +93,7 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		if _, err := vm.Topology(name, nil); err != nil {
 			http.Error(w, "error getting experiment topology", http.StatusBadRequest)
+
 			return
 		}
 
@@ -95,10 +101,11 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		search = val.(vm.TopologySearch)
-		nodes  []int
+		search, _ = val.(vm.TopologySearch)
+		nodes     []int
 	)
 
+	//nolint:godox // TODO
 	// TODO: how to handle multiple terms? AND or OR?
 
 	for term, values := range query {
@@ -124,8 +131,8 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) {
 		case "ip":
 			if net, err := netaddr.ParseIPPrefix(value); err == nil {
 				for k, v := range search.IP {
-					ip, err := netaddr.ParseIP(k)
-					if err != nil {
+					ip, ipErr := netaddr.ParseIP(k)
+					if ipErr != nil {
 						continue
 					}
 
@@ -142,8 +149,9 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) {
 	body, err := json.Marshal(util.WithRoot("nodes", nodes))
 	if err != nil {
 		http.Error(w, "error marshaling search results", http.StatusInternalServerError)
+
 		return
 	}
 
-	w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }

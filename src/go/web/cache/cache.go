@@ -20,6 +20,8 @@ const (
 	StatusSnapshotting Status = "snapshotting"
 	StatusRestoring    Status = "restoring"
 	StatusCommitting   Status = "committing"
+
+	defaultCleanupInterval = 30 * time.Second
 )
 
 type WebCache interface {
@@ -37,33 +39,40 @@ type GoWebCache struct {
 }
 
 func NewGoWebCache() *GoWebCache {
-	return &GoWebCache{c: gocache.New(gocache.NoExpiration, 30*time.Second)}
+	return &GoWebCache{c: gocache.New(gocache.NoExpiration, defaultCleanupInterval)}
 }
 
-func (this GoWebCache) Get(key string) ([]byte, bool) {
-	v, ok := this.c.Get(key)
+func (gwc GoWebCache) Get(key string) ([]byte, bool) {
+	v, ok := gwc.c.Get(key)
 	if !ok {
 		return nil, false
 	}
 
-	return v.([]byte), true
+	val, ok := v.([]byte)
+	if !ok {
+		return nil, false
+	}
+	return val, true
 }
 
-func (this *GoWebCache) Set(key string, val []byte) error {
-	this.c.Set(key, val, -1)
+func (gwc *GoWebCache) Set(key string, val []byte) error {
+	gwc.c.Set(key, val, -1)
+
 	return nil
 }
 
-func (this *GoWebCache) SetWithExpire(key string, val []byte, exp time.Duration) error {
-	this.c.Set(key, val, exp)
+func (gwc *GoWebCache) SetWithExpire(key string, val []byte, exp time.Duration) error {
+	gwc.c.Set(key, val, exp)
+
 	return nil
 }
 
-func (this *GoWebCache) Lock(key string, status Status, exp time.Duration) Status {
+func (gwc *GoWebCache) Lock(key string, status Status, exp time.Duration) Status {
 	key = "LOCK|" + key
 
-	if err := this.c.Add(key, status, exp); err != nil {
-		v, ok := this.c.Get(key)
+	err := gwc.c.Add(key, status, exp)
+	if err != nil {
+		v, ok := gwc.c.Get(key)
 
 		// This *might* happen if the key expires or is deleted between
 		// calling `Add` and `Get`.
@@ -71,23 +80,31 @@ func (this *GoWebCache) Lock(key string, status Status, exp time.Duration) Statu
 			return ""
 		}
 
-		return v.(Status)
+		val, ok := v.(Status)
+		if !ok {
+			return ""
+		}
+		return val
 	}
 
 	return ""
 }
 
-func (this *GoWebCache) Locked(key string) Status {
+func (gwc *GoWebCache) Locked(key string) Status {
 	key = "LOCK|" + key
 
-	v, ok := this.c.Get(key)
+	v, ok := gwc.c.Get(key)
 	if !ok {
 		return ""
 	}
 
-	return v.(Status)
+	val, ok := v.(Status)
+	if !ok {
+		return ""
+	}
+	return val
 }
 
-func (this *GoWebCache) Unlock(key string) {
-	this.c.Delete("LOCK|" + key)
+func (gwc *GoWebCache) Unlock(key string) {
+	gwc.c.Delete("LOCK|" + key)
 }

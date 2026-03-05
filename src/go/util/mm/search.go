@@ -1,9 +1,10 @@
 package mm
 
 import (
-	"fmt"
+	"errors"
 	"net"
 	"regexp"
+	"slices"
 	"strings"
 
 	"phenix/util/plog"
@@ -15,19 +16,18 @@ var (
 	boolOps             = regexp.MustCompile(`^(?:and|or|not)$`)
 	groups              = regexp.MustCompile(`(?:[(][^ ])|(?:[^ ][)])`)
 	keywordEscape       = regexp.MustCompile(`['"]([^'"]+)['"]`)
-	defaultSearchFields = []string{"Name", "Networks", "Host", "Disk", "Tags"}
+	defaultSearchFields = []string{"Name", "Networks", "Host", "Disk", "Tags"} //nolint:gochecknoglobals // default fields
 )
 
 type Stack struct {
-	s []interface{}
+	s []any
 }
 
-func (s *Stack) Push(item interface{}) {
+func (s *Stack) Push(item any) {
 	s.s = append(s.s, item)
-
 }
 
-func (s *Stack) Pop() interface{} {
+func (s *Stack) Pop() any {
 	if s.IsEmpty() {
 		return nil
 	}
@@ -36,12 +36,10 @@ func (s *Stack) Pop() interface{} {
 	s.s = s.s[:len(s.s)-1]
 
 	return lastItem
-
 }
 
 func (s *Stack) IsEmpty() bool {
 	return len(s.s) == 0
-
 }
 
 type ExpressionTree struct {
@@ -52,20 +50,17 @@ type ExpressionTree struct {
 }
 
 func (node *ExpressionTree) PrintTree() {
-
 	if node == nil {
 		return
 	}
 
-	//fmt.Printf("Node:%s Fields:%v\n",node.term,node.searchFields)
+	// fmt.Printf("Node:%s Fields:%v\n",node.term,node.searchFields)
 
 	node.left.PrintTree()
 	node.right.PrintTree()
-
 }
 
 func BuildTree(searchFilter string) *ExpressionTree {
-
 	if len(searchFilter) == 0 {
 		return nil
 	}
@@ -82,14 +77,7 @@ func BuildTree(searchFilter string) *ExpressionTree {
 
 	// If no operators were found, assume a default
 	// operator of "and"
-	match := false
-	for _, part := range stringParts {
-		if boolOps.MatchString(part) {
-			match = true
-			break
-		}
-
-	}
+	match := slices.ContainsFunc(stringParts, boolOps.MatchString)
 
 	if !match {
 		tmp := strings.Join(stringParts, " and ")
@@ -97,7 +85,6 @@ func BuildTree(searchFilter string) *ExpressionTree {
 	}
 
 	postFix, err := postfix(stringParts)
-
 	if err != nil {
 		return nil
 	}
@@ -112,24 +99,20 @@ func BuildTree(searchFilter string) *ExpressionTree {
 	}
 
 	expressionTree, err := createTree(postFix)
-
 	if err != nil {
 		return nil
 	}
 
 	return expressionTree
-
 }
 
 func (node *ExpressionTree) Evaluate(vm *VM) bool {
-
 	if node == nil {
 		return false
 	}
 
 	if node.left == nil && node.right == nil {
 		return node.match(vm)
-
 	}
 
 	rightSide := false
@@ -154,31 +137,29 @@ func (node *ExpressionTree) Evaluate(vm *VM) bool {
 	}
 
 	return false
-
 }
 
 // Shunting yard algorithm by Edsger Dijkstra
 // for putting search terms and operators into
-// postfix notation
+// postfix notation.
 func postfix(terms []string) ([]string, error) {
-
 	var output []string
+
 	opStack := new(Stack)
 
 	for _, term := range terms {
-
 		if len(term) == 0 {
 			continue
 		}
 
-		if boolOps.MatchString(term) || term == "(" {
+		switch {
+		case boolOps.MatchString(term) || term == "(":
 			opStack.Push(term)
-
-		} else if term == ")" {
+		case term == ")":
 			token := ""
 			for token != "(" {
 				if tmpToken, ok := opStack.Pop().(string); !ok {
-					return output, fmt.Errorf("Error: type assertion parsing token")
+					return output, errors.New("error: type assertion parsing token")
 				} else {
 					token = tmpToken
 				}
@@ -186,61 +167,47 @@ func postfix(terms []string) ([]string, error) {
 				if token != "(" {
 					output = append(output, token)
 				}
-
 			}
-
-		} else {
-
+		default:
 			output = append(output, term)
-
 		}
-
 	}
 
 	for !opStack.IsEmpty() {
-
 		if token, ok := opStack.Pop().(string); !ok {
-			return output, fmt.Errorf("Error: type assertion parsing token")
+			return output, errors.New("error: type assertion parsing token")
 		} else {
 			output = append(output, token)
 		}
-
 	}
 
 	return output, nil
-
 }
 
 func createTree(postFix []string) (*ExpressionTree, error) {
-
 	stack := new(Stack)
 
 	for _, term := range postFix {
-
 		if boolOps.MatchString(term) {
 			opTree := new(ExpressionTree)
 			opTree.term = term
 
 			if t1, ok := stack.Pop().(*ExpressionTree); !ok {
-				return nil, fmt.Errorf("Error: type assertion parsing token")
+				return nil, errors.New("error: type assertion parsing token")
 			} else {
 				opTree.right = t1
 			}
 
 			if !stack.IsEmpty() && term != "not" {
-
 				if t2, ok := stack.Pop().(*ExpressionTree); !ok {
-					return nil, fmt.Errorf("Error: type assertion parsing token")
+					return nil, errors.New("error: type assertion parsing token")
 				} else {
 					opTree.left = t2
 				}
-
 			}
 
 			stack.Push(opTree)
-
 		} else {
-
 			operand := new(ExpressionTree)
 			if keywordEscape.MatchString(term) {
 				operand.term = keywordEscape.FindAllStringSubmatch(term, -1)[0][1]
@@ -251,61 +218,51 @@ func createTree(postFix []string) (*ExpressionTree, error) {
 			}
 
 			stack.Push(operand)
-
 		}
-
 	}
 
 	if expressionTree, ok := stack.Pop().(*ExpressionTree); !ok {
-		return nil, fmt.Errorf("Error: type assertion parsing token")
+		return nil, errors.New("error: type assertion parsing token")
 	} else {
 		return expressionTree, nil
 	}
-
 }
 
 func getSearchFields(term string) []string {
-
-	if ipv4Re.MatchString(term) {
+	switch {
+	case ipv4Re.MatchString(term):
 		return []string{"IPv4"}
-
-	} else if stateRe.MatchString(term) {
+	case stateRe.MatchString(term):
 		return []string{"State"}
-
-	} else if strings.Contains(term, "capturing") {
+	case strings.Contains(term, "capturing"):
 		return []string{"Captures"}
-
-	} else if strings.Contains(term, "busy") {
+	case strings.Contains(term, "busy"):
 		return []string{"Busy"}
-
-	} else if strings.Contains(term, "dnb") {
+	case strings.Contains(term, "dnb"):
 		return []string{"DoNotBoot"}
-
-	} else {
+	default:
 		return defaultSearchFields
-
 	}
-
 }
 
-func (node *ExpressionTree) match(vm *VM) bool {
+func (node *ExpressionTree) match(vm *VM) bool { //nolint:funlen // complex logic
 	for _, field := range node.searchFields {
 		switch field {
 		case "IPv4":
 			{
 				_, refNet, err := net.ParseCIDR(node.term)
-
 				if err != nil {
 					plog.Debug(plog.TypeSystem, "unable to parse network", "network", node.term)
+
 					continue
 				}
 
 				for _, network := range vm.IPv4 {
-
 					address := net.ParseIP(network)
 
 					if address == nil {
 						plog.Debug(plog.TypeSystem, "unable to parse address", "address", network)
+
 						continue
 					}
 
@@ -313,9 +270,7 @@ func (node *ExpressionTree) match(vm *VM) bool {
 					if match {
 						return match
 					}
-
 				}
-
 			}
 		case "State":
 			{
@@ -324,13 +279,10 @@ func (node *ExpressionTree) match(vm *VM) bool {
 				} else {
 					return strings.ToLower(vm.State) == node.term
 				}
-
 			}
 		case "Busy":
 			{
-
 				return vm.Busy
-
 			}
 		case "Captures":
 			{
@@ -342,46 +294,36 @@ func (node *ExpressionTree) match(vm *VM) bool {
 			}
 		case "Networks":
 			{
-
 				for _, tap := range vm.Networks {
-
 					match := strings.Contains(strings.ToLower(tap), node.term)
 					if match {
 						return match
 					}
-
 				}
 
 				continue
-
 			}
 		case "Name":
 			{
-
 				match := strings.Contains(strings.ToLower(vm.Name), node.term)
 				if match {
 					return match
 				}
 
 				continue
-
 			}
 		case "Host":
 			{
-
 				match := strings.Contains(strings.ToLower(vm.Host), node.term)
 				if match {
 					return match
 				}
 
 				continue
-
 			}
 		case "Tags":
 			{
-
 				for _, tag := range vm.Tags {
-
 					match := strings.Contains(strings.ToLower(tag), node.term)
 					if match {
 						return match
@@ -392,14 +334,12 @@ func (node *ExpressionTree) match(vm *VM) bool {
 			}
 		case "Disk":
 			{
-
 				match := strings.Contains(strings.ToLower(vm.Disk), node.term)
 				if match {
 					return match
 				}
 
 				continue
-
 			}
 		}
 	}

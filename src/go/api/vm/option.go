@@ -112,7 +112,7 @@ type redeployOptions struct {
 }
 
 func newRedeployOptions(opts ...RedeployOption) redeployOptions {
-	o := redeployOptions{part: 1}
+	o := redeployOptions{part: 1} //nolint:exhaustruct // partial initialization
 
 	for _, opt := range opts {
 		opt(&o)

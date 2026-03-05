@@ -3,50 +3,74 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
-	"os"
 	"regexp"
 	"time"
 
+	"github.com/hpcloud/tail"
+
 	"phenix/util/plog"
 	"phenix/web/broker"
-	"phenix/web/rbac"
-
 	bt "phenix/web/broker/brokertypes"
-
-	"github.com/hpcloud/tail"
-	"golang.org/x/exp/slog"
+	"phenix/web/middleware"
+	"phenix/web/rbac"
 )
 
-// GET /logs?start=<start>&end=<end>
+const (
+	DefaultLogDuration = 30 * time.Second
+	MMLogParts         = 4
+	mmLogPartTime      = 1
+	mmLogPartLevel     = 2
+	mmLogPartLog       = 3
+)
+
+// GetLogs handles GET requests for /logs?start=<start>&end=<end>.
 func GetLogs(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetLogs")
 
 	var (
-		ctx   = r.Context()
-		role  = ctx.Value("role").(rbac.Role)
-		start = r.URL.Query().Get("start")
-		end   = r.URL.Query().Get("end")
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		start   = r.URL.Query().Get("start")
+		end     = r.URL.Query().Get("end")
 	)
 
 	if !role.Allowed("logs", "get") {
-		plog.Warn(plog.TypeSecurity, "getting logs not allowed", "user", ctx.Value("user").(string))
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting logs not allowed",
+			"user",
+			user,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
 	}
 
 	startTime, err := time.Parse(time.RFC3339, start)
 	if err != nil {
 		plog.Warn(plog.TypeSystem, "Invalid start time provided", "start", start, "error", err)
-		http.Error(w, "Missing or invalid start time. Expected RFC3339 format: "+err.Error(), http.StatusBadRequest)
+		http.Error(
+			w,
+			"Missing or invalid start time. Expected RFC3339 format: "+err.Error(),
+			http.StatusBadRequest,
+		)
+
 		return
 	}
 
-	endTime := time.Now().Add(time.Second * 30)
+	endTime := time.Now().Add(DefaultLogDuration)
 	if end != "" {
 		endTime, err = time.Parse(time.RFC3339, end)
 		if err != nil {
 			plog.Warn(plog.TypeSystem, "Invalid start time provided", "start", start, "error", err)
-			http.Error(w, "Invalid end time. Expected RFC3339 format: "+err.Error(), http.StatusBadRequest)
+			http.Error(
+				w,
+				"Invalid end time. Expected RFC3339 format: "+err.Error(),
+				http.StatusBadRequest,
+			)
+
 			return
 		}
 	}
@@ -67,10 +91,13 @@ func GetLogs(w http.ResponseWriter, r *http.Request) {
 		plog.Error(plog.TypeSystem, "error marshaling loglist", "error", err)
 		http.Error(w, "error with converting logs to protobuf", http.StatusInternalServerError)
 	}
-	w.Write(body)
+
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
-var mmLogRegex = regexp.MustCompile(`\A(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2})\s* (DEBUG|INFO|WARN|ERROR|FATAL) .*?: (.*)\z`)
+var mmLogRegex = regexp.MustCompile(
+	`\A(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2})\s* (DEBUG|INFO|WARN|ERROR|FATAL) .*?: (.*)\z`,
+)
 
 func mmLogLevelConversion(l string) slog.Level {
 	switch l {
@@ -80,17 +107,16 @@ func mmLogLevelConversion(l string) slog.Level {
 		return slog.LevelInfo
 	case "WARN":
 		return slog.LevelWarn
+	case "FATAL", "ERROR":
+		return slog.LevelError
 	default:
 		plog.Warn(plog.TypeSystem, "found unknown level in mm log file", "level", l)
-		fallthrough
-	case "FATAL":
-		fallthrough
-	case "ERROR":
+
 		return slog.LevelError
 	}
 }
 
-// tails mm log file and writes back as plog entries
+// SyncMinimegaLogs tails mm log file and writes back as plog entries.
 func SyncMinimegaLogs(ctx context.Context, minimega string) {
 	if minimega == "" {
 		return
@@ -98,7 +124,13 @@ func SyncMinimegaLogs(ctx context.Context, minimega string) {
 
 	logs := make(chan string)
 
-	tailConfig := tail.Config{Follow: true, ReOpen: true, Poll: true, Location: &tail.SeekInfo{Offset: 0, Whence: os.SEEK_END}}
+	tailConfig := tail.Config{ //nolint:exhaustruct // partial initialization
+		Follow:   true,
+		ReOpen:   true,
+		Poll:     true,
+		Location: &tail.SeekInfo{Offset: 0, Whence: io.SeekEnd},
+	}
+
 	mmLogs, err := tail.TailFile(minimega, tailConfig)
 	if err != nil {
 		panic("setting up tail for minimega logs: " + err.Error())
@@ -121,21 +153,29 @@ func SyncMinimegaLogs(ctx context.Context, minimega string) {
 			if log == "" {
 				continue
 			}
+
 			parts := mmLogRegex.FindStringSubmatch(log)
 
-			if len(parts) == 4 {
+			switch {
+			case len(parts) == MMLogParts:
 				body = map[string]string{
-					"time":  parts[1],
-					"level": parts[2],
-					"log":   parts[3],
+					"time":  parts[mmLogPartTime],
+					"level": parts[mmLogPartLevel],
+					"log":   parts[mmLogPartLog],
 				}
-			} else if body != nil {
+			case body != nil:
 				body["log"] = log
-			} else {
+			default:
 				continue
 			}
 
-			plog.Log(mmLogLevelConversion(body["level"]), plog.TypeMinimega, body["log"], "mm_time", body["time"])
+			plog.Log(
+				mmLogLevelConversion(body["level"]),
+				plog.TypeMinimega,
+				body["log"],
+				"mm_time",
+				body["time"],
+			)
 		}
 	}
 }

@@ -3,18 +3,17 @@ package util
 import (
 	"errors"
 	"fmt"
-	"phenix/util/plog"
-
 	"strings"
 
-	"github.com/gofrs/uuid"
+	"github.com/gofrs/uuid/v5"
+
+	"phenix/util/plog"
 )
-
-
 
 func LogErrorGetID(err error) string {
 	uuid := uuid.Must(uuid.NewV4()).String()
 	plog.Error(plog.TypeSystem, err.Error(), "uuid", uuid)
+
 	return uuid
 }
 
@@ -24,7 +23,7 @@ type HumanizedError struct {
 	uuid      string
 }
 
-func HumanizeError(err error, desc string, a ...interface{}) *HumanizedError {
+func HumanizeError(err error, desc string, a ...any) *HumanizedError {
 	var h *HumanizedError
 
 	if errors.As(err, &h) {
@@ -38,29 +37,29 @@ func HumanizeError(err error, desc string, a ...interface{}) *HumanizedError {
 	}
 }
 
-func (this HumanizedError) Error() string {
-	return this.cause.Error()
+func (e HumanizedError) Error() string {
+	return e.cause.Error()
 }
 
-func (this HumanizedError) Unwrap() error {
-	return this.cause
+func (e HumanizedError) Unwrap() error {
+	return e.cause
 }
 
-func (this HumanizedError) Humanize() string {
-	if this.humanized == "" {
-		err := strings.Split(this.cause.Error(), " ")
-		err[0] = strings.Title(err[0])
+func (e HumanizedError) Humanize() string {
+	if e.humanized == "" {
+		err := strings.Split(e.cause.Error(), " ")
+		err[0] = strings.ToUpper(err[0][:1]) + err[0][1:]
 
 		return strings.Join(err, " ")
 	}
 
-	return fmt.Sprintf("%s (search error logs for %s)", this.humanized, this.uuid)
+	return fmt.Sprintf("%s (search error logs for %s)", e.humanized, e.uuid)
 }
 
-func (this HumanizedError) Humanized() error {
-	return fmt.Errorf(this.Humanize())
+func (e HumanizedError) Humanized() error {
+	return errors.New(e.Humanize())
 }
 
-func (this HumanizedError) UUID() string {
-	return this.uuid
+func (e HumanizedError) UUID() string {
+	return e.uuid
 }

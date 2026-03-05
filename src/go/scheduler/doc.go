@@ -1,16 +1,17 @@
 /*
-Phenix schedulers customize VM scheduling on cluster nodes using VM hardware
-requirements, network configurations, etc. and cluster node capacity.
+Package scheduler contains phenix schedulers customize VM scheduling
+on cluster nodes using VM hardware requirements, network configurations,
+etc. and cluster node capacity.
 
 Default Schedulers
 
-  * isolate-experiment.go: isolates all experiment VMs on a single cluster node
-  * round-robin.go:        assigns experiment VMs to cluster nodes in a
-                           round-robin fashion
-  * subnet-compute.go:     assigns experiment VMs to cluster nodes based on
-                           interface VLAN assignments
+  - isolate-experiment.go: isolates all experiment VMs on a single cluster node
+  - round-robin.go:        assigns experiment VMs to cluster nodes in a
+    round-robin fashion
+  - subnet-compute.go:     assigns experiment VMs to cluster nodes based on
+    interface VLAN assignments
 
-Custom User Schedulers
+# Custom User Schedulers
 
 Custom user schedulers are interacted with through STDIN and STDOUT. The
 phenix `user.go` scheduler will pass a JSON blob to the custom user scheduler
@@ -26,23 +27,23 @@ convention `phenix-scheduler-<name>`.
 
 Example Custom User Scheduler
 
-  import json, sys
+	import json, sys
 
-  def eprint(*args):
-    print(*args, file=sys.stderr)
+	def eprint(*args):
+	  print(*args, file=sys.stderr)
 
-  def main() :
-    if len(sys.argv) != 1:
-      eprint("no arguments expected on the command line")
-      sys.exit(1)
+	def main() :
+	  if len(sys.argv) != 1:
+	    eprint("no arguments expected on the command line")
+	    sys.exit(1)
 
-    spec = json.loads(sys.stdin.read())
-    sched = spec.schedules
+	  spec = json.loads(sys.stdin.read())
+	  sched = spec.schedules
 
-    for n in spec['topology']['nodes']:
-      for h in n['general']['hostname']:
-        sched[h] = 'compute0'
+	  for n in spec['topology']['nodes']:
+	    for h in n['general']['hostname']:
+	      sched[h] = 'compute0'
 
-    print(json.dumps(spec))
+	  print(json.dumps(spec))
 */
 package scheduler

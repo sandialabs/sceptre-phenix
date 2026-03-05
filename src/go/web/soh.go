@@ -4,36 +4,47 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/gorilla/mux"
+
 	"phenix/api/soh"
 	"phenix/util/plog"
+	"phenix/web/middleware"
 	"phenix/web/rbac"
-
-	"github.com/gorilla/mux"
 )
 
-// GET /experiments/{exp}/soh[?statusFilter=<status filter>]
+// GetExperimentSoH handles GET requests for /experiments/{exp}/soh[?statusFilter=<status filter>].
 func GetExperimentSoH(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetExperimentSoH")
 
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
-		vars = mux.Vars(r)
-		exp  = vars["name"]
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		vars    = mux.Vars(r)
+		exp     = vars["name"]
 
 		query        = r.URL.Query()
 		statusFilter = query.Get("statusFilter")
 	)
 
 	if !role.Allowed("vms", "list") {
-		plog.Warn(plog.TypeSecurity, "getting experiment soh not allowed", "user", ctx.Value("user").(string), "exp", exp)
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting experiment soh not allowed",
+			"user",
+			user,
+			"exp",
+			exp,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
 		return
 	}
 
 	state, err := soh.Get(exp, statusFilter)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
@@ -46,8 +57,9 @@ func GetExperimentSoH(w http.ResponseWriter, r *http.Request) {
 	marshalled, err := json.Marshal(state)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+
 		return
 	}
 
-	w.Write(marshalled)
+	_, _ = w.Write(marshalled) //nolint:gosec // XSS via taint analysis
 }

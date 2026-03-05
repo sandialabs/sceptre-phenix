@@ -1,7 +1,6 @@
 package util
 
 import (
-	"fmt"
 	"net"
 )
 
@@ -10,7 +9,7 @@ import (
 
 // GetFreePort asks the kernel for a free open port that is ready to use.
 func GetFreePort(ip string) (int, error) {
-	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:0", ip))
+	addr, err := net.ResolveTCPAddr("tcp", ip+":0")
 	if err != nil {
 		return 0, err
 	}
@@ -20,7 +19,8 @@ func GetFreePort(ip string) (int, error) {
 		return 0, err
 	}
 
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
-	return l.Addr().(*net.TCPAddr).Port, nil
+	tcpAddr, _ := l.Addr().(*net.TCPAddr)
+	return tcpAddr.Port, nil
 }

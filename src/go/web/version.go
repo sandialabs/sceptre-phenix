@@ -13,8 +13,10 @@ type Version struct {
 	BuildDate string `json:"buildDate"`
 }
 
-// GET /version
+// GetVersion handles GET requests for /version.
 func GetVersion(w http.ResponseWriter, r *http.Request) {
-	body, _ := json.Marshal(Version{Commit: version.Commit, Tag: version.Tag, BuildDate: version.Date})
-	w.Write(body)
+	body, _ := json.Marshal(
+		Version{Commit: version.Commit, Tag: version.Tag, BuildDate: version.Date},
+	)
+	_, _ = w.Write(body)
 }

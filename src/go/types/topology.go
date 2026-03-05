@@ -1,36 +1,40 @@
 package types
 
 import (
+	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+
+	"github.com/mitchellh/mapstructure"
 
 	"phenix/store"
 	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
 	v0 "phenix/types/version/v0"
 	v1 "phenix/types/version/v1"
-
-	"github.com/mitchellh/mapstructure"
 )
 
-func DecodeTopologyFromConfig(c store.Config) (ifaces.TopologySpec, error) {
+func DecodeTopologyFromConfig(c store.Config) (ifaces.TopologySpec, error) { //nolint:ireturn // interface
 	return decodeTopologyRecursive(c, map[string]bool{})
 }
 
-func decodeTopologyRecursive(c store.Config, visited map[string]bool) (ifaces.TopologySpec, error) {
+func decodeTopologyRecursive( //nolint:ireturn // interface
+	c store.Config,
+	visited map[string]bool,
+) (ifaces.TopologySpec, error) {
 	if visited[c.Metadata.Name] {
 		return nil, fmt.Errorf("cyclic import detected: %s", c.Metadata.Name)
 	}
 
 	newVisited := make(map[string]bool)
-	for k, v := range visited {
-		newVisited[k] = v
-	}
+	maps.Copy(newVisited, visited)
+
 	newVisited[c.Metadata.Name] = true
 
 	var (
-		iface         interface{}
+		iface         any
 		latestVersion = version.StoredVersion[c.Kind]
 	)
 
@@ -63,7 +67,7 @@ func decodeTopologyRecursive(c store.Config, visited map[string]bool) (ifaces.To
 
 	spec, ok := iface.(ifaces.TopologySpec)
 	if !ok {
-		return nil, fmt.Errorf("invalid spec in config")
+		return nil, errors.New("invalid spec in config")
 	}
 
 	if v1Spec, ok := spec.(*v1.TopologySpec); ok {
@@ -87,8 +91,13 @@ func decodeTopologyRecursive(c store.Config, visited map[string]bool) (ifaces.To
 				for _, n := range childV1Spec.NodesF {
 					// check for duplicate hostnames
 					if existingHosts[n.GeneralF.HostnameF] {
-						return nil, fmt.Errorf("duplicate node hostname found in included topology %s: %s", include, n.GeneralF.HostnameF)
+						return nil, fmt.Errorf(
+							"duplicate node hostname found in included topology %s: %s",
+							include,
+							n.GeneralF.HostnameF,
+						)
 					}
+
 					v1Spec.NodesF = append(v1Spec.NodesF, n)
 					existingHosts[n.GeneralF.HostnameF] = true
 				}
@@ -104,7 +113,8 @@ func decodeTopologyRecursive(c store.Config, visited map[string]bool) (ifaces.To
 func loadTopology(source string) (*store.Config, error) {
 	// Try to load from the store first
 	if c, err := store.NewConfig("Topology/" + source); err == nil {
-		if err := store.Get(c); err == nil {
+		err := store.Get(c)
+		if err == nil {
 			return c, nil
 		}
 	}
@@ -115,6 +125,7 @@ func loadTopology(source string) (*store.Config, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		return store.NewConfigFromYAML(b)
 	}
 
@@ -123,11 +134,10 @@ func loadTopology(source string) (*store.Config, error) {
 
 type topology struct{}
 
-func (topology) Upgrade(version string, spec map[string]interface{}, md store.ConfigMetadata) (interface{}, error) {
-	// This is a dummy topology upgrader to provide an exmaple of how an upgrader
+func (topology) Upgrade(version string, spec map[string]any, md store.ConfigMetadata) (any, error) {
+	// This is a dummy topology upgrader to provide an example of how an upgrader
 	// might be coded up. The specs in v0 simply assume that some integer values
 	// might be represented as strings when in JSON format.
-
 	if version == "v0" {
 		var (
 			topoV0 *v0.TopologySpec
@@ -136,13 +146,15 @@ func (topology) Upgrade(version string, spec map[string]interface{}, md store.Co
 
 		// Using WeakDecode here since v0 schema uses strings for some integer
 		// values.
-		if err := mapstructure.WeakDecode(spec, &topoV0); err != nil {
+		err := mapstructure.WeakDecode(spec, &topoV0)
+		if err != nil {
 			return nil, fmt.Errorf("decoding topology into v0 spec: %w", err)
 		}
 
 		// Using WeakDecode here since v0 schema uses strings for some integer
 		// values.
-		if err := mapstructure.WeakDecode(spec, &topoV1); err != nil {
+		err = mapstructure.WeakDecode(spec, &topoV1)
+		if err != nil {
 			return nil, fmt.Errorf("decoding topology into v1 spec: %w", err)
 		}
 
@@ -165,6 +177,6 @@ func (topology) Upgrade(version string, spec map[string]interface{}, md store.Co
 	return nil, fmt.Errorf("unknown version %s to upgrade from", version)
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // upgrader registration
 	RegisterUpgrader("Topology/v1", new(topology))
 }

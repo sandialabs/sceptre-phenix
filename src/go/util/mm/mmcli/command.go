@@ -25,7 +25,7 @@ func NewCommand() *Command {
 // NewNamespacedCommand returns a pointer to a new command, initialized with the
 // given minimega namespace name.
 func NewNamespacedCommand(ns string) *Command {
-	return &Command{Namespace: ns}
+	return &Command{Namespace: ns} //nolint:exhaustruct // partial initialization
 }
 
 // String builds the actual command string to send to minimega using the command

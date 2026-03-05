@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -17,11 +18,11 @@ type Etcd struct {
 	cli *clientv3.Client
 }
 
-func NewEtcd() Store {
+func NewEtcd() Store { //nolint:ireturn // factory
 	return new(Etcd)
 }
 
-func (this *Etcd) Init(opts ...Option) error {
+func (e *Etcd) Init(opts ...Option) error {
 	options := NewOptions(opts...)
 
 	u, err := url.Parse(options.Endpoint)
@@ -33,26 +34,28 @@ func (this *Etcd) Init(opts ...Option) error {
 		return fmt.Errorf("invalid scheme '%s' for Etcd endpoint", u.Scheme)
 	}
 
-	this.endpoints = []string{u.Host + u.Path}
+	e.endpoints = []string{u.Host + u.Path}
 
-	cfg := clientv3.Config{
+	cfg := clientv3.Config{ //nolint:exhaustruct // partial initialization
 		Endpoints: []string{u.Host + u.Path},
 	}
 
-	this.cli, err = clientv3.New(cfg)
+	e.cli, err = clientv3.New(cfg)
 	if err != nil {
 		return fmt.Errorf("creating new Etcd client: %w", err)
 	}
 
-	if err := this.InitializeComponent(COMPONENT_STORE); err != nil {
-		return fmt.Errorf("initializing component %s: %w", COMPONENT_STORE, err)
+	if err := e.InitializeComponent(ComponentStore); err != nil {
+		return fmt.Errorf("initializing component %s: %w", ComponentStore, err)
 	}
 
 	return nil
 }
-func (this *Etcd) IsInitialized(component Component) bool {
+
+func (e *Etcd) IsInitialized(component Component) bool {
 	key := fmt.Sprintf("%s/%s", "phenix", string(component))
-	resp, err := this.cli.Get(context.Background(), key)
+
+	resp, err := e.cli.Get(context.Background(), key)
 	if err != nil {
 		return false
 	}
@@ -60,34 +63,35 @@ func (this *Etcd) IsInitialized(component Component) bool {
 	return string(resp.Kvs[0].Value) == "true"
 }
 
-func (this *Etcd) InitializeComponent(component Component) error {
+func (e *Etcd) InitializeComponent(component Component) error {
 	key := fmt.Sprintf("%s/%s", "phenix", string(component))
-	if _, err := this.cli.Put(context.Background(), key, "true"); err != nil {
+	if _, err := e.cli.Put(context.Background(), key, "true"); err != nil {
 		return fmt.Errorf("marking component %s as initialized: %w", component, err)
 	}
 
 	return nil
 }
 
-func (this Etcd) Close() error {
-	return this.cli.Close()
+func (e Etcd) Close() error {
+	return e.cli.Close()
 }
 
-func (this Etcd) List(kinds ...string) (Configs, error) {
+func (e Etcd) List(kinds ...string) (Configs, error) {
 	var configs Configs
 
 	for _, kind := range kinds {
 		kind = strings.ToLower(kind)
 
-		resp, err := this.cli.Get(context.Background(), kind, clientv3.WithPrefix())
+		resp, err := e.cli.Get(context.Background(), kind, clientv3.WithPrefix())
 		if err != nil {
 			return nil, fmt.Errorf("getting list of configs from Etcd: %w", err)
 		}
 
-		for _, e := range resp.Kvs {
+		for _, entry := range resp.Kvs {
 			var c Config
 
-			if err := json.Unmarshal(e.Value, &c); err != nil {
+			err := json.Unmarshal(entry.Value, &c)
+			if err != nil {
 				return nil, fmt.Errorf("unmarshaling config JSON: %w", err)
 			}
 
@@ -98,10 +102,10 @@ func (this Etcd) List(kinds ...string) (Configs, error) {
 	return configs, nil
 }
 
-func (this Etcd) Get(c *Config) error {
+func (e Etcd) Get(c *Config) error {
 	key := fmt.Sprintf("%s/%s", strings.ToLower(c.Kind), c.Metadata.Name)
 
-	resp, err := this.cli.Get(context.Background(), key)
+	resp, err := e.cli.Get(context.Background(), key)
 	if err != nil {
 		return fmt.Errorf("getting config %s from Etcd: %w", key, err)
 	}
@@ -110,19 +114,19 @@ func (this Etcd) Get(c *Config) error {
 		return fmt.Errorf("config %s not found", key)
 	}
 
-	e := resp.Kvs[0]
+	entry := resp.Kvs[0]
 
-	if err := json.Unmarshal(e.Value, &c); err != nil {
+	if err := json.Unmarshal(entry.Value, &c); err != nil {
 		return fmt.Errorf("unmarshaling config JSON: %w", err)
 	}
 
 	return nil
 }
 
-func (this Etcd) Create(c *Config) error {
+func (e Etcd) Create(c *Config) error {
 	key := fmt.Sprintf("%s/%s", strings.ToLower(c.Kind), c.Metadata.Name)
 
-	if resp, _ := this.cli.Get(context.Background(), key); resp.Count != 0 {
+	if resp, _ := e.cli.Get(context.Background(), key); resp.Count != 0 {
 		return fmt.Errorf("config %s/%s already exists", c.Kind, c.Metadata.Name)
 	}
 
@@ -136,17 +140,17 @@ func (this Etcd) Create(c *Config) error {
 		return fmt.Errorf("marshaling config JSON: %w", err)
 	}
 
-	if _, err := this.cli.Put(context.Background(), key, string(v)); err != nil {
+	if _, err := e.cli.Put(context.Background(), key, string(v)); err != nil {
 		return fmt.Errorf("writing config JSON to Etcd: %w", err)
 	}
 
 	return nil
 }
 
-func (this Etcd) Update(c *Config) error {
+func (e Etcd) Update(c *Config) error {
 	key := fmt.Sprintf("%s/%s", strings.ToLower(c.Kind), c.Metadata.Name)
 
-	if resp, _ := this.cli.Get(context.Background(), key); resp.Count == 0 {
+	if resp, _ := e.cli.Get(context.Background(), key); resp.Count == 0 {
 		return fmt.Errorf("config %s/%s doesn't exist", c.Kind, c.Metadata.Name)
 	}
 
@@ -159,21 +163,21 @@ func (this Etcd) Update(c *Config) error {
 		return fmt.Errorf("marshaling config JSON: %w", err)
 	}
 
-	if _, err := this.cli.Put(context.Background(), key, string(v)); err != nil {
+	if _, err := e.cli.Put(context.Background(), key, string(v)); err != nil {
 		return fmt.Errorf("writing config JSON to Etcd: %w", err)
 	}
 
 	return nil
 }
 
-func (this Etcd) Patch(c *Config, u map[string]interface{}) error {
-	return fmt.Errorf("not implemented")
+func (e Etcd) Patch(c *Config, u map[string]any) error {
+	return errors.New("not implemented")
 }
 
-func (this Etcd) Delete(c *Config) error {
+func (e Etcd) Delete(c *Config) error {
 	key := fmt.Sprintf("%s/%s", strings.ToLower(c.Kind), c.Metadata.Name)
 
-	if _, err := this.cli.Delete(context.Background(), key); err != nil {
+	if _, err := e.cli.Delete(context.Background(), key); err != nil {
 		return fmt.Errorf("deleting key %s: %w", key, err)
 	}
 

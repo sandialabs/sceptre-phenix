@@ -9,6 +9,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gorilla/mux"
+	"github.com/mitchellh/mapstructure"
+
 	"phenix/api/config"
 	"phenix/api/experiment"
 	"phenix/store"
@@ -17,32 +20,44 @@ import (
 	"phenix/util/common"
 	"phenix/util/plog"
 	"phenix/web/broker"
+	bt "phenix/web/broker/brokertypes"
 	"phenix/web/cache"
+	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
-
-	bt "phenix/web/broker/brokertypes"
-
-	"github.com/gorilla/mux"
-	"github.com/mitchellh/mapstructure"
 )
 
-// POST /workflow/apply/{branch}
+const maxBridgeNameLength = 15
+
+// ApplyWorkflow - POST /workflow/apply/{branch}.
+//
+//nolint:cyclop,funlen,gocyclo,maintidx // complex logic
 func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ApplyWorkflow")
 
 	var (
-		ctx   = r.Context()
-		role  = ctx.Value("role").(rbac.Role)
-		vars  = mux.Vars(r)
-		scope = vars["branch"]
-		q     = r.URL.Query()
-		tags  = ""
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		vars    = mux.Vars(r)
+		scope   = vars["branch"]
+		q       = r.URL.Query()
+		tags    string
 	)
 
 	if !role.Allowed("workflow", "create") {
-		plog.Warn(plog.TypeSecurity, "applying phenix workflow not allowed", "user", ctx.Value("user").(string))
-		err := weberror.NewWebError(nil, "applying phenix workflow is not allowed for user %s", ctx.Value("user").(string))
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"applying phenix workflow not allowed",
+			"user",
+			user,
+		)
+		err := weberror.NewWebError(
+			nil,
+			"applying phenix workflow is not allowed for user %s",
+			user,
+		)
+
 		return err.SetStatus(http.StatusForbidden)
 	}
 
@@ -57,13 +72,14 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 
 	// set branch name in environment variable so it can be used in
 	// NewConfigFromJSON and NewConfigFromYAML
-	os.Setenv("BRANCH_NAME", scope)
+	_ = os.Setenv("BRANCH_NAME", scope)
 
-	switch {
-	case typ == "application/json": // default to JSON if not set
+	switch typ {
+	case mimeJSON: // default to JSON if not set
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to read request data")
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -71,10 +87,11 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return weberror.NewWebError(err, "unable to parse phenix workflow config")
 		}
-	case typ == "application/x-yaml":
+	case mimeYAML:
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -83,7 +100,10 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to parse phenix workflow config")
 		}
 	default:
-		return weberror.NewWebError(nil, "must use application/json or application/x-yaml when providing phenix workflow config")
+		return weberror.NewWebError(
+			nil,
+			"must use application/json or application/x-yaml when providing phenix workflow config",
+		)
 	}
 
 	var wf workflow
@@ -95,6 +115,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 	experiments, err := experiment.List()
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to get list of experiments")
+
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
@@ -122,8 +143,10 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			return nil
 		}
 
-		if err := cache.LockExperimentForCreation(expName); err != nil {
+		err := cache.LockExperimentForCreation(expName)
+		if err != nil {
 			err := weberror.NewWebError(err, "unable to create new experiment")
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -149,8 +172,10 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			experiment.CreateWithGREMesh(wf.UseGREMesh),
 		}
 
-		if err := experiment.Create(ctx, opts...); err != nil {
+		err = experiment.Create(ctx, opts...)
+		if err != nil {
 			err := weberror.NewWebError(err, "unable to create new experiment")
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -186,12 +211,14 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			exp, err = experiment.Get(expName)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to update experiment %s", expName)
+
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 		}
 
 		if err := cache.LockExperimentForUpdate(expName); err != nil {
 			err := weberror.NewWebError(err, "unable to update experiment %s", expName)
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -208,20 +235,35 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		if topoName == "" {
-			err := weberror.NewWebError(fmt.Errorf("missing topology annotation"), "unable to update experiment with topology %s", topoName)
+			err := weberror.NewWebError(
+				errors.New("missing topology annotation"),
+				"unable to update experiment with topology %s",
+				topoName,
+			)
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
 		topo, _ := store.NewConfig("topology/" + topoName)
 
 		if err := store.Get(topo); err != nil {
-			err := weberror.NewWebError(err, "unable to update experiment with topology %s", topoName)
+			err := weberror.NewWebError(
+				err,
+				"unable to update experiment with topology %s",
+				topoName,
+			)
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
 		topoSpec, err := types.DecodeTopologyFromConfig(*topo)
 		if err != nil {
-			err := weberror.NewWebError(err, "unable to update experiment with topology %s", topoName)
+			err := weberror.NewWebError(
+				err,
+				"unable to update experiment with topology %s",
+				topoName,
+			)
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -236,13 +278,23 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			scenario, _ := store.NewConfig("scenario/" + scenarioName)
 
 			if err := store.Get(scenario); err != nil {
-				err := weberror.NewWebError(err, "unable to update experiment with scenario %s", scenarioName)
+				err := weberror.NewWebError(
+					err,
+					"unable to update experiment with scenario %s",
+					scenarioName,
+				)
+
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
 			scenSpec, err := types.DecodeScenarioFromConfig(*scenario)
 			if err != nil {
-				err := weberror.NewWebError(err, "unable to update experiment with scenario %s", scenarioName)
+				err := weberror.NewWebError(
+					err,
+					"unable to update experiment with scenario %s",
+					scenarioName,
+				)
+
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
@@ -255,8 +307,9 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		// default is to not override existing tags if no new tags are passed
+		//nolint:godox // TODO
 		// TODO: perhaps sorting tags and only updating those that are passed
-		// while leaving old tags that have not been overriden
+		// while leaving old tags that have not been overridden
 		if tags != "" {
 			exp.Metadata.Annotations["phenix.workflow/tags"] = tags
 		}
@@ -270,6 +323,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		// interfaces just in case the topology includes updates changing VLAN alias
 		// names.
 		for _, node := range exp.Spec.Topology().Nodes() {
+			//nolint:godox // TODO
 			// TODO: only consider nodes schedulable by minimega? Or should HIL nodes
 			// be taken into account here still as well?
 			if node.Network() == nil {
@@ -311,9 +365,9 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 
-		if len(wf.DefaultBridgeName()) > 15 {
+		if len(wf.DefaultBridgeName()) > maxBridgeNameLength {
 			err := weberror.NewWebError(
-				fmt.Errorf("default bridge name must be 15 characters or less"),
+				fmt.Errorf("default bridge name must be %d characters or less", maxBridgeNameLength),
 				"unable to set default bridge for experiment %s", expName,
 			)
 
@@ -323,11 +377,12 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		exp.Spec.SetDefaultBridge(wf.DefaultBridgeName())
 		exp.Spec.SetSchedule(schedules)
 		exp.Spec.SetDeployMode(string(wf.ExperimentDeployMode()))
-		exp.Spec.SetVLANRange(wf.VLANMin(), wf.VLANMax(), true)
+		_ = exp.Spec.SetVLANRange(wf.VLANMin(), wf.VLANMax(), true)
 		exp.Spec.SetUseGREMesh(wf.UseGREMesh)
 
 		if err := exp.WriteToStore(false); err != nil {
 			err := weberror.NewWebError(err, "unable to write updated experiment %s", expName)
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -343,22 +398,29 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	default:
-		err := weberror.NewWebError(nil, "more than one experiment is mapped to workflow branch %s", scope)
+		err := weberror.NewWebError(
+			nil,
+			"more than one experiment is mapped to workflow branch %s",
+			scope,
+		)
+
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
 	return nil
 }
 
-// POST /workflow/configs/{branch}
+// WorkflowUpsertConfig - POST /workflow/configs/{branch}.
+//
+//nolint:funlen // handler
 func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "WorkflowUpsertConfig")
 
 	var (
-		ctx   = r.Context()
-		role  = ctx.Value("role").(rbac.Role)
-		vars  = mux.Vars(r)
-		scope = vars["branch"]
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		vars    = mux.Vars(r)
+		scope   = vars["branch"]
 	)
 
 	var (
@@ -368,13 +430,14 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 
 	// set branch name in environment variable so it can be used in
 	// NewConfigFromJSON and NewConfigFromYAML
-	os.Setenv("BRANCH_NAME", scope)
+	_ = os.Setenv("BRANCH_NAME", scope)
 
-	switch {
-	case typ == "application/json": // default to JSON if not set
+	switch typ {
+	case mimeJSON: // default to JSON if not set
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to read request data")
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -382,10 +445,11 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return weberror.NewWebError(err, "unable to parse JSON config")
 		}
-	case typ == "application/x-yaml":
+	case mimeYAML:
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -394,7 +458,10 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to parse YAML config")
 		}
 	default:
-		return weberror.NewWebError(nil, "must use application/json or application/x-yaml when providing topology/scenario config")
+		return weberror.NewWebError(
+			nil,
+			"must use application/json or application/x-yaml when providing topology/scenario config",
+		)
 	}
 
 	var (
@@ -406,6 +473,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 	if err := store.Get(tester); err != nil {
 		if !errors.Is(err, store.ErrNotExist) {
 			err := weberror.NewWebError(err, "checking store for config")
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -414,13 +482,26 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 
 	if exists {
 		if !role.Allowed("configs", "update", name) {
-			plog.Warn(plog.TypeSecurity, "updating config not allowed", "user", ctx.Value("user").(string))
+			user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+			plog.Warn(
+				plog.TypeSecurity,
+				"updating config not allowed",
+				"user",
+				user,
+			)
 
-			err := weberror.NewWebError(nil, "updating config %s not allowed for %s", name, ctx.Value("user").(string))
+			err := weberror.NewWebError(
+				nil,
+				"updating config %s not allowed for %s",
+				name,
+				user,
+			)
+
 			return err.SetStatus(http.StatusForbidden)
 		}
 
-		if err := config.Update(name, cfg); err != nil {
+		err := config.Update(name, cfg)
+		if err != nil {
 			if errors.Is(err, store.ErrNotExist) {
 				return weberror.NewWebError(err, "config to update (%s) does not exist", name)
 			}
@@ -429,25 +510,37 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 				cause := errors.Unwrap(err)
 				lines := strings.Split(cause.Error(), "\n")
 
-				return weberror.NewWebError(cause, lines[0]).WithMetadata("validation", cause.Error(), true)
+				return weberror.NewWebError(cause, "%s", lines[0]).
+					WithMetadata("validation", cause.Error(), true)
 			}
 
 			if errors.Is(err, store.ErrInvalidFormat) {
 				cause := errors.Unwrap(err)
-				return weberror.NewWebError(cause, "invalid formatting").WithMetadata("validation", cause.Error(), true)
+
+				return weberror.NewWebError(cause, "invalid formatting").
+					WithMetadata("validation", cause.Error(), true)
 			}
 
 			return weberror.NewWebError(err, "unable to update config %s", name)
 		}
 	} else {
 		if !role.Allowed("configs", "create") {
-			err := weberror.NewWebError(nil, "creating configs not allowed for %s", ctx.Value("user").(string))
+			user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+			err := weberror.NewWebError(
+				nil,
+				"creating configs not allowed for %s",
+				user,
+			)
+
 			return err.SetStatus(http.StatusForbidden)
 		}
 
 		var (
-			opts = []config.CreateOption{config.CreateFromConfig(cfg), config.CreateWithValidation()}
-			err  error
+			opts = []config.CreateOption{
+				config.CreateFromConfig(cfg),
+				config.CreateWithValidation(),
+			}
+			err error
 		)
 
 		cfg, err = config.Create(opts...)
@@ -460,12 +553,15 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 				cause := errors.Unwrap(err)
 				lines := strings.Split(cause.Error(), "\n")
 
-				return weberror.NewWebError(cause, lines[0]).WithMetadata("validation", cause.Error(), true)
+				return weberror.NewWebError(cause, "%s", lines[0]).
+					WithMetadata("validation", cause.Error(), true)
 			}
 
 			if errors.Is(err, store.ErrInvalidFormat) {
 				cause := errors.Unwrap(err)
-				return weberror.NewWebError(cause, "invalid formatting").WithMetadata("validation", cause.Error(), true)
+
+				return weberror.NewWebError(cause, "invalid formatting").
+					WithMetadata("validation", cause.Error(), true)
 			}
 
 			if errors.Is(err, version.ErrInvalidKind) {
@@ -476,7 +572,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	w.Header().Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s", name)))
+	w.Header().Set("Location", strings.ToLower("/api/v1/configs/"+name))
 	w.WriteHeader(http.StatusCreated)
 
 	cfg.Spec = nil
@@ -485,6 +581,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 	body, err := json.Marshal(cfg)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling config", "config", cfg.FullName(), "err", err)
+
 		return nil
 	}
 
@@ -507,7 +604,7 @@ type workflow struct {
 	Topology   string            `mapstructure:"topology"`
 	Scenario   string            `mapstructure:"scenario"`
 	VLANs      map[string]int    `mapstructure:"vlans"`
-	Schedules  map[string]string `mapstructue:"schedules"`
+	Schedules  map[string]string `mapstructure:"schedules"`
 	DeployMode string            `mapstructure:"deployMode"`
 	UseGREMesh bool              `mapstructure:"useGREMesh"`
 
@@ -519,64 +616,64 @@ type workflow struct {
 	DefaultBridge string `mapstructure:"defaultBridge"`
 }
 
-func (this workflow) AutoUpdate() bool {
-	if this.Auto == nil {
+func (w workflow) AutoUpdate() bool {
+	if w.Auto == nil {
 		return true
 	}
 
-	if this.Auto.Update == nil {
+	if w.Auto.Update == nil {
 		return true
 	}
 
-	return *this.Auto.Update
+	return *w.Auto.Update
 }
 
-func (this workflow) AutoRestart() bool {
-	if this.Auto == nil {
+func (w workflow) AutoRestart() bool {
+	if w.Auto == nil {
 		return true
 	}
 
-	if this.Auto.Restart == nil {
+	if w.Auto.Restart == nil {
 		return true
 	}
 
-	return *this.Auto.Restart
+	return *w.Auto.Restart
 }
 
-func (this workflow) ExperimentName() string {
-	if this.Auto == nil {
+func (w workflow) ExperimentName() string {
+	if w.Auto == nil {
 		return ""
 	}
 
-	return this.Auto.Create
+	return w.Auto.Create
 }
 
-func (this workflow) ExperimentTopology() string {
-	return this.Topology
+func (w workflow) ExperimentTopology() string {
+	return w.Topology
 }
 
-func (this workflow) ExperimentScenario() string {
-	return this.Scenario
+func (w workflow) ExperimentScenario() string {
+	return w.Scenario
 }
 
-func (this workflow) VLANMappings() map[string]int {
-	if this.VLANs == nil {
+func (w workflow) VLANMappings() map[string]int {
+	if w.VLANs == nil {
 		return make(map[string]int)
 	}
 
-	return this.VLANs
+	return w.VLANs
 }
 
-func (this workflow) ScheduleMappings() map[string]string {
-	if this.Schedules == nil {
+func (w workflow) ScheduleMappings() map[string]string {
+	if w.Schedules == nil {
 		return make(map[string]string)
 	}
 
-	return this.Schedules
+	return w.Schedules
 }
 
-func (this workflow) ExperimentDeployMode() common.DeploymentMode {
-	mode, err := common.ParseDeployMode(this.DeployMode)
+func (w workflow) ExperimentDeployMode() common.DeploymentMode {
+	mode, err := common.ParseDeployMode(w.DeployMode)
 	if err != nil { // this will happen if deploy mode isn't provided in workflow config
 		return common.DeployMode
 	}
@@ -584,26 +681,26 @@ func (this workflow) ExperimentDeployMode() common.DeploymentMode {
 	return mode
 }
 
-func (this workflow) VLANMin() int {
-	if this.VLANRange == nil {
+func (w workflow) VLANMin() int {
+	if w.VLANRange == nil {
 		return 0
 	}
 
-	return this.VLANRange.Min
+	return w.VLANRange.Min
 }
 
-func (this workflow) VLANMax() int {
-	if this.VLANRange == nil {
+func (w workflow) VLANMax() int {
+	if w.VLANRange == nil {
 		return 0
 	}
 
-	return this.VLANRange.Max
+	return w.VLANRange.Max
 }
 
-func (this workflow) DefaultBridgeName() string {
-	if this.DefaultBridge == "" {
+func (w workflow) DefaultBridgeName() string {
+	if w.DefaultBridge == "" {
 		return "phenix"
 	}
 
-	return this.DefaultBridge
+	return w.DefaultBridge
 }

@@ -5,6 +5,8 @@ import (
 	"phenix/util/common"
 )
 
+const defaultBridgeName = "phenix"
+
 type CreateOption func(*createOptions)
 
 type createOptions struct {
@@ -24,7 +26,7 @@ type createOptions struct {
 }
 
 func newCreateOptions(opts ...CreateOption) createOptions {
-	o := createOptions{
+	o := createOptions{ //nolint:exhaustruct // functional options pattern
 		deployMode: common.DeployMode,
 		useGREMesh: common.UseGREMesh,
 	}
@@ -38,7 +40,7 @@ func newCreateOptions(opts ...CreateOption) createOptions {
 	}
 
 	if o.defaultBridge == "" {
-		o.defaultBridge = "phenix"
+		o.defaultBridge = defaultBridgeName
 	}
 
 	return o

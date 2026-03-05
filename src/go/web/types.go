@@ -8,14 +8,14 @@ import (
 
 type SignupRequest struct {
 	Username  string `json:"username"`
-	Password  string `json:"password"`
+	Password  string `json:"password"` //nolint:gosec // Exported struct field "Password" matches secret pattern
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 }
 
 type CreateUserRequest struct {
 	Username      string   `json:"username"`
-	Password      string   `json:"password"`
+	Password      string   `json:"password"` //nolint:gosec // Exported struct field "Password" matches secret pattern
 	FirstName     string   `json:"first_name"`
 	LastName      string   `json:"last_name"`
 	RoleName      string   `json:"role_name"`
@@ -41,7 +41,7 @@ type CreateTokenResponse struct {
 
 type LoginRequest struct {
 	Username string `json:"user"`
-	Password string `json:"pass"`
+	Password string `json:"pass"` //nolint:gosec // Exported struct field "Password" matches secret pattern
 }
 
 type LoginResponse struct {
@@ -72,7 +72,7 @@ type Role struct {
 func userFromRBAC(u rbac.User) User {
 	role, _ := u.Role()
 
-	user := User{
+	user := User{ //nolint:exhaustruct // partial initialization
 		Username:      u.Username(),
 		FirstName:     u.FirstName(),
 		LastName:      u.LastName(),
@@ -103,12 +103,14 @@ func roleFromRBAC(r rbac.Role) Role {
 
 func resourceNamesFromRBAC(r rbac.Role) []string {
 	rnamemap := make(map[string]struct{})
+
 	for _, p := range r.Spec.Policies {
 		var skip bool
 
 		for _, pn := range p.Resources {
 			if pn == "disks" || pn == "hosts" || pn == "users" {
 				skip = true
+
 				break
 			}
 		}
@@ -122,12 +124,13 @@ func resourceNamesFromRBAC(r rbac.Role) []string {
 		}
 	}
 
-	var rnames []string
+	rnames := make([]string, 0, len(rnamemap))
 
 	for n := range rnamemap {
 		rnames = append(rnames, n)
 	}
 
 	sort.Strings(rnames)
+
 	return rnames
 }

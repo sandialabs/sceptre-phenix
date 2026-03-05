@@ -5,7 +5,7 @@ import (
 	"phenix/util/shell"
 )
 
-var schedulers = make(map[string]Scheduler)
+var schedulers = make(map[string]Scheduler) //nolint:gochecknoglobals // global registry
 
 // Scheduler is the interface that identifies all the required functionality for
 // a phenix scheduler.
@@ -22,15 +22,13 @@ type Scheduler interface {
 }
 
 func List() []string {
-	var names []string
+	names := make([]string, 0, len(schedulers))
 
 	for name := range schedulers {
 		names = append(names, name)
 	}
 
-	for _, name := range shell.FindCommandsWithPrefix("phenix-scheduler-") {
-		names = append(names, name)
-	}
+	names = append(names, shell.FindCommandsWithPrefix("phenix-scheduler-")...)
 
 	return names
 }
@@ -39,7 +37,7 @@ func Schedule(name string, spec ifaces.ExperimentSpec) error {
 	scheduler, ok := schedulers[name]
 	if !ok {
 		scheduler = new(userScheduler)
-		scheduler.Init(Name(name))
+		_ = scheduler.Init(Name(name))
 	}
 
 	return scheduler.Schedule(spec)

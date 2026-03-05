@@ -4,65 +4,69 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"phenix/util"
 	"sync"
 	"time"
+
+	"phenix/util"
 )
 
-type GroupState struct {
+const c2OptionPadding = 2
+
+type GroupStateError struct {
 	Msg string
 	Err error
 
-	Meta map[string]interface{}
+	Meta map[string]any
 }
 
-func NewGroupSuccess(msg string, meta map[string]interface{}) GroupState {
-	return GroupState{Msg: msg, Meta: meta}
+func NewGroupSuccess(msg string, meta map[string]any) GroupStateError {
+	return GroupStateError{Msg: msg, Meta: meta} //nolint:exhaustruct // partial initialization
 }
 
-func NewGroupError(err error, meta map[string]interface{}) GroupState {
-	return GroupState{Err: err, Meta: meta}
+func NewGroupError(err error, meta map[string]any) GroupStateError {
+	return GroupStateError{Err: err, Meta: meta} //nolint:exhaustruct // partial initialization
 }
 
-func (this GroupState) Error() string {
-	return this.Err.Error()
+func (g GroupStateError) Error() string {
+	return g.Err.Error()
 }
 
-func (this GroupState) Unwrap() error {
-	return this.Err
+func (g GroupStateError) Unwrap() error {
+	return g.Err
 }
 
 type StateGroup struct {
-	sync.Mutex     // embed
 	sync.WaitGroup // embed
 
-	States   []GroupState
+	mu sync.Mutex
+
+	States   []GroupStateError
 	ErrCount int
 }
 
-func (this *StateGroup) AddSuccess(msg string, meta map[string]interface{}) {
-	this.Lock()
-	defer this.Unlock()
+func (s *StateGroup) AddSuccess(msg string, meta map[string]any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	this.States = append(this.States, NewGroupSuccess(msg, meta))
+	s.States = append(s.States, NewGroupSuccess(msg, meta))
 }
 
-func (this *StateGroup) AddError(err error, meta map[string]interface{}) {
-	this.Lock()
-	defer this.Unlock()
+func (s *StateGroup) AddError(err error, meta map[string]any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	this.States = append(this.States, NewGroupError(err, meta))
-	this.ErrCount++
+	s.States = append(s.States, NewGroupError(err, meta))
+	s.ErrCount++
 }
 
-func (this *StateGroup) AddGroupState(state GroupState) {
-	this.Lock()
-	defer this.Unlock()
+func (s *StateGroup) AddGroupStateError(state GroupStateError) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	this.States = append(this.States, state)
+	s.States = append(s.States, state)
 
 	if state.Err != nil {
-		this.ErrCount++
+		s.ErrCount++
 	}
 }
 
@@ -77,7 +81,7 @@ func (C2RetryError) Error() string {
 type C2ParallelCommand struct {
 	Wait           *StateGroup
 	Options        []C2Option
-	Meta           map[string]interface{}
+	Meta           map[string]any
 	Expected       func(string) error
 	ExpectedStdout func(string) error
 	ExpectedStderr func(string) error
@@ -89,20 +93,24 @@ func ScheduleC2ParallelCommand(ctx context.Context, cmd *C2ParallelCommand) {
 	go func() {
 		defer cmd.Wait.Done()
 
-		opts := append(cmd.Options, C2Context(ctx), C2Wait())
+		opts := make([]C2Option, 0, len(cmd.Options)+c2OptionPadding)
+		opts = append(opts, cmd.Options...)
+		opts = append(opts, C2Context(ctx), C2Wait())
 
 		id, err := ExecC2Command(opts...)
 		if err != nil {
 			cmd.Wait.AddError(fmt.Errorf("executing C2 command: %w", err), cmd.Meta)
+
 			return
 		}
 
-		opts = append(cmd.Options, C2CommandID(id))
+		opts = append(opts, C2CommandID(id))
 
 		if cmd.Expected != nil {
 			resp, err := GetC2Response(opts...)
 			if err != nil {
 				cmd.Wait.AddError(fmt.Errorf("getting response for C2 command: %w", err), cmd.Meta)
+
 				return
 			}
 
@@ -110,7 +118,8 @@ func ScheduleC2ParallelCommand(ctx context.Context, cmd *C2ParallelCommand) {
 				var retry C2RetryError
 
 				if errors.As(err, &retry) {
-					if err := util.SleepContext(ctx, retry.Delay); err != nil {
+					err := util.SleepContext(ctx, retry.Delay)
+					if err != nil {
 						return
 					}
 
@@ -126,7 +135,11 @@ func ScheduleC2ParallelCommand(ctx context.Context, cmd *C2ParallelCommand) {
 
 			resp, err := GetC2Response(opts...)
 			if err != nil {
-				cmd.Wait.AddError(fmt.Errorf("getting STDOUT response for C2 command: %w", err), cmd.Meta)
+				cmd.Wait.AddError(
+					fmt.Errorf("getting STDOUT response for C2 command: %w", err),
+					cmd.Meta,
+				)
+
 				return
 			}
 
@@ -134,7 +147,8 @@ func ScheduleC2ParallelCommand(ctx context.Context, cmd *C2ParallelCommand) {
 				var retry C2RetryError
 
 				if errors.As(err, &retry) {
-					if err := util.SleepContext(ctx, retry.Delay); err != nil {
+					err := util.SleepContext(ctx, retry.Delay)
+					if err != nil {
 						return
 					}
 
@@ -150,7 +164,11 @@ func ScheduleC2ParallelCommand(ctx context.Context, cmd *C2ParallelCommand) {
 
 			resp, err := GetC2Response(opts...)
 			if err != nil {
-				cmd.Wait.AddError(fmt.Errorf("getting STDERR response for C2 command: %w", err), cmd.Meta)
+				cmd.Wait.AddError(
+					fmt.Errorf("getting STDERR response for C2 command: %w", err),
+					cmd.Meta,
+				)
+
 				return
 			}
 
@@ -158,7 +176,8 @@ func ScheduleC2ParallelCommand(ctx context.Context, cmd *C2ParallelCommand) {
 				var retry C2RetryError
 
 				if errors.As(err, &retry) {
-					if err := util.SleepContext(ctx, retry.Delay); err != nil {
+					err := util.SleepContext(ctx, retry.Delay)
+					if err != nil {
 						return
 					}
 

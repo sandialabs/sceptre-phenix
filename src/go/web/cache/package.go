@@ -2,6 +2,7 @@ package cache
 
 import "time"
 
+//nolint:gochecknoglobals // global cache
 var DefaultWebCache WebCache = NewGoWebCache()
 
 func Get(key string) ([]byte, bool) {

@@ -7,42 +7,42 @@ import (
 type Format string
 
 const (
-	Format_Raw   Format = "raw"
-	Format_Qcow2 Format = "qcow2"
-	Format_Vmdk  Format = "vmdk"
-	Format_Vdi   Format = "vdi"
-	Format_Vhdx  Format = "vhdx"
+	FormatRaw   Format = "raw"
+	FormatQcow2 Format = "qcow2"
+	FormatVmdk  Format = "vmdk"
+	FormatVdi   Format = "vdi"
+	FormatVhdx  Format = "vhdx"
 )
 
 type Image struct {
-	Name                string
-	Variant             string            `json:"variant" yaml:"variant"`
-	Release             string            `json:"release" yaml:"release"`
-	Format              Format            `json:"format" yaml:"format"`
-	Ramdisk             bool              `json:"ramdisk" yaml:"ramdisk"`
-	Compress            bool              `json:"compress" yaml:"compress"`
-	Size                string            `json:"size" yaml:"size"`
-	Mirror              string            `json:"mirror" yaml:"mirror"`
-	SkipDefaultPackages bool              `json:"skip_default_packages" yaml:"skip_default_packages"`
-	Packages            []string          `json:"packages" yaml:"packages"`
-	Overlays            []string          `json:"overlays" yaml:"overlays"`
-	Scripts             map[string]string `json:"scripts" yaml:"scripts"`
-	ScriptOrder         []string          `json:"script_order" yaml:"script_order" structs:"script_order" mapstructure:"script_order"`
-	Components          []string          `json:"components" yaml:"components"`
-	NoVirtuals          bool              `json:"no_virtuals" yaml:"no_virtuals" structs:"no_virtuals" mapstructure:"no_virtuals"`
-	Kernel              []string          `json:"kernel" yaml:"kernel"`
+	Name                string            `mapstructure:"name"`
+	Variant             string            `mapstructure:"variant"               json:"variant"               yaml:"variant"`
+	Release             string            `mapstructure:"release"               json:"release"               yaml:"release"`
+	Format              Format            `mapstructure:"format"                json:"format"                yaml:"format"`
+	Ramdisk             bool              `mapstructure:"ramdisk"               json:"ramdisk"               yaml:"ramdisk"`
+	Compress            bool              `mapstructure:"compress"              json:"compress"              yaml:"compress"`
+	Size                string            `mapstructure:"size"                  json:"size"                  yaml:"size"`
+	Mirror              string            `mapstructure:"mirror"                json:"mirror"                yaml:"mirror"`
+	SkipDefaultPackages bool              `mapstructure:"skip_default_packages" json:"skip_default_packages" yaml:"skip_default_packages"`
+	Packages            []string          `mapstructure:"packages"              json:"packages"              yaml:"packages"`
+	Overlays            []string          `mapstructure:"overlays"              json:"overlays"              yaml:"overlays"`
+	Scripts             map[string]string `mapstructure:"scripts"               json:"scripts"               yaml:"scripts"`
+	ScriptOrder         []string          `mapstructure:"script_order"          json:"script_order"          yaml:"script_order"          structs:"script_order"`
+	Components          []string          `mapstructure:"components"            json:"components"            yaml:"components"`
+	NoVirtuals          bool              `mapstructure:"no_virtuals"           json:"no_virtuals"           yaml:"no_virtuals"           structs:"no_virtuals"`
+	Kernel              []string          `mapstructure:"kernel"                json:"kernel"                yaml:"kernel"`
 
-	Cache       bool     `json:"-" yaml:"-" structs:"-" mapstructure:"-"`
-	ScriptPaths []string `json:"-" yaml:"-" structs:"-" mapstructure:"-"`
+	Cache       bool     `json:"-" mapstructure:"-" structs:"-" yaml:"-"`
+	ScriptPaths []string `json:"-" mapstructure:"-" structs:"-" yaml:"-"`
 }
 
-func (this Image) PostBuild() string {
+func (i Image) PostBuild() string {
 	var post []string
 
-	for _, o := range this.ScriptOrder {
-		s := this.Scripts[o]
+	for _, o := range i.ScriptOrder {
+		s := i.Scripts[o]
 
-		for _, l := range strings.Split(s, "\n") {
+		for l := range strings.SplitSeq(s, "\n") {
 			if l == "" {
 				continue
 			}

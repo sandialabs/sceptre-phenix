@@ -1,11 +1,11 @@
 package v1
 
 type UserSpec struct {
-	Username  string    `yaml:"username" json:"username" structs:"username" mapstructure:"username"`
-	Password  string    `yaml:"password" json:"password" structs:"password" mapstructure:"password"`
-	FirstName string    `yaml:"firstName" json:"first_name" structs:"first_name" mapstructure:"first_name"`
-	LastName  string    `yaml:"lastName" json:"last_name" structs:"last_name" mapstructure:"last_name"`
-	Role      *RoleSpec `yaml:"rbac" json:"rbac" structs:"rbac" mapstructure:"rbac"`
+	Username  string    `json:"username"   mapstructure:"username"   structs:"username"   yaml:"username"`
+	Password  string    `json:"password"   mapstructure:"password"   structs:"password"   yaml:"password"` //nolint:gosec // Exported struct field "Password" matches secret pattern
+	FirstName string    `json:"first_name" mapstructure:"first_name" structs:"first_name" yaml:"firstName"`
+	LastName  string    `json:"last_name"  mapstructure:"last_name"  structs:"last_name"  yaml:"lastName"`
+	Role      *RoleSpec `json:"rbac"       mapstructure:"rbac"       structs:"rbac"       yaml:"rbac"`
 
-	Tokens map[string]string `yaml:"tokens" json:"tokens" structs:"tokens" mapstructure:"tokens"`
+	Tokens map[string]string `json:"tokens" mapstructure:"tokens" structs:"tokens" yaml:"tokens"`
 }

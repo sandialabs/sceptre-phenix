@@ -1,20 +1,21 @@
-package experiment
+package experiment_test
 
 import (
 	"testing"
 
-	"phenix/store"
-
 	"github.com/golang/mock/gomock"
+
+	"phenix/api/experiment"
+	"phenix/store"
 )
 
 func TestList(t *testing.T) {
 	configs := store.Configs(
 		[]store.Config{
-			{
+			{ //nolint:exhaustruct // mock data
 				Version: "phenix.sandia.gov/v1",
 				Kind:    "Experiment",
-				Metadata: store.ConfigMetadata{
+				Metadata: store.ConfigMetadata{ //nolint:exhaustruct // mock data
 					Name: "test-experiment",
 				},
 			},
@@ -27,9 +28,9 @@ func TestList(t *testing.T) {
 	m := store.NewMockStore(ctrl)
 	m.EXPECT().List(gomock.Eq("Experiment")).Return(configs, nil)
 
-	store.DefaultStore = m
+	store.DefaultStore = m //nolint:reassign // monkey patching for test
 
-	c, err := List()
+	c, err := experiment.List()
 	if err != nil {
 		t.Log(err)
 		t.FailNow()

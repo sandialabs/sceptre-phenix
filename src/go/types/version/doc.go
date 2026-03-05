@@ -1,2 +1,2 @@
-// Versioned struct type helper functions.
+// Package version contains versioned struct type helper functions.
 package version

@@ -2,14 +2,30 @@ package scorch
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 
 	"phenix/api/experiment"
 	"phenix/api/scorch/scorchmd"
 	"phenix/web/broker"
-
 	bt "phenix/web/broker/brokertypes"
+)
+
+const (
+	stageConfigure    = "configure"
+	stageStart        = "start"
+	stageStop         = "stop"
+	stageCleanup      = "cleanup"
+	stageDone         = "done"
+	stageLoop         = "loop"
+	defaultEdgeWeight = 2
+
+	idxConfigure = 0
+	idxStart     = 1
+	idxStop      = 2
+	idxCleanup   = 3
+	idxDone      = 4
 )
 
 /*
@@ -39,20 +55,20 @@ type node struct {
 	edges map[int]*edge
 }
 
-func (this *node) addEdge(n *node, weight int) {
-	e := &edge{Index: n.idx, Weight: weight}
+func (n *node) addEdge(target *node, weight int) {
+	e := &edge{Index: target.idx, Weight: weight}
 
-	this.Next = append(this.Next, e)
+	n.Next = append(n.Next, e)
 
-	if this.edges == nil {
-		this.edges = make(map[int]*edge)
+	if n.edges == nil {
+		n.edges = make(map[int]*edge)
 	}
 
-	this.edges[n.idx] = e
+	n.edges[target.idx] = e
 }
 
-func (this *node) updateEdge(n *node, weight int) {
-	if e, ok := this.edges[n.idx]; ok {
+func (n *node) updateEdge(target *node, weight int) { //nolint:unparam // weight is always 2
+	if e, ok := n.edges[target.idx]; ok {
 		e.Weight = weight
 	}
 }
@@ -87,88 +103,88 @@ type pipeline struct {
 	cleanups map[string]*node
 }
 
-func (this *pipeline) addNode(stage string, node *node) {
-	node.idx = len(this.Pipeline)
-	node.Exp = this.exp
-	node.Run = this.runID
-	node.Loop = this.loopID
+func (p *pipeline) addNode(stage string, node *node) {
+	node.idx = len(p.Pipeline)
+	node.Exp = p.exp
+	node.Run = p.runID
+	node.Loop = p.loopID
 
-	this.Pipeline = append(this.Pipeline, node)
+	p.Pipeline = append(p.Pipeline, node)
 
 	switch stage {
-	case "configure":
-		this.configs[node.Name] = node
-	case "start":
-		this.starts[node.Name] = node
-	case "stop":
-		this.stops[node.Name] = node
-	case "cleanup":
-		this.cleanups[node.Name] = node
+	case stageConfigure:
+		p.configs[node.Name] = node
+	case stageStart:
+		p.starts[node.Name] = node
+	case stageStop:
+		p.stops[node.Name] = node
+	case stageCleanup:
+		p.cleanups[node.Name] = node
 	}
 }
 
-func (this *pipeline) addComponentToStage(stage string, node *node) {
+func (p *pipeline) addComponentToStage(stage string, node *node) {
 	node.Stage = stage
 
 	switch stage {
-	case "configure":
-		this.config.addEdge(node, 0)
-	case "start":
-		this.start.addEdge(node, 0)
-	case "stop":
-		this.stop.addEdge(node, 0)
-	case "cleanup":
-		this.cleanup.addEdge(node, 0)
+	case stageConfigure:
+		p.config.addEdge(node, 0)
+	case stageStart:
+		p.start.addEdge(node, 0)
+	case stageStop:
+		p.stop.addEdge(node, 0)
+	case stageCleanup:
+		p.cleanup.addEdge(node, 0)
 	}
 }
 
-func (this *pipeline) setStageStatus(stage string, status string) bool {
+func (p *pipeline) setStageStatus(stage, status string) bool {
 	switch stage {
-	case "configure":
-		this.config.Status = status
+	case stageConfigure:
+		p.config.Status = status
 
 		switch status {
-		case "success", "failure":
-			this.config.updateEdge(this.start, 2)
+		case statusSuccess, statusFailure:
+			p.config.updateEdge(p.start, defaultEdgeWeight)
 		}
-	case "start":
-		this.start.Status = status
+	case stageStart:
+		p.start.Status = status
 
 		switch status {
-		case "success", "failure":
-			next := this.stop
-			if this.loop != nil {
-				next = this.loop
+		case statusSuccess, statusFailure:
+			next := p.stop
+			if p.loop != nil {
+				next = p.loop
 			}
 
-			this.start.updateEdge(next, 2)
+			p.start.updateEdge(next, defaultEdgeWeight)
 		}
-	case "stop":
-		this.stop.Status = status
+	case stageStop:
+		p.stop.Status = status
 
 		switch status {
-		case "success", "failure":
-			this.stop.updateEdge(this.cleanup, 2)
+		case statusSuccess, statusFailure:
+			p.stop.updateEdge(p.cleanup, defaultEdgeWeight)
 		}
-	case "cleanup":
-		this.cleanup.Status = status
+	case stageCleanup:
+		p.cleanup.Status = status
 
 		switch status {
-		case "success", "failure":
-			this.cleanup.updateEdge(this.done, 2)
+		case statusSuccess, statusFailure:
+			p.cleanup.updateEdge(p.done, defaultEdgeWeight)
 		}
-	case "done":
-		this.done.Status = status
-	case "loop":
-		if this.loop == nil {
+	case stageDone:
+		p.done.Status = status
+	case stageLoop:
+		if p.loop == nil {
 			return false
 		}
 
-		this.loop.Status = status
+		p.loop.Status = status
 
 		switch status {
-		case "success", "failure":
-			this.loop.updateEdge(this.stop, 2)
+		case statusSuccess, statusFailure:
+			p.loop.updateEdge(p.stop, defaultEdgeWeight)
 		}
 	default:
 		return false
@@ -177,10 +193,11 @@ func (this *pipeline) setStageStatus(stage string, status string) bool {
 	return true
 }
 
-func (this *pipeline) updateNodeStatus(stage string, name string, status string) bool {
+//nolint:cyclop,funlen,gocyclo // complex logic
+func (p *pipeline) updateNodeStatus(stage, name, status string) bool {
 	switch stage {
-	case "configure":
-		node, ok := this.configs[name]
+	case stageConfigure:
+		node, ok := p.configs[name]
 		if !ok {
 			return false
 		}
@@ -188,37 +205,38 @@ func (this *pipeline) updateNodeStatus(stage string, name string, status string)
 		node.Status = status
 
 		switch status {
-		case "running", "unstable":
-			this.config.Status = "running"
-			this.config.updateEdge(node, 2)
-		case "background":
-			this.config.Status = "running"
-			this.config.updateEdge(node, 2)
+		case statusRunning, statusUnstable:
+			p.config.Status = statusRunning
+			p.config.updateEdge(node, defaultEdgeWeight)
+		case statusBackground:
+			p.config.Status = statusRunning
+			p.config.updateEdge(node, defaultEdgeWeight)
 
 			fallthrough
-		case "success":
+		case statusSuccess:
 			complete := true
 
-			for _, v := range this.configs {
-				if v.Status != "background" && v.Status != "success" {
+			for _, v := range p.configs {
+				if v.Status != statusBackground && v.Status != statusSuccess {
 					complete = false
+
 					break
 				}
 			}
 
 			if complete {
-				this.config.Status = "success"
+				p.config.Status = statusSuccess
 
-				for _, v := range this.configs {
-					v.updateEdge(this.start, 2)
+				for _, v := range p.configs {
+					v.updateEdge(p.start, defaultEdgeWeight)
 				}
 			}
-		case "failure":
-			this.config.Status = "failure"
-			this.config.addEdge(this.cleanup, 2)
+		case statusFailure:
+			p.config.Status = statusFailure
+			p.config.addEdge(p.cleanup, defaultEdgeWeight)
 		}
-	case "start":
-		node, ok := this.starts[name]
+	case stageStart:
+		node, ok := p.starts[name]
 		if !ok {
 			return false
 		}
@@ -226,42 +244,43 @@ func (this *pipeline) updateNodeStatus(stage string, name string, status string)
 		node.Status = status
 
 		switch status {
-		case "running", "unstable":
-			this.start.Status = "running"
-			this.start.updateEdge(node, 2)
-		case "background":
-			this.start.Status = "running"
-			this.start.updateEdge(node, 2)
+		case statusRunning, statusUnstable:
+			p.start.Status = statusRunning
+			p.start.updateEdge(node, defaultEdgeWeight)
+		case statusBackground:
+			p.start.Status = statusRunning
+			p.start.updateEdge(node, defaultEdgeWeight)
 
 			fallthrough
-		case "success":
+		case statusSuccess:
 			complete := true
 
-			for _, v := range this.starts {
-				if v.Status != "background" && v.Status != "success" {
+			for _, v := range p.starts {
+				if v.Status != statusBackground && v.Status != statusSuccess {
 					complete = false
+
 					break
 				}
 			}
 
 			if complete {
-				this.start.Status = "success"
+				p.start.Status = statusSuccess
 
-				for _, v := range this.starts {
-					next := this.stop
-					if this.loop != nil {
-						next = this.loop
+				for _, v := range p.starts {
+					next := p.stop
+					if p.loop != nil {
+						next = p.loop
 					}
 
-					v.updateEdge(next, 2)
+					v.updateEdge(next, defaultEdgeWeight)
 				}
 			}
-		case "failure":
-			this.start.Status = "failure"
-			this.start.addEdge(this.stop, 2)
+		case statusFailure:
+			p.start.Status = statusFailure
+			p.start.addEdge(p.stop, defaultEdgeWeight)
 		}
-	case "stop":
-		node, ok := this.stops[name]
+	case stageStop:
+		node, ok := p.stops[name]
 		if !ok {
 			return false
 		}
@@ -269,19 +288,19 @@ func (this *pipeline) updateNodeStatus(stage string, name string, status string)
 		node.Status = status
 
 		switch status {
-		case "running", "unstable":
-			this.stop.Status = "running"
-			this.stop.updateEdge(node, 2)
+		case statusRunning, statusUnstable:
+			p.stop.Status = statusRunning
+			p.stop.updateEdge(node, defaultEdgeWeight)
 		}
 
 		complete := true
-		finalStatus := "success"
+		finalStatus := statusSuccess
 
-		for _, v := range this.stops {
+		for _, v := range p.stops {
 			switch v.Status {
-			case "success":
-			case "failure":
-				finalStatus = "failure"
+			case statusSuccess:
+			case statusFailure:
+				finalStatus = statusFailure
 			default:
 				complete = false
 			}
@@ -292,14 +311,14 @@ func (this *pipeline) updateNodeStatus(stage string, name string, status string)
 		}
 
 		if complete {
-			this.stop.Status = finalStatus
+			p.stop.Status = finalStatus
 
-			for _, v := range this.stops {
-				v.updateEdge(this.cleanup, 2)
+			for _, v := range p.stops {
+				v.updateEdge(p.cleanup, defaultEdgeWeight)
 			}
 		}
-	case "cleanup":
-		node, ok := this.cleanups[name]
+	case stageCleanup:
+		node, ok := p.cleanups[name]
 		if !ok {
 			return false
 		}
@@ -307,19 +326,19 @@ func (this *pipeline) updateNodeStatus(stage string, name string, status string)
 		node.Status = status
 
 		switch status {
-		case "running", "unstable":
-			this.cleanup.Status = "running"
-			this.cleanup.updateEdge(node, 2)
+		case statusRunning, statusUnstable:
+			p.cleanup.Status = statusRunning
+			p.cleanup.updateEdge(node, defaultEdgeWeight)
 		}
 
 		complete := true
-		finalStatus := "success"
+		finalStatus := statusSuccess
 
-		for _, v := range this.cleanups {
+		for _, v := range p.cleanups {
 			switch v.Status {
-			case "success":
-			case "failure":
-				finalStatus = "failure"
+			case statusSuccess:
+			case statusFailure:
+				finalStatus = statusFailure
 			default:
 				complete = false
 			}
@@ -330,10 +349,10 @@ func (this *pipeline) updateNodeStatus(stage string, name string, status string)
 		}
 
 		if complete {
-			this.cleanup.Status = finalStatus
+			p.cleanup.Status = finalStatus
 
-			for _, v := range this.cleanups {
-				v.updateEdge(this.done, 2)
+			for _, v := range p.cleanups {
+				v.updateEdge(p.done, defaultEdgeWeight)
 			}
 		}
 	default:
@@ -345,14 +364,65 @@ func (this *pipeline) updateNodeStatus(stage string, name string, status string)
 
 func newPipeline(exp, name string, run, loop int) *pipeline {
 	var (
-		config  = &node{Name: "configure", Status: "unknown", Exp: exp, Run: run, Loop: loop, idx: 0}
-		start   = &node{Name: "start", Status: "unknown", Exp: exp, Run: run, Loop: loop, idx: 1}
-		stop    = &node{Name: "stop", Status: "unknown", Exp: exp, Run: run, Loop: loop, idx: 2}
-		cleanup = &node{Name: "cleanup", Status: "unknown", Exp: exp, Run: run, Loop: loop, idx: 3}
-		done    = &node{Name: "done", Status: "unknown", Exp: exp, Run: run, Loop: loop, idx: 4}
+		config = &node{ //nolint:exhaustruct // partial initialization
+			Name:   stageConfigure,
+			Status: statusUnknown,
+			Exp:    exp,
+			Run:    run,
+			Loop:   loop,
+			idx:    idxConfigure,
+		}
+		start = &node{
+			Name:   stageStart,
+			Status: statusUnknown,
+			Exp:    exp,
+			Run:    run,
+			Loop:   loop,
+			idx:    idxStart,
+			Hint:   "",
+			Next:   nil,
+			Stage:  "",
+			edges:  nil,
+		}
+		stop = &node{
+			Name:   stageStop,
+			Status: statusUnknown,
+			Exp:    exp,
+			Run:    run,
+			Loop:   loop,
+			idx:    idxStop,
+			Hint:   "",
+			Next:   nil,
+			Stage:  "",
+			edges:  nil,
+		}
+		cleanup = &node{
+			Name:   stageCleanup,
+			Status: statusUnknown,
+			Exp:    exp,
+			Run:    run,
+			Loop:   loop,
+			idx:    idxCleanup,
+			Hint:   "",
+			Next:   nil,
+			Stage:  "",
+			edges:  nil,
+		}
+		done = &node{
+			Name:   stageDone,
+			Status: statusUnknown,
+			Exp:    exp,
+			Run:    run,
+			Loop:   loop,
+			idx:    idxDone,
+			Hint:   "",
+			Next:   nil,
+			Stage:  "",
+			edges:  nil,
+		}
 	)
 
-	return &pipeline{
+	return &pipeline{ //nolint:exhaustruct // partial initialization
 		Pipeline: []*node{config, start, stop, cleanup, done},
 		Name:     name,
 
@@ -408,14 +478,14 @@ func getPipeline(name string, run, loop int) (*pipeline, error) {
 	pl := newPipeline(name, runName, run, loop)
 
 	if len(exe.Configure) == 0 {
-		pl.addComponentToStage("configure", pl.start)
+		pl.addComponentToStage(stageConfigure, pl.start)
 	} else {
 		for _, cmp := range exe.Configure {
-			n := &node{Name: cmp, Status: "unknown"}
+			n := &node{Name: cmp, Status: statusUnknown} //nolint:exhaustruct // partial initialization
 			n.addEdge(pl.start, 0)
 
-			pl.addNode("configure", n)
-			pl.addComponentToStage("configure", n)
+			pl.addNode(stageConfigure, n)
+			pl.addComponentToStage(stageConfigure, n)
 		}
 	}
 
@@ -424,7 +494,7 @@ func getPipeline(name string, run, loop int) (*pipeline, error) {
 	if exe.Loop == nil {
 		next = pl.stop
 	} else {
-		next = &node{Name: "loop", Status: "unknown"}
+		next = &node{Name: stageLoop, Status: statusUnknown} //nolint:exhaustruct // partial initialization
 		next.addEdge(pl.stop, 0)
 
 		pl.addNode("", next)
@@ -432,38 +502,38 @@ func getPipeline(name string, run, loop int) (*pipeline, error) {
 	}
 
 	if len(exe.Start) == 0 {
-		pl.addComponentToStage("start", next)
+		pl.addComponentToStage(stageStart, next)
 	} else {
 		for _, cmp := range exe.Start {
-			n := &node{Name: cmp, Status: "unknown"}
+			n := &node{Name: cmp, Status: statusUnknown} //nolint:exhaustruct // partial initialization
 			n.addEdge(next, 0)
 
-			pl.addNode("start", n)
-			pl.addComponentToStage("start", n)
+			pl.addNode(stageStart, n)
+			pl.addComponentToStage(stageStart, n)
 		}
 	}
 
 	if len(exe.Stop) == 0 {
-		pl.addComponentToStage("stop", pl.cleanup)
+		pl.addComponentToStage(stageStop, pl.cleanup)
 	} else {
 		for _, cmp := range exe.Stop {
-			n := &node{Name: cmp, Status: "unknown"}
+			n := &node{Name: cmp, Status: statusUnknown} //nolint:exhaustruct // partial initialization
 			n.addEdge(pl.cleanup, 0)
 
-			pl.addNode("stop", n)
-			pl.addComponentToStage("stop", n)
+			pl.addNode(stageStop, n)
+			pl.addComponentToStage(stageStop, n)
 		}
 	}
 
 	if len(exe.Cleanup) == 0 {
-		pl.addComponentToStage("cleanup", pl.done)
+		pl.addComponentToStage(stageCleanup, pl.done)
 	} else {
 		for _, cmp := range exe.Cleanup {
-			n := &node{Name: cmp, Status: "unknown"}
+			n := &node{Name: cmp, Status: statusUnknown} //nolint:exhaustruct // partial initialization
 			n.addEdge(pl.done, 0)
 
-			pl.addNode("cleanup", n)
-			pl.addComponentToStage("cleanup", n)
+			pl.addNode(stageCleanup, n)
+			pl.addComponentToStage(stageCleanup, n)
 		}
 	}
 
@@ -476,6 +546,7 @@ func getPipeline(name string, run, loop int) (*pipeline, error) {
 	}
 
 	pipelines[name][run][loop] = pl
+
 	return pl, nil
 }
 
@@ -494,18 +565,18 @@ func updatePipeline(update PipelineUpdate) error {
 	}
 
 	if update.CmpType == "break" {
-		loopStat := "running"
+		loopStat := statusRunning
 
-		if update.Status == "running" {
+		if update.Status == statusRunning {
 			// use `unstable` state to represent running break component needing
 			// attention, both for the break component node and parent loop nodes
-			update.Status = "unstable"
-			loopStat = "unstable"
+			update.Status = statusUnstable
+			loopStat = statusUnstable
 		}
 
 		for i := update.Loop - 1; i >= 0; i-- {
 			pl, _ := getPipeline(update.Exp, update.Run, i)
-			pl.setStageStatus("loop", loopStat)
+			pl.setStageStatus(stageLoop, loopStat)
 
 			broadcastPipeline(update.Exp, update.Run, i, pl)
 		}
@@ -556,20 +627,21 @@ type pipelineDelete struct {
 
 var (
 	// maps to experiment, run, loop...
-	pipelines        map[string]map[int]map[int]*pipeline
-	pipelineUpdates  chan PipelineUpdate
-	pipelineRequests chan pipelineRequest
-	pipelineDeletes  chan pipelineDelete
+	pipelines        map[string]map[int]map[int]*pipeline //nolint:gochecknoglobals // global state
+	pipelineUpdates  chan PipelineUpdate                  //nolint:gochecknoglobals // global state
+	pipelineRequests chan pipelineRequest                 //nolint:gochecknoglobals // global state
+	pipelineDeletes  chan pipelineDelete                  //nolint:gochecknoglobals // global state
 )
 
 func RequestPipeline(exp string, run, loop int) (*pipeline, error) {
 	if pipelines == nil {
-		return nil, fmt.Errorf("pipelines not initialized")
+		return nil, errors.New("pipelines not initialized")
 	}
 
 	resp := make(chan pipelineResponse)
 
 	pipelineRequests <- pipelineRequest{exp, run, loop, resp}
+
 	r := <-resp
 
 	return r.pl, r.err
@@ -586,6 +658,7 @@ func UpdatePipeline(update ComponentUpdate) error {
 	}
 
 	pipelineUpdates <- pu
+
 	return <-pu.resp
 }
 
@@ -594,6 +667,7 @@ func DeletePipeline(exp string, run, loop int, rebuild bool) {
 		done := make(chan struct{})
 
 		pipelineDeletes <- pipelineDelete{exp, run, loop, rebuild, done}
+
 		<-done
 	}
 }
@@ -631,6 +705,7 @@ func processPipelines() {
 				if !del.rebuild {
 					delete(pipelines, del.exp)
 					close(del.done)
+
 					continue
 				}
 

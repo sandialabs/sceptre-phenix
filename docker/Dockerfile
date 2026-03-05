@@ -67,7 +67,8 @@ RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
 ARG PHENIX_COMMIT
 ARG PHENIX_TAG
 
-RUN COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} make bin/phenix
+# Build phenix binary (skip UI build since artifacts are already copied)
+RUN COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} make bin/phenix SKIP_UI=1
 RUN make -C src/go phenix-tunneler
 
 # Allow installing from a fork of sceptre-phenix-apps that could

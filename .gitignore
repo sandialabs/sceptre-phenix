@@ -1,11 +1,50 @@
-*.bdb
+# Editor/IDE specific
 *.code-workspace
+.devcontainer/
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw*
 
-.devcontainer
-.vscode
+# OS-specific
+.DS_Store
 
-bin
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
+# Backup/Other files
+*.bak
+*.bdb
+
+# Build artifacts
+bin/
+src/js/dist/
+
+# Example binaries
+examples/go/example-app
+examples/stderr
+.github/workflows/example
+.github/workflows/example.exe
+
+# Go specific
 staticcheck.conf
+src/go/*.pb.go
+src/go/bindata.go
+src/go/mock.go
+src/go/known_policy.go
+src/go/web/public/
 
-.venv
+# JS specific
+src/js/node_modules/
+src/js/.env.local
+src/js/.env.*.local
+
+# Python specific
+.venv/
+__pycache__/
+.pytest_cache/

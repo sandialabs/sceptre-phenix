@@ -1,11 +1,14 @@
 package scorch
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
 	"phenix/util"
 	"phenix/util/common"
@@ -14,96 +17,113 @@ import (
 	"phenix/web/scorch"
 )
 
-var ErrUserComponentNotFound = fmt.Errorf("user component not found")
+var ErrUserComponentNotFound = errors.New("user component not found")
+
+const (
+	levelInfo  = "INFO"
+	levelWarn  = "WARN"
+	levelError = "ERROR"
+	levelDebug = "DEBUG"
+
+	logFlushInterval = 10 * time.Millisecond
+)
 
 type UserComponent struct {
 	options Options
 }
 
-func (this *UserComponent) Init(opts ...Option) error {
-	this.options = NewOptions(opts...)
+func (u *UserComponent) Init(opts ...Option) error {
+	u.options = NewOptions(opts...)
+
 	return nil
 }
 
-func (this UserComponent) Type() string {
-	return this.options.Type
+func (u UserComponent) Type() string {
+	return u.options.Type
 }
 
-func (this UserComponent) Configure(ctx context.Context) error {
-	if this.options.Background {
-		ctx = background(ctx, ACTIONCONFIG, this.options)
+func (u UserComponent) Configure(ctx context.Context) error {
+	if u.options.Background {
+		ctx = background(ctx, ActionConfigure, u.options)
 	}
 
-	return this.shellOut(ctx, ACTIONCONFIG)
+	return u.shellOut(ctx, ActionConfigure)
 }
 
-func (this UserComponent) Start(ctx context.Context) error {
-	if this.options.Background {
-		ctx = background(ctx, ACTIONSTART, this.options)
+func (u UserComponent) Start(ctx context.Context) error {
+	if u.options.Background {
+		ctx = background(ctx, ActionStart, u.options)
 	}
 
-	return this.shellOut(ctx, ACTIONSTART)
+	return u.shellOut(ctx, ActionStart)
 }
 
-func (this UserComponent) Stop(ctx context.Context) error {
-	handleBackgrounded(ACTIONSTOP, this.options)
-	return this.shellOut(ctx, ACTIONSTOP)
+func (u UserComponent) Stop(ctx context.Context) error {
+	handleBackgrounded(ActionStop, u.options)
+
+	return u.shellOut(ctx, ActionStop)
 }
 
-func (this UserComponent) Cleanup(ctx context.Context) error {
-	handleBackgrounded(ACTIONCLEANUP, this.options)
-	return this.shellOut(ctx, ACTIONCLEANUP)
+func (u UserComponent) Cleanup(ctx context.Context) error {
+	handleBackgrounded(ActionCleanup, u.options)
+
+	return u.shellOut(ctx, ActionCleanup)
 }
 
-func (this UserComponent) shellOut(ctx context.Context, stage Action) error {
+func (u UserComponent) shellOut(ctx context.Context, stage Action) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
-	cmd := "phenix-scorch-component-" + this.options.Type
+	cmd := "phenix-scorch-component-" + u.options.Type
 
 	if !shell.CommandExists(cmd) {
-		return fmt.Errorf("external user component %s does not exist in your path: %w", cmd, ErrUserComponentNotFound)
+		return fmt.Errorf(
+			"external user component %s does not exist in your path: %w",
+			cmd,
+			ErrUserComponentNotFound,
+		)
 	}
 
 	// Need to unmarshal the experiment, apply replacements, and then marshal before sending to component
-	blob, err := json.Marshal(this.options.Exp)
+	blob, err := json.Marshal(u.options.Exp)
 	if err != nil {
 		return fmt.Errorf("marshaling experiment: %w", err)
 	}
 
 	var generic map[string]any
-	if err := json.Unmarshal(blob, &generic); err != nil {
+	if err = json.Unmarshal(blob, &generic); err != nil {
 		return fmt.Errorf("unmarshaling experiment to generic map: %w", err)
 	}
 
 	if spec, ok := generic["spec"].(map[string]any); ok {
-		if scenario, ok := spec["scenario"].(map[string]any); ok {
-			if apps, ok := scenario["apps"].([]any); ok {
+		if scenario, ok2 := spec["scenario"].(map[string]any); ok2 {
+			if apps, ok3 := scenario["apps"].([]any); ok3 {
 				for _, a := range apps {
-					appMap, ok := a.(map[string]any)
-					if !ok {
+					appMap, ok4 := a.(map[string]any)
+					if !ok4 {
 						continue
 					}
 
-					meta, ok := appMap["metadata"].(map[string]any)
-					if !ok {
+					meta, ok5 := appMap["metadata"].(map[string]any)
+					if !ok5 {
 						continue
 					}
 
-					cmps, ok := meta["components"].([]any)
-					if !ok {
+					cmps, ok6 := meta["components"].([]any)
+					if !ok6 {
 						continue
 					}
 
-					for _, c := range cmps {
-						cmpMap, ok := c.(map[string]any)
-						if !ok {
+					for _, comp := range cmps {
+						cmpMap, ok7 := comp.(map[string]any)
+						if !ok7 {
 							continue
 						}
 
-						if name, ok := cmpMap["name"].(string); ok && name == this.options.Name {
-							cmpMap["metadata"] = this.options.Meta
+						if name, ok8 := cmpMap["name"].(string); ok8 && name == u.options.Name {
+							cmpMap["metadata"] = u.options.Meta
+
 							break
 						}
 					}
@@ -117,78 +137,189 @@ func (this UserComponent) shellOut(ctx context.Context, stage Action) error {
 		return fmt.Errorf("marshaling experiment metadata to JSON: %w", err)
 	}
 
+	//nolint:godox // TODO
 	// TODO: consider letting the child process send a signal indicating it wants
 	// to run in the background instead of having to configure it in the scenario.
 
-	if this.options.Background {
-		go this.run(ctx, stage, cmd, data)
+	if u.options.Background {
+		go func() { _ = u.run(ctx, stage, cmd, data) }()
+
 		return nil
 	}
 
-	return this.run(ctx, stage, cmd, data)
+	return u.run(ctx, stage, cmd, data)
 }
 
-func (this UserComponent) run(ctx context.Context, stage Action, cmd string, data []byte) error {
-	update := scorch.ComponentUpdate{
-		Exp:     this.options.Exp.Spec.ExperimentName(),
-		CmpName: this.options.Name,
-		CmpType: this.options.Type,
-		Run:     this.options.Run,
-		Loop:    this.options.Loop,
-		Count:   this.options.Count,
+func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data []byte) error {
+	update := scorch.ComponentUpdate{ //nolint:exhaustruct // partial update
+		Exp:     u.options.Exp.Spec.ExperimentName(),
+		CmpName: u.options.Name,
+		CmpType: u.options.Type,
+		Run:     u.options.Run,
+		Loop:    u.options.Loop,
+		Count:   u.options.Count,
 		Stage:   string(stage),
-		Status:  "running",
-	}
-
-	logPipePath := filepath.Join(common.PhenixBase, "experiments", this.options.Exp.Spec.ExperimentName(), "scorch_pipes", this.options.Name)
-	done, err := plog.ReadProcessLogs(logPipePath, plog.TypeScorch, "component", this.options.Name, "stage", stage, "exp", this.options.Exp.Spec.ExperimentName())
-	defer close(done)
-	if err != nil {
-		return err
+		Status:  statusRunning,
 	}
 
 	stdout := make(chan []byte)
 
+	stderrChan := make(chan []byte)
+	go processLogChannel(stderrChan, func(level, msg string) {
+		kv := []any{
+			"component", u.options.Name,
+			"stage", stage,
+			"exp", u.options.Exp.Spec.ExperimentName(),
+		}
+
+		switch level {
+		case levelError, "ERR":
+			plog.Error(plog.TypeScorch, msg, kv...)
+		case levelWarn, "WARNING":
+			plog.Warn(plog.TypeScorch, msg, kv...)
+		case levelDebug, "DBG":
+			plog.Debug(plog.TypeScorch, msg, kv...)
+		default:
+			plog.Info(plog.TypeScorch, msg, kv...)
+		}
+	})
+
 	opts := []shell.Option{
 		shell.Command(cmd),
-		shell.Args(string(stage), this.options.Name, strconv.Itoa(this.options.Run), strconv.Itoa(this.options.Loop), strconv.Itoa(this.options.Count)),
+		shell.Args(
+			string(stage),
+			u.options.Name,
+			strconv.Itoa(u.options.Run),
+			strconv.Itoa(u.options.Loop),
+			strconv.Itoa(u.options.Count),
+		),
 		shell.Stdin(data),
 		shell.StreamStdout(stdout),
 		shell.Env(
 			"PHENIX_DIR="+common.PhenixBase,
-			"PHENIX_FILES_DIR="+this.options.Exp.FilesDir(),
+			"PHENIX_FILES_DIR="+u.options.Exp.FilesDir(),
 			"PHENIX_LOG_LEVEL="+util.GetEnv("PHENIX_LOG_LEVEL", "DEBUG"),
-			"PHENIX_LOG_FILE="+logPipePath,
-			"PHENIX_DRYRUN="+strconv.FormatBool(this.options.Exp.DryRun()),
-			"PHENIX_SCORCH_STARTTIME="+this.options.StartTime,
+			"PHENIX_LOG_FILE=stderr",
+			"PHENIX_DRYRUN="+strconv.FormatBool(u.options.Exp.DryRun()),
+			"PHENIX_SCORCH_STARTTIME="+u.options.StartTime,
 		),
+		shell.StreamStderr(stderrChan),
 	}
 
 	go func() {
 		for output := range stdout {
-			update.Output = append(output, []byte("\n")...)
+			update.Output = output
+			update.Output = append(update.Output, '\n')
 			scorch.UpdateComponent(update)
 		}
 	}()
 
-	stdoutBytes, stderrBytes, err := shell.ExecCommand(ctx, opts...)
+	stdoutBytes, _, err := shell.ExecCommand(ctx, opts...)
 	if err != nil {
-		plog.Warn(plog.TypeScorch, "component returned stderr", "stderr", string(stderrBytes), "component", this.options.Name, "stage", stage, "exp", this.options.Exp.Spec.ExperimentName())
-
-		return fmt.Errorf("external user component %s (command %s) failed: %w", this.options.Type, cmd, err)
+		return fmt.Errorf(
+			"external user component %s (command %s) failed: %w",
+			u.options.Type,
+			cmd,
+			err,
+		)
 	}
 
 	if len(stdoutBytes) != 0 {
 		plog.Info(plog.TypePhenixApp, string(stdoutBytes),
-			"experiment", this.options.Exp.Spec.ExperimentName(),
+			"experiment", u.options.Exp.Spec.ExperimentName(),
 			"app", "scorch",
-			"component", this.options.Name,
+			"component", u.options.Name,
 			"stage", string(stage),
-			"run", strconv.Itoa(this.options.Run),
-			"loop", strconv.Itoa(this.options.Loop),
-			"count", strconv.Itoa(this.options.Count),
+			"run", strconv.Itoa(u.options.Run),
+			"loop", strconv.Itoa(u.options.Loop),
+			"count", strconv.Itoa(u.options.Count),
 		)
 	}
 
 	return nil
+}
+
+// processLogChannel reads from ch and calls logFn for each detected log entry.
+// It buffers non-JSON lines for up to 10ms to reconstruct multi-line messages (like stack traces).
+func processLogChannel(ch <-chan []byte, logFn func(level, msg string)) {
+	var (
+		buf   bytes.Buffer
+		timer = time.NewTimer(time.Hour)
+	)
+	timer.Stop()
+
+	flush := func() {
+		if buf.Len() == 0 {
+			return
+		}
+		msg := buf.String()
+		buf.Reset()
+
+		level := levelInfo
+		switch {
+		case strings.Contains(msg, "| ERROR |") || strings.Contains(msg, "| ERR |"):
+			level = levelError
+		case strings.Contains(msg, "| WARN |") || strings.Contains(msg, "| WARNING |"):
+			level = levelWarn
+		case strings.Contains(msg, "| DEBUG |") || strings.Contains(msg, "| DBG |"):
+			level = levelDebug
+		}
+
+		logFn(level, msg)
+	}
+
+	type jsonLog struct {
+		Level     string `json:"level"`
+		Message   string `json:"msg"`
+		Traceback string `json:"traceback"`
+	}
+
+	for {
+		select {
+		case line, ok := <-ch:
+			if !ok {
+				flush()
+				return
+			}
+
+			var entry jsonLog
+			isJSON := false
+
+			if len(line) > 0 && line[0] == '{' {
+				err := json.Unmarshal(
+					line,
+					&entry,
+				)
+				if err == nil &&
+					entry.Level != "" {
+					isJSON = true
+				}
+			}
+
+			if isJSON {
+				flush()
+
+				if entry.Traceback != "" {
+					entry.Message += "\n" + entry.Traceback
+				}
+
+				logFn(entry.Level, entry.Message)
+			} else {
+				if buf.Len() > 0 {
+					buf.WriteByte('\n')
+				}
+				buf.Write(bytes.TrimRight(line, "\r\n"))
+
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				timer.Reset(logFlushInterval)
+			}
+		case <-timer.C:
+			flush()
+		}
+	}
 }

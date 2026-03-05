@@ -2,10 +2,11 @@ package cmd
 
 import (
 	"fmt"
-
-	"phenix/version"
+	"os"
 
 	"github.com/spf13/cobra"
+
+	"phenix/version"
 )
 
 func newVersionCmd() *cobra.Command {
@@ -13,7 +14,8 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "print version information",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Printf("%s (commit %s) %s\n", version.Tag, version.Commit, version.Date)
+			fmt.Fprintf(os.Stdout, "%s (commit %s) %s\n", version.Tag, version.Commit, version.Date)
+
 			return nil
 		},
 	}
@@ -21,6 +23,6 @@ func newVersionCmd() *cobra.Command {
 	return cmd
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // cobra command
 	rootCmd.AddCommand(newVersionCmd())
 }

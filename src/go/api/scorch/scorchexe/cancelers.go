@@ -8,8 +8,8 @@ import (
 )
 
 var (
-	cancelers   = make(map[string]context.CancelFunc)
-	cancelersMu sync.Mutex
+	cancelers   = make(map[string]context.CancelFunc) //nolint:gochecknoglobals // global state
+	cancelersMu sync.Mutex                            //nolint:gochecknoglobals // global lock
 )
 
 func AddCanceler(ctx context.Context, exp string, run int) context.Context {

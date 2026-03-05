@@ -2,21 +2,22 @@ package version
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/getkin/kin-openapi/openapi3"
+	"gopkg.in/yaml.v3"
 
 	v0 "phenix/types/version/v0"
 	v1 "phenix/types/version/v1"
 	v2 "phenix/types/version/v2"
-
-	"github.com/getkin/kin-openapi/openapi3"
-	"gopkg.in/yaml.v3"
 )
 
-var ErrInvalidKind = fmt.Errorf("invalid kind")
+var ErrInvalidKind = errors.New("invalid kind")
 
 // StoredVersion tracks the latest stored version of each config kind.
-var StoredVersion = map[string]string{
+var StoredVersion = map[string]string{ //nolint:gochecknoglobals // global registry
 	"Topology":   "v1",
 	"Scenario":   "v2",
 	"Experiment": "v1",
@@ -27,11 +28,11 @@ var StoredVersion = map[string]string{
 	"Ruleset":    "v1",
 }
 
-const LATEST_VERSION = "v2"
+const LATEST_VERSION = "v2" //nolint:staticcheck // constant name is part of API
 
 // GetStoredSpecForKind looks up the current stored version for the given kind
 // and returns the versioned spec. Internally it calls `GetVersionedSpecForKind`.
-func GetStoredSpecForKind(kind string) (interface{}, error) {
+func GetStoredSpecForKind(kind string) (any, error) {
 	version, ok := StoredVersion[kind]
 	if !ok {
 		return nil, fmt.Errorf("unknown kind %s", kind)
@@ -42,7 +43,7 @@ func GetStoredSpecForKind(kind string) (interface{}, error) {
 
 // GetVersionedSpecForKind returns an initialized spec for the given kind and
 // version.
-func GetVersionedSpecForKind(kind, version string) (interface{}, error) {
+func GetVersionedSpecForKind(kind, version string) (any, error) {
 	switch kind {
 	case "Topology":
 		switch version {
@@ -90,7 +91,7 @@ func GetVersionedSpecForKind(kind, version string) (interface{}, error) {
 
 // GetVersionedStatusForKind returns an initialized status for the given kind
 // and version.
-func GetVersionedStatusForKind(kind, version string) (interface{}, error) {
+func GetVersionedStatusForKind(kind, version string) (any, error) {
 	switch kind {
 	case "Experiment":
 		switch version {
@@ -106,29 +107,31 @@ func GetVersionedStatusForKind(kind, version string) (interface{}, error) {
 
 // GetVersionedSchemaForKind returns a generic map (map[string]interface{}) of
 // the schema for the given kind and version.
-func GetVersionedSchemaForKind(kind, version string) (map[string]interface{}, error) {
+func GetVersionedSchemaForKind(kind, version string) (map[string]any, error) {
 	var api struct {
 		Components struct {
-			Schemas map[string]map[string]interface{} `yaml:"schemas"`
+			Schemas map[string]map[string]any `yaml:"schemas"`
 		} `yaml:"components"`
 	}
 
-	kind = strings.Title(kind)
+	kind = strings.ToUpper(kind[:1]) + kind[1:]
 
 	switch version {
 	case "v1":
-		if err := yaml.Unmarshal(v1.OpenAPI, &api); err != nil {
+		err := yaml.Unmarshal(v1.OpenAPI, &api)
+		if err != nil {
 			return nil, fmt.Errorf("parsing v1 OpenAPI schema: %w", err)
 		}
 	case "v2":
-		if err := yaml.Unmarshal(v2.OpenAPI, &api); err != nil {
+		err := yaml.Unmarshal(v2.OpenAPI, &api)
+		if err != nil {
 			return nil, fmt.Errorf("parsing v2 OpenAPI schema: %w", err)
 		}
 	}
 
 	schema, ok := api.Components.Schemas[kind]
 	if !ok {
-		return nil, fmt.Errorf("A schema for version %s of %s is not defined", version, kind)
+		return nil, fmt.Errorf("a schema for version %s of %s is not defined", version, kind)
 	}
 
 	return schema, nil
@@ -165,13 +168,19 @@ func GetVersionedValidatorForKind(kind, version string) (*openapi3.Schema, error
 		return nil, fmt.Errorf("unknown version %s", version)
 	}
 
-	if err := t.Validate(context.Background()); err != nil {
+	err := t.Validate(context.Background())
+	if err != nil {
 		return nil, fmt.Errorf("validating OpenAPI schema for version %s: %w", version, err)
 	}
 
 	ref, ok := t.Components.Schemas[kind]
 	if !ok {
-		return nil, fmt.Errorf("%w: no schema definition found for version %s of %s", ErrInvalidKind, version, kind)
+		return nil, fmt.Errorf(
+			"%w: no schema definition found for version %s of %s",
+			ErrInvalidKind,
+			version,
+			kind,
+		)
 	}
 
 	return ref.Value, nil

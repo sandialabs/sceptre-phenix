@@ -1,5 +1,6 @@
 package types
 
+//nolint:gochecknoglobals // global constant
 var OpenAPI = []byte(`
 openapi: "3.0.0"
 info:

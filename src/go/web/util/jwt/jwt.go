@@ -1,13 +1,14 @@
 package jwt
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
 )
 
-var userClaims = []string{"sub", "username", "user"}
+var userClaims = []string{"sub", "username", "user"} //nolint:gochecknoglobals // global constant
 
 func UsernameFromClaims(claims jwt.MapClaims) (string, error) {
 	for _, claim := range userClaims {
@@ -16,18 +17,18 @@ func UsernameFromClaims(claims jwt.MapClaims) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("username not found in JWT claims")
+	return "", errors.New("username not found in JWT claims")
 }
 
 func ValidateExpirationClaim(claims jwt.MapClaims) error {
 	exp, ok := claims["exp"]
 	if !ok {
-		return fmt.Errorf("expiration (exp) missing from token claims")
+		return errors.New("expiration (exp) missing from token claims")
 	}
 
 	epoch, ok := exp.(float64)
 	if !ok {
-		return fmt.Errorf("expiration (exp) claim is formatted incorrectly")
+		return errors.New("expiration (exp) claim is formatted incorrectly")
 	}
 
 	expires := time.Unix(int64(epoch), 0)

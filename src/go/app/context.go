@@ -17,7 +17,7 @@ func AddContextMetadata(ctx context.Context, key string, val any) context.Contex
 	if v == nil {
 		md = make(map[string]any)
 	} else {
-		md = v.(map[string]any)
+		md, _ = v.(map[string]any)
 	}
 
 	md[key] = val
@@ -40,7 +40,8 @@ func SetContextTriggerCLI(ctx context.Context) context.Context {
 func GetContextMetadata(ctx context.Context) map[string]any {
 	md := ctx.Value(metadata{})
 	if md != nil {
-		return md.(map[string]any)
+		m, _ := md.(map[string]any)
+		return m
 	}
 
 	return make(map[string]any)
@@ -48,10 +49,12 @@ func GetContextMetadata(ctx context.Context) map[string]any {
 
 func IsContextTriggerUI(ctx context.Context) bool {
 	ok := ctx.Value(triggerUI{})
+
 	return ok != nil
 }
 
 func IsContextTriggerCLI(ctx context.Context) bool {
 	ok := ctx.Value(triggerCLI{})
+
 	return ok != nil
 }

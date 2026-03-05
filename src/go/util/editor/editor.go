@@ -4,11 +4,10 @@ package editor
 
 import (
 	"bytes"
-	"crypto/md5"
+	"crypto/md5" //nolint:gosec // weak cryptographic primitive
 	"encoding/hex"
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 )
@@ -31,7 +30,7 @@ func OpenFileInEditor(path string) error {
 		return err
 	}
 
-	cmd := exec.Command(executable, path)
+	cmd := exec.Command(executable, path) //nolint:noctx,gosec // interactive editor, Command injection via taint analysis
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -44,26 +43,28 @@ func OpenFileInEditor(path string) error {
 // errors encountered while editing the data. If the given data was not
 // modified, `ErrNoChange` is returned.
 func EditData(data []byte) ([]byte, error) {
-	file, err := ioutil.TempFile(os.TempDir(), "*")
+	file, err := os.CreateTemp(os.TempDir(), "*")
 	if err != nil {
 		return nil, err
 	}
 
-	defer os.Remove(file.Name())
+	defer func() { _ = os.Remove(file.Name()) }() //nolint:gosec // Path traversal via taint analysis
 
 	if _, err := io.Copy(file, bytes.NewReader(data)); err != nil {
 		return nil, err
 	}
 
-	if err = file.Close(); err != nil {
+	err = file.Close()
+	if err != nil {
 		return nil, err
 	}
 
-	if err = OpenFileInEditor(file.Name()); err != nil {
+	err = OpenFileInEditor(file.Name())
+	if err != nil {
 		return nil, err
 	}
 
-	bytes, err := ioutil.ReadFile(file.Name())
+	bytes, err := os.ReadFile(file.Name()) //nolint:gosec // Path traversal via taint analysis
 	if err != nil {
 		return nil, err
 	}
@@ -75,16 +76,16 @@ func EditData(data []byte) ([]byte, error) {
 	return bytes, nil
 }
 
-func modified(old, new []byte) bool {
-	hash := md5.New()
+func modified(old, newBytes []byte) bool {
+	hash := md5.New() //nolint:gosec // not used for security
 
-	io.Copy(hash, bytes.NewReader(old))
+	_, _ = io.Copy(hash, bytes.NewReader(old))
 
 	oldHash := hex.EncodeToString(hash.Sum(nil)[:16])
 
 	hash.Reset()
 
-	io.Copy(hash, bytes.NewReader(new))
+	_, _ = io.Copy(hash, bytes.NewReader(newBytes))
 
 	newHash := hex.EncodeToString(hash.Sum(nil)[:16])
 

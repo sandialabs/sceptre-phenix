@@ -4,23 +4,23 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
 	"phenix/api/vm"
 	"phenix/app"
-	"phenix/util/pubsub"
-	"phenix/web/util"
-
 	putil "phenix/util"
+	"phenix/util/pubsub"
 	bt "phenix/web/broker/brokertypes"
+	"phenix/web/util"
 )
 
+const brokerChannelBuffer = 1024
+
 var (
-	clients    = make(map[*Client]bool)
-	broadcast  = make(chan bt.Publish, 1024)
-	register   = make(chan *Client, 1024)
-	unregister = make(chan *Client, 1024)
+	clients    = make(map[*Client]bool)                     //nolint:gochecknoglobals // global state
+	broadcast  = make(chan bt.Publish, brokerChannelBuffer) //nolint:gochecknoglobals // global state
+	register   = make(chan *Client, brokerChannelBuffer)    //nolint:gochecknoglobals // global state
+	unregister = make(chan *Client, brokerChannelBuffer)    //nolint:gochecknoglobals // global state
 )
 
 func Start() {
@@ -31,8 +31,8 @@ func Start() {
 		select {
 		case pub := <-triggerSub:
 			var (
-				trigger = pub.(app.TriggerPublication)
-				typ     = fmt.Sprintf("apps/%s", trigger.App)
+				trigger, _ = pub.(app.TriggerPublication)
+				typ        = "apps/" + trigger.App
 
 				policy   = bt.NewRequestPolicy("experiments/trigger", "create", trigger.Experiment)
 				resource = bt.NewResource(typ, trigger.Experiment, trigger.State)
@@ -63,7 +63,7 @@ func Start() {
 				broadcast <- bt.Publish{RequestPolicy: policy, Resource: resource, Result: nil}
 			}
 		case pub := <-delayedSub:
-			delayed := pub.(string)
+			delayed, _ := pub.(string)
 			names := strings.Split(delayed, "/")
 
 			v, err := vm.Get(names[0], names[1])
@@ -73,7 +73,9 @@ func Start() {
 
 			screenshot, err := util.GetScreenshot(names[0], names[1], "215")
 			if err == nil {
-				v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+				v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
+					screenshot,
+				)
 			}
 
 			body, err := marshaler.Marshal(util.VMToProtobuf(names[0], *v, nil))
@@ -99,11 +101,12 @@ func Start() {
 					allow  bool
 				)
 
-				if policy == nil {
+				switch {
+				case policy == nil:
 					allow = true
-				} else if policy.ResourceName == "" {
+				case policy.ResourceName == "":
 					allow = cli.role.Allowed(policy.Resource, policy.Verb)
-				} else {
+				default:
 					allow = cli.role.Allowed(policy.Resource, policy.Verb, policy.ResourceName)
 				}
 

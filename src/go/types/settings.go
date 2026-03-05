@@ -7,5 +7,5 @@ import (
 
 type Setting struct {
 	Metadata store.ConfigMetadata `json:"metadata" yaml:"metadata"`
-	Spec     *v2.Setting          `json:"spec" yaml:"spec"`
+	Spec     *v2.Setting          `json:"spec"     yaml:"spec"`
 }

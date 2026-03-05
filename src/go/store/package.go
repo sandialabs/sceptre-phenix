@@ -5,7 +5,7 @@ import (
 	"net/url"
 )
 
-var DefaultStore Store = NewBoltDB()
+var DefaultStore Store = NewBoltDB() //nolint:gochecknoglobals // default implementation
 
 func Init(opts ...Option) error {
 	options := NewOptions(opts...)
@@ -47,7 +47,7 @@ func Update(config *Config) error {
 	return DefaultStore.Update(config)
 }
 
-func Patch(config *Config, data map[string]interface{}) error {
+func Patch(config *Config, data map[string]any) error {
 	return DefaultStore.Patch(config, data)
 }
 

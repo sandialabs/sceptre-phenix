@@ -2,14 +2,15 @@ package scorch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
-	"phenix/util"
-	"phenix/web/scorch"
-
 	"github.com/fatih/color"
 	"github.com/mitchellh/mapstructure"
+
+	"phenix/util"
+	"phenix/web/scorch"
 )
 
 type PauseMetadata struct {
@@ -17,9 +18,9 @@ type PauseMetadata struct {
 	FailStages []string `mapstructure:"failStages"`
 }
 
-func (this *PauseMetadata) Validate() error {
-	if this.Duration == "" {
-		this.Duration = "10s"
+func (p *PauseMetadata) Validate() error {
+	if p.Duration == "" {
+		p.Duration = "10s"
 	}
 
 	return nil
@@ -29,59 +30,64 @@ type Pause struct {
 	options Options
 }
 
-func (this *Pause) Init(opts ...Option) error {
-	this.options = NewOptions(opts...)
+func (p *Pause) Init(opts ...Option) error {
+	p.options = NewOptions(opts...)
+
 	return nil
 }
 
-func (this Pause) Type() string {
+func (p Pause) Type() string {
 	return "pause"
 }
 
-func (this Pause) Configure(ctx context.Context) error {
-	if this.options.Background {
-		ctx = background(ctx, ACTIONCONFIG, this.options)
-		go this.pause(ctx, ACTIONCONFIG)
+func (p Pause) Configure(ctx context.Context) error {
+	if p.options.Background {
+		ctx = background(ctx, ActionConfigure, p.options)
+
+		go func() { _ = p.pause(ctx, ActionConfigure) }()
+
 		return nil
 	}
 
-	return this.pause(ctx, ACTIONCONFIG)
+	return p.pause(ctx, ActionConfigure)
 }
 
-func (this Pause) Start(ctx context.Context) error {
-	if this.options.Background {
-		ctx = background(ctx, ACTIONSTART, this.options)
-		go this.pause(ctx, ACTIONSTART)
+func (p Pause) Start(ctx context.Context) error {
+	if p.options.Background {
+		ctx = background(ctx, ActionStart, p.options)
+
+		go func() { _ = p.pause(ctx, ActionStart) }()
+
 		return nil
 	}
 
-	return this.pause(ctx, ACTIONSTART)
+	return p.pause(ctx, ActionStart)
 }
 
-func (this Pause) Stop(ctx context.Context) error {
-	if handleBackgrounded(ACTIONSTOP, this.options) {
+func (p Pause) Stop(ctx context.Context) error {
+	if handleBackgrounded(ActionStop, p.options) {
 		return nil
 	}
 
-	return this.pause(ctx, ACTIONSTOP)
+	return p.pause(ctx, ActionStop)
 }
 
-func (this Pause) Cleanup(ctx context.Context) error {
-	if handleBackgrounded(ACTIONCLEANUP, this.options) {
+func (p Pause) Cleanup(ctx context.Context) error {
+	if handleBackgrounded(ActionCleanup, p.options) {
 		return nil
 	}
 
-	return this.pause(ctx, ACTIONCLEANUP)
+	return p.pause(ctx, ActionCleanup)
 }
 
-func (this Pause) pause(ctx context.Context, stage Action) error {
+func (p Pause) pause(ctx context.Context, stage Action) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
 	var md PauseMetadata
 
-	if err := mapstructure.Decode(this.options.Meta, &md); err != nil {
+	if err := mapstructure.Decode(p.options.Meta, &md); err != nil {
 		return fmt.Errorf("decoding pause component metadata: %w", err)
 	}
 
@@ -95,15 +101,15 @@ func (this Pause) pause(ctx context.Context, stage Action) error {
 	}
 
 	printer := color.New(color.FgYellow)
-	printer.Printf("pausing for %v\n", d)
+	_, _ = printer.Printf("pausing for %v\n", d)
 
-	update := scorch.ComponentUpdate{
-		Exp:     this.options.Exp.Spec.ExperimentName(),
-		CmpName: this.options.Name,
-		CmpType: this.options.Type,
-		Run:     this.options.Run,
-		Loop:    this.options.Loop,
-		Count:   this.options.Count,
+	update := scorch.ComponentUpdate{ //nolint:exhaustruct // partial update
+		Exp:     p.options.Exp.Spec.ExperimentName(),
+		CmpName: p.options.Name,
+		CmpType: p.options.Type,
+		Run:     p.options.Run,
+		Loop:    p.options.Loop,
+		Count:   p.options.Count,
 		Stage:   string(stage),
 		Status:  "running",
 	}
@@ -121,7 +127,7 @@ func (this Pause) pause(ctx context.Context, stage Action) error {
 	}
 
 	if util.StringSliceContains(md.FailStages, string(stage)) {
-		return fmt.Errorf("failing as instructed")
+		return errors.New("failing as instructed")
 	}
 
 	return nil

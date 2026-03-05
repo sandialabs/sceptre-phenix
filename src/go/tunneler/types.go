@@ -14,14 +14,14 @@ type AddHeaderTransport struct {
 	Headers http.Header
 }
 
-func (this AddHeaderTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	for k, v := range this.Headers {
+func (t AddHeaderTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	for k, v := range t.Headers {
 		for _, e := range v {
 			req.Header.Add(k, e)
 		}
 	}
 
-	return this.T.RoundTrip(req)
+	return t.T.RoundTrip(req)
 }
 
 type MessageType string
@@ -53,6 +53,6 @@ type Message struct {
 
 type Listeners []LocalListener
 
-func init() {
+func init() { //nolint:gochecknoinits // gob registration
 	gob.Register(Listeners{})
 }

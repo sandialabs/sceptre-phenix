@@ -1,6 +1,6 @@
 module phenix
 
-go 1.20
+go 1.24
 
 require (
 	github.com/activeshadow/libminimega v0.0.0-20230607190319-9d6487572f76
@@ -8,12 +8,10 @@ require (
 	github.com/cescoferraro/go-jwt-middleware v0.0.0-20161113181124-eb52b4929b4e
 	github.com/creack/pty v1.1.11
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
-	github.com/elazarl/go-bindata-assetfs v1.0.1
 	github.com/fatih/color v1.9.0
 	github.com/fsnotify/fsnotify v1.4.7
 	github.com/getkin/kin-openapi v0.118.0
-	github.com/go-bindata/go-bindata/v3 v3.1.3
-	github.com/gofrs/uuid v3.3.0+incompatible
+	github.com/gofrs/uuid/v5 v5.4.0
 	github.com/golang/mock v1.4.4
 	github.com/golang/protobuf v1.4.2
 	github.com/gorilla/mux v1.8.0
@@ -21,7 +19,7 @@ require (
 	github.com/hashicorp/go-multierror v1.0.0
 	github.com/hpcloud/tail v1.0.0
 	github.com/json-iterator/go v1.1.12
-	github.com/lmittmann/tint v0.3.4
+	github.com/lmittmann/tint v1.0.4
 	github.com/mattn/go-isatty v0.0.11
 	github.com/mitchellh/mapstructure v1.2.2
 	github.com/olekukonko/tablewriter v0.0.5
@@ -33,7 +31,6 @@ require (
 	go.etcd.io/bbolt v1.3.5
 	go.etcd.io/etcd/v3 v3.3.0-rc.0.0.20200824193021-facd0c946025
 	golang.org/x/crypto v0.1.0
-	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1
 	golang.org/x/net v0.1.0
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
 	golang.org/x/term v0.1.0
@@ -56,7 +53,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/invopop/yaml v0.1.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
-	github.com/kisielk/errcheck v1.2.0 // indirect
 	github.com/magiconair/properties v1.8.1 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.4 // indirect

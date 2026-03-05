@@ -4,23 +4,26 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/mitchellh/mapstructure"
+	"inet.af/netaddr"
+
 	"phenix/api/scorch/scorchmd"
 	"phenix/app"
 	"phenix/types"
 	"phenix/util"
 	"phenix/util/mm"
 	"phenix/util/tap"
-
-	"github.com/mitchellh/mapstructure"
-	"inet.af/netaddr"
 )
+
+const tapCompSuffixLen = 7
 
 type Tap struct {
 	options Options
 }
 
-func (this *Tap) Init(opts ...Option) error {
-	this.options = NewOptions(opts...)
+func (t *Tap) Init(opts ...Option) error {
+	t.options = NewOptions(opts...)
+
 	return nil
 }
 
@@ -32,59 +35,65 @@ func (Tap) Configure(context.Context) error {
 	return nil
 }
 
-func (this Tap) Start(ctx context.Context) error {
-	exp := this.options.Exp.Metadata.Name
+func (t Tap) Start(ctx context.Context) error {
+	exp := t.options.Exp.Metadata.Name
 
-	var t *tap.Tap
+	var tp *tap.Tap
 
-	if err := mapstructure.Decode(this.options.Meta, &t); err != nil {
+	err := mapstructure.Decode(t.options.Meta, &tp)
+	if err != nil {
 		return fmt.Errorf("decoding tap component metadata: %w", err)
 	}
 
 	pairs := discoverUsedPairs()
-	t.Init(this.options.Exp.Spec.DefaultBridge(), tap.Experiment(exp), tap.UsedPairs(pairs))
+	tp.Init(t.options.Exp.Spec.DefaultBridge(), tap.Experiment(exp), tap.UsedPairs(pairs))
 
 	// backwards compatibility (doesn't support external access firewall rules)
-	if v, ok := t.Other["internetAccess"]; ok {
+	if v, ok := tp.Other["internetAccess"]; ok {
 		enabled, _ := v.(bool)
-		t.External.Enabled = enabled
+		tp.External.Enabled = enabled
 	}
 
 	// tap names cannot be longer than 15 characters
 	// (dictated by max length of Linux interface names)
-	t.Name = fmt.Sprintf("%s-tapcomp", util.RandomString(7))
+	tp.Name = util.RandomString(tapCompSuffixLen) + "-tapcomp"
 
-	if _, err := t.Create(mm.Headnode()); err != nil {
-		return fmt.Errorf("setting up tap: %w", err)
+	if _, createErr := tp.Create(mm.Headnode()); createErr != nil {
+		return fmt.Errorf("setting up tap: %w", createErr)
 	}
 
 	var status scorchmd.ScorchStatus
-	if err := this.options.Exp.Status.ParseAppStatus("scorch", &status); err != nil {
+
+	err = t.options.Exp.Status.ParseAppStatus("scorch", &status)
+	if err != nil {
 		return fmt.Errorf("getting experiment status for scorch app: %w", err)
 	}
 
-	status.Taps[this.options.Name] = t
+	status.Taps[t.options.Name] = tp
 
-	this.options.Exp.Status.SetAppStatus("scorch", status)
-	this.options.Exp.WriteToStore(true)
+	t.options.Exp.Status.SetAppStatus("scorch", status)
+	_ = t.options.Exp.WriteToStore(true)
 
 	return nil
 }
 
-func (this Tap) Stop(ctx context.Context) error {
-	exp := this.options.Exp.Metadata.Name
+func (t Tap) Stop(ctx context.Context) error {
+	exp := t.options.Exp.Metadata.Name
 
 	var status scorchmd.ScorchStatus
-	if err := this.options.Exp.Status.ParseAppStatus("scorch", &status); err != nil {
+
+	err := t.options.Exp.Status.ParseAppStatus("scorch", &status)
+	if err != nil {
 		return fmt.Errorf("getting experiment status for scorch app: %w", err)
 	}
 
-	t, ok := status.Taps[this.options.Name]
+	tp, ok := status.Taps[t.options.Name]
 	if ok {
-		t.Init(this.options.Exp.Spec.DefaultBridge(), tap.Experiment(exp))
+		tp.Init(t.options.Exp.Spec.DefaultBridge(), tap.Experiment(exp))
 
-		if err := t.Delete(mm.Headnode()); err != nil {
-			return fmt.Errorf("deleting host tap for VLAN %s: %w", t.VLAN, err)
+		err = tp.Delete(mm.Headnode())
+		if err != nil {
+			return fmt.Errorf("deleting host tap for VLAN %s: %w", tp.VLAN, err)
 		}
 	}
 
@@ -105,18 +114,22 @@ func discoverUsedPairs() []netaddr.IPPrefix {
 
 	for _, exp := range running {
 		var scorch scorchmd.ScorchStatus
-		if err := exp.Status.ParseAppStatus("scorch", &scorch); err == nil {
+
+		err = exp.Status.ParseAppStatus("scorch", &scorch)
+		if err == nil {
 			for _, tap := range scorch.Taps {
-				if pair, err := netaddr.ParseIPPrefix(tap.Subnet); err == nil {
+				if pair, parseErr := netaddr.ParseIPPrefix(tap.Subnet); parseErr == nil {
 					pairs = append(pairs, pair)
 				}
 			}
 		}
 
 		var tap app.TapAppStatus
-		if err := exp.Status.ParseAppStatus("tap", &tap); err == nil {
+
+		err = exp.Status.ParseAppStatus("tap", &tap)
+		if err == nil {
 			for _, tap := range tap.Taps {
-				if pair, err := netaddr.ParseIPPrefix(tap.Subnet); err == nil {
+				if pair, parseErr := netaddr.ParseIPPrefix(tap.Subnet); parseErr == nil {
 					pairs = append(pairs, pair)
 				}
 			}

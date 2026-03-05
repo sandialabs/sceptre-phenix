@@ -9,34 +9,26 @@ import (
 	"sync"
 	"time"
 
-	"phenix/util/common"
-
 	"github.com/activeshadow/libminimega/minicli"
 	"github.com/activeshadow/libminimega/miniclient"
 	"github.com/hashicorp/go-multierror"
+
+	"phenix/util/common"
 )
 
-var ErrTimeout = fmt.Errorf("timeout running command")
+var ErrTimeout = errors.New("timeout running command")
 
 var (
-	mu sync.Mutex
-	mm *miniclient.Conn
+	mu sync.Mutex       //nolint:gochecknoglobals // global lock
+	mm *miniclient.Conn //nolint:gochecknoglobals // global connection
 )
-
-// noop returns a closed channel
-func noop() chan *miniclient.Response {
-	out := make(chan *miniclient.Response)
-	close(out)
-
-	return out
-}
 
 func wrapErr(err error) chan *miniclient.Response {
 	out := make(chan *miniclient.Response, 1)
 
-	out <- &miniclient.Response{
+	out <- &miniclient.Response{ //nolint:exhaustruct // partial initialization
 		Resp: minicli.Responses{
-			&minicli.Response{
+			&minicli.Response{ //nolint:exhaustruct // partial initialization
 				Error: err.Error(),
 			},
 		},
@@ -65,7 +57,7 @@ func ErrorResponse(responses chan *miniclient.Response) error {
 	return errs
 }
 
-// SingleReponse is used when only a single response (or error) is expected to
+// SingleResponse is used when only a single response (or error) is expected to
 // be returned from a call to minimega. It returns the first non-error response
 // and the last error encountered (if no non-error responses were encountered).
 func SingleResponse(responses chan *miniclient.Response) (string, error) {
@@ -84,6 +76,7 @@ func SingleResponse(responses chan *miniclient.Response) (string, error) {
 		for _, r := range response.Resp {
 			if r.Error != "" {
 				err = errors.New(r.Error)
+
 				continue
 			}
 
@@ -105,13 +98,13 @@ func SingleResponse(responses chan *miniclient.Response) (string, error) {
 	return *resp, err
 }
 
-// SingleDataReponse is used when only a single response (or error) is expected
+// SingleDataResponse is used when only a single response (or error) is expected
 // to be returned from a call to minimega, and the response just includes user
 // data. It returns the first non-error data response and the last error
 // encountered (if no non-error responses were encountered).
-func SingleDataResponse(responses chan *miniclient.Response) (interface{}, error) {
+func SingleDataResponse(responses chan *miniclient.Response) (any, error) {
 	var (
-		data interface{}
+		data any
 		err  error
 	)
 
@@ -125,6 +118,7 @@ func SingleDataResponse(responses chan *miniclient.Response) (interface{}, error
 		for _, r := range response.Resp {
 			if r.Error != "" {
 				err = errors.New(r.Error)
+
 				continue
 			}
 
@@ -164,7 +158,6 @@ func Run(c *Command) chan *miniclient.Response {
 		if strings.Contains(s, "broken pipe") || strings.Contains(s, "no such file or directory") {
 			if mm, err = miniclient.Dial(common.MinimegaBase); err != nil {
 				return wrapErr(fmt.Errorf("unable to redial: %w", err))
-
 			}
 		} else {
 			return wrapErr(fmt.Errorf("minimega error: %w", err))
@@ -182,6 +175,7 @@ func Run(c *Command) chan *miniclient.Response {
 
 	go func() {
 		resp = mm.Run(c.String())
+
 		close(done)
 	}()
 
@@ -191,6 +185,7 @@ func Run(c *Command) chan *miniclient.Response {
 	case <-time.After(c.Timeout):
 		// Reset mm since the miniclient has a lock that is likely still activated.
 		mm = nil
+
 		return wrapErr(ErrTimeout)
 	}
 }

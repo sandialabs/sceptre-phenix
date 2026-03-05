@@ -1,7 +1,9 @@
 package vlan
 
 import (
+	"errors"
 	"fmt"
+
 	"phenix/api/experiment"
 	"phenix/types"
 )
@@ -48,15 +50,15 @@ func SetAlias(opts ...Option) error {
 	o := newOptions(opts...)
 
 	if o.exp == "" {
-		return fmt.Errorf("no experiment name provided")
+		return errors.New("no experiment name provided")
 	}
 
 	if o.alias == "" {
-		return fmt.Errorf("no VLAN alias provided")
+		return errors.New("no VLAN alias provided")
 	}
 
 	if o.id == 0 {
-		return fmt.Errorf("no VLAN ID provided")
+		return errors.New("no VLAN ID provided")
 	}
 
 	exp, err := experiment.Get(o.exp)
@@ -68,7 +70,10 @@ func SetAlias(opts ...Option) error {
 		return fmt.Errorf("setting VLAN alias for experiment %s: %w", o.exp, err)
 	}
 
-	if err := experiment.Save(experiment.SaveWithName(o.exp), experiment.SaveWithSpec(exp.Spec)); err != nil {
+	if err := experiment.Save(
+		experiment.SaveWithName(o.exp),
+		experiment.SaveWithSpec(exp.Spec),
+	); err != nil {
 		return fmt.Errorf("saving updated spec for experiment %s: %w", o.exp, err)
 	}
 
@@ -104,21 +109,21 @@ func Ranges(opts ...Option) (map[string][2]int, error) {
 	for _, exp := range exps {
 		if exp.Running() {
 			var (
-				min = 0
-				max = 0
+				minVal = 0
+				maxVal = 0
 			)
 
 			for _, k := range exp.Status.VLANs() {
-				if min == 0 || k < min {
-					min = k
+				if minVal == 0 || k < minVal {
+					minVal = k
 				}
 
-				if max == 0 || k > max {
-					max = k
+				if maxVal == 0 || k > maxVal {
+					maxVal = k
 				}
 			}
 
-			info[exp.Metadata.Name] = [2]int{min, max}
+			info[exp.Metadata.Name] = [2]int{minVal, maxVal}
 		} else {
 			info[exp.Metadata.Name] = [2]int{exp.Spec.VLANs().Min(), exp.Spec.VLANs().Max()}
 		}
@@ -133,19 +138,19 @@ func SetRange(opts ...Option) error {
 	o := newOptions(opts...)
 
 	if o.exp == "" {
-		return fmt.Errorf("no experiment name provided")
+		return errors.New("no experiment name provided")
 	}
 
 	if o.min == 0 {
-		return fmt.Errorf("no VLAN min ID provided")
+		return errors.New("no VLAN min ID provided")
 	}
 
 	if o.max == 0 {
-		return fmt.Errorf("no VLAN max ID provided")
+		return errors.New("no VLAN max ID provided")
 	}
 
 	if o.min > o.max {
-		return fmt.Errorf("min VLAN ID must not be greater than max VLAN ID")
+		return errors.New("min VLAN ID must not be greater than max VLAN ID")
 	}
 
 	exp, err := experiment.Get(o.exp)
@@ -157,7 +162,10 @@ func SetRange(opts ...Option) error {
 		return fmt.Errorf("setting VLAN range for experiment %s: %w", o.exp, err)
 	}
 
-	if err := experiment.Save(experiment.SaveWithName(o.exp), experiment.SaveWithSpec(exp.Spec)); err != nil {
+	if err := experiment.Save(
+		experiment.SaveWithName(o.exp),
+		experiment.SaveWithSpec(exp.Spec),
+	); err != nil {
 		return fmt.Errorf("saving updated spec for experiment %s: %w", o.exp, err)
 	}
 

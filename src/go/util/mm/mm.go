@@ -1,8 +1,8 @@
 package mm
 
-var DefaultMM MM = new(Minimega)
+var DefaultMM MM = new(Minimega) //nolint:gochecknoglobals // default implementation
 
-type MM interface {
+type MM interface { //nolint:interfacebloat // legacy interface
 	ReadScriptFromFile(string) error
 	ClearNamespace(string) error
 

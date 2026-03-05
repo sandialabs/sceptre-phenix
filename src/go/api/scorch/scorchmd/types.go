@@ -84,38 +84,40 @@ type ScorchMetadata struct {
 	components ComponentSpecMap
 }
 
-func (this ScorchMetadata) ComponentSpecs() ComponentSpecMap {
-	return this.components
+func (m ScorchMetadata) ComponentSpecs() ComponentSpecMap {
+	return m.components
 }
 
-func (this ScorchMetadata) RunName(id int) string {
-	if len(this.Runs) > id {
-		return this.Runs[id].Name
+func (m ScorchMetadata) RunName(id int) string {
+	if len(m.Runs) > id {
+		return m.Runs[id].Name
 	}
 
 	return ""
 }
 
-func (this ScorchMetadata) FilebeatEnabled(id int) bool {
-	run := this.Runs[id]
-	return (run.Filebeat == nil && this.Filebeat.Enabled) || (run.Filebeat != nil && run.Filebeat.Enabled)
+func (m ScorchMetadata) FilebeatEnabled(id int) bool {
+	run := m.Runs[id]
+
+	return (run.Filebeat == nil && m.Filebeat.Enabled) ||
+		(run.Filebeat != nil && run.Filebeat.Enabled)
 }
 
-func (this ScorchMetadata) FilebeatConfig(id int) map[string]interface{} {
-	run := this.Runs[id]
+func (m ScorchMetadata) FilebeatConfig(id int) map[string]any {
+	run := m.Runs[id]
 
 	if run.Filebeat == nil {
-		return this.Filebeat.Config
+		return m.Filebeat.Config
 	}
 
 	return run.Filebeat.Config
 }
 
-func (this ScorchMetadata) UseExpNameAsIndexName(id int) bool {
-	run := this.Runs[id]
+func (m ScorchMetadata) UseExpNameAsIndexName(id int) bool {
+	run := m.Runs[id]
 
-	if run.Filebeat == nil && this.Filebeat.Enabled {
-		return this.Filebeat.ExpAsIndex
+	if run.Filebeat == nil && m.Filebeat.Enabled {
+		return m.Filebeat.ExpAsIndex
 	}
 
 	if run.Filebeat != nil && run.Filebeat.Enabled {
@@ -137,25 +139,25 @@ type Loop struct {
 	Loop      *Loop          `mapstructure:"loop"` // using a pointer here to avoid cyclical references
 }
 
-func (this Loop) ContainsComponent(name string) bool {
-	if util.StringSliceContains(this.Configure, name) {
+func (l Loop) ContainsComponent(name string) bool {
+	if util.StringSliceContains(l.Configure, name) {
 		return true
 	}
 
-	if util.StringSliceContains(this.Start, name) {
+	if util.StringSliceContains(l.Start, name) {
 		return true
 	}
 
-	if util.StringSliceContains(this.Stop, name) {
+	if util.StringSliceContains(l.Stop, name) {
 		return true
 	}
 
-	if util.StringSliceContains(this.Cleanup, name) {
+	if util.StringSliceContains(l.Cleanup, name) {
 		return true
 	}
 
-	if this.Loop != nil {
-		return this.Loop.ContainsComponent(name)
+	if l.Loop != nil {
+		return l.Loop.ContainsComponent(name)
 	}
 
 	return false
@@ -169,15 +171,17 @@ type ComponentSpec struct {
 }
 
 type FilebeatSpec struct {
-	Enabled    bool                   `mapstructure:"enabled"`
-	ExpAsIndex bool                   `mapstructure:"expNameAsIndexName" structs:"expNameAsIndexName"`
-	Config     map[string]interface{} `mapstructure:"config"`
+	Enabled    bool           `mapstructure:"enabled"`
+	ExpAsIndex bool           `mapstructure:"expNameAsIndexName" structs:"expNameAsIndexName"`
+	Config     map[string]any `mapstructure:"config"`
 }
 
-type ComponentMetadata map[string]interface{}
-type ComponentSpecMap map[string]ComponentSpec
+type (
+	ComponentMetadata map[string]any
+	ComponentSpecMap  map[string]ComponentSpec
+)
 
 type ScorchStatus struct {
-	RunID int                 `structs:"runID" mapstructure:"runID"`
-	Taps  map[string]*tap.Tap `structs:"taps" mapstructure:"taps"`
+	RunID int                 `mapstructure:"runID" structs:"runID"`
+	Taps  map[string]*tap.Tap `mapstructure:"taps"  structs:"taps"`
 }

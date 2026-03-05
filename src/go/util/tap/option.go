@@ -12,7 +12,7 @@ type options struct {
 }
 
 func NewOptions(opts ...Option) options {
-	o := options{netns: true}
+	o := options{netns: true} //nolint:exhaustruct // partial initialization
 
 	for _, opt := range opts {
 		opt(&o)

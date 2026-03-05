@@ -2,6 +2,7 @@ package weberror
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -16,14 +17,14 @@ type WebError struct {
 	UserMetadata   map[string]string `json:"metadata,omitempty"`     // logged and returned to user
 }
 
-func NewWebError(cause error, format string, args ...interface{}) *WebError {
+func NewWebError(cause error, format string, args ...any) *WebError {
 	causeStr := ""
 
 	if cause != nil {
 		causeStr = cause.Error()
 	}
 
-	err := &WebError{
+	err := &WebError{ //nolint:exhaustruct // partial initialization
 		Message: fmt.Sprintf(format, args...),
 		Cause:   causeStr,
 		Status:  http.StatusBadRequest,
@@ -52,6 +53,7 @@ func (err *WebError) WithMetadata(k, v string, user bool) *WebError {
 
 func (err *WebError) SetStatus(status int) *WebError {
 	err.Status = status
+
 	return err
 }
 
@@ -67,9 +69,12 @@ type ErrorHandler func(http.ResponseWriter, *http.Request) error
 
 func (err ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := err(w, r); err != nil {
-		web, ok := err.(*WebError)
+		web := &WebError{} //nolint:exhaustruct // partial initialization
+
+		ok := errors.As(err, &web)
 		if !ok {
 			w.WriteHeader(http.StatusInternalServerError)
+
 			return
 		}
 
@@ -77,6 +82,7 @@ func (err ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for key, value := range web.SystemMetadata {
 			attrs = append(attrs, key, value)
 		}
+
 		plog.Error(plog.TypeSystem, web.Error(), attrs...)
 
 		web.SystemMetadata = nil
@@ -84,6 +90,6 @@ func (err ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(web.Status)
-		w.Write(body)
+		_, _ = w.Write(body)
 	}
 }

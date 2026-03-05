@@ -2,7 +2,7 @@ package ifaces
 
 import "time"
 
-type TopologySpec interface {
+type TopologySpec interface { //nolint:interfacebloat // legacy interface
 	IncludedTopologies() []string
 	Nodes() []NodeSpec
 	BootableNodes() []NodeSpec
@@ -22,8 +22,8 @@ type TopologySpec interface {
 	Init(string) error
 }
 
-type NodeSpec interface {
-	Annotations() map[string]interface{}
+type NodeSpec interface { //nolint:interfacebloat // legacy interface
+	Annotations() map[string]any
 	Labels() map[string]string
 	Type() string
 	General() NodeGeneral
@@ -42,7 +42,7 @@ type NodeSpec interface {
 	SetType(string)
 	SetLabels(map[string]string)
 
-	AddAnnotation(string, interface{})
+	AddAnnotation(string, any)
 	AddTimerDelay(delay string)
 	AddUserDelay(delay bool)
 	AddC2Delay(hostname string, useuuid bool)
@@ -97,7 +97,7 @@ type NodeSpec interface {
 	AddOverride(string, string)
 	AddCommand(string)
 
-	GetAnnotation(string) (interface{}, bool)
+	GetAnnotation(string) (any, bool)
 	Delayed() string
 }
 
@@ -150,7 +150,7 @@ type NodeNetwork interface {
 	InterfaceMask(string) int
 }
 
-type NodeNetworkInterface interface {
+type NodeNetworkInterface interface { //nolint:interfacebloat // legacy interface
 	Name() string
 	Type() string
 	Proto() string
@@ -224,7 +224,7 @@ type NodeNetworkRuleset interface {
 	RemoveRule(int)
 }
 
-type NodeNetworkRulesetRule interface {
+type NodeNetworkRulesetRule interface { //nolint:interfacebloat // legacy interface
 	ID() int
 	Description() string
 	Action() string

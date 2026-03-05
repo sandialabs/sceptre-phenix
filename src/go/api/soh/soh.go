@@ -1,19 +1,22 @@
 package soh
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 
+	"github.com/mitchellh/mapstructure"
+
 	"phenix/api/experiment"
 	"phenix/api/vm"
-
-	"github.com/mitchellh/mapstructure"
 )
+
+const defaultEdgeLength = 150
 
 var vlanAliasRegex = regexp.MustCompile(`(.*) \(\d*\)`)
 
-func Get(expName, statusFilter string) (*Network, error) {
+func Get(expName, statusFilter string) (*Network, error) { //nolint:funlen // complex logic
 	// Create an empty network
 	network := new(Network)
 
@@ -36,14 +39,15 @@ func Get(expName, statusFilter string) (*Network, error) {
 		network.SOHRunning = Running(exp)
 
 		if app, ok := exp.Status.AppStatus()["soh"]; ok {
-			data, ok := app.(map[string]interface{})
-			if !ok {
+			data, ok2 := app.(map[string]any)
+			if !ok2 {
 				return nil, fmt.Errorf("unable to decode state of health details: %w", err)
 			}
 
 			var states []*HostState
 
-			if err := mapstructure.Decode(data["hosts"], &states); err != nil {
+			err = mapstructure.Decode(data["hosts"], &states)
+			if err != nil {
 				return nil, fmt.Errorf("unable to decode state of health host details: %w", err)
 			}
 
@@ -51,6 +55,7 @@ func Get(expName, statusFilter string) (*Network, error) {
 				for _, s := range state.AllStates() {
 					if s.Error != "" {
 						state.Errors = true
+
 						break
 					}
 				}
@@ -77,15 +82,16 @@ func Get(expName, statusFilter string) (*Network, error) {
 			was supposed to boot (ie. DNB is false) and it's not in minimega then
 			it's likely that someone has flushed it since deployment.
 		*/
-		if vm.State == "" {
+		switch vm.State {
+		case "":
 			if vm.DoNotBoot {
 				vmState = "notboot"
 			} else {
 				vmState = "notdeploy"
 			}
-		} else if vm.State == "EXTERNAL" {
+		case "EXTERNAL":
 			vmState = "external"
-		} else {
+		default:
 			if vm.Running {
 				vmState = "running"
 			} else {
@@ -97,7 +103,7 @@ func Get(expName, statusFilter string) (*Network, error) {
 			continue
 		}
 
-		node := Node{
+		node := Node{ //nolint:exhaustruct // partial initialization
 			ID:     vm.ID,
 			Label:  vm.Name,
 			Image:  vm.OSType,
@@ -130,7 +136,7 @@ func Get(expName, statusFilter string) (*Network, error) {
 			if _, ok := interfaces[vmIface]; !ok {
 				interfaces[vmIface] = ifaceCount
 
-				node := Node{
+				ifaceNode := Node{ //nolint:exhaustruct // partial initialization
 					ID:     ifaceCount,
 					Label:  vmIface,
 					Image:  "switch",
@@ -138,7 +144,7 @@ func Get(expName, statusFilter string) (*Network, error) {
 					Status: "ignore",
 				}
 
-				network.Nodes = append(network.Nodes, node)
+				network.Nodes = append(network.Nodes, ifaceNode)
 				ifaceCount++
 			}
 
@@ -150,7 +156,7 @@ func Get(expName, statusFilter string) (*Network, error) {
 				ID:     edgeCount,
 				Source: vm.ID,
 				Target: id,
-				Length: 150,
+				Length: defaultEdgeLength,
 			}
 
 			network.Edges = append(network.Edges, edge)
@@ -176,9 +182,9 @@ func GetFlows(name string) ([]string, [][]int, error) {
 		return nil, nil, nil
 	}
 
-	status, ok := soh.(map[string]interface{})
+	status, ok := soh.(map[string]any)
 	if !ok {
-		return nil, nil, fmt.Errorf("invalid format for SoH app status")
+		return nil, nil, errors.New("invalid format for SoH app status")
 	}
 
 	capture, ok := status["packetCapture"]
@@ -186,13 +192,13 @@ func GetFlows(name string) ([]string, [][]int, error) {
 		return nil, nil, nil
 	}
 
-	var packets = struct {
+	packets := struct { //nolint:exhaustruct // partial initialization
 		Hosts []string
 		Flows [][]int
 	}{}
 
-	if err := mapstructure.Decode(capture, &packets); err != nil {
-		return nil, nil, fmt.Errorf("invalid format for SoH packet capture status")
+	if err = mapstructure.Decode(capture, &packets); err != nil { //nolint:musttag // struct is used for decoding
+		return nil, nil, errors.New("invalid format for SoH packet capture status")
 	}
 
 	return packets.Hosts, packets.Flows, nil

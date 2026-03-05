@@ -1,13 +1,14 @@
 package scheduler
 
 import (
+	"errors"
 	"fmt"
 
 	ifaces "phenix/types/interfaces"
 	"phenix/util/mm"
 )
 
-func init() {
+func init() { //nolint:gochecknoinits // scheduler registration
 	schedulers["subnet-compute"] = new(subnetCompute)
 }
 
@@ -23,7 +24,7 @@ func (subnetCompute) Name() string {
 
 func (subnetCompute) Schedule(spec ifaces.ExperimentSpec) error {
 	if len(spec.Topology().Nodes()) == 0 {
-		return fmt.Errorf("no VMs defined for experiment")
+		return errors.New("no VMs defined for experiment")
 	}
 
 	cluster, err := mm.GetClusterHosts(true)
@@ -40,12 +41,15 @@ func (subnetCompute) Schedule(spec ifaces.ExperimentSpec) error {
 		if h := cluster.FindHostByName(host); h != nil {
 			if n := spec.Topology().FindNodeByName(node); n != nil {
 				if len(n.Network().Interfaces()) == 0 {
-					return fmt.Errorf("node %s doesn't have any network interfaces", n.General().Hostname())
+					return fmt.Errorf(
+						"node %s doesn't have any network interfaces",
+						n.General().Hostname(),
+					)
 				}
 
 				// cluster.IncrHostVMs(host, 1)
 				// cluster.IncrHostCPUCommit(host, n.Hardware.VCPU)
-				cluster.IncrHostMemCommit(host, n.Hardware().Memory())
+				_ = cluster.IncrHostMemCommit(host, n.Hardware().Memory())
 
 				vlan := n.Network().Interfaces()[0].VLAN()
 
@@ -70,7 +74,10 @@ func (subnetCompute) Schedule(spec ifaces.ExperimentSpec) error {
 		var scheduled *mm.Host
 
 		if len(node.Network().Interfaces()) == 0 {
-			return fmt.Errorf("node %s doesn't have any network interfaces", node.General().Hostname())
+			return fmt.Errorf(
+				"node %s doesn't have any network interfaces",
+				node.General().Hostname(),
+			)
 		}
 
 		vlan := node.Network().Interfaces()[0].VLAN()
@@ -80,6 +87,7 @@ func (subnetCompute) Schedule(spec ifaces.ExperimentSpec) error {
 				if host := cluster.FindHostByName(name); host != nil {
 					if (host.MemCommit + node.Hardware().Memory()) < host.MemTotal {
 						scheduled = host
+
 						break
 					}
 				}
@@ -100,7 +108,7 @@ func (subnetCompute) Schedule(spec ifaces.ExperimentSpec) error {
 
 		// cluster.IncrHostVMs(scheduled.Name, 1)
 		// cluster.IncrHostCPUCommit(scheduled.Name, node.Hardware.VCPU)
-		cluster.IncrHostMemCommit(scheduled.Name, node.Hardware().Memory())
+		_ = cluster.IncrHostMemCommit(scheduled.Name, node.Hardware().Memory())
 
 		cluster.SortByCommittedMem(true)
 	}

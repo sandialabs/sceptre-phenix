@@ -13,35 +13,35 @@ type (
 )
 
 const (
-	BRIDGE_MODE_UNSET  BridgingMode = ""
-	BRIDGE_MODE_MANUAL BridgingMode = "manual"
-	BRIDGE_MODE_AUTO   BridgingMode = "auto"
+	BridgeModeUnset  BridgingMode = ""
+	BridgeModeManual BridgingMode = "manual"
+	BridgeModeAuto   BridgingMode = "auto"
 )
 
 const (
-	DEPLOY_MODE_UNSET         DeploymentMode = ""
-	DEPLOY_MODE_NO_HEADNODE   DeploymentMode = "no-headnode"
-	DEPLOY_MODE_ONLY_HEADNODE DeploymentMode = "only-headnode"
-	DEPLOY_MODE_ALL           DeploymentMode = "all"
+	DeployModeUnset        DeploymentMode = ""
+	DeployModeNoHeadnode   DeploymentMode = "no-headnode"
+	DeployModeOnlyHeadnode DeploymentMode = "only-headnode"
+	DeployModeAll          DeploymentMode = "all"
 )
 
 var (
-	PhenixBase   = "/phenix"
-	MinimegaBase = "/tmp/minimega"
+	PhenixBase   = "/phenix"       //nolint:gochecknoglobals // global config
+	MinimegaBase = "/tmp/minimega" //nolint:gochecknoglobals // global config
 
-	BridgeMode = BRIDGE_MODE_MANUAL
-	DeployMode = DEPLOY_MODE_NO_HEADNODE
+	BridgeMode = BridgeModeManual     //nolint:gochecknoglobals // global config
+	DeployMode = DeployModeNoHeadnode //nolint:gochecknoglobals // global config
 
-	UnixSocket = "/tmp/phenix.sock"
+	UnixSocket = "/tmp/phenix.sock" //nolint:gochecknoglobals // global config
 
-	StoreEndpoint    string
-	HostnameSuffixes string
+	StoreEndpoint    string //nolint:gochecknoglobals // global config
+	HostnameSuffixes string //nolint:gochecknoglobals // global config
 
-	UseGREMesh bool
+	UseGREMesh bool //nolint:gochecknoglobals // global config
 )
 
 func TrimHostnameSuffixes(str string) string {
-	for _, s := range strings.Split(HostnameSuffixes, ",") {
+	for s := range strings.SplitSeq(HostnameSuffixes, ",") {
 		str = strings.TrimSuffix(str, s)
 	}
 
@@ -51,14 +51,14 @@ func TrimHostnameSuffixes(str string) string {
 func ParseBridgeMode(mode string) (BridgingMode, error) {
 	switch strings.ToLower(mode) {
 	case "manual":
-		return BRIDGE_MODE_MANUAL, nil
+		return BridgeModeManual, nil
 	case "auto":
-		return BRIDGE_MODE_AUTO, nil
+		return BridgeModeAuto, nil
 	case "": // default to current setting
 		return BridgeMode, nil
 	}
 
-	return BRIDGE_MODE_UNSET, fmt.Errorf("unknown bridge mode provided: %s", mode)
+	return BridgeModeUnset, fmt.Errorf("unknown bridge mode provided: %s", mode)
 }
 
 func SetBridgeMode(mode string) error {
@@ -75,16 +75,16 @@ func SetBridgeMode(mode string) error {
 func ParseDeployMode(mode string) (DeploymentMode, error) {
 	switch strings.ToLower(mode) {
 	case "no-headnode":
-		return DEPLOY_MODE_NO_HEADNODE, nil
+		return DeployModeNoHeadnode, nil
 	case "only-headnode":
-		return DEPLOY_MODE_ONLY_HEADNODE, nil
+		return DeployModeOnlyHeadnode, nil
 	case "all":
-		return DEPLOY_MODE_ALL, nil
+		return DeployModeAll, nil
 	case "": // default to current setting
 		return DeployMode, nil
 	}
 
-	return DEPLOY_MODE_UNSET, fmt.Errorf("unknown deploy mode provided: %s", mode)
+	return DeployModeUnset, fmt.Errorf("unknown deploy mode provided: %s", mode)
 }
 
 func SetDeployMode(mode string) error {
@@ -122,6 +122,7 @@ func ParseEnv(input string) string {
 		if value, found := os.LookupEnv(key); found {
 			return value
 		}
+
 		return defaultValue // Return default value (empty string if no default was provided)
 	})
 }

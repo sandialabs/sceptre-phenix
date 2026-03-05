@@ -17,22 +17,30 @@ import (
 	"phenix/util/notes"
 	"phenix/util/plog"
 	"phenix/web/broker"
+	bt "phenix/web/broker/brokertypes"
 	"phenix/web/cache"
 	"phenix/web/util"
 	"phenix/web/weberror"
+)
 
-	bt "phenix/web/broker/brokertypes"
+const (
+	percentMultiplier            = 100.0
+	experimentStartCheckInterval = 2 * time.Second
 )
 
 var (
 	// Track context cancelers and wait groups for periodically running apps.
-	cancelers = make(map[string][]context.CancelFunc)
-	waiters   = make(map[string]*sync.WaitGroup)
+	cancelers = make(map[string][]context.CancelFunc) //nolint:gochecknoglobals // global state
+	waiters   = make(map[string]*sync.WaitGroup)      //nolint:gochecknoglobals // global state
+	commonMu  sync.Mutex                              //nolint:gochecknoglobals // global lock
 )
 
+//nolint:funlen // complex logic
 func startExperiment(name string) ([]byte, error) {
-	if err := cache.LockExperimentForStarting(name); err != nil {
+	err := cache.LockExperimentForStarting(name)
+	if err != nil {
 		err := weberror.NewWebError(err, "unable to lock experiment %s for starting", name)
+
 		return nil, err.SetStatus(http.StatusConflict)
 	}
 
@@ -54,15 +62,23 @@ func startExperiment(name string) ([]byte, error) {
 	go func() {
 		// We don't want to use the HTTP request's context here.
 		ctx, cancel := context.WithCancel(context.Background())
+		commonMu.Lock()
 		cancelers[name] = append(cancelers[name], cancel)
+		commonMu.Unlock()
 
 		ctx = notes.Context(ctx, false)
 
 		ch := make(chan error)
 
-		if err := experiment.Start(ctx, experiment.StartWithName(name), experiment.StartWithErrorChannel(ch)); err != nil {
+		if err := experiment.Start(
+			ctx,
+			experiment.StartWithName(name),
+			experiment.StartWithErrorChannel(ch),
+		); err != nil {
 			cancel() // avoid leakage
+			commonMu.Lock()
 			delete(cancelers, name)
+			commonMu.Unlock()
 
 			status <- result{nil, err}
 		} else {
@@ -91,15 +107,31 @@ func startExperiment(name string) ([]byte, error) {
 
 			go func() {
 				for err := range ch {
-					plog.Warn(plog.TypeSystem, "delayed error starting experiment", "exp", name, "err", err)
+					plog.Warn(
+						plog.TypeSystem,
+						"delayed error starting experiment",
+						"exp",
+						name,
+						"err",
+						err,
+					)
 
 					var delayErr experiment.DelayedVMError
 
 					if errors.As(err, &delayErr) {
 						broker.Broadcast(
 							bt.NewRequestPolicy("experiments/start", "update", name),
-							bt.NewResource("experiment/vm", fmt.Sprintf("%s/%s", name, delayErr.VM), "error"),
-							json.RawMessage(fmt.Sprintf(`{"error": "unable to start delayed VM %s"}`, delayErr.VM)),
+							bt.NewResource(
+								"experiment/vm",
+								fmt.Sprintf("%s/%s", name, delayErr.VM),
+								"error",
+							),
+							json.RawMessage(
+								fmt.Sprintf(
+									`{"error": "unable to start delayed VM %s"}`,
+									delayErr.VM,
+								),
+							),
 						)
 					}
 				}
@@ -115,6 +147,7 @@ func startExperiment(name string) ([]byte, error) {
 	}()
 
 	var progress float64
+
 	count, _ := vm.Count(name)
 
 	for {
@@ -128,26 +161,33 @@ func startExperiment(name string) ([]byte, error) {
 				)
 
 				err := weberror.NewWebError(s.err, "unable to start experiment %s", name)
+
 				return nil, err.SetStatus(http.StatusBadRequest)
 			}
 
 			// We don't want to use the HTTP request's context here.
 			ctx, cancel := context.WithCancel(context.Background())
+			commonMu.Lock()
 			cancelers[name] = append(cancelers[name], cancel)
 
 			var wg sync.WaitGroup
+
 			waiters[name] = &wg
+			commonMu.Unlock()
 
 			if err := app.PeriodicallyRunApps(ctx, &wg, s.exp); err != nil {
 				cancel() // avoid leakage
+				commonMu.Lock()
 				delete(cancelers, name)
 				delete(waiters, name)
+				commonMu.Unlock()
 
-				fmt.Printf("Error scheduling experiment apps to run periodically: %v\n", err)
+				fmt.Printf("Error scheduling experiment apps to run periodically: %v\n", err) //nolint:forbidigo // error logging
 			}
 
 			vms, err := vm.List(name)
 			if err != nil {
+				//nolint:godox // TODO
 				// TODO
 				plog.Error(plog.TypeSystem, "listing VMs in experiment", "exp", name, "err", err)
 			}
@@ -155,6 +195,7 @@ func startExperiment(name string) ([]byte, error) {
 			body, err := marshaler.Marshal(util.ExperimentToProtobuf(*s.exp, "", vms))
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to start experiment %s", name)
+
 				return nil, err.SetStatus(http.StatusInternalServerError)
 			}
 
@@ -168,7 +209,15 @@ func startExperiment(name string) ([]byte, error) {
 		default:
 			p, err := mm.GetLaunchProgress(name, count)
 			if err != nil {
-				plog.Error(plog.TypeSystem, "getting progress for experiment", "exp", name, "err", err)
+				plog.Error(
+					plog.TypeSystem,
+					"getting progress for experiment",
+					"exp",
+					name,
+					"err",
+					err,
+				)
+
 				continue
 			}
 
@@ -176,9 +225,9 @@ func startExperiment(name string) ([]byte, error) {
 				progress = p
 			}
 
-			plog.Debug(plog.TypeSystem, "percent deployed", "percent", progress*100.0, "exp", name)
+			plog.Debug(plog.TypeSystem, "percent deployed", "percent", progress*percentMultiplier, "exp", name)
 
-			status := map[string]interface{}{
+			status := map[string]any{
 				"percent": progress,
 			}
 
@@ -190,7 +239,7 @@ func startExperiment(name string) ([]byte, error) {
 				marshalled,
 			)
 
-			time.Sleep(2 * time.Second)
+			time.Sleep(experimentStartCheckInterval)
 		}
 	}
 }
@@ -198,6 +247,7 @@ func startExperiment(name string) ([]byte, error) {
 func stopExperiment(name string) ([]byte, error) {
 	if err := cache.LockExperimentForStopping(name); err != nil {
 		err := weberror.NewWebError(err, "unable to lock experiment %s for stopping", name)
+
 		return nil, err.SetStatus(http.StatusConflict)
 	}
 
@@ -209,18 +259,20 @@ func stopExperiment(name string) ([]byte, error) {
 		nil,
 	)
 
-	if cancels, ok := cancelers[name]; ok {
-		for _, cancel := range cancels {
-			cancel()
-		}
-
-		if wg, ok := waiters[name]; ok {
-			wg.Wait()
-		}
-	}
-
+	commonMu.Lock()
+	cancels := cancelers[name]
+	wg := waiters[name]
 	delete(cancelers, name)
 	delete(waiters, name)
+	commonMu.Unlock()
+
+	for _, cancel := range cancels {
+		cancel()
+	}
+
+	if wg != nil {
+		wg.Wait()
+	}
 
 	if err := experiment.Stop(name); err != nil {
 		broker.Broadcast(
@@ -230,22 +282,24 @@ func stopExperiment(name string) ([]byte, error) {
 		)
 
 		err := weberror.NewWebError(err, "unable to stop experiment %s", name)
+
 		return nil, err.SetStatus(http.StatusBadRequest)
 	}
 
 	exp, err := experiment.Get(name)
 	if err != nil {
-		// TODO
+		plog.Error(plog.TypeSystem, "getting experiment", "exp", name, "err", err)
 	}
 
 	vms, err := vm.List(name)
 	if err != nil {
-		// TODO
+		plog.Error(plog.TypeSystem, "listing VMs in experiment", "exp", name, "err", err)
 	}
 
 	body, err := marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vms))
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to stop experiment %s", name)
+
 		return nil, err.SetStatus(http.StatusInternalServerError)
 	}
 

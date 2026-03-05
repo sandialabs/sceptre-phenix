@@ -13,68 +13,68 @@ type TopologySearch struct {
 	IP         map[string][]int `json:"ip"`
 }
 
-func (this *TopologySearch) AddHostname(k string, n int) {
-	if this.Hostname == nil {
-		this.Hostname = make(map[string]int)
+func (s *TopologySearch) AddHostname(k string, n int) {
+	if s.Hostname == nil {
+		s.Hostname = make(map[string]int)
 	}
 
-	this.Hostname[k] = n
+	s.Hostname[k] = n
 }
 
-func (this *TopologySearch) AddDisk(k string, n int) {
-	if this.Disk == nil {
-		this.Disk = make(map[string][]int)
+func (s *TopologySearch) AddDisk(k string, n int) {
+	if s.Disk == nil {
+		s.Disk = make(map[string][]int)
 	}
 
-	this.Disk[k] = append(this.Disk[k], n)
+	s.Disk[k] = append(s.Disk[k], n)
 }
 
-func (this *TopologySearch) AddType(k string, n int) {
-	if this.Type == nil {
-		this.Type = make(map[string][]int)
+func (s *TopologySearch) AddType(k string, n int) {
+	if s.Type == nil {
+		s.Type = make(map[string][]int)
 	}
 
-	this.Type[k] = append(this.Type[k], n)
+	s.Type[k] = append(s.Type[k], n)
 }
 
-func (this *TopologySearch) AddOSType(k string, n int) {
-	if this.OSType == nil {
-		this.OSType = make(map[string][]int)
+func (s *TopologySearch) AddOSType(k string, n int) {
+	if s.OSType == nil {
+		s.OSType = make(map[string][]int)
 	}
 
-	this.OSType[k] = append(this.OSType[k], n)
+	s.OSType[k] = append(s.OSType[k], n)
 }
 
-func (this *TopologySearch) AddLabel(k, v string, n int) {
-	if this.Label == nil {
-		this.Label = make(map[string][]int)
+func (s *TopologySearch) AddLabel(k, v string, n int) {
+	if s.Label == nil {
+		s.Label = make(map[string][]int)
 	}
 
 	k = fmt.Sprintf("%s=%s", k, v)
 
-	this.Label[k] = append(this.Label[k], n)
+	s.Label[k] = append(s.Label[k], n)
 }
 
-func (this *TopologySearch) AddAnnotation(k string, n int) {
-	if this.Annotation == nil {
-		this.Annotation = make(map[string][]int)
+func (s *TopologySearch) AddAnnotation(k string, n int) {
+	if s.Annotation == nil {
+		s.Annotation = make(map[string][]int)
 	}
 
-	this.Annotation[k] = append(this.Annotation[k], n)
+	s.Annotation[k] = append(s.Annotation[k], n)
 }
 
-func (this *TopologySearch) AddVLAN(k string, n int) {
-	if this.VLAN == nil {
-		this.VLAN = make(map[string][]int)
+func (s *TopologySearch) AddVLAN(k string, n int) {
+	if s.VLAN == nil {
+		s.VLAN = make(map[string][]int)
 	}
 
-	this.VLAN[k] = append(this.VLAN[k], n)
+	s.VLAN[k] = append(s.VLAN[k], n)
 }
 
-func (this *TopologySearch) AddIP(k string, n int) {
-	if this.IP == nil {
-		this.IP = make(map[string][]int)
+func (s *TopologySearch) AddIP(k string, n int) {
+	if s.IP == nil {
+		s.IP = make(map[string][]int)
 	}
 
-	this.IP[k] = append(this.IP[k], n)
+	s.IP[k] = append(s.IP[k], n)
 }

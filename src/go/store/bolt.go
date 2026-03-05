@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"sync"
@@ -10,18 +11,20 @@ import (
 	"go.etcd.io/bbolt"
 )
 
+const boltFileMode = 0o600
+
 type BoltDB struct {
-	sync.Mutex
+	mu sync.Mutex
 
 	db   *bbolt.DB
 	path string
 }
 
-func NewBoltDB() Store {
+func NewBoltDB() Store { //nolint:ireturn // factory
 	return new(BoltDB)
 }
 
-func (this *BoltDB) Init(opts ...Option) error {
+func (b *BoltDB) Init(opts ...Option) error {
 	options := NewOptions(opts...)
 
 	u, err := url.Parse(options.Endpoint)
@@ -33,22 +36,23 @@ func (this *BoltDB) Init(opts ...Option) error {
 		return fmt.Errorf("invalid scheme '%s' for BoltDB endpoint", u.Scheme)
 	}
 
-	this.path = u.Host + u.Path
+	b.path = u.Host + u.Path
 
-	if err := this.InitializeComponent(COMPONENT_STORE); err != nil {
-		return fmt.Errorf("initializing component %s: %w", COMPONENT_STORE, err)
+	if err := b.InitializeComponent(ComponentStore); err != nil {
+		return fmt.Errorf("initializing component %s: %w", ComponentStore, err)
 	}
 
 	return nil
 }
 
-func (this *BoltDB) IsInitialized(component Component) bool {
-	if err := this.open(); err != nil {
+func (b *BoltDB) IsInitialized(component Component) bool {
+	if err := b.open(); err != nil {
 		return false
 	}
-	defer this.Close()
 
-	v, err := this.get("phenix", string(component))
+	defer func() { _ = b.Close() }()
+
+	v, err := b.get("phenix", string(component))
 	if err != nil {
 		return false
 	}
@@ -56,25 +60,28 @@ func (this *BoltDB) IsInitialized(component Component) bool {
 	return v[0] == 1
 }
 
-func (this *BoltDB) InitializeComponent(component Component) error {
-	if err := this.open(); err != nil {
+func (b *BoltDB) InitializeComponent(component Component) error {
+	err := b.open()
+	if err != nil {
 		return err
 	}
-	defer this.Close()
 
-	if err := this.put("phenix", string(component), []byte{1}); err != nil {
+	defer func() { _ = b.Close() }()
+
+	err = b.put("phenix", string(component), []byte{1})
+	if err != nil {
 		return fmt.Errorf("marking component %s as initialized: %w", component, err)
 	}
 
 	return nil
 }
 
-func (this *BoltDB) open() error {
-	this.Lock()
+func (b *BoltDB) open() error {
+	b.mu.Lock()
 
 	var err error
 
-	this.db, err = bbolt.Open(this.path, 0600, &bbolt.Options{NoFreelistSync: true})
+	b.db, err = bbolt.Open(b.path, boltFileMode, &bbolt.Options{NoFreelistSync: true}) //nolint:exhaustruct // partial initialization
 	if err != nil {
 		return err
 	}
@@ -82,34 +89,39 @@ func (this *BoltDB) open() error {
 	return nil
 }
 
-func (this *BoltDB) Close() error {
-	defer this.Unlock()
+func (b *BoltDB) Close() error {
+	defer b.mu.Unlock()
 
-	if this.db == nil {
+	if b.db == nil {
 		return nil
 	}
 
-	return this.db.Close()
+	return b.db.Close()
 }
 
-func (this *BoltDB) List(kinds ...string) (Configs, error) {
-	this.open()
-	defer this.Close()
+func (b *BoltDB) List(kinds ...string) (Configs, error) {
+	err := b.open()
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = b.Close() }()
 
 	var configs Configs
 
 	for _, kind := range kinds {
-		if err := this.ensureBucket(kind); err != nil {
+		if err := b.ensureBucket(kind); err != nil {
 			return nil, err
 		}
 
-		err := this.db.View(func(tx *bbolt.Tx) error {
+		err := b.db.View(func(tx *bbolt.Tx) error {
 			b := tx.Bucket([]byte(kind))
 
 			err := b.ForEach(func(_, v []byte) error {
 				var c Config
 
-				if err := json.Unmarshal(v, &c); err != nil {
+				err := json.Unmarshal(v, &c)
+				if err != nil {
 					return fmt.Errorf("unmarshaling config JSON: %w", err)
 				}
 
@@ -117,14 +129,12 @@ func (this *BoltDB) List(kinds ...string) (Configs, error) {
 
 				return nil
 			})
-
 			if err != nil {
 				return fmt.Errorf("iterating %s bucket: %w", kind, err)
 			}
 
 			return nil
 		})
-
 		if err != nil {
 			return nil, fmt.Errorf("getting configs from store: %w", err)
 		}
@@ -133,11 +143,14 @@ func (this *BoltDB) List(kinds ...string) (Configs, error) {
 	return configs, nil
 }
 
-func (this *BoltDB) Get(c *Config) error {
-	this.open()
-	defer this.Close()
+func (b *BoltDB) Get(c *Config) error {
+	if err := b.open(); err != nil {
+		return err
+	}
 
-	v, err := this.get(c.Kind, c.Metadata.Name)
+	defer func() { _ = b.Close() }()
+
+	v, err := b.get(c.Kind, c.Metadata.Name)
 	if err != nil {
 		return fmt.Errorf("getting config: %w", err)
 	}
@@ -149,11 +162,14 @@ func (this *BoltDB) Get(c *Config) error {
 	return nil
 }
 
-func (this *BoltDB) Create(c *Config) error {
-	this.open()
-	defer this.Close()
+func (b *BoltDB) Create(c *Config) error {
+	if err := b.open(); err != nil {
+		return err
+	}
 
-	if _, err := this.get(c.Kind, c.Metadata.Name); err == nil {
+	defer func() { _ = b.Close() }()
+
+	if _, err := b.get(c.Kind, c.Metadata.Name); err == nil {
 		return ErrExist
 	}
 
@@ -175,18 +191,19 @@ func (this *BoltDB) Create(c *Config) error {
 		return fmt.Errorf("marshaling config JSON: %w", err)
 	}
 
-	if err := this.put(c.Kind, c.Metadata.Name, v); err != nil {
+	if err := b.put(c.Kind, c.Metadata.Name, v); err != nil {
 		return fmt.Errorf("writing config JSON to Bolt: %w", err)
 	}
 
 	return nil
 }
 
-func (this *BoltDB) Update(c *Config) error {
-	this.open()
-	defer this.Close()
+func (b *BoltDB) Update(c *Config) error {
+	_ = b.open()
 
-	if _, err := this.get(c.Kind, c.Metadata.Name); err != nil {
+	defer func() { _ = b.Close() }()
+
+	if _, err := b.get(c.Kind, c.Metadata.Name); err != nil {
 		return ErrNotExist
 	}
 
@@ -197,26 +214,27 @@ func (this *BoltDB) Update(c *Config) error {
 		return fmt.Errorf("marshaling config JSON: %w", err)
 	}
 
-	if err := this.put(c.Kind, c.Metadata.Name, v); err != nil {
+	if err := b.put(c.Kind, c.Metadata.Name, v); err != nil {
 		return fmt.Errorf("writing config JSON to Bolt: %w", err)
 	}
 
 	return nil
 }
 
-func (this *BoltDB) Patch(*Config, map[string]interface{}) error {
-	return fmt.Errorf("BoltDB.Patch not implemented")
+func (b *BoltDB) Patch(*Config, map[string]any) error {
+	return errors.New("boltDB.Patch not implemented")
 }
 
-func (this *BoltDB) Delete(c *Config) error {
-	this.open()
-	defer this.Close()
+func (b *BoltDB) Delete(c *Config) error {
+	_ = b.open()
 
-	if err := this.ensureBucket(c.Kind); err != nil {
+	defer func() { _ = b.Close() }()
+
+	if err := b.ensureBucket(c.Kind); err != nil {
 		return nil
 	}
 
-	err := this.db.Update(func(tx *bbolt.Tx) error {
+	err := b.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Kind))
 		v := b.Get([]byte(c.Metadata.Name))
 
@@ -226,7 +244,6 @@ func (this *BoltDB) Delete(c *Config) error {
 
 		return b.Delete([]byte(c.Metadata.Name))
 	})
-
 	if err != nil {
 		return fmt.Errorf("deleting key %s in bucket %s: %w", c.Metadata.Name, c.Kind, err)
 	}
@@ -234,45 +251,47 @@ func (this *BoltDB) Delete(c *Config) error {
 	return nil
 }
 
-func (this *BoltDB) get(b, k string) ([]byte, error) {
-	if err := this.ensureBucket(b); err != nil {
+func (b *BoltDB) get(bucket, k string) ([]byte, error) {
+	err := b.ensureBucket(bucket)
+	if err != nil {
 		return nil, err
 	}
 
 	var v []byte
 
-	this.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte(b))
+	_ = b.db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte(bucket))
 		v = b.Get([]byte(k))
+
 		return nil
 	})
 
 	if v == nil {
-		return nil, fmt.Errorf("%w: key %s does not exist in bucket %s", ErrNotExist, k, b)
+		return nil, fmt.Errorf("%w: key %s does not exist in bucket %s", ErrNotExist, k, bucket)
 	}
 
 	return v, nil
 }
 
-func (this *BoltDB) put(b, k string, v []byte) error {
-	if err := this.ensureBucket(b); err != nil {
+func (b *BoltDB) put(bucket, k string, v []byte) error {
+	if err := b.ensureBucket(bucket); err != nil {
 		return err
 	}
 
-	err := this.db.Update(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte(b))
+	err := b.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte(bucket))
+
 		return b.Put([]byte(k), v)
 	})
-
 	if err != nil {
-		return fmt.Errorf("updating value for key %s in bucket %s: %w", k, b, err)
+		return fmt.Errorf("updating value for key %s in bucket %s: %w", k, bucket, err)
 	}
 
 	return nil
 }
 
-func (this *BoltDB) ensureBucket(name string) error {
-	return this.db.Update(func(tx *bbolt.Tx) error {
+func (b *BoltDB) ensureBucket(name string) error {
+	return b.db.Update(func(tx *bbolt.Tx) error {
 		_, err := tx.CreateBucketIfNotExists([]byte(name))
 		if err != nil {
 			return fmt.Errorf("creating bucket in Bolt: %w", err)

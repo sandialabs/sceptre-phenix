@@ -1,35 +1,36 @@
 package types
 
 import (
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
+
+	"github.com/mitchellh/mapstructure"
 
 	"phenix/store"
 	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
 	v1 "phenix/types/version/v1"
 	v2 "phenix/types/version/v2"
-
-	"github.com/mitchellh/mapstructure"
-	"golang.org/x/exp/slices"
 )
 
-func init() {
-	var spec interface{}
+func init() { //nolint:gochecknoinits // interface assertion
+	var spec any
 
 	spec = new(v2.ScenarioSpec)
-	_ = spec.(ifaces.ScenarioSpec)
+	_, _ = spec.(ifaces.ScenarioSpec)
 
 	spec = new(v2.ScenarioApp)
-	_ = spec.(ifaces.ScenarioApp)
+	_, _ = spec.(ifaces.ScenarioApp)
 
 	spec = new(v2.ScenarioAppHost)
-	_ = spec.(ifaces.ScenarioAppHost)
+	_, _ = spec.(ifaces.ScenarioAppHost)
 }
 
-func DecodeScenarioFromConfig(c store.Config) (ifaces.ScenarioSpec, error) {
+func DecodeScenarioFromConfig(c store.Config) (ifaces.ScenarioSpec, error) { //nolint:ireturn // interface
 	var (
-		iface         interface{}
+		iface         any
 		latestVersion = version.StoredVersion[c.Kind]
 	)
 
@@ -62,22 +63,24 @@ func DecodeScenarioFromConfig(c store.Config) (ifaces.ScenarioSpec, error) {
 
 	spec, ok := iface.(ifaces.ScenarioSpec)
 	if !ok {
-		return nil, fmt.Errorf("invalid spec in config")
+		return nil, errors.New("invalid spec in config")
 	}
 
 	return spec, nil
 }
 
-func MakeCustomScenarioFromConfig(c store.Config, disabledApps []string) (ifaces.ScenarioSpec, error) {
-	//Get base spec from config, going to use this to create a custom config
+func MakeCustomScenarioFromConfig( //nolint:ireturn // interface
+	c store.Config,
+	disabledApps []string,
+) (ifaces.ScenarioSpec, error) {
+	// Get base spec from config, going to use this to create a custom config
 	spec, err := DecodeScenarioFromConfig(c)
 	if err != nil {
-		return nil, fmt.Errorf("Error make custom scenario: %w", err)
+		return nil, fmt.Errorf("error make custom scenario: %w", err)
 	}
 
-	//if app name in disabled app list, set to disabled
+	// if app name in disabled app list, set to disabled
 	for _, app := range spec.Apps() {
-
 		if slices.Contains(disabledApps, app.Name()) {
 			app.SetDisabled(true)
 		}
@@ -99,11 +102,17 @@ func MergeScenariosForTopology(scenario ifaces.ScenarioSpec, topology string) er
 
 			topo, ok := fromScenarioC.Metadata.Annotations["topology"]
 			if !ok {
-				return fmt.Errorf("topology annotation missing from scenario %s", app.FromScenario())
+				return fmt.Errorf(
+					"topology annotation missing from scenario %s",
+					app.FromScenario(),
+				)
 			}
 
 			if !strings.Contains(topo, topology) {
-				return fmt.Errorf("experiment/scenario topology mismatch for scenario %s", app.FromScenario())
+				return fmt.Errorf(
+					"experiment/scenario topology mismatch for scenario %s",
+					app.FromScenario(),
+				)
 			}
 
 			// This will upgrade the scenario to the latest known version if needed.
@@ -121,6 +130,7 @@ func MergeScenariosForTopology(scenario ifaces.ScenarioSpec, topology string) er
 					app.SetHosts(fromApp.Hosts())
 
 					found = true
+
 					break
 				}
 			}
@@ -136,28 +146,29 @@ func MergeScenariosForTopology(scenario ifaces.ScenarioSpec, topology string) er
 
 type scenario struct{}
 
-func (scenario) Upgrade(version string, spec map[string]interface{}, md store.ConfigMetadata) (interface{}, error) {
+func (scenario) Upgrade(version string, spec map[string]any, md store.ConfigMetadata) (any, error) {
 	if version == "v1" {
 		var (
-			V1 = new(v1.ScenarioSpec)
-			V2 = new(v2.ScenarioSpec)
+			v1Spec = new(v1.ScenarioSpec)
+			v2Spec = new(v2.ScenarioSpec)
 		)
 
-		if err := mapstructure.WeakDecode(spec, &V1); err != nil {
+		err := mapstructure.WeakDecode(spec, &v1Spec)
+		if err != nil {
 			return nil, fmt.Errorf("decoding scenario into v1 spec: %w", err)
 		}
 
-		for _, exp := range V1.AppsF.ExperimentF {
-			app := &v2.ScenarioApp{
+		for _, exp := range v1Spec.AppsF.ExperimentF {
+			app := &v2.ScenarioApp{ //nolint:exhaustruct // partial initialization
 				NameF:     exp.NameF,
 				AssetDirF: exp.AssetDirF,
 				MetadataF: exp.MetadataF,
 			}
 
-			V2.AppsF = append(V2.AppsF, app)
+			v2Spec.AppsF = append(v2Spec.AppsF, app)
 		}
 
-		for _, host := range V1.AppsF.HostF {
+		for _, host := range v1Spec.AppsF.HostF {
 			hosts := make([]*v2.ScenarioAppHost, len(host.HostsF))
 
 			for i, h1 := range host.HostsF {
@@ -167,21 +178,21 @@ func (scenario) Upgrade(version string, spec map[string]interface{}, md store.Co
 				}
 			}
 
-			app := &v2.ScenarioApp{
+			app := &v2.ScenarioApp{ //nolint:exhaustruct // partial initialization
 				NameF:     host.NameF,
 				AssetDirF: host.AssetDirF,
 				HostsF:    hosts,
 			}
 
-			V2.AppsF = append(V2.AppsF, app)
+			v2Spec.AppsF = append(v2Spec.AppsF, app)
 		}
 
-		return V2, nil
+		return v2Spec, nil
 	}
 
 	return nil, fmt.Errorf("unknown version %s to upgrade from", version)
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // upgrader registration
 	RegisterUpgrader("Scenario/v2", new(scenario))
 }

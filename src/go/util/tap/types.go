@@ -1,23 +1,22 @@
 package tap
 
 type Tap struct {
-	Bridge   string   `structs:"bridge" mapstructure:"bridge"`
-	VLAN     string   `structs:"vlan" mapstructure:"vlan"`
-	IP       string   `structs:"ip" mapstructure:"ip"`
-	External External `structs:"externalAccess" mapstructure:"externalAccess"`
+	Bridge   string   `mapstructure:"bridge"         structs:"bridge"`
+	VLAN     string   `mapstructure:"vlan"           structs:"vlan"`
+	IP       string   `mapstructure:"ip"             structs:"ip"`
+	External External `mapstructure:"externalAccess" structs:"externalAccess"`
 
-	Name   string `structs:"name" mapstructure:"name"`
-	Subnet string `structs:"subnet" mapstructure:"subnet"`
+	Name   string `mapstructure:"name"   structs:"name"`
+	Subnet string `mapstructure:"subnet" structs:"subnet"`
 
 	// Using this to provide backwards compatibility with the original Scorch
 	// tap/break component, where it's using `internetAccess` instead of
 	// `externalAccess`.
-	Other map[string]interface{} `structs:"-" mapstructure:",remain"`
+	Other map[string]any `mapstructure:",remain" structs:"-"`
 
 	o options
 }
 
 type External struct {
-	Enabled bool `structs:"enabled" mapstructure:"enabled"`
-	// TODO: add firewall config
+	Enabled bool `mapstructure:"enabled" structs:"enabled"`
 }

@@ -5,16 +5,13 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"log"
 	"os"
-	"os/exec"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"text/template"
-
-	"golang.org/x/exp/slices"
 )
 
 type Permission struct {
@@ -43,28 +40,36 @@ var packageTemplate = template.Must(template.New("").Parse(code))
 
 func main() {
 	var permissions []Permission
+	re := regexp.MustCompile(`role\.Allowed\("([^"]+)", "([^"]+)"`)
 
-	out, err := exec.Command(
-		"grep", "-hroPI",
-		"(?<=role.Allowed.\")(.+?)\\)", "../../",
-		"--exclude=*_test.go",
-	).Output()
-
+	err := filepath.Walk("../..", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && strings.HasSuffix(info.Name(), ".go") && !strings.HasSuffix(info.Name(), "_test.go") {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			matches := re.FindAllStringSubmatch(string(content), -1)
+			for _, match := range matches {
+				pair := Permission{match[1], match[2]}
+				found := false
+				for _, p := range permissions {
+					if p == pair {
+						found = true
+						break
+					}
+				}
+				if !found {
+					permissions = append(permissions, pair)
+				}
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		log.Fatal(err)
-	}
-
-	scanner := bufio.NewScanner(bytes.NewReader(out))
-
-	for scanner.Scan() {
-		var (
-			parts = strings.Split(scanner.Text(), ",")
-			pair  = Permission{strings.Trim(parts[0], "\"() "), strings.Trim(parts[1], "\"() ")}
-		)
-
-		if !slices.Contains(permissions, pair) {
-			permissions = append(permissions, pair)
-		}
 	}
 
 	// sort checks alphabetically

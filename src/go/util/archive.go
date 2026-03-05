@@ -10,19 +10,38 @@ import (
 	"path/filepath"
 )
 
-func CreateArchive(root, path string) error {
-	out, err := os.Create(path)
+func CreateArchive(root, path string) (err error) {
+	var out *os.File
+
+	out, err = os.Create(path)
 	if err != nil {
 		return fmt.Errorf("creating output file %s: %w", path, err)
 	}
 
-	defer out.Close()
+	defer func() {
+		cerr := out.Close()
+		if cerr != nil && err == nil {
+			err = fmt.Errorf("closing output file: %w", cerr)
+		}
+	}()
 
 	gw := gzip.NewWriter(out)
-	defer gw.Close()
+
+	defer func() {
+		cerr := gw.Close()
+		if cerr != nil && err == nil {
+			err = fmt.Errorf("closing gzip writer: %w", cerr)
+		}
+	}()
 
 	tw := tar.NewWriter(gw)
-	defer tw.Close()
+
+	defer func() {
+		cerr := tw.Close()
+		if cerr != nil && err == nil {
+			err = fmt.Errorf("closing tar writer: %w", cerr)
+		}
+	}()
 
 	fsys := os.DirFS(root)
 
@@ -40,7 +59,7 @@ func CreateArchive(root, path string) error {
 			return fmt.Errorf("opening file %s: %w", path, err)
 		}
 
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 
 		info, err := file.Stat()
 		if err != nil {
@@ -65,7 +84,6 @@ func CreateArchive(root, path string) error {
 
 		return nil
 	})
-
 	if err != nil {
 		return fmt.Errorf("walking directories rooted at %s: %w", root, err)
 	}

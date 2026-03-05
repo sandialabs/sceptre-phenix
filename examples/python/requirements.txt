@@ -1,0 +1,4 @@
+pytest
+flake8
+black
+phenix-apps @ git+https://github.com/sandialabs/sceptre-phenix-apps.git#subdirectory=src/python

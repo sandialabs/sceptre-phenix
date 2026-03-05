@@ -11,15 +11,19 @@ import (
 	"phenix/web/rbac"
 )
 
-func ExperimentToProtobuf(exp types.Experiment, status cache.Status, vms []mm.VM) *proto.Experiment {
-	pb := &proto.Experiment{
+func ExperimentToProtobuf(
+	exp types.Experiment,
+	status cache.Status,
+	vms []mm.VM,
+) *proto.Experiment {
+	pb := &proto.Experiment{ //nolint:exhaustruct // partial initialization
 		Name:      exp.Spec.ExperimentName(),
 		Topology:  exp.Metadata.Annotations["topology"],
 		Scenario:  exp.Metadata.Annotations["scenario"],
 		StartTime: exp.Status.StartTime(),
 		Running:   exp.Running(),
 		Status:    string(status),
-		VmCount:   uint32(len(vms)),
+		VmCount:   uint32(len(vms)), //nolint:gosec // integer overflow conversion int -> uint32
 	}
 
 	pb.Vms = make([]*proto.VM, len(vms))
@@ -27,12 +31,12 @@ func ExperimentToProtobuf(exp types.Experiment, status cache.Status, vms []mm.VM
 		vm := VMToProtobuf(exp.Spec.ExperimentName(), v, exp.Spec.Topology())
 
 		pb.Vms[i] = vm
-		if vm.DelayedStart != "" {
+		if vm.GetDelayedStart() != "" {
 			pb.DelayedVms++
 		}
 	}
 
-	var apps []string
+	apps := make([]string, 0, len(exp.Apps()))
 
 	for _, app := range exp.Apps() {
 		apps = append(apps, app.Name())
@@ -46,35 +50,35 @@ func ExperimentToProtobuf(exp types.Experiment, status cache.Status, vms []mm.VM
 		aliases = exp.Status.VLANs()
 
 		var (
-			min = 0
-			max = 0
+			minVal = 0
+			maxVal = 0
 		)
 
 		for _, k := range exp.Status.VLANs() {
-			if min == 0 || k < min {
-				min = k
+			if minVal == 0 || k < minVal {
+				minVal = k
 			}
 
-			if max == 0 || k > max {
-				max = k
+			if maxVal == 0 || k > maxVal {
+				maxVal = k
 			}
 		}
 
-		pb.VlanMin = uint32(min)
-		pb.VlanMax = uint32(max)
+		pb.VlanMin = uint32(minVal)
+		pb.VlanMax = uint32(maxVal)
 	} else {
 		aliases = exp.Spec.VLANs().Aliases()
 
-		pb.VlanMin = uint32(exp.Spec.VLANs().Min())
-		pb.VlanMax = uint32(exp.Spec.VLANs().Max())
+		pb.VlanMin = uint32(exp.Spec.VLANs().Min()) //nolint:gosec // integer overflow conversion int -> uint32
+		pb.VlanMax = uint32(exp.Spec.VLANs().Max()) //nolint:gosec // integer overflow conversion int -> uint32
 	}
 
 	if aliases != nil {
-		var vlans []*proto.VLAN
+		vlans := make([]*proto.VLAN, 0, len(aliases))
 
 		for alias := range aliases {
 			vlan := &proto.VLAN{
-				Vlan:  uint32(aliases[alias]),
+				Vlan:  uint32(aliases[alias]), //nolint:gosec // integer overflow conversion int -> uint32
 				Alias: alias,
 			}
 
@@ -82,21 +86,21 @@ func ExperimentToProtobuf(exp types.Experiment, status cache.Status, vms []mm.VM
 		}
 
 		pb.Vlans = vlans
-		pb.VlanCount = uint32(len(aliases))
+		pb.VlanCount = uint32(len(aliases)) //nolint:gosec // integer overflow conversion int -> uint32
 	}
 
 	return pb
 }
 
 func VMToProtobuf(exp string, vm mm.VM, topology ifaces.TopologySpec) *proto.VM {
-	v := &proto.VM{
+	v := &proto.VM{ //nolint:exhaustruct // partial initialization
 		Name:            vm.Name,
 		Host:            vm.Host,
 		Ipv4:            vm.IPv4,
-		Cpus:            uint32(vm.CPUs),
-		Ram:             uint32(vm.RAM),
+		Cpus:            uint32(vm.CPUs), //nolint:gosec // integer overflow conversion int -> uint32
+		Ram:             uint32(vm.RAM),  //nolint:gosec // integer overflow conversion int -> uint32
 		Disk:            vm.Disk,
-		InjectPartition: uint32(vm.InjectPartition),
+		InjectPartition: uint32(vm.InjectPartition), //nolint:gosec // integer overflow conversion int -> uint32
 		Uptime:          vm.Uptime,
 		Networks:        vm.Networks,
 		Taps:            vm.Taps,
@@ -128,7 +132,7 @@ func VMToProtobuf(exp string, vm mm.VM, topology ifaces.TopologySpec) *proto.VM 
 func CaptureToProtobuf(capture mm.Capture) *proto.Capture {
 	return &proto.Capture{
 		Vm:        capture.VM,
-		Interface: uint32(capture.Interface),
+		Interface: uint32(capture.Interface), //nolint:gosec // integer overflow conversion int -> uint32
 		Filepath:  capture.Filepath,
 	}
 }
@@ -144,10 +148,10 @@ func CapturesToProtobuf(captures []mm.Capture) []*proto.Capture {
 }
 
 func ExperimentScheduleToProtobuf(exp types.Experiment) *proto.ExperimentSchedule {
-	var sched []*proto.Schedule
+	sched := make([]*proto.Schedule, 0, len(exp.Spec.Schedules()))
 
 	for vm, host := range exp.Spec.Schedules() {
-		sched = append(sched, &proto.Schedule{Vm: vm, Host: host})
+		sched = append(sched, &proto.Schedule{Vm: vm, Host: host}) //nolint:exhaustruct // partial initialization
 	}
 
 	return &proto.ExperimentSchedule{Schedule: sched}
@@ -168,12 +172,14 @@ func UserToProtobuf(u rbac.User) *proto.User {
 
 func resourceNamesForRole(r rbac.Role) []string {
 	rnamemap := make(map[string]struct{})
+
 	for _, p := range r.Spec.Policies {
 		var skip bool
 
 		for _, pn := range p.Resources {
 			if pn == "disks" || pn == "hosts" || pn == "users" {
 				skip = true
+
 				break
 			}
 		}
@@ -187,10 +193,11 @@ func resourceNamesForRole(r rbac.Role) []string {
 		}
 	}
 
-	var rnames []string
+	rnames := make([]string, 0, len(rnamemap))
 	for n := range rnamemap {
 		rnames = append(rnames, n)
 	}
+
 	sort.Strings(rnames)
 
 	return rnames

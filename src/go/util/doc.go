@@ -1,2 +1,2 @@
-// Generic utility functions/helpers.
+// Package util contains generic utility functions/helpers.
 package util

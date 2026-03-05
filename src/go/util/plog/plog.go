@@ -3,40 +3,52 @@ package plog
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"os"
 	"sync"
 
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
-	"golang.org/x/exp/slog"
 )
 
 var (
-	handler = &phenixHandler{handlers: make(map[string]slog.Handler)}
-	logger  = slog.New(handler)
+	handler = &phenixHandler{ //nolint:gochecknoglobals,exhaustruct // package level logger
+		handlers: make(map[string]slog.Handler),
+	}
+	logger = slog.New(handler) //nolint:gochecknoglobals // package level logger
 
-	// used to adjust log level of "phenix-default" handler only
-	level = new(slog.LevelVar)
+	// Level is used to adjust log level of "phenix-default" handler only.
+	Level = new(slog.LevelVar) //nolint:gochecknoglobals // package level logger
 
-	// list of log attribute keys to remove from the default logger
-	logKeysIgnored = map[string]struct{}{ScorchSohKey: {}}
+	// list of log attribute keys to remove from the default logger.
+	logKeysIgnored = map[string]struct{}{ScorchSohKey: {}} //nolint:gochecknoglobals // package level logger
 )
 
-// main phenix slog.Handler
+// main phenix [slog.Handler].
 type phenixHandler struct {
 	handlers map[string]slog.Handler
 
 	mu sync.RWMutex
 }
 
-// NewPhenixHandler creates a new slog.TextHandler named "phenix-default"
-// logging to STDERR. This handler will default to a log level of slog.LevelInfo
+// NewPhenixHandler creates a new [slog.TextHandler] named "phenix-default"
+// logging to STDERR. This handler will default to a log level of [slog.LevelInfo]
 // until it is changed with the "SetLevel" function.
-func NewPhenixHandler() {
-	// options := &slog.HandlerOptions{
-	options := &tint.Options{
-		Level:   level,
-		NoColor: !isatty.IsTerminal(os.Stderr.Fd()),
+func NewPhenixHandler(w io.Writer) {
+	if w == nil {
+		w = os.Stderr
+	}
+
+	noColor := true
+	if f, ok := w.(*os.File); ok {
+		noColor = !isatty.IsTerminal(f.Fd())
+	}
+
+	options := &tint.Options{ //nolint:exhaustruct // partial initialization
+		Level:      Level,
+		TimeFormat: "2006-01-02 15:04:05.000",
+		NoColor:    noColor,
 		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
 			if _, ok := logKeysIgnored[a.Key]; ok {
 				return slog.Attr{}
@@ -46,33 +58,37 @@ func NewPhenixHandler() {
 		},
 	}
 
-	// handler.AddHandler("phenix-default", slog.NewTextHandler(os.Stderr, options))
-	handler.AddHandler("phenix-default", tint.NewHandler(os.Stderr, options))
+	handler.AddHandler("phenix-default", tint.NewHandler(w, options))
 }
 
-// AddHandler adds a new slog.Handler by name to the main phenix slog.Handler.
-func (this *phenixHandler) AddHandler(name string, h slog.Handler) {
-	this.mu.Lock()
-	defer this.mu.Unlock()
-
-	this.handlers[name] = h
+// ChangeConsoleLogger updates the "phenix-default" handler with a new writer.
+func ChangeConsoleLogger(w io.Writer) {
+	NewPhenixHandler(w)
 }
 
-// RemoveHandler removes the named slog.Handler from the main phenix slog.Handler.
-func (this *phenixHandler) RemoveHandler(name string) {
-	this.mu.Lock()
-	defer this.mu.Unlock()
+// AddHandler adds a new [slog.Handler] by name to the main phenix [slog.Handler].
+func (h *phenixHandler) AddHandler(name string, handler slog.Handler) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
-	delete(this.handlers, name)
+	h.handlers[name] = handler
 }
 
-// Enabled implements the slog.Handler interface for the phenix handler.
-func (this *phenixHandler) Enabled(ctx context.Context, l slog.Level) bool {
-	this.mu.RLock()
-	defer this.mu.RUnlock()
+// RemoveHandler removes the named [slog.Handler] from the main phenix [slog.Handler].
+func (h *phenixHandler) RemoveHandler(name string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
-	for _, h := range this.handlers {
-		if h.Enabled(ctx, l) {
+	delete(h.handlers, name)
+}
+
+// Enabled implements the [slog.Handler] interface for the phenix handler.
+func (h *phenixHandler) Enabled(ctx context.Context, l slog.Level) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for _, handler := range h.handlers {
+		if handler.Enabled(ctx, l) {
 			return true
 		}
 	}
@@ -80,46 +96,46 @@ func (this *phenixHandler) Enabled(ctx context.Context, l slog.Level) bool {
 	return false
 }
 
-// Handle implements the slog.Handler interface for the phenix handler.
-func (this *phenixHandler) Handle(ctx context.Context, r slog.Record) error {
-	this.mu.RLock()
-	defer this.mu.RUnlock()
+// Handle implements the [slog.Handler] interface for the phenix handler.
+func (h *phenixHandler) Handle(ctx context.Context, r slog.Record) error {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 
 	var errs error
 
-	for _, h := range this.handlers {
-		if h.Enabled(ctx, r.Level) {
-			errs = errors.Join(errs, h.Handle(ctx, r.Clone()))
+	for _, handler := range h.handlers {
+		if handler.Enabled(ctx, r.Level) {
+			errs = errors.Join(errs, handler.Handle(ctx, r.Clone()))
 		}
 	}
 
 	return errs
 }
 
-// WithAttrs implements the slog.Handler interface for the phenix handler.
-func (this *phenixHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	this.mu.RLock()
-	defer this.mu.RUnlock()
+// WithAttrs implements the [slog.Handler] interface for the phenix handler.
+func (h *phenixHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 
 	with := make(map[string]slog.Handler)
 
-	for n, h := range this.handlers {
-		with[n] = h.WithAttrs(attrs)
+	for n, handler := range h.handlers {
+		with[n] = handler.WithAttrs(attrs)
 	}
 
-	return &phenixHandler{handlers: with}
+	return &phenixHandler{handlers: with} //nolint:exhaustruct // partial initialization
 }
 
-// WithGroup implements the slog.Handler interface for the phenix handler.
-func (this *phenixHandler) WithGroup(name string) slog.Handler {
-	this.mu.RLock()
-	defer this.mu.RUnlock()
+// WithGroup implements the [slog.Handler] interface for the phenix handler.
+func (h *phenixHandler) WithGroup(name string) slog.Handler {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 
 	with := make(map[string]slog.Handler)
 
-	for n, h := range this.handlers {
-		with[n] = h.WithGroup(name)
+	for n, handler := range h.handlers {
+		with[n] = handler.WithGroup(name)
 	}
 
-	return &phenixHandler{handlers: with}
+	return &phenixHandler{handlers: with} //nolint:exhaustruct // partial initialization
 }

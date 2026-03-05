@@ -16,8 +16,9 @@ type MMDiskFiles struct{}
 
 func (MMDiskFiles) CommitDisk(path string) error {
 	cmd := mmcli.NewCommand()
-	cmd.Command = fmt.Sprintf("disk commit %s", path)
+	cmd.Command = "disk commit " + path
 	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
+
 	return err
 }
 
@@ -25,6 +26,7 @@ func (MMDiskFiles) SnapshotDisk(src, dst string) error {
 	cmd := mmcli.NewCommand()
 	cmd.Command = fmt.Sprintf("disk snapshot %s %s", src, dst)
 	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
+
 	return err
 }
 
@@ -35,7 +37,9 @@ func (MMDiskFiles) RebaseDisk(src, dst string, unsafe bool) error {
 	} else {
 		cmd.Command = fmt.Sprintf("disk rebase %s %s", src, dst)
 	}
+
 	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
+
 	return err
 }
 
@@ -43,6 +47,7 @@ func (MMDiskFiles) ResizeDisk(src, size string) error {
 	cmd := mmcli.NewCommand()
 	cmd.Command = fmt.Sprintf("disk resize %s %s", src, size)
 	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
+
 	return err
 }
 
@@ -50,6 +55,7 @@ func (MMDiskFiles) CloneDisk(src, dst string) error {
 	cmd := mmcli.NewCommand()
 	cmd.Command = fmt.Sprintf("shell cp %s %s", src, dst)
 	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
+
 	return err
 }
 
@@ -57,13 +63,15 @@ func (MMDiskFiles) RenameDisk(src, dst string) error {
 	cmd := mmcli.NewCommand()
 	cmd.Command = fmt.Sprintf("shell mv %s %s", src, dst)
 	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
+
 	return err
 }
 
 func (MMDiskFiles) DeleteDisk(src string) error {
 	cmd := mmcli.NewCommand()
-	cmd.Command = fmt.Sprintf("shell rm %s", src)
+	cmd.Command = "shell rm " + src
 	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
+
 	return err
 }
 
@@ -72,13 +80,12 @@ func (MMDiskFiles) GetImages(expName string) ([]Details, error) {
 	details := make(map[string]Details)
 
 	// Add all the files from the minimega files directory
-	if err := getAllFiles(details); err != nil {
-		return nil, err
-	}
+	getAllFiles(details)
 
 	// Add all files defined in the experiment topology if given; otherwise check all experiments
 	if len(expName) > 0 {
-		if err := getTopologyFiles(expName, details); err != nil {
+		err := getTopologyFiles(expName, details)
+		if err != nil {
 			return nil, err
 		}
 	} else {
@@ -86,8 +93,10 @@ func (MMDiskFiles) GetImages(expName string) ([]Details, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		for _, exp := range experiments {
-			if err := getTopologyFiles(exp.Metadata.Name, details); err != nil {
+			err = getTopologyFiles(exp.Metadata.Name, details)
+			if err != nil {
 				return nil, err
 			}
 		}
@@ -114,9 +123,8 @@ func (MMDiskFiles) GetImage(path string) (Details, error) {
 	return images[0], nil
 }
 
-// Get all image files from the minimega files directory
-func getAllFiles(details map[string]Details) error {
-
+// Get all image files from the minimega files directory.
+func getAllFiles(details map[string]Details) {
 	// First, get file listings from cluster nodes.
 	cmd := mmcli.NewCommand()
 	cmd.Command = "file list"
@@ -124,17 +132,15 @@ func getAllFiles(details map[string]Details) error {
 	for _, row := range mmcli.RunTabular(cmd) {
 		if _, ok := details[row["name"]]; row["dir"] == "" && !ok {
 			for _, image := range resolveImage(mm.GetMMFullPath(row["name"])) {
-				if _, ok := details[image.Name]; !ok {
+				if _, ok2 := details[image.Name]; !ok2 {
 					details[image.Name] = image
 				}
 			}
 		}
 	}
-
-	return nil
 }
 
-// Retrieves all the unique image names defined in the topology
+// Retrieves all the unique image names defined in the topology.
 func getTopologyFiles(expName string, details map[string]Details) error {
 	// Retrieve the experiment
 	exp, err := experiment.Get(expName)
@@ -147,6 +153,7 @@ func getTopologyFiles(expName string, details map[string]Details) error {
 			if len(drive.Image()) == 0 {
 				continue
 			}
+
 			path := drive.Image()
 			if !filepath.IsAbs(path) {
 				path = mm.GetMMFullPath(path)
@@ -154,7 +161,7 @@ func getTopologyFiles(expName string, details map[string]Details) error {
 
 			if _, ok := details[filepath.Base(path)]; !ok {
 				for _, image := range resolveImage(path) {
-					if _, ok := details[image.Name]; !ok {
+					if _, ok2 := details[image.Name]; !ok2 {
 						details[image.Name] = image
 					}
 				}
@@ -169,14 +176,18 @@ func resolveImage(path string) []Details {
 	imageDetails := []Details{}
 
 	knownFormat := false
+
 	for _, f := range knownImageExtensions {
 		if strings.HasSuffix(path, f) {
 			knownFormat = true
+
 			break
 		}
 	}
+
 	if !knownFormat {
 		plog.Debug(plog.TypeSystem, "file didn't match know image extensions: %s", "path", path)
+
 		return imageDetails
 	}
 
@@ -185,7 +196,7 @@ func resolveImage(path string) []Details {
 	images := mmcli.RunTabular(cmd)
 
 	for i, row := range images {
-		image := Details{
+		image := Details{ //nolint:exhaustruct // partial initialization
 			Name:          filepath.Base(row["image"]),
 			FullPath:      row["image"],
 			Size:          row["disksize"],
@@ -193,24 +204,28 @@ func resolveImage(path string) []Details {
 			BackingImages: []string{},
 		}
 
-		if row["format"] == "qcow2" {
-			image.Kind = VM_IMAGE
+		switch {
+		case row["format"] == "qcow2":
+			image.Kind = VMImage
+
 			backingChain := []string{}
 			for _, backing := range images[i+1:] {
 				backingChain = append(backingChain, filepath.Base(backing["image"]))
 			}
+
 			image.BackingImages = backingChain
-		} else if strings.HasSuffix(image.Name, "_rootfs.tgz") {
-			image.Kind = CONTAINER_IMAGE
-		} else if strings.HasSuffix(image.Name, ".hdd") {
-			image.Kind = VM_IMAGE
-		} else if strings.HasSuffix(image.Name, ".iso") {
-			image.Kind = ISO_IMAGE
-		} else {
+		case strings.HasSuffix(image.Name, "_rootfs.tgz"):
+			image.Kind = ContainerImage
+		case strings.HasSuffix(image.Name, ".hdd"):
+			image.Kind = VMImage
+		case strings.HasSuffix(image.Name, ".iso"):
+			image.Kind = ISOImage
+		default:
 			image.Kind = UNKNOWN
 		}
 
 		var err error
+
 		image.InUse, err = strconv.ParseBool(row["inuse"])
 		if err != nil {
 			plog.Warn(plog.TypeSystem, "could not determine if image in use", "image", path)

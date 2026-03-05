@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 
 	ifaces "phenix/types/interfaces"
 	"phenix/util/common"
@@ -20,29 +19,34 @@ type userScheduler struct {
 	options Options
 }
 
-func (this *userScheduler) Init(opts ...Option) error {
-	this.options = NewOptions(opts...)
+func (us *userScheduler) Init(opts ...Option) error {
+	us.options = NewOptions(opts...)
 
 	return nil
 }
 
-func (this userScheduler) Name() string {
-	return this.options.Name
+func (us userScheduler) Name() string {
+	return us.options.Name
 }
 
-func (this userScheduler) Schedule(spec ifaces.ExperimentSpec) error {
-	if err := this.shellOut(spec); err != nil {
+func (us userScheduler) Schedule(spec ifaces.ExperimentSpec) error {
+	err := us.shellOut(spec)
+	if err != nil {
 		return fmt.Errorf("running user scheduler: %w", err)
 	}
 
 	return nil
 }
 
-func (this userScheduler) shellOut(spec ifaces.ExperimentSpec) error {
-	cmdName := "phenix-scheduler-" + this.options.Name
+func (us userScheduler) shellOut(spec ifaces.ExperimentSpec) error {
+	cmdName := "phenix-scheduler-" + us.options.Name
 
 	if !shell.CommandExists(cmdName) {
-		return fmt.Errorf("external user scheduler %s does not exist in your path: %w", cmdName, ErrUserSchedulerNotFound)
+		return fmt.Errorf(
+			"external user scheduler %s does not exist in your path: %w",
+			cmdName,
+			ErrUserSchedulerNotFound,
+		)
 	}
 
 	cluster, err := mm.GetClusterHosts(true)
@@ -63,29 +67,30 @@ func (this userScheduler) shellOut(spec ifaces.ExperimentSpec) error {
 		return fmt.Errorf("marshaling experiment spec to JSON: %w", err)
 	}
 
-	logPipePath := filepath.Join(common.PhenixBase, "experiments", spec.ExperimentName(), "scheduler_pipes", this.options.Name)
-	done, err := plog.ReadProcessLogs(logPipePath, plog.TypeSystem, "scheduler", this.options.Name, "exp", spec.ExperimentName())
-	defer close(done)
-	if err != nil {
-		return err
-	}
+	stderrChan := make(chan []byte)
+	go plog.ProcessStderrLogs(
+		stderrChan,
+		plog.TypeSystem,
+		"scheduler",
+		us.options.Name,
+		"exp",
+		spec.ExperimentName(),
+	)
 
 	opts := []shell.Option{
 		shell.Command(cmdName),
 		shell.Stdin(data),
-		shell.Env( // TODO: update to reflect options provided by user
+		shell.Env(
 			"PHENIX_LOG_LEVEL=DEBUG",
-			"PHENIX_LOG_FILE="+logPipePath,
+			"PHENIX_LOG_FILE=stderr",
 			"PHENIX_DIR="+common.PhenixBase,
 		),
+		shell.StreamStderr(stderrChan),
 	}
 
-	stdOut, stdErr, err := shell.ExecCommand(context.Background(), opts...)
+	stdOut, _, err := shell.ExecCommand(context.Background(), opts...)
 	if err != nil {
-		plog.Warn(plog.TypeSystem, "scheduler returned stderr", "stderr", string(stdErr), "scheduler", this.options.Name, "exp", exp)
-
-
-		return fmt.Errorf("user scheduler %s command %s failed: %w", this.options.Name, cmdName, err)
+		return fmt.Errorf("user scheduler %s command %s failed: %w", us.options.Name, cmdName, err)
 	}
 
 	if err := json.Unmarshal(stdOut, &exp); err != nil {

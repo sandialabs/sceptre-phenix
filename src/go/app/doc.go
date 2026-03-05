@@ -1,16 +1,16 @@
 /*
-Phenix apps customize experiments using metadata.
+Package app provides Phenix apps that customize experiments using metadata.
 
 Default Apps
 
-  * ntp.go:     configures a NTP server into the experiment infrastructure
-  * serial.go:  configures a Serial interface on a VM image
-  * startup.go: configures minimega startup injections based on OS type
-  * user.go:    used to shell out with JSON payload to custom user apps
-  * vrouter.go: used to customize a virtual router image, including setting
-                interfaces, ACL rules, IPSec VPN settings, etc
+  - ntp.go:     configures a NTP server into the experiment infrastructure
+  - serial.go:  configures a Serial interface on a VM image
+  - startup.go: configures minimega startup injections based on OS type
+  - user.go:    used to shell out with JSON payload to custom user apps
+  - vrouter.go: used to customize a virtual router image, including setting
+    interfaces, ACL rules, IPSec VPN settings, etc
 
-Custom User Apps
+# Custom User Apps
 
 Custom user apps are interacted with through STDIN and STDOUT. The phenix
 `user.go` app will pass a single argument to the custom user app for the
@@ -42,27 +42,27 @@ value.
 
 Example Custom User App
 
-  import json, sys
+	import json, sys
 
-  def eprint(*args):
-    print(*args, file=sys.stderr)
+	def eprint(*args):
+	  print(*args, file=sys.stderr)
 
-  def main() :
-    if len(sys.argv) != 2:
-      eprint("must pass exactly one argument on the command line")
-      sys.exit(1)
+	def main() :
+	  if len(sys.argv) != 2:
+	    eprint("must pass exactly one argument on the command line")
+	    sys.exit(1)
 
-    exp = json.loads(sys.stdin.read())
+	  exp = json.loads(sys.stdin.read())
 
-    # This user app only cares about the configure stage.
-    if sys.argv[1] != 'configure':
-      print(json.dumps(exp['spec']))
-      sys.exit(0)
+	  # This user app only cares about the configure stage.
+	  if sys.argv[1] != 'configure':
+	    print(json.dumps(exp['spec']))
+	    sys.exit(0)
 
-    for n in exp['spec']['topology']['nodes']:
-      for d in n['hardware']['drives']:
-        d['image'] = 'm$.qc2'
+	  for n in exp['spec']['topology']['nodes']:
+	    for d in n['hardware']['drives']:
+	      d['image'] = 'm$.qc2'
 
-    print(json.dumps(exp))
+	  print(json.dumps(exp))
 */
 package app

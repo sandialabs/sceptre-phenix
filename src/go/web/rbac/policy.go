@@ -11,10 +11,10 @@ type Policy struct {
 	Spec *v1.PolicySpec
 }
 
-func (this Policy) resourceNameAllowed(name string) bool {
+func (p Policy) resourceNameAllowed(name string) bool {
 	var allowed bool
 
-	for _, n := range this.Spec.ResourceNames {
+	for _, n := range p.Spec.ResourceNames {
 		negate := strings.HasPrefix(n, "!")
 		n = strings.Replace(n, "!", "", 1)
 
@@ -30,8 +30,8 @@ func (this Policy) resourceNameAllowed(name string) bool {
 	return allowed
 }
 
-func (this Policy) verbAllowed(verb string) bool {
-	for _, v := range this.Spec.Verbs {
+func (p Policy) verbAllowed(verb string) bool {
+	for _, v := range p.Spec.Verbs {
 		if v == "*" || v == verb {
 			return true
 		}

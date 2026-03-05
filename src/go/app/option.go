@@ -14,7 +14,7 @@ type Options struct {
 
 // NewOptions returns an Options struct initialized with the given option list.
 func NewOptions(opts ...Option) Options {
-	o := Options{
+	o := Options{ //nolint:exhaustruct // partial initialization
 		Filter: make(map[string]struct{}),
 	}
 
@@ -46,7 +46,7 @@ func DryRun(d bool) Option {
 	}
 }
 
-// Filter adds an app(s) to the list of filtered apps.
+// FilterApp adds an app(s) to the list of filtered apps.
 func FilterApp(a ...string) Option {
 	return func(o *Options) {
 		for _, n := range a {

@@ -9,9 +9,13 @@ import (
 	"phenix/web/scorch"
 )
 
-var backgrounded = map[Action]map[string]context.CancelFunc{
-	ACTIONCONFIG: make(map[string]context.CancelFunc),
-	ACTIONSTART:  make(map[string]context.CancelFunc),
+var backgrounded = map[Action]map[string]context.CancelFunc{ //nolint:gochecknoglobals // global state
+	ActionConfigure: make(map[string]context.CancelFunc),
+	ActionStart:     make(map[string]context.CancelFunc),
+	ActionStop:      make(map[string]context.CancelFunc),
+	ActionCleanup:   make(map[string]context.CancelFunc),
+	ActionDone:      make(map[string]context.CancelFunc),
+	ActionLoop:      make(map[string]context.CancelFunc),
 }
 
 func background(ctx context.Context, stage Action, options Options) context.Context {
@@ -32,10 +36,12 @@ func handleBackgrounded(stage Action, options Options) bool {
 	var bgStage Action
 
 	switch stage {
-	case ACTIONSTOP:
-		bgStage = ACTIONSTART
-	case ACTIONCLEANUP:
-		bgStage = ACTIONCONFIG
+	case ActionStop:
+		bgStage = ActionStart
+	case ActionCleanup:
+		bgStage = ActionConfigure
+	case ActionConfigure, ActionStart, ActionDone, ActionLoop:
+		return false
 	default:
 		return false
 	}
@@ -45,7 +51,7 @@ func handleBackgrounded(stage Action, options Options) bool {
 	if cancel, ok := backgrounded[bgStage][name]; ok {
 		cancel()
 
-		update := scorch.ComponentUpdate{
+		update := scorch.ComponentUpdate{ //nolint:exhaustruct // partial update
 			Exp:     options.Exp.Spec.ExperimentName(),
 			Run:     options.Run,
 			Loop:    options.Loop,
@@ -56,7 +62,7 @@ func handleBackgrounded(stage Action, options Options) bool {
 			Status:  "success",
 		}
 
-		scorch.UpdatePipeline(update)
+		_ = scorch.UpdatePipeline(update)
 		scorch.UpdateComponent(update)
 		delete(backgrounded[bgStage], name)
 
@@ -66,7 +72,7 @@ func handleBackgrounded(stage Action, options Options) bool {
 	return false
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // config hook
 	config.RegisterConfigHook("Experiment", func(stage string, c *store.Config) error {
 		switch stage {
 		case "update", "delete":

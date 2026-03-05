@@ -17,7 +17,7 @@ import (
 func terminal(ctx context.Context, dir, cmd string, args []string, envs ...string) error {
 	printer := color.New(color.FgGreen)
 
-	printer.Printf("Breakpoint: returning control to shell...\n\n")
+	_, _ = printer.Printf("Breakpoint: returning control to shell...\n\n")
 
 	c := exec.CommandContext(ctx, cmd, args...)
 	c.Env = append(c.Env, envs...)
@@ -28,32 +28,36 @@ func terminal(ctx context.Context, dir, cmd string, args []string, envs ...strin
 		return fmt.Errorf("starting pty for %s: %w", cmd, err)
 	}
 
-	defer tty.Close()
+	defer func() { _ = tty.Close() }()
 
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGWINCH)
 
 	go func() {
 		for range ch {
-			if err := pty.InheritSize(os.Stdin, tty); err != nil {
+			err = pty.InheritSize(os.Stdin, tty)
+			if err != nil {
+				//nolint:godox // TODO
 				// TODO
-				// log.Printf("error resizing pty: %s", err)
+				_ = err
 			}
 		}
 	}()
 
 	ch <- syscall.SIGWINCH // initial resize of tty
+
 	defer func() { signal.Stop(ch); close(ch) }()
 
-	old, err := term.MakeRaw(int(os.Stdin.Fd()))
+	old, err := term.MakeRaw(int(os.Stdin.Fd())) //nolint:gosec // integer overflow conversion uintptr -> int
 	if err != nil {
 		return fmt.Errorf("putting STDIN into raw mode: %w", err)
 	}
 
-	defer term.Restore(int(os.Stdin.Fd()), old)
+	defer func() { _ = term.Restore(int(os.Stdin.Fd()), old) }() //nolint:gosec // integer overflow conversion uintptr -> int
 
-	go io.Copy(tty, os.Stdin)
-	io.Copy(os.Stdout, tty)
+	go func() { _, _ = io.Copy(tty, os.Stdin) }()
+
+	_, _ = io.Copy(os.Stdout, tty)
 
 	return nil
 }

@@ -3,8 +3,8 @@ package pubsub
 import "sync"
 
 var (
-	mu   sync.RWMutex
-	subs = make(map[string][]chan any)
+	mu   sync.RWMutex                  //nolint:gochecknoglobals // package level subscription registry
+	subs = make(map[string][]chan any) //nolint:gochecknoglobals // package level subscription registry
 )
 
 func Subscribe(topic string) chan any {

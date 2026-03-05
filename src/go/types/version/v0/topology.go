@@ -5,35 +5,35 @@ import (
 )
 
 type TopologySpec struct {
-	NodesF []*Node `json:"nodes" yaml:"nodes" structs:"nodes" mapstructure:"nodes"`
+	NodesF []*Node `json:"nodes" mapstructure:"nodes" structs:"nodes" yaml:"nodes"`
 }
 
-func (this *TopologySpec) IncludedTopologies() []string {
+func (t *TopologySpec) IncludedTopologies() []string {
 	return nil
 }
 
-func (this *TopologySpec) Nodes() []ifaces.NodeSpec {
-	if this == nil {
+func (t *TopologySpec) Nodes() []ifaces.NodeSpec {
+	if t == nil {
 		return nil
 	}
 
-	nodes := make([]ifaces.NodeSpec, len(this.NodesF))
+	nodes := make([]ifaces.NodeSpec, len(t.NodesF))
 
-	for i, n := range this.NodesF {
+	for i, n := range t.NodesF {
 		nodes[i] = n
 	}
 
 	return nodes
 }
 
-func (this *TopologySpec) BootableNodes() []ifaces.NodeSpec {
-	if this == nil {
+func (t *TopologySpec) BootableNodes() []ifaces.NodeSpec {
+	if t == nil {
 		return nil
 	}
 
 	var bootable []ifaces.NodeSpec
 
-	for _, n := range this.NodesF {
+	for _, n := range t.NodesF {
 		var dnb bool
 
 		if n.GeneralF.DoNotBootF != nil {
@@ -50,14 +50,14 @@ func (this *TopologySpec) BootableNodes() []ifaces.NodeSpec {
 	return bootable
 }
 
-func (this *TopologySpec) SchedulableNodes(platform string) []ifaces.NodeSpec {
-	if this == nil {
+func (t *TopologySpec) SchedulableNodes(platform string) []ifaces.NodeSpec {
+	if t == nil {
 		return nil
 	}
 
 	var schedulable []ifaces.NodeSpec
 
-	for _, n := range this.NodesF {
+	for _, n := range t.NodesF {
 		if !n.External() {
 			schedulable = append(schedulable, n)
 		}
@@ -66,8 +66,8 @@ func (this *TopologySpec) SchedulableNodes(platform string) []ifaces.NodeSpec {
 	return schedulable
 }
 
-func (this TopologySpec) FindNodeByName(name string) ifaces.NodeSpec {
-	for _, node := range this.NodesF {
+func (t TopologySpec) FindNodeByName(name string) ifaces.NodeSpec { //nolint:ireturn // interface
+	for _, node := range t.NodesF {
 		if node.GeneralF.HostnameF == name {
 			return node
 		}
@@ -79,13 +79,14 @@ func (this TopologySpec) FindNodeByName(name string) ifaces.NodeSpec {
 // FindNodesWithLabels finds all nodes in the topology containing at least one
 // of the labels provided. Take note that the node does not have to have all the
 // labels provided, just one.
-func (this TopologySpec) FindNodesWithLabels(labels ...string) []ifaces.NodeSpec {
+func (t TopologySpec) FindNodesWithLabels(labels ...string) []ifaces.NodeSpec {
 	var nodes []ifaces.NodeSpec
 
-	for _, n := range this.NodesF {
+	for _, n := range t.NodesF {
 		for _, l := range labels {
 			if _, ok := n.LabelsF[l]; ok {
 				nodes = append(nodes, n)
+
 				break
 			}
 		}
@@ -98,13 +99,14 @@ func (TopologySpec) FindDelayedNodes() []ifaces.NodeSpec {
 	return nil
 }
 
-func (this TopologySpec) FindNodesWithVLAN(vlan string) []ifaces.NodeSpec {
+func (t TopologySpec) FindNodesWithVLAN(vlan string) []ifaces.NodeSpec {
 	var nodes []ifaces.NodeSpec
 
-	for _, n := range this.NodesF {
+	for _, n := range t.NodesF {
 		for _, i := range n.NetworkF.InterfacesF {
 			if i.VLAN() == vlan {
 				nodes = append(nodes, n)
+
 				break
 			}
 		}
@@ -113,31 +115,32 @@ func (this TopologySpec) FindNodesWithVLAN(vlan string) []ifaces.NodeSpec {
 	return nodes
 }
 
-func (this *TopologySpec) AddNode(typ, hostname string) ifaces.NodeSpec {
-	n := &Node{
+func (t *TopologySpec) AddNode(typ, hostname string) ifaces.NodeSpec { //nolint:ireturn // interface
+	n := &Node{ //nolint:exhaustruct // partial initialization
 		TypeF: typ,
-		GeneralF: &General{
+		GeneralF: &General{ //nolint:exhaustruct // partial initialization
 			HostnameF: hostname,
 		},
 	}
 
-	this.NodesF = append(this.NodesF, n)
+	t.NodesF = append(t.NodesF, n)
 
 	return n
 }
 
-func (this *TopologySpec) RemoveNode(hostname string) {
+func (t *TopologySpec) RemoveNode(hostname string) {
 	idx := -1
 
-	for i, node := range this.NodesF {
+	for i, node := range t.NodesF {
 		if node.GeneralF.HostnameF == hostname {
 			idx = i
+
 			break
 		}
 	}
 
 	if idx != -1 {
-		this.NodesF = append(this.NodesF[:idx], this.NodesF[idx+1:]...)
+		t.NodesF = append(t.NodesF[:idx], t.NodesF[idx+1:]...)
 	}
 }
 
@@ -145,13 +148,14 @@ func (TopologySpec) HasCommands() bool {
 	return false
 }
 
-func (this *TopologySpec) Init() error {
-	this.SetDefaults()
+func (t *TopologySpec) Init() error {
+	t.SetDefaults()
+
 	return nil
 }
 
-func (this *TopologySpec) SetDefaults() {
-	for _, n := range this.NodesF {
+func (t *TopologySpec) SetDefaults() {
+	for _, n := range t.NodesF {
 		n.SetDefaults()
 	}
 }

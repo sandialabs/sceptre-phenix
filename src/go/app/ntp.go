@@ -2,15 +2,19 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/mitchellh/mapstructure"
+
 	"phenix/tmpl"
 	"phenix/types"
-
-	"github.com/mitchellh/mapstructure"
 )
+
+const osWindows = "windows"
+const osLinux = "linux"
 
 type NTPAppMetadata struct {
 	DefaultSource NTPAppSource `mapstructure:"defaultSource"`
@@ -28,22 +32,22 @@ type NTPAppSource struct {
 	Address   string `mapstructure:"address"`
 }
 
-func (this NTPAppSource) IPAddress(exp *types.Experiment) string {
-	if this.Address != "" {
-		return this.Address
+func (s NTPAppSource) IPAddress(exp *types.Experiment) string {
+	if s.Address != "" {
+		return s.Address
 	}
 
-	if this.Hostname == "" || this.Interface == "" {
+	if s.Hostname == "" || s.Interface == "" {
 		return ""
 	}
 
-	node := exp.Spec.Topology().FindNodeByName(this.Hostname)
+	node := exp.Spec.Topology().FindNodeByName(s.Hostname)
 	if node == nil {
 		return ""
 	}
 
 	for _, iface := range node.Network().Interfaces() {
-		if strings.EqualFold(iface.Name(), this.Interface) {
+		if strings.EqualFold(iface.Name(), s.Interface) {
 			return iface.Address()
 		}
 	}
@@ -58,13 +62,14 @@ func (NTP) Init(...Option) error {
 }
 
 func (NTP) Name() string {
-	return "ntp"
+	return appNameNTP
 }
 
 func (NTP) Configure(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
+//nolint:cyclop,funlen // complex logic
 func (NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
 	var (
 		ntpDir  = exp.Spec.BaseDir() + "/ntp"
@@ -81,7 +86,8 @@ func (NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
 		for _, app := range exp.Apps() {
 			if app.Name() == "ntp" {
 				var amd NTPAppMetadata
-				mapstructure.Decode(app.Metadata(), &amd)
+
+				_ = mapstructure.Decode(app.Metadata(), &amd)
 
 				// Might be an empty string, but that's okay... for now.
 				defaultSource := amd.DefaultSource.IPAddress(exp)
@@ -93,7 +99,8 @@ func (NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
 					}
 
 					var hmd NTPAppHostMetadata
-					mapstructure.Decode(host.Metadata(), &hmd)
+
+					_ = mapstructure.Decode(host.Metadata(), &hmd)
 
 					var (
 						source = hmd.Source.IPAddress(exp)
@@ -103,7 +110,10 @@ func (NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
 					if hmd.Client != "" {
 						if source == "" {
 							if defaultSource == "" {
-								return fmt.Errorf("no NTP source configured for host %s (and no default source configured)", host.Hostname())
+								return fmt.Errorf(
+									"no NTP source configured for host %s (and no default source configured)",
+									host.Hostname(),
+								)
 							}
 
 							source = defaultSource
@@ -111,25 +121,48 @@ func (NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 						switch strings.ToLower(hmd.Client) {
 						case "ntp":
-							if err := tmpl.CreateFileFromTemplate("ntp_linux.tmpl", source, cfg); err != nil {
-								return fmt.Errorf("generating NTP client config for host %s: %w", host.Hostname(), err)
+							err := tmpl.CreateFileFromTemplate("ntp_linux.tmpl", source, cfg)
+							if err != nil {
+								return fmt.Errorf(
+									"generating NTP client config for host %s: %w",
+									host.Hostname(),
+									err,
+								)
 							}
 
 							node.AddInject(cfg, "/etc/ntp.conf", "", "")
 						case "systemd":
-							if err := tmpl.CreateFileFromTemplate("systemd-timesyncd.tmpl", source, cfg); err != nil {
-								return fmt.Errorf("generating NTP client config for host %s: %w", host.Hostname(), err)
+							err := tmpl.CreateFileFromTemplate(
+								"systemd-timesyncd.tmpl",
+								source,
+								cfg,
+							)
+							if err != nil {
+								return fmt.Errorf(
+									"generating NTP client config for host %s: %w",
+									host.Hostname(),
+									err,
+								)
 							}
 
 							node.AddInject(cfg, "/etc/systemd/timesyncd.conf", "", "")
 						case "windows":
-							if err := tmpl.CreateFileFromTemplate("ntp_windows.tmpl", source, cfg); err != nil {
-								return fmt.Errorf("generating NTP client config for host %s: %w", host.Hostname(), err)
+							err := tmpl.CreateFileFromTemplate("ntp_windows.tmpl", source, cfg)
+							if err != nil {
+								return fmt.Errorf(
+									"generating NTP client config for host %s: %w",
+									host.Hostname(),
+									err,
+								)
 							}
 
 							node.AddInject(cfg, "/phenix/startup/25-ntp.ps1", "0755", "")
 						default:
-							return fmt.Errorf("unknown NTP client type %s provided for host %s", hmd.Client, host.Hostname())
+							return fmt.Errorf(
+								"unknown NTP client type %s provided for host %s",
+								hmd.Client,
+								host.Hostname(),
+							)
 						}
 
 						continue
@@ -141,13 +174,22 @@ func (NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
 							// It's okay if `source` is an empty string here. If it is, the
 							// template will generate a config for the NTP server that prefers
 							// the host's clock as the source.
-							if err := tmpl.CreateFileFromTemplate("ntp_linux.tmpl", source, cfg); err != nil {
-								return fmt.Errorf("generating NTP server config for host %s: %w", host.Hostname(), err)
+							err := tmpl.CreateFileFromTemplate("ntp_linux.tmpl", source, cfg)
+							if err != nil {
+								return fmt.Errorf(
+									"generating NTP server config for host %s: %w",
+									host.Hostname(),
+									err,
+								)
 							}
 
 							node.AddInject(cfg, "/etc/ntp.conf", "", "")
 						default:
-							return fmt.Errorf("unknown NTP server type %s provided for host %s", hmd.Server, host.Hostname())
+							return fmt.Errorf(
+								"unknown NTP server type %s provided for host %s",
+								hmd.Server,
+								host.Hostname(),
+							)
 						}
 
 						continue
@@ -170,10 +212,11 @@ func (NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
 	serverAddr = server.Network().InterfaceAddress(ifaceName)
 
 	if serverAddr == "" {
-		return fmt.Errorf("no IP address provided for NTP server")
+		return errors.New("no IP address provided for NTP server")
 	}
 
-	if err := os.MkdirAll(ntpDir, 0755); err != nil {
+	err := os.MkdirAll(ntpDir, 0o750)
+	if err != nil {
 		return fmt.Errorf("creating experiment NTP directory path: %w", err)
 	}
 
@@ -191,7 +234,8 @@ func (NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
 		ntpFile := ntpDir + "/" + node.General().Hostname() + "_ntp"
 
 		if strings.EqualFold(node.Type(), "router") {
-			if err := tmpl.CreateFileFromTemplate("ntp_linux.tmpl", serverAddr, ntpFile); err != nil {
+			err := tmpl.CreateFileFromTemplate("ntp_linux.tmpl", serverAddr, ntpFile)
+			if err != nil {
 				return fmt.Errorf("generating Router NTP script: %w", err)
 			}
 
@@ -207,13 +251,15 @@ func (NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 		switch strings.ToLower(node.Hardware().OSType()) {
 		case "linux", "rhel", "centos":
-			if err := tmpl.CreateFileFromTemplate("ntp_linux.tmpl", serverAddr, ntpFile); err != nil {
+			err := tmpl.CreateFileFromTemplate("ntp_linux.tmpl", serverAddr, ntpFile)
+			if err != nil {
 				return fmt.Errorf("generating Linux NTP script: %w", err)
 			}
 
 			node.AddInject(ntpFile, "/etc/ntp.conf", "", "")
 		case "windows":
-			if err := tmpl.CreateFileFromTemplate("ntp_windows.tmpl", serverAddr, ntpFile); err != nil {
+			err := tmpl.CreateFileFromTemplate("ntp_windows.tmpl", serverAddr, ntpFile)
+			if err != nil {
 				return fmt.Errorf("generating Windows NTP script: %w", err)
 			}
 

@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+const lockTimeout = 5 * time.Minute
+
 func IsExperimentLocked(name string) Status {
 	key := "experiment|" + name
 
@@ -32,7 +34,7 @@ func UnlockVM(exp, name string) {
 func LockExperimentForCreation(name string) error {
 	key := "experiment|" + name
 
-	if status := Lock(key, StatusCreating, 5*time.Minute); status != "" {
+	if status := Lock(key, StatusCreating, lockTimeout); status != "" {
 		return fmt.Errorf("experiment %s is locked with status %s", name, status)
 	}
 
@@ -42,7 +44,7 @@ func LockExperimentForCreation(name string) error {
 func LockExperimentForUpdate(name string) error {
 	key := "experiment|" + name
 
-	if status := Lock(key, StatusUpdating, 5*time.Minute); status != "" {
+	if status := Lock(key, StatusUpdating, lockTimeout); status != "" {
 		return fmt.Errorf("experiment %s is locked with status %s", name, status)
 	}
 
@@ -62,7 +64,7 @@ func LockExperimentForDeletion(name string) error {
 func LockExperimentForStarting(name string) error {
 	key := "experiment|" + name
 
-	if status := Lock(key, StatusStarting, 5*time.Minute); status != "" {
+	if status := Lock(key, StatusStarting, lockTimeout); status != "" {
 		return fmt.Errorf("experiment %s is locked with status %s", name, status)
 	}
 
@@ -83,7 +85,7 @@ func LockVMForStarting(exp, name string) error {
 	key := fmt.Sprintf("vm|%s/%s", exp, name)
 
 	if status := Lock(key, StatusStarting, 1*time.Minute); status != "" {
-		return fmt.Errorf("VM %s is locked with status %s", name, status)
+		return fmt.Errorf("vm %s is locked with status %s", name, status)
 	}
 
 	return nil
@@ -93,7 +95,7 @@ func LockVMForStopping(exp, name string) error {
 	key := fmt.Sprintf("vm|%s/%s", exp, name)
 
 	if status := Lock(key, StatusStopping, 1*time.Minute); status != "" {
-		return fmt.Errorf("VM %s is locked with status %s", name, status)
+		return fmt.Errorf("vm %s is locked with status %s", name, status)
 	}
 
 	return nil
@@ -102,8 +104,8 @@ func LockVMForStopping(exp, name string) error {
 func LockVMForRedeploying(exp, name string) error {
 	key := fmt.Sprintf("vm|%s/%s", exp, name)
 
-	if status := Lock(key, StatusRedeploying, 5*time.Minute); status != "" {
-		return fmt.Errorf("VM %s is locked with status %s", name, status)
+	if status := Lock(key, StatusRedeploying, lockTimeout); status != "" {
+		return fmt.Errorf("vm %s is locked with status %s", name, status)
 	}
 
 	return nil
@@ -112,8 +114,8 @@ func LockVMForRedeploying(exp, name string) error {
 func LockVMForSnapshotting(exp, name string) error {
 	key := fmt.Sprintf("vm|%s/%s", exp, name)
 
-	if status := Lock(key, StatusSnapshotting, 5*time.Minute); status != "" {
-		return fmt.Errorf("VM %s is locked with status %s", name, status)
+	if status := Lock(key, StatusSnapshotting, lockTimeout); status != "" {
+		return fmt.Errorf("vm %s is locked with status %s", name, status)
 	}
 
 	return nil
@@ -122,8 +124,8 @@ func LockVMForSnapshotting(exp, name string) error {
 func LockVMForRestoring(exp, name string) error {
 	key := fmt.Sprintf("vm|%s/%s", exp, name)
 
-	if status := Lock(key, StatusRestoring, 5*time.Minute); status != "" {
-		return fmt.Errorf("VM %s is locked with status %s", name, status)
+	if status := Lock(key, StatusRestoring, lockTimeout); status != "" {
+		return fmt.Errorf("vm %s is locked with status %s", name, status)
 	}
 
 	return nil
@@ -132,8 +134,8 @@ func LockVMForRestoring(exp, name string) error {
 func LockVMForCommitting(exp, name string) error {
 	key := fmt.Sprintf("vm|%s/%s", exp, name)
 
-	if status := Lock(key, StatusCommitting, 5*time.Minute); status != "" {
-		return fmt.Errorf("VM %s is locked with status %s", name, status)
+	if status := Lock(key, StatusCommitting, lockTimeout); status != "" {
+		return fmt.Errorf("vm %s is locked with status %s", name, status)
 	}
 
 	return nil
@@ -142,8 +144,8 @@ func LockVMForCommitting(exp, name string) error {
 func LockVMForMemorySnapshotting(exp, name string) error {
 	key := fmt.Sprintf("vm|%s/%s", exp, name)
 
-	if status := Lock(key, StatusSnapshotting, 5*time.Minute); status != "" {
-		return fmt.Errorf("VM %s is locked with status %s", name, status)
+	if status := Lock(key, StatusSnapshotting, lockTimeout); status != "" {
+		return fmt.Errorf("vm %s is locked with status %s", name, status)
 	}
 
 	return nil

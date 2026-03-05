@@ -3,11 +3,13 @@ package cmd
 import (
 	"fmt"
 
-	"phenix/util"
-	"phenix/util/common"
+	"os"
 
 	"github.com/activeshadow/libminimega/miniclient"
 	"github.com/spf13/cobra"
+
+	"phenix/util"
+	"phenix/util/common"
 )
 
 type noPager struct{}
@@ -17,7 +19,7 @@ func (noPager) Page(output string) {
 		return
 	}
 
-	fmt.Println(output)
+	fmt.Fprintln(os.Stdout, output)
 }
 
 func newMMCmd() *cobra.Command {
@@ -43,6 +45,7 @@ func newMMCmd() *cobra.Command {
 
 			if attach {
 				mm.Attach(namespace)
+
 				return nil
 			}
 
@@ -60,6 +63,7 @@ func newMMCmd() *cobra.Command {
 			}
 
 			mm.RunAndPrint(command, false)
+
 			return nil
 		},
 	}
@@ -70,7 +74,7 @@ func newMMCmd() *cobra.Command {
 	return cmd
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // cobra command
 	mmCmd := newMMCmd()
 
 	rootCmd.AddCommand(mmCmd)

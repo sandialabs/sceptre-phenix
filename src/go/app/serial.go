@@ -11,6 +11,8 @@ import (
 	ifaces "phenix/types/interfaces"
 )
 
+const appNameSerial = "serial"
+
 type Serial struct{}
 
 func (Serial) Init(...Option) error {
@@ -18,7 +20,7 @@ func (Serial) Init(...Option) error {
 }
 
 func (Serial) Name() string {
-	return "serial"
+	return appNameSerial
 }
 
 func (Serial) Configure(ctx context.Context, exp *types.Experiment) error {
@@ -29,8 +31,9 @@ func (Serial) Configure(ctx context.Context, exp *types.Experiment) error {
 		}
 
 		// We only care about configuring serial interfaces on Linux VMs.
+		//nolint:godox // TODO
 		// TODO: handle rhel and centos OS types.
-		if node.Hardware().OSType() != "linux" {
+		if node.Hardware().OSType() != osLinux {
 			continue
 		}
 
@@ -40,13 +43,16 @@ func (Serial) Configure(ctx context.Context, exp *types.Experiment) error {
 		for _, iface := range node.Network().Interfaces() {
 			if iface.Type() == "serial" {
 				serial = true
+
 				break
 			}
 		}
 
 		if serial {
 			// update injections to include serial type (src and dst)
-			serialFile := exp.Spec.BaseDir() + "/startup/" + node.General().Hostname() + "-serial.bash"
+			serialFile := exp.Spec.BaseDir() + "/startup/" + node.General().
+				Hostname() +
+				"-serial.bash"
 
 			node.AddInject(serialFile, "/etc/phenix/serial-startup.bash", "0755", "")
 
@@ -75,8 +81,9 @@ func (Serial) PreStart(ctx context.Context, exp *types.Experiment) error {
 		}
 
 		// We only care about configuring serial interfaces on Linux VMs.
+		//nolint:godox // TODO
 		// TODO: handle rhel and centos OS types.
-		if node.Hardware().OSType() != "linux" {
+		if node.Hardware().OSType() != osLinux {
 			continue
 		}
 
@@ -92,27 +99,32 @@ func (Serial) PreStart(ctx context.Context, exp *types.Experiment) error {
 		if serial != nil {
 			startupDir := exp.Spec.BaseDir() + "/startup"
 
-			if err := os.MkdirAll(startupDir, 0755); err != nil {
+			err := os.MkdirAll(startupDir, 0o750)
+			if err != nil {
 				return fmt.Errorf("creating experiment startup directory path: %w", err)
 			}
 
 			serialFile := startupDir + "/" + node.General().Hostname() + "-serial.bash"
 
-			if err := tmpl.CreateFileFromTemplate("serial_startup.tmpl", serial, serialFile); err != nil {
+			err = tmpl.CreateFileFromTemplate("serial_startup.tmpl", serial, serialFile)
+			if err != nil {
 				return fmt.Errorf("generating serial script: %w", err)
 			}
 
-			if err := tmpl.RestoreAsset(startupDir, "serial-startup.service"); err != nil {
+			err = tmpl.RestoreAsset(startupDir, "serial-startup.service")
+			if err != nil {
 				return fmt.Errorf("restoring serial-startup.service: %w", err)
 			}
 
 			symlinksDir := startupDir + "/symlinks"
 
-			if err := os.MkdirAll(symlinksDir, 0755); err != nil {
+			err = os.MkdirAll(symlinksDir, 0o750)
+			if err != nil {
 				return fmt.Errorf("creating experiment startup symlinks directory path: %w", err)
 			}
 
-			if err := os.Symlink("../serial-startup.service", symlinksDir+"/serial-startup.service"); err != nil {
+			err = os.Symlink("../serial-startup.service", symlinksDir+"/serial-startup.service")
+			if err != nil {
 				// Ignore the error if it was for the symlinked file already existing.
 				if !strings.Contains(err.Error(), "file exists") {
 					return fmt.Errorf("creating symlink for serial-startup.service: %w", err)

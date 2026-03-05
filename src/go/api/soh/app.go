@@ -5,23 +5,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net"
 	"strings"
 	"time"
+
+	"github.com/activeshadow/structs"
+	"github.com/olivere/elastic/v7"
 
 	"phenix/app"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/util/mm"
 	"phenix/util/plog"
-
-	"github.com/activeshadow/structs"
-	"github.com/olivere/elastic/v7"
 )
 
-func init() {
-	app.RegisterUserApp("soh", func() app.App { return newSOH() })
+func init() { //nolint:gochecknoinits // app registration
+	_ = app.RegisterUserApp("soh", func() app.App { return newSOH() })
 }
 
 type SOH struct {
@@ -51,13 +50,13 @@ type SOH struct {
 	apps []ifaces.ScenarioApp
 
 	// Track packet capture flows if deployed
-	packetCapture map[string]interface{}
+	packetCapture map[string]any
 
 	options app.Options
 }
 
 func newSOH() *SOH {
-	return &SOH{
+	return &SOH{ //nolint:exhaustruct // partial initialization
 		nodes:             make(map[string]ifaces.NodeSpec),
 		c2Hosts:           make(map[string]struct{}),
 		reachabilityHosts: make(map[string]struct{}),
@@ -66,12 +65,13 @@ func newSOH() *SOH {
 		failedNetwork:     make(map[string]struct{}),
 		hostIPs:           make(map[string]map[string]string),
 		status:            make(map[string]HostState),
-		packetCapture:     make(map[string]interface{}),
+		packetCapture:     make(map[string]any),
 	}
 }
 
-func (this *SOH) Init(opts ...app.Option) error {
-	this.options = app.NewOptions(opts...)
+func (s *SOH) Init(opts ...app.Option) error {
+	s.options = app.NewOptions(opts...)
+
 	return nil
 }
 
@@ -79,102 +79,112 @@ func (SOH) Name() string {
 	return "soh"
 }
 
-func (this *SOH) Configure(ctx context.Context, exp *types.Experiment) error {
-	if err := this.decodeMetadata(exp); err != nil {
+func (s *SOH) Configure(ctx context.Context, exp *types.Experiment) error {
+	err := s.decodeMetadata(exp)
+	if err != nil {
 		return err
 	}
 
-	if len(this.md.PacketCapture.CaptureHosts) == 0 {
+	if len(s.md.PacketCapture.CaptureHosts) == 0 {
 		for _, server := range exp.Spec.Topology().FindNodesWithLabels("soh-elastic-server") {
 			exp.Spec.Topology().RemoveNode(server.General().Hostname())
 		}
 	} else {
-		if servers := exp.Spec.Topology().FindNodesWithLabels("soh-elastic-server"); len(servers) == 0 {
-			ip, mask, _ := net.ParseCIDR(this.md.PacketCapture.ElasticServer.IPAddress)
+		if servers := exp.Spec.Topology().
+			FindNodesWithLabels("soh-elastic-server"); len(
+			servers,
+		) == 0 {
+			ip, mask, _ := net.ParseCIDR(s.md.PacketCapture.ElasticServer.IPAddress)
 			cidr, _ := mask.Mask.Size()
 
-			if _, err := this.buildElasticServerNode(exp, ip.String(), cidr); err != nil {
+			if _, err = s.buildElasticServerNode(exp, ip.String(), cidr); err != nil {
 				return fmt.Errorf("building Elastic server node: %w", err)
 			}
 
-			exp.Spec.Topology().Init(exp.Spec.DefaultBridge())
+			_ = exp.Spec.Topology().Init(exp.Spec.DefaultBridge())
 		}
 	}
 
-	if this.md.InjectICMPAllow {
-		if err := injectICMPAllowRules(exp.Spec.Topology().Nodes()); err != nil {
+	if s.md.InjectICMPAllow {
+		err = injectICMPAllowRules(exp.Spec.Topology().Nodes())
+		if err != nil {
 			return fmt.Errorf("injecting ICMP allow rules into topology: %w", err)
 		}
 	} else {
-		if err := removeICMPAllowRules(exp.Spec.Topology().Nodes()); err != nil {
-			return fmt.Errorf("removing ICMP allow rules from topology: %w", err)
-		}
+		removeICMPAllowRules(exp.Spec.Topology().Nodes())
 	}
 
 	return nil
 }
 
-func (this *SOH) PreStart(ctx context.Context, exp *types.Experiment) error {
+func (s *SOH) PreStart(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (this *SOH) PostStart(ctx context.Context, exp *types.Experiment) error {
+func (s *SOH) PostStart(ctx context.Context, exp *types.Experiment) error {
 	logger := plog.LoggerFromContext(ctx, plog.TypeSoh)
 
-	if err := this.decodeMetadata(exp); err != nil {
+	err := s.decodeMetadata(exp)
+	if err != nil {
 		return err
 	}
 
-	this.apps = exp.Spec.Scenario().Apps()
+	s.apps = exp.Spec.Scenario().Apps()
 
-	if err := this.deployCapture(exp, this.options.DryRun); err != nil {
-		if this.md.ExitOnError {
+	err = s.deployCapture(exp, s.options.DryRun)
+	if err != nil {
+		if s.md.ExitOnError {
 			return err
 		}
 
-		fmt.Printf("Error deploying packet capture: %v\n", err)
+		logger.Error("Error deploying packet capture", "err", err)
 	}
 
-	if this.options.DryRun {
-		fmt.Printf("skipping SoH checks since this is a dry run")
+	if s.options.DryRun {
+		logger.Info("skipping SoH checks since this is a dry run")
+
 		return nil
 	}
 
-	if this.md.startupDelay > 0 {
-		logger.Info("Waiting before running SoH checks", "delay", this.md.startupDelay)
-		time.Sleep(this.md.startupDelay)
+	if s.md.startupDelay > 0 {
+		logger.Info("Waiting before running SoH checks", "delay", s.md.startupDelay)
+		time.Sleep(s.md.startupDelay)
 	}
 
-	if err := this.runChecks(ctx, exp); err != nil {
-		if this.md.ExitOnError {
+	err = s.runChecks(ctx, exp)
+	if err != nil {
+		if s.md.ExitOnError {
 			return fmt.Errorf("running initial SoH checks: %w", err)
 		}
 
-		fmt.Printf("Error running initial SoH checks: %v\n", err)
+		logger.Error("Error running initial SoH checks", "err", err)
 	}
 
 	return nil
 }
 
-func (this *SOH) Running(ctx context.Context, exp *types.Experiment) error {
-	if err := this.decodeMetadata(exp); err != nil {
+func (s *SOH) Running(ctx context.Context, exp *types.Experiment) error {
+	err := s.decodeMetadata(exp)
+	if err != nil {
 		return err
 	}
 
-	this.apps = exp.Spec.Scenario().Apps()
+	s.apps = exp.Spec.Scenario().Apps()
 
-	return this.runChecks(ctx, exp)
+	return s.runChecks(ctx, exp)
 }
 
 func (SOH) Cleanup(ctx context.Context, exp *types.Experiment) error {
-	if err := mm.ClearC2Responses(mm.C2NS(exp.Spec.ExperimentName())); err != nil {
+	err := mm.ClearC2Responses(mm.C2NS(exp.Spec.ExperimentName()))
+	if err != nil {
 		return fmt.Errorf("deleting minimega C2 responses: %w", err)
 	}
 
 	return nil
 }
 
-func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
+//nolint:cyclop,funlen,gocyclo,maintidx // complex logic
+func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	logger := plog.LoggerFromContext(ctx, plog.TypeSoh)
 
 	logger.Info("starting SOH checks")
@@ -186,9 +196,9 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	wg := new(mm.StateGroup)
 
 	if val, ok := md["c2Timeout"]; ok {
-		if duration, ok := val.(string); ok {
+		if duration, ok2 := val.(string); ok2 {
 			if timeout, err := time.ParseDuration(duration); err == nil {
-				this.md.c2Timeout = timeout
+				s.md.c2Timeout = timeout
 			}
 		}
 	}
@@ -196,7 +206,7 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	var checks map[string]bool
 
 	if val, ok := md["checks"]; ok {
-		if slice, ok := val.([]string); ok {
+		if slice, ok2 := val.([]string); ok2 {
 			checks = make(map[string]bool)
 
 			for _, check := range slice {
@@ -221,7 +231,8 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	for _, node := range exp.Spec.Topology().Nodes() {
 		if node.External() {
 			// track IP addresses so custom reachability tests still work
-			this.gatherNodeIPs(node)
+			s.gatherNodeIPs(node)
+
 			continue
 		}
 
@@ -231,18 +242,19 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 
 		host := node.General().Hostname()
 
-		this.nodes[host] = node
+		s.nodes[host] = node
 
-		if skip(node, this.md.SkipHosts) {
+		if skip(node, s.md.SkipHosts) {
 			logger.Debug("skipping host per config", "host", host)
+
 			continue
 		}
 
 		// Assume C2 is working in this host. The host will get removed from this
 		// mapping the first time C2 is proven to not be working.
-		this.c2Hosts[host] = struct{}{}
+		s.c2Hosts[host] = struct{}{}
 
-		if this.md.SkipNetworkConfig || !checks["network-config"] {
+		if s.md.SkipNetworkConfig || !checks["network-config"] {
 			continue
 		}
 
@@ -255,76 +267,97 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 				continue
 			}
 
-			this.reachabilityHosts[host] = struct{}{}
+			s.reachabilityHosts[host] = struct{}{}
 
 			if iface.Proto() == "dhcp" {
 				wg.Add(1)
 
-				go func(idx int, iface ifaces.NodeNetworkInterface) { // using an anonymous function here so we can break out of the inner select statement
+				// using an anonymous function here so we can break out of the inner select statement
+				go func(idx int, iface ifaces.NodeNetworkInterface) {
 					defer wg.Done()
 
 					logger.Debug("waiting for DHCP address", "host", host)
 
-					timer := time.After(this.md.c2Timeout)
+					timer := time.After(s.md.c2Timeout)
 
 					for {
 						select {
 						case <-ctx.Done():
 							return
 						case <-timer:
-							wg.AddError(fmt.Errorf("time expired waiting for DHCP details from minimega"), map[string]interface{}{"host": host})
+							wg.AddError(
+								errors.New("time expired waiting for DHCP details from minimega"),
+								map[string]any{"host": host},
+							)
+
 							return
 						default:
 							vms := mm.GetVMInfo(mm.NS(ns), mm.VMName(host))
 
 							if vms == nil {
-								wg.AddError(fmt.Errorf("unable to get DHCP details from minimega"), map[string]interface{}{"host": host})
+								wg.AddError(
+									errors.New("unable to get DHCP details from minimega"),
+									map[string]any{"host": host},
+								)
+
 								return
 							} else {
 								addrs := vms[0].IPv4
 
 								if addrs == nil || addrs[idx] == "" {
 									time.Sleep(1 * time.Second)
+
 									continue
 								}
 
-								this.addrHosts[addrs[idx]] = host
-								this.vlans[iface.VLAN()] = append(this.vlans[iface.VLAN()], addrs[idx])
+								s.addrHosts[addrs[idx]] = host
+								s.vlans[iface.VLAN()] = append(s.vlans[iface.VLAN()], addrs[idx])
 
-								ips, ok := this.hostIPs[host]
+								ips, ok := s.hostIPs[host]
 								if !ok {
 									ips = make(map[string]string)
 								}
 
 								ips[iface.Name()] = addrs[idx]
-								this.hostIPs[host] = ips
+								s.hostIPs[host] = ips
 
-								wg.AddSuccess(fmt.Sprintf("IP %s configured via DHCP", addrs[idx]), map[string]interface{}{"host": host})
+								wg.AddSuccess(
+									fmt.Sprintf("IP %s configured via DHCP", addrs[idx]),
+									map[string]any{"host": host},
+								)
+
 								return
 							}
 						}
 					}
-				}(idx, iface)
+				}(
+					idx,
+					iface,
+				)
 
 				// No need to do any of the following stuff if this interface is
 				// configured using DHCP.
 				continue
 			}
 
-			this.gatherNodeIPs(node)
+			s.gatherNodeIPs(node)
 
 			cidr := fmt.Sprintf("%s/%d", iface.Address(), iface.Mask())
 			logger.Debug("waiting for IP on host to be set", "host", host, "ip", cidr)
 
-			this.isNetworkingConfigured(ctx, wg, ns, node, iface)
+			s.isNetworkingConfigured(ctx, wg, ns, node, iface)
 		}
 	}
 
-	if this.md.SkipNetworkConfig || !checks["network-config"] {
+	if s.md.SkipNetworkConfig || !checks["network-config"] {
 		logger.Info("skipping initial network configuration tests per config")
 	}
 
-	cancel := periodicallyNotify(ctx, "waiting for initial network configurations to be validated...", 5*time.Second)
+	cancel := periodicallyNotify(
+		ctx,
+		"waiting for initial network configurations to be validated...",
+		notifyInterval,
+	)
 
 	// Wait for IP address / gateway configuration to be set for each VM, as well
 	// as wait for each gateway to be reachable.
@@ -336,47 +369,46 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	for _, state := range wg.States {
-		host := state.Meta["host"].(string)
+		host, _ := state.Meta["host"].(string)
 
-		s := State{
+		st := State{ //nolint:exhaustruct // partial initialization
 			Metadata:  state.Meta,
 			Timestamp: time.Now().Format(time.RFC3339),
 		}
 
-		if err := state.Err; err != nil {
+		err := state.Err
+		if err != nil {
 			logger.Error("[✗] failed to confirm networking", "host", host, "err", err)
 
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(this.c2Hosts, host)
+				delete(s.c2Hosts, host)
 			} else {
-				this.failedNetwork[host] = struct{}{}
+				s.failedNetwork[host] = struct{}{}
 			}
 
-			s.Error = err.Error()
+			st.Error = err.Error()
 		} else {
-			s.Success = state.Msg
+			st.Success = state.Msg
 		}
 
-		state, ok := this.status[host]
+		hostState, ok := s.status[host]
 		if !ok {
-			state = HostState{Hostname: host}
+			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
 		}
 
-		state.Networking = append(state.Networking, s)
-		this.status[host] = state
+		hostState.Networking = append(hostState.Networking, st)
+		s.status[host] = hostState
 	}
 
-	this.writeResults(exp)
-
-	rand.Seed(time.Now().Unix())
+	s.writeResults(exp)
 
 	// *** RUN ACTUAL STATE OF HEALTH CHECKS *** //
 
 	var errs bool
 
 	if checks["network-config"] && (checks["reachability"] || checks["custom-reachability"]) {
-		err := this.waitForReachabilityTest(ctx, ns, checks)
-		this.writeResults(exp)
+		err := s.waitForReachabilityTest(ctx, ns, checks)
+		s.writeResults(exp)
 
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -386,8 +418,8 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	if checks["processes"] {
-		err := this.waitForProcTest(ctx, ns)
-		this.writeResults(exp)
+		err := s.waitForProcTest(ctx, ns)
+		s.writeResults(exp)
 
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -397,8 +429,8 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	if checks["ports"] {
-		err := this.waitForPortTest(ctx, ns)
-		this.writeResults(exp)
+		err := s.waitForPortTest(ctx, ns)
+		s.writeResults(exp)
 
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -408,8 +440,8 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	if checks["custom"] {
-		err := this.waitForCustomTest(ctx, ns)
-		this.writeResults(exp)
+		err := s.waitForCustomTest(ctx, ns)
+		s.writeResults(exp)
 
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -419,8 +451,8 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	if checks["cpu-load"] {
-		err := this.waitForCPULoad(ctx, ns)
-		this.writeResults(exp)
+		err := s.waitForCPULoad(ctx, ns)
+		s.writeResults(exp)
 
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -430,24 +462,24 @@ func (this *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	if checks["flows"] {
-		this.getFlows(ctx, exp)
-		this.writeResults(exp)
+		s.getFlows(ctx, exp)
+		s.writeResults(exp)
 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 	}
 
-	this.writeInitialized(exp)
+	s.writeInitialized(exp)
 
 	if errs || wg.ErrCount > 0 {
-		return fmt.Errorf("errors encountered in state of health app")
+		return errors.New("errors encountered in state of health app")
 	}
 
 	return nil
 }
 
-func (this *SOH) getFlows(ctx context.Context, exp *types.Experiment) {
+func (s *SOH) getFlows(ctx context.Context, exp *types.Experiment) { //nolint:funlen // complex logic
 	node := exp.Spec.Topology().FindNodesWithLabels("soh-elastic-server")
 
 	if len(node) == 0 {
@@ -455,25 +487,32 @@ func (this *SOH) getFlows(ctx context.Context, exp *types.Experiment) {
 	}
 
 	hostname := node[0].General().Hostname()
+
 	var id string
 
 	for {
 		var err error
 
-		opts := []mm.C2Option{mm.C2NS(exp.Metadata.Name), mm.C2VM(hostname), mm.C2Command("query-flows.sh")}
+		opts := []mm.C2Option{
+			mm.C2NS(exp.Metadata.Name),
+			mm.C2VM(hostname),
+			mm.C2Command("query-flows.sh"),
+		}
 
-		if this.md.useUUIDForC2Active(hostname) {
+		if s.md.useUUIDForC2Active(hostname) {
 			opts = append(opts, mm.C2IDClientsByUUID())
 		}
 
 		id, err = mm.ExecC2Command(opts...)
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				time.Sleep(5 * time.Second)
+				time.Sleep(c2RetryDelay)
+
 				continue
 			}
 
-			fmt.Printf("error executing command 'query-flows.sh': %v\n", err)
+			plog.Error(plog.TypeSoh, "error executing command 'query-flows.sh'", "err", err)
+
 			return
 		}
 
@@ -486,24 +525,28 @@ func (this *SOH) getFlows(ctx context.Context, exp *types.Experiment) {
 
 	resp, err := mm.WaitForC2Response(opts...)
 	if err != nil {
-		fmt.Printf("error getting response for command 'query-flows.sh': %v\n", err)
+		plog.Error(plog.TypeSoh, "error getting response for command 'query-flows.sh'", "err", err)
+
 		return
 	}
 
 	var result elastic.SearchResult
 
-	if err := json.Unmarshal([]byte(resp), &result); err != nil {
-		fmt.Printf("error parsing Elasticsearch results: %v\n", err)
+	if err = json.Unmarshal([]byte(resp), &result); err != nil {
+		plog.Error(plog.TypeSoh, "error parsing Elasticsearch results", "err", err)
+
 		return
 	}
 
 	if result.Hits == nil {
-		fmt.Println("no flow data found")
+		plog.Info(plog.TypeSoh, "no flow data found")
+
 		return
 	}
 
 	if len(result.Hits.Hits) == 0 {
-		fmt.Println("no flow data found")
+		plog.Info(plog.TypeSoh, "no flow data found")
+
 		return
 	}
 
@@ -512,8 +555,10 @@ func (this *SOH) getFlows(ctx context.Context, exp *types.Experiment) {
 	for _, hit := range result.Hits.Hits {
 		var fields flowsStruct
 
-		if err := json.Unmarshal(hit.Source, &fields); err != nil {
-			fmt.Printf("unable to parse hit source: %v\n", err)
+		err = json.Unmarshal(hit.Source, &fields)
+		if err != nil {
+			plog.Error(plog.TypeSoh, "unable to parse hit source", "err", err)
+
 			return
 		}
 
@@ -557,11 +602,11 @@ func (this *SOH) getFlows(ctx context.Context, exp *types.Experiment) {
 		}
 	}
 
-	this.packetCapture["hosts"] = hosts
-	this.packetCapture["flows"] = flows
+	s.packetCapture["hosts"] = hosts
+	s.packetCapture["flows"] = flows
 }
 
-func (this *SOH) gatherNodeIPs(node ifaces.NodeSpec) {
+func (s *SOH) gatherNodeIPs(node ifaces.NodeSpec) {
 	host := node.General().Hostname()
 
 	for _, iface := range node.Network().Interfaces() {
@@ -569,52 +614,52 @@ func (this *SOH) gatherNodeIPs(node ifaces.NodeSpec) {
 			continue
 		}
 
-		this.addrHosts[iface.Address()] = host
+		s.addrHosts[iface.Address()] = host
 
 		if iface.VLAN() != "" {
-			this.vlans[iface.VLAN()] = append(this.vlans[iface.VLAN()], iface.Address())
+			s.vlans[iface.VLAN()] = append(s.vlans[iface.VLAN()], iface.Address())
 		}
 
-		ips, ok := this.hostIPs[host]
+		ips, ok := s.hostIPs[host]
 		if !ok {
 			ips = make(map[string]string)
 		}
 
 		ips[iface.Name()] = iface.Address()
-		this.hostIPs[host] = ips
+		s.hostIPs[host] = ips
 	}
 }
 
-func (this SOH) writeResults(exp *types.Experiment) {
+func (s SOH) writeResults(exp *types.Experiment) {
 	// we do this to make sure we don't overwrite the `initialized` status
 	status := make(map[string]any)
-	exp.Status.ParseAppStatus("soh", &status)
+	_ = exp.Status.ParseAppStatus("soh", &status)
 
-	if len(this.status) > 0 {
-		var states []map[string]any
+	if len(s.status) > 0 {
+		states := make([]map[string]any, 0, len(s.status))
 
-		for _, state := range this.status {
+		for _, state := range s.status {
 			states = append(states, structs.Map(state))
 		}
 
 		status["hosts"] = states
 	}
 
-	if len(this.packetCapture) > 0 {
-		status["packetCapture"] = this.packetCapture
+	if len(s.packetCapture) > 0 {
+		status["packetCapture"] = s.packetCapture
 	}
 
 	exp.Status.SetAppStatus("soh", status)
-	exp.WriteToStore(true)
+	_ = exp.WriteToStore(true)
 }
 
-func (this SOH) writeInitialized(exp *types.Experiment) {
+func (s SOH) writeInitialized(exp *types.Experiment) {
 	// we do this to make sure we don't overwrite the existing app status
 	status := make(map[string]any)
-	exp.Status.ParseAppStatus("soh", &status)
+	_ = exp.Status.ParseAppStatus("soh", &status)
 
 	status["initialized"] = true
 
 	exp.Status.SetAppStatus("soh", status)
-	exp.WriteToStore(true)
+	_ = exp.WriteToStore(true)
 }

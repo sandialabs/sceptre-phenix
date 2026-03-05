@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const DefaultC2Timeout = 5 * time.Minute
+
 type Option func(*options)
 
 type options struct {
@@ -37,7 +39,7 @@ type options struct {
 }
 
 func NewOptions(opts ...Option) options {
-	o := options{injectPart: 1}
+	o := options{injectPart: 1} //nolint:exhaustruct // partial initialization
 
 	for _, opt := range opts {
 		opt(&o)
@@ -112,7 +114,7 @@ func ConnectVLAN(v string) Option {
 	}
 }
 
-func DisonnectInterface(i int) Option {
+func DisconnectInterface(i int) Option {
 	return func(o *options) {
 		o.connectIface = i
 	}
@@ -188,9 +190,9 @@ type c2Options struct {
 }
 
 func NewC2Options(opts ...C2Option) c2Options {
-	o := c2Options{
+	o := c2Options{ //nolint:exhaustruct // partial initialization
 		ctx:     context.Background(),
-		timeout: 5 * time.Minute, // default to 5m if not set
+		timeout: DefaultC2Timeout,
 	}
 
 	for _, opt := range opts {

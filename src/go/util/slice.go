@@ -1,11 +1,7 @@
 package util
 
-func StringSliceContains(slice []string, s string) bool {
-	for _, e := range slice {
-		if e == s {
-			return true
-		}
-	}
+import "slices"
 
-	return false
+func StringSliceContains(slice []string, s string) bool {
+	return slices.Contains(slice, s)
 }

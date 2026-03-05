@@ -2,19 +2,23 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/spf13/cobra"
 
 	"phenix/api/config"
 	"phenix/api/image"
 	v1 "phenix/types/version/v1"
 	"phenix/util"
 	"phenix/util/notes"
+	"phenix/util/plog"
 	"phenix/util/printer"
-
-	"github.com/spf13/cobra"
 )
+
+const createFromArgs = 2
 
 func newImageCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -36,6 +40,7 @@ func newImageListCmd() *cobra.Command {
 			imgs, err := image.List()
 			if err != nil {
 				err := util.HumanizeError(err, "Unable to print a list of configurations")
+
 				return err.Humanized()
 			}
 
@@ -54,7 +59,7 @@ func newImageListCmd() *cobra.Command {
 			}
 
 			if len(imgs) == 0 {
-				fmt.Println("\nThere are no image configurations available\n")
+				fmt.Fprintln(os.Stdout, "\nThere are no image configurations available")
 			} else {
 				printer.PrintTableOfImageConfigs(os.Stdout, optional, imgs...)
 			}
@@ -70,6 +75,7 @@ func newImageListCmd() *cobra.Command {
 	return cmd
 }
 
+//nolint:funlen // command definition
 func newImageCreateCmd() *cobra.Command {
 	desc := `Create a disk image configuration
 
@@ -94,11 +100,13 @@ func newImageCreateCmd() *cobra.Command {
 			var img v1.Image
 
 			if len(args) == 0 {
-				return fmt.Errorf("Must provide an image name")
+				return errors.New("must provide an image name")
 			} else if len(args) > 1 {
 				// This might happen if, for example, multiple overlays are provided to
 				// the overlays flag space-delimited instead of comma-delimited.
-				return fmt.Errorf("Must provide an image name as the only argument (check that you are using commas where required for flags)")
+				return errors.New(
+					"must provide an image name as the only argument (check that you are using commas where required for flags)",
+				)
 			}
 
 			img.Name = args[0]
@@ -134,15 +142,19 @@ func newImageCreateCmd() *cobra.Command {
 
 			units := img.Size[len(img.Size)-1:]
 			if units != "M" && units != "G" {
-				return fmt.Errorf("Must provide a valid unit for disk size option (e.g., '500M' or '10G')")
+				return errors.New(
+					"must provide a valid unit for disk size option (e.g., '500M' or '10G')",
+				)
 			}
 
-			if err := image.Create(&img); err != nil {
-				err := util.HumanizeError(err, "Unable to create the "+img.Name+" image")
+			err := image.Create(&img)
+			if err != nil {
+				err := util.HumanizeError(err, "%s", "Unable to create the "+img.Name+" image")
+
 				return err.Humanized()
 			}
 
-			fmt.Printf("The configuration for the %s image was created\n", img.Name)
+			plog.Info(plog.TypeSystem, "image configuration created", "image", img.Name)
 
 			return nil
 		},
@@ -151,17 +163,32 @@ func newImageCreateCmd() *cobra.Command {
 	cmd.Flags().StringP("size", "s", "10G", "Image size to use")
 	cmd.Flags().StringP("variant", "v", "minbase", "Image variant to use")
 	cmd.Flags().StringP("release", "r", "jammy", "OS release codename")
-	cmd.Flags().StringP("mirror", "m", "http://us.archive.ubuntu.com/ubuntu", "Debootstrap mirror (must match release)")
-	cmd.Flags().StringP("components", "l", "", "List of components from the mirror to download packages from (separated by comma)")
+	cmd.Flags().
+		StringP("mirror", "m", "http://us.archive.ubuntu.com/ubuntu", "Debootstrap mirror (must match release)")
+	cmd.Flags().
+		StringP("components", "l", "", "List of components from the mirror to download packages from (separated by comma)")
 	cmd.Flags().StringP("format", "f", "qcow2", "Format of disk image")
-	cmd.Flags().BoolP("compress", "c", false, "Compress image after creation (does not apply to raw image)")
-	cmd.Flags().BoolP("ramdisk", "R", false, "Create a kernel/initrd pair in addition to a disk image")
-	cmd.Flags().StringP("overlays", "O", "", "List of overlay names (include full path; separated by comma)")
-	cmd.Flags().Bool("skip-default-pkgs", false, "Skip default packages typically included in all builds")
-	cmd.Flags().StringP("packages", "P", "", "List of packages to include in addition to those provided by variant (separated by comma)")
-	cmd.Flags().StringP("scripts", "T", "", "List of scripts to include in addition to the defaults (include full path; separated by comma)")
-	cmd.Flags().Bool("no-virtuals", false, "Don't add virtual filesystem mounts to chroot before executing scripts when running vmdb2 (default is 'false')")
-	cmd.Flags().StringP("kernel-args", "k", "", "List of parameters which grub will pass to the Linux kernel (e.g. 'net.ifnames=0','consoleblank=0'); separated by comma)")
+	cmd.Flags().
+		BoolP("compress", "c", false, "Compress image after creation (does not apply to raw image)")
+	cmd.Flags().
+		BoolP("ramdisk", "R", false, "Create a kernel/initrd pair in addition to a disk image")
+	cmd.Flags().
+		StringP("overlays", "O", "", "List of overlay names (include full path; separated by comma)")
+	cmd.Flags().
+		Bool("skip-default-pkgs", false, "Skip default packages typically included in all builds")
+	cmd.Flags().
+		StringP("packages", "P", "", "List of packages to include in addition to those provided by variant (separated by comma)")
+	cmd.Flags().
+		StringP("scripts", "T", "", "List of scripts to include in addition to the defaults (include full path; separated by comma)")
+	cmd.Flags().
+		Bool("no-virtuals", false, "Don't add virtual filesystem mounts to chroot before executing scripts when running vmdb2 (default is 'false')")
+	cmd.Flags().
+		StringP(
+			"kernel-args",
+			"k",
+			"",
+			"List of parameters which grub will pass to the Linux kernel (e.g. 'net.ifnames=0','consoleblank=0'); separated by comma)",
+		)
 
 	return cmd
 }
@@ -177,16 +204,16 @@ func newImageCreateFromCmd() *cobra.Command {
 		Short: "Create image configuration from existing one",
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) < 2 {
-				return fmt.Errorf("The name of a existing and/or new configuration is required")
+			if len(args) < createFromArgs {
+				return errors.New("the name of a existing and/or new configuration is required")
 			}
 
 			var (
-				name         = args[0]
-				saveas       = args[1]
-				overlays     []string
-				packages     []string
-				scripts      []string
+				name     = args[0]
+				saveas   = args[1]
+				overlays []string
+				packages []string
+				scripts  []string
 			)
 
 			if opt := MustGetString(cmd.Flags(), "overlays"); opt != "" {
@@ -201,20 +228,36 @@ func newImageCreateFromCmd() *cobra.Command {
 				scripts = strings.Split(opt, ",")
 			}
 
-			if err := image.CreateFromConfig(name, saveas, overlays, packages, scripts); err != nil {
-				err := util.HumanizeError(err, "Unable to create the configuration file "+saveas)
+			err := image.CreateFromConfig(name, saveas, overlays, packages, scripts)
+			if err != nil {
+				err := util.HumanizeError(
+					err,
+					"%s",
+					"Unable to create the configuration file "+saveas,
+				)
+
 				return err.Humanized()
 			}
 
-			fmt.Printf("The configuration for the %s image was created from %s\n", saveas, name)
+			plog.Info(
+				plog.TypeSystem,
+				"image configuration created from existing",
+				"new",
+				saveas,
+				"existing",
+				name,
+			)
 
 			return nil
 		},
 	}
 
-	cmd.Flags().StringP("overlays", "O", "", "List of overlay names (include full path; separated by comma)")
-	cmd.Flags().StringP("packages", "P", "", "List of packages to include in addition to those provided by variant (separated by comma)")
-	cmd.Flags().StringP("scripts", "T", "", "List of scripts to include in addition to the defaults (include full path; separated by comma)")
+	cmd.Flags().
+		StringP("overlays", "O", "", "List of overlay names (include full path; separated by comma)")
+	cmd.Flags().
+		StringP("packages", "P", "", "List of packages to include in addition to those provided by variant (separated by comma)")
+	cmd.Flags().
+		StringP("scripts", "T", "", "List of scripts to include in addition to the defaults (include full path; separated by comma)")
 
 	return cmd
 }
@@ -231,20 +274,22 @@ func newImageEditCmd() *cobra.Command {
 		Long:  desc,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			img := fmt.Sprintf("image/%s", args[0])
+			img := "image/" + args[0]
 
 			_, err := config.Edit(img, false)
 			if err != nil {
 				if config.IsConfigNotModified(err) {
-					fmt.Printf("The %s image was not updated\n", args[0])
+					plog.Warn(plog.TypeSystem, "image configuration not updated", "image", args[0])
+
 					return nil
 				}
 
 				err := util.HumanizeError(err, "Unable to edit the %s image", args[0])
+
 				return err.Humanized()
 			}
 
-			fmt.Printf("The %s image was updated\n", args[0])
+			plog.Info(plog.TypeSystem, "image configuration updated", "image", args[0])
 
 			return nil
 		},
@@ -256,7 +301,7 @@ func newImageEditCmd() *cobra.Command {
 func newImageBuildCmd() *cobra.Command {
 	desc := `Build a virtual disk image
 
-  Used to build a new virtual disk using an exisitng configuration; vmdb2 must
+  Used to build a new virtual disk using an existing configuration; vmdb2 must
   be in path.`
 
 	example := `
@@ -270,7 +315,7 @@ func newImageBuildCmd() *cobra.Command {
 		Example: example,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
-				return fmt.Errorf("The name of a configuration to build the disk image is required")
+				return errors.New("the name of a configuration to build the disk image is required")
 			}
 
 			var (
@@ -285,6 +330,7 @@ func newImageBuildCmd() *cobra.Command {
 				cwd, err := os.Getwd()
 				if err != nil {
 					err := util.HumanizeError(err, "Unable to get the current working directory")
+
 					return err.Humanized()
 				}
 
@@ -294,23 +340,25 @@ func newImageBuildCmd() *cobra.Command {
 			}
 
 			if MustGetBool(cmd.Flags(), "verbose") {
-				verbosity = verbosity | image.V_VERBOSE
+				verbosity |= image.VVerbose
 			}
 
 			if MustGetBool(cmd.Flags(), "very-verbose") {
-				verbosity = verbosity | image.V_VVERBOSE
+				verbosity |= image.VVVerbose
 			}
 
 			ctx := notes.Context(context.Background(), false)
 
-			if err := image.Build(ctx, name, verbosity, cache, dryrun, output); err != nil {
-				err := util.HumanizeError(err, "Unable to build the "+name+" image")
+			err := image.Build(ctx, name, verbosity, cache, dryrun, output)
+			if err != nil {
+				err := util.HumanizeError(err, "%s", "Unable to build the "+name+" image")
+
 				return err.Humanized()
 			}
 
 			notes.PrettyPrint(ctx, false)
 
-			fmt.Printf("The %s image was successfully built\n", name)
+			plog.Info(plog.TypeSystem, "image built successfully", "image", name)
 
 			return nil
 		},
@@ -318,10 +366,12 @@ func newImageBuildCmd() *cobra.Command {
 
 	// panic: "vv" shorthand is more than one ASCII character
 	cmd.Flags().BoolP("verbose", "v", false, "Enable verbose output")
-	cmd.Flags().BoolP("very-verbose", "x", false, "Enable very verbose output, additionally writes output log file to <image name>.log")
+	cmd.Flags().
+		BoolP("very-verbose", "x", false, "Enable very verbose output, additionally writes output log file to <image name>.log")
 	cmd.Flags().BoolP("cache", "c", false, "Cache rootfs as tar archive")
 	cmd.Flags().BoolP("dry-run", "", false, "Do everything but actually call out to vmdb2")
-	cmd.Flags().StringP("output", "o", "", "Specify the output directory for the disk image to be saved to")
+	cmd.Flags().
+		StringP("output", "o", "", "Specify the output directory for the disk image to be saved to")
 
 	return cmd
 }
@@ -334,15 +384,17 @@ func newImageDeleteCmd() *cobra.Command {
 			name := args[0]
 
 			if name == "" {
-				return fmt.Errorf("The name of the configuration to delete is required")
+				return errors.New("the name of the configuration to delete is required")
 			}
 
-			if err := config.Delete("image/" + name); err != nil {
-				err := util.HumanizeError(err, "Unable to delete the "+name+" image")
+			err := config.Delete("image/" + name)
+			if err != nil {
+				err := util.HumanizeError(err, "%s", "Unable to delete the "+name+" image")
+
 				return err.Humanized()
 			}
 
-			fmt.Printf("The configuration for the %s image was deleted\n", name)
+			plog.Info(plog.TypeSystem, "image configuration deleted", "image", name)
 
 			return nil
 		},
@@ -363,7 +415,7 @@ func newImageAppendCmd() *cobra.Command {
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
-				return fmt.Errorf("The name of a configuration to append to is required")
+				return errors.New("the name of a configuration to append to is required")
 			}
 
 			var (
@@ -385,20 +437,25 @@ func newImageAppendCmd() *cobra.Command {
 				scripts = strings.Split(opt, ",")
 			}
 
-			if err := image.Append(name, overlays, packages, scripts); err != nil {
-				err := util.HumanizeError(err, "Unable to append to the "+name+" image")
+			err := image.Append(name, overlays, packages, scripts)
+			if err != nil {
+				err := util.HumanizeError(err, "%s", "Unable to append to the "+name+" image")
+
 				return err.Humanized()
 			}
 
-			fmt.Printf("Scripts, packages, and/or overlays for the %s configuration were appended\n", name)
+			plog.Info(plog.TypeSystem, "image configuration appended", "image", name)
 
 			return nil
 		},
 	}
 
-	cmd.Flags().StringP("overlays", "O", "", "List of overlay names (include full path; separated by comma)")
-	cmd.Flags().StringP("packages", "P", "", "List of packages to include in addition to those provided by variant (separated by comma)")
-	cmd.Flags().StringP("scripts", "T", "", "List of scripts to include in addition to the defaults (include full path; separated by comma)")
+	cmd.Flags().
+		StringP("overlays", "O", "", "List of overlay names (include full path; separated by comma)")
+	cmd.Flags().
+		StringP("packages", "P", "", "List of packages to include in addition to those provided by variant (separated by comma)")
+	cmd.Flags().
+		StringP("scripts", "T", "", "List of scripts to include in addition to the defaults (include full path; separated by comma)")
 
 	return cmd
 }
@@ -415,7 +472,7 @@ func newImageRemoveCmd() *cobra.Command {
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
-				return fmt.Errorf("The name of a configuration to remove from is required")
+				return errors.New("the name of a configuration to remove from is required")
 			}
 
 			var (
@@ -425,20 +482,25 @@ func newImageRemoveCmd() *cobra.Command {
 				scripts  = strings.Split(MustGetString(cmd.Flags(), "scripts"), ",")
 			)
 
-			if err := image.Remove(name, overlays, packages, scripts); err != nil {
-				err := util.HumanizeError(err, "Unable to remove from the "+name+" image")
+			err := image.Remove(name, overlays, packages, scripts)
+			if err != nil {
+				err := util.HumanizeError(err, "%s", "Unable to remove from the "+name+" image")
+
 				return err.Humanized()
 			}
 
-			fmt.Printf("Scripts, packages, and/or overlays for the %s configuration were removed\n", name)
+			plog.Info(plog.TypeSystem, "image configuration items removed", "image", name)
 
 			return nil
 		},
 	}
 
-	cmd.Flags().StringP("overlays", "O", "", "List of overlay names (include full path; separated by comma)")
-	cmd.Flags().StringP("packages", "P", "", "List of packages to include in addition to those provided by variant (separated by comma)")
-	cmd.Flags().StringP("scripts", "T", "", "List of scripts to include in addition to the defaults (include full path; separated by comma)")
+	cmd.Flags().
+		StringP("overlays", "O", "", "List of overlay names (include full path; separated by comma)")
+	cmd.Flags().
+		StringP("packages", "P", "", "List of packages to include in addition to those provided by variant (separated by comma)")
+	cmd.Flags().
+		StringP("scripts", "T", "", "List of scripts to include in addition to the defaults (include full path; separated by comma)")
 
 	return cmd
 }
@@ -455,17 +517,23 @@ func newImageUpdateCmd() *cobra.Command {
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
-				return fmt.Errorf("The name of a configuration to update is required")
+				return errors.New("the name of a configuration to update is required")
 			}
 
 			name := args[0]
 
-			if err := image.Update(name); err != nil {
-				err := util.HumanizeError(err, "Unable to update scripts from the "+name+" image")
+			err := image.Update(name)
+			if err != nil {
+				err := util.HumanizeError(
+					err,
+					"%s",
+					"Unable to update scripts from the "+name+" image",
+				)
+
 				return err.Humanized()
 			}
 
-			fmt.Printf("The script(s) for the %s configuration were updated\n", name)
+			plog.Info(plog.TypeSystem, "image configuration scripts updated", "image", name)
 
 			return nil
 		},
@@ -484,7 +552,9 @@ func newImageInjectMinicccCmd() *cobra.Command {
 		Short: "Inject the miniccc agent into a disk image (DEPRECATED)",
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("inject-miniccc has been deprecated - please use inject-miniexe instead")
+			return errors.New(
+				"inject-miniccc has been deprecated - please use inject-miniexe instead",
+			)
 		},
 	}
 
@@ -525,8 +595,8 @@ func newImageInjectMiniExeCmd() *cobra.Command {
 		Short: "Inject a minimega executable into a disk image",
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) < 2 {
-				return fmt.Errorf("The path to the minimega executable and the disk is required")
+			if len(args) < createFromArgs {
+				return errors.New("the path to the minimega executable and the disk is required")
 			}
 
 			var (
@@ -535,8 +605,14 @@ func newImageInjectMiniExeCmd() *cobra.Command {
 				init = MustGetString(cmd.Flags(), "init-system")
 			)
 
-			if err := image.InjectMiniExe(exe, disk, init); err != nil {
-				err := util.HumanizeError(err, "Unable to inject "+exe+" into the "+disk+" image")
+			err := image.InjectMiniExe(exe, disk, init)
+			if err != nil {
+				err := util.HumanizeError(
+					err,
+					"%s",
+					"Unable to inject "+exe+" into the "+disk+" image",
+				)
+
 				return err.Humanized()
 			}
 
@@ -544,12 +620,13 @@ func newImageInjectMiniExeCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().String("init-system", "systemd", "Linux init system to generate boot scripts for (Linux: systemd, sysinitv; Windows: startup)")
+	cmd.Flags().
+		String("init-system", "systemd", "Linux init system to generate boot scripts for (Linux: systemd, sysinitv; Windows: startup)")
 
 	return cmd
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // cobra command
 	imageCmd := newImageCmd()
 
 	imageCmd.AddCommand(newImageListCmd())

@@ -9,24 +9,38 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"phenix/api/experiment"
-	"phenix/util/common"
-	"phenix/util/file"
-	"phenix/util/mm"
-	"phenix/util/mm/mmcli"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/sync/errgroup"
+
+	"phenix/api/experiment"
+	"phenix/util/common"
+	"phenix/util/file"
+	"phenix/util/mm"
+	"phenix/util/mm/mmcli"
+)
+
+const (
+	vmStateQuit          = "QUIT"
+	vmStateRunning       = "RUNNING"
+	vmInfoCmd            = "vm info"
+	statusCompleted      = "completed"
+	shutdownTimeout      = 30 * time.Second
+	copyProgressFactor   = 0.8
+	commitWait           = 2 * time.Second
+	commitProgressBase   = 0.8
+	commitProgressFactor = 0.2
 )
 
 var vlanAliasRegex = regexp.MustCompile(`(.*) \(\d*\)`)
 
 func Count(expName string) (int, error) {
 	if expName == "" {
-		return 0, fmt.Errorf("no experiment name provided")
+		return 0, errors.New("no experiment name provided")
 	}
 
 	exp, err := experiment.Get(expName)
@@ -40,9 +54,9 @@ func Count(expName string) (int, error) {
 // List collects VMs, combining topology settings with running VM details if the
 // experiment is running. It returns a slice of VM structs and any errors
 // encountered while gathering them.
-func List(expName string) ([]mm.VM, error) {
+func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
 	if expName == "" {
-		return nil, fmt.Errorf("no experiment name provided")
+		return nil, errors.New("no experiment name provided")
 	}
 
 	exp, err := experiment.Get(expName)
@@ -82,7 +96,7 @@ func List(expName string) ([]mm.VM, error) {
 			snapshot = *node.General().Snapshot()
 		}
 
-		vm := mm.VM{
+		vm := mm.VM{ //nolint:exhaustruct // partial initialization
 			ID:              idx,
 			Name:            node.General().Hostname(),
 			Experiment:      exp.Spec.ExperimentName(),
@@ -135,10 +149,10 @@ func List(expName string) ([]mm.VM, error) {
 			// ordering of IPs matches the odering of networks. We could just use a
 			// map here, but then the iface to network ordering that minimega ensures
 			// would be lost.
-			for idx, nw := range details.Networks {
+			for i, nw := range details.Networks {
 				// If it's set here, we got it from minimega, which is the source of truth
 				// for running experiments.
-				if vm.IPv4[idx] != "" {
+				if vm.IPv4[i] != "" {
 					continue
 				}
 
@@ -146,9 +160,9 @@ func List(expName string) ([]mm.VM, error) {
 				// experiment config, we just have `EXP_1` so we need to use that
 				// portion from minimega as the `Interfaces` map key.
 				if match := vlanAliasRegex.FindStringSubmatch(nw); match != nil {
-					vm.IPv4[idx] = vm.Interfaces[match[1]]
+					vm.IPv4[i] = vm.Interfaces[match[1]]
 				} else {
-					vm.IPv4[idx] = "n/a"
+					vm.IPv4[i] = "n/a"
 				}
 			}
 		} else {
@@ -167,11 +181,11 @@ func List(expName string) ([]mm.VM, error) {
 // encountered while retrieving the VM.
 func Get(expName, vmName string) (*mm.VM, error) {
 	if expName == "" {
-		return nil, fmt.Errorf("no experiment name provided")
+		return nil, errors.New("no experiment name provided")
 	}
 
 	if vmName == "" {
-		return nil, fmt.Errorf("no VM name provided")
+		return nil, errors.New("no VM name provided")
 	}
 
 	exp, err := experiment.Get(expName)
@@ -186,7 +200,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 			continue
 		}
 
-		vm = &mm.VM{
+		vm = &mm.VM{ //nolint:exhaustruct // partial initialization
 			ID:              idx,
 			Name:            node.General().Hostname(),
 			Experiment:      exp.Spec.ExperimentName(),
@@ -196,9 +210,9 @@ func Get(expName, vmName string) (*mm.VM, error) {
 			InjectPartition: *node.Hardware().Drives()[0].InjectPartition(),
 			Interfaces:      make(map[string]string),
 			DoNotBoot:       *node.General().DoNotBoot(),
-			OSType:          string(node.Hardware().OSType()),
+			OSType:          node.Hardware().OSType(),
 			Snapshot:        *node.General().Snapshot(),
-			Metadata:        make(map[string]interface{}),
+			Metadata:        make(map[string]any),
 			Labels:          node.Labels(),
 			Tags:            node.Labels(),
 			Annotations:     node.Annotations(),
@@ -220,11 +234,12 @@ func Get(expName, vmName string) (*mm.VM, error) {
 	}
 
 	if vm == nil {
-		return nil, fmt.Errorf("VM %s not found in experiment %s", vmName, expName)
+		return nil, fmt.Errorf("vm %s not found in experiment %s", vmName, expName)
 	}
 
 	if !exp.Running() {
 		vm.Host = exp.Spec.Schedules()[vm.Name]
+
 		return vm, nil
 	}
 
@@ -278,11 +293,11 @@ func Get(expName, vmName string) (*mm.VM, error) {
 	return vm, nil
 }
 
-func Update(opts ...UpdateOption) error {
+func Update(opts ...UpdateOption) error { //nolint:funlen // complex logic
 	o := newUpdateOptions(opts...)
 
 	if o.exp == "" || o.vm == "" {
-		return fmt.Errorf("experiment or VM name not provided")
+		return errors.New("experiment or VM name not provided")
 	}
 
 	exp, err := experiment.Get(o.exp)
@@ -310,16 +325,20 @@ func Update(opts ...UpdateOption) error {
 	// VLAN an interface is connected to and the vm's tags
 	if running {
 		if o.iface == nil && o.tags == nil {
-			return fmt.Errorf("only interface connections and tags can be updated while experiment is running")
+			return errors.New(
+				"only interface connections and tags can be updated while experiment is running",
+			)
 		}
 
 		if o.iface != nil {
 			if o.iface.vlan == "" {
-				if err := Disonnect(o.exp, o.vm, o.iface.index); err != nil {
+				err := Disconnect(o.exp, o.vm, o.iface.index)
+				if err != nil {
 					return err
 				}
 			} else {
-				if err := Connect(o.exp, o.vm, o.iface.index, o.iface.vlan); err != nil {
+				err := Connect(o.exp, o.vm, o.iface.index, o.iface.vlan)
+				if err != nil {
 					return err
 				}
 			}
@@ -327,15 +346,22 @@ func Update(opts ...UpdateOption) error {
 
 		if o.tags != nil {
 			// update both the live minimega tags and the experiment spec labels
-			if err := mm.SetVMTags(mm.NS(o.exp), mm.VMName(o.vm), mm.Tags(*o.tags)); err != nil {
+			err := mm.SetVMTags(mm.NS(o.exp), mm.VMName(o.vm), mm.Tags(*o.tags))
+			if err != nil {
 				return err
 			}
 
 			vm.SetLabels(*o.tags)
-			if err := experiment.Save(experiment.SaveWithName(o.exp), experiment.SaveWithSpec(exp.Spec)); err != nil {
+
+			err = experiment.Save(
+				experiment.SaveWithName(o.exp),
+				experiment.SaveWithSpec(exp.Spec),
+			)
+			if err != nil {
 				return fmt.Errorf("unable to save experiment with updated VM: %w", err)
 			}
 		}
+
 		return nil
 	}
 
@@ -367,7 +393,7 @@ func Update(opts ...UpdateOption) error {
 		if *o.host == "" {
 			delete(exp.Spec.Schedules(), o.vm)
 		} else {
-			exp.Spec.ScheduleNode(o.vm, *o.host)
+			_ = exp.Spec.ScheduleNode(o.vm, *o.host)
 		}
 	}
 
@@ -384,7 +410,11 @@ func Update(opts ...UpdateOption) error {
 }
 
 func Screenshot(expName, vmName, size string) ([]byte, error) {
-	screenshot, err := mm.GetVMScreenshot(mm.NS(expName), mm.VMName(vmName), mm.ScreenshotSize(size))
+	screenshot, err := mm.GetVMScreenshot(
+		mm.NS(expName),
+		mm.VMName(vmName),
+		mm.ScreenshotSize(size),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("getting VM screenshot: %w", err)
 	}
@@ -396,11 +426,11 @@ func Screenshot(expName, vmName, size string) ([]byte, error) {
 // name. It returns any errors encountered while pausing the VM.
 func Pause(expName, vmName string) error {
 	if expName == "" {
-		return fmt.Errorf("no experiment name provided")
+		return errors.New("no experiment name provided")
 	}
 
 	if vmName == "" {
-		return fmt.Errorf("no VM name provided")
+		return errors.New("no VM name provided")
 	}
 
 	err := StopCaptures(expName, vmName)
@@ -415,15 +445,15 @@ func Pause(expName, vmName string) error {
 	return nil
 }
 
-// Restarts a running VM with the given name in the experiment with the given
+// Restart restarts a running VM with the given name in the experiment with the given
 // name. It returns any errors encountered while restarting the VM.
 func Restart(expName, vmName string) error {
 	if expName == "" {
-		return fmt.Errorf("no experiment name provided")
+		return errors.New("no experiment name provided")
 	}
 
 	if vmName == "" {
-		return fmt.Errorf("no VM name provided")
+		return errors.New("no VM name provided")
 	}
 
 	state, err := mm.GetVMState(mm.NS(expName), mm.VMName(vmName))
@@ -432,7 +462,7 @@ func Restart(expName, vmName string) error {
 	}
 
 	// Using "system_reset" on a VM that is in the "QUIT" state fails
-	if state == "QUIT" {
+	if state == vmStateQuit {
 		return mm.StartVM(mm.NS(expName), mm.VMName(vmName))
 	}
 
@@ -448,15 +478,15 @@ func Restart(expName, vmName string) error {
 	return nil
 }
 
-// Powers off a running VM with the given name in the experiment with the given
+// Shutdown powers off a running VM with the given name in the experiment with the given
 // name. It returns any errors encountered while shutting down the VM.
 func Shutdown(expName, vmName string) error {
 	if expName == "" {
-		return fmt.Errorf("no experiment name provided")
+		return errors.New("no experiment name provided")
 	}
 
 	if vmName == "" {
-		return fmt.Errorf("no VM name provided")
+		return errors.New("no VM name provided")
 	}
 
 	state, err := mm.GetVMState(mm.NS(expName), mm.VMName(vmName))
@@ -465,7 +495,7 @@ func Shutdown(expName, vmName string) error {
 	}
 
 	// No need to power off a VM that has already been powered down
-	if state == "QUIT" {
+	if state == vmStateQuit {
 		return nil
 	}
 
@@ -482,16 +512,17 @@ func Shutdown(expName, vmName string) error {
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		// return fmt.Errorf("powering down VM %s: %w", vmName, err)
-
 		cmd.Command = "vm kill " + vmName
-		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+
+		err := mmcli.ErrorResponse(mmcli.Run(cmd))
+		if err != nil {
 			return fmt.Errorf("shutting down VM %s in experiment %s: %w", vmName, expName, err)
 		}
 	}
 
 	waitForShutdown := func() bool {
 		// Give the VM a maximum of 30s to shutdown.
-		after := time.After(30 * time.Second)
+		after := time.After(shutdownTimeout)
 
 		for {
 			select {
@@ -501,7 +532,7 @@ func Shutdown(expName, vmName string) error {
 				time.Sleep(1 * time.Second)
 
 				state, _ := mm.GetVMState(mm.NS(expName), mm.VMName(vmName))
-				if state == "QUIT" {
+				if state == vmStateQuit {
 					return true
 				}
 			}
@@ -512,7 +543,9 @@ func Shutdown(expName, vmName string) error {
 		// Forced shutdown implementation is equivalent to killing the vm without a
 		// flush to preserve the state.
 		cmd.Command = "vm kill " + vmName
-		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+
+		err := mmcli.ErrorResponse(mmcli.Run(cmd))
+		if err != nil {
 			return fmt.Errorf("shutting down VM %s in experiment %s: %w", vmName, expName, err)
 		}
 	}
@@ -520,28 +553,28 @@ func Shutdown(expName, vmName string) error {
 	return nil
 }
 
-// Restores the disk state of a vm to the initial disk state
+// ResetDiskState restores the disk state of a vm to the initial disk state
 // It returns any errors encountered while restarting the VM.
 func ResetDiskState(expName, vmName string) error {
 	if expName == "" {
-		return fmt.Errorf("no experiment name provided")
+		return errors.New("no experiment name provided")
 	}
 
 	if vmName == "" {
-		return fmt.Errorf("no VM name provided")
+		return errors.New("no VM name provided")
 	}
 
 	// Overwrite the snapshot in the vm instance
 	// directory with a new snapshot.
 	cmd := mmcli.NewNamespacedCommand(expName)
-	cmd.Command = "vm info"
+	cmd.Command = vmInfoCmd
 	cmd.Columns = []string{"host", "name", "id", "state", "disks", "snapshot"}
 	cmd.Filters = []string{"name=" + vmName}
 
 	status := mmcli.RunTabular(cmd)
 
 	if len(status) == 0 {
-		return fmt.Errorf("VM not found")
+		return errors.New("vm not found")
 	}
 
 	var (
@@ -554,17 +587,21 @@ func ResetDiskState(expName, vmName string) error {
 
 	// Make sure the snapshot flag is set
 	if status[0]["snapshot"] == "false" {
-		return fmt.Errorf("Snapshot flag for %s was not set", vmName)
+		return fmt.Errorf("snapshot flag for %s was not set", vmName)
 	}
 
 	// Stop all packet captures for a vm that will be reset to
 	// its original state.  We are going to assume that a vm
 	// that has been shutdown will not have any active packet captures
-	if status[0]["state"] == "RUNNING" {
-
+	if status[0]["state"] == vmStateRunning {
 		err := StopCaptures(expName, vmName)
 		if err != nil && !errors.Is(err, ErrNoCaptures) {
-			return fmt.Errorf("stopping captures for VM %s in experiment %s: %w", vmName, expName, err)
+			return fmt.Errorf(
+				"stopping captures for VM %s in experiment %s: %w",
+				vmName,
+				expName,
+				err,
+			)
 		}
 
 		// Kill the vm without a flush to preserve state
@@ -574,7 +611,6 @@ func ResetDiskState(expName, vmName string) error {
 		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 			return fmt.Errorf("killing VM %s in experiment %s: %w", vmName, expName, err)
 		}
-
 	}
 
 	if !mm.IsHeadnode(node) {
@@ -585,20 +621,33 @@ func ResetDiskState(expName, vmName string) error {
 	// to exclude file injections in the new snapshot
 	cmd.Command = fmt.Sprintf("%s disk snapshot %s %s", cmdPrefix, origSnap, tmpSnap)
 
-	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-		return fmt.Errorf("taking disk snapshot remotely for VM %s in experiment %s: %w", vmName, expName, err)
+	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	if err != nil {
+		return fmt.Errorf(
+			"taking disk snapshot remotely for VM %s in experiment %s: %w",
+			vmName,
+			expName,
+			err,
+		)
 	}
 
 	// Move the snapshot to the vm instance path
 	tmpSnapFullPath := fmt.Sprintf("%s/%s", filepath.Dir(origSnap), tmpSnap)
 	cmd.Command = fmt.Sprintf("%s shell mv %s %s", cmdPrefix, tmpSnapFullPath, finalDst)
 
-	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-		return fmt.Errorf("moving disk snapshot remotely for VM %s in experiment %s: %w", vmName, expName, err)
+	err = mmcli.ErrorResponse(mmcli.Run(cmd))
+	if err != nil {
+		return fmt.Errorf(
+			"moving disk snapshot remotely for VM %s in experiment %s: %w",
+			vmName,
+			expName,
+			err,
+		)
 	}
 
 	// restart the vm
-	if err := mm.StartVM(mm.NS(expName), mm.VMName(vmName)); err != nil {
+	err = mm.StartVM(mm.NS(expName), mm.VMName(vmName))
+	if err != nil {
 		return fmt.Errorf("starting VM %s in experiment %s: %w", vmName, expName, err)
 	}
 
@@ -609,14 +658,15 @@ func ResetDiskState(expName, vmName string) error {
 // given name. It returns any errors encountered while resuming the VM.
 func Resume(expName, vmName string) error {
 	if expName == "" {
-		return fmt.Errorf("no experiment name provided")
+		return errors.New("no experiment name provided")
 	}
 
 	if vmName == "" {
-		return fmt.Errorf("no VM name provided")
+		return errors.New("no VM name provided")
 	}
 
-	if err := mm.StartVM(mm.NS(expName), mm.VMName(vmName)); err != nil {
+	err := mm.StartVM(mm.NS(expName), mm.VMName(vmName))
+	if err != nil {
 		return fmt.Errorf("resuming VM: %w", err)
 	}
 
@@ -629,11 +679,11 @@ func Resume(expName, vmName string) error {
 // encountered while redeploying the VM.
 func Redeploy(expName, vmName string, opts ...RedeployOption) error {
 	if expName == "" {
-		return fmt.Errorf("no experiment name provided")
+		return errors.New("no experiment name provided")
 	}
 
 	if vmName == "" {
-		return fmt.Errorf("no VM name provided")
+		return errors.New("no VM name provided")
 	}
 
 	o := newRedeployOptions(opts...)
@@ -674,7 +724,8 @@ func Redeploy(expName, vmName string, opts ...RedeployOption) error {
 		mm.InjectPartition(o.part),
 	}
 
-	if err := mm.RedeployVM(mmOpts...); err != nil {
+	err := mm.RedeployVM(mmOpts...)
+	if err != nil {
 		return fmt.Errorf("redeploying VM: %w", err)
 	}
 
@@ -685,14 +736,15 @@ func Redeploy(expName, vmName string, opts ...RedeployOption) error {
 // It returns any errors encountered while killing the VM.
 func Kill(expName, vmName string) error {
 	if expName == "" {
-		return fmt.Errorf("no experiment name provided")
+		return errors.New("no experiment name provided")
 	}
 
 	if vmName == "" {
-		return fmt.Errorf("no VM name provided")
+		return errors.New("no VM name provided")
 	}
 
-	if err := mm.KillVM(mm.NS(expName), mm.VMName(vmName)); err != nil {
+	err := mm.KillVM(mm.NS(expName), mm.VMName(vmName))
+	if err != nil {
 		return fmt.Errorf("killing VM: %w", err)
 	}
 
@@ -706,7 +758,7 @@ func Snapshots(expName, vmName string) ([]string, error) {
 	}
 
 	var (
-		prefix = fmt.Sprintf("%s__", vmName)
+		prefix = vmName + "__"
 		names  []string
 	)
 
@@ -719,9 +771,9 @@ func Snapshots(expName, vmName string) ([]string, error) {
 	return names, nil
 }
 
-// Takes a snapshot of the current state of the VM (disk and memory)
-// snapshots can later be restored
-func Snapshot(expName, vmName, out string, cb func(string)) error {
+// Snapshot takes a snapshot of the current state of the VM (disk and memory)
+// snapshots can later be restored.
+func Snapshot(expName, vmName, out string, cb func(string)) error { //nolint:funlen // complex logic
 	vm, err := Get(expName, vmName)
 	if err != nil {
 		return fmt.Errorf("getting VM details: %w", err)
@@ -739,14 +791,14 @@ func Snapshot(expName, vmName, out string, cb func(string)) error {
 	// Get minimega's snapshot path for VM
 
 	cmd := mmcli.NewNamespacedCommand(expName)
-	cmd.Command = "vm info"
+	cmd.Command = vmInfoCmd
 	cmd.Columns = []string{"host", "id"}
 	cmd.Filters = []string{"name=" + vmName}
 
 	status := mmcli.RunTabular(cmd)
 
 	if len(status) == 0 {
-		return fmt.Errorf("VM %s not found", vmName)
+		return fmt.Errorf("vm %s not found", vmName)
 	}
 
 	cmd.Columns = nil
@@ -775,15 +827,15 @@ func Snapshot(expName, vmName, out string, cb func(string)) error {
 		status := mmcli.RunTabular(cmd)[0]
 
 		if cb != nil {
-			if status["status"] == "completed" {
-				cb("completed")
+			if status["status"] == statusCompleted {
+				cb(statusCompleted)
 			} else {
 				progress, _ := strconv.ParseFloat(status["complete (%)"], 64)
 				cb(fmt.Sprintf("%f", progress))
 			}
 		}
 
-		if status["status"] == "completed" {
+		if status["status"] == statusCompleted {
 			break
 		}
 
@@ -792,7 +844,7 @@ func Snapshot(expName, vmName, out string, cb func(string)) error {
 
 	// ***** END: MIGRATE VM *****
 
-	cmd.Command = fmt.Sprintf("vm start %s", vmName)
+	cmd.Command = "vm start " + vmName
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("resuming VM %s after snapshot: %w", vmName, err)
@@ -816,13 +868,27 @@ func Snapshot(expName, vmName, out string, cb func(string)) error {
 
 	final := strings.TrimPrefix(out, expName+"_")
 
-	cmd.Command = fmt.Sprintf("%s shell mv %s/images/%s.state %s/%s.state", cmdPrefix, common.PhenixBase, out, dst, final)
+	cmd.Command = fmt.Sprintf(
+		"%s shell mv %s/images/%s.state %s/%s.state",
+		cmdPrefix,
+		common.PhenixBase,
+		out,
+		dst,
+		final,
+	)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("moving memory snapshot to experiment files directory: %w", err)
 	}
 
-	cmd.Command = fmt.Sprintf("%s shell mv %s/images/%s.hdd %s/%s.hdd", cmdPrefix, common.PhenixBase, out, dst, final)
+	cmd.Command = fmt.Sprintf(
+		"%s shell mv %s/images/%s.hdd %s/%s.hdd",
+		cmdPrefix,
+		common.PhenixBase,
+		out,
+		dst,
+		final,
+	)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("moving disk snapshot to experiment files directory: %w", err)
@@ -841,33 +907,31 @@ func Restore(expName, vmName, snap string) error {
 
 	var found bool
 
-	for _, ss := range snapshots {
-		if snap == ss {
-			found = true
-			break
-		}
+	if slices.Contains(snapshots, snap) {
+		found = true
 	}
 
 	if !found {
-		return fmt.Errorf("snapshot does not exist on cluster")
+		return errors.New("snapshot does not exist on cluster")
 	}
 
 	snap = fmt.Sprintf("%s/files/%s", expName, snap)
 
 	details := mm.GetVMInfo(mm.NS(expName), mm.VMName(vmName))
 	if len(details) == 0 {
-		return fmt.Errorf("error getting vm details")
+		return errors.New("error getting vm details")
 	}
 
 	cmd := mmcli.NewNamespacedCommand(expName)
-	cmd.Command = fmt.Sprintf("vm config clone %s", vmName)
+
+	cmd.Command = "vm config clone " + vmName
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("cloning config for VM %s: %w", vmName, err)
 	}
 
 	// Have to copy over UUID separate from clone.
 	// Needs to stay the same for miniccc agent to connect
-	cmd.Command = fmt.Sprintf("vm config uuid %s", details[0].UUID)
+	cmd.Command = "vm config uuid " + details[0].UUID
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("setting uuid for VM %s: %w", vmName, err)
 	}
@@ -882,17 +946,17 @@ func Restore(expName, vmName, snap string) error {
 		return fmt.Errorf("configuring disk file for VM %s: %w", vmName, err)
 	}
 
-	cmd.Command = fmt.Sprintf("vm kill %s", vmName)
+	cmd.Command = "vm kill " + vmName
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("killing VM %s: %w", vmName, err)
 	}
 
-	cmd.Command = fmt.Sprintf("vm flush %s", vmName)
+	cmd.Command = "vm flush " + vmName
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("flushing VMs: %w", err)
 	}
 
-	cmd.Command = fmt.Sprintf("vm launch kvm %s", vmName)
+	cmd.Command = "vm launch kvm " + vmName
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("relaunching VM %s: %w", vmName, err)
 	}
@@ -902,7 +966,7 @@ func Restore(expName, vmName, snap string) error {
 		return fmt.Errorf("scheduling VM %s: %w", vmName, err)
 	}
 
-	cmd.Command = fmt.Sprintf("vm start %s", vmName)
+	cmd.Command = "vm start " + vmName
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("starting VM %s: %w", vmName, err)
 	}
@@ -910,12 +974,14 @@ func Restore(expName, vmName, snap string) error {
 	return nil
 }
 
-// Creates a new disk with the current state of a running vm
+// CommitToDisk creates a new disk with the current state of a running vm
 // 1. creates a copy of the base image (e.g., the image used in the topology) named "out"
 // 2. stops the vm
 // 3. next rebases the snapshot (the running image phenix uses <vm>/disk-0.qcow2) to utilize the copy
 // 4. commits the snapshot so that it writes the current disk to "out"
-// 5. starts the vm
+// 5. starts the vm.
+//
+//nolint:cyclop,funlen,gocyclo,maintidx // complex logic
 func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error) {
 	// Determine name of new disk image, if not provided.
 	if out == "" {
@@ -923,13 +989,23 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 
 		out, err = GetNewDiskName(expName, vmName)
 		if err != nil {
-			return "", fmt.Errorf("getting new disk name for VM %s in experiment %s: %w", vmName, expName, err)
+			return "", fmt.Errorf(
+				"getting new disk name for VM %s in experiment %s: %w",
+				vmName,
+				expName,
+				err,
+			)
 		}
 	}
 
 	disk, err := getVMImage(expName, vmName)
 	if err != nil {
-		return "", fmt.Errorf("getting disk image for VM %s in experiment %s: %w", vmName, expName, err)
+		return "", fmt.Errorf(
+			"getting disk image for VM %s in experiment %s: %w",
+			vmName,
+			expName,
+			err,
+		)
 	}
 
 	if !filepath.IsAbs(disk) {
@@ -942,25 +1018,35 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 
 	base, err := getBackingImage(disk)
 	if err != nil {
-		return "", fmt.Errorf("getting backing image for VM %s in experiment %s: %w", vmName, expName, err)
+		return "", fmt.Errorf(
+			"getting backing image for VM %s in experiment %s: %w",
+			vmName,
+			expName,
+			err,
+		)
 	}
 
 	snapshots, err := getImageSnapshots(disk)
 	if err != nil {
-		return "", fmt.Errorf("getting disk snapshots for VM %s in experiment %s: %w", vmName, expName, err)
+		return "", fmt.Errorf(
+			"getting disk snapshots for VM %s in experiment %s: %w",
+			vmName,
+			expName,
+			err,
+		)
 	}
 
 	// Get status of VM (scheduled host, VM state).
 
 	cmd := mmcli.NewNamespacedCommand(expName)
-	cmd.Command = "vm info"
+	cmd.Command = vmInfoCmd
 	cmd.Columns = []string{"host", "name", "id", "state"}
 	cmd.Filters = []string{"name=" + vmName}
 
 	status := mmcli.RunTabular(cmd)
 
 	if len(status) == 0 {
-		return "", fmt.Errorf("VM not found")
+		return "", errors.New("vm not found")
 	}
 
 	var (
@@ -984,13 +1070,15 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 				// If the callback is set, intercept it to reflect the copy stage as the
 				// initial 80% of the effort.
 				if cb != nil {
-					cb(p * 0.8)
+					cb(p * copyProgressFactor)
 				}
 			}
 		}()
 
-		if err := copier.copy(ctx, base, out); err != nil {
-			os.Remove(out) // cleanup
+		err := copier.copy(ctx, base, out)
+		if err != nil {
+			_ = os.Remove(out) // cleanup
+
 			return fmt.Errorf("making copy of backing image: %w", err)
 		}
 
@@ -998,8 +1086,9 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 	})
 
 	// VM can't be running or we won't be able to copy snapshot remotely.
-	if status[0]["state"] != "QUIT" {
-		if err := Shutdown(expName, vmName); err != nil {
+	if status[0]["state"] != vmStateQuit {
+		err := Shutdown(expName, vmName)
+		if err != nil {
 			return "", fmt.Errorf("stopping VM: %w", err)
 		}
 	}
@@ -1019,12 +1108,15 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 
 			tmp := fmt.Sprintf("%s/images/%s/tmp/snapshot-%d.qc2", common.PhenixBase, expName, id)
 
-			if err := os.MkdirAll(filepath.Dir(tmp), 0o755); err != nil {
+			err := os.MkdirAll(filepath.Dir(tmp), 0o750)
+			if err != nil {
 				return fmt.Errorf("creating experiment tmp directory: %w", err)
 			}
 
-			if err := copier.copy(ctx, file, tmp); err != nil {
-				os.Remove(tmp)
+			err = copier.copy(ctx, file, tmp)
+			if err != nil {
+				_ = os.Remove(tmp)
+
 				return fmt.Errorf("making copy of snapshot %s: %w", file, err)
 			}
 
@@ -1051,21 +1143,24 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		cmd := mmcli.NewCommand()
 		cmd.Command = fmt.Sprintf("%s shell mkdir -p %s", cmdPrefix, tmp)
 
-		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		err := mmcli.ErrorResponse(mmcli.Run(cmd))
+		if err != nil {
 			return fmt.Errorf("ensuring experiment tmp directory exists: %w", err)
 		}
 
 		tmp = fmt.Sprintf("%s/images/%s/tmp/%s.qc2", common.PhenixBase, expName, vmName)
 		cmd.Command = fmt.Sprintf("%s shell cp %s %s", cmdPrefix, snap, tmp)
 
-		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		err = mmcli.ErrorResponse(mmcli.Run(cmd))
+		if err != nil {
 			return fmt.Errorf("copying snapshot remotely: %w", err)
 		}
 
 		headnode, _ := os.Hostname()
 		tmp = fmt.Sprintf("%s/tmp/%s.qc2", expName, vmName)
 
-		if err := file.CopyFile(tmp, headnode, nil); err != nil {
+		err = file.CopyFile(tmp, headnode, nil)
+		if err != nil {
 			return fmt.Errorf("pulling snapshot to headnode: %w", err)
 		}
 
@@ -1080,7 +1175,10 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 	// snapshots to rebase onto the copy of the original backing image. If the
 	// image pointed at by the VM config in the topology was not a snapshot, then
 	// this will be the only snapshot in the list.
-	snapshots = append(snapshots, fmt.Sprintf("%s/images/%s/tmp/%s.qc2", common.PhenixBase, expName, vmName))
+	snapshots = append(
+		snapshots,
+		fmt.Sprintf("%s/images/%s/tmp/%s.qc2", common.PhenixBase, expName, vmName),
+	)
 
 	for idx, snapshot := range snapshots {
 		// first parent should be copy of original backing image
@@ -1090,13 +1188,23 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 			parent = snapshots[idx-1]
 		}
 
-		shell := exec.Command("qemu-img", "rebase", "-f", "qcow2", "-b", parent, "-F", "qcow2", snapshot)
+		shell := exec.CommandContext(
+			context.Background(),
+			"qemu-img",
+			"rebase",
+			"-f",
+			"qcow2",
+			"-b",
+			parent,
+			"-F",
+			"qcow2",
+			snapshot,
+		)
 
 		res, err := shell.CombinedOutput()
 		if err != nil {
 			return "", fmt.Errorf("rebasing snapshot (%s): %w", string(res), err)
 		}
-
 	}
 
 	done := make(chan struct{})
@@ -1118,7 +1226,7 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 					// We sleep at the beginning instead of the end to ensure the command
 					// we shell out to below has time to run before we try to stat the
 					// destination file.
-					time.Sleep(2 * time.Second)
+					time.Sleep(commitWait)
 
 					stat, err := os.Stat(out)
 					if err != nil {
@@ -1127,13 +1235,13 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 
 					p := float64(stat.Size()) / targetSize
 
-					cb(0.8 + (p * 0.2))
+					cb(commitProgressBase + (p * commitProgressFactor))
 				}
 			}
 		}()
 	}
 
-	shell := exec.Command("qemu-img", "commit", "-b", out, snapshots[len(snapshots)-1])
+	shell := exec.CommandContext(context.Background(), "qemu-img", "commit", "-b", out, snapshots[len(snapshots)-1])
 
 	res, err := shell.CombinedOutput()
 	if err != nil {
@@ -1154,10 +1262,10 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 	return out, nil
 }
 
-// Create an ELF memory snapshot for a running virtual machine
+// MemorySnapshot creates an ELF memory snapshot for a running virtual machine
 //
 //	that is compatible with memory forensic toolkits Volatility and Google's Rekall.
-func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error) {
+func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error) { //nolint:funlen // complex logic
 	_, err := Get(expName, vmName)
 	if err != nil {
 		return "", fmt.Errorf("getting VM details: %w", err)
@@ -1172,20 +1280,21 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 		if filepath.Ext(out) != "" {
 			out = strings.TrimSuffix(out, filepath.Ext(out))
 		}
+
 		out += ".elf"
 	}
 
 	// Get compute node VM is running on.
 
 	cmd := mmcli.NewNamespacedCommand(expName)
-	cmd.Command = "vm info"
+	cmd.Command = vmInfoCmd
 	cmd.Columns = []string{"host", "name", "id", "state"}
 	cmd.Filters = []string{"name=" + vmName}
 
 	status := mmcli.RunTabular(cmd)
 
 	if len(status) == 0 {
-		return "", fmt.Errorf("VM not found")
+		return "", errors.New("vm not found")
 	}
 
 	// If only the filename was specified,
@@ -1210,7 +1319,10 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 	}
 	// ***** BEGIN: MEMORY SNAPSHOT VM *****
 
-	qmp := fmt.Sprintf(`{ "execute": "dump-guest-memory", "arguments": { "protocol": "file:%s", "paging": false, "format": "elf" , "detach": true} }`, out)
+	qmp := fmt.Sprintf(
+		`{ "execute": "dump-guest-memory", "arguments": { "protocol": "file:%s", "paging": false, "format": "elf" , "detach": true} }`,
+		out,
+	)
 	cmd.Command = fmt.Sprintf("vm qmp %s '%s'", vmName, qmp)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
@@ -1227,58 +1339,59 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 	)
 
 	for {
-		// sleep before querying the vm to to prevent errors from start delays
+		// sleep before querying the vm to prevent errors from start delays
 		time.Sleep(1 * time.Second)
+
 		res, err = mmcli.SingleResponse(mmcli.Run(cmd))
 		if err != nil {
 			if cb != nil {
 				cb("failed")
 			}
+
 			return "", fmt.Errorf("getting memory snapshot status for VM %s: %w", vmName, err)
 		}
 
-		json.Unmarshal([]byte(res), &v)
+		_ = json.Unmarshal([]byte(res), &v)
 
 		if len(v.Return.Status) == 0 {
 			if cb != nil {
 				cb("failed")
 			}
-			return "", fmt.Errorf("no status available for %s: %v", vmName, v)
 
+			return "", fmt.Errorf("no status available for %s: %v", vmName, v)
 		}
 
 		if v.Return.Status == "failed" {
 			if cb != nil {
 				cb("failed")
 			}
-			return "failed", fmt.Errorf("failed to create memory snapshot for %s: %v", vmName, v)
 
+			return "failed", fmt.Errorf("failed to create memory snapshot for %s: %v", vmName, v)
 		}
 
 		progress = fmt.Sprintf("%v", float64(v.Return.Completed)/float64(v.Return.Total))
 
 		cb(progress)
 
-		if v.Return.Status == "completed" {
-			cb("completed")
+		if v.Return.Status == statusCompleted {
+			cb(statusCompleted)
+
 			break
 		}
-
 	}
 
 	// Copy the ELF memory dump to the headnode if the VM was not
 	// hosted on the headnode
 	if !mm.IsHeadnode(status[0]["host"]) {
-
 		// File path should be relative to the minimega files directory
 		memoryDumpPath := fmt.Sprintf("%s/files/%s", expName, filepath.Base(out))
 
-		cmd.Command = fmt.Sprintf(`file get %s`, memoryDumpPath)
+		cmd.Command = "file get " + memoryDumpPath
 
-		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		err := mmcli.ErrorResponse(mmcli.Run(cmd))
+		if err != nil {
 			return "", fmt.Errorf("pulling ELF memory snapshot to headnode: %w", err)
 		}
-
 	}
 
 	return out, nil
@@ -1295,7 +1408,7 @@ func CaptureSubnet(expName, subnet string, vmList []string) ([]mm.Capture, error
 	}
 
 	if !exp.Running() {
-		return nil, fmt.Errorf("packet captures can only be started for a running experiment")
+		return nil, errors.New("packet captures can only be started for a running experiment")
 	}
 
 	vms, err := List(expName)
@@ -1310,11 +1423,14 @@ func CaptureSubnet(expName, subnet string, vmList []string) ([]mm.Capture, error
 
 	// Use empty struct for code consistency and
 	// slight memory savings
-	var vmTable map[string]struct{}
-	var matchedVMs []string
+	var (
+		vmTable    map[string]struct{}
+		matchedVMs []string
+	)
 
 	// An optional list of VMs can be provided
 	// to restrict the search scope
+
 	if len(vmList) > 0 {
 		// Put vms in a table for quick lookup
 		vmTable = make(map[string]struct{})
@@ -1329,14 +1445,13 @@ func CaptureSubnet(expName, subnet string, vmList []string) ([]mm.Capture, error
 	// Find the interfaces that are in the
 	// specified subnet
 	for _, vm := range vms {
-
 		// Make sure the VM is running
 		state, err := mm.GetVMState(mm.NS(expName), mm.VMName(vm.Name))
 		if err != nil {
 			continue
 		}
 
-		if state != "RUNNING" {
+		if state != vmStateRunning {
 			continue
 		}
 
@@ -1361,17 +1476,14 @@ func CaptureSubnet(expName, subnet string, vmList []string) ([]mm.Capture, error
 				if StartCapture(expName, vm.Name, iface, filename) == nil {
 					matchedVMs = append(matchedVMs, vm.Name)
 				}
-
 			}
-
 		}
-
 	}
 
 	// Get all the captures for all the VMs
 	var allVMCaptures []mm.Capture
-	for _, vmName := range matchedVMs {
 
+	for _, vmName := range matchedVMs {
 		vmCaptures := mm.GetVMCaptures(mm.NS(expName), mm.VMName(vmName))
 
 		allVMCaptures = append(allVMCaptures, vmCaptures...)
@@ -1394,7 +1506,7 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 	}
 
 	if !exp.Running() {
-		return nil, fmt.Errorf("packet captures can only be stopped for a running experiment")
+		return nil, errors.New("packet captures can only be stopped for a running experiment")
 	}
 
 	vms, err := List(expName)
@@ -1409,11 +1521,14 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 
 	// Use empty struct for code consistency and
 	// slight memory savings
-	var vmTable map[string]struct{}
-	var matchedVMs []string
+	var (
+		vmTable    map[string]struct{}
+		matchedVMs []string
+	)
 
 	// An optional list of VMs can be provided
 	// to restrict the search scope
+
 	if len(vmList) > 0 {
 		// Put vms in a table for quick lookup
 		vmTable = make(map[string]struct{})
@@ -1428,7 +1543,6 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 	// Find the interfaces that are in the
 	// specified subnet
 	for _, vm := range vms {
-
 		// Skip vms with no current captures
 		if len(vm.Captures) == 0 {
 			continue
@@ -1440,7 +1554,7 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 			continue
 		}
 
-		if state != "RUNNING" {
+		if state != vmStateRunning {
 			continue
 		}
 
@@ -1457,6 +1571,7 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 			if StopCaptures(expName, vm.Name) == nil {
 				matchedVMs = append(matchedVMs, vm.Name)
 			}
+
 			continue
 		}
 
@@ -1481,52 +1596,52 @@ func StopCaptureSubnet(expName, subnet string, vmList []string) ([]string, error
 					break
 				}
 			}
-
 		}
-
 	}
 
 	return matchedVMs, nil
 }
 
-// Changes the optical disc in the first drive
+// ChangeOpticalDisc changes the optical disc in the first drive.
 func ChangeOpticalDisc(expName, vmName, isoPath string) error {
 	if expName == "" {
-		return fmt.Errorf("no experiment name provided")
+		return errors.New("no experiment name provided")
 	}
 
 	if vmName == "" {
-		return fmt.Errorf("no VM name provided")
+		return errors.New("no VM name provided")
 	}
 
 	if isoPath == "" {
-		return fmt.Errorf("no optical disc path provided")
+		return errors.New("no optical disc path provided")
 	}
 
 	cmd := mmcli.NewNamespacedCommand(expName)
 	cmd.Command = fmt.Sprintf("vm cdrom change %s %s", vmName, isoPath)
 
-	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	if err != nil {
 		return fmt.Errorf("changing optical disc for VM %s: %w", vmName, err)
 	}
 
 	return nil
 }
 
-// Ejects the optical disc in the first drive
+// EjectOpticalDisc ejects the optical disc in the first drive.
 func EjectOpticalDisc(expName, vmName string) error {
 	if expName == "" {
-		return fmt.Errorf("no experiment name provided")
+		return errors.New("no experiment name provided")
 	}
 
 	if vmName == "" {
-		return fmt.Errorf("no VM name provided")
+		return errors.New("no VM name provided")
 	}
 
 	cmd := mmcli.NewNamespacedCommand(expName)
-	cmd.Command = fmt.Sprintf("vm cdrom eject %s", vmName)
+	cmd.Command = "vm cdrom eject " + vmName
 
-	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	if err != nil {
 		return fmt.Errorf("ejecting optical disc for VM %s: %w", vmName, err)
 	}
 

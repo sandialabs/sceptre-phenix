@@ -3,21 +3,26 @@ package app
 import (
 	"context"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
+	"slices"
 	"time"
+
+	"github.com/hashicorp/go-multierror"
+	"inet.af/netaddr"
 
 	"phenix/types"
 	"phenix/util"
 	"phenix/util/mm"
 	"phenix/util/tap"
-
-	"github.com/hashicorp/go-multierror"
-	"golang.org/x/exp/slices"
-	"inet.af/netaddr"
 )
 
-func init() {
-	RegisterUserApp("tap", func() App { return new(Tap) })
+const tapNameRandomLength = 8
+
+func init() { //nolint:gochecknoinits // app registration
+	err := RegisterUserApp("tap", func() App { return new(Tap) })
+	if err != nil {
+		panic(err)
+	}
 }
 
 type TapAppMetadata struct {
@@ -25,8 +30,8 @@ type TapAppMetadata struct {
 }
 
 type TapAppStatus struct {
-	Host string     `structs:"host" mapstructure:"host"`
-	Taps []*tap.Tap `structs:"taps" mapstructure:"taps"`
+	Host string     `mapstructure:"host" structs:"host"`
+	Taps []*tap.Tap `mapstructure:"taps" structs:"taps"`
 }
 
 type Tap struct{}
@@ -47,16 +52,16 @@ func (Tap) PreStart(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (this *Tap) PostStart(ctx context.Context, exp *types.Experiment) error {
-	app := exp.App(this.Name())
+func (t *Tap) PostStart(ctx context.Context, exp *types.Experiment) error {
+	app := exp.App(t.Name())
 	if app == nil {
 		// this should never happen...
-		return fmt.Errorf("%s app not defined in experiment scenario", this.Name())
+		return fmt.Errorf("%s app not defined in experiment scenario", t.Name())
 	}
 
 	var amd TapAppMetadata
 	if err := app.ParseMetadata(&amd); err != nil {
-		return fmt.Errorf("decoding %s app metadata: %w", this.Name(), err)
+		return fmt.Errorf("decoding %s app metadata: %w", t.Name(), err)
 	}
 
 	hosts, err := mm.GetNamespaceHosts(exp.Metadata.Name)
@@ -64,15 +69,15 @@ func (this *Tap) PostStart(ctx context.Context, exp *types.Experiment) error {
 		return fmt.Errorf("getting list of experiment hosts: %w", err)
 	}
 
-	rand.Seed(time.Now().UnixNano())
+	rng := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 1)) //nolint:gosec // weak random number generator
 
 	var (
-		host  = hosts[rand.Intn(len(hosts))].Name
-		pairs = this.discoverUsedPairs()
+		host  = hosts[rng.IntN(len(hosts))].Name
+		pairs = t.discoverUsedPairs()
 		vlans []string
 	)
 
-	status := TapAppStatus{Host: host}
+	status := TapAppStatus{Host: host} //nolint:exhaustruct // partial initialization
 
 	for _, t := range amd.Taps {
 		if slices.Contains(vlans, t.VLAN) {
@@ -88,7 +93,7 @@ func (this *Tap) PostStart(ctx context.Context, exp *types.Experiment) error {
 		t.Init(exp.Spec.DefaultBridge(), opts...)
 
 		// Tap name is random, yet descriptive to the fact that it's a "tapapp" tap.
-		t.Name = fmt.Sprintf("%s-tapapp", util.RandomString(8))
+		t.Name = util.RandomString(tapNameRandomLength) + "-tapapp"
 
 		pair, err := t.Create(host)
 		if err != nil {
@@ -105,7 +110,7 @@ func (this *Tap) PostStart(ctx context.Context, exp *types.Experiment) error {
 		vlans = append(vlans, t.VLAN)
 	}
 
-	exp.Status.SetAppStatus(this.Name(), status)
+	exp.Status.SetAppStatus(t.Name(), status)
 
 	return nil
 }
@@ -114,10 +119,12 @@ func (Tap) Running(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (this *Tap) Cleanup(ctx context.Context, exp *types.Experiment) error {
+func (t *Tap) Cleanup(ctx context.Context, exp *types.Experiment) error {
 	var status TapAppStatus
-	if err := exp.Status.ParseAppStatus(this.Name(), &status); err != nil {
-		return fmt.Errorf("getting experiment status for %s app: %w", this.Name(), err)
+
+	err := exp.Status.ParseAppStatus(t.Name(), &status)
+	if err != nil {
+		return fmt.Errorf("getting experiment status for %s app: %w", t.Name(), err)
 	}
 
 	var (
@@ -128,15 +135,19 @@ func (this *Tap) Cleanup(ctx context.Context, exp *types.Experiment) error {
 	for _, t := range status.Taps {
 		t.Init(exp.Spec.DefaultBridge(), tap.Experiment(exp.Metadata.Name))
 
-		if err := t.Delete(host); err != nil {
-			errs = multierror.Append(errs, fmt.Errorf("deleting host tap for VLAN %s: %w", t.VLAN, err))
+		err := t.Delete(host)
+		if err != nil {
+			errs = multierror.Append(
+				errs,
+				fmt.Errorf("deleting host tap for VLAN %s: %w", t.VLAN, err),
+			)
 		}
 	}
 
 	return errs
 }
 
-func (this Tap) discoverUsedPairs() []netaddr.IPPrefix {
+func (t Tap) discoverUsedPairs() []netaddr.IPPrefix {
 	var pairs []netaddr.IPPrefix
 
 	running, err := types.Experiments(true)
@@ -146,7 +157,9 @@ func (this Tap) discoverUsedPairs() []netaddr.IPPrefix {
 
 	for _, exp := range running {
 		var status TapAppStatus
-		if err := exp.Status.ParseAppStatus(this.Name(), &status); err == nil {
+
+		err := exp.Status.ParseAppStatus(t.Name(), &status)
+		if err == nil {
 			for _, tap := range status.Taps {
 				if pair, err := netaddr.ParseIPPrefix(tap.Subnet); err == nil {
 					pairs = append(pairs, pair)

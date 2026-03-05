@@ -1,27 +1,27 @@
 package v1
 
 type ScenarioSpec struct {
-	AppsF *Apps `json:"apps" yaml:"apps" structs:"apps" mapstructure:"apps"`
+	AppsF *Apps `json:"apps" mapstructure:"apps" structs:"apps" yaml:"apps"`
 }
 
 type Apps struct {
-	ExperimentF []ExperimentApp `json:"experiment" yaml:"experiment" structs:"experiment" mapstructure:"experiment"`
-	HostF       []HostApp       `json:"host" yaml:"host" structs:"host" mapstructure:"host"`
+	ExperimentF []ExperimentApp `json:"experiment" mapstructure:"experiment" structs:"experiment" yaml:"experiment"`
+	HostF       []HostApp       `json:"host"       mapstructure:"host"       structs:"host"       yaml:"host"`
 }
 
 type ExperimentApp struct {
-	NameF     string                 `json:"name" yaml:"name" structs:"name" mapstructure:"name"`
-	AssetDirF string                 `json:"assetDir" yaml:"assetDir" structs:"assetDir" mapstructure:"assetDir"`
-	MetadataF map[string]interface{} `json:"metadata" yaml:"metadata" structs:"metadata" mapstructure:"metadata"`
+	NameF     string         `json:"name"     mapstructure:"name"     structs:"name"     yaml:"name"`
+	AssetDirF string         `json:"assetDir" mapstructure:"assetDir" structs:"assetDir" yaml:"assetDir"`
+	MetadataF map[string]any `json:"metadata" mapstructure:"metadata" structs:"metadata" yaml:"metadata"`
 }
 
 type HostApp struct {
-	NameF     string `json:"name" yaml:"name" structs:"name" mapstructure:"name"`
-	AssetDirF string `json:"assetDir" yaml:"assetDir" structs:"assetDir" mapstructure:"assetDir"`
-	HostsF    []Host `json:"hosts" yaml:"hosts" structs:"hosts" mapstructure:"hosts"`
+	NameF     string `json:"name"     mapstructure:"name"     structs:"name"     yaml:"name"`
+	AssetDirF string `json:"assetDir" mapstructure:"assetDir" structs:"assetDir" yaml:"assetDir"`
+	HostsF    []Host `json:"hosts"    mapstructure:"hosts"    structs:"hosts"    yaml:"hosts"`
 }
 
 type Host struct {
-	HostnameF string                 `json:"hostname" yaml:"hostname" structs:"hostname" mapstructure:"hostname"`
-	MetadataF map[string]interface{} `json:"metadata" yaml:"metadata" structs:"metadata" mapstructure:"metadata"`
+	HostnameF string         `json:"hostname" mapstructure:"hostname" structs:"hostname" yaml:"hostname"`
+	MetadataF map[string]any `json:"metadata" mapstructure:"metadata" structs:"metadata" yaml:"metadata"`
 }

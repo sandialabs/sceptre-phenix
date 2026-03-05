@@ -2,40 +2,49 @@ package plog
 
 import (
 	"context"
+	"log/slog"
 	"strings"
-
-	"golang.org/x/exp/slog"
 )
 
-// SetLevel sets the log level of the "phenix-default" slog.Handler.
+// SetLevel sets the log level of the "phenix-default" [slog.Handler].
 func SetLevel(l slog.Level) {
-	level.Set(l)
+	Level.Set(l)
 }
 
-// SetLevelText sets the log level of the "phenix-default" slog.Handler.
+// SetLevelText sets the log level of the "phenix-default" [slog.Handler].
 func SetLevelText(l string) {
 	if strings.ToUpper(l) == "NONE" {
-		level.Set(slog.LevelError + 1)
+		Level.Set(slog.LevelError + 1)
+
 		return
 	}
-	level.UnmarshalText([]byte(l))
+
+	_ = Level.UnmarshalText([]byte(l))
+}
+
+func SetLogFile(path string) {
+	ChangeLogFile(path)
 }
 
 func TextToLevel(level string) slog.Level {
-	if strings.ToUpper(level) == "NONE" {
+	switch strings.ToUpper(level) {
+	case "NONE":
 		return slog.LevelError + 1
-	}
-	if strings.ToUpper(level) == "WARNING" { // python using warning rather than warn
+	case "WARNING": // python using warning rather than warn
 		return slog.LevelWarn
+	default:
+		var l slog.Level
+
+		err := l.UnmarshalText([]byte(level))
+		if err != nil {
+			l = slog.LevelInfo
+		}
+
+		return l
 	}
-	var l slog.Level
-	if err := l.UnmarshalText([]byte(level)); err != nil {
-		l = slog.LevelInfo
-	}
-	return l
 }
 
-// AddHandler adds a new slog.Handler by name to the main phenix slog.Handler.
+// AddHandler adds a new [slog.Handler] by name to the main phenix [slog.Handler].
 func AddHandler(name string, h slog.Handler) {
 	if handler == nil {
 		return
@@ -44,7 +53,7 @@ func AddHandler(name string, h slog.Handler) {
 	handler.AddHandler(name, h)
 }
 
-// RemoveHandler removes the named slog.Handler from the main phenix slog.Handler.
+// RemoveHandler removes the named [slog.Handler] from the main phenix [slog.Handler].
 func RemoveHandler(name string) {
 	if handler == nil {
 		return
@@ -63,23 +72,24 @@ func With(args ...any) *slog.Logger {
 
 type LogType string
 
+// Keep in sync with Log.vue.
 const (
-	// keep in sync with Log.vue
 	TypeSecurity  LogType = "SECURITY"
 	TypeSoh       LogType = "SOH"
 	TypeScorch    LogType = "SCORCH"
 	TypePhenixApp LogType = "PHENIX-APP"
 	TypeAction    LogType = "ACTION"
-	TypeHttp      LogType = "HTTP"
+	TypeHTTP      LogType = "HTTP"
 	TypeMinimega  LogType = "MINIMEGA"
 	TypeSystem    LogType = "SYSTEM" // default. Use if no other option is appropriate
 )
 
-// logs to configured loggers. LogType is a required enum used for identifying what a log message is for
+// Log logs to configured loggers. LogType is a required enum used for identifying what a log message is for.
 func Log(l slog.Level, t LogType, msg string, args ...any) {
 	if logger == nil {
 		return
 	}
+
 	logger.Log(context.Background(), l, msg, append([]any{"type", t}, args...)...)
 }
 

@@ -9,11 +9,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/olekukonko/tablewriter"
+
 	"phenix/store"
 	"phenix/types"
 	"phenix/util/mm"
+)
 
-	"github.com/olekukonko/tablewriter"
+const (
+	colWidth             = 50
+	imageConfigFixedCols = 7
 )
 
 // PrintTableOfConfigs writes the given configs to the given writer as an ASCII
@@ -36,10 +41,12 @@ func PrintTableOfConfigs(writer io.Writer, configs store.Configs) {
 func PrintTableOfExperiments(writer io.Writer, exps ...types.Experiment) {
 	table := tablewriter.NewWriter(writer)
 
-	table.SetHeader([]string{"Name", "Topology", "Scenario", "Started", "VM Count", "VLAN Count", "Apps"})
+	table.SetHeader(
+		[]string{"Name", "Topology", "Scenario", "Started", "VM Count", "VLAN Count", "Apps"},
+	)
 
 	for _, exp := range exps {
-		var apps []string
+		apps := make([]string, 0, len(exp.Apps()))
 
 		for _, app := range exp.Apps() {
 			apps = append(apps, app.Name())
@@ -50,11 +57,10 @@ func PrintTableOfExperiments(writer io.Writer, exps ...types.Experiment) {
 			exp.Metadata.Annotations["topology"],
 			exp.Metadata.Annotations["scenario"],
 			exp.Status.StartTime(),
-			fmt.Sprintf("%d", len(exp.Spec.Topology().Nodes())),
-			fmt.Sprintf("%d", len(exp.Spec.VLANs().Aliases())),
+			strconv.Itoa(len(exp.Spec.Topology().Nodes())),
+			strconv.Itoa(len(exp.Spec.VLANs().Aliases())),
 			strings.Join(apps, ", "),
 		})
-
 	}
 
 	table.Render()
@@ -79,14 +85,26 @@ func PrintTableOfVMs(writer io.Writer, vms ...mm.VM) {
 }
 
 func buildMultipleVMTable(table *tablewriter.Table, vms ...mm.VM) {
-	table.SetHeader([]string{"Host", "Name", "Running", "Disk", "Interfaces", "Uptime", "Memory", "VCPUs", "OS Type"})
+	table.SetHeader(
+		[]string{
+			"Host",
+			"Name",
+			"Running",
+			"Disk",
+			"Interfaces",
+			"Uptime",
+			"Memory",
+			"VCPUs",
+			"OS Type",
+		},
+	)
 	table.SetAutoWrapText(false)
-	table.SetColWidth(50)
+	table.SetColWidth(colWidth)
 
 	for _, vm := range vms {
 		var (
 			running = strconv.FormatBool(vm.Running)
-			ifaces  []string
+			ifaces  = make([]string, 0, len(vm.Networks))
 			uptime  string
 		)
 
@@ -98,18 +116,30 @@ func buildMultipleVMTable(table *tablewriter.Table, vms ...mm.VM) {
 			uptime = (time.Duration(vm.Uptime) * time.Second).String()
 		}
 
-		table.Append([]string{vm.Host, vm.Name, running, vm.Disk, strings.Join(ifaces, "\n"), uptime, strconv.Itoa(vm.RAM), strconv.Itoa(vm.CPUs), vm.OSType})
+		table.Append(
+			[]string{
+				vm.Host,
+				vm.Name,
+				running,
+				vm.Disk,
+				strings.Join(ifaces, "\n"),
+				uptime,
+				strconv.Itoa(vm.RAM),
+				strconv.Itoa(vm.CPUs),
+				vm.OSType,
+			},
+		)
 	}
 }
 
 func buildSingleVMTable(table *tablewriter.Table, vm mm.VM) {
 	table.SetHeader([]string{"Setting", "Value"})
 	table.SetAutoWrapText(false)
-	table.SetColWidth(50)
+	table.SetColWidth(colWidth)
 	table.SetAlignment(tablewriter.ALIGN_LEFT)
 
 	var (
-		ifaces   []string
+		ifaces   = make([]string, 0, len(vm.Networks))
 		uptime   string
 		metadata []byte
 	)
@@ -141,15 +171,16 @@ func buildSingleVMTable(table *tablewriter.Table, vm mm.VM) {
 func PrintTableOfImageConfigs(writer io.Writer, optional []string, imgs ...types.Image) {
 	var (
 		table = tablewriter.NewWriter(writer)
-		cols  = []string{"Name", "Size", "Variant", "Release", "Overlays", "Packages", "Scripts"}
+		cols  = make([]string, 0, imageConfigFixedCols+len(optional))
 	)
 
+	cols = append(cols, "Name", "Size", "Variant", "Release", "Overlays", "Packages", "Scripts")
 	cols = append(cols, optional...)
 
 	table.SetHeader(cols)
 
 	for _, img := range imgs {
-		var scripts []string
+		scripts := make([]string, 0, len(img.Spec.Scripts))
 
 		for s := range img.Spec.Scripts {
 			scripts = append(scripts, s)
@@ -186,7 +217,7 @@ func PrintTableOfVLANAliases(writer io.Writer, info map[string]map[string]int) {
 	table := tablewriter.NewWriter(writer)
 	table.SetHeader([]string{"Experiment", "VLAN Alias", "VLAN ID"})
 
-	var experiments []string
+	experiments := make([]string, 0, len(info))
 
 	for exp := range info {
 		experiments = append(experiments, exp)
@@ -195,7 +226,7 @@ func PrintTableOfVLANAliases(writer io.Writer, info map[string]map[string]int) {
 	sort.Strings(experiments)
 
 	for _, exp := range experiments {
-		var aliases []string
+		aliases := make([]string, 0, len(info[exp]))
 
 		for alias := range info[exp] {
 			aliases = append(aliases, alias)
@@ -204,7 +235,7 @@ func PrintTableOfVLANAliases(writer io.Writer, info map[string]map[string]int) {
 		sort.Strings(aliases)
 
 		for _, alias := range aliases {
-			table.Append([]string{exp, alias, fmt.Sprintf("%d", int(info[exp][alias]))})
+			table.Append([]string{exp, alias, strconv.Itoa(info[exp][alias])})
 		}
 	}
 
@@ -215,7 +246,7 @@ func PrintTableOfVLANRanges(writer io.Writer, info map[string][2]int) {
 	table := tablewriter.NewWriter(writer)
 	table.SetHeader([]string{"Experiment", "VLAN Range"})
 
-	var experiments []string
+	experiments := make([]string, 0, len(info))
 
 	for exp := range info {
 		experiments = append(experiments, exp)
@@ -267,5 +298,41 @@ func PrintTableOfSettings(writer io.Writer, settings []types.Setting) {
 		table.Append(row)
 	}
 
+	table.Render()
+}
+
+func PrintTableOfRuntimeSettings(writer io.Writer, settings map[string]any) {
+	table := tablewriter.NewWriter(writer)
+	table.SetHeader([]string{"Key", "Value"})
+	table.SetAutoWrapText(false)
+	table.SetColWidth(colWidth)
+	table.SetAlignment(tablewriter.ALIGN_LEFT)
+
+	var data [][]string
+
+	var flatten func(prefix string, m map[string]any)
+	flatten = func(prefix string, m map[string]any) {
+		for k, v := range m {
+			newPrefix := k
+			if prefix != "" {
+				newPrefix = prefix + "." + k
+			}
+			switch val := v.(type) {
+			case map[string]any:
+				flatten(newPrefix, val)
+			default:
+				data = append(data, []string{newPrefix, fmt.Sprintf("%v", val)})
+			}
+		}
+	}
+
+	flatten("", settings)
+
+	// Sort data by key
+	sort.Slice(data, func(i, j int) bool {
+		return data[i][0] < data[j][0]
+	})
+
+	table.AppendBulk(data)
 	table.Render()
 }

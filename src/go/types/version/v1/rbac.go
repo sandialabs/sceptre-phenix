@@ -1,12 +1,12 @@
 package v1
 
 type RoleSpec struct {
-	Name     string        `yaml:"roleNname" json:"roleName" structs:"roleName" mapstructure:"roleName"`
-	Policies []*PolicySpec `yaml:"policies" json:"policies" structs:"policies" mapstructure:"policies"`
+	Name     string        `json:"roleName" mapstructure:"roleName" structs:"roleName" yaml:"roleNname"`
+	Policies []*PolicySpec `json:"policies" mapstructure:"policies" structs:"policies" yaml:"policies"`
 }
 
 type PolicySpec struct {
-	Resources     []string `yaml:"resources" json:"resources" structs:"resources" mapstructure:"resources"`
-	ResourceNames []string `yaml:"resourceNames" json:"resourceNames" structs:"resourceNames" mapstructure:"resourceNames"`
-	Verbs         []string `yaml:"verbs" json:"verbs" structs:"verbs" mapstructure:"verbs"`
+	Resources     []string `json:"resources"     mapstructure:"resources"     structs:"resources"     yaml:"resources"`
+	ResourceNames []string `json:"resourceNames" mapstructure:"resourceNames" structs:"resourceNames" yaml:"resourceNames"`
+	Verbs         []string `json:"verbs"         mapstructure:"verbs"         structs:"verbs"         yaml:"verbs"`
 }

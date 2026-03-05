@@ -1,6 +1,7 @@
 package scenario
 
 import (
+	"errors"
 	"fmt"
 
 	"phenix/store"
@@ -11,7 +12,7 @@ import (
 // scenario.
 func AppList(name string) ([]string, error) {
 	if name == "" {
-		return nil, fmt.Errorf("no scenario name provided")
+		return nil, errors.New("no scenario name provided")
 	}
 
 	c, _ := store.NewConfig("scenario/" + name)

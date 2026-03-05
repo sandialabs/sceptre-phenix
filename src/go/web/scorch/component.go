@@ -4,6 +4,16 @@ import (
 	"fmt"
 )
 
+const (
+	statusStart      = "start"
+	statusBackground = "background"
+	statusFailure    = "failure"
+	statusSuccess    = "success"
+	statusRunning    = "running"
+	statusUnstable   = "unstable"
+	statusUnknown    = "unknown"
+)
+
 type ComponentUpdate struct {
 	Exp     string // experiment name
 	CmpName string // component name
@@ -30,12 +40,12 @@ type outputResponse struct {
 }
 
 var (
-	componentUpdates chan ComponentUpdate
-	outputRequests   chan outputRequest
+	componentUpdates chan ComponentUpdate //nolint:gochecknoglobals // global state
+	outputRequests   chan outputRequest   //nolint:gochecknoglobals // global state
 
-	cmpType map[string]string
-	running map[string]bool
-	output  map[string][]byte
+	cmpType map[string]string //nolint:gochecknoglobals // global state
+	running map[string]bool   //nolint:gochecknoglobals // global state
+	output  map[string][]byte //nolint:gochecknoglobals // global state
 )
 
 func UpdateComponent(update ComponentUpdate) {
@@ -45,6 +55,7 @@ func UpdateComponent(update ComponentUpdate) {
 
 	update.done = make(chan struct{})
 	componentUpdates <- update
+
 	<-update.done
 }
 
@@ -60,13 +71,20 @@ func processComponents() {
 		select {
 		case update := <-componentUpdates:
 			// track updates by exp/run/loop/stage/component
-			key := fmt.Sprintf("%s|%d|%d|%s|%s", update.Exp, update.Run, update.Loop, update.Stage, update.CmpName)
+			key := fmt.Sprintf(
+				"%s|%d|%d|%s|%s",
+				update.Exp,
+				update.Run,
+				update.Loop,
+				update.Stage,
+				update.CmpName,
+			)
 
 			switch update.Status {
-			case "start":
+			case statusStart:
 				output[key] = nil
 				cmpType[key] = update.CmpType
-			case "running", "background":
+			case statusRunning, statusBackground:
 				running[key] = true
 
 				if len(update.Output) != 0 {
@@ -79,6 +97,7 @@ func processComponents() {
 					if err != nil {
 						close(cli.done)
 						delete(ws[key], id)
+
 						continue
 					}
 
@@ -87,12 +106,12 @@ func processComponents() {
 						delete(ws[key], id)
 					}
 				}
-			case "success", "failure":
+			case statusSuccess, statusFailure:
 				delete(running, key)
 
 				// notify any websockets for this key that component is done
 				for id, cli := range ws[key] {
-					cli.ws.Write([]byte("***** COMPONENT FINISHED *****"))
+					_, _ = cli.ws.Write([]byte("***** COMPONENT FINISHED *****"))
 					close(cli.done)
 					delete(ws[key], id)
 				}
@@ -100,7 +119,7 @@ func processComponents() {
 
 			close(update.done)
 		case req := <-outputRequests:
-			resp := outputResponse{running: running[req.key]}
+			resp := outputResponse{running: running[req.key]} //nolint:exhaustruct // partial initialization
 
 			if resp.running {
 				resp.terminal = cmpType[req.key] == "break"

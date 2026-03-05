@@ -12,10 +12,10 @@ type wsRequest struct {
 }
 
 var (
-	ws         map[string]map[string]wsRequest
-	wsRequests chan wsRequest
+	ws         map[string]map[string]wsRequest //nolint:gochecknoglobals // global state
+	wsRequests chan wsRequest                  //nolint:gochecknoglobals // global state
 
-	basePath string
+	basePath string //nolint:gochecknoglobals // global state
 )
 
 func processWebSockets() {
@@ -28,10 +28,10 @@ func processWebSockets() {
 		// Component is no longer running, so update and close this client.
 		if !running[req.key] {
 			if len(out) > 0 {
-				req.ws.Write(out)
+				_, _ = req.ws.Write(out)
 			}
 
-			req.ws.Write([]byte("***** COMPONENT FINISHED *****"))
+			_, _ = req.ws.Write([]byte("***** COMPONENT FINISHED *****"))
 			close(req.done)
 
 			continue
@@ -45,7 +45,7 @@ func processWebSockets() {
 
 		// If there's already data, send it to the new client.
 		if len(out) > 0 {
-			req.ws.Write(out)
+			_, _ = req.ws.Write(out)
 		}
 	}
 }

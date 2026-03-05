@@ -1,25 +1,27 @@
 package scorchmd
 
 import (
+	"errors"
 	"fmt"
+
+	"github.com/mitchellh/mapstructure"
 
 	"phenix/types"
 	"phenix/util"
-
-	"github.com/mitchellh/mapstructure"
 )
 
-var ErrScorchNotConfigured = fmt.Errorf("scorch not configured for experiment")
+var ErrScorchNotConfigured = errors.New("scorch not configured for experiment")
 
 func DecodeMetadata(exp *types.Experiment) (ScorchMetadata, error) {
 	var (
-		ms map[string]interface{}
+		ms map[string]any
 		md ScorchMetadata
 	)
 
 	for _, app := range exp.Apps() {
 		if app.Name() == "scorch" {
 			ms = util.CopyableMap(app.Metadata()).DeepCopy()
+
 			break
 		}
 	}
@@ -28,7 +30,8 @@ func DecodeMetadata(exp *types.Experiment) (ScorchMetadata, error) {
 		return md, ErrScorchNotConfigured
 	}
 
-	if err := mapstructure.Decode(ms, &md); err != nil {
+	err := mapstructure.Decode(ms, &md)
+	if err != nil {
 		return md, fmt.Errorf("decoding app metadata: %w", err)
 	}
 

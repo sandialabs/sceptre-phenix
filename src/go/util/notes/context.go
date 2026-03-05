@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/fatih/color"
-	"github.com/gofrs/uuid"
+	"github.com/gofrs/uuid/v5"
 )
 
 type (
@@ -25,13 +25,13 @@ type info struct {
 }
 
 var (
-	errs     = make(map[string][]warn)
-	warnings = make(map[string][]warn)
-	infos    = make(map[string][]info)
+	errs     = make(map[string][]warn) //nolint:gochecknoglobals // package level notes storage
+	warnings = make(map[string][]warn) //nolint:gochecknoglobals // package level notes storage
+	infos    = make(map[string][]info) //nolint:gochecknoglobals // package level notes storage
 
-	errsMutex     sync.RWMutex
-	warningsMutex sync.RWMutex
-	infosMutex    sync.RWMutex
+	errsMutex     sync.RWMutex //nolint:gochecknoglobals // package level notes storage
+	warningsMutex sync.RWMutex //nolint:gochecknoglobals // package level notes storage
+	infosMutex    sync.RWMutex //nolint:gochecknoglobals // package level notes storage
 )
 
 func Context(ctx context.Context, flush bool) context.Context {
@@ -58,10 +58,10 @@ func AddErrors(ctx context.Context, flush bool, e ...error) {
 	defer errsMutex.Unlock()
 
 	for _, n := range e {
-		note := warn{note: n}
+		note := warn{note: n} //nolint:exhaustruct // partial initialization
 
 		if flushable && flush {
-			color.New(color.FgRed).Printf("[✗] %v\n", n)
+			_, _ = color.New(color.FgRed).Printf("[✗] %v\n", n)
 			note.seen = true
 		} else {
 			note.seen = false
@@ -84,10 +84,10 @@ func AddWarnings(ctx context.Context, flush bool, w ...error) {
 	defer warningsMutex.Unlock()
 
 	for _, n := range w {
-		note := warn{note: n}
+		note := warn{note: n} //nolint:exhaustruct // partial initialization
 
 		if flushable && flush {
-			color.New(color.FgYellow).Printf("[?] %v\n", n)
+			_, _ = color.New(color.FgYellow).Printf("[?] %v\n", n)
 			note.seen = true
 		} else {
 			note.seen = false
@@ -110,10 +110,10 @@ func AddInfo(ctx context.Context, flush bool, i ...string) {
 	defer infosMutex.Unlock()
 
 	for _, n := range i {
-		note := info{note: n}
+		note := info{note: n} //nolint:exhaustruct // partial initialization
 
 		if flushable && flush {
-			color.New(color.FgBlue).Printf("[✓] %v\n", n)
+			_, _ = color.New(color.FgBlue).Printf("[✓] %v\n", n)
 			note.seen = true
 		} else {
 			note.seen = false
@@ -291,7 +291,7 @@ func PrettyPrint(ctx context.Context, all bool) {
 
 	for _, e := range errs[uuid] {
 		if all || !e.seen {
-			color.New(color.FgRed).Printf("[✗] %v\n", e.note)
+			_, _ = color.New(color.FgRed).Printf("[✗] %v\n", e.note)
 		}
 	}
 
@@ -300,7 +300,7 @@ func PrettyPrint(ctx context.Context, all bool) {
 
 	for _, w := range warnings[uuid] {
 		if all || !w.seen {
-			color.New(color.FgYellow).Printf("[?] %v\n", w.note)
+			_, _ = color.New(color.FgYellow).Printf("[?] %v\n", w.note)
 		}
 	}
 
@@ -309,7 +309,7 @@ func PrettyPrint(ctx context.Context, all bool) {
 
 	for _, i := range infos[uuid] {
 		if all || !i.seen {
-			color.New(color.FgBlue).Printf("[✓] %s\n", i.note)
+			_, _ = color.New(color.FgBlue).Printf("[✓] %s\n", i.note)
 		}
 	}
 }

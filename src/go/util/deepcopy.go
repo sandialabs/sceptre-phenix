@@ -2,21 +2,23 @@
 
 package util
 
-type CopyableMap map[string]interface{}
+type CopyableMap map[string]any
 
-func (this CopyableMap) DeepCopy() map[string]interface{} {
-	result := map[string]interface{}{}
+func (m CopyableMap) DeepCopy() map[string]any {
+	result := map[string]any{}
 
-	for k, v := range this {
-		mapVal, ok := v.(map[string]interface{})
+	for k, v := range m {
+		mapVal, ok := v.(map[string]any)
 		if ok {
 			result[k] = CopyableMap(mapVal).DeepCopy()
+
 			continue
 		}
 
-		sliceVal, ok := v.([]interface{})
+		sliceVal, ok := v.([]any)
 		if ok {
 			result[k] = CopyableSlice(sliceVal).DeepCopy()
+
 			continue
 		}
 
@@ -26,21 +28,23 @@ func (this CopyableMap) DeepCopy() map[string]interface{} {
 	return result
 }
 
-type CopyableSlice []interface{}
+type CopyableSlice []any
 
-func (this CopyableSlice) DeepCopy() []interface{} {
-	result := []interface{}{}
+func (s CopyableSlice) DeepCopy() []any {
+	result := []any{}
 
-	for _, v := range this {
-		mapVal, ok := v.(map[string]interface{})
+	for _, v := range s {
+		mapVal, ok := v.(map[string]any)
 		if ok {
 			result = append(result, CopyableMap(mapVal).DeepCopy())
+
 			continue
 		}
 
-		sliceVal, ok := v.([]interface{})
+		sliceVal, ok := v.([]any)
 		if ok {
 			result = append(result, CopyableSlice(sliceVal).DeepCopy())
+
 			continue
 		}
 

@@ -1,2 +1,2 @@
-// Implementation of the phenix State of Health (SoH) API.
+// Package soh is an Implementation of the phenix State of Health (SoH) API.
 package soh

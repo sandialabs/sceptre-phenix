@@ -12,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gorilla/mux"
+	"gopkg.in/yaml.v3"
+
 	"phenix/api/config"
 	"phenix/api/experiment"
 	"phenix/store"
@@ -19,30 +22,41 @@ import (
 	"phenix/types/version"
 	"phenix/util/plog"
 	"phenix/web/broker"
+	bt "phenix/web/broker/brokertypes"
+	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
 	"phenix/web/weberror"
-
-	bt "phenix/web/broker/brokertypes"
-
-	"github.com/gorilla/mux"
-	"gopkg.in/yaml.v3"
 )
 
-// GET /configs
+const kindExperiment = "Experiment"
+const MaxUploadSize = 1 << 20
+
+// GetConfigs - GET /configs.
 func GetConfigs(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetConfigs")
 
 	var (
-		ctx   = r.Context()
-		role  = ctx.Value("role").(rbac.Role)
-		query = r.URL.Query()
-		kind  = query.Get("kind")
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		query   = r.URL.Query()
+		kind    = query.Get("kind")
 	)
 
 	if !role.Allowed("configs", "list") {
-		plog.Warn(plog.TypeSecurity, "listing configs not allowed", "user", ctx.Value("user").(string))
-		err := weberror.NewWebError(nil, "listing configs not allowed for %s", ctx.Value("user").(string))
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"listing configs not allowed",
+			"user",
+			user,
+		)
+		err := weberror.NewWebError(
+			nil,
+			"listing configs not allowed for %s",
+			user,
+		)
+
 		return err.SetStatus(http.StatusForbidden)
 	}
 
@@ -71,33 +85,48 @@ func GetConfigs(w http.ResponseWriter, r *http.Request) error {
 	body, err := json.Marshal(util.WithRoot("configs", allowed))
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to process configs")
+
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 
 	return nil
 }
 
-// POST /configs/download
+// DownloadConfigs - POST /configs/download.
+//
+//nolint:funlen // handler
 func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "DownloadConfigs")
 
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
 	)
 
 	if !role.Allowed("configs", "get") {
-		plog.Warn(plog.TypeSecurity, "downloading config not allowed", "user", ctx.Value("user").(string))
-		err := weberror.NewWebError(nil, "downloading configs not allowed for %s", ctx.Value("user").(string))
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"downloading config not allowed",
+			"user",
+			user,
+		)
+		err := weberror.NewWebError(
+			nil,
+			"downloading configs not allowed for %s",
+			user,
+		)
+
 		return err.SetStatus(http.StatusForbidden)
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to read request")
+
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
@@ -107,14 +136,29 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to parse request")
 	}
 
+	//nolint:godox // TODO
 	// TODO: check for len == 0
 
 	if len(configs) == 1 {
 		name := configs[0]
 
 		if !role.Allowed("configs", "get", name) {
-			plog.Warn(plog.TypeSecurity, "downloading config not allowed", "user", ctx.Value("user").(string), "config", name)
-			err := weberror.NewWebError(nil, "downloading config %s not allowed for %s", name, ctx.Value("user").(string))
+			user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+			plog.Warn(
+				plog.TypeSecurity,
+				"downloading config not allowed",
+				"user",
+				user,
+				"config",
+				name,
+			)
+			err := weberror.NewWebError(
+				nil,
+				"downloading config %s not allowed for %s",
+				name,
+				user,
+			)
+
 			return err.SetStatus(http.StatusForbidden)
 		}
 
@@ -123,8 +167,9 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
 
+		//nolint:godox // TODO
 		// TODO: also clear passwords for users
-		if cfg.Kind == "Experiment" {
+		if cfg.Kind == kindExperiment {
 			// Clear experiment name... not applicable to end users.
 			delete(cfg.Spec, "experimentName")
 		}
@@ -132,6 +177,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 		body, err := yaml.Marshal(cfg)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to process config %s", name)
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -139,7 +185,15 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("Content-Disposition", "attachment; filename="+fn)
-		plog.Info(plog.TypeAction, "downloaded config", "user", ctx.Value("user").(string), "config", name)
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Info(
+			plog.TypeAction,
+			"downloaded config",
+			"user",
+			user,
+			"config",
+			name,
+		)
 		http.ServeContent(w, r, "", time.Now(), bytes.NewReader(body))
 
 		return nil
@@ -157,8 +211,9 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
 
+		//nolint:godox // TODO
 		// TODO: also clear passwords for users
-		if cfg.Kind == "Experiment" {
+		if cfg.Kind == kindExperiment {
 			// Clear experiment name... not applicable to end users.
 			delete(cfg.Spec, "experimentName")
 		}
@@ -166,6 +221,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 		body, err := yaml.Marshal(cfg)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to process config %s", name)
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -173,12 +229,14 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 
 		zf, err := zipper.Create(fn)
 		if err != nil {
-			// TODO
+			plog.Error(plog.TypeSystem, "creating zip file entry", "file", fn, "err", err)
+
 			continue
 		}
 
 		if _, err := zf.Write(body); err != nil {
-			// TODO
+			plog.Error(plog.TypeSystem, "writing config to zip file", "file", fn, "err", err)
+
 			continue
 		}
 	}
@@ -188,24 +246,47 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 
 	// This will flush the zipped configs to the HTTP writer.
 	if err := zipper.Close(); err != nil {
-		// TODO
+		plog.Error(plog.TypeSystem, "closing zip writer", "err", err)
 	}
-	plog.Info(plog.TypeAction, "downloaded configs", "user", ctx.Value("user").(string), "configs", strings.Join(configs, ","))
+
+	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+	plog.Info(
+		plog.TypeAction,
+		"downloaded configs",
+		"user",
+		user,
+		"configs",
+		strings.Join(configs, ","),
+	)
+
 	return nil
 }
 
-// POST /configs
+// CreateConfig - POST /configs.
+//
+//nolint:funlen // handler
 func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreateConfig")
 
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
 	)
 
 	if !role.Allowed("configs", "create") {
-		plog.Warn(plog.TypeSecurity, "creating config not allowed", "user", ctx.Value("user").(string))
-		err := weberror.NewWebError(nil, "creating configs not allowed for %s", ctx.Value("user").(string))
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"creating config not allowed",
+			"user",
+			user,
+		)
+		err := weberror.NewWebError(
+			nil,
+			"creating configs not allowed for %s",
+			user,
+		)
+
 		return err.SetStatus(http.StatusForbidden)
 	}
 
@@ -215,38 +296,42 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	switch {
-	case typ == "application/json": // default to JSON if not set
+	case typ == mimeJSON: // default to JSON if not set
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
 		opts = append(opts, config.CreateFromJSON(body))
-	case typ == "application/x-yaml":
+	case typ == mimeYAML:
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
 		opts = append(opts, config.CreateFromYAML(body))
 	case strings.HasPrefix(typ, "multipart/form-data"): // file upload
-		r.ParseMultipartForm(1 << 20) // max 1M file size
+		_ = r.ParseMultipartForm(MaxUploadSize)
 
 		file, handler, err := r.FormFile("fileupload") // assume `fileupload` key used for upload
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to access uploaded file")
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 
 		switch filepath.Ext(handler.Filename) {
 		case ".json":
 			body, err := io.ReadAll(file)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
+
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
@@ -255,15 +340,24 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 			body, err := io.ReadAll(file)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
+
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
 			opts = append(opts, config.CreateFromYAML(body))
 		default:
-			return weberror.NewWebError(nil, "unknown file extension for uploaded file: %s", handler.Filename)
+			return weberror.NewWebError(
+				nil,
+				"unknown file extension for uploaded file: %s",
+				handler.Filename,
+			)
 		}
 	default:
-		return weberror.NewWebError(nil, "unknown content type provided when creating config: %s", typ)
+		return weberror.NewWebError(
+			nil,
+			"unknown content type provided when creating config: %s",
+			typ,
+		)
 	}
 
 	c, err := config.Create(opts...)
@@ -276,12 +370,15 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 			cause := errors.Unwrap(err)
 			lines := strings.Split(cause.Error(), "\n")
 
-			return weberror.NewWebError(cause, lines[0]).WithMetadata("validation", cause.Error(), true)
+			return weberror.NewWebError(cause, "%s", lines[0]).
+				WithMetadata("validation", cause.Error(), true)
 		}
 
 		if errors.Is(err, store.ErrInvalidFormat) {
 			cause := errors.Unwrap(err)
-			return weberror.NewWebError(cause, "invalid formatting").WithMetadata("validation", cause.Error(), true)
+
+			return weberror.NewWebError(cause, "invalid formatting").
+				WithMetadata("validation", cause.Error(), true)
 		}
 
 		if errors.Is(err, version.ErrInvalidKind) {
@@ -291,7 +388,8 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to create new config")
 	}
 
-	w.Header().Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
+	w.Header().
+		Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
 	w.WriteHeader(http.StatusCreated)
 
 	c.Spec = nil
@@ -300,6 +398,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 	body, err := json.Marshal(c)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling config", "config", c.FullName(), "err", err)
+
 		return nil
 	}
 
@@ -309,39 +408,58 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	plog.Info(plog.TypeAction, "created config", "user", ctx.Value("user").(string), "config", c.FullName())
+	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+	plog.Info(
+		plog.TypeAction,
+		"created config",
+		"user",
+		user,
+		"config",
+		c.FullName(),
+	)
+
 	return nil
 }
 
-// GET /configs/{kind}/{name}
+// GetConfig - GET /configs/{kind}/{name}.
 func GetConfig(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetConfig")
 
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
-		vars = mux.Vars(r)
-		name = store.ConfigFullName(vars["kind"], vars["name"])
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		vars    = mux.Vars(r)
+		name    = store.ConfigFullName(vars["kind"], vars["name"])
 	)
 
 	if !role.Allowed("configs", "get", name) {
-		plog.Warn(plog.TypeSecurity, "getting config not allowed", "user", ctx.Value("user").(string), "config", name)
-		err := weberror.NewWebError(nil, "getting config %s not allowed for %s", name, ctx.Value("user").(string))
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting config not allowed",
+			"user",
+			user,
+			"config",
+			name,
+		)
+		err := weberror.NewWebError(
+			nil,
+			"getting config %s not allowed for %s",
+			name,
+			user,
+		)
+
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	upgrade := true
-
-	if r.URL.Query().Get("noupgrade") != "" {
-		upgrade = false
-	}
+	upgrade := r.URL.Query().Get("noupgrade") == ""
 
 	cfg, err := config.Get(name, upgrade)
 	if err != nil {
 		return weberror.NewWebError(err, "unable to get config %s from store", name)
 	}
 
-	if cfg.Kind == "Experiment" {
+	if cfg.Kind == kindExperiment {
 		// Clear experiment name... not applicable to end users.
 		delete(cfg.Spec, "experimentName")
 	}
@@ -355,6 +473,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 		body, err = json.Marshal(cfg)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to process config %s", name)
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
@@ -365,33 +484,54 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 		body, err = yaml.Marshal(cfg)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to process config %s", name)
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
 		w.Header().Set("Content-Type", "application/x-yaml")
 	default:
-		return weberror.NewWebError(nil, "unknown accept content type provided when creating config: %s", typ)
+		return weberror.NewWebError(
+			nil,
+			"unknown accept content type provided when creating config: %s",
+			typ,
+		)
 	}
 
-	w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 
 	return nil
 }
 
-// PUT /configs/{kind}/{name}
+// UpdateConfig - PUT /configs/{kind}/{name}.
+//
+//nolint:funlen // handler
 func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "UpdateConfig")
 
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
-		vars = mux.Vars(r)
-		name = store.ConfigFullName(vars["kind"], vars["name"])
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		vars    = mux.Vars(r)
+		name    = store.ConfigFullName(vars["kind"], vars["name"])
 	)
 
 	if !role.Allowed("configs", "update", name) {
-		plog.Warn(plog.TypeSecurity, "updating config not allowed", "user", ctx.Value("user").(string), "config", name)
-		err := weberror.NewWebError(nil, "updating config %s not allowed for %s", name, ctx.Value("user").(string))
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"updating config not allowed",
+			"user",
+			user,
+			"config",
+			name,
+		)
+		err := weberror.NewWebError(
+			nil,
+			"updating config %s not allowed for %s",
+			name,
+			user,
+		)
+
 		return err.SetStatus(http.StatusForbidden)
 	}
 
@@ -405,70 +545,87 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
 		c, err = store.NewConfigFromJSON(body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 	case typ == "application/x-yaml":
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
 		c, err = store.NewConfigFromYAML(body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 	case strings.HasPrefix(typ, "multipart/form-data"): // file upload
-		r.ParseMultipartForm(1 << 20) // max 1M file size
+		_ = r.ParseMultipartForm(MaxUploadSize)
 
 		file, handler, err := r.FormFile("fileupload") // assume `fileupload` key used for upload
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to access uploaded file")
+
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 
 		switch filepath.Ext(handler.Filename) {
 		case ".json":
 			body, err := io.ReadAll(file)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
+
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
 			c, err = store.NewConfigFromJSON(body)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
+
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 		case ".yaml", ".yml":
 			body, err := io.ReadAll(file)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
+
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
 			c, err = store.NewConfigFromYAML(body)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
+
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 		default:
-			return weberror.NewWebError(nil, "unknown file extension for uploaded file: %s", handler.Filename)
+			return weberror.NewWebError(
+				nil,
+				"unknown file extension for uploaded file: %s",
+				handler.Filename,
+			)
 		}
 	default:
-		return weberror.NewWebError(nil, "unknown content type provided when updating config: %s", typ)
+		return weberror.NewWebError(
+			nil,
+			"unknown content type provided when updating config: %s",
+			typ,
+		)
 	}
 
-	if c.Kind == "Experiment" {
+	if c.Kind == kindExperiment {
 		// Reset experiment name in spec since we removed it before sending.
 		c.Spec["experimentName"] = vars["name"]
 	}
@@ -482,24 +639,33 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 			cause := errors.Unwrap(err)
 			lines := strings.Split(cause.Error(), "\n")
 
-			return weberror.NewWebError(cause, lines[0]).WithMetadata("validation", cause.Error(), true)
+			return weberror.NewWebError(cause, "%s", lines[0]).
+				WithMetadata("validation", cause.Error(), true)
 		}
 
 		if errors.Is(err, store.ErrInvalidFormat) {
 			cause := errors.Unwrap(err)
-			return weberror.NewWebError(cause, "invalid formatting").WithMetadata("validation", cause.Error(), true)
+
+			return weberror.NewWebError(cause, "invalid formatting").
+				WithMetadata("validation", cause.Error(), true)
 		}
 
 		return weberror.NewWebError(err, "unable to update config %s", name)
 	}
 
-	if c.Kind == "Experiment" {
-		if err := experiment.Reconfigure(c.Metadata.Name); err != nil {
-			return weberror.NewWebError(err, "unable to reconfigure updated experiment %s", c.Metadata.Name)
+	if c.Kind == kindExperiment {
+		err := experiment.Reconfigure(c.Metadata.Name)
+		if err != nil {
+			return weberror.NewWebError(
+				err,
+				"unable to reconfigure updated experiment %s",
+				c.Metadata.Name,
+			)
 		}
 	}
 
-	w.Header().Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
+	w.Header().
+		Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
 	w.WriteHeader(http.StatusNoContent)
 
 	c.Spec = nil
@@ -508,36 +674,65 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	body, err := json.Marshal(c)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling config", "config", c.FullName(), "err", err)
+
 		return nil
 	}
 
 	broker.Broadcast(
 		bt.NewRequestPolicy("configs", "list", c.FullName()),
-		bt.NewResource("config", name, "update"), // use old name in broadcast so client knows what to update
+		bt.NewResource(
+			"config",
+			name,
+			"update",
+		), // use old name in broadcast so client knows what to update
 		body,
 	)
-	plog.Info(plog.TypeAction, "updated config", "user", ctx.Value("user").(string), "config", name)
+	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+	plog.Info(
+		plog.TypeAction,
+		"updated config",
+		"user",
+		user,
+		"config",
+		name,
+	)
+
 	return nil
 }
 
-// DELETE /configs/{kind}/{name}
+// DeleteConfig - DELETE /configs/{kind}/{name}.
 func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "DeleteConfig")
 
 	var (
-		ctx  = r.Context()
-		role = ctx.Value("role").(rbac.Role)
-		vars = mux.Vars(r)
-		name = store.ConfigFullName(vars["kind"], vars["name"])
+		ctx     = r.Context()
+		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+		vars    = mux.Vars(r)
+		name    = store.ConfigFullName(vars["kind"], vars["name"])
 	)
 
 	if !role.Allowed("configs", "delete", name) {
-		plog.Warn(plog.TypeSecurity, "deleting config not allowed", "user", ctx.Value("user").(string), "config", name)
-		err := weberror.NewWebError(nil, "deleting config %s not allowed for %s", name, ctx.Value("user").(string))
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"deleting config not allowed",
+			"user",
+			user,
+			"config",
+			name,
+		)
+		err := weberror.NewWebError(
+			nil,
+			"deleting config %s not allowed for %s",
+			name,
+			user,
+		)
+
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	if err := config.Delete(name); err != nil {
+	err := config.Delete(name)
+	if err != nil {
 		return weberror.NewWebError(err, "unable to update config %s", name)
 	}
 
@@ -548,6 +743,15 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 		bt.NewResource("config", name, "delete"),
 		nil,
 	)
-	plog.Info(plog.TypeAction, "deleted config", "user", ctx.Value("user").(string), "config", name)
+	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+	plog.Info(
+		plog.TypeAction,
+		"deleted config",
+		"user",
+		user,
+		"config",
+		name,
+	)
+
 	return nil
 }

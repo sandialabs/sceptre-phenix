@@ -1,5 +1,5 @@
 /*
-minimega client helpers.
+Package mmcli contains minimega client helpers.
 
 Taken (almost) as-is from minimega/miniweb.
 */

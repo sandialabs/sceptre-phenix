@@ -8,41 +8,43 @@ import (
 	ifaces "phenix/types/interfaces"
 )
 
+const ruleIDDecrement = 10
+
 type Network struct {
-	InterfacesF []*Interface `json:"interfaces" yaml:"interfaces" structs:"interfaces" mapstructure:"interfaces"`
-	RoutesF     []Route      `json:"routes" yaml:"routes" structs:"routes" mapstructure:"routes"`
-	OSPFF       *OSPF        `json:"ospf" yaml:"ospf" structs:"ospf" mapstructure:"ospf"`
-	RulesetsF   []*Ruleset   `json:"rulesets" yaml:"rulesets" structs:"rulesets" mapstructure:"rulesets"`
+	InterfacesF []*Interface `json:"interfaces" mapstructure:"interfaces" structs:"interfaces" yaml:"interfaces"`
+	RoutesF     []Route      `json:"routes"     mapstructure:"routes"     structs:"routes"     yaml:"routes"`
+	OSPFF       *OSPF        `json:"ospf"       mapstructure:"ospf"       structs:"ospf"       yaml:"ospf"`
+	RulesetsF   []*Ruleset   `json:"rulesets"   mapstructure:"rulesets"   structs:"rulesets"   yaml:"rulesets"`
 }
 
-func (this Network) Interfaces() []ifaces.NodeNetworkInterface {
-	interfaces := make([]ifaces.NodeNetworkInterface, len(this.InterfacesF))
+func (n Network) Interfaces() []ifaces.NodeNetworkInterface {
+	interfaces := make([]ifaces.NodeNetworkInterface, len(n.InterfacesF))
 
-	for i, iface := range this.InterfacesF {
+	for i, iface := range n.InterfacesF {
 		interfaces[i] = iface
 	}
 
 	return interfaces
 }
 
-func (this Network) Routes() []ifaces.NodeNetworkRoute {
-	routes := make([]ifaces.NodeNetworkRoute, len(this.RoutesF))
+func (n Network) Routes() []ifaces.NodeNetworkRoute {
+	routes := make([]ifaces.NodeNetworkRoute, len(n.RoutesF))
 
-	for i, r := range this.RoutesF {
+	for i, r := range n.RoutesF {
 		routes[i] = r
 	}
 
 	return routes
 }
 
-func (this Network) OSPF() ifaces.NodeNetworkOSPF {
-	return this.OSPFF
+func (n Network) OSPF() ifaces.NodeNetworkOSPF { //nolint:ireturn // interface
+	return n.OSPFF
 }
 
-func (this Network) Rulesets() []ifaces.NodeNetworkRuleset {
-	sets := make([]ifaces.NodeNetworkRuleset, len(this.RulesetsF))
+func (n Network) Rulesets() []ifaces.NodeNetworkRuleset {
+	sets := make([]ifaces.NodeNetworkRuleset, len(n.RulesetsF))
 
-	for i, r := range this.RulesetsF {
+	for i, r := range n.RulesetsF {
 		sets[i] = r
 	}
 
@@ -53,22 +55,24 @@ func (Network) NAT() []ifaces.NodeNetworkNAT {
 	return nil
 }
 
-func (this *Network) SetRulesets(rules []ifaces.NodeNetworkRuleset) {
+func (n *Network) SetRulesets(rules []ifaces.NodeNetworkRuleset) {
 	sets := make([]*Ruleset, len(rules))
 
 	for i, r := range rules {
-		sets[i] = r.(*Ruleset)
+		s, _ := r.(*Ruleset)
+		sets[i] = s
 	}
 
-	this.RulesetsF = sets
+	n.RulesetsF = sets
 }
 
-func (this *Network) AddRuleset(rule ifaces.NodeNetworkRuleset) {
-	this.RulesetsF = append(this.RulesetsF, rule.(*Ruleset))
+func (n *Network) AddRuleset(rule ifaces.NodeNetworkRuleset) {
+	r, _ := rule.(*Ruleset)
+	n.RulesetsF = append(n.RulesetsF, r)
 }
 
-func (this *Network) InterfaceAddress(name string) string {
-	for _, iface := range this.InterfacesF {
+func (n *Network) InterfaceAddress(name string) string {
+	for _, iface := range n.InterfacesF {
 		if strings.EqualFold(iface.NameF, name) {
 			return iface.AddressF
 		}
@@ -77,8 +81,8 @@ func (this *Network) InterfaceAddress(name string) string {
 	return ""
 }
 
-func (this *Network) InterfaceVLAN(vlan string) string {
-	for _, iface := range this.InterfacesF {
+func (n *Network) InterfaceVLAN(vlan string) string {
+	for _, iface := range n.InterfacesF {
 		if iface.VLAN() == vlan {
 			return iface.NameF
 		}
@@ -87,8 +91,8 @@ func (this *Network) InterfaceVLAN(vlan string) string {
 	return ""
 }
 
-func (this *Network) InterfaceMask(name string) int {
-	for _, iface := range this.InterfacesF {
+func (n *Network) InterfaceMask(name string) int {
+	for _, iface := range n.InterfacesF {
 		if strings.EqualFold(iface.NameF, name) {
 			return iface.MaskF
 		}
@@ -98,240 +102,240 @@ func (this *Network) InterfaceMask(name string) int {
 }
 
 type Interface struct {
-	NameF       string   `json:"name" yaml:"name" structs:"name" mapstructure:"name"`
-	TypeF       string   `json:"type" yaml:"type" structs:"type" mapstructure:"type"`
-	ProtoF      string   `json:"proto" yaml:"proto" structs:"proto" mapstructure:"proto"`
-	UDPPortF    int      `json:"udp_port" yaml:"udp_port" structs:"udp_port" mapstructure:"udp_port"`
-	BaudRateF   int      `json:"baud_rate" yaml:"baud_rate" structs:"baud_rate" mapstructure:"baud_rate"`
-	DeviceF     string   `json:"device" yaml:"device" structs:"device" mapstructure:"device"`
-	VLANF       string   `json:"vlan" yaml:"vlan" structs:"vlan" mapstructure:"vlan"`
-	BridgeF     string   `json:"bridge" yaml:"bridge" structs:"bridge" mapstructure:"bridge"`
-	AutostartF  bool     `json:"autostart" yaml:"autostart" structs:"autostart" mapstructure:"autostart"`
-	MACF        string   `json:"mac" yaml:"mac" structs:"mac" mapstructure:"mac"`
-	DriverF     string   `json:"driver" yaml:"driver" structs:"driver" mapstructure:"driver"`
-	MTUF        int      `json:"mtu" yaml:"mtu" structs:"mtu" mapstructure:"mtu"`
-	AddressF    string   `json:"address" yaml:"address" structs:"address" mapstructure:"address"`
-	MaskF       int      `json:"mask" yaml:"mask" structs:"mask" mapstructure:"mask"`
-	GatewayF    string   `json:"gateway" yaml:"gateway" structs:"gateway" mapstructure:"gateway"`
-	DNSF        []string `json:"dns" yaml:"dns" structs:"dns" mapstructure:"dns"`
-	QinQF       bool     `json:"qinq" yaml:"qinq" structs:"qinq" mapstructure:"qinq"`
-	RulesetInF  string   `json:"ruleset_in" yaml:"ruleset_in" structs:"ruleset_in" mapstructure:"ruleset_in"`
-	RulesetOutF string   `json:"ruleset_out" yaml:"ruleset_out" structs:"ruleset_out" mapstructure:"ruleset_out"`
+	NameF       string   `json:"name"        mapstructure:"name"        structs:"name"        yaml:"name"`
+	TypeF       string   `json:"type"        mapstructure:"type"        structs:"type"        yaml:"type"`
+	ProtoF      string   `json:"proto"       mapstructure:"proto"       structs:"proto"       yaml:"proto"`
+	UDPPortF    int      `json:"udp_port"    mapstructure:"udp_port"    structs:"udp_port"    yaml:"udp_port"`
+	BaudRateF   int      `json:"baud_rate"   mapstructure:"baud_rate"   structs:"baud_rate"   yaml:"baud_rate"`
+	DeviceF     string   `json:"device"      mapstructure:"device"      structs:"device"      yaml:"device"`
+	VLANF       string   `json:"vlan"        mapstructure:"vlan"        structs:"vlan"        yaml:"vlan"`
+	BridgeF     string   `json:"bridge"      mapstructure:"bridge"      structs:"bridge"      yaml:"bridge"`
+	AutostartF  bool     `json:"autostart"   mapstructure:"autostart"   structs:"autostart"   yaml:"autostart"`
+	MACF        string   `json:"mac"         mapstructure:"mac"         structs:"mac"         yaml:"mac"`
+	DriverF     string   `json:"driver"      mapstructure:"driver"      structs:"driver"      yaml:"driver"`
+	MTUF        int      `json:"mtu"         mapstructure:"mtu"         structs:"mtu"         yaml:"mtu"`
+	AddressF    string   `json:"address"     mapstructure:"address"     structs:"address"     yaml:"address"`
+	MaskF       int      `json:"mask"        mapstructure:"mask"        structs:"mask"        yaml:"mask"`
+	GatewayF    string   `json:"gateway"     mapstructure:"gateway"     structs:"gateway"     yaml:"gateway"`
+	DNSF        []string `json:"dns"         mapstructure:"dns"         structs:"dns"         yaml:"dns"`
+	QinQF       bool     `json:"qinq"        mapstructure:"qinq"        structs:"qinq"        yaml:"qinq"`
+	RulesetInF  string   `json:"ruleset_in"  mapstructure:"ruleset_in"  structs:"ruleset_in"  yaml:"ruleset_in"`
+	RulesetOutF string   `json:"ruleset_out" mapstructure:"ruleset_out" structs:"ruleset_out" yaml:"ruleset_out"`
 }
 
-func (this Interface) Name() string {
-	return this.NameF
+func (i Interface) Name() string {
+	return i.NameF
 }
 
-func (this Interface) Type() string {
-	return this.TypeF
+func (i Interface) Type() string {
+	return i.TypeF
 }
 
-func (this Interface) Proto() string {
-	return this.ProtoF
+func (i Interface) Proto() string {
+	return i.ProtoF
 }
 
-func (this Interface) UDPPort() int {
-	return this.UDPPortF
+func (i Interface) UDPPort() int {
+	return i.UDPPortF
 }
 
-func (this Interface) BaudRate() int {
-	return this.BaudRateF
+func (i Interface) BaudRate() int {
+	return i.BaudRateF
 }
 
-func (this Interface) Device() string {
-	return this.DeviceF
+func (i Interface) Device() string {
+	return i.DeviceF
 }
 
-func (this Interface) VLAN() string {
-	return this.VLANF
+func (i Interface) VLAN() string {
+	return i.VLANF
 }
 
-func (this Interface) Bridge() string {
-	return this.BridgeF
+func (i Interface) Bridge() string {
+	return i.BridgeF
 }
 
-func (this Interface) Autostart() bool {
-	return this.AutostartF
+func (i Interface) Autostart() bool {
+	return i.AutostartF
 }
 
-func (this Interface) MAC() string {
-	return this.MACF
+func (i Interface) MAC() string {
+	return i.MACF
 }
 
-func (this Interface) Driver() string {
-	return this.DriverF
+func (i Interface) Driver() string {
+	return i.DriverF
 }
 
-func (this Interface) MTU() int {
-	return this.MTUF
+func (i Interface) MTU() int {
+	return i.MTUF
 }
 
-func (this Interface) Address() string {
-	return this.AddressF
+func (i Interface) Address() string {
+	return i.AddressF
 }
 
-func (this Interface) Mask() int {
-	return this.MaskF
+func (i Interface) Mask() int {
+	return i.MaskF
 }
 
-func (this Interface) Gateway() string {
-	return this.GatewayF
+func (i Interface) Gateway() string {
+	return i.GatewayF
 }
 
-func (this Interface) DNS() []string {
-	return this.DNSF
+func (i Interface) DNS() []string {
+	return i.DNSF
 }
 
-func (this Interface) QinQ() bool {
-	return this.QinQF
+func (i Interface) QinQ() bool {
+	return i.QinQF
 }
 
-func (this Interface) RulesetIn() string {
-	return this.RulesetInF
+func (i Interface) RulesetIn() string {
+	return i.RulesetInF
 }
 
-func (this Interface) RulesetOut() string {
-	return this.RulesetOutF
+func (i Interface) RulesetOut() string {
+	return i.RulesetOutF
 }
 
-func (this *Interface) SetName(name string) {
-	this.NameF = name
+func (i *Interface) SetName(name string) {
+	i.NameF = name
 }
 
-func (this *Interface) SetType(typ string) {
-	this.TypeF = typ
+func (i *Interface) SetType(typ string) {
+	i.TypeF = typ
 }
 
-func (this *Interface) SetProto(proto string) {
-	this.ProtoF = proto
+func (i *Interface) SetProto(proto string) {
+	i.ProtoF = proto
 }
 
-func (this *Interface) SetUDPPort(port int) {
-	this.UDPPortF = port
+func (i *Interface) SetUDPPort(port int) {
+	i.UDPPortF = port
 }
 
-func (this *Interface) SetBaudRate(rate int) {
-	this.BaudRateF = rate
+func (i *Interface) SetBaudRate(rate int) {
+	i.BaudRateF = rate
 }
 
-func (this *Interface) SetDevice(dev string) {
-	this.DeviceF = dev
+func (i *Interface) SetDevice(dev string) {
+	i.DeviceF = dev
 }
 
-func (this *Interface) SetVLAN(vlan string) {
-	this.VLANF = vlan
+func (i *Interface) SetVLAN(vlan string) {
+	i.VLANF = vlan
 }
 
-func (this *Interface) SetBridge(br string) {
-	this.BridgeF = br
+func (i *Interface) SetBridge(br string) {
+	i.BridgeF = br
 }
 
-func (this *Interface) SetAutostart(auto bool) {
-	this.AutostartF = auto
+func (i *Interface) SetAutostart(auto bool) {
+	i.AutostartF = auto
 }
 
-func (this *Interface) SetMAC(mac string) {
-	this.MACF = mac
+func (i *Interface) SetMAC(mac string) {
+	i.MACF = mac
 }
 
-func (this *Interface) SetMTU(mtu int) {
-	this.MTUF = mtu
+func (i *Interface) SetMTU(mtu int) {
+	i.MTUF = mtu
 }
 
-func (this *Interface) SetAddress(addr string) {
-	this.AddressF = addr
+func (i *Interface) SetAddress(addr string) {
+	i.AddressF = addr
 }
 
-func (this *Interface) SetMask(mask int) {
-	this.MaskF = mask
+func (i *Interface) SetMask(mask int) {
+	i.MaskF = mask
 }
 
-func (this *Interface) SetGateway(gw string) {
-	this.GatewayF = gw
+func (i *Interface) SetGateway(gw string) {
+	i.GatewayF = gw
 }
 
-func (this *Interface) SetDNS(dns []string) {
-	this.DNSF = dns
+func (i *Interface) SetDNS(dns []string) {
+	i.DNSF = dns
 }
 
-func (this *Interface) SetQinQ(q bool) {
-	this.QinQF = q
+func (i *Interface) SetQinQ(q bool) {
+	i.QinQF = q
 }
 
-func (this *Interface) SetRulesetIn(rule string) {
-	this.RulesetInF = rule
+func (i *Interface) SetRulesetIn(rule string) {
+	i.RulesetInF = rule
 }
 
-func (this *Interface) SetRulesetOut(rule string) {
-	this.RulesetOutF = rule
+func (i *Interface) SetRulesetOut(rule string) {
+	i.RulesetOutF = rule
 }
 
 type Route struct {
-	DestinationF string `json:"destination" yaml:"destination" structs:"destination" mapstructure:"destination"`
-	NextF        string `json:"next" yaml:"next" structs:"next" mapstructure:"next"`
-	CostF        *int   `json:"cost" yaml:"cost" structs:"cost" mapstructure:"cost"`
+	DestinationF string `json:"destination" mapstructure:"destination" structs:"destination" yaml:"destination"`
+	NextF        string `json:"next"        mapstructure:"next"        structs:"next"        yaml:"next"`
+	CostF        *int   `json:"cost"        mapstructure:"cost"        structs:"cost"        yaml:"cost"`
 }
 
-func (this Route) Destination() string {
-	return this.DestinationF
+func (r Route) Destination() string {
+	return r.DestinationF
 }
 
-func (this Route) Next() string {
-	return this.NextF
+func (r Route) Next() string {
+	return r.NextF
 }
 
-func (this Route) Cost() *int {
-	return this.CostF
+func (r Route) Cost() *int {
+	return r.CostF
 }
 
 type OSPF struct {
-	RouterIDF               string `json:"router_id" yaml:"router_id" structs:"router_id" mapstructure:"router_id"`
-	AreasF                  []Area `json:"areas" yaml:"areas" structs:"areas" mapstructure:"areas"`
-	DeadIntervalF           *int   `json:"dead_interval" yaml:"dead_interval" structs:"dead_interval" mapstructure:"dead_interval"`
-	HelloIntervalF          *int   `json:"hello_interval" yaml:"hello_interval" structs:"hello_interval" mapstructure:"hello_interval"`
-	RetransmissionIntervalF *int   `json:"retransmission_interval" yaml:"retransmission_interval" structs:"retransmission_interval" mapstructure:"retransmission_interval"`
+	RouterIDF               string `json:"router_id"               mapstructure:"router_id"               structs:"router_id"               yaml:"router_id"`
+	AreasF                  []Area `json:"areas"                   mapstructure:"areas"                   structs:"areas"                   yaml:"areas"`
+	DeadIntervalF           *int   `json:"dead_interval"           mapstructure:"dead_interval"           structs:"dead_interval"           yaml:"dead_interval"`
+	HelloIntervalF          *int   `json:"hello_interval"          mapstructure:"hello_interval"          structs:"hello_interval"          yaml:"hello_interval"`
+	RetransmissionIntervalF *int   `json:"retransmission_interval" mapstructure:"retransmission_interval" structs:"retransmission_interval" yaml:"retransmission_interval"`
 }
 
-func (this OSPF) RouterID() string {
-	return this.RouterIDF
+func (o OSPF) RouterID() string {
+	return o.RouterIDF
 }
 
-func (this OSPF) Areas() []ifaces.NodeNetworkOSPFArea {
-	areas := make([]ifaces.NodeNetworkOSPFArea, len(this.AreasF))
+func (o OSPF) Areas() []ifaces.NodeNetworkOSPFArea {
+	areas := make([]ifaces.NodeNetworkOSPFArea, len(o.AreasF))
 
-	for i, a := range this.AreasF {
+	for i, a := range o.AreasF {
 		areas[i] = a
 	}
 
 	return areas
 }
 
-func (this OSPF) DeadInterval() *int {
-	return this.DeadIntervalF
+func (o OSPF) DeadInterval() *int {
+	return o.DeadIntervalF
 }
 
-func (this OSPF) HelloInterval() *int {
-	return this.HelloIntervalF
+func (o OSPF) HelloInterval() *int {
+	return o.HelloIntervalF
 }
 
-func (this OSPF) RetransmissionInterval() *int {
-	return this.RetransmissionIntervalF
+func (o OSPF) RetransmissionInterval() *int {
+	return o.RetransmissionIntervalF
 }
 
 type Area struct {
-	AreaIDF       *int          `json:"area_id" yaml:"area_id" structs:"area_id" mapstructure:"area_id"`
-	AreaNetworksF []AreaNetwork `json:"area_networks" yaml:"area_networks" structs:"area_networks" mapstructure:"area_networks"`
+	AreaIDF       *int          `json:"area_id"       mapstructure:"area_id"       structs:"area_id"       yaml:"area_id"`
+	AreaNetworksF []AreaNetwork `json:"area_networks" mapstructure:"area_networks" structs:"area_networks" yaml:"area_networks"`
 }
 
-func (this Area) AreaID() *int {
-	return this.AreaIDF
+func (a Area) AreaID() *int {
+	return a.AreaIDF
 }
 
-func (this Area) AreaNetworks() []ifaces.NodeNetworkOSPFAreaNetwork {
-	nets := make([]ifaces.NodeNetworkOSPFAreaNetwork, len(this.AreaNetworksF))
+func (a Area) AreaNetworks() []ifaces.NodeNetworkOSPFAreaNetwork {
+	nets := make([]ifaces.NodeNetworkOSPFAreaNetwork, len(a.AreaNetworksF))
 
-	for i, n := range this.AreaNetworksF {
+	for i, n := range a.AreaNetworksF {
 		nets[i] = n
 	}
 
@@ -339,166 +343,167 @@ func (this Area) AreaNetworks() []ifaces.NodeNetworkOSPFAreaNetwork {
 }
 
 type AreaNetwork struct {
-	NetworkF string `json:"network" yaml:"network" structs:"network" mapstructure:"network"`
+	NetworkF string `json:"network" mapstructure:"network" structs:"network" yaml:"network"`
 }
 
-func (this AreaNetwork) Network() string {
-	return this.NetworkF
+func (an AreaNetwork) Network() string {
+	return an.NetworkF
 }
 
 type Ruleset struct {
-	NameF        string  `json:"name" yaml:"name" structs:"name" mapstructure:"name"`
-	DescriptionF string  `json:"description" yaml:"description" structs:"description" mapstructure:"description"`
-	DefaultF     string  `json:"default" yaml:"default" structs:"default" mapstructure:"default"`
-	RulesF       []*Rule `json:"rules" yaml:"rules" structs:"rules" mapstructure:"rules"`
+	NameF        string  `json:"name"        mapstructure:"name"        structs:"name"        yaml:"name"`
+	DescriptionF string  `json:"description" mapstructure:"description" structs:"description" yaml:"description"`
+	DefaultF     string  `json:"default"     mapstructure:"default"     structs:"default"     yaml:"default"`
+	RulesF       []*Rule `json:"rules"       mapstructure:"rules"       structs:"rules"       yaml:"rules"`
 }
 
-func (this Ruleset) Name() string {
-	return this.NameF
+func (rs Ruleset) Name() string {
+	return rs.NameF
 }
 
-func (this Ruleset) Description() string {
-	return this.DescriptionF
+func (rs Ruleset) Description() string {
+	return rs.DescriptionF
 }
 
-func (this Ruleset) Default() string {
-	return this.DefaultF
+func (rs Ruleset) Default() string {
+	return rs.DefaultF
 }
 
-func (this Ruleset) Rules() []ifaces.NodeNetworkRulesetRule {
-	rules := make([]ifaces.NodeNetworkRulesetRule, len(this.RulesF))
+func (rs Ruleset) Rules() []ifaces.NodeNetworkRulesetRule {
+	rules := make([]ifaces.NodeNetworkRulesetRule, len(rs.RulesF))
 
-	for i, r := range this.RulesF {
+	for i, r := range rs.RulesF {
 		rules[i] = r
 	}
 
 	return rules
 }
 
-func (this *Ruleset) UnshiftRule() ifaces.NodeNetworkRulesetRule {
-	min := -1
+func (rs *Ruleset) UnshiftRule() ifaces.NodeNetworkRulesetRule { //nolint:ireturn // interface
+	minVal := -1
 
-	for _, rule := range this.RulesF {
-		if min == -1 || rule.IDF < min {
-			min = rule.IDF
+	for _, rule := range rs.RulesF {
+		if minVal == -1 || rule.IDF < minVal {
+			minVal = rule.IDF
 		}
 	}
 
-	if min == 0 {
+	if minVal == 0 {
 		return nil
 	}
 
-	r := &Rule{IDF: min - 10}
+	r := &Rule{IDF: minVal - ruleIDDecrement} //nolint:exhaustruct // partial initialization
 
 	if r.IDF < 1 {
 		r.IDF = 1
 	}
 
-	this.RulesF = append([]*Rule{r}, this.RulesF...)
+	rs.RulesF = append([]*Rule{r}, rs.RulesF...)
 
 	return r
 }
 
-func (this *Ruleset) RemoveRule(id int) {
+func (rs *Ruleset) RemoveRule(id int) {
 	idx := -1
 
-	for i, rule := range this.RulesF {
+	for i, rule := range rs.RulesF {
 		if rule.IDF == id {
 			idx = i
+
 			break
 		}
 	}
 
 	if idx != -1 {
-		this.RulesF = append(this.RulesF[:idx], this.RulesF[idx+1:]...)
+		rs.RulesF = append(rs.RulesF[:idx], rs.RulesF[idx+1:]...)
 	}
 }
 
 type Rule struct {
-	IDF          int       `json:"id" yaml:"id" structs:"id" mapstructure:"id"`
-	DescriptionF string    `json:"description" yaml:"description" structs:"description" mapstructure:"description"`
-	ActionF      string    `json:"action" yaml:"action" structs:"action" mapstructure:"action"`
-	ProtocolF    string    `json:"protocol" yaml:"protocol" structs:"protocol" mapstructure:"protocol"`
-	SourceF      *AddrPort `json:"source" yaml:"source" structs:"source" mapstructure:"source"`
-	DestinationF *AddrPort `json:"destination" yaml:"destination" structs:"destination" mapstructure:"destination"`
+	IDF          int       `json:"id"          mapstructure:"id"          structs:"id"          yaml:"id"`
+	DescriptionF string    `json:"description" mapstructure:"description" structs:"description" yaml:"description"`
+	ActionF      string    `json:"action"      mapstructure:"action"      structs:"action"      yaml:"action"`
+	ProtocolF    string    `json:"protocol"    mapstructure:"protocol"    structs:"protocol"    yaml:"protocol"`
+	SourceF      *AddrPort `json:"source"      mapstructure:"source"      structs:"source"      yaml:"source"`
+	DestinationF *AddrPort `json:"destination" mapstructure:"destination" structs:"destination" yaml:"destination"`
 }
 
-func (this Rule) ID() int {
-	return this.IDF
+func (r Rule) ID() int {
+	return r.IDF
 }
 
-func (this Rule) Description() string {
-	return this.DescriptionF
+func (r Rule) Description() string {
+	return r.DescriptionF
 }
 
-func (this Rule) Action() string {
-	return this.ActionF
+func (r Rule) Action() string {
+	return r.ActionF
 }
 
-func (this Rule) Protocol() string {
-	return this.ProtocolF
+func (r Rule) Protocol() string {
+	return r.ProtocolF
 }
 
-func (this Rule) Source() ifaces.NodeNetworkRulesetRuleAddrPort {
-	return this.SourceF
+func (r Rule) Source() ifaces.NodeNetworkRulesetRuleAddrPort { //nolint:ireturn // interface
+	return r.SourceF
 }
 
-func (this Rule) Destination() ifaces.NodeNetworkRulesetRuleAddrPort {
-	return this.DestinationF
+func (r Rule) Destination() ifaces.NodeNetworkRulesetRuleAddrPort { //nolint:ireturn // interface
+	return r.DestinationF
 }
 
 func (Rule) Stateful() bool {
 	return false
 }
 
-func (this *Rule) SetDescription(d string) {
-	this.DescriptionF = d
+func (r *Rule) SetDescription(d string) {
+	r.DescriptionF = d
 }
 
-func (this *Rule) SetAction(a string) {
-	this.ActionF = a
+func (r *Rule) SetAction(a string) {
+	r.ActionF = a
 }
 
-func (this *Rule) SetProtocol(p string) {
-	this.ProtocolF = p
+func (r *Rule) SetProtocol(p string) {
+	r.ProtocolF = p
 }
 
-func (this *Rule) SetSource(a string, p int) {
-	this.SourceF = &AddrPort{AddressF: a, PortF: p}
+func (r *Rule) SetSource(a string, p int) {
+	r.SourceF = &AddrPort{AddressF: a, PortF: p}
 }
 
-func (this *Rule) SetDestination(a string, p int) {
-	this.DestinationF = &AddrPort{AddressF: a, PortF: p}
+func (r *Rule) SetDestination(a string, p int) {
+	r.DestinationF = &AddrPort{AddressF: a, PortF: p}
 }
 
 func (Rule) SetStateful(bool) {}
 
 type AddrPort struct {
-	AddressF string `json:"address" yaml:"address" structs:"address" mapstructure:"address"`
-	PortF    int    `json:"port" yaml:"port" structs:"port" mapstructure:"port"`
+	AddressF string `json:"address" mapstructure:"address" structs:"address" yaml:"address"`
+	PortF    int    `json:"port"    mapstructure:"port"    structs:"port"    yaml:"port"`
 }
 
-func (this AddrPort) Address() string {
-	return this.AddressF
+func (ap AddrPort) Address() string {
+	return ap.AddressF
 }
 
-func (this AddrPort) Port() int {
-	return this.PortF
+func (ap AddrPort) Port() int {
+	return ap.PortF
 }
 
-func (this *Network) SetDefaults() {
-	for idx, iface := range this.InterfacesF {
+func (n *Network) SetDefaults() {
+	for idx, iface := range n.InterfacesF {
 		if iface.BridgeF == "" {
 			iface.BridgeF = "phenix"
-			this.InterfacesF[idx] = iface
+			n.InterfacesF[idx] = iface
 		}
 	}
 }
 
-func (this Network) InterfaceConfig() string {
-	configs := make([]string, len(this.InterfacesF))
+func (n Network) InterfaceConfig() string {
+	configs := make([]string, len(n.InterfacesF))
 
-	for i, iface := range this.InterfacesF {
+	for i, iface := range n.InterfacesF {
 		config := []string{iface.BridgeF, iface.VLANF}
 
 		if iface.MACF != "" {
@@ -519,8 +524,8 @@ func (this Network) InterfaceConfig() string {
 	return strings.Join(configs, " ")
 }
 
-func (this Interface) LinkAddress() string {
-	addr := fmt.Sprintf("%s/%d", this.AddressF, this.MaskF)
+func (i Interface) LinkAddress() string {
+	addr := fmt.Sprintf("%s/%d", i.AddressF, i.MaskF)
 
 	_, n, err := net.ParseCIDR(addr)
 	if err != nil {
@@ -530,8 +535,8 @@ func (this Interface) LinkAddress() string {
 	return n.String()
 }
 
-func (this Interface) NetworkMask() string {
-	addr := fmt.Sprintf("%s/%d", this.AddressF, this.MaskF)
+func (i Interface) NetworkMask() string {
+	addr := fmt.Sprintf("%s/%d", i.AddressF, i.MaskF)
 
 	_, n, err := net.ParseCIDR(addr)
 	if err != nil {

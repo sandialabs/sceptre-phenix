@@ -17,6 +17,8 @@ import (
 	"phenix/util/mm"
 )
 
+const snapshotOffset = 2
+
 type qemuBackingChain struct {
 	Filename    string `json:"filename"`
 	BackingFile string `json:"backing-filename"`
@@ -107,7 +109,7 @@ func getImageSnapshots(path string) ([]string, error) {
 
 	// range chain in reverse to get snapshots in correct order for rebasing
 	// skip last entry since it will be the base image (not a snapshot)
-	for i := len(chain) - 2; i >= 0; i-- {
+	for i := len(chain) - snapshotOffset; i >= 0; i-- {
 		snapshots = append(snapshots, chain[i].Filename)
 	}
 
@@ -139,36 +141,36 @@ func newCopier() *copier {
 	return new(copier)
 }
 
-func (this *copier) subscribe() chan float64 {
+func (c *copier) subscribe() chan float64 {
 	s := make(chan float64)
 
-	this.subs = append(this.subs, s)
+	c.subs = append(c.subs, s)
 
 	return s
 }
 
-func (this copier) done() {
-	for _, s := range this.subs {
+func (c copier) done() {
+	for _, s := range c.subs {
 		close(s)
 	}
 }
 
-func (this copier) copy(ctx context.Context, src, dst string) error {
-	defer this.done()
+func (c copier) copy(ctx context.Context, src, dst string) error {
+	defer c.done()
 
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	out, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
 
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	pw := newProgressWriter(out)
 	cr := newCancelableReader(ctx, in)
@@ -185,7 +187,7 @@ func (this copier) copy(ctx context.Context, src, dst string) error {
 			default:
 				n := pw.N()
 
-				for _, s := range this.subs {
+				for _, s := range c.subs {
 					s <- float64(n) / float64(size)
 				}
 
@@ -195,6 +197,7 @@ func (this copier) copy(ctx context.Context, src, dst string) error {
 	}()
 
 	_, err = io.Copy(pw, cr)
+
 	close(done)
 
 	if err != nil {
@@ -205,32 +208,32 @@ func (this copier) copy(ctx context.Context, src, dst string) error {
 }
 
 type progressWriter struct {
-	sync.RWMutex
+	mu sync.RWMutex
 
 	w io.Writer
 	n int64
 }
 
 func newProgressWriter(w io.Writer) *progressWriter {
-	return &progressWriter{w: w}
+	return &progressWriter{w: w} //nolint:exhaustruct // partial initialization
 }
 
-func (this *progressWriter) Write(b []byte) (int, error) {
-	n, err := this.w.Write(b)
+func (p *progressWriter) Write(b []byte) (int, error) {
+	n, err := p.w.Write(b)
 
-	this.Lock()
-	defer this.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-	this.n += int64(n)
+	p.n += int64(n)
 
 	return n, err
 }
 
-func (this *progressWriter) N() int64 {
-	this.RLock()
-	defer this.RUnlock()
+func (p *progressWriter) N() int64 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 
-	return this.n
+	return p.n
 }
 
 type cancelableReader struct {
@@ -242,16 +245,15 @@ func newCancelableReader(ctx context.Context, r io.Reader) *cancelableReader {
 	return &cancelableReader{ctx: ctx, r: r}
 }
 
-func (this cancelableReader) Read(p []byte) (int, error) {
+func (c cancelableReader) Read(p []byte) (int, error) {
 	select {
-	case <-this.ctx.Done():
-		return 0, this.ctx.Err()
+	case <-c.ctx.Done():
+		return 0, c.ctx.Err()
 	default:
-		return this.r.Read(p)
+		return c.r.Read(p)
 	}
 }
 
 func getTimestamp() string {
-
 	return time.Now().Format("20060102_1500")
 }

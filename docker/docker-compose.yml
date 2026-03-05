@@ -10,6 +10,7 @@ x-common: &common
 
 services:
   phenix:
+    image: ghcr.io/sandialabs/sceptre-phenix/phenix:main
     build:
       context: ../
       dockerfile: docker/Dockerfile
@@ -17,10 +18,10 @@ services:
         MM_MIN_REV: ${MM_REV:-aecea71}
         PHENIX_WEB_AUTH: disabled
     command:
-    - phenix
-    - ui
-    - --hostname-suffixes=-minimega,-phenix
-    - --minimega-console
+      - phenix
+      - ui
+      - --hostname-suffixes=-minimega,-phenix
+      - --minimega-console
     image: phenix
     container_name: phenix
     privileged: true
@@ -40,9 +41,12 @@ services:
     healthcheck:
       test: phenix version
   minimega:
-    image: ghcr.io/sandia-minimega/minimega:${MM_REV:-aecea71}
+    image: ghcr.io/sandia-minimega/minimega:master
     container_name: minimega
     privileged: true
+    cap_add:
+      - ALL
+    tty: true
     <<: *common
     volumes:
       - /dev:/dev

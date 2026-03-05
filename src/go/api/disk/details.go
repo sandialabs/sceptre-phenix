@@ -9,12 +9,12 @@ type Kind uint8
 
 const (
 	UNKNOWN Kind = 1 << iota
-	VM_IMAGE
-	CONTAINER_IMAGE
-	ISO_IMAGE
+	VMImage
+	ContainerImage
+	ISOImage
 )
 
-var knownImageExtensions = []string{".qcow2", ".qc2", "_rootfs.tgz", ".hdd", ".iso"}
+var knownImageExtensions = []string{".qcow2", ".qc2", "_rootfs.tgz", ".hdd", ".iso"} //nolint:gochecknoglobals // global constant
 
 func (k Kind) MarshalJSON() ([]byte, error) {
 	return json.Marshal(k.String())
@@ -22,26 +22,27 @@ func (k Kind) MarshalJSON() ([]byte, error) {
 
 func (k Kind) String() string {
 	switch k {
-	case VM_IMAGE:
+	case VMImage:
 		return "VM"
-	case CONTAINER_IMAGE:
+	case ContainerImage:
 		return "Container"
-	case ISO_IMAGE:
+	case ISOImage:
 		return "ISO"
+	case UNKNOWN:
+		fallthrough
 	default:
 		return "Unknown"
-
 	}
 }
 
 func StringToKind(kind string) Kind {
 	switch strings.ToLower(kind) {
 	case "vm":
-		return VM_IMAGE
+		return VMImage
 	case "iso":
-		return ISO_IMAGE
+		return ISOImage
 	case "container":
-		return CONTAINER_IMAGE
+		return ContainerImage
 	default:
 		return UNKNOWN
 	}

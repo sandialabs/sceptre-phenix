@@ -1,14 +1,16 @@
 package scorchmd
 
 import (
+	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"strings"
 
-	"phenix/util"
-
 	"github.com/mitchellh/mapstructure"
+
+	"phenix/util"
 )
 
 // ResolvedReplacements holds the randomly selected value for each replacement key.
@@ -40,53 +42,70 @@ func (d *DistributionSpec) Generate() (any, error) {
 	if d.Uniform != nil {
 		count++
 	}
+
 	if d.Gaussian != nil {
 		count++
 	}
+
 	if d.Exponential != nil {
 		count++
 	}
+
 	if count == 0 {
-		return nil, fmt.Errorf("no distribution specified (uniform, gaussian, or exponential)")
+		return nil, errors.New("no distribution specified (uniform, gaussian, or exponential)")
 	}
+
 	if count > 1 {
-		return nil, fmt.Errorf("cannot specify multiple distributions")
+		return nil, errors.New("cannot specify multiple distributions")
 	}
 
 	var val float64
 
-	if d.Gaussian != nil {
+	switch {
+	case d.Gaussian != nil:
 		mean := 10.0
 		stddev := 2.0
+
 		if d.Gaussian.Mean != 0 {
 			mean = d.Gaussian.Mean
 		}
+
 		if d.Gaussian.StdDev != 0 {
 			stddev = d.Gaussian.StdDev
 		}
-		val = rand.NormFloat64()*stddev + mean
-	} else if d.Exponential != nil {
+
+		val = rand.NormFloat64()*stddev + mean //nolint:gosec // weak random number generator
+	case d.Exponential != nil:
 		mean := 10.0
 		if d.Exponential.Mean != 0 {
 			mean = d.Exponential.Mean
 		}
+
 		val = rand.ExpFloat64() * mean
-	} else {
-		min := d.Uniform.Minimum
-		max := d.Uniform.Maximum
-		if min == 0 && max == 0 {
-			min = 0.0
-			max = 10.0
+	default:
+		minVal := d.Uniform.Minimum
+
+		maxVal := d.Uniform.Maximum
+		if minVal == 0 && maxVal == 0 {
+			minVal = 0.0
+			maxVal = 10.0
 		}
-		if max <= min {
-			return nil, fmt.Errorf("uniform maximum (%v) must be greater than minimum (%v)", max, min)
+
+		if maxVal <= minVal {
+			return nil, fmt.Errorf(
+				"uniform maximum (%v) must be greater than minimum (%v)",
+				maxVal,
+				minVal,
+			)
 		}
-		val = min + rand.Float64()*(max-min)
+
+		val = minVal + rand.Float64()*(maxVal-minVal) //nolint:gosec // weak random number generator
 	}
 
 	if d.Type == "int" {
 		return int64(math.Round(val)), nil
 	}
+
 	return val, nil
 }
 
@@ -96,13 +115,13 @@ func ResolveReplacements(replace map[string]any) (ResolvedReplacements, error) {
 
 	for key, spec := range replace {
 		switch v := spec.(type) {
-
 		// Simple list of values to choose from
 		case []any:
 			if len(v) == 0 {
 				return nil, fmt.Errorf("replacement key %q has empty list", key)
 			}
-			resolved[key] = v[rand.IntN(len(v))]
+
+			resolved[key] = v[rand.IntN(len(v))] //nolint:gosec // weak random number generator
 
 		// Random distribution
 		case map[string]any:
@@ -110,10 +129,12 @@ func ResolveReplacements(replace map[string]any) (ResolvedReplacements, error) {
 			if err := mapstructure.Decode(v, &dist); err != nil {
 				return nil, fmt.Errorf("decoding distribution spec for key %q: %w", key, err)
 			}
+
 			val, err := dist.Generate()
 			if err != nil {
 				return nil, fmt.Errorf("generating value for key %q: %w", key, err)
 			}
+
 			resolved[key] = val
 
 		// Error
@@ -132,6 +153,7 @@ func ApplyReplacements(meta ComponentMetadata, resolved ResolvedReplacements) Co
 	}
 
 	copied := util.CopyableMap(meta).DeepCopy()
+
 	return applyToMap(copied, resolved)
 }
 
@@ -139,6 +161,7 @@ func applyToMap(m map[string]any, resolved ResolvedReplacements) map[string]any 
 	for k, v := range m {
 		m[k] = applyToValue(v, resolved)
 	}
+
 	return m
 }
 
@@ -146,6 +169,7 @@ func applyToSlice(s []any, resolved ResolvedReplacements) []any {
 	for i, v := range s {
 		s[i] = applyToValue(v, resolved)
 	}
+
 	return s
 }
 
@@ -173,6 +197,7 @@ func applyToString(s string, resolved ResolvedReplacements) any {
 	for key, value := range resolved {
 		result = strings.ReplaceAll(result, key, fmt.Sprintf("%v", value))
 	}
+
 	return result
 }
 
@@ -181,13 +206,9 @@ func applyToString(s string, resolved ResolvedReplacements) any {
 func MergeReplacements(base, override ResolvedReplacements) ResolvedReplacements {
 	merged := make(ResolvedReplacements)
 
-	for k, v := range base {
-		merged[k] = v
-	}
+	maps.Copy(merged, base)
 
-	for k, v := range override {
-		merged[k] = v
-	}
+	maps.Copy(merged, override)
 
 	return merged
 }

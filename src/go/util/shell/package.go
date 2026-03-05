@@ -4,7 +4,7 @@ import (
 	"context"
 )
 
-var DefaultShell Shell = new(shell)
+var DefaultShell Shell = new(shell) //nolint:gochecknoglobals // default shell implementation
 
 func FindCommandsWithPrefix(prefix string) []string {
 	return DefaultShell.FindCommandsWithPrefix(prefix)
