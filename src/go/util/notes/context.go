@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/fatih/color"
 	"github.com/gofrs/uuid/v5"
+
+	"phenix/util/plog"
 )
 
 type (
@@ -61,7 +62,7 @@ func AddErrors(ctx context.Context, flush bool, e ...error) {
 		note := warn{note: n} //nolint:exhaustruct // partial initialization
 
 		if flushable && flush {
-			_, _ = color.New(color.FgRed).Printf("[✗] %v\n", n)
+			plog.Error(plog.TypeSystem, n.Error())
 			note.seen = true
 		} else {
 			note.seen = false
@@ -87,7 +88,7 @@ func AddWarnings(ctx context.Context, flush bool, w ...error) {
 		note := warn{note: n} //nolint:exhaustruct // partial initialization
 
 		if flushable && flush {
-			_, _ = color.New(color.FgYellow).Printf("[?] %v\n", n)
+			plog.Warn(plog.TypeSystem, n.Error())
 			note.seen = true
 		} else {
 			note.seen = false
@@ -113,7 +114,7 @@ func AddInfo(ctx context.Context, flush bool, i ...string) {
 		note := info{note: n} //nolint:exhaustruct // partial initialization
 
 		if flushable && flush {
-			_, _ = color.New(color.FgBlue).Printf("[✓] %v\n", n)
+			plog.Info(plog.TypeSystem, n)
 			note.seen = true
 		} else {
 			note.seen = false
@@ -291,7 +292,7 @@ func PrettyPrint(ctx context.Context, all bool) {
 
 	for _, e := range errs[uuid] {
 		if all || !e.seen {
-			_, _ = color.New(color.FgRed).Printf("[✗] %v\n", e.note)
+			plog.Error(plog.TypeSystem, e.note.Error())
 		}
 	}
 
@@ -300,7 +301,7 @@ func PrettyPrint(ctx context.Context, all bool) {
 
 	for _, w := range warnings[uuid] {
 		if all || !w.seen {
-			_, _ = color.New(color.FgYellow).Printf("[?] %v\n", w.note)
+			plog.Warn(plog.TypeSystem, w.note.Error())
 		}
 	}
 
@@ -309,7 +310,7 @@ func PrettyPrint(ctx context.Context, all bool) {
 
 	for _, i := range infos[uuid] {
 		if all || !i.seen {
-			_, _ = color.New(color.FgBlue).Printf("[✓] %s\n", i.note)
+			plog.Info(plog.TypeSystem, i.note)
 		}
 	}
 }

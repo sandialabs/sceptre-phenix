@@ -1,10 +1,21 @@
-name: Check Example Apps
+name: Examples
 
 on:
   push:
     branches: ['**']
+    paths:
+      - 'examples/**'
+      - '.github/workflows/examples.yml'
+  pull_request:
+    paths:
+      - 'examples/**'
+      - '.github/workflows/examples.yml'
   repository_dispatch:
     types: [apps-update]
+
+env:
+  GO_VERSION: '1.24'
+  PYTHON_VERSION: '3.12'
 
 jobs:
   check-go-example:
@@ -13,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '${{ env.GO_VERSION }}'
           cache-dependency-path: "**/*.sum"
       - name: Install dependencies
         run: |
@@ -27,7 +38,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '${{ env.PYTHON_VERSION }}'
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
