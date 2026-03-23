@@ -22,7 +22,6 @@ services:
       - ui
       - --hostname-suffixes=-minimega,-phenix
       - --minimega-console
-    image: phenix
     container_name: phenix
     privileged: true
     pid: host
