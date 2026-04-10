@@ -1351,15 +1351,35 @@ func (s SOH) portTest(
 	)
 
 	exec := "ss -lntu state all"
+	target := strings.Split(port, ":")
 
 	if strings.EqualFold(node.Hardware().OSType(), "windows") {
+		var filter string
+
+		switch len(target) {
+		case 1:
+			filter = fmt.Sprintf("$_.LocalPort -eq %s", target[0])
+		case portParts:
+			switch {
+			case target[0] == "": // :<port>
+				filter = fmt.Sprintf("$_.LocalPort -eq %s", target[1])
+			case target[1] == "": // <ip>: (why?!)
+				filter = fmt.Sprintf("$_.LocalAddress -eq '%s'", target[0])
+			default: // <ip>:<port>
+				filter = fmt.Sprintf("$_.LocalAddress -eq '%s' -and $_.LocalPort -eq %s", target[0], target[1])
+			}
+		default:
+			wg.AddError(fmt.Errorf("invalid port %s provided", port), meta)
+
+			return
+		}
+
 		exec = fmt.Sprintf(
-			`powershell -command "netstat -an | select-string -pattern 'listening' | select-string -pattern '%s'"`,
-			port,
+			`powershell -command "$tcp=Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { %s }; $udp=Get-NetUDPEndpoint -ErrorAction SilentlyContinue | Where-Object { %s }; @($tcp+$udp) | Select-Object -First 1"`,
+			filter,
+			filter,
 		)
 	} else {
-		target := strings.Split(port, ":")
-
 		switch len(target) {
 		case 1:
 			exec = fmt.Sprintf("%s 'sport = %s'", exec, target[0])
