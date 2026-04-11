@@ -117,7 +117,6 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 			ErrorHandler: func(w http.ResponseWriter, r *http.Request, e string) {
 				plog.Error(plog.TypeSecurity, "validating auth token", "err", e)
 
-				//nolint:godox // TODO
 				// TODO: remove token from user spec?
 
 				http.Error(w, e, http.StatusUnauthorized)

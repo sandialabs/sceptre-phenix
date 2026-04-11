@@ -12,7 +12,6 @@ import (
 )
 
 func NewConfigFromSpec(name string, spec any) (*store.Config, error) {
-	//nolint:godox // TODO
 	// TODO: add more case statements to this as more upgraders are added.
 	switch spec := spec.(type) {
 	case store.Config:

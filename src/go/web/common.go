@@ -187,7 +187,6 @@ func startExperiment(name string) ([]byte, error) {
 
 			vms, err := vm.List(name)
 			if err != nil {
-				//nolint:godox // TODO
 				// TODO
 				plog.Error(plog.TypeSystem, "listing VMs in experiment", "exp", name, "err", err)
 			}

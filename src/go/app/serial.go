@@ -31,7 +31,6 @@ func (Serial) Configure(ctx context.Context, exp *types.Experiment) error {
 		}
 
 		// We only care about configuring serial interfaces on Linux VMs.
-		//nolint:godox // TODO
 		// TODO: handle rhel and centos OS types.
 		if node.Hardware().OSType() != osLinux {
 			continue
@@ -81,7 +80,6 @@ func (Serial) PreStart(ctx context.Context, exp *types.Experiment) error {
 		}
 
 		// We only care about configuring serial interfaces on Linux VMs.
-		//nolint:godox // TODO
 		// TODO: handle rhel and centos OS types.
 		if node.Hardware().OSType() != osLinux {
 			continue

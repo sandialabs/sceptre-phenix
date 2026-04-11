@@ -191,7 +191,6 @@ func (c *Client) read() { //nolint:maintidx // complex logic
 
 				continue
 			case "experiment/topology":
-				//nolint:godox // TODO
 				// TODO: check RBAC permissions?
 				switch req.Resource.Action {
 				case "search":
@@ -203,7 +202,6 @@ func (c *Client) read() { //nolint:maintidx // complex logic
 						continue
 					}
 
-					//nolint:godox // TODO
 					// TODO: handle multiple query terms (how? AND or OR?)
 					// Do the same as in web/experiment.go@SearchExperimentTopology
 					term := query["term"]

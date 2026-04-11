@@ -12,17 +12,16 @@ filegen clockstats file clockstats type day enable
 
 # Specify one or more NTP servers.
 
-{{ if . }}
-server {{ . }} iburst prefer
-server 127.127.1.1
+{{ if .Source }}
+server {{ .Source }} iburst prefer maxpoll 6
 {{- else }}
 server 127.127.1.1 iburst prefer
 {{- end }}
-fudge 127.127.1.1 stratum 8
+fudge 127.127.1.1 stratum 10
 
 # By default, exchange time with everybody, but don't allow configuration.
-restrict -4 default kod notrap nomodify nopeer noquery limited
-restrict -6 default kod notrap nomodify nopeer noquery limited
+restrict -4 default kod notrap nomodify nopeer noquery{{ if not .Server }} noserve{{ end }} limited
+restrict -6 default kod notrap nomodify nopeer noquery{{ if not .Server }} noserve{{ end }} limited
 
 # Local users may interrogate the ntp server more closely.
 restrict 127.0.0.1

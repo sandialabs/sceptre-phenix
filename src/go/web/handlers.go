@@ -107,7 +107,6 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		//nolint:godox // TODO
 		// TODO: limit per-experiment VMs based on RBAC
 
 		vms, err := vm.List(exp.Spec.ExperimentName())

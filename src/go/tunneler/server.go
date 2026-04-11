@@ -162,7 +162,6 @@ func handleConnection(conn net.Conn) {
 			fmt.Fprintf(os.Stderr, "ERROR: encoding %v message: %v\n", msg.Type, err)
 		}
 	case CREATE, DELETE:
-		//nolint:godox // TODO
 		// TODO: implement
 	}
 }

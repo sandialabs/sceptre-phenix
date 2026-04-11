@@ -37,7 +37,6 @@ func terminal(ctx context.Context, dir, cmd string, args []string, envs ...strin
 		for range ch {
 			err = pty.InheritSize(os.Stdin, tty)
 			if err != nil {
-				//nolint:godox // TODO
 				// TODO
 				_ = err
 			}

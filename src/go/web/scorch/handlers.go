@@ -585,7 +585,6 @@ func GetPipelines(w http.ResponseWriter, r *http.Request) error {
 
 	// if Scorch app is running, find out which run is currently being executed
 	if running {
-		//nolint:godox // TODO
 		// TODO: this should never be nil if Scorch is running...
 		if exp.Status.AppStatus() != nil {
 			if status, ok := exp.Status.AppStatus()["scorch"].(map[string]any); ok {
@@ -659,7 +658,6 @@ func GetPipeline(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-//nolint:godox // TODO
 // TODO: change this to `scorch/runs`
 
 // StartPipeline - POST /experiments/{name}/scorch/pipelines/{run}.
@@ -780,7 +778,6 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-//nolint:godox // TODO
 // TODO: change this to `scorch/runs`
 
 // CancelPipeline - DELETE /experiments/{name}/scorch/pipelines/{run}.

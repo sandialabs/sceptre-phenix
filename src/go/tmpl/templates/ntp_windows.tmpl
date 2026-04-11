@@ -42,7 +42,7 @@ tzutil /s "UTC"
 
 echo "Configuring NTP..."
 
-w32tm /config /manualpeerlist:"{{ . }}" /syncfromflags:manual /reliable:YES /update
+w32tm /config /manualpeerlist:"{{ .Source }}" /syncfromflags:manual /reliable:YES /update
 
 echo "Restart NTP for the changes to take affect..."
 
@@ -54,14 +54,14 @@ net start w32time
 # for the server to settle down and be ready.  The below loop waits for the NTP
 # server to settle and produce a valid stratum number.  Once a valid stratum is
 # received the NTP client can be restarted and forced to resync.
-echo "Wait for NTP server at {{ . }} then resync"
+echo "Wait for NTP server at {{ .Source }} then resync"
 
 Do {
     Start-Sleep -s 10
 
     echo "Get NTP server status"
 
-    $output = w32tm /monitor /computers:{{ . }} # get the output of the w32tm monitor action
+    $output = w32tm /monitor /computers:{{ .Source }} # get the output of the w32tm monitor action
 
     # find stratum number in output
     ForEach ($line in $output) {

@@ -229,7 +229,6 @@ func (m Minimega) GetVMInfo(opts ...Option) VMs { //nolint:funlen // complex log
 		vm.RAM, _ = strconv.Atoi(row["memory"])
 		vm.CPUs, _ = strconv.Atoi(row["vcpus"])
 
-		//nolint:godox // TODO
 		// TODO: confirm multiple disks are separated by whitespace.
 		disk := strings.Fields(row["disks"])[0]
 		// diskspec can include multiple settings separated by comma. Path to disk
