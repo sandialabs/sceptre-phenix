@@ -1,4 +1,4 @@
-.PHONY: all build check clean docker examples example-go example-python format generate help help-all install-dev install-wrapper uninstall-wrapper lint run-examples test tunneler ui version
+.PHONY: all build check clean deb docker examples example-go example-python format generate help help-all install-dev install-wrapper uninstall-wrapper lint run-examples test tunneler ui version
 .DEFAULT_GOAL := help
 
 # Define a helper for checking command existence
@@ -22,6 +22,7 @@ help:
 	@echo ""
 	@echo "Build:"
 	@echo "  build        - Build the main phenix binary"
+	@echo "  deb          - Build the phenix .deb package"
 	@echo "  docker       - Build the phenix docker image"
 	@echo "  ui           - Build the frontend UI"
 	@echo "  tunneler     - Build phenix-tunneler binaries"
@@ -42,6 +43,9 @@ help:
 all: format lint test examples
 
 build: bin/phenix
+
+deb:
+	./scripts/build-deb.sh
 
 docker:
 	$(call check-command,docker,Please install Docker (https://docs.docker.com/get-docker/))

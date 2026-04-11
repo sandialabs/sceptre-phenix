@@ -1,6 +1,6 @@
 ## phēnix
 
-[![Docker Package Build Status](https://github.com/sandialabs/sceptre-phenix/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/sandialabs/sceptre-phenix/actions/workflows/docker.yml)
+[![Package Build Status](https://github.com/sandialabs/sceptre-phenix/actions/workflows/packages.yml/badge.svg?branch=main)](https://github.com/sandialabs/sceptre-phenix/actions/workflows/packages.yml)
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 phēnix is an automated experimentation, emulation, and orchestration platform.
@@ -37,6 +37,20 @@ To build the phēnix container image from source (does not require installing lo
 
 ```bash
 make docker
+```
+
+### Native Installation (.deb)
+
+As an alternative to running phēnix using Docker, you can build a native Debian package (`.deb`) which installs the binaries and dependencies directly onto your system.
+
+```bash
+./scripts/build-deb.sh
+```
+
+Once the build is complete, you can install the generated package:
+
+```bash
+sudo apt install ./build/deb/phenix_<version>_amd64.deb
 ```
 
 ### Shell Completion
@@ -97,6 +111,7 @@ make test        # Run unit tests
 
 # Build
 make build       # Build the main phenix binary
+make deb         # Build the phenix .deb package
 make docker      # Build the phenix docker image
 make tunneler    # Build phenix-tunneler binaries
 

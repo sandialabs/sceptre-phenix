@@ -22,8 +22,10 @@ yarn-error.log*
 *.bdb
 
 # Build artifacts
+build/
 bin/
 src/js/dist/
+*.deb
 
 # Example binaries
 examples/go/example-app
