@@ -136,7 +136,6 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to parse request")
 	}
 
-	//nolint:godox // TODO
 	// TODO: check for len == 0
 
 	if len(configs) == 1 {
@@ -167,7 +166,6 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
 
-		//nolint:godox // TODO
 		// TODO: also clear passwords for users
 		if cfg.Kind == kindExperiment {
 			// Clear experiment name... not applicable to end users.
@@ -211,7 +209,6 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
 
-		//nolint:godox // TODO
 		// TODO: also clear passwords for users
 		if cfg.Kind == kindExperiment {
 			// Clear experiment name... not applicable to end users.

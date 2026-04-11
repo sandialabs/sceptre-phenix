@@ -307,7 +307,6 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		// default is to not override existing tags if no new tags are passed
-		//nolint:godox // TODO
 		// TODO: perhaps sorting tags and only updating those that are passed
 		// while leaving old tags that have not been overridden
 		if tags != "" {
@@ -323,7 +322,6 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		// interfaces just in case the topology includes updates changing VLAN alias
 		// names.
 		for _, node := range exp.Spec.Topology().Nodes() {
-			//nolint:godox // TODO
 			// TODO: only consider nodes schedulable by minimega? Or should HIL nodes
 			// be taken into account here still as well?
 			if node.Network() == nil {

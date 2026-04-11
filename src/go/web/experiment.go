@@ -105,7 +105,6 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) {
 		nodes     []int
 	)
 
-	//nolint:godox // TODO
 	// TODO: how to handle multiple terms? AND or OR?
 
 	for term, values := range query {

@@ -137,7 +137,6 @@ func (u UserComponent) shellOut(ctx context.Context, stage Action) error {
 		return fmt.Errorf("marshaling experiment metadata to JSON: %w", err)
 	}
 
-	//nolint:godox // TODO
 	// TODO: consider letting the child process send a signal indicating it wants
 	// to run in the background instead of having to configure it in the scenario.
 

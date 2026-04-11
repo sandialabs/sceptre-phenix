@@ -407,18 +407,10 @@ linters:
       - common-false-positives
     # Excluding configuration per-path, per-linter, per-text and per-source.
     rules:
-      - source: 'TODO'
-        linters: [ godot ]
-      - text: 'should have a package comment'
-        linters: [ revive ]
-      - text: 'exported \S+ \S+ should have comment( \(or a comment on this block\))? or be unexported'
-        linters: [ revive ]
-      - text: 'package comment should be of the form ".+"'
-        source: '// ?(nolint|TODO)'
-        linters: [ revive ]
-      - text: 'comment on exported \S+ \S+ should be of the form ".+"'
-        source: '// ?(nolint|TODO)'
-        linters: [ revive, staticcheck ]
+      - source: 'TODO|FIXME|BUG|HACK|NOTE|OPTIMIZE'
+        linters:
+          - godot
+          - godox
       - path: '_test\.go'
         linters:
           - bodyclose
@@ -429,11 +421,3 @@ linters:
           - gosec
           - noctx
           - wrapcheck
-      - path: "go.mod"
-        text: "local replacement are not allowed"
-        linters: [ gomoddirectives ]
-    paths:
-      # Excluding because of godoclint "package has more than one godoc"
-      - api/config/doc.go
-      - app/doc.go
-      - util/mm/doc.go

@@ -1,0 +1,31 @@
+# /etc/chrony/chrony.conf, configuration for chronyd; see chrony.conf(5) for help
+
+driftfile /var/lib/chrony/chrony.drift
+
+# Step the system clock if offset exceeds 1s, allowing stepping for ~10 min
+# to handle delayed server connectivity after VM startup.
+makestep 1.0 100
+
+# Enable kernel synchronization of the real-time clock (RTC).
+rtcsync
+
+# Specify directory for log files.
+logdir /var/log/chrony
+
+# Specify one or more NTP servers.
+
+{{ if .Source -}}
+# Use the specified upstream NTP server
+#  iburst    - Send a burst of 4 packets to speed up initial synchronization.
+#  prefer    - Prefer this source over others with the same stratum.
+#  maxpoll N - limit maximum polling interval to 2^N seconds (default 10, i.e. 1024s)
+server {{ .Source }} iburst prefer maxpoll 6
+{{- else -}}
+# No upstream source; use local clock as time reference.
+local stratum 10
+{{- end }}
+
+{{ if .Server -}}
+# Allow NTP clients to access this server.
+allow all
+{{- end }}

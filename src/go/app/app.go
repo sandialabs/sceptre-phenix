@@ -45,6 +45,9 @@ const (
 	ActionPostStart Action = "post-start"
 	ActionRunning   Action = "running"
 	ActionCleanup   Action = "cleanup"
+
+	osWindows = "windows"
+	osLinux   = "linux"
 )
 
 var (

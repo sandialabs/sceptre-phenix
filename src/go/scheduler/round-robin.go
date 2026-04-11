@@ -42,7 +42,6 @@ func (roundRobin) Schedule(spec ifaces.ExperimentSpec) error {
 
 	cluster.SortByVMs(true)
 
-	//nolint:godox // TODO
 	// TODO: sort VMs by scheduled,memory (??)
 
 	for _, node := range spec.Topology().Nodes() {

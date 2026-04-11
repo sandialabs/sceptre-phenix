@@ -219,7 +219,6 @@ func (s Scorch) startFilebeat(
 		stdErr bytes.Buffer
 	)
 
-	//nolint:godox // TODO
 	// TODO: don't rely on `shell.ProcessExists` since it's not working correctly
 	// for detecting zombie (defunct) processes. For example, when filebeat fails
 	// to start because of an issue w/ the config the current code still thinks

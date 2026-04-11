@@ -365,7 +365,6 @@ func DeletePortForward(w http.ResponseWriter, r *http.Request) {
 	reapForwards()
 
 	if l, ok := forwards[key]; ok {
-		//nolint:godox // TODO
 		// TODO: how would we go about allowing admins to close all port forwards?
 		if l.Owner != user {
 			http.Error(w, "forbidden", http.StatusForbidden)

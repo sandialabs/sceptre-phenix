@@ -1431,7 +1431,6 @@ func injectICMPAllowRules(nodes []ifaces.NodeSpec) error {
 	for _, node := range nodes {
 		// This only adds ICMP allow rules if one or more rulesets already exist. If
 		// no rulesets exist then ICMP should already be allowed.
-		//nolint:godox // TODO
 		// TODO: right now, we simply add a rule to allow ICMP to/from anywhere
 		// without checking the default rule or seeing if an ICMP rule already
 		// exists. May want to improve on this if it causes issues.

@@ -80,7 +80,6 @@ func Topology(exp string, ignore []string) (topology, error) {
 			}
 
 			if !cached {
-				//nolint:godox // TODO
 				// TODO: what if these change during an experiment (e.g., via user updates)?
 				search.AddVLAN(iface, node.ID)
 				search.AddIP(vm.IPv4[i], node.ID)
@@ -105,7 +104,6 @@ func Topology(exp string, ignore []string) (topology, error) {
 	}
 
 	if !cached {
-		//nolint:godox // TODO
 		// TODO: cache with expire?
 		_ = cache.Set(cacheKey, search)
 	}

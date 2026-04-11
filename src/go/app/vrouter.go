@@ -147,7 +147,6 @@ func (v Vrouter) Configure(ctx context.Context, exp *types.Experiment) error {
 				node := exp.Spec.Topology().FindNodeByName(host.Hostname())
 
 				if node == nil {
-					//nolint:godox // TODO
 					// TODO: handle this better? Like warn the user perhaps?
 					continue
 				}
@@ -801,7 +800,6 @@ func (Vrouter) processACL(md map[string]any, network ifaces.NodeNetwork) error {
 
 		ruleset, ok := iface.(ifaces.NodeNetworkRuleset)
 		if !ok {
-			//nolint:godox // TODO
 			// TODO: handle this better? Like warn the user perhaps?
 			continue
 		}

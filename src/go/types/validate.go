@@ -44,7 +44,6 @@ func ValidateConfigSpec(c store.Config) error {
 		return fmt.Errorf("getting validator for config: %w", err)
 	}
 
-	//nolint:godox // FIXME
 	// FIXME: using JSON marshal/unmarshal to get Go types converted to JSON
 	// types. This is mainly needed for Go int types, since JSON only has float64.
 	// There's a better way to do this, but it requires an update to the openapi3
@@ -77,7 +76,6 @@ func ValidateConfig(c store.Config) error {
 		return errors.New("no schema definition found for configs")
 	}
 
-	//nolint:godox // FIXME
 	// FIXME: using JSON marshal/unmarshal to get Go types converted to JSON
 	// types. This is mainly needed for Go int types, since JSON only has float64.
 	// There's a better way to do this, but it requires an update to the openapi3
