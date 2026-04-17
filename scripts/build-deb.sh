@@ -114,18 +114,41 @@ cp -a ${ARTIFACTS_DIR}/python_pkgs/. ${DEBIAN_DIR}/usr/lib/python3/dist-packages
 cp -a ${ARTIFACTS_DIR}/vmdb2_repo/. ${DEBIAN_DIR}/opt/vmdb2/
 ln -s /opt/vmdb2/vmdb2 ${DEBIAN_DIR}/usr/bin/vmdb2
 
+# Get the latest git tag to use as a fallback/prefix, defaulting to 1.0.0
+LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "1.0.0")
+LATEST_TAG=${LATEST_TAG#v}
+
 # Create DEBIAN/control file
-VERSION=$(docker run --rm ${BUILD_IMAGE} phenix version 2>/dev/null | grep "Version:" | awk '{print $2}' || echo "1.0.0")
-VERSION=${VERSION:-1.0.0}
+VERSION_STR=$(docker run --rm ${BUILD_IMAGE} phenix version 2>/dev/null || echo "${LATEST_TAG}")
+VERSION=$(echo "$VERSION_STR" | awk '{print $1}')
+# Extract just the tag/version part if it contains a colon (e.g. from a docker image name)
+VERSION="${VERSION##*:}"
+# Extract just the tag/version part if it contains a slash (e.g. from a github ref)
+VERSION="${VERSION##*/}"
+if [ "$VERSION" = "tag" ] || [ -z "$VERSION" ]; then
+    VERSION="${LATEST_TAG}"
+fi
+VERSION=${VERSION:-${LATEST_TAG}}
 # Strip leading 'v' if present
 VERSION=${VERSION#v}
+
+# Ensure the version starts with a digit (required by Debian packaging)
+if [[ ! "$VERSION" =~ ^[0-9] ]]; then
+    VERSION="${LATEST_TAG}~${VERSION}"
+fi
+
+# Replace any invalid characters (like underscores) with hyphens
+VERSION=$(echo "$VERSION" | tr '_' '-')
 
 # If we are in a git repository, append the short commit hash to the version
 # to distinguish builds, especially useful for forks and CI/CD.
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    SHORT_SHA=$(git rev-parse --short HEAD)
-    # Use ~ to denote a pre-release or + for build metadata in debian versions
-    VERSION="${VERSION}+git${SHORT_SHA}"
+    # Only append the git commit if we are NOT on a tag.
+    if ! git describe --exact-match --tags HEAD >/dev/null 2>&1; then
+        SHORT_SHA=$(git rev-parse --short HEAD)
+        # Use ~ to denote a pre-release or + for build metadata in debian versions
+        VERSION="${VERSION}+git${SHORT_SHA}"
+    fi
 fi
 
 cat <<EOF > ${DEBIAN_DIR}/DEBIAN/control
