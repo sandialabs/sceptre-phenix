@@ -12,10 +12,10 @@ import (
 func TestList(t *testing.T) {
 	configs := store.Configs(
 		[]store.Config{
-			{ //nolint:exhaustruct // mock data
+			{
 				Version: "phenix.sandia.gov/v1",
 				Kind:    "Experiment",
-				Metadata: store.ConfigMetadata{ //nolint:exhaustruct // mock data
+				Metadata: store.ConfigMetadata{
 					Name: "test-experiment",
 				},
 			},

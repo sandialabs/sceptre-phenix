@@ -416,6 +416,7 @@ linters:
           - bodyclose
           - dupl
           - errcheck
+          - exhaustruct
           - funlen
           - goconst
           - gosec

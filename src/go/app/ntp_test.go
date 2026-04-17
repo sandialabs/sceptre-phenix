@@ -12,7 +12,7 @@ import (
 // TestNTPAppSourceIPAddressDirect verifies that an explicit Address is returned
 // directly without consulting the experiment topology.
 func TestNTPAppSourceIPAddressDirect(t *testing.T) {
-	s := app.NTPAppSource{Address: "192.168.1.1"} //nolint:exhaustruct // test data
+	s := app.NTPAppSource{Address: "192.168.1.1"}
 	if got := s.IPAddress(nil); got != "192.168.1.1" {
 		t.Fatalf("expected 192.168.1.1, got %s", got)
 	}
@@ -21,7 +21,7 @@ func TestNTPAppSourceIPAddressDirect(t *testing.T) {
 // TestNTPAppSourceIPAddressMissingInterface verifies that an empty string is
 // returned when Interface is not set (nothing to look up).
 func TestNTPAppSourceIPAddressMissingInterface(t *testing.T) {
-	s := app.NTPAppSource{Hostname: "server01"} //nolint:exhaustruct // test data
+	s := app.NTPAppSource{Hostname: "server01"}
 	if got := s.IPAddress(nil); got != "" {
 		t.Fatalf("expected empty string, got %s", got)
 	}
