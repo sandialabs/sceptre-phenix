@@ -148,12 +148,12 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 		scanner.Split(o.splitter)
 
 		for scanner.Scan() {
-			bytes := scanner.Bytes()
+			line := scanner.Bytes()
 
-			stdoutBytes = append(stdoutBytes, bytes...)
+			stdoutBytes = append(stdoutBytes, line...)
 
 			if o.stdout != nil {
-				o.stdout <- bytes
+				o.stdout <- bytes.Clone(line)
 			}
 		}
 
@@ -176,12 +176,12 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 		scanner.Split(bufio.ScanLines)
 
 		for scanner.Scan() {
-			bytes := scanner.Bytes()
+			line := scanner.Bytes()
 
-			stderrBytes = append(stderrBytes, bytes...)
+			stderrBytes = append(stderrBytes, line...)
 
 			if o.stderr != nil {
-				o.stderr <- bytes
+				o.stderr <- bytes.Clone(line)
 			}
 		}
 

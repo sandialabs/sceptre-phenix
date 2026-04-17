@@ -12,10 +12,10 @@ import (
 func TestListError(t *testing.T) {
 	configs := store.Configs(
 		[]store.Config{
-			{ //nolint:exhaustruct // test data
+			{
 				Version: "phenix.sandia.gov/v1",
 				Kind:    "Experiment",
-				Metadata: store.ConfigMetadata{ //nolint:exhaustruct // test data
+				Metadata: store.ConfigMetadata{
 					Name: "test-experiment",
 				},
 			},
@@ -41,10 +41,10 @@ func TestListError(t *testing.T) {
 }
 
 func TestCreateEnv(t *testing.T) {
-	expected := store.Config{ //nolint:exhaustruct // test data
+	expected := store.Config{
 		Version: "phenix.sandia.gov/v1",
 		Kind:    "Topology",
-		Metadata: store.ConfigMetadata{ //nolint:exhaustruct // test data
+		Metadata: store.ConfigMetadata{
 			Name: "foobar-test-experiment",
 		},
 	}
