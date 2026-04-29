@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/mitchellh/mapstructure"
@@ -121,14 +122,19 @@ func Get(expName, statusFilter string) (*Network, error) { //nolint:funlen // co
 
 		network.Nodes = append(network.Nodes, node)
 
-		// Look at the VM's interface and create an interface node, ignoring MGMT
-		// VLAN
+		// Look at the VM's interface and create an interface node
+		// Unless it is a member of the ignore list
+		var vlanIgnoreList = []string{
+			"MGMT",
+			"MIRROR", // default in mirror app https://github.com/sandialabs/sceptre-phenix-apps/blob/main/src/go/cmd/phenix-app-mirror/types.go#L56
+		}
+
 		for _, vmIface := range vm.Networks {
 			if match := vlanAliasRegex.FindStringSubmatch(vmIface); match != nil {
 				vmIface = match[1]
 			}
 
-			if strings.ToUpper(vmIface) == "MGMT" {
+			if slices.Contains(vlanIgnoreList, strings.ToUpper(vmIface)) {
 				continue
 			}
 
