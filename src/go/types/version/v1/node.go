@@ -578,14 +578,28 @@ func (del Deletion) Description() string {
 }
 
 func (n Node) validate() error {
-	if n.ExternalF == nil {
+	if n.ExternalF != nil {
+		if external := *n.ExternalF; !external {
+			return errors.New(
+				"the external key should not be included for internal nodes (even if set to false)",
+			)
+		}
+
 		return nil
 	}
 
-	if external := *n.ExternalF; !external {
-		return errors.New(
-			"the external key should not be included for internal nodes (even if set to false)",
-		)
+	if n.NetworkF != nil {
+		// Check that only one gateway is defined across all interfaces
+		found := false
+		for _, iface := range n.NetworkF.InterfacesF {
+			if iface != nil && iface.GatewayF != "" {
+				if found {
+					return errors.New("internal nodes should not have more than one gateway interface")
+				}
+
+				found = true
+			}
+		}
 	}
 
 	return nil
