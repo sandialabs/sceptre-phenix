@@ -2,6 +2,7 @@ package v1
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/go-multierror"
 
@@ -174,12 +175,27 @@ func (t TopologySpec) HasCommands() bool {
 func (t *TopologySpec) Init(bridge string) error {
 	var errs error
 
+	seen := make(map[string]struct{})
+
 	for _, n := range t.NodesF {
+		hostname := n.GeneralF.HostnameF
+
+		// Hostnames must be unique across the topology (including case-insensitively)
+		hostnameLower := strings.ToLower(hostname)
+		if _, ok := seen[hostnameLower]; ok {
+			errs = multierror.Append(
+				errs,
+				fmt.Errorf("duplicate node hostname %q", hostname),
+			)
+		} else {
+			seen[hostnameLower] = struct{}{}
+		}
+
 		err := n.validate()
 		if err != nil {
 			errs = multierror.Append(
 				errs,
-				fmt.Errorf("validating node %s: %w", n.GeneralF.HostnameF, err),
+				fmt.Errorf("validating node %s: %w", hostname, err),
 			)
 		}
 

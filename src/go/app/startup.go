@@ -16,6 +16,7 @@ import (
 	"phenix/util"
 	"phenix/util/common"
 	"phenix/util/mm"
+	"phenix/util/notes"
 	"phenix/util/plog"
 	"phenix/util/pubsub"
 )
@@ -97,6 +98,20 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 				}
 
 				ips[key] = node.General().Hostname()
+
+				// Warn if a gateway is not on the interfaces subnet
+				if !node.External() && iface.Gateway() != "" {
+					if _, subnet, err := net.ParseCIDR(
+						fmt.Sprintf("%s/%d", iface.Address(), iface.Mask()),
+					); err == nil {
+						if gw := net.ParseIP(iface.Gateway()); gw != nil && !subnet.Contains(gw) {
+							notes.AddWarnings(ctx, false, fmt.Errorf(
+								"node %q interface %q gateway %s is outside the interface subnet %s (ok only with an on-link route)",
+								node.General().Hostname(), iface.Name(), iface.Gateway(), subnet,
+							))
+						}
+					}
+				}
 			}
 		}
 
@@ -104,17 +119,37 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 			continue
 		}
 
+		// Ensure a node has at least one drive
+		drives := node.Hardware().Drives()
+		if len(drives) == 0 {
+			return fmt.Errorf(
+				"node %q has no drives defined; cannot determine disk image",
+				node.General().Hostname(),
+			)
+		}
+
 		// Check if user provided an absolute path to image. If not, prepend path
 		// with default image path.
-		imagePath := node.Hardware().Drives()[0].Image()
+		imagePath := drives[0].Image()
 
 		if !filepath.IsAbs(imagePath) {
 			imagePath = imageDir + imagePath
 		}
 
-		// check if the disk image is present, if not set do not boot to true
+		// check if the disk image is present, if not set do not boot to true and warn user
 		if _, err := os.Stat(imagePath); os.IsNotExist(err) {
 			node.General().SetDoNotBoot(true)
+			plog.Warn(
+				plog.TypeSystem,
+				"disk image not found; node will not boot",
+				"node", node.General().Hostname(),
+				"image", imagePath,
+			)
+
+			notes.AddWarnings(ctx, false, fmt.Errorf(
+				"node %q will not boot: disk image %q not found",
+				node.General().Hostname(), imagePath,
+			))
 		}
 
 		// if type is router, skip it and continue
