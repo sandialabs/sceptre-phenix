@@ -14,6 +14,11 @@ import (
 
 var ErrValidationFailed = errors.New("config validation failed")
 
+func init() { //nolint:gochecknoinits // library configuration
+	// Keep schema validation errors concise
+	openapi3.SchemaErrorDetailsDisabled = true //nolint:reassign // configure library error verbosity
+}
+
 // ValidateConfigSpec validates the spec in the given config using the
 // appropriate `openapi3.Schema` validator. Any validation errors encountered
 // are returned.
