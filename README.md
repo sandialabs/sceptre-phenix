@@ -16,7 +16,7 @@ phēnix provides a framework for defining, deploying, and managing complex cyber
 
 ### Prerequisites
 
-*   Linux environment (Ubuntu 22.04+ recommended)
+*   Linux environment (Ubuntu 24.04+ recommended)
 *   Docker & Docker Compose
 
 ### Running with Docker (Preferred)
@@ -82,7 +82,7 @@ If you wish to build and run the services locally without Docker, follow these s
 ### Prerequisites
 
 *   Go 1.24+ (for core development)
-*   Python 3.10+ (for app development)
+*   Python 3.12+ (for app development)
 *   Node.js 18+ & Yarn 1.22+ (for UI development)
 *   Protoc 3.12+ (for Protocol Buffers generation)
 
@@ -95,6 +95,16 @@ sudo npm install -g yarn
 ```
 
 For Go 1.24+, follow the [official installation instructions](https://go.dev/doc/install).
+
+On older Ubuntu releases (<24.04), Python 3.12+ will need to be manually installed and pointed to with `SYSTEM_PYTHON`:
+
+```shell
+sudo apt install -y software-properties-common
+sudo add-apt-repository -y ppa:deadsnakes/ppa
+sudo apt install python3.12 python3.12-venv
+
+SYSTEM_PYTHON=/usr/bin/python3.12 make install-dev
+```
 
 ### Makefile
 
