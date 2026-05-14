@@ -542,25 +542,6 @@ func newImageUpdateCmd() *cobra.Command {
 	return cmd
 }
 
-func newImageInjectMinicccCmd() *cobra.Command {
-	desc := `Inject the miniccc agent into a disk image
-
-	This subcommand has been DEPRECATED. Please use inject-miniexe instead.`
-
-	cmd := &cobra.Command{
-		Use:   "inject-miniccc <path to miniccc> <path to disk>",
-		Short: "Inject the miniccc agent into a disk image (DEPRECATED)",
-		Long:  desc,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return errors.New(
-				"inject-miniccc has been deprecated - please use inject-miniexe instead",
-			)
-		},
-	}
-
-	return cmd
-}
-
 func newImageInjectMiniExeCmd() *cobra.Command {
 	desc := `Inject a minimega executable into a disk image
 
@@ -638,7 +619,6 @@ func init() { //nolint:gochecknoinits // cobra command
 	imageCmd.AddCommand(newImageAppendCmd())
 	imageCmd.AddCommand(newImageRemoveCmd())
 	imageCmd.AddCommand(newImageUpdateCmd())
-	imageCmd.AddCommand(newImageInjectMinicccCmd())
 	imageCmd.AddCommand(newImageInjectMiniExeCmd())
 
 	rootCmd.AddCommand(imageCmd)
