@@ -142,6 +142,7 @@ func buildSingleVMTable(table *tablewriter.Table, vm mm.VM) {
 		ifaces   = make([]string, 0, len(vm.Networks))
 		uptime   string
 		metadata []byte
+		labels   []string
 	)
 
 	for idx, nw := range vm.Networks {
@@ -156,6 +157,12 @@ func buildSingleVMTable(table *tablewriter.Table, vm mm.VM) {
 		metadata, _ = json.MarshalIndent(vm.Metadata, "", "  ")
 	}
 
+	if len(vm.Labels) > 0 {
+		for lbl, val := range vm.Labels {
+			labels = append(labels, fmt.Sprintf("%s: %s", lbl, val))
+		}
+	}
+
 	table.Append([]string{"Host", vm.Host})
 	table.Append([]string{"Name", vm.Name})
 	table.Append([]string{"Running", strconv.FormatBool(vm.Running)})
@@ -165,6 +172,7 @@ func buildSingleVMTable(table *tablewriter.Table, vm mm.VM) {
 	table.Append([]string{"VCPUs", strconv.Itoa(vm.CPUs)})
 	table.Append([]string{"Memory", strconv.Itoa(vm.RAM)})
 	table.Append([]string{"OS Type", vm.OSType})
+	table.Append([]string{"Labels", strings.Join(labels, ", ")})
 	table.Append([]string{"Metadata", string(metadata)})
 }
 

@@ -231,6 +231,7 @@ type VM struct {
 	CdRom           string            `json:"cdRom"`
 	Tags            map[string]string `json:"tags"`
 	Snapshot        bool              `json:"snapshot"`
+	Labels          map[string]string `json:"labels"`
 
 	// Used internally to track network <--> IP relationship, since
 	// network ordering from minimega may not be the same as network
@@ -238,9 +239,8 @@ type VM struct {
 	Interfaces map[string]string `json:"-"`
 
 	// Used internally for showing VM details.
-	Metadata    map[string]any    `json:"-"`
-	Labels      map[string]string `json:"-"`
-	Annotations map[string]any    `json:"-"`
+	Metadata    map[string]any `json:"-"`
+	Annotations map[string]any `json:"-"`
 
 	// Used internally to check for active CC agent.
 	UUID string `json:"-"`
