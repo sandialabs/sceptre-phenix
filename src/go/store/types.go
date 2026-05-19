@@ -41,6 +41,17 @@ type ConfigMetadata struct {
 	Annotations Annotations `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 }
 
+// Performs case-insensitive lookup of a config kind.
+func canonicalKind(kind string) string {
+	for k := range version.StoredVersion {
+		if strings.EqualFold(k, kind) {
+			return k
+		}
+	}
+
+	return ""
+}
+
 func NewConfig(name string) (*Config, error) {
 	n := strings.Split(name, "/")
 
@@ -48,8 +59,10 @@ func NewConfig(name string) (*Config, error) {
 		return nil, fmt.Errorf("invalid config name provided: %s", name)
 	}
 
-	kind, name := n[0], n[1]
-	kind = strings.ToUpper(kind[:1]) + kind[1:]
+	kind, name := canonicalKind(n[0]), n[1]
+	if kind == "" {
+		return nil, fmt.Errorf("invalid config kind provided: %s", n[0])
+	}
 
 	version := version.StoredVersion[kind]
 	version = APIGroup + "/" + version
@@ -179,9 +192,19 @@ func ConfigFullName(name ...string) string {
 			return ""
 		}
 
-		return strings.ToUpper(n[0][:1]) + n[0][1:] + "/" + n[1]
+		kind := canonicalKind(n[0])
+		if kind == "" {
+			return ""
+		}
+
+		return kind + "/" + n[1]
 	} else if len(name) == configNameParts {
-		return strings.ToUpper(name[0][:1]) + name[0][1:] + "/" + name[1]
+		kind := canonicalKind(name[0])
+		if kind == "" {
+			return ""
+		}
+
+		return kind + "/" + name[1]
 	}
 
 	return ""
