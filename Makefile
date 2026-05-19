@@ -1,6 +1,8 @@
 .PHONY: all build check clean deb docker examples example-go example-python format generate help help-all install-dev install-wrapper uninstall-wrapper lint run-examples test tunneler ui version
 .DEFAULT_GOAL := help
 
+DOCKER_TAG ?= latest
+
 # Define a helper for checking command existence
 check-command = @if ! command -v $(1) > /dev/null; then \
 		echo "Error: '$(1)' not found. $(2)"; \
@@ -50,7 +52,7 @@ deb:
 docker:
 	$(call check-command,docker,Please install Docker (https://docs.docker.com/get-docker/))
 	@docker info > /dev/null 2>&1 || { echo "Docker daemon is not running"; exit 1; }
-	docker build -t phenix -f docker/Dockerfile .
+	docker build -t phenix:$(DOCKER_TAG) -f docker/Dockerfile .
 
 clean:
 	$(RM) bin/phenix
