@@ -621,5 +621,5 @@ func init() { //nolint:gochecknoinits // cobra command
 	imageCmd.AddCommand(newImageUpdateCmd())
 	imageCmd.AddCommand(newImageInjectMiniExeCmd())
 
-	rootCmd.AddCommand(imageCmd)
+	addCommandToRoot(imageCmd, true)
 }

@@ -140,5 +140,5 @@ func newUICmd() *cobra.Command {
 }
 
 func init() { //nolint:gochecknoinits // cobra command
-	rootCmd.AddCommand(newUICmd())
+	addCommandToRoot(newUICmd(), false)
 }

@@ -24,5 +24,5 @@ func newVersionCmd() *cobra.Command {
 }
 
 func init() { //nolint:gochecknoinits // cobra command
-	rootCmd.AddCommand(newVersionCmd())
+	addCommandToRoot(newVersionCmd(), true)
 }
