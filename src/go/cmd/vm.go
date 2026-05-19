@@ -868,5 +868,5 @@ func init() { //nolint:gochecknoinits // cobra command
 	vmCmd.AddCommand(newVMCaptureCmd())
 	vmCmd.AddCommand(newVMMemorySnapshotCmd())
 
-	rootCmd.AddCommand(vmCmd)
+	addCommandToRoot(vmCmd, true)
 }

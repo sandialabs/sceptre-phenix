@@ -15,6 +15,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
 	"phenix/api/config"
@@ -521,4 +522,32 @@ func getEffectiveSettings() map[string]any {
 	}
 
 	return vMerge.AllSettings()
+}
+
+// hideInheritedPersistentFlags marks all inherited persistent flags as hidden
+// for the provided command.
+func hideInheritedPersistentFlags(cmd *cobra.Command) {
+	cmd.InheritedFlags().VisitAll(func(f *pflag.Flag) {
+		_ = cmd.Flags().MarkHidden(f.Name)
+		_ = cmd.InheritedFlags().MarkHidden(f.Name)
+	})
+}
+
+// hideInheritedHelp wraps the default help behavior so inherited
+// persistent flags are hidden when help is generated.
+func hideInheritedHelp(cmd *cobra.Command) {
+	defaultHelp := cmd.HelpFunc()
+
+	cmd.SetHelpFunc(func(c *cobra.Command, args []string) {
+		hideInheritedPersistentFlags(c)
+		defaultHelp(c, args)
+	})
+}
+
+func addCommandToRoot(cmd *cobra.Command, excludeGlobalFlags bool) {
+	if excludeGlobalFlags {
+		hideInheritedHelp(cmd)
+	}
+
+	rootCmd.AddCommand(cmd)
 }
