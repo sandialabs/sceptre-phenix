@@ -1,3 +1,5 @@
+# check=skip=SecretsUsedInArgOrEnv
+
 # Update GitHub workflow config to change the minimum version of minimega
 # required for use with phenix. This build stage is needed for making sure the
 # latest version of the minimega Python module is installed.
@@ -27,8 +29,8 @@ WORKDIR /phenix/src/js
 ARG PHENIX_WEB_AUTH=disabled
 ARG PHENIX_BASE_PATH=/
 
-ENV VUE_APP_AUTH ${PHENIX_WEB_AUTH}
-ENV VUE_BASE_PATH ${PHENIX_BASE_PATH}
+ENV VUE_APP_AUTH=${PHENIX_WEB_AUTH}
+ENV VUE_BASE_PATH=${PHENIX_BASE_PATH}
 
 RUN make dist/index.html
 
