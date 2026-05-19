@@ -513,5 +513,5 @@ func init() { //nolint:gochecknoinits // cobra command
 	configCmd.AddCommand(newConfigEditCmd())
 	configCmd.AddCommand(deleteCmd)
 
-	rootCmd.AddCommand(configCmd)
+	addCommandToRoot(configCmd, true)
 }

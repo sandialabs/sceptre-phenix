@@ -75,7 +75,5 @@ func newMMCmd() *cobra.Command {
 }
 
 func init() { //nolint:gochecknoinits // cobra command
-	mmCmd := newMMCmd()
-
-	rootCmd.AddCommand(mmCmd)
+	addCommandToRoot(newMMCmd(), true)
 }
