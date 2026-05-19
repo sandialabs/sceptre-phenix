@@ -538,21 +538,6 @@ func flattenSettingsMap(prefix string, src map[string]any, dst map[string]any) {
 	}
 }
 
-func init() { //nolint:gochecknoinits // cobra command
-	settingsCmd := newSettingsCmd()
-
-	dbCmd := newSettingsDBCmd()
-	dbCmd.AddCommand(newSettingsDBListCmd())
-	dbCmd.AddCommand(newSettingsDBEditCmd())
-	settingsCmd.AddCommand(dbCmd)
-
-	settingsCmd.AddCommand(newSettingsSetCmd())
-	settingsCmd.AddCommand(newSettingsListCmd())
-	settingsCmd.AddCommand(newSettingsGetCmd())
-	settingsCmd.AddCommand(newSettingsUnsetCmd())
-	rootCmd.AddCommand(settingsCmd)
-}
-
 func inferType(s string) any {
 	// Check for boolean
 	if strings.ToLower(s) == "true" {
@@ -574,4 +559,20 @@ func inferType(s string) any {
 	}
 
 	return s
+}
+
+func init() { //nolint:gochecknoinits // cobra command
+	settingsCmd := newSettingsCmd()
+
+	dbCmd := newSettingsDBCmd()
+	dbCmd.AddCommand(newSettingsDBListCmd())
+	dbCmd.AddCommand(newSettingsDBEditCmd())
+	settingsCmd.AddCommand(dbCmd)
+
+	settingsCmd.AddCommand(newSettingsSetCmd())
+	settingsCmd.AddCommand(newSettingsListCmd())
+	settingsCmd.AddCommand(newSettingsGetCmd())
+	settingsCmd.AddCommand(newSettingsUnsetCmd())
+
+	addCommandToRoot(settingsCmd, true)
 }

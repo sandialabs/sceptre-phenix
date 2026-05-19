@@ -187,5 +187,5 @@ func init() { //nolint:gochecknoinits // cobra command
 	vlanCmd.AddCommand(newVlanAliasCmd())
 	vlanCmd.AddCommand(newVlanRangeCmd())
 
-	rootCmd.AddCommand(vlanCmd)
+	addCommandToRoot(vlanCmd, true)
 }
