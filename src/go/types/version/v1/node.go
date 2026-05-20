@@ -588,17 +588,46 @@ func (n Node) validate() error {
 		return nil
 	}
 
-	if n.NetworkF != nil {
-		// Check that only one gateway is defined across all interfaces
-		found := false
-		for _, iface := range n.NetworkF.InterfacesF {
-			if iface != nil && iface.GatewayF != "" {
-				if found {
-					return errors.New("internal nodes should not have more than one gateway interface")
-				}
+	if n.NetworkF == nil {
+		return nil
+	}
 
-				found = true
+	var (
+		gateways   int
+		seenIfaces = make(map[string]struct{})
+	)
+
+	for _, iface := range n.NetworkF.InterfacesF {
+		if iface == nil {
+			continue
+		}
+
+		// ensure interface name only used once for each node
+		if name := iface.NameF; name != "" {
+			if _, ok := seenIfaces[name]; ok {
+				return fmt.Errorf("interface name %q is defined more than once", name)
 			}
+
+			seenIfaces[name] = struct{}{}
+		}
+
+		if iface.GatewayF == "" {
+			continue
+		}
+
+		// gateway is not relevant for DHCP or manual proto
+		switch strings.ToLower(iface.ProtoF) {
+		case "dhcp", "manual":
+			return fmt.Errorf(
+				"interface %q sets a gateway but uses the %q protocol, where the gateway is ignored",
+				iface.NameF, iface.ProtoF,
+			)
+		}
+
+		// Only one interface may define a gateway.
+		gateways++
+		if gateways > 1 {
+			return errors.New("internal nodes should not have more than one gateway interface")
 		}
 	}
 
