@@ -578,14 +578,57 @@ func (del Deletion) Description() string {
 }
 
 func (n Node) validate() error {
-	if n.ExternalF == nil {
+	if n.ExternalF != nil {
+		if external := *n.ExternalF; !external {
+			return errors.New(
+				"the external key should not be included for internal nodes (even if set to false)",
+			)
+		}
+
 		return nil
 	}
 
-	if external := *n.ExternalF; !external {
-		return errors.New(
-			"the external key should not be included for internal nodes (even if set to false)",
-		)
+	if n.NetworkF == nil {
+		return nil
+	}
+
+	var (
+		gateways   int
+		seenIfaces = make(map[string]struct{})
+	)
+
+	for _, iface := range n.NetworkF.InterfacesF {
+		if iface == nil {
+			continue
+		}
+
+		// ensure interface name only used once for each node
+		if name := iface.NameF; name != "" {
+			if _, ok := seenIfaces[name]; ok {
+				return fmt.Errorf("interface name %q is defined more than once", name)
+			}
+
+			seenIfaces[name] = struct{}{}
+		}
+
+		if iface.GatewayF == "" {
+			continue
+		}
+
+		// gateway is not relevant for DHCP or manual proto
+		switch strings.ToLower(iface.ProtoF) {
+		case "dhcp", "manual":
+			return fmt.Errorf(
+				"interface %q sets a gateway but uses the %q protocol, where the gateway is ignored",
+				iface.NameF, iface.ProtoF,
+			)
+		}
+
+		// Only one interface may define a gateway.
+		gateways++
+		if gateways > 1 {
+			return errors.New("internal nodes should not have more than one gateway interface")
+		}
 	}
 
 	return nil

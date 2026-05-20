@@ -174,12 +174,26 @@ func (t TopologySpec) HasCommands() bool {
 func (t *TopologySpec) Init(bridge string) error {
 	var errs error
 
+	seen := make(map[string]struct{})
+
 	for _, n := range t.NodesF {
+		hostname := n.GeneralF.HostnameF
+
+		// Hostnames must be unique across the topology
+		if _, ok := seen[hostname]; ok {
+			errs = multierror.Append(
+				errs,
+				fmt.Errorf("duplicate node hostname %q", hostname),
+			)
+		} else {
+			seen[hostname] = struct{}{}
+		}
+
 		err := n.validate()
 		if err != nil {
 			errs = multierror.Append(
 				errs,
-				fmt.Errorf("validating node %s: %w", n.GeneralF.HostnameF, err),
+				fmt.Errorf("validating node %s: %w", hostname, err),
 			)
 		}
 
