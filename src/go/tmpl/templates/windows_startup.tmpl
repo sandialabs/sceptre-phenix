@@ -87,13 +87,22 @@ if (Phenix-StartupStatusIs('running')) {
 {{ end }}
 
 echo 'Configuring network interfaces...'
-
-$wmi = $null
-Do {
-    Start-Sleep -Milliseconds 1000
-    $wmi = gwmi win32_NetworkAdapterConfiguration -Filter 'ipenabled = "true"' | sort -Property Description
-} While ($wmi -eq $null)
 {{ $length := len .Node.Network.Interfaces }}
+
+$wmi = $null  
+$maxRetries = 100 
+$retryCount = 0 
+Do {  
+    Start-Sleep -Milliseconds 1000  
+    $wmi = gwmi win32_NetworkAdapterConfiguration -Filter 'ipenabled = "true"' | sort -Property Description  
+    $retryCount++  
+      
+    if ($retryCount -ge $maxRetries) {  
+        Write-Host "Timeout waiting for IP-enabled network adapters"  
+        exit 1  
+    }  
+} While ($wmi -eq $null -or @($wmi).Count -lt {{ $length }})  
+
 {{ range $idx, $iface := .Node.Network.Interfaces }}
     {{ if and (eq $iface.Proto "static") (not $iface.QinQ) }}
 Do {
