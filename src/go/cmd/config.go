@@ -48,11 +48,13 @@ func configKindArgsValidator(multi, allowAll bool) cobra.PositionalArgs {
 				kinds = append(kinds, "all")
 			}
 
-			if kind := tokens[0]; !util.StringSliceContains(kinds, kind) {
+			kind := strings.ToLower(tokens[0])
+
+			if !util.StringSliceContains(kinds, kind) {
 				return fmt.Errorf(
 					"expects the configuration kind to be one of %v, received %s",
 					kinds,
-					kind,
+					tokens[0],
 				)
 			}
 		}
