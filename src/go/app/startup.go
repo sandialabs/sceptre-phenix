@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -25,9 +26,33 @@ const (
 	tunnelConfigPartsPortOnly     = 1
 	tunnelConfigPartsPortHost     = 2
 	tunnelConfigPartsPortHostDest = 3
+
+	startupViaCCAnnotation = "phenix/startup-via-cc"
+
+	linuxHostnameInjectDst  = "/etc/phenix/startup/1_hostname-start.sh"
+	linuxTimezoneInjectDst  = "/etc/phenix/startup/2_timezone-start.sh"
+	linuxIfaceInjectDst     = "/etc/phenix/startup/3_interfaces-start.sh"
+	linuxDomainInjectDst    = "/etc/phenix/startup/4_domain-start.sh"
+	windowsStartupInjectDst = "/phenix/startup/20-startup.ps1"
+
+	legacyWindowsStartupWrapperDst = "/phenix/phenix-startup.ps1"
+	windowsSchedulerDst            = "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/startup_scheduler.cmd"
 )
 
 type Startup struct{}
+
+type startupC2Executor string
+
+const (
+	startupC2Linux   startupC2Executor = "linux"
+	startupC2Windows startupC2Executor = "windows"
+)
+
+type commandSetter interface {
+	SetCommands([]string)
+}
+
+var startupMMFullPath = mm.GetMMFullPath //nolint:gochecknoglobals // overridden by tests
 
 func (Startup) Init(...Option) error {
 	return nil
@@ -39,6 +64,197 @@ func (Startup) Name() string {
 
 func (s *Startup) Configure(ctx context.Context, exp *types.Experiment) error {
 	return nil
+}
+
+// startupViaCCEnabled reports whether the startup app should use C2 delivery.
+func startupViaCCEnabled(node ifaces.NodeSpec) bool {
+	val, ok := node.GetAnnotation(startupViaCCAnnotation)
+	if !ok {
+		return false
+	}
+
+	switch v := val.(type) {
+	case bool:
+		return v
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "false", "0":
+			return false
+		default:
+			return true
+		}
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	case float64:
+		return v != 0
+	default:
+		return true
+	}
+}
+
+// startupC2DeliveryEnabled reports whether generated startup scripts need C2 delivery.
+func startupC2DeliveryEnabled(node ifaces.NodeSpec) bool {
+	if node.General() != nil && node.General().DoNotBoot() != nil && *node.General().DoNotBoot() {
+		return false
+	}
+
+	return startupViaCCEnabled(node) || firstDriveInjectPartition(node) == 0
+}
+
+// firstDriveInjectPartition returns the first disk inject partition, defaulting to one.
+func firstDriveInjectPartition(node ifaces.NodeSpec) int {
+	if node.Hardware() == nil {
+		return 1
+	}
+
+	drives := node.Hardware().Drives()
+	if len(drives) == 0 {
+		return 1
+	}
+
+	part := drives[0].InjectPartition()
+	if part == nil {
+		return 1
+	}
+
+	return *part
+}
+
+// addStartupInject adds a startup app injection unless startup injection suppression is active.
+func addStartupInject(node ifaces.NodeSpec, src, dst, perms string, suppress bool) {
+	if suppress {
+		return
+	}
+
+	node.AddInject(src, dst, perms, "")
+}
+
+// addStartupC2Script stages a generated startup script and queues its C2 commands.
+func addStartupC2Script(exp *types.Experiment, node ifaces.NodeSpec, filename string, executor startupC2Executor) error {
+	send, exec, relPath := startupC2Commands(exp, filename, executor)
+	if err := stageStartupC2Script(filename, relPath); err != nil {
+		return fmt.Errorf("staging startup C2 script for node %s: %w", node.General().Hostname(), err)
+	}
+
+	node.AddCommand(send)
+	node.AddCommand(exec)
+
+	return nil
+}
+
+// stageStartupC2Script copies a generated startup script into minimega's file path.
+func stageStartupC2Script(src, relPath string) error {
+	dst := startupMMFullPath(relPath)
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
+		return fmt.Errorf("creating startup C2 script directory: %w", err)
+	}
+
+	content, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("reading startup script: %w", err)
+	}
+
+	if err := os.WriteFile(dst, content, 0o600); err != nil {
+		return fmt.Errorf("writing startup C2 script: %w", err)
+	}
+
+	return nil
+}
+
+// startupC2Commands builds the minimega send and exec-once commands for a startup script.
+func startupC2Commands(exp *types.Experiment, filename string, executor startupC2Executor) (string, string, string) {
+	relPath := path.Join(exp.Spec.ExperimentName(), filepath.Base(filename))
+	guestPath := path.Join("/tmp/miniccc/files", relPath)
+
+	send := "send " + relPath
+
+	switch executor {
+	case startupC2Windows:
+		return send, fmt.Sprintf("exec-once cmd /c 'powershell.exe -noprofile -executionpolicy bypass -file %s'", guestPath), relPath
+	default:
+		return send, "exec-once bash " + guestPath, relPath
+	}
+}
+
+// removeStartupC2Commands removes previously generated startup C2 commands for idempotency.
+func removeStartupC2Commands(exp *types.Experiment, node ifaces.NodeSpec) {
+	setter, ok := node.(commandSetter)
+	if !ok {
+		return
+	}
+
+	stale := make(map[string]struct{})
+	for _, filename := range startupC2ScriptNames(node.General().Hostname()) {
+		for _, executor := range []startupC2Executor{startupC2Linux, startupC2Windows} {
+			send, exec, _ := startupC2Commands(exp, filename, executor)
+			stale[send] = struct{}{}
+			stale[exec] = struct{}{}
+		}
+	}
+
+	commands := node.Commands()
+	filtered := make([]string, 0, len(commands))
+
+	for _, command := range commands {
+		if _, ok := stale[command]; ok {
+			continue
+		}
+
+		filtered = append(filtered, command)
+	}
+
+	setter.SetCommands(filtered)
+}
+
+// startupC2ScriptNames returns the generated startup script names for a node.
+func startupC2ScriptNames(hostname string) []string {
+	return []string{
+		hostname + "-hostname.sh",
+		hostname + "-timezone.sh",
+		hostname + "-interfaces.sh",
+		hostname + "-domain.sh",
+		hostname + "-startup.ps1",
+	}
+}
+
+// removeStartupInjections removes only injections owned by the startup app.
+func removeStartupInjections(node ifaces.NodeSpec) {
+	removeInjectionDestinations(node, map[string]struct{}{
+		linuxHostnameInjectDst:  {},
+		linuxTimezoneInjectDst:  {},
+		linuxIfaceInjectDst:     {},
+		linuxDomainInjectDst:    {},
+		windowsStartupInjectDst: {},
+	})
+}
+
+// removeLegacyWindowsStartupInjections cleans stale startup-owned Windows wrapper and Start Menu injections.
+// Remove this migration helper after existing environments have had enough startup runs to drop those old entries.
+func removeLegacyWindowsStartupInjections(node ifaces.NodeSpec) {
+	removeInjectionDestinations(node, map[string]struct{}{
+		legacyWindowsStartupWrapperDst: {},
+		windowsSchedulerDst:            {},
+		"/" + windowsSchedulerDst:      {},
+	})
+}
+
+// removeInjectionDestinations filters node injections whose destinations match dsts.
+func removeInjectionDestinations(node ifaces.NodeSpec, dsts map[string]struct{}) {
+	injections := node.Injections()
+	filtered := make([]ifaces.NodeInjection, 0, len(injections))
+
+	for _, injection := range injections {
+		if _, ok := dsts[injection.Dst()]; ok {
+			continue
+		}
+
+		filtered = append(filtered, injection)
+	}
+
+	node.SetInjections(filtered)
 }
 
 //nolint:cyclop,funlen,gocyclo,maintidx // complex logic
@@ -152,6 +368,16 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 			))
 		}
 
+		useC2 := startupC2DeliveryEnabled(node)
+		suppressStartupInjects := startupViaCCEnabled(node)
+
+		removeStartupC2Commands(exp, node)
+		removeLegacyWindowsStartupInjections(node)
+
+		if suppressStartupInjects {
+			removeStartupInjections(node)
+		}
+
 		// if type is router, skip it and continue
 		if strings.EqualFold(node.Type(), "Router") {
 			continue
@@ -175,23 +401,9 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 				ifaceFile    = startupDir + "/" + node.General().Hostname() + "-interfaces.sh"
 			)
 
-			node.AddInject(
-				hostnameFile,
-				"/etc/phenix/startup/1_hostname-start.sh",
-				"0755", "",
-			)
-
-			node.AddInject(
-				timezoneFile,
-				"/etc/phenix/startup/2_timezone-start.sh",
-				"0755", "",
-			)
-
-			node.AddInject(
-				ifaceFile,
-				"/etc/phenix/startup/3_interfaces-start.sh",
-				"0755", "",
-			)
+			addStartupInject(node, hostnameFile, linuxHostnameInjectDst, "0755", suppressStartupInjects)
+			addStartupInject(node, timezoneFile, linuxTimezoneInjectDst, "0755", suppressStartupInjects)
+			addStartupInject(node, ifaceFile, linuxIfaceInjectDst, "0755", suppressStartupInjects)
 
 			timeZone := "Etc/UTC"
 
@@ -214,16 +426,26 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 				return fmt.Errorf("generating linux interfaces script: %w", err)
 			}
 
+			if useC2 {
+				if err := addStartupC2Script(exp, node, hostnameFile, startupC2Linux); err != nil {
+					return err
+				}
+
+				if err := addStartupC2Script(exp, node, timezoneFile, startupC2Linux); err != nil {
+					return err
+				}
+
+				if err := addStartupC2Script(exp, node, ifaceFile, startupC2Linux); err != nil {
+					return err
+				}
+			}
+
 			if startupApp != nil {
 				for _, host := range startupApp.Hosts() {
 					if host.Hostname() == node.General().Hostname() {
 						domainFile := startupDir + "/" + node.General().Hostname() + "-domain.sh"
 
-						node.AddInject(
-							domainFile,
-							"/etc/phenix/startup/4_domain-start.sh",
-							"0755", "",
-						)
+						addStartupInject(node, domainFile, linuxDomainInjectDst, "0755", suppressStartupInjects)
 
 						err := tmpl.CreateFileFromTemplate(
 							"linux_domain.tmpl",
@@ -233,6 +455,12 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 						if err != nil {
 							return fmt.Errorf("generating linux domain script: %w", err)
 						}
+
+						if useC2 {
+							if err := addStartupC2Script(exp, node, domainFile, startupC2Linux); err != nil {
+								return err
+							}
+						}
 					}
 				}
 			}
@@ -240,39 +468,7 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 		case osWindows:
 			startupFile := startupDir + "/" + node.General().Hostname() + "-startup.ps1"
 
-			node.AddInject(
-				startupFile,
-				"/phenix/startup/20-startup.ps1",
-				"0755", "",
-			)
-
-			if incl, ok := node.GetAnnotation(
-				"includes-phenix-startup",
-			); !ok || incl == "false" ||
-				incl == false {
-				node.AddInject(
-					startupDir+"/phenix-startup.ps1",
-					"/phenix/phenix-startup.ps1",
-					"0755", "",
-				)
-
-				err := tmpl.RestoreAsset(startupDir, "phenix-startup.ps1")
-				if err != nil {
-					return fmt.Errorf("restoring phenix startup script: %w", err)
-				}
-
-				node.AddInject(
-					startupDir+"/startup-scheduler.cmd",
-					"ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/startup_scheduler.cmd",
-					"0755",
-					"",
-				)
-
-				err = tmpl.RestoreAsset(startupDir, "startup-scheduler.cmd")
-				if err != nil {
-					return fmt.Errorf("restoring windows startup scheduler: %w", err)
-				}
-			}
+			addStartupInject(node, startupFile, windowsStartupInjectDst, "0755", suppressStartupInjects)
 
 			// Temporary struct to send to the Windows Startup template.
 			data := struct {
@@ -297,6 +493,12 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 			if err != nil {
 				return fmt.Errorf("generating windows startup script: %w", err)
 			}
+
+			if useC2 {
+				if err := addStartupC2Script(exp, node, startupFile, startupC2Windows); err != nil {
+					return err
+				}
+			}
 		}
 	}
 
@@ -307,23 +509,6 @@ func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 	for _, node := range exp.Spec.Topology().Nodes() {
 		if node.External() {
 			continue
-		}
-
-		if strings.EqualFold(node.Hardware().OSType(), "windows") {
-			// Windows 10 doesn't automatically run scripts in the startup folder
-			if ver, ok := node.GetAnnotation("windows-version"); ok && (ver == "10" || ver == 10) {
-				_, err := mm.ExecC2Command(
-					mm.C2NS(exp.Metadata.Name),
-					mm.C2VM(node.General().Hostname()),
-					mm.C2SkipActiveClientCheck(true),
-					mm.C2Command(
-						`powershell.exe -noprofile -executionpolicy bypass -file /phenix/phenix-startup.ps1`,
-					),
-				)
-				if err != nil {
-					return fmt.Errorf("execute C2 command to run Windows startup script: %w", err)
-				}
-			}
 		}
 
 		if annotation, ok := node.GetAnnotation("phenix/startup-autotunnel"); ok {

@@ -323,6 +323,11 @@ func (n *Node) AddCommand(cmd string) {
 	n.CommandsF = append(n.CommandsF, cmd)
 }
 
+// SetCommands replaces the node command list.
+func (n *Node) SetCommands(commands []string) {
+	n.CommandsF = commands
+}
+
 func (n Node) GetAnnotation(a string) (any, bool) {
 	if n.AnnotationsF == nil {
 		return nil, false
