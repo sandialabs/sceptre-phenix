@@ -3,6 +3,7 @@
 package mmcli
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/activeshadow/libminimega/minicli"
@@ -50,10 +51,16 @@ func tabularToMapCols(columns []string) tabularToMapper {
 	}
 }
 
-// RunTabular is used to run the given command when the response is expected to
-// be in tabular form. A slice of maps is returned, with each map representing a
-// row in the tabular response and each map key representing the column.
-func RunTabular(cmd *Command) []map[string]string {
+// RunTabularErr is used to run the given command when the response is expected
+// to be in tabular form. It returns a slice of maps (each map a row, keyed by
+// column) along with the FIRST error encountered in any response. Rows that
+// were parsed before the error are still returned so the caller can decide how
+// to treat partial data.
+//
+// Callers that need to distinguish a transient failure (e.g. a mesh node
+// hiccup) from a genuinely empty result should use this instead of RunTabular,
+// which discards errors.
+func RunTabularErr(cmd *Command) ([]map[string]string, error) {
 	// copy all fields in header order
 	mapper := tabularToMap
 
@@ -64,17 +71,14 @@ func RunTabular(cmd *Command) []map[string]string {
 
 	res := []map[string]string{}
 
+	var firstErr error
+
 	for resps := range Run(cmd) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
-				plog.Error(
-					plog.TypeSystem,
-					"error running mm cmd",
-					"cmd",
-					cmd.Command,
-					"error",
-					resp.Error,
-				)
+				if firstErr == nil {
+					firstErr = errors.New(resp.Error)
+				}
 
 				continue
 			}
@@ -85,5 +89,26 @@ func RunTabular(cmd *Command) []map[string]string {
 		}
 	}
 
-	return res
+	return res, firstErr
+}
+
+// RunTabular is used to run the given command when the response is expected to
+// be in tabular form. A slice of maps is returned, with each map representing a
+// row in the tabular response and each map key representing the column. Any
+// error encountered is logged and discarded; callers that need to act on the
+// error should use RunTabularErr.
+func RunTabular(cmd *Command) []map[string]string {
+	rows, err := RunTabularErr(cmd)
+	if err != nil {
+		plog.Error(
+			plog.TypeSystem,
+			"error running mm cmd",
+			"cmd",
+			cmd.Command,
+			"error",
+			err.Error(),
+		)
+	}
+
+	return rows
 }

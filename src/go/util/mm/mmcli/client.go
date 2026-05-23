@@ -19,8 +19,9 @@ import (
 var ErrTimeout = errors.New("timeout running command")
 
 var (
-	mu sync.Mutex       //nolint:gochecknoglobals // global lock
-	mm *miniclient.Conn //nolint:gochecknoglobals // global connection
+	mu     sync.Mutex       //nolint:gochecknoglobals // global lock
+	mm     *miniclient.Conn //nolint:gochecknoglobals // global connection
+	mmDead bool             //nolint:gochecknoglobals // flags mm for replacement
 )
 
 func wrapErr(err error) chan *miniclient.Response {
@@ -136,55 +137,94 @@ func SingleDataResponse(responses chan *miniclient.Response) (any, error) {
 	return data, err
 }
 
+// conn returns a usable connection to minimega, dialing or redialing as needed.
+// The caller must hold mu.
+func conn() (*miniclient.Conn, error) {
+	if mm == nil || mmDead {
+		c, err := miniclient.Dial(common.MinimegaBase)
+		if err != nil {
+			return nil, fmt.Errorf("unable to dial: %w", err)
+		}
+
+		mm, mmDead = c, false
+	}
+
+	// If the connection is already in a broken state, redial.
+	if err := mm.Error(); err != nil {
+		s := err.Error()
+
+		if strings.Contains(s, "broken pipe") || strings.Contains(s, "no such file or directory") {
+			c, err := miniclient.Dial(common.MinimegaBase)
+			if err != nil {
+				return nil, fmt.Errorf("unable to redial: %w", err)
+			}
+
+			mm, mmDead = c, false
+		} else {
+			return nil, fmt.Errorf("minimega error: %w", err)
+		}
+	}
+
+	return mm, nil
+}
+
+// markDead flags the given connection for replacement on the next call, but only
+// if it is still the current connection. The identity check stops a stale
+// timeout from clobbering a connection that a later call already redialed.
+func markDead(c *miniclient.Conn) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if mm == c {
+		mmDead = true
+	}
+}
+
 // Run dials the minimega Unix socket and runs the given command, automatically
 // redialing if disconnected. Any errors encountered will be returned as part of
 // the response channel.
 func Run(c *Command) chan *miniclient.Response {
 	mu.Lock()
-	defer mu.Unlock()
 
-	var err error
+	active, err := conn()
+	if err != nil {
+		mu.Unlock()
 
-	if mm == nil {
-		if mm, err = miniclient.Dial(common.MinimegaBase); err != nil {
-			return wrapErr(fmt.Errorf("unable to dial: %w", err))
-		}
+		return wrapErr(err)
 	}
 
-	// check if there's already an error and try to redial
-	if err := mm.Error(); err != nil {
-		s := err.Error()
+	// Build the command string and release mu before waiting on the response.
+	// The connection's own internal lock serializes the actual exchange, so we
+	// don't need to (and must not) hold mu across a potentially slow command --
+	// doing so would serialize all minimega traffic behind one slow command.
+	cmdStr := c.String()
 
-		if strings.Contains(s, "broken pipe") || strings.Contains(s, "no such file or directory") {
-			if mm, err = miniclient.Dial(common.MinimegaBase); err != nil {
-				return wrapErr(fmt.Errorf("unable to redial: %w", err))
-			}
-		} else {
-			return wrapErr(fmt.Errorf("minimega error: %w", err))
-		}
-	}
+	mu.Unlock()
 
 	if c.Timeout == 0 {
-		return mm.Run(c.String())
+		return active.Run(cmdStr)
 	}
 
 	var (
-		resp chan *miniclient.Response
+		resp = make(chan chan *miniclient.Response, 1)
 		done = make(chan struct{})
 	)
 
 	go func() {
-		resp = mm.Run(c.String())
+		resp <- active.Run(cmdStr)
 
 		close(done)
 	}()
 
 	select {
 	case <-done:
-		return resp
+		return <-resp
 	case <-time.After(c.Timeout):
-		// Reset mm since the miniclient has a lock that is likely still activated.
-		mm = nil
+		// Dispatch is stuck (the connection's internal lock is likely held by a
+		// previous unresponsive command). Flag this connection for replacement so
+		// the next call redials, rather than nil-ing out a shared pointer that
+		// live readers may still reference.
+		markDead(active)
 
 		return wrapErr(ErrTimeout)
 	}
