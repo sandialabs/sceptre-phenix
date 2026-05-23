@@ -229,11 +229,7 @@ func (m Minimega) GetVMInfo(opts ...Option) VMs { //nolint:funlen // complex log
 		vm.RAM, _ = strconv.Atoi(row["memory"])
 		vm.CPUs, _ = strconv.Atoi(row["vcpus"])
 
-		// The disks column can be empty (e.g. a VM that was queued but never fully
-		// configured, or a malformed/partial response from a mesh node). Guard the
-		// slice access so a missing disk doesn't panic with an index out of range.
 		var disk string
-
 		// TODO: confirm multiple disks are separated by whitespace.
 		if fields := strings.Fields(row["disks"]); len(fields) > 0 {
 			// diskspec can include multiple settings separated by comma. Path to
@@ -950,10 +946,7 @@ func (m Minimega) IsHeadnode(node string) bool {
 
 	head := m.Headnode()
 
-	// If we can't determine the headnode, fail safe by assuming the command
-	// targets the local node. Returning false here would make callers build a
-	// `mesh send <node> ...` that minimega rejects with "cannot mesh send
-	// yourself" when <node> is in fact the headnode.
+	// If we can't determine the headnode, assume the local node
 	if head == "" {
 		plog.Warn(
 			plog.TypeSystem,
@@ -968,8 +961,7 @@ func (m Minimega) IsHeadnode(node string) bool {
 		return true
 	}
 
-	// Fall back to the local hostname to cover FQDN vs. short-name mismatches
-	// between what minimega reports as the headnode and what a caller passes in.
+	// Fall back to the local hostname
 	if local, err := os.Hostname(); err == nil {
 		if node == common.TrimHostnameSuffixes(local) {
 			return true
@@ -1056,13 +1048,9 @@ func (Minimega) IsC2ClientActive(opts ...C2Option) error {
 			return ErrC2ClientNotActive
 		default:
 			rows, err := mmcli.RunTabularErr(cmd)
+			// For transient mesh error, poll within the timeout budget
 			if err != nil {
 				if mmcli.IsTransientErr(err) {
-					// A swallowed transient mesh/connection error looks identical
-					// to "no client". Keep polling within the timeout budget
-					// instead of falsely concluding the client is not active --
-					// that false negative is what fails SOH on multi-node
-					// reservations.
 					plog.Warn(
 						plog.TypeSystem,
 						"transient error checking C2 client; retrying",
@@ -1542,12 +1530,10 @@ func waitForResponse(ctx context.Context, ns, id string, timeout time.Duration) 
 	cmd.Columns = []string{"id", "responses"}
 	cmd.Filters = []string{"id=" + id}
 
-	// On a multi-node cluster `cc commands` returns one row per cluster host.
-	// Because `ExecC2Command` sets the filter to a specific VM, only the host
-	// running that VM will report a response; the others report zero responses
-	// and a host that doesn't know the command may even return an error. So a
-	// valid row from any one host is sufficient, and a sibling host's error is
-	// noise unless no host returned a row at all.
+	// Multiple rows will come back for each command ID, one row per cluster host.
+	// Because the `ExecC2Command` sets the filter to a specific VM, only one of
+	// the rows will have a response since a VM can only run on a single cluster
+	// host. A valid row from any one host is sufficient.
 
 	after := time.After(timeout)
 
@@ -1559,10 +1545,6 @@ func waitForResponse(ctx context.Context, ns, id string, timeout time.Duration) 
 			return fmt.Errorf("timeout waiting for response for command %s", id)
 		default:
 			rows, err := mmcli.RunTabularErr(cmd)
-
-			// Only act on the error when no host returned a usable row -- a valid
-			// row elsewhere means the command exists and the error is just a
-			// sibling host that isn't running the VM.
 			if err != nil && len(rows) == 0 && !mmcli.IsTransientErr(err) {
 				return fmt.Errorf("waiting for response for command %s: %w", id, err)
 			}
@@ -1573,12 +1555,7 @@ func waitForResponse(ctx context.Context, ns, id string, timeout time.Duration) 
 				}
 			}
 
-			// The command may not be visible in `cc commands` the instant after
-			// it's issued (id assignment vs. mesh propagation), and the response
-			// may not have arrived yet. Keep polling within the timeout instead of
-			// failing the moment the row or response is absent -- that race is
-			// what intermittently fails networking/reachability checks on
-			// multi-node reservations.
+			//  Keep polling within the timeout
 			time.Sleep(responseWaitInterval)
 		}
 	}

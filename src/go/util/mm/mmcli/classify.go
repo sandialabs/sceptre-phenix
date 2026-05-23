@@ -6,8 +6,7 @@ import (
 )
 
 // transientSubstrings are matched (case-insensitively) against an error's text.
-// These represent conditions that commonly clear on a retry, especially when a
-// command is fanned out to remote nodes over minimega's mesh (meshage).
+// These represent conditions that can clear on a retry.
 var transientSubstrings = []string{ //nolint:gochecknoglobals // lookup table
 	"broken pipe",
 	"use of closed network connection",
@@ -21,8 +20,7 @@ var transientSubstrings = []string{ //nolint:gochecknoglobals // lookup table
 
 // permanentSubstrings are matched (case-insensitively) and ALWAYS win over a
 // transient match. These are genuine logic/usage errors that will never clear
-// on retry. Notably "cannot mesh send yourself" contains no transient token but
-// must never be retried.
+// on retry.
 var permanentSubstrings = []string{ //nolint:gochecknoglobals // lookup table
 	"cannot mesh send yourself",
 	"vm not found",
@@ -51,11 +49,7 @@ func isPermanentErr(err error) bool {
 	return false
 }
 
-// IsTransientErr reports whether err is transient -- i.e. worth re-polling
-// rather than treating as a hard failure. Permanent matches short-circuit to
-// false so they are never mistaken for a recoverable blip. It is exported so
-// callers outside this package (the mm package's C2/response polling loops) can
-// make the same transient-vs-permanent distinction.
+// IsTransientErr reports whether err is transient rather than treating as a hard failure.
 func IsTransientErr(err error) bool {
 	if err == nil || isPermanentErr(err) {
 		return false
