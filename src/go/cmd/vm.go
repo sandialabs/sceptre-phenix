@@ -501,21 +501,139 @@ func newVMKillCmd() *cobra.Command {
 	return cmd
 }
 
+//nolint:funlen // complex logic
 func newVMSetCmd() *cobra.Command {
-	desc := `Set configuration value for a VM
+	var (
+		cpu  int
+		mem  int
+		part int
+	)
 
-  Used to set a configuration value for a virtual machine in a stopped
-  experiment. This command is not yet implemented. For now, you can edit the
-  experiment directly with 'phenix config edit'`
+	desc := `Set configuration value(s) for VM(s)
+
+  Used to set one or more configuration values for virtual machine(s) in an
+  experiment. Only flags that are explicitly provided will be applied. While
+  an experiment is running, only labels can be updated via this command (use
+  'phenix vm net' to modify interface VLAN connections on a running
+  experiment).`
 
 	cmd := &cobra.Command{
-		Use:   "set",
-		Short: "Set configuration value for a VM",
-		Long:  desc,
+		Use:               "set <experiment name> [vm name]",
+		Short:             "Set configuration value(s) for VM(s)",
+		Long:              desc,
+		ValidArgsFunction: vmArgsCompletion,
+
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return cmd.Help()
+			expName, vmNames, err := vmTargetNamesForCommand(cmd, args)
+			if err != nil {
+				return err
+			}
+
+			var (
+				disk          = MustGetString(cmd.Flags(), "disk")
+				dnb           = MustGetBool(cmd.Flags(), "do-not-boot")
+				snapshot      = MustGetBool(cmd.Flags(), "snapshot")
+				rawLabels     = MustGetStringArray(cmd.Flags(), "label-changes")
+				appendLabels  = MustGetBool(cmd.Flags(), "append-labels")
+				cpuChanged    = cmd.Flags().Changed("cpu")
+				memChanged    = cmd.Flags().Changed("mem")
+				partChanged   = cmd.Flags().Changed("partition")
+				dnbChanged    = cmd.Flags().Changed("do-not-boot")
+				snapChanged   = cmd.Flags().Changed("snapshot")
+				labelsChanged = cmd.Flags().Changed("label-changes") ||
+					cmd.Flags().Changed("append-labels")
+			)
+
+			if cpuChanged && (cpu < 1 || cpu > 8) {
+				return errors.New("cpus can only be 1-8")
+			}
+
+			if memChanged && (mem < 512 || mem > 16384 || mem%512 != 0) {
+				return errors.New(
+					"memory must be one of 512, 1024, 2048, 3072, 4096, 8192, 12288, 16384",
+				)
+			}
+
+			labels := make(map[string]string)
+
+			for _, t := range rawLabels {
+				k, v, ok := strings.Cut(t, "=")
+				if !ok || k == "" {
+					return fmt.Errorf("invalid label %q (expected key=value)", t)
+				}
+
+				labels[k] = v
+			}
+
+			if !cpuChanged && !memChanged && disk == "" && !partChanged &&
+				!dnbChanged && !snapChanged && !labelsChanged {
+				return errors.New("no configuration values provided to set")
+			}
+
+			for _, vmName := range vmNames {
+				opts := []vm.UpdateOption{
+					vm.UpdateExperiment(expName),
+					vm.UpdateVM(vmName),
+				}
+
+				if cpuChanged {
+					opts = append(opts, vm.UpdateWithCPU(cpu))
+				}
+
+				if memChanged {
+					opts = append(opts, vm.UpdateWithMem(mem))
+				}
+
+				if disk != "" {
+					opts = append(opts, vm.UpdateWithDisk(disk))
+				}
+
+				if partChanged {
+					opts = append(opts, vm.UpdateWithPartition(part))
+				}
+
+				if dnbChanged {
+					opts = append(opts, vm.UpdateWithDNB(dnb))
+				}
+
+				if snapChanged {
+					opts = append(opts, vm.UpdateWithSnapshot(snapshot))
+				}
+
+				if labelsChanged {
+					opts = append(opts, vm.UpdateWithTags(labels, appendLabels))
+				}
+
+				if err := vm.Update(opts...); err != nil {
+					err := util.HumanizeError(err, "%s", "Unable to update the "+vmName+" VM")
+
+					return err.Humanized()
+				}
+
+				plog.Info(plog.TypeSystem, "vm updated", "vm", vmName, "exp", expName)
+			}
+
+			return nil
 		},
 	}
+
+	cmd.Flags().IntVarP(&cpu, "cpu", "c", 0, "Number of VM CPUs (1-8 is valid)")
+	cmd.Flags().
+		IntVarP(&mem, "mem", "m", 0, "Amount of memory in megabytes (512, 1024, 2048, 3072, 4096, 8192, 12288, 16384 are valid)")
+	cmd.Flags().StringP("disk", "d", "", "VM backing disk image file")
+	cmd.Flags().
+		IntVarP(&part, "partition", "p", 0, "Partition of disk to inject files into")
+	cmd.Flags().Bool("do-not-boot", false, "Set the do-not-boot flag for the VM")
+	cmd.Flags().Bool("snapshot", false, "Set the snapshot (non-persistent) flag for the VM")
+	cmd.Flags().StringArrayP(
+		"label-changes",
+		"L",
+		nil,
+		"VM label(s) to add or edit in key=value form (may be repeated)",
+	)
+	cmd.Flags().
+		Bool("append-labels", false, "Append the provided labels to the VM's existing labels instead of replacing the labels")
+	addVMLabelFlag(cmd)
 
 	return cmd
 }

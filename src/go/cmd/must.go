@@ -32,3 +32,12 @@ func MustGetInt(flags *pflag.FlagSet, name string) int {
 
 	return val
 }
+
+func MustGetStringArray(flags *pflag.FlagSet, name string) []string {
+	val, err := flags.GetStringArray(name)
+	if err != nil {
+		panic(fmt.Sprintf("Getting value for %s: %v", name, err))
+	}
+
+	return val
+}
