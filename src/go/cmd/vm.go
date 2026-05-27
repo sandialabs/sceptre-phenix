@@ -501,25 +501,6 @@ func newVMKillCmd() *cobra.Command {
 	return cmd
 }
 
-func newVMSetCmd() *cobra.Command {
-	desc := `Set configuration value for a VM
-
-  Used to set a configuration value for a virtual machine in a stopped
-  experiment. This command is not yet implemented. For now, you can edit the
-  experiment directly with 'phenix config edit'`
-
-	cmd := &cobra.Command{
-		Use:   "set",
-		Short: "Set configuration value for a VM",
-		Long:  desc,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cmd.Help()
-		},
-	}
-
-	return cmd
-}
-
 func newVMNetConnectCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "connect <experiment name> <vm name> <iface index> <vlan id>",
@@ -960,7 +941,6 @@ func init() { //nolint:gochecknoinits // cobra command
 	vmCmd.AddCommand(newVMRedeployCmd())
 	vmCmd.AddCommand(newVMShutdownCmd())
 	vmCmd.AddCommand(newVMKillCmd())
-	vmCmd.AddCommand(newVMSetCmd())
 	vmCmd.AddCommand(newVMNetCmd())
 	vmCmd.AddCommand(newVMCaptureCmd())
 	vmCmd.AddCommand(newVMMemorySnapshotCmd())
