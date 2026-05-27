@@ -293,7 +293,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 	return vm, nil
 }
 
-func Update(opts ...UpdateOption) error { //nolint:funlen // complex logic
+func Update(opts ...UpdateOption) error { //nolint:funlen,gocyclo,cyclop  // complex logic
 	o := newUpdateOptions(opts...)
 
 	if o.exp == "" || o.vm == "" {
@@ -324,6 +324,18 @@ func Update(opts ...UpdateOption) error { //nolint:funlen // complex logic
 	// The only settings that can be updated while an experiment is running is the
 	// VLAN an interface is connected to and the vm's tags
 	if running {
+		unsupported := o.cpu != 0 ||
+			o.mem != 0 ||
+			o.disk != "" ||
+			o.partition != 0 ||
+			o.dnb != nil ||
+			o.host != nil ||
+			o.snapshot != nil
+
+		if unsupported {
+			return errors.New("only interface connections and tags can be updated while experiment is running")
+		}
+
 		if o.iface == nil && o.tags == nil {
 			return errors.New(
 				"only interface connections and tags can be updated while experiment is running",
