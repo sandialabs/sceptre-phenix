@@ -229,15 +229,16 @@ func (m Minimega) GetVMInfo(opts ...Option) VMs { //nolint:funlen // complex log
 		vm.RAM, _ = strconv.Atoi(row["memory"])
 		vm.CPUs, _ = strconv.Atoi(row["vcpus"])
 
-		// TODO: confirm multiple disks are separated by whitespace.
-		disk := strings.Fields(row["disks"])[0]
-		// diskspec can include multiple settings separated by comma. Path to disk
-		// will always be first setting.
-		disk = strings.Split(disk, ",")[0]
+		var disk string
+		// Multiple disks are space-separated (minimega DiskConfigs.String).
+		if fields := strings.Fields(row["disks"]); len(fields) > 0 {
+			// Each diskspec is comma-separated (path,interface,cache); path is first.
+			disk = strings.Split(fields[0], ",")[0]
+		}
 
 		snapshot, _ := strconv.ParseBool(row["snapshot"])
 
-		if snapshot {
+		if snapshot && disk != "" {
 			cmd = mmcli.NewCommand()
 			cmd.Command = "disk info " + disk
 
@@ -806,10 +807,18 @@ func (Minimega) GetExperimentCaptures(opts ...Option) []Capture {
 		}
 
 		// `interface` column will be in the form of <vm_name>:<iface_idx>
-		iface := strings.Split(row["interface"], ":")
+		vm, idxStr, ok := strings.Cut(row["interface"], ":")
+		if !ok {
+			plog.Warn(
+				plog.TypeSystem,
+				"unexpected capture interface format",
+				"interface", row["interface"],
+			)
 
-		vm := iface[0]
-		idx, _ := strconv.Atoi(iface[1])
+			continue
+		}
+
+		idx, _ := strconv.Atoi(idxStr)
 
 		capture := Capture{
 			VM:        vm,
@@ -934,7 +943,31 @@ func (m Minimega) IsHeadnode(node string) bool {
 	// Docker containers by Docker Compose config.
 	node = common.TrimHostnameSuffixes(node)
 
-	return node == m.Headnode()
+	head := m.Headnode()
+
+	// If we can't determine the headnode, assume the local node
+	if head == "" {
+		plog.Warn(
+			plog.TypeSystem,
+			"headnode unknown; assuming local to avoid mesh-send-to-self",
+			"node", node,
+		)
+
+		return true
+	}
+
+	if node == head {
+		return true
+	}
+
+	// Fall back to the local hostname
+	if local, err := os.Hostname(); err == nil {
+		if node == common.TrimHostnameSuffixes(local) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (m Minimega) GetMMArgs() (map[string]string, error) {
@@ -1482,7 +1515,7 @@ func waitForResponse(ctx context.Context, ns, id string, timeout time.Duration) 
 	// Multiple rows will come back for each command ID, one row per cluster host.
 	// Because the `ExecC2Command` sets the filter to a specific VM, only one of
 	// the rows will have a response since a VM can only run on a single cluster
-	// host.
+	// host. A valid row from any one host is sufficient.
 
 	after := time.After(timeout)
 
@@ -1493,18 +1526,9 @@ func waitForResponse(ctx context.Context, ns, id string, timeout time.Duration) 
 		case <-after:
 			return fmt.Errorf("timeout waiting for response for command %s", id)
 		default:
-			rows := mmcli.RunTabular(cmd)
-
-			if len(rows) == 0 {
-				return fmt.Errorf("no commands returned for ID %s", id)
-			}
-
-			if rid := rows[0]["id"]; rid != id {
-				return fmt.Errorf("wrong command returned: %s", rid)
-			}
-
-			for _, row := range rows {
-				if row["responses"] != "0" {
+			// Only the host running the VM has a response; scan all rows.
+			for _, row := range mmcli.RunTabular(cmd) {
+				if row["id"] == id && row["responses"] != "0" {
 					return nil
 				}
 			}

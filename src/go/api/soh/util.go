@@ -19,7 +19,6 @@ import (
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
-	"phenix/util/common"
 	"phenix/util/mm"
 	"phenix/util/plog"
 )
@@ -1548,8 +1547,9 @@ func (s SOH) customTest( //nolint:funlen // complex logic
 		script += ".ps1"
 	}
 
-	path := fmt.Sprintf("%s/images/%s/%s", common.PhenixBase, ns, script)
-
+	// All three paths below must agree on the same minimega-relative path
+	relPath := fmt.Sprintf("%s/%s", ns, script)
+	path := mm.GetMMFullPath(relPath)
 	err := os.WriteFile(path, []byte(test.TestScript), 0o600)
 	if err != nil {
 		wg.AddError(fmt.Errorf("unable to write test script to file: %w", err), meta)
@@ -1557,11 +1557,11 @@ func (s SOH) customTest( //nolint:funlen // complex logic
 		return
 	}
 
-	command := fmt.Sprintf("%s /tmp/miniccc/files/%s", executor, script)
+	command := fmt.Sprintf("%s /tmp/miniccc/files/%s", executor, relPath)
 	opts := []mm.C2Option{
 		mm.C2NS(ns),
 		mm.C2VM(host),
-		mm.C2SendFile(script),
+		mm.C2SendFile(relPath),
 		mm.C2Command(command),
 		mm.C2Timeout(s.md.c2Timeout),
 	}
