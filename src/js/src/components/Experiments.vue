@@ -186,15 +186,21 @@
             {{ props.row.vlan_min }} - {{ props.row.vlan_max}} ({{ props.row.vlan_count }})
           </b-table-column>
           <b-table-column label="Actions" width="125" centered v-slot="props">
-            <button v-if="roleAllowed('experiments', 'delete', props.row.name)" class="button is-light is-small action" :disabled="updating( props.row.status )" @click="del( props.row.name, props.row.running )">
-              <b-icon icon="trash"></b-icon>
-            </button>
-            <router-link v-if="roleAllowed('experiments', 'get', props.row.name)" class="button is-light is-small action" :disabled="updating( props.row.status )" :to="{ name: 'soh', params: { id: props.row.name }}">
-              <b-icon icon="heartbeat"></b-icon>
-            </router-link>
-            <router-link v-if="roleAllowed('experiments', 'get', props.row.name)" class="button is-light is-small action" :disabled="updating( props.row.status )" :to="{ name: 'scorch', params: { id: props.row.name }}">
-              <b-icon icon="fire"></b-icon>
-            </router-link>
+            <b-tooltip v-if="roleAllowed('experiments', 'delete', props.row.name)" label="Delete experiment" type="is-dark">
+              <button class="button is-light is-small action" :disabled="updating( props.row.status )" @click="del( props.row.name, props.row.running )">
+                <b-icon icon="trash"></b-icon>
+              </button>
+            </b-tooltip>
+            <b-tooltip v-if="roleAllowed('experiments', 'get', props.row.name)" label="View system health" type="is-dark">
+              <router-link class="button is-light is-small action" :disabled="updating( props.row.status )" :to="{ name: 'soh', params: { id: props.row.name }}">
+                <b-icon icon="heartbeat"></b-icon>
+              </router-link>
+            </b-tooltip>
+            <b-tooltip v-if="roleAllowed('experiments', 'get', props.row.name)" label="View scorch runs" type="is-dark">
+              <router-link class="button is-light is-small action" :disabled="updating( props.row.status )" :to="{ name: 'scorchruns', params: { id: props.row.name }}">
+                <b-icon icon="fire"></b-icon>
+              </router-link>
+            </b-tooltip>
           </b-table-column>
         </b-table>
         <br>
