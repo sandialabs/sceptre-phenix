@@ -545,7 +545,7 @@
               <b-icon icon="heartbeat"></b-icon>
             </router-link>
             &nbsp;
-            <router-link v-if="roleAllowed('experiments', 'get', experiment.name)" class="button is-light" :to="{ name: 'scorch', params: { id: this.$route.params.id }}">
+            <router-link v-if="roleAllowed('experiments', 'get', experiment.name)" class="button is-light" :to="{ name: 'scorchruns', params: { id: this.$route.params.id }}">
               <b-icon icon="fire"></b-icon>
             </router-link>
           </p>
@@ -701,23 +701,6 @@
               </template>
               <template v-else>
                 {{  props.row.networks | stringify | lowercase }}
-              </template>
-            </b-table-column>
-            <b-table-column field="taps"  label="Taps" v-slot="props">
-              <template v-if="roleAllowed('vms/captures', 'create', experiment.name + '/' + props.row.name) && props.row.running && !props.row.busy">
-                <b-tooltip  :label="updateCaptureLabel(props.row)" type="is-dark">
-                  <div class="field">
-                    <div  v-for="( t, index ) in props.row.taps" 
-                      :class="tapDecorator( props.row.captures, index )" 
-                      :key="index" 
-                      @click="handlePcap( props.row, index )">
-                      {{ t | lowercase }}
-                    </div>
-                  </div>
-                </b-tooltip>
-              </template>
-              <template v-else>
-                {{  props.row.taps | stringify | lowercase }}
               </template>
             </b-table-column>
             <b-table-column field="uptime"  label="Uptime" v-slot="props">
