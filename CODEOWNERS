@@ -1,0 +1,28 @@
+# Generated from GitHub commit history by path (June 2026)
+
+# Default owners
+* @activeshadow @glattercj @cmulk @GhostofGoes @mgaliar
+
+# Repo files
+.editorconfig   @GhostofGoes
+.gitignore      @GhostofGoes @activeshadow @glattercj @cmulk
+CHANGELOG.md    @glattercj @cmulk @GhostofGoes
+LICENSE         @cmulk @mgaliar
+Makefile        @glattercj @activeshadow @GhostofGoes @cmulk
+README.md       @cmulk @activeshadow @glattercj @GhostofGoes @mgaliar
+
+# Misc directories
+/.github/       @cmulk @mgaliar @GhostofGoes @activeshadow @glattercj
+/data/          @activeshadow
+/examples/      @nblair2 @glattercj
+/scripts/       @glattercj
+
+# Containers
+/docker/        @activeshadow @glattercj @GhostofGoes @mgaliar @cmulk @nblair2
+/podman/        @activeshadow
+
+# Go code
+/src/go/        @activeshadow @glattercj @nblair2 @GhostofGoes
+
+# Web UI
+/src/js/        @activeshadow @glattercj @jacdavi @nblair2 @eric-c-wood
