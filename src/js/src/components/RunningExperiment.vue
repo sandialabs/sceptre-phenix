@@ -548,6 +548,19 @@
             <router-link v-if="roleAllowed('experiments', 'get', experiment.name)" class="button is-light" :to="{ name: 'scorchruns', params: { id: this.$route.params.id }}">
               <b-icon icon="fire"></b-icon>
             </router-link>
+            &nbsp;
+            <b-tooltip label="Select visible columns" type="is-light">
+              <b-dropdown multiple aria-role="list" position="is-bottom-left" style="margin-right: 1rem;">
+                <template #trigger>
+                  <b-button type="is-light" icon-left="columns"/>
+                </template>
+                <b-dropdown-item v-for="toggle in columnToggles" :key="toggle.key" custom>
+                  <b-checkbox v-model="columnVisibility[toggle.key]" @input="persistColumnVisibility(toggle)" size="is-small" type="is-primary">
+                    {{ toggle.label }}
+                  </b-checkbox>
+                </b-dropdown-item>
+              </b-dropdown>
+            </b-tooltip>
           </p>
         </b-field>
        </div>
@@ -629,7 +642,7 @@
                 <b-progress size="is-small" type="is-warning" show-value :value="props.row.percent" format="percent"></b-progress>
               </section>
             </b-table-column>
-            <b-table-column field="screenshot"  label="Screenshot" centered v-slot="props" width="200">
+            <b-table-column v-if="columnVisibility.screenshot" field="screenshot"  label="Screenshot" centered v-slot="props" width="200">
               <a  :href="vncLoc(props.row)" target="_blank">
                 <img :src="getVmScreenshot(props.row)" width="200" height="150">
               </a>
@@ -637,7 +650,7 @@
             <b-table-column v-if="isDelayed()" field="delayed"  label="Delay" centered v-slot="props">
               <b-tag type="is-info" v-if="props.row.delayed_start && props.row.state == 'BUILDING'">{{ props.row.delayed_start }}</b-tag>
             </b-table-column> 
-            <b-table-column field="host" label="Host" sortable v-slot="props">
+            <b-table-column v-if="columnVisibility.host" field="host" label="Host" sortable v-slot="props">
               <template v-if="props.row.external">
                 EXTERNAL
               </template>
@@ -645,7 +658,7 @@
                 {{ props.row.host }}
               </template>
             </b-table-column>   
-            <b-table-column field="ipv4"  label="IPv4">
+            <b-table-column v-if="columnVisibility.ipv4" field="ipv4"  label="IPv4">
               <template v-slot:header= "{ column }"> 
                 <div class="level">  
                   <div class="level-item"> 
@@ -683,7 +696,7 @@
                 </template>
               </template>
             </b-table-column>
-            <b-table-column field="network" label="Network" v-slot="props">
+            <b-table-column v-if="columnVisibility.network" field="network" label="Network" v-slot="props">
               <template v-if="roleAllowed('vms', 'patch', experiment.name + '/' + props.row.name) && props.row.running && !props.row.busy">                  
                 <b-tooltip  label="change vlan(s)" type="is-dark">
                   <div class="field">
@@ -703,7 +716,24 @@
                 {{  props.row.networks | stringify | lowercase }}
               </template>
             </b-table-column>
-            <b-table-column field="uptime"  label="Uptime" v-slot="props">
+            <b-table-column v-if="columnVisibility.taps" field="taps"  label="Taps" v-slot="props">
+              <template v-if="roleAllowed('vms/captures', 'create', experiment.name + '/' + props.row.name) && props.row.running && !props.row.busy">
+                <b-tooltip  :label="updateCaptureLabel(props.row)" type="is-dark">
+                  <div class="field">
+                    <div  v-for="( t, index ) in props.row.taps" 
+                      :class="tapDecorator( props.row.captures, index )" 
+                      :key="index" 
+                      @click="handlePcap( props.row, index )">
+                      {{ t | lowercase }}
+                    </div>
+                  </div>
+                </b-tooltip>
+              </template>
+              <template v-else>
+                {{  props.row.taps | stringify | lowercase }}
+              </template>
+            </b-table-column>
+            <b-table-column v-if="columnVisibility.uptime" field="uptime"  label="Uptime" v-slot="props">
               <template v-if="props.row.external">
                 unknown 
               </template>
@@ -711,7 +741,7 @@
                 {{ props.row.uptime | uptime }}
               </template>
             </b-table-column>
-            <b-table-column label="Labels" centered v-slot="props">
+            <b-table-column v-if="columnVisibility.labels" label="Labels" centered v-slot="props">
                 <template>
                   <b-tooltip label="View/Edit Labels" type="is-dark">
                     <div @click="showTagsModal( props.row )" class="is-clickable">
@@ -850,6 +880,7 @@
 
     async created () {
       this.$options.sockets.onmessage = this.handler;
+      this.loadColumnVisibility();
       this.updateExperiment();
 
       try {
@@ -927,14 +958,27 @@
     },
 
     methods: {
+      getUserStorageKey (storageKey) {
+        var user = localStorage.getItem('user');
+        return user + '.' + storageKey;
+      },
+      loadColumnVisibility () {
+        this.columnToggles.forEach((toggle) => {
+          let value = localStorage.getItem(this.getUserStorageKey(toggle.storageKey));
+          if (value !== null) {
+            this.columnVisibility[toggle.key] = value == 'true';
+          }
+        });
+      },
+      persistColumnVisibility (toggle) {
+        localStorage.setItem(this.getUserStorageKey(toggle.storageKey), this.columnVisibility[toggle.key]);
+      },
       changePaginate () {
-        var user = localStorage.getItem( 'user' );
-        localStorage.setItem( user + '.lastPaginate', this.table.isPaginated );
+        localStorage.setItem(this.getUserStorageKey('lastPaginate'), this.table.isPaginated);
       },
 
       changeFilesPaginate () {
-        var user = localStorage.getItem( 'user' );
-        localStorage.setItem( user + '.lastPaginate', this.filesTable.isPaginated );
+        localStorage.setItem(this.getUserStorageKey('lastPaginate'), this.filesTable.isPaginated );
       },
 
       vncLoc (vm) {
@@ -3371,6 +3415,24 @@
         searchHistory: [],
         searchHistoryLength:10,
         searchPlaceholder:"Find a VM",
+        columnToggles: [
+          { key: 'screenshot', label: 'Screenshots', storageKey: 'showScreenshotsColumn' },
+          { key: 'host', label: 'Host', storageKey: 'showHostColumn' },
+          { key: 'ipv4', label: 'IPv4', storageKey: 'showIPv4Column' },
+          { key: 'network', label: 'Network', storageKey: 'showNetworkColumn' },
+          { key: 'taps', label: 'Taps', storageKey: 'showTapsColumn' },
+          { key: 'uptime', label: 'Uptime', storageKey: 'showUptimeColumn' },
+          { key: 'labels', label: 'Labels', storageKey: 'showLabelsColumn' }
+        ],
+        columnVisibility: {
+          screenshot: true,
+          host: true,
+          ipv4: true,
+          network: true,
+          taps: true,
+          uptime: true,
+          labels: true
+        },
         activeTab:0,
         netflow: {
           tooltip: "Start Netflow Capture",
