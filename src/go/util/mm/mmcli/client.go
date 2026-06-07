@@ -220,10 +220,9 @@ func Run(c *Command) chan *miniclient.Response {
 	case <-done:
 		return <-resp
 	case <-time.After(c.Timeout):
-		// Dispatch is stuck (the connection's internal lock is likely held by a
-		// previous unresponsive command). Flag this connection for replacement so
-		// the next call redials, rather than nil-ing out a shared pointer that
-		// live readers may still reference.
+		// Dispatch is stuck, close it so the goroutine fails
+		active.Close()
+		// Flag it so the next call redials
 		markDead(active)
 
 		return wrapErr(ErrTimeout)
