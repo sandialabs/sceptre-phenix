@@ -95,3 +95,29 @@ jobs:
           tags: ${{ steps.meta-jit.outputs.tags }}
     outputs:
       image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+
+  # Build the Podman Containerfile so it can't drift from the Docker build and
+  # break unnoticed. podman is preinstalled on ubuntu-latest runners.
+  build-podman:
+    name: Build Podman Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Get short SHA
+        run: echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - name: Build Podman image (through the Go build stage)
+        # Build the jsbuilder + gobuilder stages, which cover everything that can
+        # break from a code change. The final runtime stage pulls several
+        # external, flaky resources (filebeat, vmdb2, the Kali keyring), so it is
+        # intentionally skipped here to keep this check reliable.
+        run: |
+          podman build \
+            -f podman/Containerfile \
+            --target gobuilder \
+            --build-arg PHENIX_COMMIT=${{ env.sha }} \
+            --build-arg PHENIX_VERSION=ci \
+            -t phenix-podman-ci \
+            .

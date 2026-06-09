@@ -30,6 +30,7 @@ Adding a new setting:
 type Settings struct {
 	PasswordSettings PasswordSettings `json:"password_settings"`
 	LoggingSettings  LoggingSettings  `json:"logging_settings"`
+	TimeoutSettings  TimeoutSettings  `json:"timeout_settings"`
 }
 
 func GetSettings() (*Settings, error) {
@@ -52,6 +53,11 @@ func GetSettings() (*Settings, error) {
 		return nil, fmt.Errorf("error getting logging settings: %w", err)
 	}
 
+	settings.TimeoutSettings, err = GetTimeoutSettingsFromList(settingList)
+	if err != nil {
+		return nil, fmt.Errorf("error getting timeout settings: %w", err)
+	}
+
 	return settings, nil
 }
 
@@ -64,6 +70,10 @@ func UpdateAllSettings(newSettings Settings) error {
 	err = UpdateLoggingSettings(newSettings.LoggingSettings)
 	if err != nil {
 		return fmt.Errorf("error updating logging settings: %w", err)
+	}
+
+	if err := UpdateTimeoutSettings(newSettings.TimeoutSettings); err != nil {
+		return fmt.Errorf("error updating timeout settings: %w", err)
 	}
 
 	return nil
@@ -226,4 +236,8 @@ func parseFloat(value string) (float64, error) {
 
 func formatInt(value int32) string {
 	return strconv.FormatInt(int64(value), 10)
+}
+
+func formatFloat(value float64) string {
+	return strconv.FormatFloat(value, 'f', -1, 64)
 }

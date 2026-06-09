@@ -83,7 +83,6 @@ install-dev:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
 	$(call check-command,protoc,Please install protobuf-compiler (e.g. sudo apt install protobuf-compiler))
 	$(call check-command,npm,Please install npm (e.g. sudo apt install npm))
-	$(call check-command,yarn,Please install yarn (e.g. sudo npm install -g yarn))
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	go install go.uber.org/mock/mockgen@latest
 	$(MAKE) -C src/go install-dev
@@ -113,7 +112,6 @@ tunneler:
 	$(MAKE) -C src/go phenix-tunneler
 
 ui:
-	$(call check-command,yarn,Please install yarn (e.g. sudo npm install -g yarn))
 	$(MAKE) -C src/js dist/index.html
 
 bin/phenix: generate $(if $(SKIP_UI),,ui)
@@ -156,6 +154,5 @@ version:
 	@printf "Python:     " && (python3 --version 2>/dev/null || echo "Not installed")
 	@printf "Node:       " && (node --version 2>/dev/null || echo "Not installed")
 	@printf "NPM:        " && (npm --version 2>/dev/null || echo "Not installed")
-	@printf "Yarn:       " && (yarn --version 2>/dev/null || echo "Not installed")
 	@printf "Protoc:     " && (protoc --version 2>/dev/null || echo "Not installed")
 	@printf "Docker:     " && (docker --version 2>/dev/null || echo "Not installed")

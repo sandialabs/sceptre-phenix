@@ -1,0 +1,8 @@
+@import '_variables';
+
+// Bulma - Vite confuses it as an ordinary JavaScript module if we do @import "bulma"
+@import 'bulma/bulma';
+// Buefy
+@import 'buefy/src/scss/buefy';
+
+@import '_general';
