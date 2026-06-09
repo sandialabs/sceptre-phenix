@@ -15,6 +15,8 @@ const (
 	DefaultPasswordMinLength = 8
 	DefaultLogMaxFileSize    = 100
 	DefaultLogMaxFileAge     = 90
+	DefaultTimeoutMin        = 30
+	DefaultWarningMin        = 3
 )
 
 var DefaultSettings = []v2.Setting{ //nolint:gochecknoglobals // global constant
@@ -43,6 +45,10 @@ var DefaultSettings = []v2.Setting{ //nolint:gochecknoglobals // global constant
 		Value:    strconv.FormatBool(false),
 	},
 	{Category: "Password", Name: "MinLength", Type: v2.SettingValueInt, Value: formatInt(DefaultPasswordMinLength)},
+
+	{Category: "Timeout", Name: "Enabled", Type: v2.SettingValueBool, Value: strconv.FormatBool(false)},
+	{Category: "Timeout", Name: "TimeoutMin", Type: v2.SettingValueFloat, Value: formatFloat(DefaultTimeoutMin)},
+	{Category: "Timeout", Name: "WarningMin", Type: v2.SettingValueFloat, Value: formatFloat(DefaultWarningMin)},
 
 	{Category: "Logging", Name: "MaxFileRotations", Type: v2.SettingValueInt, Value: formatInt(0)},
 	{Category: "Logging", Name: "MaxFileSize", Type: v2.SettingValueInt, Value: formatInt(DefaultLogMaxFileSize)},
