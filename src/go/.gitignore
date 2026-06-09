@@ -5,6 +5,6 @@ mock.go
 known_policy.go
 
 web/public/assets
-web/public/favicon.ico
+web/public/favicon*.ico
 web/public/index.html
 web/public/docs/index.html

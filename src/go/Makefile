@@ -92,7 +92,7 @@ clean: lint-clean
 	$(RM) store/mock.go
 	$(RM) web/proto/*.pb.go
 	$(RM) web/public/docs/index.html
-	$(RM) web/public/favicon.ico
+	$(RM) web/public/favicon*.ico
 	$(RM) web/public/index.html
 	$(RM) -r web/public/assets
 	$(RM) web/rbac/known_policy.go
@@ -113,7 +113,7 @@ bin/protoc-gen-go:
 	go install google.golang.org/protobuf/cmd/protoc-gen-go
 
 web/public/docs/index.html: web/public/docs/openapi.yml
-	npx redoc-cli build web/public/docs/openapi.yml -o web/public/docs/index.html --title 'phenix API'
+	npx @redocly/cli build-docs web/public/docs/openapi.yml -o web/public/docs/index.html --title 'phenix API'
 
 web/public/index.html:
 	$(MAKE) -C ../js dist/index.html

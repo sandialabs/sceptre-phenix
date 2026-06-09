@@ -1,6 +1,6 @@
-FROM docker.io/library/node:12.18.3 AS jsbuilder
+FROM docker.io/library/node:24.16.0 AS jsbuilder
 
-RUN npm install -g @vue/cli redoc-cli
+RUN npm install -g @redocly/cli
 
 COPY ./src/js /phenix/src/js
 
@@ -9,20 +9,20 @@ WORKDIR /phenix/src/js
 ARG PHENIX_WEB_AUTH=disabled
 ARG PHENIX_BASE_PATH=/
 
-ENV VUE_APP_AUTH ${PHENIX_WEB_AUTH}
-ENV VUE_BASE_PATH ${PHENIX_BASE_PATH}
+ENV VITE_AUTH=${PHENIX_WEB_AUTH}
+ENV VITE_BASE_PATH=${PHENIX_BASE_PATH}
 
-RUN npm install \
+RUN npm ci \
   && npm run build
 
 COPY ./src/go/web/public/docs/openapi.yml /phenix/src/go/web/public/docs/openapi.yml
 
 WORKDIR /phenix/src/go/web/public/docs
 
-RUN npx redoc-cli bundle openapi.yml -o index.html --title 'phenix API'
+RUN npx @redocly/cli build-docs openapi.yml -o index.html --title 'phenix API'
 
 
-FROM docker.io/library/golang:1.17.2 AS gobuilder
+FROM docker.io/library/golang:1.24.1 AS gobuilder
 
 RUN apt update \
   && apt install -y protobuf-compiler xz-utils
@@ -47,7 +47,9 @@ RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
 ARG PHENIX_VERSION
 ARG PHENIX_COMMIT
 
-RUN VER=${PHENIX_VERSION} COMMIT=${PHENIX_COMMIT} make bin/phenix
+# Skip the UI build: it was already built in the jsbuilder stage and copied in
+# above (this golang stage has no node/npm).
+RUN VER=${PHENIX_VERSION} COMMIT=${PHENIX_COMMIT} make bin/phenix SKIP_UI=1
 
 RUN git clone --branch main https://github.com/sandialabs/sceptre-phenix-apps.git /phenix-apps
 

@@ -3,6 +3,7 @@ package disk
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,12 @@ import (
 )
 
 type MMDiskFiles struct{}
+
+// diskSizeRe validates the size argument passed to `disk resize` before it is
+// interpolated into a minimega command. It is anchored so the entire value must
+// be an (optionally signed) integer followed by a unit suffix, matching the
+// format the web UI allows (see views/Disks.vue).
+var diskSizeRe = regexp.MustCompile(`^[+-]?\d+[KMGTPE]$`)
 
 func (MMDiskFiles) CommitDisk(path string) error {
 	cmd := mmcli.NewCommand()
@@ -44,6 +51,10 @@ func (MMDiskFiles) RebaseDisk(src, dst string, unsafe bool) error {
 }
 
 func (MMDiskFiles) ResizeDisk(src, size string) error {
+	if !diskSizeRe.MatchString(size) {
+		return fmt.Errorf("invalid disk size %q: must be an optionally signed integer followed by one of K, M, G, T, P, E", size)
+	}
+
 	cmd := mmcli.NewCommand()
 	cmd.Command = fmt.Sprintf("disk resize %s %s", src, size)
 	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
@@ -186,7 +197,7 @@ func resolveImage(path string) []Details {
 	}
 
 	if !knownFormat {
-		plog.Debug(plog.TypeSystem, "file didn't match know image extensions: %s", "path", path)
+		plog.Debug(plog.TypeSystem, "file didn't match known image extensions: %s", "path", path)
 
 		return imageDetails
 	}

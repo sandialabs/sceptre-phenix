@@ -2,6 +2,9 @@
 node_modules
 /dist
 
+# Vite dependency-optimizer cache
+.vite
+
 # local env files
 .env.local
 .env.*.local
