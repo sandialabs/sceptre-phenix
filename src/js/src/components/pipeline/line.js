@@ -6,11 +6,11 @@ export class EdgeService {
 
   static getDrawEdgeService(lineStyle, step) {
     switch (lineStyle) {
-      case "default":
+      case 'default':
         return new DefaultStyleService(step.x, step.y);
-      case "bessel":
+      case 'bessel':
         return new BesselStyleService(step.x, step.y);
-      case "line":
+      case 'line':
         return new LineStyleService(step.x, step.y);
       default:
         break;
@@ -21,7 +21,7 @@ export class EdgeService {
   drawEdge(start, end) {}
 
   drawVerticalEdge(start, end) {
-      const radius=14
+    const radius = 14;
     return `M ${start.x},${start.y + radius} L${start.x},${start.y + radius} ${end.x},${
       end.y - radius
     }`;
@@ -81,10 +81,10 @@ class DefaultStyleService extends EdgeService {
     if (start.x == end.x) {
       return this.drawVerticalEdge(start, end);
     }
-    const lb = "c 0 12 12 12 12 12";
-    const rb = "c 12 0 12 -12 12 -12";
-    const rt = "c 12 0 12 12 12 12";
-    const lt = "c 0 -12 12 -12 12 -12";
+    const lb = 'c 0 12 12 12 12 12';
+    const rb = 'c 12 0 12 -12 12 -12';
+    const rt = 'c 12 0 12 12 12 12';
+    const lt = 'c 0 -12 12 -12 12 -12';
     let midy = Math.abs(end.y - start.y);
     if (end.y > start.y) {
       // 左上到右下

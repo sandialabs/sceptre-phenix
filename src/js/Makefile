@@ -35,14 +35,13 @@ clean:
 	$(RM) -r node_modules
 
 install:
-	$(call check-command,yarn,Please install yarn (e.g. sudo npm install -g yarn))
-	yarn install
+	$(call check-command,npm,Please install Node.js and npm (https://nodejs.org))
+	npm ci
 
 install-dev: install
 
 dist: dist/index.html
 
 dist/index.html: $(SOURCES)
-	$(call check-command,yarn,Please install yarn (e.g. sudo npm install -g yarn))
-	yarn install
-	yarn build
+	$(call check-command,npm,Please install Node.js and npm (https://nodejs.org))
+	npm ci && npm run build

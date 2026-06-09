@@ -4210,3 +4210,34 @@ func GetPasswordRequirements(w http.ResponseWriter, r *http.Request) {
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
+
+// GetTimeoutSettings - GET /settings/timeout.
+func GetTimeoutSettings(w http.ResponseWriter, r *http.Request) {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetTimeoutSettings")
+
+	_ = settings.SetDefaults()
+
+	timeoutReqs, err := settings.GetTimeoutSettings()
+	if err != nil {
+		plog.Error(plog.TypeSystem, "Getting timeout settings:", "err", err)
+		http.Error(
+			w,
+			http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError,
+		)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	body, err := json.Marshal(timeoutReqs)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "Marshalling timeout reqs:", "err", err)
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+
+		return
+	}
+
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+}
