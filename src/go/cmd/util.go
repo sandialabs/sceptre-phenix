@@ -135,5 +135,5 @@ func init() { //nolint:gochecknoinits // cobra command
 	utilCmd.AddCommand(newUtilAppJSONCmd())
 	utilCmd.AddCommand(newUtilRoleTableCmd())
 
-	rootCmd.AddCommand(utilCmd)
+	addCommandToRoot(utilCmd, true)
 }

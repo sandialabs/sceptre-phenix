@@ -71,5 +71,5 @@ PowerShell:
 }
 
 func init() { //nolint:gochecknoinits // cobra command
-	rootCmd.AddCommand(newCompletionCmd())
+	addCommandToRoot(newCompletionCmd(), true)
 }
