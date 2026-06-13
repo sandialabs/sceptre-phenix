@@ -162,7 +162,7 @@ func newImageCreateCmd() *cobra.Command {
 
 	cmd.Flags().StringP("size", "s", "10G", "Image size to use")
 	cmd.Flags().StringP("variant", "v", "minbase", "Image variant to use")
-	cmd.Flags().StringP("release", "r", "jammy", "OS release codename")
+	cmd.Flags().StringP("release", "r", "noble", "OS release codename")
 	cmd.Flags().
 		StringP("mirror", "m", "http://us.archive.ubuntu.com/ubuntu", "Debootstrap mirror (must match release)")
 	cmd.Flags().

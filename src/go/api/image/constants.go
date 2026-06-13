@@ -162,6 +162,13 @@ var DefaultPackages = []string{ //nolint:gochecknoglobals // global constant
 
 var DebianComponents = []string{ //nolint:gochecknoglobals // global constant
 	"main",
+	"contrib",
+	"non-free",
+	"non-free-firmware",
+}
+
+var UbuntuComponents = []string{ //nolint:gochecknoglobals // global constant
+	"main",
 	"restricted",
 	"universe",
 	"multiverse",
