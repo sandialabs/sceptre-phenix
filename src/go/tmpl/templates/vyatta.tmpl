@@ -257,6 +257,11 @@ set service snmp trap-target {{ $target }} community '{{ $community.Name }}'
     {{- end }}
 # --------------------------------- System --------------------------------
 set system host-name {{ $node.RouterName }}
+{{- range $idx, $iface := $node.Network.Interfaces }}
+    {{- range $dnsServer := $iface.DNS }}
+set system name-server {{ $dnsServer }}
+    {{- end }}
+{{- end }}
 commit
 save
 exit
