@@ -186,7 +186,10 @@ func resolveImage(path string) []Details {
 	}
 
 	if !knownFormat {
-		plog.Debug(plog.TypeSystem, "file didn't match know image extensions: %s", "path", path)
+		// Only log non-snapshot files
+		if !strings.Contains(path, "_snapshot") {
+			plog.Debug(plog.TypeSystem, "file didn't match known image extensions", "path", path, "knownExtensions", knownImageExtensions)
+		}
 
 		return imageDetails
 	}
