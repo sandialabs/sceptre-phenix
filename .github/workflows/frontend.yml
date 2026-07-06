@@ -1,0 +1,91 @@
+name: Frontend
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'src/js/**'
+      - 'src/go/**'
+      - 'docker/**'
+      - 'Makefile'
+      - '.github/workflows/frontend.yml'
+  pull_request:
+    paths:
+      - 'src/js/**'
+      - 'src/go/**'
+      - 'docker/**'
+      - 'Makefile'
+      - '.github/workflows/frontend.yml'
+
+env:
+  GO_VERSION: '1.24'
+  NODE_VERSION: '24'
+
+jobs:
+  test-js:
+    name: Unit Tests (JS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/js
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: src/js/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Run unit tests
+        run: npm test
+
+  test-e2e:
+    name: E2E Smoke (UI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            src/js/package-lock.json
+            src/js/e2e/package-lock.json
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: src/go/go.sum
+      - name: Install system dependencies
+        run: sudo apt-get update -q && sudo apt-get install -y protobuf-compiler
+      - name: Build UI
+        working-directory: src/js
+        run: |
+          npm ci
+          VITE_AUTH=disabled npm run build
+      - name: Build phenix
+        # SKIP_UI keeps make from rebuilding the UI already built with VITE_AUTH=disabled
+        run: make bin/phenix SKIP_UI=1
+      - name: Start phenix UI
+        run: |
+          ./bin/phenix ui --store.endpoint bolt:///tmp/phenix-e2e.bdb \
+            --listen-endpoint 127.0.0.1:3000 &> /tmp/phenix-ui.log &
+          timeout 30 bash -c \
+            'until curl -sf http://127.0.0.1:3000/api/v1/experiments > /dev/null; do sleep 1; done'
+      - name: Install e2e dependencies
+        working-directory: src/js/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Run e2e smoke tests
+        working-directory: src/js/e2e
+        run: npx playwright test
+      - name: Server log
+        if: failure()
+        run: tail -100 /tmp/phenix-ui.log
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-artifacts
+          path: src/js/e2e/test-results

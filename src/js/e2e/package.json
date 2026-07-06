@@ -1,0 +1,8 @@
+{
+  "name": "phenix-ui-e2e",
+  "private": true,
+  "description": "Browser smoke tests for the phenix web UI",
+  "devDependencies": {
+    "@playwright/test": "1.61.0"
+  }
+}
