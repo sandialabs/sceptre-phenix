@@ -330,6 +330,12 @@
             }
 
             switch ( msg.resource.action ) {
+              case 'start':
+              case 'stop': {
+                this.runsView(this.exp.name);
+                break;
+              }
+
               case 'delete': {
                 this.$router.replace({name: 'scorch'});
               

@@ -47,9 +47,6 @@ func startExperiment(name string) ([]byte, error) {
 
 	defer cache.UnlockExperiment(name)
 
-	// Clear previous SCORCH pipeline runtime state before experiment start
-	scorch.DeletePipeline(name, -1, -1, false)
-
 	broker.Broadcast(
 		bt.NewRequestPolicy("experiments/start", "update", name),
 		bt.NewResource("experiment", name, "starting"),
@@ -168,6 +165,9 @@ func startExperiment(name string) ([]byte, error) {
 
 				return nil, err.SetStatus(http.StatusBadRequest)
 			}
+
+			// Clear previous SCORCH pipeline runtime state after successful experiment start.
+			scorch.DeletePipeline(name, -1, -1, false)
 
 			// We don't want to use the HTTP request's context here.
 			ctx, cancel := context.WithCancel(context.Background())
@@ -288,9 +288,6 @@ func stopExperiment(name string) ([]byte, error) {
 
 		return nil, err.SetStatus(http.StatusBadRequest)
 	}
-
-	// Clear previous SCORCH pipeline runtime state after successful experiment stop
-	scorch.DeletePipeline(name, -1, -1, false)
 
 	exp, err := experiment.Get(name)
 	if err != nil {
