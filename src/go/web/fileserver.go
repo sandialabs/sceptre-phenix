@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -177,8 +178,15 @@ const fileServerLoginHTML = `<!doctype html>
 </html>
 `
 
-var fileServerIndexTemplate = template.Must(template.New("fileserver-index").Parse(fileServerIndexHTML)) //nolint:gochecknoglobals // shared parsed template
-var fileServerLoginTemplate = template.Must(template.New("fileserver-login").Parse(fileServerLoginHTML)) //nolint:gochecknoglobals // shared parsed template
+//nolint:gochecknoglobals // shared parsed template
+var fileServerIndexTemplate = template.Must(
+	template.New("fileserver-index").Parse(fileServerIndexHTML),
+)
+
+//nolint:gochecknoglobals // shared parsed template
+var fileServerLoginTemplate = template.Must(
+	template.New("fileserver-login").Parse(fileServerLoginHTML),
+)
 
 type fileServerIndexData struct {
 	User        string
@@ -260,7 +268,7 @@ func fileServerCookieAuth(h http.Handler, jwtKey string) http.Handler {
 
 // newFileServerResponseRecorder buffers fileserver responses so auth errors can redirect.
 func newFileServerResponseRecorder() *fileServerResponseRecorder {
-	return &fileServerResponseRecorder{header: make(http.Header)}
+	return &fileServerResponseRecorder{header: make(http.Header)} //nolint:exhaustruct // partial initialization
 }
 
 // Header returns the buffered response headers.
@@ -319,7 +327,7 @@ func fileServerLogin(proxyAuthHeader string) http.HandlerFunc {
 		switch r.Method {
 		case http.MethodGet:
 			if proxyAuthHeader == "" && r.Header.Get("X-Phenix-Auth-Token") == "" {
-				renderFileServerLogin(w, fileServerLoginData{})
+				renderFileServerLogin(w, fileServerLoginData{Error: "", Proxy: false})
 
 				return
 			}
@@ -335,7 +343,7 @@ func fileServerLogin(proxyAuthHeader string) http.HandlerFunc {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 		case http.MethodPost:
 			if err := r.ParseForm(); err != nil {
-				renderFileServerLogin(w, fileServerLoginData{Error: err.Error()})
+				renderFileServerLogin(w, fileServerLoginData{Error: err.Error(), Proxy: proxyAuthHeader != ""})
 
 				return
 			}
@@ -343,7 +351,7 @@ func fileServerLogin(proxyAuthHeader string) http.HandlerFunc {
 			req := LoginRequest{Username: r.FormValue("username"), Password: r.FormValue("password")}
 			token, err := loginFileServerUser(r, &req)
 			if err != nil {
-				renderFileServerLogin(w, fileServerLoginData{Error: err.Error()})
+				renderFileServerLogin(w, fileServerLoginData{Error: err.Error(), Proxy: proxyAuthHeader != ""})
 
 				return
 			}
@@ -392,7 +400,7 @@ func loginFileServerUser(r *http.Request, req *LoginRequest) (string, error) {
 	}
 
 	if resp.Token == "" {
-		return "", fmt.Errorf("missing login token")
+		return "", errors.New("missing login token")
 	}
 
 	return resp.Token, nil
@@ -400,7 +408,7 @@ func loginFileServerUser(r *http.Request, req *LoginRequest) (string, error) {
 
 // setFileServerTokenCookie stores the phenix auth token for browser form requests.
 func setFileServerTokenCookie(w http.ResponseWriter, token string) {
-	http.SetCookie(w, &http.Cookie{ //nolint:exhaustruct // only relevant cookie fields
+	http.SetCookie(w, &http.Cookie{
 		Name:     fileServerTokenCookie,
 		Value:    encodeFileServerTokenCookie(token),
 		Path:     "/",
@@ -426,7 +434,7 @@ func decodeFileServerTokenCookie(value string) (string, error) {
 
 // clearFileServerTokenCookie expires the fileserver auth cookie.
 func clearFileServerTokenCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{ //nolint:exhaustruct // only relevant cookie fields
+	http.SetCookie(w, &http.Cookie{
 		Name:     fileServerTokenCookie,
 		Value:    "",
 		Path:     "/",
@@ -543,7 +551,12 @@ func renderFileServerIndex(w http.ResponseWriter, r *http.Request, message strin
 	names := experimentNames(experiments, role)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	data := fileServerIndexData{User: middleware.UserFromContext(r.Context()), Message: message, Experiments: names, AuthEnabled: authEnabled}
+	data := fileServerIndexData{
+		User:        middleware.UserFromContext(r.Context()),
+		Message:     message,
+		Experiments: names,
+		AuthEnabled: authEnabled,
+	}
 	if err := fileServerIndexTemplate.Execute(w, data); err != nil {
 		plog.Error(plog.TypeSystem, "rendering file server index", "err", err)
 	}

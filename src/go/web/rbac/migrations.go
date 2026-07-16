@@ -77,7 +77,10 @@ func ensureExperimentFilesCreatePolicy(role *v1.RoleSpec, names []string) bool {
 		return changed
 	}
 
-	role.Policies = append(role.Policies, &v1.PolicySpec{Resources: []string{experimentFilesResource}, ResourceNames: names, Verbs: []string{experimentFilesCreateVerb}})
+	role.Policies = append(
+		role.Policies,
+		&v1.PolicySpec{Resources: []string{experimentFilesResource}, ResourceNames: names, Verbs: []string{experimentFilesCreateVerb}},
+	)
 
 	return true
 }

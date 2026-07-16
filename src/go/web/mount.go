@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -557,6 +558,8 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) {
 }
 
 // CopyExperimentFileToMount copies a same-experiment file into a mounted VM directory.
+//
+//nolint:funlen // complex logic
 func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	basePath := mm.GetLocalMountPath(vars["exp"], vars["name"])
@@ -638,7 +641,11 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	destFile, err := os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) //nolint:gosec // destination validated against mount path
+	destFile, err := os.OpenFile(
+		destPath,
+		os.O_CREATE|os.O_TRUNC|os.O_WRONLY,
+		0o600,
+	) //nolint:gosec // destination validated against mount path
 	if err != nil {
 		http.Error(w, "Error creating destination file: "+err.Error(), http.StatusInternalServerError)
 
@@ -656,7 +663,7 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) {
 // getExperimentFilePath returns a source path only when it matches a known experiment file.
 func getExperimentFilePath(expName, source, filesDir string) (string, error) {
 	if source == "" {
-		return "", fmt.Errorf("no source file provided")
+		return "", errors.New("no source file provided")
 	}
 
 	files, err := experiment.Files(expName, "")
@@ -679,13 +686,13 @@ func getExperimentFilePath(expName, source, filesDir string) (string, error) {
 		}
 
 		if info.IsDir() {
-			return "", fmt.Errorf("source is a directory")
+			return "", errors.New("source is a directory")
 		}
 
 		return path, nil
 	}
 
-	return "", fmt.Errorf("file not found")
+	return "", errors.New("file not found")
 }
 
 // validatePathWithin returns an error when path escapes base.
@@ -696,7 +703,7 @@ func validatePathWithin(path, base string) error {
 	}
 
 	if rel == ".." || strings.HasPrefix(rel, "../") {
-		return fmt.Errorf("path is not within base")
+		return errors.New("path is not within base")
 	}
 
 	return nil
