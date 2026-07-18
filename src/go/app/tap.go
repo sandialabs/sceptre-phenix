@@ -16,7 +16,15 @@ import (
 	"phenix/util/tap"
 )
 
-const tapNameRandomLength = 8
+const (
+	tapNameRandomLength = 8
+
+	// tapStagePreStart runs tap creation during the experiment's pre-start stage.
+	tapStagePreStart = "pre-start"
+	// tapStagePostStart runs tap creation during the experiment's post-start
+	// stage. This is the default to preserve backwards compatibility.
+	tapStagePostStart = "post-start"
+)
 
 func init() { //nolint:gochecknoinits // app registration
 	err := RegisterUserApp("tap", func() App { return new(Tap) })
@@ -26,7 +34,11 @@ func init() { //nolint:gochecknoinits // app registration
 }
 
 type TapAppMetadata struct {
-	Taps []*tap.Tap `mapstructure:"taps"`
+	// Stage controls which experiment lifecycle stage the taps are created in.
+	// Valid values are "pre-start" and "post-start". Defaults to "post-start"
+	// when unset.
+	Stage string     `mapstructure:"stage"`
+	Taps  []*tap.Tap `mapstructure:"taps"`
 }
 
 type TapAppStatus struct {
@@ -48,11 +60,18 @@ func (Tap) Configure(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (Tap) PreStart(ctx context.Context, exp *types.Experiment) error {
-	return nil
+func (t *Tap) PreStart(ctx context.Context, exp *types.Experiment) error {
+	return t.createTaps(exp, tapStagePreStart)
 }
 
 func (t *Tap) PostStart(ctx context.Context, exp *types.Experiment) error {
+	return t.createTaps(exp, tapStagePostStart)
+}
+
+// createTaps creates the configured host taps if the app's configured stage
+// matches the given stage. The stage defaults to "post-start" when unset in the
+// app metadata, preserving the original behavior.
+func (t *Tap) createTaps(exp *types.Experiment, stage string) error {
 	app := exp.App(t.Name())
 	if app == nil {
 		// this should never happen...
@@ -62,6 +81,25 @@ func (t *Tap) PostStart(ctx context.Context, exp *types.Experiment) error {
 	var amd TapAppMetadata
 	if err := app.ParseMetadata(&amd); err != nil {
 		return fmt.Errorf("decoding %s app metadata: %w", t.Name(), err)
+	}
+
+	configuredStage := amd.Stage
+	if configuredStage == "" {
+		configuredStage = tapStagePostStart
+	}
+
+	switch configuredStage {
+	case tapStagePreStart, tapStagePostStart:
+	default:
+		return fmt.Errorf(
+			"invalid stage %q for %s app: must be %q or %q",
+			amd.Stage, t.Name(), tapStagePreStart, tapStagePostStart,
+		)
+	}
+
+	// Only create taps during the stage the app is configured to run in.
+	if configuredStage != stage {
+		return nil
 	}
 
 	hosts, err := mm.GetNamespaceHosts(exp.Metadata.Name)
