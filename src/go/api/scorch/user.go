@@ -26,6 +26,11 @@ const (
 	levelDebug = "DEBUG"
 
 	logFlushInterval = 10 * time.Millisecond
+
+	// uiUpdateBuffer is how many component output updates can be queued for
+	// the scorch UI modal before further updates are dropped instead of
+	// blocking component execution.
+	uiUpdateBuffer = 256
 )
 
 type UserComponent struct {
@@ -161,27 +166,19 @@ func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data [
 		Status:  statusRunning,
 	}
 
+	sendUI, stopUI := startUIForwarder(update)
+
 	stdout := make(chan []byte)
 
 	stderrChan := make(chan []byte)
-	go processLogChannel(stderrChan, func(level, msg string) {
-		kv := []any{
-			"component", u.options.Name,
-			"stage", stage,
-			"exp", u.options.Exp.Spec.ExperimentName(),
-		}
 
-		switch level {
-		case levelError, "ERR":
-			plog.Error(plog.TypeScorch, msg, kv...)
-		case levelWarn, "WARNING":
-			plog.Warn(plog.TypeScorch, msg, kv...)
-		case levelDebug, "DBG":
-			plog.Debug(plog.TypeScorch, msg, kv...)
-		default:
-			plog.Info(plog.TypeScorch, msg, kv...)
-		}
-	})
+	logDone := make(chan struct{})
+
+	go func() {
+		defer close(logDone)
+
+		processLogChannel(stderrChan, u.componentLogger(stage, sendUI))
+	}()
 
 	opts := []shell.Option{
 		shell.Command(cmd),
@@ -205,15 +202,30 @@ func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data [
 		shell.StreamStderr(stderrChan),
 	}
 
+	var (
+		stdoutBuf  bytes.Buffer
+		stdoutDone = make(chan struct{})
+	)
+
 	go func() {
+		defer close(stdoutDone)
+
 		for output := range stdout {
-			update.Output = output
-			update.Output = append(update.Output, '\n')
-			scorch.UpdateComponent(update)
+			output = append(output, '\n')
+			stdoutBuf.Write(output)
+			sendUI(output)
 		}
 	}()
 
-	stdoutBytes, _, err := shell.ExecCommand(ctx, opts...)
+	_, _, err := shell.ExecCommand(ctx, opts...)
+
+	// ExecCommand closes both stream channels on every return path, so these
+	// joins are prompt. The UI forwarder is stopped only after both senders
+	// have exited.
+	<-stdoutDone
+	<-logDone
+	stopUI()
+
 	if err != nil {
 		return fmt.Errorf(
 			"external user component %s (command %s) failed: %w",
@@ -223,8 +235,10 @@ func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data [
 		)
 	}
 
-	if len(stdoutBytes) != 0 {
-		plog.Info(plog.TypePhenixApp, string(stdoutBytes),
+	// Anything a component writes directly to stdout (log messages go to
+	// stderr as JSON) is captured here so it still lands in the phenix log.
+	if stdoutBuf.Len() != 0 {
+		plog.Info(plog.TypePhenixApp, strings.TrimRight(stdoutBuf.String(), "\n"),
 			"experiment", u.options.Exp.Spec.ExperimentName(),
 			"app", "scorch",
 			"component", u.options.Name,
@@ -236,6 +250,69 @@ func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data [
 	}
 
 	return nil
+}
+
+// startUIForwarder returns a send function that streams component output to
+// the scorch UI modal without ever blocking the caller: updates flow through
+// a buffered channel drained by a separate goroutine and are dropped once the
+// buffer fills. This keeps a stalled UI websocket client from back-pressuring
+// the child process's stdout/stderr pipes and hanging the component run. The
+// stop function must only be called once both senders have exited; it drains
+// the remaining backlog (bounded by the modal websocket write deadline) so
+// every output update is delivered before the caller posts the component's
+// terminal status.
+func startUIForwarder(update scorch.ComponentUpdate) (func([]byte), func()) {
+	updates := make(chan []byte, uiUpdateBuffer)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		for output := range updates {
+			outUpdate := update
+			outUpdate.Output = output
+			scorch.UpdateComponent(outUpdate)
+		}
+	}()
+
+	send := func(output []byte) {
+		select {
+		case updates <- output:
+		default: // drop rather than block component execution
+		}
+	}
+
+	stop := func() {
+		close(updates)
+		<-done
+	}
+
+	return send, stop
+}
+
+// componentLogger returns a processLogChannel callback that writes component
+// log messages to the phenix log and streams them to the scorch UI modal.
+func (u UserComponent) componentLogger(stage Action, sendUI func([]byte)) func(level, msg string) {
+	return func(level, msg string) {
+		kv := []any{
+			"component", u.options.Name,
+			"stage", stage,
+			"exp", u.options.Exp.Spec.ExperimentName(),
+		}
+
+		switch level {
+		case levelError, "ERR":
+			plog.Error(plog.TypeScorch, msg, kv...)
+		case levelWarn, "WARNING":
+			plog.Warn(plog.TypeScorch, msg, kv...)
+		case levelDebug, "DBG":
+			plog.Debug(plog.TypeScorch, msg, kv...)
+		default:
+			plog.Info(plog.TypeScorch, msg, kv...)
+		}
+
+		sendUI(fmt.Appendf(nil, "[%s] %s\n", level, msg))
+	}
 }
 
 // processLogChannel reads from ch and calls logFn for each detected log entry.

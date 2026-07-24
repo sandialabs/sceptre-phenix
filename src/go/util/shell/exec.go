@@ -18,7 +18,14 @@ import (
 	"github.com/hashicorp/go-multierror"
 )
 
-const killDelay = 10 * time.Second
+const (
+	killDelay = 10 * time.Second
+
+	// maxScanTokenSize bounds how long a single line from a child process can
+	// be before the scanner gives up. JSON log frames from phenix-apps are
+	// chunked well below this limit.
+	maxScanTokenSize = 1024 * 1024
+)
 
 type shell struct{}
 
@@ -114,6 +121,16 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 
 	err := cmd.Start()
 	if err != nil {
+		// close the stream channels so consumers ranging over them still
+		// terminate even though the scanner goroutines never start
+		if o.stdout != nil {
+			close(o.stdout)
+		}
+
+		if o.stderr != nil {
+			close(o.stderr)
+		}
+
 		return nil, nil, fmt.Errorf("starting command: %w", err)
 	}
 
@@ -145,6 +162,7 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 		defer wg.Done()
 
 		scanner := bufio.NewScanner(stdout)
+		scanner.Buffer(nil, maxScanTokenSize)
 		scanner.Split(o.splitter)
 
 		for scanner.Scan() {
@@ -160,6 +178,10 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 		err := scanner.Err()
 		if err != nil {
 			errs = multierror.Append(errs, fmt.Errorf("scanning STDOUT: %w", err))
+
+			// keep draining the pipe so the child process can't block forever
+			// writing to it
+			_, _ = io.Copy(io.Discard, stdout)
 		}
 
 		if o.stdout != nil {
@@ -173,6 +195,7 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 		defer wg.Done()
 
 		scanner := bufio.NewScanner(stderr)
+		scanner.Buffer(nil, maxScanTokenSize)
 		scanner.Split(bufio.ScanLines)
 
 		for scanner.Scan() {
@@ -188,6 +211,10 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 		err := scanner.Err()
 		if err != nil {
 			errs = multierror.Append(errs, fmt.Errorf("scanning STDERR: %w", err))
+
+			// keep draining the pipe so the child process can't block forever
+			// writing to it
+			_, _ = io.Copy(io.Discard, stderr)
 		}
 
 		if o.stderr != nil {

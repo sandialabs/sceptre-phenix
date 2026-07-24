@@ -2,9 +2,15 @@ package scorch
 
 import (
 	"fmt"
+	"time"
 )
 
 const (
+	// wsWriteTimeout bounds how long a component update write to a scorch
+	// modal websocket may block; a client that can't keep up is dropped so it
+	// can't stall updates for every other component.
+	wsWriteTimeout = 5 * time.Second
+
 	statusStart      = "start"
 	statusBackground = "background"
 	statusFailure    = "failure"
@@ -43,9 +49,10 @@ var (
 	componentUpdates chan ComponentUpdate //nolint:gochecknoglobals // global state
 	outputRequests   chan outputRequest   //nolint:gochecknoglobals // global state
 
-	cmpType map[string]string //nolint:gochecknoglobals // global state
-	running map[string]bool   //nolint:gochecknoglobals // global state
-	output  map[string][]byte //nolint:gochecknoglobals // global state
+	cmpType  map[string]string //nolint:gochecknoglobals // global state
+	running  map[string]bool   //nolint:gochecknoglobals // global state
+	output   map[string][]byte //nolint:gochecknoglobals // global state
+	finished map[string]bool   //nolint:gochecknoglobals // global state
 )
 
 func UpdateComponent(update ComponentUpdate) {
@@ -66,6 +73,7 @@ func processComponents() {
 	cmpType = make(map[string]string)
 	running = make(map[string]bool)
 	output = make(map[string][]byte)
+	finished = make(map[string]bool)
 
 	for {
 		select {
@@ -84,7 +92,15 @@ func processComponents() {
 			case statusStart:
 				output[key] = nil
 				cmpType[key] = update.CmpType
+
+				delete(finished, key)
 			case statusRunning, statusBackground:
+				// a late buffered output update must not resurrect a
+				// component whose terminal status was already posted
+				if finished[key] {
+					break
+				}
+
 				running[key] = true
 
 				if len(update.Output) != 0 {
@@ -93,6 +109,8 @@ func processComponents() {
 
 				// stream to any websockets listening for this key
 				for id, cli := range ws[key] {
+					_ = cli.ws.SetWriteDeadline(time.Now().Add(wsWriteTimeout))
+
 					nw, err := cli.ws.Write(update.Output)
 					if err != nil {
 						close(cli.done)
@@ -109,8 +127,12 @@ func processComponents() {
 			case statusSuccess, statusFailure:
 				delete(running, key)
 
+				finished[key] = true
+
 				// notify any websockets for this key that component is done
 				for id, cli := range ws[key] {
+					_ = cli.ws.SetWriteDeadline(time.Now().Add(wsWriteTimeout))
+
 					_, _ = cli.ws.Write([]byte("***** COMPONENT FINISHED *****"))
 					close(cli.done)
 					delete(ws[key], id)

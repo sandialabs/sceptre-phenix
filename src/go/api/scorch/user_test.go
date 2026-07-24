@@ -189,6 +189,7 @@ func TestUserComponentRunRoutesStdoutAndStructuredStderr(t *testing.T) {
 	script := strings.Join([]string{
 		"#!/bin/sh",
 		"printf 'component stdout\\n'",
+		"printf 'second stdout line\\n'",
 		"printf '{\"level\":\"INFO\",\"msg\":\"component stderr\",\"traceback\":\"trace line\"}\\n' >&2",
 		"cat >/dev/null",
 	}, "\n") + "\n"
@@ -269,8 +270,10 @@ func TestUserComponentRunRoutesStdoutAndStructuredStderr(t *testing.T) {
 			foundScorchLog = true
 		}
 
+		// physically separate stdout lines must stay newline-separated in the
+		// aggregated log entry
 		if entry.logType == string(plog.TypePhenixApp) &&
-			strings.Contains(entry.msg, "component stdout") &&
+			strings.Contains(entry.msg, "component stdout\nsecond stdout line") &&
 			strings.Contains(entry.msg, "component=test-component") {
 			foundStdoutLog = true
 		}
