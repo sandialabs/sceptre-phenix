@@ -128,6 +128,8 @@ func MergeScenariosForTopology(scenario ifaces.ScenarioSpec, topology string) er
 					app.SetAssetDir(fromApp.AssetDir())
 					app.SetMetadata(fromApp.Metadata())
 					app.SetHosts(fromApp.Hosts())
+					app.SetDisabled(fromApp.Disabled())
+					app.SetRunPeriodically(fromApp.RunPeriodically())
 
 					found = true
 
