@@ -119,7 +119,7 @@ func (s *SOH) deployCapture(exp *types.Experiment, dryrun bool) error {
 	}
 
 	if !dryrun {
-		err = mm.ReadScriptFromFile(filename)
+		err = mm.ReadScriptFromFile(exp.Spec.ExperimentName(), filename)
 		if err != nil {
 			return fmt.Errorf("reading packet capture script: %w", err)
 		}

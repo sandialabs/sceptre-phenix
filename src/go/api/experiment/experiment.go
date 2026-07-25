@@ -576,7 +576,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			return fmt.Errorf("deleting experiment snapshots and CC responses: %w", err)
 		}
 
-		err = mm.ReadScriptFromFile(mmScript)
+		err = mm.ReadScriptFromFile(exp.Spec.ExperimentName(), mmScript)
 		if err != nil {
 			if !o.mmErrAsWarn {
 				_ = mm.ClearNamespace(exp.Spec.ExperimentName())
@@ -734,7 +734,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	if o.errChan == nil {
 		if !o.dryrun {
 			if exp.Spec.Topology().HasCommands() {
-				err = mm.ReadScriptFromFile(ccScript)
+				err = mm.ReadScriptFromFile(exp.Spec.ExperimentName(), ccScript)
 				if err != nil {
 					errors := multierror.Append(
 						nil,
@@ -799,7 +799,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 
 			if !o.dryrun {
 				if exp.Spec.Topology().HasCommands() {
-					err = mm.ReadScriptFromFile(ccScript)
+					err = mm.ReadScriptFromFile(exp.Spec.ExperimentName(), ccScript)
 					if err != nil {
 						o.errChan <- fmt.Errorf("reading minimega cc script: %w", err)
 

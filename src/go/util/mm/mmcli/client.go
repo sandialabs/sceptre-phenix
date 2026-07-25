@@ -16,18 +16,24 @@ import (
 	"phenix/util/common"
 )
 
-var ErrTimeout = errors.New("timeout running command")
-
 var (
-	mu     sync.Mutex       //nolint:gochecknoglobals // global lock
-	mm     *miniclient.Conn //nolint:gochecknoglobals // global connection
-	mmDead bool             //nolint:gochecknoglobals // flags mm for replacement
+	// ErrTimeout is reported when a command does not return within the requested
+	// time period.
+	ErrTimeout = errors.New("timeout running command")
+
+	// ErrNoResponse is reported when minimega closes a command's response stream
+	// without having sent anything. That means the connection was lost, not that
+	// the command legitimately produced no output.
+	ErrNoResponse = errors.New("no response from minimega (connection lost)")
+	mu            sync.Mutex       //nolint:gochecknoglobals // global lock
+	mm            *miniclient.Conn //nolint:gochecknoglobals // global connection
+	mmDead        bool             //nolint:gochecknoglobals // flags mm for replacement
 )
 
-func wrapErr(err error) chan *miniclient.Response {
-	out := make(chan *miniclient.Response, 1)
-
-	out <- &miniclient.Response{ //nolint:exhaustruct // partial initialization
+// errResponse builds the single response value used to report an error back
+// through a response channel.
+func errResponse(err error) *miniclient.Response {
+	return &miniclient.Response{ //nolint:exhaustruct // partial initialization
 		Resp: minicli.Responses{
 			&minicli.Response{ //nolint:exhaustruct // partial initialization
 				Error: err.Error(),
@@ -35,6 +41,29 @@ func wrapErr(err error) chan *miniclient.Response {
 		},
 		More: false,
 	}
+}
+
+// reconstructErr turns a response's error string back into an error, restoring
+// the sentinel identity where the string is one of ours.
+func reconstructErr(msg string) error {
+	for _, sentinel := range []error{ErrTimeout, ErrNoResponse} {
+		if msg == sentinel.Error() {
+			return sentinel
+		}
+
+		// streamEnded wraps its sentinel with context before it is flattened to a string
+		if suffix := ": " + sentinel.Error(); strings.HasSuffix(msg, suffix) {
+			return fmt.Errorf("%s: %w", strings.TrimSuffix(msg, suffix), sentinel)
+		}
+	}
+
+	return errors.New(msg)
+}
+
+func wrapErr(err error) chan *miniclient.Response {
+	out := make(chan *miniclient.Response, 1)
+
+	out <- errResponse(err)
 
 	close(out)
 
@@ -50,7 +79,7 @@ func ErrorResponse(responses chan *miniclient.Response) error {
 	for response := range responses {
 		for _, resp := range response.Resp {
 			if resp.Error != "" {
-				errs = multierror.Append(errs, errors.New(resp.Error))
+				errs = multierror.Append(errs, reconstructErr(resp.Error))
 			}
 		}
 	}
@@ -76,7 +105,7 @@ func SingleResponse(responses chan *miniclient.Response) (string, error) {
 
 		for _, r := range response.Resp {
 			if r.Error != "" {
-				err = errors.New(r.Error)
+				err = reconstructErr(r.Error)
 
 				continue
 			}
@@ -118,7 +147,7 @@ func SingleDataResponse(responses chan *miniclient.Response) (any, error) {
 
 		for _, r := range response.Resp {
 			if r.Error != "" {
-				err = errors.New(r.Error)
+				err = reconstructErr(r.Error)
 
 				continue
 			}
@@ -140,6 +169,12 @@ func SingleDataResponse(responses chan *miniclient.Response) (any, error) {
 // conn returns a usable connection to minimega, dialing or redialing as needed.
 // The caller must hold mu.
 func conn() (*miniclient.Conn, error) {
+	// miniclient records only the FIRST error it encounters and never clears it,
+	// so any non-nil error means this connection is permanently unusable
+	if mm != nil && mm.Error() != nil {
+		mmDead = true
+	}
+
 	if mm == nil || mmDead {
 		c, err := miniclient.Dial(common.MinimegaBase)
 		if err != nil {
@@ -147,22 +182,6 @@ func conn() (*miniclient.Conn, error) {
 		}
 
 		mm, mmDead = c, false
-	}
-
-	// If the connection is already in a broken state, redial.
-	if err := mm.Error(); err != nil {
-		s := err.Error()
-
-		if strings.Contains(s, "broken pipe") || strings.Contains(s, "no such file or directory") {
-			c, err := miniclient.Dial(common.MinimegaBase)
-			if err != nil {
-				return nil, fmt.Errorf("unable to redial: %w", err)
-			}
-
-			mm, mmDead = c, false
-		} else {
-			return nil, fmt.Errorf("minimega error: %w", err)
-		}
 	}
 
 	return mm, nil
@@ -180,10 +199,77 @@ func markDead(c *miniclient.Conn) {
 	}
 }
 
-// Run dials the minimega Unix socket and runs the given command, automatically
-// redialing if disconnected. Any errors encountered will be returned as part of
-// the response channel.
+// streamEnded reports the error, if any, that should be appended once a response
+// stream has closed. miniclient signals a lost connection only through its own
+// private error field and closes the response channel having sent nothing.
+func streamEnded(c *miniclient.Conn, count int) error {
+	err := c.Error()
+
+	if err == nil {
+		if count > 0 {
+			return nil
+		}
+
+		err = ErrNoResponse
+	}
+
+	return fmt.Errorf("running minimega command: %w", err)
+}
+
+// guard forwards responses from the shared connection, reporting a truncated or
+// empty stream as an error rather than as a successful empty result.
+//
+// release is called once the terminal error has been read, before markDead,
+// which takes mu itself. It must not be called any earlier: miniclient closes
+// the response channel before releasing its own connection lock, so another
+// command could otherwise take that lock and overwrite Conn.err first.
+//
+// Callers MUST drain the returned channel. Abandoning it blocks this goroutine,
+// and miniclient's reader behind it, for the life of the process.
+func guard(
+	c *miniclient.Conn,
+	in chan *miniclient.Response,
+	release func(),
+) chan *miniclient.Response {
+	out := make(chan *miniclient.Response)
+
+	go func() {
+		defer close(out)
+
+		var count int
+
+		for resp := range in {
+			count++
+
+			out <- resp
+		}
+
+		err := streamEnded(c, count)
+
+		release()
+
+		if err == nil {
+			return
+		}
+
+		markDead(c)
+
+		out <- errResponse(err)
+	}()
+
+	return out
+}
+
+// Run runs the given command against minimega, automatically redialing the
+// shared connection if it was disconnected. Any errors encountered will be
+// returned as part of the response channel, which the caller must drain.
 func Run(c *Command) chan *miniclient.Response {
+	cmdStr := c.String()
+
+	if c.Timeout > 0 {
+		return runWithTimeout(cmdStr, c.Timeout)
+	}
+
 	mu.Lock()
 
 	active, err := conn()
@@ -193,38 +279,63 @@ func Run(c *Command) chan *miniclient.Response {
 		return wrapErr(err)
 	}
 
-	// Build the command string and release mu before waiting on the response.
-	// The connection's own internal lock serializes the actual exchange, so we
-	// don't need to (and must not) hold mu across a potentially slow command --
-	// doing so would serialize all minimega traffic behind one slow command.
-	cmdStr := c.String()
+	// mu is held until guard has read the terminal error, so no other command
+	// can reach Conn.err in between
+	return guard(active, active.Run(cmdStr), mu.Unlock)
+}
 
-	mu.Unlock()
-
-	if c.Timeout == 0 {
-		return active.Run(cmdStr)
+// runWithTimeout runs a command on a connection of its own, so that abandoning
+// it on timeout cannot disturb commands in flight on the shared connection.
+//
+// Callers MUST drain the returned channel, as with guard.
+func runWithTimeout(cmdStr string, timeout time.Duration) chan *miniclient.Response {
+	private, err := miniclient.Dial(common.MinimegaBase)
+	if err != nil {
+		return wrapErr(fmt.Errorf("unable to dial: %w", err))
 	}
 
-	var (
-		resp = make(chan chan *miniclient.Response, 1)
-		done = make(chan struct{})
-	)
+	out := make(chan *miniclient.Response)
 
 	go func() {
-		resp <- active.Run(cmdStr)
+		defer close(out)
+		defer func() { _ = private.Close() }()
 
-		close(done)
+		var (
+			in    = private.Run(cmdStr)
+			after = time.After(timeout)
+			count int
+		)
+
+		for {
+			select {
+			case resp, ok := <-in:
+				if !ok {
+					if err := streamEnded(private, count); err != nil {
+						out <- errResponse(err)
+					}
+
+					return
+				}
+
+				count++
+
+				out <- resp
+			case <-after:
+				// Drain in the background so miniclient's reader can exit. It
+				// may be parked on its unbuffered send, where closing the
+				// connection alone would not release it.
+				go func() {
+					for range in {
+						_ = struct{}{}
+					}
+				}()
+
+				out <- errResponse(ErrTimeout)
+
+				return
+			}
+		}
 	}()
 
-	select {
-	case <-done:
-		return <-resp
-	case <-time.After(c.Timeout):
-		// Dispatch is stuck, close it so the goroutine fails
-		active.Close()
-		// Flag it so the next call redials
-		markDead(active)
-
-		return wrapErr(ErrTimeout)
-	}
+	return out
 }

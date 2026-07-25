@@ -30,8 +30,9 @@ var (
 	ErrScreenshotNotFound = errors.New("screenshot not found")
 )
 
-const vmInfoCmd = "vm info"
 const (
+	vmInfoCmd = "vm info"
+
 	c2ActiveCheckInterval  = 2 * time.Second
 	responseWaitInterval   = 1 * time.Second
 	responseRegexGroupUUID = 2
@@ -43,13 +44,23 @@ const (
 // instances of the Minimega struct.
 var ccMu sync.Mutex //nolint:gochecknoglobals // global lock
 
+// Cache of the last known good headnode name. The headnode does not change for
+// the life of the process.
+var headnode struct { //nolint:gochecknoglobals // process-lifetime cache
+	mu   sync.Mutex
+	name string
+}
+
 // Regular express to use for matching C2 response headers.
 var responseRegex = regexp.MustCompile(`(\d*)\/(.*)\/(stdout|stderr):`)
 
 type Minimega struct{}
 
-func (Minimega) ReadScriptFromFile(filename string) error {
-	cmd := mmcli.NewCommand()
+// ReadScriptFromFile runs `read` against ns. The namespace has to travel
+// with the command: minimega's `read` prefixes every line of the script
+// with the namespace that was active when it started.
+func (Minimega) ReadScriptFromFile(ns, filename string) error {
+	cmd := mmcli.NewNamespacedCommand(ns)
 	cmd.Command = "read " + filename
 
 	err := mmcli.ErrorResponse(mmcli.Run(cmd))
@@ -278,15 +289,21 @@ func (Minimega) GetVMScreenshot(opts ...Option) ([]byte, error) {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = fmt.Sprintf("vm screenshot %s file /dev/null %s", o.vm, o.screenshotSize)
 
+	var (
+		screenshot []byte
+		err        error
+	)
+
+	// Drain the full response channel
 	for resps := range mmcli.Run(cmd) {
 		for _, resp := range resps.Resp {
-			if resp.Error != "" {
-				if strings.HasPrefix(resp.Error, "vm not found:") {
-					return nil, ErrVMNotFound
-				}
+			if screenshot != nil {
+				continue
+			}
 
-				if strings.HasPrefix(resp.Error, "vm not running:") {
-					return nil, ErrVMNotFound
+			if resp.Error != "" {
+				if strings.HasPrefix(resp.Error, "vm not found:") || strings.HasPrefix(resp.Error, "vm not running:") {
+					err = ErrVMNotFound
 				}
 
 				continue
@@ -297,13 +314,24 @@ func (Minimega) GetVMScreenshot(opts ...Option) ([]byte, error) {
 			}
 
 			data, _ := resp.Data.(string)
-			screenshot, err := base64.StdEncoding.DecodeString(data)
-			if err != nil {
-				return nil, fmt.Errorf("decoding screenshot: %w", err)
+
+			decoded, decErr := base64.StdEncoding.DecodeString(data)
+			if decErr != nil {
+				err = fmt.Errorf("decoding screenshot: %w", decErr)
+				continue
 			}
 
-			return screenshot, nil
+			screenshot = decoded
 		}
+	}
+
+	// A screenshot found on any host wins over any error recorded from another
+	if screenshot != nil {
+		return screenshot, nil
+	}
+
+	if err != nil {
+		return nil, err
 	}
 
 	return nil, ErrScreenshotNotFound
@@ -928,14 +956,22 @@ func (Minimega) Headnode() string {
 	hosts := processNamespaceHosts("minimega")
 
 	if len(hosts) == 0 {
-		return "" // ???
-	}
+		// hosts is empty on any mmcli failure, fall back to the last known headnode
+		headnode.mu.Lock()
+		defer headnode.mu.Unlock()
 
-	headnode := hosts[0].Name
+		return headnode.name
+	}
 
 	// Trim host name suffixes (like -minimega, or -phenix) potentially added to
 	// Docker containers by Docker Compose config.
-	return common.TrimHostnameSuffixes(headnode)
+	name := common.TrimHostnameSuffixes(hosts[0].Name)
+
+	headnode.mu.Lock()
+	headnode.name = name
+	headnode.mu.Unlock()
+
+	return name
 }
 
 func (m Minimega) IsHeadnode(node string) bool {
@@ -943,28 +979,13 @@ func (m Minimega) IsHeadnode(node string) bool {
 	// Docker containers by Docker Compose config.
 	node = common.TrimHostnameSuffixes(node)
 
-	head := m.Headnode()
-
-	// If we can't determine the headnode, assume the local node
-	if head == "" {
-		plog.Warn(
-			plog.TypeSystem,
-			"headnode unknown; assuming local to avoid mesh-send-to-self",
-			"node", node,
-		)
-
-		return true
-	}
-
-	if node == head {
+	if node == m.Headnode() {
 		return true
 	}
 
 	// Fall back to the local hostname
 	if local, err := os.Hostname(); err == nil {
-		if node == common.TrimHostnameSuffixes(local) {
-			return true
-		}
+		return node == common.TrimHostnameSuffixes(local)
 	}
 
 	return false
@@ -1007,16 +1028,45 @@ func (Minimega) GetVLANs(opts ...Option) (map[string]int, error) {
 	return vlans, nil
 }
 
-func (Minimega) IsC2ClientActive(opts ...C2Option) error {
-	o := NewC2Options(opts...)
+func (m Minimega) IsC2ClientActive(opts ...C2Option) error {
+	_, _, err := m.c2Client(NewC2Options(opts...))
+
+	return err
+}
+
+// pickVM returns the VM named exactly `name`, else the first match. The lookup
+// folds case, so a namespace holding two names differing only in case would
+// otherwise be able to resolve to the wrong VM.
+func pickVM(vms VMs, name string) VM {
+	for _, vm := range vms {
+		if vm.Name == name {
+			return vm
+		}
+	}
+
+	// If exact match not found, return the first match.
+	return vms[0]
+}
+
+// c2Client waits for a VM's miniccc client to register and returns the name
+// minimega launched the VM under along with its UUID. Callers must address the
+// VM by one of those: this lookup folds case (minicli's `.filter` lowercases
+// both sides) while `cc filter name=`, `cc mount` and `clear cc mount` match
+// exactly, so a mis-cased name passes the check here and then targets zero
+// clients. The UUID is immune to that and is preferred where minimega accepts
+// one.
+func (Minimega) c2Client(o c2Options) (string, string, error) {
 	if o.skipActiveClientCheck {
-		return nil
+		return o.vm, "", nil
 	}
 
 	vms := GetVMInfo(NS(o.ns), VMName(o.vm))
 	if len(vms) == 0 {
-		return fmt.Errorf("vm %s does not exist", o.vm)
+		return "", "", fmt.Errorf("vm %s does not exist", o.vm)
 	}
+
+	// Try to find exact name match
+	vm := pickVM(vms, o.vm)
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "cc client"
@@ -1026,7 +1076,7 @@ func (Minimega) IsC2ClientActive(opts ...C2Option) error {
 		// the actual hostname of the VM as reported by the miniccc agent, which may
 		// not always match the name minimega uses to track the VM.
 		cmd.Columns = []string{"uuid"}
-		cmd.Filters = []string{"uuid=" + vms[0].UUID}
+		cmd.Filters = []string{"uuid=" + vm.UUID}
 	} else {
 		// Even though `cc clients` returns the actual hostname of the VM as reported
 		// by the miniccc agent, we still go ahead and check for the VM name as
@@ -1034,7 +1084,7 @@ func (Minimega) IsC2ClientActive(opts ...C2Option) error {
 		// (per the startup app). This way, we don't consider Windows VMs ready until
 		// they've rebooted to get their hostname set correctly.
 		cmd.Columns = []string{"hostname"}
-		cmd.Filters = []string{"hostname=" + vms[0].Name}
+		cmd.Filters = []string{"hostname=" + vm.Name}
 	}
 
 	after := time.After(o.timeout)
@@ -1042,14 +1092,14 @@ func (Minimega) IsC2ClientActive(opts ...C2Option) error {
 	for {
 		select {
 		case <-o.ctx.Done():
-			return o.ctx.Err()
+			return "", "", o.ctx.Err()
 		case <-after:
-			return ErrC2ClientNotActive
+			return "", "", ErrC2ClientNotActive
 		default:
 			rows := mmcli.RunTabular(cmd)
 
 			if len(rows) != 0 {
-				return nil
+				return vm.Name, vm.UUID, nil
 			}
 
 			time.Sleep(c2ActiveCheckInterval)
@@ -1058,19 +1108,30 @@ func (Minimega) IsC2ClientActive(opts ...C2Option) error {
 }
 
 func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:funlen // complex logic
-	err := m.IsC2ClientActive(opts...)
+	o := NewC2Options(opts...)
+
+	// Address the VM below by the name minimega launched it under, not by
+	// whatever the caller spelled: `cc filter name=`, `cc mount` and
+	// `clear cc mount` all match it exactly.
+	vmName, vmUUID, err := m.c2Client(o)
 	if err != nil {
 		return "", fmt.Errorf("cannot execute command: %w", err)
 	}
-
-	o := NewC2Options(opts...)
 
 	exec := func(ns, vm, cmd string) (string, error) {
 		ccMu.Lock()
 		defer ccMu.Unlock()
 
 		c := mmcli.NewNamespacedCommand(ns)
-		c.Command = "cc filter name=" + vm
+
+		// Filter by UUID where we have one. `cc filter name=` falls through to
+		// an implicit tag filter matched against the VM name with a plain
+		// string compare
+		if vmUUID != "" {
+			c.Command = "cc filter uuid=" + vmUUID
+		} else {
+			c.Command = "cc filter name=" + vm
+		}
 
 		if err := mmcli.ErrorResponse(mmcli.Run(c)); err != nil {
 			return "", fmt.Errorf("setting host filter to %s: %w", vm, err)
@@ -1094,7 +1155,7 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 	if o.testConn != "" {
 		cmd := "cc test-conn " + o.testConn
 
-		id, err := exec(o.ns, o.vm, cmd)
+		id, err := exec(o.ns, vmName, cmd)
 		if err != nil {
 			return "", fmt.Errorf("calling '%s' for vm %s: %w", cmd, o.vm, err)
 		}
@@ -1112,7 +1173,7 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 	if o.sendFile != "" {
 		cmd := "cc send " + o.sendFile
 
-		id, err := exec(o.ns, o.vm, cmd)
+		id, err := exec(o.ns, vmName, cmd)
 		if err != nil {
 			return "", fmt.Errorf("sending file '%s' to vm %s: %w", o.sendFile, o.vm, err)
 		}
@@ -1135,7 +1196,7 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 	if o.command != "" {
 		cmd := "cc exec " + o.command
 
-		id, err := exec(o.ns, o.vm, cmd)
+		id, err := exec(o.ns, vmName, cmd)
 		if err != nil {
 			return "", fmt.Errorf("calling '%s' for vm %s: %w", cmd, o.vm, err)
 		}
@@ -1154,23 +1215,23 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 		if *o.mount {
 			var (
 				path = GetLocalMountPath(o.ns, o.vm)
-				cmd  = fmt.Sprintf("cc mount %s %s", o.vm, path)
+				cmd  = fmt.Sprintf("cc mount %s %s", vmName, path)
 			)
 
 			if err := os.MkdirAll(path, 0o750); err != nil {
 				return "", fmt.Errorf("creating mount directory: %w", err)
 			}
 
-			id, err := exec(o.ns, o.vm, cmd)
+			id, err := exec(o.ns, vmName, cmd)
 			if err != nil {
 				return "", fmt.Errorf("error creating mount: %w", err)
 			}
 
 			return id, nil
 		} else {
-			cmd := "clear cc mount " + o.vm
+			cmd := "clear cc mount " + vmName
 
-			id, err := exec(o.ns, o.vm, cmd)
+			id, err := exec(o.ns, vmName, cmd)
 			if err != nil {
 				return "", fmt.Errorf("error clearing mount: %w", err)
 			}
@@ -1445,19 +1506,33 @@ func (Minimega) MeshShellResponse(host, command string) (string, error) {
 		cmd.Command = fmt.Sprintf("mesh send %s shell %s", host, command)
 	}
 
+	var (
+		out   string
+		found bool
+	)
+
+	// Drain the full response channel -- returning early would abandon it and wedge the shared minimega connection.
 	for resps := range mmcli.Run(cmd) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
-				plog.Warn(plog.TypeSystem, "error running shell command: ", "cmd", cmd)
+				plog.Warn(plog.TypeSystem, "error running shell command", "cmd", cmd.Command, "error", resp.Error)
 
 				continue
 			}
 
-			return strings.TrimSpace(resp.Response), nil
+			if found {
+				continue
+			}
+
+			out, found = strings.TrimSpace(resp.Response), true
 		}
 	}
 
-	return "", errors.New("error running MeshShellResponse()")
+	if !found {
+		return "", errors.New("error running MeshShellResponse()")
+	}
+
+	return out, nil
 }
 
 func (Minimega) MeshSend(ns, host, command string) error {
