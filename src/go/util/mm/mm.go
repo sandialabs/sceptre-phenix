@@ -3,7 +3,7 @@ package mm
 var DefaultMM MM = new(Minimega) //nolint:gochecknoglobals // default implementation
 
 type MM interface { //nolint:interfacebloat // legacy interface
-	ReadScriptFromFile(string) error
+	ReadScriptFromFile(string, string) error
 	ClearNamespace(string) error
 
 	LaunchVMs(string, ...string) error

@@ -1,7 +1,7 @@
 package mm
 
-func ReadScriptFromFile(filename string) error {
-	return DefaultMM.ReadScriptFromFile(filename)
+func ReadScriptFromFile(ns, filename string) error {
+	return DefaultMM.ReadScriptFromFile(ns, filename)
 }
 
 func ClearNamespace(ns string) error {
