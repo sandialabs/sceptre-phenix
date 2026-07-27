@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -14,16 +15,16 @@ func normalizeFileServerEndpoint(value string) (string, error) {
 		return "", nil
 	}
 
-	if _, err := parseFileServerPort(value); err == nil {
+	if err := parseFileServerPort(value); err == nil {
 		return net.JoinHostPort("127.0.0.1", value), nil
 	}
 
 	host, port, err := net.SplitHostPort(value)
 	if err != nil {
-		return "", fmt.Errorf("expected port or host:port")
+		return "", errors.New("expected port or host:port")
 	}
 
-	if _, err := parseFileServerPort(port); err != nil {
+	if err := parseFileServerPort(port); err != nil {
 		return "", err
 	}
 
@@ -31,15 +32,15 @@ func normalizeFileServerEndpoint(value string) (string, error) {
 }
 
 // parseFileServerPort validates a numeric TCP port.
-func parseFileServerPort(value string) (int, error) {
+func parseFileServerPort(value string) error {
 	port, err := strconv.Atoi(value)
 	if err != nil {
-		return 0, fmt.Errorf("invalid port %q", value)
+		return fmt.Errorf("invalid port %q", value)
 	}
 
 	if port < 0 || port > 65535 {
-		return 0, fmt.Errorf("port %d out of range", port)
+		return fmt.Errorf("port %d out of range", port)
 	}
 
-	return port, nil
+	return nil
 }

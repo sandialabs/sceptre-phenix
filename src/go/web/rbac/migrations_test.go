@@ -36,7 +36,12 @@ func TestEnsureExperimentFilesCreatePolicyAddsPolicy(t *testing.T) {
 
 // TestEnsureExperimentFilesCreatePolicyUpdatesExistingPolicy verifies partial policies are updated.
 func TestEnsureExperimentFilesCreatePolicyUpdatesExistingPolicy(t *testing.T) {
-	role := &v1.RoleSpec{Name: "Experiment User", Policies: []*v1.PolicySpec{{Resources: []string{experimentFilesResource}, ResourceNames: []string{"exp-a"}, Verbs: []string{"get"}}}}
+	role := &v1.RoleSpec{
+		Name: "Experiment User",
+		Policies: []*v1.PolicySpec{
+			{Resources: []string{experimentFilesResource}, ResourceNames: []string{"exp-a"}, Verbs: []string{"get"}},
+		},
+	}
 
 	if !ensureExperimentFilesCreatePolicy(role, []string{"exp-a", "exp-b"}) {
 		t.Fatal("expected role to change")
@@ -53,7 +58,12 @@ func TestEnsureExperimentFilesCreatePolicyUpdatesExistingPolicy(t *testing.T) {
 
 // TestEnsureExperimentFilesCreatePolicyIdempotent verifies repeated migration does not duplicate values.
 func TestEnsureExperimentFilesCreatePolicyIdempotent(t *testing.T) {
-	role := &v1.RoleSpec{Name: "Experiment User", Policies: []*v1.PolicySpec{{Resources: []string{experimentFilesResource}, ResourceNames: []string{"exp-a"}, Verbs: []string{experimentFilesCreateVerb}}}}
+	role := &v1.RoleSpec{
+		Name: "Experiment User",
+		Policies: []*v1.PolicySpec{
+			{Resources: []string{experimentFilesResource}, ResourceNames: []string{"exp-a"}, Verbs: []string{experimentFilesCreateVerb}},
+		},
+	}
 
 	if ensureExperimentFilesCreatePolicy(role, []string{"exp-a"}) {
 		t.Fatal("expected role to stay unchanged")
@@ -70,7 +80,13 @@ func TestEnsureExperimentFilesCreatePolicyIdempotent(t *testing.T) {
 
 // TestExperimentResourceNamesPreservesUserScope verifies embedded user experiment scopes are reused.
 func TestExperimentResourceNamesPreservesUserScope(t *testing.T) {
-	role := &v1.RoleSpec{Name: "Experiment User", Policies: []*v1.PolicySpec{{Resources: []string{"experiments"}, ResourceNames: []string{"exp-a"}, Verbs: []string{"get"}}, {Resources: []string{"hosts"}, ResourceNames: []string{"*"}, Verbs: []string{"list"}}}}
+	role := &v1.RoleSpec{
+		Name: "Experiment User",
+		Policies: []*v1.PolicySpec{
+			{Resources: []string{"experiments"}, ResourceNames: []string{"exp-a"}, Verbs: []string{"get"}},
+			{Resources: []string{"hosts"}, ResourceNames: []string{"*"}, Verbs: []string{"list"}},
+		},
+	}
 
 	names := experimentResourceNames(role)
 	if len(names) != 1 || names[0] != "exp-a" {
@@ -90,7 +106,13 @@ func TestExperimentResourceNamesDefaultsNil(t *testing.T) {
 
 // TestExperimentResourceNamesIgnoresOtherPolicyScopes verifies only experiments scope is copied.
 func TestExperimentResourceNamesIgnoresOtherPolicyScopes(t *testing.T) {
-	role := &v1.RoleSpec{Name: "Experiment User", Policies: []*v1.PolicySpec{{Resources: []string{"vms"}, ResourceNames: []string{"vm-a"}, Verbs: []string{"get"}}, {Resources: []string{"hosts"}, ResourceNames: []string{"*"}, Verbs: []string{"list"}}}}
+	role := &v1.RoleSpec{
+		Name: "Experiment User",
+		Policies: []*v1.PolicySpec{
+			{Resources: []string{"vms"}, ResourceNames: []string{"vm-a"}, Verbs: []string{"get"}},
+			{Resources: []string{"hosts"}, ResourceNames: []string{"*"}, Verbs: []string{"list"}},
+		},
+	}
 
 	names := experimentResourceNames(role)
 	if len(names) != 0 {
@@ -100,7 +122,16 @@ func TestExperimentResourceNamesIgnoresOtherPolicyScopes(t *testing.T) {
 
 // TestSyncUserSpecForExperimentFilesMigration verifies migrated user RBAC is prepared for saving.
 func TestSyncUserSpecForExperimentFilesMigration(t *testing.T) {
-	user := &User{Spec: &v1.UserSpec{Username: "user-a", Role: &v1.RoleSpec{Name: "Experiment User", Policies: []*v1.PolicySpec{{Resources: []string{"experiments"}, ResourceNames: []string{"exp-a"}, Verbs: []string{"get"}}}}}, config: &store.Config{Spec: map[string]any{}}}
+	user := &User{
+		Spec: &v1.UserSpec{
+			Username: "user-a",
+			Role: &v1.RoleSpec{
+				Name:     "Experiment User",
+				Policies: []*v1.PolicySpec{{Resources: []string{"experiments"}, ResourceNames: []string{"exp-a"}, Verbs: []string{"get"}}},
+			},
+		},
+		config: &store.Config{Spec: map[string]any{}},
+	}
 
 	if !ensureExperimentFilesCreatePolicy(user.Spec.Role, experimentResourceNames(user.Spec.Role)) {
 		t.Fatal("expected user role to change")
