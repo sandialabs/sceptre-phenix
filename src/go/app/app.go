@@ -175,7 +175,7 @@ type App interface {
 // the given experiment for the given lifecycle phase. It returns any errors
 // encountered while applying the apps.
 //
-//nolint:cyclop,funlen,gocyclo,maintidx // complex logic
+//nolint:funlen,maintidx // complex logic
 func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error {
 	var (
 		options = NewOptions(opts...)
@@ -329,39 +329,35 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 
 				exp.Status.SetAppRunning(app.Name(), true)
 
-				err := exp.WriteToStore(true)
-				if err != nil {
+				// storeErr is local to issues here
+				storeErr := exp.WriteToStore(true)
+				if storeErr != nil {
 					notes.AddErrors(
 						ctx,
 						false,
 						fmt.Errorf(
 							"error updating store with experiment (%s): %w",
 							exp.Spec.ExperimentName(),
-							err,
+							storeErr,
 						),
 					)
 				}
 
-				if err := a.Running(ctx, exp); err != nil {
-					notes.AddErrors(
-						ctx,
-						false,
-						fmt.Errorf("running app %s: %w", app.Name(), err),
-					)
-				}
+				// Assign to the function-level err to carry out
+				err = a.Running(ctx, exp)
 
 				_ = exp.Reload() // reload experiment from store in case status was updated during run
 				exp.Status.SetAppRunning(app.Name(), false)
 
-				err = exp.WriteToStore(true)
-				if err != nil {
+				storeErr = exp.WriteToStore(true)
+				if storeErr != nil {
 					notes.AddErrors(
 						ctx,
 						false,
 						fmt.Errorf(
 							"error updating store with experiment (%s): %w",
 							exp.Spec.ExperimentName(),
-							err,
+							storeErr,
 						),
 					)
 				}
