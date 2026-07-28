@@ -139,6 +139,11 @@
           }
 
           default: {
+            if ( comp.status === 'unknown' ) { // clear stale UI for unknown status
+              this.exitOutput();
+              this.resetTerminal(true);
+              return;
+            }
             let endpoint = `experiments/${comp.exp}/scorch/components/${comp.run}/${comp.loop}/${comp.stage}/${comp.name}`;
 
             this.$http.get(
@@ -330,8 +335,9 @@
             }
 
             switch ( msg.resource.action ) {
-              case 'start':
-              case 'stop': {
+              case 'start':{ 
+                this.exitOutput();
+                this.resetTerminal(true);
                 this.runsView(this.exp.name);
                 break;
               }
