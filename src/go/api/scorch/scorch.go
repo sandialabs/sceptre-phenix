@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"phenix/api/config"
+	"phenix/api/experiment"
 	"phenix/store"
 	"phenix/web/scorch"
 )
@@ -80,5 +81,9 @@ func init() { //nolint:gochecknoinits // config hook
 		}
 
 		return nil
+	})
+
+	experiment.RegisterHook("start", func(_ string, name string) { // clear SCORCH pipeline on experiment start
+		scorch.DeletePipeline(name, -1, -1, false)
 	})
 }
