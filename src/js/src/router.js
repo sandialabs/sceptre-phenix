@@ -98,7 +98,7 @@ router.beforeEach( async ( to, from, next ) => {
         }
       }
 
-      store.commit( 'LOGIN', { loginResponse, 'remember': false } );
+      store.commit( 'LOGIN', { loginResponse, 'remember': false, 'navigate': false } );
     }
 
     next();

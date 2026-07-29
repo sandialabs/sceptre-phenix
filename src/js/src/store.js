@@ -20,7 +20,7 @@ export default new Vuex.Store({
   },
 
   mutations: {
-    'LOGIN' ( state, { loginResponse, remember } ) {
+    'LOGIN' ( state, { loginResponse, remember, navigate = true } ) {
       state.username = loginResponse.user.username;
       state.token    = loginResponse.token;
       state.role     = loginResponse.user.role;
@@ -31,6 +31,10 @@ export default new Vuex.Store({
         localStorage.setItem( 'phenix.token', state.token );
         localStorage.setItem( 'phenix.role',  JSON.stringify(state.role) );
         localStorage.setItem( 'phenix.auth',  state.auth );
+      }
+
+      if ( !navigate ) {
+        return;
       }
 
       if ( state.role.name === "VM Viewer" ) {
