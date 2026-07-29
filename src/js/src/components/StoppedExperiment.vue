@@ -7,6 +7,7 @@
         </header>
         <section class="modal-card-body">
           <p>Host: {{ expModal.vm.host }}</p>
+          <p>Description: {{ expModal.vm.description || 'unknown' }}</p>
           <p>IPv4: {{ expModal.vm.ipv4 | stringify }}</p>
           <p>CPU(s): {{ expModal.vm.cpus }}</p>
           <p>Memory: {{ expModal.vm.ram | ram }}</p>

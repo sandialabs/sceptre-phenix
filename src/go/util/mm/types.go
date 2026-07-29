@@ -209,6 +209,7 @@ func (v VMs) Paginate(page, size int) VMs {
 type VM struct {
 	ID              int               `json:"id"`
 	Name            string            `json:"name"`
+	Description     string            `json:"description"`
 	Type            string            `json:"type"`
 	Experiment      string            `json:"experiment"`
 	Host            string            `json:"host"`

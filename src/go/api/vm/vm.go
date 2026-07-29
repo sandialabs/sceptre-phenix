@@ -99,6 +99,7 @@ func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
 		vm := mm.VM{ //nolint:exhaustruct // partial initialization
 			ID:              idx,
 			Name:            node.General().Hostname(),
+			Description:     node.General().Description(),
 			Experiment:      exp.Spec.ExperimentName(),
 			CPUs:            node.Hardware().VCPU(),
 			RAM:             node.Hardware().Memory(),
@@ -203,6 +204,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 		vm = &mm.VM{ //nolint:exhaustruct // partial initialization
 			ID:              idx,
 			Name:            node.General().Hostname(),
+			Description:     node.General().Description(),
 			Experiment:      exp.Spec.ExperimentName(),
 			CPUs:            node.Hardware().VCPU(),
 			RAM:             node.Hardware().Memory(),

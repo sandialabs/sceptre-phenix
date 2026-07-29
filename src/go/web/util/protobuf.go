@@ -95,6 +95,7 @@ func ExperimentToProtobuf(
 func VMToProtobuf(exp string, vm mm.VM, topology ifaces.TopologySpec) *proto.VM {
 	v := &proto.VM{ //nolint:exhaustruct // partial initialization
 		Name:            vm.Name,
+		Description:     vm.Description,
 		Host:            vm.Host,
 		Ipv4:            vm.IPv4,
 		Cpus:            uint32(vm.CPUs), //nolint:gosec // integer overflow conversion int -> uint32

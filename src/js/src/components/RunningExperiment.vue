@@ -7,6 +7,7 @@
         </header>
         <section class="modal-card-body">
           <p>Host: {{ expModal.vm.host }}</p>
+          <p>Description: {{ expModal.vm.description || 'unknown' }}</p>
           <p>IPv4: {{ expModal.vm.ipv4 | stringify }}</p>
           <p>CPU(s): {{ expModal.vm.cpus }}</p>
           <p>Memory: {{ expModal.vm.ram | ram }}</p>
@@ -1784,6 +1785,10 @@
           return
         }
 
+        this.expModal.vm       = vm;
+        this.expModal.fullName = this.experiment.name + '/' + vm.name;
+        this.expModal.active   = true;
+
         try {
           const [details, snapshots, forwards] = await Promise.all([
             this.fetchVMDetails(vm),
@@ -1809,9 +1814,6 @@
               this.expModal.forwards.push(l);
             }
           }
-
-          this.expModal.fullName = this.experiment.name + '/' + vm.name;
-          this.expModal.active   = true;
         } catch (err) {
           this.errorNotification(err);
         }
