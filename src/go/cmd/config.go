@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
@@ -57,6 +58,31 @@ func configKindArgsValidator(multi, allowAll bool) cobra.PositionalArgs {
 					tokens[0],
 				)
 			}
+		}
+
+		return nil
+	}
+}
+
+func configKindValidator() cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if narg := len(args); narg > 1 {
+			return fmt.Errorf("expected zero or one argument, received %d", narg)
+		}
+
+		if len(args) == 0 {
+			return nil
+		}
+
+		kind := strings.ToLower(args[0])
+		kinds := []string{"topology", "scenario", "experiment", "image", "user", "role"}
+
+		if !util.StringSliceContains(kinds, kind) {
+			return fmt.Errorf(
+				"expects the configuration kind to be one of %v, received %s",
+				kinds,
+				args[0],
+			)
 		}
 
 		return nil
@@ -399,7 +425,7 @@ func newConfigDeleteCmd() *cobra.Command {
 		Use:   "delete <kind/name> ...",
 		Short: "Delete a configuration(s)",
 		Long:  desc,
-		Args:  configKindArgsValidator(true, true),
+		Args:  configKindArgsValidator(true, false),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, c := range args {
 				err := config.Delete(c)
@@ -419,14 +445,73 @@ func newConfigDeleteCmd() *cobra.Command {
 	return cmd
 }
 
+func newConfigDeleteAllCmd() *cobra.Command {
+	desc := `Delete all configurations
+
+  This subcommand is used to delete all configurations, or all configurations
+  of a specific kind.`
+
+	example := `
+  phenix config delete all
+  phenix config delete all topology
+  phenix config delete all scenario`
+
+	cmd := &cobra.Command{
+		Use:       "all [kind]",
+		Short:     "Delete all configurations (optionally by kind)",
+		Long:      desc,
+		Example:   example,
+		Args:      configKindValidator(),
+		ValidArgs: []string{"topology", "scenario", "experiment", "image", "user", "role"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			which := "all"
+			if len(args) == 1 {
+				which = strings.ToLower(args[0])
+			}
+
+			configs, err := config.List(which)
+			if err != nil {
+				err := util.HumanizeError(err, "Unable to list known configurations")
+
+				return err.Humanized()
+			}
+
+			var errs error
+
+			for _, c := range configs {
+				name := strings.ToLower(c.Kind) + "/" + c.Metadata.Name
+
+				err = config.Delete(name)
+				if err != nil {
+					errs = multierror.Append(errs, fmt.Errorf("deleting config %s: %w", name, err))
+					continue
+				}
+
+				plog.Info(plog.TypeSystem, "configuration deleted", "config", name)
+			}
+
+			if errs != nil {
+				err := util.HumanizeError(errs, "Unable to delete one or more configurations")
+				return err.Humanized()
+			}
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
 func init() { //nolint:gochecknoinits // cobra command
 	configCmd := newConfigCmd()
+	deleteCmd := newConfigDeleteCmd()
+	deleteCmd.AddCommand(newConfigDeleteAllCmd())
 
 	configCmd.AddCommand(newConfigListCmd())
 	configCmd.AddCommand(newConfigGetCmd())
 	configCmd.AddCommand(newConfigCreateCmd())
 	configCmd.AddCommand(newConfigEditCmd())
-	configCmd.AddCommand(newConfigDeleteCmd())
+	configCmd.AddCommand(deleteCmd)
 
 	rootCmd.AddCommand(configCmd)
 }
