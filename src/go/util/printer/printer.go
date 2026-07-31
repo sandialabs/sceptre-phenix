@@ -67,37 +67,38 @@ func PrintTableOfExperiments(writer io.Writer, exps ...types.Experiment) {
 }
 
 // PrintTableOfVMs writes the given VMs to the given writer as an ASCII table.
-// The table headers are set to Host, Name, Running, Disk, Interfaces, and
-// Uptime.
-func PrintTableOfVMs(writer io.Writer, vms ...mm.VM) {
+func PrintTableOfVMs(writer io.Writer, includeTaps bool, vms ...mm.VM) {
 	table := tablewriter.NewWriter(writer)
 
 	switch len(vms) {
 	case 0:
 		return
 	case 1:
-		buildSingleVMTable(table, vms[0])
+		buildSingleVMTable(table, includeTaps, vms[0])
 	default:
-		buildMultipleVMTable(table, vms...)
+		buildMultipleVMTable(table, includeTaps, vms...)
 	}
 
 	table.Render()
 }
 
-func buildMultipleVMTable(table *tablewriter.Table, vms ...mm.VM) {
-	table.SetHeader(
-		[]string{
-			"Host",
-			"Name",
-			"Running",
-			"Disk",
-			"Interfaces",
-			"Uptime",
-			"Memory",
-			"VCPUs",
-			"OS Type",
-		},
-	)
+func buildMultipleVMTable(table *tablewriter.Table, includeTaps bool, vms ...mm.VM) {
+	header := []string{
+		"Host",
+		"Name",
+		"Running",
+		"Disk",
+		"Interfaces",
+		"Uptime",
+		"Memory",
+		"VCPUs",
+		"OS Type",
+	}
+	if includeTaps {
+		header = append(header, "Taps")
+	}
+
+	table.SetHeader(header)
 	table.SetAutoWrapText(false)
 	table.SetColWidth(colWidth)
 
@@ -116,23 +117,26 @@ func buildMultipleVMTable(table *tablewriter.Table, vms ...mm.VM) {
 			uptime = (time.Duration(vm.Uptime) * time.Second).String()
 		}
 
-		table.Append(
-			[]string{
-				vm.Host,
-				vm.Name,
-				running,
-				vm.Disk,
-				strings.Join(ifaces, "\n"),
-				uptime,
-				strconv.Itoa(vm.RAM),
-				strconv.Itoa(vm.CPUs),
-				vm.OSType,
-			},
-		)
+		row := []string{
+			vm.Host,
+			vm.Name,
+			running,
+			vm.Disk,
+			strings.Join(ifaces, "\n"),
+			uptime,
+			strconv.Itoa(vm.RAM),
+			strconv.Itoa(vm.CPUs),
+			vm.OSType,
+		}
+		if includeTaps {
+			row = append(row, strings.Join(vm.Taps, ", "))
+		}
+
+		table.Append(row)
 	}
 }
 
-func buildSingleVMTable(table *tablewriter.Table, vm mm.VM) {
+func buildSingleVMTable(table *tablewriter.Table, includeTaps bool, vm mm.VM) {
 	table.SetHeader([]string{"Setting", "Value"})
 	table.SetAutoWrapText(false)
 	table.SetColWidth(colWidth)
@@ -172,6 +176,9 @@ func buildSingleVMTable(table *tablewriter.Table, vm mm.VM) {
 	table.Append([]string{"VCPUs", strconv.Itoa(vm.CPUs)})
 	table.Append([]string{"Memory", strconv.Itoa(vm.RAM)})
 	table.Append([]string{"OS Type", vm.OSType})
+	if includeTaps {
+		table.Append([]string{"Taps", strings.Join(vm.Taps, ", ")})
+	}
 	table.Append([]string{"Labels", strings.Join(labels, ", ")})
 	table.Append([]string{"Metadata", string(metadata)})
 }

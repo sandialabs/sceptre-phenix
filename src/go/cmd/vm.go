@@ -278,7 +278,7 @@ func newVMInfoCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				printer.PrintTableOfVMs(os.Stdout, vms...)
+				printer.PrintTableOfVMs(os.Stdout, MustGetBool(cmd.Flags(), "taps"), vms...)
 
 				return nil
 			}
@@ -292,7 +292,7 @@ func newVMInfoCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				printer.PrintTableOfVMs(os.Stdout, vms...)
+				printer.PrintTableOfVMs(os.Stdout, MustGetBool(cmd.Flags(), "taps"), vms...)
 			case infoArgs:
 				vm, err := vm.Get(args[0], args[1])
 				if err != nil {
@@ -305,7 +305,7 @@ func newVMInfoCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				printer.PrintTableOfVMs(os.Stdout, *vm)
+				printer.PrintTableOfVMs(os.Stdout, MustGetBool(cmd.Flags(), "taps"), *vm)
 			default:
 				return errors.New("invalid argument")
 			}
@@ -315,6 +315,7 @@ func newVMInfoCmd() *cobra.Command {
 	}
 
 	addVMLabelFlag(cmd)
+	cmd.Flags().BoolP("taps", "t", false, "Include tap interface names")
 
 	return cmd
 }
