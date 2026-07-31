@@ -31,6 +31,19 @@ type UserApp struct {
 	options Options
 }
 
+// PopulateRuntime adds current minimega host and VM details to an experiment.
+func PopulateRuntime(exp *types.Experiment) error {
+	cluster, err := mm.GetClusterHosts(true)
+	if err != nil {
+		return fmt.Errorf("getting cluster hosts: %w", err)
+	}
+
+	exp.Hosts = cluster
+	exp.VMs = mm.GetVMInfo(mm.NS(exp.Spec.ExperimentName()))
+
+	return nil
+}
+
 func (u *UserApp) Init(opts ...Option) error {
 	u.options = NewOptions(opts...)
 
@@ -97,12 +110,9 @@ func (u UserApp) shellOut(ctx context.Context, action Action, exp *types.Experim
 		)
 	}
 
-	cluster, err := mm.GetClusterHosts(true)
-	if err != nil {
-		return fmt.Errorf("getting cluster hosts: %w", err)
+	if err := PopulateRuntime(exp); err != nil {
+		return err
 	}
-
-	exp.Hosts = cluster
 
 	data, err := json.Marshal(exp)
 	if err != nil {

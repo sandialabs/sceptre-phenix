@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"phenix/api/experiment"
+	"phenix/app"
 	"phenix/util"
 	"phenix/web/rbac"
 )
@@ -43,6 +44,12 @@ func newUtilAppJSONCmd() *cobra.Command {
 			exp, err := experiment.Get(name)
 			if err != nil {
 				err := util.HumanizeError(err, "%s", "Unable to get the "+name+" experiment")
+
+				return err.Humanized()
+			}
+
+			if err := app.PopulateRuntime(exp); err != nil {
+				err := util.HumanizeError(err, "Unable to collect runtime experiment information")
 
 				return err.Humanized()
 			}

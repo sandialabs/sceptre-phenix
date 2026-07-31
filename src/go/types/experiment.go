@@ -23,6 +23,7 @@ type Experiment struct {
 
 	// used for user apps
 	Hosts mm.Hosts `json:"hosts,omitempty" yaml:"hosts,omitempty"` // cluster host details
+	VMs   mm.VMs   `json:"vms,omitempty"   yaml:"vms,omitempty"`   // VM runtime details
 }
 
 func NewExperiment(md store.ConfigMetadata) *Experiment {
