@@ -158,11 +158,8 @@ func newExperimentCreateCmd() *cobra.Command {
 		Short:   "Create an experiment",
 		Long:    desc,
 		Example: example,
+		Args:    argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) < 1 {
-				return errors.New("must provide an experiment name")
-			}
-
 			var (
 				topology = MustGetString(cmd.Flags(), "topology")
 				scenario = MustGetString(cmd.Flags(), "scenario")
@@ -276,7 +273,7 @@ func newExperimentEditCmd() *cobra.Command {
 		Short:             "Edit an experiment",
 		Long:              desc,
 		ValidArgsFunction: expNameCompletion(false),
-		Args:              cobra.ExactArgs(1),
+		Args:              argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				force = MustGetBool(cmd.Flags(), "force")
@@ -319,7 +316,7 @@ func newExperimentDeleteCmd() *cobra.Command {
 		Short:             "Delete an experiment",
 		Long:              desc,
 		ValidArgsFunction: expNameCompletion(true),
-		Args:              cobra.ExactArgs(1),
+		Args:              argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
@@ -406,7 +403,7 @@ func newExperimentScheduleCmd() *cobra.Command {
 			}
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
-		Args: cobra.ExactArgs(scheduleArgs),
+		Args: argsWithUsage(cobra.ExactArgs(scheduleArgs)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := []experiment.ScheduleOption{
 				experiment.ScheduleForName(args[0]),
@@ -452,7 +449,7 @@ func newExperimentStartCmd() *cobra.Command {
 		Short:             "Start an experiment",
 		Long:              desc,
 		ValidArgsFunction: expNameCompletion(true),
-		Args:              cobra.ExactArgs(1),
+		Args:              argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
@@ -577,7 +574,7 @@ func newExperimentStopCmd() *cobra.Command {
 		Short:             "Stop an experiment",
 		Long:              desc,
 		ValidArgsFunction: expNameCompletion(true),
-		Args:              cobra.ExactArgs(1),
+		Args:              argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
@@ -650,7 +647,7 @@ func newExperimentRestartCmd() *cobra.Command {
 		Short:             "Restart an experiment",
 		Long:              desc,
 		ValidArgsFunction: expNameCompletion(true),
-		Args:              cobra.ExactArgs(1),
+		Args:              argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
@@ -756,7 +753,7 @@ func newExperimentReconfigureCmd() *cobra.Command {
 		Short:             "Reconfigure an experiment",
 		Long:              desc,
 		ValidArgsFunction: expNameCompletion(true),
-		Args:              cobra.ExactArgs(1),
+		Args:              argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
@@ -845,7 +842,7 @@ func newExperimentTriggerRunningCmd() *cobra.Command {
 			}
 			return matches, cobra.ShellCompDirectiveNoFileComp
 		},
-		Args: cobra.MinimumNArgs(1),
+		Args: argsWithUsage(cobra.MinimumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
@@ -932,7 +929,7 @@ func newExperimentScorchCmd() *cobra.Command {
 		Short:             "Start a Scorch run for experiment",
 		Long:              desc,
 		ValidArgsFunction: expNameCompletion(false),
-		Args:              cobra.MinimumNArgs(1),
+		Args:              argsWithUsage(cobra.MinimumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name = args[0]
