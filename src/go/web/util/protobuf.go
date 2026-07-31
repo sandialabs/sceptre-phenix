@@ -16,6 +16,11 @@ func ExperimentToProtobuf(
 	status cache.Status,
 	vms []mm.VM,
 ) *proto.Experiment {
+	vmCount := len(vms)
+	if exp.Running() {
+		vmCount = 0
+	}
+
 	pb := &proto.Experiment{ //nolint:exhaustruct // partial initialization
 		Name:      exp.Spec.ExperimentName(),
 		Topology:  exp.Metadata.Annotations["topology"],
@@ -23,7 +28,7 @@ func ExperimentToProtobuf(
 		StartTime: exp.Status.StartTime(),
 		Running:   exp.Running(),
 		Status:    string(status),
-		VmCount:   uint32(len(vms)), //nolint:gosec // integer overflow conversion int -> uint32
+		VmCount:   uint32(vmCount), //nolint:gosec // integer overflow conversion int -> uint32
 	}
 
 	pb.Vms = make([]*proto.VM, len(vms))
@@ -31,6 +36,10 @@ func ExperimentToProtobuf(
 		vm := VMToProtobuf(exp.Spec.ExperimentName(), v, exp.Spec.Topology())
 
 		pb.Vms[i] = vm
+		if exp.Running() && !vm.GetDoNotBoot() && !vm.GetExternal() {
+			pb.VmCount++
+		}
+
 		if vm.GetDelayedStart() != "" {
 			pb.DelayedVms++
 		}
