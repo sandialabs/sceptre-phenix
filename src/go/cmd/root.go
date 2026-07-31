@@ -204,6 +204,16 @@ var rootCmd = &cobra.Command{
 	SilenceUsage: true, // don't print help when subcommands return an error
 }
 
+func argsWithUsage(validate cobra.PositionalArgs) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if err := validate(cmd, args); err != nil {
+			return fmt.Errorf("%w\n\n%s", err, strings.TrimSpace(cmd.UsageString()))
+		}
+
+		return nil
+	}
+}
+
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
