@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
 
+### Fixed
+
+- **vrouter**: Set VyOS and Vyatta router hostnames exactly as written in the topology instead of lowercasing them and replacing `.` and `_` with `-`, so the guest hostname matches the minimega VM name. Firewall nodes already behaved this way.
+
 ## [1.0.0]
 
 ### Changed

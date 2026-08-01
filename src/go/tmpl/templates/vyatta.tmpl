@@ -256,7 +256,7 @@ set service snmp trap-target {{ $target }} community '{{ $community.Name }}'
         {{- end }}
     {{- end }}
 # --------------------------------- System --------------------------------
-set system host-name {{ $node.RouterName }}
+set system host-name {{ $node.General.Hostname }}
 {{- range $idx, $iface := $node.Network.Interfaces }}
     {{- range $dnsServer := $iface.DNS }}
 set system name-server {{ $dnsServer }}
@@ -629,7 +629,7 @@ service {
     {{- end }}
 
 system {
-    host-name {{ $node.RouterName }}
+    host-name {{ $node.General.Hostname }}
     {{- if $ntpAddr }}
     ntp {
         server {{ $ntpAddr }} {
