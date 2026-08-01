@@ -49,17 +49,6 @@ type ExpressionTree struct {
 	searchFields []string
 }
 
-func (node *ExpressionTree) PrintTree() {
-	if node == nil {
-		return
-	}
-
-	// fmt.Printf("Node:%s Fields:%v\n",node.term,node.searchFields)
-
-	node.left.PrintTree()
-	node.right.PrintTree()
-}
-
 func BuildTree(searchFilter string) *ExpressionTree {
 	if len(searchFilter) == 0 {
 		return nil
