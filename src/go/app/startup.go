@@ -157,6 +157,13 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 			continue
 		}
 
+		// Skip generating startup scripts/templates for this node if default
+		// apps are disabled, now that the checks/normalization above (which
+		// should always run) have been performed.
+		if !defaultAppsEnabled(node) {
+			continue
+		}
+
 		// Check to see if a scenario exists for this experiment and if it
 		// contains a "startup" app. If so, store it for later use
 		var startupApp ifaces.ScenarioApp
@@ -309,8 +316,10 @@ func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 			continue
 		}
 
-		if strings.EqualFold(node.Hardware().OSType(), "windows") {
-			// Windows 10 doesn't automatically run scripts in the startup folder
+		// Windows 10 doesn't automatically run scripts in the startup folder;
+		// only re-run it here if default apps (which set up that script) are
+		// enabled for this node.
+		if defaultAppsEnabled(node) && strings.EqualFold(node.Hardware().OSType(), "windows") {
 			if ver, ok := node.GetAnnotation("windows-version"); ok && (ver == "10" || ver == 10) {
 				_, err := mm.ExecC2Command(
 					mm.C2NS(exp.Metadata.Name),
@@ -326,6 +335,8 @@ func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 			}
 		}
 
+		// The autotunnel annotation is independent of default apps, so it is
+		// honored regardless of whether default apps are enabled for this node.
 		if annotation, ok := node.GetAnnotation("phenix/startup-autotunnel"); ok {
 			var tunnels []string
 

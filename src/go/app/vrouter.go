@@ -151,6 +151,10 @@ func (v Vrouter) Configure(ctx context.Context, exp *types.Experiment) error {
 					continue
 				}
 
+				if !defaultAppsEnabled(node) {
+					continue
+				}
+
 				err := v.processACL(host.Metadata(), node.Network())
 				if err != nil {
 					return fmt.Errorf(
@@ -186,7 +190,7 @@ func (v *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 	// loop through nodes
 	for _, node := range exp.Spec.Topology().Nodes() {
-		if node.External() {
+		if node.External() || !defaultAppsEnabled(node) {
 			continue
 		}
 
@@ -425,7 +429,7 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	for _, node := range exp.Spec.Topology().Nodes() {
-		if node.External() {
+		if node.External() || !defaultAppsEnabled(node) {
 			continue
 		}
 

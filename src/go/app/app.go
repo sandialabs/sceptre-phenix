@@ -46,8 +46,9 @@ const (
 	ActionRunning   Action = "running"
 	ActionCleanup   Action = "cleanup"
 
-	osWindows = "windows"
-	osLinux   = "linux"
+	defaultAppsAnnotation = "phenix/default-apps"
+	osWindows             = "windows"
+	osLinux               = "linux"
 )
 
 var (
@@ -135,6 +136,17 @@ func DefaultApps() []string {
 	}
 
 	return apps
+}
+
+func defaultAppsEnabled(node ifaces.NodeSpec) bool {
+	enabled, ok := node.GetAnnotation(defaultAppsAnnotation)
+	if !ok {
+		return true
+	}
+
+	value, ok := enabled.(bool)
+
+	return !ok || value
 }
 
 // App is the interface that identifies all the required functionality for a

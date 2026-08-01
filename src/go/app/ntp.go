@@ -122,7 +122,7 @@ func (NTP) preStartWithAppConfig(_ context.Context, exp *types.Experiment, ntpDi
 
 		for _, host := range app.Hosts() {
 			node := exp.Spec.Topology().FindNodeByName(host.Hostname())
-			if node == nil {
+			if node == nil || !defaultAppsEnabled(node) {
 				continue
 			}
 
@@ -210,6 +210,10 @@ func (NTP) preStartWithNodeLabels(_ context.Context, exp *types.Experiment, ntpD
 
 	// Configure topology nodes as NTP clients.
 	for _, node := range exp.Spec.Topology().Nodes() {
+		if !defaultAppsEnabled(node) {
+			continue
+		}
+
 		if _, ok := node.Labels()["ntp-server"]; ok {
 			// Don't configure NTP server nodes as clients.
 			continue
