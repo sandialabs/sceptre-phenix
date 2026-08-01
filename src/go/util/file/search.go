@@ -82,15 +82,6 @@ type ExpressionTree struct {
 	searchFields []string
 }
 
-func (node *ExpressionTree) PrintTree() {
-	if node == nil {
-		return
-	}
-
-	node.left.PrintTree()
-	node.right.PrintTree()
-}
-
 func BuildTree(searchFilter string) *ExpressionTree {
 	if len(searchFilter) == 0 {
 		return nil

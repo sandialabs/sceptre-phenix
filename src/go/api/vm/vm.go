@@ -525,7 +525,6 @@ func Shutdown(expName, vmName string) error {
 	cmd.Command = fmt.Sprintf("vm qmp %s '%s'", vmName, qmp)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-		// return fmt.Errorf("powering down VM %s: %w", vmName, err)
 		cmd.Command = "vm kill " + vmName
 
 		err := mmcli.ErrorResponse(mmcli.Run(cmd))

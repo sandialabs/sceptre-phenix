@@ -82,9 +82,6 @@ func GetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	// if len(logs) > 10_000 {
-	// 	logs = logs[len(logs)-10_000:]
-	// }
 
 	body, err := json.Marshal(logs)
 	if err != nil {
