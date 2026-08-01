@@ -40,6 +40,10 @@ All notable changes to this project will be documented in this file.
   - Config permissions are checked against `<Kind>/<name>`, as the server does.
   - VM snapshot controls check `vms/snapshots` with the server's verbs: `create` to take a snapshot and `update` to restore one. Roles such as Experiment User now see the snapshot button.
 
+### Fixed
+
+- **vrouter**: Set VyOS and Vyatta router hostnames exactly as written in the topology instead of lowercasing them and replacing `.` and `_` with `-`, so the guest hostname matches the minimega VM name. Firewall nodes already behaved this way.
+
 ## [1.0.0]
 
 ### Changed
