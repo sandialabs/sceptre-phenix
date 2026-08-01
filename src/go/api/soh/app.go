@@ -220,6 +220,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 			"network-config":      true,
 			"reachability":        true,
 			"custom-reachability": true,
+			"files":               true,
 			"processes":           true,
 			"ports":               true,
 			"custom":              true,
@@ -408,6 +409,17 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 
 	if checks["network-config"] && (checks["reachability"] || checks["custom-reachability"]) {
 		err := s.waitForReachabilityTest(ctx, ns, checks)
+		s.writeResults(exp)
+
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		errs = errs || err
+	}
+
+	if checks["files"] {
+		err := s.waitForFileTest(ctx, ns)
 		s.writeResults(exp)
 
 		if ctx.Err() != nil {

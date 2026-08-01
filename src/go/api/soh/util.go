@@ -605,6 +605,66 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 	return wg.ErrCount > 0
 }
 
+func (s *SOH) waitForFileTest(ctx context.Context, ns string) bool {
+	var (
+		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
+		wg     = new(mm.StateGroup)
+	)
+
+	for host, files := range s.md.HostFiles {
+		if _, ok := s.c2Hosts[host]; !ok {
+			logger.Debug("skipping host per config", "host", host)
+
+			continue
+		}
+
+		for _, path := range files {
+			logger.Debug("checking for file on host", "host", host, "path", path)
+			s.fileTest(ctx, wg, ns, s.nodes[host], path)
+		}
+	}
+
+	cancel := periodicallyNotify(ctx, "waiting for file tests to complete...", notifyInterval)
+
+	wg.Wait()
+	cancel()
+
+	for _, state := range wg.States {
+		var (
+			host, _ = state.Meta["host"].(string)
+			path, _ = state.Meta["path"].(string)
+		)
+
+		st := State{ //nolint:exhaustruct // partial initialization
+			Metadata:  state.Meta,
+			Timestamp: time.Now().Format(time.RFC3339),
+		}
+
+		err := state.Err
+		if err != nil {
+			if errors.Is(err, mm.ErrC2ClientNotActive) {
+				delete(s.c2Hosts, host)
+			}
+
+			st.Error = err.Error()
+
+			logger.Error("[✗] file not found on host", "host", host, "path", path)
+		} else {
+			st.Success = state.Msg
+		}
+
+		hostState, ok := s.status[host]
+		if !ok {
+			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
+		}
+
+		hostState.Files = append(hostState.Files, st)
+		s.status[host] = hostState
+	}
+
+	return wg.ErrCount > 0
+}
+
 //nolint:dupl // similar to waitForPortTest
 func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 	var (
@@ -1335,6 +1395,58 @@ func (s SOH) procTest(
 	cmd.Expected = expected
 
 	mm.ScheduleC2ParallelCommand(ctx, cmd)
+}
+
+func (s SOH) fileTest(
+	ctx context.Context,
+	wg *mm.StateGroup,
+	ns string,
+	node ifaces.NodeSpec,
+	path string,
+) {
+	var (
+		host = node.General().Hostname()
+		meta = map[string]any{"host": host, "path": path}
+	)
+
+	retries := 5
+	expected := func(resp string) error {
+		if strings.TrimSpace(resp) != "present" {
+			if retries > 0 {
+				retries--
+
+				return mm.C2RetryError{Delay: c2RetryDelay}
+			}
+
+			return errors.New("file not found")
+		}
+
+		wg.AddSuccess("file found", meta)
+
+		return nil
+	}
+
+	cmd := s.newParallelCommand(ns, host, fileCheckCommand(node.Hardware().OSType(), path))
+	cmd.Wait = wg
+	cmd.Meta = meta
+	cmd.Expected = expected
+
+	mm.ScheduleC2ParallelCommand(ctx, cmd)
+}
+
+func fileCheckCommand(osType, path string) string {
+	if strings.EqualFold(osType, "windows") {
+		path = strings.ReplaceAll(path, "'", "''")
+
+		return fmt.Sprintf(
+			`powershell -NoProfile -Command "if (Test-Path -LiteralPath '%s' -PathType Leaf) { 'present' }"`,
+			path,
+		)
+	}
+
+	path = strings.ReplaceAll(path, "'", `'"'"'`)
+
+	return fmt.Sprintf("stat -c present -- '%s'", path)
 }
 
 func (s SOH) portTest(
