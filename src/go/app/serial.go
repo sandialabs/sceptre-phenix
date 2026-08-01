@@ -26,7 +26,7 @@ func (Serial) Name() string {
 func (Serial) Configure(ctx context.Context, exp *types.Experiment) error {
 	// loop through nodes
 	for _, node := range exp.Spec.Topology().Nodes() {
-		if node.External() {
+		if node.External() || !defaultAppsEnabled(node) {
 			continue
 		}
 
@@ -75,7 +75,7 @@ func (Serial) Configure(ctx context.Context, exp *types.Experiment) error {
 func (Serial) PreStart(ctx context.Context, exp *types.Experiment) error {
 	// loop through nodes
 	for _, node := range exp.Spec.Topology().Nodes() {
-		if node.External() {
+		if node.External() || !defaultAppsEnabled(node) {
 			continue
 		}
 
