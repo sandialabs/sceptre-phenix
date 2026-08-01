@@ -1613,6 +1613,8 @@
                 for ( let i = 0;  i < state.disks.length; i++ ) {
                   this.disks.push( state.disks[i].fullPath );
                 }
+
+                this.disks.sort((a, b) => this.getBaseName(a).localeCompare(this.getBaseName(b)))
               }
             );
           },  err => {
