@@ -605,13 +605,29 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 	return wg.ErrCount > 0
 }
 
-func (s *SOH) waitForFileTest(ctx context.Context, ns string) bool {
+// fileExistenceTestFn matches the signature shared by fileTest and fileAbsentTest.
+type fileExistenceTestFn func(ctx context.Context, wg *mm.StateGroup, ns string, node ifaces.NodeSpec, path string)
+
+// waitForFileExistenceTest runs the given file existence test (fileTest or
+// fileAbsentTest) for each host/path pair in hostFiles, then records results
+// into the host state field selected by assign. This is shared by
+// waitForFileTest and waitForFileAbsentTest since they only differ by which
+// test is run, what gets logged, and where results are stored.
+func (s *SOH) waitForFileExistenceTest(
+	ctx context.Context,
+	ns string,
+	hostFiles map[string][]string,
+	test fileExistenceTestFn,
+	waitMsg string,
+	notFoundLogMsg string,
+	assign func(*HostState, State),
+) bool {
 	var (
 		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
 		wg     = new(mm.StateGroup)
 	)
 
-	for host, files := range s.md.HostFiles {
+	for host, files := range hostFiles {
 		if _, ok := s.c2Hosts[host]; !ok {
 			logger.Debug("skipping host per config", "host", host)
 
@@ -619,12 +635,12 @@ func (s *SOH) waitForFileTest(ctx context.Context, ns string) bool {
 		}
 
 		for _, path := range files {
-			logger.Debug("checking for file on host", "host", host, "path", path)
-			s.fileTest(ctx, wg, ns, s.nodes[host], path)
+			logger.Debug("checking file on host", "host", host, "path", path)
+			test(ctx, wg, ns, s.nodes[host], path)
 		}
 	}
 
-	cancel := periodicallyNotify(ctx, "waiting for file tests to complete...", notifyInterval)
+	cancel := periodicallyNotify(ctx, waitMsg, notifyInterval)
 
 	wg.Wait()
 	cancel()
@@ -648,7 +664,7 @@ func (s *SOH) waitForFileTest(ctx context.Context, ns string) bool {
 
 			st.Error = err.Error()
 
-			logger.Error("[✗] file not found on host", "host", host, "path", path)
+			logger.Error(notFoundLogMsg, "host", host, "path", path)
 		} else {
 			st.Success = state.Msg
 		}
@@ -658,11 +674,39 @@ func (s *SOH) waitForFileTest(ctx context.Context, ns string) bool {
 			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
 		}
 
-		hostState.Files = append(hostState.Files, st)
+		assign(&hostState, st)
 		s.status[host] = hostState
 	}
 
 	return wg.ErrCount > 0
+}
+
+func (s *SOH) waitForFileTest(ctx context.Context, ns string) bool {
+	return s.waitForFileExistenceTest(
+		ctx,
+		ns,
+		s.md.HostFiles,
+		s.fileTest,
+		"waiting for file tests to complete...",
+		"[✗] file not found on host",
+		func(hostState *HostState, st State) {
+			hostState.Files = append(hostState.Files, st)
+		},
+	)
+}
+
+func (s *SOH) waitForFileAbsentTest(ctx context.Context, ns string) bool {
+	return s.waitForFileExistenceTest(
+		ctx,
+		ns,
+		s.md.HostFilesAbsent,
+		s.fileAbsentTest,
+		"waiting for file absence tests to complete...",
+		"[✗] file found on host",
+		func(hostState *HostState, st State) {
+			hostState.FilesAbsent = append(hostState.FilesAbsent, st)
+		},
+	)
 }
 
 //nolint:dupl // similar to waitForPortTest
@@ -1447,6 +1491,43 @@ func fileCheckCommand(osType, path string) string {
 	path = strings.ReplaceAll(path, "'", `'"'"'`)
 
 	return fmt.Sprintf("stat -c present -- '%s'", path)
+}
+
+func (s SOH) fileAbsentTest(
+	ctx context.Context,
+	wg *mm.StateGroup,
+	ns string,
+	node ifaces.NodeSpec,
+	path string,
+) {
+	var (
+		host = node.General().Hostname()
+		meta = map[string]any{"host": host, "path": path}
+	)
+
+	retries := 5
+	expected := func(resp string) error {
+		if strings.TrimSpace(resp) == "present" {
+			if retries > 0 {
+				retries--
+
+				return mm.C2RetryError{Delay: c2RetryDelay}
+			}
+
+			return errors.New("file exists")
+		}
+
+		wg.AddSuccess("file not found", meta)
+
+		return nil
+	}
+
+	cmd := s.newParallelCommand(ns, host, fileCheckCommand(node.Hardware().OSType(), path))
+	cmd.Wait = wg
+	cmd.Meta = meta
+	cmd.Expected = expected
+
+	mm.ScheduleC2ParallelCommand(ctx, cmd)
 }
 
 func (s SOH) portTest(
