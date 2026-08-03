@@ -429,9 +429,13 @@ func getCurrentUserInfo() (string, string) {
 		sudo = os.Getenv("SUDO_USER")
 	)
 
-	// Only trust `SUDO_USER` env variable if we're currently running as root and,
-	// if set, use it to lookup the actual user that ran the sudo command.
-	if u.Uid == "0" && sudo != "" {
+	// `SUDO_USER` (and `SUDO_COMMAND`) remain set in the environment even after
+	// a user has escalated to a root shell (eg. via `sudo su` or `sudo -i`), so
+	// checking `SUDO_USER` alone isn't enough to determine whether phenix was
+	// invoked directly via sudo (eg. `sudo phenix ...`) versus indirectly from
+	// a root shell that was itself started via sudo. Only trust `SUDO_USER` if
+	// `SUDO_COMMAND` indicates phenix was the command actually run via sudo.
+	if u.Uid == "0" && sudo != "" && sudoRanPhenix() {
 		u, err := user.Lookup(sudo)
 		if err != nil {
 			// fall back to sudo if we couldn't get actual user
@@ -450,6 +454,35 @@ func getCurrentUserInfo() (string, string) {
 	}
 
 	return uid, home
+}
+
+// sudoRanPhenix returns true if the `SUDO_COMMAND` env variable indicates the
+// phenix executable was the command directly invoked via sudo (eg.
+// `sudo phenix ...`). It returns false if `SUDO_COMMAND` refers to something
+// else, such as `su` or `/bin/bash`, which happens when a user obtains a root
+// shell via sudo (eg. `sudo su` or `sudo -i`) and then runs phenix from that
+// shell -- in that case `SUDO_USER` should not be used to determine the
+// config/store paths, since the command is truly being run as root.
+func sudoRanPhenix() bool {
+	cmd := os.Getenv("SUDO_COMMAND")
+	if cmd == "" {
+		return false
+	}
+
+	// `SUDO_COMMAND` may include arguments, so only consider the command name.
+	fields := strings.Fields(cmd)
+	if len(fields) == 0 {
+		return false
+	}
+
+	name := filepath.Base(fields[0])
+
+	exe, err := os.Executable()
+	if err == nil && name == filepath.Base(exe) {
+		return true
+	}
+
+	return name == "phenix"
 }
 
 // getEffectiveString returns the configuration value with the following precedence:
