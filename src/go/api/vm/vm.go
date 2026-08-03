@@ -229,7 +229,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 		for _, app := range exp.Apps() {
 			for _, h := range app.Hosts() {
 				if h.Hostname() == vm.Name {
-					vm.Metadata[app.Name()] = h.Metadata
+					vm.Metadata[app.Name()] = h.Metadata()
 				}
 			}
 		}
