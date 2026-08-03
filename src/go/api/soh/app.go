@@ -221,6 +221,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 			"reachability":        true,
 			"custom-reachability": true,
 			"files":               true,
+			"files-absent":        true,
 			"processes":           true,
 			"ports":               true,
 			"custom":              true,
@@ -420,6 +421,17 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 
 	if checks["files"] {
 		err := s.waitForFileTest(ctx, ns)
+		s.writeResults(exp)
+
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		errs = errs || err
+	}
+
+	if checks["files-absent"] {
+		err := s.waitForFileAbsentTest(ctx, ns)
 		s.writeResults(exp)
 
 		if ctx.Err() != nil {

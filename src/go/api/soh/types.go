@@ -53,6 +53,7 @@ type HostState struct {
 	Networking   []State `json:"networking,omitempty"   mapstructure:"networking,omitempty"   structs:"networking,omitempty"`
 	Reachability []State `json:"reachability,omitempty" mapstructure:"reachability,omitempty" structs:"reachability,omitempty"`
 	Files        []State `json:"files,omitempty"        mapstructure:"files,omitempty"        structs:"files,omitempty"`
+	FilesAbsent  []State `json:"filesAbsent,omitempty"  mapstructure:"filesAbsent,omitempty"  structs:"filesAbsent,omitempty"`
 	Processes    []State `json:"processes,omitempty"    mapstructure:"processes,omitempty"    structs:"processes,omitempty"`
 	Listeners    []State `json:"listeners,omitempty"    mapstructure:"listeners,omitempty"    structs:"listeners,omitempty"`
 	CustomTests  []State `json:"customTests,omitempty"  mapstructure:"customTests,omitempty"  structs:"customTests,omitempty"`
@@ -62,17 +63,15 @@ type HostState struct {
 }
 
 func (h HostState) AllStates() []State {
-	all := make(
-		[]State,
-		0,
-		len(h.Networking)+len(h.Reachability)+len(h.Files)+len(h.Processes)+len(h.Listeners)+len(
-			h.CustomTests,
-		),
-	)
+	total := len(h.Networking) + len(h.Reachability) + len(h.Files) + len(h.FilesAbsent) +
+		len(h.Processes) + len(h.Listeners) + len(h.CustomTests)
+
+	all := make([]State, 0, total)
 
 	all = append(all, h.Networking...)
 	all = append(all, h.Reachability...)
 	all = append(all, h.Files...)
+	all = append(all, h.FilesAbsent...)
 	all = append(all, h.Processes...)
 	all = append(all, h.Listeners...)
 	all = append(all, h.CustomTests...)
@@ -130,6 +129,7 @@ type sohMetadata struct {
 	C2Timeout          string                      `mapstructure:"c2Timeout"`
 	ExitOnError        bool                        `mapstructure:"exitOnError"`
 	HostFiles          map[string][]string         `mapstructure:"hostFiles"`
+	HostFilesAbsent    map[string][]string         `mapstructure:"hostFilesAbsent"`
 	HostListeners      map[string][]string         `mapstructure:"hostListeners"`
 	HostProcesses      map[string][]string         `mapstructure:"hostProcesses"`
 	CustomHostTests    map[string][]customHostTest `mapstructure:"hostCustomTests"`
