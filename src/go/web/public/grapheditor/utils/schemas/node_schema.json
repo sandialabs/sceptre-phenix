@@ -79,7 +79,8 @@
           "examples": [
             "ADServer"
           ],
-          "pattern": "^[\\w-]+$"
+          "maxLength": 63,
+          "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$"
         },
         "description": {
           "$id": "#/nodes/properties/general/properties/description",
