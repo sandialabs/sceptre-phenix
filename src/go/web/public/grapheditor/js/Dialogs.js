@@ -1638,7 +1638,7 @@ function checkValue(graph, cell, ui) {
                 var checkLabel = vertices[i].getAttribute('label');
                 var checkHostId = parseInt(vertices[i].getId());
                 if (checkLabel == hostname && checkHostId != cellId && cellId > checkHostId) {
-                    schemaVars.general.hostname = `${schemaVars.device}_device_${host_count}`;
+                    schemaVars.general.hostname = `${schemaVars.device}-device-${host_count}`;
                     // hack to prevent ifaces/vlans from piling up in cloned node
                     try {
                         delete schemaVars.network;
@@ -1646,7 +1646,7 @@ function checkValue(graph, cell, ui) {
                     catch {
                         // console.log('network object does not exist');
                     }
-                    value.setAttribute('label', `${schemaVars.device}_device_${host_count}`);
+                    value.setAttribute('label', `${schemaVars.device}-device-${host_count}`);
                     host_count++;
                 }
             }
@@ -1709,8 +1709,8 @@ function checkValue(graph, cell, ui) {
             schemaVars.type = nodeType;
 
             if (typeof schemaVars.general === 'undefined') schemaVars.general = {};
-            schemaVars.general.hostname = `${device}_device_${host_count}`; // (cell.getId());
-            value.setAttribute('label', `${device}_device_${host_count}`);
+            schemaVars.general.hostname = `${device}-device-${host_count}`; // (cell.getId());
+            value.setAttribute('label', `${device}-device-${host_count}`);
             host_count++;
 
             if (type === 'kvm') {
@@ -1723,8 +1723,8 @@ function checkValue(graph, cell, ui) {
             schemaVars.id = 0;
 
             if (device == 'switch') {
-                schemaVars.hostname = `${device}_device_${host_count}`;
-                value.setAttribute('label', `${device}_device_${host_count}`);
+                schemaVars.hostname = `${device}-device-${host_count}`;
+                value.setAttribute('label', `${device}-device-${host_count}`);
                 schemaVars.name = searchNextVlan(vlanid).toString();
                 host_count++;
             } else {
@@ -3821,12 +3821,12 @@ var EditMiniConfigDialog = function(editorUi,vertices,edges)
                 } 
                 else{
                     config += `##Config for a ${schemaVars.device} device #${count}\n`;
-                    name = `${schemaVars.device}_device_${count}`
+                    name = `${schemaVars.device}-device-${count}`
                 }
             }
             catch {
                 config += `##Config for a ${schemaVars.device} device #${count}\n`;
-                name = `${schemaVars.device}_device_${count}`
+                name = `${schemaVars.device}-device-${count}`
             }
             value.setAttribute('label', name);
             graph.getModel().setValue(cell, value);
@@ -4592,7 +4592,7 @@ var ImportJSONDialog = function(graph, ui) {
                     obj.geometry = {width: 80, height: 80};
                     obj.value = {};
                     obj.value.schemaVars = JSON.stringify(node);
-                    obj.value.label = node.general.hostname || device + '_device_' + host_count;
+                    obj.value.label = node.general.hostname || device + '-device-' + host_count;
                     host_count++;
                     const xmlNode = enc.encode(obj.value);
                     var layer;
