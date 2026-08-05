@@ -682,6 +682,7 @@ func executor(
 	if exe.Loop != nil {
 		update := scorch.ComponentUpdate{ //nolint:exhaustruct // partial update
 			Exp:   exp,
+			Run:   options.Run,
 			Loop:  options.Loop,
 			Stage: string(ActionLoop),
 		}
