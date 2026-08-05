@@ -3795,7 +3795,14 @@ func CreateConsole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd := exec.CommandContext(r.Context(), phenix, "mm", "--attach") //nolint:gosec // Command injection via taint analysis
+	// the console must outlive this request; r.Context() is canceled as soon
+	// as the response is written, which would SIGKILL the attach process
+	cmd := exec.CommandContext(
+		context.WithoutCancel(r.Context()),
+		phenix,
+		"mm",
+		"--attach",
+	) //nolint:gosec // Command injection via taint analysis
 
 	tty, err := pty.Start(cmd)
 	if err != nil {
@@ -3815,6 +3822,20 @@ func CreateConsole(w http.ResponseWriter, r *http.Request) {
 	ptyMu.Lock()
 	ptys[pid] = tty
 	ptyMu.Unlock()
+
+	// reap the console process when it exits and drop its dead pty
+	go func() {
+		_ = cmd.Wait()
+
+		ptyMu.Lock()
+		if t, ok := ptys[pid]; ok && t == tty {
+			_ = t.Close()
+			delete(ptys, pid)
+		}
+		ptyMu.Unlock()
+
+		plog.Debug(plog.TypeSystem, "minimega console exited", "pid", pid)
+	}()
 
 	body, _ := json.Marshal(util.WithRoot("pid", pid))
 
@@ -3860,15 +3881,14 @@ func ResizeConsole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ptyMu.Lock()
-
 	tty, ok := ptys[pid]
+	ptyMu.Unlock()
+
 	if !ok {
 		http.Error(w, "pty not found", http.StatusNotFound)
 
 		return
 	}
-
-	ptyMu.Unlock()
 
 	rows, err := strconv.ParseUint(r.FormValue("rows"), 10, 16)
 	if err != nil {
@@ -3942,15 +3962,14 @@ func WsConsole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ptyMu.Lock()
-
 	tty, ok := ptys[pid]
+	ptyMu.Unlock()
+
 	if !ok {
 		http.Error(w, "pty not found", http.StatusNotFound)
 
 		return
 	}
-
-	ptyMu.Unlock()
 
 	websocket.Handler(func(ws *websocket.Conn) {
 		defer func() { _ = tty.Close() }()
