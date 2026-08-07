@@ -227,7 +227,7 @@
     </b-modal>
     <!-- END STYLE MODAL -->
     <hr>
-    <div class="columns is-centered"> 
+    <div class="columns is-centered">
       <div class="column is-1">
         <router-link class="button is-dark" :to="{ name: 'experiment', params: { id: this.$route.params.id }}">
           <b-tooltip label="return to the experiment component" type="is-light is-right" :delay="1000">
@@ -278,6 +278,14 @@
               <div v-else>
                 <b-button @click="execSoH" type="is-light">Run SOH</b-button>
               </div>
+            </div>
+            <div>
+              <b-dropdown v-model="showEdgeType" aria-role="list" :triggers="['hover']">
+                <b-button label="Link Type" type="is-light" slot="trigger" />
+                <b-dropdown-item v-for="( n, index ) in networks" :key="index" :value="n" aria-role="listitem">
+                  <font color="#202020">{{ n }}</font>
+                </b-dropdown-item>
+              </b-dropdown>
             </div>
             <div class="column" />
           </div>
@@ -496,7 +504,7 @@ export default {
                   d3.selectAll('circle').attr( "fill", this.updateNodeColor );
                 }
               }
-              
+
               break;
             }
             case 'delete': {
@@ -506,7 +514,7 @@ export default {
                   d3.selectAll('circle').attr( "fill", this.updateNodeColor );
                 }
               }
-              
+
               break;
             }
           }
@@ -593,15 +601,42 @@ export default {
       return colors[ node.status ];
     },
 
+    updateEdgeColor( edge ) {
+      if ( edge.type == "serial" ) {
+        return '#A020F0' // purple
+      }
+
+      return '#999';
+    },
+
+    setEdge( type ) {
+      this.showEdgeType = type;
+      this.resetNetwork();
+    },
+
     generateGraph () {
       if ( this.nodes == null ) {
         return;
       }
 
-      const nodes = this.nodes.map( d => Object.create( d ) );
-      const links = this.edges.map( d => Object.create( d ) );
+      const nodes = this.nodes;
+      const links = this.edges.filter( (d) => {
+        switch ( this.showEdgeType ) {
+          case 'all': {
+            return true;
+          }
 
-      const width = 600;
+          case 'network': {
+            return d.type !== 'serial';
+          }
+
+          case 'serial': {
+            return d.type === 'serial';
+          }
+        }
+      }, this);
+
+      const width  = 600;
       const height = 400;
 
       const simulation = d3.forceSimulation( nodes )
@@ -625,11 +660,11 @@ export default {
       );
 
       const link = g.append( "g" )
-        .attr( "stroke", "#999" )
-        .attr( "stroke-opacity", 0.6 )
         .selectAll( "line" )
         .data( links )
         .join( "line" )
+        .attr( "stroke-opacity", 0.6 )
+        .attr( "stroke", this.updateEdgeColor )
         .attr( "stroke-width", d => Math.sqrt( d.value ) );
 
       const defs = svg.append( "svg:defs" );
@@ -770,7 +805,7 @@ export default {
       }
 
       let circle = d3.select( e.target );
-      
+
       circle
         .transition()
         .attr( "r", 15 )
@@ -813,18 +848,18 @@ export default {
         event.subject.fx = event.subject.x;
         event.subject.fy = event.subject.y;
       }
-      
+
       function dragged ( event ) {
         event.subject.fx = event.x;
         event.subject.fy = event.y;
       }
-      
+
       function dragended ( event ) {
         if ( !event.active ) simulation.alphaTarget( 0 );
         event.subject.fx = null;
         event.subject.fy = null;
       }
-      
+
       return d3.drag()
         .on( "start", dragstarted )
         .on( "drag", dragged )
@@ -842,16 +877,16 @@ export default {
 
       const innerRadius = Math.min(width, height) * .35;
       const outerRadius = innerRadius * 1.018;
-      
+
       const chord = d3.chord()
         .padAngle(10 / innerRadius)
         .sortSubgroups(d3.descending)
         .sortChords(d3.descending);
-      
+
       const arc = d3.arc()
         .innerRadius(innerRadius)
         .outerRadius(outerRadius);
-      
+
       const ribbon = d3.ribbon()
         .radius(innerRadius - 1)
         .padAngle(1 / innerRadius);
@@ -878,7 +913,7 @@ export default {
         .selectAll("g")
         .data(chords.groups)
         .join("g");
-      
+
       group.append("path")
         .attr("fill", d => color(names[d.index]))
         .attr("stroke", d => color(names[d.index]))
@@ -921,7 +956,7 @@ export default {
             ? `↑ ${names[d.index]}`
             : `${names[d.index]} ↓`;
         });
-      
+
       svg.append("g")
         .attr("fill-opacity", 0.8)
         .selectAll("path")
@@ -1054,6 +1089,10 @@ export default {
         this.generateChord();
       }
     },
+
+    showEdgeType: function () {
+      this.generateGraph();
+    }
   },
 
   data() {
@@ -1062,9 +1101,15 @@ export default {
       sohInitialized: false,
       sohRunning: false,
       flows: false,
+      volume: [],
       nodes: [],
       edges: [],
-      volume: [],
+      showEdgeType: 'all',
+      networks: [
+       'all',
+       'network',
+       'serial'
+      ],
       radioButton: '',
       vlan: VLAN,
       detailsModal: {
@@ -1135,5 +1180,9 @@ export default {
 
   ul {
     column-count: 1;
+  }
+
+  .dropdown-item.is-active {
+    background-color: whitesmoke;
   }
 </style>

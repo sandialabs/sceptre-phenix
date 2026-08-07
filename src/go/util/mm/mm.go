@@ -51,5 +51,6 @@ type MM interface { //nolint:interfacebloat // legacy interface
 	TapVLAN(...TapOption) error
 	MeshShell(string, string) error
 	MeshShellResponse(string, string) (string, error)
+	MeshBackground(string, string) error
 	MeshSend(string, string, string) error
 }

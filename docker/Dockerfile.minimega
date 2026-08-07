@@ -1,0 +1,17 @@
+# Update GitHub workflow configs and docker-compose config to change the version
+# of minimega required for use with phenix.
+ARG  MM_REV
+FROM ghcr.io/activeshadow/minimega/minimega:${MM_REV}
+
+ARG   MINIMEGA_REVISION
+LABEL org.opencontainers.image.base.name="ghcr.io/activeshadow/minimega/minimega:${MM_REV}"
+ARG   PHENIX_REVISION=local-dev
+LABEL gov.sandia.phenix.revision="${PHENIX_REVISION}"
+
+# iptables needed in minimega container for scorch and tap apps
+# socat needed in minimega container for serial app
+RUN apt update && apt install -y iptables socat \
+  && apt autoremove -y \
+  && apt clean -y \
+  && rm -rf /var/lib/apt/lists/* \
+  && rm -rf /var/cache/apt/archives/*
