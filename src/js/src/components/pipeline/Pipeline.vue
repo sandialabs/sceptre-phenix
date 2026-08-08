@@ -50,6 +50,7 @@
       PipelineNode,
       PipelineLine,
     },
+    emits: ['select', 'mouseenter', 'mouseleave'],
     props: {
       x: {
         type: Number,

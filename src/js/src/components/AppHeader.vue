@@ -8,7 +8,7 @@ are only available to Global Administrator or Global Viewer.
 <template>
   <b-navbar class="mb-4">
     <template #brand>
-      <b-navbar-item tag="router-link" :to="homeLoc()" :active="false">
+      <b-navbar-item tag="router-link" :to="{ name: 'home' }" :active="false">
         <img src="@/assets/imgs/phenix-banner.png" alt="phenix" />
       </b-navbar-item>
     </template>
@@ -94,14 +94,15 @@ are only available to Global Administrator or Global Viewer.
   </b-navbar>
 </template>
 
-<script setup>
+<script>
   import { usePhenixStore } from '@/store.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import axiosInstance from '@/utils/axios.js';
-</script>
 
-<script>
   export default {
+    setup() {
+      return { roleAllowed };
+    },
     //  The computed elements determine if the user is already logged
     //  in; if so, the routable links are available. If not, the sign
     //  in routable link is the only one available. The role getter
@@ -142,10 +143,6 @@ are only available to Global Administrator or Global Viewer.
             }
           }
         });
-      },
-
-      homeLoc() {
-        return this.$router.resolve({ name: 'home' }).href;
       },
 
       builderLoc() {

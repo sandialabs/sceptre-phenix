@@ -267,18 +267,19 @@
   </div>
 </template>
 
-<script setup>
-  import { roleAllowed } from '@/utils/rbac.js';
-  import { useErrorNotification } from '@/utils/errorNotif';
-</script>
 <script>
   import axiosInstance from '@/utils/axios.js';
   import YAML from 'js-yaml';
 
   import FileSaver from 'file-saver';
+  import { roleAllowed } from '@/utils/rbac.js';
+  import { useErrorNotification } from '@/utils/errorNotif';
 
   export default {
     emits: ['edit', 'create'],
+    setup() {
+      return { roleAllowed };
+    },
     data() {
       return {
         configs: [],

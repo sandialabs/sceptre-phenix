@@ -78,6 +78,9 @@
       PipelineNodeStart,
       PipelineNodeEnd,
     },
+    // declare emits so the click listener does not also fall through
+    // to the root element as a native listener and fire twice
+    emits: ['click', 'mouseenter', 'mouseleave'],
     props: {
       index: {
         type: Number,

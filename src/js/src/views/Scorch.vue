@@ -158,9 +158,6 @@
     </b-modal>
   </div>
 </template>
-<script setup>
-  import { roleAllowed } from '@/utils/rbac.js';
-</script>
 <script>
   import Terminal from '@/components/MiniTerminal.vue';
 
@@ -168,11 +165,12 @@
   import { useErrorNotification } from '@/utils/errorNotif';
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
   import { useTable } from '@/utils/useTable.js';
+  import { roleAllowed } from '@/utils/rbac.js';
 
   export default {
     setup() {
       const { table } = useTable();
-      return { table };
+      return { table, roleAllowed };
     },
     components: {
       'vue-terminal': Terminal,
@@ -412,11 +410,15 @@
       },
 
       exitTerminal() {
-        axiosInstance.pos(this.terminal.exit).then(() => {
-          this.resetTerminal(true);
-          this.experimentTerminal(this.terminal.exp, false);
-          delete this.terminals[this.terminal.exp];
-        });
+        // terminal.exit is a server-provided path that already includes the
+        // base path; clear baseURL so axios doesn't prepend it again
+        axiosInstance
+          .post(this.terminal.exit, null, { baseURL: '' })
+          .then(() => {
+            this.resetTerminal(true);
+            this.experimentTerminal(this.terminal.exp, false);
+            delete this.terminals[this.terminal.exp];
+          });
       },
 
       experimentTerminal(exp, enabled) {

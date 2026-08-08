@@ -293,17 +293,10 @@
         let query =
           `logs?start=${this.startDate.toISOString()}` +
           (this.endNow ? '' : `&end=${this.endDate.toISOString()}`);
-        console.log(`${new Date().toISOString()} get logs ${query}`);
         axiosInstance
           .get(query)
           .then((response) => {
-            console.log(`${new Date().toISOString()} got response`);
-            const json = response.data;
-
-            console.log(
-              `${new Date().toISOString()} got logs and converted to json len=${json.length}`,
-            );
-            this.logs = json;
+            this.logs = response.data ?? [];
             this.$nextTick(() => {
               this.$refs.logScroller.scrollToPosition(Number.MAX_SAFE_INTEGER);
               this.isLoading = false;

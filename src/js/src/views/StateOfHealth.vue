@@ -594,12 +594,9 @@
     </div>
   </div>
 </template>
-<script setup>
-  import { roleAllowed } from '@/utils/rbac.js';
-</script>
-
 <script>
   const SOH_STYLE_LABEL_KEY = '__sohStyle';
+  import { roleAllowed } from '@/utils/rbac.js';
   import * as d3 from 'd3';
   import VmLabelsModal from '@/components/VMLabelsModal.vue';
 
@@ -618,7 +615,10 @@
   import { usePhenixStore } from '@/store.js';
 
   export default {
-    async beforeDestroy() {
+    setup() {
+      return { roleAllowed };
+    },
+    async beforeUnmount() {
       removeWsHandler(this.handleWs);
     },
 

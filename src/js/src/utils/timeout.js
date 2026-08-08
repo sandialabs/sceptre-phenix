@@ -23,11 +23,17 @@ export class TimeoutTool {
       return;
     }
 
-    axiosInstance.get('settings/timeout').then((resp) => {
-      this.data = resp.data;
-      this.time_set = new Date();
-      this.startLogoutTimer();
-    });
+    axiosInstance
+      .get('settings/timeout')
+      .then((resp) => {
+        this.data = resp.data;
+        this.time_set = new Date();
+        this.startLogoutTimer();
+      })
+      .catch((err) => {
+        // leave the timeout disabled if the settings can't be fetched
+        console.warn('failed to fetch timeout settings', err);
+      });
   }
 
   startLogoutTimer() {

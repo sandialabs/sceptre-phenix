@@ -204,10 +204,13 @@ func List() ([]types.Setting, error) {
 
 func GetSetting(category, name string) (*types.Setting, error) {
 	combined := fmt.Sprintf("%s.%s", category, name)
-	c, _ := store.NewConfig("setting/" + combined)
 
-	err := store.Get(c)
+	c, err := store.NewConfig("setting/" + combined)
 	if err != nil {
+		return nil, fmt.Errorf("creating setting config %s: %w", combined, err)
+	}
+
+	if err := store.Get(c); err != nil {
 		return nil, fmt.Errorf("getting setting config %s from store: %w", name, err)
 	}
 

@@ -127,7 +127,7 @@ side will pass.
   import axiosInstance from '@/utils/axios.js';
   import { usePhenixStore } from '@/store';
   export default {
-    beforeDestroy() {
+    beforeUnmount() {
       clearInterval(this.update);
     },
 

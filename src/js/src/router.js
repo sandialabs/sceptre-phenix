@@ -92,7 +92,9 @@ const router = createRouter({
     },
 
     {
-      path: '/proxysignup',
+      // username must be a path param: Vue Router 4 drops params that are
+      // not part of the route path (passing them worked in Vue Router 3)
+      path: '/proxysignup/:username?',
       name: 'proxysignup',
       component: () => import('@/views/ProxySignUp.vue'),
       props: true,
@@ -118,7 +120,6 @@ const router = createRouter({
 
     //console paths
     { path: '/api/v1/console/:pid/ws', name: 'console-ws' },
-    { path: '/api/v1/console/:pid/size', name: 'console-size' },
 
     //tunneler paths
     {

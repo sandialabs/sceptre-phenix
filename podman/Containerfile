@@ -47,8 +47,7 @@ RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
 ARG PHENIX_VERSION
 ARG PHENIX_COMMIT
 
-# Skip the UI build: it was already built in the jsbuilder stage and copied in
-# above (this golang stage has no node/npm).
+# UI already built by jsbuilder and copied in above; this stage has no node/npm.
 RUN VER=${PHENIX_VERSION} COMMIT=${PHENIX_COMMIT} make bin/phenix SKIP_UI=1
 
 RUN git clone --branch main https://github.com/sandialabs/sceptre-phenix-apps.git /phenix-apps

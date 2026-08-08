@@ -39,10 +39,9 @@
       },
 
       resizePath() {
-        return this.$router.resolve({
-          name: 'console-size',
-          params: { pid: this.pid },
-        }).href;
+        // relative to the axios instance's api/v1 base; a router-resolved
+        // (base-prefixed) path would get the baseURL prepended again
+        return `console/${this.pid}/size`;
       },
     },
     mounted() {

@@ -12,7 +12,10 @@ export default defineConfig(({ mode }) => {
     VITE_FAVICON: mode === 'development' ? '/favicon_dev.ico' : '/favicon.ico',
   };
   return {
-    base: process.env.VITE_BASE_PATH || '/',
+    // normalize to a trailing slash: import.meta.env.BASE_URL is replaced
+    // with this raw value (not Vite's slash-normalized resolved base), and
+    // code concatenates paths onto it (e.g. `${BASE_URL}api/v1/`)
+    base: (process.env.VITE_BASE_PATH || '/').replace(/\/?$/, '/'),
     assetsDir: 'assets',
     plugins: [vue(), vueDevTools()],
     resolve: {
@@ -51,6 +54,10 @@ export default defineConfig(({ mode }) => {
           silenceDeprecations: ['import', 'color-functions', 'global-builtin'],
         },
       },
+    },
+    // vitest: the Playwright suite in e2e/ has its own runner
+    test: {
+      exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
     },
   };
 });

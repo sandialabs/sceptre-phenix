@@ -24,34 +24,21 @@
     },
     watch: {
       wsPath: function () {
-        if (this.socket != null) {
-          this.socket.close();
-        }
-
+        this.teardownSocket();
         this.setupTerminal();
       },
     },
 
     beforeUnmount() {
-      if (this.handleResize) {
-        window.removeEventListener('resize', this.handleResize);
-      }
-
-      if (this.socket) {
-        this.socket.close();
-      }
+      window.removeEventListener('resize', this.handleResize);
+      this.teardownSocket();
     },
 
     mounted() {
-      this.socket = new WebSocket(this.getWsUrl());
-
       const term = new Terminal();
 
       this.fit = new FitAddon();
-      this.attach = new AttachAddon(this.socket);
-
       term.loadAddon(this.fit);
-      term.loadAddon(this.attach);
 
       term.open(this.$refs.xterm);
 
@@ -71,8 +58,45 @@
       }
 
       this.term = term;
+      this.setupTerminal();
     },
     methods: {
+      setupTerminal() {
+        this.socket = new WebSocket(this.getWsUrl());
+
+        // the attach addon throws on input if it is loaded before the
+        // socket is open, so wait for onopen to wire it up
+        this.socket.onopen = () => {
+          this.attach = new AttachAddon(this.socket);
+          this.term.loadAddon(this.attach);
+
+          if (this.resizePath !== undefined) {
+            this.fit.fit();
+          }
+        };
+
+        this.socket.onerror = () => {
+          this.term.write('\r\n[terminal connection error]\r\n');
+        };
+
+        this.socket.onclose = () => {
+          this.term.write('\r\n[terminal connection closed]\r\n');
+        };
+      },
+      teardownSocket() {
+        if (this.socket) {
+          this.socket.onopen = null;
+          this.socket.onerror = null;
+          this.socket.onclose = null;
+          this.socket.close();
+          this.socket = null;
+        }
+
+        if (this.attach) {
+          this.attach.dispose();
+          this.attach = null;
+        }
+      },
       getWsUrl() {
         const phenixStore = usePhenixStore();
         const token = phenixStore.token;
