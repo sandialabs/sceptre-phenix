@@ -4210,3 +4210,362 @@ func GetPasswordRequirements(w http.ResponseWriter, r *http.Request) {
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
+
+// ReconfigureExperiment - POST /experiments/{name}/reconfigure.
+// Performs the full reconfigure operation (runs the 'configure' stage for all apps).
+func ReconfigureExperiment(w http.ResponseWriter, r *http.Request) {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ReconfigureExperiment")
+
+	var (
+		ctx  = r.Context()
+		role = middleware.RoleFromContext(ctx)
+		vars = mux.Vars(r)
+		name = vars["name"]
+	)
+
+	if !role.Allowed("experiments/reconfigure", "create", name) {
+		plog.Warn(
+			plog.TypeSecurity,
+			"reconfiguring experiment not allowed",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			name,
+		)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
+	if err := experiment.Reconfigure(name); err != nil {
+		plog.Error(plog.TypeSystem, "reconfiguring experiment", "exp", name, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	plog.Info(
+		plog.TypeAction,
+		"experiment reconfigured",
+		"user",
+		middleware.UserFromContext(ctx),
+		"exp",
+		name,
+	)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetExperimentAppsInput - GET /experiments/{name}/apps/input.
+// Returns resolved application-input JSON equivalent to `util app-json`.
+func GetExperimentAppsInput(w http.ResponseWriter, r *http.Request) {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetExperimentAppsInput")
+
+	var (
+		ctx  = r.Context()
+		role = middleware.RoleFromContext(ctx)
+		vars = mux.Vars(r)
+		name = vars["name"]
+	)
+
+	if !role.Allowed("experiments/apps", "get", name) {
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting experiment apps input not allowed",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			name,
+		)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
+	exp, err := experiment.Get(name)
+	if err != nil {
+		http.Error(w, "experiment not found: "+name, http.StatusNotFound)
+
+		return
+	}
+
+	if err := app.PopulateRuntime(exp); err != nil {
+		plog.Error(plog.TypeSystem, "populating runtime", "exp", name, "err", err)
+		http.Error(w, "unable to populate runtime information: "+err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	body, err := json.Marshal(exp)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "marshaling experiment", "exp", name, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+}
+
+type connectVMRequest struct {
+	Interface int    `json:"interface"`
+	VLAN      string `json:"vlan"`
+}
+
+// ConnectVM - POST /experiments/{exp}/vms/{name}/connect.
+// Connects (or reconnects) a VM interface to a VLAN.
+func ConnectVM(w http.ResponseWriter, r *http.Request) {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ConnectVM")
+
+	var (
+		ctx      = r.Context()
+		role     = middleware.RoleFromContext(ctx)
+		vars     = mux.Vars(r)
+		expName  = vars["exp"]
+		name     = vars["name"]
+		fullName = expName + "/" + name
+	)
+
+	if !role.Allowed("vms/connect", "update", fullName) {
+		plog.Warn(
+			plog.TypeSecurity,
+			"connecting VM not allowed",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			expName,
+			"vm",
+			name,
+		)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "reading request body", "err", err)
+		http.Error(w, "unable to read request body", http.StatusInternalServerError)
+
+		return
+	}
+
+	var req connectVMRequest
+
+	if err := json.Unmarshal(body, &req); err != nil {
+		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.VLAN == "" {
+		http.Error(w, "vlan is required", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := vm.Connect(expName, name, req.Interface, req.VLAN); err != nil {
+		plog.Error(plog.TypeSystem, "connecting VM", "exp", expName, "vm", name, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	broker.Broadcast(
+		bt.NewRequestPolicy("vms/connect", "update", fullName),
+		bt.NewResource("experiment/vm", expName+"/"+name, "connected"),
+		nil,
+	)
+
+	plog.Info(
+		plog.TypeAction,
+		"vm connected",
+		"user",
+		middleware.UserFromContext(ctx),
+		"exp",
+		expName,
+		"vm",
+		name,
+		"iface",
+		req.Interface,
+		"vlan",
+		req.VLAN,
+	)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type disconnectVMRequest struct {
+	Interface int `json:"interface"`
+}
+
+// DisconnectVM - POST /experiments/{exp}/vms/{name}/disconnect.
+// Disconnects a VM interface from its current VLAN.
+func DisconnectVM(w http.ResponseWriter, r *http.Request) {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "DisconnectVM")
+
+	var (
+		ctx      = r.Context()
+		role     = middleware.RoleFromContext(ctx)
+		vars     = mux.Vars(r)
+		expName  = vars["exp"]
+		name     = vars["name"]
+		fullName = expName + "/" + name
+	)
+
+	if !role.Allowed("vms/disconnect", "update", fullName) {
+		plog.Warn(
+			plog.TypeSecurity,
+			"disconnecting VM not allowed",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			expName,
+			"vm",
+			name,
+		)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "reading request body", "err", err)
+		http.Error(w, "unable to read request body", http.StatusInternalServerError)
+
+		return
+	}
+
+	var req disconnectVMRequest
+
+	if err := json.Unmarshal(body, &req); err != nil {
+		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if err := vm.Disconnect(expName, name, req.Interface); err != nil {
+		plog.Error(plog.TypeSystem, "disconnecting VM", "exp", expName, "vm", name, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	broker.Broadcast(
+		bt.NewRequestPolicy("vms/disconnect", "update", fullName),
+		bt.NewResource("experiment/vm", expName+"/"+name, "disconnected"),
+		nil,
+	)
+
+	plog.Info(
+		plog.TypeAction,
+		"vm disconnected",
+		"user",
+		middleware.UserFromContext(ctx),
+		"exp",
+		expName,
+		"vm",
+		name,
+		"iface",
+		req.Interface,
+	)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ResetVMDisk - POST /experiments/{exp}/vms/{name}/resetDisk.
+// Restores the disk state of a VM to the initial disk state.
+func ResetVMDisk(w http.ResponseWriter, r *http.Request) {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ResetVMDisk")
+
+	var (
+		ctx      = r.Context()
+		role     = middleware.RoleFromContext(ctx)
+		vars     = mux.Vars(r)
+		expName  = vars["exp"]
+		name     = vars["name"]
+		fullName = expName + "/" + name
+	)
+
+	if !role.Allowed("vms/resetDisk", "update", fullName) {
+		plog.Warn(
+			plog.TypeSecurity,
+			"resetting VM disk not allowed",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			expName,
+			"vm",
+			name,
+		)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
+	if err := cache.LockVMForStopping(expName, name); err != nil {
+		plog.Error(
+			plog.TypeSystem,
+			"locking VM",
+			"exp",
+			expName,
+			"vm",
+			name,
+			"action",
+			"stopping",
+			"err",
+			err,
+		)
+		http.Error(w, err.Error(), http.StatusConflict)
+
+		return
+	}
+
+	defer cache.UnlockVM(expName, name)
+
+	if err := vm.ResetDiskState(expName, name); err != nil {
+		plog.Error(plog.TypeSystem, "resetting VM disk", "exp", expName, "vm", name, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	exp, err := experiment.Get(expName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	v, err := vm.Get(expName, name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *v, exp.Spec.Topology()))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	broker.Broadcast(
+		bt.NewRequestPolicy("vms/resetDisk", "update", fullName),
+		bt.NewResource("experiment/vm", expName+"/"+name, "diskReset"),
+		body,
+	)
+
+	plog.Info(
+		plog.TypeAction,
+		"vm disk reset",
+		"user",
+		middleware.UserFromContext(ctx),
+		"exp",
+		expName,
+		"vm",
+		name,
+	)
+	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+}

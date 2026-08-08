@@ -28,6 +28,9 @@ All notable changes to this project will be documented in this file.
 - **Code Quality**: Integrated `golangci-lint` with a comprehensive ruleset (`.golangci.yml`) and fixed numerous static analysis issues. (Note: Some linters are currently disabled to facilitate incremental adoption).
 - **Shell Completion**: Added `phenix completion` command for Bash, Zsh, Fish, and PowerShell.
 - **Docker Wrapper**: Added `make install-wrapper` to support shell completion when running via Docker.
+- **HTTP API Parity**: Exposed CLI-only operations as API routes (#312): `POST /experiments/{name}/reconfigure`, `GET /experiments/{name}/apps/input`, `GET /schedulers`, `GET /vlans`, `GET|POST /experiments/{name}/vlans/aliases`, `GET|POST /experiments/{name}/vlans/ranges`, `POST /experiments/{exp}/vms/{name}/connect`, `.../disconnect`, `.../resetDisk`, `POST|GET /images/{name}/build` (asynchronous), `POST /disks/inject`, and roles CRUD (`POST /roles`, `GET|PATCH|DELETE /roles/{name}`).
+- **Role Permission Matrix**: `GET /roles` and `GET /roles/{name}` accept `?permissions=true` to return the resolved permission matrix that `phenix util role-table` prints.
+- **API Documentation Coverage**: Every route registered under `/api/v1` now has an OpenAPI entry, and `TestOpenAPI` fails if a route, path parameter, or router-required query parameter drifts from `web/public/docs/openapi.yml`.
 
 ### Changed
 - **Log Output**: Default log output format changed to structured JSON on `stderr` for applications.
@@ -44,9 +47,12 @@ All notable changes to this project will be documented in this file.
 - **Refactor**: Updated `vrouter` app to use structured logging instead of `fmt.Printf`.
 - **Refactor**: Replaced `go-bindata` with Go 1.16+ `embed` package for asset embedding, removing the build dependency on `go-bindata`.
 - **Performance**: Removed excessive debug logging from hot paths in log file cache management to reduce I/O overhead during high-frequency UI polling.
+- **Default Roles**: `Experiment Admin` now allows `experiments/reconfigure:create` and `experiments/vlans:patch`. Roles already in the datastore are backfilled on startup by `rbac.EnsureRolePermissions` (which generalizes the former `EnsureExperimentFilesCreatePermission`).
+- **OpenAPI Document**: Documented the query parameters the router matches on (`disk`, `new`, `backing`, `unsafe`, `size`, `path`, `cols`, `rows`) as required, declared the JWT/cookie security schemes, tagged every operation so it groups in the rendered docs, and renamed the `{exp_name}`/`{vm_name}` path parameters to the `{exp}`/`{name}` the routes actually use.
 
 ### Removed
 - **Legacy Tests**: Removed outdated `testing/` directory and unused `*_test.go` files (replaced by `examples/`).
+- **Stale API Doc**: Removed `web/public/docs/apiary.apib`, which described a long-superseded API shape and was referenced by nothing.
 
 ### Fixed
 - **Timestamp Consistency**: Enforced `2006-01-02 15:04:05.000` time format across file logs.
