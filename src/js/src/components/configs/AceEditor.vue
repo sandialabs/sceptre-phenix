@@ -128,7 +128,7 @@
     // setup() {
     //   this.ace.config.set('basePath', 'ace-builds/src-noconflict/');
     // },
-    beforeDestroy() {
+    beforeUnmount() {
       this.editor.destroy();
     },
     methods: {

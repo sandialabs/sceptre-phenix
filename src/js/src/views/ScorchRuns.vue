@@ -97,12 +97,12 @@
     },
 
     created() {
-      addWsHandler(this.handler);
+      addWsHandler(this.handle);
       this.runsView(this.$route.params.id);
     },
 
     beforeUnmount() {
-      removeWsHandler(this.handler);
+      removeWsHandler(this.handle);
     },
 
     methods: {
@@ -167,6 +167,10 @@
       },
 
       componentDetail(comp) {
+        if (!comp) {
+          return;
+        }
+
         switch (comp.name) {
           case 'configure':
           case 'start':
@@ -246,7 +250,7 @@
             let run = this.runs[runID];
 
             run.loop = loopID;
-            run.nodes = resp.data.pipeline;
+            run.nodes = resp.data.pipeline ?? [];
 
             // using `Vue.set` to force reactivity
             this.runs[runID] = run;
@@ -305,14 +309,16 @@
       },
 
       exitTerminal() {
-        axiosInstance.post(this.terminal.exit).finally(() => {
-          this.resetTerminal(true);
-        });
+        // terminal.exit is a server-provided path that already includes the
+        // base path; clear baseURL so axios doesn't prepend it again
+        axiosInstance
+          .post(this.terminal.exit, null, { baseURL: '' })
+          .finally(() => {
+            this.resetTerminal(true);
+          });
       },
 
       exitOutput() {
-        this.$disconnect();
-
         if (this.output.socket != null) {
           this.output.socket.close();
           this.output.socket = null;
@@ -321,15 +327,6 @@
         this.output.title = '';
         this.output.msg = [];
         this.output.modal = false;
-      },
-
-      handler(event) {
-        event.data.split(/\r?\n/).forEach((m) => {
-          if (m) {
-            let msg = JSON.parse(m);
-            this.handle(msg);
-          }
-        });
       },
 
       handle(msg) {
@@ -377,7 +374,7 @@
                 let run = this.runs[runID];
 
                 if (run.loop == loopID) {
-                  run.nodes = msg.result.pipeline;
+                  run.nodes = msg.result.pipeline ?? [];
                   this.runs[runID] = run;
                 }
 
@@ -397,6 +394,11 @@
               case 'start': {
                 this.exitOutput();
                 this.resetTerminal(true);
+                this.runsView(this.exp.name);
+                break;
+              }
+
+              case 'stop': {
                 this.runsView(this.exp.name);
                 break;
               }

@@ -306,18 +306,16 @@
   </div>
 </template>
 
-<script setup>
-  import { roleAllowed } from '@/utils/rbac.js';
-</script>
 <script>
   import axiosInstance from '@/utils/axios.js';
   import { useErrorNotification } from '@/utils/errorNotif';
   import { usePhenixStore } from '@/store.js';
   import { useTable } from '@/utils/useTable.js';
+  import { roleAllowed } from '@/utils/rbac.js';
 
   export default {
     setup() {
-      return useTable();
+      return { ...useTable(), roleAllowed };
     },
     async created() {
       this.updateDisks();
@@ -537,7 +535,7 @@
           message: 'Are you sure you want to download this disk?',
           onConfirm: () => {
             const store = usePhenixStore();
-            const basePath = import.meta.env.VITE_BASE_PATH || '/';
+            const basePath = import.meta.env.BASE_URL;
             window.open(
               `${basePath}api/v1/disks/download?token=${store.token}&disk=${encodeURIComponent(path)}`,
               '_blank',

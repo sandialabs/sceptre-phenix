@@ -143,10 +143,8 @@
     </div>
   </section>
 </template>
-<script setup>
-  import { useErrorNotification } from '@/utils/errorNotif';
-</script>
 <script>
+  import { useErrorNotification } from '@/utils/errorNotif';
   import YAML from 'js-yaml';
   import AceEditor from './AceEditor.vue';
   import { sample } from 'openapi-sampler';

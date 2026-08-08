@@ -83,6 +83,11 @@ func GetLogs(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
+	if logs == nil {
+		// marshal an empty list, not null, when no logs match
+		logs = []plog.LogEntry{}
+	}
+
 	body, err := json.Marshal(logs)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "error marshaling loglist", "error", err)

@@ -295,21 +295,18 @@
   </div>
 </template>
 
-<script setup>
-  import { roleAllowed } from '@/utils/rbac';
-  import { useErrorNotification } from '@/utils/errorNotif';
-</script>
-
 <script>
   import axiosInstance from '@/utils/axios.js';
   import { uniq } from 'lodash-es';
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
   import { usePhenixStore } from '@/store';
   import { useTable } from '@/utils/useTable.js';
+  import { roleAllowed } from '@/utils/rbac.js';
+  import { useErrorNotification } from '@/utils/errorNotif';
 
   export default {
     setup() {
-      return useTable();
+      return { ...useTable(), roleAllowed };
     },
     beforeUnmount() {
       removeWsHandler(this.handleWs);

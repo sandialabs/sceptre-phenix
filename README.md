@@ -83,18 +83,30 @@ If you wish to build and run the services locally without Docker, follow these s
 
 *   Go 1.24+ (for core development)
 *   Python 3.12+ (for app development)
-*   Node.js 18+ & Yarn 1.22+ (for UI development)
+*   Node.js 24+ & npm (for UI development)
 *   Protoc 3.12+ (for Protocol Buffers generation)
 
 To install the required system packages on Ubuntu:
 
 ```bash
 sudo apt update
-sudo apt install -y protobuf-compiler npm python3 python3-pip python3-venv
-sudo npm install -g yarn
+sudo apt install -y protobuf-compiler python3 python3-pip python3-venv
 ```
 
 For Go 1.24+, follow the [official installation instructions](https://go.dev/doc/install).
+
+For Node.js, the simplest way to get (and stay on) the right version is
+[nvm](https://github.com/nvm-sh/nvm):
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+nvm install 24
+```
+
+The UI source tree has a `.nvmrc`, so `nvm use` (or `nvm install`) run from
+`src/js` selects the correct Node version automatically. UI dependencies are
+installed with `npm ci` from `src/js` (one-off tools like `prettier` can be
+run with `npx` without a global install).
 
 On older Ubuntu releases (<24.04), Python 3.12+ will need to be manually installed and pointed to with `SYSTEM_PYTHON`:
 

@@ -142,8 +142,14 @@ function globalWsMessageHandler(event: MessageEvent): void {
         msg,
       );
 
-      // dispatch to listeners
-      wsListeners.forEach((listener) => listener(msg));
+      // dispatch to listeners; one failing listener must not block the rest
+      wsListeners.forEach((listener) => {
+        try {
+          listener(msg);
+        } catch (err) {
+          console.error('websocket listener error', err);
+        }
+      });
 
       // global handlers
       if (

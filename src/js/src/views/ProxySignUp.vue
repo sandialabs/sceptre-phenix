@@ -2,7 +2,7 @@
   <div id="signup">
     <div class="signup-form">
       <b-field label="Username">
-        <b-input type="text" :value="username" disabled></b-input>
+        <b-input type="text" :model-value="username" disabled></b-input>
       </b-field>
       <b-field label="First Name">
         <b-input type="text" v-model="firstName" autofocus></b-input>
@@ -67,9 +67,7 @@
           .post('signup', params)
           .then((response) => {
             const store = usePhenixStore();
-            return response.json().then((user) => {
-              store.login(user, false);
-            });
+            store.login(response.data, false);
           })
           .catch((err) => {
             useErrorNotification(err);

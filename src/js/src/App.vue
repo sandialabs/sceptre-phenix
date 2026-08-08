@@ -8,7 +8,7 @@
   import AppHeader from '@/components/AppHeader.vue';
   import AppFooter from '@/components/AppFooter.vue';
   import { onUnmounted, onMounted } from 'vue';
-  import axios from 'axios';
+  import router from '@/router';
   import { usePhenixStore } from '@/store';
   import { storeToRefs } from 'pinia';
   import { watch } from 'vue';
@@ -18,10 +18,10 @@
   const store = usePhenixStore();
   const timeout = new TimeoutTool();
 
-  axios
-    .get('/features')
-    .then((resp) => {
-      store.features = resp.data.features;
+  fetch(router.resolve({ name: 'features' }).href)
+    .then((resp) => resp.json())
+    .then((data) => {
+      store.features = data.features;
     })
     .catch((err) => {
       console.log(err);

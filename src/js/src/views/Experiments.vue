@@ -366,22 +366,19 @@
   </div>
 </template>
 
-<script setup>
-  import { roleAllowed } from '@/utils/rbac.js';
-  import { useErrorNotification } from '@/utils/errorNotif';
-</script>
-
 <script>
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import axiosInstance from '@/utils/axios.js';
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
   import { useTable } from '@/utils/useTable.js';
+  import { roleAllowed } from '@/utils/rbac.js';
+  import { useErrorNotification } from '@/utils/errorNotif';
 
   export default {
     mixins: [formattingMixin],
 
     setup() {
-      return useTable();
+      return { ...useTable(), roleAllowed };
     },
 
     async beforeUnmount() {

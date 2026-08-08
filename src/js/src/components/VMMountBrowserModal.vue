@@ -114,16 +114,17 @@
   </form>
 </template>
 
-<script setup>
+<script>
   import { roleAllowed } from '@/utils/rbac.js';
   import axiosInstance from '@/utils/axios.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import { usePhenixStore } from '@/store';
-</script>
 
-<script>
   export default {
     mixins: [formattingMixin],
+    setup() {
+      return { roleAllowed };
+    },
     props: ['targetExp', 'targetVm'],
 
     data() {

@@ -26,6 +26,7 @@ var StoredVersion = map[string]string{ //nolint:gochecknoglobals // global regis
 	"Role":       "v1",
 	"Node":       "v1",
 	"Ruleset":    "v1",
+	"Setting":    "v2",
 }
 
 const LATEST_VERSION = "v2" //nolint:staticcheck // constant name is part of API
