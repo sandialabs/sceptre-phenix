@@ -88,16 +88,24 @@ func newUtilRoleTableCmd() *cobra.Command {
 
 			header := make([]string, 0, roleHeaderPadding+len(roles))
 			header = append(header, "", "")
-			for _, r := range roles {
+
+			granted := make([]map[rbac.Permission]bool, len(roles))
+
+			for i, r := range roles {
 				header = append(header, r.Spec.Name)
+
+				granted[i] = make(map[rbac.Permission]bool, len(rbac.Permissions))
+				for _, p := range r.AllowedPermissions() {
+					granted[i][p] = true
+				}
 			}
 
 			data := make([][]string, 0, len(rbac.Permissions))
 
 			for _, p := range rbac.Permissions {
 				row := []string{p.Resource, p.Verb}
-				for _, r := range roles {
-					if r.Allowed(p.Resource, p.Verb) {
+				for i := range roles {
+					if granted[i][p] {
 						row = append(row, "Y")
 					} else {
 						row = append(row, "")

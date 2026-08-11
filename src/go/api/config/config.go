@@ -29,6 +29,57 @@ var AllKinds = []string{"Topology", "Scenario", "Experiment", "Image", "User", "
 
 var NameRegex = regexp.MustCompile(`^[a-zA-Z0-9_@.-]*$`)
 
+// walkDefaultConfigs calls fn for each built-in config file and its decoded contents.
+func walkDefaultConfigs(fn func(path string, content []byte, c store.Config) error) error {
+	return fs.WalkDir(defaultFS, "default", func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		switch strings.ToLower(filepath.Ext(path)) {
+		case ".yaml", ".yml", ".json":
+		default:
+			return nil
+		}
+
+		content, err := defaultFS.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		var c store.Config
+		if err := yaml.Unmarshal(content, &c); err != nil {
+			return fmt.Errorf("unmarshaling default config %s: %w", path, err)
+		}
+
+		return fn(path, content, c)
+	})
+}
+
+// DefaultNames returns the metadata names of the built-in configs of the given
+// kind. Built-in configs are recreated on startup, so callers that need to
+// treat them as immutable should ask here rather than keep their own list.
+func DefaultNames(kind string) ([]string, error) {
+	var names []string
+
+	err := walkDefaultConfigs(func(_ string, _ []byte, c store.Config) error {
+		if strings.EqualFold(c.Kind, kind) {
+			names = append(names, c.Metadata.Name)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walking default configs: %w", err)
+	}
+
+	return names, nil
+}
+
 // ConfigHook is a function to be called during the different lifecycle stages
 // of a config. The passed config can be updated by the hook functions as
 // necessary, and an error can be returned if the lifecycle stage should be
@@ -56,33 +107,10 @@ func init() { //nolint:gochecknoinits // config hook
 	}
 }
 
-//nolint:cyclop,funlen,gocyclo // complex init logic
+//nolint:funlen // complex init logic
 func Init() error {
 	// Ensure all built-in, default configs are present in the store.
-	err := fs.WalkDir(defaultFS, "default", func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			return nil
-		}
-
-		ext := strings.ToLower(filepath.Ext(path))
-		if ext != ".yaml" && ext != ".yml" && ext != ".json" {
-			return nil
-		}
-
-		content, err := defaultFS.ReadFile(path)
-		if err != nil {
-			return err
-		}
-
-		var c store.Config
-		err = yaml.Unmarshal(content, &c)
-		if err != nil {
-			return fmt.Errorf("unmarshaling default config %s: %w", path, err)
-		}
-
+	err := walkDefaultConfigs(func(path string, content []byte, c store.Config) error {
 		name := strings.ToLower(c.Kind) + "/" + c.Metadata.Name
 
 		// Don't attempt to create this default config again if it already exists in

@@ -73,6 +73,17 @@ func RoleFromConfig(name string) (*Role, error) {
 	return nil, fmt.Errorf("could not find role in store: %w", err)
 }
 
+// ConfigName returns the role's config metadata name (e.g. "global-admin"),
+// which differs from Spec.Name (e.g. "Global Admin"). It is empty for roles
+// that were built in memory rather than read from the store.
+func (r Role) ConfigName() string {
+	if r.config == nil {
+		return ""
+	}
+
+	return r.config.Metadata.Name
+}
+
 func (r Role) Save() error {
 	r.config.Spec = structs.MapDefaultCase(r.Spec, structs.CASESNAKE)
 
@@ -143,6 +154,20 @@ func (r *Role) AddPolicy(res, rn, v []string) {
 	}
 
 	r.Spec.Policies = append(r.Spec.Policies, policy)
+}
+
+// AllowedPermissions returns the subset of the known Permissions this role
+// grants. It backs both `phenix util role-table` and the HTTP roles API.
+func (r Role) AllowedPermissions() []Permission {
+	allowed := make([]Permission, 0, len(Permissions))
+
+	for _, p := range Permissions {
+		if r.Allowed(p.Resource, p.Verb) {
+			allowed = append(allowed, p)
+		}
+	}
+
+	return allowed
 }
 
 func (r Role) Allowed(resource, verb string, names ...string) bool {

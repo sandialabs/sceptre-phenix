@@ -2,15 +2,23 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/activeshadow/structs"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
 
+	"phenix/api/config"
 	"phenix/api/settings"
+	"phenix/store"
+	v1 "phenix/types/version/v1"
 	"phenix/util/plog"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -534,8 +542,14 @@ func GetRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	withPermissions := r.URL.Query().Get("permissions") == "true"
+
 	for _, r := range roles {
-		resp = append(resp, roleFromRBAC(*r))
+		if withPermissions {
+			resp = append(resp, roleWithPermissions(*r))
+		} else {
+			resp = append(resp, roleFromRBAC(*r))
+		}
 	}
 
 	body, err := json.Marshal(util.WithRoot("roles", resp))
@@ -547,4 +561,377 @@ func GetRoles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, _ = w.Write(body)
+}
+
+// GetRole - GET /roles/{name}.
+func GetRole(w http.ResponseWriter, r *http.Request) {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetRole")
+
+	var (
+		ctx  = r.Context()
+		role = middleware.RoleFromContext(ctx)
+		vars = mux.Vars(r)
+		name = vars["name"]
+	)
+
+	if !role.Allowed("roles", "get") {
+		plog.Error(
+			plog.TypeSecurity,
+			"getting role not allowed",
+			"username",
+			middleware.UserFromContext(ctx),
+		)
+		http.Error(w, "forbidden to get role", http.StatusForbidden)
+
+		return
+	}
+
+	r2, err := rbac.RoleFromConfig(name)
+	if err != nil {
+		http.Error(w, "role not found: "+name, http.StatusNotFound)
+
+		return
+	}
+
+	out := roleFromRBAC(*r2)
+	if r.URL.Query().Get("permissions") == "true" {
+		out = roleWithPermissions(*r2)
+	}
+
+	body, err := json.Marshal(out)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "marshaling role", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	_, _ = w.Write(body)
+}
+
+type createRoleRequest struct {
+	Name         string   `json:"name"`
+	MetadataName string   `json:"metadataName"`
+	Policies     []Policy `json:"policies"`
+}
+
+// roleMetadataName returns the config name to store a role under, defaulting to
+// a slug of its display name. Config names cannot contain spaces (NameRegex in
+// api/config), so "Global Admin" has to become "global-admin".
+func roleMetadataName(req createRoleRequest) string {
+	if req.MetadataName != "" {
+		return req.MetadataName
+	}
+
+	return strings.ToLower(strings.ReplaceAll(req.Name, " ", "-"))
+}
+
+// roleNameTaken reports whether either name is already in use. RoleFromConfig
+// resolves both forms, so both have to be unique or later lookups are ambiguous.
+func roleNameTaken(metaName, displayName string) (bool, error) {
+	roles, err := rbac.GetRoles()
+	if err != nil {
+		return false, fmt.Errorf("getting roles: %w", err)
+	}
+
+	for _, role := range roles {
+		if role.ConfigName() == metaName || role.Spec.Name == displayName {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// storeRole writes a new role config, validating it against the Role schema.
+func storeRole(metaName string, spec *v1.RoleSpec) error {
+	c := &store.Config{ //nolint:exhaustruct // partial initialization
+		Version:  "phenix.sandia.gov/v1",
+		Kind:     "Role",
+		Metadata: store.ConfigMetadata{Name: metaName}, //nolint:exhaustruct // partial initialization
+		Spec:     structs.MapDefaultCase(spec, structs.CASESNAKE),
+	}
+
+	if _, err := config.Create(config.CreateFromConfig(c), config.CreateWithValidation()); err != nil {
+		return fmt.Errorf("creating role config: %w", err)
+	}
+
+	return nil
+}
+
+// policySpecs converts request policies into their stored representation.
+func policySpecs(policies []Policy) []*v1.PolicySpec {
+	specs := make([]*v1.PolicySpec, len(policies))
+
+	for i, p := range policies {
+		specs[i] = &v1.PolicySpec{
+			Resources:     p.Resources,
+			ResourceNames: p.ResourceNames,
+			Verbs:         p.Verbs,
+		}
+	}
+
+	return specs
+}
+
+// CreateRole - POST /roles.
+func CreateRole(w http.ResponseWriter, r *http.Request) {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreateRole")
+
+	var (
+		ctx  = r.Context()
+		role = middleware.RoleFromContext(ctx)
+	)
+
+	if !role.Allowed("roles", "create") {
+		plog.Error(
+			plog.TypeSecurity,
+			"creating role not allowed",
+			"username",
+			middleware.UserFromContext(ctx),
+		)
+		http.Error(w, "forbidden to create role", http.StatusForbidden)
+
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "reading request body", "err", err)
+		http.Error(w, "unable to read request body", http.StatusInternalServerError)
+
+		return
+	}
+
+	var req createRoleRequest
+
+	if err := json.Unmarshal(body, &req); err != nil {
+		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.Name == "" {
+		http.Error(w, "role name is required", http.StatusBadRequest)
+
+		return
+	}
+
+	metaName := roleMetadataName(req)
+
+	taken, err := roleNameTaken(metaName, req.Name)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "retrieving roles", "err", err)
+		http.Error(w, "error retrieving roles", http.StatusInternalServerError)
+
+		return
+	}
+
+	if taken {
+		http.Error(w, "role already exists: "+req.Name, http.StatusConflict)
+
+		return
+	}
+
+	spec := &v1.RoleSpec{
+		Name:     req.Name,
+		Policies: policySpecs(req.Policies),
+	}
+
+	if err := storeRole(metaName, spec); err != nil {
+		if errors.Is(err, store.ErrExist) {
+			http.Error(w, "role already exists: "+req.Name, http.StatusConflict)
+
+			return
+		}
+
+		plog.Error(plog.TypeSystem, "creating role", "name", req.Name, "err", err)
+		http.Error(w, "error creating role: "+err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	out, err := json.Marshal(roleFromRBAC(rbac.Role{Spec: spec}))
+	if err != nil {
+		plog.Error(plog.TypeSystem, "marshaling role", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	plog.Info(
+		plog.TypeAction,
+		"role created",
+		"user",
+		middleware.UserFromContext(ctx),
+		"role",
+		req.Name,
+	)
+
+	w.Header().Set("Location", "/api/v1/roles/"+metaName)
+	w.WriteHeader(http.StatusCreated)
+	_, _ = w.Write(out)
+}
+
+// updateRoleRequest uses a pointer so an absent "policies" key is rejected
+// rather than silently stripping every permission from the role.
+type updateRoleRequest struct {
+	Policies *[]Policy `json:"policies"`
+}
+
+// UpdateRole - PATCH /roles/{name}.
+func UpdateRole(w http.ResponseWriter, r *http.Request) {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "UpdateRole")
+
+	var (
+		ctx  = r.Context()
+		role = middleware.RoleFromContext(ctx)
+		vars = mux.Vars(r)
+		name = vars["name"]
+	)
+
+	if !role.Allowed("roles", "patch") {
+		plog.Error(
+			plog.TypeSecurity,
+			"updating role not allowed",
+			"username",
+			middleware.UserFromContext(ctx),
+		)
+		http.Error(w, "forbidden to update role", http.StatusForbidden)
+
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "reading request body", "err", err)
+		http.Error(w, "unable to read request body", http.StatusInternalServerError)
+
+		return
+	}
+
+	var req updateRoleRequest
+
+	if err := json.Unmarshal(body, &req); err != nil {
+		plog.Error(plog.TypeSystem, "unmarshaling request body", "err", err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if req.Policies == nil || len(*req.Policies) == 0 {
+		http.Error(w, "policies is required and must not be empty", http.StatusBadRequest)
+
+		return
+	}
+
+	r2, err := rbac.RoleFromConfig(name)
+	if err != nil {
+		http.Error(w, "role not found: "+name, http.StatusNotFound)
+
+		return
+	}
+
+	r2.Spec.Policies = policySpecs(*req.Policies)
+
+	if err := r2.Save(); err != nil {
+		plog.Error(plog.TypeSystem, "saving role", "name", name, "err", err)
+		http.Error(w, "error updating role: "+err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	plog.Info(
+		plog.TypeAction,
+		"role updated",
+		"user",
+		middleware.UserFromContext(ctx),
+		"role",
+		name,
+	)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// DeleteRole - DELETE /roles/{name}.
+func DeleteRole(w http.ResponseWriter, r *http.Request) {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "DeleteRole")
+
+	var (
+		ctx  = r.Context()
+		role = middleware.RoleFromContext(ctx)
+		vars = mux.Vars(r)
+		name = vars["name"]
+	)
+
+	if !role.Allowed("roles", "delete") {
+		plog.Error(
+			plog.TypeSecurity,
+			"deleting role not allowed",
+			"username",
+			middleware.UserFromContext(ctx),
+		)
+		http.Error(w, "forbidden to delete role", http.StatusForbidden)
+
+		return
+	}
+
+	// Resolve first: RoleFromConfig accepts the display name too, but
+	// config.Delete only understands the config metadata name.
+	r2, err := rbac.RoleFromConfig(name)
+	if err != nil {
+		http.Error(w, "role not found: "+name, http.StatusNotFound)
+
+		return
+	}
+
+	if err := roleDeletable(*r2); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+
+		return
+	}
+
+	if err := config.Delete("role/" + r2.ConfigName()); err != nil {
+		plog.Error(plog.TypeSystem, "deleting role", "name", name, "err", err)
+		http.Error(w, "error deleting role: "+err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	plog.Info(
+		plog.TypeAction,
+		"role deleted",
+		"user",
+		middleware.UserFromContext(ctx),
+		"role",
+		name,
+	)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// roleDeletable reports why a role must not be deleted, if so. Built-in roles
+// are recreated on startup, and deleting an assigned role would leave its users
+// without one.
+func roleDeletable(role rbac.Role) error {
+	builtin, err := config.DefaultNames("Role")
+	if err != nil {
+		return fmt.Errorf("getting built-in roles: %w", err)
+	}
+
+	if slices.Contains(builtin, role.ConfigName()) {
+		return errors.New("cannot delete built-in role " + role.ConfigName())
+	}
+
+	users, err := rbac.GetUsers()
+	if err != nil {
+		return fmt.Errorf("getting users: %w", err)
+	}
+
+	for _, user := range users {
+		if user.RoleName() == role.Spec.Name {
+			return errors.New("role is assigned to user " + user.Username())
+		}
+	}
+
+	return nil
 }

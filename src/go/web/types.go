@@ -67,6 +67,10 @@ type Policy struct {
 type Role struct {
 	Name     string   `json:"name"`
 	Policies []Policy `json:"policies"`
+
+	// Permissions is the resolved equivalent of `phenix util role-table` for
+	// this role. It is only populated when explicitly requested.
+	Permissions []rbac.Permission `json:"permissions,omitempty"`
 }
 
 func userFromRBAC(u rbac.User) User {
@@ -93,10 +97,18 @@ func roleFromRBAC(r rbac.Role) Role {
 		}
 	}
 
-	role := Role{
+	role := Role{ //nolint:exhaustruct // permissions are opt-in, see roleWithPermissions
 		Name:     r.Spec.Name,
 		Policies: policies,
 	}
+
+	return role
+}
+
+// roleWithPermissions is roleFromRBAC plus the role's resolved permission matrix.
+func roleWithPermissions(r rbac.Role) Role {
+	role := roleFromRBAC(r)
+	role.Permissions = r.AllowedPermissions()
 
 	return role
 }

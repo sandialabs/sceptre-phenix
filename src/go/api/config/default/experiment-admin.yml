@@ -33,6 +33,14 @@ spec:
     verbs:
     - create
   - resources:
+    - "experiments/reconfigure"
+    verbs:
+    - create
+  - resources:
+    - "experiments/vlans"
+    verbs:
+    - patch
+  - resources:
     - hosts
     resourceNames:
     - "*"

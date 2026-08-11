@@ -1,9 +1,8 @@
 openapi: 3.0.0
 info:
   description: phenix API
-  version: 0.0.0
+  version: "1.0.0"
   title: phenix
-  termsOfService: http://swagger.io/terms/
   contact:
     url: https://github.com/sandialabs/sceptre-phenix
   license:
@@ -25,8 +24,28 @@ tags:
     description: Available phenix topologies
   - name: Disks
     description: Available phenix disk images
+  - name: VLANs
+    description: VLAN details and controls
+  - name: Schedulers
+    description: Available phenix schedulers
+  - name: Roles
+    description: Role details and controls
   - name: Users
     description: User details and controls
+  - name: Builder
+    description: Topology builder details and controls
+  - name: Netflow
+    description: Experiment netflow controls
+  - name: Scorch
+    description: Scorch pipeline, component, and terminal controls
+  - name: Console
+    description: minimega console controls
+  - name: Settings
+    description: Server settings
+  - name: Workflow
+    description: Workflow config controls
+  - name: Server
+    description: Server options, logs, and event broker
 paths:
   "/configs":
     get:
@@ -371,6 +390,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Experiment"
+    patch:
+      tags:
+        - Experiments
+      summary: Update an existing experiment
+      operationId: patchExperimentsName
+      parameters:
+        - $ref: "#/components/parameters/name"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
     delete:
       tags:
         - Experiments
@@ -462,7 +491,7 @@ paths:
           description: name of phenix experiment to update schedule for
           required: true
           schema:
-            type: name
+            type: string
       requestBody:
         description: scheduling algorithm to use
         required: true
@@ -550,7 +579,7 @@ paths:
               schema:
                 type: string
                 format: binary
-  "/experiments/{exp_name}/vms":
+  "/experiments/{exp}/vms":
     get:
       tags:
         - Virtual Machines
@@ -558,7 +587,7 @@ paths:
       description: ""
       operationId: getExperimentsNameVms
       parameters:
-        - name: exp_name
+        - name: exp
           in: path
           description: name of phenix experiment to get VMs for
           required: true
@@ -577,7 +606,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VMs"
-  "/experiments/{exp_name}/vms/{vm_name}":
+    patch:
+      tags:
+        - Virtual Machines
+      summary: Update VMs in an experiment
+      operationId: patchExperimentsNameVms
+      parameters:
+        - $ref: "#/components/parameters/exp"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}":
     get:
       tags:
         - Virtual Machines
@@ -585,13 +624,13 @@ paths:
       description: ""
       operationId: getExperimentsNameVmName
       parameters:
-        - name: exp_name
+        - name: exp
           in: path
           description: name of phenix experiment to get VM from
           required: true
           schema:
             type: string
-        - name: vm_name
+        - name: name
           in: path
           description: name of phenix experiment VM to get
           required: true
@@ -617,13 +656,13 @@ paths:
       description: ""
       operationId: patchExperimentsNameVmsName
       parameters:
-        - name: exp_name
+        - name: exp
           in: path
           description: name of phenix experiment to modify
           required: true
           schema:
             type: string
-        - name: vm_name
+        - name: name
           in: path
           description: name of phenix virtual machine to modify
           required: true
@@ -668,13 +707,13 @@ paths:
       description: ""
       operationId: deleteExperimentsNameVmsName
       parameters:
-        - name: name
+        - name: exp
           in: path
           description: name of phenix experiment
           required: true
           schema:
             type: string
-        - name: vm_name
+        - name: name
           in: path
           description: name of phenix virtual machine to delete
           required: true
@@ -683,7 +722,7 @@ paths:
       responses:
         "204":
           description: successful operation
-  "/experiments/{exp_name}/vms/{vm_name}/start":
+  "/experiments/{exp}/vms/{name}/start":
     post:
       tags:
         - Virtual Machines
@@ -691,13 +730,13 @@ paths:
       description: ""
       operationId: postExperimentsNameVMsNameStart
       parameters:
-        - name: exp_name
+        - name: exp
           in: path
           description: name of phenix experiment
           required: true
           schema:
             type: string
-        - name: vm_name
+        - name: name
           in: path
           description: name of phenix VM to start
           required: true
@@ -710,7 +749,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VM"
-  "/experiments/{exp_name}/vms/{vm_name}/stop":
+  "/experiments/{exp}/vms/{name}/stop":
     post:
       tags:
         - Virtual Machines
@@ -718,13 +757,13 @@ paths:
       description: ""
       operationId: postExperimentsNameVMsNameStop
       parameters:
-        - name: exp_name
+        - name: exp
           in: path
           description: name of phenix experiment
           required: true
           schema:
             type: string
-        - name: vm_name
+        - name: name
           in: path
           description: name of phenix VM to stop
           required: true
@@ -737,7 +776,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VM"
-  "/experiments/{exp_name}/vms/{vm_name}/redeploy":
+  "/experiments/{exp}/vms/{name}/redeploy":
     post:
       tags:
         - Virtual Machines
@@ -745,13 +784,13 @@ paths:
       description: ""
       operationId: postExperimentsNameVMsNameRedeploy
       parameters:
-        - name: exp_name
+        - name: exp
           in: path
           description: name of phenix experiment
           required: true
           schema:
             type: string
-        - name: vm_name
+        - name: name
           in: path
           description: name of phenix VM to redeploy
           required: true
@@ -764,7 +803,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VM"
-  "/experiments/{exp_name}/vms/{vm_name}/screenshot.png":
+  "/experiments/{exp}/vms/{name}/screenshot.png":
     get:
       tags:
         - Virtual Machines
@@ -772,13 +811,13 @@ paths:
       description: ""
       operationId: getExperimentsNameVmsNameScreenshot
       parameters:
-        - name: exp_name
+        - name: exp
           in: path
           description: name of phenix experiment
           required: true
           schema:
             type: string
-        - name: vm_name
+        - name: name
           in: path
           description: name of phenix virtual machine to get screenshot from
           required: true
@@ -804,7 +843,7 @@ paths:
               schema:
                 type: string
                 format: base64
-  "/experiments/{exp_name}/vms/{vm_name}/vnc/ws":
+  "/experiments/{exp}/vms/{name}/vnc/ws":
     get:
       tags:
         - Virtual Machines
@@ -812,13 +851,13 @@ paths:
       description: ""
       operationId: getExperimentsNameVmsNameVncWs
       parameters:
-        - name: exp_name
+        - name: exp
           in: path
           description: name of phenix experiment
           required: true
           schema:
             type: string
-        - name: vm_name
+        - name: name
           in: path
           description: name of phenix virtual machine to connect to
           required: true
@@ -827,7 +866,7 @@ paths:
       responses:
         "101":
           description: switching protocols
-  "/experiments/{exp_name}/vms/{vm_name}/captures":
+  "/experiments/{exp}/vms/{name}/captures":
     get:
       tags:
         - Virtual Machines
@@ -835,13 +874,13 @@ paths:
       description: ""
       operationId: getExperimentsNameVmsNameCaptures
       parameters:
-        - name: exp_name
+        - name: exp
           in: path
           description: name of phenix experiment
           required: true
           schema:
             type: string
-        - name: vm_name
+        - name: name
           in: path
           description: name of phenix VM to get captures for
           required: true
@@ -861,13 +900,13 @@ paths:
       description: ""
       operationId: postExperimentsNameVmsNameCapture
       parameters:
-        - name: exp_name
+        - name: exp
           in: path
           description: name of phenix experiment
           required: true
           schema:
             type: string
-        - name: vm_name
+        - name: name
           in: path
           description: name of phenix VM to start capture on
           required: true
@@ -895,13 +934,13 @@ paths:
       description: ""
       operationId: deleteExperimentsNameVmsNameCaptures
       parameters:
-        - name: exp_name
+        - name: exp
           in: path
           description: name of phenix experiment
           required: true
           schema:
             type: string
-        - name: vm_name
+        - name: name
           in: path
           description: name of phenix VM to stop captures on
           required: true
@@ -910,7 +949,7 @@ paths:
       responses:
         "204":
           description: successful operation
-  "/experiments/{exp_name}/vms/{vm_name}/snapshots":
+  "/experiments/{exp}/vms/{name}/snapshots":
     get:
       tags:
         - Virtual Machines
@@ -918,13 +957,13 @@ paths:
       description: ""
       operationId: getExperimentsNameVmsNameSnapshots
       parameters:
-        - name: exp_name
+        - name: exp
           in: path
           description: name of phenix experiment
           required: true
           schema:
             type: string
-        - name: vm_name
+        - name: name
           in: path
           description: name of phenix VM to get snapshots for
           required: true
@@ -944,13 +983,13 @@ paths:
       description: ""
       operationId: postExperimentsNameVmsNameSnapshots
       parameters:
-        - name: exp_name
+        - name: exp
           in: path
           description: name of phenix experiment
           required: true
           schema:
             type: string
-        - name: vm_name
+        - name: name
           in: path
           description: name of phenix VM to snapshot
           required: true
@@ -969,7 +1008,7 @@ paths:
       responses:
         "204":
           description: successful operation
-  "/experiments/{exp_name}/vms/{vm_name}/snapshots/{snapshot}":
+  "/experiments/{exp}/vms/{name}/snapshots/{snapshot}":
     post:
       tags:
         - Virtual Machines
@@ -977,13 +1016,13 @@ paths:
       description: ""
       operationId: postExperimentsNameVmsNameSnapshotsSnapshot
       parameters:
-        - name: exp_name
+        - name: exp
           in: path
           description: name of phenix experiment
           required: true
           schema:
             type: string
-        - name: vm_name
+        - name: name
           in: path
           description: name of phenix VM to restore
           required: true
@@ -1061,6 +1100,513 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Disks"
+    post:
+      tags:
+        - Disks
+      summary: Upload a disk
+      operationId: postDisks
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+    delete:
+      tags:
+        - Disks
+      summary: Delete a disk
+      operationId: deleteDisks
+      parameters:
+        - $ref: "#/components/parameters/diskQuery"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/disks/inject":
+    post:
+      tags:
+        - Disks
+      summary: Inject miniccc or minirouter into a disk image
+      operationId: injectMiniExe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - disk
+              properties:
+                exe:
+                  type: string
+                  default: /phenix/miniccc
+                disk:
+                  type: string
+                  description: Absolute path or a filename relative to /phenix/vmdb
+                svc:
+                  type: string
+      responses:
+        "204":
+          description: executable injected
+        "400":
+          description: invalid request
+        "403":
+          description: forbidden
+  "/images/{name}/build":
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - Disks
+      summary: Get the status of the most recent image build
+      operationId: getImageBuild
+      responses:
+        "200":
+          description: image build status
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - building
+                      - complete
+                      - failed
+                  error:
+                    type: string
+        "403":
+          description: forbidden
+        "404":
+          description: no build found
+    post:
+      tags:
+        - Disks
+      summary: Build a VM disk image
+      operationId: buildImage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                verbosity:
+                  type: integer
+                cache:
+                  type: boolean
+                dry_run:
+                  type: boolean
+                output:
+                  type: string
+                  default: /phenix/vmdb
+      responses:
+        "202":
+          description: build accepted; poll the URL in the Location header for status
+          headers:
+            Location:
+              schema:
+                type: string
+        "400":
+          description: invalid request
+        "403":
+          description: forbidden
+        "409":
+          description: build already in progress
+  "/experiments/{name}/apps/input":
+    get:
+      tags:
+        - Experiments
+      summary: Get resolved application input for an experiment
+      operationId: getExperimentAppsInput
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: resolved experiment application input
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: forbidden
+        "404":
+          description: experiment not found
+  "/experiments/{name}/reconfigure":
+    post:
+      tags:
+        - Experiments
+      summary: Reconfigure an experiment
+      operationId: reconfigureExperiment
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: experiment reconfigured
+        "403":
+          description: forbidden
+  "/experiments/{exp}/vms/{name}/connect":
+    post:
+      tags:
+        - Virtual Machines
+      summary: Connect a VM interface to a VLAN
+      operationId: connectVM
+      parameters:
+        - name: exp
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - vlan
+              properties:
+                interface:
+                  type: integer
+                vlan:
+                  type: string
+      responses:
+        "204":
+          description: VM interface connected
+        "400":
+          description: invalid request
+        "403":
+          description: forbidden
+  "/experiments/{exp}/vms/{name}/disconnect":
+    post:
+      tags:
+        - Virtual Machines
+      summary: Disconnect a VM interface
+      operationId: disconnectVM
+      parameters:
+        - name: exp
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                interface:
+                  type: integer
+      responses:
+        "204":
+          description: VM interface disconnected
+        "400":
+          description: invalid request
+        "403":
+          description: forbidden
+  "/experiments/{exp}/vms/{name}/resetDisk":
+    post:
+      tags:
+        - Virtual Machines
+      summary: Reset a VM disk
+      operationId: resetVMDisk
+      parameters:
+        - name: exp
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: VM disk reset
+        "403":
+          description: forbidden
+        "409":
+          description: VM is busy
+  "/experiments/{name}/vlans/aliases":
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - VLANs
+      summary: Get VLAN aliases for an experiment
+      operationId: getExperimentVLANAliases
+      responses:
+        "200":
+          description: VLAN aliases
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: forbidden
+    post:
+      tags:
+        - VLANs
+      summary: Set a VLAN alias for an experiment
+      operationId: setExperimentVLANAlias
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - alias
+                - id
+              properties:
+                alias:
+                  type: string
+                id:
+                  type: integer
+                force:
+                  type: boolean
+      responses:
+        "204":
+          description: VLAN alias set
+        "400":
+          description: invalid request
+        "403":
+          description: forbidden
+  "/experiments/{name}/vlans/ranges":
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - VLANs
+      summary: Get the VLAN range for an experiment
+      operationId: getExperimentVLANRange
+      responses:
+        "200":
+          description: VLAN range
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: forbidden
+    post:
+      tags:
+        - VLANs
+      summary: Set the VLAN range for an experiment
+      operationId: setExperimentVLANRange
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - min
+                - max
+              properties:
+                min:
+                  type: integer
+                max:
+                  type: integer
+                force:
+                  type: boolean
+      responses:
+        "204":
+          description: VLAN range set
+        "400":
+          description: invalid request
+        "403":
+          description: forbidden
+  "/vlans":
+    get:
+      tags:
+        - VLANs
+      summary: Get VLAN aliases for all experiments
+      operationId: getVLANs
+      responses:
+        "200":
+          description: VLAN aliases
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: forbidden
+  "/schedulers":
+    get:
+      tags:
+        - Schedulers
+      summary: Get all available schedulers
+      operationId: getSchedulers
+      responses:
+        "200":
+          description: available schedulers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedulers:
+                    type: array
+                    items:
+                      type: string
+        "403":
+          description: forbidden
+  "/roles":
+    get:
+      tags:
+        - Roles
+      summary: Get all roles
+      operationId: getRoles
+      parameters:
+        - $ref: "#/components/parameters/permissionsQuery"
+      responses:
+        "200":
+          description: roles
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      tags:
+        - Roles
+      summary: Create a role
+      operationId: createRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: display name of the role (e.g. "Global Admin")
+                metadataName:
+                  type: string
+                  description: >
+                    config name to store the role under, used in the path of the
+                    other /roles routes. Defaults to a slug of name (e.g.
+                    "global-admin"); may not contain spaces.
+                policies:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/Policy"
+      responses:
+        "201":
+          description: role created
+          headers:
+            Location:
+              schema:
+                description: location of the newly created role
+                type: string
+                format: uri
+        "400":
+          description: invalid request
+        "403":
+          description: forbidden
+        "409":
+          description: a role with the same name already exists
+  "/roles/{name}":
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: config name or display name of the role
+        schema:
+          type: string
+    get:
+      tags:
+        - Roles
+      summary: Get a role
+      operationId: getRole
+      parameters:
+        - $ref: "#/components/parameters/permissionsQuery"
+      responses:
+        "200":
+          description: role
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: forbidden
+        "404":
+          description: role not found
+    patch:
+      tags:
+        - Roles
+      summary: Replace a role's policies
+      operationId: updateRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - policies
+              properties:
+                policies:
+                  type: array
+                  minItems: 1
+                  items:
+                    $ref: "#/components/schemas/Policy"
+      responses:
+        "204":
+          description: role updated
+        "400":
+          description: invalid request
+        "403":
+          description: forbidden
+        "404":
+          description: role not found
+    delete:
+      tags:
+        - Roles
+      summary: Delete a role
+      operationId: deleteRole
+      responses:
+        "204":
+          description: role deleted
+        "403":
+          description: forbidden
+        "404":
+          description: role not found
+        "409":
+          description: role is built in or is still assigned to a user
   "/hosts":
     get:
       tags:
@@ -1289,12 +1835,908 @@ paths:
       responses:
         "204":
           description: successful operation
-externalDocs:
-  description: Find out more about Swagger
-  url: http://swagger.io
+  "/builder/topologies":
+    get:
+      tags:
+        - Builder
+      summary: Get available builder topologies
+      operationId: getBuilderTopologies
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/builder/topologies/{name}":
+    parameters:
+      - $ref: "#/components/parameters/name"
+    get:
+      tags:
+        - Builder
+      summary: Get a builder topology
+      operationId: getBuilderTopology
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/configs/download":
+    post:
+      tags:
+        - Configs
+      summary: Download a collection of configs
+      operationId: postConfigsDownload
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/builder":
+    post:
+      tags:
+        - Builder
+      summary: Create an experiment from the builder
+      operationId: postExperimentsBuilder
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+    put:
+      tags:
+        - Builder
+      summary: Update an experiment from the builder
+      operationId: putExperimentsBuilder
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{name}/apps":
+    parameters:
+      - $ref: "#/components/parameters/name"
+    get:
+      tags:
+        - Experiments
+      summary: Get the applications configured for an experiment
+      operationId: getExperimentApps
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/netflow":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+    get:
+      tags:
+        - Netflow
+      summary: Get experiment netflow status
+      operationId: getExperimentNetflow
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+    post:
+      tags:
+        - Netflow
+      summary: Start experiment netflow
+      operationId: postExperimentNetflow
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+    delete:
+      tags:
+        - Netflow
+      summary: Stop experiment netflow
+      operationId: deleteExperimentNetflow
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/netflow/ws":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+    get:
+      tags:
+        - Netflow
+      summary: Stream experiment netflow over a websocket
+      operationId: getExperimentNetflowWebSocket
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{name}/topology":
+    parameters:
+      - $ref: "#/components/parameters/name"
+    get:
+      tags:
+        - Experiments
+      summary: Get an experiment topology
+      operationId: getExperimentTopology
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{name}/topology/search":
+    parameters:
+      - $ref: "#/components/parameters/name"
+    get:
+      tags:
+        - Experiments
+      summary: Search an experiment topology
+      operationId: searchExperimentTopology
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{name}/trigger":
+    parameters:
+      - $ref: "#/components/parameters/name"
+    post:
+      tags:
+        - Experiments
+      summary: Trigger the running stage for experiment applications
+      operationId: postExperimentTrigger
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+    delete:
+      tags:
+        - Experiments
+      summary: Cancel triggered experiment applications
+      operationId: deleteExperimentTrigger
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/captureSubnet":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+    post:
+      tags:
+        - Virtual Machines
+      summary: Start a packet capture on every VM in a subnet
+      operationId: postExperimentCaptureSubnet
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/stopCaptureSubnet":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+    post:
+      tags:
+        - Virtual Machines
+      summary: Stop the packet captures on every VM in a subnet
+      operationId: postExperimentStopCaptureSubnet
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}":
+    parameters:
+      - $ref: "#/components/parameters/name"
+      - $ref: "#/components/parameters/run"
+      - $ref: "#/components/parameters/loop"
+      - $ref: "#/components/parameters/stage"
+      - $ref: "#/components/parameters/cmp"
+    get:
+      tags:
+        - Scorch
+      summary: Get Scorch component output
+      operationId: getScorchComponentOutput
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}/ws":
+    parameters:
+      - $ref: "#/components/parameters/name"
+      - $ref: "#/components/parameters/run"
+      - $ref: "#/components/parameters/loop"
+      - $ref: "#/components/parameters/stage"
+      - $ref: "#/components/parameters/cmp"
+    get:
+      tags:
+        - Scorch
+      summary: Stream Scorch component output over a websocket
+      operationId: getScorchComponentOutputWebSocket
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{name}/scorch/pipelines":
+    parameters:
+      - $ref: "#/components/parameters/name"
+    get:
+      tags:
+        - Scorch
+      summary: Get Scorch pipelines
+      operationId: getScorchPipelines
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{name}/scorch/pipelines/{run}/{loop}":
+    parameters:
+      - $ref: "#/components/parameters/name"
+      - $ref: "#/components/parameters/run"
+      - $ref: "#/components/parameters/loop"
+    get:
+      tags:
+        - Scorch
+      summary: Get a Scorch pipeline
+      operationId: getScorchPipeline
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{name}/scorch/pipelines/{run}":
+    parameters:
+      - $ref: "#/components/parameters/name"
+      - $ref: "#/components/parameters/run"
+    post:
+      tags:
+        - Scorch
+      summary: Start a Scorch pipeline
+      operationId: postScorchPipeline
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+    delete:
+      tags:
+        - Scorch
+      summary: Cancel a Scorch pipeline
+      operationId: deleteScorchPipeline
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{name}/scorch/terminals":
+    parameters:
+      - $ref: "#/components/parameters/name"
+    get:
+      tags:
+        - Scorch
+      summary: Get Scorch terminals
+      operationId: getScorchTerminals
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{name}/scorch/terminals/{pid}":
+    parameters:
+      - $ref: "#/components/parameters/name"
+      - $ref: "#/components/parameters/pid"
+    get:
+      tags:
+        - Scorch
+      summary: Connect to a Scorch terminal
+      operationId: getScorchTerminal
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{name}/scorch/terminals/{pid}/exit/{id}":
+    parameters:
+      - $ref: "#/components/parameters/name"
+      - $ref: "#/components/parameters/pid"
+      - $ref: "#/components/parameters/id"
+    post:
+      tags:
+        - Scorch
+      summary: Exit a Scorch terminal
+      operationId: postScorchTerminalExit
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{name}/scorch/terminals/{pid}/ws/{id}":
+    parameters:
+      - $ref: "#/components/parameters/name"
+      - $ref: "#/components/parameters/pid"
+      - $ref: "#/components/parameters/id"
+    get:
+      tags:
+        - Scorch
+      summary: Stream a Scorch terminal over a websocket
+      operationId: getScorchTerminalWebSocket
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}":
+    parameters:
+      - $ref: "#/components/parameters/name"
+      - $ref: "#/components/parameters/run"
+      - $ref: "#/components/parameters/loop"
+      - $ref: "#/components/parameters/stage"
+      - $ref: "#/components/parameters/cmp"
+    get:
+      tags:
+        - Scorch
+      summary: Connect to a Scorch component terminal
+      operationId: getScorchComponentTerminal
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{name}/soh":
+    parameters:
+      - $ref: "#/components/parameters/name"
+    get:
+      tags:
+        - Experiments
+      summary: Get experiment state of health
+      operationId: getExperimentSoH
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}/reset":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+      - $ref: "#/components/parameters/name"
+    get:
+      tags:
+        - Virtual Machines
+      summary: Reset a VM
+      operationId: getVMReset
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}/restart":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+      - $ref: "#/components/parameters/name"
+    get:
+      tags:
+        - Virtual Machines
+      summary: Restart a VM
+      operationId: getVMRestart
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}/shutdown":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+      - $ref: "#/components/parameters/name"
+    get:
+      tags:
+        - Virtual Machines
+      summary: Shut down a VM
+      operationId: getVMShutdown
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}/cdrom":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+      - $ref: "#/components/parameters/name"
+    post:
+      tags:
+        - Virtual Machines
+      summary: Change a VM optical disc
+      operationId: postVMOpticalDisc
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+    delete:
+      tags:
+        - Virtual Machines
+      summary: Eject a VM optical disc
+      operationId: deleteVMOpticalDisc
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}/vnc":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+      - $ref: "#/components/parameters/name"
+    get:
+      tags:
+        - Virtual Machines
+      summary: Get the noVNC client for a VM
+      operationId: getVMVNC
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}/commit":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+      - $ref: "#/components/parameters/name"
+    post:
+      tags:
+        - Virtual Machines
+      summary: Commit a VM disk
+      operationId: postVMCommit
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}/memorySnapshot":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+      - $ref: "#/components/parameters/name"
+    post:
+      tags:
+        - Virtual Machines
+      summary: Create a VM memory snapshot
+      operationId: postVMMemorySnapshot
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}/forwards":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+      - $ref: "#/components/parameters/name"
+    get:
+      tags:
+        - Virtual Machines
+      summary: Get VM port forwards
+      operationId: getVMPortForwards
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+    post:
+      tags:
+        - Virtual Machines
+      summary: Create a VM port forward
+      operationId: postVMPortForward
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+    delete:
+      tags:
+        - Virtual Machines
+      summary: Delete a VM port forward
+      operationId: deleteVMPortForward
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}/forwards/{host}/{port}/ws":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+      - $ref: "#/components/parameters/name"
+      - $ref: "#/components/parameters/host"
+      - $ref: "#/components/parameters/port"
+    get:
+      tags:
+        - Virtual Machines
+      summary: Connect to a VM port forward over a websocket
+      operationId: getVMPortForwardWebSocket
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}/mount":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+      - $ref: "#/components/parameters/name"
+    post:
+      tags:
+        - Virtual Machines
+      summary: Mount a VM disk
+      description: Requires the "vm-mount" feature to be enabled.
+      operationId: postVMMount
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}/unmount":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+      - $ref: "#/components/parameters/name"
+    delete:
+      tags:
+        - Virtual Machines
+      summary: Unmount a VM disk
+      description: Requires the "vm-mount" feature to be enabled.
+      operationId: deleteVMMount
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}/files":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+      - $ref: "#/components/parameters/name"
+      - $ref: "#/components/parameters/pathQuery"
+    get:
+      tags:
+        - Virtual Machines
+      summary: List files on a mounted VM disk
+      description: Requires the "vm-mount" feature to be enabled.
+      operationId: getVMMountFiles
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}/files/download":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+      - $ref: "#/components/parameters/name"
+      - $ref: "#/components/parameters/pathQuery"
+    get:
+      tags:
+        - Virtual Machines
+      summary: Download a file from a mounted VM disk
+      description: Requires the "vm-mount" feature to be enabled.
+      operationId: getVMMountFileDownload
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}/files/upload":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+      - $ref: "#/components/parameters/name"
+      - $ref: "#/components/parameters/pathQuery"
+    put:
+      tags:
+        - Virtual Machines
+      summary: Upload a file to a mounted VM disk
+      description: Requires the "vm-mount" feature to be enabled.
+      operationId: putVMMountFileUpload
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/experiments/{exp}/vms/{name}/files/copy":
+    parameters:
+      - $ref: "#/components/parameters/exp"
+      - $ref: "#/components/parameters/name"
+    post:
+      tags:
+        - Virtual Machines
+      summary: Copy an experiment file to a mounted VM disk
+      description: Requires the "vm-mount" feature to be enabled.
+      operationId: postVMMountFileCopy
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/disks/snapshot":
+    parameters:
+      - $ref: "#/components/parameters/diskQuery"
+      - $ref: "#/components/parameters/newDiskQuery"
+    post:
+      tags:
+        - Disks
+      summary: Snapshot a disk
+      operationId: postDiskSnapshot
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/disks/rebase":
+    parameters:
+      - $ref: "#/components/parameters/diskQuery"
+      - $ref: "#/components/parameters/backingQuery"
+      - $ref: "#/components/parameters/unsafeQuery"
+    post:
+      tags:
+        - Disks
+      summary: Rebase a disk onto a different backing image
+      operationId: postDiskRebase
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/disks/resize":
+    parameters:
+      - $ref: "#/components/parameters/diskQuery"
+      - $ref: "#/components/parameters/sizeQuery"
+    post:
+      tags:
+        - Disks
+      summary: Resize a disk
+      operationId: postDiskResize
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/disks/commit":
+    parameters:
+      - $ref: "#/components/parameters/diskQuery"
+    post:
+      tags:
+        - Disks
+      summary: Commit a disk into its backing image
+      operationId: postDiskCommit
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/disks/clone":
+    parameters:
+      - $ref: "#/components/parameters/diskQuery"
+      - $ref: "#/components/parameters/newDiskQuery"
+    post:
+      tags:
+        - Disks
+      summary: Clone a disk
+      operationId: postDiskClone
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/disks/rename":
+    parameters:
+      - $ref: "#/components/parameters/diskQuery"
+      - $ref: "#/components/parameters/newDiskQuery"
+    post:
+      tags:
+        - Disks
+      summary: Rename a disk
+      operationId: postDiskRename
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/disks/download":
+    parameters:
+      - $ref: "#/components/parameters/diskQuery"
+    get:
+      tags:
+        - Disks
+      summary: Download a disk
+      operationId: getDiskDownload
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/topologies/{topo}/scenarios":
+    parameters:
+      - $ref: "#/components/parameters/topo"
+    get:
+      tags:
+        - Topologies
+      summary: Get the scenarios available for a topology
+      operationId: getTopologyScenarios
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/users/{username}/tokens":
+    parameters:
+      - $ref: "#/components/parameters/username"
+    post:
+      tags:
+        - Users
+      summary: Create a user access token
+      operationId: postUserToken
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/logs":
+    get:
+      tags:
+        - Server
+      summary: Get server logs
+      operationId: getLogs
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/ws":
+    get:
+      tags:
+        - Server
+      summary: Connect to the event broker over a websocket
+      operationId: getWebSocket
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/console":
+    post:
+      tags:
+        - Console
+      summary: Create a minimega console
+      operationId: postConsole
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/console/{pid}/ws":
+    parameters:
+      - $ref: "#/components/parameters/pid"
+    get:
+      tags:
+        - Console
+      summary: Connect to a minimega console over a websocket
+      operationId: getConsoleWebSocket
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/console/{pid}/size":
+    parameters:
+      - $ref: "#/components/parameters/pid"
+      - $ref: "#/components/parameters/colsQuery"
+      - $ref: "#/components/parameters/rowsQuery"
+    post:
+      tags:
+        - Console
+      summary: Resize a minimega console
+      operationId: postConsoleSize
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/settings":
+    get:
+      tags:
+        - Settings
+      summary: Get server settings
+      operationId: getSettings
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+    post:
+      tags:
+        - Settings
+      summary: Update server settings
+      operationId: postSettings
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/settings/password":
+    get:
+      tags:
+        - Settings
+      summary: Get password requirements
+      operationId: getPasswordRequirements
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/workflow/apply/{branch}":
+    parameters:
+      - $ref: "#/components/parameters/branch"
+    post:
+      tags:
+        - Workflow
+      summary: Apply a workflow branch
+      operationId: postWorkflowApply
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/workflow/configs/{branch}":
+    parameters:
+      - $ref: "#/components/parameters/branch"
+    post:
+      tags:
+        - Workflow
+      summary: Create or update a workflow config
+      operationId: postWorkflowConfig
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+  "/options":
+    get:
+      tags:
+        - Server
+      summary: Get server options
+      operationId: getOptions
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
 servers:
   - url: http://localhost:3000/api/v1
+security:
+  - bearerAuth: []
+  - cookieAuth: []
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        JWT issued by POST /login, or a user access token issued by
+        POST /users/{username}/tokens.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: JWT issued by POST /login, used by the phenix web UI.
+  responses:
+    Success:
+      description: successful operation
+  parameters:
+    name:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+    exp:
+      name: exp
+      in: path
+      required: true
+      schema:
+        type: string
+    run:
+      name: run
+      in: path
+      required: true
+      schema:
+        type: string
+    loop:
+      name: loop
+      in: path
+      required: true
+      schema:
+        type: string
+    stage:
+      name: stage
+      in: path
+      required: true
+      schema:
+        type: string
+    cmp:
+      name: cmp
+      in: path
+      required: true
+      schema:
+        type: string
+    pid:
+      name: pid
+      in: path
+      required: true
+      schema:
+        type: string
+    id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    host:
+      name: host
+      in: path
+      required: true
+      schema:
+        type: string
+    port:
+      name: port
+      in: path
+      required: true
+      schema:
+        type: string
+    topo:
+      name: topo
+      in: path
+      required: true
+      schema:
+        type: string
+    username:
+      name: username
+      in: path
+      required: true
+      schema:
+        type: string
+    branch:
+      name: branch
+      in: path
+      required: true
+      schema:
+        type: string
+    # Query parameters the router matches on: a request without them does not
+    # reach the handler at all, so they are required rather than optional.
+    diskQuery:
+      name: disk
+      in: query
+      required: true
+      description: path of the disk image, relative to the phenix images directory
+      schema:
+        type: string
+    newDiskQuery:
+      name: new
+      in: query
+      required: true
+      description: path of the resulting disk image
+      schema:
+        type: string
+    backingQuery:
+      name: backing
+      in: query
+      required: true
+      description: path of the new backing image (empty to flatten the disk)
+      schema:
+        type: string
+    unsafeQuery:
+      name: unsafe
+      in: query
+      required: true
+      description: skip the backing image compatibility check
+      schema:
+        type: boolean
+    sizeQuery:
+      name: size
+      in: query
+      required: true
+      description: new disk size (e.g. 10G)
+      schema:
+        type: string
+    pathQuery:
+      name: path
+      in: query
+      required: true
+      description: path within the mounted VM disk
+      schema:
+        type: string
+    colsQuery:
+      name: cols
+      in: query
+      required: true
+      schema:
+        type: integer
+    rowsQuery:
+      name: rows
+      in: query
+      required: true
+      schema:
+        type: integer
+    permissionsQuery:
+      name: permissions
+      in: query
+      required: false
+      description: >
+        include each role's resolved permission matrix, equivalent to what
+        `phenix util role-table` prints
+      schema:
+        type: boolean
+        default: false
   schemas:
     Configs:
       type: object
@@ -1416,7 +2858,7 @@ components:
           items:
             $ref: "#/components/schemas/Capture"
         running:
-          type: bool
+          type: boolean
         uptime:
           type: number
           format: float
@@ -1550,6 +2992,29 @@ components:
               type: array
               items:
                 type: string
+    Policy:
+      type: object
+      properties:
+        resources:
+          type: array
+          items:
+            type: string
+          example:
+            - experiments
+            - experiments/*
+        resourceNames:
+          type: array
+          items:
+            type: string
+          example:
+            - "*"
+        verbs:
+          type: array
+          items:
+            type: string
+          example:
+            - list
+            - get
     Credentials:
       type: object
       properties:
