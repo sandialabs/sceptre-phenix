@@ -3,6 +3,7 @@ package common
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -29,6 +30,10 @@ var (
 	PhenixBase   = "/phenix"       //nolint:gochecknoglobals // global config
 	MinimegaBase = "/tmp/minimega" //nolint:gochecknoglobals // global config
 
+	// MountBase is the base directory used to store VM filesystem mounts. When
+	// empty, callers should default to PhenixBase + "/mounts".
+	MountBase string //nolint:gochecknoglobals // global config
+
 	BridgeMode = BridgeModeManual     //nolint:gochecknoglobals // global config
 	DeployMode = DeployModeNoHeadnode //nolint:gochecknoglobals // global config
 
@@ -39,6 +44,17 @@ var (
 
 	UseGREMesh bool //nolint:gochecknoglobals // global config
 )
+
+// MountDir returns the effective base directory to use for VM filesystem
+// mounts. If MountBase has not been explicitly configured, it defaults to
+// PhenixBase + "/mounts".
+func MountDir() string {
+	if MountBase == "" {
+		return filepath.Join(PhenixBase, "mounts")
+	}
+
+	return MountBase
+}
 
 func TrimHostnameSuffixes(str string) string {
 	for s := range strings.SplitSeq(HostnameSuffixes, ",") {
