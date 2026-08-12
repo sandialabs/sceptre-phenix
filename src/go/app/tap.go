@@ -158,6 +158,15 @@ func (Tap) Running(ctx context.Context, exp *types.Experiment) error {
 }
 
 func (t *Tap) Cleanup(ctx context.Context, exp *types.Experiment) error {
+	if _, ok := exp.Status.AppStatus()[t.Name()]; !ok {
+		// No status was ever recorded for this app, meaning its taps were never
+		// created. This happens, for example, when the app is configured to run
+		// in the post-start stage but the experiment is stopped before delayed
+		// VMs finish starting, so post-start (and thus createTaps) never runs.
+		// There's nothing to clean up in that case.
+		return nil
+	}
+
 	var status TapAppStatus
 
 	err := exp.Status.ParseAppStatus(t.Name(), &status)

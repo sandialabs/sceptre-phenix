@@ -816,6 +816,14 @@ func Start(ctx context.Context, opts ...StartOption) error {
 				if err != nil {
 					o.errChan <- fmt.Errorf("handling delayed VMs: %w", err)
 
+					// If the context was canceled, the experiment is already being
+					// stopped elsewhere (e.g. via the web UI, which cancels this
+					// context before calling Stop). Calling Stop again here would
+					// race with that in-progress stop and its cleanup, so skip it.
+					if errors.Is(ctx.Err(), context.Canceled) {
+						return
+					}
+
 					err = Stop(exp.Spec.ExperimentName())
 					if err != nil {
 						o.errChan <- fmt.Errorf("stopping experiment: %w", err)
@@ -1245,6 +1253,16 @@ func handleDelayedVMs(
 	}
 
 	if errs != nil {
+		// If the context was canceled, the experiment is already being (or is
+		// about to be) stopped elsewhere (e.g. a user requested the experiment
+		// be stopped while delayed VMs were still pending). That in-progress
+		// stop already owns tearing down the namespace, so clearing it here too
+		// would race with it and can delete resources (such as taps created by
+		// the tap app) out from under that cleanup.
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return errs //nolint:wrapcheck // returning multierror
+		}
+
 		err2 := mm.ClearNamespace(ns)
 		if err2 != nil {
 			errs = multierror.Append(errs, fmt.Errorf("killing experiment VMs: %w", err2))
