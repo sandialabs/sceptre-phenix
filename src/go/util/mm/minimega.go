@@ -1565,7 +1565,7 @@ func (Minimega) MeshSend(ns, host, command string) error {
 // GetLocalMountPath returns where the mount path should be on this filesystem
 // for the given namespace and VM.
 func GetLocalMountPath(ns, vm string) string {
-	return filepath.Join(common.PhenixBase, "mounts", ns, vm)
+	return filepath.Join(common.MountDir(), ns, vm)
 }
 
 func getActiveC2(ns string) map[string]bool {

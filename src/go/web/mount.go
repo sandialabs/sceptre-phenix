@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"phenix/api/experiment"
+	"phenix/api/vm"
 	"phenix/util/file"
 	"phenix/util/mm"
 	"phenix/util/plog"
@@ -24,10 +25,7 @@ import (
 	"phenix/web/rbac"
 )
 
-const (
-	MountTimeout     = 5 * time.Second
-	MountPathTimeout = 2 * time.Second
-)
+const MountPathTimeout = 2 * time.Second
 
 // MountInfo is a small struct for tracking number of users interacting with a mount and the
 // lock for that mount.
@@ -97,16 +95,7 @@ func MountVM(w http.ResponseWriter, r *http.Request) {
 			user,
 		)
 
-		_, err := mm.ExecC2Command(
-			mm.C2NS(vars["exp"]),
-			mm.C2VM(vars["name"]),
-			mm.C2Mount(),
-			mm.C2IDClientsByUUID(),
-			mm.C2Timeout(MountTimeout),
-		)
-
-		// if already mounted, that's ok, but still add to map
-		if err != nil && !strings.Contains(err.Error(), "already connected") {
+		if err := vm.MountFilesystem(vars["exp"], vars["name"]); err != nil {
 			plog.Error(plog.TypeSystem, "creating mount", "mount", mapKey, "err", err)
 			http.Error(w, fmt.Sprintf("Error mounting: %s", err), http.StatusInternalServerError)
 
@@ -160,14 +149,7 @@ func UnmountVM(w http.ResponseWriter, r *http.Request) {
 
 			mountInfo.lock.Lock()
 
-			_, err := mm.ExecC2Command(
-				mm.C2NS(vars["exp"]),
-				mm.C2VM(vars["name"]),
-				mm.C2Unmount(),
-				mm.C2Timeout(MountTimeout),
-				mm.C2SkipActiveClientCheck(true),
-			)
-			if err != nil {
+			if err := vm.UnmountFilesystem(vars["exp"], vars["name"]); err != nil {
 				mountInfo.lock.Unlock()
 
 				plog.Error(plog.TypeSystem, "unmounting", "mount", mapKey, "err", err)

@@ -35,6 +35,8 @@ const (
 	stopSubnetArgs   = 2
 	stopAllArgs      = 1
 	memSnapArgs      = 3
+	mountArgs        = 2
+	unmountArgs      = 2
 )
 
 func vmArgsCompletion(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -1068,6 +1070,99 @@ func newVMMemorySnapshotCmd() *cobra.Command {
 	return cmd
 }
 
+func newVMMountCmd() *cobra.Command {
+	desc := `Mount a VM's filesystem on the headnode
+
+  Mount the filesystem of a running virtual machine to a directory on the
+  headnode. By default, the mount path will be <mount-dir>/<experiment
+  name>/<vm name> (see the --mount-dir root flag / PHENIX_MOUNT_DIR
+  environment variable). An optional host path can be specified to mount to a
+  custom location instead.`
+
+	cmd := &cobra.Command{
+		Use:               "mount <experiment name> <vm name> [host path]",
+		Short:             "Mount a VM's filesystem on the headnode",
+		Long:              desc,
+		ValidArgsFunction: vmArgsCompletion,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) < mountArgs || len(args) > mountArgs+1 {
+				return errors.New(
+					"must provide an experiment name and VM name, optionally followed by a host path",
+				)
+			}
+
+			var (
+				expName  = args[0]
+				vmName   = args[1]
+				hostPath string
+			)
+
+			if len(args) == mountArgs+1 {
+				hostPath = args[2]
+			}
+
+			mountPath, err := vm.Mount(expName, vmName, hostPath)
+			if err != nil {
+				err := util.HumanizeError(err, "%s", "Unable to mount the "+vmName+" VM")
+
+				return err.Humanized()
+			}
+
+			fmt.Fprintf(os.Stdout, "VM %s in experiment %s mounted at: %s\n", vmName, expName, mountPath)
+			plog.Info(
+				plog.TypeSystem,
+				"vm mounted",
+				"vm",
+				vmName,
+				"exp",
+				expName,
+				"path",
+				mountPath,
+			)
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+func newVMUnmountCmd() *cobra.Command {
+	desc := `Unmount a VM's filesystem from the headnode
+
+  Unmount a previously mounted virtual machine filesystem from the headnode.`
+
+	cmd := &cobra.Command{
+		Use:               "unmount <experiment name> <vm name>",
+		Short:             "Unmount a VM's filesystem from the headnode",
+		Long:              desc,
+		ValidArgsFunction: vmArgsCompletion,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != unmountArgs {
+				return errors.New("must provide an experiment name and VM name")
+			}
+
+			var (
+				expName = args[0]
+				vmName  = args[1]
+			)
+
+			if err := vm.Unmount(expName, vmName); err != nil {
+				err := util.HumanizeError(err, "%s", "Unable to unmount the "+vmName+" VM")
+
+				return err.Humanized()
+			}
+
+			fmt.Fprintf(os.Stdout, "VM %s in experiment %s unmounted\n", vmName, expName)
+			plog.Info(plog.TypeSystem, "vm unmounted", "vm", vmName, "exp", expName)
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
 func init() { //nolint:gochecknoinits // cobra command
 	vmCmd := newVMCmd()
 
@@ -1083,6 +1178,8 @@ func init() { //nolint:gochecknoinits // cobra command
 	vmCmd.AddCommand(newVMNetCmd())
 	vmCmd.AddCommand(newVMCaptureCmd())
 	vmCmd.AddCommand(newVMMemorySnapshotCmd())
+	vmCmd.AddCommand(newVMMountCmd())
+	vmCmd.AddCommand(newVMUnmountCmd())
 
 	addCommandToRoot(vmCmd, true)
 }

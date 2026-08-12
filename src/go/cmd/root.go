@@ -36,6 +36,7 @@ const (
 var (
 	phenixBase         string   //nolint:gochecknoglobals // global flag
 	minimegaBase       string   //nolint:gochecknoglobals // global flag
+	mountDir           string   //nolint:gochecknoglobals // global flag
 	hostnameSuffixes   string   //nolint:gochecknoglobals // global flag
 	storeEndpoint      string   //nolint:gochecknoglobals // global flag
 	currentConsoleFile *os.File //nolint:gochecknoglobals // global state
@@ -149,6 +150,10 @@ var rootCmd = &cobra.Command{
 		common.MinimegaBase = getEffectiveString( //nolint:reassign // configuration injection
 			"base-dir.minimega",
 			cmd.Flags().Changed("base-dir.minimega"),
+		)
+		common.MountBase = getEffectiveString( //nolint:reassign // configuration injection
+			"mount-dir",
+			cmd.Flags().Changed("mount-dir"),
 		)
 		common.HostnameSuffixes = getEffectiveString( //nolint:reassign // configuration injection
 			"hostname-suffixes",
@@ -378,6 +383,8 @@ func init() {
 		StringVar(&phenixBase, "base-dir.phenix", "/phenix", "base phenix directory")
 	rootCmd.PersistentFlags().
 		StringVar(&minimegaBase, "base-dir.minimega", "/tmp/minimega", "base minimega directory")
+	rootCmd.PersistentFlags().
+		StringVar(&mountDir, "mount-dir", "", "base directory for VM filesystem mounts (default: <base-dir.phenix>/mounts)")
 	rootCmd.PersistentFlags().
 		StringVar(&hostnameSuffixes, "hostname-suffixes", "-minimega,-phenix", "hostname suffixes to strip")
 	rootCmd.PersistentFlags().String("log.level", "info", "level to log messages at")
