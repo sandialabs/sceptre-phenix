@@ -309,7 +309,8 @@ func newExperimentDeleteCmd() *cobra.Command {
 
   Used to delete an existing experiment; experiment must be stopped.
   Using 'all' instead of a specific experiment name will include all
-  stopped experiments`
+  stopped experiments. Use the -f/--force flag to automatically stop
+  a running experiment before deleting it.`
 
 	cmd := &cobra.Command{
 		Use:               "delete <experiment name>",
@@ -320,6 +321,7 @@ func newExperimentDeleteCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
+				force       = MustGetBool(cmd.Flags(), "force")
 				experiments []types.Experiment
 			)
 
@@ -345,14 +347,29 @@ func newExperimentDeleteCmd() *cobra.Command {
 
 			for _, exp := range experiments {
 				if exp.Running() {
-					plog.Warn(
-						plog.TypeSystem,
-						"not deleting running experiment",
-						"exp",
-						exp.Metadata.Name,
-					)
+					if !force {
+						plog.Warn(
+							plog.TypeSystem,
+							"not deleting running experiment",
+							"exp",
+							exp.Metadata.Name,
+						)
 
-					continue
+						continue
+					}
+
+					if err := experiment.Stop(exp.Metadata.Name); err != nil {
+						err := util.HumanizeError(
+							err,
+							"%s",
+							"Unable to stop the "+exp.Metadata.Name+" experiment before deleting it",
+						)
+						plog.Error(plog.TypeSystem, err.Humanize())
+
+						continue
+					}
+
+					plog.Info(plog.TypeSystem, "experiment stopped", "exp", exp.Metadata.Name)
 				}
 
 				err := config.Delete("experiment/" + exp.Metadata.Name)
@@ -373,6 +390,8 @@ func newExperimentDeleteCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolP("force", "f", false, "Stop a running experiment before deleting it")
 
 	return cmd
 }
