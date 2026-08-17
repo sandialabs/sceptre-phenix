@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -25,15 +26,16 @@ import (
 )
 
 const (
-	vmStateQuit          = "QUIT"
-	vmStateRunning       = "RUNNING"
-	vmInfoCmd            = "vm info"
-	statusCompleted      = "completed"
-	shutdownTimeout      = 30 * time.Second
-	copyProgressFactor   = 0.8
-	commitWait           = 2 * time.Second
-	commitProgressBase   = 0.8
-	commitProgressFactor = 0.2
+	vmStateQuit           = "QUIT"
+	vmStateRunning        = "RUNNING"
+	vmInfoCmd             = "vm info"
+	statusCompleted       = "completed"
+	shutdownTimeout       = 30 * time.Second
+	commitShutdownTimeout = 5 * time.Minute
+	copyProgressFactor    = 0.8
+	commitWait            = 2 * time.Second
+	commitProgressBase    = 0.8
+	commitProgressFactor  = 0.2
 )
 
 var vlanAliasRegex = regexp.MustCompile(`(.*) \(\d*\)`)
@@ -493,8 +495,16 @@ func Restart(expName, vmName string) error {
 }
 
 // Shutdown powers off a running VM with the given name in the experiment with the given
-// name. It returns any errors encountered while shutting down the VM.
+// name, killing it if it doesn't power off in time. It returns any errors encountered
+// while shutting down the VM.
 func Shutdown(expName, vmName string) error {
+	return shutdown(expName, vmName, shutdownTimeout, true)
+}
+
+// shutdown gracefully powers off a VM via ACPI, waiting up to timeout for the guest to
+// quit. If force is set the VM is killed after the timeout; otherwise an error is
+// returned so callers needing a clean disk (e.g. commit) can abort.
+func shutdown(expName, vmName string, timeout time.Duration, force bool) error {
 	if expName == "" {
 		return errors.New("no experiment name provided")
 	}
@@ -534,16 +544,15 @@ func Shutdown(expName, vmName string) error {
 	}
 
 	waitForShutdown := func() bool {
-		// Give the VM a maximum of 30s to shutdown.
-		after := time.After(shutdownTimeout)
+		after := time.After(timeout)
+		tick := time.NewTicker(1 * time.Second)
+		defer tick.Stop()
 
 		for {
 			select {
 			case <-after:
 				return false
-			default:
-				time.Sleep(1 * time.Second)
-
+			case <-tick.C:
 				state, _ := mm.GetVMState(mm.NS(expName), mm.VMName(vmName))
 				if state == vmStateQuit {
 					return true
@@ -553,6 +562,15 @@ func Shutdown(expName, vmName string) error {
 	}
 
 	if !waitForShutdown() {
+		if !force {
+			return fmt.Errorf(
+				"VM %s in experiment %s did not power off within %s",
+				vmName,
+				expName,
+				timeout,
+			)
+		}
+
 		// Forced shutdown implementation is equivalent to killing the vm without a
 		// flush to preserve the state.
 		cmd.Command = "vm kill " + vmName
@@ -995,11 +1013,9 @@ func Restore(expName, vmName, snap string) error {
 // 5. starts the vm.
 //
 //nolint:cyclop,funlen,gocyclo,maintidx // complex logic
-func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error) {
+func CommitToDisk(expName, vmName, out string, cb func(float64)) (_ string, err error) {
 	// Determine name of new disk image, if not provided.
 	if out == "" {
-		var err error
-
 		out, err = GetNewDiskName(expName, vmName)
 		if err != nil {
 			return "", fmt.Errorf(
@@ -1064,11 +1080,56 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 
 	var (
 		// Get current disk snapshot on the compute node (based on VM ID).
-		snap = fmt.Sprintf("%s/%s/disk-0.qcow2", common.MinimegaBase, status[0]["id"])
-		node = status[0]["host"]
+		snap   = fmt.Sprintf("%s/%s/disk-0.qcow2", common.MinimegaBase, status[0]["id"])
+		node   = status[0]["host"]
+		tmpDir = fmt.Sprintf("%s/images/%s/tmp", common.PhenixBase, expName)
 	)
 
-	wait, ctx := errgroup.WithContext(context.Background())
+	// The new image is incomplete until committed and synced; don't leave a
+	// partial copy behind on failure.
+	committed := false
+
+	defer func() {
+		if !committed {
+			_ = os.Remove(out)
+		}
+	}()
+
+	// Working copies under the experiment tmp dir are only needed during the
+	// rebase/commit; always clean them up.
+	defer func() {
+		for _, s := range snapshots {
+			if strings.HasPrefix(s, tmpDir+"/") {
+				_ = os.Remove(s)
+			}
+		}
+
+		_ = os.Remove(fmt.Sprintf("%s/%s.qc2", tmpDir, vmName))
+
+		if !mm.IsHeadnode(node) {
+			cmd := mmcli.NewCommand()
+			cmd.Command = fmt.Sprintf("mesh send %s shell rm -f %s/%s.qc2", node, tmpDir, vmName)
+
+			_ = mmcli.ErrorResponse(mmcli.Run(cmd))
+		}
+	}()
+
+	// Best effort to leave the VM running again whether or not the commit
+	// succeeds.
+	stopped := false
+
+	defer func() {
+		if stopped {
+			if serr := mm.StartVM(mm.NS(expName), mm.VMName(vmName)); serr != nil {
+				err = errors.Join(err, fmt.Errorf("restarting VM: %w", serr))
+			}
+		}
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	wait, ctx := errgroup.WithContext(ctx)
 
 	// Make copy of base image locally on headnode. Using a context here will help
 	// cancel the potentially long running copy of a large base image if the other
@@ -1078,7 +1139,13 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		copier := newCopier()
 		s := copier.subscribe()
 
+		var fwd sync.WaitGroup
+
+		fwd.Add(1)
+
 		go func() {
+			defer fwd.Done()
+
 			for p := range s {
 				// If the callback is set, intercept it to reflect the copy stage as the
 				// initial 80% of the effort.
@@ -1089,6 +1156,10 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		}()
 
 		err := copier.copy(ctx, base, out)
+
+		// Join the forwarder so no progress callback fires after we return.
+		fwd.Wait()
+
 		if err != nil {
 			_ = os.Remove(out) // cleanup
 
@@ -1098,12 +1169,18 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		return nil
 	})
 
-	// VM can't be running or we won't be able to copy snapshot remotely.
+	// VM can't be running or we won't be able to copy snapshot remotely. Don't
+	// force-kill here: committing a hard-killed guest bakes a dirty filesystem
+	// into the new backing image.
 	if status[0]["state"] != vmStateQuit {
-		err := Shutdown(expName, vmName)
-		if err != nil {
-			return "", fmt.Errorf("stopping VM: %w", err)
+		if serr := shutdown(expName, vmName, commitShutdownTimeout, false); serr != nil {
+			cancel()
+			_ = wait.Wait()
+
+			return "", fmt.Errorf("stopping VM: %w", serr)
 		}
+
+		stopped = true
 	}
 
 	// Make a copy of any snapshots pointed at by the VM disk image in the
@@ -1119,7 +1196,7 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		wait.Go(func() error {
 			copier := newCopier()
 
-			tmp := fmt.Sprintf("%s/images/%s/tmp/snapshot-%d.qc2", common.PhenixBase, expName, id)
+			tmp := fmt.Sprintf("%s/snapshot-%d.qc2", tmpDir, id)
 
 			err := os.MkdirAll(filepath.Dir(tmp), 0o750)
 			if err != nil {
@@ -1151,17 +1228,15 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 			cmdPrefix = "mesh send " + node
 		}
 
-		tmp := fmt.Sprintf("%s/images/%s/tmp", common.PhenixBase, expName)
-
 		cmd := mmcli.NewCommand()
-		cmd.Command = fmt.Sprintf("%s shell mkdir -p %s", cmdPrefix, tmp)
+		cmd.Command = fmt.Sprintf("%s shell mkdir -p %s", cmdPrefix, tmpDir)
 
 		err := mmcli.ErrorResponse(mmcli.Run(cmd))
 		if err != nil {
 			return fmt.Errorf("ensuring experiment tmp directory exists: %w", err)
 		}
 
-		tmp = fmt.Sprintf("%s/images/%s/tmp/%s.qc2", common.PhenixBase, expName, vmName)
+		tmp := fmt.Sprintf("%s/%s.qc2", tmpDir, vmName)
 		cmd.Command = fmt.Sprintf("%s shell cp %s %s", cmdPrefix, snap, tmp)
 
 		err = mmcli.ErrorResponse(mmcli.Run(cmd))
@@ -1188,10 +1263,7 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 	// snapshots to rebase onto the copy of the original backing image. If the
 	// image pointed at by the VM config in the topology was not a snapshot, then
 	// this will be the only snapshot in the list.
-	snapshots = append(
-		snapshots,
-		fmt.Sprintf("%s/images/%s/tmp/%s.qc2", common.PhenixBase, expName, vmName),
-	)
+	snapshots = append(snapshots, fmt.Sprintf("%s/%s.qc2", tmpDir, vmName))
 
 	for idx, snapshot := range snapshots {
 		// first parent should be copy of original backing image
@@ -1220,6 +1292,11 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		}
 	}
 
+	var prog sync.WaitGroup
+
+	// Join the progress Goroutine so no callback fires after we return.
+	defer prog.Wait()
+
 	done := make(chan struct{})
 	defer close(done)
 
@@ -1230,17 +1307,19 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		stat, _ = os.Stat(snap)
 		targetSize += float64(stat.Size())
 
+		prog.Add(1)
+
 		go func() {
+			defer prog.Done()
+
+			tick := time.NewTicker(commitWait)
+			defer tick.Stop()
+
 			for {
 				select {
 				case <-done:
 					return
-				default:
-					// We sleep at the beginning instead of the end to ensure the command
-					// we shell out to below has time to run before we try to stat the
-					// destination file.
-					time.Sleep(commitWait)
-
+				case <-tick.C:
 					stat, err := os.Stat(out)
 					if err != nil {
 						continue
@@ -1261,18 +1340,15 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 		return "", fmt.Errorf("committing snapshot (%s): %w", string(res), err)
 	}
 
-	out, _ = filepath.Rel(common.PhenixBase+"/images/", out)
+	rel, _ := filepath.Rel(common.PhenixBase+"/images/", out)
 
-	if err := file.SyncFile(out, nil); err != nil {
+	if err := file.SyncFile(rel, nil); err != nil {
 		return "", fmt.Errorf("syncing new backing image across cluster: %w", err)
 	}
 
-	// restart the vm
-	if err := mm.StartVM(mm.NS(expName), mm.VMName(vmName)); err != nil {
-		return "", fmt.Errorf("starting VM: %w", err)
-	}
+	committed = true
 
-	return out, nil
+	return rel, nil
 }
 
 // MemorySnapshot creates an ELF memory snapshot for a running virtual machine

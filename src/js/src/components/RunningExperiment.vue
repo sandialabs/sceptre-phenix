@@ -1332,6 +1332,27 @@
 
                 break;
               }
+
+              case  'errorCommitting': {
+                for ( let i = 0; i < vms.length; i++ ) {
+                  if  ( vms[i].name == vm[ 1 ] ) {
+                    vms[i].busy = false;
+                    this.experiment.vms = [ ...vms ];
+
+                    break;
+                  }
+                }
+
+                let error = msg.result && msg.result.error ? ': ' + msg.result.error : '';
+
+                this.$buefy.toast.open({
+                  message: 'Creating a backing image for the ' + vm[ 1 ] + ' VM failed' + error,
+                  type: 'is-danger',
+                  duration: 8000
+                });
+
+                break;
+              }
             }
 
             break;
