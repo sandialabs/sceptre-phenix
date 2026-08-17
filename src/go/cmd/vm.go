@@ -464,7 +464,8 @@ func newVMShutdownCmd() *cobra.Command {
 	desc := `Shuts down or powers off running or paused VM(s)
 
   Used to shutdown or power off running or paused virtual machine(s) for a specific
-  experiment.  The shutdown is not graceful and is equivalent to pulling the power cord`
+  experiment.  A graceful ACPI shutdown is attempted first; if the VM has not powered
+  off after 30 seconds it is killed, which is equivalent to pulling the power cord`
 
 	cmd := &cobra.Command{
 		Use:               "shutdown <experiment name> [vm name]",

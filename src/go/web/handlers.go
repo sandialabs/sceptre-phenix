@@ -3180,6 +3180,12 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		filename = req.GetFilename()
 	}
 
+	if filename == "" {
+		http.Error(w, "must provide new disk name for commit", http.StatusBadRequest)
+
+		return
+	}
+
 	if err := cache.LockVMForCommitting(expName, name); err != nil {
 		plog.Error(
 			plog.TypeSystem,
@@ -3198,22 +3204,6 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	defer cache.UnlockVM(expName, name)
-
-	if filename == "" {
-		/*
-			if filename, err = api.GetNewDiskName(exp, name); err != nil {
-				log.Error("failure getting new disk name for commit")
-				http.Error(w, "failure getting new disk name for commit", http.StatusInternalServerError)
-				return
-			}
-		*/
-
-		http.Error(w, "must provide new disk name for commit", http.StatusBadRequest)
-
-		return
-	}
-
 	payload := &proto.BackingImageResponse{Disk: filename} //nolint:exhaustruct // partial initialization
 	body, _ = marshaler.Marshal(payload)
 
@@ -3223,87 +3213,89 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		body,
 	)
 
-	status := make(chan float64)
+	user := middleware.UserFromContext(ctx)
 
+	// Committing large images takes longer than proxies allow a request to
+	// live, so run it in the background and deliver progress and the final
+	// result over the broker.
 	go func() {
-		for s := range status {
-			plog.Debug(plog.TypeSystem, "VM commit percent complete", "percent", s)
+		defer cache.UnlockVM(expName, name)
 
-			status := map[string]any{
-				"percent": s,
+		status := make(chan float64)
+
+		go func() {
+			for s := range status {
+				plog.Debug(plog.TypeSystem, "VM commit percent complete", "percent", s)
+
+				marshalled, _ := json.Marshal(map[string]any{"percent": s})
+
+				broker.Broadcast(
+					bt.NewRequestPolicy("vms/commit", "create", fullName),
+					bt.NewResource("experiment/vm/commit", expName+"/"+name, "progress"),
+					marshalled,
+				)
 			}
+		}()
 
-			marshalled, _ := json.Marshal(status)
+		cb := func(s float64) { status <- s }
+
+		broadcastErr := func(err error) {
+			marshalled, _ := json.Marshal(map[string]any{"error": err.Error()})
 
 			broker.Broadcast(
 				bt.NewRequestPolicy("vms/commit", "create", fullName),
-				bt.NewResource("experiment/vm/commit", expName+"/"+name, "progress"),
+				bt.NewResource("experiment/vm/commit", expName+"/"+name, "errorCommitting"),
 				marshalled,
 			)
 		}
+
+		_, err := vm.CommitToDisk(expName, name, filename, cb)
+
+		close(status)
+
+		if err != nil {
+			plog.Error(plog.TypeSystem, "committing VM", "exp", expName, "vm", name, "err", err)
+			broadcastErr(err)
+
+			return
+		}
+
+		exp, err := experiment.Get(expName)
+		if err != nil {
+			broadcastErr(err)
+
+			return
+		}
+
+		v, err := vm.Get(expName, name)
+		if err != nil {
+			broadcastErr(err)
+
+			return
+		}
+
+		payload.Vm = util.VMToProtobuf(expName, *v, exp.Spec.Topology())
+		body, _ := marshaler.Marshal(payload)
+
+		broker.Broadcast(
+			bt.NewRequestPolicy("vms/commit", "create", fullName),
+			bt.NewResource("experiment/vm/commit", expName+"/"+name, "commit"),
+			body,
+		)
+
+		plog.Info(
+			plog.TypeAction,
+			"vm committed",
+			"user",
+			user,
+			"exp",
+			expName,
+			"vm",
+			name,
+		)
 	}()
 
-	cb := func(s float64) { status <- s }
-
-	if _, err = vm.CommitToDisk(expName, name, filename, cb); err != nil {
-		broker.Broadcast(
-			bt.NewRequestPolicy("vms/commit", "create", fullName),
-			bt.NewResource("experiment/vm/commit", expName+"/"+name, "errorCommitting"),
-			nil,
-		)
-
-		plog.Error(plog.TypeSystem, "committing VM", "exp", expName, "vm", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	exp, err := experiment.Get(expName)
-	if err != nil {
-		broker.Broadcast(
-			bt.NewRequestPolicy("vms/commit", "create", fullName),
-			bt.NewResource("experiment/vm/commit", expName+"/"+name, "errorCommitting"),
-			nil,
-		)
-
-		http.Error(w, err.Error(), http.StatusBadRequest)
-
-		return
-	}
-
-	v, err := vm.Get(expName, name)
-	if err != nil {
-		broker.Broadcast(
-			bt.NewRequestPolicy("vms/commit", "create", fullName),
-			bt.NewResource("experiment/vm/commit", expName+"/"+name, "errorCommitting"),
-			nil,
-		)
-
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	payload.Vm = util.VMToProtobuf(expName, *v, exp.Spec.Topology())
-	body, _ = marshaler.Marshal(payload)
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("vms/commit", "create", fmt.Sprintf("%s/%s", expName, name)),
-		bt.NewResource("experiment/vm/commit", expName+"/"+name, "commit"),
-		body,
-	)
-
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"vm committed",
-		"user",
-		user,
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
+	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
