@@ -1058,38 +1058,20 @@
               v-slot="props">
               <template v-if="props.row.external">
                 <img
-                  src="@/assets/imgs/external.png"
+                  :src="getVmScreenshot(props.row)"
                   width="200"
                   height="150" />
               </template>
               <template
                 v-else-if="
-                  props.row.running && !props.row.busy && !props.row.screenshot
+                  (props.row.running && !props.row.busy) ||
+                  (props.row.delayed_start && props.row.state == 'BUILDING')
                 ">
                 <a :href="vncLoc(props.row)" target="_blank">
                   <img
-                    src="@/assets/imgs/not-available.png"
-                    width="200"
-                    height="150" />
-                </a>
-              </template>
-              <template
-                v-else-if="
-                  props.row.delayed_start && props.row.state == 'BUILDING'
-                ">
-                <a :href="vncLoc(props.row)" target="_blank">
-                  <img
-                    src="@/assets/imgs/delayed.png"
-                    width="200"
-                    height="150" />
-                </a>
-              </template>
-              <template
-                v-else-if="
-                  props.row.running && !props.row.busy && props.row.screenshot
-                ">
-                <a :href="vncLoc(props.row)" target="_blank">
-                  <img :src="props.row.screenshot" />
+                    :src="getVmScreenshot(props.row)"
+                    :width="props.row.screenshot ? undefined : 200"
+                    :height="props.row.screenshot ? undefined : 150" />
                 </a>
               </template>
               <template v-else-if="props.row.busy">
@@ -1097,14 +1079,14 @@
                   label="Screenshot not available while busy with action"
                   type="is-dark">
                   <img
-                    src="@/assets/imgs/not-available.png"
+                    :src="getVmScreenshot(props.row)"
                     width="200"
                     height="150" />
                 </b-tooltip>
               </template>
               <template v-else>
                 <img
-                  src="@/assets/imgs/not-running.png"
+                  :src="getVmScreenshot(props.row)"
                   width="200"
                   height="150" />
               </template>
@@ -1420,6 +1402,73 @@
             </div>
           </b-field>
         </b-tab-item>
+        <b-tab-item label="VNC" icon="arrow-pointer">
+          <b-field
+            label="Zoom Level"
+            style="width: 300px; margin-left: 32px"
+            horizontal>
+            <b-slider
+              :min="2"
+              :max="16"
+              :custom-formatter="(val) => 0.25 + (val - 1) * 0.25 + 'x'"
+              v-model="vncZoom">
+              <template v-for="val in [4, 8, 12, 16]" :key="val">
+                <b-slider-tick :value="val">
+                  {{ 0.25 + (val - 1) * 0.25 + 'x' }}
+                </b-slider-tick>
+              </template>
+            </b-slider>
+          </b-field>
+          <div
+            style="
+              display: flex;
+              flex-direction: row;
+              flex-wrap: wrap;
+              align-items: flex-end;
+              justify-content: center;
+              gap: 4px;
+            ">
+            <template v-if="experiment.vms && experiment.vms.length">
+              <div v-for="vm in experiment.vms" :key="vm.name">
+                <a v-if="!vm.external" :href="vncLoc(vm)" target="_blank">
+                  <img
+                    :src="getVmScreenshot(vm)"
+                    :width="vncWidth"
+                    style="display: block" />
+                </a>
+                <img
+                  v-else
+                  :src="getVmScreenshot(vm)"
+                  :width="vncWidth"
+                  style="display: block" />
+                <a
+                  v-if="!vm.external"
+                  style="
+                    color: whitesmoke;
+                    display: block;
+                    background-color: grey;
+                    text-align: center;
+                    padding: 2px 0px;
+                  "
+                  @click="getInfo(vm)"
+                  >{{ vm.name }}</a
+                >
+                <span
+                  v-else
+                  style="
+                    color: whitesmoke;
+                    display: block;
+                    background-color: grey;
+                    text-align: center;
+                    padding: 2px 0px;
+                  "
+                  >{{ vm.name }}</span
+                >
+              </div>
+            </template>
+            <template v-else>Your search turned up empty!</template>
+          </div>
+        </b-tab-item>
         <b-tab-item label="Netflow" icon="circle-nodes" v-if="netflow.data">
           <div class="control">
             <textarea
@@ -1450,6 +1499,10 @@
   import axiosInstance from '@/utils/axios.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import { useErrorNotification } from '@/utils/errorNotif';
+  import externalImg from '@/assets/imgs/external.png';
+  import notAvailableImg from '@/assets/imgs/not-available.png';
+  import delayedImg from '@/assets/imgs/delayed.png';
+  import notRunningImg from '@/assets/imgs/not-running.png';
 
   export default {
     mixins: [formattingMixin],
@@ -1485,6 +1538,10 @@
             vm.toLowerCase().indexOf(this.search.filter.toLowerCase()) >= 0
           );
         });
+      },
+
+      vncWidth() {
+        return this.activeTab == 2 ? this.vncZoom * 50 : 200;
       },
 
       paginationNeeded() {
@@ -1574,6 +1631,36 @@
             token: usePhenixStore().token,
           },
         }).href;
+      },
+
+      getVmScreenshot(vm) {
+        if (vm.external) {
+          return externalImg;
+        } else if (vm.running && !vm.busy && !vm.screenshot) {
+          return notAvailableImg;
+        } else if (vm.delayed_start && vm.state == 'BUILDING') {
+          return delayedImg;
+        } else if (vm.running && !vm.busy && vm.screenshot) {
+          return vm.screenshot;
+        } else if (vm.busy) {
+          return notAvailableImg;
+        } else {
+          return notRunningImg;
+        }
+      },
+
+      setVncScreenshotRes(width) {
+        let msg = {
+          resource: {
+            type: 'metadata/screenshot',
+            action: 'resize',
+          },
+          request: {
+            size: width + '',
+          },
+        };
+
+        sendWsMsg(msg);
       },
 
       searchVMs: debounce(function (term) {
@@ -4019,13 +4106,17 @@
         this.searchHistory = [];
         this.searchName = '';
 
-        if (newVal == 0) {
+        if (newVal == 0 || newVal == 2) {
           this.searchPlaceholder = 'Find a VM';
           this.updateExperiment();
         } else {
           this.searchPlaceholder = 'Find a File';
           this.updateFiles();
         }
+      },
+
+      vncWidth(w) {
+        this.setVncScreenshotRes(w);
       },
     },
 
@@ -4191,6 +4282,7 @@
           labels: true,
         },
         activeTab: 0,
+        vncZoom: 4,
         netflow: {
           tooltip: 'Start Netflow Capture',
           capturing: false,

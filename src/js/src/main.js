@@ -21,7 +21,8 @@ import {
     faTag, faBolt, faDesktop, faFileAlt, faNetworkWired, faPlay, faBars, faExclamationTriangle, faCircleNodes, faStop,
     faPlayCircle, faStopCircle, faPause, faDatabase, faSave, faCamera, faHistory, faSkullCrossbones, faUndoAlt, 
     faSyncAlt, faPowerOff, faPencil, faArrowRight, faArrowLeft, faCompactDisc, faCheckCircle, faHdd, faMinus, faTerminal,
-    faPaintbrush, faTv, faCircle, faRefresh, faCaretDown, faTimesCircle, faAngleLeft, faAngleRight, faCopy
+    faPaintbrush, faTv, faCircle, faRefresh, faCaretDown, faTimesCircle, faAngleLeft, faAngleRight, faCopy,
+    faTableColumns, faArrowPointer
 } from '@fortawesome/free-solid-svg-icons'
 
 // prettier-ignore
@@ -31,7 +32,8 @@ library.add(
     faTag, faBolt, faDesktop, faFileAlt, faNetworkWired, faPlay, faBars, faExclamationTriangle, faCircleNodes, faStop,
     faPlayCircle, faStopCircle, faPause, faDatabase, faSave, faCamera, faHistory, faSkullCrossbones, faUndoAlt, 
     faSyncAlt, faPowerOff, faPencil, faArrowRight, faArrowLeft, faCompactDisc, faCheckCircle, faHdd, faMinus, faTerminal,
-    faPaintbrush, faTv, faCircle, faRefresh, faCaretDown, faTimesCircle, faAngleLeft, faAngleRight, faCopy
+    faPaintbrush, faTv, faCircle, faRefresh, faCaretDown, faTimesCircle, faAngleLeft, faAngleRight, faCopy,
+    faTableColumns, faArrowPointer
 )
 
 import App from './App.vue';
