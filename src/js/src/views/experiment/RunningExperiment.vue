@@ -1459,6 +1459,11 @@
 
     async beforeUnmount() {
       removeWsHandler(this.handleWs);
+
+      if (this.socket) {
+        this.socket.close();
+        this.socket = null;
+      }
     },
 
     async created() {
@@ -3933,46 +3938,46 @@
         }
       },
 
-      handleNetflow(start, create = true) {
+      async handleNetflow(start, create = true) {
         if (start) {
-          let created = true;
-
+          // the websocket upgrade 404s until the backend registers the
+          // capture, so wait for the POST to finish before connecting
           if (create) {
-            axiosInstance
-              .post(`experiments/${this.$route.params.id}/netflow`)
-              .catch((err) => {
-                useErrorNotification(err);
-                created = false;
-              });
-          }
-
-          if (created) {
-            this.netflow.capturing = true;
-            this.netflow.tooltip = 'Stop Netflow Capture';
-            this.netflow.data += '### CAPTURE START ###\n';
-
-            let path = `${import.meta.env.BASE_URL}api/v1/experiments/${this.$route.params.id}/netflow/ws`;
-
-            let token = usePhenixStore().token;
-            if (token) {
-              path += `?token=${token}`;
+            try {
+              await axiosInstance.post(
+                `experiments/${this.$route.params.id}/netflow`,
+              );
+            } catch (err) {
+              useErrorNotification(err);
+              return;
             }
-
-            let proto = location.protocol == 'https:' ? 'wss://' : 'ws://';
-            let url = proto + location.host + path;
-
-            this.socket = new WebSocket(url);
-            this.socket.addEventListener('message', (event) => {
-              event.data.split(/\r?\n/).forEach((data) => {
-                if (data) {
-                  let msg = JSON.parse(data);
-                  let flow = `${msg['src']}:${msg['sport']}\t\t-->\t${msg['dst']}:${msg['dport']}\t\t${msg['proto']}\t${msg['packets']}\t${msg['bytes']}\n`;
-
-                  this.netflow.data += flow;
-                }
-              });
-            });
           }
+
+          this.netflow.capturing = true;
+          this.netflow.tooltip = 'Stop Netflow Capture';
+          this.netflow.data += '### CAPTURE START ###\n';
+
+          let path = `${import.meta.env.BASE_URL}api/v1/experiments/${this.$route.params.id}/netflow/ws`;
+
+          let token = usePhenixStore().token;
+          if (token) {
+            path += `?token=${token}`;
+          }
+
+          let proto = location.protocol == 'https:' ? 'wss://' : 'ws://';
+          let url = proto + location.host + path;
+
+          this.socket = new WebSocket(url);
+          this.socket.addEventListener('message', (event) => {
+            event.data.split(/\r?\n/).forEach((data) => {
+              if (data) {
+                let msg = JSON.parse(data);
+                let flow = `${msg['src']}:${msg['sport']}\t\t-->\t${msg['dst']}:${msg['dport']}\t\t${msg['proto']}\t${msg['packets']}\t${msg['bytes']}\n`;
+
+                this.netflow.data += flow;
+              }
+            });
+          });
         } else {
           axiosInstance
             .delete(`experiments/${this.$route.params.id}/netflow`)
