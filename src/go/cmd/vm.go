@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -21,22 +22,32 @@ import (
 )
 
 const (
-	infoArgs         = 2
-	pauseArgs        = 2
-	defaultMem       = 512
-	redeployArgs     = 2
-	shutdownArgs     = 2
-	killArgs         = 2
-	connectArgs      = 4
-	disconnectArgs   = 3
-	startCaptureArgs = 4
-	startSubnetArgs  = 2
-	stopCaptureArgs  = 2
-	stopSubnetArgs   = 2
-	stopAllArgs      = 1
-	memSnapArgs      = 3
-	mountArgs        = 2
-	unmountArgs      = 2
+	infoArgs               = 2
+	pauseArgs              = 2
+	defaultMem             = 512
+	redeployArgs           = 2
+	shutdownArgs           = 2
+	killArgs               = 2
+	connectArgs            = 4
+	disconnectArgs         = 3
+	startCaptureArgs       = 4
+	startSubnetArgs        = 2
+	stopCaptureArgs        = 2
+	stopSubnetArgs         = 2
+	stopAllArgs            = 1
+	memSnapArgs            = 3
+	mountArgs              = 2
+	unmountArgs            = 2
+	vmInfoColumnHost       = "host"
+	vmInfoColumnName       = "name"
+	vmInfoColumnRunning    = "running"
+	vmInfoColumnDisk       = "disk"
+	vmInfoColumnInterfaces = "interfaces"
+	vmInfoColumnUptime     = "uptime"
+	vmInfoColumnMemory     = "memory"
+	vmInfoColumnVCPUs      = "vcpus"
+	vmInfoColumnOSType     = "ostype"
+	vmInfoColumnTaps       = "taps"
 )
 
 func vmArgsCompletion(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -170,6 +181,132 @@ func listVMsByLabel(expName string, labels []string) ([]mm.VM, error) {
 	return matchedVMs, nil
 }
 
+type vmInfoFilter struct {
+	column string
+	value  string
+}
+
+func parseVMInfoFilters(rawFilters []string) ([]vmInfoFilter, error) {
+	filters := make([]vmInfoFilter, 0, len(rawFilters))
+
+	for _, rawFilter := range rawFilters {
+		rawColumn, value, found := strings.Cut(rawFilter, "=")
+		if !found || strings.TrimSpace(rawColumn) == "" {
+			return nil, fmt.Errorf("invalid VM info filter %q: expected COLUMN=VALUE", rawFilter)
+		}
+
+		column := strings.ToLower(
+			strings.NewReplacer(" ", "", "-", "", "_", "").Replace(strings.TrimSpace(rawColumn)),
+		)
+		switch column {
+		case vmInfoColumnHost,
+			vmInfoColumnName,
+			vmInfoColumnRunning,
+			vmInfoColumnDisk,
+			vmInfoColumnInterfaces,
+			vmInfoColumnUptime,
+			vmInfoColumnMemory,
+			vmInfoColumnVCPUs,
+			vmInfoColumnOSType,
+			vmInfoColumnTaps:
+		case "ram":
+			column = vmInfoColumnMemory
+		case "cpus":
+			column = vmInfoColumnVCPUs
+		default:
+			return nil, fmt.Errorf("unknown VM info filter column %q", strings.TrimSpace(rawColumn))
+		}
+
+		filters = append(filters, vmInfoFilter{
+			column: column,
+			value:  strings.TrimSpace(value),
+		})
+	}
+
+	return filters, nil
+}
+
+func vmInfoColumnValue(vmInfo mm.VM, column string) string {
+	switch column {
+	case vmInfoColumnHost:
+		return vmInfo.Host
+	case vmInfoColumnName:
+		return vmInfo.Name
+	case vmInfoColumnRunning:
+		return strconv.FormatBool(vmInfo.Running)
+	case vmInfoColumnDisk:
+		return vmInfo.Disk
+	case vmInfoColumnInterfaces:
+		interfaces := make([]string, 0, len(vmInfo.Networks))
+		for idx, network := range vmInfo.Networks {
+			interfaces = append(interfaces, fmt.Sprintf("ID: %d, IP: %s, VLAN: %s", idx, vmInfo.IPv4[idx], network))
+		}
+
+		return strings.Join(interfaces, "\n")
+	case vmInfoColumnUptime:
+		if vmInfo.Running {
+			return (time.Duration(vmInfo.Uptime) * time.Second).String()
+		}
+
+		return ""
+	case vmInfoColumnMemory:
+		return strconv.Itoa(vmInfo.RAM)
+	case vmInfoColumnVCPUs:
+		return strconv.Itoa(vmInfo.CPUs)
+	case vmInfoColumnOSType:
+		return vmInfo.OSType
+	case vmInfoColumnTaps:
+		return strings.Join(vmInfo.Taps, ", ")
+	default:
+		panic(fmt.Sprintf("unsupported VM info column %q", column))
+	}
+}
+
+func vmInfoFilterMatches(vmInfo mm.VM, filter vmInfoFilter) bool {
+	value := vmInfoColumnValue(vmInfo, filter.column)
+	if strings.EqualFold(value, filter.value) {
+		return true
+	}
+
+	if filter.column != vmInfoColumnDisk || value == "" {
+		return false
+	}
+
+	filename := path.Base(value)
+	stem := strings.TrimSuffix(filename, path.Ext(filename))
+
+	return strings.EqualFold(filename, filter.value) || strings.EqualFold(stem, filter.value)
+}
+
+func filterVMInfo(vms []mm.VM, rawFilters []string) ([]mm.VM, error) {
+	filters, err := parseVMInfoFilters(rawFilters)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(filters) == 0 {
+		return vms, nil
+	}
+
+	filtered := make([]mm.VM, 0, len(vms))
+
+	for _, vmInfo := range vms {
+		matches := true
+		for _, filter := range filters {
+			if !vmInfoFilterMatches(vmInfo, filter) {
+				matches = false
+				break
+			}
+		}
+
+		if matches {
+			filtered = append(filtered, vmInfo)
+		}
+	}
+
+	return filtered, nil
+}
+
 func vmTargetNamesForCommand(cmd *cobra.Command, args []string) (string, []string, error) {
 	if len(args) < 1 {
 		return "", nil, errors.New("must provide an experiment name")
@@ -250,7 +387,17 @@ func newVMInfoCmd() *cobra.Command {
 	desc := `Table of VM(s)
 
   Used to display a table of virtual machine(s) for a specific experiment;
-  VM name is optional, when included will display only that VM.`
+  VM name is optional, when included will display only that VM.
+
+  Filter the output by repeating --filter with a COLUMN=VALUE expression.
+  Multiple filters are combined with AND semantics. Column names and values
+  are case-insensitive. Supported columns are HOST, NAME, RUNNING, DISK,
+  INTERFACES, UPTIME, MEMORY, VCPUS, OS_TYPE, and TAPS. DISK values may be
+  full paths, filenames, or filenames without extensions. For example:
+
+    phenix vm info my-experiment --filter RUNNING=true
+    phenix vm info my-experiment --filter RUNNING=true --filter OS_TYPE=linux
+    phenix vm info my-experiment --filter DISK=jammy`
 
 	cmd := &cobra.Command{
 		Use:               "info <experiment name> [vm name]",
@@ -261,6 +408,11 @@ func newVMInfoCmd() *cobra.Command {
 			if len(args) < 1 {
 				return errors.New("must provide an experiment name")
 			}
+
+			var (
+				vms []mm.VM
+				err error
+			)
 
 			if cmd.Flags().Changed("label") {
 				flagLabels, err := cmd.Flags().GetStringArray("label")
@@ -273,50 +425,52 @@ func newVMInfoCmd() *cobra.Command {
 					return errors.New("must provide at least one VM label filter")
 				}
 
-				vms, err := listVMsByLabel(args[0], labels)
+				vms, err = listVMsByLabel(args[0], labels)
 				if err != nil {
 					err := util.HumanizeError(err, "Unable to get a filtered list of VMs")
 
 					return err.Humanized()
 				}
+			} else {
+				switch len(args) {
+				case 1:
+					vms, err = vm.List(args[0])
+					if err != nil {
+						err := util.HumanizeError(err, "Unable to get a list of VMs")
 
-				printer.PrintTableOfVMs(os.Stdout, MustGetBool(cmd.Flags(), "taps"), vms...)
+						return err.Humanized()
+					}
+				case infoArgs:
+					vmInfo, err := vm.Get(args[0], args[1])
+					if err != nil {
+						err := util.HumanizeError(
+							err,
+							"%s",
+							"Unable to get information for the "+args[1]+" VM",
+						)
 
-				return nil
+						return err.Humanized()
+					}
+
+					vms = []mm.VM{*vmInfo}
+				default:
+					return errors.New("invalid argument")
+				}
 			}
 
-			switch len(args) {
-			case 1:
-				vms, err := vm.List(args[0])
-				if err != nil {
-					err := util.HumanizeError(err, "Unable to get a list of VMs")
-
-					return err.Humanized()
-				}
-
-				printer.PrintTableOfVMs(os.Stdout, MustGetBool(cmd.Flags(), "taps"), vms...)
-			case infoArgs:
-				vm, err := vm.Get(args[0], args[1])
-				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to get information for the "+args[1]+" VM",
-					)
-
-					return err.Humanized()
-				}
-
-				printer.PrintTableOfVMs(os.Stdout, MustGetBool(cmd.Flags(), "taps"), *vm)
-			default:
-				return errors.New("invalid argument")
+			vms, err = filterVMInfo(vms, MustGetStringArray(cmd.Flags(), "filter"))
+			if err != nil {
+				return err
 			}
+
+			printer.PrintTableOfVMs(os.Stdout, MustGetBool(cmd.Flags(), "taps"), vms...)
 
 			return nil
 		},
 	}
 
 	addVMLabelFlag(cmd)
+	cmd.Flags().StringArrayP("filter", "f", nil, "Filter output by column value (COLUMN=VALUE); may be repeated")
 	cmd.Flags().BoolP("taps", "t", false, "Include tap interface names")
 
 	return cmd
