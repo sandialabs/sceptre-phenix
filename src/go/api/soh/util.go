@@ -709,6 +709,66 @@ func (s *SOH) waitForFileAbsentTest(ctx context.Context, ns string) bool {
 	)
 }
 
+func (s *SOH) waitForServiceTest(ctx context.Context, ns string) bool {
+	var (
+		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
+		wg     = new(mm.StateGroup)
+	)
+
+	for host, services := range s.md.HostServices {
+		if _, ok := s.c2Hosts[host]; !ok {
+			logger.Debug("skipping host per config", "host", host)
+
+			continue
+		}
+
+		for _, service := range services {
+			logger.Debug("checking for service on host", "host", host, "service", service)
+			s.serviceTest(ctx, wg, ns, s.nodes[host], service)
+		}
+	}
+
+	cancel := periodicallyNotify(ctx, "waiting for service tests to complete...", notifyInterval)
+
+	wg.Wait()
+	cancel()
+
+	for _, state := range wg.States {
+		var (
+			host, _    = state.Meta["host"].(string)
+			service, _ = state.Meta["service"].(string)
+		)
+
+		st := State{ //nolint:exhaustruct // partial initialization
+			Metadata:  state.Meta,
+			Timestamp: time.Now().Format(time.RFC3339),
+		}
+
+		err := state.Err
+		if err != nil {
+			if errors.Is(err, mm.ErrC2ClientNotActive) {
+				delete(s.c2Hosts, host)
+			}
+
+			st.Error = err.Error()
+
+			logger.Error("[✗] service not running on host", "host", host, "service", service)
+		} else {
+			st.Success = state.Msg
+		}
+
+		hostState, ok := s.status[host]
+		if !ok {
+			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
+		}
+
+		hostState.Services = append(hostState.Services, st)
+		s.status[host] = hostState
+	}
+
+	return wg.ErrCount > 0
+}
+
 //nolint:dupl // similar to waitForPortTest
 func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 	var (
@@ -1528,6 +1588,58 @@ func (s SOH) fileAbsentTest(
 	cmd.Expected = expected
 
 	mm.ScheduleC2ParallelCommand(ctx, cmd)
+}
+
+func (s SOH) serviceTest(
+	ctx context.Context,
+	wg *mm.StateGroup,
+	ns string,
+	node ifaces.NodeSpec,
+	service string,
+) {
+	var (
+		host = node.General().Hostname()
+		meta = map[string]any{"host": host, "service": service}
+	)
+
+	retries := 5
+	expected := func(resp string) error {
+		if strings.TrimSpace(resp) != "active" {
+			if retries > 0 {
+				retries--
+
+				return mm.C2RetryError{Delay: c2RetryDelay}
+			}
+
+			return errors.New("service not active")
+		}
+
+		wg.AddSuccess("service running", meta)
+
+		return nil
+	}
+
+	cmd := s.newParallelCommand(ns, host, serviceCheckCommand(node.Hardware().OSType(), service))
+	cmd.Wait = wg
+	cmd.Meta = meta
+	cmd.Expected = expected
+
+	mm.ScheduleC2ParallelCommand(ctx, cmd)
+}
+
+func serviceCheckCommand(osType, service string) string {
+	if strings.EqualFold(osType, "windows") {
+		service = strings.ReplaceAll(service, "'", "''")
+
+		return fmt.Sprintf(
+			`powershell -NoProfile -Command "if ((Get-Service -Name '%s' -ErrorAction SilentlyContinue).Status -eq 'Running') { 'active' }"`,
+			service,
+		)
+	}
+
+	service = strings.ReplaceAll(service, "'", `'"'"'`)
+
+	return fmt.Sprintf("systemctl is-active -- '%s'", service)
 }
 
 func (s SOH) portTest(

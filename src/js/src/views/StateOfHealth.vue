@@ -209,6 +209,42 @@
               </b-table>
               <br />
             </div>
+            <div v-if="detailsModal.soh.services">
+              <p class="title is-6">Services</p>
+              <b-table
+                :data="detailsModal.soh.services"
+                default-sort="timestamp">
+                <b-table-column
+                  field="timestamp"
+                  label="Timestamp"
+                  sortable
+                  v-slot="props">
+                  {{ props.row.timestamp }}
+                </b-table-column>
+                <b-table-column
+                  field="service"
+                  label="Service"
+                  sortable
+                  v-slot="props">
+                  {{ props.row.metadata.service }}
+                </b-table-column>
+                <b-table-column
+                  field="success"
+                  label="Success"
+                  sortable
+                  v-slot="props">
+                  {{ props.row.success }}
+                </b-table-column>
+                <b-table-column
+                  field="error"
+                  label="Error"
+                  sortable
+                  v-slot="props">
+                  {{ props.row.error }}
+                </b-table-column>
+              </b-table>
+              <br />
+            </div>
             <div v-if="detailsModal.soh.listeners">
               <p class="title is-6">Listeners</p>
               <b-table
