@@ -20,6 +20,20 @@ func (t *Tap) Init(bridge string, opts ...Option) {
 }
 
 func (t *Tap) Create(host string) (netaddr.IPPrefix, error) {
+	if t.External.Enabled {
+		if err := t.External.Firewall.Validate(); err != nil {
+			return netaddr.IPPrefix{}, fmt.Errorf(
+				"validating external access firewall for VLAN %s: %w", t.VLAN, err,
+			)
+		}
+	} else if t.External.Firewall != nil {
+		plog.Warn(
+			plog.TypeSystem,
+			"external access firewall configured but external access is not enabled -- firewall will not be applied",
+			"vlan", t.VLAN,
+		)
+	}
+
 	err := t.create(host)
 	if err != nil {
 		// attempt to clean up any progress already made
@@ -237,6 +251,28 @@ func (t *Tap) connect(host string, subnet netaddr.IPPrefix) error { //nolint:fun
 			host,
 			err,
 		)
+	}
+
+	if t.External.Firewall != nil {
+		plog.Info(
+			plog.TypeSystem,
+			"configuring external access firewall in network namespace on host",
+			"ns",
+			t.Name,
+			"host",
+			host,
+		)
+
+		for _, cmd := range buildFirewallCommands(t.Name, t.External.Firewall) {
+			if err := mm.MeshShell(host, cmd); err != nil {
+				return fmt.Errorf(
+					"configuring external access firewall in network namespace %s on host %s: %w",
+					t.Name,
+					host,
+					err,
+				)
+			}
+		}
 	}
 
 	plog.Info(plog.TypeSystem, "configuring iptables in the system namespace on host", "host", host)
