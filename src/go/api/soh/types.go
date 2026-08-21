@@ -57,6 +57,7 @@ type HostState struct {
 	Services     []State `json:"services,omitempty"     mapstructure:"services,omitempty"     structs:"services,omitempty"`
 	Processes    []State `json:"processes,omitempty"    mapstructure:"processes,omitempty"    structs:"processes,omitempty"`
 	Listeners    []State `json:"listeners,omitempty"    mapstructure:"listeners,omitempty"    structs:"listeners,omitempty"`
+	Containers   []State `json:"containers,omitempty"   mapstructure:"containers,omitempty"   structs:"containers,omitempty"`
 	CustomTests  []State `json:"customTests,omitempty"  mapstructure:"customTests,omitempty"  structs:"customTests,omitempty"`
 
 	// populated before sending to UI client
@@ -65,7 +66,8 @@ type HostState struct {
 
 func (h HostState) AllStates() []State {
 	total := len(h.Networking) + len(h.Reachability) + len(h.Files) + len(h.FilesAbsent) +
-		len(h.Services) + len(h.Processes) + len(h.Listeners) + len(h.CustomTests)
+		len(h.Services) + len(h.Processes) + len(h.Listeners) + len(h.Containers) +
+		len(h.CustomTests)
 
 	all := make([]State, 0, total)
 
@@ -76,6 +78,7 @@ func (h HostState) AllStates() []State {
 	all = append(all, h.Services...)
 	all = append(all, h.Processes...)
 	all = append(all, h.Listeners...)
+	all = append(all, h.Containers...)
 	all = append(all, h.CustomTests...)
 
 	return all
@@ -135,6 +138,7 @@ type sohMetadata struct {
 	HostServices       map[string][]string         `mapstructure:"hostServices"`
 	HostListeners      map[string][]string         `mapstructure:"hostListeners"`
 	HostProcesses      map[string][]string         `mapstructure:"hostProcesses"`
+	HostContainers     map[string][]string         `mapstructure:"dockerContainers"`
 	CustomHostTests    map[string][]customHostTest `mapstructure:"hostCustomTests"`
 	InjectICMPAllow    bool                        `mapstructure:"injectICMPAllow"`
 	PacketCapture      packetCapture               `mapstructure:"packetCapture"`

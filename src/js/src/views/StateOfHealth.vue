@@ -281,6 +281,42 @@
               </b-table>
               <br />
             </div>
+            <div v-if="detailsModal.soh.containers">
+              <p class="title is-6">Docker Containers</p>
+              <b-table
+                :data="detailsModal.soh.containers"
+                default-sort="timestamp">
+                <b-table-column
+                  field="timestamp"
+                  label="Timestamp"
+                  sortable
+                  v-slot="props">
+                  {{ props.row.timestamp }}
+                </b-table-column>
+                <b-table-column
+                  field="container"
+                  label="Container"
+                  sortable
+                  v-slot="props">
+                  {{ props.row.metadata.container }}
+                </b-table-column>
+                <b-table-column
+                  field="success"
+                  label="Success"
+                  sortable
+                  v-slot="props">
+                  {{ props.row.success }}
+                </b-table-column>
+                <b-table-column
+                  field="error"
+                  label="Error"
+                  sortable
+                  v-slot="props">
+                  {{ props.row.error }}
+                </b-table-column>
+              </b-table>
+              <br />
+            </div>
             <div v-if="detailsModal.soh.customTests">
               <p class="title is-6">Custom User Tests</p>
               <b-table :data="detailsModal.soh.customTests" default-sort="test">

@@ -709,6 +709,7 @@ func (s *SOH) waitForFileAbsentTest(ctx context.Context, ns string) bool {
 	)
 }
 
+//nolint:dupl // similar to waitForContainerTest
 func (s *SOH) waitForServiceTest(ctx context.Context, ns string) bool {
 	var (
 		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
@@ -763,6 +764,77 @@ func (s *SOH) waitForServiceTest(ctx context.Context, ns string) bool {
 		}
 
 		hostState.Services = append(hostState.Services, st)
+		s.status[host] = hostState
+	}
+
+	return wg.ErrCount > 0
+}
+
+//nolint:dupl // similar to waitForServiceTest
+func (s *SOH) waitForContainerTest(ctx context.Context, ns string) bool {
+	var (
+		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
+		wg     = new(mm.StateGroup)
+	)
+
+	for host, containers := range s.md.HostContainers {
+		if _, ok := s.c2Hosts[host]; !ok {
+			logger.Debug("skipping host per config", "host", host)
+
+			continue
+		}
+
+		for _, container := range containers {
+			logger.Debug("checking docker container on host", "host", host, "container", container)
+			s.containerTest(ctx, wg, ns, s.nodes[host], container)
+		}
+	}
+
+	cancel := periodicallyNotify(
+		ctx,
+		"waiting for docker container tests to complete...",
+		notifyInterval,
+	)
+
+	wg.Wait()
+	cancel()
+
+	for _, state := range wg.States {
+		var (
+			host, _      = state.Meta["host"].(string)
+			container, _ = state.Meta["container"].(string)
+		)
+
+		st := State{ //nolint:exhaustruct // partial initialization
+			Metadata:  state.Meta,
+			Timestamp: time.Now().Format(time.RFC3339),
+		}
+
+		err := state.Err
+		if err != nil {
+			if errors.Is(err, mm.ErrC2ClientNotActive) {
+				delete(s.c2Hosts, host)
+			}
+
+			st.Error = err.Error()
+
+			logger.Error(
+				"[✗] docker container not up/healthy on host",
+				"host",
+				host,
+				"container",
+				container,
+			)
+		} else {
+			st.Success = state.Msg
+		}
+
+		hostState, ok := s.status[host]
+		if !ok {
+			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
+		}
+
+		hostState.Containers = append(hostState.Containers, st)
 		s.status[host] = hostState
 	}
 
@@ -1640,6 +1712,90 @@ func serviceCheckCommand(osType, service string) string {
 	service = strings.ReplaceAll(service, "'", `'"'"'`)
 
 	return fmt.Sprintf("systemctl is-active -- '%s'", service)
+}
+
+func (s SOH) containerTest(
+	ctx context.Context,
+	wg *mm.StateGroup,
+	ns string,
+	node ifaces.NodeSpec,
+	container string,
+) {
+	var (
+		host = node.General().Hostname()
+		meta = map[string]any{"host": host, "container": container}
+	)
+
+	retries := 5
+	expected := func(resp string) error {
+		status := strings.ToLower(strings.TrimSpace(resp))
+
+		switch status {
+		case "healthy", "running":
+			wg.AddSuccess(fmt.Sprintf("container %s", status), meta)
+
+			return nil
+		case "unhealthy":
+			return errors.New("container unhealthy")
+		case "starting", "":
+			if retries > 0 {
+				retries--
+
+				return mm.C2RetryError{Delay: c2RetryDelay}
+			}
+
+			return errors.New("container not up")
+		default: // exited, dead, paused, restarting, created, or unknown container
+			if retries > 0 {
+				retries--
+
+				return mm.C2RetryError{Delay: c2RetryDelay}
+			}
+
+			return fmt.Errorf("container not up (state: %s)", status)
+		}
+	}
+
+	cmd := s.newParallelCommand(
+		ns,
+		host,
+		containerCheckCommand(node.Hardware().OSType(), container),
+	)
+	cmd.Wait = wg
+	cmd.Meta = meta
+	cmd.Expected = expected
+
+	mm.ScheduleC2ParallelCommand(ctx, cmd)
+}
+
+// containerCheckCommand builds a command that queries the state of a docker
+// container on the host. If the container has a configured healthcheck, its
+// health status (eg. "healthy", "unhealthy", "starting") is returned.
+// Otherwise, the container's run state (eg. "running", "exited") is returned.
+//
+// Note: commands are executed directly by the guest's C2 agent (miniccc),
+// not via a shell, so shell-only syntax (eg. stderr redirection) must not be
+// used here on Linux -- it would be passed through as a literal, unparsed
+// argument and corrupt the command. The Windows command is an exception
+// since it's wrapped in a `powershell -Command "..."` invocation, which
+// itself acts as an interpreter for the quoted script text.
+func containerCheckCommand(osType, container string) string {
+	const tmpl = `{{if .State.Health}}{{.State.Health.Status}}` +
+		`{{else}}{{if .State.Running}}running{{else}}{{.State.Status}}{{end}}{{end}}`
+
+	if strings.EqualFold(osType, "windows") {
+		container = strings.ReplaceAll(container, "'", "''")
+
+		return fmt.Sprintf(
+			`powershell -NoProfile -Command "docker inspect --format='%s' -- '%s' 2>$null"`,
+			tmpl,
+			container,
+		)
+	}
+
+	container = strings.ReplaceAll(container, "'", `'"'"'`)
+
+	return fmt.Sprintf("docker inspect --format='%s' -- '%s'", tmpl, container)
 }
 
 func (s SOH) portTest(
