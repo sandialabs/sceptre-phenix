@@ -15,6 +15,7 @@ func TestHostStateAllStatesIncludesFiles(t *testing.T) {
 	fileAbsent := State{Success: "file not found"}
 	service := State{Success: "service running"}
 	process := State{Success: "process running"}
+	container := State{Success: "container running"}
 
 	state := HostState{
 		Networking:  []State{networking},
@@ -22,9 +23,10 @@ func TestHostStateAllStatesIncludesFiles(t *testing.T) {
 		FilesAbsent: []State{fileAbsent},
 		Services:    []State{service},
 		Processes:   []State{process},
+		Containers:  []State{container},
 	}
 
-	want := []State{networking, file, fileAbsent, service, process}
+	want := []State{networking, file, fileAbsent, service, process, container}
 	if got := state.AllStates(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("AllStates() = %#v, want %#v", got, want)
 	}
@@ -68,6 +70,29 @@ func TestSOHMetadataDecodesHostFilesAbsent(t *testing.T) {
 			"HostFilesAbsent = %#v, want %#v",
 			metadata.HostFilesAbsent,
 			input["hostFilesAbsent"],
+		)
+	}
+}
+
+func TestSOHMetadataDecodesDockerContainers(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]any{
+		"dockerContainers": map[string][]string{
+			"server": {"nginx", "redis"},
+		},
+	}
+
+	var metadata sohMetadata
+	if err := mapstructure.Decode(input, &metadata); err != nil {
+		t.Fatalf("decoding metadata: %v", err)
+	}
+
+	if !reflect.DeepEqual(metadata.HostContainers, input["dockerContainers"]) {
+		t.Fatalf(
+			"HostContainers = %#v, want %#v",
+			metadata.HostContainers,
+			input["dockerContainers"],
 		)
 	}
 }
@@ -154,6 +179,45 @@ func TestServiceCheckCommand(t *testing.T) {
 
 			if got := serviceCheckCommand(test.osType, test.service); got != test.want {
 				t.Fatalf("serviceCheckCommand() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestContainerCheckCommand(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		osType    string
+		container string
+		want      string
+	}{
+		{
+			name:      "linux",
+			osType:    "linux",
+			container: "o'brien's-app",
+			want: `docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}` +
+				`{{else}}{{if .State.Running}}running{{else}}{{.State.Status}}{{end}}{{end}}' ` +
+				`-- 'o'"'"'brien'"'"'s-app'`,
+		},
+		{
+			name:      "windows",
+			osType:    "windows",
+			container: "o'brien's-app",
+			want: `powershell -NoProfile -Command "docker inspect --format='` +
+				`{{if .State.Health}}{{.State.Health.Status}}` +
+				`{{else}}{{if .State.Running}}running{{else}}{{.State.Status}}{{end}}{{end}}' ` +
+				`-- 'o''brien''s-app' 2>$null"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := containerCheckCommand(test.osType, test.container); got != test.want {
+				t.Fatalf("containerCheckCommand() = %q, want %q", got, test.want)
 			}
 		})
 	}

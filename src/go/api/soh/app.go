@@ -225,6 +225,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 			"services":            true,
 			"processes":           true,
 			"ports":               true,
+			"docker":              true,
 			"custom":              true,
 			"cpu-load":            true,
 			"flows":               true,
@@ -466,6 +467,17 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 
 	if checks["ports"] {
 		err := s.waitForPortTest(ctx, ns)
+		s.writeResults(exp)
+
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		errs = errs || err
+	}
+
+	if checks["docker"] {
+		err := s.waitForContainerTest(ctx, ns)
 		s.writeResults(exp)
 
 		if ctx.Err() != nil {
