@@ -15,6 +15,12 @@
           <p>Memory: {{ formatRAM(expModal.vm.ram) }}</p>
           <p>Disk: {{ expModal.vm.disk }}</p>
           <p>Uptime: {{ formatUptime(expModal.vm.uptime) }}</p>
+          <p
+            :class="{
+              'has-text-danger has-text-weight-bold': !expModal.vm.snapshot,
+            }">
+            Snapshot: {{ expModal.vm.snapshot ? 'enabled' : 'disabled' }}
+          </p>
           <p v-if="expModal.vm.delayed_start">
             Delay: {{ expModal.vm.delayed_start }}
           </p>
@@ -140,7 +146,8 @@
             v-if="
               roleAllowed('vms/commit', 'create', expModal.fullName) &&
               !showModifyStateBar &&
-              expModal.vm.running
+              expModal.vm.running &&
+              expModal.vm.snapshot
             ">
             <b-tooltip label="create backing image" type="is-light">
               <b-button
@@ -154,7 +161,8 @@
             v-if="
               roleAllowed('vms/snapshot', 'create', expModal.fullName) &&
               !showModifyStateBar &&
-              expModal.vm.running
+              expModal.vm.running &&
+              expModal.vm.snapshot
             ">
             <b-tooltip label="create vm snapshot" type="is-light">
               <b-button
@@ -202,7 +210,10 @@
             </b-tooltip>
 
             <b-tooltip
-              v-if="roleAllowed('vms/reset', 'update', expModal.fullName)"
+              v-if="
+                roleAllowed('vms/reset', 'update', expModal.fullName) &&
+                expModal.vm.snapshot
+              "
               label="reset disk state"
               type="is-light">
               <b-button
@@ -1499,6 +1510,7 @@
   import axiosInstance from '@/utils/axios.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import { useErrorNotification } from '@/utils/errorNotif';
+  import { partitionSnapshotVMNames } from '@/utils/vmSnapshot.js';
   import externalImg from '@/assets/imgs/external.png';
   import notAvailableImg from '@/assets/imgs/not-available.png';
   import delayedImg from '@/assets/imgs/delayed.png';
@@ -2510,9 +2522,14 @@
       },
 
       captureSnapshot(name) {
-        if (!Array.isArray(name)) {
-          name = [name];
-        }
+        const { enabled, disabled } = partitionSnapshotVMNames(
+          name,
+          this.experiment.vms,
+        );
+        this.notifySnapshotDisabled(disabled);
+        name = enabled;
+        if (name.length === 0) return;
+
         var dateTime = new Date();
         var time =
           dateTime.getFullYear() +
@@ -2592,6 +2609,14 @@
       },
 
       diskImage(name) {
+        const { enabled, disabled } = partitionSnapshotVMNames(
+          name,
+          this.experiment.vms,
+        );
+        this.notifySnapshotDisabled(disabled);
+        name = enabled;
+        if (name.length === 0) return;
+
         var now = new Date();
         var date =
           now.getFullYear() +
@@ -2605,9 +2630,6 @@
           ('0' + now.getMinutes()).slice(-2) +
           '' +
           ('0' + now.getSeconds()).slice(-2);
-        if (!Array.isArray(name)) {
-          name = [name];
-        }
         let vms = this.experiment.vms;
         name.forEach((arg) => {
           for (let i = 0; i < vms.length; i++) {
@@ -3149,9 +3171,13 @@
       },
 
       resetVmState(name) {
-        if (!Array.isArray(name)) {
-          name = [name];
-        }
+        const { enabled, disabled } = partitionSnapshotVMNames(
+          name,
+          this.experiment.vms,
+        );
+        this.notifySnapshotDisabled(disabled);
+        name = enabled;
+        if (name.length === 0) return;
 
         let vmList = [];
         let vmExcludeList = [];
@@ -3835,6 +3861,19 @@
         }
 
         this.unSelectAllVMs();
+      },
+
+      notifySnapshotDisabled(names) {
+        if (names.length === 0) return;
+
+        this.$buefy.toast.open({
+          message:
+            'VMs ' +
+            names.join(', ') +
+            ' do not have snapshots enabled and were skipped.',
+          type: 'is-warning',
+          duration: 5000,
+        });
       },
 
       updateCaptureLabel(vm) {
