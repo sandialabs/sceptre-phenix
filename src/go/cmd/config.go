@@ -422,10 +422,11 @@ func newConfigDeleteCmd() *cobra.Command {
 	`
 
 	cmd := &cobra.Command{
-		Use:   "delete <kind/name> ...",
-		Short: "Delete a configuration(s)",
-		Long:  desc,
-		Args:  configKindArgsValidator(true, false),
+		Use:     "delete <kind/name> ...",
+		Aliases: []string{deleteAlias},
+		Short:   "Delete a configuration(s)",
+		Long:    desc,
+		Args:    configKindArgsValidator(true, false),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, c := range args {
 				err := config.Delete(c)

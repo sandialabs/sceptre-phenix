@@ -314,6 +314,7 @@ func newExperimentDeleteCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:               "delete <experiment name>",
+		Aliases:           []string{deleteAlias},
 		Short:             "Delete an experiment",
 		Long:              desc,
 		ValidArgsFunction: expNameCompletion(true),
@@ -663,6 +664,7 @@ func newExperimentRestartCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:               "restart <experiment name>",
+		Aliases:           []string{restartAlias},
 		Short:             "Restart an experiment",
 		Long:              desc,
 		ValidArgsFunction: expNameCompletion(true),
@@ -769,6 +771,7 @@ func newExperimentReconfigureCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:               "reconfigure <experiment name>",
+		Aliases:           []string{"rec"},
 		Short:             "Reconfigure an experiment",
 		Long:              desc,
 		ValidArgsFunction: expNameCompletion(true),
@@ -846,9 +849,10 @@ func newExperimentTriggerRunningCmd() *cobra.Command {
 	be run.`
 
 	cmd := &cobra.Command{
-		Use:   "trigger-running <experiment name> [<app name> ...]",
-		Short: "Trigger running stage for app(s) in experiment",
-		Long:  desc,
+		Use:     "trigger-running <experiment name> [<app name> ...]",
+		Aliases: []string{"trig"},
+		Short:   "Trigger running stage for app(s) in experiment",
+		Long:    desc,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			if len(args) == 0 {
 				return expNameCompletion(true)(cmd, args, toComplete)

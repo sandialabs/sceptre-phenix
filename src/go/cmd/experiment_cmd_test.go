@@ -98,6 +98,36 @@ func TestExperimentCommandsShowUsageForMissingArguments(t *testing.T) {
 	}
 }
 
+func TestExperimentCommandAliases(t *testing.T) {
+	tests := []struct {
+		alias      string
+		command    string
+		newCommand func() *cobra.Command
+	}{
+		{alias: deleteAlias, command: "delete", newCommand: newExperimentDeleteCmd},
+		{alias: "trig", command: "trigger-running", newCommand: newExperimentTriggerRunningCmd},
+		{alias: restartAlias, command: "restart", newCommand: newExperimentRestartCmd},
+		{alias: "rec", command: "reconfigure", newCommand: newExperimentReconfigureCmd},
+	}
+
+	for _, test := range tests {
+		t.Run(test.alias, func(t *testing.T) {
+			root := &cobra.Command{Use: "phenix"}
+			experimentCmd := newExperimentCmd()
+			experimentCmd.AddCommand(test.newCommand())
+			root.AddCommand(experimentCmd)
+
+			command, _, err := root.Find([]string{"exp", test.alias})
+			if err != nil {
+				t.Fatalf("expected alias to resolve: %v", err)
+			}
+			if command.Name() != test.command {
+				t.Fatalf("expected alias to resolve to %q, got %q", test.command, command.Name())
+			}
+		})
+	}
+}
+
 func TestExperimentScheduleUsageDescribesArgumentOrder(t *testing.T) {
 	cmd := newExperimentScheduleCmd()
 

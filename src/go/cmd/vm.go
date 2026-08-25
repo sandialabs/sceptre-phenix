@@ -355,6 +355,7 @@ func newVMResumeCmd() *cobra.Command {
 func newVMRestartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "restart <experiment name> [vm name]",
+		Aliases:           []string{restartAlias},
 		Short:             "Restart running, paused, or powered off VM(s) for a specific experiment",
 		ValidArgsFunction: vmArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {

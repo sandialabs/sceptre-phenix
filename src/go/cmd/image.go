@@ -378,8 +378,9 @@ func newImageBuildCmd() *cobra.Command {
 
 func newImageDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "delete <configuration name>",
-		Short: "Delete an existing image configuration",
+		Use:     "delete <configuration name>",
+		Aliases: []string{deleteAlias},
+		Short:   "Delete an existing image configuration",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
