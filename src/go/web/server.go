@@ -167,25 +167,9 @@ func Start(opts ...ServerOption) error {
 			r.Method,
 		)
 
-		if o.unbundled {
-			http.ServeFile(w, r, "web/public/index.html")
-		} else {
-			f, err := assets.Open("index.html")
-			if err != nil {
-				plog.Error(plog.TypeSystem, "opening index.html from assets", "err", err)
-				http.NotFound(w, r)
-				return
-			}
-			defer f.Close()
-
-			fi, err := f.Stat()
-			if err != nil {
-				plog.Error(plog.TypeSystem, "statting index.html from assets", "err", err)
-				http.NotFound(w, r)
-				return
-			}
-
-			http.ServeContent(w, r, "index.html", fi.ModTime(), f)
+		if err := serveRuntimeIndex(w, r, assets, o); err != nil {
+			plog.Error(plog.TypeSystem, "serving UI index", "err", err)
+			http.NotFound(w, r)
 		}
 	})
 

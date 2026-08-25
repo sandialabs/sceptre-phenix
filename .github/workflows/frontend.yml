@@ -62,9 +62,9 @@ jobs:
         working-directory: src/js
         run: |
           npm ci
-          VITE_AUTH=disabled npm run build
+          npm run build
       - name: Build phenix
-        # SKIP_UI keeps make from rebuilding the UI already built with VITE_AUTH=disabled
+        # SKIP_UI keeps make from rebuilding the UI copied above.
         run: make bin/phenix SKIP_UI=1
       - name: Start phenix UI
         run: |

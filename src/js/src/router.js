@@ -3,10 +3,11 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { ToastProgrammatic as Toast } from 'buefy';
 
 import { usePhenixStore } from '@/store.js';
+import { authMode, basePath } from '@/runtimeConfig.js';
 import axiosInstance from '@/utils/axios.js';
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: createWebHistory(basePath),
   routes: [
     {
       path: '/',
@@ -144,7 +145,7 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   const store = usePhenixStore();
 
-  if (import.meta.env.VITE_AUTH === 'disabled' || !import.meta.env.VITE_AUTH) {
+  if (authMode === 'disabled') {
     if (!store.auth) {
       let role = {
         name: 'Global Admin',
@@ -175,12 +176,12 @@ router.beforeEach(async (to, from, next) => {
     return;
   }
 
-  if (to.name === 'signin' && import.meta.env.VITE_AUTH === 'enabled') {
+  if (to.name === 'signin' && authMode === 'enabled') {
     next();
     return;
   }
 
-  if (to.name === 'proxysignup' && import.meta.env.VITE_AUTH === 'proxy') {
+  if (to.name === 'proxysignup' && authMode === 'proxy') {
     next();
     return;
   }
@@ -209,7 +210,7 @@ router.beforeEach(async (to, from, next) => {
   } else {
     store.next = to;
 
-    if (import.meta.env.VITE_AUTH === 'proxy') {
+    if (authMode === 'proxy') {
       // next(); //TODO
       // return;
 

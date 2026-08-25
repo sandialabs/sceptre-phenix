@@ -48,10 +48,11 @@ All notable changes to this project will be documented in this file.
 - **Refactor**: Replaced `go-bindata` with Go 1.16+ `embed` package for asset embedding, removing the build dependency on `go-bindata`.
 - **Performance**: Removed excessive debug logging from hot paths in log file cache management to reduce I/O overhead during high-frequency UI polling.
 - **Web UI Build**: Replaced yarn with npm and `vue-cli` with Vite; the UI build toolchain now targets Node 24.
-- **Web UI Environment Variables**: Build-time UI environment variables are now prefixed `VITE_` instead of `VUE_APP_` (e.g. `VITE_AUTH` replaces `VUE_APP_AUTH`, and `VITE_BASE_PATH` replaces `VUE_BASE_PATH`). The Docker `PHENIX_WEB_AUTH` / `PHENIX_BASE_PATH` build args are unchanged.
+- **Web UI Configuration**: Authentication mode and base path are now supplied by the server at runtime, so one prebuilt UI supports every deployment configuration.
 
 ### Removed
 - **Legacy Tests**: Removed outdated `testing/` directory and unused `*_test.go` files (replaced by `examples/`).
+- **JIT UI Image**: Removed the separate `phenix-jit-ui` image and the `PHENIX_WEB_AUTH` / `PHENIX_BASE_PATH` Docker build arguments. `PHENIX_BASE_PATH` remains supported as a runtime environment variable.
 
 ### Fixed
 - **Timestamp Consistency**: Enforced `2006-01-02 15:04:05.000` time format across file logs.

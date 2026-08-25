@@ -16,7 +16,6 @@ services:
       dockerfile: docker/Dockerfile
       args:
         MM_MIN_REV: ${MM_REV:-aecea71}
-        PHENIX_WEB_AUTH: disabled
     command:
       - phenix
       - ui

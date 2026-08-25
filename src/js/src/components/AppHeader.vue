@@ -98,6 +98,7 @@ are only available to Global Administrator or Global Viewer.
   import { usePhenixStore } from '@/store.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import axiosInstance from '@/utils/axios.js';
+  import { authMode } from '@/runtimeConfig.js';
 
   export default {
     setup() {
@@ -118,7 +119,7 @@ are only available to Global Administrator or Global Viewer.
         return phenixStore.role.name === 'Disabled';
       },
       proxyAuth() {
-        return import.meta.env.VITE_AUTH === 'proxy';
+        return authMode === 'proxy';
       },
 
       tunneler() {
