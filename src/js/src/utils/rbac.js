@@ -1,6 +1,19 @@
 import { usePhenixStore } from '@/store.js';
 import { minimatch } from 'minimatch';
 
+// Restrict minimatch to the Go filepath.Match semantics the server uses: `*`
+// never crosses a `/` namespace boundary, and minimatch-only features
+// (globstars, braces, extglobs, `#` comments, `!` negation, and dotfile
+// exclusion) are disabled. resourceNameAllowed handles `!` itself.
+const matchOptions = {
+  dot: true,
+  noglobstar: true,
+  nobrace: true,
+  noext: true,
+  nocomment: true,
+  nonegate: true,
+};
+
 let cache = new Map();
 // should match role.go#Allowed (with added caching)
 export function roleAllowed(resource, verb, ...names) {
@@ -17,7 +30,7 @@ export function roleAllowed(resource, verb, ...names) {
 
   for (const p of role.policies) {
     for (const r of p.resources) {
-      if (minimatch(resource, r)) {
+      if (minimatch(resource, r, matchOptions)) {
         for (const v of p.verbs) {
           if (v == '*' || v == verb) {
             if (names.length == 0) {
@@ -46,11 +59,7 @@ let resourceNameAllowed = (policy, name) => {
     let negate = n.startsWith('!');
     var n2 = n.replace('!', '');
 
-    if (name.includes('/') && !n2.includes('/')) {
-      n2 = '*/' + n2;
-    }
-
-    if (minimatch(name, n2)) {
+    if (minimatch(name, n2, matchOptions)) {
       if (negate) {
         return false;
       }

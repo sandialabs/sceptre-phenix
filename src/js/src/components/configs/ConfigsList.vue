@@ -43,7 +43,7 @@
       </section>
       <footer class="modal-card-foot x-modal-dark buttons is-right">
         <button
-          v-if="roleAllowed('configs', 'update', viewer.config.metadata.name)"
+          v-if="roleAllowed('configs', 'update', configFullName(viewer.config))"
           class="button is-success"
           @click="$emit('edit', viewer.config)">
           Edit Config
@@ -66,7 +66,7 @@
             v-if="
               selectedConfigs.length > 0 &&
               selectedConfigs.every((c) =>
-                roleAllowed('configs', 'get', c.metadata.name),
+                roleAllowed('configs', 'get', configFullName(c)),
               )
             ">
             <b-tooltip label="download selected configs" type="is-light is-top">
@@ -81,7 +81,7 @@
             v-if="
               selectedConfigs.length > 0 &&
               selectedConfigs.every((c) =>
-                roleAllowed('configs', 'delete', c.metadata.name),
+                roleAllowed('configs', 'delete', configFullName(c)),
               )
             ">
             <b-tooltip label="delete selected configs" type="is-light is-top">
@@ -188,7 +188,8 @@
         width="400"
         sortable
         v-slot="props">
-        <template v-if="roleAllowed('configs', 'get', props.row.metadata.name)">
+        <template
+          v-if="roleAllowed('configs', 'get', configFullName(props.row))">
           <b-tooltip label="view config" type="is-dark">
             <div class="field is-clickable">
               <div @click="viewConfig(props.row)">
@@ -222,7 +223,7 @@
           type="is-light"
           multilined>
           <button
-            v-if="roleAllowed('configs', 'update', props.row.metadata.name)"
+            v-if="roleAllowed('configs', 'update', configFullName(props.row))"
             class="button is-light is-small action"
             @click="$emit('edit', props.row)">
             <b-icon icon="edit"></b-icon>
@@ -235,7 +236,7 @@
           type="is-light"
           multilined>
           <button
-            v-if="roleAllowed('configs', 'get', props.row.metadata.name)"
+            v-if="roleAllowed('configs', 'get', configFullName(props.row))"
             class="button is-light is-small action"
             @click="download([props.row])">
             <b-icon icon="download"></b-icon>
@@ -248,7 +249,7 @@
           type="is-light"
           multilined>
           <button
-            v-if="roleAllowed('configs', 'delete', props.row.metadata.name)"
+            v-if="roleAllowed('configs', 'delete', configFullName(props.row))"
             class="button is-light is-small action"
             @click="deleteConfigs([props.row])">
             <b-icon icon="trash"></b-icon>
@@ -362,6 +363,10 @@
             this.isWaiting = false;
           });
       },
+      // Matches store.Config.FullName, the name the server authorizes.
+      configFullName(cfg) {
+        return `${cfg.kind}/${cfg.metadata.name}`;
+      },
       isBuilderTopology(cfg) {
         if (cfg.kind == 'Topology') {
           if ('annotations' in cfg.metadata) {
@@ -372,9 +377,7 @@
         return false;
       },
       download(configList) {
-        const configs = configList.map(
-          (conf) => `${conf.kind}/${conf.metadata.name}`,
-        );
+        const configs = configList.map(this.configFullName);
         axiosInstance
           .post('configs/download', JSON.stringify(configs), {
             headers: {
@@ -399,9 +402,7 @@
           });
       },
       deleteConfigs(configList) {
-        const configs = configList.map(
-          (conf) => `${conf.kind}/${conf.metadata.name}`,
-        );
+        const configs = configList.map(this.configFullName);
         let msg;
         if (configs.length > 1) {
           msg =
@@ -429,10 +430,9 @@
                 .then(() => {
                   //delete from config list
                   let configsSet = new Set(configs);
-                  this.configs = this.configs.filter((item) => {
-                    const key = `${item.kind}/${item.metadata.name}`;
-                    return !configsSet.has(key);
-                  });
+                  this.configs = this.configs.filter(
+                    (item) => !configsSet.has(this.configFullName(item)),
+                  );
 
                   let confirmMsg;
                   if (configs.length > 1) {
