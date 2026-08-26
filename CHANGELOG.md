@@ -57,4 +57,5 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - **Web UI**: Removed non-functional packet-capture controls from the IP column header and renamed the IPv4 column to IP.
 - **VM Snapshots**: Replaced deprecated minimega `vm migrate` commands with `vm save` and `vm config state` for snapshot, restore, and redeploy workflows.
+- **Image Script Updates**: Prevented `phenix image update` from duplicating refreshed scripts in `script_order`.
 - **Timestamp Consistency**: Enforced `2006-01-02 15:04:05.000` time format across file logs.
