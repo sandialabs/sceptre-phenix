@@ -122,9 +122,15 @@ func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
 			}
 		}
 
-		if node.External() {
+		details, exists := running[vm.Name]
+		if exp.Running() && !exp.DryRun() && !node.External() && !dnb && !exists {
+			continue
+		}
+
+		switch {
+		case node.External():
 			vm.State = "EXTERNAL"
-		} else if details, ok := running[vm.Name]; ok {
+		case exists:
 			vm.Host = details.Host
 			vm.State = details.State
 			vm.Running = details.Running
@@ -166,7 +172,7 @@ func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
 					vm.IPv4[i] = "n/a"
 				}
 			}
-		} else {
+		default:
 			vm.Host = exp.Spec.Schedules()[vm.Name]
 		}
 
