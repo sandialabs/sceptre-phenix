@@ -1790,9 +1790,9 @@
             }
 
             this.experiment.vms = [...msg.result.vms];
+            this.table.total = msg.result.total;
 
             if (this.search.filter) {
-              this.table.total = msg.result.total;
               // Only add successful searches to the search history
               if (this.table.total > 0) {
                 if (this.searchHistory > this.searchHistoryLength) {
@@ -1801,8 +1801,6 @@
                 this.searchHistory.push(this.search.filter.trim());
                 this.searchHistory = this.getUniqueItems(this.searchHistory);
               }
-            } else {
-              this.table.total = this.experiment.vm_count;
             }
 
             this.isWaiting = false;

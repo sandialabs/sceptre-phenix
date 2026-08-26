@@ -448,6 +448,8 @@ func (c *Client) read() { //nolint:maintidx // complex logic
 				allowed.SortBy(sort, asc)
 			}
 
+			totalBeforePaging := len(allowed)
+
 			if page != 0 && size != 0 {
 				allowed = allowed.Paginate(page, size)
 			}
@@ -463,7 +465,7 @@ func (c *Client) read() { //nolint:maintidx // complex logic
 			c.vmMu.Unlock()
 
 			resp := &proto.VMList{
-				Total: uint32(len(allowed)), //nolint:gosec // integer overflow conversion int -> uint32
+				Total: uint32(totalBeforePaging), //nolint:gosec // integer overflow conversion int -> uint32
 				Vms:   make([]*proto.VM, len(allowed)),
 			}
 			for i, v := range allowed {

@@ -9,12 +9,23 @@ import (
 	"phenix/api/vm"
 	"phenix/store"
 	"phenix/types"
+	"phenix/util/mm"
 )
+
+type listMM struct {
+	mm.MM
+
+	vms mm.VMs
+}
+
+func (m listMM) GetVMInfo(...mm.Option) mm.VMs {
+	return m.vms
+}
 
 // getTestExperiment builds a store mock backing a minimal experiment with one
 // topology node and one scenario app that targets the node with metadata, and
 // makes it the phenix default store for the duration of the test.
-func getTestExperiment(t *testing.T, vmName string, appMetadata map[string]any) {
+func getTestExperiment(t *testing.T, vmName string, appMetadata map[string]any, startTime string) {
 	t.Helper()
 
 	ctrl := gomock.NewController(t)
@@ -76,6 +87,10 @@ func getTestExperiment(t *testing.T, vmName string, appMetadata map[string]any) 
 		},
 	}
 
+	if startTime != "" {
+		c.Status = map[string]any{"startTime": startTime}
+	}
+
 	m := store.NewMockStore(ctrl)
 	m.EXPECT().Get(gomock.Any()).DoAndReturn(func(cfg *store.Config) error {
 		*cfg = c
@@ -95,7 +110,7 @@ func getTestExperiment(t *testing.T, vmName string, appMetadata map[string]any) 
 func TestGetIncludesAppMetadata(t *testing.T) {
 	metadata := map[string]any{"key": "value"}
 
-	getTestExperiment(t, "test-vm", metadata)
+	getTestExperiment(t, "test-vm", metadata, "")
 
 	got, err := vm.Get("test-experiment", "test-vm")
 	if err != nil {
@@ -114,6 +129,53 @@ func TestGetIncludesAppMetadata(t *testing.T) {
 
 	if !reflect.DeepEqual(appMetadataMap, metadata) {
 		t.Fatalf("expected app metadata %v, got %v", metadata, appMetadataMap)
+	}
+}
+
+func TestListExcludesKilledVMsFromRunningExperiment(t *testing.T) {
+	tests := []struct {
+		name      string
+		startTime string
+		vms       mm.VMs
+		want      int
+	}{
+		{
+			name:      "running VM remains listed",
+			startTime: "2026-08-26T00:00:00Z",
+			vms:       mm.VMs{{Name: "test-vm", Running: true}},
+			want:      1,
+		},
+		{
+			name:      "killed VM is excluded",
+			startTime: "2026-08-26T00:00:00Z",
+			vms:       nil,
+			want:      0,
+		},
+		{
+			name:      "dry-run VM remains listed",
+			startTime: "2026-08-26T00:00:00Z-DRYRUN",
+			vms:       nil,
+			want:      1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			getTestExperiment(t, "test-vm", nil, test.startTime)
+
+			originalMM := mm.DefaultMM
+			t.Cleanup(func() { mm.DefaultMM = originalMM }) //nolint:reassign // restore test double
+			mm.DefaultMM = listMM{vms: test.vms}            //nolint:reassign // install test double
+
+			got, err := vm.List("test-experiment")
+			if err != nil {
+				t.Fatalf("vm.List returned error: %v", err)
+			}
+
+			if len(got) != test.want {
+				t.Fatalf("vm.List returned %d VMs, want %d: %#v", len(got), test.want, got)
+			}
+		})
 	}
 }
 
