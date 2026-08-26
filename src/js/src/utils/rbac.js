@@ -46,10 +46,6 @@ let resourceNameAllowed = (policy, name) => {
     let negate = n.startsWith('!');
     var n2 = n.replace('!', '');
 
-    if (name.includes('/') && !n2.includes('/')) {
-      n2 = '*/' + n2;
-    }
-
     if (minimatch(name, n2)) {
       if (negate) {
         return false;
