@@ -409,7 +409,7 @@ func (Minimega) RedeployVM(opts ...Option) error { //nolint:funlen // complex lo
 		return fmt.Errorf("cloning VM %s in namespace %s: %w", o.vm, o.ns, err)
 	}
 
-	cmd.Command = "clear vm config migrate"
+	cmd.Command = "clear vm config state"
 
 	err = mmcli.ErrorResponse(mmcli.Run(cmd))
 	if err != nil {

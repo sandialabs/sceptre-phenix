@@ -819,19 +819,19 @@ func Snapshot(expName, vmName, out string, cb func(string)) error { //nolint:fun
 
 	host := status[0]["host"]
 
-	// ***** BEGIN: MIGRATE VM *****
+	// ***** BEGIN: SAVE VM *****
 
-	cmd.Command = fmt.Sprintf("vm migrate %s %s", vmName, out)
+	cmd.Command = fmt.Sprintf("vm save %s %s", vmName, out)
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("starting memory snapshot for VM %s: %w", vmName, err)
 	}
 
-	cmd.Command = "vm migrate"
+	cmd.Command = "vm save"
 	cmd.Columns = []string{"name", "status", "complete (%)"}
 	cmd.Filters = []string{"name=" + vmName}
 
-	// Adding a 1 second delay before calling "vm migrate"
+	// Adding a 1 second delay before calling "vm save"
 	// for a status update appears to prevent the status call
 	// from crashing minimega
 	time.Sleep(1 * time.Second)
@@ -855,7 +855,7 @@ func Snapshot(expName, vmName, out string, cb func(string)) error { //nolint:fun
 		time.Sleep(1 * time.Second)
 	}
 
-	// ***** END: MIGRATE VM *****
+	// ***** END: SAVE VM *****
 
 	cmd.Command = "vm start " + vmName
 
@@ -949,9 +949,9 @@ func Restore(expName, vmName, snap string) error {
 		return fmt.Errorf("setting uuid for VM %s: %w", vmName, err)
 	}
 
-	cmd.Command = fmt.Sprintf("vm config migrate %s.state", snap)
+	cmd.Command = fmt.Sprintf("vm config state %s.state", snap)
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-		return fmt.Errorf("configuring migrate file for VM %s: %w", vmName, err)
+		return fmt.Errorf("configuring state file for VM %s: %w", vmName, err)
 	}
 
 	cmd.Command = fmt.Sprintf("vm config disk %s.hdd,writeback", snap)
