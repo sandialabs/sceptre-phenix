@@ -25,12 +25,6 @@ COPY ./src/js /phenix/src/js
 
 WORKDIR /phenix/src/js
 
-ARG PHENIX_WEB_AUTH=disabled
-ARG PHENIX_BASE_PATH=/
-
-ENV VITE_AUTH=${PHENIX_WEB_AUTH}
-ENV VITE_BASE_PATH=${PHENIX_BASE_PATH}
-
 RUN make dist/index.html
 
 COPY ./src/go/web/public/docs/openapi.yml /phenix/src/go/web/public/docs/openapi.yml

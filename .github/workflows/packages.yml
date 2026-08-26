@@ -73,26 +73,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release create ${{ github.ref_name }} build/deb/*.deb --generate-notes
 
-      - name: Docker meta for JIT UI
-        id: meta-jit
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}/phenix-jit-ui
-          tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=sha
-      - name: Build JIT container image
-        uses: docker/build-push-action@v6
-        with:
-          context: docker/jit
-          file: docker/jit/Dockerfile
-          build-args: |
-            PHENIX_REPO=${{ github.event.pull_request.head.repo.full_name || github.repository }}
-            PHENIX_IMG=${{ fromJSON(steps.meta.outputs.json).tags[0] }}
-            PHENIX_BRANCH=${{ github.head_ref || github.ref_name }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta-jit.outputs.tags }}
     outputs:
       image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
 

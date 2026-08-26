@@ -11,11 +11,11 @@ a CI-built binary, a container, or a full range node.
 | `routes.spec.js` | just a running server (empty store is fine) | yes |
 | `forms.spec.js` | just a running server | yes |
 | `experiment-lifecycle.spec.js` | minimega, VM images, a topology | opt-in (`E2E_LIFECYCLE=1`) |
-| `auth-enabled.spec.js` | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key` | opt-in (`E2E_AUTH_MODE=enabled`) |
-| `auth-proxy.spec.js` | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt` | opt-in (`E2E_AUTH_MODE=proxy`) |
+| `auth-enabled.spec.js` | server `--jwt-signing-key` | opt-in (`E2E_AUTH_MODE=enabled`) |
+| `auth-proxy.spec.js` | server `--jwt-signing-key proxy-jwt` | opt-in (`E2E_AUTH_MODE=proxy`) |
 
-CI (`.github/workflows/frontend.yml`) builds the UI with `VITE_AUTH=disabled`,
-starts `bin/phenix ui` against a throw-away store, and runs the default set.
+CI (`.github/workflows/frontend.yml`) builds the UI, starts `bin/phenix ui`
+against a throw-away store, and runs the default set.
 
 ## Running locally
 
@@ -31,10 +31,10 @@ npx playwright test
 E2E_LIFECYCLE=1 E2E_TOPOLOGY=helloworld npx playwright test experiment-lifecycle
 ```
 
-The auth-mode specs need the UI rebuilt with the matching `VITE_AUTH` value and
-the server restarted with the matching `--jwt-signing-key`; see the header
-comment in each spec. The proxy spec simulates the auth proxy with Playwright's
-`extraHTTPHeaders` — no external proxy required.
+The auth-mode specs only need the server restarted with the matching
+`--jwt-signing-key`; see the header comment in each spec. The proxy spec
+simulates the auth proxy with Playwright's `extraHTTPHeaders` — no external
+proxy required.
 
 Failure artifacts (screenshots, traces) land in `test-results/`; open traces
 with `npx playwright show-trace <trace.zip>`.

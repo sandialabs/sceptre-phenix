@@ -676,6 +676,7 @@
   import axiosInstance from '@/utils/axios.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import { useErrorNotification } from '@/utils/errorNotif';
+  import { basePath } from '@/runtimeConfig.js';
 
   export default {
     mixins: [formattingMixin],
@@ -1680,7 +1681,6 @@
       downloadFile(exp_name, name, path) {
         console.log('attempting to downlad file');
         const store = usePhenixStore();
-        const basePath = import.meta.env.BASE_URL;
 
         const url = `${basePath}api/v1/experiments/${exp_name}/files/${name}`;
         const queryParams = new URLSearchParams({
