@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -24,7 +25,7 @@ func clientAuthMode(jwtKey string) string {
 
 func renderRuntimeIndex(index []byte, options serverOptions) ([]byte, error) {
 	if bytes.Count(index, []byte(runtimeConfigMarker)) != 1 {
-		return nil, fmt.Errorf("expected one runtime configuration marker in UI index")
+		return nil, errors.New("expected one runtime configuration marker in UI index")
 	}
 
 	basePath := html.EscapeString(options.basePath)
