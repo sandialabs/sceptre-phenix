@@ -38,3 +38,17 @@ spec:
     - "*"
     verbs:
     - list
+  - resources:
+    - builder
+    verbs:
+    - get
+    - post
+    - put
+  - resources:
+    - scorch
+    verbs:
+    - get
+  - resources:
+    - tunneler
+    verbs:
+    - get

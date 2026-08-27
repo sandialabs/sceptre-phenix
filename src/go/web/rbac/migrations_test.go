@@ -12,7 +12,13 @@ import (
 
 // TestEnsureExperimentFilesCreatePolicyAddsPolicy verifies missing upload permission is added.
 func TestEnsureExperimentFilesCreatePolicyAddsPolicy(t *testing.T) {
-	role := &v1.RoleSpec{Name: "Experiment Admin", Policies: []*v1.PolicySpec{{Resources: []string{"experiments"}, Verbs: []string{"get"}}}}
+	role := &v1.RoleSpec{
+		Name: experimentAdminRole,
+		Policies: []*v1.PolicySpec{{
+			Resources: []string{"experiments"},
+			Verbs:     []string{"get"},
+		}},
+	}
 
 	if !ensureExperimentFilesCreatePolicy(role, nil) {
 		t.Fatal("expected role to change")
@@ -37,7 +43,7 @@ func TestEnsureExperimentFilesCreatePolicyAddsPolicy(t *testing.T) {
 // TestEnsureExperimentFilesCreatePolicyUpdatesExistingPolicy verifies partial policies are updated.
 func TestEnsureExperimentFilesCreatePolicyUpdatesExistingPolicy(t *testing.T) {
 	role := &v1.RoleSpec{
-		Name: "Experiment User",
+		Name: experimentUserRole,
 		Policies: []*v1.PolicySpec{
 			{Resources: []string{experimentFilesResource}, ResourceNames: []string{"exp-a"}, Verbs: []string{"get"}},
 		},
@@ -59,7 +65,7 @@ func TestEnsureExperimentFilesCreatePolicyUpdatesExistingPolicy(t *testing.T) {
 // TestEnsureExperimentFilesCreatePolicyIdempotent verifies repeated migration does not duplicate values.
 func TestEnsureExperimentFilesCreatePolicyIdempotent(t *testing.T) {
 	role := &v1.RoleSpec{
-		Name: "Experiment User",
+		Name: experimentUserRole,
 		Policies: []*v1.PolicySpec{
 			{Resources: []string{experimentFilesResource}, ResourceNames: []string{"exp-a"}, Verbs: []string{experimentFilesCreateVerb}},
 		},
@@ -81,7 +87,7 @@ func TestEnsureExperimentFilesCreatePolicyIdempotent(t *testing.T) {
 // TestExperimentResourceNamesPreservesUserScope verifies embedded user experiment scopes are reused.
 func TestExperimentResourceNamesPreservesUserScope(t *testing.T) {
 	role := &v1.RoleSpec{
-		Name: "Experiment User",
+		Name: experimentUserRole,
 		Policies: []*v1.PolicySpec{
 			{Resources: []string{"experiments"}, ResourceNames: []string{"exp-a"}, Verbs: []string{"get"}},
 			{Resources: []string{"hosts"}, ResourceNames: []string{"*"}, Verbs: []string{"list"}},
@@ -96,7 +102,13 @@ func TestExperimentResourceNamesPreservesUserScope(t *testing.T) {
 
 // TestExperimentResourceNamesDefaultsNil verifies unscoped roles stay unscoped.
 func TestExperimentResourceNamesDefaultsNil(t *testing.T) {
-	role := &v1.RoleSpec{Name: "Experiment Admin", Policies: []*v1.PolicySpec{{Resources: []string{"experiments"}, Verbs: []string{"get"}}}}
+	role := &v1.RoleSpec{
+		Name: experimentAdminRole,
+		Policies: []*v1.PolicySpec{{
+			Resources: []string{"experiments"},
+			Verbs:     []string{"get"},
+		}},
+	}
 
 	names := experimentResourceNames(role)
 	if len(names) != 0 {
@@ -126,7 +138,7 @@ func TestSyncUserSpecForExperimentFilesMigration(t *testing.T) {
 		Spec: &v1.UserSpec{
 			Username: "user-a",
 			Role: &v1.RoleSpec{
-				Name:     "Experiment User",
+				Name:     experimentUserRole,
 				Policies: []*v1.PolicySpec{{Resources: []string{"experiments"}, ResourceNames: []string{"exp-a"}, Verbs: []string{"get"}}},
 			},
 		},
@@ -150,5 +162,74 @@ func TestSyncUserSpecForExperimentFilesMigration(t *testing.T) {
 
 	if len(policies) != 2 {
 		t.Fatalf("expected 2 policies, got %d", len(policies))
+	}
+}
+
+func TestEnsureServicePermissions(t *testing.T) {
+	tests := []struct {
+		name        string
+		roleName    string
+		permissions []servicePermission
+	}{
+		{
+			name:     "experiment admin",
+			roleName: experimentAdminRole,
+			permissions: []servicePermission{
+				{resource: builderResource, verb: getVerb},
+				{resource: builderResource, verb: postVerb},
+				{resource: builderResource, verb: putVerb},
+				{resource: scorchResource, verb: getVerb},
+				{resource: tunnelerResource, verb: getVerb},
+			},
+		},
+		{
+			name:     "experiment user",
+			roleName: experimentUserRole,
+			permissions: []servicePermission{
+				{resource: builderResource, verb: getVerb},
+				{resource: builderResource, verb: postVerb},
+				{resource: scorchResource, verb: getVerb},
+				{resource: tunnelerResource, verb: getVerb},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			role := &v1.RoleSpec{Name: test.roleName}
+
+			if !ensureServicePermissions(role) {
+				t.Fatal("expected role to change")
+			}
+
+			migrated := Role{Spec: role}
+			for _, permission := range test.permissions {
+				if !migrated.Allowed(permission.resource, permission.verb) {
+					t.Fatalf("expected %s:%s permission", permission.resource, permission.verb)
+				}
+			}
+
+			if ensureServicePermissions(role) {
+				t.Fatal("expected repeated migration to be idempotent")
+			}
+		})
+	}
+}
+
+func TestEnsureServicePermissionsLeavesCustomRolesUnchanged(t *testing.T) {
+	role := &v1.RoleSpec{
+		Name: "Custom Role",
+		Policies: []*v1.PolicySpec{{
+			Resources: []string{"experiments"},
+			Verbs:     []string{"list"},
+		}},
+	}
+
+	if ensureServicePermissions(role) {
+		t.Fatal("expected custom role to stay unchanged")
+	}
+
+	if len(role.Policies) != 1 {
+		t.Fatalf("expected one policy, got %d", len(role.Policies))
 	}
 }

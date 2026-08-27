@@ -77,6 +77,37 @@ func fromPhenixAuthTokenHeader(r *http.Request) (string, error) {
 	return authHeaderParts[1], nil
 }
 
+func fromPhenixAuthTokenForm(r *http.Request) (string, error) {
+	if r.Method != http.MethodPost {
+		return "", nil
+	}
+
+	if err := r.ParseForm(); err != nil {
+		return "", err
+	}
+
+	return r.PostForm.Get("token"), nil
+}
+
+func AuthTokenFromForm(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Phenix-Auth-Token") == "" {
+			token, err := fromPhenixAuthTokenForm(r)
+			if err != nil {
+				http.Error(w, "parsing phenix auth token", http.StatusBadRequest)
+
+				return
+			}
+
+			if token != "" {
+				r.Header.Set("X-Phenix-Auth-Token", "bearer "+token)
+			}
+		}
+
+		h.ServeHTTP(w, r)
+	})
+}
+
 func NoAuth(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		role, _ := rbac.RoleFromConfig("global-admin")
@@ -88,6 +119,31 @@ func NoAuth(h http.Handler) http.Handler {
 
 		h.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func RequirePermission(resource, verb string) mux.MiddlewareFunc {
+	return func(h http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			role := RoleFromContext(r.Context())
+			if role.Spec == nil || !role.Allowed(resource, verb) {
+				plog.Warn(
+					plog.TypeSecurity,
+					"service access not allowed",
+					"user",
+					UserFromContext(r.Context()),
+					"resource",
+					resource,
+					"verb",
+					verb,
+				)
+				http.Error(w, "forbidden", http.StatusForbidden)
+
+				return
+			}
+
+			h.ServeHTTP(w, r)
+		})
+	}
 }
 
 //nolint:funlen // middleware
@@ -136,6 +192,12 @@ func Auth(jwtKey, proxyAuthHeader string) mux.MiddlewareFunc {
 				)
 
 				http.Error(w, "missing phenix auth token header", http.StatusBadRequest)
+
+				return
+			}
+
+			if raw == "" {
+				http.Error(w, "missing phenix auth token", http.StatusBadRequest)
 
 				return
 			}

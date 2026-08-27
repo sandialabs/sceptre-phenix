@@ -22,7 +22,10 @@
       <div class="column is-1">
         <b-tooltip :label="statusLabel()" type="is-light is-left" :delay="1000">
           <span class="tag is-medium" :class="statusDecorator()">
-            <div class="field" @click="controller(exp, run)">
+            <div
+              class="field"
+              :class="{ 'is-clickable': controllable }"
+              @click="controllable && controller(exp, run)">
               {{ status }}
             </div>
           </span>
@@ -73,6 +76,10 @@
       controller: {
         type: Function,
       },
+      controllable: {
+        type: Boolean,
+        default: false,
+      },
       rewinder: {
         type: Function,
       },
@@ -104,6 +111,10 @@
       },
 
       statusLabel() {
+        if (!this.controllable) {
+          return this.status;
+        }
+
         return this.running ? 'cancel scorch run' : 'start scorch run';
       },
 
