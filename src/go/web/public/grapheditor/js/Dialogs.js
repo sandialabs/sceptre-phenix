@@ -998,30 +998,6 @@ var ExportDialog = function(editorUi)
     var imageFormatSelect = document.createElement('select');
     imageFormatSelect.style.width = '180px';
 
-    var pngOption = document.createElement('option');
-    pngOption.setAttribute('value', 'png');
-    mxUtils.write(pngOption, mxResources.get('formatPng'));
-    imageFormatSelect.appendChild(pngOption);
-
-    var gifOption = document.createElement('option');
-    
-    if (ExportDialog.showGifOption)
-    {
-        gifOption.setAttribute('value', 'gif');
-        mxUtils.write(gifOption, mxResources.get('formatGif'));
-        imageFormatSelect.appendChild(gifOption);
-    }
-    
-    var jpgOption = document.createElement('option');
-    jpgOption.setAttribute('value', 'jpg');
-    mxUtils.write(jpgOption, mxResources.get('formatJpg'));
-    imageFormatSelect.appendChild(jpgOption);
-
-    var pdfOption = document.createElement('option');
-    pdfOption.setAttribute('value', 'pdf');
-    mxUtils.write(pdfOption, mxResources.get('formatPdf'));
-    imageFormatSelect.appendChild(pdfOption);
-    
     var svgOption = document.createElement('option');
     svgOption.setAttribute('value', 'svg');
     mxUtils.write(svgOption, mxResources.get('formatSvg'));
@@ -1424,11 +1400,6 @@ var ExportDialog = function(editorUi)
  * Remembers last value for border.
  */
 ExportDialog.lastBorderValue = 0;
-
-/**
- * Global switches for the export dialog.
- */
-ExportDialog.showGifOption = true;
 
 /**
  * Global switches for the export dialog.
@@ -4577,16 +4548,16 @@ var ImportJSONDialog = function(graph, ui) {
                         device = 'desktop';
                     }
                     node.device = device;
-                    // default to type kvm
-                    var type = node.type || 'kvm';
-                    type = type.toLowerCase();
-                    if (!types.includes(type)) {
-                        type = 'kvm';
+                    // VM implementation controls the icon variant; node.type is
+                    // the phēnix role and must remain unchanged.
+                    var vmType = node.general && node.general.vm_type || 'kvm';
+                    vmType = vmType.toLowerCase();
+                    if (!types.includes(vmType)) {
+                        vmType = 'kvm';
                     }
-                    node.type = type;
                     // build node styling string based on device and type
-                    var imageDir = (type == 'kvm') ? "/virtual_machines" : "/containers";
-                    var imageType = (type == 'kvm') ? "vm" : "container";
+                    var imageDir = (vmType == 'kvm') ? "/virtual_machines" : "/containers";
+                    var imageType = (vmType == 'kvm') ? "vm" : "container";
                     var styleString = vertexStyleString + stencilsDir + imageDir + "/" + device + "_blue_" + imageType + ".png";
                     obj.style = styleString;
                     obj.geometry = {width: 80, height: 80};
@@ -4620,7 +4591,7 @@ var ImportJSONDialog = function(graph, ui) {
                         for (var i = 0; i < ifaces.length; i++) {
                             var name = ifaces[i].vlan;
                             if (!vlans[name]) {
-                                var vlan = {"id": 'auto', "name": name, "type": type};
+                                var vlan = {"id": 'auto', "name": name, "type": vmType};
                                 vlan.targets = [];
                                 vlans[name] = vlan;
                             }

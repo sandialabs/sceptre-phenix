@@ -4,11 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"html/template"
 	"io"
+	"mime"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -36,6 +35,42 @@ type builder struct {
 	Scenario string         `json:"scenario"`
 	Name     string         `json:"name"`
 	XML      string         `json:"builderXML"`
+}
+
+func validateBuilderRequest(req builder) error {
+	switch {
+	case strings.TrimSpace(req.Name) == "":
+		return errors.New("topology name is required")
+	case req.Topology == nil:
+		return errors.New("topology spec is required")
+	case strings.TrimSpace(req.XML) == "":
+		return errors.New("builder XML is required")
+	default:
+		return nil
+	}
+}
+
+func addScenarioTopology(scenario *store.Config, topology string) {
+	if scenario.Metadata.Annotations == nil {
+		scenario.Metadata.Annotations = make(store.Annotations)
+	}
+
+	topologies := strings.Split(scenario.Metadata.Annotations["topology"], ",")
+	for _, existing := range topologies {
+		if strings.TrimSpace(existing) == topology {
+			return
+		}
+	}
+
+	topologies = append(topologies, topology)
+	nonempty := topologies[:0]
+	for _, name := range topologies {
+		if name = strings.TrimSpace(name); name != "" {
+			nonempty = append(nonempty, name)
+		}
+	}
+
+	scenario.Metadata.Annotations["topology"] = strings.Join(nonempty, ",")
 }
 
 // GetBuilder - GET /builder.
@@ -96,11 +131,19 @@ func CreateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unmarshaling request body")
 	}
 
+	if err := validateBuilderRequest(req); err != nil {
+		return weberror.NewWebError(err, "invalid builder request")
+	}
+
 	// create new topology
 
-	topo, _ := store.NewConfig("topology/" + req.Name)
+	topo, err := store.NewConfig("topology/" + req.Name)
+	if err != nil {
+		return weberror.NewWebError(err, "creating topology config").
+			WithMetadata("type", "topology", true)
+	}
 
-	topo.Metadata.Annotations = store.Annotations{"builder-xml": req.XML}
+	topo.Metadata.Annotations = store.Annotations{config.BuilderXMLAnnotation: req.XML}
 	topo.Spec = req.Topology
 
 	config, err := config.Create(config.CreateFromConfig(topo), config.CreateWithValidation())
@@ -150,19 +193,19 @@ func CreateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 	defer cache.UnlockExperiment(req.Name)
 
 	if req.Scenario != "" {
-		scenario, _ := store.NewConfig("scenario/" + req.Scenario)
+		scenario, err := store.NewConfig("scenario/" + req.Scenario)
+		if err != nil {
+			return weberror.NewWebError(err, "creating scenario config")
+		}
 
-		err := store.Get(scenario)
+		err = store.Get(scenario)
 		if err != nil {
 			return weberror.NewWebError(nil, "scenario %s doesn't exist", req.Scenario)
 		}
 
 		// add this new topology to the given scenario
 
-		topo := scenario.Metadata.Annotations["topology"]
-		topo = fmt.Sprintf("%s,%s", topo, req.Name)
-
-		scenario.Metadata.Annotations["topology"] = topo
+		addScenarioTopology(scenario, req.Name)
 
 		err = store.Update(scenario)
 		if err != nil {
@@ -294,11 +337,31 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unmarshaling request body")
 	}
 
+	if err := validateBuilderRequest(req); err != nil {
+		return weberror.NewWebError(err, "invalid builder request")
+	}
+
 	// update existing topology
 
-	topo, _ := store.NewConfig("topology/" + req.Name)
+	topo, err := config.Get(store.ConfigFullName("topology", req.Name), false)
+	if err != nil {
+		if errors.Is(err, store.ErrNotExist) {
+			return weberror.NewWebError(err, "topology with same name doesn't exist yet").
+				WithMetadata("type", "topology", true)
+		}
 
-	topo.Metadata.Annotations = store.Annotations{"builder-xml": req.XML}
+		return weberror.NewWebError(err, "getting topology %s", req.Name).
+			SetStatus(http.StatusInternalServerError)
+	}
+
+	if topo.Metadata.Annotations == nil {
+		topo.Metadata.Annotations = make(store.Annotations)
+	}
+
+	fileBacked := topo.HasAnnotation(config.BuilderXMLFileAnnotation)
+	if !fileBacked {
+		topo.Metadata.Annotations[config.BuilderXMLAnnotation] = req.XML
+	}
 	topo.Spec = req.Topology
 
 	if err := config.Update(topo.FullName(), topo); err != nil {
@@ -318,6 +381,13 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 
 		return weberror.NewWebError(err, "unable to update existing topology").
 			WithMetadata("type", "topology", true)
+	}
+
+	if fileBacked {
+		if err := config.WriteBuilderXMLFile(*topo, []byte(req.XML)); err != nil {
+			return weberror.NewWebError(err, "updating builder XML file").
+				SetStatus(http.StatusInternalServerError)
+		}
 	}
 
 	// Grab this now, before we clear the spec from the toplology config, just in
@@ -414,6 +484,36 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 		// update existing experiment
 
 		exp.Spec.SetTopology(topoSpec)
+		exp.Spec.VLANs().SetAliases(req.VLANs)
+
+		if req.Scenario != "" && annotations["scenario"] != req.Scenario {
+			scenario, err := store.NewConfig("scenario/" + req.Scenario)
+			if err != nil {
+				return weberror.NewWebError(err, "creating scenario config")
+			}
+
+			if err := store.Get(scenario); err != nil {
+				return weberror.NewWebError(err, "getting scenario %s", req.Scenario)
+			}
+
+			addScenarioTopology(scenario, req.Name)
+			if err := store.Update(scenario); err != nil {
+				return weberror.NewWebError(err, "updating scenario %s", req.Scenario).
+					SetStatus(http.StatusInternalServerError)
+			}
+
+			scenarioSpec, err := types.DecodeScenarioFromConfig(*scenario)
+			if err != nil {
+				return weberror.NewWebError(err, "decoding scenario %s", req.Scenario)
+			}
+
+			if err := types.MergeScenariosForTopology(scenarioSpec, req.Name); err != nil {
+				return weberror.NewWebError(err, "merging scenario %s", req.Scenario)
+			}
+
+			exp.Spec.SetScenario(scenarioSpec)
+			exp.Metadata.Annotations["scenario"] = req.Scenario
+		}
 
 		err = exp.WriteToStore(false)
 		if err != nil {
@@ -432,19 +532,19 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 		defer cache.UnlockExperiment(req.Name)
 
 		if req.Scenario != "" {
-			scenario, _ := store.NewConfig("scenario/" + req.Scenario)
+			scenario, err := store.NewConfig("scenario/" + req.Scenario)
+			if err != nil {
+				return weberror.NewWebError(err, "creating scenario config")
+			}
 
-			err := store.Get(scenario)
+			err = store.Get(scenario)
 			if err != nil {
 				return weberror.NewWebError(nil, "scenario %s doesn't exist", req.Scenario)
 			}
 
 			// add this topology to the given scenario
 
-			topo := scenario.Metadata.Annotations["topology"]
-			topo = fmt.Sprintf("%s,%s", topo, req.Name)
-
-			scenario.Metadata.Annotations["topology"] = topo
+			addScenarioTopology(scenario, req.Name)
 
 			err = store.Update(scenario)
 			if err != nil {
@@ -552,21 +652,31 @@ func SaveBuilderTopology(w http.ResponseWriter, r *http.Request) {
 		name = "export"
 	}
 
+	data := r.FormValue("xml")
+	if data == "" {
+		http.Error(w, "builder topology XML is required", http.StatusBadRequest)
+		return
+	}
+
 	format := r.FormValue("format")
 	if format == "" {
 		format = "xml"
 	}
 
-	data, err := url.QueryUnescape(r.FormValue("xml"))
-	if err != nil {
-		msg := "unable to decode builder topology XML"
-		http.Error(w, msg, http.StatusBadRequest)
-
+	contentTypes := map[string]string{
+		"svg": "image/svg+xml; charset=utf-8",
+		"xml": "application/xml; charset=utf-8",
+	}
+	contentType, ok := contentTypes[format]
+	if !ok {
+		http.Error(w, "unsupported builder download format", http.StatusBadRequest)
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/plain")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{
+		"filename": name,
+	}))
 	plog.Info(plog.TypeAction, "downloading builder file", "file", name, "format", format)
 	http.ServeContent(w, r, "", time.Now(), bytes.NewReader([]byte(data)))
 }
@@ -607,10 +717,8 @@ func GetBuilderTopologies(w http.ResponseWriter, r *http.Request) error {
 	allowed := []string{}
 
 	for _, topo := range topologies {
-		if role.Allowed("topologies", "list", topo.Metadata.Name) {
-			if topo.HasAnnotation("builder-xml") {
-				allowed = append(allowed, topo.Metadata.Name)
-			}
+		if role.Allowed("configs", "get", topo.FullName()) && config.HasBuilderXML(topo) {
+			allowed = append(allowed, topo.Metadata.Name)
 		}
 	}
 
@@ -639,7 +747,7 @@ func GetBuilderTopology(w http.ResponseWriter, r *http.Request) error {
 		name    = store.ConfigFullName("topology", vars["name"])
 	)
 
-	if !role.Allowed("configs", "list", name) {
+	if !role.Allowed("configs", "get", name) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 		plog.Warn(
 			plog.TypeSecurity,
@@ -661,12 +769,16 @@ func GetBuilderTopology(w http.ResponseWriter, r *http.Request) error {
 
 	topology, err := config.Get(name, false)
 	if err != nil {
-		err := weberror.NewWebError(err, "unable to get topology %s from store", vars["name"])
+		if errors.Is(err, store.ErrNotExist) {
+			return weberror.NewWebError(err, "unable to get topology %s from store", vars["name"]).
+				SetStatus(http.StatusNotFound)
+		}
 
-		return err.SetStatus(http.StatusInternalServerError)
+		return weberror.NewWebError(err, "unable to get topology %s from store", vars["name"]).
+			SetStatus(http.StatusInternalServerError)
 	}
 
-	if !topology.HasAnnotation("builder-xml") {
+	if !config.HasBuilderXML(*topology) {
 		return weberror.NewWebError(
 			nil,
 			"the %s topology does not include a builder XML config",
@@ -674,7 +786,11 @@ func GetBuilderTopology(w http.ResponseWriter, r *http.Request) error {
 		)
 	}
 
-	body := []byte(topology.Metadata.Annotations["builder-xml"])
+	body, err := config.BuilderXML(*topology)
+	if err != nil {
+		return weberror.NewWebError(err, "unable to load builder XML for topology %s", vars["name"]).
+			SetStatus(http.StatusInternalServerError)
+	}
 
 	w.Header().Set("Content-Type", "application/xml")
 	_, _ = w.Write(body)

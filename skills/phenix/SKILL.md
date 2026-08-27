@@ -1,6 +1,6 @@
 ---
 name: phenix
-description: 'Guide for using the phenix CLI and REST/web API to build and run cyber ranges, cyber experiments, and network/system emulation environments. Covers Topology (nodes, VMs, networks), Scenario (apps assigned to hosts), and Experiment (topology + scenario deployed via minimega) resources. Use when asked about phenix, phēnix, SCEPTRE, cyber range, cyber experimentation, emulation, minimega, SCORCH, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui).'
+description: 'Guide for using the phenix CLI, REST/web API, and graphical Builder to build and run cyber ranges, cyber experiments, digital twins, and network/system emulation environments. Covers Topology, Scenario, Experiment, mxGraph builder XML, network-map and inventory conversion, and minimega deployment. Use when asked to build or translate network diagrams for cyber emulation, whenever digital twins are mentioned, or when asked about phenix, phēnix, SCEPTRE, Builder diagrams, cyber ranges, emulation, minimega, SCORCH, or any `phenix` subcommand.'
 license: GPL-3.0-only (see LICENSE)
 ---
 
@@ -204,6 +204,200 @@ experiment with a base directory, VLAN pool, bridge name, and deploy mode.
 Lifecycle: `create` → `schedule` (assign VMs to cluster hosts) → `start`
 (deploy VMs via minimega) → `stop` → `restart`/`reconfigure` → `delete`.
 An experiment also tracks runtime `status` (VM/app state) once started.
+
+## Topology Builder
+
+Builder is the graphical topology editor at `/builder`. It is a customized
+JGraph/draw.io GraphEditor backed by an **mxGraph XML model**. The diagram XML
+preserves layout, icons, labels, and per-cell configuration; Builder separately
+derives a phenix `Topology` config and experiment VLAN aliases from the cells'
+`schemaVars` JSON.
+
+### Builder API
+
+Authenticate API requests as described in [Querying the Web API](#querying-the-web-api).
+Builder endpoints use the same `/api/v1` base path:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/builder` | Load the graphical editor; this route is outside `/api/v1` |
+| `GET` | `/api/v1/builder/topologies` | List readable topology configs that contain Builder XML |
+| `GET` | `/api/v1/builder/topologies/{name}` | Return one diagram as `application/xml` |
+| `POST` | `/api/v1/experiments/builder` | Create a topology and same-named experiment |
+| `PUT` | `/api/v1/experiments/builder` | Update a Builder topology and its same-named experiment |
+| `POST` | `/builder/save` | Download XML/SVG; form fields are `filename`, `xml`, and optional `format` (`xml` or `svg`) |
+
+The experiment create/update payload is:
+
+```json
+{
+  "name": "branch-office",
+  "topology": {
+    "nodes": [
+      {
+        "type": "VirtualMachine",
+        "general": {"hostname": "client-1", "vm_type": "kvm"},
+        "hardware": {
+          "os_type": "linux",
+          "vcpus": 2,
+          "memory": 2048,
+          "drives": [{"image": "ubuntu.qc2"}]
+        },
+        "network": {
+          "interfaces": [
+            {
+              "name": "eth0",
+              "type": "ethernet",
+              "proto": "static",
+              "address": "10.10.10.10",
+              "mask": 24,
+              "gateway": "10.10.10.1",
+              "vlan": "users"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "vlans": {"users": 101},
+  "scenario": "branch-office-apps",
+  "builderXML": "<mxGraphModel>...</mxGraphModel>"
+}
+```
+
+`scenario` may be empty. To save only a topology, use the normal
+`POST /api/v1/configs` endpoint and put the XML in the topology metadata as
+described below. `POST /builder/save` returns submitted XML unchanged: the
+default `format=xml` uses `application/xml`, while `format=svg` uses
+`image/svg+xml`. It does not render PNG, GIF, JPEG, or PDF.
+
+### Storing Builder XML
+
+Builder identifies editable topologies through one of two mutually exclusive
+metadata annotations:
+
+```yaml
+# Inline form: portable, but can make topology.yaml very large.
+metadata:
+  name: branch-office
+  annotations:
+    builder-xml: |
+      <mxGraphModel>
+        ...
+      </mxGraphModel>
+```
+
+```yaml
+# File-backed form: preferred for configs maintained on disk.
+metadata:
+  name: branch-office
+  annotations:
+    builder-xml-file: ./builder/branch-office.xml
+```
+
+For `phenix config create /path/to/topology.yaml`, a relative
+`builder-xml-file` path is resolved relative to `topology.yaml`, normalized to
+an absolute path in the stored config, and read when Builder requests the
+diagram. The XML file must therefore be present and readable on the host (or
+inside the container) running `phenix ui`. Changes to that file are visible on
+the next Builder load without embedding the XML in YAML. Saving the topology
+through Builder writes the new XML back to the referenced file and preserves
+file-backed mode. Prefer absolute paths for configs submitted directly through
+the REST API because those relative paths resolve against the server process's
+working directory.
+
+### Diagram Model and Config Translation
+
+An mxGraph document has an `<mxGraphModel>` root, an inner `<root>`, reserved
+`mxCell` IDs `0` and `1`, and one cell per vertex or edge. Builder-specific
+cells wrap `mxCell` in an `<object>` (or `<Object>`) carrying:
+
+- `label`: displayed hostname or VLAN name.
+- `schemaVars`: JSON containing phenix semantics.
+- `mxCell`: graph role (`vertex="1"` or `edge="1"`), style, source/target IDs,
+  and an `mxGeometry` child.
+
+When **View JSON / Save to phenix** runs, Builder translates the graph as
+follows:
+
+1. Every vertex with `schemaVars` becomes a candidate.
+2. Vertices whose `schemaVars.device` is `switch` represent VLANs and are not
+   emitted as topology nodes.
+3. Other semantic vertices become `spec.nodes[]`; Builder removes its private
+   `device` and `schema` keys.
+4. Node `annotations` and `labels`, represented in the editor as
+   `[{key, value}]`, become phenix maps.
+5. A VLAN edge has `schemaVars` like `{"name":"users","id":101}`. Its
+   source/target relationship causes matching network interfaces to be added
+   to endpoint nodes.
+6. Each nonzero edge VLAN ID becomes an experiment alias:
+   `vlans: {"users": 101}`. ID `0` means automatic allocation.
+7. Plain shapes, text, and edges without semantic `schemaVars` are
+   diagram-only and do not affect the topology.
+8. Builder variables such as `$DEFAULT_MEMORY` are string-replaced before the
+   generated topology is submitted.
+
+Treat the diagram and generated topology as a pair. The topology is the
+deployable source of truth for phenix/minimega; XML is the editable visual
+source. After changing XML programmatically, derive or update the topology
+payload too—uploading XML alone does not regenerate `spec.nodes`.
+
+### Building Diagrams from Prompts, Images, or Inventory
+
+Use this workflow when an agent must translate a user prompt, network-map
+image, spreadsheet, CMDB export, or inventory file:
+
+1. Extract an intermediate inventory: hostname, role/icon, VM type, OS image,
+   CPU/memory, interfaces, IP/prefix, gateway, VLAN name/ID, and links.
+2. Separate facts from assumptions. Do not invent IPs, images, VLAN IDs, or
+   gateways when the input does not define them; use Builder defaults or mark
+   unresolved values for user confirmation.
+3. Normalize names to phenix constraints: unique hostnames, valid config name,
+   one canonical VLAN name per broadcast domain, and exact interface-to-VLAN
+   membership.
+4. Build and validate the phenix topology object first. This catches semantic
+   problems more reliably than reasoning directly in XML.
+5. Create the mxGraph model from that object. Prefer cloning a small
+   Builder-exported node/switch/edge as a template so styles and `schemaVars`
+   escaping remain compatible. Assign unique cell IDs and valid edge
+   `source`/`target` references.
+6. Lay out nodes by trust zone, site, subnet, or the source image's spatial
+   grouping. Use switch vertices for shared VLANs and direct semantic edges
+   only where they describe the intended broadcast domain.
+7. Keep decorative boundaries, titles, legends, and unimplemented devices free
+   of semantic `schemaVars` so they cannot become accidental VMs.
+8. Save XML with `builder-xml-file`, load the topology through
+   `phenix config create`, fetch it through
+   `/api/v1/builder/topologies/{name}`, and open **View JSON** to compare the
+   generated nodes and VLAN aliases against the intermediate inventory.
+9. Only create/start an experiment after the generated topology validates and
+   every expected node, interface, and VLAN is accounted for.
+
+For image input, visual links can cross, terminate at zone boxes, or omit
+interface details. Trace endpoints carefully and use labels/legends to
+disambiguate; do not infer that geometric proximity means connectivity. For
+inventory input, join interface records to nodes by stable identifiers before
+using display names, and detect duplicate hostnames/IPs and conflicting VLAN
+IDs before producing XML.
+
+### Builder Gotchas
+
+- **Do not put topology semantics only in labels.** Translation reads
+  `schemaVars`; a labeled icon without it is decorative.
+- **Do not change `node.type` to `kvm` or `container`.** `type` is the phenix
+  role (`VirtualMachine`, `Router`, `Firewall`, etc.); VM implementation belongs
+  in `general.vm_type`.
+- **Do not define both XML annotations.** `builder-xml` and
+  `builder-xml-file` are mutually exclusive.
+- **Keep file-backed XML server-local.** Browser/client paths are not visible
+  to the phenix server or container.
+- **Preserve XML escaping.** JSON inside an XML attribute must escape quotes
+  (normally `&quot;`). Prefer an XML library rather than string concatenation.
+- **Validate both representations.** A valid mxGraph document can still
+  generate an invalid topology, and valid topology YAML does not guarantee its
+  diagram matches.
+- **Use exact scenario topology membership.** Scenario `topology` annotations
+  are comma-separated names; avoid substring tests and duplicate entries.
 
 ## CLI Reference
 
