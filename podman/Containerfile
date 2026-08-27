@@ -1,6 +1,21 @@
+# check=skip=SecretsUsedInArgOrEnv
+
+# Update GitHub workflow config to change the minimum version of minimega
+# required for use with phenix. This build stage is needed for making sure the
+# latest version of the minimega Python module is installed.
+ARG  MM_MIN_REV=aecea71
+FROM ghcr.io/sandia-minimega/minimega:${MM_MIN_REV} AS minimega
+
+
+# ** jsbuilder **
 FROM docker.io/library/node:24.16.0 AS jsbuilder
 
-RUN npm install -g @redocly/cli
+ARG INSTALL_CERTS=
+COPY docker/install-certs.sh /tmp/install-certs.sh
+RUN /tmp/install-certs.sh && \
+  yarn config set cafile /etc/ssl/certs/ca-certificates.crt
+
+RUN npm install -g @redocly/cli@2.48.0
 
 COPY ./src/js /phenix/src/js
 
@@ -12,8 +27,7 @@ ARG PHENIX_BASE_PATH=/
 ENV VITE_AUTH=${PHENIX_WEB_AUTH}
 ENV VITE_BASE_PATH=${PHENIX_BASE_PATH}
 
-RUN npm ci \
-  && npm run build
+RUN make dist/index.html
 
 COPY ./src/go/web/public/docs/openapi.yml /phenix/src/go/web/public/docs/openapi.yml
 
@@ -22,74 +36,138 @@ WORKDIR /phenix/src/go/web/public/docs
 RUN npx @redocly/cli build-docs openapi.yml -o index.html --title 'phenix API'
 
 
+# ** gobuilder **
 FROM docker.io/library/golang:1.24.1 AS gobuilder
 
-RUN apt update \
-  && apt install -y protobuf-compiler xz-utils
+RUN apt-get update \
+  && apt-get install -y protobuf-compiler xz-utils
 
+COPY .git       /phenix/.git
 COPY ./Makefile /phenix/Makefile
 COPY ./src/go   /phenix/src/go
 
 WORKDIR /phenix
 
+# Copy files from jsbuilder stage
 COPY --from=jsbuilder /phenix/src/js /phenix/src/js
 COPY --from=jsbuilder /phenix/src/go/web/public/docs/index.html /phenix/src/go/web/public/docs/index.html
 
 ARG INSTALL_CERTS=
-RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
-  IFS=',' read -r -a arr <<< $INSTALL_CERTS; \
-  for i in ${!arr[@]}; do \
-    wget ${arr[$i]} -e use_proxy=no \
-      -O /usr/local/share/ca-certificates/custom$i.crt; \
-  done && \
-  update-ca-certificates; fi"]
+COPY docker/install-certs.sh /tmp/install-certs.sh
+RUN /tmp/install-certs.sh
 
-ARG PHENIX_VERSION
 ARG PHENIX_COMMIT
+ARG PHENIX_TAG
 
-# UI already built by jsbuilder and copied in above; this stage has no node/npm.
-RUN VER=${PHENIX_VERSION} COMMIT=${PHENIX_COMMIT} make bin/phenix SKIP_UI=1
+# Build phenix binary (skip UI build since artifacts are already copied)
+RUN COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} make bin/phenix SKIP_UI=1
+RUN make -C src/go phenix-tunneler
 
-RUN git clone --branch main https://github.com/sandialabs/sceptre-phenix-apps.git /phenix-apps
+# Allow installing from a fork of sceptre-phenix-apps that could
+# exist on GitHub or elsewhere.
+# We can specify one APPS_REPO and APPS_BRANCH for both Go and Python
+ARG APPS_REPO=github.com/sandialabs/sceptre-phenix-apps
+ARG APPS_BRANCH=main
+# Or the user can override Go and Python apps repos/branches separately
+ARG GO_APPS_REPO=${APPS_REPO}
+ARG GO_APPS_BRANCH=${APPS_BRANCH}
+
+RUN git clone --branch ${GO_APPS_BRANCH} https://${GO_APPS_REPO}.git /phenix-apps
 
 WORKDIR /phenix-apps/src/go
 
-RUN go install ./...
+RUN CGO_ENABLED=0 GOOS=linux go install -trimpath ./...
 
 
-FROM docker.io/library/ubuntu:20.04
+# ** Build the phenix image **
+FROM docker.io/library/ubuntu:24.04
 
-ENV TZ=Etc/UTC
+# General image metadata
+# Reference: https://github.com/opencontainers/image-spec/blob/main/annotations.md
+ARG PHENIX_COMMIT
+LABEL org.opencontainers.image.authors="Sandia National Laboratories <emulytics@sandia.gov>, Bryan Richardson <bryan@activeshadow.com>" \
+  org.opencontainers.image.documentation="https://phenix.sceptre.dev/" \
+  org.opencontainers.image.source="https://github.com/sandialabs/sceptre-phenix" \
+  org.opencontainers.image.revision="${PHENIX_COMMIT}" \
+  org.opencontainers.image.vendor="Sandia National Laboratories" \
+  org.opencontainers.image.licenses="GPL-3.0-or-later" \
+  org.opencontainers.image.title="phenix" \
+  org.opencontainers.image.description="phenix is an orchestration tool and GUI for Sandia's minimega platform"
+
+# Set timezone
+ENV TZ="Etc/UTC"
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+# Use bash with pipefail so a failed command earlier in a pipe isn't masked
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # tshark needed for scorch tcpdump component
-RUN apt update \
+RUN apt-get update \
   && echo 'wireshark-common wireshark-common/install-setuid boolean false' | debconf-set-selections \
-  && apt install -y cmdtest cpio debootstrap git iproute2 iputils-ping kpartx locales nano parted psmisc python3 python3-jinja2 python3-pip python3-yaml qemu-utils tshark vim wget xz-utils zerofree \
+  && apt-get install -y cmdtest cpio debootstrap git iproute2 iputils-ping kpartx locales nano parted psmisc python3 python3-jinja2 python3-pip python3-yaml qemu-utils tshark vim wget xz-utils zerofree guestfish \
   && locale-gen en_US.UTF-8 \
-  && apt autoremove -y \
-  && apt clean -y \
+  && apt-get autoremove -y \
+  && apt-get clean -y \
   && rm -rf /var/lib/apt/lists/* \
   && rm -rf /var/cache/apt/archives/*
 
-ENV LANG   en_US.UTF-8
-ENV LC_ALL en_US.UTF-8
+ENV LANG="en_US.UTF-8" \
+  LC_ALL="en_US.UTF-8" \
+  PIP_DISABLE_PIP_VERSION_CHECK=1
+
+ARG INSTALL_CERTS=
+COPY docker/install-certs.sh /tmp/install-certs.sh
+RUN /tmp/install-certs.sh
 
 RUN git clone https://gitlab.com/glattercj/vmdb2 /opt/vmdb2
 RUN ln -s /opt/vmdb2/vmdb2 /usr/bin/vmdb2
 
 # needed to build Kali images with phenix
-RUN wget https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
+RUN wget --progress=dot:giga https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
 
 # used by scorch
-RUN wget -O filebeat.deb https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.14.2-amd64.deb \
-	&& dpkg -i filebeat.deb && rm filebeat.deb
+RUN wget --progress=dot:giga -O glow.tgz https://github.com/charmbracelet/glow/releases/download/v1.5.0/glow_1.5.0_Linux_x86_64.tar.gz \
+  && tar -xzf glow.tgz glow \
+  && mv glow /usr/local/bin/glow \
+  && rm glow.tgz
 
+# used by scorch
+RUN wget --progress=dot:giga -O filebeat.deb https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.17.5-amd64.deb \
+  && dpkg -i filebeat.deb \
+  && rm filebeat.deb
+
+# Allow the use of PyPI mirrors via build args
+ARG PIP_INDEX="https://pypi.org/"
+ARG PIP_INDEX_URL="https://pypi.org/simple"
+
+# Do this before installing phenix-apps so minimega package is latest version
+COPY --from=minimega /opt/minimega/lib /tmp/minimega
+RUN python3 -m pip install --break-system-packages --no-cache-dir /tmp/minimega
+
+# Allow installing from a fork of sceptre-phenix-apps that could
+# exist on GitHub or elsewhere.
+# We can specify one APPS_REPO and APPS_BRANCH for both Go and Python
+ARG APPS_REPO=github.com/sandialabs/sceptre-phenix-apps
+ARG APPS_BRANCH=main
+# Or the user can override Go and Python apps repos/branches separately
+ARG PY_APPS_REPO=${APPS_REPO}
+ARG PY_APPS_BRANCH=${APPS_BRANCH}
+
+# Install phenix user apps
+RUN python3 -m pip install --break-system-packages --ignore-installed --no-cache-dir \
+  "git+https://${PY_APPS_REPO}.git@${PY_APPS_BRANCH}#egg=phenix-apps&subdirectory=src/python"
+
+# Copy binaries from gobuilder stage
 COPY --from=gobuilder /phenix/bin/phenix   /usr/local/bin/phenix
 COPY --from=gobuilder /go/bin/phenix-app-* /usr/local/bin
 
-ARG CACHEBUST=1
+COPY --from=gobuilder /phenix/src/go/bin/phenix-tunneler-* /opt/phenix/downloads/tunneler/
 
-RUN python3 -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org "git+https://github.com/activeshadow/phenix-apps.git@scorch#egg=phenix-apps&subdirectory=src/python"
+# Update GitHub workflow config to change the minimum version of minimega
+# required for use with phenix.
+ARG   MM_MIN_REV=aecea71
+LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandia-minimega/minimega:${MM_MIN_REV}"
+
+WORKDIR /opt/phenix
 
 CMD ["phenix", "help"]

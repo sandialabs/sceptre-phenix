@@ -96,10 +96,10 @@ func (NTP) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 func (NTP) preStartWithAppConfig(_ context.Context, exp *types.Experiment, ntpDir string) error {
 	ntpClientTypes := map[string]ntpTypeConfig{
-		"ntp":     {"ntp_linux.tmpl", "/etc/ntp.conf", ""},
-		"chrony":  {"chrony_linux.tmpl", "/etc/chrony/chrony.conf", ""},
-		"systemd": {"systemd-timesyncd.tmpl", "/etc/systemd/timesyncd.conf", ""},
-		"windows": {"ntp_windows.tmpl", "/phenix/startup/25-ntp.ps1", "0755"},
+		appNameNTP: {"ntp_linux.tmpl", "/etc/ntp.conf", ""},
+		"chrony":   {"chrony_linux.tmpl", "/etc/chrony/chrony.conf", ""},
+		"systemd":  {"systemd-timesyncd.tmpl", "/etc/systemd/timesyncd.conf", ""},
+		"windows":  {"ntp_windows.tmpl", "/phenix/startup/25-ntp.ps1", "0755"},
 	}
 
 	ntpServerTypes := map[string]ntpTypeConfig{
@@ -109,7 +109,7 @@ func (NTP) preStartWithAppConfig(_ context.Context, exp *types.Experiment, ntpDi
 	}
 
 	for _, app := range exp.Apps() {
-		if app.Name() != "ntp" {
+		if app.Name() != appNameNTP {
 			continue
 		}
 

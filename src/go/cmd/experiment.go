@@ -58,7 +58,7 @@ func expNameCompletion(includeAll bool) func(cmd *cobra.Command, args []string, 
 
 func newExperimentCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "experiment",
+		Use:     configKindExperiment,
 		Aliases: []string{"exp"},
 		Short:   "Experiment management",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -71,7 +71,7 @@ func newExperimentCmd() *cobra.Command {
 
 func newExperimentListCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "list",
+		Use:   commandList,
 		Short: "Display a table of available experiments",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			exps, err := experiment.List()
@@ -254,7 +254,7 @@ func newExperimentCreateCmd() *cobra.Command {
 	cmd.Flags().StringP("scenario", "s", "", "Name of an existing scenario to use (optional)")
 	cmd.Flags().StringP("base-dir", "d", "", "Base directory to use for experiment (optional)")
 	cmd.Flags().
-		StringP("default-bridge", "b", "phenix", "Default bridge name to use for experiment (optional)")
+		StringP("default-bridge", "b", appName, "Default bridge name to use for experiment (optional)")
 	cmd.Flags().Int("vlan-min", 0, "VLAN pool minimum")
 	cmd.Flags().Int("vlan-max", 0, "VLAN pool maximum")
 	cmd.Flags().StringSlice("disabled-apps", []string{}, "Comma separated ist of apps to disable")

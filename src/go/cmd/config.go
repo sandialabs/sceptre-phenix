@@ -19,10 +19,22 @@ import (
 )
 
 const (
-	configArgParts = 2
-	FormatJSON     = "json"
-	FormatYAML     = "yaml"
+	configArgParts       = 2
+	FormatJSON           = "json"
+	FormatYAML           = "yaml"
+	configKindExperiment = "experiment"
+	commandImage         = "image"
+	commandList          = "list"
+	boolStringTrue       = "true"
 )
+
+func configKinds() []string {
+	return []string{"topology", "scenario", configKindExperiment, commandImage, "user", "role"}
+}
+
+func configListKinds() []string {
+	return []string{allExperiments, "topology", "scenario", configKindExperiment, commandImage, "user"}
+}
 
 func configKindArgsValidator(multi, allowAll bool) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
@@ -43,10 +55,10 @@ func configKindArgsValidator(multi, allowAll bool) cobra.PositionalArgs {
 				return errors.New("expected an argument in the form of <config kind>/<config name>")
 			}
 
-			kinds := []string{"topology", "scenario", "experiment", "image", "user", "role"}
+			kinds := append([]string(nil), configKinds()...)
 
 			if allowAll {
-				kinds = append(kinds, "all")
+				kinds = append(kinds, allExperiments)
 			}
 
 			kind := strings.ToLower(tokens[0])
@@ -75,7 +87,7 @@ func configKindValidator() cobra.PositionalArgs {
 		}
 
 		kind := strings.ToLower(args[0])
-		kinds := []string{"topology", "scenario", "experiment", "image", "user", "role"}
+		kinds := configKinds()
 
 		if !util.StringSliceContains(kinds, kind) {
 			return fmt.Errorf(
@@ -121,7 +133,7 @@ func newConfigListCmd() *cobra.Command {
 		Use:       "list <kind>",
 		Short:     "Show table of stored configuration files",
 		Example:   example,
-		ValidArgs: []string{"all", "topology", "scenario", "experiment", "image", "user"},
+		ValidArgs: configListKinds(),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var kinds string
 
@@ -162,7 +174,7 @@ func configGetArgsCompletion(_ *cobra.Command, args []string, toComplete string)
 	parts := strings.Split(toComplete, "/")
 
 	if len(parts) == 1 {
-		kinds := []string{"topology", "scenario", "experiment", "image", "user", "role"}
+		kinds := configKinds()
 		for _, k := range kinds {
 			if strings.HasPrefix(k, toComplete) {
 				comps = append(comps, k+"/")
@@ -463,9 +475,9 @@ func newConfigDeleteAllCmd() *cobra.Command {
 		Long:      desc,
 		Example:   example,
 		Args:      configKindValidator(),
-		ValidArgs: []string{"topology", "scenario", "experiment", "image", "user", "role"},
+		ValidArgs: configKinds(),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			which := "all"
+			which := allExperiments
 			if len(args) == 1 {
 				which = strings.ToLower(args[0])
 			}

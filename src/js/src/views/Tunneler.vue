@@ -35,8 +35,8 @@
         Once the phenix-tunneler server is running locally, it will
         automatically get notified of port forwards created in the UI. If the
         same user that logged into the phenix-tunneler server is the same user
-        that creats the port forward in the UI, the local port will be activated
-        automatically.
+        that creates the port forward in the UI, the local port will be
+        activated automatically.
 
         <br />
         <br />

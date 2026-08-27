@@ -61,7 +61,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	// currently querries only are used to pass tags. However, this
+	// currently queries only are used to pass tags. However, this
 	// is extensible for future fields as well.
 	tags = strings.Join(q["tag"], ",")
 

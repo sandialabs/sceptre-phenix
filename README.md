@@ -16,8 +16,8 @@ phēnix provides a framework for defining, deploying, and managing complex cyber
 
 ### Prerequisites
 
-*   Linux environment (Ubuntu 24.04+ recommended)
-*   Docker & Docker Compose
+* Linux environment (Ubuntu 24.04+ recommended)
+* Docker & Docker Compose
 
 ### Running with Docker (Preferred)
 
@@ -81,10 +81,10 @@ If you wish to build and run the services locally without Docker, follow these s
 
 ### Prerequisites
 
-*   Go 1.24+ (for core development)
-*   Python 3.12+ (for app development)
-*   Node.js 24+ & npm (for UI development)
-*   Protoc 3.12+ (for Protocol Buffers generation)
+* Go 1.24+ (for core development)
+* Python 3.12+ (for app development)
+* Node.js 24+ & npm (for UI development)
+* Protoc 3.12+ (for Protocol Buffers generation)
 
 To install the required system packages on Ubuntu:
 
@@ -124,11 +124,10 @@ We use a `Makefile` to standardize development tasks. Run `make help` to see all
 
 ```bash
 # Development
-make all         # Run all tools (format, lint, test)
+make all         # Run all tools (lint, test, build examples)
 make check       # Run linters without fixing (for CI)
-make format      # Format code
 make generate    # Run code generation (protobuf, mocks, etc)
-make lint        # Run linters and fix issues
+make lint        # Run linters and formatters, fixing issues in place
 make test        # Run unit tests
 
 # Build
@@ -222,10 +221,10 @@ Logging settings are managed via the `phenix settings` command, which modifies t
 
 phēnix resolves configuration settings in the following order (highest to lowest):
 
-1.  **Command Line Flags**: Arguments passed directly to the binary (e.g., `phenix ui --log.level=debug`).
-2.  **Config File**: Settings defined in `config.yaml` (managed via `phenix settings set`).
-3.  **Environment Variables**: Variables like `PHENIX_LOG_LEVEL`.
-4.  **Defaults**: Internal application defaults.
+1. **Command Line Flags**: Arguments passed directly to the binary (e.g., `phenix ui --log.level=debug`).
+2. **Config File**: Settings defined in `config.yaml` (managed via `phenix settings set`).
+3. **Environment Variables**: Variables like `PHENIX_LOG_LEVEL`.
+4. **Defaults**: Internal application defaults.
 
 > [!NOTE]
 > This precedence allows you to set baseline configuration using Environment Variables (e.g., in Docker Compose) but still override them at runtime using `phenix settings set`. To revert to the environment variable value, use `phenix settings unset`.
@@ -255,18 +254,20 @@ phenix settings unset --all
 > Check out the [Example Applications](examples/README.md) for complete, runnable reference implementations in Go and Python.
 
 #### The Logging Contract
+
 All applications (Go or Python) running under phēnix must adhere to the following contract to ensure their logs are correctly parsed and displayed in the UI:
 
-1.  **Output**: Logs must be written to `stderr`.
-2.  **Format**: Logs must be single-line **JSON** objects.
-3.  **Required Fields**:
-    *   `level`: `DEBUG`, `INFO`, `WARN`, `ERROR`
-    *   `msg`: The log message string.
-    *   `time`: Timestamp (RFC3339 or similar).
-4.  **Optional Fields**:
-    *   `traceback`: For exceptions/panics (string).
+1. **Output**: Logs must be written to `stderr`.
+2. **Format**: Logs must be single-line **JSON** objects.
+3. **Required Fields**:
+    * `level`: `DEBUG`, `INFO`, `WARN`, `ERROR`
+    * `msg`: The log message string.
+    * `time`: Timestamp (RFC3339 or similar).
+4. **Optional Fields**:
+    * `traceback`: For exceptions/panics (string).
 
 #### Python Apps
+
 Use the `phenix_apps.common.logger`. It is pre-configured to output JSON to stderr.
 
 > [!IMPORTANT]
@@ -285,6 +286,7 @@ def my_func():
 ```
 
 #### Go Apps
+
 Use `log/slog` with a JSON handler.
 
 ```go
@@ -302,6 +304,7 @@ func main() {
 ```
 
 #### phēnix Core
+
 Use the `phenix/util/plog` package.
 
 ```go
@@ -324,11 +327,12 @@ func MyFunc() {
 
 ### ⚠️ Gotchas & Troubleshooting
 
-*   **Do NOT delete `config.yaml`**: If you delete the config file while phēnix is running, the file watcher breaks. Use `phenix settings unset --all` instead.
-*   **Tracebacks**: In Python, standard `print(e)` or `traceback.print_exc()` writes raw text to stderr, which breaks the JSON parser. Always use `logger.exception()`.
-*   **Timestamps**: Ensure timestamps are consistent. The core now enforces `2006-01-02 15:04:05.000` format for file logs for easier reading.
+* **Do NOT delete `config.yaml`**: If you delete the config file while phēnix is running, the file watcher breaks. Use `phenix settings unset --all` instead.
+* **Tracebacks**: In Python, standard `print(e)` or `traceback.print_exc()` writes raw text to stderr, which breaks the JSON parser. Always use `logger.exception()`.
+* **Timestamps**: Ensure timestamps are consistent. The core now enforces `2006-01-02 15:04:05.000` format for file logs for easier reading.
 
 ### 🌐 HTTP Request Logging
+
 To view detailed HTTP request logs (method, path, status, duration), start the UI with the `--log-requests` flag
 
 ## 🤝 Contributing

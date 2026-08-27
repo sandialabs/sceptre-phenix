@@ -10,7 +10,10 @@ const { attachCapture, settle, fatalOf } = require('./helpers');
 const ADMIN_USER = process.env.E2E_ADMIN_USER || 'e2e-admin';
 const ADMIN_PASS = process.env.E2E_ADMIN_PASS || 'Testpass1!';
 
-test.skip(process.env.E2E_AUTH_MODE !== 'enabled', 'set E2E_AUTH_MODE=enabled (see file header)');
+test.skip(
+  process.env.E2E_AUTH_MODE !== 'enabled',
+  'set E2E_AUTH_MODE=enabled (see file header)',
+);
 
 // Known upstream issue (predates the Vue 3 upgrade): in enabled mode the jwt
 // middleware stores the parsed token under a plain-string context key while
@@ -19,7 +22,8 @@ test.skip(process.env.E2E_AUTH_MODE !== 'enabled', 'set E2E_AUTH_MODE=enabled (s
 // themselves bypass that check and are what these tests cover.
 function filterKnown403s(issues) {
   return issues.filter(
-    (i) => !/403/.test(i.text) && !/WebSocket connection .* failed/.test(i.text)
+    (i) =>
+      !/403/.test(i.text) && !/WebSocket connection .* failed/.test(i.text),
   );
 }
 
@@ -40,9 +44,13 @@ test('wrong password shows incorrect-credentials toast', async ({ page }) => {
   await page.goto('/signin');
   await settle(page);
   await page.locator('.signin-form input[type="text"]').fill(ADMIN_USER);
-  await page.locator('.signin-form input[type="password"]').fill('definitely-wrong');
+  await page
+    .locator('.signin-form input[type="password"]')
+    .fill('definitely-wrong');
   await page.getByRole('button', { name: 'Submit' }).click();
-  await expect(page.getByText('The username and/or password is incorrect')).toBeVisible({
+  await expect(
+    page.getByText('The username and/or password is incorrect'),
+  ).toBeVisible({
     timeout: 10000,
   });
   const fatal = filterKnown403s(fatalOf(issues));
@@ -62,7 +70,9 @@ test('login lands on experiments', async ({ page }) => {
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 });
 
-test('create account via signup modal lands on disabled page', async ({ page }) => {
+test('create account via signup modal lands on disabled page', async ({
+  page,
+}) => {
   const issues = [];
   attachCapture(page, issues);
   await page.request.delete('/api/v1/users/e2e-signup').catch(() => {});
@@ -70,7 +80,9 @@ test('create account via signup modal lands on disabled page', async ({ page }) 
   await settle(page);
 
   await page.getByRole('button', { name: 'Create Account' }).click();
-  await expect(page.getByText('Create a New Account', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Create a New Account', { exact: true }),
+  ).toBeVisible();
 
   const modal = page.locator('.modal-card');
   await modal.locator('input[type="text"]').nth(0).fill('e2e-signup');
@@ -82,7 +94,9 @@ test('create account via signup modal lands on disabled page', async ({ page }) 
 
   // fresh self-signup users get the Disabled role until an admin assigns one
   await expect(page).toHaveURL(/\/disabled/, { timeout: 15000 });
-  await expect(page.getByText('Your account is currently disabled')).toBeVisible();
+  await expect(
+    page.getByText('Your account is currently disabled'),
+  ).toBeVisible();
 
   const fatal = filterKnown403s(fatalOf(issues));
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);

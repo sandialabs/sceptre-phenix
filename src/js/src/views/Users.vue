@@ -317,6 +317,9 @@
       this.getPasswordRequirements();
     },
     computed: {
+      // Intentionally restores the persisted pagination toggle as a side
+      // effect on first access.
+      /* eslint-disable vue/no-side-effects-in-computed-properties */
       paginationNeeded() {
         this.restorePaginate();
 
@@ -327,6 +330,7 @@
           return true;
         }
       },
+      /* eslint-enable vue/no-side-effects-in-computed-properties */
     },
 
     methods: {
@@ -525,8 +529,6 @@
         }
 
         this.isWaiting = true;
-
-        let name = this.user.username;
 
         axiosInstance
           .post('users', this.user)

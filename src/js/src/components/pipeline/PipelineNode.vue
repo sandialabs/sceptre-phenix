@@ -143,7 +143,7 @@
         this.$emit('mouseleave', this.index, this.node);
       },
       getTextWidth(text, font) {
-        // re-use canvas object for better performance
+        // reuse canvas object for better performance
         var canvas =
           this.getTextWidth.canvas ||
           (this.getTextWidth.canvas = document.createElement('canvas'));

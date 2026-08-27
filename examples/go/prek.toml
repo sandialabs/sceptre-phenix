@@ -1,0 +1,33 @@
+# Nested prek project for the Go example app.
+# prek runs a project's hooks with the project's directory as the working
+# directory, so paths below are relative to examples/go.
+# See the root prek.toml for general notes on this repository's prek setup.
+
+default_language_version.golang = "1.24"
+
+# Named priority aliases must be redeclared per nested project (prek 0.4.11+).
+# See the root prek.toml for the full fixers/format/lint ordering rationale.
+[priorities]
+fixers = 0
+format = 1
+lint = 2
+
+[[repos]]
+repo = "https://github.com/golangci/golangci-lint"
+# NOTE: keep in sync with the golangci-lint version pinned in src/go/prek.toml.
+# See that file for why `language_version = "1.25"` is pinned below.
+rev = "v2.10.1"
+
+[[repos.hooks]]
+id = "golangci-lint-fmt"
+args = ["-c", "../../src/go/.golangci.yml"]
+language_version = "1.25"
+priority = "format"
+
+[[repos.hooks]]
+id = "golangci-lint-full"
+# --allow-parallel-runners avoids lock contention with the concurrently
+# running src/go nested project's own golangci-lint-full invocation.
+args = ["-c", "../../src/go/.golangci.yml", "--fix", "--allow-parallel-runners"]
+language_version = "1.25"
+priority = "lint"

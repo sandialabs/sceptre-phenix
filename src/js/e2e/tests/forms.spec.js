@@ -14,7 +14,9 @@ test('users: create and delete a user via modal', async ({ page }) => {
   await page.request.delete('/api/v1/users/e2e-user').catch(() => {});
 
   await page.locator('p.control button.button.is-light').click();
-  await expect(page.getByText('Create a New User', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Create a New User', { exact: true }),
+  ).toBeVisible();
 
   const modal = page.locator('.modal-card');
   await modal.locator('input[type="text"]').nth(0).fill('e2e-user');
@@ -36,7 +38,9 @@ test('users: create and delete a user via modal', async ({ page }) => {
   if (await confirmBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
     await confirmBtn.click();
   }
-  await expect(page.locator('tr', { hasText: 'e2e-user' })).toBeHidden({ timeout: 15000 });
+  await expect(page.locator('tr', { hasText: 'e2e-user' })).toBeHidden({
+    timeout: 15000,
+  });
 
   const fatal = fatalOf(issues);
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
@@ -49,7 +53,9 @@ test('settings: load and save round-trip', async ({ page }) => {
   await settle(page);
 
   await page.getByRole('button', { name: 'Save Changes' }).click();
-  await expect(page.getByText('Settings updated')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('Settings updated')).toBeVisible({
+    timeout: 10000,
+  });
 
   const fatal = fatalOf(issues);
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
@@ -66,10 +72,14 @@ test('configs: view a config and open the editor', async ({ page }) => {
     metadata: { name: 'e2e-viewer-role' },
     spec: {
       roleName: 'e2e-viewer-role',
-      policies: [{ resources: ['experiments'], resourceNames: ['*'], verbs: ['list'] }],
+      policies: [
+        { resources: ['experiments'], resourceNames: ['*'], verbs: ['list'] },
+      ],
     },
   };
-  await page.request.delete('/api/v1/configs/role/e2e-viewer-role').catch(() => {});
+  await page.request
+    .delete('/api/v1/configs/role/e2e-viewer-role')
+    .catch(() => {});
   const created = await page.request.post('/api/v1/configs', { data: fixture });
   expect(created.ok(), await created.text()).toBeTruthy();
 
@@ -84,7 +94,9 @@ test('configs: view a config and open the editor', async ({ page }) => {
   await page.getByRole('button', { name: /edit/i }).first().click();
   await expect(page.locator('.ace_editor')).toBeVisible({ timeout: 20000 });
 
-  await page.request.delete('/api/v1/configs/role/e2e-viewer-role').catch(() => {});
+  await page.request
+    .delete('/api/v1/configs/role/e2e-viewer-role')
+    .catch(() => {});
 
   const fatal = fatalOf(issues);
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);

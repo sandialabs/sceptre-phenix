@@ -133,7 +133,7 @@
     },
     methods: {
       loadVimCommands() {
-        this.ace.config.loadModule('ace/keybinding/vim', (module) => {
+        this.ace.config.loadModule('ace/keybinding/vim', (_) => {
           const VimApi = this.ace.require('ace/keyboard/vim').CodeMirror.Vim;
 
           VimApi.defineEx('wq', null, () => {

@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [1.0.0]
 
 ### Added
+
 - **CLI Command Aliases**: Added `exp del`, `exp trig`, `exp res`, `exp rec`, `image del`, `config del`, and `vm res`.
 - **Centralized Logging Architecture**: Implemented a unified logging system where phēnix core aggregates logs from internal services and external apps.
 - **Dynamic Configuration**: Integrated `viper` with `fsnotify` to allow hot-swapping of configuration settings (e.g., log levels) without restarting services.
@@ -21,12 +22,13 @@ All notable changes to this project will be documented in this file.
     - Supports dynamic log levels via `PHENIX_LOG_LEVEL`.
     - Added unit tests (`main_test.go`) using the subprocess pattern to verify CLI behavior, panic recovery, and log output.
 - **Documentation**:
-    - Comprehensive `README.md` updates including architecture diagrams, configuration tables, and developer guides.
-    - Added dependency installation instructions (Go, Python, Node, Protoc) for local development.
-    - Added developer guidelines for Python app error handling (raise vs sys.exit).
+  - Comprehensive `README.md` updates including architecture diagrams, configuration tables, and developer guides.
+  - Added dependency installation instructions (Go, Python, Node, Protoc) for local development.
+  - Added developer guidelines for Python app error handling (raise vs sys.exit).
 - **Build Tools**: Added `make docker` target for easier container builds.
 - **Build System**: Standardized Makefiles with consistent targets (`help`, `all`, `test`, `lint`, `format`, `clean`) and improved help output.
 - **Code Quality**: Integrated `golangci-lint` with a comprehensive ruleset (`.golangci.yml`) and fixed numerous static analysis issues. (Note: Some linters are currently disabled to facilitate incremental adoption).
+- **Linting**: Repository-wide linting (Go, Python, JS/Vue, shell, YAML, Markdown, Dockerfiles, GitHub Actions, spelling, etc.) is now handled by [prek](https://prek.j178.dev/). Run `make lint` to lint and auto-fix locally; the same checks run in CI via the Lint workflow.
 - **Shell Completion**: Added `phenix completion` command for Bash, Zsh, Fish, and PowerShell.
 - **Docker Wrapper**: Added `make install-wrapper` to support shell completion when running via Docker.
 - **Web UI (Vue 3)**: Upgraded the web frontend to Vue 3 (Vuex → Pinia, vue-resource → axios, vue-cli → Vite, Buefy 1.0). Page components now load dynamically for a quicker initial load, and the codebase was reorganized (page components moved to `views/`).
@@ -34,6 +36,7 @@ All notable changes to this project will be documented in this file.
 - **Podman CI**: Added a GitHub Actions job that builds the Podman `Containerfile` (through the Go build stage) so the Podman build path can't break unnoticed.
 
 ### Changed
+
 - **Log Output**: Default log output format changed to structured JSON on `stderr` for applications.
 - **Configuration Management**: Moved from static flags/env vars to a watched `config.yaml` file managed via `phenix settings` commands.
 - **CLI Commands**: Separated runtime configuration (`phenix settings`) from persistent database management (`phenix settings db`). Replaced `reset` command with `unset --all`.
@@ -52,7 +55,9 @@ All notable changes to this project will be documented in this file.
 - **Web UI Environment Variables**: Build-time UI environment variables are now prefixed `VITE_` instead of `VUE_APP_` (e.g. `VITE_AUTH` replaces `VUE_APP_AUTH`, and `VITE_BASE_PATH` replaces `VUE_BASE_PATH`). The Docker `PHENIX_WEB_AUTH` / `PHENIX_BASE_PATH` build args are unchanged.
 
 ### Removed
+
 - **Legacy Tests**: Removed outdated `testing/` directory and unused `*_test.go` files (replaced by `examples/`).
 
 ### Fixed
+
 - **Timestamp Consistency**: Enforced `2006-01-02 15:04:05.000` time format across file logs.

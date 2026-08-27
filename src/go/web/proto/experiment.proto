@@ -24,7 +24,7 @@ message Experiment {
 	repeated VM vms = 12;
 	repeated string apps = 13;
 
-	// TODO: depricate
+	// TODO: deprecate
 	uint32 vlan_count = 14 [json_name="vlan_count"];
 	uint32 vm_count = 15 [json_name="vm_count"];
 

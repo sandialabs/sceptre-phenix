@@ -176,9 +176,14 @@ var DebianPackages = []string{ //nolint:gochecknoglobals // global constant
 	"locales",
 }
 
+const (
+	debianMinGUIPackageWMCtrl  = "wmctrl"
+	debianMinGUIPackageXDoTool = "xdotool"
+)
+
 var DebianMinGUIPackages = []string{ //nolint:gochecknoglobals // global constant
-	"wmctrl",
-	"xdotool",
+	debianMinGUIPackageWMCtrl,
+	debianMinGUIPackageXDoTool,
 	"xfce4",
 	"xfce4-terminal",
 }
@@ -198,8 +203,8 @@ var KaliPackages = []string{ //nolint:gochecknoglobals // global constant
 
 var KaliMinGUIPackages = []string{ //nolint:gochecknoglobals // global constant
 	"kali-desktop-xfce",
-	"wmctrl",
-	"xdotool",
+	debianMinGUIPackageWMCtrl,
+	debianMinGUIPackageXDoTool,
 }
 
 var UbuntuPackages = []string{ //nolint:gochecknoglobals // global constant
@@ -208,7 +213,7 @@ var UbuntuPackages = []string{ //nolint:gochecknoglobals // global constant
 }
 
 var UbuntuMinGUIPackages = []string{ //nolint:gochecknoglobals // global constant
-	"wmctrl",
-	"xdotool",
+	debianMinGUIPackageWMCtrl,
+	debianMinGUIPackageXDoTool,
 	"xubuntu-desktop",
 }

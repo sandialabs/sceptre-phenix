@@ -13,7 +13,7 @@ fi
 echo "building phenix UI (this could take a while...)"
 start_time=$(date +%s)
 
-pushd /usr/local/src/phenix/src/js &> /dev/null
+pushd /usr/local/src/phenix/src/js &> /dev/null || exit
 
 npm ci &> /tmp/phenix-ui-install.log
 res=$?
@@ -32,12 +32,12 @@ if [ $res -ne 0 ]; then
   cat /tmp/phenix-ui-build.log
   exit $res
 fi
-popd &> /dev/null
+popd &> /dev/null || exit
 
 end_time=$(date +%s)
 echo -e "phenix UI took $((end_time - start_time)) seconds to build\n"
 
-cd /opt/phenix
+cd /opt/phenix || exit
 cp -a /usr/local/src/phenix/src/js/dist/* web/public
 
 exec phenix ui --base-path "$base" --unbundled "$@"

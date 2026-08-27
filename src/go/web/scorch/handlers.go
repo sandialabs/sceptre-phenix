@@ -37,6 +37,7 @@ func init() { //nolint:gochecknoinits // hook registration
 }
 
 const (
+	appNameScorch       = "scorch"
 	TerminalBufferSize  = 32 * 1024
 	TerminalInitTimeout = 5 * time.Second
 )
@@ -574,7 +575,7 @@ func GetPipelines(w http.ResponseWriter, r *http.Request) error {
 
 	// first make sure Scorch app is running
 	for app, status := range exp.Status.AppRunning() {
-		if app == "scorch" && status {
+		if app == appNameScorch && status {
 			running = true
 
 			break
@@ -587,7 +588,7 @@ func GetPipelines(w http.ResponseWriter, r *http.Request) error {
 	if running {
 		// TODO: this should never be nil if Scorch is running...
 		if exp.Status.AppStatus() != nil {
-			if status, ok := exp.Status.AppStatus()["scorch"].(map[string]any); ok {
+			if status, ok := exp.Status.AppStatus()[appNameScorch].(map[string]any); ok {
 				if id, ok := status["runID"].(float64); ok {
 					runID = int(id)
 				}
@@ -721,7 +722,7 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 		key := fmt.Sprintf("%s/%d", name, run)
 
 		pubsub.Publish("trigger-app", app.TriggerPublication{ //nolint:exhaustruct // partial initialization
-			Experiment: name, App: "scorch", Resource: key, State: "start",
+			Experiment: name, App: appNameScorch, Resource: key, State: "start",
 		})
 
 		err := scorchexe.Execute(ctx, exp, run)
@@ -740,7 +741,7 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 
 				pubsub.Publish("trigger-app", app.TriggerPublication{ //nolint:exhaustruct // partial initialization
 					Experiment: name,
-					App:        "scorch",
+					App:        appNameScorch,
 					Resource:   key,
 					State:      "error",
 					Error: fmt.Errorf(
@@ -761,7 +762,7 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 			)
 
 			pubsub.Publish("trigger-app", app.TriggerPublication{ //nolint:exhaustruct // partial initialization
-				Experiment: name, App: "scorch", Resource: key, State: "success",
+				Experiment: name, App: appNameScorch, Resource: key, State: "success",
 			})
 		}
 
@@ -816,7 +817,7 @@ func CancelPipeline(w http.ResponseWriter, r *http.Request) error {
 		key := fmt.Sprintf("%s/%d", name, run)
 
 		pubsub.Publish("trigger-app", app.TriggerPublication{ //nolint:exhaustruct // partial initialization
-			Experiment: name, Verb: "delete", App: "scorch", Resource: key, State: "success",
+			Experiment: name, Verb: "delete", App: appNameScorch, Resource: key, State: "success",
 		})
 	}
 

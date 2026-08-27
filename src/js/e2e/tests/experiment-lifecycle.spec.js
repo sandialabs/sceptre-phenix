@@ -9,7 +9,10 @@ const { attachCapture, settle, fatalOf, gotoSeeded } = require('./helpers');
 const EXP = 'e2e-smoketest';
 const TOPOLOGY = process.env.E2E_TOPOLOGY || 'helloworld';
 
-test.skip(!process.env.E2E_LIFECYCLE, 'set E2E_LIFECYCLE=1 on a deployment with minimega + VM images');
+test.skip(
+  !process.env.E2E_LIFECYCLE,
+  'set E2E_LIFECYCLE=1 on a deployment with minimega + VM images',
+);
 test.describe.configure({ mode: 'serial' });
 
 async function expState(page) {
@@ -41,8 +44,13 @@ test('create experiment via modal', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Create Experiment' }).click();
   await expect(page.locator('.modal-card')).toBeHidden({ timeout: 60000 });
-  await expect(page.getByRole('link', { name: EXP })).toBeVisible({ timeout: 60000 });
-  expect(fatalOf(issues), JSON.stringify(fatalOf(issues), null, 2)).toHaveLength(0);
+  await expect(page.getByRole('link', { name: EXP })).toBeVisible({
+    timeout: 60000,
+  });
+  expect(
+    fatalOf(issues),
+    JSON.stringify(fatalOf(issues), null, 2),
+  ).toHaveLength(0);
 });
 
 test('stopped experiment view renders', async ({ page }) => {
@@ -51,7 +59,10 @@ test('stopped experiment view renders', async ({ page }) => {
   await gotoSeeded(page, '/experiment/' + EXP);
   await settle(page, 4000);
   expect(await page.locator('table tbody tr').count()).toBeGreaterThan(0);
-  expect(fatalOf(issues), JSON.stringify(fatalOf(issues), null, 2)).toHaveLength(0);
+  expect(
+    fatalOf(issues),
+    JSON.stringify(fatalOf(issues), null, 2),
+  ).toHaveLength(0);
 });
 
 test('start experiment', async ({ page }) => {
@@ -67,9 +78,15 @@ test('start experiment', async ({ page }) => {
   await page.getByRole('button', { name: 'Start', exact: true }).click();
 
   await expect
-    .poll(async () => ((await expState(page)) || {}).running, { timeout: 360000, intervals: [5000] })
+    .poll(async () => ((await expState(page)) || {}).running, {
+      timeout: 360000,
+      intervals: [5000],
+    })
     .toBe(true);
-  expect(fatalOf(issues), JSON.stringify(fatalOf(issues), null, 2)).toHaveLength(0);
+  expect(
+    fatalOf(issues),
+    JSON.stringify(fatalOf(issues), null, 2),
+  ).toHaveLength(0);
 });
 
 test('running experiment view renders', async ({ page }) => {
@@ -78,7 +95,10 @@ test('running experiment view renders', async ({ page }) => {
   await gotoSeeded(page, '/experiment/' + EXP);
   await settle(page, 6000);
   expect(await page.locator('table tbody tr').count()).toBeGreaterThan(0);
-  expect(fatalOf(issues), JSON.stringify(fatalOf(issues), null, 2)).toHaveLength(0);
+  expect(
+    fatalOf(issues),
+    JSON.stringify(fatalOf(issues), null, 2),
+  ).toHaveLength(0);
 });
 
 test('stop experiment', async ({ page }) => {
@@ -94,9 +114,15 @@ test('stop experiment', async ({ page }) => {
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
 
   await expect
-    .poll(async () => ((await expState(page)) || {}).running, { timeout: 360000, intervals: [5000] })
+    .poll(async () => ((await expState(page)) || {}).running, {
+      timeout: 360000,
+      intervals: [5000],
+    })
     .toBe(false);
-  expect(fatalOf(issues), JSON.stringify(fatalOf(issues), null, 2)).toHaveLength(0);
+  expect(
+    fatalOf(issues),
+    JSON.stringify(fatalOf(issues), null, 2),
+  ).toHaveLength(0);
 });
 
 test('delete experiment', async ({ page }) => {
@@ -111,7 +137,13 @@ test('delete experiment', async ({ page }) => {
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
 
   await expect
-    .poll(async () => !!(await expState(page)), { timeout: 60000, intervals: [3000] })
+    .poll(async () => !!(await expState(page)), {
+      timeout: 60000,
+      intervals: [3000],
+    })
     .toBe(false);
-  expect(fatalOf(issues), JSON.stringify(fatalOf(issues), null, 2)).toHaveLength(0);
+  expect(
+    fatalOf(issues),
+    JSON.stringify(fatalOf(issues), null, 2),
+  ).toHaveLength(0);
 });

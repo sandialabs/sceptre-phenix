@@ -30,7 +30,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 	var resp []User
 
 	switch {
-	case role.Allowed("users", "list"):
+	case role.Allowed(resourceUsers, "list"):
 		users, err := rbac.GetUsers()
 		if err != nil {
 			http.Error(w, "", http.StatusInternalServerError)
@@ -39,7 +39,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, rbacUser := range users {
-			if role.Allowed("users", "list", rbacUser.Username()) {
+			if role.Allowed(resourceUsers, "list", rbacUser.Username()) {
 				user := userFromRBAC(*rbacUser)
 
 				if rbacUser.Username() == uname {
@@ -49,7 +49,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 				resp = append(resp, user)
 			}
 		}
-	case role.Allowed("users", "get", uname):
+	case role.Allowed(resourceUsers, verbGet, uname):
 		rbacUser, err := rbac.GetUser(uname)
 		if err != nil {
 			http.Error(w, "", http.StatusInternalServerError)
@@ -68,7 +68,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := json.Marshal(util.WithRoot("users", resp))
+	body, err := json.Marshal(util.WithRoot(resourceUsers, resp))
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling users", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -90,7 +90,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
 	)
 
-	if !role.Allowed("users", "create") {
+	if !role.Allowed(resourceUsers, "create") {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 		plog.Warn(
 			plog.TypeSecurity,
@@ -159,9 +159,9 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	// allow user to get and update their own user details
 	uRole.AddPolicy(
-		[]string{"users"},
+		[]string{resourceUsers},
 		[]string{req.Username},
-		[]string{"get", "patch"},
+		[]string{verbGet, verbPatch},
 	)
 
 	_ = user.SetRole(uRole)
@@ -177,7 +177,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	broker.Broadcast(
-		bt.NewRequestPolicy("users", "create", ""),
+		bt.NewRequestPolicy(resourceUsers, "create", ""),
 		bt.NewResource("user", req.Username, "create"),
 		body,
 	)
@@ -208,7 +208,7 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 		username = vars["username"]
 	)
 
-	if !role.Allowed("users", "get", username) {
+	if !role.Allowed(resourceUsers, verbGet, username) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 		plog.Warn(
 			plog.TypeSecurity,
@@ -258,7 +258,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		uname   = vars["username"]
 	)
 
-	if !role.Allowed("users", "patch", uname) {
+	if !role.Allowed(resourceUsers, verbPatch, uname) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 		plog.Warn(
 			plog.TypeSecurity,
@@ -338,7 +338,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
-	if req.RoleName != "" && role.Allowed("users/roles", "patch", uname) {
+	if req.RoleName != "" && role.Allowed("users/roles", verbPatch, uname) {
 		uRole, err := rbac.RoleFromConfig(req.RoleName)
 		if err != nil {
 			plog.Error(plog.TypeSystem, "role not found", "role", req.RoleName)
@@ -351,9 +351,9 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 		// allow user to get their own user details
 		uRole.AddPolicy(
-			[]string{"users"},
+			[]string{resourceUsers},
 			[]string{uname},
-			[]string{"get", "patch"},
+			[]string{verbGet, verbPatch},
 		)
 
 		_ = u.SetRole(uRole)
@@ -429,7 +429,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	broker.Broadcast(
-		bt.NewRequestPolicy("users", "patch", uname),
+		bt.NewRequestPolicy(resourceUsers, verbPatch, uname),
 		bt.NewResource("user", uname, "update"),
 		body,
 	)
@@ -455,7 +455,7 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !role.Allowed("users", "delete", uname) {
+	if !role.Allowed(resourceUsers, "delete", uname) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 		plog.Warn(
 			plog.TypeSecurity,
@@ -479,7 +479,7 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	broker.Broadcast(
-		bt.NewRequestPolicy("users", "delete", uname),
+		bt.NewRequestPolicy(resourceUsers, "delete", uname),
 		bt.NewResource("user", uname, "delete"),
 		nil,
 	)

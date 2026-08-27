@@ -25,6 +25,7 @@ import (
 )
 
 const (
+	statusKeyPercent             = "percent"
 	percentMultiplier            = 100.0
 	experimentStartCheckInterval = 2 * time.Second
 )
@@ -228,10 +229,10 @@ func startExperiment(name string) ([]byte, error) {
 				progress = p
 			}
 
-			plog.Debug(plog.TypeSystem, "percent deployed", "percent", progress*percentMultiplier, "exp", name)
+			plog.Debug(plog.TypeSystem, "percent deployed", statusKeyPercent, progress*percentMultiplier, "exp", name)
 
 			status := map[string]any{
-				"percent": progress,
+				statusKeyPercent: progress,
 			}
 
 			marshalled, _ := json.Marshal(status)
