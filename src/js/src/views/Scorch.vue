@@ -94,7 +94,14 @@
       </b-table-column>
       <b-table-column label="Scorch Status" width="100" centered v-slot="props">
         <template
-          v-if="roleAllowed('experiments/trigger', 'create', props.row.name)">
+          v-if="
+            roleAllowed(
+              'experiments/trigger',
+              props.row.scorch.running ? 'delete' : 'create',
+              props.row.name,
+            ) &&
+            roleAllowed('scorch', props.row.scorch.running ? 'delete' : 'post')
+          ">
           <b-tooltip :label="scorchControlLabel(props.row)" type="is-dark">
             <span
               class="tag is-medium"
@@ -133,7 +140,7 @@
           <vue-terminal :wsPath="terminal.loc"></vue-terminal>
         </section>
         <footer class="modal-card-foot buttons is-right">
-          <div v-if="terminal.ro">
+          <div v-if="terminal.ro || !roleAllowed('scorch', 'post')">
             <b-tooltip
               label="this will close but not exit the terminal"
               type="is-light is-left"

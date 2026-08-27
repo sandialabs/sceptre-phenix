@@ -40,7 +40,7 @@ var packageTemplate = template.Must(template.New("").Parse(code))
 
 func main() {
 	var permissions []Permission
-	re := regexp.MustCompile(`role\.Allowed\("([^"]+)", "([^"]+)"`)
+	re := regexp.MustCompile(`(?:role\.Allowed|middleware\.RequirePermission)\("([^"]+)", "([^"]+)"`)
 
 	err := filepath.Walk("../..", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
