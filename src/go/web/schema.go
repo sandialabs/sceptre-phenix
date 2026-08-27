@@ -8,8 +8,6 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"phenix/types/version"
-	v1 "phenix/types/version/v1"
-	v2 "phenix/types/version/v2"
 	"phenix/util/plog"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -55,23 +53,17 @@ func GetSchemaSpec(w http.ResponseWriter, r *http.Request) error {
 
 	var spec map[string]any
 
-	switch ver {
-	case "v1":
-		err := yaml.Unmarshal(v1.OpenAPI, &spec)
-		if err != nil {
-			err := weberror.NewWebError(err, "unable to process %s spec", ver)
-
-			return err.SetStatus(http.StatusInternalServerError)
-		}
-	case "v2":
-		err := yaml.Unmarshal(v2.OpenAPI, &spec)
-		if err != nil {
-			err := weberror.NewWebError(err, "unable to process %s spec", ver)
-
-			return err.SetStatus(http.StatusInternalServerError)
-		}
-	default:
+	// assume failure to read means bad version
+	schemaText, err := version.ReadSchemaFile(ver)
+	if err != nil {
 		return weberror.NewWebError(nil, "unknown version %s", ver)
+	}
+
+	err = yaml.Unmarshal(schemaText, &spec)
+	if err != nil {
+		err := weberror.NewWebError(err, "unable to process %s spec", ver)
+
+		return err.SetStatus(http.StatusInternalServerError)
 	}
 
 	var body []byte

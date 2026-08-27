@@ -89,3 +89,40 @@ test('configs: view a config and open the editor', async ({ page }) => {
   const fatal = fatalOf(issues);
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 });
+
+test('configs: schema selection generates a config template', async ({ page }) => {
+  const issues = [];
+  attachCapture(page, issues);
+  await gotoSeeded(page, '/configs/');
+  await settle(page);
+
+  await page.locator('button#main:has(svg[data-icon="plus"])').click();
+  await expect(page.locator('.ace_editor')).toBeVisible({ timeout: 20000 });
+
+  const fullSchema = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/v1/schemas/v2') &&
+      response.request().method() === 'GET',
+  );
+  const roleSchema = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/v1/schemas/Role/v1') &&
+      response.request().method() === 'GET',
+  );
+
+  await page
+    .locator('.field.editor', { hasText: 'Config Kind' })
+    .locator('select')
+    .selectOption('Role');
+
+  expect((await fullSchema).ok()).toBeTruthy();
+  expect((await roleSchema).ok()).toBeTruthy();
+
+  const editor = page.locator('.ace_content');
+  await expect(editor).toContainText('kind: Role', { timeout: 20000 });
+  await expect(editor).toContainText('roleName:');
+  await expect(editor).toContainText('policies:');
+
+  const fatal = fatalOf(issues);
+  expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
+});

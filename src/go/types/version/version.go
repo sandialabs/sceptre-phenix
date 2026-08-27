@@ -2,6 +2,7 @@ package version
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
 	"strings"
@@ -13,6 +14,9 @@ import (
 	v1 "phenix/types/version/v1"
 	v2 "phenix/types/version/v2"
 )
+
+//go:embed schemas/*.yaml
+var openAPISchemas embed.FS
 
 var ErrInvalidKind = errors.New("invalid kind")
 
@@ -109,30 +113,36 @@ func GetVersionedStatusForKind(kind, version string) (any, error) {
 // GetVersionedSchemaForKind returns a generic map (map[string]interface{}) of
 // the schema for the given kind and version.
 func GetVersionedSchemaForKind(kind, version string) (map[string]any, error) {
+	if kind == "" {
+		return nil, fmt.Errorf("%w: kind cannot be empty", ErrInvalidKind)
+	}
+
 	var api struct {
 		Components struct {
 			Schemas map[string]map[string]any `yaml:"schemas"`
 		} `yaml:"components"`
 	}
 
-	kind = strings.ToUpper(kind[:1]) + kind[1:]
-
-	switch version {
-	case "v1":
-		err := yaml.Unmarshal(v1.OpenAPI, &api)
-		if err != nil {
-			return nil, fmt.Errorf("parsing v1 OpenAPI schema: %w", err)
-		}
-	case "v2":
-		err := yaml.Unmarshal(v2.OpenAPI, &api)
-		if err != nil {
-			return nil, fmt.Errorf("parsing v2 OpenAPI schema: %w", err)
-		}
+	schemaText, err := ReadSchemaFile(version)
+	if err != nil {
+		return nil, err
 	}
+
+	err = yaml.Unmarshal(schemaText, &api)
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s OpenAPI schema: %w", version, err)
+	}
+
+	kind = strings.ToUpper(kind[:1]) + kind[1:]
 
 	schema, ok := api.Components.Schemas[kind]
 	if !ok {
-		return nil, fmt.Errorf("a schema for version %s of %s is not defined", version, kind)
+		return nil, fmt.Errorf(
+			"%w: no schema definition found for version %s of %s",
+			ErrInvalidKind,
+			version,
+			kind,
+		)
 	}
 
 	return schema, nil
@@ -141,35 +151,17 @@ func GetVersionedSchemaForKind(kind, version string) (map[string]any, error) {
 // GetVersionedValidatorForKind returns a pointer to the `openapi3.Schema`
 // validator corresponding to the given kind and version.
 func GetVersionedValidatorForKind(kind, version string) (*openapi3.Schema, error) {
-	var t *openapi3.T
-
-	switch version {
-	case "v0":
-		var err error
-
-		t, err = openapi3.NewLoader().LoadFromData(v0.OpenAPI)
-		if err != nil {
-			return nil, fmt.Errorf("loading OpenAPI schema for version %s: %w", version, err)
-		}
-	case "v1":
-		var err error
-
-		t, err = openapi3.NewLoader().LoadFromData(v1.OpenAPI)
-		if err != nil {
-			return nil, fmt.Errorf("loading OpenAPI schema for version %s: %w", version, err)
-		}
-	case "v2":
-		var err error
-
-		t, err = openapi3.NewLoader().LoadFromData(v2.OpenAPI)
-		if err != nil {
-			return nil, fmt.Errorf("loading OpenAPI schema for version %s: %w", version, err)
-		}
-	default:
-		return nil, fmt.Errorf("unknown version %s", version)
+	schemaText, err := ReadSchemaFile(version)
+	if err != nil {
+		return nil, err
 	}
 
-	err := t.Validate(context.Background())
+	t, err := openapi3.NewLoader().LoadFromData(schemaText)
+	if err != nil {
+		return nil, fmt.Errorf("loading OpenAPI schema for version %s: %w", version, err)
+	}
+
+	err = t.Validate(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("validating OpenAPI schema for version %s: %w", version, err)
 	}
@@ -185,4 +177,16 @@ func GetVersionedValidatorForKind(kind, version string) (*openapi3.Schema, error
 	}
 
 	return ref.Value, nil
+}
+
+// ReadSchemaFile reads the embedded OpenAPI schema YAML file for the given version.
+func ReadSchemaFile(version string) ([]byte, error) {
+	filename := fmt.Sprintf("schemas/%s.yaml", version)
+
+	schemaText, err := openAPISchemas.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("reading embedded OpenAPI schema %s: %w", filename, err)
+	}
+
+	return schemaText, nil
 }
