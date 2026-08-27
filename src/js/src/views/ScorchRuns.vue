@@ -11,6 +11,7 @@
         :nodes="run.nodes"
         :viewer="componentDetail"
         :controller="scorchControl"
+        :controllable="canControl(run)"
         :rewinder="loopHistory" />
     </div>
     <hr />
@@ -32,7 +33,7 @@
           <vue-terminal :wsPath="terminal.loc"></vue-terminal>
         </section>
         <footer class="modal-card-foot buttons is-right">
-          <div v-if="terminal.ro">
+          <div v-if="terminal.ro || !roleAllowed('scorch', 'post')">
             <b-tooltip
               label="this will close but not exit the terminal"
               type="is-light is-left"
@@ -84,12 +85,17 @@
   import axiosInstance from '@/utils/axios.js';
   import { useErrorNotification } from '@/utils/errorNotif';
   import { usePhenixStore } from '@/store.js';
+  import { roleAllowed } from '@/utils/rbac.js';
 
   import ScorchKey from '@/components/scorch/ScorchKey.vue';
   import ScorchRun from '@/components/scorch/ScorchRun.vue';
   import Terminal from '@/components/MiniTerminal.vue';
 
   export default {
+    setup() {
+      return { roleAllowed };
+    },
+
     components: {
       'scorch-key': ScorchKey,
       'scorch-run': ScorchRun,
@@ -106,6 +112,16 @@
     },
 
     methods: {
+      canControl(run) {
+        const verb = run.running ? 'delete' : 'create';
+        const serviceVerb = run.running ? 'delete' : 'post';
+
+        return (
+          roleAllowed('experiments/trigger', verb, this.exp.name) &&
+          roleAllowed('scorch', serviceVerb)
+        );
+      },
+
       scorchControl(exp, runID) {
         let run = this.runs[runID];
         if (run.running) {
