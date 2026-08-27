@@ -342,6 +342,10 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 		return nil, errors.New("no config, path, or data provided")
 	}
 
+	if err := normalizeBuilderXMLFilePath(c, o.path); err != nil {
+		return nil, err
+	}
+
 	if o.validate {
 		validateErr := types.ValidateConfigSpec(*c)
 		if validateErr != nil {
@@ -444,6 +448,10 @@ func Edit(name string, force bool) (*store.Config, error) {
 // changed as part of the update, a new config will be created and the old
 // config deleted.
 func Update(name string, c *store.Config) error {
+	if err := normalizeBuilderXMLFilePath(c, ""); err != nil {
+		return err
+	}
+
 	old, err := store.NewConfig(name)
 	if err != nil {
 		return fmt.Errorf("getting config to update: %w", err)
