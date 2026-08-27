@@ -1,5 +1,6 @@
 import os
 import sys
+
 from phenix_apps.apps import AppBase
 from phenix_apps.common.logger import logger
 

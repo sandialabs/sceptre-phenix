@@ -187,10 +187,10 @@ func newSettingsSetCmd() *cobra.Command {
 			configFile := viper.ConfigFileUsed()
 			if configFile == "" {
 				uid, home := getCurrentUserInfo()
-				targetDir := "/etc/phenix"
+				targetDir := configDir
 
 				if uid != "0" {
-					targetDir = filepath.Join(home, ".config", "phenix")
+					targetDir = filepath.Join(home, ".config", appName)
 				}
 
 				err := os.MkdirAll(targetDir, 0o750)
@@ -273,7 +273,7 @@ func newSettingsSetCmd() *cobra.Command {
 
 func newSettingsListCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "list",
+		Use:   commandList,
 		Short: "List all runtime settings",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			settings := getEffectiveSettings()
@@ -432,10 +432,10 @@ func newSettingsUnsetCmd() *cobra.Command {
 			configFile := viper.ConfigFileUsed()
 			if configFile == "" {
 				uid, home := getCurrentUserInfo()
-				targetDir := "/etc/phenix"
+				targetDir := configDir
 
 				if uid != "0" {
-					targetDir = filepath.Join(home, ".config", "phenix")
+					targetDir = filepath.Join(home, ".config", appName)
 				}
 
 				configFile = filepath.Join(targetDir, "config.yaml")
@@ -540,7 +540,7 @@ func flattenSettingsMap(prefix string, src map[string]any, dst map[string]any) {
 
 func inferType(s string) any {
 	// Check for boolean
-	if strings.ToLower(s) == "true" {
+	if strings.ToLower(s) == boolStringTrue {
 		return true
 	}
 

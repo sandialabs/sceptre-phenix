@@ -22,7 +22,7 @@ Adding a new setting:
 		- add to settings category file (i.e. password.go)
 		- update GET and UPDATE functions
 	- If category is new
-		- create new file for the categroy, make Get and Update function
+		- create new file for the category, make Get and Update function
 		- Add new category to GetSettings and UpdateAllSettings (settings.go)
 4. Update Settings.vue for UI visibility
 */
@@ -99,8 +99,8 @@ func Update(category, name, value string) (bool, error) {
 	oldSetting.Spec.Value = value
 
 	c := store.Config{ //nolint:exhaustruct // partial initialization
-		Version: "phenix.sandia.gov/v2",
-		Kind:    "Setting",
+		Version: settingAPIVersion,
+		Kind:    settingKind,
 		Metadata: store.ConfigMetadata{ //nolint:exhaustruct // partial initialization
 			Name: settingName,
 		},
@@ -136,8 +136,8 @@ func UpdateWithVerification(category, name, value string) error {
 	oldSetting.Spec.Value = value
 
 	c := store.Config{ //nolint:exhaustruct // partial initialization
-		Version: "phenix.sandia.gov/v2",
-		Kind:    "Setting",
+		Version: settingAPIVersion,
+		Kind:    settingKind,
 		Metadata: store.ConfigMetadata{ //nolint:exhaustruct // partial initialization
 			Name: settingName,
 		},
@@ -176,7 +176,7 @@ func verify(settingType v2.SettingValueType, value string) (bool, error) {
 }
 
 func List() ([]types.Setting, error) {
-	configs, err := store.List("Setting")
+	configs, err := store.List(settingKind)
 	if err != nil {
 		return nil, fmt.Errorf("getting list of settings from store: %w", err)
 	}

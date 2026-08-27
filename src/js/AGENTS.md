@@ -22,13 +22,13 @@ nvm use
 npm ci
 ```
 
-| Purpose | Command |
-|---|---|
-| Development server | `npm run dev` |
-| Focused Vitest | `npm test -- test/rbac.test.js` |
-| All Vitest | `npm test` |
-| Production build | `npm run build` |
-| Format, then review diff | `npm run format` |
+| Purpose                  | Command                         |
+| ------------------------ | ------------------------------- |
+| Development server       | `npm run dev`                   |
+| Focused Vitest           | `npm test -- test/rbac.test.js` |
+| All Vitest               | `npm test`                      |
+| Production build         | `npm run build`                 |
+| Format, then review diff | `npm run format`                |
 
 The development server needs a backend on `localhost:3000`.
 

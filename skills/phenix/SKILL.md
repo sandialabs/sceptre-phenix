@@ -437,5 +437,5 @@ documentation, branch, commit, and pull request requirements.
 
 ## References
 
-See [`AGENTS.md`](../../AGENTS.md#documentation-and-other-references) for the
+See [`AGENTS.md`](../../AGENTS.md#documentation-and-references) for the
 repository documentation map and companion phēnix repositories.

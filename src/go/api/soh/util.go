@@ -23,15 +23,22 @@ import (
 	"phenix/util/plog"
 )
 
-const appName = "soh"
-
 const (
-	loadAvgParts = 5
-	portParts    = 2
-	byteMask     = 0xFF
-	shift8       = 8
-	shift16      = 16
-	shift24      = 24
+	appName       = "soh"
+	hostKey       = "host"
+	typeKey       = "type"
+	protoKey      = "proto"
+	srcKey        = "src"
+	dstKey        = "dst"
+	targetKey     = "target"
+	osTypeLinux   = "linux"
+	osTypeWindows = "windows"
+	loadAvgParts  = 5
+	portParts     = 2
+	byteMask      = 0xFF
+	shift8        = 8
+	shift16       = 16
+	shift24       = 24
 )
 
 var stringSpacePattern = regexp.MustCompile(`\s+`)
@@ -153,7 +160,7 @@ func (s *SOH) buildElasticServerNode( //nolint:ireturn // complex logic
 
 	node := exp.Spec.Topology().AddNode("VirtualMachine", name)
 	node.AddLabel("soh-elastic-server", "true")
-	node.AddHardware("linux", cpu, mem)
+	node.AddHardware(osTypeLinux, cpu, mem)
 	node.Hardware().AddDrive(s.md.PacketCapture.ElasticImage, 1)
 	node.AddInject(elasticConfigFile, "/etc/elasticsearch/elasticsearch.yml", "", "")
 	node.AddInject(kibanaConfigFile, "/etc/kibana/kibana.yml", "", "")
@@ -209,11 +216,11 @@ func (s *SOH) buildPacketBeatNode( //nolint:funlen,ireturn // complex logic
 	nets := []map[string]any{
 		{
 			"name":    "IF0",
-			"type":    "ethernet",
+			typeKey:   "ethernet",
 			"vlan":    "MGMT",
 			"address": ip,
 			"mask":    cidr,
-			"proto":   "static",
+			protoKey:  "static",
 			"bridge":  exp.Spec.DefaultBridge(),
 		},
 	}
@@ -223,9 +230,9 @@ func (s *SOH) buildPacketBeatNode( //nolint:funlen,ireturn // complex logic
 			if iface.Name() == ifaceToMonitor {
 				monitorIface := map[string]any{
 					"name":   fmt.Sprintf("MONITOR%d", i),
-					"type":   "ethernet",
+					typeKey:  "ethernet",
 					"vlan":   iface.VLAN(),
-					"proto":  "static",
+					protoKey: "static",
 					"bridge": exp.Spec.DefaultBridge(),
 				}
 
@@ -240,7 +247,7 @@ func (s *SOH) buildPacketBeatNode( //nolint:funlen,ireturn // complex logic
 
 	spec := map[string]any{
 		"labels": map[string]string{"soh-monitor-node": "true"},
-		"type":   "VirtualMachine",
+		typeKey:  "VirtualMachine",
 		"general": map[string]any{
 			"hostname": name,
 			"vm_type":  "kvm",
@@ -253,24 +260,24 @@ func (s *SOH) buildPacketBeatNode( //nolint:funlen,ireturn // complex logic
 					"image": s.md.PacketCapture.PacketBeatImage,
 				},
 			},
-			"os_type": "linux",
+			"os_type": osTypeLinux,
 		},
 		"injections": []map[string]any{
 			{
-				"src": hostnameFile,
-				"dst": "/etc/phenix/startup/1_hostname-start.sh",
+				srcKey: hostnameFile,
+				dstKey: "/etc/phenix/startup/1_hostname-start.sh",
 			},
 			{
-				"src": timezoneFile,
-				"dst": "/etc/phenix/startup/2_timezone-start.sh",
+				srcKey: timezoneFile,
+				dstKey: "/etc/phenix/startup/2_timezone-start.sh",
 			},
 			{
-				"src": ifaceFile,
-				"dst": "/etc/phenix/startup/3_interfaces-start.sh",
+				srcKey: ifaceFile,
+				dstKey: "/etc/phenix/startup/3_interfaces-start.sh",
 			},
 			{
-				"src": packetBeatConfigFile,
-				"dst": "/etc/packetbeat/packetbeat.yml",
+				srcKey: packetBeatConfigFile,
+				dstKey: "/etc/packetbeat/packetbeat.yml",
 			},
 		},
 		"network": map[string]any{
@@ -407,7 +414,7 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 						targeted = true
 
 						if skipHost != nil {
-							wg.AddError(skipHost, map[string]any{"host": host, "target": targetIP})
+							wg.AddError(skipHost, map[string]any{hostKey: host, targetKey: targetIP})
 						} else {
 							logger.Debug(
 								"running ping test",
@@ -433,7 +440,7 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 						// to do any reachability to it.
 						var (
 							err  = errors.New("networking not configured on target")
-							meta = map[string]any{"host": host, "target": targetIP}
+							meta = map[string]any{hostKey: host, targetKey: targetIP}
 						)
 
 						wg.AddError(err, meta)
@@ -450,7 +457,7 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 							// to do any reachability to it.
 							var (
 								err  = errors.New("networking not configured on target")
-								meta = map[string]any{"host": host, "target": targetIP}
+								meta = map[string]any{hostKey: host, targetKey: targetIP}
 							)
 
 							wg.AddError(err, meta)
@@ -459,7 +466,7 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 						}
 
 						if skipHost != nil {
-							wg.AddError(skipHost, map[string]any{"host": host, "target": targetIP})
+							wg.AddError(skipHost, map[string]any{hostKey: host, targetKey: targetIP})
 						} else {
 							logger.Debug(
 								"running ping test",
@@ -486,7 +493,7 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 				// This host is known to not have C2 active, so don't test from it.
 				wg.AddError(
 					errors.New("c2 not active on host"),
-					map[string]any{"host": host, "target": reach.Dst},
+					map[string]any{hostKey: host, targetKey: reach.Dst},
 				)
 
 				continue
@@ -496,7 +503,7 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 				// This host failed the network config test, so don't test from it.
 				wg.AddError(
 					errors.New("networking not configured on host"),
-					map[string]any{"host": host, "target": reach.Dst},
+					map[string]any{hostKey: host, targetKey: reach.Dst},
 				)
 
 				continue
@@ -537,15 +544,15 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 
 	for _, state := range wg.States {
 		var (
-			host, _   = state.Meta["host"].(string)
-			target, _ = state.Meta["target"].(string)
+			host, _   = state.Meta[hostKey].(string)
+			target, _ = state.Meta[targetKey].(string)
 		)
 
 		// Convert target IP to hostname.
 		hostname := s.addrHosts[target]
 
 		if hostname != "" { // might be empty if target IP not in topology
-			state.Meta["target"] = hostname
+			state.Meta[targetKey] = hostname
 		}
 
 		state.Meta["ip"] = target
@@ -566,7 +573,7 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 			if _, ok := state.Meta["port"]; ok {
 				var (
 					port, _  = state.Meta["port"].(int)
-					proto, _ = state.Meta["proto"].(string)
+					proto, _ = state.Meta[protoKey].(string)
 				)
 
 				logger.Error(
@@ -629,13 +636,13 @@ func (s *SOH) waitForFileExistenceTest(
 
 	for host, files := range hostFiles {
 		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
+			logger.Debug("skipping host per config", hostKey, host)
 
 			continue
 		}
 
 		for _, path := range files {
-			logger.Debug("checking file on host", "host", host, "path", path)
+			logger.Debug("checking for file on host", hostKey, host, "path", path)
 			test(ctx, wg, ns, s.nodes[host], path)
 		}
 	}
@@ -647,7 +654,7 @@ func (s *SOH) waitForFileExistenceTest(
 
 	for _, state := range wg.States {
 		var (
-			host, _ = state.Meta["host"].(string)
+			host, _ = state.Meta[hostKey].(string)
 			path, _ = state.Meta["path"].(string)
 		)
 
@@ -664,7 +671,7 @@ func (s *SOH) waitForFileExistenceTest(
 
 			st.Error = err.Error()
 
-			logger.Error(notFoundLogMsg, "host", host, "path", path)
+			logger.Error(notFoundLogMsg, hostKey, host, "path", path)
 		} else {
 			st.Success = state.Msg
 		}
@@ -852,13 +859,13 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 		// If the host isn't in the C2 hosts map, then don't operate on it since it
 		// was likely skipped for a reason.
 		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
+			logger.Debug("skipping host per config", hostKey, host)
 
 			continue
 		}
 
 		for _, proc := range processes {
-			logger.Debug("checking for process on host", "host", host, "process", proc)
+			logger.Debug("checking for process on host", hostKey, host, "process", proc)
 			s.procTest(ctx, wg, ns, s.nodes[host], proc)
 		}
 	}
@@ -868,7 +875,7 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 		for _, host := range app.Hosts() {
 			if ms, ok := host.Metadata()[s.md.AppProfileKey]; ok {
 				if _, ok := s.c2Hosts[host.Hostname()]; !ok {
-					logger.Debug("skipping host per config", "host", host.Hostname())
+					logger.Debug("skipping host per config", hostKey, host.Hostname())
 
 					continue
 				}
@@ -879,7 +886,7 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 				if err != nil {
 					logger.Warn(
 						"incorrect SoH profile for host in app",
-						"host",
+						hostKey,
 						host.Hostname(),
 						"app",
 						app.Name(),
@@ -891,7 +898,7 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 				for _, proc := range profile.Processes {
 					logger.Debug(
 						"checking for process on host",
-						"host",
+						hostKey,
 						host.Hostname(),
 						"process",
 						proc,
@@ -909,7 +916,7 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 
 	for _, state := range wg.States {
 		var (
-			host, _ = state.Meta["host"].(string)
+			host, _ = state.Meta[hostKey].(string)
 			proc, _ = state.Meta["proc"].(string)
 		)
 
@@ -926,7 +933,7 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 
 			st.Error = err.Error()
 
-			logger.Error("[✗] process not running on host", "host", host, "process", proc)
+			logger.Error("[✗] process not running on host", hostKey, host, "process", proc)
 		} else {
 			st.Success = state.Msg
 		}
@@ -954,13 +961,13 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 		// If the host isn't in the C2 hosts map, then don't operate on it since it
 		// was likely skipped for a reason.
 		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
+			logger.Debug("skipping host per config", hostKey, host)
 
 			continue
 		}
 
 		for _, port := range listeners {
-			logger.Debug("checking for listener on host", "host", host, "listener", port)
+			logger.Debug("checking for listener on host", hostKey, host, "listener", port)
 			s.portTest(ctx, wg, ns, s.nodes[host], port)
 		}
 	}
@@ -970,7 +977,7 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 		for _, host := range app.Hosts() {
 			if ms, ok := host.Metadata()[s.md.AppProfileKey]; ok {
 				if _, ok := s.c2Hosts[host.Hostname()]; !ok {
-					logger.Debug("skipping host per config", "host", host.Hostname())
+					logger.Debug("skipping host per config", hostKey, host.Hostname())
 
 					continue
 				}
@@ -981,7 +988,7 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 				if err != nil {
 					logger.Warn(
 						"incorrect SoH profile for host in app",
-						"host",
+						hostKey,
 						host.Hostname(),
 						"app",
 						app.Name(),
@@ -993,7 +1000,7 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 				for _, port := range profile.Listeners {
 					logger.Debug(
 						"checking for listener on host",
-						"host",
+						hostKey,
 						host.Hostname(),
 						"listener",
 						port,
@@ -1011,7 +1018,7 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 
 	for _, state := range wg.States {
 		var (
-			host, _ = state.Meta["host"].(string)
+			host, _ = state.Meta[hostKey].(string)
 			port, _ = state.Meta["port"].(string)
 		)
 
@@ -1028,7 +1035,7 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 
 			st.Error = err.Error()
 
-			logger.Error("[✗] host not listening on port", "host", host, "port", port)
+			logger.Error("[✗] host not listening on port", hostKey, host, "port", port)
 		} else {
 			st.Success = state.Msg
 		}
@@ -1055,13 +1062,13 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 		// If the host isn't in the C2 hosts map, then don't operate on it since it
 		// was likely skipped for a reason.
 		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
+			logger.Debug("skipping host per config", hostKey, host)
 
 			continue
 		}
 
 		for _, test := range tests {
-			logger.Debug("running custom test on host", "host", host, "test", test.Name)
+			logger.Debug("running custom test on host", hostKey, host, "test", test.Name)
 			s.customTest(ctx, wg, ns, s.nodes[host], test)
 		}
 	}
@@ -1071,7 +1078,7 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 		for _, host := range app.Hosts() {
 			if ms, ok := host.Metadata()[s.md.AppProfileKey]; ok {
 				if _, ok := s.c2Hosts[host.Hostname()]; !ok {
-					logger.Debug("skipping host per config", "host", host.Hostname())
+					logger.Debug("skipping host per config", hostKey, host.Hostname())
 
 					continue
 				}
@@ -1082,7 +1089,7 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 				if err != nil {
 					logger.Warn(
 						"incorrect SoH profile for host in app",
-						"host",
+						hostKey,
 						host.Hostname(),
 						"app",
 						app.Name(),
@@ -1094,7 +1101,7 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 				for _, test := range profile.CustomTests {
 					logger.Debug(
 						"running custom test on host",
-						"host",
+						hostKey,
 						host.Hostname(),
 						"test",
 						test.Name,
@@ -1112,7 +1119,7 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 
 	for _, state := range wg.States {
 		var (
-			host, _ = state.Meta["host"].(string)
+			host, _ = state.Meta[hostKey].(string)
 			test, _ = state.Meta["test"].(string)
 		)
 
@@ -1129,7 +1136,7 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 
 			st.Error = err.Error()
 
-			logger.Error("[✗] test failed on host", "host", host, "test", test)
+			logger.Error("[✗] test failed on host", hostKey, host, "test", test)
 		} else {
 			st.Success = state.Msg
 		}
@@ -1164,7 +1171,7 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 			node := s.nodes[host]
 			exec := `cat /proc/loadavg`
 
-			if strings.EqualFold(node.Hardware().OSType(), "windows") {
+			if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
 				exec = `powershell -command "Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select -ExpandProperty Average"`
 			}
 
@@ -1183,7 +1190,7 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 			if err != nil {
 				wg.AddError(
 					fmt.Errorf("executing command '%s': %w", exec, err),
-					map[string]any{"host": host},
+					map[string]any{hostKey: host},
 				)
 
 				return
@@ -1200,7 +1207,7 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 			if err != nil {
 				wg.AddError(
 					fmt.Errorf("getting response for command '%s': %w", exec, err),
-					map[string]any{"host": host},
+					map[string]any{hostKey: host},
 				)
 
 				return
@@ -1211,11 +1218,11 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 				hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
 			}
 
-			if strings.EqualFold(node.Hardware().OSType(), "windows") {
+			if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
 				if resp == "" {
 					wg.AddError(
 						fmt.Errorf("no response for command '%s'", exec),
-						map[string]any{"host": host},
+						map[string]any{hostKey: host},
 					)
 
 					return
@@ -1228,7 +1235,7 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 				if len(parts) != loadAvgParts {
 					wg.AddError(
 						fmt.Errorf("invalid response for command '%s': %s", exec, resp),
-						map[string]any{"host": host},
+						map[string]any{hostKey: host},
 					)
 
 					return
@@ -1248,7 +1255,7 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 	cancel()
 
 	for _, state := range wg.States {
-		host, _ := state.Meta["host"].(string)
+		host, _ := state.Meta[hostKey].(string)
 
 		err := state.Err
 		if err != nil {
@@ -1264,7 +1271,7 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 			hostState.CPULoad = err.Error()
 			s.status[host] = hostState
 
-			logger.Error("[✗] failed to get CPU load from host", "host", host, "err", err)
+			logger.Error("[✗] failed to get CPU load from host", hostKey, host, "err", err)
 		}
 	}
 
@@ -1284,7 +1291,7 @@ func (s SOH) isNetworkingConfigured( //nolint:funlen // complex logic
 		addr    = iface.Address()
 		host    = node.General().Hostname()
 		gateway = iface.Gateway()
-		meta    = map[string]any{"host": host}
+		meta    = map[string]any{hostKey: host}
 	)
 
 	// First, we wait for the IP address to be set on the interface. Then, we wait
@@ -1293,7 +1300,7 @@ func (s SOH) isNetworkingConfigured( //nolint:funlen // complex logic
 	// processor within `expected` functions.
 	ipExpected := func(resp string) error {
 		if addr != "" {
-			if strings.EqualFold(node.Hardware().OSType(), "windows") {
+			if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
 				// If `resp` doesn't contain the IP address, then the IP address isn't
 				// configured yet, so keep retrying the C2 command.
 				if !strings.Contains(resp, addr) {
@@ -1324,7 +1331,7 @@ func (s SOH) isNetworkingConfigured( //nolint:funlen // complex logic
 			// The IP address is now set, so schedule a C2 command for determining if
 			// the default gateway is set.
 			gwExpected := func(resp string) error {
-				if strings.EqualFold(node.Hardware().OSType(), "windows") {
+				if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
 					expected := "0.0.0.0\\s+0.0.0.0\\s+" + gateway
 
 					// If `resp` doesn't contain the default gateway, then the default gateway
@@ -1355,7 +1362,7 @@ func (s SOH) isNetworkingConfigured( //nolint:funlen // complex logic
 				// The default gateway is now set, so schedule a C2 command for
 				// determining if the default gateway is up (pingable).
 				gwPingExpected := func(resp string) error {
-					if strings.EqualFold(node.Hardware().OSType(), "windows") {
+					if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
 						// If `resp` contains `Destination host unreachable`, the
 						// default gateway isn't up (pingable) yet, so keep retrying the C2
 						// command.
@@ -1385,13 +1392,13 @@ func (s SOH) isNetworkingConfigured( //nolint:funlen // complex logic
 
 				exec := "ping -c 1 " + gateway
 
-				if strings.EqualFold(node.Hardware().OSType(), "windows") {
+				if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
 					exec = "ping -n 1 " + gateway
 				}
 
 				cmd := s.newParallelCommand(ns, host, exec)
 				cmd.Wait = wg
-				cmd.Meta = map[string]any{"host": host}
+				cmd.Meta = map[string]any{hostKey: host}
 				cmd.Expected = gwPingExpected
 
 				mm.ScheduleC2ParallelCommand(ctx, cmd)
@@ -1401,13 +1408,13 @@ func (s SOH) isNetworkingConfigured( //nolint:funlen // complex logic
 
 			exec := "ip route"
 
-			if strings.EqualFold(node.Hardware().OSType(), "windows") {
+			if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
 				exec = "route print"
 			}
 
 			cmd := s.newParallelCommand(ns, host, exec)
 			cmd.Wait = wg
-			cmd.Meta = map[string]any{"host": host}
+			cmd.Meta = map[string]any{hostKey: host}
 			cmd.Expected = gwExpected
 
 			mm.ScheduleC2ParallelCommand(ctx, cmd)
@@ -1418,7 +1425,7 @@ func (s SOH) isNetworkingConfigured( //nolint:funlen // complex logic
 
 	exec := "ip addr"
 
-	if strings.EqualFold(node.Hardware().OSType(), "windows") {
+	if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
 		exec = "ipconfig /all"
 	}
 
@@ -1439,17 +1446,17 @@ func (s SOH) pingTest(
 ) {
 	exec := "ping -c 1 " + target
 
-	if strings.EqualFold(node.Hardware().OSType(), "windows") {
+	if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
 		exec = "ping -n 1 " + target
 	}
 
 	var (
 		host = node.General().Hostname()
-		meta = map[string]any{"host": host, "target": target}
+		meta = map[string]any{hostKey: host, targetKey: target}
 	)
 
 	expected := func(resp string) error {
-		if strings.EqualFold(node.Hardware().OSType(), "windows") {
+		if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
 			// If `resp` contains `Destination host unreachable`, the
 			// default gateway isn't up (pingable) yet, so keep retrying the C2
 			// command.
@@ -1497,7 +1504,7 @@ func (s SOH) connTest(
 		test = fmt.Sprintf("%s %s", test, packet)
 	}
 
-	meta := map[string]any{"host": src, "target": dst, "port": port, "proto": proto}
+	meta := map[string]any{hostKey: src, targetKey: dst, "port": port, protoKey: proto}
 	opts := []mm.C2Option{
 		mm.C2NS(ns),
 		mm.C2VM(src),
@@ -1536,7 +1543,7 @@ func (s SOH) procTest(
 ) {
 	exec := "pgrep -f " + proc
 
-	if strings.EqualFold(node.Hardware().OSType(), "windows") {
+	if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
 		exec = fmt.Sprintf(
 			`powershell -command "Get-Process %s -ErrorAction SilentlyContinue"`,
 			proc,
@@ -1545,7 +1552,7 @@ func (s SOH) procTest(
 
 	var (
 		host = node.General().Hostname()
-		meta = map[string]any{"host": host, "proc": proc}
+		meta = map[string]any{hostKey: host, "proc": proc}
 	)
 
 	retries := 5
@@ -1582,7 +1589,7 @@ func (s SOH) fileTest(
 ) {
 	var (
 		host = node.General().Hostname()
-		meta = map[string]any{"host": host, "path": path}
+		meta = map[string]any{hostKey: host, "path": path}
 	)
 
 	retries := 5
@@ -1611,7 +1618,7 @@ func (s SOH) fileTest(
 }
 
 func fileCheckCommand(osType, path string) string {
-	if strings.EqualFold(osType, "windows") {
+	if strings.EqualFold(osType, osTypeWindows) {
 		path = strings.ReplaceAll(path, "'", "''")
 
 		return fmt.Sprintf(
@@ -1634,7 +1641,7 @@ func (s SOH) fileAbsentTest(
 ) {
 	var (
 		host = node.General().Hostname()
-		meta = map[string]any{"host": host, "path": path}
+		meta = map[string]any{hostKey: host, "path": path}
 	)
 
 	retries := 5
@@ -1807,13 +1814,13 @@ func (s SOH) portTest(
 ) {
 	var (
 		host = node.General().Hostname()
-		meta = map[string]any{"host": host, "port": port}
+		meta = map[string]any{hostKey: host, "port": port}
 	)
 
 	exec := "ss -lntu state all"
 	target := strings.Split(port, ":")
 
-	if strings.EqualFold(node.Hardware().OSType(), "windows") {
+	if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
 		var filter string
 
 		switch len(target) {
@@ -1863,7 +1870,7 @@ func (s SOH) portTest(
 	expected := func(resp string) error {
 		lineCount := 1
 
-		if strings.EqualFold(node.Hardware().OSType(), "windows") {
+		if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
 			lineCount = 0
 		}
 
@@ -1977,7 +1984,7 @@ func (s SOH) customTest( //nolint:funlen // complex logic
 	test customHostTest,
 ) {
 	host := node.General().Hostname()
-	meta := map[string]any{"host": host, "test": test.Name}
+	meta := map[string]any{hostKey: host, "test": test.Name}
 
 	if test.TestScript == "" {
 		wg.AddError(errors.New("no test script provided"), meta)
@@ -1997,7 +2004,7 @@ func (s SOH) customTest( //nolint:funlen // complex logic
 	executor := test.Executor
 	if executor == "" {
 		switch strings.ToLower(node.Hardware().OSType()) {
-		case "windows":
+		case osTypeWindows:
 			executor = "powershell -NoProfile -ExecutionPolicy bypass -File"
 		default:
 			executor = "bash"

@@ -71,11 +71,14 @@ side will pass.
         </b-dropdown>
       </b-field>
     </b-field>
-    <div v-for="chunk in chunkedVMs">
+    <div v-for="(chunk, chunkIndex) in chunkedVMs" :key="chunkIndex">
       <div class="tile is-ancestor">
         <div class="tile is-parent">
           <template v-if="exp == null">
-            <div v-for="v in chunk" class="tile is-child box is-4">
+            <div
+              v-for="v in chunk"
+              :key="vmFullName(v)"
+              class="tile is-child box is-4">
               <p class="title" style="font-size: medium">
                 {{ vmFullName(v) }}
               </p>
@@ -92,7 +95,10 @@ side will pass.
             </div>
           </template>
           <template v-else>
-            <div v-for="v in chunk" class="tile is-child box is-4">
+            <div
+              v-for="v in chunk"
+              :key="vmFullName(v)"
+              class="tile is-child box is-4">
               <p
                 v-if="v.experiment === exp"
                 class="title"
@@ -176,7 +182,7 @@ side will pass.
       },
 
       filteredData() {
-        let names = [];
+        let names;
         let vms = this.getVms;
 
         if (this.exp) {

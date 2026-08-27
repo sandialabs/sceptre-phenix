@@ -431,6 +431,9 @@
         });
       },
 
+      // Intentionally restores the persisted pagination toggle as a side
+      // effect on first access.
+      /* eslint-disable vue/no-side-effects-in-computed-properties */
       paginationNeeded() {
         this.restorePaginate();
 
@@ -441,6 +444,7 @@
           return true;
         }
       },
+      /* eslint-enable vue/no-side-effects-in-computed-properties */
 
       bridgeMode() {
         return this.options['bridge-mode'];
@@ -796,7 +800,7 @@
 
         axiosInstance
           .post('experiments', experimentData, { timeout: 0 })
-          .then((response) => {
+          .then(() => {
             this.isWaiting = false;
           })
           .catch((err) => {

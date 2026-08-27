@@ -401,7 +401,7 @@ var activateCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 
 var deactivateCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "deactivate <id>",
-	Short: "Dectivate a local forward (stop listening on local port)",
+	Short: "Deactivate a local forward (stop listening on local port)",
 	Args:  cobra.ExactArgs(1),
 
 	RunE: func(cmd *cobra.Command, args []string) error {

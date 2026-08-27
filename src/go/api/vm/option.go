@@ -130,7 +130,7 @@ func CPU(c int) RedeployOption {
 	}
 }
 
-// Memory sets the amound of memory (in MB) to be used for the redeployed VM. It
+// Memory sets the amount of memory (in MB) to be used for the redeployed VM. It
 // defaults to 0, which means the redeployed VM will have the same amount of
 // memory as the current VM.
 func Memory(m int) RedeployOption {

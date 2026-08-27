@@ -246,7 +246,7 @@
               </section>
             </template>
             <b-table-column field="multiselect" label="">
-              <template v-slot:header="{ column }">
+              <template v-slot:header>
                 <b-tooltip label="Select/Unselect All" type="is-dark">
                   <b-checkbox v-model="checkAll"></b-checkbox>
                 </b-tooltip>
@@ -727,6 +727,9 @@
         });
       },
 
+      // Intentionally restores the persisted pagination toggle as a side
+      // effect on first access.
+      /* eslint-disable vue/no-side-effects-in-computed-properties */
       paginationNeeded() {
         var user = usePhenixStore().username;
 
@@ -756,6 +759,7 @@
           return true;
         }
       },
+      /* eslint-enable vue/no-side-effects-in-computed-properties */
     },
 
     methods: {
@@ -1112,7 +1116,7 @@
             axiosInstance
               .post('experiments/' + this.$route.params.id + '/start')
               .then(
-                (response) => {
+                () => {
                   console.log(
                     'the ' + this.$route.params.id + ' experiment was started.',
                   );
@@ -1174,7 +1178,7 @@
         });
       },
 
-      unassignHost(name, host) {
+      unassignHost(name, _) {
         this.$buefy.dialog.confirm({
           title: 'Unassign a Host',
           message: 'This will cancel the host assignment for ' + name + ' VM.',
@@ -1461,7 +1465,7 @@
       },
 
       updateSnapshot(name, persistence) {
-        let persistenceMessage = '';
+        let persistenceMessage;
         if (persistence == 'true') {
           persistenceMessage = 'Non-Persistent';
         } else {
@@ -1596,7 +1600,6 @@
         let vms = [];
 
         let successMessage = '';
-        let failedMessage = '';
 
         //Determine the list of VMs to apply the boot request to
         if (this.selectedRows.length == 0 && this.searchName.length > 0) {
@@ -1617,10 +1620,8 @@
 
         if (dnb) {
           successMessage = 'The selected VMs were set to not boot';
-          failedMessage = 'The selected VMs were unable to be set to not boot';
         } else {
           successMessage = 'The selected VMs were set to boot';
-          failedMessage = 'The selected VMs were unable to be set to boot';
         }
 
         let requestList = [];
@@ -1678,7 +1679,7 @@
       },
 
       downloadFile(exp_name, name, path) {
-        console.log('attempting to downlad file');
+        console.log('attempting to download file');
         const store = usePhenixStore();
         const basePath = import.meta.env.BASE_URL;
 

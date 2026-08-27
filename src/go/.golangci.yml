@@ -70,9 +70,9 @@ linters:
     - goheader # checks is file header matches to pattern
     - gomoddirectives # manages the use of 'replace', 'retract', and 'excludes' directives in go.mod
     - goprintffuncname # checks that printf-like functions are named with f at the end
-#   - gosec # inspects source code for security problems
+    #   - gosec # inspects source code for security problems
     - gosmopolitan # reports certain i18n/l10n anti-patterns in your Go codebase
-#   - govet # reports suspicious constructs, such as Printf calls whose arguments do not align with the format string
+    #   - govet # reports suspicious constructs, such as Printf calls whose arguments do not align with the format string
     - grouper # analyzes expression groups
     - iface # checks the incorrect use of interfaces, helping developers avoid interface pollution
     - importas # enforces consistent import aliases
@@ -90,12 +90,12 @@ linters:
     - modernize # suggests simplifications to Go code, using modern language and library features
     - musttag # enforces field tags in (un)marshaled structs
     - nakedret # finds naked returns in functions greater than a specified function length
-#   - nestif # reports deeply nested if statements
+    #   - nestif # reports deeply nested if statements
     - nilerr # finds the code that returns nil even if it checks that the error is not nil
     - nilnesserr # reports that it checks for err != nil, but it returns a different nil value error (powered by nilness and nilerr)
     - nilnil # checks that there is no simultaneous return of nil error and an invalid value
     - noctx # finds sending http request without context.Context
-#   - noinlineerr # disallows inline error handling `if err := ...; err != nil {`
+    #   - noinlineerr # disallows inline error handling `if err := ...; err != nil {`
     - nolintlint # reports ill-formed or insufficient nolint directives
     - nonamedreturns # reports all named returns
     - nosprintfhostport # checks for misuse of Sprintf to construct a host with port in a URL
@@ -105,14 +105,14 @@ linters:
     - promlinter # checks Prometheus metrics naming via promlint
     - protogetter # reports direct reads from proto message fields when getters should be used
     - reassign # checks that package variables are not reassigned
-#   - recvcheck # checks for receiver type consistency
-#   - revive # fast, configurable, extensible, flexible, and beautiful linter for Go, drop-in replacement of golint
+    #   - recvcheck # checks for receiver type consistency
+    #   - revive # fast, configurable, extensible, flexible, and beautiful linter for Go, drop-in replacement of golint
     - rowserrcheck # checks whether Err of rows is checked successfully
-#   - sloglint # ensure consistent code style when using log/slog
+    #   - sloglint # ensure consistent code style when using log/slog
     - spancheck # checks for mistakes with OpenTelemetry/Census spans
     - sqlclosecheck # checks that sql.Rows and sql.Stmt are closed
     - staticcheck # is a go vet on steroids, applying a ton of static analysis checks
-#   - tagliatelle # checks the struct tags
+    #   - tagliatelle # checks the struct tags
     - testableexamples # checks if examples are testable (have an expected output)
     - testifylint # checks usage of github.com/stretchr/testify
     - thelper # detects golang test helpers without t.Helper() call and checks the consistency of test helpers
@@ -125,7 +125,7 @@ linters:
     - usetesting # reports uses of functions with replacement inside the testing package
     - wastedassign # finds wasted assignment statements
     - whitespace # detects leading and trailing whitespace
-#   - wrapcheck # checks that errors returned from external packages are wrapped
+    #   - wrapcheck # checks that errors returned from external packages are wrapped
     - zerologlint # detects the wrong usage of zerolog that a user forgets to dispatch zerolog.Event
 
 
@@ -291,6 +291,13 @@ linters:
         # Require proper doc links to standard library declarations where applicable.
         # https://github.com/godoc-lint/godoc-lint?tab=readme-ov-file#require-stdlib-doclink
         - require-stdlib-doclink
+
+    gomoddirectives:
+      # Allow local `replace` directives.
+      # Needed for examples/go/go.mod, which replaces the phenix module with
+      # a local path so the example app can build against this repository.
+      # Default: false
+      replace-local: true
 
     govet:
       # Enable all analyzers.

@@ -14,7 +14,10 @@ import (
 	"phenix/web/util"
 )
 
-const brokerChannelBuffer = 1024
+const (
+	brokerChannelBuffer = 1024
+	triggerStateError   = "error"
+)
 
 var (
 	clients    = make(map[*Client]bool)                     //nolint:gochecknoglobals // global state
@@ -46,16 +49,16 @@ func Start() {
 				resource.Name = trigger.Resource
 			}
 
-			if trigger.State == "error" {
+			if trigger.State == triggerStateError {
 				var (
 					humanized *putil.HumanizedError
 					result    []byte
 				)
 
 				if errors.As(trigger.Error, &humanized) {
-					result, _ = json.Marshal(map[string]any{"error": humanized.Humanized()})
+					result, _ = json.Marshal(map[string]any{triggerStateError: humanized.Humanized()})
 				} else {
-					result, _ = json.Marshal(map[string]any{"error": trigger.Error.Error()})
+					result, _ = json.Marshal(map[string]any{triggerStateError: trigger.Error.Error()})
 				}
 
 				broadcast <- bt.Publish{RequestPolicy: policy, Resource: resource, Result: result}

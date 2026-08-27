@@ -182,7 +182,7 @@ func (v VMs) SortBy(col string, asc bool) {
 	switch col {
 	case "name":
 		v.SortByName(asc)
-	case "host":
+	case hostColumn:
 		v.SortByHost(asc)
 	case "uptime":
 		v.SortByUptime(asc)

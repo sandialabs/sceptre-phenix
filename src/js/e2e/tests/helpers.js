@@ -12,7 +12,9 @@ function attachCapture(page, issues) {
       });
     }
   });
-  page.on('pageerror', (err) => issues.push({ kind: 'pageerror', text: String(err) }));
+  page.on('pageerror', (err) =>
+    issues.push({ kind: 'pageerror', text: String(err) }),
+  );
   page.on('response', (resp) => {
     if (resp.status() >= 400) {
       issues.push({
@@ -24,7 +26,10 @@ function attachCapture(page, issues) {
   page.on('requestfailed', (req) => {
     const f = req.failure();
     if (f && f.errorText !== 'net::ERR_ABORTED') {
-      issues.push({ kind: 'requestfailed', text: req.method() + ' ' + req.url() + ' -> ' + f.errorText });
+      issues.push({
+        kind: 'requestfailed',
+        text: req.method() + ' ' + req.url() + ' -> ' + f.errorText,
+      });
     }
   });
 }
@@ -41,7 +46,11 @@ async function settle(page, ms = 2500) {
 function fatalOf(issues) {
   return issues.filter((i) => {
     if (i.kind !== 'pageerror' && i.kind !== 'console-error') return false;
-    if (/^Failed to load resource/.test(i.text) && (i.loc || '').includes('/api/')) return false;
+    if (
+      /^Failed to load resource/.test(i.text) &&
+      (i.loc || '').includes('/api/')
+    )
+      return false;
     return true;
   });
 }

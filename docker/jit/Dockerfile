@@ -10,12 +10,12 @@ ARG PHENIX_BRANCH
 
 # Install Node.js
 ENV NODE_VERSION=24.16.0
-RUN wget -O node.txz https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz \
+RUN wget --progress=dot:giga -O node.txz https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz \
   && tar -xJf node.txz -C /usr/local --strip-components=1 --no-same-owner && rm node.txz \
   && ln -s /usr/local/bin/node /usr/local/bin/nodejs
 
 # Install Redocly CLI globally for building API docs
-RUN npm install -g @redocly/cli && npm cache clean --force
+RUN npm install -g @redocly/cli@2.48.0 && npm cache clean --force
 
 RUN git clone --branch ${PHENIX_BRANCH} https://github.com/${PHENIX_REPO}.git /usr/local/src/phenix \
   && mkdir -p /opt/phenix/web \

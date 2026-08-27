@@ -2,7 +2,7 @@ import { usePhenixStore } from '@/store.js';
 import { NotificationProgrammatic as Notification } from 'buefy';
 
 export async function useErrorNotification(error) {
-  let message = null;
+  let message;
   console.warn('Error', error);
   if (!('response' in error)) {
     message = error.message;

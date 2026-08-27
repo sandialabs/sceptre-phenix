@@ -2,7 +2,7 @@
   "singleQuote": true,
   "semi": true,
   "printWidth": 80,
+  "tabWidth": 2,
   "vueIndentScriptAndStyle": true,
-  "bracketSameLine": true,
-  "jsxBracketSameLine": true
+  "bracketSameLine": true
 }

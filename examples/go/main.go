@@ -14,6 +14,11 @@ import (
 
 const minArgs = 2
 
+const (
+	stageRunning   = "running"
+	annotationTrue = "true"
+)
+
 func main() {
 	logger := setupLogging()
 
@@ -137,7 +142,7 @@ func executeStage(stage string, exp *types.Experiment, inputLen int, logger *slo
 		logger.Info("executing pre-start checks")
 	case "post-start":
 		logger.Info("executing post-start tasks")
-	case "running":
+	case stageRunning:
 		logger.Info("running application logic")
 		// Example of structured logging with extra fields
 		logger.Debug("detailed debug info",
@@ -174,7 +179,7 @@ func addAnnotation(input []byte) ([]byte, error) {
 		}
 
 		if annotations, ok := metadata["annotations"].(map[string]any); ok {
-			annotations["example-go-processed"] = "true"
+			annotations["example-go-processed"] = annotationTrue
 		}
 	}
 

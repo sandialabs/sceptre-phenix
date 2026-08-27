@@ -126,7 +126,7 @@ func Get(expName, statusFilter string) (*Network, error) { //nolint:funlen // co
 		// Unless it is a member of the ignore list
 		var vlanIgnoreList = []string{
 			"MGMT",
-			"MIRROR", // default in mirror app https://github.com/sandialabs/sceptre-phenix-apps/blob/main/src/go/cmd/phenix-app-mirror/types.go#L56
+			"MIRROR", // default in mirror app https://github.com/sandialabs/sceptre-phenix-apps/blob/92c1e8c5fd48b5da2c333aad26d13803d7e25e9d/src/go/cmd/phenix-app-mirror/types.go#L56
 		}
 
 		for _, vmIface := range vm.Networks {

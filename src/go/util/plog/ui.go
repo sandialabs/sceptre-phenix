@@ -48,7 +48,7 @@ func (h uiHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 
 	r.Attrs(func(attr slog.Attr) bool {
-		if attr.Key == "type" {
+		if attr.Key == logAttrType {
 			logtype = attr.Value.String()
 		} else if _, ok := logKeysIgnored[attr.Key]; !ok {
 			attrs = append(attrs, fmt.Sprintf("%s=%v", attr.Key, attr.Value.Any()))

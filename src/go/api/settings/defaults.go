@@ -17,42 +17,47 @@ const (
 	DefaultLogMaxFileAge     = 90
 	DefaultTimeoutMin        = 30
 	DefaultWarningMin        = 3
+	settingCategoryPassword  = "Password"
+	settingCategoryLogging   = "Logging"
+	settingCategoryTimeout   = "Timeout"
+	settingAPIVersion        = "phenix.sandia.gov/v2"
+	settingKind              = "Setting"
 )
 
 var DefaultSettings = []v2.Setting{ //nolint:gochecknoglobals // global constant
 	{
-		Category: "Password",
+		Category: settingCategoryPassword,
 		Name:     "NumberReq",
 		Type:     v2.SettingValueBool,
 		Value:    strconv.FormatBool(true),
 	},
 	{
-		Category: "Password",
+		Category: settingCategoryPassword,
 		Name:     "SymbolReq",
 		Type:     v2.SettingValueBool,
 		Value:    strconv.FormatBool(true),
 	},
 	{
-		Category: "Password",
+		Category: settingCategoryPassword,
 		Name:     "LowercaseReq",
 		Type:     v2.SettingValueBool,
 		Value:    strconv.FormatBool(true),
 	},
 	{
-		Category: "Password",
+		Category: settingCategoryPassword,
 		Name:     "UppercaseReq",
 		Type:     v2.SettingValueBool,
 		Value:    strconv.FormatBool(false),
 	},
-	{Category: "Password", Name: "MinLength", Type: v2.SettingValueInt, Value: formatInt(DefaultPasswordMinLength)},
+	{Category: settingCategoryPassword, Name: "MinLength", Type: v2.SettingValueInt, Value: formatInt(DefaultPasswordMinLength)},
 
-	{Category: "Timeout", Name: "Enabled", Type: v2.SettingValueBool, Value: strconv.FormatBool(false)},
-	{Category: "Timeout", Name: "TimeoutMin", Type: v2.SettingValueFloat, Value: formatFloat(DefaultTimeoutMin)},
-	{Category: "Timeout", Name: "WarningMin", Type: v2.SettingValueFloat, Value: formatFloat(DefaultWarningMin)},
+	{Category: settingCategoryTimeout, Name: "Enabled", Type: v2.SettingValueBool, Value: strconv.FormatBool(false)},
+	{Category: settingCategoryTimeout, Name: "TimeoutMin", Type: v2.SettingValueFloat, Value: formatFloat(DefaultTimeoutMin)},
+	{Category: settingCategoryTimeout, Name: "WarningMin", Type: v2.SettingValueFloat, Value: formatFloat(DefaultWarningMin)},
 
-	{Category: "Logging", Name: "MaxFileRotations", Type: v2.SettingValueInt, Value: formatInt(0)},
-	{Category: "Logging", Name: "MaxFileSize", Type: v2.SettingValueInt, Value: formatInt(DefaultLogMaxFileSize)},
-	{Category: "Logging", Name: "MaxFileAge", Type: v2.SettingValueInt, Value: formatInt(DefaultLogMaxFileAge)},
+	{Category: settingCategoryLogging, Name: "MaxFileRotations", Type: v2.SettingValueInt, Value: formatInt(0)},
+	{Category: settingCategoryLogging, Name: "MaxFileSize", Type: v2.SettingValueInt, Value: formatInt(DefaultLogMaxFileSize)},
+	{Category: settingCategoryLogging, Name: "MaxFileAge", Type: v2.SettingValueInt, Value: formatInt(DefaultLogMaxFileAge)},
 }
 
 func GetDefault(category, name string) (v2.Setting, bool) {
@@ -71,8 +76,8 @@ func SetDefaults() error {
 		settingName := GetStoreName(spec.Category, spec.Name)
 
 		c := store.Config{ //nolint:exhaustruct // partial initialization
-			Version: "phenix.sandia.gov/v2",
-			Kind:    "Setting",
+			Version: settingAPIVersion,
+			Kind:    settingKind,
 			Metadata: store.ConfigMetadata{ //nolint:exhaustruct // partial initialization
 				Name: settingName,
 			},
@@ -101,8 +106,8 @@ func setMissingDefaults(existing []types.Setting) ([]types.Setting, error) {
 		settingName := GetStoreName(spec.Category, spec.Name)
 
 		c := store.Config{ //nolint:exhaustruct // partial initialization
-			Version: "phenix.sandia.gov/v2",
-			Kind:    "Setting",
+			Version: settingAPIVersion,
+			Kind:    settingKind,
 			Metadata: store.ConfigMetadata{ //nolint:exhaustruct // partial initialization
 				Name: settingName,
 			},

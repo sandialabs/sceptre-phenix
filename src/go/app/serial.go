@@ -40,7 +40,7 @@ func (Serial) Configure(ctx context.Context, exp *types.Experiment) error {
 
 		// Loop through interface type to see if any of the interfaces are serial.
 		for _, iface := range node.Network().Interfaces() {
-			if iface.Type() == "serial" {
+			if iface.Type() == appNameSerial {
 				serial = true
 
 				break
@@ -89,7 +89,7 @@ func (Serial) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 		// Loop through interface type to see if any of the interfaces are serial.
 		for _, iface := range node.Network().Interfaces() {
-			if iface.Type() == "serial" {
+			if iface.Type() == appNameSerial {
 				serial = append(serial, iface)
 			}
 		}

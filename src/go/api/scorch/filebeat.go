@@ -12,7 +12,11 @@ import (
 	"phenix/api/scorch/scorchmd"
 )
 
-const yamlIndent = 2
+const (
+	yamlIndent       = 2
+	filebeatStartKey = "s_time"
+	filebeatNameKey  = "name"
+)
 
 type filebeatMetrics struct {
 	Started int `json:"filebeat.harvester.started"`
@@ -119,7 +123,7 @@ func mergeFilebeatConfig(
 	c["fields_under_root"] = true
 
 	fields := map[string]any{
-		"s_time":            start.Format(time.RubyDate),
+		filebeatStartKey:    start.Format(time.RubyDate),
 		"scorch.experiment": expName,
 		"scorch.run_id":     runID,
 		"scorch.runtime":    start.Format(time.RubyDate),
@@ -134,14 +138,14 @@ func mergeFilebeatConfig(
 	c["processors"] = []map[string]any{
 		{
 			"timestamp": map[string]any{
-				"field":        "s_time",
+				"field":        filebeatStartKey,
 				"layouts":      []string{"Mon Jan 02 15:04:05 -0700 2006"},
 				"target_field": "scorch.start_time",
 			},
 		},
 		{
 			"drop_fields": map[string]any{
-				"fields": []string{"s_time"},
+				"fields": []string{filebeatStartKey},
 			},
 		},
 	}
@@ -154,10 +158,10 @@ func mergeFilebeatConfig(
 	c["logging.to_files"] = true
 
 	c["logging.files"] = map[string]any{
-		"path":       filepath.Join(runDir, "filebeat"),
-		"name":       "filebeat.log",
-		"keepfiles":  "7",
-		"permission": "0644",
+		"path":          filepath.Join(runDir, "filebeat"),
+		filebeatNameKey: "filebeat.log",
+		"keepfiles":     "7",
+		"permission":    "0644",
 	}
 
 	var inputs []any
