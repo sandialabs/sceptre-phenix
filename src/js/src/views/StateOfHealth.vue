@@ -16,7 +16,8 @@
               <li
                 v-for="k in Object.keys(detailsModal.tags).filter((k) =>
                   k.startsWith('__notes_'),
-                )">
+                )"
+                :key="k">
                 <p style="white-space: pre-line">
                   {{ detailsModal.tags[k] }}
                 </p>
@@ -756,6 +757,8 @@
                 break;
               }
             }
+
+            break;
           }
 
           case 'experiment/apps': {
@@ -767,17 +770,18 @@
               case 'triggered': {
                 if (msg.result && msg.result.app && msg.result.app === 'soh') {
                   this.sohRunning = true;
-                  break;
                 }
+
+                break;
               }
 
               case 'triggerSuccess': {
                 if (msg.result && msg.result.app && msg.result.app === 'soh') {
                   this.resetNetwork();
                   this.sohRunning = false;
-
-                  break;
                 }
+
+                break;
               }
 
               case 'triggerError': {
@@ -788,11 +792,13 @@
                   });
 
                   this.sohRunning = false;
-
-                  break;
                 }
+
+                break;
               }
             }
+
+            break;
           }
 
           case 'experiment/vm': {
@@ -1157,7 +1163,7 @@
 
       color(d) {
         const scale = d3.scaleOrdinal(d3.schemeCategory10);
-        return (d) => scale(d.group);
+        return scale(d);
       },
 
       drag(simulation) {

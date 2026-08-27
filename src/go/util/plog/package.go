@@ -73,6 +73,8 @@ func With(args ...any) *slog.Logger {
 type LogType string
 
 // Keep in sync with Log.vue.
+const logAttrType = "type"
+
 const (
 	TypeSecurity  LogType = "SECURITY"
 	TypeSoh       LogType = "SOH"
@@ -90,7 +92,7 @@ func Log(l slog.Level, t LogType, msg string, args ...any) {
 		return
 	}
 
-	logger.Log(context.Background(), l, msg, append([]any{"type", t}, args...)...)
+	logger.Log(context.Background(), l, msg, append([]any{logAttrType, t}, args...)...)
 }
 
 func Debug(t LogType, msg string, args ...any) {

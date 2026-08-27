@@ -36,7 +36,7 @@ func TestAddAnnotation(t *testing.T) {
 	meta := result["metadata"].(map[string]any)
 	annotations := meta["annotations"].(map[string]any)
 
-	if annotations["example-go-processed"] != "true" {
+	if annotations["example-go-processed"] != annotationTrue {
 		t.Errorf(
 			"expected annotation 'example-go-processed' to be 'true', got %v",
 			annotations["example-go-processed"],
@@ -76,7 +76,7 @@ func TestAddAnnotation_MissingMetadata(t *testing.T) {
 		t.Fatal("expected annotations to be created")
 	}
 
-	if annotations["example-go-processed"] != "true" {
+	if annotations["example-go-processed"] != annotationTrue {
 		t.Errorf(
 			"expected annotation 'example-go-processed' to be 'true', got %v",
 			annotations["example-go-processed"],
@@ -118,7 +118,7 @@ func TestPanicRecovery(t *testing.T) {
 
 func TestLogLevelDebug(t *testing.T) {
 	if os.Getenv("TEST_LOG_LEVEL_DEBUG") == "1" {
-		os.Args = []string{"app", "running"} //nolint:reassign // test pattern
+		os.Args = []string{"app", stageRunning} //nolint:reassign // test pattern
 		main()
 		return
 	}
@@ -147,7 +147,7 @@ func TestLogLevelDebug(t *testing.T) {
 
 func TestLogJSONFormat(t *testing.T) {
 	if os.Getenv("TEST_LOG_JSON") == "1" {
-		os.Args = []string{"app", "running"} //nolint:reassign // test pattern
+		os.Args = []string{"app", stageRunning} //nolint:reassign // test pattern
 		main()
 		return
 	}
@@ -180,7 +180,7 @@ func TestLogJSONFormat(t *testing.T) {
 
 func TestLogFile(t *testing.T) {
 	if os.Getenv("TEST_LOG_FILE") == "1" {
-		os.Args = []string{"app", "running"} //nolint:reassign // test pattern
+		os.Args = []string{"app", stageRunning} //nolint:reassign // test pattern
 		main()
 		return
 	}

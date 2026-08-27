@@ -55,10 +55,10 @@ var (
 	apps = make(map[string]AppFactory) //nolint:gochecknoglobals // global registry
 
 	defaultApps = map[string]struct{}{ //nolint:gochecknoglobals // global constant
-		"ntp":     {},
-		"serial":  {},
-		"startup": {},
-		"vrouter": {},
+		appNameNTP:     {},
+		appNameSerial:  {},
+		appNameStartup: {},
+		"vrouter":      {},
 	}
 )
 
@@ -66,9 +66,9 @@ var ErrUserAppAlreadyRegistered = errors.New("user app already registered")
 
 func init() { //nolint:gochecknoinits // app registration
 	// Default apps (always run)
-	apps["ntp"] = func() App { return new(NTP) }
-	apps["serial"] = func() App { return new(Serial) }
-	apps["startup"] = func() App { return new(Startup) }
+	apps[appNameNTP] = func() App { return new(NTP) }
+	apps[appNameSerial] = func() App { return new(Serial) }
+	apps[appNameStartup] = func() App { return new(Startup) }
 	apps["vrouter"] = func() App { return new(Vrouter) }
 
 	// External user apps

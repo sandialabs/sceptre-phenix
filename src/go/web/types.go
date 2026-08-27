@@ -108,7 +108,7 @@ func resourceNamesFromRBAC(r rbac.Role) []string {
 		var skip bool
 
 		for _, pn := range p.Resources {
-			if pn == "disks" || pn == "hosts" || pn == "users" {
+			if pn == "disks" || pn == "hosts" || pn == resourceUsers {
 				skip = true
 
 				break

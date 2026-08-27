@@ -25,7 +25,9 @@ import (
 //go:embed default
 var defaultFS embed.FS
 
-var AllKinds = []string{"Topology", "Scenario", "Experiment", "Image", "User", "Role"} //nolint:gochecknoglobals // global constant
+const kindExperiment = "Experiment"
+
+var AllKinds = []string{"Topology", "Scenario", kindExperiment, "Image", "User", "Role"} //nolint:gochecknoglobals // global constant
 
 var NameRegex = regexp.MustCompile(`^[a-zA-Z0-9_@.-]*$`)
 
@@ -231,7 +233,7 @@ func List(which string) (store.Configs, error) {
 	case "scenario":
 		configs, err = store.List("Scenario")
 	case "experiment":
-		configs, err = store.List("Experiment")
+		configs, err = store.List(kindExperiment)
 	case "image":
 		configs, err = store.List("Image")
 	case "user":
@@ -397,7 +399,7 @@ func Edit(name string, force bool) (*store.Config, error) {
 
 	var expName string
 
-	if c.Kind == "Experiment" {
+	if c.Kind == kindExperiment {
 		var exp *types.Experiment
 		exp, err = types.DecodeExperimentFromConfig(*c)
 		if err != nil {
@@ -429,7 +431,7 @@ func Edit(name string, force bool) (*store.Config, error) {
 		return nil, fmt.Errorf("unmarshaling config as YAML: %w", err)
 	}
 
-	if c.Kind == "Experiment" {
+	if c.Kind == kindExperiment {
 		c.Spec["experimentName"] = expName
 	}
 

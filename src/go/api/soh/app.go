@@ -249,7 +249,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 		s.nodes[host] = node
 
 		if skip(node, s.md.SkipHosts) {
-			logger.Debug("skipping host per config", "host", host)
+			logger.Debug("skipping host per config", hostKey, host)
 
 			continue
 		}
@@ -280,7 +280,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 				go func(idx int, iface ifaces.NodeNetworkInterface) {
 					defer wg.Done()
 
-					logger.Debug("waiting for DHCP address", "host", host)
+					logger.Debug("waiting for DHCP address", hostKey, host)
 
 					timer := time.After(s.md.c2Timeout)
 
@@ -291,7 +291,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 						case <-timer:
 							wg.AddError(
 								errors.New("time expired waiting for DHCP details from minimega"),
-								map[string]any{"host": host},
+								map[string]any{hostKey: host},
 							)
 
 							return
@@ -301,7 +301,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 							if vms == nil {
 								wg.AddError(
 									errors.New("unable to get DHCP details from minimega"),
-									map[string]any{"host": host},
+									map[string]any{hostKey: host},
 								)
 
 								return
@@ -327,7 +327,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 
 								wg.AddSuccess(
 									fmt.Sprintf("IP %s configured via DHCP", addrs[idx]),
-									map[string]any{"host": host},
+									map[string]any{hostKey: host},
 								)
 
 								return
@@ -347,7 +347,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 			s.gatherNodeIPs(node)
 
 			cidr := fmt.Sprintf("%s/%d", iface.Address(), iface.Mask())
-			logger.Debug("waiting for IP on host to be set", "host", host, "ip", cidr)
+			logger.Debug("waiting for IP on host to be set", hostKey, host, "ip", cidr)
 
 			s.isNetworkingConfigured(ctx, wg, ns, node, iface)
 		}
@@ -373,7 +373,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	for _, state := range wg.States {
-		host, _ := state.Meta["host"].(string)
+		host, _ := state.Meta[hostKey].(string)
 
 		st := State{ //nolint:exhaustruct // partial initialization
 			Metadata:  state.Meta,
@@ -382,7 +382,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 
 		err := state.Err
 		if err != nil {
-			logger.Error("[✗] failed to confirm networking", "host", host, "err", err)
+			logger.Error("[✗] failed to confirm networking", hostKey, host, "err", err)
 
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
 				delete(s.c2Hosts, host)

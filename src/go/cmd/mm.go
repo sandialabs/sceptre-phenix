@@ -38,7 +38,7 @@ func newMMCmd() *cobra.Command {
 
 			mm, err := miniclient.Dial(common.MinimegaBase)
 			if err != nil {
-				return util.HumanizeError(err, "Unable to conect to minimega").Humanized()
+				return util.HumanizeError(err, "Unable to connect to minimega").Humanized()
 			}
 
 			mm.Pager = new(noPager)

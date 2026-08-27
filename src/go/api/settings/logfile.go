@@ -33,7 +33,7 @@ func GetLoggingSettingsFromList(settings []types.Setting) (LoggingSettings, erro
 		category := setting.Spec.Category
 		name := setting.Spec.Name
 
-		if category != "Logging" {
+		if category != settingCategoryLogging {
 			continue
 		}
 
@@ -80,7 +80,7 @@ func UpdateLoggingSettings(newSettings LoggingSettings) error {
 		updated bool
 	)
 
-	updated, err = Update("Logging", "MaxFileRotations", formatInt(newSettings.MaxFileRotations))
+	updated, err = Update(settingCategoryLogging, "MaxFileRotations", formatInt(newSettings.MaxFileRotations))
 	if err != nil {
 		return fmt.Errorf("error updating Logging.MaxFileRotations: %w", err)
 	}
@@ -89,7 +89,7 @@ func UpdateLoggingSettings(newSettings LoggingSettings) error {
 		plog.ChangeMaxLogFileBackups(int(newSettings.MaxFileRotations))
 	}
 
-	updated, err = Update("Logging", "MaxFileSize", formatInt(newSettings.MaxFileSize))
+	updated, err = Update(settingCategoryLogging, "MaxFileSize", formatInt(newSettings.MaxFileSize))
 	if err != nil {
 		return fmt.Errorf("error updating Logging.MaxFileSize: %w", err)
 	}
@@ -98,7 +98,7 @@ func UpdateLoggingSettings(newSettings LoggingSettings) error {
 		plog.ChangeMaxLogFileSize(int(newSettings.MaxFileSize))
 	}
 
-	updated, err = Update("Logging", "MaxFileAge", formatInt(newSettings.MaxFileAge))
+	updated, err = Update(settingCategoryLogging, "MaxFileAge", formatInt(newSettings.MaxFileAge))
 	if err != nil {
 		return fmt.Errorf("error updating Logging.MaxFileAge: %w", err)
 	}

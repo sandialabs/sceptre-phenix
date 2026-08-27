@@ -972,7 +972,7 @@
               </section>
             </template>
             <b-table-column field="multiselect" label="">
-              <template v-slot:header="{ column }">
+              <template v-slot:header>
                 <b-tooltip label="Select/Unselect All" type="is-dark">
                   <b-checkbox v-model="checkAll"></b-checkbox>
                 </b-tooltip>
@@ -1544,6 +1544,9 @@
         return this.activeTab == 2 ? this.vncZoom * 50 : 200;
       },
 
+      // Intentionally restores the persisted pagination toggle as a side
+      // effect on first access.
+      /* eslint-disable vue/no-side-effects-in-computed-properties */
       paginationNeeded() {
         var user = usePhenixStore().username;
 
@@ -1573,6 +1576,7 @@
           return true;
         }
       },
+      /* eslint-enable vue/no-side-effects-in-computed-properties */
 
       isMultiVmSelected() {
         if (
@@ -1770,6 +1774,8 @@
                 break;
               }
             }
+
+            break;
           }
 
           case 'experiment/vms': {
@@ -1908,7 +1914,7 @@
                   message: 'Redeployed ' + vm[1],
                   type: 'is-success',
                 });
-                var i = 0;
+                var i;
                 for (i = 0; this.redeployModal.actionsQueue.length; i++) {
                   if (this.redeployModal.actionsQueue[i].name == vm[1]) {
                     break;
@@ -2016,7 +2022,7 @@
 
                 for (let i = 0; i < vms.length; i++) {
                   if (vms[i].name == vm[1]) {
-                    vms[i].busy = true; //incase committing message is missed
+                    vms[i].busy = true; //in case committing message is missed
                     vms[i].percent = percent;
                     this.experiment.vms = [...vms];
 
@@ -2086,7 +2092,7 @@
                 let percent = Math.round(msg.result.percent * 100);
                 for (let i = 0; i < vms.length; i++) {
                   if (vms[i].name == vm[1]) {
-                    vms[i].busy = true; //incase committing message is missed
+                    vms[i].busy = true; //in case committing message is missed
                     vms[i].percent = percent;
                     this.experiment.vms = [...vms];
                     break;
@@ -2612,7 +2618,7 @@
         name.forEach((arg) => {
           for (let i = 0; i < vms.length; i++) {
             if (vms[i].name == arg) {
-              var filename = '';
+              var filename;
               if (/(.*)_\d{14}/.test(vms[i].disk)) {
                 filename =
                   vms[i].disk.substring(0, vms[i].disk.indexOf('_')) +
@@ -2739,7 +2745,6 @@
       createMemorySnapshot(vm) {
         this.memorySnapshotModal.active = false;
         let url = '';
-        let name = '';
         let body = '';
         vm.forEach((arg) => {
           url =
@@ -2749,7 +2754,6 @@
             arg.name +
             '/memorySnapshot';
           body = { filename: arg.filename + '.elf' };
-          name = arg.name;
 
           axiosInstance.post(url, body, { timeout: 0 }).catch((err) => {
             useErrorNotification(err);
@@ -3393,7 +3397,6 @@
       redeployVm(vms) {
         let body = '';
         let postUrl = '';
-        let name = '';
 
         vms.forEach((vm, _) => {
           body = {
@@ -3931,7 +3934,7 @@
       },
 
       downloadFile(exp_name, name, path) {
-        console.log('attempting to downlad file');
+        console.log('attempting to download file');
         const store = usePhenixStore();
         const basePath = import.meta.env.BASE_URL;
 

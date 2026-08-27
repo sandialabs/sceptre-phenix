@@ -16,17 +16,19 @@ import (
 
 var ErrInvalidKind = errors.New("invalid kind")
 
+const kindExperiment = "Experiment"
+
 // StoredVersion tracks the latest stored version of each config kind.
 var StoredVersion = map[string]string{ //nolint:gochecknoglobals // global registry
-	"Topology":   "v1",
-	"Scenario":   "v2",
-	"Experiment": "v1",
-	"Image":      "v1",
-	"User":       "v1",
-	"Role":       "v1",
-	"Node":       "v1",
-	"Ruleset":    "v1",
-	"Setting":    "v2",
+	"Topology":     "v1",
+	"Scenario":     "v2",
+	kindExperiment: "v1",
+	"Image":        "v1",
+	"User":         "v1",
+	"Role":         "v1",
+	"Node":         "v1",
+	"Ruleset":      "v1",
+	"Setting":      "v2",
 }
 
 const LATEST_VERSION = "v2" //nolint:staticcheck // constant name is part of API
@@ -64,7 +66,7 @@ func GetVersionedSpecForKind(kind, version string) (any, error) {
 		default:
 			return nil, fmt.Errorf("unknown version %s for %s", version, kind)
 		}
-	case "Experiment":
+	case kindExperiment:
 		switch version {
 		case "v1":
 			return new(v1.ExperimentSpec), nil
@@ -94,7 +96,7 @@ func GetVersionedSpecForKind(kind, version string) (any, error) {
 // and version.
 func GetVersionedStatusForKind(kind, version string) (any, error) {
 	switch kind {
-	case "Experiment":
+	case kindExperiment:
 		switch version {
 		case "v1":
 			return new(v1.ExperimentStatus), nil

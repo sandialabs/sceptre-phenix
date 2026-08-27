@@ -1,5 +1,9 @@
-.PHONY: all build check clean clean-venv example-go example-python format help install-dev lint run run-go run-python test
+.PHONY: all build clean clean-venv example-go example-python help install-dev run run-go run-python test
 .DEFAULT_GOAL := help
+
+# NOTE: Linting/formatting (golangci-lint for go/, ruff for python/)
+# is handled by `prek` from the repository root, not by this Makefile.
+# Run `make lint` (or `prek run --all-files`) from the repo root.
 
 GO ?= go
 SYSTEM_PYTHON ?= python3
@@ -7,12 +11,8 @@ VENV := .venv
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
-FLAKE8 := $(VENV)/bin/flake8
-BLACK := $(VENV)/bin/black
-# Use golangci-lint from PATH if available, otherwise use the one installed by src/go
-GOLANGCI_LINT ?= $(shell command -v golangci-lint 2> /dev/null || echo $(abspath ../src/go/bin/golangci-lint))
 
-all: format lint test run
+all: test run
 
 # Define a helper for checking command existence
 check-command = @if ! command -v $(1) > /dev/null; then \
@@ -24,10 +24,7 @@ help:
 	@echo "Available targets:"
 	@echo ""
 	@echo "Development:"
-	@echo "  all            - Run all tools (format, lint, test, run)"
-	@echo "  check          - Run linters without fixing"
-	@echo "  format         - Format code (go fmt, black)"
-	@echo "  lint           - Run linters and fix issues"
+	@echo "  all            - Run tests and example apps"
 	@echo "  test           - Run tests for all examples"
 	@echo ""
 	@echo "Installation:"
@@ -105,26 +102,5 @@ clean-venv:
 	$(RM) -r $(VENV)
 
 install-dev: $(VENV)/bin/activate
-
-check: $(VENV)/bin/activate
-	@echo "Checking go example..."
-	$(call check-command,$(GOLANGCI_LINT),Please run 'make install-dev' from the root directory.)
-	cd go && $(GOLANGCI_LINT) run --config ../../src/go/.golangci.yml
-	@echo "Checking python example..."
-	$(FLAKE8) python/
-
-format: $(VENV)/bin/activate
-	@echo "Formatting go example..."
-	$(call check-command,$(GO),Please install Go 1.24+ or set GO variable)
-	cd go && $(GO) fmt ./...
-	@echo "Formatting python example..."
-	$(BLACK) python/
-
-lint: $(VENV)/bin/activate
-	@echo "Linting go example..."
-	$(call check-command,$(GOLANGCI_LINT),Please run 'make install-dev' from the root directory.)
-	cd go && $(GOLANGCI_LINT) run --config ../../src/go/.golangci.yml --fix
-	@echo "Linting python example..."
-	$(FLAKE8) python/
 
 test: example-go example-python

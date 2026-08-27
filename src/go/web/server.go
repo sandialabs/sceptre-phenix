@@ -26,6 +26,12 @@ type route struct {
 	methods []string
 }
 
+const (
+	resourceUsers = "users"
+	verbGet       = "get"
+	verbPatch     = "patch"
+)
+
 var o serverOptions //nolint:gochecknoglobals // global options
 
 func ConfigureUsers(users []string) error {
@@ -35,9 +41,9 @@ func ConfigureUsers(users []string) error {
 
 			// allow user to get their own user details
 			role.AddPolicy(
-				[]string{"users"},
+				[]string{resourceUsers},
 				[]string{user.Username()},
-				[]string{"get"},
+				[]string{verbGet},
 			)
 
 			_ = user.SetRole(role)

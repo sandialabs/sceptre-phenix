@@ -8,13 +8,13 @@ FROM $PHENIX_IMG
 ARG PHENIX_REPO
 ARG PHENIX_BRANCH
 
-ENV NODE_VERSION 24.16.0
+ENV NODE_VERSION=24.16.0
 
-RUN wget -O node.txz https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz \
+RUN wget --progress=dot:giga -O node.txz https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz \
   && tar -xJf node.txz -C /usr/local --strip-components=1 --no-same-owner && rm node.txz \
   && ln -s /usr/local/bin/node /usr/local/bin/nodejs
 
-RUN npm install -g @redocly/cli
+RUN npm install -g @redocly/cli@2.48.0
 RUN git clone --branch ${PHENIX_BRANCH} https://github.com/${PHENIX_REPO}.git /usr/local/src/phenix \
   && mkdir -p /opt/phenix/web \
   && cp -a /usr/local/src/phenix/src/go/web/public /opt/phenix/web

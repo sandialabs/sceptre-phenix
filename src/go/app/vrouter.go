@@ -25,6 +25,7 @@ import (
 const (
 	appNameVrouter    = "vrouter"
 	appNameNTP        = "ntp"
+	osTypeVyos        = "vyos"
 	ipsecSecretLength = 32
 )
 
@@ -204,7 +205,7 @@ func (v *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error {
 		// supported, just not here. Including os_type `linux` is for legacy
 		// support.
 		if !util.StringSliceContains(
-			[]string{"vyatta", "vyos", "linux"},
+			[]string{"vyatta", osTypeVyos, osLinux},
 			strings.ToLower(node.Hardware().OSType()),
 		) {
 			if strings.ToLower(node.Hardware().OSType()) != "minirouter" {
@@ -221,7 +222,7 @@ func (v *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error {
 			continue
 		}
 
-		if strings.EqualFold(node.Hardware().OSType(), "linux") {
+		if strings.EqualFold(node.Hardware().OSType(), osLinux) {
 			plog.Warn(
 				plog.TypePhenixApp,
 				"OS Type 'linux' for Node Type is deprecated; use 'vyatta', 'vyos', or 'minirouter' instead",
@@ -231,7 +232,7 @@ func (v *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error {
 		}
 
 		var (
-			isVyos       = strings.EqualFold(node.Hardware().OSType(), "vyos")
+			isVyos       = strings.EqualFold(node.Hardware().OSType(), osTypeVyos)
 			vrouterDir   = exp.Spec.BaseDir() + "/vrouter"
 			vyattaFile   = vrouterDir + "/" + node.General().Hostname() + ".boot"
 			vyattaConfig = "/opt/vyatta/etc/config/config.boot"
@@ -262,8 +263,8 @@ func (v *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error {
 		data := map[string]any{
 			"node":     node,
 			"ntp-addr": ntpAddr,
-			"vyos":     isVyos,
-			"passwd":   "vyos", // will only be used if `isVyos` is true
+			osTypeVyos: isVyos,
+			"passwd":   osTypeVyos, // will only be used if `isVyos` is true
 		}
 
 		if passwd, ok := node.GetAnnotation("vrouter/vyos-password"); ok {

@@ -27,6 +27,7 @@ import (
 )
 
 const (
+	appName              = "phenix"
 	configDir            = "/etc/phenix"
 	defaultMaxLogSize    = 100
 	defaultMaxLogBackups = 3
@@ -44,7 +45,7 @@ var (
 
 //nolint:gochecknoglobals // root command
 var rootCmd = &cobra.Command{
-	Use:   "phenix",
+	Use:   appName,
 	Short: "A cli application for phēnix",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		common.UnixSocket = getEffectiveString( //nolint:reassign // configuration injection
@@ -243,7 +244,7 @@ func init() {
 		defaultLogPath = "/var/log/phenix/phenix.log"
 		defaultStore = "bolt:///etc/phenix/store.bdb"
 	} else {
-		defaultConfigDir = filepath.Join(home, ".config", "phenix")
+		defaultConfigDir = filepath.Join(home, ".config", appName)
 		defaultLogPath = filepath.Join(home, "phenix_logs", "phenix.log")
 		defaultStore = fmt.Sprintf("bolt://%s/.phenix.bdb", home)
 	}
@@ -490,7 +491,7 @@ func sudoRanPhenix() bool {
 		return true
 	}
 
-	return name == "phenix"
+	return name == appName
 }
 
 // getEffectiveString returns the configuration value with the following precedence:

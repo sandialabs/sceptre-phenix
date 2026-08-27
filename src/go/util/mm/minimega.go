@@ -30,9 +30,11 @@ var (
 	ErrScreenshotNotFound = errors.New("screenshot not found")
 )
 
-const (
-	vmInfoCmd = "vm info"
+const vmInfoCmd = "vm info"
 
+const (
+	hostColumn             = "host"
+	stateColumn            = "state"
 	c2ActiveCheckInterval  = 2 * time.Second
 	responseWaitInterval   = 1 * time.Second
 	responseRegexGroupUUID = 2
@@ -137,7 +139,7 @@ func (Minimega) GetLaunchProgress(ns string, expected int) (float64, error) {
 
 	if queued == 0 {
 		cmd.Command = vmInfoCmd
-		cmd.Columns = []string{"state"}
+		cmd.Columns = []string{stateColumn}
 
 		status := mmcli.RunTabular(cmd)
 
@@ -146,7 +148,7 @@ func (Minimega) GetLaunchProgress(ns string, expected int) (float64, error) {
 		}
 
 		for _, s := range status {
-			if s["state"] == "BUILDING" {
+			if s[stateColumn] == "BUILDING" {
 				queued++
 			}
 		}
@@ -165,9 +167,9 @@ func (m Minimega) GetVMInfo(opts ...Option) VMs { //nolint:funlen // complex log
 	cmd.Command = vmInfoCmd
 	cmd.Columns = []string{
 		"uuid",
-		"host",
+		hostColumn,
 		"name",
-		"state",
+		stateColumn,
 		"uptime",
 		"vlan",
 		"tap",
@@ -184,15 +186,16 @@ func (m Minimega) GetVMInfo(opts ...Option) VMs { //nolint:funlen // complex log
 		cmd.Filters = []string{"name=" + o.vm}
 	}
 
-	var vms VMs
+	status := mmcli.RunTabular(cmd)
+	vms := make(VMs, 0, len(status))
 
-	for _, row := range mmcli.RunTabular(cmd) {
+	for _, row := range status {
 		vm := VM{ //nolint:exhaustruct // partial initialization
 			UUID:     row["uuid"],
-			Host:     row["host"],
+			Host:     row[hostColumn],
 			Name:     row["name"],
-			State:    row["state"],
-			Running:  row["state"] == "RUNNING",
+			State:    row[stateColumn],
+			Running:  row[stateColumn] == "RUNNING",
 			CCActive: activeC2[row["uuid"]],
 			CdRom:    row["cdrom"],
 		}
@@ -253,8 +256,8 @@ func (m Minimega) GetVMInfo(opts ...Option) VMs { //nolint:funlen // complex log
 			cmd = mmcli.NewCommand()
 			cmd.Command = "disk info " + disk
 
-			if !IsHeadnode(row["host"]) {
-				cmd.Command = fmt.Sprintf("mesh send %s %s", row["host"], cmd.Command)
+			if !IsHeadnode(row[hostColumn]) {
+				cmd.Command = fmt.Sprintf("mesh send %s %s", row[hostColumn], cmd.Command)
 			}
 
 			resp := mmcli.RunTabular(cmd)
@@ -342,13 +345,13 @@ func (Minimega) GetVNCEndpoint(opts ...Option) (string, error) {
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = vmInfoCmd
-	cmd.Columns = []string{"host", "vnc_port"}
+	cmd.Columns = []string{hostColumn, "vnc_port"}
 	cmd.Filters = []string{"type=kvm", "name=" + o.vm}
 
 	var endpoint string
 
 	for _, vm := range mmcli.RunTabular(cmd) {
-		endpoint = fmt.Sprintf("%s:%s", vm["host"], vm["vnc_port"])
+		endpoint = fmt.Sprintf("%s:%s", vm[hostColumn], vm["vnc_port"])
 	}
 
 	if endpoint == "" {
@@ -542,7 +545,7 @@ func (Minimega) GetVMHost(opts ...Option) (string, error) {
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = vmInfoCmd
-	cmd.Columns = []string{"host"}
+	cmd.Columns = []string{hostColumn}
 	cmd.Filters = []string{"name=" + o.vm}
 
 	status := mmcli.RunTabular(cmd)
@@ -551,7 +554,7 @@ func (Minimega) GetVMHost(opts ...Option) (string, error) {
 		return "", fmt.Errorf("vm %s not found", o.vm)
 	}
 
-	return status[0]["host"], nil
+	return status[0][hostColumn], nil
 }
 
 func (Minimega) GetVMState(opts ...Option) (string, error) {
@@ -559,7 +562,7 @@ func (Minimega) GetVMState(opts ...Option) (string, error) {
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "vm info summary"
-	cmd.Columns = []string{"state"}
+	cmd.Columns = []string{stateColumn}
 	cmd.Filters = []string{"name=" + o.vm}
 
 	status := mmcli.RunTabular(cmd)
@@ -568,7 +571,7 @@ func (Minimega) GetVMState(opts ...Option) (string, error) {
 		return "", fmt.Errorf("vm %s not found", o.vm)
 	}
 
-	return status[0]["state"], nil
+	return status[0][stateColumn], nil
 }
 
 func (Minimega) SetVMTags(opts ...Option) error {
@@ -1330,7 +1333,7 @@ func (m Minimega) TapVLAN(opts ...TapOption) error { //nolint:funlen // complex 
 	o := NewTapOptions(opts...)
 
 	if o.untap {
-		plog.Info(plog.TypeSystem, "deleting tap from host", "tap", o.name, "host", o.host)
+		plog.Info(plog.TypeSystem, "deleting tap from host", "tap", o.name, hostColumn, o.host)
 
 		var errs error
 
@@ -1350,7 +1353,7 @@ func (m Minimega) TapVLAN(opts ...TapOption) error { //nolint:funlen // complex 
 				"deleting network namespace from host",
 				"ns",
 				o.netns,
-				"host",
+				hostColumn,
 				o.host,
 			)
 
@@ -1374,7 +1377,7 @@ func (m Minimega) TapVLAN(opts ...TapOption) error { //nolint:funlen // complex 
 		o.vlan,
 		"bridge",
 		o.bridge,
-		"host",
+		hostColumn,
 		o.host,
 	)
 
@@ -1403,7 +1406,7 @@ func (m Minimega) TapVLAN(opts ...TapOption) error { //nolint:funlen // complex 
 			"creating network namespace for tap on host",
 			"tap",
 			o.name,
-			"host",
+			hostColumn,
 			o.host,
 		)
 
@@ -1419,7 +1422,7 @@ func (m Minimega) TapVLAN(opts ...TapOption) error { //nolint:funlen // complex 
 			"moving tap to network namespace on host",
 			"tap",
 			o.name,
-			"host",
+			hostColumn,
 			o.host,
 		)
 
@@ -1435,7 +1438,7 @@ func (m Minimega) TapVLAN(opts ...TapOption) error { //nolint:funlen // complex 
 			"bringing tap up in network namespace on host",
 			"tap",
 			o.name,
-			"host",
+			hostColumn,
 			o.host,
 		)
 
@@ -1452,7 +1455,7 @@ func (m Minimega) TapVLAN(opts ...TapOption) error { //nolint:funlen // complex 
 				"setting IP address for tap in network namespace on host",
 				"tap",
 				o.name,
-				"host",
+				hostColumn,
 				o.host,
 			)
 
@@ -1673,15 +1676,13 @@ func deleteFile(path string) error {
 
 func processNamespaceHosts(namespace string) Hosts {
 	cmd := mmcli.NewNamespacedCommand(namespace)
-	cmd.Command = "host"
+	cmd.Command = hostColumn
 
-	var (
-		hosts  Hosts
-		status = mmcli.RunTabular(cmd)
-	)
+	status := mmcli.RunTabular(cmd)
+	hosts := make(Hosts, 0, len(status))
 
 	for _, row := range status {
-		host := Host{Name: row["host"]} //nolint:exhaustruct // partial initialization
+		host := Host{Name: row[hostColumn]} //nolint:exhaustruct // partial initialization
 		host.CPUs, _ = strconv.Atoi(row["cpus"])
 		host.CPUCommit, _ = strconv.Atoi(row["cpucommit"])
 		host.Load = strings.Split(row["load"], " ")

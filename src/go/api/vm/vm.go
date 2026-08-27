@@ -28,6 +28,9 @@ const (
 	vmStateQuit          = "QUIT"
 	vmStateRunning       = "RUNNING"
 	vmInfoCmd            = "vm info"
+	vmInfoColumnHost     = "host"
+	vmInfoColumnName     = "name"
+	vmInfoColumnState    = "state"
 	statusCompleted      = "completed"
 	shutdownTimeout      = 30 * time.Second
 	copyProgressFactor   = 0.8
@@ -147,7 +150,7 @@ func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
 
 			// Since we get the IP from the experiment config, but the network name
 			// from minimega (to preserve iface to network ordering), make sure the
-			// ordering of IPs matches the odering of networks. We could just use a
+			// ordering of IPs matches the ordering of networks. We could just use a
 			// map here, but then the iface to network ordering that minimega ensures
 			// would be lost.
 			for i, nw := range details.Networks {
@@ -273,7 +276,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 
 	// Since we get the IP from the experiment config, but the network name from
 	// minimega (to preserve iface to network ordering), make sure the ordering of
-	// IPs matches the odering of networks. We could just use a map here, but then
+	// IPs matches the ordering of networks. We could just use a map here, but then
 	// the iface to network ordering that minimega ensures would be lost.
 	for idx, nw := range details[0].Networks {
 		// If it's set here, we got it from minimega, which is the source of truth
@@ -581,8 +584,8 @@ func ResetDiskState(expName, vmName string) error {
 	// directory with a new snapshot.
 	cmd := mmcli.NewNamespacedCommand(expName)
 	cmd.Command = vmInfoCmd
-	cmd.Columns = []string{"host", "name", "id", "state", "disks", "snapshot"}
-	cmd.Filters = []string{"name=" + vmName}
+	cmd.Columns = []string{vmInfoColumnHost, vmInfoColumnName, "id", vmInfoColumnState, "disks", "snapshot"}
+	cmd.Filters = []string{vmInfoColumnName + "=" + vmName}
 
 	status := mmcli.RunTabular(cmd)
 
@@ -594,7 +597,7 @@ func ResetDiskState(expName, vmName string) error {
 		origSnap  = strings.Split(status[0]["disks"], ",")[0]
 		finalDst  = fmt.Sprintf("%s/%s/%s", common.MinimegaBase, status[0]["id"], "disk-0.qcow2")
 		tmpSnap   = fmt.Sprintf("%s_%s_disk-0.qcow2", expName, vmName)
-		node      = status[0]["host"]
+		node      = status[0][vmInfoColumnHost]
 		cmdPrefix = ""
 	)
 
@@ -606,7 +609,7 @@ func ResetDiskState(expName, vmName string) error {
 	// Stop all packet captures for a vm that will be reset to
 	// its original state.  We are going to assume that a vm
 	// that has been shutdown will not have any active packet captures
-	if status[0]["state"] == vmStateRunning {
+	if status[0][vmInfoColumnState] == vmStateRunning {
 		err := StopCaptures(expName, vmName)
 		if err != nil && !errors.Is(err, ErrNoCaptures) {
 			return fmt.Errorf(
@@ -805,7 +808,7 @@ func Snapshot(expName, vmName, out string, cb func(string)) error { //nolint:fun
 
 	cmd := mmcli.NewNamespacedCommand(expName)
 	cmd.Command = vmInfoCmd
-	cmd.Columns = []string{"host", "id"}
+	cmd.Columns = []string{vmInfoColumnHost, "id"}
 	cmd.Filters = []string{"name=" + vmName}
 
 	status := mmcli.RunTabular(cmd)
@@ -817,7 +820,7 @@ func Snapshot(expName, vmName, out string, cb func(string)) error { //nolint:fun
 	cmd.Columns = nil
 	cmd.Filters = nil
 
-	host := status[0]["host"]
+	host := status[0][vmInfoColumnHost]
 
 	// ***** BEGIN: MIGRATE VM *****
 
@@ -828,7 +831,7 @@ func Snapshot(expName, vmName, out string, cb func(string)) error { //nolint:fun
 	}
 
 	cmd.Command = "vm migrate"
-	cmd.Columns = []string{"name", "status", "complete (%)"}
+	cmd.Columns = []string{vmInfoColumnName, "status", "complete (%)"}
 	cmd.Filters = []string{"name=" + vmName}
 
 	// Adding a 1 second delay before calling "vm migrate"
@@ -1053,7 +1056,7 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 
 	cmd := mmcli.NewNamespacedCommand(expName)
 	cmd.Command = vmInfoCmd
-	cmd.Columns = []string{"host", "name", "id", "state"}
+	cmd.Columns = []string{vmInfoColumnHost, vmInfoColumnName, "id", vmInfoColumnState}
 	cmd.Filters = []string{"name=" + vmName}
 
 	status := mmcli.RunTabular(cmd)
@@ -1065,7 +1068,7 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 	var (
 		// Get current disk snapshot on the compute node (based on VM ID).
 		snap = fmt.Sprintf("%s/%s/disk-0.qcow2", common.MinimegaBase, status[0]["id"])
-		node = status[0]["host"]
+		node = status[0][vmInfoColumnHost]
 	)
 
 	wait, ctx := errgroup.WithContext(context.Background())
@@ -1099,7 +1102,7 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 	})
 
 	// VM can't be running or we won't be able to copy snapshot remotely.
-	if status[0]["state"] != vmStateQuit {
+	if status[0][vmInfoColumnState] != vmStateQuit {
 		err := Shutdown(expName, vmName)
 		if err != nil {
 			return "", fmt.Errorf("stopping VM: %w", err)
@@ -1301,7 +1304,7 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 
 	cmd := mmcli.NewNamespacedCommand(expName)
 	cmd.Command = vmInfoCmd
-	cmd.Columns = []string{"host", "name", "id", "state"}
+	cmd.Columns = []string{vmInfoColumnHost, vmInfoColumnName, "id", vmInfoColumnState}
 	cmd.Filters = []string{"name=" + vmName}
 
 	status := mmcli.RunTabular(cmd)
@@ -1319,8 +1322,8 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 
 	// Make sure that the memory snapshot directory exists
 	var cmdPrefix string
-	if !mm.IsHeadnode(status[0]["host"]) {
-		cmdPrefix = "mesh send " + status[0]["host"]
+	if !mm.IsHeadnode(status[0][vmInfoColumnHost]) {
+		cmdPrefix = "mesh send " + status[0][vmInfoColumnHost]
 	}
 
 	cmd.Columns = nil
@@ -1395,7 +1398,7 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 
 	// Copy the ELF memory dump to the headnode if the VM was not
 	// hosted on the headnode
-	if !mm.IsHeadnode(status[0]["host"]) {
+	if !mm.IsHeadnode(status[0][vmInfoColumnHost]) {
 		// File path should be relative to the minimega files directory
 		memoryDumpPath := fmt.Sprintf("%s/files/%s", expName, filepath.Base(out))
 

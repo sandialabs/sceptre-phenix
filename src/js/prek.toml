@@ -1,0 +1,41 @@
+# Nested prek project for the frontend (Vue 3 + Vite) app.
+# prek runs a project's hooks with the project's directory as the working
+# directory, so paths below are relative to src/js.
+# See the root prek.toml for general notes on this repository's prek setup.
+#
+# Unlike the Go/Python hooks elsewhere in this repo, ESLint's behavior here is
+# tightly coupled to this project's exact installed devDependencies
+# (eslint-plugin-vue, @vue/eslint-config-prettier, eslint.config.js) tracked
+# in package.json/package-lock.json. Rather than duplicate those dependency
+# versions in prek.toml (the approach taken by community eslint pre-commit
+# mirrors, via `additional_dependencies`), these hooks are `local`/`system`
+# and just run this project's own npm scripts, assuming `node_modules` is
+# already installed (via `make install-dev` locally, or `npm ci` in CI).
+
+# Named priority aliases must be redeclared per nested project (prek 0.4.11+).
+# See the root prek.toml for the full fixers/format/lint ordering rationale.
+[priorities]
+fixers = 0
+format = 1
+lint = 2
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "prettier"
+name = "prettier (format)"
+description = "Formats JS/Vue/JSON/etc. files with Prettier."
+entry = "npm run format"
+language = "system"
+pass_filenames = false
+priority = "format"
+
+[[repos.hooks]]
+id = "eslint"
+name = "eslint (lint)"
+description = "Lints JS/Vue files with ESLint, fixing what it safely can."
+entry = "npm run lint"
+language = "system"
+pass_filenames = false
+priority = "lint"

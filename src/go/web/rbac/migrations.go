@@ -11,6 +11,8 @@ import (
 
 const experimentFilesResource = "experiments/files"
 const experimentFilesCreateVerb = "create"
+const experimentAdminRole = "Experiment Admin"
+const experimentUserRole = "Experiment User"
 
 // EnsureExperimentFilesCreatePermission updates existing roles and users for file uploads.
 func EnsureExperimentFilesCreatePermission() error {
@@ -51,7 +53,7 @@ func EnsureExperimentFilesCreatePermission() error {
 
 // experimentFilesRole returns true for roles that should allow experiment file uploads.
 func experimentFilesRole(name string) bool {
-	return name == "Experiment Admin" || name == "Experiment User"
+	return name == experimentAdminRole || name == experimentUserRole
 }
 
 // ensureExperimentFilesCreatePolicy ensures the role can create experiment files for the given names.

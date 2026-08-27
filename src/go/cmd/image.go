@@ -22,7 +22,7 @@ const createFromArgs = 2
 
 func newImageCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "image",
+		Use:   commandImage,
 		Short: "Virtual disk image management",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
@@ -34,7 +34,7 @@ func newImageCmd() *cobra.Command {
 
 func newImageListCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "list",
+		Use:   commandList,
 		Short: "Table of image configurations",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			imgs, err := image.List()
@@ -197,7 +197,7 @@ func newImageCreateFromCmd() *cobra.Command {
 	desc := `Create image configuration from existing one
 
   Used to create a new virtual disk image configuration from an existing one;
-  if options are used they will be added to the exisiting configuration.`
+  if options are used they will be added to the existing configuration.`
 
 	cmd := &cobra.Command{
 		Use:   "create-from <existing configuration> <new configuration>",

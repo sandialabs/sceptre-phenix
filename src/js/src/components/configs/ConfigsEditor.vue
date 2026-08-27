@@ -441,7 +441,6 @@
               })
               .catch((err) => {
                 console.log(err);
-                let name = config.kind + '/' + config.metadata.name;
                 const resp = err.response.data;
                 // useErrorNotification(err);
                 if (resp.metadata && resp.metadata.validation) {
@@ -483,7 +482,6 @@
           })
           .catch((err) => {
             console.log(err);
-            let name = config.kind + '/' + config.metadata.name;
 
             if (
               err.response.data.metadata &&
@@ -627,7 +625,7 @@
   };
 </script>
 <style scoped>
-  /*Quickfix for css. incorperate into main css packages*/
+  /*Quickfix for css. incorporate into main css packages*/
   .hero.is-light.is-bold {
     background-image: linear-gradient(
       141deg,
