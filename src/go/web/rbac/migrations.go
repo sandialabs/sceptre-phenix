@@ -9,8 +9,39 @@ import (
 	v1 "phenix/types/version/v1"
 )
 
-const experimentFilesResource = "experiments/files"
-const experimentFilesCreateVerb = "create"
+const (
+	builderResource           = "builder"
+	experimentAdminRole       = "Experiment Admin"
+	experimentFilesCreateVerb = "create"
+	experimentFilesResource   = "experiments/files"
+	experimentUserRole        = "Experiment User"
+	scorchResource            = "scorch"
+	getVerb                   = "get"
+	postVerb                  = "post"
+	putVerb                   = "put"
+	tunnelerResource          = "tunneler"
+)
+
+type servicePermission struct {
+	resource string
+	verb     string
+}
+
+var legacyServicePermissions = map[string][]servicePermission{ //nolint:gochecknoglobals // migration data
+	experimentAdminRole: {
+		{resource: builderResource, verb: getVerb},
+		{resource: builderResource, verb: postVerb},
+		{resource: builderResource, verb: putVerb},
+		{resource: scorchResource, verb: getVerb},
+		{resource: tunnelerResource, verb: getVerb},
+	},
+	experimentUserRole: {
+		{resource: builderResource, verb: getVerb},
+		{resource: builderResource, verb: postVerb},
+		{resource: scorchResource, verb: getVerb},
+		{resource: tunnelerResource, verb: getVerb},
+	},
+}
 
 // EnsureExperimentFilesCreatePermission updates existing roles and users for file uploads.
 func EnsureExperimentFilesCreatePermission() error {
@@ -49,9 +80,80 @@ func EnsureExperimentFilesCreatePermission() error {
 	return nil
 }
 
+// EnsureServicePermissions preserves access for built-in roles after adding service-level RBAC.
+func EnsureServicePermissions() error {
+	roles, err := GetRoles()
+	if err != nil {
+		return fmt.Errorf("getting roles: %w", err)
+	}
+
+	for _, role := range roles {
+		if ensureServicePermissions(role.Spec) {
+			if err := role.Save(); err != nil {
+				return fmt.Errorf("saving role %s: %w", role.Spec.Name, err)
+			}
+		}
+	}
+
+	users, err := GetUsers()
+	if err != nil {
+		return fmt.Errorf("getting users: %w", err)
+	}
+
+	for _, user := range users {
+		if user.Spec.Role == nil || !ensureServicePermissions(user.Spec.Role) {
+			continue
+		}
+
+		user.config.Spec = structs.MapDefaultCase(user.Spec, structs.CASESNAKE)
+
+		if err := user.Save(); err != nil {
+			return fmt.Errorf("saving user %s: %w", user.Username(), err)
+		}
+	}
+
+	return nil
+}
+
+func ensureServicePermissions(role *v1.RoleSpec) bool {
+	var changed bool
+
+	for _, permission := range legacyServicePermissions[role.Name] {
+		if ensurePermission(role, permission) {
+			changed = true
+		}
+	}
+
+	return changed
+}
+
+func ensurePermission(role *v1.RoleSpec, permission servicePermission) bool {
+	for _, policy := range role.Policies {
+		if !slices.Contains(policy.Resources, permission.resource) {
+			continue
+		}
+
+		if slices.Contains(policy.Verbs, permission.verb) {
+			return false
+		}
+
+		policy.Verbs = append(policy.Verbs, permission.verb)
+
+		return true
+	}
+
+	role.Policies = append(role.Policies, &v1.PolicySpec{
+		Resources:     []string{permission.resource},
+		ResourceNames: nil,
+		Verbs:         []string{permission.verb},
+	})
+
+	return true
+}
+
 // experimentFilesRole returns true for roles that should allow experiment file uploads.
 func experimentFilesRole(name string) bool {
-	return name == "Experiment Admin" || name == "Experiment User"
+	return name == experimentAdminRole || name == experimentUserRole
 }
 
 // ensureExperimentFilesCreatePolicy ensures the role can create experiment files for the given names.

@@ -30,5 +30,9 @@ func Init() error {
 		return fmt.Errorf("ensuring experiment file upload permissions: %w", err)
 	}
 
+	if err := rbac.EnsureServicePermissions(); err != nil {
+		return fmt.Errorf("ensuring Builder, Scorch, and Tunneler permissions: %w", err)
+	}
+
 	return nil
 }

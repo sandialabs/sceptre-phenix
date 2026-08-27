@@ -107,8 +107,9 @@ func Start(opts ...ServerOption) error {
 	_ = ConfigureUsers(o.users)
 
 	var (
-		router = mux.NewRouter().StrictSlash(true)
-		assets http.FileSystem
+		router         = mux.NewRouter().StrictSlash(true)
+		authMiddleware = middleware.Auth(o.jwtKey, o.proxyAuthHeader)
+		assets         http.FileSystem
 	)
 
 	if o.unbundled {
@@ -125,13 +126,36 @@ func Start(opts ...ServerOption) error {
 
 	if o.featured("tunneler-download") {
 		plog.Info(plog.TypeSystem, "Serving phēnix tunneler downloads")
-		router.HandleFunc("/downloads/tunneler/{name}", forward.GetTunneler).Methods("GET")
+		router.Handle(
+			"/downloads/tunneler/{name}",
+			authMiddleware(
+				middleware.RequirePermission("tunneler", "get")(
+					http.HandlerFunc(forward.GetTunneler),
+				),
+			),
+		).Methods("GET")
 	}
 
 	router.HandleFunc("/features", GetFeatures).Methods("GET")
 	router.HandleFunc("/version", GetVersion).Methods("GET")
-	router.HandleFunc("/builder", GetBuilder).Methods("GET")
-	router.HandleFunc("/builder/save", SaveBuilderTopology).Methods("POST")
+	router.Handle(
+		"/builder",
+		authMiddleware(
+			middleware.RequirePermission("builder", "get")(http.HandlerFunc(GetBuilder)),
+		),
+	).Methods("GET")
+
+	builderSaveHandler := authMiddleware(
+		middleware.RequirePermission("builder", "post")(http.HandlerFunc(SaveBuilderTopology)),
+	)
+	if o.jwtKey != "" && o.jwtKey != "proxy-jwt" && !strings.HasPrefix(o.jwtKey, "dev|") {
+		builderSaveHandler = middleware.AuthTokenFromForm(builderSaveHandler)
+	}
+
+	router.Handle(
+		"/builder/save",
+		builderSaveHandler,
+	).Methods("POST")
 
 	plog.Info(plog.TypeSystem, "setting up assets")
 
@@ -192,9 +216,19 @@ func Start(opts ...ServerOption) error {
 	api := router.PathPrefix("/api/v1").Subrouter()
 
 	// OPTIONS method needed for CORS
-	api.Handle("/builder/topologies", weberror.ErrorHandler(GetBuilderTopologies)).
+	api.Handle(
+		"/builder/topologies",
+		middleware.RequirePermission("builder", "get")(
+			weberror.ErrorHandler(GetBuilderTopologies),
+		),
+	).
 		Methods("GET", "OPTIONS")
-	api.Handle("/builder/topologies/{name}", weberror.ErrorHandler(GetBuilderTopology)).
+	api.Handle(
+		"/builder/topologies/{name}",
+		middleware.RequirePermission("builder", "get")(
+			weberror.ErrorHandler(GetBuilderTopology),
+		),
+	).
 		Methods("GET", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(GetConfigs)).Methods("GET", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(CreateConfig)).Methods("POST", "OPTIONS")
@@ -211,9 +245,19 @@ func Start(opts ...ServerOption) error {
 
 	api.HandleFunc("/experiments", GetExperiments).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments", CreateExperiment).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/builder", weberror.ErrorHandler(CreateExperimentFromBuilder)).
+	api.Handle(
+		"/experiments/builder",
+		middleware.RequirePermission("builder", "post")(
+			weberror.ErrorHandler(CreateExperimentFromBuilder),
+		),
+	).
 		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/builder", weberror.ErrorHandler(UpdateExperimentFromBuilder)).
+	api.Handle(
+		"/experiments/builder",
+		middleware.RequirePermission("builder", "put")(
+			weberror.ErrorHandler(UpdateExperimentFromBuilder),
+		),
+	).
 		Methods("PUT", "OPTIONS")
 	api.Handle("/experiments/{name}", weberror.ErrorHandler(GetExperiment)).
 		Methods("GET", "OPTIONS")
@@ -246,27 +290,82 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/experiments/{name}/files", GetExperimentFiles).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/files/{filename}", GetExperimentFile).
 		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(scorch.GetComponentOutput)).
+	api.Handle(
+		"/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}",
+		middleware.RequirePermission("scorch", "get")(
+			weberror.ErrorHandler(scorch.GetComponentOutput),
+		),
+	).
 		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}/ws", scorch.StreamComponentOutput).
+	api.Handle(
+		"/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}/ws",
+		middleware.RequirePermission("scorch", "get")(
+			http.HandlerFunc(scorch.StreamComponentOutput),
+		),
+	).
 		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines", weberror.ErrorHandler(scorch.GetPipelines)).
+	api.Handle(
+		"/experiments/{name}/scorch/pipelines",
+		middleware.RequirePermission("scorch", "get")(
+			weberror.ErrorHandler(scorch.GetPipelines),
+		),
+	).
 		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines/{run}/{loop}", weberror.ErrorHandler(scorch.GetPipeline)).
+	api.Handle(
+		"/experiments/{name}/scorch/pipelines/{run}/{loop}",
+		middleware.RequirePermission("scorch", "get")(
+			weberror.ErrorHandler(scorch.GetPipeline),
+		),
+	).
 		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines/{run}", weberror.ErrorHandler(scorch.StartPipeline)).
+	api.Handle(
+		"/experiments/{name}/scorch/pipelines/{run}",
+		middleware.RequirePermission("scorch", "post")(
+			weberror.ErrorHandler(scorch.StartPipeline),
+		),
+	).
 		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines/{run}", weberror.ErrorHandler(scorch.CancelPipeline)).
+	api.Handle(
+		"/experiments/{name}/scorch/pipelines/{run}",
+		middleware.RequirePermission("scorch", "delete")(
+			weberror.ErrorHandler(scorch.CancelPipeline),
+		),
+	).
 		Methods("DELETE", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals", scorch.GetTerminals).
+	api.Handle(
+		"/experiments/{name}/scorch/terminals",
+		middleware.RequirePermission("scorch", "get")(
+			http.HandlerFunc(scorch.GetTerminals),
+		),
+	).
 		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}", scorch.ConnectTerminal).
+	api.Handle(
+		"/experiments/{name}/scorch/terminals/{pid}",
+		middleware.RequirePermission("scorch", "get")(
+			http.HandlerFunc(scorch.ConnectTerminal),
+		),
+	).
 		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}/exit/{id}", scorch.ExitTerminal).
+	api.Handle(
+		"/experiments/{name}/scorch/terminals/{pid}/exit/{id}",
+		middleware.RequirePermission("scorch", "post")(
+			http.HandlerFunc(scorch.ExitTerminal),
+		),
+	).
 		Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}/ws/{id}", scorch.StreamTerminal).
+	api.Handle(
+		"/experiments/{name}/scorch/terminals/{pid}/ws/{id}",
+		middleware.RequirePermission("scorch", "get")(
+			http.HandlerFunc(scorch.StreamTerminal),
+		),
+	).
 		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}", scorch.ConnectTerminal).
+	api.Handle(
+		"/experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}",
+		middleware.RequirePermission("scorch", "get")(
+			http.HandlerFunc(scorch.ConnectTerminal),
+		),
+	).
 		Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/soh", GetExperimentSoH).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms", GetVMs).Methods("GET", "OPTIONS")
@@ -402,7 +501,7 @@ func Start(opts ...ServerOption) error {
 		api.Use(middleware.AllowCORS)
 	}
 
-	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader))
+	api.Use(authMiddleware)
 
 	switch o.logMiddleware {
 	case "full":

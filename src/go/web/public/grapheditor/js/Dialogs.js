@@ -1506,7 +1506,8 @@ ExportDialog.saveLocalFile = function(editorUi, data, filename, format)
     {
         editorUi.hideDialog();
         var req = new mxXmlRequest(SAVE_URL, 'xml=' + encodeURIComponent(data) + '&filename=' +
-            encodeURIComponent(filename) + '&format=' + format);
+            encodeURIComponent(filename) + '&format=' + format + '&token=' +
+            encodeURIComponent(urlParams['token'] || ''));
         req.simulate(document, '_blank');
     }
     else

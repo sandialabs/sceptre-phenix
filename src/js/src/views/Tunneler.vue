@@ -55,7 +55,7 @@
         {{ props.row.arch }}
       </b-table-column>
       <b-table-column field="link" label="Download" centered v-slot="props">
-        <a :href="props.row.link" target="_blank">
+        <a :href="props.row.link" @click.prevent="download(props.row)">
           <b-icon icon="file-download" size="is-small"></b-icon>
         </a>
       </b-table-column>
@@ -64,6 +64,9 @@
 </template>
 
 <script>
+  import { usePhenixStore } from '@/store.js';
+  import { useErrorNotification } from '@/utils/errorNotif';
+
   export default {
     data() {
       return {
@@ -90,6 +93,32 @@
           },
         ],
       };
+    },
+
+    methods: {
+      async download(tunneler) {
+        const store = usePhenixStore();
+
+        try {
+          const response = await fetch(tunneler.link, {
+            headers: {
+              'X-Phenix-Auth-Token': `bearer ${store.token}`,
+            },
+          });
+          if (!response.ok) {
+            throw new Error(`download failed with status ${response.status}`);
+          }
+
+          const blobURL = URL.createObjectURL(await response.blob());
+          const link = document.createElement('a');
+          link.href = blobURL;
+          link.download = tunneler.link.split('/').pop();
+          link.click();
+          URL.revokeObjectURL(blobURL);
+        } catch (err) {
+          useErrorNotification(err);
+        }
+      },
     },
   };
 </script>

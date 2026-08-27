@@ -97,8 +97,11 @@ func CreateWebTerminal(
 
 	body, _ := json.Marshal(term)
 
-	broker.Broadcast(
-		nil,
+	broker.BroadcastWithPolicies(
+		[]*bt.RequestPolicy{
+			bt.NewRequestPolicy(scorchAppName, "get", ""),
+			bt.NewRequestPolicy("experiments", "get", exp),
+		},
 		bt.NewResource("apps/scorch", exp, "terminal-create"),
 		body,
 	)
@@ -114,8 +117,11 @@ func KillTerminal(term WebTerm) error {
 	delete(webTermsExp, term.key)
 	webTermMu.Unlock()
 
-	broker.Broadcast(
-		nil,
+	broker.BroadcastWithPolicies(
+		[]*bt.RequestPolicy{
+			bt.NewRequestPolicy(scorchAppName, "get", ""),
+			bt.NewRequestPolicy("experiments", "get", term.Exp),
+		},
 		bt.NewResource("apps/scorch", term.Exp, "terminal-exit"),
 		nil,
 	)

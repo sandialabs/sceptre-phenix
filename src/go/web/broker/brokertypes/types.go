@@ -25,9 +25,10 @@ func NewResource(t, n, a string) *Resource {
 }
 
 type Publish struct {
-	RequestPolicy *RequestPolicy  `json:"-"`
-	Resource      *Resource       `json:"resource"`
-	Result        json.RawMessage `json:"result"`
+	RequestPolicy   *RequestPolicy   `json:"-"`
+	RequestPolicies []*RequestPolicy `json:"-"`
+	Resource        *Resource        `json:"resource"`
+	Result          json.RawMessage  `json:"result"`
 }
 
 type Request struct {
