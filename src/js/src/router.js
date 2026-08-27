@@ -141,7 +141,7 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach(async (to, from, next) => {
+router.beforeEach(async (to, _, next) => {
   const store = usePhenixStore();
 
   if (import.meta.env.VITE_AUTH === 'disabled' || !import.meta.env.VITE_AUTH) {

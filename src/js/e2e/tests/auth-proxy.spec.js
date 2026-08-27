@@ -12,7 +12,10 @@ const { attachCapture, settle, fatalOf, unsignedJwt } = require('./helpers');
 
 const USER = 'e2e-proxy-user';
 
-test.skip(process.env.E2E_AUTH_MODE !== 'proxy', 'set E2E_AUTH_MODE=proxy (see file header)');
+test.skip(
+  process.env.E2E_AUTH_MODE !== 'proxy',
+  'set E2E_AUTH_MODE=proxy (see file header)',
+);
 
 test.use({
   extraHTTPHeaders: { 'X-Phenix-Auth-Token': 'Bearer ' + unsignedJwt(USER) },
@@ -44,12 +47,16 @@ test('unknown proxy user lands on populated signup form; submit is handled clean
   // a real error message (e.g. password-policy validation, a known upstream
   // limitation for proxy signups). Both are fine here — what must never
   // happen is a client-side TypeError like the old "e.json is not a function".
-  expect(issues.filter((i) => /is not a function/i.test(i.text))).toHaveLength(0);
+  expect(issues.filter((i) => /is not a function/i.test(i.text))).toHaveLength(
+    0,
+  );
   const notif = await page.locator('.notification').allTextContents();
   expect(notif.join(' | ')).not.toMatch(/is not a function/i);
 });
 
-test('signup success (200) logs the user in via response.data', async ({ page }) => {
+test('signup success (200) logs the user in via response.data', async ({
+  page,
+}) => {
   const issues = [];
   attachCapture(page, issues);
 
@@ -69,19 +76,27 @@ test('signup success (200) logs the user in via response.data', async ({ page })
           resource_names: ['*', '*/*'],
           role: {
             name: 'Global Admin',
-            policies: [{ resources: ['*', '*/*'], resourceNames: ['*', '*/*'], verbs: ['*'] }],
+            policies: [
+              {
+                resources: ['*', '*/*'],
+                resourceNames: ['*', '*/*'],
+                verbs: ['*'],
+              },
+            ],
           },
         },
         token: unsignedJwt(USER),
       },
-    })
+    }),
   );
 
   await gotoProxySignup(page);
   await page.getByRole('button', { name: 'Submit' }).click();
 
   await expect(page).toHaveURL(/\/experiments/, { timeout: 15000 });
-  expect(issues.filter((i) => /is not a function/i.test(i.text))).toHaveLength(0);
+  expect(issues.filter((i) => /is not a function/i.test(i.text))).toHaveLength(
+    0,
+  );
 
   // 401/user-error fallout is expected: the user was never really created
   const fatal = fatalOf(issues).filter((i) => !/401|user error/.test(i.text));

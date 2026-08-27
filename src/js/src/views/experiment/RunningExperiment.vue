@@ -983,7 +983,7 @@
               </section>
             </template>
             <b-table-column field="multiselect" label="">
-              <template v-slot:header="{ column }">
+              <template v-slot:header>
                 <b-tooltip label="Select/Unselect All" type="is-dark">
                   <b-checkbox v-model="checkAll"></b-checkbox>
                 </b-tooltip>
@@ -1483,6 +1483,7 @@
       this.features = usePhenixStore().features;
       addWsHandler(this.handleWs);
       this.loadColumnVisibility();
+      this.loadPaginationPreference();
       this.updateExperiment();
 
       try {
@@ -1513,33 +1514,11 @@
       },
 
       paginationNeeded() {
-        var user = usePhenixStore().username;
-
-        if (localStorage.getItem(user + '.lastPaginate')) {
-          this.table.isPaginated =
-            localStorage.getItem(user + '.lastPaginate') == 'true';
-        }
-
-        if (this.table.total <= this.table.perPage) {
-          return false;
-        } else {
-          return true;
-        }
+        return this.table.total > this.table.perPage;
       },
 
       filesPaginationNeeded() {
-        var user = usePhenixStore().username;
-
-        if (localStorage.getItem(user + '.lastPaginate')) {
-          this.filesTable.isPaginated =
-            localStorage.getItem(user + '.lastPaginate') == 'true';
-        }
-
-        if (this.filesTable.total <= this.filesTable.perPage) {
-          return false;
-        } else {
-          return true;
-        }
+        return this.filesTable.total > this.filesTable.perPage;
       },
 
       isMultiVmSelected() {
@@ -1573,6 +1552,15 @@
             this.columnVisibility[toggle.key] = value == 'true';
           }
         });
+      },
+
+      loadPaginationPreference() {
+        var user = usePhenixStore().username;
+        let value = localStorage.getItem(user + '.lastPaginate');
+        if (value !== null) {
+          this.table.isPaginated = value == 'true';
+          this.filesTable.isPaginated = value == 'true';
+        }
       },
 
       persistColumnVisibility(toggle) {
@@ -1738,6 +1726,7 @@
                 break;
               }
             }
+            break;
           }
 
           case 'experiment/vms': {
@@ -1874,13 +1863,12 @@
                   message: 'Redeployed ' + vm[1],
                   type: 'is-success',
                 });
-                var i = 0;
-                for (i = 0; this.redeployModal.actionsQueue.length; i++) {
-                  if (this.redeployModal.actionsQueue[i].name == vm[1]) {
-                    break;
-                  }
+                let index = this.redeployModal.actionsQueue.findIndex(
+                  (action) => action.name == vm[1],
+                );
+                if (index !== -1) {
+                  this.redeployModal.actionsQueue.splice(index, 1);
                 }
-                this.redeployModal.actionsQueue.splice(i, 1);
                 if (this.redeployModal.actionsQueue.length > 0) {
                   let url = this.redeployModal.actionsQueue[0].url;
                   let body = this.redeployModal.actionsQueue[0].body;
@@ -1982,7 +1970,7 @@
 
                 for (let i = 0; i < vms.length; i++) {
                   if (vms[i].name == vm[1]) {
-                    vms[i].busy = true; //incase committing message is missed
+                    vms[i].busy = true; // in case committing message is missed
                     vms[i].percent = percent;
                     this.experiment.vms = [...vms];
 
@@ -2052,7 +2040,7 @@
                 let percent = Math.round(msg.result.percent * 100);
                 for (let i = 0; i < vms.length; i++) {
                   if (vms[i].name == vm[1]) {
-                    vms[i].busy = true; //incase committing message is missed
+                    vms[i].busy = true; // in case committing message is missed
                     vms[i].percent = percent;
                     this.experiment.vms = [...vms];
                     break;
@@ -2588,7 +2576,7 @@
         name.forEach((arg) => {
           for (let i = 0; i < vms.length; i++) {
             if (vms[i].name == arg) {
-              var filename = '';
+              var filename;
               if (/(.*)_\d{14}/.test(vms[i].disk)) {
                 filename =
                   vms[i].disk.substring(0, vms[i].disk.indexOf('_')) +
@@ -2715,7 +2703,6 @@
       createMemorySnapshot(vm) {
         this.memorySnapshotModal.active = false;
         let url = '';
-        let name = '';
         let body = '';
         vm.forEach((arg) => {
           url =
@@ -2725,7 +2712,6 @@
             arg.name +
             '/memorySnapshot';
           body = { filename: arg.filename + '.elf' };
-          name = arg.name;
 
           axiosInstance.post(url, body, { timeout: 0 }).catch((err) => {
             useErrorNotification(err);
@@ -3373,9 +3359,8 @@
       redeployVm(vms) {
         let body = '';
         let postUrl = '';
-        let name = '';
 
-        vms.forEach((vm, _) => {
+        vms.forEach((vm) => {
           body = {
             cpus: parseInt(vm.cpus),
             ram: parseInt(vm.ram),
@@ -3747,7 +3732,7 @@
       },
 
       downloadFile(exp_name, name, path) {
-        console.log('attempting to downlad file');
+        console.log('attempting to download file');
         const store = usePhenixStore();
         const basePath = import.meta.env.BASE_URL;
 

@@ -179,7 +179,7 @@ func DecodeExperimentFromConfig(c store.Config) (*Experiment, error) {
 
 	if err := mapstructure.Decode(c.Spec, &iface); err != nil {
 		// If we have a decoding error, it's likely due to the embedded topology or
-		// scenario not being the lastest version.
+		// scenario not being the latest version.
 		var (
 			kbArticle = "EX-SC-UPG-01"
 			kbLink    = "https://phenix.sceptre.dev/kb/#article-ex-sc-upg-01"

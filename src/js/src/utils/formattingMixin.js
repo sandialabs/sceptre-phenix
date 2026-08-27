@@ -26,7 +26,7 @@ export const formattingMixin = {
         return value;
       }
 
-      var uptime = null;
+      var uptime;
       var seconds = parseInt(value, 10);
 
       var days = Math.floor(seconds / (3600 * 24));

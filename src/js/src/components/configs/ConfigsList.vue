@@ -358,7 +358,7 @@
             this.configs = state.configs === null ? [] : state.configs;
             this.isWaiting = false;
           })
-          .catch((err) => {
+          .catch(() => {
             this.isWaiting = false;
           });
       },
@@ -402,7 +402,7 @@
         const configs = configList.map(
           (conf) => `${conf.kind}/${conf.metadata.name}`,
         );
-        let msg = '';
+        let msg;
         if (configs.length > 1) {
           msg =
             'This will delete ' +
@@ -434,7 +434,7 @@
                     return !configsSet.has(key);
                   });
 
-                  let confirmMsg = '';
+                  let confirmMsg;
                   if (configs.length > 1) {
                     confirmMsg = 'The configs have been deleted.';
                   } else {

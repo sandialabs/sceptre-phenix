@@ -11,15 +11,11 @@ FROM ghcr.io/sandia-minimega/minimega:${MM_MIN_REV} AS minimega
 FROM node:24.16.0 AS jsbuilder
 
 ARG INSTALL_CERTS=
-RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
-  IFS=',' read -r -a arr <<< $INSTALL_CERTS; \
-  for i in ${!arr[@]}; do \
-    wget ${arr[$i]} -e use_proxy=no \
-      -O /usr/local/share/ca-certificates/custom$i.crt; \
-  done && \
-  update-ca-certificates; fi"]
+COPY docker/install-certs.sh /tmp/install-certs.sh
+RUN /tmp/install-certs.sh && \
+  yarn config set cafile /etc/ssl/certs/ca-certificates.crt
 
-RUN npm install -g @redocly/cli
+RUN npm install -g @redocly/cli@2.48.0
 
 COPY ./src/js /phenix/src/js
 
@@ -43,8 +39,8 @@ RUN npx @redocly/cli build-docs openapi.yml -o index.html --title 'phenix API'
 # ** gobuilder **
 FROM golang:1.24.1 AS gobuilder
 
-RUN apt update \
-  && apt install -y protobuf-compiler xz-utils
+RUN apt-get update \
+  && apt-get install -y protobuf-compiler xz-utils
 
 COPY .git       /phenix/.git
 COPY ./Makefile /phenix/Makefile
@@ -57,13 +53,8 @@ COPY --from=jsbuilder /phenix/src/js /phenix/src/js
 COPY --from=jsbuilder /phenix/src/go/web/public/docs/index.html /phenix/src/go/web/public/docs/index.html
 
 ARG INSTALL_CERTS=
-RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
-  IFS=',' read -r -a arr <<< $INSTALL_CERTS; \
-  for i in ${!arr[@]}; do \
-    wget ${arr[$i]} -e use_proxy=no \
-      -O /usr/local/share/ca-certificates/custom$i.crt; \
-  done && \
-  update-ca-certificates; fi"]
+COPY docker/install-certs.sh /tmp/install-certs.sh
+RUN /tmp/install-certs.sh
 
 ARG PHENIX_COMMIT
 ARG PHENIX_TAG
@@ -107,13 +98,16 @@ LABEL org.opencontainers.image.authors="Sandia National Laboratories <emulytics@
 ENV TZ="Etc/UTC"
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+# Use bash with pipefail so a failed command earlier in a pipe isn't masked
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # tshark needed for scorch tcpdump component
-RUN apt update \
+RUN apt-get update \
   && echo 'wireshark-common wireshark-common/install-setuid boolean false' | debconf-set-selections \
-  && apt install -y cmdtest cpio debootstrap git iproute2 iputils-ping kpartx locales nano parted psmisc python3 python3-jinja2 python3-pip python3-yaml qemu-utils tshark vim wget xz-utils zerofree guestfish \
+  && apt-get install -y cmdtest cpio debootstrap git iproute2 iputils-ping kpartx locales nano parted psmisc python3 python3-jinja2 python3-pip python3-yaml qemu-utils tshark vim wget xz-utils zerofree guestfish \
   && locale-gen en_US.UTF-8 \
-  && apt autoremove -y \
-  && apt clean -y \
+  && apt-get autoremove -y \
+  && apt-get clean -y \
   && rm -rf /var/lib/apt/lists/* \
   && rm -rf /var/cache/apt/archives/*
 
@@ -122,29 +116,23 @@ ENV LANG="en_US.UTF-8" \
   PIP_DISABLE_PIP_VERSION_CHECK=1
 
 ARG INSTALL_CERTS=
-RUN ["/bin/bash", "-c", "if [ -n $INSTALL_CERTS ]; then \
-  IFS=',' read -r -a arr <<< $INSTALL_CERTS; \
-  for i in ${!arr[@]}; do \
-    wget ${arr[$i]} -e use_proxy=no \
-      -O /usr/local/share/ca-certificates/custom$i.crt; \
-  done && \
-  update-ca-certificates; \
-  fi"]
+COPY docker/install-certs.sh /tmp/install-certs.sh
+RUN /tmp/install-certs.sh
 
 RUN git clone https://gitlab.com/glattercj/vmdb2 /opt/vmdb2
 RUN ln -s /opt/vmdb2/vmdb2 /usr/bin/vmdb2
 
 # needed to build Kali images with phenix
-RUN wget https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
+RUN wget --progress=dot:giga https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
 
 # used by scorch
-RUN wget -O glow.tgz https://github.com/charmbracelet/glow/releases/download/v1.5.0/glow_1.5.0_Linux_x86_64.tar.gz \
+RUN wget --progress=dot:giga -O glow.tgz https://github.com/charmbracelet/glow/releases/download/v1.5.0/glow_1.5.0_Linux_x86_64.tar.gz \
   && tar -xzf glow.tgz glow \
   && mv glow /usr/local/bin/glow \
   && rm glow.tgz
 
 # used by scorch
-RUN wget -O filebeat.deb https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.17.5-amd64.deb \
+RUN wget --progress=dot:giga -O filebeat.deb https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.17.5-amd64.deb \
   && dpkg -i filebeat.deb \
   && rm filebeat.deb
 

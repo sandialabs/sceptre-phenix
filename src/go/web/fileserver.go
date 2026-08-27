@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -379,7 +380,7 @@ func loginFileServerUser(r *http.Request, req *LoginRequest) (string, error) {
 		method = http.MethodPost
 	}
 
-	loginReq := httptest.NewRequest(method, "/login", body)
+	loginReq := httptest.NewRequestWithContext(context.Background(), method, "/login", body)
 	loginReq = loginReq.WithContext(r.Context())
 	loginReq.Header = r.Header.Clone()
 

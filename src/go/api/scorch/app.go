@@ -35,6 +35,7 @@ const (
 	statusSuccess  = "success"
 	statusFailure  = "failure"
 	statusUnstable = "unstable"
+	scorchInfoName = "name"
 
 	filebeatStartupDelay = 2 * time.Second
 	filebeatScanDelay    = 7 * time.Second
@@ -459,12 +460,12 @@ func (s Scorch) recordInfo(
 
 	info := map[string]any{
 		"experiment": map[string]string{
-			"name": md.Name,
-			"tags": md.Annotations["phenix.workflow/tags"],
+			scorchInfoName: md.Name,
+			"tags":         md.Annotations["phenix.workflow/tags"],
 		},
 		"run": map[string]any{
-			"name":  s.md.RunName(runID),
-			"index": runID,
+			scorchInfoName: s.md.RunName(runID),
+			"index":        runID,
 		},
 		"start": startTime.Format(time.RFC3339),
 		"end":   time.Now().UTC().Format(time.RFC3339),

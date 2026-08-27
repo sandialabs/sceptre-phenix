@@ -46,7 +46,9 @@
             <p class="title is-5">Backing Chain</p>
             <div style="text-align: center">
               <b>{{ detailsModal.disk.name }}</b>
-              <div v-for="i in detailsModal.disk.backingImages">
+              <div
+                v-for="(i, index) in detailsModal.disk.backingImages"
+                :key="index">
                 &darr;<br />
                 <a
                   @click="detailsModal.disk = disks.find((d) => d.name == i)"

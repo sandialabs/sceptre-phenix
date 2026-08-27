@@ -231,7 +231,7 @@ func (log *LogEntry) UnmarshalJSON(data []byte) error { //nolint:funlen // compl
 			}
 
 			log.Level = level
-		case "type":
+		case logAttrType:
 			t, ok := value.(string)
 			if !ok {
 				return errors.New("could not parse type as string")

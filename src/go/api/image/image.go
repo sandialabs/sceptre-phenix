@@ -129,7 +129,7 @@ func SetupImage(img *v1.Image) error { //nolint:funlen // complex logic
 // Create collects image values from user input at command line, creates an
 // image configuration, and then persists it to the store. SetupImage is used
 // to set default packages and constants. This sub-command requires an image
-// `name`. It will return any errors encoutered while creating the
+// `name`. It will return any errors encountered while creating the
 // configuration.
 func Create(img *v1.Image) error {
 	if img.Name == "" {
@@ -158,7 +158,7 @@ func Create(img *v1.Image) error {
 
 // CreateFromConfig will take in an existing image configuration by name and
 // modify overlay, packages, and scripts as passed by the user. It will then
-// persist a new image configuration to the store. Any errors enountered will be
+// persist a new image configuration to the store. Any errors encountered will be
 // passed when creating a new image configuration, retrieving the existing image
 // configuration file, or storing the new image configuration file in the store.
 func CreateFromConfig(name, saveas string, overlays, packages, scripts []string) error {

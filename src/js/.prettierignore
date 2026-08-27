@@ -1,0 +1,8 @@
+dist
+node_modules
+coverage
+*.min.js
+*.min.css
+package-lock.json
+e2e/test-results
+e2e/playwright-report

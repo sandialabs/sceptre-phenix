@@ -319,7 +319,7 @@
               axiosInstance
                 .post(`experiments/${exp.name}/stop`)
                 .catch((err) => {
-                  useErrorNotificaion(err);
+                  useErrorNotification(err);
                 });
             },
           });

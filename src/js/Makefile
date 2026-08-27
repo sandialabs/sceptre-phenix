@@ -27,6 +27,10 @@ help:
 	@echo ""
 	@echo "Help:"
 	@echo "  help    - Show this help message"
+	@echo ""
+	@echo "NOTE: Linting/formatting (ESLint, Prettier) is handled by 'prek'"
+	@echo "      from the repository root, not by this Makefile. Run 'make"
+	@echo "      lint' (or 'prek run --all-files') from the repo root."
 
 all: dist
 

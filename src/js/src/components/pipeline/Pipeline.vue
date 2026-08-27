@@ -46,6 +46,11 @@
   import { Pipeline } from '@/components/pipeline/service.js';
 
   export default {
+    // Explicit multi-word name: this component is already registered
+    // elsewhere as `vue-pipeline` (see ScorchRun.vue); this also satisfies
+    // vue/multi-word-component-names, which otherwise flags the filename
+    // "Pipeline" as ambiguous with a future native <pipeline> element.
+    name: 'VuePipeline',
     components: {
       PipelineNode,
       PipelineLine,
@@ -98,7 +103,7 @@
     },
 
     methods: {
-      handleClick(index, node) {
+      handleClick(_, node) {
         // Commented these out to keep clicked node from being highlighted.
         // this.selectedList.fill(false, 0, this.nodeList.length);
         // this.$set(this.selectedList, index, true);
@@ -106,11 +111,11 @@
         this.$emit('select', node);
       },
 
-      handleMouseEnter(index, node) {
+      handleMouseEnter(_, node) {
         this.$emit('mouseenter', node);
       },
 
-      handleMouseLeave(index, node) {
+      handleMouseLeave(_, node) {
         this.$emit('mouseleave', node);
       },
 

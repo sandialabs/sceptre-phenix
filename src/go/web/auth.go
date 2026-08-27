@@ -18,7 +18,11 @@ import (
 	jwtutil "phenix/web/util/jwt"
 )
 
-const hoursInDay = 24
+const (
+	hoursInDay  = 24
+	jwtClaimSub = "sub"
+	jwtClaimExp = "exp"
+)
 
 //nolint:funlen // handler
 func Signup(w http.ResponseWriter, r *http.Request) {
@@ -110,8 +114,8 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 
 	if token == nil { // not using proxy JWT
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-			"sub": u.Username(),
-			"exp": time.Now().Add(o.jwtLifetime).Unix(),
+			jwtClaimSub: u.Username(),
+			jwtClaimExp: time.Now().Add(o.jwtLifetime).Unix(),
 		})
 
 		// Sign and get the complete encoded token as a string using the secret
@@ -311,8 +315,8 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	if token == nil {
 		token = jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-			"sub": u.Username(),
-			"exp": time.Now().Add(o.jwtLifetime).Unix(),
+			jwtClaimSub: u.Username(),
+			jwtClaimExp: time.Now().Add(o.jwtLifetime).Unix(),
 		})
 
 		// Sign and get the complete encoded token as a string using the secret
@@ -465,8 +469,8 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) {
 	exp := time.Now().Add(dur)
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": u.Username(),
-		"exp": exp.Unix(),
+		jwtClaimSub: u.Username(),
+		"exp":       exp.Unix(),
 	})
 
 	// Sign and get the complete encoded token as a string using the secret

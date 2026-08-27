@@ -19,6 +19,8 @@ import (
 const (
 	colWidth             = 50
 	imageConfigFixedCols = 7
+	headerName           = "Name"
+	headerValue          = "Value"
 )
 
 // PrintTableOfConfigs writes the given configs to the given writer as an ASCII
@@ -26,7 +28,7 @@ const (
 func PrintTableOfConfigs(writer io.Writer, configs store.Configs) {
 	table := tablewriter.NewWriter(writer)
 
-	table.SetHeader([]string{"Kind", "Version", "Name", "Created"})
+	table.SetHeader([]string{"Kind", "Version", headerName, "Created"})
 
 	for _, c := range configs {
 		table.Append([]string{c.Kind, c.Version, c.Metadata.Name, c.Metadata.Created})
@@ -42,7 +44,7 @@ func PrintTableOfExperiments(writer io.Writer, exps ...types.Experiment) {
 	table := tablewriter.NewWriter(writer)
 
 	table.SetHeader(
-		[]string{"Name", "Topology", "Scenario", "Started", "VM Count", "VLAN Count", "Apps"},
+		[]string{headerName, "Topology", "Scenario", "Started", "VM Count", "VLAN Count", "Apps"},
 	)
 
 	for _, exp := range exps {
@@ -85,7 +87,7 @@ func PrintTableOfVMs(writer io.Writer, includeTaps bool, vms ...mm.VM) {
 func buildMultipleVMTable(table *tablewriter.Table, includeTaps bool, vms ...mm.VM) {
 	header := []string{
 		"Host",
-		"Name",
+		headerName,
 		"Running",
 		"Disk",
 		"Interfaces",
@@ -137,7 +139,7 @@ func buildMultipleVMTable(table *tablewriter.Table, includeTaps bool, vms ...mm.
 }
 
 func buildSingleVMTable(table *tablewriter.Table, includeTaps bool, vm mm.VM) {
-	table.SetHeader([]string{"Setting", "Value"})
+	table.SetHeader([]string{"Setting", headerValue})
 	table.SetAutoWrapText(false)
 	table.SetColWidth(colWidth)
 	table.SetAlignment(tablewriter.ALIGN_LEFT)
@@ -168,7 +170,7 @@ func buildSingleVMTable(table *tablewriter.Table, includeTaps bool, vm mm.VM) {
 	}
 
 	table.Append([]string{"Host", vm.Host})
-	table.Append([]string{"Name", vm.Name})
+	table.Append([]string{headerName, vm.Name})
 	table.Append([]string{"Running", strconv.FormatBool(vm.Running)})
 	table.Append([]string{"Disk", vm.Disk})
 	table.Append([]string{"Interfaces", strings.Join(ifaces, "\n")})
@@ -189,7 +191,7 @@ func PrintTableOfImageConfigs(writer io.Writer, optional []string, imgs ...types
 		cols  = make([]string, 0, imageConfigFixedCols+len(optional))
 	)
 
-	cols = append(cols, "Name", "Size", "Variant", "Release", "Overlays", "Packages", "Scripts")
+	cols = append(cols, headerName, "Size", "Variant", "Release", "Overlays", "Packages", "Scripts")
 	cols = append(cols, optional...)
 
 	table.SetHeader(cols)
@@ -280,7 +282,7 @@ func PrintTableOfVLANRanges(writer io.Writer, info map[string][2]int) {
 
 func PrintTableOfSubnetCaptures(writer io.Writer, captures []mm.Capture) {
 	table := tablewriter.NewWriter(writer)
-	table.SetHeader([]string{"Name", "Interface Index", "File Path"})
+	table.SetHeader([]string{headerName, "Interface Index", "File Path"})
 
 	for _, capture := range captures {
 		table.Append([]string{capture.VM, strconv.Itoa(capture.Interface), capture.Filepath})
@@ -292,7 +294,7 @@ func PrintTableOfSubnetCaptures(writer io.Writer, captures []mm.Capture) {
 func PrintTableOfSettings(writer io.Writer, settings []types.Setting) {
 	var (
 		table = tablewriter.NewWriter(writer)
-		cols  = []string{"Name", "Category", "Value"}
+		cols  = []string{headerName, "Category", headerValue}
 	)
 
 	table.SetHeader(cols)
@@ -318,7 +320,7 @@ func PrintTableOfSettings(writer io.Writer, settings []types.Setting) {
 
 func PrintTableOfRuntimeSettings(writer io.Writer, settings map[string]any) {
 	table := tablewriter.NewWriter(writer)
-	table.SetHeader([]string{"Key", "Value"})
+	table.SetHeader([]string{"Key", headerValue})
 	table.SetAutoWrapText(false)
 	table.SetColWidth(colWidth)
 	table.SetAlignment(tablewriter.ALIGN_LEFT)

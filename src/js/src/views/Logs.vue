@@ -21,6 +21,7 @@
           </template>
           <b-dropdown-item
             v-for="(_, t) in dateModes"
+            :key="t"
             :value="t"
             aria-role="listitem"
             @click="dateDropdownClick">
@@ -75,6 +76,7 @@
           </template>
           <b-dropdown-item
             v-for="t in knownLevels"
+            :key="t"
             :value="t"
             aria-role="listitem"
             >{{ t }}</b-dropdown-item
@@ -99,6 +101,7 @@
           </template>
           <b-dropdown-item
             v-for="t in knownTypes"
+            :key="t"
             :value="t"
             aria-role="listitem"
             >{{ t }}</b-dropdown-item

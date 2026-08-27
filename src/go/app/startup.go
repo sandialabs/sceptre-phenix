@@ -24,6 +24,7 @@ import (
 )
 
 const (
+	appNameStartup                = "startup"
 	tunnelConfigPartsPortOnly     = 1
 	tunnelConfigPartsPortHost     = 2
 	tunnelConfigPartsPortHostDest = 3
@@ -60,7 +61,7 @@ func (Startup) Init(...Option) error {
 }
 
 func (Startup) Name() string {
-	return "startup"
+	return appNameStartup
 }
 
 func (s *Startup) Configure(ctx context.Context, exp *types.Experiment) error {
@@ -398,13 +399,13 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 		var startupApp ifaces.ScenarioApp
 
 		for _, app := range exp.Apps() {
-			if app.Name() == "startup" {
+			if app.Name() == appNameStartup {
 				startupApp = app
 			}
 		}
 
 		switch strings.ToLower(node.Hardware().OSType()) {
-		case "linux", "rhel", "centos":
+		case osLinux, "rhel", "centos":
 			var (
 				hostnameFile = startupDir + "/" + node.General().Hostname() + "-hostname.sh"
 				timezoneFile = startupDir + "/" + node.General().Hostname() + "-timezone.sh"

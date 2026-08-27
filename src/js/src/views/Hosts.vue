@@ -179,6 +179,9 @@ available for experiments, the number of VMs, and host uptime.
     },
 
     computed: {
+      // Intentionally restores the persisted pagination toggle as a side
+      // effect on first access.
+      /* eslint-disable vue/no-side-effects-in-computed-properties */
       paginationNeeded() {
         this.restorePaginate();
 
@@ -189,6 +192,7 @@ available for experiments, the number of VMs, and host uptime.
           return true;
         }
       },
+      /* eslint-enable vue/no-side-effects-in-computed-properties */
     },
 
     data() {

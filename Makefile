@@ -1,4 +1,4 @@
-.PHONY: all build check clean deb docker examples example-go example-python format generate help help-all install-dev install-wrapper uninstall-wrapper lint run-examples test tunneler ui version
+.PHONY: all build check clean deb docker examples example-go example-python generate help help-all install-dev update-actions install-wrapper uninstall-wrapper lint prek run-examples test tunneler ui version
 .DEFAULT_GOAL := help
 
 DOCKER_TAG ?= latest
@@ -13,26 +13,27 @@ help:
 	@echo "Available targets:"
 	@echo ""
 	@echo "Development:"
-	@echo "  all          - Run all development tasks (format, lint, test) and build examples"
-	@echo "  check        - Run linters without fixing (for CI)"
-	@echo "  format       - Format code"
-	@echo "  generate     - Run code generation (protobuf, mocks, etc)"
-	@echo "  lint         - Run linters and fix issues"
-	@echo "  test         - Run unit tests"
-	@echo "  examples     - Build/Check example applications"
-	@echo "  run-examples - Run example applications"
+	@echo "  all            - Run all development tasks (lint, test) and build examples"
+	@echo "  check          - Run prek hooks without committing fixes (for CI)"
+	@echo "  generate       - Run code generation (protobuf, mocks, etc)"
+	@echo "  lint           - Run prek hooks and fix issues (formatting, linting, etc)"
+	@echo "  prek           - Alias for 'lint'"
+	@echo "  test           - Run unit tests"
+	@echo "  examples       - Build/Check example applications"
+	@echo "  run-examples   - Run example applications"
+	@echo "  update-actions - Update pinned actions in GitHub workflows"
 	@echo ""
 	@echo "Build:"
-	@echo "  build        - Build the main phenix binary"
-	@echo "  deb          - Build the phenix .deb package"
-	@echo "  docker       - Build the phenix docker image"
-	@echo "  ui           - Build the frontend UI"
-	@echo "  tunneler     - Build phenix-tunneler binaries"
+	@echo "  build          - Build the main phenix binary"
+	@echo "  deb            - Build the phenix .deb package"
+	@echo "  docker         - Build the phenix docker image"
+	@echo "  ui             - Build the frontend UI"
+	@echo "  tunneler       - Build phenix-tunneler binaries"
 	@echo ""
 	@echo "Installation:"
-	@echo "  install-dev  - Install development and build dependencies"
-	@echo "  install-wrapper - Install the Docker wrapper script (required for shell completion)"
-	@echo "  uninstall-wrapper - Uninstall the Docker wrapper script"
+	@echo "  install-dev        - Install development and build dependencies"
+	@echo "  install-wrapper    - Install the Docker wrapper script (required for shell completion)"
+	@echo "  uninstall-wrapper  - Uninstall the Docker wrapper script"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  clean        - Clean build artifacts"
@@ -42,7 +43,7 @@ help:
 	@echo "  help-all     - Show help for all sub-projects"
 	@echo "  version      - Show versions of installed tools"
 
-all: format lint test examples
+all: lint test examples
 
 build: bin/phenix
 
@@ -60,21 +61,23 @@ clean:
 	$(MAKE) -C src/js clean
 	$(MAKE) -C examples clean
 
-check: generate
-	$(MAKE) -C src/go check
-	$(MAKE) -C examples check
+# Linting, formatting, and other static checks are handled entirely by prek.
+# `check` runs the same hooks as CI: it doesn't commit any fixes it makes, but
+# fails if a hook would have changed a file. `lint` is the dev-facing alias
+# that also applies fixes.
+check:
+	$(call check-command,prek,Please install prek (run 'make install-dev' or see https://prek.j178.dev/installation/))
+	prek run --all-files --show-diff-on-failure
 
 test: generate
 	$(MAKE) -C src/go test
 	$(MAKE) -C examples test
 
-lint: generate
-	$(MAKE) -C src/go lint
-	$(MAKE) -C examples lint
+lint: prek
 
-format:
-	$(MAKE) -C src/go format
-	$(MAKE) -C examples format
+prek:
+	$(call check-command,prek,Please install prek (run 'make install-dev' or see https://prek.j178.dev/installation/))
+	prek run --all-files
 
 generate:
 	$(MAKE) -C src/go generate
@@ -85,8 +88,17 @@ install-dev:
 	$(call check-command,npm,Please install npm (e.g. sudo apt install npm))
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	go install go.uber.org/mock/mockgen@latest
+	@if ! command -v prek > /dev/null; then \
+		curl --proto '=https' --tlsv1.2 -LsSf https://github.com/j178/prek/releases/download/v0.4.14/prek-installer.sh | sh; \
+	fi
+	prek install
 	$(MAKE) -C src/go install-dev
+	$(MAKE) -C src/js install-dev
 	$(MAKE) -C examples install-dev
+
+update-actions:
+	@echo "Updating pinned actions in GitHub workflows..."
+	@docker run --rm -v $(CURDIR):/workflows mheap/pin-github-action .github/workflows/
 
 install-wrapper:
 	@echo "Installing wrapper script to /usr/local/bin/phenix (requires sudo)..."

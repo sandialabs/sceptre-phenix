@@ -333,7 +333,7 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 		return errors.New("topology doesn't exist")
 	}
 
-	// This will upgrade the toplogy to the latest known version if needed.
+	// This will upgrade the topology to the latest known version if needed.
 	topo, err2 := types.DecodeTopologyFromConfig(*topoC)
 	if err2 != nil {
 		return fmt.Errorf("decoding topology from config: %w", err2)
@@ -442,7 +442,7 @@ func processCreateScenario(
 
 	err = types.MergeScenariosForTopology(scenario, topologyName)
 	if err != nil {
-		return fmt.Errorf("merging scenerios: %w", err)
+		return fmt.Errorf("merging scenarios: %w", err)
 	}
 
 	meta.Annotations["scenario"] = scenarioName

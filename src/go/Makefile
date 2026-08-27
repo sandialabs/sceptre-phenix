@@ -13,8 +13,6 @@ TUNNELSOURCES := $(shell find tunneler -name '*.go' )
 THISFILE := $(lastword $(MAKEFILE_LIST))
 THISDIR  := $(shell dirname $(realpath $(THISFILE)))
 GOBIN    := $(THISDIR)/bin
-# Use golangci-lint from PATH if available (e.g. CI), otherwise use local install
-GOLANGCI_LINT ?= $(shell command -v golangci-lint 2> /dev/null || echo $(GOBIN)/golangci-lint)
 
 # Define a helper for checking command existence
 check-command = @if ! command -v $(1) > /dev/null; then \
@@ -29,7 +27,7 @@ PATH := $(GOBIN):$(PATH)
 # Export GOBIN env variable so `go install` picks it up correctly.
 export GOBIN
 
-.PHONY: all check check-protoc clean format generate generate-mocks generate-protobuf go-generate help install install-dev lint lint-clean phenix phenix-debug phenix-tunneler test
+.PHONY: all check-protoc clean generate generate-mocks generate-protobuf go-generate help install install-dev phenix phenix-debug phenix-tunneler test
 .DEFAULT_GOAL := help
 
 help:
@@ -39,12 +37,12 @@ help:
 	@echo "  phenix-tunneler    - Build tunneler binaries"
 	@echo ""
 	@echo "Development targets:"
-	@echo "  all                - Run all tools (format, lint, test)"
-	@echo "  check              - Run linters without fixing (for CI)"
-	@echo "  format             - Format code (golangci-lint)"
-	@echo "  lint               - Lint code and fix issues (golangci-lint)"
-	@echo "  lint-clean         - Clean lint cache"
+	@echo "  all                - Run all tools (test)"
 	@echo "  test               - Run unit tests"
+	@echo ""
+	@echo "NOTE: Linting/formatting (golangci-lint) is handled by 'prek' from"
+	@echo "      the repository root, not by this Makefile. Run 'make lint'"
+	@echo "      (or 'prek run --all-files') from the repo root."
 	@echo ""
 	@echo "Code Generation targets:"
 	@echo "  generate           - Run all code generation tools"
@@ -62,31 +60,15 @@ help:
 	@echo "Help targets:"
 	@echo "  help               - Show this help message"
 
-all: format lint test
-
-check:
-	$(call check-command,$(GOLANGCI_LINT),Please run 'make install-dev' to install it.)
-	$(GOLANGCI_LINT) run -c .golangci.yml
+all: test
 
 generate: generate-mocks generate-protobuf go-generate
-
-format:
-	$(call check-command,$(GOLANGCI_LINT),Please run 'make install-dev' to install it.)
-	$(GOLANGCI_LINT) fmt -c .golangci.yml
-
-lint:
-	$(call check-command,$(GOLANGCI_LINT),Please run 'make install-dev' to install it.)
-	$(GOLANGCI_LINT) run -c .golangci.yml --fix
-
-lint-clean:
-	$(call check-command,$(GOLANGCI_LINT),Please run 'make install-dev' to install it.)
-	$(GOLANGCI_LINT) cache clean
 
 test:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
 	go test -v -race ./...
 
-clean: lint-clean
+clean:
 	$(RM) bin/phenix
 	$(RM) bin/phenix-debug
 	$(RM) store/mock.go
@@ -104,6 +86,12 @@ install:
 
 install-dev: bin/mockgen bin/protoc-gen-go
 	$(call check-command,curl,Please install curl (e.g. sudo apt install curl))
+	# prek runs golangci-lint from its own isolated, version-pinned install
+	# (see prek.toml) and doesn't put it on PATH, so this system-wide install
+	# is what IDEs/editors (e.g. the VS Code Go extension, GoLand) pick up for
+	# real-time linting, and what you get running `golangci-lint` directly for
+	# quick ad-hoc checks. Keep the version in sync with prek.toml/../prek.toml
+	# so editor and manual runs match prek/CI results.
 	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(GOBIN) v2.10.1
 
 bin/mockgen:

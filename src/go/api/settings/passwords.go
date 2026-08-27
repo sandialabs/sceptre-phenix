@@ -45,7 +45,7 @@ func GetPasswordSettingsFromList(settings []types.Setting) (PasswordSettings, er
 		category := setting.Spec.Category
 		name := setting.Spec.Name
 
-		if category != "Password" {
+		if category != settingCategoryPassword {
 			continue
 		}
 
@@ -111,22 +111,22 @@ func UpdatePasswordSettings(newSettings PasswordSettings) error {
 
 	var err error
 
-	_, err = Update("Password", "NumberReq", strconv.FormatBool(newSettings.NumberReq))
+	_, err = Update(settingCategoryPassword, "NumberReq", strconv.FormatBool(newSettings.NumberReq))
 	if err != nil {
 		return fmt.Errorf("error updating Settings.NumberReq: %w", err)
 	}
 
-	_, err = Update("Password", "SymbolReq", strconv.FormatBool(newSettings.SymbolReq))
+	_, err = Update(settingCategoryPassword, "SymbolReq", strconv.FormatBool(newSettings.SymbolReq))
 	if err != nil {
 		return fmt.Errorf("error updating Settings.SymbolReq: %w", err)
 	}
 
-	_, err = Update("Password", "LowercaseReq", strconv.FormatBool(newSettings.LowercaseReq))
+	_, err = Update(settingCategoryPassword, "LowercaseReq", strconv.FormatBool(newSettings.LowercaseReq))
 	if err != nil {
 		return fmt.Errorf("error updating Settings.LowercaseReq: %w", err)
 	}
 
-	_, err = Update("Password", "UppercaseReq", strconv.FormatBool(newSettings.UppercaseReq))
+	_, err = Update(settingCategoryPassword, "UppercaseReq", strconv.FormatBool(newSettings.UppercaseReq))
 	if err != nil {
 		return fmt.Errorf("error updating Settings.UppercaseReq: %w", err)
 	}
@@ -140,7 +140,7 @@ func UpdatePasswordSettings(newSettings PasswordSettings) error {
 		)
 	}
 
-	_, err = Update("Password", "MinLength", formatInt(newSettings.MinLength))
+	_, err = Update(settingCategoryPassword, "MinLength", formatInt(newSettings.MinLength))
 	if err != nil {
 		return fmt.Errorf("error updating Settings.MinLength: %w", err)
 	}

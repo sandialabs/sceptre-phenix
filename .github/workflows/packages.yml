@@ -9,6 +9,13 @@ on:
     types: [apps-update]
 env:
   MM_REV: aecea71
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Never cancel an in-progress tag build (release), but do cancel stale
+  # in-progress runs for the same branch/PR when new commits supersede them.
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 jobs:
   build-and-publish:
     name: Build and Publish Docker & Debian Packages
@@ -18,14 +25,15 @@ jobs:
       contents: write
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Get short SHA
         run: |
-          echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
       - name: Log in to GitHub Docker Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
@@ -33,7 +41,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
         with:
           images: ghcr.io/${{ github.repository }}/phenix
           tags: |
@@ -41,7 +49,7 @@ jobs:
             type=ref,event=tag
             type=sha
       - name: Build container image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
         with:
           context: .
           file: docker/Dockerfile
@@ -55,27 +63,21 @@ jobs:
           load: true
           tags: ${{ steps.meta.outputs.tags }}
 
-      - name: Build Debian Package
-        env:
-          PHENIX_BUILD_IMAGE: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
-        run: ./scripts/build-deb.sh
-
-      - name: Upload .deb Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: phenix-deb-package
-          path: build/deb/*.deb
-          retention-days: 3
-
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create ${{ github.ref_name }} build/deb/*.deb --generate-notes
-
+      # Built right after the phenix image (its only dependency) and before
+      # the slower Debian package build, so the JIT UI image is available
+      # sooner rather than waiting on the .deb build/release steps.
+      #
+      # NOTE: this and the phenix build above intentionally use the default
+      # (non-buildx-container) docker driver instead of
+      # docker/setup-buildx-action + GHA layer caching. The JIT build's
+      # `FROM $PHENIX_IMG` needs to resolve the phenix image that was just
+      # `load: true`-ed into the local Docker engine (PR builds don't push to
+      # the registry), and only the default driver shares that local image
+      # store; the docker-container driver builds in an isolated BuildKit
+      # instance that can't see it and would fail to resolve the image.
       - name: Docker meta for JIT UI
         id: meta-jit
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
         with:
           images: ghcr.io/${{ github.repository }}/phenix-jit-ui
           tags: |
@@ -83,7 +85,7 @@ jobs:
             type=ref,event=tag
             type=sha
       - name: Build JIT container image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
         with:
           context: docker/jit
           file: docker/jit/Dockerfile
@@ -93,6 +95,25 @@ jobs:
             PHENIX_BRANCH=${{ github.head_ref || github.ref_name }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta-jit.outputs.tags }}
+
+      - name: Build Debian Package
+        env:
+          PHENIX_BUILD_IMAGE: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+        run: ./scripts/build-deb.sh
+
+      - name: Upload .deb Artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: phenix-deb-package
+          path: build/deb/*.deb
+          retention-days: 3
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" build/deb/*.deb --generate-notes
     outputs:
       image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
 
@@ -100,20 +121,25 @@ jobs:
   build-podman:
     name: Build Podman Image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Get short SHA
-        run: echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
       - name: Build Podman image (through the Go build stage)
         # Stops at gobuilder: the final stage pulls flaky external resources (filebeat, vmdb2, Kali keyring).
+        env:
+          SHA: ${{ env.sha }}
         run: |
           podman build \
             -f podman/Containerfile \
             --target gobuilder \
-            --build-arg PHENIX_COMMIT=${{ env.sha }} \
+            --build-arg PHENIX_COMMIT="$SHA" \
             --build-arg PHENIX_VERSION=ci \
             -t phenix-podman-ci \
             .

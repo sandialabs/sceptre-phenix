@@ -6,7 +6,7 @@ Vue 3 single-page application leveraging pinia, vue-router, and axios libraries.
 
 Requires node 24. It is recommended to install node using [nvm](https://github.com/nvm-sh/nvm).
 
-```
+```text
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 nvm install 24
 nvm use 24
@@ -16,31 +16,31 @@ Run `npm install` afterwards to install all modules defined in `package.json`
 
 ## Useful commands
 
-**Run the development server with hot-reload:**
+### Run the development server with hot-reload
 
 (Be sure to have a regular build of the phenix backend running to connect to)
 
-```
+```text
 npm run dev
 ```
 
-**Compile for Production**
+### Compile for Production
 
 (Or use `make dist/index.html`)
 
-```
+```text
 npm run build
 ```
 
-**Format Code**
+### Format Code
 
-```
+```text
 npm run format
 ```
 
-**Run tests**
+### Run tests
 
-```
+```text
 npm run test
 ```
 
@@ -49,14 +49,14 @@ npm run test
 ### Structure
 
 - `src`
-    - `assets`: images and css
-    - `components`: UI components that are used to make full views. These should be relatively small and may be reusable
-    - `utils`: Various helper functions imported in Vue files
-    - `views`: Full UI pages, typically referenced in `router.js`. May use components
-    - `App.vue`: Base UI page that contains common elements (header, footer). Shows a single `view` page at a time
-    - `main.js`: Creates the Vue app
-    - `router.js`: Defines routes and hooks using `vue-router`
-    - `store.js`: Defines the `pinia` store
+  - `assets`: images and css
+  - `components`: UI components that are used to make full views. These should be relatively small and may be reusable
+  - `utils`: Various helper functions imported in Vue files
+  - `views`: Full UI pages, typically referenced in `router.js`. May use components
+  - `App.vue`: Base UI page that contains common elements (header, footer). Shows a single `view` page at a time
+  - `main.js`: Creates the Vue app
+  - `router.js`: Defines routes and hooks using `vue-router`
+  - `store.js`: Defines the `pinia` store
 - `test`: unit tests
 - `*.env`: Files which define environment variables used during build
 - `index.html`: Base page loaded by browser. Loads the rest of the app
@@ -71,7 +71,7 @@ npm run test
 - `vite`: build tools. Replaces `vue-cli` in vue2
 - `Buefy`: UI library. Recently upgraded to support vue3
 - `Bulma`: css library used by Buefy
-    - Note: currently Buefy uses Bulma 0.9.4. See docs here: https://versions.bulma.io/0.9.4/documentation/
+  - Note: currently Buefy uses Bulma 0.9.4. See docs here: <https://versions.bulma.io/0.9.4/documentation/>
 
 ### Notes
 

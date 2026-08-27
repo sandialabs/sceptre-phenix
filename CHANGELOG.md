@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [1.0.0]
 
 ### Fixed
+
 - **Tunneler**:
   - **Listener State Synchronization**: Centralized local listener tracking behind a synchronized manager to prevent concurrent map and state access.
   - **Operation Reporting**: Return errors for unknown listeners and local port conflicts instead of reporting successful operations.
@@ -16,6 +17,7 @@ All notable changes to this project will be documented in this file.
   - **Unix Socket Protocol**: Replace Gob messages with JSON and typed listener action payloads.
 
 ### Added
+
 - **Tunneler Web Interface**: Add a local web dashboard for listing, enabling, disabling, and moving listeners, with live WebSocket updates.
 - **CLI Command Aliases**: Added `exp del`, `exp trig`, `exp res`, `exp rec`, `image del`, `config del`, and `vm res`.
 - **Centralized Logging Architecture**: Implemented a unified logging system where phēnix core aggregates logs from internal services and external apps.
@@ -33,9 +35,9 @@ All notable changes to this project will be documented in this file.
     - Supports dynamic log levels via `PHENIX_LOG_LEVEL`.
     - Added unit tests (`main_test.go`) using the subprocess pattern to verify CLI behavior, panic recovery, and log output.
 - **Documentation**:
-    - Comprehensive `README.md` updates including architecture diagrams, configuration tables, and developer guides.
-    - Added dependency installation instructions (Go, Python, Node, Protoc) for local development.
-    - Added developer guidelines for Python app error handling (raise vs sys.exit).
+  - Comprehensive `README.md` updates including architecture diagrams, configuration tables, and developer guides.
+  - Added dependency installation instructions (Go, Python, Node, Protoc) for local development.
+  - Added developer guidelines for Python app error handling (raise vs sys.exit).
 - **Build Tools**: Added `make docker` target for easier container builds.
 - **Build System**: Standardized Makefiles with consistent targets (`help`, `all`, `test`, `lint`, `format`, `clean`) and improved help output.
 - **Code Quality**: Integrated `golangci-lint` with a comprehensive ruleset (`.golangci.yml`) and fixed numerous static analysis issues. (Note: Some linters are currently disabled to facilitate incremental adoption).
@@ -46,6 +48,7 @@ All notable changes to this project will be documented in this file.
 - **Podman CI**: Added a GitHub Actions job that builds the Podman `Containerfile` (through the Go build stage) so the Podman build path can't break unnoticed.
 
 ### Changed
+
 - **Log Output**: Default log output format changed to structured JSON on `stderr` for applications.
 - **Configuration Management**: Moved from static flags/env vars to a watched `config.yaml` file managed via `phenix settings` commands.
 - **CLI Commands**: Separated runtime configuration (`phenix settings`) from persistent database management (`phenix settings db`). Replaced `reset` command with `unset --all`.
@@ -64,9 +67,11 @@ All notable changes to this project will be documented in this file.
 - **Web UI Environment Variables**: Build-time UI environment variables are now prefixed `VITE_` instead of `VUE_APP_` (e.g. `VITE_AUTH` replaces `VUE_APP_AUTH`, and `VITE_BASE_PATH` replaces `VUE_BASE_PATH`). The Docker `PHENIX_WEB_AUTH` / `PHENIX_BASE_PATH` build args are unchanged.
 
 ### Removed
+
 - **Legacy Tests**: Removed outdated `testing/` directory and unused `*_test.go` files (replaced by `examples/`).
 
 ### Fixed
+
 - **Web UI**: Removed non-functional packet-capture controls from the IP column header and renamed the IPv4 column to IP.
 - **Web UI VNC Tab**: Excluded external/HIL nodes and "Do Not Boot" (DNB) nodes from the VNC tab in the running experiment view.
 - **VM Snapshots**: Replaced deprecated minimega `vm migrate` commands with `vm save` and `vm config state` for snapshot, restore, and redeploy workflows.

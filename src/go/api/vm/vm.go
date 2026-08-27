@@ -153,7 +153,7 @@ func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
 
 			// Since we get the IP from the experiment config, but the network name
 			// from minimega (to preserve iface to network ordering), make sure the
-			// ordering of IPs matches the odering of networks. We could just use a
+			// ordering of IPs matches the ordering of networks. We could just use a
 			// map here, but then the iface to network ordering that minimega ensures
 			// would be lost.
 			for i, nw := range details.Networks {
@@ -279,7 +279,7 @@ func Get(expName, vmName string) (*mm.VM, error) {
 
 	// Since we get the IP from the experiment config, but the network name from
 	// minimega (to preserve iface to network ordering), make sure the ordering of
-	// IPs matches the odering of networks. We could just use a map here, but then
+	// IPs matches the ordering of networks. We could just use a map here, but then
 	// the iface to network ordering that minimega ensures would be lost.
 	for idx, nw := range details[0].Networks {
 		// If it's set here, we got it from minimega, which is the source of truth

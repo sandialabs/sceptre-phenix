@@ -55,7 +55,6 @@ def test_panic_recovery(capsys):
     input_json = json.dumps(input_data)
 
     with patch("sys.stdin", StringIO(input_json)):
-
         app = Example("example", "running")
 
         # Reconfigure logger to write JSON to stderr
@@ -86,10 +85,10 @@ def test_log_level_debug(capsys):
     }
     input_json = json.dumps(input_data)
 
-    with patch("sys.stdin", StringIO(input_json)), patch(
-        "phenix_apps.common.settings.PHENIX_LOG_LEVEL", "DEBUG"
+    with (
+        patch("sys.stdin", StringIO(input_json)),
+        patch("phenix_apps.common.settings.PHENIX_LOG_LEVEL", "DEBUG"),
     ):
-
         app = Example("example", "running")
 
         # Reconfigure logger to write JSON to stderr
@@ -115,7 +114,6 @@ def test_log_json_format(capsys):
     input_json = json.dumps(input_data)
 
     with patch("sys.stdin", StringIO(input_json)):
-
         app = Example("example", "running")
 
         # Reconfigure logger to write JSON to stderr
@@ -151,10 +149,11 @@ def test_iteration_field(capsys):
     }
     input_json = json.dumps(input_data)
 
-    with patch("sys.stdin", StringIO(input_json)), patch(
-        "phenix_apps.common.settings.PHENIX_LOG_FILE", "stderr"
-    ), patch("phenix_apps.common.settings.PHENIX_LOG_LEVEL", "DEBUG"):
-
+    with (
+        patch("sys.stdin", StringIO(input_json)),
+        patch("phenix_apps.common.settings.PHENIX_LOG_FILE", "stderr"),
+        patch("phenix_apps.common.settings.PHENIX_LOG_LEVEL", "DEBUG"),
+    ):
         app = Example("example", "running")
 
         # Reconfigure logger to write JSON to stderr

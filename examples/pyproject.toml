@@ -1,0 +1,11 @@
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+ignore = [
+  # phenix apps intentionally catch broad exceptions and re-raise them via
+  # logger.exception() so panics/tracebacks are captured as structured JSON
+  # logs (see examples/README.md's "Error Handling" section). This is the
+  # documented, recommended pattern for this framework, not a mistake.
+  "BLE001",
+]

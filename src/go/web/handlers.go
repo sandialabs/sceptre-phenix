@@ -2967,10 +2967,10 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 
 			progress, err := strconv.ParseFloat(s, 64)
 			if err == nil {
-				plog.Debug(plog.TypeSystem, "snapshot percent complete", "percent", progress)
+				plog.Debug(plog.TypeSystem, "snapshot percent complete", statusKeyPercent, progress)
 
 				status := map[string]any{
-					"percent": progress / percentDivisor,
+					statusKeyPercent: progress / percentDivisor,
 				}
 
 				marshalled, _ := json.Marshal(status)
@@ -3227,10 +3227,10 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		for s := range status {
-			plog.Debug(plog.TypeSystem, "VM commit percent complete", "percent", s)
+			plog.Debug(plog.TypeSystem, "VM commit percent complete", statusKeyPercent, s)
 
 			status := map[string]any{
-				"percent": s,
+				statusKeyPercent: s,
 			}
 
 			marshalled, _ := json.Marshal(status)
@@ -3419,10 +3419,10 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 			progress, err := strconv.ParseFloat(s, 64)
 			if err == nil {
 				status := map[string]any{
-					"percent": progress,
+					statusKeyPercent: progress,
 				}
 
-				plog.Info(plog.TypeSystem, "memory snapshot percent complete", "percent", progress)
+				plog.Info(plog.TypeSystem, "memory snapshot percent complete", statusKeyPercent, progress)
 
 				marshalled, _ := json.Marshal(status)
 
