@@ -29,8 +29,7 @@
         </b-tooltip>
       </div>
     </div>
-    <div
-      style="margin-top: 10px; border: 2px solid whitesmoke; background: #333">
+    <div class="graph-surface">
       <vue-pipeline :ref="runRef()" :pipeline="nodes" @select="viewer" />
     </div>
   </div>

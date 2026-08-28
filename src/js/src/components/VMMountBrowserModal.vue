@@ -322,6 +322,7 @@
   }
 
   .disabled > .file-cta {
-    background-color: gray !important;
+    color: var(--text-secondary) !important;
+    background-color: var(--surface-secondary) !important;
   }
 </style>
