@@ -18,7 +18,7 @@
             </svg>
           </div>
           <div class="column">
-            <span style="color: whitesmoke">Uninitialized</span>
+            <span>Uninitialized</span>
           </div>
         </div>
       </div>
@@ -44,7 +44,7 @@
             </svg>
           </div>
           <div class="column">
-            <span style="color: whitesmoke">Running</span>
+            <span>Running</span>
           </div>
         </div>
       </div>
@@ -61,7 +61,7 @@
                     class="circle-bg success"></circle>
                   <g class="result-status-glyph">
                     <polygon
-                      fill="white"
+                      fill="var(--text-inverse)"
                       points="-2.00 2.80 -4.80 0.00 -5.73 0.933 -2.00 4.67 6.00 -3.33 5.07 -4.27"></polygon>
                   </g>
                 </g>
@@ -69,7 +69,7 @@
             </svg>
           </div>
           <div class="column">
-            <span style="color: whitesmoke">Success</span>
+            <span>Success</span>
           </div>
         </div>
       </div>
@@ -97,7 +97,7 @@
             </svg>
           </div>
           <div class="column">
-            <span style="color: whitesmoke">Break Point</span>
+            <span>Break Point</span>
           </div>
         </div>
       </div>
@@ -123,7 +123,7 @@
             </svg>
           </div>
           <div class="column">
-            <span style="color: whitesmoke">Backgrounded</span>
+            <span>Backgrounded</span>
           </div>
         </div>
       </div>
@@ -140,7 +140,7 @@
                     class="circle-bg failure"></circle>
                   <g class="result-status-glyph">
                     <polygon
-                      fill="white"
+                      fill="var(--text-inverse)"
                       points="4.67 -3.73 3.73 -4.67 0 -0.94 -3.73 -4.67 -4.67 -3.73 -0.94 0 -4.67 3.73 -3.73 4.67 0 0.94 3.73 4.67 4.67 3.73 0.94 0"></polygon>
                   </g>
                 </g>
@@ -148,7 +148,7 @@
             </svg>
           </div>
           <div class="column">
-            <span style="color: whitesmoke">Failure</span>
+            <span>Failure</span>
           </div>
         </div>
       </div>
@@ -163,46 +163,46 @@
   }
 
   .node > circle {
-    stroke: white;
+    stroke: var(--border-primary);
     stroke-width: 2px;
   }
 
   .node > circle.success {
-    fill: #8cc04f;
+    fill: var(--status-running);
   }
 
   .node > circle.failure {
-    fill: #d54c53;
+    fill: var(--status-stopped);
   }
 
   .node > circle.unstable {
-    fill: #f6b44b;
+    fill: var(--status-pending);
   }
 
   .node > circle.aborted {
-    fill: #949393;
+    fill: var(--status-neutral);
   }
 
   .node > circle.paused {
-    fill: #24b0d5;
+    fill: var(--status-external);
   }
 
   .node > circle.unknown {
-    fill: #686868;
+    fill: var(--status-neutral);
   }
 
   .node > circle.running {
-    fill: #fff;
+    fill: var(--surface-primary);
   }
 
   g.running {
-    fill: #8ccc4f;
+    fill: var(--status-running);
     animation: rotating 2s linear infinite;
     animation-iteration-count: infinite;
   }
 
   g.background {
-    fill: #f6b44b;
+    fill: var(--status-pending);
     animation: rotating 2s linear infinite;
     animation-iteration-count: infinite;
   }

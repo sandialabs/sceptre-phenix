@@ -411,7 +411,10 @@
               <div>
                 <hr
                   v-if="parseInt(index) > 0"
-                  style="color: #595959; background-color: #595959" />
+                  style="
+                    color: var(--border-subtle);
+                    background-color: var(--border-subtle);
+                  " />
                 Create disk image of the {{ vmI.name }} VM with filename:
                 <br /><br />
                 <b-field
@@ -452,7 +455,10 @@
               <div>
                 <hr
                   v-if="parseInt(index) > 0"
-                  style="color: #595959; background-color: #595959" />
+                  style="
+                    color: var(--border-subtle);
+                    background-color: var(--border-subtle);
+                  " />
                 Create a memory snapshot for the
                 {{ vmI.name }} VM with filename: <br /><br />
                 <b-field
@@ -1443,27 +1449,11 @@
                   style="display: block" />
                 <a
                   v-if="!vm.external"
-                  style="
-                    color: whitesmoke;
-                    display: block;
-                    background-color: grey;
-                    text-align: center;
-                    padding: 2px 0px;
-                  "
+                  class="vm-tile-label"
                   @click="getInfo(vm)"
                   >{{ vm.name }}</a
                 >
-                <span
-                  v-else
-                  style="
-                    color: whitesmoke;
-                    display: block;
-                    background-color: grey;
-                    text-align: center;
-                    padding: 2px 0px;
-                  "
-                  >{{ vm.name }}</span
-                >
+                <span v-else class="vm-tile-label">{{ vm.name }}</span>
               </div>
             </template>
             <template v-else>Your search turned up empty!</template>
@@ -4294,6 +4284,16 @@
     },
   };
 </script>
+
+<style scoped>
+  .vm-tile-label {
+    display: block;
+    padding: 2px 0;
+    color: var(--text-primary);
+    text-align: center;
+    background-color: var(--surface-tertiary);
+  }
+</style>
 
 <style scoped>
   .fa-layers-counter {

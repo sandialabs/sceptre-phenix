@@ -36,6 +36,7 @@ export async function useErrorNotification(error) {
     hasIcon: true,
     position: 'is-top',
     indefinite: true,
+    ariaCloseLabel: 'Dismiss error',
     message: message,
   });
 }

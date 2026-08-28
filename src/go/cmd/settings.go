@@ -5,12 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 
 	"phenix/api/settings"
@@ -18,6 +16,8 @@ import (
 	"phenix/util"
 	"phenix/util/plog"
 	"phenix/util/printer"
+	"phenix/util/runtimeconfig"
+	"phenix/util/theme"
 )
 
 const (
@@ -182,84 +182,15 @@ func newSettingsSetCmd() *cobra.Command {
 		ValidArgsFunction: settingsKeyCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := args[0]
-			val := inferType(args[1])
-
-			configFile := viper.ConfigFileUsed()
-			if configFile == "" {
-				uid, home := getCurrentUserInfo()
-				targetDir := "/etc/phenix"
-
-				if uid != "0" {
-					targetDir = filepath.Join(home, ".config", "phenix")
-				}
-
-				err := os.MkdirAll(targetDir, 0o750)
-				if err != nil {
-					return fmt.Errorf("creating config directory: %w", err)
-				}
-
-				configFile = filepath.Join(targetDir, "config.yaml")
-			}
-
-			// Read existing config file
-			data, err := os.ReadFile(configFile)
-			if err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("reading config file: %w", err)
-			}
-
-			configMap := make(map[string]any)
-			if len(data) > 0 {
-				err := yaml.Unmarshal(data, &configMap)
-				if err != nil {
-					return fmt.Errorf("parsing config file: %w", err)
-				}
-			}
-
-			// Helper to set nested keys
-			var setKey func(m map[string]any, k string, v any)
-
-			setKey = func(m map[string]any, k string, v any) {
-				parts := strings.SplitN(k, ".", keyParts)
-				target := parts[0]
-
-				// Find existing key with case-insensitive match
-				for mk := range m {
-					if strings.EqualFold(mk, target) {
-						target = mk
-						break
-					}
-				}
-
-				if len(parts) == 1 {
-					m[target] = v
-
-					return
-				}
-
-				if _, ok := m[target]; !ok {
-					m[target] = make(map[string]any)
-				}
-
-				if next, ok := m[target].(map[string]any); ok {
-					setKey(next, parts[1], v)
-				} else {
-					// Overwrite if it's not a map (e.g. changing a leaf to a branch, which shouldn't happen in valid config but good for robustness)
-					next := make(map[string]any)
-					m[target] = next
-					setKey(next, parts[1], v)
-				}
-			}
-
-			setKey(configMap, key, val)
-
-			newData, err := yaml.Marshal(configMap)
+			val, err := normalizeRuntimeSetting(key, args[1])
 			if err != nil {
-				return fmt.Errorf("marshaling config: %w", err)
+				return err
 			}
 
-			// Write back to file
-			if err := os.WriteFile(configFile, newData, 0o600); err != nil {
-				return fmt.Errorf("writing config file: %w", err)
+			configFile := getRuntimeConfigFilePath()
+
+			if err := runtimeconfig.Set(configFile, key, val); err != nil {
+				return err
 			}
 
 			plog.Info(plog.TypeSystem, "configuration updated", "file", configFile)
@@ -269,6 +200,18 @@ func newSettingsSetCmd() *cobra.Command {
 	}
 
 	return cmd
+}
+
+func normalizeRuntimeSetting(key, value string) (any, error) {
+	if strings.EqualFold(key, "ui.default-theme") {
+		mode, err := theme.Parse(value)
+		if err != nil {
+			return nil, err
+		}
+		return string(mode), nil
+	}
+
+	return inferType(value), nil
 }
 
 func newSettingsListCmd() *cobra.Command {
@@ -429,20 +372,9 @@ func newSettingsUnsetCmd() *cobra.Command {
 				key = args[0]
 			}
 
-			configFile := viper.ConfigFileUsed()
-			if configFile == "" {
-				uid, home := getCurrentUserInfo()
-				targetDir := "/etc/phenix"
-
-				if uid != "0" {
-					targetDir = filepath.Join(home, ".config", "phenix")
-				}
-
-				configFile = filepath.Join(targetDir, "config.yaml")
-
-				if _, err := os.Stat(configFile); os.IsNotExist(err) {
-					return errors.New("no configuration file found")
-				}
+			configFile := getRuntimeConfigFilePath()
+			if _, err := os.Stat(configFile); os.IsNotExist(err) {
+				return errors.New("no configuration file found")
 			}
 
 			if all {

@@ -4,6 +4,8 @@
 </template>
 
 <script>
+  import { useTheme } from '@/utils/theme.js';
+
   // import ace from 'ace-builds/src-noconflict/ace';
   //
   // import themeDraculaUrl from 'ace-builds/src-noconflict/theme-dracula?url';
@@ -61,6 +63,11 @@
         themeDraculaUrl.default,
       );
 
+      const themeChromeUrl = await import(
+        'ace-builds/src-noconflict/theme-chrome?url'
+      );
+      this.ace.config.setModuleUrl('ace/theme/chrome', themeChromeUrl.default);
+
       const keybindingVimUrl = await import(
         'ace-builds/src-noconflict/keybinding-vim?url'
       );
@@ -84,7 +91,7 @@
       this.ace.config.setModuleUrl('ace/mode/yaml', modeYamlUrl.default);
 
       this.editor = this.ace.edit(this.$refs.editor, {
-        theme: 'ace/theme/dracula',
+        theme: this.aceTheme,
         mode: 'ace/mode/' + this.lang,
         useWorker: false,
         tabSize: 2,
@@ -104,6 +111,11 @@
       this.isLoading = false;
     },
     watch: {
+      aceTheme(newTheme) {
+        if (this.editor) {
+          this.editor.setTheme(newTheme);
+        }
+      },
       value(newValue) {
         if (this.editor && this.editor.getValue() !== newValue) {
           this.editor.setValue(newValue, 1); // 1 is to move cursor to the start
@@ -123,6 +135,13 @@
         } else {
           this.editor.setKeyboardHandler('');
         }
+      },
+    },
+    computed: {
+      aceTheme() {
+        return useTheme().activeTheme.value === 'dark'
+          ? 'ace/theme/dracula'
+          : 'ace/theme/chrome';
       },
     },
     // setup() {

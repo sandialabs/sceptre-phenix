@@ -34,6 +34,7 @@ side will pass.
         <p class="control">
           <button
             class="button input-button"
+            aria-label="Clear VM search"
             @click="
               searchVMs('');
               filesTable.category = null;

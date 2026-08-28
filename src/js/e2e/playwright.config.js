@@ -15,5 +15,16 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
   },
+  projects: [
+    {
+      name: 'chromium',
+      use: { browserName: 'chromium' },
+    },
+    {
+      name: 'firefox-theme',
+      grep: /theme:/,
+      use: { browserName: 'firefox' },
+    },
+  ],
   outputDir: './test-results',
 });

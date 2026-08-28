@@ -203,7 +203,7 @@ graph TD
 
 ### ⚙️ Configuration
 
-Logging settings are managed via the `phenix settings` command, which modifies the `config.yaml` file. Changes are applied **dynamically** (hot-swapped) without restarting the service.
+Runtime settings are managed via the `phenix settings` command, which modifies the `config.yaml` file. Changes are applied **dynamically** (hot-swapped) without restarting the service.
 
 #### Settings Reference
 
@@ -217,6 +217,7 @@ Logging settings are managed via the `phenix settings` command, which modifies t
 | `log.system.max-age` | `PHENIX_LOG_SYSTEM_MAX_AGE` | `90` | Max age in days to retain old logs. |
 | `ui.logs.level` | `PHENIX_UI_LOGS_LEVEL` | `""` | Log level for the web UI stream (defaults to `log.level`). |
 | `ui.logs.minimega-path` | `PHENIX_UI_LOGS_MINIMEGA_PATH` | `""` | Path to the minimega log file to display in the UI. **(Restart Required)** |
+| `ui.default-theme` | `PHENIX_UI_DEFAULT_THEME` | `system` | Default web UI theme (`system`, `light`, or `dark`). A browser-local preference takes precedence. |
 
 #### Configuration Precedence
 
@@ -242,12 +243,24 @@ phenix settings list
 # Change log level to debug
 phenix settings set log.level debug
 
+# Set the default web UI theme
+phenix settings set ui.default-theme dark
+
 # Revert a setting to default
 phenix settings unset log.level
 
 # Reset all settings
 phenix settings unset --all
 ```
+
+The default theme can also be set for one UI process with
+`phenix ui --default-theme system|light|dark`. An explicit flag has highest
+precedence and locks the default-theme control in the Settings UI.
+
+Each browser can toggle its active light or dark theme from the header. That
+choice is stored under `phenix.theme` in browser-local storage and takes
+precedence over `ui.default-theme`. Without a local choice, `system` follows
+the browser's operating-system color preference, including live changes.
 
 ### 👨‍💻 Developer Guide
 

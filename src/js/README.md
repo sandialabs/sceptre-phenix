@@ -76,3 +76,21 @@ npm run test
 ### Notes
 
 - Font Awesome icons are imported individually in `main.js` to reduce bundle size. Add any new icons there.
+
+### Themes
+
+The application loads `/theme.js` before its styles to apply the initial
+theme without a flash. Theme resolution order is:
+
+1. `phenix.theme` in browser-local storage (`light` or `dark`).
+2. The server's `ui.default-theme` value (`system`, `light`, or `dark`).
+3. `prefers-color-scheme` when the server default is `system`.
+
+The header toggle changes only the browser-local choice. The Settings view
+changes the shared server default unless `phenix ui --default-theme` was
+explicitly supplied.
+
+All runtime assets are bundled or same-origin; theme behavior requires no
+network access. The sun and moon SVG icons come from Font Awesome Free,
+copyright Fonticons, Inc., and are locally bundled under the CC BY 4.0 icon
+license. Font Awesome Free describes this distribution as GPL friendly.
