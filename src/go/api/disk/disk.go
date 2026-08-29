@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -90,12 +91,16 @@ func (MMDiskFiles) GetImages(expName string) ([]Details, error) {
 	// Using a map here to weed out duplicates.
 	details := make(map[string]Details)
 
+	// Tracks the set of experiments whose topology references each image (keyed
+	// by image name), so an image used by multiple experiments can list them all.
+	expsByImage := make(map[string]map[string]struct{})
+
 	// Add all the files from the minimega files directory
 	getAllFiles(details)
 
 	// Add all files defined in the experiment topology if given; otherwise check all experiments
 	if len(expName) > 0 {
-		err := getTopologyFiles(expName, details)
+		err := getTopologyFiles(expName, details, expsByImage)
 		if err != nil {
 			return nil, err
 		}
@@ -106,12 +111,16 @@ func (MMDiskFiles) GetImages(expName string) ([]Details, error) {
 		}
 
 		for _, exp := range experiments {
-			err = getTopologyFiles(exp.Metadata.Name, details)
+			err = getTopologyFiles(exp.Metadata.Name, details, expsByImage)
 			if err != nil {
 				return nil, err
 			}
 		}
 	}
+
+	// Record the referencing experiment(s) on each image, sorted and joined so
+	// images used by more than one experiment list all of them deterministically.
+	setExperimentImages(details, expsByImage)
 
 	var images []Details
 	for name := range details {
@@ -152,7 +161,7 @@ func getAllFiles(details map[string]Details) {
 }
 
 // Retrieves all the unique image names defined in the topology.
-func getTopologyFiles(expName string, details map[string]Details) error {
+func getTopologyFiles(expName string, details map[string]Details, expsByImage map[string]map[string]struct{}) error {
 	// Retrieve the experiment
 	exp, err := experiment.Get(expName)
 	if err != nil {
@@ -177,10 +186,43 @@ func getTopologyFiles(expName string, details map[string]Details) error {
 					}
 				}
 			}
+
+			// Record that this experiment references the image. This is tracked
+			// even for images already discovered via the minimega file listing
+			// (getAllFiles), whose Experiment field would otherwise remain unset
+			// and show as "N/A" in the UI.
+			name := filepath.Base(path)
+			if expsByImage[name] == nil {
+				expsByImage[name] = make(map[string]struct{})
+			}
+			expsByImage[name][expName] = struct{}{}
 		}
 	}
 
 	return nil
+}
+
+// setExperimentImages records on each image the sorted, comma-separated list of
+// experiments whose topology references it. Images discovered via the minimega
+// file listing but not referenced by any experiment keep their unset (nil)
+// Experiment field, which the UI shows as "N/A".
+func setExperimentImages(details map[string]Details, expsByImage map[string]map[string]struct{}) {
+	for name, exps := range expsByImage {
+		entry, ok := details[name]
+		if !ok || len(exps) == 0 {
+			continue
+		}
+
+		names := make([]string, 0, len(exps))
+		for exp := range exps {
+			names = append(names, exp)
+		}
+		sort.Strings(names)
+
+		joined := strings.Join(names, ", ")
+		entry.Experiment = &joined
+		details[name] = entry
+	}
 }
 
 func resolveImage(path string) []Details {
