@@ -1,0 +1,79 @@
+name: "Bug/Issue Report"
+description: "Describe a bug, error, unexpected behavior, or other problem"
+title: "[BUG] "
+labels: ["bug"]
+type: Bug
+assignees: []
+body:
+  - type: input
+    attributes:
+      label: Host OS
+      description: "The phenix/minimega host operating system name and version, or 'N/A' if not applicable."
+      placeholder: "e.g., Ubuntu 22.04"
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Browser
+      description: "The browser you are using to access the phenix UI, if applicable."
+      options:
+        - Chrome
+        - Firefox
+        - Safari
+        - Edge
+        - Other
+        - N/A
+  - type: input
+    attributes:
+      label: Client OS
+      description: "The OS name and version of the system you are using to access the phenix UI, or 'N/A' if not applicable."
+      placeholder: "e.g., Windows 11, macOS 26.6.2, Ubuntu 24.04, N/A"
+  - type: input
+    attributes:
+      label: Phenix Version
+      description: "Output of '`phenix version`', '`docker exec phenix phenix version`', the release timestamp + commit from bottom right of phenix UI, or 'N/A' if not applicable. At a bare minimum, include the specific commit or release version. Do not say things like 'latest on main' or 'latest release', please."
+      placeholder: "main (commit 5792e16) Mon Sep 29 19:35:35 UTC 2025"
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Minimega Version
+      description: "Output of '`mm version`', '`docker exec minimega minimega -e version`', or 'N/A' if not applicable. At a bare minimum, include the specific commit or version number."
+      placeholder: "minimega 3.0.1 837c9174cdbda9ceb84e015020f0db87393bc00f 2026-07-08"
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Description
+      description: "A clear and concise description of what the bug is. What did you expect to happen, and what actually happened?"
+      placeholder: "Describe the bug here..."
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Steps to Reproduce
+      description: "Clear and concise list of steps to reproduce the bug."
+      placeholder: "1. Step one\n2. Step two\n3. Step three\n4. See the error"
+  - type: upload
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: "If applicable, add screenshots to help explain your problem. If it is a UI issue, screenshots are especially helpful, and it will be difficult to diagnose your issue without them."
+  - type: upload
+    attributes:
+      label: Logs and other data
+      description: "If applicable, add logs, YAML configs or other data relevant to the issue. This will help us reproduce the issue and fix it faster."
+  - type: textarea
+    attributes:
+      label: Additional Context
+      description: "Add any other context about the problem here, such as screenshots, logs, error messages, or related issues/PRs. Please attach large logs or files as separate attachments rather than pasting them directly into the issue."
+      placeholder: "Describe the additional context here..."
+  - type: checkboxes
+    attributes:
+      label: Checklist
+      description: "Please confirm the following before submitting your issue."
+      options:
+        - label: "I have included no proprietary/sensitive information in my issue."
+          required: true
+        - label: "I have searched the existing issues and believe this is not a duplicate of an existing bug report. If this bug is not the same as another bug, but closely related, please link to the related issue(s). If it's a duplicate, add your information to an existing issue instead of creating a new one."
+          required: true
