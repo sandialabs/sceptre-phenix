@@ -55,4 +55,5 @@ All notable changes to this project will be documented in this file.
 - **Legacy Tests**: Removed outdated `testing/` directory and unused `*_test.go` files (replaced by `examples/`).
 
 ### Fixed
+- **Image Script Updates**: Prevented `phenix image update` from duplicating refreshed scripts in `script_order`.
 - **Timestamp Consistency**: Enforced `2006-01-02 15:04:05.000` time format across file logs.

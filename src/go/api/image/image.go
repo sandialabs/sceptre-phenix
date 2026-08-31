@@ -366,6 +366,9 @@ func Update(name string) error {
 		for k := range scripts {
 			if _, statErr := os.Stat(k); statErr == nil {
 				delete(img.Scripts, k)
+				img.ScriptOrder = slices.DeleteFunc(img.ScriptOrder, func(script string) bool {
+					return script == k
+				})
 
 				err = addScriptToImage(&img, k, "")
 				if err != nil {
