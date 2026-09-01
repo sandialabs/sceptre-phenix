@@ -57,7 +57,10 @@ func reply(body string) *miniclient.Response {
 func newFakeMinimega(t *testing.T, handle fakeHandler) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("/tmp", "mmcli-")
+	// Use a short-lived /tmp directory because the Unix socket path must fit under
+	// the OS limit. t.TempDir() points under /var/folders, which is too long on
+	// macOS for the listener socket and causes bind: invalid argument.
+	dir, err := os.MkdirTemp("/tmp", "mmcli-") //nolint:usetesting // short socket path is required for Unix socket compatibility on macOS
 	if err != nil {
 		t.Fatalf("creating temp dir for fake minimega socket: %v", err)
 	}
