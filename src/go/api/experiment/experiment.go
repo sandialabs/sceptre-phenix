@@ -567,10 +567,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	} else {
 		// Delete any snapshot files created by this headnode for this experiment
 		// previously before starting the experiment. This way, cluster nodes that VMs
-		// get scheduled on will pull the most up-to-date snapshot files. We don't do
-		// this after stopping an experiment just in case users need to access the
-		// snapshots for any reason, but we do clean them up when an experiment is
-		// deleted.
+		// get scheduled on will pull the most up-to-date snapshot files.
 		err = deleteC2AndSnapshots(exp)
 		if err != nil {
 			return fmt.Errorf("deleting experiment snapshots and CC responses: %w", err)
@@ -864,9 +861,12 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	return nil
 }
 
-// Stop stops the experiment with the given name. It returns any errors
-// encountered while stopping the experiment.
-func Stop(name string) error {
+// Stop stops the experiment with the given name. Injection snapshots are
+// deleted by default. It returns any errors encountered while stopping the
+// experiment.
+func Stop(name string, opts ...StopOption) error {
+	o := newStopOptions(opts...)
+
 	var err error
 	c, _ := store.NewConfig("experiment/" + name)
 
@@ -899,9 +899,9 @@ func Stop(name string) error {
 	}
 
 	if !dryrun {
-		err = mm.ClearNamespace(exp.Spec.ExperimentName())
+		err = stopVMsAndDeleteSnapshots(exp, o.keepInjectionSnapshots)
 		if err != nil {
-			errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
+			errors = multierror.Append(errors, err)
 		}
 	}
 
@@ -920,6 +920,24 @@ func Stop(name string) error {
 	}
 
 	return errors
+}
+
+func stopVMsAndDeleteSnapshots(exp *types.Experiment, keepSnapshots bool) error {
+	err := mm.ClearNamespace(exp.Spec.ExperimentName())
+	if err != nil {
+		return fmt.Errorf("killing experiment VMs: %w", err)
+	}
+
+	if keepSnapshots {
+		return nil
+	}
+
+	err = deleteSnapshots(exp)
+	if err != nil {
+		return fmt.Errorf("deleting experiment snapshots: %w", err)
+	}
+
+	return nil
 }
 
 func Status(name string) (*v1.ExperimentStatus, error) {
@@ -1157,6 +1175,18 @@ func File(name, filePath string) ([]byte, error) {
 }
 
 func deleteC2AndSnapshots(exp *types.Experiment) error {
+	expName := exp.Metadata.Name
+	c2Path := expName + "/miniccc_responses"
+
+	err := file.DeleteFile(c2Path)
+	if err != nil {
+		return fmt.Errorf("deleting CC responses for experiment %s: %w", expName, err)
+	}
+
+	return deleteSnapshots(exp)
+}
+
+func deleteSnapshots(exp *types.Experiment) error {
 	// Snapshot naming convention is as follows:
 	//   {hostname}_{experiment_name}_{vm_name}_snapshot
 	// Now, we *could* use {hostname}_{experiment_name}_*_snapshot as the deletion
@@ -1176,13 +1206,6 @@ func deleteC2AndSnapshots(exp *types.Experiment) error {
 		headnode = mm.Headnode()
 	)
 
-	c2Path := expName + "/miniccc_responses"
-
-	err := file.DeleteFile(c2Path)
-	if err != nil {
-		return fmt.Errorf("deleting CC responses for experiment %s: %w", expName, err)
-	}
-
 	for _, node := range exp.Spec.Topology().Nodes() {
 		if node.External() {
 			continue
@@ -1191,7 +1214,7 @@ func deleteC2AndSnapshots(exp *types.Experiment) error {
 		hostname := node.General().Hostname()
 		snapshot := fmt.Sprintf("%s_%s_%s_snapshot", headnode, expName, hostname)
 
-		err = file.DeleteFile(snapshot)
+		err := file.DeleteFile(snapshot)
 		if err != nil {
 			return fmt.Errorf(
 				"deleting snapshot file for VM %s in experiment %s: %w",

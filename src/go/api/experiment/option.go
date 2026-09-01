@@ -265,3 +265,25 @@ func StartWithMMErrorsAsWarnings(w bool) StartOption {
 		o.mmErrAsWarn = w
 	}
 }
+
+type StopOption func(*stopOptions)
+
+type stopOptions struct {
+	keepInjectionSnapshots bool
+}
+
+func newStopOptions(opts ...StopOption) stopOptions {
+	var o stopOptions
+
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	return o
+}
+
+func StopWithKeepInjectionSnapshots(k bool) StopOption {
+	return func(o *stopOptions) {
+		o.keepInjectionSnapshots = k
+	}
+}

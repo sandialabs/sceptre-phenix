@@ -15,6 +15,8 @@ import (
 	"phenix/util/mm"
 )
 
+const falseFlagDefault = "false"
+
 // fakeClusterFiles is a test double for file.ClusterFiles that no-ops
 // DeleteFile calls; any other method invocation will panic since the
 // embedded interface is left nil.
@@ -154,7 +156,7 @@ func TestExperimentDeleteForceFlagDefaultsToFalse(t *testing.T) {
 		t.Fatalf("expected force flag shorthand to be %q, got %q", "f", flag.Shorthand)
 	}
 
-	if flag.DefValue != "false" {
+	if flag.DefValue != falseFlagDefault {
 		t.Fatalf("expected force flag to default to false, got %q", flag.DefValue)
 	}
 }
@@ -231,5 +233,22 @@ func TestExperimentDeleteForceStopsRunningExperimentBeforeDeleting(t *testing.T)
 
 	if _, err := root.ExecuteC(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestExperimentStopKeepInjectionSnapshotsFlag(t *testing.T) {
+	cmd := newExperimentStopCmd()
+	flag := cmd.Flags().Lookup("keep-injection-snapshots")
+
+	if flag == nil {
+		t.Fatal("expected keep-injection-snapshots flag")
+	}
+
+	if flag.DefValue != falseFlagDefault {
+		t.Fatalf("expected flag to default to false, got %q", flag.DefValue)
+	}
+	if flag.Shorthand != "K" {
+		t.Fatalf("expected flag shorthand to be %q, got %q", "K", flag.Shorthand)
+		t.Fatalf("expected flag shorthand to be %q, got %q", "K", flag.Shorthand)
 	}
 }

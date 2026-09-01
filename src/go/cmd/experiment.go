@@ -597,8 +597,9 @@ func newExperimentStopCmd() *cobra.Command {
 		Args:              argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
-				name        = args[0]
-				experiments []types.Experiment
+				name                   = args[0]
+				keepInjectionSnapshots = MustGetBool(cmd.Flags(), "keep-injection-snapshots")
+				experiments            []types.Experiment
 			)
 
 			if name == allExperiments {
@@ -633,7 +634,10 @@ func newExperimentStopCmd() *cobra.Command {
 					continue
 				}
 
-				err := experiment.Stop(exp.Metadata.Name)
+				err := experiment.Stop(
+					exp.Metadata.Name,
+					experiment.StopWithKeepInjectionSnapshots(keepInjectionSnapshots),
+				)
 				if err != nil {
 					err := util.HumanizeError(
 						err,
@@ -650,6 +654,9 @@ func newExperimentStopCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().
+		BoolP("keep-injection-snapshots", "K", false, "Keep VM injection snapshots after stopping")
 
 	return cmd
 }
