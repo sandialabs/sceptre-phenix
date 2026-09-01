@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 )
@@ -187,6 +188,15 @@ func TestBoltRecordListPrefixIsolation(t *testing.T) {
 
 	if len(chunks) != 2 {
 		t.Fatalf("ListRecords(prefix) = %d records, want 2", len(chunks))
+	}
+
+	chunkKeys, err := s.ListRecordKeys("drafts", "draft-1/chunks/")
+	if err != nil {
+		t.Fatalf("ListRecordKeys with prefix returned error: %v", err)
+	}
+
+	if !reflect.DeepEqual(chunkKeys, keys[:2]) {
+		t.Fatalf("ListRecordKeys(prefix) = %v, want %v", chunkKeys, keys[:2])
 	}
 
 	other, err := s.ListRecords("chunks", "")

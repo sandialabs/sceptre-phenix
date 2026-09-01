@@ -69,6 +69,12 @@ func ListRecords(namespace, prefix string) (Records, error) {
 	return DefaultStore.ListRecords(namespace, prefix)
 }
 
+// ListRecordKeys returns only the ordered keys matching namespace and prefix,
+// using the default store.
+func ListRecordKeys(namespace, prefix string) ([]string, error) {
+	return DefaultStore.ListRecordKeys(namespace, prefix)
+}
+
 // GetRecord returns the record stored at the given namespace and key, using the
 // default store.
 func GetRecord(namespace, key string) (Record, error) {

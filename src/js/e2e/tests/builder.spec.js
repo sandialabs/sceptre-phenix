@@ -57,6 +57,24 @@ test('blank diagram autosaves, reloads, and supports keyboard editing', async ({
     '1 devices, 1 switches',
   );
 
+  await page
+    .getByTestId('builder-node')
+    .filter({ hasText: 'Device' })
+    .first()
+    .click();
+  await expect(page.locator('.builder-inspector__subject')).toBeVisible();
+
+  const deviceOutline = page
+    .locator('.builder-outline__item')
+    .filter({ hasText: 'device' })
+    .first();
+  await deviceOutline.click();
+  await deviceOutline.press('F2');
+  const rename = page.locator('.builder-outline__rename');
+  await rename.press('Delete');
+  await expect(page.getByTestId('builder-summary')).toContainText('1 devices');
+  await rename.press('Escape');
+
   await page.locator('#connect-device').selectOption({ index: 1 });
   await page.locator('#connect-switch').selectOption({ index: 1 });
   await page.getByTestId('outline-connect').click();
@@ -74,6 +92,7 @@ test('blank diagram autosaves, reloads, and supports keyboard editing', async ({
       page.evaluate(() => localStorage.getItem('phenix.builder.theme')),
     )
     .not.toBe('system');
+  await page.locator('.vue-flow__pane').click({ position: { x: 700, y: 400 } });
   await expectAccessible(page);
 
   await page.reload();

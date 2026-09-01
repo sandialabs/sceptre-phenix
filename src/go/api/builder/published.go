@@ -529,9 +529,9 @@ func (s *Service) CleanupOrphanedChunks(ctx context.Context) (int, error) {
 		live[publishedPayloadScope(docs[i].ID, docs[i].PayloadID)] = true
 	}
 
-	records, err := s.store.ListRecords(NamespaceChunks, "")
+	keys, err := s.store.ListRecordKeys(NamespaceChunks, "")
 	if err != nil {
-		return 0, fmt.Errorf("listing chunks: %w", err)
+		return 0, fmt.Errorf("listing chunk keys: %w", err)
 	}
 
 	var (
@@ -539,16 +539,16 @@ func (s *Service) CleanupOrphanedChunks(ctx context.Context) (int, error) {
 		errs    []error
 	)
 
-	for _, record := range records {
-		scope := chunkPayloadScopeOf(record.Key)
+	for _, key := range keys {
+		scope := chunkPayloadScopeOf(key)
 		if scope == "" {
-			errs = append(errs, newCorruptError("chunk", record.Key, "key is not shaped like a chunk key"))
+			errs = append(errs, newCorruptError("chunk", key, "key is not shaped like a chunk key"))
 
 			continue
 		}
 
 		if !live[scope] {
-			orphans = append(orphans, record.Key)
+			orphans = append(orphans, key)
 		}
 	}
 

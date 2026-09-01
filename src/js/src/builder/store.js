@@ -202,7 +202,7 @@ export const useBuilderStore = defineStore('builder', {
               this.etag = state.etag;
             }
           },
-          onDraft: (envelope) => {
+          onDraft: (envelope, operation) => {
             if (envelope.etag) {
               this.etag = envelope.etag;
             }
@@ -210,6 +210,35 @@ export const useBuilderStore = defineStore('builder', {
             const history = envelope.history || envelope.draft?.history;
             if (history) {
               this.serverHistory = history;
+            }
+
+            if (operation?.kind === 'snapshot') {
+              const entry = this.history.entries.find(
+                (item) => item.id === operation.commitId,
+              );
+              const snapshotId =
+                history?.[envelope.cursor]?.id || envelope.draft?.snapshotId;
+
+              if (entry && snapshotId) {
+                entry.serverSnapshotId = snapshotId;
+              }
+            }
+
+            if (history?.length) {
+              const currentId = this.history.currentEntry().id;
+              const serverIds = new Set(history.map((entry) => entry.id));
+
+              this.history.entries = this.history.entries.filter(
+                (entry) =>
+                  !entry.serverSnapshotId ||
+                  serverIds.has(entry.serverSnapshotId),
+              );
+              this.history.index = Math.max(
+                0,
+                this.history.entries.findIndex(
+                  (entry) => entry.id === currentId,
+                ),
+              );
             }
           },
         }),
@@ -310,6 +339,7 @@ export const useBuilderStore = defineStore('builder', {
         this.readOnly = false;
         this.doc = envelope.document ? parseDocument(envelope.document) : doc;
         this.history = markRaw(new History(this.doc, DEFAULT_HISTORY_LIMIT));
+        this.linkCurrentHistorySnapshot(envelope);
 
         await this.initAutosave({
           owner: this.owner,
@@ -349,13 +379,16 @@ export const useBuilderStore = defineStore('builder', {
           return null;
         }
 
+        this.linkCurrentHistorySnapshot(envelope);
+        const serverETag = envelope.etag;
+
         await this.initAutosave({
           owner: this.owner,
           draftId: this.draftId,
           etag: this.etag,
         });
 
-        await this.recoverLocalHistory();
+        await this.recoverLocalHistory(serverETag);
 
         if (phenix.username && this.owner !== phenix.username) {
           this.announce('Opened a shared draft.');
@@ -375,41 +408,115 @@ export const useBuilderStore = defineStore('builder', {
      * Restores the full ordered local history and pending queue recorded by a
      * previous session on this device.
      */
-    async recoverLocalHistory() {
+    async recoverLocalHistory(serverETag = this.etag) {
       if (!this.autosave) {
         return false;
       }
 
       const local = await this.autosave.recover(this.owner, this.draftId);
 
-      if (!local || !local.entries || local.entries.length === 0) {
+      const queue = local?.queue || [];
+
+      if (!local || queue.length === 0) {
+        await this.autosave.attach({
+          owner: this.owner,
+          draftId: this.draftId,
+          etag: serverETag,
+          entries: [],
+          cursor: 0,
+          queue: [],
+        });
+
         return false;
       }
 
-      const pending = (local.queue || []).length;
+      const safeQueue = queue.filter(
+        (operation) =>
+          operation.kind === 'snapshot' ||
+          (operation.kind === 'cursor' &&
+            (operation.snapshotId || operation.commitId)),
+      );
 
-      this.history.restore(local.entries, local.cursor);
+      if (safeQueue.length === 0) {
+        await this.autosave.attach({
+          owner: this.owner,
+          draftId: this.draftId,
+          etag: serverETag,
+          entries: [],
+          cursor: 0,
+          queue: [],
+        });
+
+        return false;
+      }
+
+      const relevantIds = new Set(
+        safeQueue.flatMap((operation) =>
+          operation.commitId ? [operation.commitId] : [],
+        ),
+      );
+      const pendingEntries = (local.entries || []).filter((entry) =>
+        relevantIds.has(entry.id),
+      );
+      const entries = [this.history.currentEntry(), ...pendingEntries];
+      const lastOperation = safeQueue[safeQueue.length - 1];
+      const targetIndex = lastOperation
+        ? entries.findIndex(
+            (entry) =>
+              entry.id === lastOperation.commitId ||
+              (lastOperation.snapshotId &&
+                entry.serverSnapshotId === lastOperation.snapshotId),
+          )
+        : entries.length - 1;
+      const resolvedTargetIndex =
+        targetIndex < 0 ? entries.length - 1 : targetIndex;
+      const targetEntryId = entries[resolvedTargetIndex].id;
+
+      this.history.restore(entries, resolvedTargetIndex);
       this.doc = this.history.current();
 
       await this.autosave.attach({
         owner: this.owner,
         draftId: this.draftId,
-        etag: this.etag,
+        etag: local.etag,
         entries: local.entries,
         cursor: local.cursor,
-        queue: local.queue || [],
+        queue: safeQueue,
       });
 
-      if (pending > 0) {
-        this.announce(
-          `Recovered ${pending} unsaved change${pending === 1 ? '' : 's'} from this device.`,
+      const pending = safeQueue.length;
+      this.announce(
+        `Recovered ${pending} unsaved change${pending === 1 ? '' : 's'} from this device.`,
+      );
+
+      if (local.etag !== serverETag) {
+        this.autosave.conflict();
+
+        return true;
+      }
+
+      const saved = await this.autosave.flush();
+      if (saved.status === 'saved') {
+        const savedIndex = this.history.entries.findIndex(
+          (entry) => entry.id === targetEntryId,
         );
-        await this.autosave.flush();
-      } else {
-        this.announce('Recovered local edit history from this device.');
+
+        if (savedIndex >= 0) {
+          this.history.index = savedIndex;
+          this.doc = this.history.current();
+        }
       }
 
       return true;
+    },
+
+    linkCurrentHistorySnapshot(envelope) {
+      const snapshotId =
+        envelope.history?.[envelope.cursor]?.id || envelope.draft?.snapshotId;
+
+      if (snapshotId) {
+        this.history.currentEntry().serverSnapshotId = snapshotId;
+      }
     },
 
     /**
@@ -422,7 +529,13 @@ export const useBuilderStore = defineStore('builder', {
         return;
       }
 
-      this.trackQueue(this.autosave.moveCursor(this.history.index));
+      const entry = this.history.currentEntry();
+      this.trackQueue(
+        this.autosave.moveCursor({
+          snapshotId: entry.serverSnapshotId,
+          commitId: entry.id,
+        }),
+      );
     },
 
     async saveNow() {
@@ -615,10 +728,7 @@ export const useBuilderStore = defineStore('builder', {
           return null;
         }
 
-        const cursor = this.serverHistory.findIndex(
-          (entry) => entry.id === snapshotId,
-        );
-        if (cursor < 0) {
+        if (!this.serverHistory.some((entry) => entry.id === snapshotId)) {
           this.error = 'That snapshot is no longer in the draft history.';
 
           return null;
@@ -631,7 +741,7 @@ export const useBuilderStore = defineStore('builder', {
         );
 
         const cursorState = await this.trackQueue(
-          this.autosave.moveCursor(cursor),
+          this.autosave.moveCursor({ snapshotId }),
         );
         if (cursorState.status !== 'saved') {
           return null;
@@ -641,6 +751,7 @@ export const useBuilderStore = defineStore('builder', {
           label: 'Snapshot restored',
           resetHistory: true,
         });
+        this.history.currentEntry().serverSnapshotId = snapshotId;
         this.announce('Snapshot restored');
 
         return document;

@@ -621,6 +621,21 @@ func (v *validator) validateSource() {
 		v.addf("source.kind", "unknown source kind %q", v.doc.Source.Kind)
 	}
 
+	for i, name := range v.doc.Source.IncludeTopologies {
+		path := fmt.Sprintf("source.includeTopologies[%d]", i)
+
+		switch {
+		case strings.TrimSpace(name) == "":
+			v.addf(path, "included topology name is required")
+		case strings.ContainsAny(name, " \t\n"):
+			v.addf(
+				path,
+				"included topology name %q must not contain whitespace",
+				name,
+			)
+		}
+	}
+
 	if digest := v.doc.Source.Digest; digest != "" && !isContentDigest(digest) {
 		v.addf("source.digest", "malformed source digest %q (expected sha256:<64 hex>)", digest)
 	}

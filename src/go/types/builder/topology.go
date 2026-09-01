@@ -81,8 +81,13 @@ func (d *Document) ToTopology() (*Topology, error) {
 		}
 	}
 
+	spec := map[string]any{keyNodes: nodes}
+	if d.Source != nil && len(d.Source.IncludeTopologies) > 0 {
+		spec["includeTopologies"] = slices.Clone(d.Source.IncludeTopologies)
+	}
+
 	return &Topology{
-		Spec:        map[string]any{keyNodes: nodes},
+		Spec:        spec,
 		VLANAliases: aliases,
 		Warnings:    warnings,
 	}, nil

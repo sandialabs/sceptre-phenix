@@ -25,18 +25,19 @@ export function newId() {
  *
  * @param {string} base desired name
  * @param {Iterable<string>} taken already used names
+ * @param {(value: string) => string} [normalize] comparison normalization
  * @returns {string}
  */
-export function uniqueName(base, taken) {
-  const used = taken instanceof Set ? taken : new Set(taken || []);
+export function uniqueName(base, taken, normalize = (value) => value) {
+  const used = new Set([...(taken || [])].map(normalize));
 
-  if (!used.has(base)) {
+  if (!used.has(normalize(base))) {
     return base;
   }
 
   let n = 2;
 
-  while (used.has(`${base}-${n}`)) {
+  while (used.has(normalize(`${base}-${n}`))) {
     n += 1;
   }
 

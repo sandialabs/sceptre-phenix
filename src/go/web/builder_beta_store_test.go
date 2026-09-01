@@ -68,6 +68,20 @@ func (f *builderBetaFakeStore) ListRecords(namespace, prefix string) (store.Reco
 	return records, nil
 }
 
+func (f *builderBetaFakeStore) ListRecordKeys(namespace, prefix string) ([]string, error) {
+	records, err := f.ListRecords(namespace, prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	keys := make([]string, 0, len(records))
+	for _, record := range records {
+		keys = append(keys, record.Key)
+	}
+
+	return keys, nil
+}
+
 func (f *builderBetaFakeStore) GetRecord(namespace, key string) (store.Record, error) {
 	if err := builderBetaValidateRecord(namespace, key); err != nil {
 		return store.Record{}, err

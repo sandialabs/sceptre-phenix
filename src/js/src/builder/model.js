@@ -185,7 +185,7 @@ export function addNetwork(doc, init = {}) {
       .trim()
       .replace(/\s+/g, '-') || 'EXP';
   const name = taken.has(base.toLowerCase())
-    ? uniqueName(base, [...taken].map(String))
+    ? uniqueName(base, [...taken], (value) => value.toLowerCase())
     : base;
 
   const network = {
@@ -492,6 +492,8 @@ export function updateNode(doc, id, patch = {}) {
 
     if (patch.device.spec) {
       device.spec = JSON.parse(JSON.stringify(patch.device.spec));
+    } else if (node.device.spec) {
+      device.spec = JSON.parse(JSON.stringify(node.device.spec));
     }
 
     if (patch.device.hostname !== undefined) {

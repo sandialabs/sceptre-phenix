@@ -49,8 +49,9 @@
               v-model="renameValue"
               class="builder-outline__rename"
               type="text"
-              @keydown.stop.enter="commitRename(item)"
-              @keydown.stop.esc="renamingId = ''"
+              @keydown.stop
+              @keydown.enter.prevent="commitRename(item)"
+              @keydown.esc.prevent="renamingId = ''"
               @blur="commitRename(item)" />
           </template>
           <template v-else>

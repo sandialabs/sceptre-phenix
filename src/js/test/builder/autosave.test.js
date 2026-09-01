@@ -40,7 +40,12 @@ function fakeApi(overrides = {}) {
     appendSnapshot: vi.fn(async () => {
       revision += 1;
 
-      return { draft: { id: 'd1', owner: 'alice' }, etag: `"${revision}"` };
+      return {
+        draft: { id: 'd1', owner: 'alice', snapshotId: `s${revision}` },
+        history: [{ id: `s${revision}` }],
+        cursor: 0,
+        etag: `"${revision}"`,
+      };
     }),
     moveCursor: vi.fn(async () => ({
       draft: { id: 'd1', owner: 'alice' },
@@ -130,7 +135,12 @@ describe('one commit, one snapshot', () => {
       appendSnapshot: vi.fn(async () => {
         order.push('snapshot');
 
-        return { draft: {}, etag: '"2"' };
+        return {
+          draft: { snapshotId: 'server-c1' },
+          history: [{ id: 'server-c1' }],
+          cursor: 0,
+          etag: '"2"',
+        };
       }),
       moveCursor: vi.fn(async () => {
         order.push('cursor');
@@ -141,12 +151,14 @@ describe('one commit, one snapshot', () => {
     const { queue } = await attached({ api });
 
     const commit = queue.commit({ id: 'c1', label: 'one', snapshot: doc });
-    const cursor = queue.moveCursor(0);
+    const cursor = queue.moveCursor({ commitId: 'c1' });
 
     await Promise.all([commit, cursor]);
 
     expect(order).toEqual(['snapshot', 'cursor']);
-    expect(api.moveCursor.mock.calls[0][2]).toEqual({ index: 0 });
+    expect(api.moveCursor.mock.calls[0][2]).toEqual({
+      snapshotId: 'server-c1',
+    });
   });
 
   test('the local ordered log is persisted before the server call', async () => {
@@ -195,6 +207,48 @@ describe('recovery', () => {
 
     expect(recovered.entries).toHaveLength(1);
     expect(recovered.entries[0].label).toBe('one');
+  });
+
+  describe('lifecycle', () => {
+    test('dispose prevents an in-flight completion from emitting or retrying', async () => {
+      let resolveRequest;
+      const setTimeout = vi.fn();
+      const onState = vi.fn();
+      const onDraft = vi.fn();
+      const api = fakeApi({
+        appendSnapshot: vi.fn(
+          () =>
+            new Promise((resolve) => {
+              resolveRequest = resolve;
+            }),
+        ),
+      });
+      const { queue } = await attached({
+        api,
+        setTimeout,
+        extra: { onState, onDraft },
+      });
+      const pending = queue.commit({
+        id: 'c1',
+        label: 'one',
+        snapshot: doc,
+      });
+
+      await vi.waitFor(() => expect(api.appendSnapshot).toHaveBeenCalled());
+      queue.dispose();
+      const stateCalls = onState.mock.calls.length;
+      resolveRequest({
+        draft: { snapshotId: 's2' },
+        history: [{ id: 's2' }],
+        cursor: 0,
+        etag: '"2"',
+      });
+      await pending;
+
+      expect(onState).toHaveBeenCalledTimes(stateCalls);
+      expect(onDraft).not.toHaveBeenCalled();
+      expect(setTimeout).not.toHaveBeenCalled();
+    });
   });
 
   test('records are scoped to owner and actor', async () => {

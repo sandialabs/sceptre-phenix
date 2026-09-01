@@ -57,6 +57,41 @@ func (b *BoltDB) ListRecords(namespace, prefix string) (Records, error) {
 	return records, nil
 }
 
+// ListRecordKeys returns only the ordered record keys matching namespace and
+// prefix without decoding or copying record values.
+func (b *BoltDB) ListRecordKeys(namespace, prefix string) ([]string, error) {
+	if err := validateRecordNamespaceAndPrefix(namespace, prefix); err != nil {
+		return nil, err
+	}
+
+	if err := b.open(); err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = b.Close() }()
+
+	keys := []string{}
+
+	err := b.db.View(func(tx *bbolt.Tx) error {
+		bucket := boltNamespaceBucket(tx, namespace)
+		if bucket == nil {
+			return nil
+		}
+
+		cursor := bucket.Cursor()
+		for key, _ := cursor.Seek([]byte(prefix)); key != nil && bytes.HasPrefix(key, []byte(prefix)); key, _ = cursor.Next() {
+			keys = append(keys, string(key))
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing record keys in namespace %s: %w", namespace, err)
+	}
+
+	return keys, nil
+}
+
 // GetRecord returns the record stored at the given namespace and key.
 func (b *BoltDB) GetRecord(namespace, key string) (Record, error) {
 	if err := validateRecordNamespaceAndKey(namespace, key); err != nil {

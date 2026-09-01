@@ -225,8 +225,11 @@ type Source struct {
 	Digest string `json:"digest,omitempty"`
 	// UpdatedAt is the metadata.updated timestamp of the source config at
 	// import time. It is informational; [Source.Digest] is authoritative.
-	UpdatedAt string   `json:"updatedAt,omitempty"`
-	Warnings  []string `json:"warnings,omitempty"`
+	UpdatedAt string `json:"updatedAt,omitempty"`
+	// IncludeTopologies preserves topology composition that is not visualized
+	// on the canvas so publishing does not silently flatten imported topologies.
+	IncludeTopologies []string `json:"includeTopologies,omitempty"`
+	Warnings          []string `json:"warnings,omitempty"`
 }
 
 // NewDocument returns an empty, valid document with a deterministic ID derived

@@ -200,12 +200,25 @@ func (g *generator) importTopology(spec map[string]any) {
 		return
 	}
 
-	if included, ok := spec["includeTopologies"].([]any); ok && len(included) > 0 {
-		g.warnf(
-			"topology includes %d other topologies, which the builder does not "+
-				"represent; included nodes are not shown",
-			len(included),
-		)
+	if included, ok := spec["includeTopologies"].([]any); ok {
+		for i, value := range included {
+			name, ok := value.(string)
+			if !ok || strings.TrimSpace(name) == "" || strings.ContainsAny(name, " \t\n") {
+				g.warnf("included topology at index %d has an invalid name and was skipped", i)
+
+				continue
+			}
+
+			g.doc.Source.IncludeTopologies = append(g.doc.Source.IncludeTopologies, name)
+		}
+
+		if len(g.doc.Source.IncludeTopologies) > 0 {
+			g.warnf(
+				"topology includes %d other topologies; included nodes are not shown, "+
+					"but the references will be preserved when published",
+				len(g.doc.Source.IncludeTopologies),
+			)
+		}
 	}
 
 	nodes, _ := spec[keyNodes].([]any)
@@ -364,14 +377,18 @@ func (g *generator) importVLANs(value any) {
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(aliases)) {
+		if strings.TrimSpace(name) == "" || strings.ContainsAny(name, " \t\n") {
+			g.warnf("VLAN alias name %q is invalid and was dropped", name)
+
+			continue
+		}
+
 		alias, ok := toInt(aliases[name])
 		if !ok {
 			g.warnf("VLAN alias for %q is not an integer and was dropped", name)
 
 			continue
 		}
-
-		network := g.network(name)
 
 		if alias == 0 {
 			// phenix records unassigned VLANs with an alias of 0.
@@ -384,6 +401,7 @@ func (g *generator) importVLANs(value any) {
 			continue
 		}
 
+		network := g.network(name)
 		value := alias
 		network.Alias = &value
 	}

@@ -75,6 +75,32 @@ func TestFromTopologyConfig(t *testing.T) {
 	}
 }
 
+func TestFromTopologyConfigPreservesIncludedTopologies(t *testing.T) {
+	config := loadConfig(t, "topology.json")
+	config.Spec["includeTopologies"] = []any{"shared-services", "monitoring"}
+
+	doc, warnings := documentFromConfig(t, config)
+	if !reflect.DeepEqual(doc.Source.IncludeTopologies, []string{"shared-services", "monitoring"}) {
+		t.Fatalf("included topologies = %v", doc.Source.IncludeTopologies)
+	}
+
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want one visualization warning", warnings)
+	}
+
+	topology, err := doc.ToTopology()
+	if err != nil {
+		t.Fatalf("ToTopology: %v", err)
+	}
+
+	if !reflect.DeepEqual(
+		topology.Spec["includeTopologies"],
+		[]string{"shared-services", "monitoring"},
+	) {
+		t.Fatalf("published includes = %v", topology.Spec["includeTopologies"])
+	}
+}
+
 func TestFromTopologyConfigPreservesNodeSemantics(t *testing.T) {
 	config := loadConfig(t, "topology.json")
 	doc, _ := documentFromConfig(t, config)
@@ -258,6 +284,34 @@ func TestFromExperimentConfig(t *testing.T) {
 
 	if err := doc.Validate(); err != nil {
 		t.Fatalf("generated document is invalid: %v", err)
+	}
+}
+
+func TestFromExperimentSkipsBlankZeroVLANAlias(t *testing.T) {
+	config := loadConfig(t, "experiment.json")
+	vlans, ok := config.Spec["vlans"].(map[string]any)
+	if !ok {
+		t.Fatal("fixture has no VLAN map")
+	}
+
+	aliases, ok := vlans["aliases"].(map[string]any)
+	if !ok {
+		t.Fatal("fixture has no VLAN aliases")
+	}
+
+	aliases[""] = 0
+
+	doc, warnings := documentFromConfig(t, config)
+	if doc.NetworkByName("") != nil {
+		t.Fatal("blank VLAN alias created a network")
+	}
+
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("generated document is invalid: %v", err)
+	}
+
+	if !containsSubstring(warnings, `VLAN alias name "" is invalid`) {
+		t.Fatalf("warnings = %v, want blank VLAN warning", warnings)
 	}
 }
 

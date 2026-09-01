@@ -98,10 +98,13 @@ export function createAutosave(options = {}) {
   let retries = 0;
   let retryHandle = null;
   let detachOnline = null;
+  let disposed = false;
 
   const emit = (patch = {}) => {
     state = { ...state, ...patch, pending: record ? record.queue.length : 0 };
-    onState(state);
+    if (!disposed) {
+      onState(state);
+    }
 
     return state;
   };
@@ -110,7 +113,7 @@ export function createAutosave(options = {}) {
   // the queue lives in memory too, so a storage failure is reported and the
   // send continues rather than raising an unhandled rejection.
   const persist = async () => {
-    if (!record || !store) {
+    if (disposed || !record || !store) {
       return;
     }
 
@@ -134,6 +137,10 @@ export function createAutosave(options = {}) {
   };
 
   const scheduleRetry = () => {
+    if (disposed) {
+      return;
+    }
+
     cancelRetry();
 
     const delay = RETRY_DELAYS[Math.min(retries, RETRY_DELAYS.length - 1)];
@@ -151,7 +158,7 @@ export function createAutosave(options = {}) {
    * @returns {Promise<object>} state
    */
   async function flush() {
-    if (!record || flushing || !record.owner || !record.draftId) {
+    if (disposed || !record || flushing || !record.owner || !record.draftId) {
       return state;
     }
 
@@ -172,14 +179,32 @@ export function createAutosave(options = {}) {
 
     try {
       while (record.queue.length > 0) {
+        if (disposed) {
+          return state;
+        }
+
         const op = record.queue[0];
         const envelope = await send(op);
 
         record.queue.shift();
         record.etag = envelope.etag || record.etag;
 
+        if (op.kind === 'snapshot') {
+          const entry = record.entries.find((item) => item.id === op.commitId);
+          const snapshotId =
+            envelope.history?.[envelope.cursor]?.id ||
+            envelope.draft?.snapshotId ||
+            envelope.draft?.history?.[envelope.draft?.cursor]?.id;
+
+          if (entry && snapshotId) {
+            entry.serverSnapshotId = snapshotId;
+          }
+        }
+
         await persist();
-        onDraft(envelope);
+        if (!disposed) {
+          onDraft(envelope, op);
+        }
       }
 
       retries = 0;
@@ -187,6 +212,10 @@ export function createAutosave(options = {}) {
 
       return emit({ status: 'saved', lastSavedAt: now(), etag: record.etag });
     } catch (error) {
+      if (disposed) {
+        return state;
+      }
+
       const kind = classifyError(error);
       const message = errorMessage(kind, error);
 
@@ -212,10 +241,21 @@ export function createAutosave(options = {}) {
 
   async function send(op) {
     if (op.kind === 'cursor') {
+      const snapshotId =
+        op.snapshotId ||
+        record.entries.find((item) => item.id === op.commitId)
+          ?.serverSnapshotId;
+
+      if (!snapshotId) {
+        throw Object.assign(new Error('missing server snapshot id'), {
+          response: { status: 500 },
+        });
+      }
+
       return api.moveCursor(
         record.owner,
         record.draftId,
-        { index: op.index },
+        { snapshotId },
         record.etag,
       );
     }
@@ -280,13 +320,14 @@ export function createAutosave(options = {}) {
       const existing = explicit
         ? null
         : await this.recover(draft.owner, draft.draftId);
+      const hasPending = (existing?.queue || []).length > 0;
 
       record = {
         key,
         actor,
         owner: draft.owner,
         draftId: draft.draftId,
-        etag: draft.etag || null,
+        etag: hasPending ? existing.etag : draft.etag || null,
         cursor: draft.cursor ?? existing?.cursor ?? 0,
         entries: draft.entries ?? existing?.entries ?? [],
         queue: draft.queue ?? existing?.queue ?? [],
@@ -345,7 +386,12 @@ export function createAutosave(options = {}) {
 
       record.entries = [
         ...record.entries.filter((item) => item.id !== entry.id),
-        { id: entry.id, label: entry.label, snapshot: entry.snapshot },
+        {
+          id: entry.id,
+          label: entry.label,
+          snapshot: entry.snapshot,
+          serverSnapshotId: entry.serverSnapshotId,
+        },
       ];
       record.cursor = record.entries.length - 1;
       record.queue = [
@@ -376,27 +422,36 @@ export function createAutosave(options = {}) {
      * it tells the server which snapshot the draft currently points at, so a
      * reload and a publish use the same document the user sees.
      *
-     * @param {number} index history index
+     * @param {{snapshotId?: string, commitId?: string}} target server snapshot
      * @returns {Promise<object>} state
      */
-    async moveCursor(index) {
+    async moveCursor(target) {
       if (!record) {
         return state;
       }
 
-      record.cursor = index;
       record.queue = [
         ...record.queue,
         {
-          opId: `cursor-${index}-${record.queue.length}`,
+          opId: `cursor-${target.snapshotId || target.commitId}-${record.queue.length}`,
           kind: 'cursor',
-          index,
+          snapshotId: target.snapshotId,
+          commitId: target.commitId,
         },
       ];
 
       await persist();
 
       return flush();
+    },
+
+    /** Blocks replay when locally queued work was based on another ETag. */
+    conflict(
+      message = 'This draft changed on the server since your local edits.',
+    ) {
+      cancelRetry();
+
+      return emit({ status: 'conflict', message });
     },
 
     /**
@@ -514,11 +569,19 @@ export function createAutosave(options = {}) {
       }
 
       const online = () => {
+        if (disposed) {
+          return;
+        }
+
         emit({ online: true });
         retries = 0;
         flush();
       };
-      const offline = () => emit({ status: 'offline', online: false });
+      const offline = () => {
+        if (!disposed) {
+          emit({ status: 'offline', online: false });
+        }
+      };
 
       target.addEventListener('online', online);
       target.addEventListener('offline', offline);
@@ -534,6 +597,7 @@ export function createAutosave(options = {}) {
 
     /** Stops listeners and pending retries. */
     dispose() {
+      disposed = true;
       cancelRetry();
 
       if (detachOnline) {

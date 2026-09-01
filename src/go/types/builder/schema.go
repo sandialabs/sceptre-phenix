@@ -643,7 +643,10 @@ func sourceDef() map[string]any {
 			"importedAt":  stringDef(""),
 			keyDigest:     digestDef("Digest of the source config identity and spec."),
 			"updatedAt":   stringDef("metadata.updated of the source config at import time."),
-			"warnings":    arrayDef(stringDef("")),
+			"includeTopologies": arrayDef(
+				nameDef("Topology included by the generated source topology."),
+			),
+			"warnings": arrayDef(stringDef("")),
 		},
 	)
 }

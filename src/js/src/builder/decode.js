@@ -85,6 +85,7 @@ const SOURCE_KEYS = new Set([
   'importedAt',
   'digest',
   'updatedAt',
+  'includeTopologies',
   'warnings',
 ]);
 

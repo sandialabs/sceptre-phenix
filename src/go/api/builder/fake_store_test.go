@@ -61,6 +61,20 @@ func (f *fakeStore) ListRecords(namespace, prefix string) (store.Records, error)
 	return records, nil
 }
 
+func (f *fakeStore) ListRecordKeys(namespace, prefix string) ([]string, error) {
+	records, err := f.ListRecords(namespace, prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	keys := make([]string, 0, len(records))
+	for _, record := range records {
+		keys = append(keys, record.Key)
+	}
+
+	return keys, nil
+}
+
 func (f *fakeStore) GetRecord(namespace, key string) (store.Record, error) {
 	if err := validateNamespaceAndKey(namespace, key); err != nil {
 		return store.Record{}, err

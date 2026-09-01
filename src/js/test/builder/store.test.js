@@ -29,7 +29,9 @@ const api = vi.hoisted(() => ({
   })),
   deleteDraft: vi.fn(async () => true),
   appendSnapshot: vi.fn(async () => ({
-    draft: { id: 'd1', owner: 'alice' },
+    draft: { id: 'd1', owner: 'alice', snapshotId: 's2' },
+    history: [{ id: 's1' }, { id: 's2' }],
+    cursor: 1,
     etag: '"2"',
   })),
   moveCursor: vi.fn(async () => ({
@@ -113,6 +115,7 @@ beforeEach(() => {
 
 async function withDraft() {
   await store.initAutosave({ owner: 'alice', draftId: 'd1', etag: '"1"' });
+  store.history.currentEntry().serverSnapshotId = 's1';
 }
 
 describe('documents', () => {
@@ -216,7 +219,7 @@ describe('editing commits', () => {
     expect(api.moveCursor).toHaveBeenCalledWith(
       'alice',
       'd1',
-      { index: 0 },
+      { snapshotId: 's1' },
       expect.any(String),
     );
     expect(api.appendSnapshot).not.toHaveBeenCalled();
@@ -260,12 +263,149 @@ describe('editing commits', () => {
     expect(api.moveCursor).toHaveBeenCalledWith(
       'alice',
       'd1',
-      { index: 1 },
+      { snapshotId: 's2' },
       '"1"',
     );
     expect(api.appendSnapshot).not.toHaveBeenCalled();
     expect(store.doc.id).toBe(doc.id);
     expect(store.etag).toBe('"3"');
+  });
+
+  test('cached history without pending operations cannot replace server state', async () => {
+    await withDraft();
+    const serverDocument = store.doc;
+    const staleDocument = sampleDocument().doc;
+
+    await store.autosave.attach({
+      owner: 'alice',
+      draftId: 'd1',
+      etag: '"0"',
+      entries: [{ id: 'stale', label: 'stale', snapshot: staleDocument }],
+      cursor: 0,
+      queue: [],
+    });
+
+    expect(await store.recoverLocalHistory('"2"')).toBe(false);
+    expect(store.doc).toBe(serverDocument);
+    expect(store.autosave.record.entries).toEqual([]);
+    expect(store.autosave.record.etag).toBe('"2"');
+  });
+
+  test('pending recovery based on a stale ETag becomes a conflict', async () => {
+    await withDraft();
+    const pendingDocument = sampleDocument().doc;
+
+    await store.autosave.attach({
+      owner: 'alice',
+      draftId: 'd1',
+      etag: '"1"',
+      entries: [
+        { id: 'pending', label: 'offline edit', snapshot: pendingDocument },
+      ],
+      cursor: 0,
+      queue: [
+        {
+          opId: 'pending',
+          kind: 'snapshot',
+          commitId: 'pending',
+          label: 'offline edit',
+        },
+      ],
+    });
+    api.appendSnapshot.mockClear();
+
+    expect(await store.recoverLocalHistory('"2"')).toBe(true);
+    expect(store.saveState.status).toBe('conflict');
+    expect(store.doc).toEqual(pendingDocument);
+    expect(api.appendSnapshot).not.toHaveBeenCalled();
+    expect(store.autosave.record.etag).toBe('"1"');
+  });
+
+  test('legacy cursor-only recovery is discarded without a conflict', async () => {
+    await withDraft();
+
+    await store.autosave.attach({
+      owner: 'alice',
+      draftId: 'd1',
+      etag: '"1"',
+      entries: [],
+      cursor: 0,
+      queue: [{ opId: 'old-cursor', kind: 'cursor', index: 0 }],
+    });
+
+    expect(await store.recoverLocalHistory('"2"')).toBe(false);
+    expect(store.saveState.status).toBe('saved');
+    expect(store.autosave.record.queue).toEqual([]);
+    expect(store.autosave.record.etag).toBe('"2"');
+  });
+
+  test('recovered edits after undo keep the final branch aligned with the server', async () => {
+    await withDraft();
+    const abandoned = { ...sampleDocument().doc, name: 'Abandoned' };
+    const final = { ...sampleDocument().doc, name: 'Final' };
+
+    api.appendSnapshot
+      .mockResolvedValueOnce({
+        draft: { snapshotId: 's2' },
+        history: [{ id: 's1' }, { id: 's2' }],
+        cursor: 1,
+        etag: '"2"',
+      })
+      .mockResolvedValueOnce({
+        draft: { snapshotId: 's3' },
+        history: [{ id: 's1' }, { id: 's3' }],
+        cursor: 1,
+        etag: '"4"',
+      });
+    api.moveCursor.mockResolvedValueOnce({
+      history: [{ id: 's1' }, { id: 's2' }],
+      cursor: 0,
+      etag: '"3"',
+    });
+    await store.autosave.attach({
+      owner: 'alice',
+      draftId: 'd1',
+      etag: '"1"',
+      entries: [
+        { id: 'abandoned', label: 'abandoned', snapshot: abandoned },
+        { id: 'final', label: 'final', snapshot: final },
+      ],
+      cursor: 1,
+      queue: [
+        { kind: 'snapshot', commitId: 'abandoned', label: 'abandoned' },
+        { kind: 'cursor', snapshotId: 's1' },
+        { kind: 'snapshot', commitId: 'final', label: 'final' },
+      ],
+    });
+
+    expect(await store.recoverLocalHistory('"1"')).toBe(true);
+    expect({
+      document: store.doc.name,
+      saveState: store.saveState,
+      index: store.history.index,
+      entries: store.history.entries.map((entry) => ({
+        id: entry.id,
+        name: entry.snapshot.name,
+        serverSnapshotId: entry.serverSnapshotId,
+      })),
+    }).toEqual({
+      document: 'Final',
+      saveState: expect.objectContaining({ status: 'saved' }),
+      index: 1,
+      entries: [
+        expect.objectContaining({ name: 'Test', serverSnapshotId: 's1' }),
+        expect.objectContaining({ id: 'final', name: 'Final' }),
+      ],
+    });
+    expect(store.history.entries.map((entry) => entry.id)).not.toContain(
+      'abandoned',
+    );
+    expect(api.moveCursor).toHaveBeenCalledWith(
+      'alice',
+      'd1',
+      { snapshotId: 's1' },
+      '"2"',
+    );
   });
 });
 
@@ -480,7 +620,7 @@ describe('server data', () => {
     await withDraft();
 
     store.addNode({ kind: 'switch', networkName: 'EXP' });
-    store.addNode({ kind: 'switch', networkName: 'EXP' });
+    store.doc.networks[0].name = '';
 
     expect(store.errors.length).toBeGreaterThan(0);
 

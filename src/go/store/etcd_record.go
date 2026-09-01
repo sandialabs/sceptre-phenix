@@ -17,6 +17,8 @@ import (
 // collisions.
 const etcdRecordRoot = "phenix/records"
 
+const etcdRecordKeyPageSize = 1000
+
 // etcdRecordEnvelope is the encoded representation of a record value. The
 // revision of a record is not stored in the envelope; etcd's ModRevision is
 // used instead.
@@ -192,6 +194,47 @@ func (e Etcd) ListRecords(namespace, prefix string) (Records, error) {
 	}
 
 	return records, nil
+}
+
+// ListRecordKeys returns only the ordered record keys matching namespace and
+// prefix. Etcd is read in bounded pages and values are never returned.
+func (e Etcd) ListRecordKeys(namespace, prefix string) ([]string, error) {
+	if err := validateRecordNamespaceAndPrefix(namespace, prefix); err != nil {
+		return nil, err
+	}
+
+	start := EtcdRecordPrefix(namespace, prefix)
+	end := clientv3.GetPrefixRangeEnd(start)
+	keys := []string{}
+
+	for {
+		resp, err := e.cli.Get(
+			context.Background(),
+			start,
+			clientv3.WithRange(end),
+			clientv3.WithKeysOnly(),
+			clientv3.WithLimit(etcdRecordKeyPageSize),
+			clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("listing record keys in namespace %s from Etcd: %w", namespace, err)
+		}
+
+		for _, kv := range resp.Kvs {
+			key, err := EtcdRecordKeyName(namespace, string(kv.Key))
+			if err != nil {
+				return nil, err
+			}
+
+			keys = append(keys, key)
+		}
+
+		if len(resp.Kvs) < etcdRecordKeyPageSize {
+			return keys, nil
+		}
+
+		start = string(resp.Kvs[len(resp.Kvs)-1].Key) + "\x00"
+	}
 }
 
 // GetRecord returns the record stored at the given namespace and key.

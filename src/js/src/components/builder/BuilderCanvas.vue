@@ -32,7 +32,8 @@
       aria-label="Topology canvas. Use the outline panel for keyboard editing."
       @connect="onConnect"
       @node-drag-stop="onNodeDragStop"
-      @selection-change="onSelectionChange"
+      @nodes-change="onNodesChange"
+      @edges-change="onEdgesChange"
       @pane-click="onPaneClick">
       <Background
         v-if="gridEnabled"
@@ -169,10 +170,35 @@
     store.moveNodes(moves);
   }
 
-  function onSelectionChange(payload) {
+  function selectedAfterChanges(current, changes) {
+    const selected = new Set(current);
+
+    for (const change of changes || []) {
+      if (change.type !== 'select') {
+        continue;
+      }
+
+      if (change.selected) {
+        selected.add(change.id);
+      } else {
+        selected.delete(change.id);
+      }
+    }
+
+    return [...selected];
+  }
+
+  function onNodesChange(changes) {
     store.select({
-      nodes: (payload?.nodes || []).map((node) => node.id),
-      edges: (payload?.edges || []).map((edge) => edge.id),
+      nodes: selectedAfterChanges(store.selection.nodes, changes),
+      edges: store.selection.edges,
+    });
+  }
+
+  function onEdgesChange(changes) {
+    store.select({
+      nodes: store.selection.nodes,
+      edges: selectedAfterChanges(store.selection.edges, changes),
     });
   }
 

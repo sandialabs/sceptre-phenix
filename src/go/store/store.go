@@ -28,6 +28,10 @@ type RecordStore interface {
 	// error.
 	ListRecords(namespace, prefix string) (Records, error)
 
+	// ListRecordKeys returns only the ordered keys matching namespace and prefix.
+	// Implementations must not load record values.
+	ListRecordKeys(namespace, prefix string) ([]string, error)
+
 	// GetRecord returns the record stored at the given namespace and key. A
 	// *RecordNotExistError is returned if the record does not exist.
 	GetRecord(namespace, key string) (Record, error)

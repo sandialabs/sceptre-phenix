@@ -128,6 +128,23 @@ describe('nodes', () => {
     expect(nodeLabel(next.nodes.find((n) => n.id === alpha.id))).toBe('alpha');
   });
 
+  test('updating a hostname does not mutate the prior device spec', () => {
+    const { doc, alpha } = sampleDocument();
+    const original = doc.nodes.find((node) => node.id === alpha.id);
+    const originalSpec = JSON.parse(JSON.stringify(original.device.spec));
+
+    const next = updateNode(doc, alpha.id, {
+      device: { hostname: 'renamed' },
+    });
+
+    expect(original.device.spec).toEqual(originalSpec);
+    expect(original.device.spec.general.hostname).toBe('alpha');
+    expect(
+      next.nodes.find((node) => node.id === alpha.id).device.spec.general
+        .hostname,
+    ).toBe('renamed');
+  });
+
   test('multiple nodes move in one operation', () => {
     const { doc, alpha, bravo } = sampleDocument();
     const next = moveNodes(doc, [
@@ -153,8 +170,17 @@ describe('networks', () => {
     doc = addNetwork(doc, { name: 'EXP' }).doc;
     const again = addNetwork(doc, { name: 'exp' });
 
-    expect(again.network.name).not.toBe('exp');
+    expect(again.network.name).toBe('exp-2');
     expect(again.doc.networks).toHaveLength(2);
+  });
+
+  test('suffix checks are also case insensitive', () => {
+    let doc = createDocument();
+
+    doc = addNetwork(doc, { name: 'EXP' }).doc;
+    doc = addNetwork(doc, { name: 'exp-2' }).doc;
+
+    expect(addNetwork(doc, { name: 'Exp' }).network.name).toBe('Exp-3');
   });
 
   test('renaming a network rewrites the interface vlan of connected devices', () => {
