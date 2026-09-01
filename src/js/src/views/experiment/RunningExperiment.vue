@@ -1511,6 +1511,11 @@
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import { useErrorNotification } from '@/utils/errorNotif';
   import { partitionSnapshotVMNames } from '@/utils/vmSnapshot.js';
+  import {
+    applyStopCaptureUpdate,
+    isInterfaceCapturing,
+    hasMultipleCaptures,
+  } from '@/utils/captures.js';
   import externalImg from '@/assets/imgs/external.png';
   import notAvailableImg from '@/assets/imgs/not-available.png';
   import delayedImg from '@/assets/imgs/delayed.png';
@@ -2168,14 +2173,25 @@
               case 'stop': {
                 for (let i = 0; i < vms.length; i++) {
                   if (vms[i].name == vm[1]) {
-                    vms[i].captures = [];
+                    vms[i].captures = applyStopCaptureUpdate(
+                      vms[i].captures,
+                      msg.result,
+                    );
                     break;
                   }
                 }
 
+                this.experiment.vms = [...vms];
+
                 this.$buefy.toast.open({
                   message:
-                    'Packet capture was stopped for the ' + vm[1] + ' VM.',
+                    msg.result && msg.result.interface !== undefined
+                      ? 'Packet capture was stopped for interface ' +
+                        msg.result.interface +
+                        ' on the ' +
+                        vm[1] +
+                        ' VM.'
+                      : 'Packet capture was stopped for the ' + vm[1] + ' VM.',
                   type: 'is-success',
                 });
 
@@ -2901,6 +2917,44 @@
         }
       },
 
+      // stopVMCapture issues the DELETE request to stop packet capture(s) for
+      // a VM. If iface is provided, only that interface's capture is
+      // stopped; otherwise all captures for the VM are stopped.
+      stopVMCapture(vm, iface) {
+        this.isWaiting = true;
+
+        const params = iface === undefined ? {} : { iface: iface };
+
+        axiosInstance
+          .delete(
+            'experiments/' +
+              this.$route.params.id +
+              '/vms/' +
+              vm.name +
+              '/captures',
+            { params: params },
+          )
+          .then((response) => {
+            if (response.status == 204) {
+              let vms = this.experiment.vms;
+
+              for (let i = 0; i < vms.length; i++) {
+                if (vms[i].name == response.data.name) {
+                  vms[i] = response.data;
+                  break;
+                }
+              }
+
+              this.experiment.vms = [...vms];
+              this.isWaiting = false;
+            }
+          })
+          .catch((err) => {
+            useErrorNotification(err);
+            this.isWaiting = false;
+          });
+      },
+
       handlePcap(vm, iface) {
         var dateTime = new Date();
         var time =
@@ -2922,23 +2976,46 @@
               '/captures',
           )
           .then((response) => {
-            let captures = response.data.captures;
-            let capturing = false;
+            let captures = response.data.captures || [];
+            let capturing = isInterfaceCapturing(captures, iface);
 
-            if (captures) {
-              for (let i = 0; i < captures.length; i++) {
-                if (captures[i].interface === iface) {
-                  capturing = true;
-                  break;
-                }
-              }
-            }
-
-            if (capturing) {
+            if (capturing && hasMultipleCaptures(captures)) {
+              // More than one capture is currently running for this VM;
+              // let the user choose between stopping just this interface's
+              // capture or all of the VM's running captures.
               this.$buefy.dialog.confirm({
-                title: 'Stop All Packet Captures',
+                title: 'Stop Packet Capture',
                 message:
-                  'This will stop all packet captures for the ' +
+                  'The ' +
+                  vm.name +
+                  ' VM has multiple packet captures running. Stop the ' +
+                  'capture on interface ' +
+                  iface +
+                  ' only, or stop all packet captures for the VM?',
+                cancelText: 'Stop Interface ' + iface + ' Only',
+                confirmText: 'Stop All Captures',
+                type: 'is-danger',
+                hasIcon: true,
+                onConfirm: () => {
+                  this.stopVMCapture(vm);
+                },
+                onCancel: (trigger) => {
+                  // Only the "Stop Interface <iface> Only" button (as
+                  // opposed to dismissing the dialog via escape or clicking
+                  // outside of it, either of which should be a no-op) stops
+                  // this interface's capture.
+                  if (trigger === 'button') {
+                    this.stopVMCapture(vm, iface);
+                  }
+                },
+              });
+            } else if (capturing) {
+              this.$buefy.dialog.confirm({
+                title: 'Stop Packet Capture',
+                message:
+                  'This will stop the packet capture on interface ' +
+                  iface +
+                  ' for the ' +
                   vm.name +
                   ' VM.',
                 cancelText: 'Cancel',
@@ -2946,35 +3023,7 @@
                 type: 'is-danger',
                 hasIcon: true,
                 onConfirm: () => {
-                  this.isWaiting = true;
-
-                  axiosInstance
-                    .delete(
-                      'experiments/' +
-                        this.$route.params.id +
-                        '/vms/' +
-                        vm.name +
-                        '/captures',
-                    )
-                    .then((response) => {
-                      if (response.status == 204) {
-                        let vms = this.experiment.vms;
-
-                        for (let i = 0; i < vms.length; i++) {
-                          if (vms[i].name == response.data.name) {
-                            vms[i] = response.data;
-                            break;
-                          }
-                        }
-
-                        this.experiment.vms = [...vms];
-                        this.isWaiting = false;
-                      }
-                    })
-                    .catch((err) => {
-                      useErrorNotification(err);
-                      this.isWaiting = false;
-                    });
+                  this.stopVMCapture(vm, iface);
                 },
               });
             } else if (vm.networks[iface] == 'disconnected') {

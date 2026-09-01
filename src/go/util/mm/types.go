@@ -239,6 +239,12 @@ type VM struct {
 	// ordering in the experiment database.
 	Interfaces map[string]string `json:"-"`
 
+	// IfaceNames holds the topology-declared name of each network
+	// interface, index-aligned with Networks. It's used internally to
+	// resolve a user-supplied interface name (as opposed to index) to the
+	// interface's index for operations like packet captures.
+	IfaceNames []string `json:"-"`
+
 	// Used internally for showing VM details.
 	Metadata    map[string]any `json:"-"`
 	Annotations map[string]any `json:"-"`
@@ -257,6 +263,9 @@ func (v VM) Copy() VM {
 
 	vm.Networks = make([]string, len(v.Networks))
 	copy(vm.Networks, v.Networks)
+
+	vm.IfaceNames = make([]string, len(v.IfaceNames))
+	copy(vm.IfaceNames, v.IfaceNames)
 
 	vm.Taps = make([]string, len(v.Taps))
 	copy(vm.Taps, v.Taps)

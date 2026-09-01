@@ -797,20 +797,52 @@ func (Minimega) StartVMCapture(opts ...Option) error {
 	return nil
 }
 
+// StopVMCapture stops packet captures for a VM. If the CaptureInterface
+// option is provided, only the capture running on that interface index is
+// stopped, leaving any other captures for the VM running. Otherwise, all
+// captures for the VM are stopped.
 func (Minimega) StopVMCapture(opts ...Option) error {
+	o := NewOptions(opts...)
+
 	captures := GetVMCaptures(opts...)
 
-	if len(captures) == 0 {
+	if o.captureIfaceSet {
+		var found bool
+
+		for _, capture := range captures {
+			if capture.Interface == o.captureIface {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return ErrNoCaptures
+		}
+	} else if len(captures) == 0 {
 		return ErrNoCaptures
 	}
 
-	o := NewOptions(opts...)
-
 	cmd := mmcli.NewNamespacedCommand(o.ns)
-	cmd.Command = "capture pcap delete vm " + o.vm
+
+	if o.captureIfaceSet {
+		cmd.Command = fmt.Sprintf("capture pcap delete vm %s %d", o.vm, o.captureIface)
+	} else {
+		cmd.Command = "capture pcap delete vm " + o.vm
+	}
 
 	err := mmcli.ErrorResponse(mmcli.Run(cmd))
 	if err != nil {
+		if o.captureIfaceSet {
+			return fmt.Errorf(
+				"deleting VM capture for interface %d on VM %s in namespace %s: %w",
+				o.captureIface,
+				o.vm,
+				o.ns,
+				err,
+			)
+		}
+
 		return fmt.Errorf("deleting VM captures for VM %s in namespace %s: %w", o.vm, o.ns, err)
 	}
 
