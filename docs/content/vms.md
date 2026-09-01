@@ -232,14 +232,19 @@ outlive their experiment.
 Click on the name of the network tap on a running VM in a started experiment to
 start a packet capture. The name of the network tap will turn green once a packet
 capture has started. It is possible to start captures on multiple network taps.
-However, when you stop packet capture, it will stop captures on all network taps.
+
+To stop a capture, click the name of a green network tap. If the VM has more
+than one capture running, phēnix asks whether to stop only that interface's
+capture or all packet captures for the VM.
 
 ### From the Command Line Binary
 
-To start a packet capture, run the following command.
+To start a packet capture, run the following command, specifying the target
+network interface by its name (as declared in the experiment topology, e.g.
+`IF0`) or its zero-based index.
 
 ```shell
-phenix vm capture start <experiment name> <vm name> <iface index> </path/to/out file>
+phenix vm capture start <experiment name> <vm name> <iface name/index> </path/to/out file>
 ```
 
 To stop all packet captures on a running VM, use the following command.
@@ -247,6 +252,18 @@ To stop all packet captures on a running VM, use the following command.
 ```shell
 phenix vm capture stop <experiment name> <vm name>
 ```
+
+To stop the packet capture running on a single interface, without affecting
+any other captures running on the same VM, provide the interface name or
+index.
+
+```shell
+phenix vm capture stop <experiment name> <vm name> <iface name/index>
+```
+
+!!! note
+    Stopping the capture on a single interface, from the Web-UI or the command
+    line, requires minimega 3.3.0 or later.
 
 ## Kill a VM
 
