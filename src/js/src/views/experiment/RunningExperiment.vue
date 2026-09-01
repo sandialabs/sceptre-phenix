@@ -1439,21 +1439,15 @@
               justify-content: center;
               gap: 4px;
             ">
-            <template v-if="experiment.vms && experiment.vms.length">
-              <div v-for="vm in experiment.vms" :key="vm.name">
-                <a v-if="!vm.external" :href="vncLoc(vm)" target="_blank">
+            <template v-if="vncVms.length">
+              <div v-for="vm in vncVms" :key="vm.name">
+                <a :href="vncLoc(vm)" target="_blank">
                   <img
                     :src="getVmScreenshot(vm)"
                     :width="vncWidth"
                     style="display: block" />
                 </a>
-                <img
-                  v-else
-                  :src="getVmScreenshot(vm)"
-                  :width="vncWidth"
-                  style="display: block" />
                 <a
-                  v-if="!vm.external"
                   style="
                     color: whitesmoke;
                     display: block;
@@ -1463,17 +1457,6 @@
                   "
                   @click="getInfo(vm)"
                   >{{ vm.name }}</a
-                >
-                <span
-                  v-else
-                  style="
-                    color: whitesmoke;
-                    display: block;
-                    background-color: grey;
-                    text-align: center;
-                    padding: 2px 0px;
-                  "
-                  >{{ vm.name }}</span
                 >
               </div>
             </template>
@@ -1554,6 +1537,14 @@
 
       vncWidth() {
         return this.activeTab == 2 ? this.vncZoom * 50 : 200;
+      },
+
+      vncVms() {
+        // Hide external/HIL nodes and DNB (do not boot) nodes from the VNC tab
+        // since they don't have a VNC console to display.
+        return (this.experiment.vms || []).filter(
+          (vm) => !vm.external && !vm.dnb,
+        );
       },
 
       paginationNeeded() {
