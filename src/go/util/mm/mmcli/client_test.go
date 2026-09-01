@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -56,7 +57,11 @@ func reply(body string) *miniclient.Response {
 func newFakeMinimega(t *testing.T, handle fakeHandler) string {
 	t.Helper()
 
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp("/tmp", "mmcli-")
+	if err != nil {
+		t.Fatalf("creating temp dir for fake minimega socket: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 
 	listener, err := net.Listen("unix", filepath.Join(dir, "minimega"))
 	if err != nil {

@@ -11,8 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	v1 "phenix/types/version/v1"
-	v2 "phenix/types/version/v2"
+	"phenix/types/version"
 )
 
 const (
@@ -38,36 +37,31 @@ func main() {
 	flag.BoolVar(&failOnNoSchemas, "fail-on-no-schemas", true, "fail when an expected OpenAPI version has no schemas")
 	flag.Parse()
 
-	openAPIByVersion := map[string][]byte{
-		"v1": v1.OpenAPI,
-		"v2": v2.OpenAPI,
-	}
-
 	versions := strings.Split(versionsCSV, ",")
 	for i := range versions {
 		versions[i] = strings.TrimSpace(versions[i])
 	}
 
-	for _, version := range versions {
-		openAPI, ok := openAPIByVersion[version]
-		if !ok {
-			exitf("unknown version %q; supported versions are: v1, v2", version)
+	for _, schemaVersion := range versions {
+		openAPI, err := version.ReadSchemaFile(schemaVersion)
+		if err != nil {
+			exitf("read %s OpenAPI: %v", schemaVersion, err)
 		}
 
 		doc, err := parseOpenAPIDoc(openAPI)
 		if err != nil {
-			exitf("parse %s OpenAPI: %v", version, err)
+			exitf("parse %s OpenAPI: %v", schemaVersion, err)
 		}
 
 		if len(doc.Components.Schemas) == 0 {
 			if failOnNoSchemas {
-				exitf("%s OpenAPI has no components.schemas section", version)
+				exitf("%s OpenAPI has no components.schemas section", schemaVersion)
 			}
 			continue
 		}
 
-		if err := exportVersionSchemas(outDir, version, doc.Components.Schemas); err != nil {
-			exitf("export %s schemas: %v", version, err)
+		if err := exportVersionSchemas(outDir, schemaVersion, doc.Components.Schemas); err != nil {
+			exitf("export %s schemas: %v", schemaVersion, err)
 		}
 	}
 }
