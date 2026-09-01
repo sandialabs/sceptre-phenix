@@ -59,7 +59,7 @@
         "VirtualMachine"
       ],
       "default": "VirtualMachine",
-      "examples": ["VirutalMachine"],
+      "examples": ["VirtualMachine"],
       "readonly": true,
       "pattern": "^(.*)$"
     },
@@ -176,7 +176,8 @@
             "rhel",
             "vyatta",
             "vyos",
-            "windows"
+            "windows",
+            "other"
           ],
           "default": "linux",
           "examples": [
@@ -693,9 +694,9 @@
           "type": "string",
           "title": "mac",
           "examples": [
-            "00:11:22:33:44:55:66"
+            "00:11:22:33:44:55"
           ],
-          "pattern": "^([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]){2}$"
+          "pattern": "^$|^([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]){2}$"
         },
         "mtu": {
           "type": "integer",
@@ -918,7 +919,7 @@
                 57600,
                 115200,
                 128000,
-                25600
+                256000
               ],
               "default": 9600,
               "examples": [
