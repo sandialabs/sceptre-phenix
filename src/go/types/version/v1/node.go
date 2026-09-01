@@ -763,15 +763,7 @@ func (n Node) FileDeletions() string {
 }
 
 func (n Node) RouterName() string {
-	if !strings.EqualFold(n.TypeF, "router") {
-		return n.GeneralF.HostnameF
-	}
-
-	name := strings.ToLower(n.GeneralF.HostnameF)
-	name = strings.ReplaceAll(name, ".", "-")
-	name = strings.ReplaceAll(name, "_", "-")
-
-	return name
+	return n.GeneralF.HostnameF
 }
 
 func (h Hardware) DiskConfig(snapshot string) string {
