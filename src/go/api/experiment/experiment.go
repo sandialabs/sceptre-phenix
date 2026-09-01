@@ -1038,10 +1038,13 @@ func Reconfigure(name string) error {
 	return nil
 }
 
-// TriggerRunning executes the 'running' stage for the given apps in the given
-// experiment. If no apps are passed, then all experiment apps will have their
-// 'running' stage triggered.
-func TriggerRunning(ctx context.Context, name string, apps ...string) error {
+// Trigger executes the given lifecycle stage for the selected apps in an
+// experiment. If no apps are passed, the stage is triggered for all apps.
+func Trigger(ctx context.Context, name string, stage app.Action, apps ...string) error {
+	if !stage.Valid() {
+		return fmt.Errorf("invalid app lifecycle stage %q", stage)
+	}
+
 	var err error
 	c, _ := store.NewConfig("experiment/" + name)
 
@@ -1055,21 +1058,39 @@ func TriggerRunning(ctx context.Context, name string, apps ...string) error {
 		return fmt.Errorf("decoding experiment from config: %w", err2)
 	}
 
-	if !exp.Running() {
+	if stage == app.ActionRunning && !exp.Running() {
 		return errors.New("experiment is not running")
 	}
 
 	err = app.ApplyApps(
 		ctx,
 		exp,
-		app.Stage(app.ActionRunning),
+		app.Stage(stage),
 		app.FilterApp(apps...),
+		app.Trigger(),
 	)
 	if err != nil {
-		return fmt.Errorf("triggering apps for experiment: %w", err)
+		return fmt.Errorf("triggering %s stage for experiment apps: %w", stage, err)
+	}
+
+	// Running-stage apps persist their status as they execute and reload the
+	// experiment between apps.
+	if stage == app.ActionRunning {
+		return nil
+	}
+
+	if err := exp.WriteToStore(false); err != nil {
+		return fmt.Errorf("saving experiment after triggering %s stage: %w", stage, err)
 	}
 
 	return nil
+}
+
+// TriggerRunning executes the 'running' stage for the given apps in the given
+// experiment. If no apps are passed, then all experiment apps will have their
+// 'running' stage triggered.
+func TriggerRunning(ctx context.Context, name string, apps ...string) error {
+	return Trigger(ctx, name, app.ActionRunning, apps...)
 }
 
 func Delete(name string) error {

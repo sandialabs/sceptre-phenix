@@ -49,6 +49,7 @@ type ExperimentStatus interface { //nolint:interfacebloat // legacy interface
 	AppStatus() map[string]any
 	AppFrequency() map[string]string
 	AppRunning() map[string]bool
+	AppCleanup() map[string]bool
 	VLANs() map[string]int
 	Schedules() map[string]string
 
@@ -56,6 +57,7 @@ type ExperimentStatus interface { //nolint:interfacebloat // legacy interface
 	SetAppStatus(string, any)
 	SetAppFrequency(string, string)
 	SetAppRunning(string, bool)
+	SetAppCleanup(string, bool)
 	SetVLANs(map[string]int)
 	SetSchedule(map[string]string)
 

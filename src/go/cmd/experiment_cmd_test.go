@@ -9,6 +9,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/spf13/cobra"
 
+	"phenix/app"
 	"phenix/store"
 	"phenix/types"
 	"phenix/util/file"
@@ -67,6 +68,7 @@ func TestExperimentCommandsShowUsageForMissingArguments(t *testing.T) {
 		{name: "stop", newCommand: newExperimentStopCmd},
 		{name: "restart", newCommand: newExperimentRestartCmd},
 		{name: "reconfigure", newCommand: newExperimentReconfigureCmd},
+		{name: "trigger", newCommand: newExperimentTriggerCmd},
 		{name: "trigger-running", newCommand: newExperimentTriggerRunningCmd},
 		{name: "scorch", newCommand: newExperimentScorchCmd},
 	}
@@ -125,6 +127,64 @@ func TestExperimentCommandAliases(t *testing.T) {
 				t.Fatalf("expected alias to resolve to %q, got %q", test.command, command.Name())
 			}
 		})
+	}
+}
+
+func TestExperimentTriggerUsageDescribesArgumentOrder(t *testing.T) {
+	cmd := newExperimentTriggerCmd()
+
+	err := cmd.ValidateArgs(nil)
+	if err == nil {
+		t.Fatal("expected missing argument error")
+	}
+
+	want := "Usage:\n  trigger <lifecycle> <experiment name> [<app name> ...]"
+	if got := err.Error(); !strings.Contains(got, want) {
+		t.Fatalf("expected error to contain %q, got:\n%s", want, got)
+	}
+}
+
+func TestExperimentTriggerRejectsInvalidLifecycleStage(t *testing.T) {
+	cmd := newExperimentTriggerCmd()
+
+	err := cmd.ValidateArgs([]string{"invalid", "test-exp"})
+	if err == nil {
+		t.Fatal("expected invalid lifecycle stage error")
+	}
+
+	want := "valid lifecycles and shorthands: configure (config), pre-start (pre), post-start (post), running (run), cleanup (clean)"
+	if got := err.Error(); !strings.Contains(got, want) {
+		t.Fatalf("expected error to contain %q, got:\n%s", want, got)
+	}
+}
+
+func TestExperimentTriggerAcceptsLifecycleStages(t *testing.T) {
+	cmd := newExperimentTriggerCmd()
+
+	for _, stage := range app.Actions() {
+		for _, value := range []string{string(stage), stage.Shorthand()} {
+			if err := cmd.ValidateArgs([]string{value, "test-exp"}); err != nil {
+				t.Errorf("expected lifecycle %q to be accepted, got: %v", value, err)
+			}
+		}
+	}
+}
+
+func TestExperimentTriggerDocumentsLifecycleValues(t *testing.T) {
+	cmd := newExperimentTriggerCmd()
+
+	want := "Valid lifecycles and shorthands: configure (config), pre-start (pre), post-start (post), running (run), cleanup (clean)."
+	if !strings.Contains(cmd.Long, want) {
+		t.Fatalf("expected help to contain %q, got:\n%s", want, cmd.Long)
+	}
+}
+
+func TestExperimentTriggerRunningIsDeprecated(t *testing.T) {
+	cmd := newExperimentTriggerRunningCmd()
+
+	want := "use 'phenix exp trigger running' instead"
+	if cmd.Deprecated != want {
+		t.Fatalf("expected deprecation message %q, got %q", want, cmd.Deprecated)
 	}
 }
 
