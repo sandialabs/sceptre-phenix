@@ -567,6 +567,14 @@
               >
             </div>
             <div class="column">
+              <b-radio
+                v-model="radioButton"
+                native-value="external"
+                type="is-light"
+                >External / HIL</b-radio
+              >
+            </div>
+            <div class="column">
               <b-button @click="resetNetwork" type="is-light"
                 >Refresh Network</b-button
               >
