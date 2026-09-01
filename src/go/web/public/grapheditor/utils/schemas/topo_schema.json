@@ -108,7 +108,7 @@
             "Switch"
           ],
           "default": "VirtualMachine",
-          "examples": ["VirutalMachine"],
+          "examples": ["VirtualMachine"],
           "readonly": false,
           "pattern": "^(.*)$"
         },
@@ -226,7 +226,8 @@
                 "rhel",
                 "vyatta",
                 "vyos",
-                "windows"
+                "windows",
+                "other"
               ],
               "default": "linux",
               "examples": [
@@ -892,7 +893,7 @@
                     57600,
                     115200,
                     128000,
-                    25600
+                    256000
                   ],
                   "default": 9600,
                   "examples": [
@@ -947,9 +948,9 @@
               "type": "string",
               "title": "mac",
               "examples": [
-                "00:11:22:33:44:55:66"
+                "00:11:22:33:44:55"
               ],
-              "pattern": "^([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]){2}$"
+              "pattern": "^$|^([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]){2}$"
             },
             "mtu": {
               "type": "integer",
@@ -1061,7 +1062,7 @@
           "type": "string",
           "title": "Type",
           "default": "HIL",
-          "examples": ["HIL"],
+          "examples": ["HIL", "GRE", "PLC", "RTU"],
           "readonly": false,
           "pattern": "^(.*)$"
         },
@@ -1114,7 +1115,8 @@
                 "rhel",
                 "vyatta",
                 "vyos",
-                "windows"
+                "windows",
+                "other"
               ],
               "default": "linux",
               "examples": [
@@ -1141,8 +1143,7 @@
                 "type": "object",
                 "title": "Interface",
                 "required": [
-                  "name",
-                  "address"
+                  "name"
                 ],
                 "properties": {
                   "name": {
@@ -1150,10 +1151,50 @@
                     "title": "Interface Name",
                     "example": "eth0"
                   },
+                  "proto": {
+                    "type": "string",
+                    "title": "proto",
+                    "enum": [
+                      "static",
+                      "dhcp",
+                      "manual",
+                      ""
+                    ],
+                    "default": "dhcp",
+                    "examples": [
+                      "static"
+                    ]
+                  },
                   "address": {
                     "type": "string",
                     "title": "IP Address",
+                    "format": "ipv4",
                     "example": "192.168.1.100"
+                  },
+                  "mask": {
+                    "type": "integer",
+                    "title": "mask",
+                    "minimum": 0,
+                    "maximum": 32,
+                    "default": 24,
+                    "examples": [
+                      24
+                    ]
+                  },
+                  "gateway": {
+                    "type": "string",
+                    "title": "gateway",
+                    "format": "ipv4",
+                    "examples": [
+                      "192.168.1.1"
+                    ]
+                  },
+                  "vlan": {
+                    "type": "string",
+                    "title": "VLAN",
+                    "examples": [
+                      "EXP-1"
+                    ]
                   }
                 }
               }

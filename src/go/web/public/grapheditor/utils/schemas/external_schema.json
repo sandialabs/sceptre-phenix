@@ -149,7 +149,8 @@
             "rhel",
             "vyatta",
             "vyos",
-            "windows"
+            "windows",
+            "other"
           ],
           "default": "linux",
           "examples": [

@@ -238,6 +238,13 @@ components:
       properties:
         type:
           type: string
+          enum:
+          - VirtualMachine
+          - Firewall
+          - Printer
+          - Router
+          - Server
+          - Switch
           default: VirtualMachine
           example: VirtualMachine
         general:
@@ -416,6 +423,18 @@ components:
                             network:
                               type: string
                               example: 10.1.25.0/24
+                dead_interval:
+                  type: integer
+                  nullable: true
+                  example: 40
+                hello_interval:
+                  type: integer
+                  nullable: true
+                  example: 10
+                retransmission_interval:
+                  type: integer
+                  nullable: true
+                  example: 5
             rulesets:
               type: array
               nullable: true
@@ -605,6 +624,15 @@ components:
               example: 8192
             os_type:
               type: string
+              enum:
+              - centos
+              - linux
+              - minirouter
+              - rhel
+              - vyatta
+              - vyos
+              - windows
+              - other
               default: linux
               example: windows
         network:
