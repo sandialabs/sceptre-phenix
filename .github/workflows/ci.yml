@@ -40,9 +40,6 @@ jobs:
             src/go/store/mock.go
             src/go/web/proto/*.pb.go
             src/go/web/rbac/known_policy.go
-            src/go/types/version/v0/schema.go
-            src/go/types/version/v1/schema.go
-            src/go/types/version/v2/schema.go
 
   lint-go:
     name: Lint / Format (Go)

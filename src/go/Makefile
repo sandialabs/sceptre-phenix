@@ -69,7 +69,7 @@ check:
 	$(call check-command,$(GOLANGCI_LINT),Please run 'make install-dev' to install it.)
 	$(GOLANGCI_LINT) run -c .golangci.yml
 
-generate: generate-mocks generate-protobuf go-generate generate-schemas
+generate: generate-mocks generate-protobuf go-generate
 
 generate-schemas:
 	go run ./tools/schema-export -out ../../schemas
