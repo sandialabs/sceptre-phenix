@@ -1,0 +1,62 @@
+[
+  {
+    "name": "phenix Topology (v2)",
+    "description": "phenix Topology configuration schema (v2)",
+    "fileMatch": ["topology.yml", "topology.yaml", "*topology*.yml", "*topology*.yaml"],
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/v2/topology.schema.json"
+  },
+  {
+    "name": "phenix Scenario (v2)",
+    "description": "phenix Scenario configuration schema (v2)",
+    "fileMatch": ["scenario.yml", "scenario.yaml", "*scenario*.yml", "*scenario*.yaml"],
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/v2/scenario.schema.json"
+  },
+  {
+    "name": "phenix Experiment (v2)",
+    "description": "phenix Experiment configuration schema (v2)",
+    "fileMatch": ["experiment.yml", "experiment.yaml", "*experiment*.yml", "*experiment*.yaml"],
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/v2/experiment.schema.json"
+  },
+  {
+    "name": "phenix Image (v2)",
+    "description": "phenix Image configuration schema (v2)",
+    "fileMatch": ["image.yml", "image.yaml", "*image*.yml", "*image*.yaml"],
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/v2/image.schema.json"
+  },
+  {
+    "name": "phenix User (v2)",
+    "description": "phenix User configuration schema (v2)",
+    "fileMatch": ["user.yml", "user.yaml", "*user*.yml", "*user*.yaml"],
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/v2/user.schema.json"
+  },
+  {
+    "name": "phenix Role (v2)",
+    "description": "phenix Role configuration schema (v2)",
+    "fileMatch": ["role.yml", "role.yaml", "*role*.yml", "*role*.yaml"],
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/v2/role.schema.json"
+  },
+  {
+    "name": "phenix Topology (v1)",
+    "description": "phenix Topology configuration schema (v1)",
+    "fileMatch": ["topology.yml", "topology.yaml", "*topology*.yml", "*topology*.yaml"],
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/v1/topology.schema.json"
+  },
+  {
+    "name": "phenix Scenario (v1)",
+    "description": "phenix Scenario configuration schema (v1)",
+    "fileMatch": ["scenario.yml", "scenario.yaml", "*scenario*.yml", "*scenario*.yaml"],
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/v1/scenario.schema.json"
+  },
+  {
+    "name": "phenix Experiment (v1)",
+    "description": "phenix Experiment configuration schema (v1)",
+    "fileMatch": ["experiment.yml", "experiment.yaml", "*experiment*.yml", "*experiment*.yaml"],
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/v1/experiment.schema.json"
+  },
+  {
+    "name": "phenix Image (v1)",
+    "description": "phenix Image configuration schema (v1)",
+    "fileMatch": ["image.yml", "image.yaml", "*image*.yml", "*image*.yaml"],
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/v1/image.schema.json"
+  }
+]

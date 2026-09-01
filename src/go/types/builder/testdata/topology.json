@@ -1,0 +1,142 @@
+{
+  "apiVersion": "phenix.sandia.gov/v1",
+  "kind": "Topology",
+  "metadata": {
+    "name": "builder-fixture"
+  },
+  "spec": {
+    "nodes": [
+      {
+        "type": "VirtualMachine",
+        "general": {
+          "hostname": "router",
+          "description": "core router"
+        },
+        "hardware": {
+          "os_type": "linux",
+          "vcpus": 2,
+          "memory": 2048,
+          "drives": [
+            {
+              "image": "ubuntu.qc2"
+            }
+          ]
+        },
+        "network": {
+          "interfaces": [
+            {
+              "name": "eth0",
+              "type": "ethernet",
+              "proto": "static",
+              "address": "10.0.0.1",
+              "mask": 24,
+              "vlan": "EXP"
+            },
+            {
+              "name": "eth1",
+              "type": "ethernet",
+              "proto": "static",
+              "address": "10.0.1.1",
+              "mask": 24,
+              "vlan": "MGMT"
+            },
+            {
+              "name": "eth2",
+              "type": "ethernet",
+              "proto": "dhcp"
+            }
+          ],
+          "routes": [
+            {
+              "destination": "0.0.0.0/0",
+              "next": "10.0.0.254",
+              "cost": 1
+            }
+          ]
+        },
+        "annotations": {
+          "vendor/extension": {
+            "nested": true,
+            "values": [1, 2, 3]
+          }
+        }
+      },
+      {
+        "type": "VirtualMachine",
+        "general": {
+          "hostname": "host-a",
+          "description": "workstation"
+        },
+        "hardware": {
+          "os_type": "linux",
+          "drives": [
+            {
+              "image": "ubuntu.qc2"
+            }
+          ]
+        },
+        "network": {
+          "interfaces": [
+            {
+              "name": "eth0",
+              "type": "ethernet",
+              "proto": "static",
+              "address": "10.0.0.2",
+              "mask": 24,
+              "vlan": "EXP"
+            }
+          ]
+        }
+      },
+      {
+        "type": "VirtualMachine",
+        "general": {
+          "hostname": "sensor"
+        },
+        "hardware": {
+          "os_type": "linux",
+          "drives": [
+            {
+              "image": "ubuntu.qc2"
+            }
+          ]
+        },
+        "network": {
+          "interfaces": [
+            {
+              "name": "eth0",
+              "type": "ethernet",
+              "proto": "static",
+              "address": "10.0.9.2",
+              "mask": 24,
+              "vlan": "SENSOR"
+            }
+          ]
+        }
+      },
+      {
+        "type": "VirtualMachine",
+        "general": {
+          "hostname": "standalone"
+        },
+        "hardware": {
+          "os_type": "linux",
+          "drives": [
+            {
+              "image": "ubuntu.qc2"
+            }
+          ]
+        },
+        "network": {
+          "interfaces": [
+            {
+              "name": "eth0",
+              "type": "ethernet",
+              "proto": "dhcp"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

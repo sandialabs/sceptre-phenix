@@ -44,6 +44,38 @@ npm run format
 npm run test
 ```
 
+Browser tests use the separate Playwright project:
+
+```
+cd e2e
+npm ci
+npx playwright install --with-deps chrome firefox
+npx playwright test
+```
+
+## Builder Beta
+
+Start the backend with `phenix ui --features builder-beta`, then open
+`/builder-beta`. The beta uses Vue Flow for the canvas and JSON Forms for
+schema-backed node/network properties while retaining `/builder` for legacy
+`builder-xml` diagrams.
+
+Builder documents and draft history autosave independently from phenix configs.
+Creating or updating topology, scenario, or experiment configs requires the
+explicit Publish action. The editor supports JSON/YAML document transfer,
+PNG/SVG visual export, generated diagrams from authorized stored or uploaded
+Topology/Experiment JSON or YAML configs, shared-draft RBAC, and a synchronized
+keyboard/screen-reader outline.
+
+Uploaded configs generate new drafts without changing their source. They may
+create publication targets, but only drafts tied to the matching stored
+Topology or Experiment may update those resources. Updating an uploaded
+Scenario reference also requires the fresh target digest shown by the server,
+so a concurrent Scenario change is rejected instead of overwritten.
+
+Builder theme choices are system, light, and dark. System is the default;
+explicit choices persist in browser local storage for Builder only.
+
 ## Code Details
 
 ### Structure

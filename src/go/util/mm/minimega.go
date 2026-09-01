@@ -184,9 +184,10 @@ func (m Minimega) GetVMInfo(opts ...Option) VMs { //nolint:funlen // complex log
 		cmd.Filters = []string{"name=" + o.vm}
 	}
 
-	var vms VMs
+	rows := mmcli.RunTabular(cmd)
+	vms := make(VMs, 0, len(rows))
 
-	for _, row := range mmcli.RunTabular(cmd) {
+	for _, row := range rows {
 		vm := VM{ //nolint:exhaustruct // partial initialization
 			UUID:     row["uuid"],
 			Host:     row["host"],
@@ -1675,10 +1676,8 @@ func processNamespaceHosts(namespace string) Hosts {
 	cmd := mmcli.NewNamespacedCommand(namespace)
 	cmd.Command = "host"
 
-	var (
-		hosts  Hosts
-		status = mmcli.RunTabular(cmd)
-	)
+	status := mmcli.RunTabular(cmd)
+	hosts := make(Hosts, 0, len(status))
 
 	for _, row := range status {
 		host := Host{Name: row["host"]} //nolint:exhaustruct // partial initialization
