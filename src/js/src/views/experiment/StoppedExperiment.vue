@@ -10,7 +10,7 @@
         <section class="modal-card-body">
           <p>Host: {{ expModal.vm.host }}</p>
           <p>Description: {{ expModal.vm.description || 'unknown' }}</p>
-          <p>IPv4: {{ formatStringify(expModal.vm.ipv4) }}</p>
+          <p>IP: {{ formatStringify(expModal.vm.ipv4) }}</p>
           <p>CPU(s): {{ expModal.vm.cpus }}</p>
           <p>Memory: {{ formatRAM(expModal.vm.ram) }}</p>
           <p>Disk: {{ expModal.vm.disk }}</p>
@@ -336,7 +336,7 @@
                 {{ props.row.host }}
               </template>
             </b-table-column>
-            <b-table-column field="ipv4" label="IPv4" v-slot="props">
+            <b-table-column field="ipv4" label="IP" v-slot="props">
               <div v-for="(ip, index) in props.row.ipv4" :key="index">
                 {{ ip || 'unknown' }}
               </div>

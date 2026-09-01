@@ -10,7 +10,7 @@
         <section class="modal-card-body">
           <p>Host: {{ expModal.vm.host }}</p>
           <p>Description: {{ expModal.vm.description || 'unknown' }}</p>
-          <p>IPv4: {{ formatStringify(expModal.vm.ipv4) }}</p>
+          <p>IP: {{ formatStringify(expModal.vm.ipv4) }}</p>
           <p>CPU(s): {{ expModal.vm.cpus }}</p>
           <p>Memory: {{ formatRAM(expModal.vm.ram) }}</p>
           <p>Disk: {{ expModal.vm.disk }}</p>
@@ -1129,43 +1129,8 @@
             <b-table-column
               v-if="columnVisibility.ipv4"
               field="ipv4"
-              label="IPv4"
+              label="IP"
               width="150">
-              <template v-slot:header="{ column }">
-                {{ column.label }}
-                <b-tooltip
-                  label="Start Subnet Packet Capture"
-                  type="is-dark"
-                  :active="isSubnetPresent()">
-                  <b-button
-                    :disabled="!isSubnetPresent() || displayedVMsCapturing()"
-                    class="button is-text is-small"
-                    @click="captureSubnet()"
-                    style="width: 0.1em">
-                    <b-icon icon="play-circle"></b-icon>
-                  </b-button>
-                </b-tooltip>
-                <b-tooltip
-                  label="Stop Subnet Packet Capture"
-                  type="is-dark"
-                  :active="
-                    (isSubnetPresent() || capturesSearched()) &&
-                    displayedVMsCapturing()
-                  ">
-                  <b-button
-                    :disabled="
-                      !(
-                        (isSubnetPresent() || capturesSearched()) &&
-                        displayedVMsCapturing()
-                      )
-                    "
-                    class="button is-text is-small"
-                    @click="stopCaptureSubnet()"
-                    style="width: 0.1em">
-                    <b-icon icon="stop-circle"></b-icon>
-                  </b-button>
-                </b-tooltip>
-              </template>
               <template v-slot:default="props">
                 <template
                   v-if="
@@ -3552,155 +3517,6 @@
         this.vlanModal.active = false;
       },
 
-      captureSubnet() {
-        let subnets = this.extractAllSubnets(this.search.filter);
-        if (subnets == null) {
-          return;
-        }
-        if (subnets.length > 1) {
-          this.$buefy.dialog.alert({
-            title: 'Multiple Subnets Detected',
-            message:
-              'Subnet packet captures can be started for only one subnet',
-            type: 'is-dark',
-            confirmText: 'Ok',
-          });
-          return;
-        }
-
-        let vms = this.vmSelectedArray;
-        //Determine the list of VMs to apply the capture request to
-        if (vms.length == 0) {
-          vms = [];
-          let visibleItems = this.$refs['vmTable'].visibleData;
-
-          for (let i = 0; i < visibleItems.length; i++) {
-            vms.push(visibleItems[i].name);
-          }
-        }
-
-        if (vms.length == 0) {
-          return;
-        }
-
-        this.$buefy.dialog.confirm({
-          title: 'Start Subnet Packet Captures',
-          message: 'This will start all packet captures for ' + vms.join(', '),
-          cancelText: 'Cancel',
-          confirmText: 'Ok',
-          type: 'is-success',
-          onConfirm: () => {
-            let url = 'experiments/' + this.$route.params.id + '/captureSubnet';
-            let body = { subnet: subnets[0], vms: vms };
-
-            axiosInstance
-              .post(url, body)
-              .then((response) => {
-                let vmMap = {};
-                for (let i = 0; i < response.data.captures.length; i++) {
-                  if (vmMap[response.data.captures[i].vm] === undefined) {
-                    vmMap[response.data.captures[i].vm] = [];
-                    vmMap[response.data.captures[i].vm].push(
-                      response.data.captures[i],
-                    );
-                  } else {
-                    vmMap[response.data.captures[i].vm].push(
-                      response.data.captures[i],
-                    );
-                  }
-                }
-
-                let vms = this.experiment.vms;
-                for (let i = 0; i < vms.length; i++) {
-                  if (vmMap[vms[i].name] !== undefined) {
-                    vms[i].captures = vmMap[vms[i].name];
-                  }
-                }
-                this.experiment.vms = [...vms];
-                this.isWaiting = false;
-              })
-              .catch((err) => {
-                useErrorNotification(err);
-                this.isWaiting = false;
-              });
-          },
-        });
-      },
-
-      stopCaptureSubnet() {
-        let subnets = this.extractAllSubnets(this.search.filter);
-        if (subnets == null) {
-          if (!this.capturesSearched()) {
-            return;
-          }
-          subnets = [];
-        }
-        if (subnets.length > 1) {
-          this.$buefy.dialog.alert({
-            title: 'Multiple Subnets Detected',
-            message:
-              'Subnet packet captures can only be stopped for only one subnet',
-            type: 'is-dark',
-            confirmText: 'Ok',
-          });
-          return;
-        }
-
-        let vms = this.vmSelectedArray;
-        //Determine the list of VMs to apply the capture request to
-        if (vms.length == 0) {
-          vms = [];
-          let visibleItems = this.$refs['vmTable'].visibleData;
-
-          for (let i = 0; i < visibleItems.length; i++) {
-            vms.push(visibleItems[i].name);
-          }
-        }
-
-        if (vms.length == 0) {
-          return;
-        }
-
-        this.$buefy.dialog.confirm({
-          title: 'Stop Subnet Packet Captures',
-          message: 'This will stop all packet captures for ' + vms.join(', '),
-          cancelText: 'Cancel',
-          confirmText: 'Ok',
-          type: 'is-danger',
-          onConfirm: () => {
-            let url =
-              'experiments/' + this.$route.params.id + '/stopCaptureSubnet';
-            let body = {
-              subnet: subnets.length > 0 ? subnets[0] : '',
-              vms: vms,
-            };
-            axiosInstance
-              .post(url, body)
-              .then((response) => {
-                let vmMap = {};
-                for (let i = 0; i < response.data.vms.length; i++) {
-                  if (vmMap[response.data.vms[i]] === undefined) {
-                    vmMap[response.data.vms[i]] = true;
-                  }
-                }
-
-                let vms = this.experiment.vms;
-                for (let i = 0; i < vms.length; i++) {
-                  if (vmMap[vms[i].name] !== undefined) {
-                    vms[i].captures = [];
-                  }
-                }
-                this.experiment.vms = [...vms];
-                this.isWaiting = false;
-              })
-              .catch((err) => {
-                useErrorNotification(err);
-                this.isWaiting = false;
-              });
-          },
-        });
-      },
-
       changeOpticalDisc(vmName, isoPath) {
         this.opticalDiscModal.active = false;
 
@@ -3937,34 +3753,6 @@
         defaultMessage = 'menu for assigning vm(s) disk',
       ) {
         return this.disks.indexOf(fullPath) == -1 ? defaultMessage : fullPath;
-      },
-
-      isSubnetPresent() {
-        return /(?:\d{1,3}[.]){3}\d{1,3}[/]\d{1,2}/.test(this.search.filter);
-      },
-
-      extractAllSubnets(searchTerm) {
-        return searchTerm.match(/(?:\d{1,3}[.]){3}\d{1,3}[/]\d{1,2}/g);
-      },
-
-      capturesSearched() {
-        let tmp = this.search.filter.toLowerCase();
-        return (
-          tmp.indexOf('capturing') != -1 && tmp.indexOf('not capturing') == -1
-        );
-      },
-
-      displayedVMsCapturing() {
-        // Determine if any displayed VMs are currently capturing
-        let visibleItems = this.$refs['vmTable'].visibleData;
-
-        for (let i = 0; i < visibleItems.length; i++) {
-          if (visibleItems[i].captures.length > 0) {
-            return true;
-          }
-        }
-
-        return false;
       },
 
       downloadFile(exp_name, name, path) {
@@ -4285,7 +4073,7 @@
           },
           {
             key: 'ipv4',
-            label: 'IPv4',
+            label: 'IP',
             storageKey: 'showIPv4Column',
           },
           {
