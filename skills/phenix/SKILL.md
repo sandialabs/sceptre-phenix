@@ -240,8 +240,69 @@ full settings reference, including UI-only settings (`ui.logs.level`,
 `config.yaml`, or `PHENIX_UI_FEATURES=vm-mount`) enables the optional
 "VM mount" UI feature, which lets users transfer files to and from a running
 VM's filesystem directly from the web UI (backed by the `/experiments/{exp}/vms/{name}/mount`,
-`/unmount`, `/files`, `/files/download`, `/files/upload` API routes). It's
-disabled by default and requires restarting `phenix ui` to take effect.
+`/unmount`, `/files`, `/files/download`, `/files/upload` API routes).
+
+`phenix ui --features builder-beta` enables the Vue Flow Builder Beta at
+`/builder-beta` and its draft/document APIs. It leaves the legacy `/builder`
+route available for `builder-xml` topologies. Drafts autosave separately from
+phenix configs; only the explicit Publish action creates or updates topology,
+scenario, or experiment configs.
+
+Draft owners can manage their own drafts. Cross-user access uses the
+`builder-drafts` RBAC resource with `{owner}/{draft-id}` resource names. A role
+that may inspect and modify every draft needs an explicit policy like:
+
+```yaml
+- resources: [builder-drafts]
+  resourceNames: ["*/*"]
+  verbs: [list, get, update, delete]
+```
+
+`create` is deliberately not a `builder-drafts` verb: a draft is always created
+for the authenticated user, never on somebody else's behalf. Resource names are
+matched with `filepath.Match`, which does not match `/`, so a bare `"*"` never
+matches a `{owner}/{draft-id}` name — use `"*/*"` (as `global-admin` does) or an
+explicit `alice/*`.
+
+Every Builder Beta request also needs the base `configs` permission of the verb
+it performs (`list`, `get`, `create`, `update`, `delete`), so builder access can
+never exceed a user's config access. A cross-user request that fails the
+`builder-drafts` check is answered with `404`, not `403`, so draft existence is
+never disclosed. Every mutation after creation requires an `If-Match` header
+carrying the quoted ETag the previous response returned: a missing or malformed
+tag is `400`, a stale one `412`.
+
+Publishing still requires the applicable config, scenario, and experiment
+permissions; Builder draft access does not bypass them.
+
+A mutation whose durable write succeeded but whose superseded content could not
+be removed returns its normal success status, body, and new `ETag`, plus a
+`Warning: 199` header naming the operation; the cause is logged, never sent.
+Failing such a request would only make the client retry with a stale tag.
+
+`GET /builder/sources` groups configs by kind: `topologies` and `experiments`
+(what a document can be generated from, reported as `generatable: true`),
+`scenarios` (selectable when publishing) and `images` (node property editing).
+Each config is filtered through the `configs` permission *and* the kind specific
+`list` permission that already gates the kind elsewhere (`topologies`,
+`experiments`, `scenarios`); `Image` configs have no kind specific vocabulary,
+so `configs` is their only gate. Generating from a non-generatable kind is
+`422`. VLANs are derived from the document and are not a config kind.
+
+`POST /builder/generate` accepts either `{"source":"Topology/name"}` (or an
+Experiment source) or `{"content":"..."}` containing an uploaded JSON/YAML
+Topology or Experiment. Uploaded sources are reported as `stored: false` and
+receive uploaded provenance, so they can create publication targets but cannot
+authorize a Topology or Experiment update.
+
+Publishing an uploaded Scenario with action `update` requires
+`scenario.expectedDigest`, copied from a fresh matching entry returned by
+`GET /builder/sources`. A digest mismatch is a conflict; never retry it with a
+guessed digest. Topology and Experiment updates likewise require a draft tied
+to that exact stored source.
+
+Features are disabled by default and require restarting `phenix ui` after
+changing `ui.features`.
 
 ### `phenix config` — manage stored configs (topology/scenario/experiment/image/user/role)
 
@@ -350,7 +411,12 @@ below are relative to the base path.
 | SCORCH | `/experiments/{name}/scorch/terminals*`, `/experiments/{name}/scorch/components/.../ws` |
 | Settings | `GET/POST /settings`, `GET /settings/password` |
 | Builder | `GET /builder`, `POST /builder/save`, `GET /builder/topologies[/{name}]` |
+| Builder Beta (`builder-beta` feature only) | `GET /schemas/builder/v1`, `GET/POST /builder/drafts`, `GET/DELETE /builder/drafts/{owner}/{draft}`, `GET/POST /builder/drafts/{owner}/{draft}/snapshots`, `GET /builder/drafts/{owner}/{draft}/snapshots/{snapshot\|current}`, `PATCH/PUT /builder/drafts/{owner}/{draft}/cursor`, `POST /builder/drafts/{owner}/{draft}/publish`, `GET /builder/sources`, `POST /builder/generate`, `GET /builder/documents[/{document}]` |
 | Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode) |
+
+Unmatched `/api/v1/*` requests return a JSON `404`; only non-API routes fall
+through to the SPA index. A route behind a disabled feature flag is therefore a
+real `404`, not `200 text/html`.
 
 Prefer the equivalent `phenix` CLI command over calling the web API directly
 unless the user explicitly needs the HTTP interface (e.g. scripting against a

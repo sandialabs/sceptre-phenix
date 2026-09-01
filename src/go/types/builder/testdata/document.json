@@ -1,0 +1,144 @@
+{
+  "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+  "revision": 1,
+  "id": "49d876d1-571a-5b5c-91b7-aadf5bb5209c",
+  "name": "hand-authored",
+  "description": "fixture exercising every node kind",
+  "nodes": [
+    {
+      "id": "c60601dd-6d6b-56c7-97e5-149caf5ed993",
+      "kind": "group",
+      "label": "rack 1",
+      "position": { "x": -40, "y": -40 },
+      "size": { "width": 720, "height": 420 },
+      "group": { "title": "rack 1", "color": "#eef" }
+    },
+    {
+      "id": "4113dfc0-f4be-57f9-8115-6cecd1f1aea3",
+      "kind": "device",
+      "label": "router",
+      "position": { "x": 0, "y": 0 },
+      "parentId": "c60601dd-6d6b-56c7-97e5-149caf5ed993",
+      "device": {
+        "hostname": "router",
+        "iconKey": "router",
+        "spec": {
+          "type": "VirtualMachine",
+          "general": {
+            "hostname": "router",
+            "description": "core router"
+          },
+          "hardware": {
+            "os_type": "linux",
+            "drives": [{ "image": "ubuntu.qc2" }]
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "type": "ethernet",
+                "proto": "static",
+                "address": "10.0.0.1",
+                "mask": 24,
+                "vlan": "STALE"
+              },
+              {
+                "name": "eth1",
+                "type": "ethernet",
+                "proto": "dhcp"
+              }
+            ]
+          }
+        },
+        "interfaces": [
+          { "id": "7f010dcd-e23d-514c-9206-3609df999026", "name": "eth0", "index": 0 },
+          { "id": "6727e6af-98cb-55b8-a50b-793e9c0da86e", "name": "eth1", "index": 1 }
+        ]
+      }
+    },
+    {
+      "id": "880cc913-ef40-526f-b079-8c94e60bf767",
+      "kind": "device",
+      "label": "host-a",
+      "position": { "x": 320, "y": 0 },
+      "parentId": "c60601dd-6d6b-56c7-97e5-149caf5ed993",
+      "device": {
+        "hostname": "host-a",
+        "spec": {
+          "type": "VirtualMachine",
+          "general": { "hostname": "host-a" },
+          "hardware": {
+            "os_type": "linux",
+            "drives": [{ "image": "ubuntu.qc2" }]
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "type": "ethernet",
+                "proto": "static",
+                "address": "10.0.0.2",
+                "mask": 24
+              }
+            ]
+          }
+        },
+        "interfaces": [{ "id": "532fb184-8d0a-572f-8e69-a73688bbce90", "name": "eth0", "index": 0 }]
+      }
+    },
+    {
+      "id": "dee6bc70-8103-581e-8b31-6c95cda798a0",
+      "kind": "switch",
+      "label": "EXP",
+      "position": { "x": 160, "y": 260 },
+      "switch": { "networkId": "a8af611d-c68f-54e0-94a5-9176cea64e44" }
+    },
+    {
+      "id": "874e945f-4f75-57c7-9533-0d8ffd6ec32b",
+      "kind": "note",
+      "position": { "x": 700, "y": 40 },
+      "note": { "text": "remember to snapshot", "color": "#ffd" }
+    }
+  ],
+  "networks": [
+    {
+      "id": "a8af611d-c68f-54e0-94a5-9176cea64e44",
+      "name": "EXP",
+      "alias": 101,
+      "description": "experiment network"
+    },
+    {
+      "id": "6fd71ba6-69b9-5ff7-9dff-e76b03c43101",
+      "name": "RESERVED",
+      "alias": 250
+    }
+  ],
+  "edges": [
+    {
+      "id": "503c4f01-e7e0-5a2e-a07d-26e2776fea8f",
+      "sourceNodeId": "4113dfc0-f4be-57f9-8115-6cecd1f1aea3",
+      "sourceHandleId": "7f010dcd-e23d-514c-9206-3609df999026",
+      "targetNodeId": "dee6bc70-8103-581e-8b31-6c95cda798a0",
+      "networkId": "a8af611d-c68f-54e0-94a5-9176cea64e44"
+    },
+    {
+      "id": "6cdcd274-ceeb-511f-a4b1-c5b06391999c",
+      "sourceNodeId": "dee6bc70-8103-581e-8b31-6c95cda798a0",
+      "targetNodeId": "880cc913-ef40-526f-b079-8c94e60bf767",
+      "targetHandleId": "532fb184-8d0a-572f-8e69-a73688bbce90",
+      "networkId": "a8af611d-c68f-54e0-94a5-9176cea64e44"
+    }
+  ],
+  "viewport": { "x": 0, "y": 0, "zoom": 1 },
+  "grid": { "enabled": true, "size": 16, "snap": true },
+  "scenario": {
+    "kind": "stored",
+    "name": "builder-scenario",
+    "apiVersion": "phenix.sandia.gov/v2",
+    "digest": "sha256:1f7f8940e18192505e3ec1f993db7204b6baa8d6c1d9156917a82c663656a1b4"
+  },
+  "source": {
+    "kind": "manual",
+    "name": "hand-authored"
+  }
+}

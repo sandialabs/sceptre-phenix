@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -190,6 +191,20 @@ func Start(opts ...ServerOption) error {
 	})
 
 	api := router.PathPrefix("/api/v1").Subrouter()
+
+	// Unmatched API requests must not fall through to the router's
+	// NotFoundHandler, which serves the SPA index: an API client would receive
+	// 200 HTML instead of a 404, and a route behind a disabled feature flag
+	// would look enabled while it is not.
+	api.NotFoundHandler = apiNotFoundHandler()
+
+	// The Builder Beta routes are registered before the generic schema routes
+	// so /schemas/builder/v1 is matched by the builder schema handler rather
+	// than by /schemas/{kind}/{version}. Registration is a no-op unless the
+	// "builder-beta" feature is enabled.
+	if err := registerBuilderBetaRoutes(api); err != nil {
+		return fmt.Errorf("configuring Builder Beta API: %w", err)
+	}
 
 	// OPTIONS method needed for CORS
 	api.Handle("/builder/topologies", weberror.ErrorHandler(GetBuilderTopologies)).
@@ -508,4 +523,39 @@ func addRoutesToRouter(router *mux.Router, routes ...route) {
 	for _, r := range routes {
 		router.Handle(r.path, r.handler).Methods(r.methods...)
 	}
+}
+
+// apiNotFoundHandler answers a request that reached the API router but matched
+// no route. It never serves the SPA index, so an unregistered route (including
+// one gated behind a disabled feature flag) is reported as the 404 it is.
+//
+// Router middleware, including authentication, does not run for a router's
+// NotFoundHandler, so this must not disclose anything a caller could not learn
+// by requesting the path.
+func apiNotFoundHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plog.Warn(
+			plog.TypeSystem,
+			"Unknown API route requested",
+			"route",
+			r.URL.Path,
+			"method",
+			r.Method,
+		)
+
+		webErr := weberror.NewWebError(nil, "no API route matches this request").
+			SetStatus(http.StatusNotFound)
+
+		body, err := json.Marshal(webErr)
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+
+			return
+		}
+
+		w.Header().Set("Content-Type", mimeJSON)
+		w.WriteHeader(http.StatusNotFound)
+
+		_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	})
 }

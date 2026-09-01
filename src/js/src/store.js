@@ -17,8 +17,55 @@ export const usePhenixStore = defineStore('phenix', {
       sessionStorage.getItem('phenix.auth') === 'true',
     next: null,
     features: [],
+    featuresLoaded: false,
+    featuresPromise: null,
+    featuresError: null,
   }),
   actions: {
+    // Single-flight fetch of /features so feature-gated routes can await a
+    // deterministic answer instead of racing App.vue's initial request.
+    ensureFeatures(fetchImpl) {
+      if (this.featuresLoaded) {
+        return Promise.resolve(this.features);
+      }
+
+      if (!this.featuresPromise) {
+        const doFetch =
+          fetchImpl ||
+          (() =>
+            fetch(router.resolve({ name: 'features' }).href).then((resp) => {
+              if (!resp.ok) {
+                throw new Error(
+                  `feature request failed with status ${resp.status}`,
+                );
+              }
+
+              return resp.json();
+            }));
+
+        this.featuresPromise = Promise.resolve()
+          .then(doFetch)
+          .then((data) => {
+            if (!Array.isArray(data?.features)) {
+              throw new Error('feature response does not contain a list');
+            }
+
+            this.features = data.features;
+            this.featuresLoaded = true;
+            this.featuresError = null;
+            return this.features;
+          })
+          .catch((error) => {
+            this.featuresError =
+              error instanceof Error ? error.message : String(error);
+            this.featuresPromise = null;
+            throw error;
+          });
+      }
+
+      return this.featuresPromise;
+    },
+
     login(loginResponse, remember, navigate = true) {
       this.username = loginResponse.user.username;
       this.token = loginResponse.token;

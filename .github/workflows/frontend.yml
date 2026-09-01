@@ -69,6 +69,7 @@ jobs:
       - name: Start phenix UI
         run: |
           ./bin/phenix ui --store.endpoint bolt:///tmp/phenix-e2e.bdb \
+            --features builder-beta \
             --listen-endpoint 127.0.0.1:3000 &> /tmp/phenix-ui.log &
           timeout 30 bash -c \
             'until curl -sf http://127.0.0.1:3000/api/v1/experiments > /dev/null; do sleep 1; done'
@@ -76,7 +77,7 @@ jobs:
         working-directory: src/js/e2e
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chrome firefox
       - name: Run e2e smoke tests
         working-directory: src/js/e2e
         run: npx playwright test

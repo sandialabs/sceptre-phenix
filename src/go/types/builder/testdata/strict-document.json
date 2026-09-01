@@ -1,0 +1,114 @@
+{
+  "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+  "revision": 1,
+  "id": "f8303221-fe85-5254-b687-e3c4f3d6aa99",
+  "name": "publishable",
+  "description": "fixture whose projection satisfies the phenix topology schema",
+  "nodes": [
+    {
+      "id": "4113dfc0-f4be-57f9-8115-6cecd1f1aea3",
+      "kind": "device",
+      "label": "router",
+      "position": { "x": 0, "y": 0 },
+      "device": {
+        "hostname": "router",
+        "iconKey": "router",
+        "spec": {
+          "type": "VirtualMachine",
+          "general": {
+            "hostname": "router",
+            "description": "core router"
+          },
+          "hardware": {
+            "os_type": "linux",
+            "vcpus": 1,
+            "memory": 1024,
+            "drives": [{ "image": "ubuntu.qc2" }]
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "type": "ethernet",
+                "proto": "static",
+                "address": "10.0.0.1",
+                "mask": 24,
+                "vlan": "STALE"
+              }
+            ]
+          }
+        },
+        "interfaces": [{ "id": "7f010dcd-e23d-514c-9206-3609df999026", "name": "eth0", "index": 0 }]
+      }
+    },
+    {
+      "id": "880cc913-ef40-526f-b079-8c94e60bf767",
+      "kind": "device",
+      "label": "host-a",
+      "position": { "x": 320, "y": 0 },
+      "device": {
+        "hostname": "host-a",
+        "iconKey": "linux",
+        "spec": {
+          "type": "VirtualMachine",
+          "general": { "hostname": "host-a" },
+          "hardware": {
+            "os_type": "linux",
+            "vcpus": 1,
+            "memory": 1024,
+            "drives": [{ "image": "ubuntu.qc2" }]
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "type": "ethernet",
+                "proto": "static",
+                "address": "10.0.0.2",
+                "mask": 24,
+                "vlan": "STALE"
+              }
+            ]
+          }
+        },
+        "interfaces": [{ "id": "532fb184-8d0a-572f-8e69-a73688bbce90", "name": "eth0", "index": 0 }]
+      }
+    },
+    {
+      "id": "dee6bc70-8103-581e-8b31-6c95cda798a0",
+      "kind": "switch",
+      "label": "EXP",
+      "position": { "x": 160, "y": 260 },
+      "switch": { "networkId": "a8af611d-c68f-54e0-94a5-9176cea64e44" }
+    }
+  ],
+  "networks": [
+    {
+      "id": "a8af611d-c68f-54e0-94a5-9176cea64e44",
+      "name": "EXP",
+      "alias": 101
+    }
+  ],
+  "edges": [
+    {
+      "id": "503c4f01-e7e0-5a2e-a07d-26e2776fea8f",
+      "sourceNodeId": "4113dfc0-f4be-57f9-8115-6cecd1f1aea3",
+      "sourceHandleId": "7f010dcd-e23d-514c-9206-3609df999026",
+      "targetNodeId": "dee6bc70-8103-581e-8b31-6c95cda798a0",
+      "networkId": "a8af611d-c68f-54e0-94a5-9176cea64e44"
+    },
+    {
+      "id": "6cdcd274-ceeb-511f-a4b1-c5b06391999c",
+      "sourceNodeId": "dee6bc70-8103-581e-8b31-6c95cda798a0",
+      "targetNodeId": "880cc913-ef40-526f-b079-8c94e60bf767",
+      "targetHandleId": "532fb184-8d0a-572f-8e69-a73688bbce90",
+      "networkId": "a8af611d-c68f-54e0-94a5-9176cea64e44"
+    }
+  ],
+  "viewport": { "x": 0, "y": 0, "zoom": 1 },
+  "grid": { "enabled": true, "size": 16, "snap": true },
+  "source": {
+    "kind": "manual",
+    "name": "publishable"
+  }
+}

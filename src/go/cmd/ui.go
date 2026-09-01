@@ -94,7 +94,8 @@ func newUICmd() *cobra.Command {
 	uiCmd.Flags().Bool("unbundled", false, "serve local public files instead of bundled")
 	uiCmd.Flags().String("logs.minimega-path", "", "path to minimega log file to publish to UI")
 	uiCmd.Flags().String("logs.level", "", "log level to publish to UI. Defaults to file level")
-	uiCmd.Flags().StringSlice("features", nil, "list of features to enable (options: vm-mount)")
+	uiCmd.Flags().
+		StringSlice("features", nil, "list of features to enable (options: builder-beta, vm-mount)")
 	uiCmd.Flags().Bool("minimega-console", false, "enable minimega console access in UI")
 
 	_ = viper.BindPFlag("ui.listen-endpoint", uiCmd.Flags().Lookup("listen-endpoint"))

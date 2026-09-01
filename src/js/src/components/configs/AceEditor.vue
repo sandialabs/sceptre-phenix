@@ -44,6 +44,7 @@
         editor: null,
         ace: null,
         isLoading: false,
+        disposed: false,
       };
     },
     async mounted() {
@@ -82,6 +83,10 @@
         'ace-builds/src-noconflict/mode-yaml?url'
       );
       this.ace.config.setModuleUrl('ace/mode/yaml', modeYamlUrl.default);
+
+      if (this.disposed || !this.$refs.editor) {
+        return;
+      }
 
       this.editor = this.ace.edit(this.$refs.editor, {
         theme: 'ace/theme/dracula',
@@ -129,7 +134,9 @@
     //   this.ace.config.set('basePath', 'ace-builds/src-noconflict/');
     // },
     beforeUnmount() {
-      this.editor.destroy();
+      this.disposed = true;
+      this.editor?.destroy();
+      this.editor = null;
     },
     methods: {
       loadVimCommands() {
