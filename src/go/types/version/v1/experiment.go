@@ -344,6 +344,7 @@ type ExperimentStatus struct {
 	// manually via the CLI or UI.
 	FrequencyF map[string]string `json:"appRunningStageFrequency,omitempty" mapstructure:"appRunningStageFrequency" structs:"appRunningStageFrequency" yaml:"appRunningStageFrequency,omitempty"`
 	RunningF   map[string]bool   `json:"appRunningStageStatus,omitempty"    mapstructure:"appRunningStageStatus"    structs:"appRunningStageStatus"    yaml:"appRunningStageStatus,omitempty"`
+	CleanupF   map[string]bool   `json:"appCleanupStagePending,omitempty"   mapstructure:"appCleanupStagePending"   structs:"appCleanupStagePending"   yaml:"appCleanupStagePending,omitempty"`
 }
 
 func (s *ExperimentStatus) Init() error {
@@ -388,6 +389,14 @@ func (s ExperimentStatus) AppRunning() map[string]bool {
 	}
 
 	return s.RunningF
+}
+
+func (s ExperimentStatus) AppCleanup() map[string]bool {
+	if s.CleanupF == nil {
+		return make(map[string]bool)
+	}
+
+	return s.CleanupF
 }
 
 func (s ExperimentStatus) VLANs() map[string]int {
@@ -449,6 +458,20 @@ func (s *ExperimentStatus) SetAppRunning(a string, r bool) {
 	}
 
 	s.RunningF[a] = r
+}
+
+func (s *ExperimentStatus) SetAppCleanup(a string, pending bool) {
+	if s.CleanupF == nil {
+		s.CleanupF = make(map[string]bool)
+	}
+
+	if !pending {
+		delete(s.CleanupF, a)
+
+		return
+	}
+
+	s.CleanupF[a] = true
 }
 
 func (s *ExperimentStatus) SetVLANs(v map[string]int) {

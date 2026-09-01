@@ -51,6 +51,63 @@ const (
 	osLinux               = "linux"
 )
 
+// Actions returns the supported experiment app lifecycle actions.
+func Actions() []Action {
+	return []Action{
+		ActionConfigure,
+		ActionPreStart,
+		ActionPostStart,
+		ActionRunning,
+		ActionCleanup,
+	}
+}
+
+// ParseAction parses a lifecycle action or its shorthand.
+func ParseAction(value string) (Action, bool) {
+	switch value {
+	case string(ActionConfigure), "config":
+		return ActionConfigure, true
+	case string(ActionPreStart), "pre":
+		return ActionPreStart, true
+	case string(ActionPostStart), "post":
+		return ActionPostStart, true
+	case string(ActionRunning), "run":
+		return ActionRunning, true
+	case string(ActionCleanup), "clean":
+		return ActionCleanup, true
+	default:
+		return "", false
+	}
+}
+
+// Shorthand returns the shorthand for the action.
+func (a Action) Shorthand() string {
+	switch a {
+	case ActionConfigure:
+		return "config"
+	case ActionPreStart:
+		return "pre"
+	case ActionPostStart:
+		return "post"
+	case ActionRunning:
+		return "run"
+	case ActionCleanup:
+		return "clean"
+	default:
+		return ""
+	}
+}
+
+// Valid reports whether the action is a supported experiment app lifecycle action.
+func (a Action) Valid() bool {
+	switch a {
+	case ActionConfigure, ActionPreStart, ActionPostStart, ActionRunning, ActionCleanup:
+		return true
+	default:
+		return false
+	}
+}
+
 var (
 	apps = make(map[string]AppFactory) //nolint:gochecknoglobals // global registry
 
@@ -187,14 +244,14 @@ type App interface {
 // the given experiment for the given lifecycle phase. It returns any errors
 // encountered while applying the apps.
 //
-//nolint:funlen,maintidx // complex logic
+//nolint:cyclop,funlen,gocyclo,maintidx // complex lifecycle dispatch logic
 func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error {
 	var (
 		options = NewOptions(opts...)
 		err     error
 	)
 
-	if options.Stage == ActionPreStart {
+	if options.Stage == ActionPreStart && !options.Trigger {
 		// Reset status.apps for experiment. Note that this will get rid of any app
 		// status from previous experiment deployments. We do this in the pre-start
 		// stage instead of the post-start stage to ensure there's no lingering app
@@ -215,14 +272,40 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 		})
 	}
 
+	matchesFilter := func(name string) bool {
+		if len(options.Filter) == 0 {
+			return true
+		}
+
+		_, ok := options.Filter[name]
+		return ok
+	}
+
+	queueCleanup := func(name string) {
+		if !options.Trigger {
+			return
+		}
+
+		switch options.Stage {
+		case ActionConfigure, ActionPreStart, ActionPostStart:
+			exp.Status.SetAppCleanup(name, true)
+		case ActionRunning, ActionCleanup:
+		}
+	}
+
 	for _, name := range DefaultApps() {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
+		if !matchesFilter(name) {
+			continue
+		}
+
 		a := GetApp(name)
 		_ = a.Init(Name(name), DryRun(options.DryRun))
 
+		queueCleanup(a.Name())
 		publish(a.Name(), "start", nil)
 
 		switch options.Stage {
@@ -254,6 +337,10 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 			)
 		}
 
+		if options.Stage == ActionCleanup {
+			exp.Status.SetAppCleanup(a.Name(), false)
+		}
+
 		publish(a.Name(), "success", nil)
 
 		plog.Info(
@@ -273,14 +360,32 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				continue
 			}
 
-			// Skip app if disabled, unless stage is ACTIONRUNNING
-			if app.Disabled() && options.Stage != ActionRunning {
+			if !matchesFilter(app.Name()) {
+				plog.Debug(
+					plog.TypePhenixApp,
+					fmt.Sprintf(
+						"Skipping '%s' experiment app (%s)",
+						app.Name(),
+						options.Stage,
+					),
+				)
+
+				continue
+			}
+
+			// Running-stage triggers historically include disabled apps. Explicit
+			// filters provide the same override for other lifecycle stages.
+			cleanupPending := options.Stage == ActionCleanup &&
+				exp.Status.AppCleanup()[app.Name()]
+			if app.Disabled() && options.Stage != ActionRunning &&
+				len(options.Filter) == 0 && !cleanupPending {
 				continue
 			}
 
 			a := GetApp(app.Name())
 			_ = a.Init(Name(app.Name()), DryRun(options.DryRun))
 
+			queueCleanup(a.Name())
 			publish(a.Name(), "start", nil)
 
 			switch options.Stage {
@@ -309,21 +414,6 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				exp.Status.SetAppRunning(app.Name(), false)
 				_ = exp.WriteToStore(true)
 			case ActionRunning:
-				if len(options.Filter) > 0 {
-					if _, ok := options.Filter[app.Name()]; !ok {
-						plog.Warn(
-							plog.TypePhenixApp,
-							fmt.Sprintf(
-								"Skipping '%s' experiment app (%s)",
-								app.Name(),
-								options.Stage,
-							),
-						)
-
-						continue
-					}
-				}
-
 				// Check to make sure this app isn't already running via an automatic
 				// periodic execution.
 				if running := exp.Status.AppRunning()[app.Name()]; running {
@@ -406,6 +496,10 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 					options.Stage,
 					err,
 				)
+			}
+
+			if options.Stage == ActionCleanup {
+				exp.Status.SetAppCleanup(a.Name(), false)
 			}
 
 			publish(a.Name(), "success", nil)

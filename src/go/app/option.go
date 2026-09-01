@@ -6,10 +6,11 @@ type Option func(*Options)
 
 // Options represents a set of options generic to all apps.
 type Options struct {
-	Stage  Action
-	Name   string // used to set the app name
-	DryRun bool
-	Filter map[string]struct{}
+	Stage   Action
+	Name    string // used to set the app name
+	DryRun  bool
+	Filter  map[string]struct{}
+	Trigger bool
 }
 
 // NewOptions returns an Options struct initialized with the given option list.
@@ -52,5 +53,12 @@ func FilterApp(a ...string) Option {
 		for _, n := range a {
 			o.Filter[n] = struct{}{}
 		}
+	}
+}
+
+// Trigger marks app execution as a manual lifecycle trigger.
+func Trigger() Option {
+	return func(o *Options) {
+		o.Trigger = true
 	}
 }
