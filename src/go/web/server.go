@@ -38,7 +38,7 @@ func ConfigureUsers(users []string) error {
 			role.AddPolicy(
 				[]string{"users"},
 				[]string{user.Username()},
-				[]string{"get"},
+				[]string{string(builderBetaVerbGet)},
 			)
 
 			_ = user.SetRole(role)
