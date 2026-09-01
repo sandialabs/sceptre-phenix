@@ -58,9 +58,9 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
 
 ### Submitting Code
 
-1. **Create a Branch**: Create a new branch (on your fork of the repository) for your feature or bug fix using [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) notation. The branch name should follow this format:
+1. **Create a Branch**: Create a new branch (on your fork of the repository) for your feature or bug fix using a [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) type. Branch names must not contain `/` and should follow this format:
     ```bash
-    type/description
+    type-description
     ```
     Where `type` can be one of the following:
     - `feat`: A new feature
@@ -73,7 +73,7 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
 
     Example:
     ```bash
-    git checkout -b feat/add-user-authentication
+    git checkout -b feat-add-user-authentication
     ```
 
 2. **Make Your Changes**: Implement your changes. Please include unit tests for any new logic or features.
@@ -129,7 +129,7 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
 
     Example:
     ```bash
-    git push origin feat/add-user-authentication --force
+    git push origin feat-add-user-authentication --force
     ```
 
 6. **Open a Pull Request**: Go to the original repository and open a [pull request](https://github.com/sandialabs/sceptre-phenix/pulls). Provide a clear description of your changes and reference any related issues.

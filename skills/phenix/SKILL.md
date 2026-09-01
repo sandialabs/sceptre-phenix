@@ -432,65 +432,10 @@ for the authoritative reference.
 
 ## Contributing
 
-When making a code/behavior change to this repo (not just this skill doc):
-
-- **Update `CHANGELOG.md`**: add an entry describing the change under the
-  top-most version section (or a new `[Unreleased]` section if the top
-  entry has already been released), following the existing
-  `### Added` / `### Changed` / `### Fixed` grouping style already used in
-  the file.
-- **New features need a README example**: if the change adds a new feature
-  (CLI flag, subcommand, API route, config option, app, etc.), add a short
-  bullet to the relevant `README.md` section showing a minimal example of
-  using it (e.g. a one-line command or snippet), not just a prose
-  description.
-- See `.github/CONTRIBUTING.md` for branch naming (Conventional Commits,
-  `type/description`, no other slashes), commit message format, and PR
-  process.
+Follow [`AGENTS.md`](../../AGENTS.md#change-management) for repository change,
+documentation, branch, commit, and pull request requirements.
 
 ## References
 
-- Project README: `README.md` (build/install, logging & configuration architecture)
-- Example apps and dev workflow: `examples/README.md`, `examples/TUTORIAL.md`
-- Topology/Scenario/Experiment Go interfaces: `src/go/types/interfaces/{topology,scenario,experiment}.go`
-- v1/v2 struct field definitions (YAML/JSON keys): `src/go/types/version/v1/*.go`, `src/go/types/version/v2/*.go`
-- Full JSON Schema for topology node shape (enums for type/os_type/proto/etc.):
-  `src/go/web/public/grapheditor/utils/schemas/topo_schema.json`
-- CLI command implementations: `src/go/cmd/*.go`
-- Web API route table: `src/go/web/server.go`
-- Online docs: [Configuration Files](https://phenix.sceptre.dev/latest/configuration/),
-  [Apps](https://phenix.sceptre.dev/latest/apps/),
-  [Settings & Configuration](https://phenix.sceptre.dev/latest/settings/)
-
-### Related repositories
-
-phenix's ecosystem is split across several companion GitHub repos
-(`sandialabs/sceptre-phenix-*`). Consult these when the current repo doesn't
-have the answer:
-
-- **[`sceptre-phenix-apps`](https://github.com/sandialabs/sceptre-phenix-apps)**
-  — source for the official (non-default) phenix apps and SCORCH components
-  (e.g. `caldera`, `scale`, `wireguard`, `otsim`, `helics`, `packetbeat`,
-  `elasticsearch`). Reference this when writing/debugging a scenario `apps`
-  entry for one of these apps, when an app's metadata schema isn't documented
-  in this skill, or when authoring a new custom app (it also documents the
-  phenix "App Contract": read stage arg + experiment JSON on stdin, write
-  updated experiment JSON to stdout, structured JSON logs to stderr).
-- **[`sceptre-phenix-images`](https://github.com/sandialabs/sceptre-phenix-images)**
-  — configuration files, overlays, and scripts used by `phenix image` (a
-  wrapper around [vmdb2](https://vmdb2.liw.fi/)) to build Debian-based qcow2
-  VM disk images. Reference this when creating/customizing an `Image` config,
-  looking for an existing overlay/script to reuse with `phenix image create -O/-T`,
-  or debugging an image build failure.
-- **[`sceptre-phenix-docs`](https://github.com/sandialabs/sceptre-phenix-docs)**
-  — source for the official documentation site at
-  [phenix.sceptre.dev](https://phenix.sceptre.dev) (MkDocs + Material).
-  Reference this (or fetch the live site) for narrative/how-to documentation
-  beyond what's summarized in this skill — e.g. full config reference pages,
-  state-of-health, VM management, or settings docs.
-- **[`sceptre-phenix-topologies`](https://github.com/sandialabs/sceptre-phenix-topologies)**
-  — a library of ready-to-use example Topology configs (uses Git LFS for disk
-  images), including a detailed "soap" example and a minimal "helloworld".
-  Reference this when the user wants a starting-point topology to copy/adapt
-  instead of writing one from scratch, or wants to see a real-world example
-  of a particular topology feature (routers, NAT, delayed starts, etc.).
+See [`AGENTS.md`](../../AGENTS.md#documentation-and-other-references) for the
+repository documentation map and companion phēnix repositories.
