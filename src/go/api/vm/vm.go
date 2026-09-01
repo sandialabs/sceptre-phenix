@@ -113,12 +113,16 @@ func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
 			Tags:            node.Labels(),
 		}
 
+		ifaceNameByVLAN := make(map[string]string)
+
 		for _, iface := range node.Network().Interfaces() {
 			vm.IPv4 = append(vm.IPv4, iface.Address()) // empty for DHCP
 
 			if iface.VLAN() != "" { // might be empty for external nodes
 				vm.Networks = append(vm.Networks, iface.VLAN())
+				vm.IfaceNames = append(vm.IfaceNames, iface.Name())
 				vm.Interfaces[iface.VLAN()] = iface.Address() // empty for DHCP
+				ifaceNameByVLAN[iface.VLAN()] = iface.Name()
 			}
 		}
 
@@ -151,25 +155,35 @@ func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
 				vm.IPv4 = make([]string, len(details.Networks))
 			}
 
+			// minimega is the source of truth for interface ordering in a running
+			// experiment, so rebuild `vm.IfaceNames` to match `details.Networks`
+			// instead of leaving it in the (possibly different) order the
+			// interfaces were declared in the topology.
+			vm.IfaceNames = make([]string, len(details.Networks))
+
 			// Since we get the IP from the experiment config, but the network name
 			// from minimega (to preserve iface to network ordering), make sure the
 			// ordering of IPs matches the odering of networks. We could just use a
 			// map here, but then the iface to network ordering that minimega ensures
 			// would be lost.
 			for i, nw := range details.Networks {
-				// If it's set here, we got it from minimega, which is the source of truth
-				// for running experiments.
-				if vm.IPv4[i] != "" {
-					continue
-				}
-
 				// At this point, `nw` will look something like `EXP_1 (101)`. In the
 				// experiment config, we just have `EXP_1` so we need to use that
-				// portion from minimega as the `Interfaces` map key.
-				if match := vlanAliasRegex.FindStringSubmatch(nw); match != nil {
-					vm.IPv4[i] = vm.Interfaces[match[1]]
-				} else {
-					vm.IPv4[i] = "n/a"
+				// portion from minimega as the `Interfaces`/`ifaceNameByVLAN` map key.
+				match := vlanAliasRegex.FindStringSubmatch(nw)
+
+				// If it's set here, we got it from minimega, which is the source of truth
+				// for running experiments.
+				if vm.IPv4[i] == "" {
+					if match != nil {
+						vm.IPv4[i] = vm.Interfaces[match[1]]
+					} else {
+						vm.IPv4[i] = "n/a"
+					}
+				}
+
+				if match != nil {
+					vm.IfaceNames[i] = ifaceNameByVLAN[match[1]]
 				}
 			}
 		default:
@@ -186,7 +200,7 @@ func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
 // name. If the experiment is running, topology VM settings are combined with
 // running VM details. It returns a pointer to a VM struct, and any errors
 // encountered while retrieving the VM.
-func Get(expName, vmName string) (*mm.VM, error) {
+func Get(expName, vmName string) (*mm.VM, error) { //nolint:funlen // complex logic
 	if expName == "" {
 		return nil, errors.New("no experiment name provided")
 	}
@@ -200,7 +214,10 @@ func Get(expName, vmName string) (*mm.VM, error) {
 		return nil, fmt.Errorf("getting experiment %s: %w", expName, err)
 	}
 
-	var vm *mm.VM
+	var (
+		vm              *mm.VM
+		ifaceNameByVLAN = make(map[string]string)
+	)
 
 	for idx, node := range exp.Spec.Topology().Nodes() {
 		if node.General().Hostname() != vmName {
@@ -229,7 +246,9 @@ func Get(expName, vmName string) (*mm.VM, error) {
 		for _, iface := range node.Network().Interfaces() {
 			vm.IPv4 = append(vm.IPv4, iface.Address()) // empty for DHCP
 			vm.Networks = append(vm.Networks, iface.VLAN())
+			vm.IfaceNames = append(vm.IfaceNames, iface.Name())
 			vm.Interfaces[iface.VLAN()] = iface.Address() // empty for DHCP
+			ifaceNameByVLAN[iface.VLAN()] = iface.Name()
 		}
 
 		for _, app := range exp.Apps() {
@@ -277,24 +296,34 @@ func Get(expName, vmName string) (*mm.VM, error) {
 		vm.IPv4 = make([]string, len(details[0].Networks))
 	}
 
+	// minimega is the source of truth for interface ordering in a running
+	// experiment, so rebuild `vm.IfaceNames` to match `details[0].Networks`
+	// instead of leaving it in the (possibly different) order the interfaces
+	// were declared in the topology.
+	vm.IfaceNames = make([]string, len(details[0].Networks))
+
 	// Since we get the IP from the experiment config, but the network name from
 	// minimega (to preserve iface to network ordering), make sure the ordering of
 	// IPs matches the odering of networks. We could just use a map here, but then
 	// the iface to network ordering that minimega ensures would be lost.
 	for idx, nw := range details[0].Networks {
-		// If it's set here, we got it from minimega, which is the source of truth
-		// for running experiments.
-		if vm.IPv4[idx] != "" {
-			continue
-		}
-
 		// At this point, `nw` will look something like `EXP_1 (101)`. In the exp,
 		// we just have `EXP_1` so we need to use that portion from minimega as the
-		// `Interfaces` map key.
-		if match := vlanAliasRegex.FindStringSubmatch(nw); match != nil {
-			vm.IPv4[idx] = vm.Interfaces[match[1]]
-		} else {
-			vm.IPv4[idx] = "n/a"
+		// `Interfaces`/`ifaceNameByVLAN` map key.
+		match := vlanAliasRegex.FindStringSubmatch(nw)
+
+		// If it's set here, we got it from minimega, which is the source of truth
+		// for running experiments.
+		if vm.IPv4[idx] == "" {
+			if match != nil {
+				vm.IPv4[idx] = vm.Interfaces[match[1]]
+			} else {
+				vm.IPv4[idx] = "n/a"
+			}
+		}
+
+		if match != nil {
+			vm.IfaceNames[idx] = ifaceNameByVLAN[match[1]]
 		}
 	}
 
