@@ -29,7 +29,7 @@ PATH := $(GOBIN):$(PATH)
 # Export GOBIN env variable so `go install` picks it up correctly.
 export GOBIN
 
-.PHONY: all check check-protoc clean format generate generate-mocks generate-protobuf go-generate help install install-dev lint lint-clean phenix phenix-debug phenix-tunneler test
+.PHONY: all check check-protoc clean format generate generate-mocks generate-protobuf generate-schemas go-generate help install install-dev lint lint-clean phenix phenix-debug phenix-tunneler test
 .DEFAULT_GOAL := help
 
 help:
@@ -50,6 +50,7 @@ help:
 	@echo "  generate           - Run all code generation tools"
 	@echo "  generate-mocks     - Generate mocks"
 	@echo "  generate-protobuf  - Generate protobufs"
+	@echo "  generate-schemas   - Export JSON schemas for SchemaStore/editor use"
 	@echo "  go-generate        - Run go generate"
 	@echo ""
 	@echo "Installation targets:"
@@ -68,7 +69,10 @@ check:
 	$(call check-command,$(GOLANGCI_LINT),Please run 'make install-dev' to install it.)
 	$(GOLANGCI_LINT) run -c .golangci.yml
 
-generate: generate-mocks generate-protobuf go-generate
+generate: generate-mocks generate-protobuf go-generate generate-schemas
+
+generate-schemas:
+	go run ./tools/schema-export -out ../../schemas
 
 format:
 	$(call check-command,$(GOLANGCI_LINT),Please run 'make install-dev' to install it.)
