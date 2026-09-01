@@ -9,8 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	v1 "phenix/types/version/v1"
-	v2 "phenix/types/version/v2"
+	"phenix/types/version"
 )
 
 const (
@@ -126,13 +125,23 @@ func SchemaJSON() ([]byte, error) {
 // [PhenixDefPrefix] and OpenAPI component references are rewritten to local
 // $defs references.
 func PhenixDefs() (map[string]any, error) {
-	return BundleOpenAPIDefs(v1.OpenAPI, PhenixDefPrefix)
+	doc, err := version.ReadSchemaFile("v1")
+	if err != nil {
+		return nil, err
+	}
+
+	return BundleOpenAPIDefs(doc, PhenixDefPrefix)
 }
 
 // PhenixV2Defs returns the phenix v2 OpenAPI component schemas prepared for
 // inclusion in a JSON Schema $defs map, namespaced with [PhenixV2DefPrefix].
 func PhenixV2Defs() (map[string]any, error) {
-	return BundleOpenAPIDefs(v2.OpenAPI, PhenixV2DefPrefix)
+	doc, err := version.ReadSchemaFile("v2")
+	if err != nil {
+		return nil, err
+	}
+
+	return BundleOpenAPIDefs(doc, PhenixV2DefPrefix)
 }
 
 // BundleOpenAPIDefs converts the component schemas of an OpenAPI document into
