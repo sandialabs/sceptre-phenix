@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -247,6 +248,29 @@ func startExperiment(name string) ([]byte, error) {
 	}
 }
 
+// takeCancelers removes and returns what was registered for the experiment,
+// including app running stages triggered from the UI, which register under
+// "<exp>/<app>".
+func takeCancelers(name string) ([]context.CancelFunc, *sync.WaitGroup) {
+	commonMu.Lock()
+	defer commonMu.Unlock()
+
+	cancels := cancelers[name]
+	wg := waiters[name]
+
+	delete(cancelers, name)
+	delete(waiters, name)
+
+	for key, fns := range cancelers {
+		if strings.HasPrefix(key, name+"/") {
+			cancels = append(cancels, fns...)
+			delete(cancelers, key)
+		}
+	}
+
+	return cancels, wg
+}
+
 func stopExperiment(name string) ([]byte, error) {
 	if err := cache.LockExperimentForStopping(name); err != nil {
 		err := weberror.NewWebError(err, "unable to lock experiment %s for stopping", name)
@@ -262,12 +286,7 @@ func stopExperiment(name string) ([]byte, error) {
 		nil,
 	)
 
-	commonMu.Lock()
-	cancels := cancelers[name]
-	wg := waiters[name]
-	delete(cancelers, name)
-	delete(waiters, name)
-	commonMu.Unlock()
+	cancels, wg := takeCancelers(name)
 
 	for _, cancel := range cancels {
 		cancel()

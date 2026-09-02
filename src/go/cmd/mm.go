@@ -5,7 +5,7 @@ import (
 
 	"os"
 
-	"github.com/activeshadow/libminimega/miniclient"
+	"github.com/sandia-minimega/minimega/v2/pkg/miniclient"
 	"github.com/spf13/cobra"
 
 	"phenix/util"

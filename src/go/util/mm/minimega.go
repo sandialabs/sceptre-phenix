@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,23 +28,34 @@ var (
 	ErrCaptureExists      = errors.New("capture already exists")
 	ErrNoCaptures         = errors.New("no captures exist")
 	ErrC2ClientNotActive  = errors.New("C2 client not active for VM")
+	ErrC2CommandMismatch  = errors.New("C2 command id does not belong to this VM")
 	ErrVMNotFound         = errors.New("VM not found")
 	ErrScreenshotNotFound = errors.New("screenshot not found")
 )
 
 const (
-	vmInfoCmd = "vm info"
+	vmInfoCmd   = "vm info"
+	ccClientCmd = "cc client"
 
 	c2ActiveCheckInterval  = 2 * time.Second
+	c2LivenessInterval     = 10 * time.Second
 	responseWaitInterval   = 1 * time.Second
 	responseRegexGroupUUID = 2
 	responseRegexGroupType = 3
+	maxPollFailures        = 3
 )
 
-// Mutex to protect minimega cc filter setting when configuring cc commands from
-// different Goroutines. This is at the package level to protect across multiple
-// instances of the Minimega struct.
-var ccMu sync.Mutex //nolint:gochecknoglobals // global lock
+// ccLocks serialises the `cc filter` + `cc <command>` pair per namespace. The
+// filter is namespace state in minimega, so pairs from different namespaces
+// cannot interfere with each other.
+var ccLocks sync.Map //nolint:gochecknoglobals // per-namespace locks
+
+func ccLock(ns string) *sync.Mutex {
+	l, _ := ccLocks.LoadOrStore(ns, new(sync.Mutex))
+	mu, _ := l.(*sync.Mutex)
+
+	return mu
+}
 
 // Cache of the last known good headnode name. The headnode does not change for
 // the life of the process.
@@ -1029,7 +1042,7 @@ func (Minimega) GetVLANs(opts ...Option) (map[string]int, error) {
 }
 
 func (m Minimega) IsC2ClientActive(opts ...C2Option) error {
-	_, _, err := m.c2Client(NewC2Options(opts...))
+	_, err := m.c2Client(NewC2Options(opts...))
 
 	return err
 }
@@ -1048,58 +1061,65 @@ func pickVM(vms VMs, name string) VM {
 	return vms[0]
 }
 
-// c2Client waits for a VM's miniccc client to register and returns the name
-// minimega launched the VM under along with its UUID. Callers must address the
-// VM by one of those: this lookup folds case (minicli's `.filter` lowercases
-// both sides) while `cc filter name=`, `cc mount` and `clear cc mount` match
-// exactly, so a mis-cased name passes the check here and then targets zero
-// clients. The UUID is immune to that and is preferred where minimega accepts
-// one.
-func (Minimega) c2Client(o c2Options) (string, string, error) {
+// c2Target identifies a VM for C2: the name minimega launched it under, its
+// UUID and the cluster host serving its client.
+type c2Target struct {
+	name, uuid, host string
+}
+
+// c2Client waits for a VM's miniccc client to register and returns how to
+// address it. Callers must use the returned name or UUID: the `vm info` lookup
+// here folds case (minicli's `.filter` lowercases both sides) while `cc filter
+// name=`, `cc mount` and `clear cc mount` match exactly, so a mis-cased name
+// passes the check here and then targets zero clients. The UUID is immune to
+// that and is preferred where minimega accepts one; callers that already know
+// it skip the lookup.
+func (Minimega) c2Client(o c2Options) (c2Target, error) {
 	if o.skipActiveClientCheck {
-		return o.vm, "", nil
+		return c2Target{name: o.vm, uuid: o.vmUUID, host: o.vmHost}, nil
 	}
 
-	vms := GetVMInfo(NS(o.ns), VMName(o.vm))
-	if len(vms) == 0 {
-		return "", "", fmt.Errorf("vm %s does not exist", o.vm)
-	}
+	name, uuid := o.vm, o.vmUUID
 
-	// Try to find exact name match
-	vm := pickVM(vms, o.vm)
+	if uuid == "" {
+		vms := GetVMInfo(NS(o.ns), VMName(o.vm))
+		if len(vms) == 0 {
+			return c2Target{}, fmt.Errorf("vm %s does not exist", o.vm)
+		}
+
+		vm := pickVM(vms, o.vm)
+		name, uuid = vm.Name, vm.UUID
+	}
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
-	cmd.Command = "cc client"
+	cmd.Command = ccClientCmd
+	cmd.Columns = []string{"host", "uuid", "hostname"}
+	cmd.Filters = []string{"uuid=" + uuid}
 
-	if o.idByUUID {
-		// We use the UUID of the VM instead of the name since `cc clients` returns
-		// the actual hostname of the VM as reported by the miniccc agent, which may
-		// not always match the name minimega uses to track the VM.
-		cmd.Columns = []string{"uuid"}
-		cmd.Filters = []string{"uuid=" + vm.UUID}
-	} else {
-		// Even though `cc clients` returns the actual hostname of the VM as reported
-		// by the miniccc agent, we still go ahead and check for the VM name as
-		// defined in the topology since that is what the hostname should be in the VM
-		// (per the startup app). This way, we don't consider Windows VMs ready until
-		// they've rebooted to get their hostname set correctly.
-		cmd.Columns = []string{"hostname"}
-		cmd.Filters = []string{"hostname=" + vm.Name}
-	}
-
-	after := time.After(o.timeout)
+	var (
+		after    = time.After(o.timeout)
+		failures int
+	)
 
 	for {
 		select {
 		case <-o.ctx.Done():
-			return "", "", o.ctx.Err()
+			return c2Target{}, o.ctx.Err()
 		case <-after:
-			return "", "", ErrC2ClientNotActive
+			return c2Target{}, ErrC2ClientNotActive
 		default:
-			rows := mmcli.RunTabular(cmd)
+			rows, err := runTabularPoll(cmd, &failures)
+			if err != nil {
+				return c2Target{}, err
+			}
 
-			if len(rows) != 0 {
-				return vm.Name, vm.UUID, nil
+			for _, row := range rows {
+				// Unless told to trust the UUID alone, also wait for the guest to
+				// report the topology hostname (set by the startup app): Windows VMs
+				// are not ready until they have rebooted with it.
+				if o.idByUUID || strings.EqualFold(row["hostname"], name) {
+					return c2Target{name: name, uuid: uuid, host: row["host"]}, nil
+				}
 			}
 
 			time.Sleep(c2ActiveCheckInterval)
@@ -1113,14 +1133,18 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 	// Address the VM below by the name minimega launched it under, not by
 	// whatever the caller spelled: `cc filter name=`, `cc mount` and
 	// `clear cc mount` all match it exactly.
-	vmName, vmUUID, err := m.c2Client(o)
+	target, err := m.c2Client(o)
 	if err != nil {
 		return "", fmt.Errorf("cannot execute command: %w", err)
 	}
 
+	vmName, vmUUID, vmHost := target.name, target.uuid, target.host
+	o.vmUUID, o.vmHost = vmUUID, vmHost
+
 	exec := func(ns, vm, cmd string) (string, error) {
-		ccMu.Lock()
-		defer ccMu.Unlock()
+		mu := ccLock(ns)
+		mu.Lock()
+		defer mu.Unlock()
 
 		c := mmcli.NewNamespacedCommand(ns)
 
@@ -1140,7 +1164,11 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 		c.Command = cmd
 		c.Timeout = o.timeout
 
-		data, err := mmcli.SingleDataResponse(mmcli.Run(c))
+		byHost, errs := mmcli.DataResponseByHost(mmcli.Run(c))
+
+		// Command ids are per-host counters, so a sibling host's answer would
+		// name a different command there.
+		data, err := hostResponse(byHost, vmHost, errs)
 		if err != nil {
 			if errors.Is(err, mmcli.ErrTimeout) {
 				return "", fmt.Errorf("timeout running '%s' in vm %s", cmd, vm)
@@ -1149,19 +1177,44 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 			return "", fmt.Errorf("running '%s' in vm %s: %w", cmd, vm, err)
 		}
 
+		if ids := distinctIDs(byHost); len(ids) > 1 {
+			plog.Warn(
+				plog.TypeSystem, "cc command ids differ across hosts",
+				"ns", ns, "vm", vm, "cmd", cmd, "ids", fmt.Sprint(byHost),
+			)
+		}
+
+		if data == nil {
+			return "", nil
+		}
+
 		return fmt.Sprintf("%v", data), nil
+	}
+
+	// execID is exec for commands minimega answers with a cc command id.
+	execID := func(ns, vm, cmd string) (string, error) {
+		id, err := exec(ns, vm, cmd)
+		if err != nil {
+			return "", err
+		}
+
+		if id == "" {
+			return "", fmt.Errorf("running '%s' in vm %s: no command id in response", cmd, vm)
+		}
+
+		return id, nil
 	}
 
 	if o.testConn != "" {
 		cmd := "cc test-conn " + o.testConn
 
-		id, err := exec(o.ns, vmName, cmd)
+		id, err := execID(o.ns, vmName, cmd)
 		if err != nil {
 			return "", fmt.Errorf("calling '%s' for vm %s: %w", cmd, o.vm, err)
 		}
 
 		if o.wait {
-			err := waitForResponse(o.ctx, o.ns, id, o.timeout)
+			err := waitForResponse(o.ctx, o, id)
 			if err != nil {
 				return "", fmt.Errorf("waiting for response: %w", err)
 			}
@@ -1173,7 +1226,7 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 	if o.sendFile != "" {
 		cmd := "cc send " + o.sendFile
 
-		id, err := exec(o.ns, vmName, cmd)
+		id, err := execID(o.ns, vmName, cmd)
 		if err != nil {
 			return "", fmt.Errorf("sending file '%s' to vm %s: %w", o.sendFile, o.vm, err)
 		}
@@ -1182,7 +1235,7 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 		// send the file first, wait for it to be sent (no matter what), then
 		// execute the command.
 		if o.command != "" || o.wait {
-			err := waitForResponse(o.ctx, o.ns, id, o.timeout)
+			err := waitForResponse(o.ctx, o, id)
 			if err != nil {
 				return "", fmt.Errorf("waiting for response: %w", err)
 			}
@@ -1196,13 +1249,13 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 	if o.command != "" {
 		cmd := "cc exec " + o.command
 
-		id, err := exec(o.ns, vmName, cmd)
+		id, err := execID(o.ns, vmName, cmd)
 		if err != nil {
 			return "", fmt.Errorf("calling '%s' for vm %s: %w", cmd, o.vm, err)
 		}
 
 		if o.wait {
-			err := waitForResponse(o.ctx, o.ns, id, o.timeout)
+			err := waitForResponse(o.ctx, o, id)
 			if err != nil {
 				return "", fmt.Errorf("waiting for response: %w", err)
 			}
@@ -1247,30 +1300,35 @@ func (Minimega) GetC2Response(opts ...C2Option) (string, error) {
 	o := NewC2Options(opts...)
 
 	if o.responseType == "" {
-		return getResponse(o.ns, o.commandID)
+		return getResponse(o.ns, o.vmHost, o.commandID)
 	}
 
-	if o.vm == "" {
-		return "", errors.New("must provide VM when getting typed response")
+	uuid := o.vmUUID
+
+	if uuid == "" {
+		if o.vm == "" {
+			return "", errors.New("must provide VM when getting typed response")
+		}
+
+		vms := GetVMInfo(NS(o.ns), VMName(o.vm))
+		if len(vms) == 0 {
+			return "", fmt.Errorf("vm %s does not exist", o.vm)
+		}
+
+		uuid = pickVM(vms, o.vm).UUID
 	}
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "cc response " + o.commandID
 
-	resp, err := mmcli.SingleResponse(mmcli.Run(cmd))
+	byHost, errs := mmcli.ResponseByHost(mmcli.Run(cmd))
+
+	resp, err := hostResponse(byHost, o.vmHost, errs)
 	if err != nil {
 		return "", fmt.Errorf("getting response for command %s: %w", o.commandID, err)
 	}
 
-	vms := GetVMInfo(NS(o.ns), VMName(o.vm))
-	if len(vms) == 0 {
-		return "", fmt.Errorf("vm %s does not exist", o.vm)
-	}
-
-	var (
-		scanner = bufio.NewScanner(strings.NewReader(resp))
-		uuid    = vms[0].UUID
-	)
+	scanner := bufio.NewScanner(strings.NewReader(resp))
 
 	var output []string
 
@@ -1304,12 +1362,12 @@ func (Minimega) GetC2Response(opts ...C2Option) (string, error) {
 func (Minimega) WaitForC2Response(opts ...C2Option) (string, error) {
 	o := NewC2Options(opts...)
 
-	err := waitForResponse(o.ctx, o.ns, o.commandID, o.timeout)
+	err := waitForResponse(o.ctx, o, o.commandID)
 	if err != nil {
 		return "", err
 	}
 
-	return getResponse(o.ns, o.commandID)
+	return getResponse(o.ns, o.vmHost, o.commandID)
 }
 
 func (Minimega) ClearC2Responses(opts ...C2Option) error {
@@ -1572,7 +1630,7 @@ func getActiveC2(ns string) map[string]bool {
 	active := make(map[string]bool)
 
 	cmd := mmcli.NewNamespacedCommand(ns)
-	cmd.Command = "cc client"
+	cmd.Command = ccClientCmd
 
 	for _, row := range mmcli.RunTabular(cmd) {
 		active[row["uuid"]] = true
@@ -1581,18 +1639,31 @@ func getActiveC2(ns string) map[string]bool {
 	return active
 }
 
-func waitForResponse(ctx context.Context, ns, id string, timeout time.Duration) error {
-	cmd := mmcli.NewNamespacedCommand(ns)
+// waitForResponse blocks until command id has a response on the host running
+// the VM (any host when unknown). The command must first appear there within
+// the appear grace, and while it is unanswered the VM's C2 client must keep
+// showing up in `cc clients`, or the wait ends early with
+// ErrC2ClientNotActive instead of running out the full timeout.
+func waitForResponse(ctx context.Context, o c2Options, id string) error {
+	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "cc commands"
-	cmd.Columns = []string{"id", "responses"}
+	cmd.Columns = []string{"host", "id", "responses", "filter"}
 	cmd.Filters = []string{"id=" + id}
 
-	// Multiple rows will come back for each command ID, one row per cluster host.
-	// Because the `ExecC2Command` sets the filter to a specific VM, only one of
-	// the rows will have a response since a VM can only run on a single cluster
-	// host. A valid row from any one host is sufficient.
+	var (
+		host  = o.vmHost
+		uuid  = o.vmUUID
+		start = time.Now()
 
-	after := time.After(timeout)
+		after    = time.After(o.timeout)
+		failures int
+
+		seen      = host == "" || o.appearGrace <= 0
+		liveness  = uuid != "" && o.clientGrace > 0
+		interval  = min(c2LivenessInterval, o.clientGrace)
+		lastSeen  = start
+		nextCheck = start.Add(interval)
+	)
 
 	for {
 		select {
@@ -1601,28 +1672,180 @@ func waitForResponse(ctx context.Context, ns, id string, timeout time.Duration) 
 		case <-after:
 			return fmt.Errorf("timeout waiting for response for command %s", id)
 		default:
-			// Only the host running the VM has a response; scan all rows.
-			for _, row := range mmcli.RunTabular(cmd) {
-				if row["id"] == id && row["responses"] != "0" {
-					return nil
-				}
+		}
+
+		rows, err := runTabularPoll(cmd, &failures)
+		if err != nil {
+			return fmt.Errorf("waiting for response for command %s: %w", id, err)
+		}
+
+		// Every host reports the id; only the host running the VM ever has a
+		// response, so its row is the one that counts when it is known.
+		for _, row := range rows {
+			if row["id"] != id || (host != "" && row["host"] != host) {
+				continue
 			}
 
-			time.Sleep(responseWaitInterval)
+			// The id names another VM's command on this host: fatal on the VM's
+			// host, just not ours to read anywhere else.
+			if uuid != "" && !filterTargets(row["filter"], uuid) {
+				if host == "" {
+					continue
+				}
+
+				return fmt.Errorf(
+					"command %s on host %s targets %q, not vm %s: %w",
+					id, host, row["filter"], uuid, ErrC2CommandMismatch,
+				)
+			}
+
+			seen = true
+
+			if row["responses"] != "0" {
+				return nil
+			}
 		}
+
+		now := time.Now()
+
+		if !seen && now.Sub(start) >= o.appearGrace {
+			return fmt.Errorf(
+				"command %s never appeared on host %s within %s: %w",
+				id, host, o.appearGrace, ErrC2CommandMismatch,
+			)
+		}
+
+		if liveness && now.After(nextCheck) {
+			nextCheck = now.Add(interval)
+
+			active, err := clientSeen(o.ns, uuid, &failures)
+			if err != nil {
+				return fmt.Errorf("waiting for response for command %s: %w", id, err)
+			}
+
+			if active {
+				lastSeen = now
+			} else if unseen := now.Sub(lastSeen); unseen > o.clientGrace {
+				return fmt.Errorf(
+					"vm %s unseen for %s while waiting for command %s: %w",
+					uuid, unseen.Round(time.Second), id, ErrC2ClientNotActive,
+				)
+			}
+		}
+
+		time.Sleep(responseWaitInterval)
 	}
 }
 
-func getResponse(ns, id string) (string, error) {
+// clientSeen reports whether the C2 client for uuid is currently registered on
+// any host.
+func clientSeen(ns, uuid string, failures *int) (bool, error) {
+	cmd := mmcli.NewNamespacedCommand(ns)
+	cmd.Command = ccClientCmd
+	cmd.Columns = []string{"host", "uuid"}
+	cmd.Filters = []string{"uuid=" + uuid}
+
+	rows, err := runTabularPoll(cmd, failures)
+	if err != nil {
+		return false, err
+	}
+
+	for _, row := range rows {
+		if strings.EqualFold(row["uuid"], uuid) {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// filterTargets reports whether a `cc commands` filter column names uuid.
+// minimega renders the filter as `k=v && k=v` with the UUID lowercased.
+func filterTargets(filter, uuid string) bool {
+	for term := range strings.SplitSeq(filter, "&&") {
+		if strings.EqualFold(strings.TrimSpace(term), "uuid="+uuid) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// runTabularPoll runs cmd for a polling loop. Rows from any host are returned
+// as-is, while a query that yields nothing but errors counts as a failure and
+// becomes fatal once it repeats maxPollFailures times, so a lost minimega
+// connection is reported as such rather than as a client that never appeared.
+func runTabularPoll(cmd *mmcli.Command, failures *int) ([]map[string]string, error) {
+	rows, err := mmcli.RunTabularErr(cmd)
+	if len(rows) > 0 || err == nil {
+		*failures = 0
+
+		return rows, nil
+	}
+
+	*failures++
+
+	if *failures >= maxPollFailures {
+		return nil, fmt.Errorf("querying minimega (%s): %w", cmd.Command, err)
+	}
+
+	return nil, nil
+}
+
+func getResponse(ns, host, id string) (string, error) {
 	cmd := mmcli.NewNamespacedCommand(ns)
 	cmd.Command = fmt.Sprintf("cc response %s raw", id)
 
-	resp, err := mmcli.SingleResponse(mmcli.Run(cmd))
+	byHost, errs := mmcli.ResponseByHost(mmcli.Run(cmd))
+
+	resp, err := hostResponse(byHost, host, errs)
 	if err != nil {
 		return "", fmt.Errorf("getting response for command %s: %w", id, err)
 	}
 
 	return resp, nil
+}
+
+// hostResponse picks host's answer out of a per-host response set. With no
+// host to prefer, the first answering host (by name, for determinism) wins;
+// errs is only reported when nothing usable came back.
+func hostResponse[T any](byHost map[string]T, host string, errs error) (T, error) { //nolint:ireturn // generic
+	var zero T
+
+	if host != "" {
+		if resp, ok := byHost[host]; ok {
+			return resp, nil
+		}
+
+		if errs == nil {
+			errs = errors.New("no response")
+		}
+
+		return zero, fmt.Errorf("host %s: %w", host, errs)
+	}
+
+	for _, h := range slices.Sorted(maps.Keys(byHost)) {
+		return byHost[h], nil
+	}
+
+	if errs == nil {
+		errs = errors.New("no response from any host")
+	}
+
+	return zero, errs
+}
+
+// distinctIDs returns the distinct non-nil values of a per-host data set.
+func distinctIDs(byHost map[string]any) []string {
+	ids := make(map[string]struct{})
+
+	for _, data := range byHost {
+		if data != nil {
+			ids[fmt.Sprintf("%v", data)] = struct{}{}
+		}
+	}
+
+	return slices.Sorted(maps.Keys(ids))
 }
 
 func flush(ns string) error {
