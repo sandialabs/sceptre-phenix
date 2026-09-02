@@ -2,6 +2,7 @@ package mm
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -84,13 +85,82 @@ func serveFake(conn net.Conn) {
 		var resp minicli.Responses
 
 		if handle != nil {
-			resp = handle(req.Command)
+			resp = applyColumns(req.Command, handle(req.Command))
 		}
 
 		if err := enc.Encode(&miniclient.Response{Resp: resp}); err != nil {
 			return
 		}
 	}
+}
+
+// applyColumns mimics minicli's `.columns` builtin: each column must match a
+// header exactly or as a unique prefix, and the responding host is not one.
+func applyColumns(cmd string, resps minicli.Responses) minicli.Responses {
+	_, rest, ok := strings.Cut(cmd, ".columns ")
+	if !ok {
+		return resps
+	}
+
+	columns := strings.Split(strings.Trim(strings.Fields(rest)[0], `"`), `","`)
+
+	for _, r := range resps {
+		if r.Header == nil {
+			continue
+		}
+
+		if r.Tabular == nil {
+			r.Header = columns
+
+			continue
+		}
+
+		header := make([]string, len(columns))
+		rows := make([][]string, len(r.Tabular))
+
+		for i, col := range columns {
+			j, err := findColumn(r.Header, col)
+			if err != nil {
+				return minicli.Responses{errRow("fake", err.Error())}
+			}
+
+			header[i] = r.Header[j]
+
+			for k, row := range r.Tabular {
+				rows[k] = append(rows[k], row[j])
+			}
+		}
+
+		r.Header, r.Tabular = header, rows
+	}
+
+	return resps
+}
+
+func findColumn(headers []string, column string) (int, error) {
+	found := -1
+
+	for i, header := range headers {
+		if header == column {
+			return i, nil
+		}
+
+		if !strings.HasPrefix(header, column) {
+			continue
+		}
+
+		if found >= 0 {
+			return 0, fmt.Errorf("ambiguous column `%s`", column)
+		}
+
+		found = i
+	}
+
+	if found < 0 {
+		return 0, fmt.Errorf("no such column `%s`", column)
+	}
+
+	return found, nil
 }
 
 // useFakeHandler installs handle for the duration of the test.

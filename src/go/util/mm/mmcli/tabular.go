@@ -32,8 +32,9 @@ func tabularToMapCols(columns []string) tabularToMapper {
 		res := map[string]string{}
 
 		for _, column := range cols {
-			// `host` is the responding minimega node, not a header; a substring
-			// match here would also swallow the `hostname` column of `cc clients`
+			// `host` is the responding minimega node, not a header (Command.String
+			// drops it from `.columns`); a substring match here would also swallow
+			// the `hostname` column of `cc clients`
 			if column == "host" {
 				res["host"] = resp.Host
 
