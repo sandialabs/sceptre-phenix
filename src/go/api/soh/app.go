@@ -357,18 +357,9 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 		logger.Info("skipping initial network configuration tests per config")
 	}
 
-	cancel := periodicallyNotify(
-		ctx,
-		"waiting for initial network configurations to be validated...",
-		notifyInterval,
-	)
-
 	// Wait for IP address / gateway configuration to be set for each VM, as well
 	// as wait for each gateway to be reachable.
-	wg.Wait()
-	cancel()
-
-	if ctx.Err() != nil {
+	if waitAll(ctx, wg, "waiting for initial network configurations to be validated...") {
 		return ctx.Err()
 	}
 
@@ -383,142 +374,51 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 			s.recordHostIP(host, iface, vlan, ip)
 		}
 
-		st := State{ //nolint:exhaustruct // partial initialization
-			Metadata:  state.Meta,
-			Timestamp: time.Now().Format(time.RFC3339),
-		}
+		st := s.newState(state)
+		if st.Error != "" {
+			logger.Error("[✗] failed to confirm networking", "host", host, "err", state.Err)
 
-		err := state.Err
-		if err != nil {
-			logger.Error("[✗] failed to confirm networking", "host", host, "err", err)
-
-			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				s.markC2Dead(host)
-			} else {
+			if !errors.Is(state.Err, mm.ErrC2ClientNotActive) {
 				s.failedNetwork[host] = struct{}{}
 			}
-
-			st.Error = err.Error()
-		} else {
-			st.Success = state.Msg
 		}
 
-		hostState, ok := s.status[host]
-		if !ok {
-			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
-		}
-
-		hostState.Networking = append(hostState.Networking, st)
-		s.status[host] = hostState
+		s.updateHost(host, func(h *HostState) { h.Networking = append(h.Networking, st) })
 	}
 
 	s.writeResults(exp)
 
 	// *** RUN ACTUAL STATE OF HEALTH CHECKS *** //
 
+	reachability := checks["network-config"] && (checks["reachability"] || checks["custom-reachability"])
+
+	steps := []struct {
+		enabled bool
+		run     func() bool
+	}{
+		{reachability, func() bool { return s.waitForReachabilityTest(ctx, ns, checks) }},
+		{checks["files"], func() bool { return s.waitForFileTest(ctx, ns) }},
+		{checks["files-absent"], func() bool { return s.waitForFileAbsentTest(ctx, ns) }},
+		{checks["services"], func() bool { return s.waitForServiceTest(ctx, ns) }},
+		{checks["processes"], func() bool { return s.waitForProcTest(ctx, ns) }},
+		{checks["ports"], func() bool { return s.waitForPortTest(ctx, ns) }},
+		{checks["docker"], func() bool { return s.waitForContainerTest(ctx, ns) }},
+		{checks["custom"], func() bool { return s.waitForCustomTest(ctx, ns) }},
+		{checks["cpu-load"], func() bool { return s.waitForCPULoad(ctx, ns) }},
+		{checks["flows"], func() bool { s.getFlows(ctx, exp); return false }},
+	}
+
 	var errs bool
 
-	if checks["network-config"] && (checks["reachability"] || checks["custom-reachability"]) {
-		err := s.waitForReachabilityTest(ctx, ns, checks)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
+	for _, step := range steps {
+		if !step.enabled {
+			continue
 		}
 
-		errs = errs || err
-	}
-
-	if checks["files"] {
-		err := s.waitForFileTest(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
+		if step.run() {
+			errs = true
 		}
 
-		errs = errs || err
-	}
-
-	if checks["files-absent"] {
-		err := s.waitForFileAbsentTest(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		errs = errs || err
-	}
-
-	if checks["services"] {
-		err := s.waitForServiceTest(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		errs = errs || err
-	}
-
-	if checks["processes"] {
-		err := s.waitForProcTest(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		errs = errs || err
-	}
-
-	if checks["ports"] {
-		err := s.waitForPortTest(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		errs = errs || err
-	}
-
-	if checks["docker"] {
-		err := s.waitForContainerTest(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		errs = errs || err
-	}
-
-	if checks["custom"] {
-		err := s.waitForCustomTest(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		errs = errs || err
-	}
-
-	if checks["cpu-load"] {
-		err := s.waitForCPULoad(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		errs = errs || err
-	}
-
-	if checks["flows"] {
-		s.getFlows(ctx, exp)
 		s.writeResults(exp)
 
 		if ctx.Err() != nil {

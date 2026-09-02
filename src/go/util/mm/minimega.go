@@ -1659,14 +1659,11 @@ func waitForResponse(ctx context.Context, o c2Options, id string) error {
 		failures int
 
 		seen      = host == "" || o.appearGrace <= 0
-		lastSeen  = start
-		nextCheck = start.Add(c2LivenessInterval)
 		liveness  = uuid != "" && o.clientGrace > 0
+		interval  = min(c2LivenessInterval, o.clientGrace)
+		lastSeen  = start
+		nextCheck = start.Add(interval)
 	)
-
-	if liveness {
-		nextCheck = start.Add(min(c2LivenessInterval, o.clientGrace))
-	}
 
 	for {
 		select {
@@ -1719,7 +1716,7 @@ func waitForResponse(ctx context.Context, o c2Options, id string) error {
 		}
 
 		if liveness && now.After(nextCheck) {
-			nextCheck = now.Add(min(c2LivenessInterval, o.clientGrace))
+			nextCheck = now.Add(interval)
 
 			active, err := clientSeen(o.ns, uuid, &failures)
 			if err != nil {

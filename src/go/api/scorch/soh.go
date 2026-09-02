@@ -175,7 +175,12 @@ func (s SOH) check(ctx context.Context, stage Action) error {
 
 	plog.RemoveHandler(handlerName)
 
-	exp, _ = experiment.Get(exp.Metadata.Name)
+	exp, err = experiment.Get(name)
+	if err != nil {
+		updateComponent("Unable to reload the experiment for results.\n")
+
+		return fmt.Errorf("getting experiment %s after checks: %w", name, err)
+	}
 
 	var results map[string]any
 

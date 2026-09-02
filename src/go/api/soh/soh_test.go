@@ -2,6 +2,7 @@ package soh
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
@@ -263,11 +264,36 @@ func (h fakeHardware) OSType() string { return h.osType }
 type fakeInterface struct {
 	ifaces.NodeNetworkInterface
 
-	name, vlan string
+	name, vlan, address, gateway string
+	mask                         int
 }
 
-func (i fakeInterface) Name() string { return i.name }
-func (i fakeInterface) VLAN() string { return i.vlan }
+func (i fakeInterface) Name() string    { return i.name }
+func (i fakeInterface) VLAN() string    { return i.vlan }
+func (i fakeInterface) Address() string { return i.address }
+func (i fakeInterface) Mask() int       { return i.mask }
+func (i fakeInterface) Gateway() string { return i.gateway }
+
+// fakeApp covers the slice of ifaces.ScenarioApp the SoH profile lookup reads.
+type fakeApp struct {
+	ifaces.ScenarioApp
+
+	name  string
+	hosts []ifaces.ScenarioAppHost
+}
+
+func (a fakeApp) Name() string                    { return a.name }
+func (a fakeApp) Hosts() []ifaces.ScenarioAppHost { return a.hosts }
+
+type fakeAppHost struct {
+	ifaces.ScenarioAppHost
+
+	hostname string
+	meta     map[string]any
+}
+
+func (h fakeAppHost) Hostname() string         { return h.hostname }
+func (h fakeAppHost) Metadata() map[string]any { return h.meta }
 
 // fakeMM answers every C2 command with the same response. Embedding the (nil)
 // mm.MM interface makes any other method call panic, which these tests never
@@ -281,6 +307,7 @@ type fakeMM struct {
 
 func (f fakeMM) GetVMInfo(...mm.Option) mm.VMs                    { return f.vms }
 func (f fakeMM) ExecC2Command(...mm.C2Option) (string, error)     { return "1", nil }
+func (f fakeMM) GetC2Response(...mm.C2Option) (string, error)     { return f.response, nil }
 func (f fakeMM) WaitForC2Response(...mm.C2Option) (string, error) { return f.response, nil }
 
 func useFakeMM(t *testing.T, fake mm.MM) {
@@ -494,3 +521,158 @@ func TestSOHMetadataParsesC2Tuning(t *testing.T) {
 }
 
 func durationPtr(d time.Duration) *time.Duration { return &d }
+
+// TestRunHostCheckRecordsResults drives a per-host check end to end: every
+// configured target of a live host gets a result, a host whose C2 client went
+// away gets an error per target, and a host skipped by configuration is not
+// recorded at all.
+func TestRunHostCheckRecordsResults(t *testing.T) {
+	useFakeMM(t, fakeMM{response: "active"})
+
+	s := newSOH()
+	s.md.c2Timeout = time.Second
+	s.md.HostServices = map[string][]string{
+		"live":    {"sshd", "nginx"},
+		"gone":    {"sshd"},
+		"skipped": {"sshd"},
+	}
+
+	for host := range s.md.HostServices {
+		s.nodes[host] = fakeNode{hostname: host, osType: "linux"}
+	}
+
+	s.c2Hosts["live"] = struct{}{}
+	s.markC2Dead("gone")
+
+	if errs := s.waitForServiceTest(context.Background(), "exp"); !errs {
+		t.Fatal("expected the host without C2 to be reported as an error")
+	}
+
+	live := s.status["live"].Services
+	if len(live) != 2 {
+		t.Fatalf("live host recorded %d services, want 2", len(live))
+	}
+
+	for _, st := range live {
+		if st.Success != "service running" || st.Error != "" {
+			t.Fatalf("live host state = %+v, want success", st)
+		}
+
+		if _, ok := st.Metadata["service"].(string); !ok {
+			t.Fatalf("live host state metadata = %v, want a service name", st.Metadata)
+		}
+	}
+
+	gone := s.status["gone"].Services
+	if len(gone) != 1 || gone[0].Error != errC2Dead.Error() || gone[0].Metadata["service"] != "sshd" {
+		t.Fatalf("host without C2 recorded %+v, want one %q error for sshd", gone, errC2Dead)
+	}
+
+	if _, ok := s.status["skipped"]; ok {
+		t.Fatal("host skipped by configuration must not be recorded")
+	}
+}
+
+// TestRunHostCheckUsesAppProfiles: targets also come from the SoH profile an
+// app attaches to its hosts, and a malformed profile is skipped with a warning
+// rather than failing the check.
+func TestRunHostCheckUsesAppProfiles(t *testing.T) {
+	useFakeMM(t, fakeMM{response: "1234"})
+
+	s := newSOH()
+	s.md.c2Timeout = time.Second
+	s.md.AppProfileKey = "sohProfile"
+
+	for _, host := range []string{"web", "bad"} {
+		s.nodes[host] = fakeNode{hostname: host, osType: "linux"}
+		s.c2Hosts[host] = struct{}{}
+	}
+
+	s.apps = []ifaces.ScenarioApp{fakeApp{name: "web", hosts: []ifaces.ScenarioAppHost{
+		fakeAppHost{hostname: "web", meta: map[string]any{"sohProfile": map[string]any{"processes": []string{"nginx"}}}},
+		fakeAppHost{hostname: "bad", meta: map[string]any{"sohProfile": "not a profile"}},
+	}}}
+
+	if errs := s.waitForProcTest(context.Background(), "exp"); errs {
+		t.Fatal("unexpected errors from the process check")
+	}
+
+	procs := s.status["web"].Processes
+	if len(procs) != 1 || procs[0].Success != "process running" || procs[0].Metadata["proc"] != "nginx" {
+		t.Fatalf("profile host recorded %+v, want one success for nginx", procs)
+	}
+
+	if _, ok := s.status["bad"]; ok {
+		t.Fatal("host with a malformed profile must not be recorded")
+	}
+}
+
+// TestNetworkingConfiguredChainsChecks: the address, gateway and gateway ping
+// probes run in sequence, each scheduled by the one before it.
+func TestNetworkingConfiguredChainsChecks(t *testing.T) {
+	useFakeMM(t, fakeMM{response: "10.0.0.5/24 default via 10.0.0.1 1 received"})
+
+	s := newSOH()
+	s.md.c2Timeout = time.Second
+
+	var (
+		wg    = new(mm.StateGroup)
+		node  = fakeNode{hostname: "host0", osType: "linux"}
+		iface = fakeInterface{name: "IF0", vlan: "OT", address: "10.0.0.5", mask: 24, gateway: "10.0.0.1"}
+	)
+
+	s.isNetworkingConfigured(context.Background(), wg, "exp", node, iface)
+	wg.Wait()
+
+	if wg.ErrCount != 0 {
+		t.Fatalf("ErrCount = %d, want 0: %+v", wg.ErrCount, wg.States)
+	}
+
+	got := make([]string, 0, len(wg.States))
+
+	for _, state := range wg.States {
+		got = append(got, state.Msg)
+	}
+
+	want := []string{"IP 10.0.0.5 configured", "gateway 10.0.0.1 configured", "gateway 10.0.0.1 is up"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("states = %q, want %q", got, want)
+	}
+}
+
+func TestFailAfterRetries(t *testing.T) {
+	t.Parallel()
+
+	var (
+		fail  = failAfterRetries()
+		want  = errors.New("boom")
+		retry mm.C2RetryError
+	)
+
+	for i := range probeRetries {
+		if err := fail(want); !errors.As(err, &retry) {
+			t.Fatalf("attempt %d: got %v, want a retry", i, err)
+		}
+	}
+
+	if err := fail(want); !errors.Is(err, want) {
+		t.Fatalf("after %d retries got %v, want %v", probeRetries, err, want)
+	}
+}
+
+func TestFailAfterDeadline(t *testing.T) {
+	t.Parallel()
+
+	var (
+		want  = errors.New("boom")
+		retry mm.C2RetryError
+	)
+
+	if err := failAfterDeadline(time.Now().Add(time.Hour))(want); !errors.As(err, &retry) {
+		t.Fatalf("before the deadline got %v, want a retry", err)
+	}
+
+	if err := failAfterDeadline(time.Now().Add(-time.Second))(want); !errors.Is(err, want) {
+		t.Fatalf("after the deadline got %v, want %v", err, want)
+	}
+}
