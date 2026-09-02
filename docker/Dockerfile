@@ -99,7 +99,7 @@ LABEL org.opencontainers.image.authors="Sandia National Laboratories <emulytics@
   org.opencontainers.image.source="https://github.com/sandialabs/sceptre-phenix" \
   org.opencontainers.image.revision="${PHENIX_COMMIT}" \
   org.opencontainers.image.vendor="Sandia National Laboratories" \
-  org.opencontainers.image.licenses="GPL-3.0-or-later" \
+  org.opencontainers.image.licenses="GPL-3.0-only" \
   org.opencontainers.image.title="phenix" \
   org.opencontainers.image.description="phenix is an orchestration tool and GUI for Sandia's minimega platform"
 

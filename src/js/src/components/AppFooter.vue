@@ -9,7 +9,7 @@ component.
     <div class="container is-fluid">
       <small>
         <p style="float: left; color: whitesmoke; padding-bottom: 16px">
-          Copyright &copy; <b>2019-2025 Sandia National Laboratories</b>. All
+          Copyright &copy; <b>2019-2026 Sandia National Laboratories</b>. All
           Rights Reserved.
         </p>
         <p style="float: right; color: whitesmoke">{{ version }}</p>
