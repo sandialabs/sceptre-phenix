@@ -169,8 +169,9 @@ const (
 type c2Options struct {
 	ctx context.Context
 
-	ns string
-	vm string
+	ns     string
+	vm     string
+	vmUUID string
 
 	command   string
 	commandID string
@@ -217,6 +218,14 @@ func C2NS(n string) C2Option {
 func C2VM(v string) C2Option {
 	return func(o *c2Options) {
 		o.vm = v
+	}
+}
+
+// C2VMUUID supplies the UUID minimega launched the VM under, saving the
+// `vm info` lookup that would otherwise resolve it on every command.
+func C2VMUUID(u string) C2Option {
+	return func(o *c2Options) {
+		o.vmUUID = u
 	}
 }
 

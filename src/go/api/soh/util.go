@@ -535,6 +535,10 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 	wg.Wait()
 	cancel()
 
+	if ctx.Err() != nil {
+		return true
+	}
+
 	for _, state := range wg.States {
 		var (
 			host, _   = state.Meta["host"].(string)
@@ -558,7 +562,7 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 		err := state.Err
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markC2Dead(host)
 			}
 
 			st.Error = err.Error()
@@ -628,13 +632,13 @@ func (s *SOH) waitForFileExistenceTest(
 	)
 
 	for host, files := range hostFiles {
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
-
-			continue
-		}
-
 		for _, path := range files {
+			if s.skipHost(wg, host, map[string]any{"host": host, "path": path}) {
+				logger.Debug("skipping host per config", "host", host)
+
+				continue
+			}
+
 			logger.Debug("checking file on host", "host", host, "path", path)
 			test(ctx, wg, ns, s.nodes[host], path)
 		}
@@ -644,6 +648,10 @@ func (s *SOH) waitForFileExistenceTest(
 
 	wg.Wait()
 	cancel()
+
+	if ctx.Err() != nil {
+		return true
+	}
 
 	for _, state := range wg.States {
 		var (
@@ -659,7 +667,7 @@ func (s *SOH) waitForFileExistenceTest(
 		err := state.Err
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markC2Dead(host)
 			}
 
 			st.Error = err.Error()
@@ -717,13 +725,13 @@ func (s *SOH) waitForServiceTest(ctx context.Context, ns string) bool {
 	)
 
 	for host, services := range s.md.HostServices {
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
-
-			continue
-		}
-
 		for _, service := range services {
+			if s.skipHost(wg, host, map[string]any{"host": host, "service": service}) {
+				logger.Debug("skipping host per config", "host", host)
+
+				continue
+			}
+
 			logger.Debug("checking for service on host", "host", host, "service", service)
 			s.serviceTest(ctx, wg, ns, s.nodes[host], service)
 		}
@@ -733,6 +741,10 @@ func (s *SOH) waitForServiceTest(ctx context.Context, ns string) bool {
 
 	wg.Wait()
 	cancel()
+
+	if ctx.Err() != nil {
+		return true
+	}
 
 	for _, state := range wg.States {
 		var (
@@ -748,7 +760,7 @@ func (s *SOH) waitForServiceTest(ctx context.Context, ns string) bool {
 		err := state.Err
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markC2Dead(host)
 			}
 
 			st.Error = err.Error()
@@ -778,13 +790,13 @@ func (s *SOH) waitForContainerTest(ctx context.Context, ns string) bool {
 	)
 
 	for host, containers := range s.md.HostContainers {
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
-
-			continue
-		}
-
 		for _, container := range containers {
+			if s.skipHost(wg, host, map[string]any{"host": host, "container": container}) {
+				logger.Debug("skipping host per config", "host", host)
+
+				continue
+			}
+
 			logger.Debug("checking docker container on host", "host", host, "container", container)
 			s.containerTest(ctx, wg, ns, s.nodes[host], container)
 		}
@@ -798,6 +810,10 @@ func (s *SOH) waitForContainerTest(ctx context.Context, ns string) bool {
 
 	wg.Wait()
 	cancel()
+
+	if ctx.Err() != nil {
+		return true
+	}
 
 	for _, state := range wg.States {
 		var (
@@ -813,7 +829,7 @@ func (s *SOH) waitForContainerTest(ctx context.Context, ns string) bool {
 		err := state.Err
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markC2Dead(host)
 			}
 
 			st.Error = err.Error()
@@ -849,15 +865,13 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 	)
 
 	for host, processes := range s.md.HostProcesses {
-		// If the host isn't in the C2 hosts map, then don't operate on it since it
-		// was likely skipped for a reason.
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
-
-			continue
-		}
-
 		for _, proc := range processes {
+			if s.skipHost(wg, host, map[string]any{"host": host, "proc": proc}) {
+				logger.Debug("skipping host per config", "host", host)
+
+				continue
+			}
+
 			logger.Debug("checking for process on host", "host", host, "process", proc)
 			s.procTest(ctx, wg, ns, s.nodes[host], proc)
 		}
@@ -867,12 +881,6 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 	for _, app := range s.apps {
 		for _, host := range app.Hosts() {
 			if ms, ok := host.Metadata()[s.md.AppProfileKey]; ok {
-				if _, ok := s.c2Hosts[host.Hostname()]; !ok {
-					logger.Debug("skipping host per config", "host", host.Hostname())
-
-					continue
-				}
-
 				var profile sohProfile
 
 				err := mapstructure.Decode(ms, &profile)
@@ -889,6 +897,13 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 				}
 
 				for _, proc := range profile.Processes {
+					meta := map[string]any{"host": host.Hostname(), "proc": proc}
+					if s.skipHost(wg, host.Hostname(), meta) {
+						logger.Debug("skipping host per config", "host", host.Hostname())
+
+						continue
+					}
+
 					logger.Debug(
 						"checking for process on host",
 						"host",
@@ -907,6 +922,10 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 	wg.Wait()
 	cancel()
 
+	if ctx.Err() != nil {
+		return true
+	}
+
 	for _, state := range wg.States {
 		var (
 			host, _ = state.Meta["host"].(string)
@@ -921,7 +940,7 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 		err := state.Err
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markC2Dead(host)
 			}
 
 			st.Error = err.Error()
@@ -951,15 +970,13 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 	)
 
 	for host, listeners := range s.md.HostListeners {
-		// If the host isn't in the C2 hosts map, then don't operate on it since it
-		// was likely skipped for a reason.
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
-
-			continue
-		}
-
 		for _, port := range listeners {
+			if s.skipHost(wg, host, map[string]any{"host": host, "port": port}) {
+				logger.Debug("skipping host per config", "host", host)
+
+				continue
+			}
+
 			logger.Debug("checking for listener on host", "host", host, "listener", port)
 			s.portTest(ctx, wg, ns, s.nodes[host], port)
 		}
@@ -969,12 +986,6 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 	for _, app := range s.apps {
 		for _, host := range app.Hosts() {
 			if ms, ok := host.Metadata()[s.md.AppProfileKey]; ok {
-				if _, ok := s.c2Hosts[host.Hostname()]; !ok {
-					logger.Debug("skipping host per config", "host", host.Hostname())
-
-					continue
-				}
-
 				var profile sohProfile
 
 				err := mapstructure.Decode(ms, &profile)
@@ -991,6 +1002,13 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 				}
 
 				for _, port := range profile.Listeners {
+					meta := map[string]any{"host": host.Hostname(), "port": port}
+					if s.skipHost(wg, host.Hostname(), meta) {
+						logger.Debug("skipping host per config", "host", host.Hostname())
+
+						continue
+					}
+
 					logger.Debug(
 						"checking for listener on host",
 						"host",
@@ -1009,6 +1027,10 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 	wg.Wait()
 	cancel()
 
+	if ctx.Err() != nil {
+		return true
+	}
+
 	for _, state := range wg.States {
 		var (
 			host, _ = state.Meta["host"].(string)
@@ -1023,7 +1045,7 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 		err := state.Err
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markC2Dead(host)
 			}
 
 			st.Error = err.Error()
@@ -1052,15 +1074,13 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 	)
 
 	for host, tests := range s.md.CustomHostTests {
-		// If the host isn't in the C2 hosts map, then don't operate on it since it
-		// was likely skipped for a reason.
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
-
-			continue
-		}
-
 		for _, test := range tests {
+			if s.skipHost(wg, host, map[string]any{"host": host, "test": test.Name}) {
+				logger.Debug("skipping host per config", "host", host)
+
+				continue
+			}
+
 			logger.Debug("running custom test on host", "host", host, "test", test.Name)
 			s.customTest(ctx, wg, ns, s.nodes[host], test)
 		}
@@ -1070,12 +1090,6 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 	for _, app := range s.apps {
 		for _, host := range app.Hosts() {
 			if ms, ok := host.Metadata()[s.md.AppProfileKey]; ok {
-				if _, ok := s.c2Hosts[host.Hostname()]; !ok {
-					logger.Debug("skipping host per config", "host", host.Hostname())
-
-					continue
-				}
-
 				var profile sohProfile
 
 				err := mapstructure.Decode(ms, &profile)
@@ -1092,6 +1106,13 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 				}
 
 				for _, test := range profile.CustomTests {
+					meta := map[string]any{"host": host.Hostname(), "test": test.Name}
+					if s.skipHost(wg, host.Hostname(), meta) {
+						logger.Debug("skipping host per config", "host", host.Hostname())
+
+						continue
+					}
+
 					logger.Debug(
 						"running custom test on host",
 						"host",
@@ -1110,6 +1131,10 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 	wg.Wait()
 	cancel()
 
+	if ctx.Err() != nil {
+		return true
+	}
+
 	for _, state := range wg.States {
 		var (
 			host, _ = state.Meta["host"].(string)
@@ -1124,7 +1149,7 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 		err := state.Err
 		if err != nil {
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markC2Dead(host)
 			}
 
 			st.Error = err.Error()
@@ -1161,30 +1186,21 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 		go func(host string) {
 			defer wg.Done()
 
-			node := s.nodes[host]
-			exec := `cat /proc/loadavg`
+			var (
+				node = s.nodes[host]
+				meta = map[string]any{"host": host}
+				exec = `cat /proc/loadavg`
+			)
 
 			if strings.EqualFold(node.Hardware().OSType(), "windows") {
 				exec = `powershell -command "Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select -ExpandProperty Average"`
 			}
 
-			opts := []mm.C2Option{
-				mm.C2NS(ns),
-				mm.C2VM(host),
-				mm.C2Command(exec),
-				mm.C2Timeout(s.md.c2Timeout),
-			}
-
-			if s.md.useUUIDForC2Active(host) {
-				opts = append(opts, mm.C2IDClientsByUUID())
-			}
+			opts := append(s.c2Options(ns, host), mm.C2Command(exec))
 
 			id, err := mm.ExecC2Command(opts...)
 			if err != nil {
-				wg.AddError(
-					fmt.Errorf("executing command '%s': %w", exec, err),
-					map[string]any{"host": host},
-				)
+				wg.AddError(fmt.Errorf("executing command '%s': %w", exec, err), meta)
 
 				return
 			}
@@ -1198,47 +1214,37 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 
 			resp, err := mm.WaitForC2Response(opts...)
 			if err != nil {
-				wg.AddError(
-					fmt.Errorf("getting response for command '%s': %w", exec, err),
-					map[string]any{"host": host},
-				)
+				wg.AddError(fmt.Errorf("getting response for command '%s': %w", exec, err), meta)
 
 				return
 			}
 
-			hostState, ok := s.status[host]
-			if !ok {
-				hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
-			}
-
 			if strings.EqualFold(node.Hardware().OSType(), "windows") {
 				if resp == "" {
-					wg.AddError(
-						fmt.Errorf("no response for command '%s'", exec),
-						map[string]any{"host": host},
-					)
+					wg.AddError(fmt.Errorf("no response for command '%s'", exec), meta)
 
 					return
 				}
 
-				hostState.CPULoad = resp
-			} else {
-				parts := strings.Fields(resp)
+				wg.AddSuccess(resp, meta)
 
-				if len(parts) != loadAvgParts {
-					wg.AddError(
-						fmt.Errorf("invalid response for command '%s': %s", exec, resp),
-						map[string]any{"host": host},
-					)
-
-					return
-				}
-
-				hostState.CPULoad = parts[0]
+				return
 			}
 
-			s.status[host] = hostState
+			parts := strings.Fields(resp)
+
+			if len(parts) != loadAvgParts {
+				wg.AddError(fmt.Errorf("invalid response for command '%s': %s", exec, resp), meta)
+
+				return
+			}
+
+			wg.AddSuccess(parts[0], meta)
 		}(host)
+	}
+
+	for host := range s.c2Dead {
+		wg.AddError(errC2Dead, map[string]any{"host": host})
 	}
 
 	cancel := periodicallyNotify(ctx, "waiting for CPU load details...", notifyInterval)
@@ -1247,25 +1253,33 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 	wg.Wait()
 	cancel()
 
+	if ctx.Err() != nil {
+		return true
+	}
+
+	// Results are recorded here rather than in the goroutines: the status map is
+	// not safe for concurrent writes.
 	for _, state := range wg.States {
 		host, _ := state.Meta["host"].(string)
 
-		err := state.Err
-		if err != nil {
-			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
-			}
-
-			hostState, ok := s.status[host]
-			if !ok {
-				hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
-			}
-
-			hostState.CPULoad = err.Error()
-			s.status[host] = hostState
-
-			logger.Error("[✗] failed to get CPU load from host", "host", host, "err", err)
+		hostState, ok := s.status[host]
+		if !ok {
+			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
 		}
+
+		if state.Err != nil {
+			if errors.Is(state.Err, mm.ErrC2ClientNotActive) {
+				s.markC2Dead(host)
+			}
+
+			hostState.CPULoad = state.Err.Error()
+
+			logger.Error("[✗] failed to get CPU load from host", "host", host, "err", state.Err)
+		} else {
+			hostState.CPULoad = state.Msg
+		}
+
+		s.status[host] = hostState
 	}
 
 	return wg.ErrCount > 0
@@ -1498,20 +1512,9 @@ func (s SOH) connTest(
 	}
 
 	meta := map[string]any{"host": src, "target": dst, "port": port, "proto": proto}
-	opts := []mm.C2Option{
-		mm.C2NS(ns),
-		mm.C2VM(src),
-		mm.C2TestConn(test),
-		mm.C2Timeout(s.md.c2Timeout),
-	}
-
-	if s.md.useUUIDForC2Active(src) {
-		opts = append(opts, mm.C2IDClientsByUUID())
-	}
-
 	cmd := &mm.C2ParallelCommand{ //nolint:exhaustruct // partial initialization
 		Wait:    wg,
-		Options: opts,
+		Options: append(s.c2Options(ns, src), mm.C2TestConn(test)),
 		Meta:    meta,
 		Expected: func(resp string) error {
 			if strings.Contains(resp, "fail") {
@@ -1893,18 +1896,25 @@ func (s SOH) portTest(
 }
 
 func (s SOH) newParallelCommand(ns, host, exec string) *mm.C2ParallelCommand {
-	opts := []mm.C2Option{
-		mm.C2NS(ns),
-		mm.C2VM(host),
-		mm.C2Command(exec),
-		mm.C2Timeout(s.md.c2Timeout),
+	opts := append(s.c2Options(ns, host), mm.C2Command(exec))
+
+	return &mm.C2ParallelCommand{Options: opts} //nolint:exhaustruct // partial initialization
+}
+
+// c2Options addresses host for a C2 command, by UUID where the VM was found
+// when the run started.
+func (s SOH) c2Options(ns, host string) []mm.C2Option {
+	opts := []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2Timeout(s.md.c2Timeout)}
+
+	if vm, ok := s.vms[host]; ok && vm.UUID != "" {
+		opts = append(opts, mm.C2VMUUID(vm.UUID))
 	}
 
 	if s.md.useUUIDForC2Active(host) {
 		opts = append(opts, mm.C2IDClientsByUUID())
 	}
 
-	return &mm.C2ParallelCommand{Options: opts} //nolint:exhaustruct // partial initialization
+	return opts
 }
 
 func injectICMPAllowRules(nodes []ifaces.NodeSpec) error {
@@ -2019,21 +2029,10 @@ func (s SOH) customTest( //nolint:funlen // complex logic
 	}
 
 	command := fmt.Sprintf("%s /tmp/miniccc/files/%s", executor, relPath)
-	opts := []mm.C2Option{
-		mm.C2NS(ns),
-		mm.C2VM(host),
-		mm.C2SendFile(relPath),
-		mm.C2Command(command),
-		mm.C2Timeout(s.md.c2Timeout),
-	}
-
-	if s.md.useUUIDForC2Active(host) {
-		opts = append(opts, mm.C2IDClientsByUUID())
-	}
 
 	cmd := &mm.C2ParallelCommand{ //nolint:exhaustruct // partial initialization
 		Wait:    wg,
-		Options: opts,
+		Options: append(s.c2Options(ns, host), mm.C2SendFile(relPath), mm.C2Command(command)),
 		Meta:    meta,
 	}
 
@@ -2116,7 +2115,8 @@ func skip(node ifaces.NodeSpec, toSkip []string) bool {
 		// Check to see if this is a reference to an image. If so, skip this host if
 		// it's using the referenced image.
 		if ext := filepath.Ext(skipHost); ext == ".qc2" || ext == ".qcow2" {
-			if filepath.Base(node.Hardware().Drives()[0].Image()) == skipHost {
+			if drives := node.Hardware().Drives(); len(drives) > 0 &&
+				filepath.Base(drives[0].Image()) == skipHost {
 				return true
 			}
 		}

@@ -43,35 +43,34 @@ type Component interface {
 	Cleanup(context.Context) error
 }
 
-var components map[string]Component //nolint:gochecknoglobals // global registry
+// components are constructed per execution: Init stores the run's options on
+// the instance, so a shared one would be overwritten by a concurrent run.
+var components map[string]func() Component //nolint:gochecknoglobals // global registry
 
 func init() { //nolint:gochecknoinits // component registration
-	components = map[string]Component{
-		"break":      new(Break),
-		"pause":      new(Pause),
-		"soh":        new(SOH),
-		"tap":        new(Tap),
-		"user-shell": new(UserComponent),
+	components = map[string]func() Component{
+		"break":      func() Component { return new(Break) },
+		"pause":      func() Component { return new(Pause) },
+		"soh":        func() Component { return new(SOH) },
+		"tap":        func() Component { return new(Tap) },
+		"user-shell": func() Component { return new(UserComponent) },
 	}
 }
 
 //nolint:ireturn // factory function returns interface
 func GetComponent(name string) Component {
-	cmp, ok := components[name]
+	factory, ok := components[name]
 	if !ok {
-		cmp = components["user-shell"]
+		factory = components["user-shell"]
 	}
 
-	return cmp
+	return factory()
 }
 
 func ExecuteComponent(ctx context.Context, opts ...Option) error {
 	options := NewOptions(opts...)
 
-	cmp, ok := components[options.Type]
-	if !ok {
-		cmp = components["user-shell"]
-	}
+	cmp := GetComponent(options.Type)
 
 	_ = cmp.Init(opts...)
 

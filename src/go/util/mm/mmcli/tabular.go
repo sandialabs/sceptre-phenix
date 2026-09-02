@@ -3,9 +3,8 @@
 package mmcli
 
 import (
-	"strings"
-
-	"github.com/activeshadow/libminimega/minicli"
+	"github.com/hashicorp/go-multierror"
+	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
 
 	"phenix/util/plog"
 )
@@ -33,14 +32,16 @@ func tabularToMapCols(columns []string) tabularToMapper {
 		res := map[string]string{}
 
 		for _, column := range cols {
-			if strings.Contains(column, "host") {
+			// `host` is the responding minimega node, not a header; a substring
+			// match here would also swallow the `hostname` column of `cc clients`
+			if column == "host" {
 				res["host"] = resp.Host
 
 				continue
 			}
 
 			for i, header := range resp.Header {
-				if strings.Contains(column, header) {
+				if column == header {
 					res[header] = row[i]
 				}
 			}
@@ -52,8 +53,22 @@ func tabularToMapCols(columns []string) tabularToMapper {
 
 // RunTabular is used to run the given command when the response is expected to
 // be in tabular form. A slice of maps is returned, with each map representing a
-// row in the tabular response and each map key representing the column.
+// row in the tabular response and each map key representing the column. Errors
+// are logged; use RunTabularErr to act on them.
 func RunTabular(cmd *Command) []map[string]string {
+	rows, err := RunTabularErr(cmd)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "error running mm cmd", "cmd", cmd.Command, "error", err)
+	}
+
+	return rows
+}
+
+// RunTabularErr is RunTabular with the errors returned alongside the rows. On a
+// mesh some hosts legitimately answer with an error (eg. a `cc` query on a host
+// that does not own the VM), so callers decide whether the rows the other hosts
+// returned are sufficient.
+func RunTabularErr(cmd *Command) ([]map[string]string, error) {
 	// copy all fields in header order
 	mapper := tabularToMap
 
@@ -62,28 +77,24 @@ func RunTabular(cmd *Command) []map[string]string {
 		mapper = tabularToMapCols(cmd.Columns)
 	}
 
-	res := []map[string]string{}
+	var (
+		rows = []map[string]string{}
+		errs error
+	)
 
 	for resps := range Run(cmd) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
-				plog.Error(
-					plog.TypeSystem,
-					"error running mm cmd",
-					"cmd",
-					cmd.Command,
-					"error",
-					resp.Error,
-				)
+				errs = multierror.Append(errs, reconstructErr(resp.Error))
 
 				continue
 			}
 
 			for _, row := range resp.Tabular {
-				res = append(res, mapper(resp, row))
+				rows = append(rows, mapper(resp, row))
 			}
 		}
 	}
 
-	return res
+	return rows, errs
 }
