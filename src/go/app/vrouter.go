@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"net"
 	"os"
@@ -23,9 +24,14 @@ import (
 )
 
 const (
-	appNameVrouter    = "vrouter"
-	appNameNTP        = "ntp"
-	ipsecSecretLength = 32
+	appNameVrouter        = "vrouter"
+	appNameNTP            = "ntp"
+	ipsecSecretLength     = 32
+	syslogProtocolUDP     = "udp"
+	syslogProtocolTCP     = "tcp"
+	syslogDefaultProtocol = syslogProtocolUDP
+	syslogDefaultFacility = "all"
+	syslogDefaultLevel    = "info"
 )
 
 var (
@@ -76,6 +82,15 @@ type SNMPConfig struct {
 		Clients       []string `mapstructure:"clients"`
 		TrapTargets   []string `mapstructure:"trapTargets"`
 	} `mapstructure:"communities"`
+}
+
+// SyslogRemote is one remote syslog target from vrouter host metadata.
+type SyslogRemote struct {
+	Address  string `mapstructure:"address"`
+	Protocol string `mapstructure:"protocol"`
+	Port     int    `mapstructure:"port"`
+	Facility string `mapstructure:"facility"`
+	Level    string `mapstructure:"level"`
 }
 
 type Emulator struct {
@@ -337,6 +352,28 @@ func (v *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 						data["snat"] = sources
 						data["dnat"] = destinations
+
+						syslog, err := v.processSyslog(md, exp.Spec.Topology())
+						if err != nil {
+							return fmt.Errorf(
+								"processing syslog metadata for host %s: %w",
+								host.Hostname(),
+								err,
+							)
+						}
+
+						if len(syslog) > 0 && !isVyos {
+							plog.Warn(
+								plog.TypePhenixApp,
+								"syslog metadata is only applied to VyOS routers",
+								"host",
+								host.Hostname(),
+								"os",
+								node.Hardware().OSType(),
+							)
+						}
+
+						data["syslog"] = syslog
 
 						break
 					}
@@ -1041,6 +1078,89 @@ func (v *Vrouter) processNAT(
 	}
 
 	return sources, destinations, nil
+}
+
+// processSyslog decodes the syslog host metadata and resolves each remote address.
+func (Vrouter) processSyslog(md map[string]any, topo ifaces.TopologySpec) ([]SyslogRemote, error) {
+	raw, ok := md["syslog"]
+	if !ok {
+		return nil, nil
+	}
+
+	var remotes []SyslogRemote
+
+	if err := mapstructure.Decode(raw, &remotes); err != nil {
+		return nil, fmt.Errorf("decoding syslog config: %w", err)
+	}
+
+	for i := range remotes {
+		remote := &remotes[i]
+
+		if remote.Address == "" {
+			return nil, fmt.Errorf("syslog remote at index %d must include an address", i)
+		}
+
+		addr, err := resolveAddress(topo, remote.Address)
+		if err != nil {
+			return nil, fmt.Errorf("resolving syslog remote address: %w", err)
+		}
+
+		remote.Address = addr
+
+		remote.Protocol = strings.ToLower(remote.Protocol)
+
+		switch remote.Protocol {
+		case "":
+			remote.Protocol = syslogDefaultProtocol
+		case syslogProtocolUDP, syslogProtocolTCP:
+		default:
+			return nil, fmt.Errorf(
+				"syslog remote %s protocol must be udp or tcp (%s was provided)",
+				remote.Address,
+				remote.Protocol,
+			)
+		}
+
+		if remote.Port < 0 || remote.Port > math.MaxUint16 {
+			return nil, fmt.Errorf("syslog remote %s port %d is out of range", remote.Address, remote.Port)
+		}
+
+		if remote.Facility == "" {
+			remote.Facility = syslogDefaultFacility
+		}
+
+		if remote.Level == "" {
+			remote.Level = syslogDefaultLevel
+		}
+	}
+
+	return remotes, nil
+}
+
+// resolveAddress returns addr if it is an IP address, otherwise resolves a
+// hostname|interface pair against the topology.
+func resolveAddress(topo ifaces.TopologySpec, addr string) (string, error) {
+	addr = strings.TrimSpace(addr)
+
+	if ip := net.ParseIP(addr); ip != nil {
+		return ip.String(), nil
+	}
+
+	hostname, iface, ok := strings.Cut(addr, "|")
+	if !ok || hostname == "" || iface == "" {
+		return "", fmt.Errorf("address %q must be an IP address or hostname|interface pair", addr)
+	}
+
+	node := topo.FindNodeByName(hostname)
+	if node == nil {
+		return "", fmt.Errorf("host %s (from address %q) not found in topology", hostname, addr)
+	}
+
+	if ip := node.Network().InterfaceAddress(iface); ip != "" {
+		return ip, nil
+	}
+
+	return "", fmt.Errorf("interface %s on host %s (from address %q) not found or has no address", iface, hostname, addr)
 }
 
 func configureNTP(exp *types.Experiment, hostname string) (string, error) {
