@@ -1,10 +1,17 @@
 package soh
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/mitchellh/mapstructure"
+
+	ifaces "phenix/types/interfaces"
+	"phenix/util/mm"
 )
 
 func TestHostStateAllStatesIncludesFiles(t *testing.T) {
@@ -220,5 +227,452 @@ func TestContainerCheckCommand(t *testing.T) {
 				t.Fatalf("containerCheckCommand() = %q, want %q", got, test.want)
 			}
 		})
+	}
+}
+
+// fakeNode covers the slice of ifaces.NodeSpec the checks read.
+type fakeNode struct {
+	ifaces.NodeSpec
+
+	hostname, osType string
+}
+
+func (n fakeNode) General() ifaces.NodeGeneral { //nolint:ireturn // test double
+	return fakeGeneral{hostname: n.hostname}
+}
+
+func (n fakeNode) Hardware() ifaces.NodeHardware { //nolint:ireturn // test double
+	return fakeHardware{osType: n.osType}
+}
+
+type fakeGeneral struct {
+	ifaces.NodeGeneral
+
+	hostname string
+}
+
+func (g fakeGeneral) Hostname() string { return g.hostname }
+
+type fakeHardware struct {
+	ifaces.NodeHardware
+
+	osType string
+}
+
+func (h fakeHardware) OSType() string { return h.osType }
+
+type fakeInterface struct {
+	ifaces.NodeNetworkInterface
+
+	name, vlan, address, gateway string
+	mask                         int
+}
+
+func (i fakeInterface) Name() string    { return i.name }
+func (i fakeInterface) VLAN() string    { return i.vlan }
+func (i fakeInterface) Address() string { return i.address }
+func (i fakeInterface) Mask() int       { return i.mask }
+func (i fakeInterface) Gateway() string { return i.gateway }
+
+// fakeApp covers the slice of ifaces.ScenarioApp the SoH profile lookup reads.
+type fakeApp struct {
+	ifaces.ScenarioApp
+
+	name  string
+	hosts []ifaces.ScenarioAppHost
+}
+
+func (a fakeApp) Name() string                    { return a.name }
+func (a fakeApp) Hosts() []ifaces.ScenarioAppHost { return a.hosts }
+
+type fakeAppHost struct {
+	ifaces.ScenarioAppHost
+
+	hostname string
+	meta     map[string]any
+}
+
+func (h fakeAppHost) Hostname() string         { return h.hostname }
+func (h fakeAppHost) Metadata() map[string]any { return h.meta }
+
+// fakeMM answers every C2 command with the same response. Embedding the (nil)
+// mm.MM interface makes any other method call panic, which these tests never
+// trigger.
+type fakeMM struct {
+	mm.MM
+
+	vms      mm.VMs
+	response string
+}
+
+func (f fakeMM) GetVMInfo(...mm.Option) mm.VMs                    { return f.vms }
+func (f fakeMM) ExecC2Command(...mm.C2Option) (string, error)     { return "1", nil }
+func (f fakeMM) GetC2Response(...mm.C2Option) (string, error)     { return f.response, nil }
+func (f fakeMM) WaitForC2Response(...mm.C2Option) (string, error) { return f.response, nil }
+
+func useFakeMM(t *testing.T, fake mm.MM) {
+	t.Helper()
+
+	original := mm.DefaultMM
+	t.Cleanup(func() { mm.DefaultMM = original }) //nolint:reassign // restore test double
+
+	mm.DefaultMM = fake //nolint:reassign // install test double
+}
+
+// TestWaitForCPULoadRecordsResults drives the parallel CPU load probes for
+// several hosts. Results must reach the status map from the joining goroutine
+// only (run with -race), and a host whose C2 client went away must be reported
+// rather than left out.
+func TestWaitForCPULoadRecordsResults(t *testing.T) {
+	useFakeMM(t, fakeMM{response: "0.10 0.20 0.30 1/200 12345"})
+
+	s := newSOH()
+	s.md.c2Timeout = time.Second
+
+	for i := range 8 {
+		host := fmt.Sprintf("host%d", i)
+
+		s.nodes[host] = fakeNode{hostname: host, osType: "linux"}
+		s.c2Hosts[host] = struct{}{}
+	}
+
+	s.markC2Dead("gone")
+
+	if errs := s.waitForCPULoad(context.Background(), "exp"); !errs {
+		t.Fatal("expected the host without C2 to be reported as an error")
+	}
+
+	for host := range s.c2Hosts {
+		if got := s.status[host].CPULoad; got != "0.10" {
+			t.Fatalf("%s: CPULoad = %q, want %q", host, got, "0.10")
+		}
+	}
+
+	if got := s.status["gone"].CPULoad; got != errC2Dead.Error() {
+		t.Fatalf("CPULoad for the host without C2 = %q, want %q", got, errC2Dead.Error())
+	}
+}
+
+// TestWaitForDHCPReportsAddress checks the DHCP wait hands the address back
+// through the state group, to be recorded after the join so the goroutines
+// never touch the shared maps, and tolerates minimega listing fewer addresses
+// than the interface index.
+func TestWaitForDHCPReportsAddress(t *testing.T) {
+	useFakeMM(t, fakeMM{vms: mm.VMs{{Name: "host0", IPv4: []string{"10.0.0.5"}}}})
+
+	s := newSOH()
+	s.md.c2Timeout = 100 * time.Millisecond
+
+	var (
+		ctx   = context.Background()
+		wg    = new(mm.StateGroup)
+		iface = fakeInterface{name: "IF0", vlan: "OT"}
+	)
+
+	wg.Add(2)
+
+	go s.waitForDHCP(ctx, wg, "exp", "host0", 0, iface)
+	go s.waitForDHCP(ctx, wg, "exp", "host0", 3, iface)
+
+	wg.Wait()
+
+	if wg.ErrCount != 1 {
+		t.Fatalf("ErrCount = %d, want 1 (index past the address list must time out)", wg.ErrCount)
+	}
+
+	for _, state := range wg.States {
+		if state.Err != nil {
+			continue
+		}
+
+		var (
+			name, _ = state.Meta["iface"].(string)
+			vlan, _ = state.Meta["vlan"].(string)
+			ip, _   = state.Meta["ip"].(string)
+		)
+
+		s.recordHostIP("host0", name, vlan, ip)
+	}
+
+	if got := s.hostIPs["host0"]["IF0"]; got != "10.0.0.5" {
+		t.Fatalf("hostIPs = %q, want %q", got, "10.0.0.5")
+	}
+
+	if got := s.vlans["OT"]; !reflect.DeepEqual(got, []string{"10.0.0.5"}) {
+		t.Fatalf("vlans[OT] = %v, want [10.0.0.5]", got)
+	}
+
+	if got := s.addrHosts["10.0.0.5"]; got != "host0" {
+		t.Fatalf("addrHosts = %q, want %q", got, "host0")
+	}
+}
+
+// TestSkipHostRecordsDeadHosts: hosts skipped by configuration stay silent,
+// hosts whose C2 client went away get an error state per skipped check.
+func TestSkipHostRecordsDeadHosts(t *testing.T) {
+	t.Parallel()
+
+	s := newSOH()
+	s.c2Hosts["live"] = struct{}{}
+	s.markC2Dead("gone")
+
+	wg := new(mm.StateGroup)
+
+	if s.skipHost(wg, "live", nil) {
+		t.Fatal("host with C2 was skipped")
+	}
+
+	if !s.skipHost(wg, "never-added", nil) || wg.ErrCount != 0 {
+		t.Fatal("host skipped by configuration must be skipped silently")
+	}
+
+	if !s.skipHost(wg, "gone", map[string]any{"host": "gone"}) || wg.ErrCount != 1 {
+		t.Fatal("host without C2 must be skipped with an error state")
+	}
+}
+
+// TestMetadataHelpersAcceptQueryValues: context metadata arrives as strings
+// from scorch and the CLI but as url.Values slices from the UI.
+func TestMetadataHelpersAcceptQueryValues(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		in   any
+		want string
+	}{
+		{"5m", "5m"},
+		{[]string{"10m"}, "10m"},
+		{[]string{}, ""},
+		{42, ""},
+	} {
+		if got := metadataString(test.in); got != test.want {
+			t.Fatalf("metadataString(%#v) = %q, want %q", test.in, got, test.want)
+		}
+	}
+
+	for _, test := range []struct {
+		in   any
+		want []string
+	}{
+		{[]string{"files", "services"}, []string{"files", "services"}},
+		{[]string{"files, services"}, []string{"files", "services"}},
+		{"files,services,", []string{"files", "services"}},
+		{nil, nil},
+	} {
+		if got := metadataStrings(test.in); !reflect.DeepEqual(got, test.want) {
+			t.Fatalf("metadataStrings(%#v) = %v, want %v", test.in, got, test.want)
+		}
+	}
+}
+
+func TestSOHMetadataParsesC2Tuning(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name        string
+		input       map[string]any
+		appear      *time.Duration
+		client      *time.Duration
+		concurrency int
+		wantErr     bool
+	}{
+		{name: "defaults", input: map[string]any{}, concurrency: defaultC2Concurrency},
+		{
+			name: "explicit",
+			input: map[string]any{
+				"c2AppearGrace": "0s",
+				"c2ClientGrace": "2m",
+				"c2Concurrency": 0,
+			},
+			appear: durationPtr(0),
+			client: durationPtr(2 * time.Minute),
+		},
+		{name: "malformed", input: map[string]any{"c2ClientGrace": "soon"}, wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var md sohMetadata
+			if err := mapstructure.Decode(tc.input, &md); err != nil {
+				t.Fatalf("decoding metadata: %v", err)
+			}
+
+			err := md.init()
+			if tc.wantErr != (err != nil) {
+				t.Fatalf("init() err = %v, wantErr %v", err, tc.wantErr)
+			}
+
+			if tc.wantErr {
+				return
+			}
+
+			if !reflect.DeepEqual(md.c2AppearGrace, tc.appear) ||
+				!reflect.DeepEqual(md.c2ClientGrace, tc.client) {
+				t.Fatalf("graces = %v/%v, want %v/%v", md.c2AppearGrace, md.c2ClientGrace, tc.appear, tc.client)
+			}
+
+			if md.c2Concurrency != tc.concurrency {
+				t.Fatalf("c2Concurrency = %d, want %d", md.c2Concurrency, tc.concurrency)
+			}
+		})
+	}
+}
+
+func durationPtr(d time.Duration) *time.Duration { return &d }
+
+// TestRunHostCheckRecordsResults drives a per-host check end to end: every
+// configured target of a live host gets a result, a host whose C2 client went
+// away gets an error per target, and a host skipped by configuration is not
+// recorded at all.
+func TestRunHostCheckRecordsResults(t *testing.T) {
+	useFakeMM(t, fakeMM{response: "active"})
+
+	s := newSOH()
+	s.md.c2Timeout = time.Second
+	s.md.HostServices = map[string][]string{
+		"live":    {"sshd", "nginx"},
+		"gone":    {"sshd"},
+		"skipped": {"sshd"},
+	}
+
+	for host := range s.md.HostServices {
+		s.nodes[host] = fakeNode{hostname: host, osType: "linux"}
+	}
+
+	s.c2Hosts["live"] = struct{}{}
+	s.markC2Dead("gone")
+
+	if errs := s.waitForServiceTest(context.Background(), "exp"); !errs {
+		t.Fatal("expected the host without C2 to be reported as an error")
+	}
+
+	live := s.status["live"].Services
+	if len(live) != 2 {
+		t.Fatalf("live host recorded %d services, want 2", len(live))
+	}
+
+	for _, st := range live {
+		if st.Success != "service running" || st.Error != "" {
+			t.Fatalf("live host state = %+v, want success", st)
+		}
+
+		if _, ok := st.Metadata["service"].(string); !ok {
+			t.Fatalf("live host state metadata = %v, want a service name", st.Metadata)
+		}
+	}
+
+	gone := s.status["gone"].Services
+	if len(gone) != 1 || gone[0].Error != errC2Dead.Error() || gone[0].Metadata["service"] != "sshd" {
+		t.Fatalf("host without C2 recorded %+v, want one %q error for sshd", gone, errC2Dead)
+	}
+
+	if _, ok := s.status["skipped"]; ok {
+		t.Fatal("host skipped by configuration must not be recorded")
+	}
+}
+
+// TestRunHostCheckUsesAppProfiles: targets also come from the SoH profile an
+// app attaches to its hosts, and a malformed profile is skipped with a warning
+// rather than failing the check.
+func TestRunHostCheckUsesAppProfiles(t *testing.T) {
+	useFakeMM(t, fakeMM{response: "1234"})
+
+	s := newSOH()
+	s.md.c2Timeout = time.Second
+	s.md.AppProfileKey = "sohProfile"
+
+	for _, host := range []string{"web", "bad"} {
+		s.nodes[host] = fakeNode{hostname: host, osType: "linux"}
+		s.c2Hosts[host] = struct{}{}
+	}
+
+	s.apps = []ifaces.ScenarioApp{fakeApp{name: "web", hosts: []ifaces.ScenarioAppHost{
+		fakeAppHost{hostname: "web", meta: map[string]any{"sohProfile": map[string]any{"processes": []string{"nginx"}}}},
+		fakeAppHost{hostname: "bad", meta: map[string]any{"sohProfile": "not a profile"}},
+	}}}
+
+	if errs := s.waitForProcTest(context.Background(), "exp"); errs {
+		t.Fatal("unexpected errors from the process check")
+	}
+
+	procs := s.status["web"].Processes
+	if len(procs) != 1 || procs[0].Success != "process running" || procs[0].Metadata["proc"] != "nginx" {
+		t.Fatalf("profile host recorded %+v, want one success for nginx", procs)
+	}
+
+	if _, ok := s.status["bad"]; ok {
+		t.Fatal("host with a malformed profile must not be recorded")
+	}
+}
+
+// TestNetworkingConfiguredChainsChecks: the address, gateway and gateway ping
+// probes run in sequence, each scheduled by the one before it.
+func TestNetworkingConfiguredChainsChecks(t *testing.T) {
+	useFakeMM(t, fakeMM{response: "10.0.0.5/24 default via 10.0.0.1 1 received"})
+
+	s := newSOH()
+	s.md.c2Timeout = time.Second
+
+	var (
+		wg    = new(mm.StateGroup)
+		node  = fakeNode{hostname: "host0", osType: "linux"}
+		iface = fakeInterface{name: "IF0", vlan: "OT", address: "10.0.0.5", mask: 24, gateway: "10.0.0.1"}
+	)
+
+	s.isNetworkingConfigured(context.Background(), wg, "exp", node, iface)
+	wg.Wait()
+
+	if wg.ErrCount != 0 {
+		t.Fatalf("ErrCount = %d, want 0: %+v", wg.ErrCount, wg.States)
+	}
+
+	got := make([]string, 0, len(wg.States))
+
+	for _, state := range wg.States {
+		got = append(got, state.Msg)
+	}
+
+	want := []string{"IP 10.0.0.5 configured", "gateway 10.0.0.1 configured", "gateway 10.0.0.1 is up"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("states = %q, want %q", got, want)
+	}
+}
+
+func TestFailAfterRetries(t *testing.T) {
+	t.Parallel()
+
+	var (
+		fail  = failAfterRetries()
+		want  = errors.New("boom")
+		retry mm.C2RetryError
+	)
+
+	for i := range probeRetries {
+		if err := fail(want); !errors.As(err, &retry) {
+			t.Fatalf("attempt %d: got %v, want a retry", i, err)
+		}
+	}
+
+	if err := fail(want); !errors.Is(err, want) {
+		t.Fatalf("after %d retries got %v, want %v", probeRetries, err, want)
+	}
+}
+
+func TestFailAfterDeadline(t *testing.T) {
+	t.Parallel()
+
+	var (
+		want  = errors.New("boom")
+		retry mm.C2RetryError
+	)
+
+	if err := failAfterDeadline(time.Now().Add(time.Hour))(want); !errors.As(err, &retry) {
+		t.Fatalf("before the deadline got %v, want a retry", err)
+	}
+
+	if err := failAfterDeadline(time.Now().Add(-time.Second))(want); !errors.Is(err, want) {
+		t.Fatalf("after the deadline got %v, want %v", err, want)
 	}
 }
