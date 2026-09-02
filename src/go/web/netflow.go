@@ -219,7 +219,6 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 		endpoint = flow.Conn.LocalAddr().String()
 
 		id = putil.RandomString(netflowIDLength)
-		cb = flow.NewChannel(id)
 
 		upgrader = websocket.Upgrader{ //nolint:exhaustruct // partial initialization
 			ReadBufferSize:  netflowBufferSize,
@@ -234,6 +233,15 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "upgrading connection to WebSocket", "err", err)
+
+		return
+	}
+
+	// Register only after a successful upgrade. A failed handshake must not
+	// leave a permanently slow callback in the capture fan-out.
+	cb := flow.NewChannel(id)
+	if cb == nil {
+		_ = conn.Close()
 
 		return
 	}
@@ -265,6 +273,7 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 	go func() { // reader (for pong and close messages)
 		defer close(done) // stop writer
 
+		_ = conn.SetReadDeadline(time.Now().Add(netflowReadDeadline))
 		conn.SetPongHandler(pongHandler)
 		conn.SetCloseHandler(closeHandler)
 		conn.SetReadLimit(netflowReadLimit)
@@ -341,6 +350,9 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 				err := conn.WriteJSON(msg)
 				if err != nil {
 					plog.Error(plog.TypeSystem, "writing netflow message", "client", id, "err", err)
+					_ = conn.Close()
+
+					return
 				}
 			case <-ticker.C:
 				deadline := time.Now().Add(netflowWriteDeadline)
@@ -348,6 +360,9 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) {
 				err := conn.WriteControl(websocket.PingMessage, nil, deadline)
 				if err != nil {
 					plog.Error(plog.TypeSystem, "writing ping message", "client", id, "err", err)
+					_ = conn.Close()
+
+					return
 				}
 			}
 		}
