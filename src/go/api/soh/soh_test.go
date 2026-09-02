@@ -437,3 +437,60 @@ func TestMetadataHelpersAcceptQueryValues(t *testing.T) {
 		}
 	}
 }
+
+func TestSOHMetadataParsesC2Tuning(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name        string
+		input       map[string]any
+		appear      *time.Duration
+		client      *time.Duration
+		concurrency int
+		wantErr     bool
+	}{
+		{name: "defaults", input: map[string]any{}, concurrency: defaultC2Concurrency},
+		{
+			name: "explicit",
+			input: map[string]any{
+				"c2AppearGrace": "0s",
+				"c2ClientGrace": "2m",
+				"c2Concurrency": 0,
+			},
+			appear: durationPtr(0),
+			client: durationPtr(2 * time.Minute),
+		},
+		{name: "malformed", input: map[string]any{"c2ClientGrace": "soon"}, wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var md sohMetadata
+			if err := mapstructure.Decode(tc.input, &md); err != nil {
+				t.Fatalf("decoding metadata: %v", err)
+			}
+
+			err := md.init()
+			if tc.wantErr != (err != nil) {
+				t.Fatalf("init() err = %v, wantErr %v", err, tc.wantErr)
+			}
+
+			if tc.wantErr {
+				return
+			}
+
+			if !reflect.DeepEqual(md.c2AppearGrace, tc.appear) ||
+				!reflect.DeepEqual(md.c2ClientGrace, tc.client) {
+				t.Fatalf("graces = %v/%v, want %v/%v", md.c2AppearGrace, md.c2ClientGrace, tc.appear, tc.client)
+			}
+
+			if md.c2Concurrency != tc.concurrency {
+				t.Fatalf("c2Concurrency = %d, want %d", md.c2Concurrency, tc.concurrency)
+			}
+		})
+	}
+}
+
+func durationPtr(d time.Duration) *time.Duration { return &d }

@@ -1196,7 +1196,15 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 				exec = `powershell -command "Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select -ExpandProperty Average"`
 			}
 
-			opts := append(s.c2Options(ns, host), mm.C2Command(exec))
+			if err := s.limiter.Acquire(ctx); err != nil {
+				wg.AddError(err, meta)
+
+				return
+			}
+
+			defer s.limiter.Release()
+
+			opts := append(s.c2Options(ns, host), mm.C2Context(ctx), mm.C2Command(exec))
 
 			id, err := mm.ExecC2Command(opts...)
 			if err != nil {
@@ -1205,12 +1213,7 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 				return
 			}
 
-			opts = []mm.C2Option{
-				mm.C2NS(ns),
-				mm.C2Context(ctx),
-				mm.C2CommandID(id),
-				mm.C2Timeout(s.md.c2Timeout),
-			}
+			opts = append(opts, mm.C2CommandID(id))
 
 			resp, err := mm.WaitForC2Response(opts...)
 			if err != nil {
@@ -1514,6 +1517,7 @@ func (s SOH) connTest(
 	meta := map[string]any{"host": src, "target": dst, "port": port, "proto": proto}
 	cmd := &mm.C2ParallelCommand{ //nolint:exhaustruct // partial initialization
 		Wait:    wg,
+		Limiter: s.limiter,
 		Options: append(s.c2Options(ns, src), mm.C2TestConn(test)),
 		Meta:    meta,
 		Expected: func(resp string) error {
@@ -1898,16 +1902,24 @@ func (s SOH) portTest(
 func (s SOH) newParallelCommand(ns, host, exec string) *mm.C2ParallelCommand {
 	opts := append(s.c2Options(ns, host), mm.C2Command(exec))
 
-	return &mm.C2ParallelCommand{Options: opts} //nolint:exhaustruct // partial initialization
+	return &mm.C2ParallelCommand{Options: opts, Limiter: s.limiter} //nolint:exhaustruct // partial initialization
 }
 
-// c2Options addresses host for a C2 command, by UUID where the VM was found
-// when the run started.
+// c2Options addresses host for a C2 command, by UUID and cluster host where
+// the VM was found when the run started.
 func (s SOH) c2Options(ns, host string) []mm.C2Option {
 	opts := []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2Timeout(s.md.c2Timeout)}
 
 	if vm, ok := s.vms[host]; ok && vm.UUID != "" {
-		opts = append(opts, mm.C2VMUUID(vm.UUID))
+		opts = append(opts, mm.C2VMUUID(vm.UUID), mm.C2VMHost(vm.Host))
+	}
+
+	if s.md.c2AppearGrace != nil {
+		opts = append(opts, mm.C2AppearGrace(*s.md.c2AppearGrace))
+	}
+
+	if s.md.c2ClientGrace != nil {
+		opts = append(opts, mm.C2ClientGrace(*s.md.c2ClientGrace))
 	}
 
 	if s.md.useUUIDForC2Active(host) {
@@ -2032,6 +2044,7 @@ func (s SOH) customTest( //nolint:funlen // complex logic
 
 	cmd := &mm.C2ParallelCommand{ //nolint:exhaustruct // partial initialization
 		Wait:    wg,
+		Limiter: s.limiter,
 		Options: append(s.c2Options(ns, host), mm.C2SendFile(relPath), mm.C2Command(command)),
 		Meta:    meta,
 	}

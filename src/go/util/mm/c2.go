@@ -78,8 +78,47 @@ func (C2RetryError) Error() string {
 	return "retry"
 }
 
+// C2Limiter bounds how many C2 commands run at once. Every command polls
+// minimega for as long as it is in flight, so an unbounded fan-out over a large
+// topology is a query storm every experiment on the cluster feels. A nil
+// limiter imposes no bound.
+type C2Limiter struct {
+	slots chan struct{}
+}
+
+func NewC2Limiter(n int) *C2Limiter {
+	if n <= 0 {
+		return nil
+	}
+
+	return &C2Limiter{slots: make(chan struct{}, n)}
+}
+
+// Acquire blocks until a slot is free or ctx is done.
+func (l *C2Limiter) Acquire(ctx context.Context) error {
+	if l == nil {
+		return nil
+	}
+
+	select {
+	case l.slots <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (l *C2Limiter) Release() {
+	if l == nil {
+		return
+	}
+
+	<-l.slots
+}
+
 type C2ParallelCommand struct {
 	Wait           *StateGroup
+	Limiter        *C2Limiter
 	Options        []C2Option
 	Meta           map[string]any
 	Expected       func(string) error
@@ -92,6 +131,14 @@ func ScheduleC2ParallelCommand(ctx context.Context, cmd *C2ParallelCommand) {
 
 	go func() {
 		defer cmd.Wait.Done()
+
+		if err := cmd.Limiter.Acquire(ctx); err != nil {
+			cmd.Wait.AddError(err, cmd.Meta)
+
+			return
+		}
+
+		defer cmd.Limiter.Release()
 
 		opts := make([]C2Option, 0, len(cmd.Options)+c2OptionPadding)
 		opts = append(opts, cmd.Options...)

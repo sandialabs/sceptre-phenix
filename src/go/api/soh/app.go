@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -51,6 +52,8 @@ type SOH struct {
 	c2Dead map[string]struct{}
 	// Track VMs as minimega launched them (name, UUID, host) by hostname
 	vms map[string]mm.VM
+	// Bounds in-flight C2 probes for this run
+	limiter *mm.C2Limiter
 	// Track hosts that should be tested for reachability
 	// (ie. hosts that have at least one interface in an experiment VLAN)
 	reachabilityHosts map[string]struct{}
@@ -234,11 +237,23 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 
 	// *** WAIT FOR NODES TO HAVE NETWORKING CONFIGURED *** //
 
-	if val, ok := md["c2Timeout"]; ok {
-		if timeout, err := time.ParseDuration(metadataString(val)); err == nil {
-			s.md.c2Timeout = timeout
-		}
+	if d := metadataDuration(md["c2Timeout"]); d != nil {
+		s.md.c2Timeout = *d
 	}
+
+	if d := metadataDuration(md["c2AppearGrace"]); d != nil {
+		s.md.c2AppearGrace = d
+	}
+
+	if d := metadataDuration(md["c2ClientGrace"]); d != nil {
+		s.md.c2ClientGrace = d
+	}
+
+	if n, err := strconv.Atoi(metadataString(md["c2Concurrency"])); err == nil {
+		s.md.c2Concurrency = n
+	}
+
+	s.limiter = mm.NewC2Limiter(s.md.c2Concurrency)
 
 	var checks map[string]bool
 
@@ -542,12 +557,7 @@ func (s *SOH) getFlows(ctx context.Context, exp *types.Experiment) { //nolint:fu
 		return
 	}
 
-	opts = []mm.C2Option{
-		mm.C2NS(ns),
-		mm.C2Context(ctx),
-		mm.C2CommandID(id),
-		mm.C2Timeout(s.md.c2Timeout),
-	}
+	opts = append(opts, mm.C2CommandID(id))
 
 	resp, err := mm.WaitForC2Response(opts...)
 	if err != nil {
@@ -765,6 +775,17 @@ func metadataString(val any) string {
 	return ""
 }
 
+// metadataDuration parses a context metadata duration, nil when absent or
+// malformed.
+func metadataDuration(val any) *time.Duration {
+	d, err := time.ParseDuration(metadataString(val))
+	if err != nil {
+		return nil
+	}
+
+	return &d
+}
+
 // metadataStrings returns a context metadata list that arrives as a slice or
 // as comma-separated strings.
 func metadataStrings(val any) []string {
@@ -790,37 +811,35 @@ func metadataStrings(val any) []string {
 	return out
 }
 
+// writeResults merges the run's results into the stored app status, keeping
+// keys such as `initialized` and whatever other apps stored meanwhile.
 func (s SOH) writeResults(exp *types.Experiment) {
-	// we do this to make sure we don't overwrite the `initialized` status
-	status := make(map[string]any)
-	_ = exp.Status.ParseAppStatus("soh", &status)
+	err := exp.UpdateAppStatus("soh", func(status map[string]any) {
+		if len(s.status) > 0 {
+			hosts := slices.Sorted(maps.Keys(s.status))
+			states := make([]map[string]any, 0, len(hosts))
 
-	if len(s.status) > 0 {
-		hosts := slices.Sorted(maps.Keys(s.status))
-		states := make([]map[string]any, 0, len(hosts))
+			for _, host := range hosts {
+				states = append(states, structs.Map(s.status[host]))
+			}
 
-		for _, host := range hosts {
-			states = append(states, structs.Map(s.status[host]))
+			status["hosts"] = states
 		}
 
-		status["hosts"] = states
+		if len(s.packetCapture) > 0 {
+			status["packetCapture"] = s.packetCapture
+		}
+	})
+	if err != nil {
+		plog.Error(plog.TypeSoh, "saving SoH results", "exp", exp.Metadata.Name, "err", err)
 	}
-
-	if len(s.packetCapture) > 0 {
-		status["packetCapture"] = s.packetCapture
-	}
-
-	exp.Status.SetAppStatus("soh", status)
-	_ = exp.WriteToStore(true)
 }
 
 func (s SOH) writeInitialized(exp *types.Experiment) {
-	// we do this to make sure we don't overwrite the existing app status
-	status := make(map[string]any)
-	_ = exp.Status.ParseAppStatus("soh", &status)
-
-	status["initialized"] = true
-
-	exp.Status.SetAppStatus("soh", status)
-	_ = exp.WriteToStore(true)
+	err := exp.UpdateAppStatus("soh", func(status map[string]any) {
+		status["initialized"] = true
+	})
+	if err != nil {
+		plog.Error(plog.TypeSoh, "saving SoH status", "exp", exp.Metadata.Name, "err", err)
+	}
 }

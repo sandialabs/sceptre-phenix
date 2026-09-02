@@ -166,6 +166,54 @@ func SingleDataResponse(responses chan *miniclient.Response) (any, error) {
 	return data, err
 }
 
+// ResponseByHost returns every host's non-error response keyed by the host
+// that sent it, along with the errors the other hosts reported. On a mesh a
+// `cc` query is answered by the host running the VM and rejected by its
+// siblings, so callers choose the host they need rather than the first
+// success.
+func ResponseByHost(responses chan *miniclient.Response) (map[string]string, error) {
+	var (
+		byHost = make(map[string]string)
+		errs   error
+	)
+
+	for response := range responses {
+		for _, r := range response.Resp {
+			if r.Error != "" {
+				errs = multierror.Append(errs, reconstructErr(r.Error))
+
+				continue
+			}
+
+			byHost[r.Host] = r.Response
+		}
+	}
+
+	return byHost, errs
+}
+
+// DataResponseByHost is ResponseByHost for commands answered with user data.
+func DataResponseByHost(responses chan *miniclient.Response) (map[string]any, error) {
+	var (
+		byHost = make(map[string]any)
+		errs   error
+	)
+
+	for response := range responses {
+		for _, r := range response.Resp {
+			if r.Error != "" {
+				errs = multierror.Append(errs, reconstructErr(r.Error))
+
+				continue
+			}
+
+			byHost[r.Host] = r.Data
+		}
+	}
+
+	return byHost, errs
+}
+
 // conn returns a usable connection to minimega, dialing or redialing as needed.
 // The caller must hold mu.
 func conn() (*miniclient.Conn, error) {
