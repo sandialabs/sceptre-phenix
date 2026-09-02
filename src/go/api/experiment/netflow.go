@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,7 +16,10 @@ import (
 	"phenix/util/plog"
 )
 
-const netflowChannelBufferSize = 100
+const (
+	netflowChannelBufferSize = 100
+	netflowMinFieldCount     = 8
+)
 
 type Netflow struct {
 	mu sync.RWMutex
@@ -212,32 +217,83 @@ func StartNetflow(exp string) error {
 	netflows[exp] = flow
 
 	go func() {
-		scanner := bufio.NewScanner(conn)
+		reader := bufio.NewReader(conn)
 
-		for scanner.Scan() {
-			fields := strings.Fields(scanner.Text())
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					return
+				}
+				if errors.Is(err, net.ErrClosed) || errors.Is(err, os.ErrClosed) ||
+					strings.Contains(err.Error(), "use of closed network connection") {
+					return
+				}
+				plog.Warn(plog.TypeSystem, "reading netflow capture", "exp", exp, "err", err)
+				return
+			}
 
-			body := make(map[string]any)
-
-			body["proto"], _ = strconv.Atoi(fields[2])
-
-			src := strings.Split(fields[3], ":")
-			dst := strings.Split(fields[5], ":")
-
-			body["src"] = src[0]
-			body["sport"], _ = strconv.Atoi(src[1])
-
-			body["dst"] = dst[0]
-			body["dport"], _ = strconv.Atoi(dst[1])
-
-			body["packets"], _ = strconv.Atoi(fields[6])
-			body["bytes"], _ = strconv.Atoi(fields[7])
+			line = strings.TrimSpace(line)
+			body, ok := parseNetflowLine(line)
+			if !ok {
+				plog.Debug(plog.TypeSystem, "dropping malformed netflow line", "exp", exp, "line", line)
+				continue
+			}
 
 			flow.Publish(body)
 		}
 	}()
 
 	return nil
+}
+
+func parseNetflowLine(line string) (map[string]any, bool) {
+	fields := strings.Fields(line)
+	if len(fields) < netflowMinFieldCount || fields[4] != "->" {
+		return nil, false
+	}
+
+	proto, err := strconv.Atoi(fields[2])
+	if err != nil || proto < 0 || proto > 255 {
+		return nil, false
+	}
+
+	srcHost, srcPortText, err := net.SplitHostPort(fields[3])
+	if err != nil || net.ParseIP(srcHost) == nil {
+		return nil, false
+	}
+	srcPort, err := strconv.Atoi(srcPortText)
+	if err != nil || srcPort < 0 || srcPort > 65535 {
+		return nil, false
+	}
+
+	dstHost, dstPortText, err := net.SplitHostPort(fields[5])
+	if err != nil || net.ParseIP(dstHost) == nil {
+		return nil, false
+	}
+	dstPort, err := strconv.Atoi(dstPortText)
+	if err != nil || dstPort < 0 || dstPort > 65535 {
+		return nil, false
+	}
+
+	packets, err := strconv.Atoi(fields[6])
+	if err != nil || packets < 0 {
+		return nil, false
+	}
+	bytes, err := strconv.Atoi(fields[7])
+	if err != nil || bytes < 0 {
+		return nil, false
+	}
+
+	return map[string]any{
+		"proto":   proto,
+		"src":     srcHost,
+		"sport":   srcPort,
+		"dst":     dstHost,
+		"dport":   dstPort,
+		"packets": packets,
+		"bytes":   bytes,
+	}, true
 }
 
 func StopNetflow(exp string) error {
