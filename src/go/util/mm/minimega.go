@@ -34,7 +34,8 @@ var (
 )
 
 const (
-	vmInfoCmd = "vm info"
+	vmInfoCmd   = "vm info"
+	ccClientCmd = "cc client"
 
 	c2ActiveCheckInterval  = 2 * time.Second
 	c2LivenessInterval     = 10 * time.Second
@@ -1091,7 +1092,7 @@ func (Minimega) c2Client(o c2Options) (c2Target, error) {
 	}
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
-	cmd.Command = "cc client"
+	cmd.Command = ccClientCmd
 	cmd.Columns = []string{"host", "uuid", "hostname"}
 	cmd.Filters = []string{"uuid=" + uuid}
 
@@ -1629,7 +1630,7 @@ func getActiveC2(ns string) map[string]bool {
 	active := make(map[string]bool)
 
 	cmd := mmcli.NewNamespacedCommand(ns)
-	cmd.Command = "cc client"
+	cmd.Command = ccClientCmd
 
 	for _, row := range mmcli.RunTabular(cmd) {
 		active[row["uuid"]] = true
@@ -1743,7 +1744,7 @@ func waitForResponse(ctx context.Context, o c2Options, id string) error {
 // any host.
 func clientSeen(ns, uuid string, failures *int) (bool, error) {
 	cmd := mmcli.NewNamespacedCommand(ns)
-	cmd.Command = "cc client"
+	cmd.Command = ccClientCmd
 	cmd.Columns = []string{"host", "uuid"}
 	cmd.Filters = []string{"uuid=" + uuid}
 

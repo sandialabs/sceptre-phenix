@@ -153,86 +153,57 @@ func ScheduleC2ParallelCommand(ctx context.Context, cmd *C2ParallelCommand) {
 
 		opts = append(opts, C2CommandID(id))
 
-		if cmd.Expected != nil {
-			resp, err := GetC2Response(opts...)
-			if err != nil {
-				cmd.Wait.AddError(fmt.Errorf("getting response for C2 command: %w", err), cmd.Meta)
-
-				return
-			}
-
-			if err := cmd.Expected(resp); err != nil {
-				var retry C2RetryError
-
-				if errors.As(err, &retry) {
-					err := util.SleepContext(ctx, retry.Delay)
-					if err != nil {
-						return
-					}
-
-					ScheduleC2ParallelCommand(ctx, cmd)
-				} else {
-					cmd.Wait.AddError(err, cmd.Meta)
-				}
-			}
+		if cmd.Expected != nil && !cmd.check(ctx, opts, "response", cmd.Expected) {
+			return
 		}
 
 		if cmd.ExpectedStdout != nil {
 			opts = append(opts, C2ResponseTypeStdout())
 
-			resp, err := GetC2Response(opts...)
-			if err != nil {
-				cmd.Wait.AddError(
-					fmt.Errorf("getting STDOUT response for C2 command: %w", err),
-					cmd.Meta,
-				)
-
+			if !cmd.check(ctx, opts, "STDOUT response", cmd.ExpectedStdout) {
 				return
-			}
-
-			if err := cmd.ExpectedStdout(resp); err != nil {
-				var retry C2RetryError
-
-				if errors.As(err, &retry) {
-					err := util.SleepContext(ctx, retry.Delay)
-					if err != nil {
-						return
-					}
-
-					ScheduleC2ParallelCommand(ctx, cmd)
-				} else {
-					cmd.Wait.AddError(err, cmd.Meta)
-				}
 			}
 		}
 
 		if cmd.ExpectedStderr != nil {
 			opts = append(opts, C2ResponseTypeStderr())
 
-			resp, err := GetC2Response(opts...)
-			if err != nil {
-				cmd.Wait.AddError(
-					fmt.Errorf("getting STDERR response for C2 command: %w", err),
-					cmd.Meta,
-				)
-
+			if !cmd.check(ctx, opts, "STDERR response", cmd.ExpectedStderr) {
 				return
-			}
-
-			if err := cmd.ExpectedStderr(resp); err != nil {
-				var retry C2RetryError
-
-				if errors.As(err, &retry) {
-					err := util.SleepContext(ctx, retry.Delay)
-					if err != nil {
-						return
-					}
-
-					ScheduleC2ParallelCommand(ctx, cmd)
-				} else {
-					cmd.Wait.AddError(err, cmd.Meta)
-				}
 			}
 		}
 	}()
+}
+
+// check fetches one response and evaluates it with expect, rescheduling the
+// whole command on a C2RetryError. It reports whether to carry on with the
+// remaining checks.
+func (cmd *C2ParallelCommand) check(ctx context.Context, opts []C2Option, what string, expect func(string) error) bool {
+	resp, err := GetC2Response(opts...)
+	if err != nil {
+		cmd.Wait.AddError(fmt.Errorf("getting %s for C2 command: %w", what, err), cmd.Meta)
+
+		return false
+	}
+
+	err = expect(resp)
+	if err == nil {
+		return true
+	}
+
+	var retry C2RetryError
+
+	if !errors.As(err, &retry) {
+		cmd.Wait.AddError(err, cmd.Meta)
+
+		return true
+	}
+
+	if err := util.SleepContext(ctx, retry.Delay); err != nil {
+		return false
+	}
+
+	ScheduleC2ParallelCommand(ctx, cmd)
+
+	return true
 }
