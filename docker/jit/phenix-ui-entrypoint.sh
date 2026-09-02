@@ -15,15 +15,6 @@ start_time=$(date +%s)
 
 pushd /usr/local/src/phenix/src/js &> /dev/null
 
-npm ci &> /tmp/phenix-ui-install.log
-res=$?
-
-if [ $res -ne 0 ]; then
-  echo -e "\nthere was an error installing phenix UI dependencies\n"
-  cat /tmp/phenix-ui-install.log
-  exit $res
-fi
-
 VITE_BASE_PATH=$base VITE_AUTH=$auth npm run build &> /tmp/phenix-ui-build.log
 res=$?
 
