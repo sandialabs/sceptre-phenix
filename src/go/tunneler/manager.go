@@ -21,7 +21,7 @@ func newListenerManager() *listenerManager {
 	return &listenerManager{
 		listeners: make(map[string]*LocalListener),
 		byID:      make(map[int]*LocalListener),
-	}
+	} //nolint:exhaustruct
 }
 
 func (m *listenerManager) add(listener ft.Listener) (*LocalListener, bool) {

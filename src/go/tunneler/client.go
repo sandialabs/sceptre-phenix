@@ -83,7 +83,7 @@ func (c client) activateLocalListener(id int) error {
 	msg := Message{ //nolint:exhaustruct // partial initialization
 		MID:     int(rand.Uint64()), //nolint:gosec // weak random number generator
 		Type:    ACTIVATE,
-		Payload: marshalPayload(listenerAction{ID: id}),
+		Payload: marshalPayload(listenerAction{ID: id}), //nolint:exhaustruct
 	}
 
 	if err := c.roundTrip(&msg); err != nil {
@@ -101,7 +101,7 @@ func (c client) deactivateLocalListener(id int) error {
 	msg := Message{ //nolint:exhaustruct // partial initialization
 		MID:     int(rand.Uint64()), //nolint:gosec // weak random number generator
 		Type:    DEACTIVATE,
-		Payload: marshalPayload(listenerAction{ID: id}),
+		Payload: marshalPayload(listenerAction{ID: id}), //nolint:exhaustruct
 	}
 
 	if err := c.roundTrip(&msg); err != nil {

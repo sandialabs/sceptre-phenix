@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"errors"
 	"html/template"
@@ -35,7 +36,7 @@ type webEventClient struct {
 	messages chan string
 }
 
-var webEvents = &webEventHub{clients: make(map[*webEventClient]struct{})} //nolint:gochecknoglobals // local web server state
+var webEvents = &webEventHub{clients: make(map[*webEventClient]struct{})} //nolint:gochecknoglobals //nolint:exhaustruct // local web server state
 
 func (h *webEventHub) setTemplate(tmpl *template.Template) {
 	h.mu.Lock()
@@ -123,13 +124,13 @@ func startWebServer(addr string) error {
 		return err
 	}
 
-	listener, err := net.Listen("tcp", addr) //nolint:gosec // address is configured by the local user
+	listener, err := new(net.ListenConfig).Listen(context.Background(), "tcp", addr) //nolint:gosec // address is configured by the local user
 	if err != nil {
 		return err
 	}
 
 	server := &http.Server{Handler: handler} //nolint:exhaustruct // defaults are intentional
-	go server.Serve(listener)
+	go server.Serve(listener) //nolint:errcheck
 
 	return nil
 }
@@ -160,7 +161,7 @@ func newWebHandler() (http.Handler, error) {
 		renderWebPage(w, tmpl, webPageData{
 			Listeners: localListeners.snapshot(),
 			Origin:    origin,
-		})
+		}) //nolint:exhaustruct
 	})
 
 	mux.HandleFunc("/listeners/", func(w http.ResponseWriter, r *http.Request) {
@@ -273,5 +274,5 @@ func renderWebError(w http.ResponseWriter, tmpl *template.Template, status int, 
 		Listeners: localListeners.snapshot(),
 		Origin:    origin,
 		Error:     message,
-	})
+	}) //nolint:exhaustruct
 }
