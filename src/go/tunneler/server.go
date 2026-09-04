@@ -351,7 +351,10 @@ func createLocalListener(listener ft.Listener) error {
 }
 
 func moveLocalListener(ll *LocalListener, port int) error {
-	active := ll.Listening
+	var (
+		active  = ll.Listening
+		oldPort = ll.SrcPort
+	)
 
 	if active {
 		err := deactivateLocalListener(ll)
@@ -363,9 +366,19 @@ func moveLocalListener(ll *LocalListener, port int) error {
 	ll.SrcPort = port
 
 	if active {
-		err := activateLocalListener(ll)
-		if err != nil {
-			return fmt.Errorf("reactivating listener: %w", err)
+		if err := activateLocalListener(ll); err != nil {
+			moveErr := fmt.Errorf("reactivating listener on port %d: %w", port, err)
+
+			ll.SrcPort = oldPort
+
+			if restoreErr := activateLocalListener(ll); restoreErr != nil {
+				return errors.Join(
+					moveErr,
+					fmt.Errorf("restoring listener on port %d: %w", oldPort, restoreErr),
+				)
+			}
+
+			return moveErr
 		}
 	}
 
