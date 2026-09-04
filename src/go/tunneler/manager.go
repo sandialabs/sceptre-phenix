@@ -12,12 +12,14 @@ var errListenerNotFound = errors.New("listener not found")
 type listenerManager struct {
 	mu        sync.RWMutex
 	listeners map[string]*LocalListener
+	byID      map[int]*LocalListener
 	nextID    int
 }
 
 func newListenerManager() *listenerManager {
 	return &listenerManager{
 		listeners: make(map[string]*LocalListener),
+		byID:      make(map[int]*LocalListener),
 	}
 }
 
@@ -26,8 +28,18 @@ func (m *listenerManager) add(listener ft.Listener) *LocalListener {
 	defer m.mu.Unlock()
 
 	m.nextID++
-	local := &LocalListener{ID: m.nextID, Listener: listener} //nolint:exhaustruct // partial initialization
-	m.listeners[listener.ToKey()] = local
+
+	var (
+		local = &LocalListener{ID: m.nextID, Listener: listener} //nolint:exhaustruct // partial initialization
+		key   = listener.ToKey()
+	)
+
+	if previous, ok := m.listeners[key]; ok {
+		delete(m.byID, previous.ID)
+	}
+
+	m.listeners[key] = local
+	m.byID[local.ID] = local
 
 	return local
 }
@@ -67,7 +79,9 @@ func (m *listenerManager) remove(key string) (int, bool) {
 	}
 
 	port := listener.SrcPort
+
 	delete(m.listeners, key)
+	delete(m.byID, listener.ID)
 
 	return port, true
 }
@@ -76,14 +90,14 @@ func (m *listenerManager) withListener(id int, fn func(*LocalListener) error) er
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	for _, listener := range m.listeners {
-		if listener.ID == id {
-			return fn(listener)
-		}
+	listener, ok := m.byID[id]
+	if ok {
+		return fn(listener)
 	}
 
 	return errListenerNotFound
 }
 
 // listenerManager is the sole owner of the process-local listener registry.
+// Listener IDs are session-scoped and are not persisted across restarts.
 var localListeners = newListenerManager() //nolint:gochecknoglobals // process-local state

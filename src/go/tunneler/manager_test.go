@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -94,5 +95,55 @@ func TestListenerManagerConcurrentAccess(t *testing.T) {
 
 	if got := len(manager.snapshot()); got != 0 {
 		t.Errorf("snapshot length after removal = %d, want 0", got)
+	}
+}
+
+func TestListenerManagerIDsAreUniqueAndNotReused(t *testing.T) {
+	var (
+		manager = newListenerManager()
+
+		first  = manager.add(ft.Listener{Exp: "experiment-1", VM: "vm", DstHost: "127.0.0.1", DstPort: 80})
+		second = manager.add(ft.Listener{Exp: "experiment-2", VM: "vm", DstHost: "127.0.0.1", DstPort: 81})
+		third  = manager.add(ft.Listener{Exp: "experiment-3", VM: "vm", DstHost: "127.0.0.1", DstPort: 82})
+	)
+
+	if first.ID == second.ID {
+		t.Fatalf("listeners received duplicate ID %d", first.ID)
+	}
+
+	manager.remove(first.ToKey())
+
+	if third.ID <= second.ID {
+		t.Fatalf("new listener ID = %d, want greater than %d", third.ID, second.ID)
+	}
+
+	if err := manager.withListener(first.ID, func(*LocalListener) error { return nil }); !errors.Is(err, errListenerNotFound) {
+		t.Fatalf("lookup of removed ID returned %v, want listener-not-found error", err)
+	}
+}
+
+func TestListenerManagerDuplicateKeyRemovesStaleID(t *testing.T) {
+	var (
+		manager  = newListenerManager()
+		listener = ft.Listener{Exp: "experiment", VM: "vm", DstHost: "127.0.0.1", DstPort: 80}
+
+		first  = manager.add(listener)
+		second = manager.add(listener)
+	)
+
+	if err := manager.withListener(first.ID, func(*LocalListener) error { return nil }); !errors.Is(err, errListenerNotFound) {
+		t.Fatalf("lookup of replaced ID returned %v, want listener-not-found error", err)
+	}
+
+	err := manager.withListener(second.ID, func(got *LocalListener) error {
+		if got != second {
+			t.Error("lookup returned the wrong listener")
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("lookup of replacement listener: %v", err)
 	}
 }
