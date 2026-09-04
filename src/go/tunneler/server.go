@@ -339,7 +339,10 @@ func getRemoteVMs(client *http.Client, url string) ([]string, error) {
 }
 
 func createLocalListener(listener ft.Listener) error {
-	local := localListeners.add(listener)
+	local, created := localListeners.add(listener)
+	if !created {
+		return nil
+	}
 
 	fmt.Fprintf(os.Stdout, "created new local listener for port %d\n", listener.SrcPort)
 

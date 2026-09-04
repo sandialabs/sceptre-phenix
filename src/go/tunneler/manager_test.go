@@ -10,8 +10,10 @@ import (
 )
 
 func TestListenerManagerSnapshotIsIndependent(t *testing.T) {
-	manager := newListenerManager()
-	listener := manager.add(ft.Listener{Exp: "experiment", VM: "vm", DstHost: "127.0.0.1", DstPort: 80})
+	var (
+		manager     = newListenerManager()
+		listener, _ = manager.add(ft.Listener{Exp: "experiment", VM: "vm", DstHost: "127.0.0.1", DstPort: 80})
+	)
 
 	err := manager.withListener(listener.ID, func(local *LocalListener) error {
 		local.Listening = true
@@ -36,8 +38,10 @@ func TestListenerManagerSnapshotIsIndependent(t *testing.T) {
 }
 
 func TestListenerManagerConcurrentAccess(t *testing.T) {
-	manager := newListenerManager()
-	var wg sync.WaitGroup
+	var (
+		manager = newListenerManager()
+		wg      sync.WaitGroup
+	)
 
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
@@ -45,7 +49,7 @@ func TestListenerManagerConcurrentAccess(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 
-			listener := manager.add(ft.Listener{
+			listener, _ := manager.add(ft.Listener{
 				Exp:     fmt.Sprintf("experiment-%d", i),
 				VM:      "vm",
 				DstHost: "127.0.0.1",
@@ -102,9 +106,9 @@ func TestListenerManagerIDsAreUniqueAndNotReused(t *testing.T) {
 	var (
 		manager = newListenerManager()
 
-		first  = manager.add(ft.Listener{Exp: "experiment-1", VM: "vm", DstHost: "127.0.0.1", DstPort: 80})
-		second = manager.add(ft.Listener{Exp: "experiment-2", VM: "vm", DstHost: "127.0.0.1", DstPort: 81})
-		third  = manager.add(ft.Listener{Exp: "experiment-3", VM: "vm", DstHost: "127.0.0.1", DstPort: 82})
+		first, _  = manager.add(ft.Listener{Exp: "experiment-1", VM: "vm", DstHost: "127.0.0.1", DstPort: 80})
+		second, _ = manager.add(ft.Listener{Exp: "experiment-2", VM: "vm", DstHost: "127.0.0.1", DstPort: 81})
+		third, _  = manager.add(ft.Listener{Exp: "experiment-3", VM: "vm", DstHost: "127.0.0.1", DstPort: 82})
 	)
 
 	if first.ID == second.ID {
@@ -142,28 +146,36 @@ func TestListenerManagerSnapshotIsSorted(t *testing.T) {
 	}
 }
 
-func TestListenerManagerDuplicateKeyRemovesStaleID(t *testing.T) {
+func TestListenerManagerDuplicateKeyIsIdempotent(t *testing.T) {
 	var (
 		manager  = newListenerManager()
 		listener = ft.Listener{Exp: "experiment", VM: "vm", DstHost: "127.0.0.1", DstPort: 80}
 
-		first  = manager.add(listener)
-		second = manager.add(listener)
+		first, firstCreated   = manager.add(listener)
+		second, secondCreated = manager.add(listener)
 	)
 
-	if err := manager.withListener(first.ID, func(*LocalListener) error { return nil }); !errors.Is(err, errListenerNotFound) {
-		t.Fatalf("lookup of replaced ID returned %v, want listener-not-found error", err)
+	if !firstCreated || secondCreated {
+		t.Fatalf("duplicate creation flags = (%t, %t), want (true, false)", firstCreated, secondCreated)
 	}
 
-	err := manager.withListener(second.ID, func(got *LocalListener) error {
+	if first != second {
+		t.Fatal("duplicate creation returned a different listener")
+	}
+
+	err := manager.withListener(first.ID, func(got *LocalListener) error {
 		if got != second {
-			t.Error("lookup returned the wrong listener")
+			t.Error("lookup returned the wrong listener after duplicate creation")
 		}
 
 		return nil
 	})
 
 	if err != nil {
-		t.Fatalf("lookup of replacement listener: %v", err)
+		t.Fatalf("lookup of original listener after duplicate creation: %v", err)
+	}
+
+	if got := len(manager.snapshot()); got != 1 {
+		t.Fatalf("snapshot length = %d, want 1", got)
 	}
 }

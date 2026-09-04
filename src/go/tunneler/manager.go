@@ -24,25 +24,24 @@ func newListenerManager() *listenerManager {
 	}
 }
 
-func (m *listenerManager) add(listener ft.Listener) *LocalListener {
+func (m *listenerManager) add(listener ft.Listener) (*LocalListener, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	key := listener.ToKey()
+
+	if existing, ok := m.listeners[key]; ok {
+		return existing, false
+	}
+
 	m.nextID++
 
-	var (
-		local = &LocalListener{ID: m.nextID, Listener: listener} //nolint:exhaustruct // partial initialization
-		key   = listener.ToKey()
-	)
-
-	if previous, ok := m.listeners[key]; ok {
-		delete(m.byID, previous.ID)
-	}
+	local := &LocalListener{ID: m.nextID, Listener: listener} //nolint:exhaustruct // partial initialization
 
 	m.listeners[key] = local
 	m.byID[local.ID] = local
 
-	return local
+	return local, true
 }
 
 func (m *listenerManager) snapshot() Listeners {
