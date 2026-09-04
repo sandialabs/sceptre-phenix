@@ -30,10 +30,6 @@ var (
 	httpCli = new(http.Client)  //nolint:gochecknoglobals // global state
 	headers = make(http.Header) //nolint:gochecknoglobals // global state
 
-	listenerIDs = make(chan int) //nolint:gochecknoglobals // global state
-	// key will be "<exp>:<vm>:<fwd host>:<dst port>".
-	listeners = make(map[string]*LocalListener) //nolint:gochecknoglobals // global state
-
 	username string //nolint:gochecknoglobals // global state
 )
 
@@ -210,12 +206,6 @@ var serveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 			return fmt.Errorf("dialing websocket (%s): %w", wsURL, err)
 		}
 
-		go func() { // start a goroutine to generate listener IDs
-			for id := 1; ; id++ {
-				listenerIDs <- id
-			}
-		}()
-
 		existing, err := getRemoteListeners()
 		if err != nil {
 			return fmt.Errorf("getting initial list of existing listeners: %w", err)
@@ -270,7 +260,7 @@ var serveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 						continue
 					}
 
-					if _, ok := listeners[payload["key"]]; ok {
+					if localListeners.hasKey(payload["key"]) {
 						deleteLocalListener(payload["key"])
 					}
 				}

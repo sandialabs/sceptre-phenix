@@ -73,13 +73,7 @@ func handleConnection(conn net.Conn) {
 
 	switch msg.Type {
 	case LISTENERS:
-		var payload Listeners
-
-		for _, l := range listeners {
-			payload = append(payload, *l)
-		}
-
-		msg.Payload = payload
+		msg.Payload = localListeners.snapshot()
 
 		err := enc.Encode(msg)
 		if err != nil {
@@ -93,16 +87,14 @@ func handleConnection(conn net.Conn) {
 				port = args[1]
 			)
 
-			for _, listener := range listeners {
-				if listener.ID == id {
-					err := moveLocalListener(listener, port)
-					if err != nil {
-						msg.Error = fmt.Sprintf("moving listener %d to port %d: %v", id, port, err)
-					}
-
-					break
+			localListeners.withListener(id, func(listener *LocalListener) error {
+				err := moveLocalListener(listener, port)
+				if err != nil {
+					msg.Error = fmt.Sprintf("moving listener %d to port %d: %v", id, port, err)
 				}
-			}
+
+				return err
+			})
 		} else {
 			msg.Error = "malformed arguments provided"
 		}
@@ -114,20 +106,19 @@ func handleConnection(conn net.Conn) {
 	case ACTIVATE:
 		id, ok := msg.Payload.(int)
 		if ok {
-			for _, listener := range listeners {
-				if listener.ID == id {
-					if listener.Listening {
-						msg.Error = fmt.Sprintf("listener %d is already active", id)
-					} else {
-						err := activateLocalListener(listener)
-						if err != nil {
-							msg.Error = fmt.Sprintf("activating listener %d: %v", id, err)
-						}
-					}
-
-					break
+			localListeners.withListener(id, func(listener *LocalListener) error {
+				if listener.Listening {
+					msg.Error = fmt.Sprintf("listener %d is already active", id)
+					return nil
 				}
-			}
+
+				err := activateLocalListener(listener)
+				if err != nil {
+					msg.Error = fmt.Sprintf("activating listener %d: %v", id, err)
+				}
+
+				return err
+			})
 		} else {
 			msg.Error = "malformed listener ID provided"
 		}
@@ -139,20 +130,19 @@ func handleConnection(conn net.Conn) {
 	case DEACTIVATE:
 		id, ok := msg.Payload.(int)
 		if ok {
-			for _, listener := range listeners {
-				if listener.ID == id {
-					if !listener.Listening {
-						msg.Error = fmt.Sprintf("listener %d is already inactive", id)
-					} else {
-						err := deactivateLocalListener(listener)
-						if err != nil {
-							msg.Error = fmt.Sprintf("deactivating listener %d: %v", id, err)
-						}
-					}
-
-					break
+			localListeners.withListener(id, func(listener *LocalListener) error {
+				if !listener.Listening {
+					msg.Error = fmt.Sprintf("listener %d is already inactive", id)
+					return nil
 				}
-			}
+
+				err := deactivateLocalListener(listener)
+				if err != nil {
+					msg.Error = fmt.Sprintf("deactivating listener %d: %v", id, err)
+				}
+
+				return err
+			})
 		} else {
 			msg.Error = "malformed listener ID provided"
 		}
@@ -323,13 +313,12 @@ func getRemoteVMs(client *http.Client, url string) ([]string, error) {
 }
 
 func createLocalListener(listener ft.Listener) error {
-	local := &LocalListener{ID: <-listenerIDs, Listener: listener} //nolint:exhaustruct // partial initialization
-	listeners[listener.ToKey()] = local
+	local := localListeners.add(listener)
 
 	fmt.Fprintf(os.Stdout, "created new local listener for port %d\n", listener.SrcPort)
 
 	if username == "" || username == listener.Owner {
-		return activateLocalListener(local)
+		return localListeners.withListener(local.ID, activateLocalListener)
 	}
 
 	return nil
@@ -379,8 +368,9 @@ func activateLocalListener(ll *LocalListener) error {
 
 	ll.listener = ln
 	ll.Listening = true
+	localPort := ll.SrcPort
 
-	fmt.Fprintf(os.Stdout, "activated local listener on port %d\n", ll.SrcPort)
+	fmt.Fprintf(os.Stdout, "activated local listener on port %d\n", localPort)
 
 	go func() {
 		for {
@@ -388,7 +378,7 @@ func activateLocalListener(ll *LocalListener) error {
 			if err != nil {
 				// this error is expected when connection is closed
 				if !strings.Contains(err.Error(), "use of closed network connection") {
-					fmt.Fprintf(os.Stderr, "accepting new connection on port %d: %v\n", ll.SrcPort, err)
+					fmt.Fprintf(os.Stderr, "accepting new connection on port %d: %v\n", localPort, err)
 				}
 
 				return
@@ -439,14 +429,8 @@ func deactivateLocalListener(ll *LocalListener) error {
 }
 
 func deleteLocalListener(key string) {
-	ll, ok := listeners[key]
-
-	// listener may be nil if deactivated when getting deleted
-	if ok && ll.listener != nil {
-		_ = ll.listener.Close()
+	port, ok := localListeners.remove(key)
+	if ok {
+		fmt.Fprintf(os.Stdout, "deleted local listener on port %d\n", port)
 	}
-
-	delete(listeners, key)
-
-	fmt.Fprintf(os.Stdout, "deleted local listener on port %d\n", ll.SrcPort)
 }
