@@ -87,7 +87,7 @@ func handleConnection(conn net.Conn) {
 				port = args[1]
 			)
 
-			localListeners.withListener(id, func(listener *LocalListener) error {
+			err := localListeners.withListener(id, func(listener *LocalListener) error {
 				err := moveLocalListener(listener, port)
 				if err != nil {
 					msg.Error = fmt.Sprintf("moving listener %d to port %d: %v", id, port, err)
@@ -95,6 +95,10 @@ func handleConnection(conn net.Conn) {
 
 				return err
 			})
+
+			if errors.Is(err, errListenerNotFound) {
+				msg.Error = fmt.Sprintf("listener %d not found", id)
+			}
 		} else {
 			msg.Error = "malformed arguments provided"
 		}
@@ -106,7 +110,7 @@ func handleConnection(conn net.Conn) {
 	case ACTIVATE:
 		id, ok := msg.Payload.(int)
 		if ok {
-			localListeners.withListener(id, func(listener *LocalListener) error {
+			err := localListeners.withListener(id, func(listener *LocalListener) error {
 				if listener.Listening {
 					msg.Error = fmt.Sprintf("listener %d is already active", id)
 					return nil
@@ -119,6 +123,10 @@ func handleConnection(conn net.Conn) {
 
 				return err
 			})
+
+			if errors.Is(err, errListenerNotFound) {
+				msg.Error = fmt.Sprintf("listener %d not found", id)
+			}
 		} else {
 			msg.Error = "malformed listener ID provided"
 		}
@@ -130,7 +138,7 @@ func handleConnection(conn net.Conn) {
 	case DEACTIVATE:
 		id, ok := msg.Payload.(int)
 		if ok {
-			localListeners.withListener(id, func(listener *LocalListener) error {
+			err := localListeners.withListener(id, func(listener *LocalListener) error {
 				if !listener.Listening {
 					msg.Error = fmt.Sprintf("listener %d is already inactive", id)
 					return nil
@@ -143,6 +151,10 @@ func handleConnection(conn net.Conn) {
 
 				return err
 			})
+
+			if errors.Is(err, errListenerNotFound) {
+				msg.Error = fmt.Sprintf("listener %d not found", id)
+			}
 		} else {
 			msg.Error = "malformed listener ID provided"
 		}
@@ -351,6 +363,8 @@ func activateLocalListener(ll *LocalListener) error {
 		return errors.New("listener already active")
 	}
 
+	localPort := ll.SrcPort
+
 	//nolint:exhaustruct // partial initialization
 	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", fmt.Sprintf(":%d", ll.SrcPort))
 	if err != nil {
@@ -360,15 +374,14 @@ func activateLocalListener(ll *LocalListener) error {
 				ll.SrcPort,
 			)
 
-			return nil
+			return fmt.Errorf("unable to activate local listener on port %d: address already in use", localPort)
 		}
 
-		return fmt.Errorf("listening on port %d: %w", ll.SrcPort, err)
+		return fmt.Errorf("listening on port %d: %w", localPort, err)
 	}
 
 	ll.listener = ln
 	ll.Listening = true
-	localPort := ll.SrcPort
 
 	fmt.Fprintf(os.Stdout, "activated local listener on port %d\n", localPort)
 
