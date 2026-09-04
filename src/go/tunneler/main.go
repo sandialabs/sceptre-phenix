@@ -30,10 +30,6 @@ var (
 	httpCli = new(http.Client)  //nolint:gochecknoglobals // global state
 	headers = make(http.Header) //nolint:gochecknoglobals // global state
 
-	listenerIDs = make(chan int) //nolint:gochecknoglobals // global state
-	// key will be "<exp>:<vm>:<fwd host>:<dst port>".
-	listeners = make(map[string]*LocalListener) //nolint:gochecknoglobals // global state
-
 	username string //nolint:gochecknoglobals // global state
 )
 
@@ -69,6 +65,7 @@ by other users can be created manually using the 'activate' subcommand.
 var serveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "serve <url>",
 	Short: "Start local WebSocket proxy server",
+	Args:  cobra.ExactArgs(1),
 
 	RunE: func(cmd *cobra.Command, args []string) error {
 		origin = args[0]
@@ -83,6 +80,11 @@ var serveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 		token, err := cmd.Flags().GetString("auth-token")
 		if err != nil {
 			return errors.New("unable to get --auth-token flag")
+		}
+
+		webListen, err := cmd.Flags().GetString("web-listen")
+		if err != nil {
+			return errors.New("unable to get --web-listen flag")
 		}
 
 		u, err := url.Parse(origin)
@@ -210,12 +212,6 @@ var serveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 			return fmt.Errorf("dialing websocket (%s): %w", wsURL, err)
 		}
 
-		go func() { // start a goroutine to generate listener IDs
-			for id := 1; ; id++ {
-				listenerIDs <- id
-			}
-		}()
-
 		existing, err := getRemoteListeners()
 		if err != nil {
 			return fmt.Errorf("getting initial list of existing listeners: %w", err)
@@ -230,6 +226,14 @@ var serveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 
 		if err := startUnixSocket(); err != nil {
 			return fmt.Errorf("starting unix socket: %w", err)
+		}
+
+		if webListen != "" {
+			if err := startWebServer(webListen); err != nil {
+				return fmt.Errorf("starting web server: %w", err)
+			}
+
+			fmt.Printf("tunneler web interface available at http://%s\n", webListen) //nolint:forbidigo // CLI output
 		}
 
 		for {
@@ -270,7 +274,7 @@ var serveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 						continue
 					}
 
-					if _, ok := listeners[payload["key"]]; ok {
+					if localListeners.hasKey(payload["key"]) {
 						deleteLocalListener(payload["key"])
 					}
 				}
@@ -282,6 +286,7 @@ var serveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 var listCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "list",
 	Short: "Show table of known port forwards",
+	Args:  cobra.NoArgs,
 
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cli, err := newClient()
@@ -336,16 +341,17 @@ var listCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 var moveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "move <id> <port>",
 	Short: "Move listener to a different local port",
+	Args:  cobra.ExactArgs(2), //nolint:mnd
 
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.Atoi(args[0])
+		id, err := parseListenerID(args[0])
 		if err != nil {
-			return fmt.Errorf("malformed listener ID provided (%s): %w", args[0], err)
+			return err
 		}
 
-		port, err := strconv.Atoi(args[1])
+		port, err := parseLocalPort(args[1])
 		if err != nil {
-			return fmt.Errorf("malformed listener port provided (%s): %w", args[1], err)
+			return err
 		}
 
 		cli, err := newClient()
@@ -368,11 +374,12 @@ var moveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 var activateCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "activate <id>",
 	Short: "Activate a local forward (start listening on local port)",
+	Args:  cobra.ExactArgs(1),
 
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.Atoi(args[0])
+		id, err := parseListenerID(args[0])
 		if err != nil {
-			return fmt.Errorf("malformed listener ID provided (%s): %w", args[0], err)
+			return err
 		}
 
 		cli, err := newClient()
@@ -395,11 +402,12 @@ var activateCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 var deactivateCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "deactivate <id>",
 	Short: "Dectivate a local forward (stop listening on local port)",
+	Args:  cobra.ExactArgs(1),
 
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.Atoi(args[0])
+		id, err := parseListenerID(args[0])
 		if err != nil {
-			return fmt.Errorf("malformed listener ID provided (%s): %w", args[0], err)
+			return err
 		}
 
 		cli, err := newClient()
@@ -423,6 +431,7 @@ func main() {
 	serveCmd.Flags().StringP("username", "u", "", "username to log into phēnix with")
 	serveCmd.Flags().StringP("auth-token", "t", "", "phēnix API token (skip login process)")
 	serveCmd.Flags().StringP("use-cookie", "c", "", "name of cookie to use for auth token")
+	serveCmd.Flags().StringP("web-listen", "w", "", "address for the local web interface (disabled by default)")
 
 	rootCmd.AddCommand(listCmd, activateCmd, deactivateCmd, moveCmd, serveCmd)
 

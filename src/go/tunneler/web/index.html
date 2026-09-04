@@ -1,0 +1,103 @@
+{{define "listenerRows"}}
+{{if .}}
+{{range .}}
+<tr>
+  <td data-label="ID">{{.ID}}</td>
+  <td data-label="Experiment">{{.Exp}}</td>
+  <td data-label="VM">{{.VM}}</td>
+  <td data-label="Remote">{{.DstHost}}:{{.DstPort}}</td>
+  <td data-label="Local">localhost:{{.SrcPort}}</td>
+  <td data-label="State" class="{{if .Listening}}active{{else}}inactive{{end}}">{{if .Listening}}Active{{else}}Inactive{{end}}</td>
+  <td data-label="Actions" class="actions">
+    {{if .Listening}}
+    <form method="post" action="/listeners/{{.ID}}/deactivate"><button type="submit">Disable</button></form>
+    {{else}}
+    <form method="post" action="/listeners/{{.ID}}/activate"><button type="submit">Enable</button></form>
+    {{end}}
+    <form method="post" action="/listeners/{{.ID}}/move">
+      <input type="number" name="port" min="1" max="65535" value="{{.SrcPort}}" aria-label="New local port">
+      <button type="submit">Move</button>
+    </form>
+  </td>
+</tr>
+{{end}}
+{{else}}<tr><td colspan="7">No listeners are registered.</td></tr>{{end}}
+{{end}}
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>phēnix tunneler</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+      body { background: #15171a; color: #e8eaed; margin: 0; }
+      main { margin: 0 auto; max-width: 1100px; padding: 2rem 1rem; }
+      h1 { font-size: 1.7rem; margin: 0 0 .35rem; }
+      p { color: #aeb4bc; }
+      .notice { background: #253b2c; border: 1px solid #41714d; border-radius: .35rem; padding: .8rem 1rem; }
+      .error { background: #482b2b; border-color: #a85b5b; }
+      table { border-collapse: collapse; margin-top: 1.5rem; width: 100%; }
+      th, td { border-bottom: 1px solid #30343a; padding: .75rem .5rem; text-align: left; vertical-align: middle; }
+      th { color: #aeb4bc; font-size: .8rem; text-transform: uppercase; }
+      .actions { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+      form { display: inline-flex; gap: .35rem; }
+      button, input { background: #24282e; border: 1px solid #505861; border-radius: .25rem; color: inherit; padding: .4rem .55rem; }
+      button { cursor: pointer; }
+      button:hover { background: #343a42; }
+      input[type=number] { width: 5.5rem; }
+      .active { color: #74d68a; }
+      .inactive { color: #e0a85c; }
+      @media (max-width: 700px) {
+        thead { display: none; }
+        tr, td { display: block; }
+        tr { border-bottom: 1px solid #30343a; padding: .75rem 0; }
+        td { border: 0; padding: .25rem 0; }
+        td::before { color: #aeb4bc; content: attr(data-label) ": "; font-weight: 600; }
+        td.actions::before { display: block; margin-bottom: .3rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>phēnix tunneler</h1>
+      <p>Manage local listeners for port forwards created in phēnix (at <strong>{{.Origin}}</strong>).</p>
+      <p id="connection-status">Live updates connecting...</p>
+      {{if .Message}}<div class="notice">{{.Message}}</div>{{end}}
+      {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+      <table>
+        <thead><tr><th>ID</th><th>Experiment</th><th>VM</th><th>Remote</th><th>Local</th><th>State</th><th>Actions</th></tr></thead>
+        <tbody id="listener-body">
+        {{template "listenerRows" .Listeners}}
+        </tbody>
+      </table>
+    </main>
+    <script>
+      (() => {
+        const body = document.getElementById('listener-body');
+        const status = document.getElementById('connection-status');
+
+        const connect = () => {
+          const url = new URL('/events', window.location.href);
+          url.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
+          const socket = new WebSocket(url);
+
+          socket.onopen = () => { status.textContent = 'Live updates connected'; };
+
+          socket.onmessage = (event) => {
+            body.innerHTML = event.data;
+          };
+
+          socket.onclose = () => {
+            status.textContent = 'Live updates disconnected, retrying...';
+            window.setTimeout(connect, 1000);
+          };
+        };
+
+        connect();
+      })();
+    </script>
+  </body>
+</html>

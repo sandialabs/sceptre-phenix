@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -58,8 +57,8 @@ func handleConnection(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 
 	var (
-		enc = gob.NewEncoder(conn)
-		dec = gob.NewDecoder(conn)
+		enc = json.NewEncoder(conn)
+		dec = json.NewDecoder(conn)
 	)
 
 	var msg Message
@@ -73,38 +72,45 @@ func handleConnection(conn net.Conn) {
 
 	switch msg.Type {
 	case LISTENERS:
-		var payload Listeners
-
-		for _, l := range listeners {
-			payload = append(payload, *l)
-		}
-
-		msg.Payload = payload
+		msg.Payload = marshalPayload(localListeners.snapshot())
 
 		err := enc.Encode(msg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "ERROR: encoding %v message: %v\n", msg.Type, err)
 		}
 	case MOVE:
-		args, ok := msg.Payload.([]int)
-		if ok {
+		var args listenerAction
+
+		if err := json.Unmarshal(msg.Payload, &args); err != nil {
+			msg.Error = "malformed move arguments provided"
+		} else {
 			var (
-				id   = args[0]
-				port = args[1]
+				id   = args.ID
+				port = args.Port
 			)
 
-			for _, listener := range listeners {
-				if listener.ID == id {
+			if err := validateListenerID(id); err != nil {
+				msg.Error = err.Error()
+			} else if err := validateLocalPort(port); err != nil {
+				msg.Error = err.Error()
+			} else {
+				err := localListeners.withListener(id, func(listener *LocalListener) error {
 					err := moveLocalListener(listener, port)
 					if err != nil {
 						msg.Error = fmt.Sprintf("moving listener %d to port %d: %v", id, port, err)
 					}
 
-					break
+					return err
+				})
+
+				if errors.Is(err, errListenerNotFound) {
+					msg.Error = fmt.Sprintf("listener %d not found", id)
+				}
+
+				if err == nil {
+					broadcastWebListeners()
 				}
 			}
-		} else {
-			msg.Error = "malformed arguments provided"
 		}
 
 		err := enc.Encode(msg)
@@ -112,24 +118,36 @@ func handleConnection(conn net.Conn) {
 			fmt.Fprintf(os.Stderr, "ERROR: encoding %v message: %v\n", msg.Type, err)
 		}
 	case ACTIVATE:
-		id, ok := msg.Payload.(int)
-		if ok {
-			for _, listener := range listeners {
-				if listener.ID == id {
+		var args listenerAction
+		if err := json.Unmarshal(msg.Payload, &args); err != nil {
+			msg.Error = "malformed listener ID provided"
+		} else {
+			id := args.ID
+			if err := validateListenerID(id); err != nil {
+				msg.Error = err.Error()
+			} else {
+				err := localListeners.withListener(id, func(listener *LocalListener) error {
 					if listener.Listening {
 						msg.Error = fmt.Sprintf("listener %d is already active", id)
-					} else {
-						err := activateLocalListener(listener)
-						if err != nil {
-							msg.Error = fmt.Sprintf("activating listener %d: %v", id, err)
-						}
+						return nil
 					}
 
-					break
+					err := activateLocalListener(listener)
+					if err != nil {
+						msg.Error = fmt.Sprintf("activating listener %d: %v", id, err)
+					}
+
+					return err
+				})
+
+				if errors.Is(err, errListenerNotFound) {
+					msg.Error = fmt.Sprintf("listener %d not found", id)
+				}
+
+				if err == nil {
+					broadcastWebListeners()
 				}
 			}
-		} else {
-			msg.Error = "malformed listener ID provided"
 		}
 
 		err := enc.Encode(msg)
@@ -137,24 +155,36 @@ func handleConnection(conn net.Conn) {
 			fmt.Fprintf(os.Stderr, "ERROR: encoding %v message: %v\n", msg.Type, err)
 		}
 	case DEACTIVATE:
-		id, ok := msg.Payload.(int)
-		if ok {
-			for _, listener := range listeners {
-				if listener.ID == id {
+		var args listenerAction
+		if err := json.Unmarshal(msg.Payload, &args); err != nil {
+			msg.Error = "malformed listener ID provided"
+		} else {
+			id := args.ID
+			if err := validateListenerID(id); err != nil {
+				msg.Error = err.Error()
+			} else {
+				err := localListeners.withListener(id, func(listener *LocalListener) error {
 					if !listener.Listening {
 						msg.Error = fmt.Sprintf("listener %d is already inactive", id)
-					} else {
-						err := deactivateLocalListener(listener)
-						if err != nil {
-							msg.Error = fmt.Sprintf("deactivating listener %d: %v", id, err)
-						}
+						return nil
 					}
 
-					break
+					err := deactivateLocalListener(listener)
+					if err != nil {
+						msg.Error = fmt.Sprintf("deactivating listener %d: %v", id, err)
+					}
+
+					return err
+				})
+
+				if errors.Is(err, errListenerNotFound) {
+					msg.Error = fmt.Sprintf("listener %d not found", id)
+				}
+
+				if err == nil {
+					broadcastWebListeners()
 				}
 			}
-		} else {
-			msg.Error = "malformed listener ID provided"
 		}
 
 		err := enc.Encode(msg)
@@ -323,20 +353,30 @@ func getRemoteVMs(client *http.Client, url string) ([]string, error) {
 }
 
 func createLocalListener(listener ft.Listener) error {
-	local := &LocalListener{ID: <-listenerIDs, Listener: listener} //nolint:exhaustruct // partial initialization
-	listeners[listener.ToKey()] = local
+	local, created := localListeners.add(listener)
+	if !created {
+		return nil
+	}
 
 	fmt.Fprintf(os.Stdout, "created new local listener for port %d\n", listener.SrcPort)
 
 	if username == "" || username == listener.Owner {
-		return activateLocalListener(local)
+		err := localListeners.withListener(local.ID, activateLocalListener)
+
+		broadcastWebListeners()
+		return err
 	}
+
+	broadcastWebListeners()
 
 	return nil
 }
 
 func moveLocalListener(ll *LocalListener, port int) error {
-	active := ll.Listening
+	var (
+		active  = ll.Listening
+		oldPort = ll.SrcPort
+	)
 
 	if active {
 		err := deactivateLocalListener(ll)
@@ -348,9 +388,19 @@ func moveLocalListener(ll *LocalListener, port int) error {
 	ll.SrcPort = port
 
 	if active {
-		err := activateLocalListener(ll)
-		if err != nil {
-			return fmt.Errorf("reactivating listener: %w", err)
+		if err := activateLocalListener(ll); err != nil {
+			moveErr := fmt.Errorf("reactivating listener on port %d: %w", port, err)
+
+			ll.SrcPort = oldPort
+
+			if restoreErr := activateLocalListener(ll); restoreErr != nil {
+				return errors.Join(
+					moveErr,
+					fmt.Errorf("restoring listener on port %d: %w", oldPort, restoreErr),
+				)
+			}
+
+			return moveErr
 		}
 	}
 
@@ -362,6 +412,8 @@ func activateLocalListener(ll *LocalListener) error {
 		return errors.New("listener already active")
 	}
 
+	localPort := ll.SrcPort
+
 	//nolint:exhaustruct // partial initialization
 	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", fmt.Sprintf(":%d", ll.SrcPort))
 	if err != nil {
@@ -371,16 +423,16 @@ func activateLocalListener(ll *LocalListener) error {
 				ll.SrcPort,
 			)
 
-			return nil
+			return fmt.Errorf("unable to activate local listener on port %d: address already in use", localPort)
 		}
 
-		return fmt.Errorf("listening on port %d: %w", ll.SrcPort, err)
+		return fmt.Errorf("listening on port %d: %w", localPort, err)
 	}
 
 	ll.listener = ln
 	ll.Listening = true
 
-	fmt.Fprintf(os.Stdout, "activated local listener on port %d\n", ll.SrcPort)
+	fmt.Fprintf(os.Stdout, "activated local listener on port %d\n", localPort)
 
 	go func() {
 		for {
@@ -388,7 +440,7 @@ func activateLocalListener(ll *LocalListener) error {
 			if err != nil {
 				// this error is expected when connection is closed
 				if !strings.Contains(err.Error(), "use of closed network connection") {
-					fmt.Fprintf(os.Stderr, "accepting new connection on port %d: %v\n", ll.SrcPort, err)
+					fmt.Fprintf(os.Stderr, "accepting new connection on port %d: %v\n", localPort, err)
 				}
 
 				return
@@ -439,14 +491,9 @@ func deactivateLocalListener(ll *LocalListener) error {
 }
 
 func deleteLocalListener(key string) {
-	ll, ok := listeners[key]
-
-	// listener may be nil if deactivated when getting deleted
-	if ok && ll.listener != nil {
-		_ = ll.listener.Close()
+	port, ok := localListeners.remove(key)
+	if ok {
+		broadcastWebListeners()
+		fmt.Fprintf(os.Stdout, "deleted local listener on port %d\n", port)
 	}
-
-	delete(listeners, key)
-
-	fmt.Fprintf(os.Stdout, "deleted local listener on port %d\n", ll.SrcPort)
 }

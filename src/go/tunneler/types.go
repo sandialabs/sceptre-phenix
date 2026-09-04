@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/gob"
+	"encoding/json"
 	"net"
 	"net/http"
 
@@ -38,21 +38,22 @@ const (
 type LocalListener struct {
 	ft.Listener
 
-	ID int
+	ID int `json:"id"`
 
-	Listening bool
+	Listening bool `json:"listening"`
 	listener  net.Listener
 }
 
 type Message struct {
-	MID     int
-	Type    MessageType
-	Payload any
-	Error   string
+	MID     int             `json:"mid"`
+	Type    MessageType     `json:"type"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+	Error   string          `json:"error,omitempty"`
 }
 
 type Listeners []LocalListener
 
-func init() { //nolint:gochecknoinits // gob registration
-	gob.Register(Listeners{})
+type listenerAction struct {
+	ID   int `json:"id"`
+	Port int `json:"port,omitempty"`
 }
