@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"sort"
 	"sync"
 
 	ft "phenix/web/forward/forwardtypes"
@@ -46,12 +47,17 @@ func (m *listenerManager) add(listener ft.Listener) *LocalListener {
 
 func (m *listenerManager) snapshot() Listeners {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
 
 	result := make(Listeners, 0, len(m.listeners))
 	for _, listener := range m.listeners {
 		result = append(result, *listener)
 	}
+
+	m.mu.RUnlock()
+
+	sort.SliceStable(result, func(i, j int) bool {
+		return result[i].ID < result[j].ID
+	})
 
 	return result
 }

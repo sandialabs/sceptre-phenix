@@ -122,6 +122,26 @@ func TestListenerManagerIDsAreUniqueAndNotReused(t *testing.T) {
 	}
 }
 
+func TestListenerManagerSnapshotIsSorted(t *testing.T) {
+	manager := newListenerManager()
+
+	manager.add(ft.Listener{Exp: "foo", VM: "vm", DstHost: "127.0.0.1", DstPort: 83})
+	manager.add(ft.Listener{Exp: "bar", VM: "vm", DstHost: "127.0.0.1", DstPort: 81})
+	manager.add(ft.Listener{Exp: "sucka", VM: "vm", DstHost: "127.0.0.1", DstPort: 82})
+
+	for i := 0; i < 10; i++ {
+		snapshot := manager.snapshot()
+
+		for index, listener := range snapshot {
+			wantID := index + 1
+
+			if listener.ID != wantID {
+				t.Fatalf("snapshot[%d].ID = %d, want %d", index, listener.ID, wantID)
+			}
+		}
+	}
+}
+
 func TestListenerManagerDuplicateKeyRemovesStaleID(t *testing.T) {
 	var (
 		manager  = newListenerManager()
