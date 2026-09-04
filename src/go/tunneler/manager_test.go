@@ -43,7 +43,7 @@ func TestListenerManagerConcurrentAccess(t *testing.T) {
 		wg      sync.WaitGroup
 	)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 
 		go func(i int) {
@@ -75,7 +75,7 @@ func TestListenerManagerConcurrentAccess(t *testing.T) {
 		t.Errorf("snapshot length = %d, want 100", got)
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 
 		go func(i int) {
@@ -85,7 +85,7 @@ func TestListenerManagerConcurrentAccess(t *testing.T) {
 		}(i)
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 
 		go func(int) {
@@ -133,7 +133,7 @@ func TestListenerManagerSnapshotIsSorted(t *testing.T) {
 	manager.add(ft.Listener{Exp: "bar", VM: "vm", DstHost: "127.0.0.1", DstPort: 81})
 	manager.add(ft.Listener{Exp: "sucka", VM: "vm", DstHost: "127.0.0.1", DstPort: 82})
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		snapshot := manager.snapshot()
 
 		for index, listener := range snapshot {

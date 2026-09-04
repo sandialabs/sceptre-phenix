@@ -18,10 +18,10 @@ type listenerManager struct {
 }
 
 func newListenerManager() *listenerManager {
-	return &listenerManager{
+	return &listenerManager{ //nolint:exhaustruct // partial initialization
 		listeners: make(map[string]*LocalListener),
 		byID:      make(map[int]*LocalListener),
-	} //nolint:exhaustruct
+	}
 }
 
 func (m *listenerManager) add(listener ft.Listener) (*LocalListener, bool) {

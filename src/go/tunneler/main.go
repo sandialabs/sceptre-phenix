@@ -341,7 +341,7 @@ var listCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 var moveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "move <id> <port>",
 	Short: "Move listener to a different local port",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.ExactArgs(2), //nolint:mnd
 
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id, err := parseListenerID(args[0])

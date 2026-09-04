@@ -79,7 +79,7 @@ func TestActivateLocalListenerReportsOccupiedPort(t *testing.T) {
 
 	var (
 		port     = occupied.Addr().(*net.TCPAddr).Port
-		listener = &LocalListener{Listener: ft.Listener{SrcPort: port}} //nolint:exhaustruct // partial initialization
+		listener = &LocalListener{Listener: ft.Listener{SrcPort: port}}
 	)
 
 	if err := activateLocalListener(listener); err == nil {

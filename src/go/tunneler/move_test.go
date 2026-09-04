@@ -60,7 +60,7 @@ func TestMoveLocalListenerRollsBackOnBindFailure(t *testing.T) {
 
 func TestMoveLocalListenerInactiveListener(t *testing.T) {
 	var (
-		listener = &LocalListener{Listener: ft.Listener{SrcPort: freeTCPPort(t)}} //nolint:exhaustruct // partial initialization
+		listener = &LocalListener{Listener: ft.Listener{SrcPort: freeTCPPort(t)}}
 		newPort  = freeTCPPort(t)
 	)
 
@@ -80,7 +80,7 @@ func TestMoveLocalListenerInactiveListener(t *testing.T) {
 func newTestLocalListener(t *testing.T) *LocalListener {
 	t.Helper()
 
-	listener := &LocalListener{Listener: ft.Listener{SrcPort: freeTCPPort(t)}} //nolint:exhaustruct // partial initialization
+	listener := &LocalListener{Listener: ft.Listener{SrcPort: freeTCPPort(t)}}
 
 	if err := activateLocalListener(listener); err != nil {
 		t.Fatalf("activating test listener: %v", err)

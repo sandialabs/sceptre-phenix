@@ -36,7 +36,7 @@ type webEventClient struct {
 	messages chan string
 }
 
-var webEvents = &webEventHub{clients: make(map[*webEventClient]struct{})} //nolint:gochecknoglobals //nolint:exhaustruct // local web server state
+var webEvents = &webEventHub{clients: make(map[*webEventClient]struct{})} //nolint:gochecknoglobals,exhaustruct // local web server state
 
 func (h *webEventHub) setTemplate(tmpl *template.Template) {
 	h.mu.Lock()
@@ -45,7 +45,7 @@ func (h *webEventHub) setTemplate(tmpl *template.Template) {
 }
 
 func (h *webEventHub) add(conn *websocket.Conn) *webEventClient {
-	client := &webEventClient{conn: conn, messages: make(chan string, 1)} //nolint:exhaustruct // initialized below
+	client := &webEventClient{conn: conn, messages: make(chan string, 1)}
 
 	h.mu.Lock()
 	h.clients[client] = struct{}{}
@@ -124,13 +124,16 @@ func startWebServer(addr string) error {
 		return err
 	}
 
-	listener, err := new(net.ListenConfig).Listen(context.Background(), "tcp", addr) //nolint:gosec // address is configured by the local user
+	listener, err := new(net.ListenConfig).Listen( //nolint:gosec // address is configured by the local user
+		context.Background(), "tcp", addr,
+	)
+
 	if err != nil {
 		return err
 	}
 
-	server := &http.Server{Handler: handler} //nolint:exhaustruct // defaults are intentional
-	go server.Serve(listener) //nolint:errcheck
+	server := &http.Server{Handler: handler}
+	go server.Serve(listener) //nolint:errcheck // Goroutine
 
 	return nil
 }
@@ -158,10 +161,10 @@ func newWebHandler() (http.Handler, error) {
 			return
 		}
 
-		renderWebPage(w, tmpl, webPageData{
+		renderWebPage(w, tmpl, webPageData{ //nolint:exhaustruct // partial initialization
 			Listeners: localListeners.snapshot(),
 			Origin:    origin,
-		}) //nolint:exhaustruct
+		})
 	})
 
 	mux.HandleFunc("/listeners/", func(w http.ResponseWriter, r *http.Request) {
@@ -192,7 +195,7 @@ func handleWebListenerAction(w http.ResponseWriter, r *http.Request, tmpl *templ
 
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 
-	if len(parts) != 3 {
+	if len(parts) != 3 { //nolint:mnd
 		http.NotFound(w, r)
 		return
 	}
@@ -270,9 +273,9 @@ func renderWebError(w http.ResponseWriter, tmpl *template.Template, status int, 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 
-	renderWebPage(w, tmpl, webPageData{
+	renderWebPage(w, tmpl, webPageData{ //nolint:exhaustruct // partial initialization
 		Listeners: localListeners.snapshot(),
 		Origin:    origin,
 		Error:     message,
-	}) //nolint:exhaustruct
+	})
 }
