@@ -65,6 +65,7 @@ by other users can be created manually using the 'activate' subcommand.
 var serveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "serve <url>",
 	Short: "Start local WebSocket proxy server",
+	Args:  cobra.ExactArgs(1),
 
 	RunE: func(cmd *cobra.Command, args []string) error {
 		origin = args[0]
@@ -272,6 +273,7 @@ var serveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 var listCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "list",
 	Short: "Show table of known port forwards",
+	Args:  cobra.NoArgs,
 
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cli, err := newClient()
@@ -326,16 +328,17 @@ var listCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 var moveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "move <id> <port>",
 	Short: "Move listener to a different local port",
+	Args:  cobra.ExactArgs(2),
 
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.Atoi(args[0])
+		id, err := parseListenerID(args[0])
 		if err != nil {
-			return fmt.Errorf("malformed listener ID provided (%s): %w", args[0], err)
+			return err
 		}
 
-		port, err := strconv.Atoi(args[1])
+		port, err := parseLocalPort(args[1])
 		if err != nil {
-			return fmt.Errorf("malformed listener port provided (%s): %w", args[1], err)
+			return err
 		}
 
 		cli, err := newClient()
@@ -358,11 +361,12 @@ var moveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 var activateCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "activate <id>",
 	Short: "Activate a local forward (start listening on local port)",
+	Args:  cobra.ExactArgs(1),
 
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.Atoi(args[0])
+		id, err := parseListenerID(args[0])
 		if err != nil {
-			return fmt.Errorf("malformed listener ID provided (%s): %w", args[0], err)
+			return err
 		}
 
 		cli, err := newClient()
@@ -385,11 +389,12 @@ var activateCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 var deactivateCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 	Use:   "deactivate <id>",
 	Short: "Dectivate a local forward (stop listening on local port)",
+	Args:  cobra.ExactArgs(1),
 
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := strconv.Atoi(args[0])
+		id, err := parseListenerID(args[0])
 		if err != nil {
-			return fmt.Errorf("malformed listener ID provided (%s): %w", args[0], err)
+			return err
 		}
 
 		cli, err := newClient()

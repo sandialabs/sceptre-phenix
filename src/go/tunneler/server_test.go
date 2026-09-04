@@ -64,6 +64,28 @@ func TestActivateLocalListenerReportsOccupiedPort(t *testing.T) {
 	}
 }
 
+func TestListenerOperationsRejectMalformedPayloads(t *testing.T) {
+	tests := []struct {
+		name    string
+		message Message
+	}{
+		{name: "empty move payload", message: Message{Type: MOVE, Payload: []int{}}},
+		{name: "short move payload", message: Message{Type: MOVE, Payload: []int{1}}},
+		{name: "wrong move payload", message: Message{Type: MOVE, Payload: "1,12345"}},
+		{name: "wrong activate payload", message: Message{Type: ACTIVATE, Payload: "1"}},
+		{name: "wrong deactivate payload", message: Message{Type: DEACTIVATE, Payload: "1"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := sendListenerMessage(t, test.message)
+			if response.Error == "" {
+				t.Fatal("malformed payload returned no error")
+			}
+		})
+	}
+}
+
 func sendListenerMessage(t *testing.T, message Message) Message {
 	t.Helper()
 

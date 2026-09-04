@@ -81,26 +81,32 @@ func handleConnection(conn net.Conn) {
 		}
 	case MOVE:
 		args, ok := msg.Payload.([]int)
-		if ok {
+		if ok && len(args) == 2 {
 			var (
 				id   = args[0]
 				port = args[1]
 			)
 
-			err := localListeners.withListener(id, func(listener *LocalListener) error {
-				err := moveLocalListener(listener, port)
-				if err != nil {
-					msg.Error = fmt.Sprintf("moving listener %d to port %d: %v", id, port, err)
+			if err := validateListenerID(id); err != nil {
+				msg.Error = err.Error()
+			} else if err := validateLocalPort(port); err != nil {
+				msg.Error = err.Error()
+			} else {
+				err := localListeners.withListener(id, func(listener *LocalListener) error {
+					err := moveLocalListener(listener, port)
+					if err != nil {
+						msg.Error = fmt.Sprintf("moving listener %d to port %d: %v", id, port, err)
+					}
+
+					return err
+				})
+
+				if errors.Is(err, errListenerNotFound) {
+					msg.Error = fmt.Sprintf("listener %d not found", id)
 				}
-
-				return err
-			})
-
-			if errors.Is(err, errListenerNotFound) {
-				msg.Error = fmt.Sprintf("listener %d not found", id)
 			}
 		} else {
-			msg.Error = "malformed arguments provided"
+			msg.Error = "malformed move arguments provided"
 		}
 
 		err := enc.Encode(msg)
@@ -110,22 +116,26 @@ func handleConnection(conn net.Conn) {
 	case ACTIVATE:
 		id, ok := msg.Payload.(int)
 		if ok {
-			err := localListeners.withListener(id, func(listener *LocalListener) error {
-				if listener.Listening {
-					msg.Error = fmt.Sprintf("listener %d is already active", id)
-					return nil
+			if err := validateListenerID(id); err != nil {
+				msg.Error = err.Error()
+			} else {
+				err := localListeners.withListener(id, func(listener *LocalListener) error {
+					if listener.Listening {
+						msg.Error = fmt.Sprintf("listener %d is already active", id)
+						return nil
+					}
+
+					err := activateLocalListener(listener)
+					if err != nil {
+						msg.Error = fmt.Sprintf("activating listener %d: %v", id, err)
+					}
+
+					return err
+				})
+
+				if errors.Is(err, errListenerNotFound) {
+					msg.Error = fmt.Sprintf("listener %d not found", id)
 				}
-
-				err := activateLocalListener(listener)
-				if err != nil {
-					msg.Error = fmt.Sprintf("activating listener %d: %v", id, err)
-				}
-
-				return err
-			})
-
-			if errors.Is(err, errListenerNotFound) {
-				msg.Error = fmt.Sprintf("listener %d not found", id)
 			}
 		} else {
 			msg.Error = "malformed listener ID provided"
@@ -138,22 +148,26 @@ func handleConnection(conn net.Conn) {
 	case DEACTIVATE:
 		id, ok := msg.Payload.(int)
 		if ok {
-			err := localListeners.withListener(id, func(listener *LocalListener) error {
-				if !listener.Listening {
-					msg.Error = fmt.Sprintf("listener %d is already inactive", id)
-					return nil
+			if err := validateListenerID(id); err != nil {
+				msg.Error = err.Error()
+			} else {
+				err := localListeners.withListener(id, func(listener *LocalListener) error {
+					if !listener.Listening {
+						msg.Error = fmt.Sprintf("listener %d is already inactive", id)
+						return nil
+					}
+
+					err := deactivateLocalListener(listener)
+					if err != nil {
+						msg.Error = fmt.Sprintf("deactivating listener %d: %v", id, err)
+					}
+
+					return err
+				})
+
+				if errors.Is(err, errListenerNotFound) {
+					msg.Error = fmt.Sprintf("listener %d not found", id)
 				}
-
-				err := deactivateLocalListener(listener)
-				if err != nil {
-					msg.Error = fmt.Sprintf("deactivating listener %d: %v", id, err)
-				}
-
-				return err
-			})
-
-			if errors.Is(err, errListenerNotFound) {
-				msg.Error = fmt.Sprintf("listener %d not found", id)
 			}
 		} else {
 			msg.Error = "malformed listener ID provided"
