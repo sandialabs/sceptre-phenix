@@ -144,6 +144,10 @@ make install-dev # Install development and build dependencies
 make clean       # Clean build artifacts
 ```
 
+The `phenix-tunneler serve` command can provide a local web interface for
+listing and managing listeners. It is disabled by default; enable it with
+`--web-listen 127.0.0.1:8080`. The address can be changed with that option.
+
 ### Build
 
 To build the phēnix core services locally:

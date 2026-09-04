@@ -4,7 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [1.0.0]
 
+### Fixed
+- **Tunneler**:
+  - **Listener State Synchronization**: Centralized local listener tracking behind a synchronized manager to prevent concurrent map and state access.
+  - **Operation Reporting**: Return errors for unknown listeners and local port conflicts instead of reporting successful operations.
+  - **Argument Handling**: Reject malformed command arguments and Unix socket payloads without panicking.
+  - **Listener Moves**: Restore an active listener's original port when moving to a new port fails.
+  - **Listener IDs**: Maintain a direct ID index and prevent IDs from being reused during a tunneler session.
+  - **Listener Listing**: Return local listeners in deterministic ID order.
+  - **Duplicate Listeners**: Treat repeated listener creation events as idempotent without replacing active listeners.
+  - **Unix Socket Protocol**: Replace Gob messages with JSON and typed listener action payloads.
+
 ### Added
+- **Tunneler Web Interface**: Add a local web dashboard for listing, enabling, disabling, and moving listeners, with live WebSocket updates.
 - **CLI Command Aliases**: Added `exp del`, `exp trig`, `exp res`, `exp rec`, `image del`, `config del`, and `vm res`.
 - **Centralized Logging Architecture**: Implemented a unified logging system where phēnix core aggregates logs from internal services and external apps.
 - **Dynamic Configuration**: Integrated `viper` with `fsnotify` to allow hot-swapping of configuration settings (e.g., log levels) without restarting services.

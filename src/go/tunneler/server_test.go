@@ -1,12 +1,39 @@
 package main
 
 import (
-	"encoding/gob"
+	"encoding/json"
 	"net"
 	"testing"
 
 	ft "phenix/web/forward/forwardtypes"
 )
+
+func TestLocalListenerJSONUsesStableFieldNames(t *testing.T) {
+	data, err := json.Marshal(LocalListener{
+		ID:        7,
+		Listening: true,
+	})
+	if err != nil {
+		t.Fatalf("marshaling local listener: %v", err)
+	}
+
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("decoding local listener JSON: %v", err)
+	}
+
+	for _, field := range []string{"id", "listening"} {
+		if _, ok := payload[field]; !ok {
+			t.Errorf("listener JSON missing %q: %s", field, data)
+		}
+	}
+
+	for _, field := range []string{"ID", "Listening"} {
+		if _, ok := payload[field]; ok {
+			t.Errorf("listener JSON unexpectedly contains %q: %s", field, data)
+		}
+	}
+}
 
 func TestListenerOperationsReportUnknownIDs(t *testing.T) {
 	previousManager := localListeners
@@ -20,15 +47,15 @@ func TestListenerOperationsReportUnknownIDs(t *testing.T) {
 	}{
 		{
 			name:    "move",
-			message: Message{Type: MOVE, Payload: []int{1, 12345}},
+			message: Message{Type: MOVE, Payload: json.RawMessage(`{"id":1,"port":12345}`)},
 		},
 		{
 			name:    "activate",
-			message: Message{Type: ACTIVATE, Payload: 1},
+			message: Message{Type: ACTIVATE, Payload: json.RawMessage(`{"id":1}`)},
 		},
 		{
 			name:    "deactivate",
-			message: Message{Type: DEACTIVATE, Payload: 1},
+			message: Message{Type: DEACTIVATE, Payload: json.RawMessage(`{"id":1}`)},
 		},
 	}
 
@@ -69,11 +96,11 @@ func TestListenerOperationsRejectMalformedPayloads(t *testing.T) {
 		name    string
 		message Message
 	}{
-		{name: "empty move payload", message: Message{Type: MOVE, Payload: []int{}}},
-		{name: "short move payload", message: Message{Type: MOVE, Payload: []int{1}}},
-		{name: "wrong move payload", message: Message{Type: MOVE, Payload: "1,12345"}},
-		{name: "wrong activate payload", message: Message{Type: ACTIVATE, Payload: "1"}},
-		{name: "wrong deactivate payload", message: Message{Type: DEACTIVATE, Payload: "1"}},
+		{name: "empty move payload", message: Message{Type: MOVE, Payload: json.RawMessage(`[]`)}},
+		{name: "short move payload", message: Message{Type: MOVE, Payload: json.RawMessage(`[1]`)}},
+		{name: "wrong move payload", message: Message{Type: MOVE, Payload: json.RawMessage(`"1,12345"`)}},
+		{name: "wrong activate payload", message: Message{Type: ACTIVATE, Payload: json.RawMessage(`"1"`)}},
+		{name: "wrong deactivate payload", message: Message{Type: DEACTIVATE, Payload: json.RawMessage(`"1"`)}},
 	}
 
 	for _, test := range tests {
@@ -99,12 +126,12 @@ func sendListenerMessage(t *testing.T, message Message) Message {
 		close(done)
 	}()
 
-	if err := gob.NewEncoder(client).Encode(message); err != nil {
+	if err := json.NewEncoder(client).Encode(message); err != nil {
 		t.Fatalf("sending message: %v", err)
 	}
 
 	var response Message
-	if err := gob.NewDecoder(client).Decode(&response); err != nil {
+	if err := json.NewDecoder(client).Decode(&response); err != nil {
 		t.Fatalf("receiving response: %v", err)
 	}
 

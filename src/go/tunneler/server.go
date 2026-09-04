@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -58,8 +57,8 @@ func handleConnection(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 
 	var (
-		enc = gob.NewEncoder(conn)
-		dec = gob.NewDecoder(conn)
+		enc = json.NewEncoder(conn)
+		dec = json.NewDecoder(conn)
 	)
 
 	var msg Message
@@ -73,18 +72,21 @@ func handleConnection(conn net.Conn) {
 
 	switch msg.Type {
 	case LISTENERS:
-		msg.Payload = localListeners.snapshot()
+		msg.Payload = marshalPayload(localListeners.snapshot())
 
 		err := enc.Encode(msg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "ERROR: encoding %v message: %v\n", msg.Type, err)
 		}
 	case MOVE:
-		args, ok := msg.Payload.([]int)
-		if ok && len(args) == 2 {
+		var args listenerAction
+
+		if err := json.Unmarshal(msg.Payload, &args); err != nil {
+			msg.Error = "malformed move arguments provided"
+		} else {
 			var (
-				id   = args[0]
-				port = args[1]
+				id   = args.ID
+				port = args.Port
 			)
 
 			if err := validateListenerID(id); err != nil {
@@ -104,9 +106,11 @@ func handleConnection(conn net.Conn) {
 				if errors.Is(err, errListenerNotFound) {
 					msg.Error = fmt.Sprintf("listener %d not found", id)
 				}
+
+				if err == nil {
+					broadcastWebListeners()
+				}
 			}
-		} else {
-			msg.Error = "malformed move arguments provided"
 		}
 
 		err := enc.Encode(msg)
@@ -114,8 +118,11 @@ func handleConnection(conn net.Conn) {
 			fmt.Fprintf(os.Stderr, "ERROR: encoding %v message: %v\n", msg.Type, err)
 		}
 	case ACTIVATE:
-		id, ok := msg.Payload.(int)
-		if ok {
+		var args listenerAction
+		if err := json.Unmarshal(msg.Payload, &args); err != nil {
+			msg.Error = "malformed listener ID provided"
+		} else {
+			id := args.ID
 			if err := validateListenerID(id); err != nil {
 				msg.Error = err.Error()
 			} else {
@@ -136,9 +143,11 @@ func handleConnection(conn net.Conn) {
 				if errors.Is(err, errListenerNotFound) {
 					msg.Error = fmt.Sprintf("listener %d not found", id)
 				}
+
+				if err == nil {
+					broadcastWebListeners()
+				}
 			}
-		} else {
-			msg.Error = "malformed listener ID provided"
 		}
 
 		err := enc.Encode(msg)
@@ -146,8 +155,11 @@ func handleConnection(conn net.Conn) {
 			fmt.Fprintf(os.Stderr, "ERROR: encoding %v message: %v\n", msg.Type, err)
 		}
 	case DEACTIVATE:
-		id, ok := msg.Payload.(int)
-		if ok {
+		var args listenerAction
+		if err := json.Unmarshal(msg.Payload, &args); err != nil {
+			msg.Error = "malformed listener ID provided"
+		} else {
+			id := args.ID
 			if err := validateListenerID(id); err != nil {
 				msg.Error = err.Error()
 			} else {
@@ -168,9 +180,11 @@ func handleConnection(conn net.Conn) {
 				if errors.Is(err, errListenerNotFound) {
 					msg.Error = fmt.Sprintf("listener %d not found", id)
 				}
+
+				if err == nil {
+					broadcastWebListeners()
+				}
 			}
-		} else {
-			msg.Error = "malformed listener ID provided"
 		}
 
 		err := enc.Encode(msg)
@@ -347,8 +361,13 @@ func createLocalListener(listener ft.Listener) error {
 	fmt.Fprintf(os.Stdout, "created new local listener for port %d\n", listener.SrcPort)
 
 	if username == "" || username == listener.Owner {
-		return localListeners.withListener(local.ID, activateLocalListener)
+		err := localListeners.withListener(local.ID, activateLocalListener)
+
+		broadcastWebListeners()
+		return err
 	}
+
+	broadcastWebListeners()
 
 	return nil
 }
@@ -474,6 +493,7 @@ func deactivateLocalListener(ll *LocalListener) error {
 func deleteLocalListener(key string) {
 	port, ok := localListeners.remove(key)
 	if ok {
+		broadcastWebListeners()
 		fmt.Fprintf(os.Stdout, "deleted local listener on port %d\n", port)
 	}
 }

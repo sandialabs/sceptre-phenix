@@ -82,6 +82,11 @@ var serveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 			return errors.New("unable to get --auth-token flag")
 		}
 
+		webListen, err := cmd.Flags().GetString("web-listen")
+		if err != nil {
+			return errors.New("unable to get --web-listen flag")
+		}
+
 		u, err := url.Parse(origin)
 		if err != nil {
 			return fmt.Errorf("parsing URL: %w", err)
@@ -221,6 +226,14 @@ var serveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 
 		if err := startUnixSocket(); err != nil {
 			return fmt.Errorf("starting unix socket: %w", err)
+		}
+
+		if webListen != "" {
+			if err := startWebServer(webListen); err != nil {
+				return fmt.Errorf("starting web server: %w", err)
+			}
+
+			fmt.Printf("tunneler web interface available at http://%s\n", webListen) //nolint:forbidigo // CLI output
 		}
 
 		for {
@@ -418,6 +431,7 @@ func main() {
 	serveCmd.Flags().StringP("username", "u", "", "username to log into phēnix with")
 	serveCmd.Flags().StringP("auth-token", "t", "", "phēnix API token (skip login process)")
 	serveCmd.Flags().StringP("use-cookie", "c", "", "name of cookie to use for auth token")
+	serveCmd.Flags().StringP("web-listen", "w", "", "address for the local web interface (disabled by default)")
 
 	rootCmd.AddCommand(listCmd, activateCmd, deactivateCmd, moveCmd, serveCmd)
 
