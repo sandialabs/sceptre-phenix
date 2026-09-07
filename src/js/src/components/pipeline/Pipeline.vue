@@ -152,28 +152,28 @@
   }
 
   .pipeline .weight0 {
-    fill: #f5f5f5;
-    stroke: #f5f5f5;
+    fill: var(--text-primary);
+    stroke: var(--text-primary);
   }
 
   .pipeline .weight1 {
-    fill: #f6b44b;
-    stroke: #f6b44b;
+    fill: var(--status-pending);
+    stroke: var(--status-pending);
   }
 
   .pipeline .weight2 {
-    fill: #8cc04f;
-    stroke: #8cc04f;
+    fill: var(--status-running);
+    stroke: var(--status-running);
   }
 
   /* .pipeline .pipeline-node{
   transform: rotate(90deg)
 } */
   .pipeline-node-terminal {
-    fill: #949393;
+    fill: var(--status-neutral);
   }
   .pipeline-connector-skipped {
-    stroke: #949393;
+    stroke: var(--status-neutral);
     stroke-opacity: 0.25;
   }
   .pipeline-small-label {
@@ -185,14 +185,14 @@
   }
   .pipeline-selection-highlight circle {
     fill: none;
-    stroke: #4a90e2;
+    stroke: var(--focus-ring);
   }
   .pipeline-selection-highlight circle.white-highlight {
-    stroke: white;
+    stroke: var(--border-primary);
   }
 
   .pipeline-node-terminal {
-    fill: #949393;
+    fill: var(--status-neutral);
   }
   .svgResultStatus.no-background .circle-bg {
     opacity: 0;

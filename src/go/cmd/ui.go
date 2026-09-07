@@ -9,6 +9,7 @@ import (
 
 	"phenix/util"
 	"phenix/util/plog"
+	"phenix/util/theme"
 	"phenix/web"
 )
 
@@ -26,7 +27,14 @@ func newUICmd() *cobra.Command {
 		Short: "Run the phenix UI",
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := web.Init()
+			defaultTheme, err := theme.Parse(
+				getEffectiveString("ui.default-theme", cmd.Flags().Changed("default-theme")),
+			)
+			if err != nil {
+				return fmt.Errorf("invalid UI default theme: %w", err)
+			}
+
+			err = web.Init()
 			if err != nil {
 				return fmt.Errorf("initializing web package: %w", err)
 			}
@@ -43,6 +51,11 @@ func newUICmd() *cobra.Command {
 				web.ServeWithFeatures(viper.GetStringSlice("ui.features")),
 				web.ServeWithProxyAuthHeader(viper.GetString("ui.proxy-auth-header")),
 				web.ServeWithUnixSocketGID(viper.GetInt("unix-socket-gid")),
+				web.ServeWithDefaultTheme(
+					string(defaultTheme),
+					cmd.Flags().Changed("default-theme"),
+					getRuntimeConfigFilePath(),
+				),
 			}
 
 			if level := viper.GetString("ui.logs.level"); level != "" {
@@ -96,6 +109,8 @@ func newUICmd() *cobra.Command {
 	uiCmd.Flags().String("logs.level", "", "log level to publish to UI. Defaults to file level")
 	uiCmd.Flags().StringSlice("features", nil, "list of features to enable (options: vm-mount)")
 	uiCmd.Flags().Bool("minimega-console", false, "enable minimega console access in UI")
+	uiCmd.Flags().
+		String("default-theme", string(theme.System), "default UI theme (system, light, or dark)")
 
 	_ = viper.BindPFlag("ui.listen-endpoint", uiCmd.Flags().Lookup("listen-endpoint"))
 	_ = viper.BindPFlag("ui.base-path", uiCmd.Flags().Lookup("base-path"))
@@ -110,6 +125,7 @@ func newUICmd() *cobra.Command {
 	_ = viper.BindPFlag("ui.logs.level", uiCmd.Flags().Lookup("logs.level"))
 	_ = viper.BindPFlag("ui.features", uiCmd.Flags().Lookup("features"))
 	_ = viper.BindPFlag("ui.minimega-console", uiCmd.Flags().Lookup("minimega-console"))
+	_ = viper.BindPFlag("ui.default-theme", uiCmd.Flags().Lookup("default-theme"))
 
 	_ = viper.BindEnv("ui.listen-endpoint")
 	_ = viper.BindEnv("ui.base-path")
@@ -124,6 +140,21 @@ func newUICmd() *cobra.Command {
 	_ = viper.BindEnv("ui.logs.level")
 	_ = viper.BindEnv("ui.features")
 	_ = viper.BindEnv("ui.minimega-console")
+	_ = viper.BindEnv("ui.default-theme")
+
+	_ = uiCmd.RegisterFlagCompletionFunc(
+		"default-theme",
+		func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			var matches []string
+			for _, value := range theme.Values() {
+				if len(toComplete) == 0 || len(value) >= len(toComplete) &&
+					value[:len(toComplete)] == toComplete {
+					matches = append(matches, value)
+				}
+			}
+			return matches, cobra.ShellCompDirectiveNoFileComp
+		},
+	)
 
 	uiCmd.Flags().Bool("log-requests", false, "Log HTTP requests")
 	uiCmd.Flags().

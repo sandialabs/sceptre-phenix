@@ -627,34 +627,28 @@
   };
 </script>
 <style scoped>
-  /*Quickfix for css. incorperate into main css packages*/
   .hero.is-light.is-bold {
-    background-image: linear-gradient(
-      141deg,
-      #564749 0%,
-      #686868 71%,
-      #7b716f 100%
-    );
+    background-image: none;
   }
   .hero.is-light {
-    background-color: #686868;
-    color: #fff;
+    color: var(--text-primary);
+    background-color: var(--surface-secondary);
   }
   div.autocomplete :deep(a.dropdown-item) {
-    color: #383838 !important;
+    color: var(--text-primary) !important;
   }
 
   .x-modal-dark {
-    background-color: #5b5b5b;
+    background-color: var(--surface-primary);
   }
 
   .x-modal-dark :deep(p) {
-    color: whitesmoke;
+    color: var(--text-primary);
   }
 
   .x-modal-dark :deep(textarea) {
-    background-color: #686868;
-    color: whitesmoke;
+    color: var(--input-text);
+    background-color: var(--input-background);
   }
 
   .x-config-text {
@@ -662,7 +656,7 @@
   }
 
   .editor :deep(.label) {
-    color: whitesmoke;
+    color: var(--text-primary);
   }
 
   button#editor {

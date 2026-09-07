@@ -19,12 +19,12 @@
 <style lang="css">
   .pipeline-node-end .circle-end {
     stroke: none;
-    fill: #aaa;
+    fill: var(--status-neutral);
   }
 
   .pipeline-node-end__text {
     stroke: none;
-    fill: whitesmoke;
+    fill: var(--text-primary);
     font-size: 14px;
   }
 </style>

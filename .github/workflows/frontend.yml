@@ -76,7 +76,7 @@ jobs:
         working-directory: src/js/e2e
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium firefox
       - name: Run e2e smoke tests
         working-directory: src/js/e2e
         run: npx playwright test

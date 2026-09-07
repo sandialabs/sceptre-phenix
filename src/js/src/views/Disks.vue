@@ -215,13 +215,19 @@
         </b-autocomplete>
 
         <p class="control">
-          <button class="button input-button" @click="filterString = ''">
+          <button
+            class="button input-button"
+            aria-label="Clear disk search"
+            @click="filterString = ''">
             <b-icon icon="window-close"></b-icon>
           </button>
         </p>
       </b-field>
       <b-tooltip label="Refresh List" type="is-light is-left">
-        <button class="button is-light" @click="updateDisks">
+        <button
+          class="button is-light"
+          aria-label="Refresh disk list"
+          @click="updateDisks">
           <b-icon icon="refresh"></b-icon>
         </button>
       </b-tooltip>
@@ -230,6 +236,7 @@
         label="Upload a disk"
         type="is-light is-left">
         <b-upload
+          aria-label="Upload a disk"
           class="file-label"
           style="margin-left: 8px"
           @update:modelValue="uploadDisk"
@@ -641,13 +648,13 @@
   }
 
   .action-button {
-    color: dimgray;
+    color: var(--text-secondary);
     padding: 8px;
     cursor: pointer !important;
   }
 
   .action-button:hover {
-    background-color: #ddd;
+    background-color: var(--surface-hover);
   }
 
   .action-separator {
@@ -665,7 +672,7 @@
   .file-cta > p,
   .file-cta:hover {
     border: none;
-    background-color: #686868;
-    color: whitesmoke !important;
+    background-color: var(--surface-secondary);
+    color: var(--text-primary) !important;
   }
 </style>

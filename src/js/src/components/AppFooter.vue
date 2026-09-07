@@ -8,11 +8,11 @@ component.
     <hr class="mb-4" />
     <div class="container is-fluid">
       <small>
-        <p style="float: left; color: whitesmoke; padding-bottom: 16px">
+        <p class="copyright">
           Copyright &copy; <b>2019-2025 Sandia National Laboratories</b>. All
           Rights Reserved.
         </p>
-        <p style="float: right; color: whitesmoke">{{ version }}</p>
+        <p class="version">{{ version }}</p>
       </small>
     </div>
   </div>
@@ -38,3 +38,16 @@ component.
     },
   };
 </script>
+
+<style scoped>
+  .copyright {
+    float: left;
+    padding-bottom: 16px;
+    color: var(--text-primary);
+  }
+
+  .version {
+    float: right;
+    color: var(--text-primary);
+  }
+</style>

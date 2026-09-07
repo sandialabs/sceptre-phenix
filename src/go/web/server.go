@@ -129,6 +129,7 @@ func Start(opts ...ServerOption) error {
 	}
 
 	router.HandleFunc("/features", GetFeatures).Methods("GET")
+	router.HandleFunc("/theme.js", GetThemeBootstrap).Methods("GET")
 	router.HandleFunc("/version", GetVersion).Methods("GET")
 	router.HandleFunc("/builder", GetBuilder).Methods("GET")
 	router.HandleFunc("/builder/save", SaveBuilderTopology).Methods("POST")
@@ -378,6 +379,8 @@ func Start(opts ...ServerOption) error {
 
 	api.HandleFunc("/settings", GetSettings).Methods("GET", "OPTIONS")
 	api.HandleFunc("/settings", SetSettings).Methods("POST", "OPTIONS")
+	api.HandleFunc("/settings/theme", GetDefaultThemeSetting).Methods("GET", "OPTIONS")
+	api.HandleFunc("/settings/theme", SetDefaultThemeSetting).Methods("PUT", "OPTIONS")
 	api.HandleFunc("/settings/password", GetPasswordRequirements).Methods("GET", "OPTIONS")
 	api.HandleFunc("/settings/timeout", GetTimeoutSettings).Methods("GET", "OPTIONS")
 

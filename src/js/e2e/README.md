@@ -6,23 +6,26 @@ a CI-built binary, a container, or a full range node.
 
 ## What runs where
 
-| Spec | Needs | CI |
-|---|---|---|
-| `routes.spec.js` | just a running server (empty store is fine) | yes |
-| `forms.spec.js` | just a running server | yes |
-| `experiment-lifecycle.spec.js` | minimega, VM images, a topology | opt-in (`E2E_LIFECYCLE=1`) |
-| `auth-enabled.spec.js` | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key` | opt-in (`E2E_AUTH_MODE=enabled`) |
-| `auth-proxy.spec.js` | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt` | opt-in (`E2E_AUTH_MODE=proxy`) |
+| Spec                           | Needs                                                                 | CI                               |
+| ------------------------------ | --------------------------------------------------------------------- | -------------------------------- |
+| `routes.spec.js`               | just a running server (empty store is fine)                           | yes                              |
+| `theme.spec.js`                | just a running server                                                 | yes                              |
+| `forms.spec.js`                | just a running server                                                 | yes                              |
+| `experiment-lifecycle.spec.js` | minimega, VM images, a topology                                       | opt-in (`E2E_LIFECYCLE=1`)       |
+| `auth-enabled.spec.js`         | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`         | opt-in (`E2E_AUTH_MODE=enabled`) |
+| `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt` | opt-in (`E2E_AUTH_MODE=proxy`)   |
 
 CI (`.github/workflows/frontend.yml`) builds the UI with `VITE_AUTH=disabled`,
 starts `bin/phenix ui` against a throw-away store, and runs the default set.
+Chromium runs the full suite, including WCAG 2.2 AA scans of every route in
+explicit light and dark themes. Firefox runs the targeted theme suite.
 
 ## Running locally
 
 ```bash
 cd src/js/e2e
 npm ci
-npx playwright install --with-deps chromium
+npx playwright install --with-deps chromium firefox
 
 # default set against a server on :3000 (override with E2E_BASE_URL)
 npx playwright test

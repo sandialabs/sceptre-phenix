@@ -596,12 +596,7 @@
             </div>
             <div class="column" />
           </div>
-          <div
-            style="
-              margin-top: 10px;
-              border: 2px solid whitesmoke;
-              background: #333;
-            ">
+          <div class="graph-surface">
             <div v-if="nodes == null">
               <section class="hero is-light is-bold is-large">
                 <div class="hero-body">
@@ -627,27 +622,27 @@
                   <img :src="vlan" style="width: 20px; height: 20px" />
                 </div>
                 <div class="column">
-                  <span style="color: whitesmoke">VLAN Segment</span>
+                  <span>VLAN Segment</span>
                 </div>
               </div>
             </div>
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: #4f8f00" />
+                  <b-icon icon="circle" class="status-running" />
                 </div>
                 <div class="column">
-                  <span style="color: whitesmoke">Running</span>
+                  <span>Running</span>
                 </div>
               </div>
             </div>
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: #670b00" />
+                  <b-icon icon="circle" class="status-stopped" />
                 </div>
                 <div class="column">
-                  <span style="color: whitesmoke">Not running</span>
+                  <span>Not running</span>
                 </div>
               </div>
             </div>
@@ -658,30 +653,30 @@
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: black" />
+                  <b-icon icon="circle" class="status-neutral" />
                 </div>
                 <div class="column">
-                  <span style="color: whitesmoke">Not booted</span>
+                  <span>Not booted</span>
                 </div>
               </div>
             </div>
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: #ffd479" />
+                  <b-icon icon="circle" class="status-pending" />
                 </div>
                 <div class="column">
-                  <span style="color: whitesmoke">Not deployed</span>
+                  <span>Not deployed</span>
                 </div>
               </div>
             </div>
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: #005493" />
+                  <b-icon icon="circle" class="status-external" />
                 </div>
                 <div class="column">
-                  <span style="color: whitesmoke">External</span>
+                  <span>External</span>
                 </div>
               </div>
             </div>
@@ -689,12 +684,7 @@
           </div>
         </b-tab-item>
         <b-tab-item v-if="flows" label="Network Volume">
-          <div
-            style="
-              margin-top: 10px;
-              border: 2px solid whitesmoke;
-              background: #333;
-            ">
+          <div class="graph-surface">
             <div id="chord"></div>
           </div>
         </b-tab-item>
@@ -890,7 +880,7 @@
 
       updateNodeBorder(node) {
         if (node.soh && node.soh.errors) {
-          return '#FF9900'; // orange
+          return 'var(--status-pending)';
         }
 
         return this.updateNodeColor(node);
@@ -898,11 +888,11 @@
 
       updateNodeColor(node) {
         const colors = {
-          running: '#4F8F00', // green
-          notrunning: '#670b00', // red
-          notboot: 'black',
-          notdeploy: '#FFD479', // yellow
-          external: '#005493', // blue
+          running: 'var(--status-running)',
+          notrunning: 'var(--status-stopped)',
+          notboot: 'var(--status-neutral)',
+          notdeploy: 'var(--status-pending)',
+          external: 'var(--status-external)',
         };
 
         if (node.status === 'external') {
@@ -968,7 +958,7 @@
 
         const link = g
           .append('g')
-          .attr('stroke', '#999')
+          .attr('stroke', 'var(--border-subtle)')
           .attr('stroke-opacity', 0.6)
           .selectAll('line')
           .data(links)
@@ -1101,7 +1091,7 @@
           .join('text')
           .text((d) => d.label)
           .style('text-anchor', 'start')
-          .style('fill', 'whitesmoke')
+          .style('fill', 'var(--text-primary)')
           .style('font-size', '6px');
 
         simulation.on('tick', () => {
@@ -1281,7 +1271,7 @@
           .append('text')
           .attr('x', 8)
           .attr('dy', '0.35em')
-          .attr('fill', 'whitesmoke')
+          .attr('fill', 'var(--text-primary)')
           .attr('transform', (d) =>
             d.angle > Math.PI ? 'rotate(180) translate(-16)' : null,
           )
@@ -1291,7 +1281,7 @@
         group
           .select('text')
           .attr('font-weight', 'bold')
-          .attr('fill', 'whitesmoke')
+          .attr('fill', 'var(--text-primary)')
           .text(function (d) {
             return this.getAttribute('text-anchor') === 'end'
               ? `↑ ${names[d.index]}`
@@ -1515,19 +1505,19 @@
 
 <style scoped>
   label.radio:hover {
-    color: whitesmoke;
+    color: var(--text-primary);
   }
 
   .modal-card-head {
-    background-color: #686868;
+    background-color: var(--surface-primary);
   }
 
   .modal-card-title {
-    color: whitesmoke;
+    color: var(--text-primary);
   }
 
   li::marker {
-    color: black;
+    color: var(--text-primary);
   }
 
   ul {

@@ -17,20 +17,32 @@ It requires a valid username and password.
             :message="{ 'User already exists': userExists }">
             <b-input
               type="text"
+              aria-label="User name"
+              autocomplete="username"
               v-model="username"
               minlength="4"
               maxlength="32"
               autofocus></b-input>
           </b-field>
           <b-field label="First Name">
-            <b-input type="text" v-model="first_name"></b-input>
+            <b-input
+              type="text"
+              aria-label="First name"
+              autocomplete="given-name"
+              v-model="first_name"></b-input>
           </b-field>
           <b-field label="Last Name">
-            <b-input type="text" v-model="last_name"></b-input>
+            <b-input
+              type="text"
+              aria-label="Last name"
+              autocomplete="family-name"
+              v-model="last_name"></b-input>
           </b-field>
           <b-field label="Password">
             <b-input
               type="password"
+              aria-label="Password"
+              autocomplete="new-password"
               minlength="8"
               maxlength="32"
               v-model="password"></b-input>
@@ -38,6 +50,8 @@ It requires a valid username and password.
           <b-field label="Confirm Password">
             <b-input
               type="password"
+              aria-label="Confirm password"
+              autocomplete="new-password"
               minlength="8"
               maxlength="32"
               v-model="confirmPassword"
@@ -51,11 +65,18 @@ It requires a valid username and password.
     </b-modal>
     <div class="signin-form">
       <b-field label="Username">
-        <b-input type="text" v-model="username" autofocus></b-input>
+        <b-input
+          type="text"
+          aria-label="Username"
+          autocomplete="username"
+          v-model="username"
+          autofocus></b-input>
       </b-field>
       <b-field label="Password">
         <b-input
           type="password"
+          aria-label="Password"
+          autocomplete="current-password"
           v-model="password"
           @keyup.enter="onSubmit"></b-input>
       </b-field>
@@ -246,16 +267,17 @@ It requires a valid username and password.
   .signin-form {
     width: 400px;
     margin: 30px auto;
-    border: 1px solid #eee;
+    border: 1px solid var(--border-subtle);
     padding: 20px;
-    box-shadow: 0 2px 3px #ccc;
+    background: var(--surface-primary);
+    box-shadow: 0 2px 3px var(--shadow);
   }
 
   .signin-form :deep(.label) {
-    color: whitesmoke;
+    color: var(--text-primary);
   }
 
   label.checkbox:hover {
-    color: whitesmoke;
+    color: var(--text-primary);
   }
 </style>

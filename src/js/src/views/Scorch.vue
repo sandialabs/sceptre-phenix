@@ -10,7 +10,10 @@
         <template #empty> No results found </template>
       </b-autocomplete>
       <p class="control">
-        <button class="button input-button" @click="searchName = ''">
+        <button
+          class="button input-button"
+          aria-label="Clear experiment search"
+          @click="searchName = ''">
           <b-icon icon="window-close"></b-icon>
         </button>
       </p>
@@ -702,6 +705,6 @@
 </script>
 <style scoped>
   div.autocomplete :deep(a.dropdown-item) {
-    color: #383838 !important;
+    color: var(--text-primary) !important;
   }
 </style>

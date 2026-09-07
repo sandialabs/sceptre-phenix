@@ -42,15 +42,20 @@ type serverOptions struct {
 	features map[string]bool
 
 	unixSocketGID int
+
+	defaultTheme       string
+	defaultThemeLocked bool
+	configFile         string
 }
 
 func newServerOptions(opts ...ServerOption) serverOptions {
 	so := serverOptions{ //nolint:exhaustruct // partial initialization
-		endpoint:    ":3000",
-		users:       []string{"admin@foo.com:foobar:Global Admin"},
-		basePath:    "/",
-		jwtLifetime: defaultJWTLifetime,
-		features:    make(map[string]bool),
+		endpoint:     ":3000",
+		users:        []string{"admin@foo.com:foobar:Global Admin"},
+		basePath:     "/",
+		jwtLifetime:  defaultJWTLifetime,
+		features:     make(map[string]bool),
+		defaultTheme: "system",
 	}
 
 	for _, opt := range opts {
@@ -191,6 +196,14 @@ func ServeWithFeatures(f []string) ServerOption {
 func ServeWithUnixSocketGID(g int) ServerOption {
 	return func(o *serverOptions) {
 		o.unixSocketGID = g
+	}
+}
+
+func ServeWithDefaultTheme(value string, locked bool, configFile string) ServerOption {
+	return func(o *serverOptions) {
+		o.defaultTheme = value
+		o.defaultThemeLocked = locked
+		o.configFile = configFile
 	}
 }
 
