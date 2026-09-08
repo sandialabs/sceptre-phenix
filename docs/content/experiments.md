@@ -1,5 +1,9 @@
 # Experiments
 
+For experiments spanning multiple minimega hosts, see [GRE Mesh](gre-mesh.md)
+to trunk experiment networks between hosts with `--use-gre-mesh`, including
+the physical network MTU requirements.
+
 ## Listing Experiments
 
 ### From the Web-UI

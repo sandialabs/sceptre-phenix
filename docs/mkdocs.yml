@@ -90,6 +90,7 @@ nav:
     - State of Health: state-of-health.md
   - Networking:
     - Bridge Mode: bridge-mode.md
+    - GRE Mesh: gre-mesh.md
     - Netflow: netflow.md
     - Tunneler: tunneler.md
   - Integrations:
