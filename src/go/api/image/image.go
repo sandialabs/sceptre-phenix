@@ -45,7 +45,7 @@ const protonuke = "protonuke"
 // returned if the variant value is not valid (acceptable values are `minbase`
 // or `mingui`).
 func SetupImage(img *v1.Image) error { //nolint:funlen // complex logic
-	debian := []string{"jessie", "stretch", "buster", "bullseye", "bookworm"}
+	debian := []string{"jessie", "stretch", "buster", "bullseye", "bookworm", "trixie", "forky"}
 	kali := []string{"kali-dev", "kali-rolling", "kali-last-snapshot", "kali-bleeding-edge"}
 
 	// If mirror is the default value, make sure it is correct based on the Release
@@ -63,8 +63,10 @@ func SetupImage(img *v1.Image) error { //nolint:funlen // complex logic
 		switch {
 		case slices.Contains(kali, img.Release):
 			img.Components = append(img.Components, KaliComponents...)
-		default:
+		case slices.Contains(debian, img.Release):
 			img.Components = append(img.Components, DebianComponents...)
+		default:
+			img.Components = append(img.Components, UbuntuComponents...)
 		}
 	}
 
@@ -81,7 +83,7 @@ func SetupImage(img *v1.Image) error { //nolint:funlen // complex logic
 			img.Packages = append(img.Packages, KaliPackages...)
 		case slices.Contains(debian, img.Release):
 			img.Packages = append(img.Packages, DebianPackages...)
-		default: // "xenial", "bionic", "focal", "jammy", "noble" ...
+		default: // "xenial", "bionic", "focal", "jammy", "noble", "oracular", "plucky", "questing", "resolute" ...
 			img.Packages = append(img.Packages, UbuntuPackages...)
 		}
 	case "mingui":
@@ -94,7 +96,7 @@ func SetupImage(img *v1.Image) error { //nolint:funlen // complex logic
 			img.Packages = append(img.Packages, DebianPackages...)
 			img.Packages = append(img.Packages, DebianMinGUIPackages...)
 			_ = addScriptToImage(img, "POSTBUILD_GUI", PostbuildGUI)
-		default: // "xenial", "bionic", "focal", "jammy", "noble" ...
+		default: // "xenial", "bionic", "focal", "jammy", "noble", "oracular", "plucky", "questing", "resolute" ...
 			img.Packages = append(img.Packages, UbuntuPackages...)
 			img.Packages = append(img.Packages, UbuntuMinGUIPackages...)
 			_ = addScriptToImage(img, "POSTBUILD_GUI", PostbuildGUI)
