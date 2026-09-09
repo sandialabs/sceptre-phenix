@@ -8,7 +8,6 @@
   import AppHeader from '@/components/AppHeader.vue';
   import AppFooter from '@/components/AppFooter.vue';
   import { onUnmounted, onMounted } from 'vue';
-  import router from '@/router';
   import { usePhenixStore } from '@/store';
   import { storeToRefs } from 'pinia';
   import { watch } from 'vue';
@@ -18,14 +17,10 @@
   const store = usePhenixStore();
   const timeout = new TimeoutTool();
 
-  fetch(router.resolve({ name: 'features' }).href)
-    .then((resp) => resp.json())
-    .then((data) => {
-      store.features = data.features;
-    })
-    .catch((err) => {
-      console.log(err);
-    });
+  // single-flight: the router's feature guards await the same promise
+  store.ensureFeatures().catch((err) => {
+    console.error('Unable to load server features.', err);
+  });
 
   onMounted(() => {
     // connect websockets once user has authenticated (or auth disabled)

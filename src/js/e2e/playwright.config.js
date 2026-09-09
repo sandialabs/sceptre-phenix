@@ -1,4 +1,4 @@
-const { defineConfig } = require('@playwright/test');
+const { defineConfig, devices } = require('@playwright/test');
 
 // Target server: a running `phenix ui` (any deployment). Override with
 // E2E_BASE_URL. Tests assume the UI was built with VITE_AUTH=disabled unless
@@ -15,5 +15,22 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
   },
+  projects: [
+    {
+      name: 'google-chrome',
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+        viewport: { width: 1600, height: 900 },
+      },
+    },
+    {
+      name: 'firefox',
+      use: {
+        ...devices['Desktop Firefox'],
+        viewport: { width: 1600, height: 900 },
+      },
+    },
+  ],
   outputDir: './test-results',
 });

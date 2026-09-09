@@ -121,7 +121,7 @@ func newConfigListCmd() *cobra.Command {
 		Use:       "list <kind>",
 		Short:     "Show table of stored configuration files",
 		Example:   example,
-		ValidArgs: []string{"all", "topology", "scenario", "experiment", "image", "user"},
+		ValidArgs: []string{allExperiments, "topology", "scenario", "experiment", "image", "user"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var kinds string
 

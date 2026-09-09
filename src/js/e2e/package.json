@@ -3,6 +3,7 @@
   "private": true,
   "description": "Browser smoke tests for the phenix web UI",
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@playwright/test": "1.61.0"
   }
 }

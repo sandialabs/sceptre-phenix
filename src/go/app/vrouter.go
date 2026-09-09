@@ -23,8 +23,6 @@ import (
 )
 
 const (
-	appNameVrouter    = "vrouter"
-	appNameNTP        = "ntp"
 	ipsecSecretLength = 32
 )
 
@@ -204,7 +202,7 @@ func (v *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error {
 		// supported, just not here. Including os_type `linux` is for legacy
 		// support.
 		if !util.StringSliceContains(
-			[]string{"vyatta", "vyos", "linux"},
+			[]string{"vyatta", "vyos", osLinux},
 			strings.ToLower(node.Hardware().OSType()),
 		) {
 			if strings.ToLower(node.Hardware().OSType()) != "minirouter" {
@@ -221,7 +219,7 @@ func (v *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error {
 			continue
 		}
 
-		if strings.EqualFold(node.Hardware().OSType(), "linux") {
+		if strings.EqualFold(node.Hardware().OSType(), osLinux) {
 			plog.Warn(
 				plog.TypePhenixApp,
 				"OS Type 'linux' for Node Type is deprecated; use 'vyatta', 'vyos', or 'minirouter' instead",

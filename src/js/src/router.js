@@ -4,6 +4,7 @@ import { ToastProgrammatic as Toast } from 'buefy';
 
 import { usePhenixStore } from '@/store.js';
 import axiosInstance from '@/utils/axios.js';
+import { BUILDER_BETA_FEATURE, createFeatureGuard } from '@/utils/features.js';
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -89,6 +90,35 @@ const router = createRouter({
       path: '/tunneler',
       name: 'tunneler',
       component: () => import('@/views/Tunneler.vue'),
+    },
+    {
+      // Builder Beta. `beforeEnter` runs before Vue Router resolves the async
+      // component, so a disabled feature flag denies the route without ever
+      // downloading the editor chunk.
+      path: '/builder-beta',
+      name: 'builder-beta',
+      component: () => import('@/views/BuilderBeta.vue'),
+      beforeEnter: createFeatureGuard({
+        flag: BUILDER_BETA_FEATURE,
+        ensureFeatures: () => usePhenixStore().ensureFeatures(),
+        fallback: { name: 'home' },
+        onDenied: () => {
+          new Toast().open({
+            message: 'Builder Beta is not enabled on this phenix server.',
+            type: 'is-warning',
+            duration: 5000,
+          });
+        },
+        onError: (error) => {
+          console.error('Unable to load server features.', error);
+          new Toast().open({
+            message:
+              'Unable to verify whether Builder Beta is enabled. Try again.',
+            type: 'is-danger',
+            duration: 5000,
+          });
+        },
+      }),
     },
 
     {

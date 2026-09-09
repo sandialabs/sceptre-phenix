@@ -13,6 +13,8 @@ import (
 	"phenix/types"
 )
 
+const appNameNTP = "ntp"
+
 type NTPAppMetadata struct {
 	DefaultSource NTPAppSource `mapstructure:"defaultSource"`
 }

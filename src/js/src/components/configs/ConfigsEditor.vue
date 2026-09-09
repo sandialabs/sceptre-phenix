@@ -151,6 +151,7 @@
   import { debounce } from 'lodash-es';
 
   import axiosInstance from '@/utils/axios.js';
+  import { BETA_ANNOTATION, builderAnnotation } from '@/builder/configs.js';
 
   export default {
     expose: ['confirmResetEditor'],
@@ -185,15 +186,33 @@
 
         axiosInstance
           .get('configs/' + name, { headers: { Accept: 'application/json' } })
-          .then((response) => {
+          .then(async (response) => {
             if (this.isBuilderTopology(response.data)) {
+              if (builderAnnotation(response.data) === BETA_ANNOTATION) {
+                this.editor.isLoading = false;
+                const router = this.$router;
+                const destination = {
+                  name: 'builder-beta',
+                  query: { topology: response.data.metadata.name },
+                };
+
+                this.$emit('is-done');
+                await router.push(destination);
+                return;
+              }
+
+              this.editor.isLoading = false;
               this.$buefy.dialog.alert({
-                title: 'Built by Builder',
-                message: 'This configuration can only be edited in Builder',
+                title: `Built by ${this.builderName(response.data)}`,
+                message: `This configuration can only be edited in ${this.builderName(
+                  response.data,
+                )}`,
                 confirmText: 'OK',
                 type: 'is-warning',
                 hasIcon: true,
+                onConfirm: () => this.$emit('is-done'),
               });
+              return;
             } else {
               this.config.obj = response.data;
               this.config.str = this.getConfigStr('yaml');
@@ -500,12 +519,12 @@
         this.isWaiting = false;
       },
       isBuilderTopology(cfg) {
-        if (cfg.kind == 'Topology') {
-          if ('annotations' in cfg.metadata) {
-            return 'builder-xml' in cfg.metadata.annotations;
-          }
-        }
-        return false;
+        return builderAnnotation(cfg) !== null;
+      },
+      builderName(cfg) {
+        return builderAnnotation(cfg) === BETA_ANNOTATION
+          ? 'Builder Beta'
+          : 'Builder';
       },
     },
     computed: {

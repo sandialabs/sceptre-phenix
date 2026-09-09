@@ -161,7 +161,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	uRole.AddPolicy(
 		[]string{"users"},
 		[]string{req.Username},
-		[]string{"get", "patch"},
+		[]string{string(builderBetaVerbGet), "patch"},
 	)
 
 	_ = user.SetRole(uRole)
@@ -353,7 +353,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		uRole.AddPolicy(
 			[]string{"users"},
 			[]string{uname},
-			[]string{"get", "patch"},
+			[]string{string(builderBetaVerbGet), "patch"},
 		)
 
 		_ = u.SetRole(uRole)

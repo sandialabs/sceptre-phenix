@@ -504,9 +504,9 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 
 	body, _ = json.Marshal(config)
 
-	action := "create"
+	action := string(builderBetaVerbCreate)
 	if exists {
-		action = "update"
+		action = string(builderBetaVerbUpdate)
 	}
 
 	broker.Broadcast(

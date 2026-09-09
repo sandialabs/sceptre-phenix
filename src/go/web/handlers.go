@@ -833,7 +833,7 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 			}
 
 			pubsub.Publish("trigger-app", app.TriggerPublication{ //nolint:exhaustruct // partial initialization
-				Experiment: name, Verb: "delete", App: a, State: "success",
+				Experiment: name, Verb: string(builderBetaVerbDelete), App: a, State: "success",
 			})
 		}
 	}()
@@ -3412,7 +3412,7 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 
 		for {
 			s := <-status
-			if s == "failed" || s == "completed" {
+			if s == builderPublishFailed || s == "completed" {
 				return
 			}
 

@@ -197,16 +197,16 @@
             </div>
           </b-tooltip>
           &nbsp;
-          <b-tag type="is-info" v-if="isBuilderTopology(props.row)"
-            >builder</b-tag
-          >
+          <b-tag type="is-info" v-if="builderTag(props.row)">{{
+            builderTag(props.row)
+          }}</b-tag>
         </template>
         <template v-else>
           {{ props.row.metadata.name }}
           &nbsp;
-          <b-tag type="is-info" v-if="isBuilderTopology(props.row)"
-            >builder</b-tag
-          >
+          <b-tag type="is-info" v-if="builderTag(props.row)">{{
+            builderTag(props.row)
+          }}</b-tag>
         </template>
       </b-table-column>
 
@@ -274,6 +274,7 @@
   import FileSaver from 'file-saver';
   import { roleAllowed } from '@/utils/rbac.js';
   import { useErrorNotification } from '@/utils/errorNotif';
+  import { builderTagLabel } from '@/builder/configs.js';
 
   export default {
     emits: ['edit', 'create'],
@@ -362,14 +363,10 @@
             this.isWaiting = false;
           });
       },
-      isBuilderTopology(cfg) {
-        if (cfg.kind == 'Topology') {
-          if ('annotations' in cfg.metadata) {
-            return 'builder-xml' in cfg.metadata.annotations;
-          }
-        }
-
-        return false;
+      // distinguishes beta builder documents (builder-doc) from legacy
+      // builder diagrams (builder-xml)
+      builderTag(cfg) {
+        return builderTagLabel(cfg);
       },
       download(configList) {
         const configs = configList.map(

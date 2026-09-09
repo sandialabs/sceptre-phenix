@@ -1,0 +1,3052 @@
+{
+  "$defs": {
+    "device": {
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        "iconKey": {
+          "$ref": "#/$defs/iconKey"
+        },
+        "interfaces": {
+          "items": {
+            "$ref": "#/$defs/interfaceHandle"
+          },
+          "type": "array"
+        },
+        "spec": {
+          "description": "Complete phenix topology node spec.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/phenix.v1.minimega_node"
+            },
+            {
+              "$ref": "#/$defs/phenix.v1.external_node"
+            }
+          ]
+        }
+      },
+      "required": [
+        "hostname",
+        "spec",
+        "interfaces"
+      ],
+      "type": "object"
+    },
+    "edge": {
+      "additionalProperties": false,
+      "description": "Attaches a device interface handle to a switch hub. Reference targets are validated by the server, not by this schema.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "label": {
+          "type": "string"
+        },
+        "networkId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "sourceHandleId": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/identifier"
+            }
+          ],
+          "description": "Handle of the source node, when it is a device."
+        },
+        "sourceNodeId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "targetHandleId": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/identifier"
+            }
+          ],
+          "description": "Handle of the target node, when it is a device."
+        },
+        "targetNodeId": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "required": [
+        "id",
+        "sourceNodeId",
+        "targetNodeId",
+        "networkId"
+      ],
+      "type": "object"
+    },
+    "grid": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "size": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "snap": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled",
+        "size",
+        "snap"
+      ],
+      "type": "object"
+    },
+    "group": {
+      "additionalProperties": false,
+      "properties": {
+        "collapsed": {
+          "type": "boolean"
+        },
+        "color": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "iconKey": {
+      "description": "Builder local icon hint; empty selects the default icon.",
+      "enum": [
+        "",
+        "centos",
+        "container",
+        "desktop",
+        "external",
+        "firewall",
+        "linux",
+        "printer",
+        "redhat",
+        "router",
+        "server",
+        "switch",
+        "vlan",
+        "windows"
+      ],
+      "type": "string"
+    },
+    "identifier": {
+      "description": "Stable RFC 4122 UUID. Identifiers are compared case-insensitively; the front end mints new identifiers with crypto.randomUUID.",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+      "type": "string"
+    },
+    "interfaceHandle": {
+      "additionalProperties": false,
+      "description": "Stable mapping of a canvas handle onto a named interface of the device spec.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "index": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "index"
+      ],
+      "type": "object"
+    },
+    "network": {
+      "additionalProperties": false,
+      "description": "Canonical phenix network (VLAN).",
+      "properties": {
+        "alias": {
+          "description": "Optional integer VLAN alias published to an experiment.",
+          "maximum": 4094,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "color": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "name": {
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "node": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "device"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "switch"
+                  ]
+                },
+                {
+                  "required": [
+                    "note"
+                  ]
+                },
+                {
+                  "required": [
+                    "group"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "device"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "switch"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "device"
+                  ]
+                },
+                {
+                  "required": [
+                    "note"
+                  ]
+                },
+                {
+                  "required": [
+                    "group"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "switch"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "note"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "device"
+                  ]
+                },
+                {
+                  "required": [
+                    "switch"
+                  ]
+                },
+                {
+                  "required": [
+                    "group"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "note"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "group"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "device"
+                  ]
+                },
+                {
+                  "required": [
+                    "switch"
+                  ]
+                },
+                {
+                  "required": [
+                    "note"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "group"
+            ]
+          }
+        }
+      ],
+      "description": "Canvas node. The payload key must match the node kind.",
+      "properties": {
+        "device": {
+          "$ref": "#/$defs/device"
+        },
+        "group": {
+          "$ref": "#/$defs/group"
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "kind": {
+          "enum": [
+            "device",
+            "switch",
+            "note",
+            "group"
+          ],
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "note": {
+          "$ref": "#/$defs/note"
+        },
+        "parentId": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/identifier"
+            }
+          ],
+          "description": "Identifier of the group node this node belongs to."
+        },
+        "position": {
+          "$ref": "#/$defs/position"
+        },
+        "size": {
+          "$ref": "#/$defs/size"
+        },
+        "switch": {
+          "$ref": "#/$defs/switch"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "position"
+      ],
+      "type": "object"
+    },
+    "note": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "phenix.v1.Experiment": {
+      "properties": {
+        "baseDir": {
+          "example": "/phenix/topologies/example-topo",
+          "type": "string"
+        },
+        "experimentName": {
+          "example": "example-exp",
+          "readOnly": true,
+          "type": "string"
+        },
+        "scenario": {
+          "$ref": "#/$defs/phenix.v1.Scenario"
+        },
+        "schedule": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "example": {
+            "ADServer": "compute1"
+          },
+          "type": "object"
+        },
+        "topology": {
+          "$ref": "#/$defs/phenix.v1.Topology"
+        },
+        "vlans": {
+          "properties": {
+            "aliases": {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "example": {
+                "MGMT": 200
+              },
+              "type": "object"
+            },
+            "max": {
+              "type": "integer"
+            },
+            "min": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "topology"
+      ],
+      "type": "object"
+    },
+    "phenix.v1.Image": {
+      "properties": {
+        "compress": {
+          "default": false,
+          "example": false,
+          "type": "boolean"
+        },
+        "deb_append": {
+          "example": "--components=main,restricted",
+          "type": "string"
+        },
+        "format": {
+          "example": "qcow2",
+          "type": "string"
+        },
+        "mirror": {
+          "example": "http://us.archive.ubuntu.com/ubuntu/",
+          "type": "string"
+        },
+        "overlays": {
+          "example": [
+            "/phenix/vmdb/overlays/example-overlay"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "packages": {
+          "example": [
+            "isc-dhcp-client",
+            "openssh-server"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "ramdisk": {
+          "default": false,
+          "example": false,
+          "type": "boolean"
+        },
+        "release": {
+          "example": "focal",
+          "type": "string"
+        },
+        "script_order": {
+          "example": [
+            "POSTBUILD_APT_CLEANUP"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "scripts": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "example": {
+            "POSTBUILD_APT_CLEANUP": "apt clean || apt-get clean || echo \"unable to clean apt cache\"\n"
+          },
+          "type": "object"
+        },
+        "size": {
+          "example": "10G",
+          "type": "string"
+        },
+        "variant": {
+          "example": "minbase",
+          "type": "string"
+        }
+      },
+      "required": [
+        "format",
+        "mirror",
+        "release",
+        "size",
+        "variant"
+      ],
+      "type": "object"
+    },
+    "phenix.v1.Role": {
+      "properties": {
+        "policies": {
+          "example": [
+            {
+              "resourceNames": [
+                "*"
+              ],
+              "resources": [
+                "experiments",
+                "experiments/*"
+              ],
+              "verbs": [
+                "list",
+                "get"
+              ]
+            }
+          ],
+          "items": {
+            "properties": {
+              "resourceNames": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "resources": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "verbs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "roleName": {
+          "example": "Example Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policies",
+        "roleName"
+      ],
+      "type": "object"
+    },
+    "phenix.v1.Scenario": {
+      "properties": {
+        "apps": {
+          "properties": {
+            "experiment": {
+              "items": {
+                "properties": {
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "apps"
+      ],
+      "type": "object"
+    },
+    "phenix.v1.Topology": {
+      "anyOf": [
+        {
+          "required": [
+            "nodes"
+          ]
+        },
+        {
+          "required": [
+            "includeTopologies"
+          ]
+        }
+      ],
+      "properties": {
+        "includeTopologies": {
+          "example": [
+            "/phenix/topologies/enterprise/phenix-configs/topology.yml",
+            "store-topo"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/phenix.v1.minimega_node"
+              },
+              {
+                "$ref": "#/$defs/phenix.v1.external_node"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "phenix.v1.User": {
+      "properties": {
+        "first_name": {
+          "example": "John",
+          "type": "string"
+        },
+        "last_name": {
+          "example": "Doe",
+          "type": "string"
+        },
+        "password": {
+          "example": "\u003cencrypted password\u003e",
+          "readOnly": true,
+          "type": "string"
+        },
+        "rbac": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/phenix.v1.Role"
+            }
+          ],
+          "readOnly": true
+        },
+        "username": {
+          "example": "johndoe@example.com",
+          "type": "string"
+        }
+      },
+      "required": [
+        "first_name",
+        "last_name",
+        "username"
+      ],
+      "type": "object"
+    },
+    "phenix.v1.dhcp_iface": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/phenix.v1.iface"
+        },
+        {
+          "$ref": "#/$defs/phenix.v1.iface_rulesets"
+        }
+      ],
+      "properties": {
+        "proto": {
+          "default": "dhcp",
+          "enum": [
+            "dhcp",
+            "manual"
+          ],
+          "example": "dhcp",
+          "type": "string"
+        },
+        "type": {
+          "default": "ethernet",
+          "enum": [
+            "ethernet"
+          ],
+          "example": "ethernet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "proto"
+      ]
+    },
+    "phenix.v1.external_node": {
+      "properties": {
+        "external": {
+          "type": "boolean"
+        },
+        "general": {
+          "properties": {
+            "description": {
+              "example": "Active Directory Server",
+              "type": "string"
+            },
+            "hostname": {
+              "example": "ADServer",
+              "type": "string"
+            },
+            "vm_type": {
+              "default": "vm",
+              "enum": [
+                "vm",
+                "container",
+                ""
+              ],
+              "example": "vm",
+              "type": "string"
+            }
+          },
+          "required": [
+            "hostname"
+          ],
+          "type": "object"
+        },
+        "hardware": {
+          "properties": {
+            "cpu": {
+              "default": "Broadwell",
+              "example": "Broadwell",
+              "type": "string"
+            },
+            "memory": {
+              "default": 1024,
+              "example": 8192,
+              "oneOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "os_type": {
+              "default": "linux",
+              "example": "windows",
+              "type": "string"
+            },
+            "vcpus": {
+              "default": 1,
+              "example": 4,
+              "oneOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "os_type"
+          ],
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "network": {
+          "properties": {
+            "interfaces": {
+              "items": {
+                "properties": {
+                  "address": {
+                    "example": "192.168.1.100",
+                    "format": "ipv4",
+                    "type": "string"
+                  },
+                  "gateway": {
+                    "example": "192.168.1.1",
+                    "format": "ipv4",
+                    "type": "string"
+                  },
+                  "mask": {
+                    "default": 24,
+                    "example": 24,
+                    "maximum": 32,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "name": {
+                    "example": "eth0",
+                    "type": "string"
+                  },
+                  "proto": {
+                    "default": "dhcp",
+                    "enum": [
+                      "static",
+                      "dhcp",
+                      "manual",
+                      ""
+                    ],
+                    "example": "static",
+                    "type": "string"
+                  },
+                  "vlan": {
+                    "example": "EXP-1",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "interfaces"
+          ],
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "type": {
+          "default": "HIL",
+          "example": "HIL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "external",
+        "type",
+        "general"
+      ],
+      "type": "object"
+    },
+    "phenix.v1.iface": {
+      "properties": {
+        "autostart": {
+          "default": true,
+          "type": "boolean"
+        },
+        "bridge": {
+          "default": "phenix",
+          "type": "string"
+        },
+        "driver": {
+          "example": "e1000",
+          "type": "string"
+        },
+        "mac": {
+          "example": "00:11:22:33:44:55:66",
+          "pattern": "^([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]){2}$",
+          "type": "string"
+        },
+        "mtu": {
+          "default": 1500,
+          "example": 1500,
+          "type": "integer"
+        },
+        "name": {
+          "example": "eth0",
+          "minLength": 1,
+          "type": "string"
+        },
+        "qinq": {
+          "default": false,
+          "type": "boolean"
+        },
+        "vlan": {
+          "example": "EXP-1",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "vlan"
+      ],
+      "type": "object"
+    },
+    "phenix.v1.iface_address": {
+      "properties": {
+        "address": {
+          "example": "192.168.1.100",
+          "format": "ipv4",
+          "minLength": 7,
+          "type": "string"
+        },
+        "dns": {
+          "anyOf": [
+            {
+              "example": [
+                "192.168.1.1",
+                "192.168.1.2"
+              ],
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gateway": {
+          "example": "192.168.1.1",
+          "format": "ipv4",
+          "minLength": 7,
+          "type": "string"
+        },
+        "mask": {
+          "default": 24,
+          "example": 24,
+          "maximum": 32,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "address",
+        "mask"
+      ],
+      "type": "object"
+    },
+    "phenix.v1.iface_rulesets": {
+      "properties": {
+        "ruleset_in": {
+          "example": "InFromInet",
+          "pattern": "^[\\w-]+$",
+          "type": "string"
+        },
+        "ruleset_out": {
+          "example": "OutToInet",
+          "pattern": "^[\\w-]+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "phenix.v1.minimega_node": {
+      "properties": {
+        "advanced": {
+          "type": "object"
+        },
+        "commands": {
+          "example": [
+            "exec df -h"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "delay": {
+          "properties": {
+            "c2": {
+              "items": {
+                "properties": {
+                  "hostname": {
+                    "type": "string"
+                  },
+                  "useUUID": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "timer": {
+              "example": "5m",
+              "type": "string"
+            },
+            "user": {
+              "type": "boolean"
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "general": {
+          "properties": {
+            "description": {
+              "example": "Active Directory Server",
+              "type": "string"
+            },
+            "do_not_boot": {
+              "default": false,
+              "example": false,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "hostname": {
+              "example": "ADServer",
+              "maxLength": 63,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$",
+              "type": "string"
+            },
+            "snapshot": {
+              "default": false,
+              "example": false,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "vm_type": {
+              "default": "kvm",
+              "enum": [
+                "kvm",
+                "container",
+                ""
+              ],
+              "example": "kvm",
+              "type": "string"
+            }
+          },
+          "required": [
+            "hostname"
+          ],
+          "type": "object"
+        },
+        "hardware": {
+          "properties": {
+            "cpu": {
+              "default": "Broadwell",
+              "example": "Broadwell",
+              "type": "string"
+            },
+            "drives": {
+              "items": {
+                "properties": {
+                  "cache_mode": {
+                    "default": "writeback",
+                    "enum": [
+                      "none",
+                      "writeback",
+                      "unsafe",
+                      "directsync",
+                      "writethrough",
+                      ""
+                    ],
+                    "example": "writeback",
+                    "type": "string"
+                  },
+                  "image": {
+                    "example": "ubuntu.qc2",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "inject_partition": {
+                    "default": 1,
+                    "example": 2,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "interface": {
+                    "default": "ide",
+                    "enum": [
+                      "ahci",
+                      "ide",
+                      "scsi",
+                      "sd",
+                      "mtd",
+                      "floppy",
+                      "pflash",
+                      "virtio",
+                      ""
+                    ],
+                    "example": "ide",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "image"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "memory": {
+              "default": 1024,
+              "example": 8192,
+              "oneOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "os_type": {
+              "default": "linux",
+              "enum": [
+                "centos",
+                "linux",
+                "minirouter",
+                "rhel",
+                "vyatta",
+                "vyos",
+                "windows",
+                "other"
+              ],
+              "example": "windows",
+              "type": "string"
+            },
+            "vcpus": {
+              "default": 1,
+              "example": 4,
+              "oneOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "os_type",
+            "drives"
+          ],
+          "type": "object"
+        },
+        "injections": {
+          "items": {
+            "properties": {
+              "description": {
+                "example": "phenix config file",
+                "type": "string"
+              },
+              "dst": {
+                "example": "/etc/phenix/foo.xml",
+                "minLength": 1,
+                "type": "string"
+              },
+              "permissions": {
+                "example": "0664",
+                "type": "string"
+              },
+              "src": {
+                "example": "foo.xml",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "src",
+              "dst"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "network": {
+          "properties": {
+            "interfaces": {
+              "items": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/phenix.v1.static_iface"
+                  },
+                  {
+                    "$ref": "#/$defs/phenix.v1.dhcp_iface"
+                  },
+                  {
+                    "$ref": "#/$defs/phenix.v1.serial_iface"
+                  }
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "ospf": {
+              "properties": {
+                "areas": {
+                  "items": {
+                    "properties": {
+                      "area_id": {
+                        "default": 1,
+                        "example": 1,
+                        "type": "integer"
+                      },
+                      "area_networks": {
+                        "items": {
+                          "properties": {
+                            "network": {
+                              "example": "10.1.25.0/24",
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "network"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "area_id",
+                      "area_networks"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "router_id": {
+                  "example": "0.0.0.1",
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "router_id",
+                "areas"
+              ],
+              "type": "object"
+            },
+            "routes": {
+              "items": {
+                "properties": {
+                  "cost": {
+                    "default": 1,
+                    "example": 1,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "destination": {
+                    "example": "192.168.0.0/24",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "next": {
+                    "example": "192.168.1.254",
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "destination",
+                  "next"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "rulesets": {
+              "items": {
+                "properties": {
+                  "default": {
+                    "enum": [
+                      "accept",
+                      "drop",
+                      "reject"
+                    ],
+                    "example": "drop",
+                    "type": "string"
+                  },
+                  "description": {
+                    "example": "From Corp to the DMZ network",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "name": {
+                    "example": "OutToDMZ",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "rules": {
+                    "items": {
+                      "properties": {
+                        "action": {
+                          "enum": [
+                            "accept",
+                            "drop",
+                            "reject"
+                          ],
+                          "example": "accept",
+                          "type": "string"
+                        },
+                        "description": {
+                          "example": "Allow UDP 10.1.26.80 ==\u003e 10.2.25.0/24:123",
+                          "type": "string"
+                        },
+                        "destination": {
+                          "properties": {
+                            "address": {
+                              "example": "10.1.24.60",
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "port": {
+                              "example": 3389,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "address"
+                          ],
+                          "type": "object"
+                        },
+                        "id": {
+                          "example": 10,
+                          "type": "integer"
+                        },
+                        "protocol": {
+                          "default": "tcp",
+                          "enum": [
+                            "tcp",
+                            "udp",
+                            "tcp_udp",
+                            "icmp",
+                            "esp",
+                            "ah",
+                            "all"
+                          ],
+                          "example": "tcp",
+                          "type": "string"
+                        },
+                        "source": {
+                          "properties": {
+                            "address": {
+                              "example": "10.1.24.60",
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "port": {
+                              "example": 3389,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "address"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "action",
+                        "protocol"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "default",
+                  "rules"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "interfaces"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "default": "VirtualMachine",
+          "example": "VirtualMachine",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "general",
+        "hardware"
+      ],
+      "type": "object"
+    },
+    "phenix.v1.serial_iface": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/phenix.v1.iface"
+        },
+        {
+          "$ref": "#/$defs/phenix.v1.iface_address"
+        },
+        {
+          "$ref": "#/$defs/phenix.v1.iface_rulesets"
+        }
+      ],
+      "properties": {
+        "baud_rate": {
+          "default": 9600,
+          "enum": [
+            110,
+            300,
+            600,
+            1200,
+            2400,
+            4800,
+            9600,
+            14400,
+            19200,
+            38400,
+            57600,
+            115200,
+            128000,
+            256000
+          ],
+          "example": 9600,
+          "type": "integer"
+        },
+        "device": {
+          "default": "/dev/ttyS0",
+          "example": "/dev/ttyS0",
+          "minLength": 1,
+          "type": "string"
+        },
+        "proto": {
+          "default": "static",
+          "enum": [
+            "static"
+          ],
+          "example": "static",
+          "type": "string"
+        },
+        "type": {
+          "default": "serial",
+          "enum": [
+            "serial"
+          ],
+          "example": "serial",
+          "type": "string"
+        },
+        "udp_port": {
+          "default": 8989,
+          "example": 8989,
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "type",
+        "proto",
+        "udp_port",
+        "baud_rate",
+        "device"
+      ]
+    },
+    "phenix.v1.static_iface": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/phenix.v1.iface"
+        },
+        {
+          "$ref": "#/$defs/phenix.v1.iface_address"
+        },
+        {
+          "$ref": "#/$defs/phenix.v1.iface_rulesets"
+        }
+      ],
+      "properties": {
+        "proto": {
+          "default": "static",
+          "enum": [
+            "static",
+            "ospf"
+          ],
+          "example": "static",
+          "type": "string"
+        },
+        "type": {
+          "default": "ethernet",
+          "enum": [
+            "ethernet"
+          ],
+          "example": "ethernet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "proto"
+      ]
+    },
+    "phenix.v2.Experiment": {
+      "properties": {
+        "baseDir": {
+          "example": "/phenix/topologies/example-topo",
+          "type": "string"
+        },
+        "experimentName": {
+          "example": "example-exp",
+          "readOnly": true,
+          "type": "string"
+        },
+        "scenario": {
+          "$ref": "#/$defs/phenix.v2.Scenario"
+        },
+        "schedule": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "example": {
+            "ADServer": "compute1"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "topology": {
+          "$ref": "#/$defs/phenix.v2.Topology"
+        },
+        "vlans": {
+          "properties": {
+            "aliases": {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "example": {
+                "MGMT": 200
+              },
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "max": {
+              "type": "integer"
+            },
+            "min": {
+              "type": "integer"
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "topology"
+      ],
+      "type": "object"
+    },
+    "phenix.v2.Image": {
+      "properties": {
+        "compress": {
+          "default": false,
+          "example": false,
+          "type": "boolean"
+        },
+        "deb_append": {
+          "example": "--components=main,restricted",
+          "type": "string"
+        },
+        "format": {
+          "example": "qcow2",
+          "type": "string"
+        },
+        "mirror": {
+          "example": "http://us.archive.ubuntu.com/ubuntu/",
+          "type": "string"
+        },
+        "overlays": {
+          "example": [
+            "/phenix/vmdb/overlays/example-overlay"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "packages": {
+          "example": [
+            "isc-dhcp-client",
+            "openssh-server"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "ramdisk": {
+          "default": false,
+          "example": false,
+          "type": "boolean"
+        },
+        "release": {
+          "example": "focal",
+          "type": "string"
+        },
+        "script_order": {
+          "example": [
+            "POSTBUILD_APT_CLEANUP"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "scripts": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "example": {
+            "POSTBUILD_APT_CLEANUP": "apt clean || apt-get clean || echo \"unable to clean apt cache\"\n"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "size": {
+          "example": "10G",
+          "type": "string"
+        },
+        "variant": {
+          "example": "minbase",
+          "type": "string"
+        }
+      },
+      "required": [
+        "format",
+        "mirror",
+        "release",
+        "size",
+        "variant"
+      ],
+      "type": "object"
+    },
+    "phenix.v2.Role": {
+      "properties": {
+        "policies": {
+          "example": [
+            {
+              "resourceNames": [
+                "*"
+              ],
+              "resources": [
+                "experiments",
+                "experiments/*"
+              ],
+              "verbs": [
+                "list",
+                "get"
+              ]
+            }
+          ],
+          "items": {
+            "properties": {
+              "resourceNames": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "resources": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "verbs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "roleName": {
+          "example": "Example Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policies",
+        "roleName"
+      ],
+      "type": "object"
+    },
+    "phenix.v2.Scenario": {
+      "properties": {
+        "apps": {
+          "items": {
+            "properties": {
+              "assetDir": {
+                "example": "/phenix/topologies/example-topo/assets",
+                "type": "string"
+              },
+              "disabled": {
+                "default": false,
+                "example": false,
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "hosts": {
+                "items": {
+                  "properties": {
+                    "hostname": {
+                      "example": "example-host",
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": true,
+                      "example": {
+                        "setting0": true,
+                        "setting1": 42,
+                        "setting2": "universe key"
+                      },
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "hostname"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "metadata": {
+                "additionalProperties": true,
+                "example": {
+                  "setting0": true,
+                  "setting1": 42,
+                  "setting2": "universe key"
+                },
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "name": {
+                "example": "example-app",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "apps"
+      ],
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "phenix.v2.Topology": {
+      "properties": {
+        "nodes": {
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/phenix.v2.minimega_node"
+              },
+              {
+                "$ref": "#/$defs/phenix.v2.external_node"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "nodes"
+      ],
+      "type": "object"
+    },
+    "phenix.v2.User": {
+      "properties": {
+        "first_name": {
+          "example": "John",
+          "type": "string"
+        },
+        "last_name": {
+          "example": "Doe",
+          "type": "string"
+        },
+        "password": {
+          "example": "\u003cencrypted password\u003e",
+          "readOnly": true,
+          "type": "string"
+        },
+        "rbac": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/phenix.v2.Role"
+            }
+          ],
+          "readOnly": true
+        },
+        "username": {
+          "example": "johndoe@example.com",
+          "type": "string"
+        }
+      },
+      "required": [
+        "first_name",
+        "last_name",
+        "username"
+      ],
+      "type": "object"
+    },
+    "phenix.v2.dhcp_iface": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/phenix.v2.iface"
+        },
+        {
+          "$ref": "#/$defs/phenix.v2.iface_rulesets"
+        }
+      ],
+      "properties": {
+        "proto": {
+          "default": "dhcp",
+          "enum": [
+            "dhcp",
+            "manual"
+          ],
+          "example": "dhcp",
+          "type": "string"
+        },
+        "type": {
+          "default": "ethernet",
+          "enum": [
+            "ethernet"
+          ],
+          "example": "ethernet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "proto"
+      ]
+    },
+    "phenix.v2.external_node": {
+      "properties": {
+        "external": {
+          "type": "boolean"
+        },
+        "general": {
+          "properties": {
+            "description": {
+              "example": "Active Directory Server",
+              "type": "string"
+            },
+            "hostname": {
+              "example": "ADServer",
+              "type": "string"
+            },
+            "vm_type": {
+              "default": "vm",
+              "enum": [
+                "vm",
+                "container",
+                ""
+              ],
+              "example": "vm",
+              "type": "string"
+            }
+          },
+          "required": [
+            "hostname"
+          ],
+          "type": "object"
+        },
+        "hardware": {
+          "properties": {
+            "cpu": {
+              "default": "Broadwell",
+              "example": "Broadwell",
+              "type": "string"
+            },
+            "memory": {
+              "default": 1024,
+              "example": 8192,
+              "oneOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "os_type": {
+              "default": "linux",
+              "example": "windows",
+              "type": "string"
+            },
+            "vcpus": {
+              "default": 1,
+              "example": 4,
+              "oneOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "os_type"
+          ],
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "network": {
+          "properties": {
+            "interfaces": {
+              "items": {
+                "properties": {
+                  "address": {
+                    "example": "192.168.1.100",
+                    "format": "ipv4",
+                    "type": "string"
+                  },
+                  "gateway": {
+                    "example": "192.168.1.1",
+                    "format": "ipv4",
+                    "type": "string"
+                  },
+                  "mask": {
+                    "default": 24,
+                    "example": 24,
+                    "maximum": 32,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "name": {
+                    "example": "eth0",
+                    "type": "string"
+                  },
+                  "proto": {
+                    "default": "dhcp",
+                    "enum": [
+                      "static",
+                      "dhcp",
+                      "manual",
+                      ""
+                    ],
+                    "example": "static",
+                    "type": "string"
+                  },
+                  "vlan": {
+                    "example": "EXP-1",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "interfaces"
+          ],
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "type": {
+          "default": "HIL",
+          "example": "HIL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "external",
+        "type",
+        "general"
+      ],
+      "type": "object"
+    },
+    "phenix.v2.iface": {
+      "properties": {
+        "autostart": {
+          "default": true,
+          "type": "boolean"
+        },
+        "bridge": {
+          "default": "phenix",
+          "type": "string"
+        },
+        "driver": {
+          "example": "e1000",
+          "type": "string"
+        },
+        "mac": {
+          "example": "00:11:22:33:44:55",
+          "pattern": "^$|^([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]){2}$",
+          "type": "string"
+        },
+        "mtu": {
+          "default": 1500,
+          "example": 1500,
+          "type": "integer"
+        },
+        "name": {
+          "example": "eth0",
+          "type": "string"
+        },
+        "qinq": {
+          "default": false,
+          "type": "boolean"
+        },
+        "vlan": {
+          "example": "EXP-1",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "vlan"
+      ],
+      "type": "object"
+    },
+    "phenix.v2.iface_address": {
+      "properties": {
+        "address": {
+          "example": "192.168.1.100",
+          "format": "ipv4",
+          "type": "string"
+        },
+        "dns": {
+          "anyOf": [
+            {
+              "example": [
+                "192.168.1.1",
+                "192.168.1.2"
+              ],
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gateway": {
+          "example": "192.168.1.1",
+          "format": "ipv4",
+          "type": "string"
+        },
+        "mask": {
+          "default": 24,
+          "example": 24,
+          "maximum": 32,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "address",
+        "mask"
+      ],
+      "type": "object"
+    },
+    "phenix.v2.iface_rulesets": {
+      "properties": {
+        "ruleset_in": {
+          "example": "InFromInet",
+          "pattern": "^[\\w-]*$",
+          "type": "string"
+        },
+        "ruleset_out": {
+          "example": "OutToInet",
+          "pattern": "^[\\w-]*$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "phenix.v2.minimega_node": {
+      "properties": {
+        "advanced": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "commands": {
+          "example": [
+            "exec df -h"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "delay": {
+          "properties": {
+            "c2": {
+              "items": {
+                "properties": {
+                  "hostname": {
+                    "type": "string"
+                  },
+                  "useUUID": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "timer": {
+              "example": "5m",
+              "type": "string"
+            },
+            "user": {
+              "type": "boolean"
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "general": {
+          "properties": {
+            "description": {
+              "example": "Active Directory Server",
+              "type": "string"
+            },
+            "do_not_boot": {
+              "default": false,
+              "example": false,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "hostname": {
+              "example": "ADServer",
+              "maxLength": 63,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$",
+              "type": "string"
+            },
+            "snapshot": {
+              "default": false,
+              "example": false,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "vm_type": {
+              "default": "kvm",
+              "enum": [
+                "kvm",
+                "container",
+                ""
+              ],
+              "example": "kvm",
+              "type": "string"
+            }
+          },
+          "required": [
+            "hostname"
+          ],
+          "type": "object"
+        },
+        "hardware": {
+          "properties": {
+            "cpu": {
+              "default": "Broadwell",
+              "example": "Broadwell",
+              "type": "string"
+            },
+            "drives": {
+              "items": {
+                "properties": {
+                  "cache_mode": {
+                    "default": "writeback",
+                    "enum": [
+                      "none",
+                      "writeback",
+                      "unsafe",
+                      "directsync",
+                      "writethrough",
+                      ""
+                    ],
+                    "example": "writeback",
+                    "type": "string"
+                  },
+                  "image": {
+                    "example": "ubuntu.qc2",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "inject_partition": {
+                    "default": 1,
+                    "example": 2,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "interface": {
+                    "default": "ide",
+                    "enum": [
+                      "ahci",
+                      "ide",
+                      "scsi",
+                      "sd",
+                      "mtd",
+                      "floppy",
+                      "pflash",
+                      "virtio",
+                      ""
+                    ],
+                    "example": "ide",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "image"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "memory": {
+              "default": 1024,
+              "example": 8192,
+              "oneOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "os_type": {
+              "default": "linux",
+              "enum": [
+                "centos",
+                "linux",
+                "minirouter",
+                "rhel",
+                "vyatta",
+                "vyos",
+                "windows",
+                "other"
+              ],
+              "example": "windows",
+              "type": "string"
+            },
+            "vcpus": {
+              "default": 1,
+              "example": 4,
+              "oneOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "os_type",
+            "drives"
+          ],
+          "type": "object"
+        },
+        "injections": {
+          "items": {
+            "properties": {
+              "description": {
+                "example": "phenix config file",
+                "type": "string"
+              },
+              "dst": {
+                "example": "/etc/phenix/foo.xml",
+                "type": "string"
+              },
+              "permissions": {
+                "example": "0664",
+                "type": "string"
+              },
+              "src": {
+                "example": "foo.xml",
+                "type": "string"
+              }
+            },
+            "required": [
+              "src",
+              "dst"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "network": {
+          "properties": {
+            "interfaces": {
+              "items": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/phenix.v2.static_iface"
+                  },
+                  {
+                    "$ref": "#/$defs/phenix.v2.dhcp_iface"
+                  },
+                  {
+                    "$ref": "#/$defs/phenix.v2.serial_iface"
+                  }
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "ospf": {
+              "properties": {
+                "areas": {
+                  "items": {
+                    "properties": {
+                      "area_id": {
+                        "default": 1,
+                        "example": 1,
+                        "type": "integer"
+                      },
+                      "area_networks": {
+                        "items": {
+                          "properties": {
+                            "network": {
+                              "example": "10.1.25.0/24",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "network"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "area_id",
+                      "area_networks"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "router_id": {
+                  "example": "0.0.0.1",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "router_id",
+                "areas"
+              ],
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "routes": {
+              "items": {
+                "properties": {
+                  "cost": {
+                    "default": 1,
+                    "example": 1,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "destination": {
+                    "example": "192.168.0.0/24",
+                    "type": "string"
+                  },
+                  "next": {
+                    "example": "192.168.1.254",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "destination",
+                  "next"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "rulesets": {
+              "items": {
+                "properties": {
+                  "default": {
+                    "enum": [
+                      "accept",
+                      "drop",
+                      "reject"
+                    ],
+                    "example": "drop",
+                    "type": "string"
+                  },
+                  "description": {
+                    "example": "From Corp to the DMZ network",
+                    "type": "string"
+                  },
+                  "name": {
+                    "example": "OutToDMZ",
+                    "type": "string"
+                  },
+                  "rules": {
+                    "items": {
+                      "properties": {
+                        "action": {
+                          "enum": [
+                            "accept",
+                            "drop",
+                            "reject"
+                          ],
+                          "example": "accept",
+                          "type": "string"
+                        },
+                        "description": {
+                          "example": "Allow UDP 10.1.26.80 ==\u003e 10.2.25.0/24:123",
+                          "type": "string"
+                        },
+                        "destination": {
+                          "properties": {
+                            "address": {
+                              "example": "10.1.24.60",
+                              "type": "string"
+                            },
+                            "port": {
+                              "example": 3389,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "address"
+                          ],
+                          "type": [
+                            "object",
+                            "null"
+                          ]
+                        },
+                        "id": {
+                          "example": 10,
+                          "type": "integer"
+                        },
+                        "protocol": {
+                          "default": "tcp",
+                          "enum": [
+                            "tcp",
+                            "udp",
+                            "tcp_udp",
+                            "icmp",
+                            "esp",
+                            "ah",
+                            "all"
+                          ],
+                          "example": "tcp",
+                          "type": "string"
+                        },
+                        "source": {
+                          "properties": {
+                            "address": {
+                              "example": "10.1.24.60",
+                              "type": "string"
+                            },
+                            "port": {
+                              "example": 3389,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "address"
+                          ],
+                          "type": [
+                            "object",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "action",
+                        "protocol"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "default",
+                  "rules"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "interfaces"
+          ],
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "type": {
+          "default": "VirtualMachine",
+          "example": "VirtualMachine",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "general",
+        "hardware"
+      ],
+      "type": "object"
+    },
+    "phenix.v2.serial_iface": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/phenix.v2.iface"
+        },
+        {
+          "$ref": "#/$defs/phenix.v2.iface_address"
+        },
+        {
+          "$ref": "#/$defs/phenix.v2.iface_rulesets"
+        }
+      ],
+      "properties": {
+        "baud_rate": {
+          "default": 9600,
+          "enum": [
+            110,
+            300,
+            600,
+            1200,
+            2400,
+            4800,
+            9600,
+            14400,
+            19200,
+            38400,
+            57600,
+            115200,
+            128000,
+            256000
+          ],
+          "example": 9600,
+          "type": "integer"
+        },
+        "device": {
+          "default": "/dev/ttyS0",
+          "example": "/dev/ttyS0",
+          "type": "string"
+        },
+        "proto": {
+          "default": "static",
+          "enum": [
+            "static"
+          ],
+          "example": "static",
+          "type": "string"
+        },
+        "type": {
+          "default": "serial",
+          "enum": [
+            "serial"
+          ],
+          "example": "serial",
+          "type": "string"
+        },
+        "udp_port": {
+          "default": 8989,
+          "example": 8989,
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "type",
+        "proto",
+        "udp_port",
+        "baud_rate",
+        "device"
+      ]
+    },
+    "phenix.v2.static_iface": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/phenix.v2.iface"
+        },
+        {
+          "$ref": "#/$defs/phenix.v2.iface_address"
+        },
+        {
+          "$ref": "#/$defs/phenix.v2.iface_rulesets"
+        }
+      ],
+      "properties": {
+        "proto": {
+          "default": "static",
+          "enum": [
+            "static",
+            "ospf"
+          ],
+          "example": "static",
+          "type": "string"
+        },
+        "type": {
+          "default": "ethernet",
+          "enum": [
+            "ethernet"
+          ],
+          "example": "ethernet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "proto"
+      ]
+    },
+    "position": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "type": "object"
+    },
+    "scenario": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "stored"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "name",
+              "apiVersion",
+              "digest"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "uploaded"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "content",
+              "apiVersion",
+              "digest"
+            ]
+          }
+        }
+      ],
+      "description": "Optional stored or uploaded scenario reference.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "content": {
+          "$ref": "#/$defs/phenix.v2.Scenario"
+        },
+        "digest": {
+          "description": "Digest of the scenario content. Required on every scenario reference, and must match the content when the content is present.",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "stored",
+            "uploaded"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "apiVersion",
+        "digest"
+      ],
+      "type": "object"
+    },
+    "size": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "source": {
+      "additionalProperties": false,
+      "description": "Document provenance and generation warnings.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "digest": {
+          "description": "Digest of the source config identity and spec.",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "importedAt": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "manual",
+            "topology",
+            "experiment"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "topology": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "description": "metadata.updated of the source config at import time.",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "switch": {
+      "additionalProperties": false,
+      "description": "Visual hub bound to exactly one network.",
+      "properties": {
+        "networkId": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "required": [
+        "networkId"
+      ],
+      "type": "object"
+    },
+    "viewport": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "zoom": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "zoom"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://phenix.sandia.gov/schemas/builder/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Library independent document model of the phenix topology builder.",
+  "properties": {
+    "$schema": {
+      "const": "https://phenix.sandia.gov/schemas/builder/v1",
+      "description": "Identifies the builder document schema."
+    },
+    "description": {
+      "type": "string"
+    },
+    "edges": {
+      "items": {
+        "$ref": "#/$defs/edge"
+      },
+      "type": "array"
+    },
+    "grid": {
+      "$ref": "#/$defs/grid"
+    },
+    "id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "name": {
+      "type": "string"
+    },
+    "networks": {
+      "items": {
+        "$ref": "#/$defs/network"
+      },
+      "type": "array"
+    },
+    "nodes": {
+      "items": {
+        "$ref": "#/$defs/node"
+      },
+      "type": "array"
+    },
+    "revision": {
+      "const": 1,
+      "description": "Revision of the builder document schema."
+    },
+    "scenario": {
+      "$ref": "#/$defs/scenario"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "viewport": {
+      "$ref": "#/$defs/viewport"
+    }
+  },
+  "required": [
+    "$schema",
+    "revision",
+    "id",
+    "nodes",
+    "networks",
+    "edges",
+    "viewport",
+    "grid"
+  ],
+  "title": "phenix builder document",
+  "type": "object"
+}

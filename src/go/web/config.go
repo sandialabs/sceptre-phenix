@@ -464,7 +464,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 	var body []byte
 
 	switch typ := r.Header.Get("Accept"); typ {
-	case "", "*/*", "application/json": // default to JSON if not set
+	case "", mimeAny, "application/json": // default to JSON if not set
 		var err error
 
 		body, err = json.Marshal(cfg)

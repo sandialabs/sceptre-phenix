@@ -404,7 +404,7 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 		}
 
 		switch strings.ToLower(node.Hardware().OSType()) {
-		case "linux", "rhel", "centos":
+		case osLinux, "rhel", "centos":
 			var (
 				hostnameFile = startupDir + "/" + node.General().Hostname() + "-hostname.sh"
 				timezoneFile = startupDir + "/" + node.General().Hostname() + "-timezone.sh"
