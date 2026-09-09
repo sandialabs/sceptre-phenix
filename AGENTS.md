@@ -134,8 +134,8 @@ image, documentation, or topology details.
   `feat-add-user-authentication`.
 - Use rebase workflow and one commit per logical feature; PRs normally contain
   one commit. Squash work-in-progress commits and update the message.
-- Update `CHANGELOG.md` for code or behavior changes and `CODEOWNERS` for new
-  areas or ownership changes.
+- Add a Changie fragment in `.changes/unreleased/` for code or behavior changes and
+  update `CODEOWNERS` for new areas or ownership changes.
 - New user-facing features need a minimal README example and documentation in
   [`sceptre-phenix-docs`](https://github.com/sandialabs/sceptre-phenix-docs).
   Existing changes may also require docs; cross-link both pull requests.

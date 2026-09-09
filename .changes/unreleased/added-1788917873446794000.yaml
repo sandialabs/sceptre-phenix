@@ -1,0 +1,4 @@
+kind: Added
+body: Added Changie-powered changelog fragments so contributors can document release
+  notes without editing `CHANGELOG.md` directly.
+time: 2026-09-08T19:37:53.446794-06:00

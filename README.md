@@ -126,6 +126,7 @@ We use a `Makefile` to standardize development tasks. Run `make help` to see all
 # Development
 make all         # Run all tools (format, lint, test)
 make check       # Run linters without fixing (for CI)
+make changelog-check # Verify a Changie changelog fragment exists
 make format      # Format code
 make generate    # Run code generation (protobuf, mocks, etc)
 make lint        # Run linters and fix issues
@@ -133,6 +134,7 @@ make test        # Run unit tests
 
 # Build
 make build       # Build the main phenix binary
+make changelog RELEASE_VERSION=1.1.0 # Build CHANGELOG.md from fragments
 make deb         # Build the phenix .deb package
 make docker      # Build the phenix docker image
 make tunneler    # Build phenix-tunneler binaries
@@ -143,6 +145,11 @@ make install-dev # Install development and build dependencies
 # Cleanup
 make clean       # Clean build artifacts
 ```
+
+### Changelog
+
+Release notes are generated with [Changie](https://changie.dev/) from fragments in `.changes/unreleased/`.
+Add one fragment per pull request instead of editing `CHANGELOG.md` directly, then run `make changelog-check`.
 
 ### Build
 
