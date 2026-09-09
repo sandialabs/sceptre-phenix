@@ -78,7 +78,14 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
 
 2. **Make Your Changes**: Implement your changes. Please include unit tests for any new logic or features.
 
-3. **Stage Your Changes**: Use the `git add` command to stage the changes you want to commit. You can stage specific files or all changes:
+3. **Add a Changelog Fragment**: For code or behavior changes, add one [Changie](https://changie.dev/) fragment under `.changes/unreleased/` instead of editing `CHANGELOG.md` directly. Supported kinds are `Security`, `Removed`, `Deprecated`, `Added`, `Changed`, and `Fixed`.
+    ```bash
+    make install-dev
+    bin/tools/changie new --kind Added --body "Added experiment import validation."
+    make changelog-check
+    ```
+
+4. **Stage Your Changes**: Use the `git add` command to stage the changes you want to commit. You can stage specific files or all changes:
     To stage specific files:
     ```bash
     git add path/to/your/file1 path/to/your/file2
@@ -89,7 +96,7 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
     git add .
     ```
 
-3. **Commit Your Changes**: Commit your changes using [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) notation. Your commit message should follow this format:
+5. **Commit Your Changes**: Commit your changes using [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) notation. Your commit message should follow this format:
     ```bash
     type(scope): subject
     ```
@@ -110,7 +117,7 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
     ```
 
 
-4. **Rebase Your Branch**: Before opening a pull request, ensure your branch is up to date with the main branch.
+6. **Rebase Your Branch**: Before opening a pull request, ensure your branch is up to date with the main branch.
     * Fetch the latest changes from the upstream repository.
         ```bash
         git fetch upstream
@@ -125,14 +132,14 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
         ```
     In the interactive rebase interface, change the word `pick` to `squash` (or `s`) for all commits you want to combine into the first commit. After saving and closing the editor, you will be prompted to create a new commit message. Write a single, comprehensive commit message that summarizes all the changes.
 
-5. **Push to Your Fork**: If you had to rebase, you may need to force push your changes to your forked repository.
+7. **Push to Your Fork**: If you had to rebase, you may need to force push your changes to your forked repository.
 
     Example:
     ```bash
     git push origin feat-add-user-authentication --force
     ```
 
-6. **Open a Pull Request**: Go to the original repository and open a [pull request](https://github.com/sandialabs/sceptre-phenix/pulls). Provide a clear description of your changes and reference any related issues.
+8. **Open a Pull Request**: Go to the original repository and open a [pull request](https://github.com/sandialabs/sceptre-phenix/pulls). Provide a clear description of your changes and reference any related issues.
 
 ## License
 By contributing to this project, you agree that your contributions will be licensed under the [GNU](https://github.com/sandialabs/sceptre-phenix/blob/main/LICENSE) License.

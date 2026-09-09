@@ -1,0 +1,35 @@
+changesDir: .changes
+unreleasedDir: unreleased
+headerPath: header.tpl.md
+changelogPath: CHANGELOG.md
+versionExt: md
+fragmentFileFormat: '{{lower .Kind}}-{{.Time.UnixNano}}'
+versionFormat: '## [{{.VersionNoPrefix}}](https://github.com/sandialabs/sceptre-phenix/releases/tag/{{.Version}}) - {{.Time.Format "2006-01-02"}}'
+kindFormat: '### {{.Kind}}'
+changeFormat: '- {{.Body}}'
+kinds:
+  - label: Security
+    key: security
+    auto: patch
+  - label: Removed
+    key: removed
+    auto: minor
+  - label: Deprecated
+    key: deprecated
+    auto: minor
+  - label: Added
+    key: added
+    auto: minor
+  - label: Changed
+    key: changed
+    auto: major
+  - label: Fixed
+    key: fixed
+    auto: patch
+newlines:
+  afterChangelogHeader: 1
+  beforeChangelogVersion: 1
+  afterChangelogVersion: 1
+  beforeKind: 1
+  afterKind: 0
+  endOfVersion: 1

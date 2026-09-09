@@ -1,7 +1,11 @@
-.PHONY: all build check clean deb docker examples example-go example-python format generate help help-all install-dev install-wrapper uninstall-wrapper lint run-examples test tunneler ui version
+.PHONY: all build changelog changelog-check check clean deb docker examples example-go example-python format generate help help-all install-dev install-wrapper uninstall-wrapper lint run-examples test tunneler ui version
 .DEFAULT_GOAL := help
 
 DOCKER_TAG ?= latest
+CHANGIE_VERSION ?= ec0d23a0e8a3615978e36ec0039410b845635257
+CHANGELOG_BASE_REF ?= origin/main
+TOOLS_DIR := bin/tools
+CHANGIE := $(TOOLS_DIR)/changie
 
 # Define a helper for checking command existence
 check-command = @if ! command -v $(1) > /dev/null; then \
@@ -15,6 +19,7 @@ help:
 	@echo "Development:"
 	@echo "  all          - Run all development tasks (format, lint, test) and build examples"
 	@echo "  check        - Run linters without fixing (for CI)"
+	@echo "  changelog-check - Check for a Changie changelog fragment"
 	@echo "  format       - Format code"
 	@echo "  generate     - Run code generation (protobuf, mocks, etc)"
 	@echo "  lint         - Run linters and fix issues"
@@ -24,6 +29,7 @@ help:
 	@echo ""
 	@echo "Build:"
 	@echo "  build        - Build the main phenix binary"
+	@echo "  changelog    - Build CHANGELOG.md from fragments (requires RELEASE_VERSION=x.y.z)"
 	@echo "  deb          - Build the phenix .deb package"
 	@echo "  docker       - Build the phenix docker image"
 	@echo "  ui           - Build the frontend UI"
@@ -60,7 +66,7 @@ clean:
 	$(MAKE) -C src/js clean
 	$(MAKE) -C examples clean
 
-check: generate
+check: changelog-check generate
 	$(MAKE) -C src/go check
 	$(MAKE) -C examples check
 
@@ -79,7 +85,32 @@ format:
 generate:
 	$(MAKE) -C src/go generate
 
-install-dev:
+$(CHANGIE):
+	$(call check-command,go,Please install Go 1.24+ or set GO variable)
+	GOBIN=$(abspath $(TOOLS_DIR)) go install github.com/miniscruff/changie@$(CHANGIE_VERSION)
+
+changelog-check:
+	@changed_files="$$( \
+		{ git diff --name-only --diff-filter=ACMR "$(CHANGELOG_BASE_REF)...HEAD" 2>/dev/null || true; \
+		  git diff --name-only --diff-filter=ACMR; \
+		  git diff --name-only --cached --diff-filter=ACMR; \
+		  git ls-files --others --exclude-standard; } | sort -u \
+	)"; \
+	if printf '%s\n' "$$changed_files" | grep -q '^CHANGELOG.md$$'; then \
+		echo "CHANGELOG.md changed; assuming release update."; \
+	elif printf '%s\n' "$$changed_files" | grep -Eq '^\.changes/unreleased/[^/]+\.yaml$$'; then \
+		echo "Found Changie changelog fragment."; \
+	else \
+		echo "Error: add a Changie fragment under .changes/unreleased/ or update CHANGELOG.md for a release."; \
+		exit 1; \
+	fi
+
+changelog: $(CHANGIE)
+	@test -n "$(RELEASE_VERSION)" || { echo "Error: RELEASE_VERSION is required, e.g. make changelog RELEASE_VERSION=1.1.0"; exit 1; }
+	$(CHANGIE) batch v$(RELEASE_VERSION)
+	$(CHANGIE) merge
+
+install-dev: $(CHANGIE)
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))
 	$(call check-command,protoc,Please install protobuf-compiler (e.g. sudo apt install protobuf-compiler))
 	$(call check-command,npm,Please install npm (e.g. sudo apt install npm))
@@ -156,3 +187,4 @@ version:
 	@printf "NPM:        " && (npm --version 2>/dev/null || echo "Not installed")
 	@printf "Protoc:     " && (protoc --version 2>/dev/null || echo "Not installed")
 	@printf "Docker:     " && (docker --version 2>/dev/null || echo "Not installed")
+	@printf "Changie:    " && ($(CHANGIE) --version 2>/dev/null || echo "Not installed")
