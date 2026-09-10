@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	log "github.com/activeshadow/libminimega/minilog"
 	"github.com/gorilla/mux"
+	log "github.com/sandia-minimega/minimega/v2/pkg/minilog"
 )
 
 // GetTunneler - GET /downloads/tunneler/{name}.

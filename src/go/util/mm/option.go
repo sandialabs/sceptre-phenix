@@ -7,7 +7,16 @@ import (
 	"time"
 )
 
-const DefaultC2Timeout = 5 * time.Minute
+const (
+	DefaultC2Timeout = 5 * time.Minute
+	// DefaultC2AppearGrace bounds how long a command may take to show up on the
+	// host running the VM. A command missing there was created under another
+	// id on that host and would never answer.
+	DefaultC2AppearGrace = 30 * time.Second
+	// DefaultC2ClientGrace is how long a VM's miniccc client may go unseen while
+	// a command is waiting on it; longer than two ron reaper cycles.
+	DefaultC2ClientGrace = 90 * time.Second
+)
 
 type Option func(*options)
 
@@ -169,8 +178,10 @@ const (
 type c2Options struct {
 	ctx context.Context
 
-	ns string
-	vm string
+	ns     string
+	vm     string
+	vmUUID string
+	vmHost string
 
 	command   string
 	commandID string
@@ -180,8 +191,10 @@ type c2Options struct {
 
 	mount *bool
 
-	timeout time.Duration
-	wait    bool
+	timeout     time.Duration
+	appearGrace time.Duration
+	clientGrace time.Duration
+	wait        bool
 
 	skipActiveClientCheck bool
 
@@ -191,8 +204,10 @@ type c2Options struct {
 
 func NewC2Options(opts ...C2Option) c2Options {
 	o := c2Options{ //nolint:exhaustruct // partial initialization
-		ctx:     context.Background(),
-		timeout: DefaultC2Timeout,
+		ctx:         context.Background(),
+		timeout:     DefaultC2Timeout,
+		appearGrace: DefaultC2AppearGrace,
+		clientGrace: DefaultC2ClientGrace,
 	}
 
 	for _, opt := range opts {
@@ -217,6 +232,22 @@ func C2NS(n string) C2Option {
 func C2VM(v string) C2Option {
 	return func(o *c2Options) {
 		o.vm = v
+	}
+}
+
+// C2VMUUID supplies the UUID minimega launched the VM under, saving the
+// `vm info` lookup that would otherwise resolve it on every command.
+func C2VMUUID(u string) C2Option {
+	return func(o *c2Options) {
+		o.vmUUID = u
+	}
+}
+
+// C2VMHost supplies the cluster host running the VM. Command ids and responses
+// are per host in minimega, so responses are read from this host alone.
+func C2VMHost(h string) C2Option {
+	return func(o *c2Options) {
+		o.vmHost = h
 	}
 }
 
@@ -261,6 +292,22 @@ func C2Unmount() C2Option {
 func C2Timeout(d time.Duration) C2Option {
 	return func(o *c2Options) {
 		o.timeout = d
+	}
+}
+
+// C2AppearGrace bounds the wait for a command to appear on the VM's host. Zero
+// disables the check.
+func C2AppearGrace(d time.Duration) C2Option {
+	return func(o *c2Options) {
+		o.appearGrace = d
+	}
+}
+
+// C2ClientGrace bounds how long the VM's C2 client may go unseen while a
+// command waits for its response. Zero disables the check.
+func C2ClientGrace(d time.Duration) C2Option {
+	return func(o *c2Options) {
+		o.clientGrace = d
 	}
 }
 

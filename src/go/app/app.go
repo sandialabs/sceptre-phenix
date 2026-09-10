@@ -325,7 +325,10 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				}
 
 				// Check to make sure this app isn't already running via an automatic
-				// periodic execution.
+				// periodic execution. Callers pass their own copy of the experiment,
+				// so consult the store rather than that copy's status.
+				_ = exp.Reload()
+
 				if running := exp.Status.AppRunning()[app.Name()]; running {
 					notes.AddInfo(
 						ctx,

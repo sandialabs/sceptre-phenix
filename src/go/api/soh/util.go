@@ -343,7 +343,6 @@ func (s *SOH) decodeMetadata(exp *types.Experiment) error {
 	return nil
 }
 
-//nolint:cyclop,funlen,gocyclo,maintidx // complex logic
 func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map[string]bool) bool {
 	if s.md.SkipNetworkConfig || !checks["network-config"] {
 		return false
@@ -373,780 +372,247 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 	wg := new(mm.StateGroup)
 
 	if !icmpDisabled {
-		for host := range s.reachabilityHosts {
-			// Assume we're not skipping this host by default.
-			var skipHost error
-
-			if _, ok := s.c2Hosts[host]; !ok {
-				// This host is known to not have C2 active, so don't test from it.
-				skipHost = errors.New("c2 not active on host")
-			}
-
-			if _, ok := s.failedNetwork[host]; ok {
-				// This host failed the network config test, so don't test from it.
-				skipHost = errors.New("networking not configured on host")
-			}
-
-			for _, ips := range s.vlans {
-				// Each host should try to ping a single random host in each VLAN.
-				if strings.EqualFold(s.md.Reachability, "sample") {
-					var targeted bool
-
-					// Range over IPs to prevent this for-loop from going on forever if
-					// all IPs in VLAN failed network connectivity test.
-					for range ips {
-						idx := rand.IntN(len(ips)) //nolint:gosec // weak random number generator
-						targetIP := ips[idx]
-
-						targetHost := s.addrHosts[targetIP]
-
-						if _, ok := s.failedNetwork[targetHost]; ok {
-							continue
-						}
-
-						targeted = true
-
-						if skipHost != nil {
-							wg.AddError(skipHost, map[string]any{"host": host, "target": targetIP})
-						} else {
-							logger.Debug(
-								"running ping test",
-								"from",
-								host,
-								"to",
-								targetHost,
-								"ip",
-								targetIP,
-							)
-							s.pingTest(ctx, wg, ns, s.nodes[host], targetIP)
-						}
-
-						break
-					}
-
-					if !targeted {
-						// Choose random host in VLAN to create error for.
-						idx := rand.IntN(len(ips)) //nolint:gosec // weak random number generator
-						targetIP := ips[idx]
-
-						// This target host failed the network config test, so don't try
-						// to do any reachability to it.
-						var (
-							err  = errors.New("networking not configured on target")
-							meta = map[string]any{"host": host, "target": targetIP}
-						)
-
-						wg.AddError(err, meta)
-					}
-				}
-
-				// Each host should try to ping every host in each VLAN.
-				if strings.EqualFold(s.md.Reachability, "full") {
-					for _, targetIP := range ips {
-						targetHost := s.addrHosts[targetIP]
-
-						if _, ok := s.failedNetwork[targetHost]; ok {
-							// This target host failed the network config test, so don't try
-							// to do any reachability to it.
-							var (
-								err  = errors.New("networking not configured on target")
-								meta = map[string]any{"host": host, "target": targetIP}
-							)
-
-							wg.AddError(err, meta)
-
-							continue
-						}
-
-						if skipHost != nil {
-							wg.AddError(skipHost, map[string]any{"host": host, "target": targetIP})
-						} else {
-							logger.Debug(
-								"running ping test",
-								"from",
-								host,
-								"to",
-								targetHost,
-								"ip",
-								targetIP,
-							)
-							s.pingTest(ctx, wg, ns, s.nodes[host], targetIP)
-						}
-					}
-				}
-			}
-		}
+		s.icmpReachabilityTests(ctx, wg, ns)
 	}
 
 	if !customDisabled {
-		for _, reach := range s.md.CustomReachability {
-			host := reach.Src
-
-			if _, ok := s.c2Hosts[host]; !ok {
-				// This host is known to not have C2 active, so don't test from it.
-				wg.AddError(
-					errors.New("c2 not active on host"),
-					map[string]any{"host": host, "target": reach.Dst},
-				)
-
-				continue
-			}
-
-			if _, ok := s.failedNetwork[host]; ok {
-				// This host failed the network config test, so don't test from it.
-				wg.AddError(
-					errors.New("networking not configured on host"),
-					map[string]any{"host": host, "target": reach.Dst},
-				)
-
-				continue
-			}
-
-			target := reach.Dst
-
-			if fields := strings.Split(reach.Dst, "|"); len(fields) > 1 {
-				target = s.hostIPs[fields[0]][fields[1]]
-			}
-
-			logger.Debug(
-				"running custom reachability test",
-				"from",
-				host,
-				"to",
-				fmt.Sprintf("%s://%s:%d", reach.Proto, target, reach.Port),
-			)
-
-			wait, err := time.ParseDuration(reach.Wait)
-			if err != nil && reach.Wait != "" {
-				logger.Warn("invalid wait time provided, using default", "provided", reach.Wait)
-			}
-
-			s.connTest(ctx, wg, ns, host, target, reach.Proto, reach.Port, wait, reach.Packet)
-		}
+		s.customReachabilityTests(ctx, wg, ns)
 	}
 
-	cancel := periodicallyNotify(
-		ctx,
-		"waiting for reachability tests to complete...",
-		notifyInterval,
-	)
-
-	// Wait for hosts to test reachability to other hosts.
-	wg.Wait()
-	cancel()
+	if waitAll(ctx, wg, "waiting for reachability tests to complete...") {
+		return true
+	}
 
 	for _, state := range wg.States {
 		var (
 			host, _   = state.Meta["host"].(string)
 			target, _ = state.Meta["target"].(string)
+			hostname  = s.addrHosts[target] // empty when the target is not in the topology
 		)
 
-		// Convert target IP to hostname.
-		hostname := s.addrHosts[target]
-
-		if hostname != "" { // might be empty if target IP not in topology
+		if hostname != "" {
 			state.Meta["target"] = hostname
 		}
 
 		state.Meta["ip"] = target
 
-		st := State{ //nolint:exhaustruct // partial initialization
-			Metadata:  state.Meta,
-			Timestamp: time.Now().Format(time.RFC3339),
-		}
+		st := s.newState(state)
+		if st.Error != "" {
+			if port, ok := state.Meta["port"].(int); ok {
+				proto, _ := state.Meta["proto"].(string)
 
-		err := state.Err
-		if err != nil {
-			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
-			}
-
-			st.Error = err.Error()
-
-			if _, ok := state.Meta["port"]; ok {
-				var (
-					port, _  = state.Meta["port"].(int)
-					proto, _ = state.Meta["proto"].(string)
-				)
-
-				logger.Error(
-					"[✗] failed to connect",
-					"from",
-					host,
-					"to",
-					fmt.Sprintf("%s://%s:%d", proto, target, port),
-				)
+				logger.Error("[✗] failed to connect", "from", host, "to", fmt.Sprintf("%s://%s:%d", proto, target, port))
 			} else {
 				logger.Error("[✗] failed to ping", "from", host, "to", hostname, "ip", target)
 			}
-		} else {
-			st.Success = state.Msg
 		}
 
-		hostState, ok := s.status[host]
-		if !ok {
-			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
-		}
+		// The result belongs to both ends of the test.
+		record := func(h *HostState) { h.Reachability = append(h.Reachability, st) }
 
-		hostState.Reachability = append(hostState.Reachability, st)
-		s.status[host] = hostState
+		s.updateHost(host, record)
 
-		if hostname != "" { // might be empty if target IP not in topology
-			hostState, ok = s.status[hostname]
-			if !ok {
-				hostState = HostState{Hostname: hostname} //nolint:exhaustruct // partial initialization
-			}
-
-			hostState.Reachability = append(hostState.Reachability, st)
-			s.status[hostname] = hostState
+		if hostname != "" {
+			s.updateHost(hostname, record)
 		}
 	}
 
 	return wg.ErrCount > 0
 }
 
-// fileExistenceTestFn matches the signature shared by fileTest and fileAbsentTest.
-type fileExistenceTestFn func(ctx context.Context, wg *mm.StateGroup, ns string, node ifaces.NodeSpec, path string)
+// icmpReachabilityTests pings across VLANs from every host under test: one
+// random target per VLAN in sample mode, every target in full mode.
+func (s *SOH) icmpReachabilityTests(ctx context.Context, wg *mm.StateGroup, ns string) {
+	logger := plog.LoggerFromContext(ctx, plog.TypeSoh)
 
-// waitForFileExistenceTest runs the given file existence test (fileTest or
-// fileAbsentTest) for each host/path pair in hostFiles, then records results
-// into the host state field selected by assign. This is shared by
-// waitForFileTest and waitForFileAbsentTest since they only differ by which
-// test is run, what gets logged, and where results are stored.
-func (s *SOH) waitForFileExistenceTest(
-	ctx context.Context,
-	ns string,
-	hostFiles map[string][]string,
-	test fileExistenceTestFn,
-	waitMsg string,
-	notFoundLogMsg string,
-	assign func(*HostState, State),
-) bool {
-	var (
-		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
-		wg     = new(mm.StateGroup)
-	)
+	// ping runs a ping from host to targetIP, or records why it cannot run.
+	ping := func(host, targetIP string) {
+		var (
+			meta       = map[string]any{"host": host, "target": targetIP}
+			targetHost = s.addrHosts[targetIP]
+		)
 
-	for host, files := range hostFiles {
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
+		if _, failed := s.failedNetwork[targetHost]; failed {
+			wg.AddError(errors.New("networking not configured on target"), meta)
+
+			return
+		}
+
+		if err := s.cannotReach(host); err != nil {
+			wg.AddError(err, meta)
+
+			return
+		}
+
+		logger.Debug("running ping test", "from", host, "to", targetHost, "ip", targetIP)
+		s.pingTest(ctx, wg, ns, s.nodes[host], targetIP)
+	}
+
+	for host := range s.reachabilityHosts {
+		for _, ips := range s.vlans {
+			switch {
+			case strings.EqualFold(s.md.Reachability, "sample"):
+				ping(host, s.sampleTarget(ips))
+			case strings.EqualFold(s.md.Reachability, "full"):
+				for _, targetIP := range ips {
+					ping(host, targetIP)
+				}
+			}
+		}
+	}
+}
+
+// customReachabilityTests runs the configured connection tests.
+func (s *SOH) customReachabilityTests(ctx context.Context, wg *mm.StateGroup, ns string) {
+	logger := plog.LoggerFromContext(ctx, plog.TypeSoh)
+
+	for _, reach := range s.md.CustomReachability {
+		var (
+			host = reach.Src
+			meta = map[string]any{"host": host, "target": reach.Dst}
+		)
+
+		if err := s.cannotReach(host); err != nil {
+			wg.AddError(err, meta)
 
 			continue
 		}
 
-		for _, path := range files {
-			logger.Debug("checking file on host", "host", host, "path", path)
-			test(ctx, wg, ns, s.nodes[host], path)
+		target := reach.Dst
+
+		if fields := strings.Split(reach.Dst, "|"); len(fields) > 1 {
+			target = s.hostIPs[fields[0]][fields[1]]
 		}
-	}
 
-	cancel := periodicallyNotify(ctx, waitMsg, notifyInterval)
-
-	wg.Wait()
-	cancel()
-
-	for _, state := range wg.States {
-		var (
-			host, _ = state.Meta["host"].(string)
-			path, _ = state.Meta["path"].(string)
+		logger.Debug(
+			"running custom reachability test",
+			"from", host,
+			"to", fmt.Sprintf("%s://%s:%d", reach.Proto, target, reach.Port),
 		)
 
-		st := State{ //nolint:exhaustruct // partial initialization
-			Metadata:  state.Meta,
-			Timestamp: time.Now().Format(time.RFC3339),
+		wait, err := time.ParseDuration(reach.Wait)
+		if err != nil && reach.Wait != "" {
+			logger.Warn("invalid wait time provided, using default", "provided", reach.Wait)
 		}
 
-		err := state.Err
-		if err != nil {
-			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
-			}
+		s.connTest(ctx, wg, ns, host, target, reach.Proto, reach.Port, wait, reach.Packet)
+	}
+}
 
-			st.Error = err.Error()
-
-			logger.Error(notFoundLogMsg, "host", host, "path", path)
-		} else {
-			st.Success = state.Msg
-		}
-
-		hostState, ok := s.status[host]
-		if !ok {
-			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
-		}
-
-		assign(&hostState, st)
-		s.status[host] = hostState
+// cannotReach explains why host cannot originate reachability tests, nil when
+// it can.
+func (s *SOH) cannotReach(host string) error {
+	if _, ok := s.failedNetwork[host]; ok {
+		return errors.New("networking not configured on host")
 	}
 
-	return wg.ErrCount > 0
+	if _, ok := s.c2Hosts[host]; !ok {
+		return errors.New("c2 not active on host")
+	}
+
+	return nil
+}
+
+// sampleTarget picks a random address from ips, preferring one whose host
+// passed the network config check.
+func (s *SOH) sampleTarget(ips []string) string {
+	var candidates []string
+
+	for _, ip := range ips {
+		if _, failed := s.failedNetwork[s.addrHosts[ip]]; !failed {
+			candidates = append(candidates, ip)
+		}
+	}
+
+	if len(candidates) == 0 {
+		candidates = ips
+	}
+
+	return candidates[rand.IntN(len(candidates))] //nolint:gosec // weak random number generator
 }
 
 func (s *SOH) waitForFileTest(ctx context.Context, ns string) bool {
-	return s.waitForFileExistenceTest(
-		ctx,
-		ns,
-		s.md.HostFiles,
-		s.fileTest,
-		"waiting for file tests to complete...",
-		"[✗] file not found on host",
-		func(hostState *HostState, st State) {
-			hostState.Files = append(hostState.Files, st)
-		},
-	)
+	return runHostCheck(ctx, s, ns, hostCheck[string]{ //nolint:exhaustruct // partial initialization
+		kind:    "path",
+		targets: s.md.HostFiles,
+		test:    s.fileTest,
+		waitMsg: "waiting for file tests to complete...",
+		failMsg: "[✗] file not found on host",
+		record:  func(h *HostState, st State) { h.Files = append(h.Files, st) },
+	})
 }
 
 func (s *SOH) waitForFileAbsentTest(ctx context.Context, ns string) bool {
-	return s.waitForFileExistenceTest(
-		ctx,
-		ns,
-		s.md.HostFilesAbsent,
-		s.fileAbsentTest,
-		"waiting for file absence tests to complete...",
-		"[✗] file found on host",
-		func(hostState *HostState, st State) {
-			hostState.FilesAbsent = append(hostState.FilesAbsent, st)
-		},
-	)
+	return runHostCheck(ctx, s, ns, hostCheck[string]{ //nolint:exhaustruct // partial initialization
+		kind:    "path",
+		targets: s.md.HostFilesAbsent,
+		test:    s.fileAbsentTest,
+		waitMsg: "waiting for file absence tests to complete...",
+		failMsg: "[✗] file found on host",
+		record:  func(h *HostState, st State) { h.FilesAbsent = append(h.FilesAbsent, st) },
+	})
 }
 
-//nolint:dupl // similar to waitForContainerTest
 func (s *SOH) waitForServiceTest(ctx context.Context, ns string) bool {
-	var (
-		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
-		wg     = new(mm.StateGroup)
-	)
-
-	for host, services := range s.md.HostServices {
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
-
-			continue
-		}
-
-		for _, service := range services {
-			logger.Debug("checking for service on host", "host", host, "service", service)
-			s.serviceTest(ctx, wg, ns, s.nodes[host], service)
-		}
-	}
-
-	cancel := periodicallyNotify(ctx, "waiting for service tests to complete...", notifyInterval)
-
-	wg.Wait()
-	cancel()
-
-	for _, state := range wg.States {
-		var (
-			host, _    = state.Meta["host"].(string)
-			service, _ = state.Meta["service"].(string)
-		)
-
-		st := State{ //nolint:exhaustruct // partial initialization
-			Metadata:  state.Meta,
-			Timestamp: time.Now().Format(time.RFC3339),
-		}
-
-		err := state.Err
-		if err != nil {
-			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
-			}
-
-			st.Error = err.Error()
-
-			logger.Error("[✗] service not running on host", "host", host, "service", service)
-		} else {
-			st.Success = state.Msg
-		}
-
-		hostState, ok := s.status[host]
-		if !ok {
-			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
-		}
-
-		hostState.Services = append(hostState.Services, st)
-		s.status[host] = hostState
-	}
-
-	return wg.ErrCount > 0
+	return runHostCheck(ctx, s, ns, hostCheck[string]{ //nolint:exhaustruct // partial initialization
+		kind:    "service",
+		targets: s.md.HostServices,
+		test:    s.serviceTest,
+		waitMsg: "waiting for service tests to complete...",
+		failMsg: "[✗] service not running on host",
+		record:  func(h *HostState, st State) { h.Services = append(h.Services, st) },
+	})
 }
 
-//nolint:dupl // similar to waitForServiceTest
 func (s *SOH) waitForContainerTest(ctx context.Context, ns string) bool {
-	var (
-		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
-		wg     = new(mm.StateGroup)
-	)
-
-	for host, containers := range s.md.HostContainers {
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
-
-			continue
-		}
-
-		for _, container := range containers {
-			logger.Debug("checking docker container on host", "host", host, "container", container)
-			s.containerTest(ctx, wg, ns, s.nodes[host], container)
-		}
-	}
-
-	cancel := periodicallyNotify(
-		ctx,
-		"waiting for docker container tests to complete...",
-		notifyInterval,
-	)
-
-	wg.Wait()
-	cancel()
-
-	for _, state := range wg.States {
-		var (
-			host, _      = state.Meta["host"].(string)
-			container, _ = state.Meta["container"].(string)
-		)
-
-		st := State{ //nolint:exhaustruct // partial initialization
-			Metadata:  state.Meta,
-			Timestamp: time.Now().Format(time.RFC3339),
-		}
-
-		err := state.Err
-		if err != nil {
-			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
-			}
-
-			st.Error = err.Error()
-
-			logger.Error(
-				"[✗] docker container not up/healthy on host",
-				"host",
-				host,
-				"container",
-				container,
-			)
-		} else {
-			st.Success = state.Msg
-		}
-
-		hostState, ok := s.status[host]
-		if !ok {
-			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
-		}
-
-		hostState.Containers = append(hostState.Containers, st)
-		s.status[host] = hostState
-	}
-
-	return wg.ErrCount > 0
+	return runHostCheck(ctx, s, ns, hostCheck[string]{ //nolint:exhaustruct // partial initialization
+		kind:    "container",
+		targets: s.md.HostContainers,
+		test:    s.containerTest,
+		waitMsg: "waiting for docker container tests to complete...",
+		failMsg: "[✗] docker container not up/healthy on host",
+		record:  func(h *HostState, st State) { h.Containers = append(h.Containers, st) },
+	})
 }
 
-//nolint:dupl // similar to waitForPortTest
 func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
-	var (
-		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
-		wg     = new(mm.StateGroup)
-	)
-
-	for host, processes := range s.md.HostProcesses {
-		// If the host isn't in the C2 hosts map, then don't operate on it since it
-		// was likely skipped for a reason.
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
-
-			continue
-		}
-
-		for _, proc := range processes {
-			logger.Debug("checking for process on host", "host", host, "process", proc)
-			s.procTest(ctx, wg, ns, s.nodes[host], proc)
-		}
-	}
-
-	// Check to see if any of the apps have hosts with metadata that include an SoH profile.
-	for _, app := range s.apps {
-		for _, host := range app.Hosts() {
-			if ms, ok := host.Metadata()[s.md.AppProfileKey]; ok {
-				if _, ok := s.c2Hosts[host.Hostname()]; !ok {
-					logger.Debug("skipping host per config", "host", host.Hostname())
-
-					continue
-				}
-
-				var profile sohProfile
-
-				err := mapstructure.Decode(ms, &profile)
-				if err != nil {
-					logger.Warn(
-						"incorrect SoH profile for host in app",
-						"host",
-						host.Hostname(),
-						"app",
-						app.Name(),
-					)
-
-					continue
-				}
-
-				for _, proc := range profile.Processes {
-					logger.Debug(
-						"checking for process on host",
-						"host",
-						host.Hostname(),
-						"process",
-						proc,
-					)
-					s.procTest(ctx, wg, ns, s.nodes[host.Hostname()], proc)
-				}
-			}
-		}
-	}
-
-	cancel := periodicallyNotify(ctx, "waiting for process tests to complete...", notifyInterval)
-
-	wg.Wait()
-	cancel()
-
-	for _, state := range wg.States {
-		var (
-			host, _ = state.Meta["host"].(string)
-			proc, _ = state.Meta["proc"].(string)
-		)
-
-		st := State{ //nolint:exhaustruct // partial initialization
-			Metadata:  state.Meta,
-			Timestamp: time.Now().Format(time.RFC3339),
-		}
-
-		err := state.Err
-		if err != nil {
-			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
-			}
-
-			st.Error = err.Error()
-
-			logger.Error("[✗] process not running on host", "host", host, "process", proc)
-		} else {
-			st.Success = state.Msg
-		}
-
-		hostState, ok := s.status[host]
-		if !ok {
-			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
-		}
-
-		hostState.Processes = append(hostState.Processes, st)
-		s.status[host] = hostState
-	}
-
-	return wg.ErrCount > 0
+	return runHostCheck(ctx, s, ns, hostCheck[string]{ //nolint:exhaustruct // partial initialization
+		kind:    "proc",
+		targets: s.md.HostProcesses,
+		profile: func(p sohProfile) []string { return p.Processes },
+		test:    s.procTest,
+		waitMsg: "waiting for process tests to complete...",
+		failMsg: "[✗] process not running on host",
+		record:  func(h *HostState, st State) { h.Processes = append(h.Processes, st) },
+	})
 }
 
-//nolint:dupl // similar to waitForProcTest
 func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
-	var (
-		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
-		wg     = new(mm.StateGroup)
-	)
-
-	for host, listeners := range s.md.HostListeners {
-		// If the host isn't in the C2 hosts map, then don't operate on it since it
-		// was likely skipped for a reason.
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
-
-			continue
-		}
-
-		for _, port := range listeners {
-			logger.Debug("checking for listener on host", "host", host, "listener", port)
-			s.portTest(ctx, wg, ns, s.nodes[host], port)
-		}
-	}
-
-	// Check to see if any of the apps have hosts with metadata that include an SoH profile.
-	for _, app := range s.apps {
-		for _, host := range app.Hosts() {
-			if ms, ok := host.Metadata()[s.md.AppProfileKey]; ok {
-				if _, ok := s.c2Hosts[host.Hostname()]; !ok {
-					logger.Debug("skipping host per config", "host", host.Hostname())
-
-					continue
-				}
-
-				var profile sohProfile
-
-				err := mapstructure.Decode(ms, &profile)
-				if err != nil {
-					logger.Warn(
-						"incorrect SoH profile for host in app",
-						"host",
-						host.Hostname(),
-						"app",
-						app.Name(),
-					)
-
-					continue
-				}
-
-				for _, port := range profile.Listeners {
-					logger.Debug(
-						"checking for listener on host",
-						"host",
-						host.Hostname(),
-						"listener",
-						port,
-					)
-					s.portTest(ctx, wg, ns, s.nodes[host.Hostname()], port)
-				}
-			}
-		}
-	}
-
-	cancel := periodicallyNotify(ctx, "waiting for listener tests to complete...", notifyInterval)
-
-	wg.Wait()
-	cancel()
-
-	for _, state := range wg.States {
-		var (
-			host, _ = state.Meta["host"].(string)
-			port, _ = state.Meta["port"].(string)
-		)
-
-		st := State{ //nolint:exhaustruct // partial initialization
-			Metadata:  state.Meta,
-			Timestamp: time.Now().Format(time.RFC3339),
-		}
-
-		err := state.Err
-		if err != nil {
-			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
-			}
-
-			st.Error = err.Error()
-
-			logger.Error("[✗] host not listening on port", "host", host, "port", port)
-		} else {
-			st.Success = state.Msg
-		}
-
-		hostState, ok := s.status[host]
-		if !ok {
-			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
-		}
-
-		hostState.Listeners = append(hostState.Listeners, st)
-		s.status[host] = hostState
-	}
-
-	return wg.ErrCount > 0
+	return runHostCheck(ctx, s, ns, hostCheck[string]{ //nolint:exhaustruct // partial initialization
+		kind:    "port",
+		targets: s.md.HostListeners,
+		profile: func(p sohProfile) []string { return p.Listeners },
+		test:    s.portTest,
+		waitMsg: "waiting for listener tests to complete...",
+		failMsg: "[✗] host not listening on port",
+		record:  func(h *HostState, st State) { h.Listeners = append(h.Listeners, st) },
+	})
 }
 
 func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
-	var (
-		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
-		wg     = new(mm.StateGroup)
-	)
-
-	for host, tests := range s.md.CustomHostTests {
-		// If the host isn't in the C2 hosts map, then don't operate on it since it
-		// was likely skipped for a reason.
-		if _, ok := s.c2Hosts[host]; !ok {
-			logger.Debug("skipping host per config", "host", host)
-
-			continue
-		}
-
-		for _, test := range tests {
-			logger.Debug("running custom test on host", "host", host, "test", test.Name)
-			s.customTest(ctx, wg, ns, s.nodes[host], test)
-		}
-	}
-
-	// Check to see if any of the apps have hosts with metadata that include an SoH profile.
-	for _, app := range s.apps {
-		for _, host := range app.Hosts() {
-			if ms, ok := host.Metadata()[s.md.AppProfileKey]; ok {
-				if _, ok := s.c2Hosts[host.Hostname()]; !ok {
-					logger.Debug("skipping host per config", "host", host.Hostname())
-
-					continue
-				}
-
-				var profile sohProfile
-
-				err := mapstructure.Decode(ms, &profile)
-				if err != nil {
-					logger.Warn(
-						"incorrect SoH profile for host in app",
-						"host",
-						host.Hostname(),
-						"app",
-						app.Name(),
-					)
-
-					continue
-				}
-
-				for _, test := range profile.CustomTests {
-					logger.Debug(
-						"running custom test on host",
-						"host",
-						host.Hostname(),
-						"test",
-						test.Name,
-					)
-					s.customTest(ctx, wg, ns, s.nodes[host.Hostname()], test)
-				}
-			}
-		}
-	}
-
-	cancel := periodicallyNotify(ctx, "waiting for custom tests to complete...", notifyInterval)
-
-	wg.Wait()
-	cancel()
-
-	for _, state := range wg.States {
-		var (
-			host, _ = state.Meta["host"].(string)
-			test, _ = state.Meta["test"].(string)
-		)
-
-		st := State{ //nolint:exhaustruct // partial initialization
-			Metadata:  state.Meta,
-			Timestamp: time.Now().Format(time.RFC3339),
-		}
-
-		err := state.Err
-		if err != nil {
-			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
-			}
-
-			st.Error = err.Error()
-
-			logger.Error("[✗] test failed on host", "host", host, "test", test)
-		} else {
-			st.Success = state.Msg
-		}
-
-		hostState, ok := s.status[host]
-		if !ok {
-			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
-		}
-
-		hostState.CustomTests = append(hostState.CustomTests, st)
-		s.status[host] = hostState
-	}
-
-	return wg.ErrCount > 0
+	return runHostCheck(ctx, s, ns, hostCheck[customHostTest]{
+		kind:    "test",
+		targets: s.md.CustomHostTests,
+		profile: func(p sohProfile) []customHostTest { return p.CustomTests },
+		label:   func(t customHostTest) string { return t.Name },
+		test:    s.customTest,
+		waitMsg: "waiting for custom tests to complete...",
+		failMsg: "[✗] test failed on host",
+		record:  func(h *HostState, st State) { h.CustomTests = append(h.CustomTests, st) },
+	})
 }
 
-func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:funlen // complex logic
+func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool {
 	var (
 		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
 		wg     = new(mm.StateGroup)
@@ -1156,261 +622,142 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 
 	// Only check for CPU load in hosts that have confirmed C2 availability.
 	for host := range s.c2Hosts {
-		wg.Add(1)
-
-		go func(host string) {
-			defer wg.Done()
-
-			node := s.nodes[host]
-			exec := `cat /proc/loadavg`
-
-			if strings.EqualFold(node.Hardware().OSType(), "windows") {
-				exec = `powershell -command "Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select -ExpandProperty Average"`
-			}
-
-			opts := []mm.C2Option{
-				mm.C2NS(ns),
-				mm.C2VM(host),
-				mm.C2Command(exec),
-				mm.C2Timeout(s.md.c2Timeout),
-			}
-
-			if s.md.useUUIDForC2Active(host) {
-				opts = append(opts, mm.C2IDClientsByUUID())
-			}
-
-			id, err := mm.ExecC2Command(opts...)
-			if err != nil {
-				wg.AddError(
-					fmt.Errorf("executing command '%s': %w", exec, err),
-					map[string]any{"host": host},
-				)
-
-				return
-			}
-
-			opts = []mm.C2Option{
-				mm.C2NS(ns),
-				mm.C2Context(ctx),
-				mm.C2CommandID(id),
-				mm.C2Timeout(s.md.c2Timeout),
-			}
-
-			resp, err := mm.WaitForC2Response(opts...)
-			if err != nil {
-				wg.AddError(
-					fmt.Errorf("getting response for command '%s': %w", exec, err),
-					map[string]any{"host": host},
-				)
-
-				return
-			}
-
-			hostState, ok := s.status[host]
-			if !ok {
-				hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
-			}
-
-			if strings.EqualFold(node.Hardware().OSType(), "windows") {
-				if resp == "" {
-					wg.AddError(
-						fmt.Errorf("no response for command '%s'", exec),
-						map[string]any{"host": host},
-					)
-
-					return
-				}
-
-				hostState.CPULoad = resp
-			} else {
-				parts := strings.Fields(resp)
-
-				if len(parts) != loadAvgParts {
-					wg.AddError(
-						fmt.Errorf("invalid response for command '%s': %s", exec, resp),
-						map[string]any{"host": host},
-					)
-
-					return
-				}
-
-				hostState.CPULoad = parts[0]
-			}
-
-			s.status[host] = hostState
-		}(host)
+		s.cpuLoadTest(ctx, wg, ns, s.nodes[host])
 	}
 
-	cancel := periodicallyNotify(ctx, "waiting for CPU load details...", notifyInterval)
+	for host := range s.c2Dead {
+		wg.AddError(errC2Dead, map[string]any{"host": host})
+	}
 
-	// Wait for CPU load requests to complete.
-	wg.Wait()
-	cancel()
+	if waitAll(ctx, wg, "waiting for CPU load details...") {
+		return true
+	}
 
 	for _, state := range wg.States {
 		host, _ := state.Meta["host"].(string)
 
-		err := state.Err
-		if err != nil {
-			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
-			}
-
-			hostState, ok := s.status[host]
-			if !ok {
-				hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
-			}
-
-			hostState.CPULoad = err.Error()
-			s.status[host] = hostState
-
-			logger.Error("[✗] failed to get CPU load from host", "host", host, "err", err)
+		st := s.newState(state)
+		if st.Error != "" {
+			logger.Error("[✗] failed to get CPU load from host", "host", host, "err", state.Err)
 		}
+
+		s.updateHost(host, func(h *HostState) {
+			h.CPULoad = st.Success
+
+			if st.Error != "" {
+				h.CPULoad = st.Error
+			}
+		})
 	}
 
 	return wg.ErrCount > 0
 }
 
-func (s SOH) isNetworkingConfigured( //nolint:funlen // complex logic
+func (s SOH) cpuLoadTest(ctx context.Context, wg *mm.StateGroup, ns string, node ifaces.NodeSpec) {
+	var (
+		host = node.General().Hostname()
+		meta = map[string]any{"host": host}
+		exec = `cat /proc/loadavg`
+	)
+
+	if isWindows(node) {
+		exec = `powershell -command "Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select -ExpandProperty Average"`
+	}
+
+	expected := func(resp string) error {
+		if isWindows(node) {
+			if resp == "" {
+				return fmt.Errorf("no response for command '%s'", exec)
+			}
+
+			wg.AddSuccess(resp, meta)
+
+			return nil
+		}
+
+		parts := strings.Fields(resp)
+
+		if len(parts) != loadAvgParts {
+			return fmt.Errorf("invalid response for command '%s': %s", exec, resp)
+		}
+
+		wg.AddSuccess(parts[0], meta)
+
+		return nil
+	}
+
+	s.schedule(ctx, wg, ns, host, exec, meta, expected)
+}
+
+func (s SOH) isNetworkingConfigured(
 	ctx context.Context,
 	wg *mm.StateGroup,
 	ns string,
 	node ifaces.NodeSpec,
 	iface ifaces.NodeNetworkInterface,
 ) {
-	retryUntil := time.Now().Add(s.md.c2Timeout)
-
 	var (
 		addr    = iface.Address()
 		host    = node.General().Hostname()
 		gateway = iface.Gateway()
 		meta    = map[string]any{"host": host}
+		fail    = failAfterDeadline(time.Now().Add(s.md.c2Timeout))
 	)
 
-	// First, we wait for the IP address to be set on the interface. Then, we wait
-	// for the default gateway to be set. Last, we wait for the default gateway to
-	// be up (pingable). This is all done via nested commands streamed to the C2
-	// processor within `expected` functions.
+	// The address, then the default gateway, then the gateway answering pings
+	// are confirmed in turn, each step scheduling the next once it passes.
+	gwPingExpected := func(resp string) error {
+		if pingFailed(node, resp) {
+			return fail(errors.New("retry time expired waiting for gateway to be up"))
+		}
+
+		wg.AddSuccess(fmt.Sprintf("gateway %s is up", gateway), meta)
+
+		return nil
+	}
+
+	gwExpected := func(resp string) error {
+		var found bool
+
+		if isWindows(node) {
+			found, _ = regexp.MatchString("0.0.0.0\\s+0.0.0.0\\s+"+gateway, resp)
+		} else {
+			found = strings.Contains(resp, "default via "+gateway)
+		}
+
+		if !found {
+			return fail(errors.New("retry time expired waiting for gateway to be set"))
+		}
+
+		wg.AddSuccess(fmt.Sprintf("gateway %s configured", gateway), meta)
+		s.schedule(ctx, wg, ns, host, pingCommand(node, gateway), meta, gwPingExpected)
+
+		return nil
+	}
+
 	ipExpected := func(resp string) error {
 		if addr != "" {
-			if strings.EqualFold(node.Hardware().OSType(), "windows") {
-				// If `resp` doesn't contain the IP address, then the IP address isn't
-				// configured yet, so keep retrying the C2 command.
-				if !strings.Contains(resp, addr) {
-					if time.Now().After(retryUntil) {
-						return errors.New("retry time expired waiting for IP to be set")
-					}
+			want := fmt.Sprintf("%s/%d", addr, iface.Mask())
 
-					return mm.C2RetryError{Delay: c2RetryDelay}
-				}
-			} else {
-				cidr := fmt.Sprintf("%s/%d", addr, iface.Mask())
+			if isWindows(node) {
+				want = addr
+			}
 
-				// If `resp` doesn't contain the IP address, then the IP address isn't
-				// configured yet, so keep retrying the C2 command.
-				if !strings.Contains(resp, cidr) {
-					if time.Now().After(retryUntil) {
-						return errors.New("retry time expired waiting for IP to be set")
-					}
-
-					return mm.C2RetryError{Delay: c2RetryDelay}
-				}
+			if !strings.Contains(resp, want) {
+				return fail(errors.New("retry time expired waiting for IP to be set"))
 			}
 
 			wg.AddSuccess(fmt.Sprintf("IP %s configured", addr), meta)
 		}
 
 		if gateway != "" {
-			// The IP address is now set, so schedule a C2 command for determining if
-			// the default gateway is set.
-			gwExpected := func(resp string) error {
-				if strings.EqualFold(node.Hardware().OSType(), "windows") {
-					expected := "0.0.0.0\\s+0.0.0.0\\s+" + gateway
-
-					// If `resp` doesn't contain the default gateway, then the default gateway
-					// isn't configured yet, so keep retrying the C2 command.
-					if found, _ := regexp.MatchString(expected, resp); !found {
-						if time.Now().After(retryUntil) {
-							return errors.New("retry time expired waiting for gateway to be set")
-						}
-
-						return mm.C2RetryError{Delay: c2RetryDelay}
-					}
-				} else {
-					expected := "default via " + gateway
-
-					// If `resp` doesn't contain the default gateway, then the default gateway
-					// isn't configured yet, so keep retrying the C2 command.
-					if !strings.Contains(resp, expected) {
-						if time.Now().After(retryUntil) {
-							return errors.New("retry time expired waiting for gateway to be set")
-						}
-
-						return mm.C2RetryError{Delay: c2RetryDelay}
-					}
-				}
-
-				wg.AddSuccess(fmt.Sprintf("gateway %s configured", gateway), meta)
-
-				// The default gateway is now set, so schedule a C2 command for
-				// determining if the default gateway is up (pingable).
-				gwPingExpected := func(resp string) error {
-					if strings.EqualFold(node.Hardware().OSType(), "windows") {
-						// If `resp` contains `Destination host unreachable`, the
-						// default gateway isn't up (pingable) yet, so keep retrying the C2
-						// command.
-						if strings.Contains(resp, "Destination host unreachable") {
-							if time.Now().After(retryUntil) {
-								return errors.New("retry time expired waiting for gateway to be up")
-							}
-
-							return mm.C2RetryError{Delay: c2RetryDelay}
-						}
-					} else {
-						// If `resp` contains `0 received`, the default gateway isn't up
-						// (pingable) yet, so keep retrying the C2 command.
-						if strings.Contains(resp, "0 received") {
-							if time.Now().After(retryUntil) {
-								return errors.New("retry time expired waiting for gateway to be up")
-							}
-
-							return mm.C2RetryError{Delay: c2RetryDelay}
-						}
-					}
-
-					wg.AddSuccess(fmt.Sprintf("gateway %s is up", gateway), meta)
-
-					return nil
-				}
-
-				exec := "ping -c 1 " + gateway
-
-				if strings.EqualFold(node.Hardware().OSType(), "windows") {
-					exec = "ping -n 1 " + gateway
-				}
-
-				cmd := s.newParallelCommand(ns, host, exec)
-				cmd.Wait = wg
-				cmd.Meta = map[string]any{"host": host}
-				cmd.Expected = gwPingExpected
-
-				mm.ScheduleC2ParallelCommand(ctx, cmd)
-
-				return nil
-			}
-
 			exec := "ip route"
 
-			if strings.EqualFold(node.Hardware().OSType(), "windows") {
+			if isWindows(node) {
 				exec = "route print"
 			}
 
-			cmd := s.newParallelCommand(ns, host, exec)
-			cmd.Wait = wg
-			cmd.Meta = map[string]any{"host": host}
-			cmd.Expected = gwExpected
-
-			mm.ScheduleC2ParallelCommand(ctx, cmd)
+			s.schedule(ctx, wg, ns, host, exec, meta, gwExpected)
 		}
 
 		return nil
@@ -1418,16 +765,11 @@ func (s SOH) isNetworkingConfigured( //nolint:funlen // complex logic
 
 	exec := "ip addr"
 
-	if strings.EqualFold(node.Hardware().OSType(), "windows") {
+	if isWindows(node) {
 		exec = "ipconfig /all"
 	}
 
-	cmd := s.newParallelCommand(ns, host, exec)
-	cmd.Wait = wg
-	cmd.Meta = meta
-	cmd.Expected = ipExpected
-
-	mm.ScheduleC2ParallelCommand(ctx, cmd)
+	s.schedule(ctx, wg, ns, host, exec, meta, ipExpected)
 }
 
 func (s SOH) pingTest(
@@ -1437,31 +779,14 @@ func (s SOH) pingTest(
 	node ifaces.NodeSpec,
 	target string,
 ) {
-	exec := "ping -c 1 " + target
-
-	if strings.EqualFold(node.Hardware().OSType(), "windows") {
-		exec = "ping -n 1 " + target
-	}
-
 	var (
 		host = node.General().Hostname()
 		meta = map[string]any{"host": host, "target": target}
 	)
 
 	expected := func(resp string) error {
-		if strings.EqualFold(node.Hardware().OSType(), "windows") {
-			// If `resp` contains `Destination host unreachable`, the
-			// default gateway isn't up (pingable) yet, so keep retrying the C2
-			// command.
-			if strings.Contains(resp, "Destination host unreachable") {
-				return errors.New("no successful pings")
-			}
-		} else {
-			// If `resp` contains `0 received`, the default gateway isn't up
-			// (pingable) yet, so keep retrying the C2 command.
-			if strings.Contains(resp, "0 received") {
-				return errors.New("no successful pings")
-			}
+		if pingFailed(node, resp) {
+			return errors.New("no successful pings")
 		}
 
 		wg.AddSuccess(fmt.Sprintf("pinging %s succeeded", target), meta)
@@ -1469,12 +794,7 @@ func (s SOH) pingTest(
 		return nil
 	}
 
-	cmd := s.newParallelCommand(ns, host, exec)
-	cmd.Wait = wg
-	cmd.Meta = meta
-	cmd.Expected = expected
-
-	mm.ScheduleC2ParallelCommand(ctx, cmd)
+	s.schedule(ctx, wg, ns, host, pingCommand(node, target), meta, expected)
 }
 
 func (s SOH) connTest(
@@ -1498,20 +818,10 @@ func (s SOH) connTest(
 	}
 
 	meta := map[string]any{"host": src, "target": dst, "port": port, "proto": proto}
-	opts := []mm.C2Option{
-		mm.C2NS(ns),
-		mm.C2VM(src),
-		mm.C2TestConn(test),
-		mm.C2Timeout(s.md.c2Timeout),
-	}
-
-	if s.md.useUUIDForC2Active(src) {
-		opts = append(opts, mm.C2IDClientsByUUID())
-	}
-
 	cmd := &mm.C2ParallelCommand{ //nolint:exhaustruct // partial initialization
 		Wait:    wg,
-		Options: opts,
+		Limiter: s.limiter,
+		Options: append(s.c2Options(ns, src), mm.C2TestConn(test)),
 		Meta:    meta,
 		Expected: func(resp string) error {
 			if strings.Contains(resp, "fail") {
@@ -1536,28 +846,19 @@ func (s SOH) procTest(
 ) {
 	exec := "pgrep -f " + proc
 
-	if strings.EqualFold(node.Hardware().OSType(), "windows") {
-		exec = fmt.Sprintf(
-			`powershell -command "Get-Process %s -ErrorAction SilentlyContinue"`,
-			proc,
-		)
+	if isWindows(node) {
+		exec = fmt.Sprintf(`powershell -command "Get-Process %s -ErrorAction SilentlyContinue"`, proc)
 	}
 
 	var (
 		host = node.General().Hostname()
 		meta = map[string]any{"host": host, "proc": proc}
+		fail = failAfterRetries()
 	)
 
-	retries := 5
 	expected := func(resp string) error {
 		if resp == "" {
-			if retries > 0 {
-				retries--
-
-				return mm.C2RetryError{Delay: c2RetryDelay}
-			}
-
-			return errors.New("process not running")
+			return fail(errors.New("process not running"))
 		}
 
 		wg.AddSuccess("process running", meta)
@@ -1565,12 +866,7 @@ func (s SOH) procTest(
 		return nil
 	}
 
-	cmd := s.newParallelCommand(ns, host, exec)
-	cmd.Wait = wg
-	cmd.Meta = meta
-	cmd.Expected = expected
-
-	mm.ScheduleC2ParallelCommand(ctx, cmd)
+	s.schedule(ctx, wg, ns, host, exec, meta, expected)
 }
 
 func (s SOH) fileTest(
@@ -1583,18 +879,12 @@ func (s SOH) fileTest(
 	var (
 		host = node.General().Hostname()
 		meta = map[string]any{"host": host, "path": path}
+		fail = failAfterRetries()
 	)
 
-	retries := 5
 	expected := func(resp string) error {
 		if strings.TrimSpace(resp) != "present" {
-			if retries > 0 {
-				retries--
-
-				return mm.C2RetryError{Delay: c2RetryDelay}
-			}
-
-			return errors.New("file not found")
+			return fail(errors.New("file not found"))
 		}
 
 		wg.AddSuccess("file found", meta)
@@ -1602,12 +892,7 @@ func (s SOH) fileTest(
 		return nil
 	}
 
-	cmd := s.newParallelCommand(ns, host, fileCheckCommand(node.Hardware().OSType(), path))
-	cmd.Wait = wg
-	cmd.Meta = meta
-	cmd.Expected = expected
-
-	mm.ScheduleC2ParallelCommand(ctx, cmd)
+	s.schedule(ctx, wg, ns, host, fileCheckCommand(node.Hardware().OSType(), path), meta, expected)
 }
 
 func fileCheckCommand(osType, path string) string {
@@ -1635,18 +920,12 @@ func (s SOH) fileAbsentTest(
 	var (
 		host = node.General().Hostname()
 		meta = map[string]any{"host": host, "path": path}
+		fail = failAfterRetries()
 	)
 
-	retries := 5
 	expected := func(resp string) error {
 		if strings.TrimSpace(resp) == "present" {
-			if retries > 0 {
-				retries--
-
-				return mm.C2RetryError{Delay: c2RetryDelay}
-			}
-
-			return errors.New("file exists")
+			return fail(errors.New("file exists"))
 		}
 
 		wg.AddSuccess("file not found", meta)
@@ -1654,12 +933,7 @@ func (s SOH) fileAbsentTest(
 		return nil
 	}
 
-	cmd := s.newParallelCommand(ns, host, fileCheckCommand(node.Hardware().OSType(), path))
-	cmd.Wait = wg
-	cmd.Meta = meta
-	cmd.Expected = expected
-
-	mm.ScheduleC2ParallelCommand(ctx, cmd)
+	s.schedule(ctx, wg, ns, host, fileCheckCommand(node.Hardware().OSType(), path), meta, expected)
 }
 
 func (s SOH) serviceTest(
@@ -1672,18 +946,12 @@ func (s SOH) serviceTest(
 	var (
 		host = node.General().Hostname()
 		meta = map[string]any{"host": host, "service": service}
+		fail = failAfterRetries()
 	)
 
-	retries := 5
 	expected := func(resp string) error {
 		if strings.TrimSpace(resp) != "active" {
-			if retries > 0 {
-				retries--
-
-				return mm.C2RetryError{Delay: c2RetryDelay}
-			}
-
-			return errors.New("service not active")
+			return fail(errors.New("service not active"))
 		}
 
 		wg.AddSuccess("service running", meta)
@@ -1691,12 +959,7 @@ func (s SOH) serviceTest(
 		return nil
 	}
 
-	cmd := s.newParallelCommand(ns, host, serviceCheckCommand(node.Hardware().OSType(), service))
-	cmd.Wait = wg
-	cmd.Meta = meta
-	cmd.Expected = expected
-
-	mm.ScheduleC2ParallelCommand(ctx, cmd)
+	s.schedule(ctx, wg, ns, host, serviceCheckCommand(node.Hardware().OSType(), service), meta, expected)
 }
 
 func serviceCheckCommand(osType, service string) string {
@@ -1724,9 +987,9 @@ func (s SOH) containerTest(
 	var (
 		host = node.General().Hostname()
 		meta = map[string]any{"host": host, "container": container}
+		fail = failAfterRetries()
 	)
 
-	retries := 5
 	expected := func(resp string) error {
 		status := strings.ToLower(strings.TrimSpace(resp))
 
@@ -1738,34 +1001,13 @@ func (s SOH) containerTest(
 		case "unhealthy":
 			return errors.New("container unhealthy")
 		case "starting", "":
-			if retries > 0 {
-				retries--
-
-				return mm.C2RetryError{Delay: c2RetryDelay}
-			}
-
-			return errors.New("container not up")
+			return fail(errors.New("container not up"))
 		default: // exited, dead, paused, restarting, created, or unknown container
-			if retries > 0 {
-				retries--
-
-				return mm.C2RetryError{Delay: c2RetryDelay}
-			}
-
-			return fmt.Errorf("container not up (state: %s)", status)
+			return fail(fmt.Errorf("container not up (state: %s)", status))
 		}
 	}
 
-	cmd := s.newParallelCommand(
-		ns,
-		host,
-		containerCheckCommand(node.Hardware().OSType(), container),
-	)
-	cmd.Wait = wg
-	cmd.Meta = meta
-	cmd.Expected = expected
-
-	mm.ScheduleC2ParallelCommand(ctx, cmd)
+	s.schedule(ctx, wg, ns, host, containerCheckCommand(node.Hardware().OSType(), container), meta, expected)
 }
 
 // containerCheckCommand builds a command that queries the state of a docker
@@ -1808,12 +1050,13 @@ func (s SOH) portTest(
 	var (
 		host = node.General().Hostname()
 		meta = map[string]any{"host": host, "port": port}
+		fail = failAfterRetries()
 	)
 
 	exec := "ss -lntu state all"
 	target := strings.Split(port, ":")
 
-	if strings.EqualFold(node.Hardware().OSType(), "windows") {
+	if isWindows(node) {
 		var filter string
 
 		switch len(target) {
@@ -1859,24 +1102,16 @@ func (s SOH) portTest(
 		}
 	}
 
-	retries := 5
 	expected := func(resp string) error {
+		// ss prints a header line; the Windows query prints only matches.
 		lineCount := 1
 
-		if strings.EqualFold(node.Hardware().OSType(), "windows") {
+		if isWindows(node) {
 			lineCount = 0
 		}
 
-		lines := trim(resp)
-
-		if len(lines) <= lineCount {
-			if retries > 0 {
-				retries--
-
-				return mm.C2RetryError{Delay: c2RetryDelay}
-			}
-
-			return errors.New("not listening on port")
+		if lines := trim(resp); len(lines) <= lineCount {
+			return fail(errors.New("not listening on port"))
 		}
 
 		wg.AddSuccess("listening on port", meta)
@@ -1884,27 +1119,31 @@ func (s SOH) portTest(
 		return nil
 	}
 
-	cmd := s.newParallelCommand(ns, host, exec)
-	cmd.Wait = wg
-	cmd.Meta = meta
-	cmd.Expected = expected
-
-	mm.ScheduleC2ParallelCommand(ctx, cmd)
+	s.schedule(ctx, wg, ns, host, exec, meta, expected)
 }
 
-func (s SOH) newParallelCommand(ns, host, exec string) *mm.C2ParallelCommand {
-	opts := []mm.C2Option{
-		mm.C2NS(ns),
-		mm.C2VM(host),
-		mm.C2Command(exec),
-		mm.C2Timeout(s.md.c2Timeout),
+// c2Options addresses host for a C2 command, by UUID and cluster host where
+// the VM was found when the run started.
+func (s SOH) c2Options(ns, host string) []mm.C2Option {
+	opts := []mm.C2Option{mm.C2NS(ns), mm.C2VM(host), mm.C2Timeout(s.md.c2Timeout)}
+
+	if vm, ok := s.vms[host]; ok && vm.UUID != "" {
+		opts = append(opts, mm.C2VMUUID(vm.UUID), mm.C2VMHost(vm.Host))
+	}
+
+	if s.md.c2AppearGrace != nil {
+		opts = append(opts, mm.C2AppearGrace(*s.md.c2AppearGrace))
+	}
+
+	if s.md.c2ClientGrace != nil {
+		opts = append(opts, mm.C2ClientGrace(*s.md.c2ClientGrace))
 	}
 
 	if s.md.useUUIDForC2Active(host) {
 		opts = append(opts, mm.C2IDClientsByUUID())
 	}
 
-	return &mm.C2ParallelCommand{Options: opts} //nolint:exhaustruct // partial initialization
+	return opts
 }
 
 func injectICMPAllowRules(nodes []ifaces.NodeSpec) error {
@@ -2019,21 +1258,11 @@ func (s SOH) customTest( //nolint:funlen // complex logic
 	}
 
 	command := fmt.Sprintf("%s /tmp/miniccc/files/%s", executor, relPath)
-	opts := []mm.C2Option{
-		mm.C2NS(ns),
-		mm.C2VM(host),
-		mm.C2SendFile(relPath),
-		mm.C2Command(command),
-		mm.C2Timeout(s.md.c2Timeout),
-	}
-
-	if s.md.useUUIDForC2Active(host) {
-		opts = append(opts, mm.C2IDClientsByUUID())
-	}
 
 	cmd := &mm.C2ParallelCommand{ //nolint:exhaustruct // partial initialization
 		Wait:    wg,
-		Options: opts,
+		Limiter: s.limiter,
+		Options: append(s.c2Options(ns, host), mm.C2SendFile(relPath), mm.C2Command(command)),
 		Meta:    meta,
 	}
 
@@ -2116,7 +1345,8 @@ func skip(node ifaces.NodeSpec, toSkip []string) bool {
 		// Check to see if this is a reference to an image. If so, skip this host if
 		// it's using the referenced image.
 		if ext := filepath.Ext(skipHost); ext == ".qc2" || ext == ".qcow2" {
-			if filepath.Base(node.Hardware().Drives()[0].Image()) == skipHost {
+			if drives := node.Hardware().Drives(); len(drives) > 0 &&
+				filepath.Base(drives[0].Image()) == skipHost {
 				return true
 			}
 		}
@@ -2144,15 +1374,11 @@ func trim(str string) []string {
 	return trimmed
 }
 
-func periodicallyNotify(
-	ctx context.Context,
-	msg string,
-	d time.Duration, //nolint:unparam // utility function
-) context.CancelFunc {
+func periodicallyNotify(ctx context.Context, msg string) context.CancelFunc {
 	var (
 		logger       = plog.LoggerFromContext(ctx, plog.TypeSoh)
 		cctx, cancel = context.WithCancel(ctx)
-		ticker       = time.NewTicker(d)
+		ticker       = time.NewTicker(notifyInterval)
 	)
 
 	go func() {

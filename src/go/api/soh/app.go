@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
+	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/activeshadow/structs"
@@ -15,6 +19,7 @@ import (
 	"phenix/app"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
+	"phenix/util"
 	"phenix/util/mm"
 	"phenix/util/plog"
 )
@@ -22,6 +27,18 @@ import (
 func init() { //nolint:gochecknoinits // app registration
 	_ = app.RegisterUserApp("soh", func() app.App { return newSOH() })
 }
+
+// ErrAlreadyRunning is returned when checks are already in progress for the
+// experiment.
+var ErrAlreadyRunning = errors.New("state of health checks already running")
+
+// errC2Dead marks checks a host could not run because its C2 client had gone.
+var errC2Dead = errors.New("skipped: C2 client not active on host")
+
+// running guards against concurrent check runs for one experiment. The
+// experiment status flag cannot serve: every trigger writes it from its own
+// copy of the experiment.
+var running sync.Map //nolint:gochecknoglobals // per-experiment run guard
 
 type SOH struct {
 	// App configuration metadata (from scenario config)
@@ -31,6 +48,12 @@ type SOH struct {
 	nodes map[string]ifaces.NodeSpec
 	// Track hosts with active C2
 	c2Hosts map[string]struct{}
+	// Track hosts whose C2 client went away mid-run (as opposed to skipped ones)
+	c2Dead map[string]struct{}
+	// Track VMs as minimega launched them (name, UUID, host) by hostname
+	vms map[string]mm.VM
+	// Bounds in-flight C2 probes for this run
+	limiter *mm.C2Limiter
 	// Track hosts that should be tested for reachability
 	// (ie. hosts that have at least one interface in an experiment VLAN)
 	reachabilityHosts map[string]struct{}
@@ -59,6 +82,8 @@ func newSOH() *SOH {
 	return &SOH{ //nolint:exhaustruct // partial initialization
 		nodes:             make(map[string]ifaces.NodeSpec),
 		c2Hosts:           make(map[string]struct{}),
+		c2Dead:            make(map[string]struct{}),
+		vms:               make(map[string]mm.VM),
 		reachabilityHosts: make(map[string]struct{}),
 		addrHosts:         make(map[string]string),
 		vlans:             make(map[string][]string),
@@ -148,7 +173,11 @@ func (s *SOH) PostStart(ctx context.Context, exp *types.Experiment) error {
 
 	if s.md.startupDelay > 0 {
 		logger.Info("Waiting before running SoH checks", "delay", s.md.startupDelay)
-		time.Sleep(s.md.startupDelay)
+
+		err = util.SleepContext(ctx, s.md.startupDelay)
+		if err != nil {
+			return err
+		}
 	}
 
 	err = s.runChecks(ctx, exp)
@@ -185,28 +214,51 @@ func (SOH) Cleanup(ctx context.Context, exp *types.Experiment) error {
 
 //nolint:cyclop,funlen,gocyclo,maintidx // complex logic
 func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
-	logger := plog.LoggerFromContext(ctx, plog.TypeSoh)
+	var (
+		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
+		md     = app.GetContextMetadata(ctx)
+		ns     = exp.Spec.ExperimentName()
+		wg     = new(mm.StateGroup)
+	)
+
+	if _, loaded := running.LoadOrStore(ns, struct{}{}); loaded {
+		return ErrAlreadyRunning
+	}
+
+	defer running.Delete(ns)
 
 	logger.Info("starting SOH checks")
 
+	// Resolve VM identities once; every C2 command would otherwise look them up
+	// again.
+	for _, vm := range mm.GetVMInfo(mm.NS(ns)) {
+		s.vms[vm.Name] = vm
+	}
+
 	// *** WAIT FOR NODES TO HAVE NETWORKING CONFIGURED *** //
 
-	md := app.GetContextMetadata(ctx)
-	ns := exp.Spec.ExperimentName()
-	wg := new(mm.StateGroup)
-
-	if val, ok := md["c2Timeout"]; ok {
-		if duration, ok2 := val.(string); ok2 {
-			if timeout, err := time.ParseDuration(duration); err == nil {
-				s.md.c2Timeout = timeout
-			}
-		}
+	if d := metadataDuration(md["c2Timeout"]); d != nil {
+		s.md.c2Timeout = *d
 	}
+
+	if d := metadataDuration(md["c2AppearGrace"]); d != nil {
+		s.md.c2AppearGrace = d
+	}
+
+	if d := metadataDuration(md["c2ClientGrace"]); d != nil {
+		s.md.c2ClientGrace = d
+	}
+
+	if n, err := strconv.Atoi(metadataString(md["c2Concurrency"])); err == nil {
+		s.md.c2Concurrency = n
+	}
+
+	s.limiter = mm.NewC2Limiter(s.md.c2Concurrency)
 
 	var checks map[string]bool
 
 	if val, ok := md["checks"]; ok {
-		if slice, ok2 := val.([]string); ok2 {
+		if slice := metadataStrings(val); len(slice) > 0 {
 			checks = make(map[string]bool)
 
 			for _, check := range slice {
@@ -230,6 +282,10 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 			"cpu-load":            true,
 			"flows":               true,
 		}
+	}
+
+	if !checks["network-config"] && (checks["reachability"] || checks["custom-reachability"]) {
+		logger.Warn("reachability checks depend on network-config and will be skipped")
 	}
 
 	for _, node := range exp.Spec.Topology().Nodes() {
@@ -262,6 +318,8 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 			continue
 		}
 
+		gathered := false // static addresses are recorded once per node
+
 		for idx, iface := range node.Network().Interfaces() {
 			if strings.EqualFold(iface.VLAN(), "MGMT") {
 				continue
@@ -276,75 +334,17 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 			if iface.Proto() == "dhcp" {
 				wg.Add(1)
 
-				// using an anonymous function here so we can break out of the inner select statement
-				go func(idx int, iface ifaces.NodeNetworkInterface) {
-					defer wg.Done()
-
-					logger.Debug("waiting for DHCP address", "host", host)
-
-					timer := time.After(s.md.c2Timeout)
-
-					for {
-						select {
-						case <-ctx.Done():
-							return
-						case <-timer:
-							wg.AddError(
-								errors.New("time expired waiting for DHCP details from minimega"),
-								map[string]any{"host": host},
-							)
-
-							return
-						default:
-							vms := mm.GetVMInfo(mm.NS(ns), mm.VMName(host))
-
-							if vms == nil {
-								wg.AddError(
-									errors.New("unable to get DHCP details from minimega"),
-									map[string]any{"host": host},
-								)
-
-								return
-							} else {
-								addrs := vms[0].IPv4
-
-								if addrs == nil || addrs[idx] == "" {
-									time.Sleep(1 * time.Second)
-
-									continue
-								}
-
-								s.addrHosts[addrs[idx]] = host
-								s.vlans[iface.VLAN()] = append(s.vlans[iface.VLAN()], addrs[idx])
-
-								ips, ok := s.hostIPs[host]
-								if !ok {
-									ips = make(map[string]string)
-								}
-
-								ips[iface.Name()] = addrs[idx]
-								s.hostIPs[host] = ips
-
-								wg.AddSuccess(
-									fmt.Sprintf("IP %s configured via DHCP", addrs[idx]),
-									map[string]any{"host": host},
-								)
-
-								return
-							}
-						}
-					}
-				}(
-					idx,
-					iface,
-				)
+				go s.waitForDHCP(ctx, wg, ns, host, idx, iface)
 
 				// No need to do any of the following stuff if this interface is
 				// configured using DHCP.
 				continue
 			}
 
-			s.gatherNodeIPs(node)
+			if !gathered {
+				s.gatherNodeIPs(node)
+				gathered = true
+			}
 
 			cidr := fmt.Sprintf("%s/%d", iface.Address(), iface.Mask())
 			logger.Debug("waiting for IP on host to be set", "host", host, "ip", cidr)
@@ -357,160 +357,68 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 		logger.Info("skipping initial network configuration tests per config")
 	}
 
-	cancel := periodicallyNotify(
-		ctx,
-		"waiting for initial network configurations to be validated...",
-		notifyInterval,
-	)
-
 	// Wait for IP address / gateway configuration to be set for each VM, as well
 	// as wait for each gateway to be reachable.
-	wg.Wait()
-	cancel()
-
-	if ctx.Err() != nil {
+	if waitAll(ctx, wg, "waiting for initial network configurations to be validated...") {
 		return ctx.Err()
 	}
 
 	for _, state := range wg.States {
 		host, _ := state.Meta["host"].(string)
 
-		st := State{ //nolint:exhaustruct // partial initialization
-			Metadata:  state.Meta,
-			Timestamp: time.Now().Format(time.RFC3339),
+		// DHCP addresses are only known now; the reachability tests need them
+		if ip, ok := state.Meta["ip"].(string); ok && state.Err == nil {
+			iface, _ := state.Meta["iface"].(string)
+			vlan, _ := state.Meta["vlan"].(string)
+
+			s.recordHostIP(host, iface, vlan, ip)
 		}
 
-		err := state.Err
-		if err != nil {
-			logger.Error("[✗] failed to confirm networking", "host", host, "err", err)
+		st := s.newState(state)
+		if st.Error != "" {
+			logger.Error("[✗] failed to confirm networking", "host", host, "err", state.Err)
 
-			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
-			} else {
+			if !errors.Is(state.Err, mm.ErrC2ClientNotActive) {
 				s.failedNetwork[host] = struct{}{}
 			}
-
-			st.Error = err.Error()
-		} else {
-			st.Success = state.Msg
 		}
 
-		hostState, ok := s.status[host]
-		if !ok {
-			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
-		}
-
-		hostState.Networking = append(hostState.Networking, st)
-		s.status[host] = hostState
+		s.updateHost(host, func(h *HostState) { h.Networking = append(h.Networking, st) })
 	}
 
 	s.writeResults(exp)
 
 	// *** RUN ACTUAL STATE OF HEALTH CHECKS *** //
 
+	reachability := checks["network-config"] && (checks["reachability"] || checks["custom-reachability"])
+
+	steps := []struct {
+		enabled bool
+		run     func() bool
+	}{
+		{reachability, func() bool { return s.waitForReachabilityTest(ctx, ns, checks) }},
+		{checks["files"], func() bool { return s.waitForFileTest(ctx, ns) }},
+		{checks["files-absent"], func() bool { return s.waitForFileAbsentTest(ctx, ns) }},
+		{checks["services"], func() bool { return s.waitForServiceTest(ctx, ns) }},
+		{checks["processes"], func() bool { return s.waitForProcTest(ctx, ns) }},
+		{checks["ports"], func() bool { return s.waitForPortTest(ctx, ns) }},
+		{checks["docker"], func() bool { return s.waitForContainerTest(ctx, ns) }},
+		{checks["custom"], func() bool { return s.waitForCustomTest(ctx, ns) }},
+		{checks["cpu-load"], func() bool { return s.waitForCPULoad(ctx, ns) }},
+		{checks["flows"], func() bool { s.getFlows(ctx, exp); return false }},
+	}
+
 	var errs bool
 
-	if checks["network-config"] && (checks["reachability"] || checks["custom-reachability"]) {
-		err := s.waitForReachabilityTest(ctx, ns, checks)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
+	for _, step := range steps {
+		if !step.enabled {
+			continue
 		}
 
-		errs = errs || err
-	}
-
-	if checks["files"] {
-		err := s.waitForFileTest(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
+		if step.run() {
+			errs = true
 		}
 
-		errs = errs || err
-	}
-
-	if checks["files-absent"] {
-		err := s.waitForFileAbsentTest(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		errs = errs || err
-	}
-
-	if checks["services"] {
-		err := s.waitForServiceTest(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		errs = errs || err
-	}
-
-	if checks["processes"] {
-		err := s.waitForProcTest(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		errs = errs || err
-	}
-
-	if checks["ports"] {
-		err := s.waitForPortTest(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		errs = errs || err
-	}
-
-	if checks["docker"] {
-		err := s.waitForContainerTest(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		errs = errs || err
-	}
-
-	if checks["custom"] {
-		err := s.waitForCustomTest(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		errs = errs || err
-	}
-
-	if checks["cpu-load"] {
-		err := s.waitForCPULoad(ctx, ns)
-		s.writeResults(exp)
-
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		errs = errs || err
-	}
-
-	if checks["flows"] {
-		s.getFlows(ctx, exp)
 		s.writeResults(exp)
 
 		if ctx.Err() != nil {
@@ -534,46 +442,26 @@ func (s *SOH) getFlows(ctx context.Context, exp *types.Experiment) { //nolint:fu
 		return
 	}
 
-	hostname := node[0].General().Hostname()
+	var (
+		logger   = plog.LoggerFromContext(ctx, plog.TypeSoh)
+		ns       = exp.Spec.ExperimentName()
+		hostname = node[0].General().Hostname()
+	)
 
-	var id string
+	opts := append(s.c2Options(ns, hostname), mm.C2Context(ctx), mm.C2Command("query-flows.sh"))
 
-	for {
-		var err error
+	id, err := mm.ExecC2Command(opts...)
+	if err != nil {
+		logger.Error("error executing command 'query-flows.sh'", "err", err)
 
-		opts := []mm.C2Option{
-			mm.C2NS(exp.Metadata.Name),
-			mm.C2VM(hostname),
-			mm.C2Command("query-flows.sh"),
-		}
-
-		if s.md.useUUIDForC2Active(hostname) {
-			opts = append(opts, mm.C2IDClientsByUUID())
-		}
-
-		id, err = mm.ExecC2Command(opts...)
-		if err != nil {
-			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				time.Sleep(c2RetryDelay)
-
-				continue
-			}
-
-			plog.Error(plog.TypeSoh, "error executing command 'query-flows.sh'", "err", err)
-
-			return
-		}
-
-		if id != "" {
-			break
-		}
+		return
 	}
 
-	opts := []mm.C2Option{mm.C2NS(exp.Metadata.Name), mm.C2Context(ctx), mm.C2CommandID(id)}
+	opts = append(opts, mm.C2CommandID(id))
 
 	resp, err := mm.WaitForC2Response(opts...)
 	if err != nil {
-		plog.Error(plog.TypeSoh, "error getting response for command 'query-flows.sh'", "err", err)
+		logger.Error("error getting response for command 'query-flows.sh'", "err", err)
 
 		return
 	}
@@ -581,19 +469,19 @@ func (s *SOH) getFlows(ctx context.Context, exp *types.Experiment) { //nolint:fu
 	var result elastic.SearchResult
 
 	if err = json.Unmarshal([]byte(resp), &result); err != nil {
-		plog.Error(plog.TypeSoh, "error parsing Elasticsearch results", "err", err)
+		logger.Error("error parsing Elasticsearch results", "err", err)
 
 		return
 	}
 
 	if result.Hits == nil {
-		plog.Info(plog.TypeSoh, "no flow data found")
+		logger.Info("no flow data found")
 
 		return
 	}
 
 	if len(result.Hits.Hits) == 0 {
-		plog.Info(plog.TypeSoh, "no flow data found")
+		logger.Info("no flow data found")
 
 		return
 	}
@@ -605,7 +493,7 @@ func (s *SOH) getFlows(ctx context.Context, exp *types.Experiment) { //nolint:fu
 
 		err = json.Unmarshal(hit.Source, &fields)
 		if err != nil {
-			plog.Error(plog.TypeSoh, "unable to parse hit source", "err", err)
+			logger.Error("unable to parse hit source", "err", err)
 
 			return
 		}
@@ -654,6 +542,72 @@ func (s *SOH) getFlows(ctx context.Context, exp *types.Experiment) { //nolint:fu
 	s.packetCapture["flows"] = flows
 }
 
+// waitForDHCP polls minimega until the interface at idx reports an address,
+// then hands it back through wg. wg.Add must be done by the caller.
+func (s *SOH) waitForDHCP(
+	ctx context.Context,
+	wg *mm.StateGroup,
+	ns, host string,
+	idx int,
+	iface ifaces.NodeNetworkInterface,
+) {
+	defer wg.Done()
+
+	var (
+		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
+		meta   = map[string]any{"host": host}
+		timer  = time.After(s.md.c2Timeout)
+	)
+
+	logger.Debug("waiting for DHCP address", "host", host)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer:
+			wg.AddError(errors.New("time expired waiting for DHCP details from minimega"), meta)
+
+			return
+		default:
+			vms := mm.GetVMInfo(mm.NS(ns), mm.VMName(host))
+			if len(vms) == 0 {
+				wg.AddError(errors.New("unable to get DHCP details from minimega"), meta)
+
+				return
+			}
+
+			// minimega lists one address per configured interface, in order
+			addrs := vmNamed(vms, host).IPv4
+
+			if idx >= len(addrs) || addrs[idx] == "" {
+				time.Sleep(1 * time.Second)
+
+				continue
+			}
+
+			wg.AddSuccess(
+				fmt.Sprintf("IP %s configured via DHCP", addrs[idx]),
+				map[string]any{"host": host, "iface": iface.Name(), "vlan": iface.VLAN(), "ip": addrs[idx]},
+			)
+
+			return
+		}
+	}
+}
+
+// vmNamed returns the VM minimega tracks under exactly name, else the first
+// match: the `name=` filter folds case.
+func vmNamed(vms mm.VMs, name string) mm.VM {
+	for _, vm := range vms {
+		if vm.Name == name {
+			return vm
+		}
+	}
+
+	return vms[0]
+}
+
 func (s *SOH) gatherNodeIPs(node ifaces.NodeSpec) {
 	host := node.General().Hostname()
 
@@ -662,52 +616,130 @@ func (s *SOH) gatherNodeIPs(node ifaces.NodeSpec) {
 			continue
 		}
 
-		s.addrHosts[iface.Address()] = host
-
-		if iface.VLAN() != "" {
-			s.vlans[iface.VLAN()] = append(s.vlans[iface.VLAN()], iface.Address())
-		}
-
-		ips, ok := s.hostIPs[host]
-		if !ok {
-			ips = make(map[string]string)
-		}
-
-		ips[iface.Name()] = iface.Address()
-		s.hostIPs[host] = ips
+		s.recordHostIP(host, iface.Name(), iface.VLAN(), iface.Address())
 	}
 }
 
+// recordHostIP tracks an address by host, VLAN and interface. Not safe for
+// concurrent use: results gathered in goroutines are recorded after they join.
+func (s *SOH) recordHostIP(host, iface, vlan, ip string) {
+	s.addrHosts[ip] = host
+
+	if vlan != "" {
+		s.vlans[vlan] = append(s.vlans[vlan], ip)
+	}
+
+	ips, ok := s.hostIPs[host]
+	if !ok {
+		ips = make(map[string]string)
+		s.hostIPs[host] = ips
+	}
+
+	ips[iface] = ip
+}
+
+// markC2Dead drops a host whose C2 client stopped answering from further
+// checks, remembering it so the checks it misses are reported rather than
+// silently absent.
+func (s *SOH) markC2Dead(host string) {
+	delete(s.c2Hosts, host)
+	s.c2Dead[host] = struct{}{}
+}
+
+// skipHost reports whether host cannot be tested, recording an error state
+// for a host whose C2 client went away.
+func (s *SOH) skipHost(wg *mm.StateGroup, host string, meta map[string]any) bool {
+	if _, ok := s.c2Hosts[host]; ok {
+		return false
+	}
+
+	if _, dead := s.c2Dead[host]; dead {
+		wg.AddError(errC2Dead, meta)
+	}
+
+	return true
+}
+
+// metadataString returns a context metadata value that arrives as a string
+// (scorch, CLI) or as the single-valued slice a URL query yields (UI).
+func metadataString(val any) string {
+	switch v := val.(type) {
+	case string:
+		return v
+	case []string:
+		if len(v) > 0 {
+			return v[0]
+		}
+	}
+
+	return ""
+}
+
+// metadataDuration parses a context metadata duration, nil when absent or
+// malformed.
+func metadataDuration(val any) *time.Duration {
+	d, err := time.ParseDuration(metadataString(val))
+	if err != nil {
+		return nil
+	}
+
+	return &d
+}
+
+// metadataStrings returns a context metadata list that arrives as a slice or
+// as comma-separated strings.
+func metadataStrings(val any) []string {
+	var raw []string
+
+	switch v := val.(type) {
+	case string:
+		raw = []string{v}
+	case []string:
+		raw = v
+	}
+
+	var out []string
+
+	for _, r := range raw {
+		for item := range strings.SplitSeq(r, ",") {
+			if item = strings.TrimSpace(item); item != "" {
+				out = append(out, item)
+			}
+		}
+	}
+
+	return out
+}
+
+// writeResults merges the run's results into the stored app status, keeping
+// keys such as `initialized` and whatever other apps stored meanwhile.
 func (s SOH) writeResults(exp *types.Experiment) {
-	// we do this to make sure we don't overwrite the `initialized` status
-	status := make(map[string]any)
-	_ = exp.Status.ParseAppStatus("soh", &status)
+	err := exp.UpdateAppStatus("soh", func(status map[string]any) {
+		if len(s.status) > 0 {
+			hosts := slices.Sorted(maps.Keys(s.status))
+			states := make([]map[string]any, 0, len(hosts))
 
-	if len(s.status) > 0 {
-		states := make([]map[string]any, 0, len(s.status))
+			for _, host := range hosts {
+				states = append(states, structs.Map(s.status[host]))
+			}
 
-		for _, state := range s.status {
-			states = append(states, structs.Map(state))
+			status["hosts"] = states
 		}
 
-		status["hosts"] = states
+		if len(s.packetCapture) > 0 {
+			status["packetCapture"] = s.packetCapture
+		}
+	})
+	if err != nil {
+		plog.Error(plog.TypeSoh, "saving SoH results", "exp", exp.Metadata.Name, "err", err)
 	}
-
-	if len(s.packetCapture) > 0 {
-		status["packetCapture"] = s.packetCapture
-	}
-
-	exp.Status.SetAppStatus("soh", status)
-	_ = exp.WriteToStore(true)
 }
 
 func (s SOH) writeInitialized(exp *types.Experiment) {
-	// we do this to make sure we don't overwrite the existing app status
-	status := make(map[string]any)
-	_ = exp.Status.ParseAppStatus("soh", &status)
-
-	status["initialized"] = true
-
-	exp.Status.SetAppStatus("soh", status)
-	_ = exp.WriteToStore(true)
+	err := exp.UpdateAppStatus("soh", func(status map[string]any) {
+		status["initialized"] = true
+	})
+	if err != nil {
+		plog.Error(plog.TypeSoh, "saving SoH status", "exp", exp.Metadata.Name, "err", err)
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/activeshadow/structs"
 	"github.com/mitchellh/mapstructure"
@@ -66,7 +67,14 @@ func (e *Experiment) Reload() error {
 	return nil
 }
 
+// statusMu serialises experiment writes to the store so a read-modify-write
+// of one app's status cannot interleave with another writer's.
+var statusMu sync.Mutex //nolint:gochecknoglobals // process-wide store guard
+
 func (e Experiment) WriteToStore(statusOnly bool) error {
+	statusMu.Lock()
+	defer statusMu.Unlock()
+
 	name := e.Metadata.Name
 
 	c, _ := store.NewConfig("experiment/" + name)
@@ -87,6 +95,44 @@ func (e Experiment) WriteToStore(statusOnly bool) error {
 
 	err = store.Update(c)
 	if err != nil {
+		return fmt.Errorf("saving experiment config: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateAppStatus applies fn to app's status as currently stored and writes
+// only that back, so a long-running app does not clobber what other writers
+// stored meanwhile. The in-memory status is refreshed to match. WriteToStore
+// replaces the whole status with the caller's copy instead.
+func (e *Experiment) UpdateAppStatus(app string, fn func(status map[string]any)) error {
+	statusMu.Lock()
+	defer statusMu.Unlock()
+
+	name := e.Metadata.Name
+
+	c, _ := store.NewConfig("experiment/" + name)
+
+	if err := store.Get(c); err != nil {
+		return fmt.Errorf("getting experiment %s from store: %w", name, err)
+	}
+
+	exp, err := DecodeExperimentFromConfig(*c)
+	if err != nil {
+		return fmt.Errorf("decoding experiment %s: %w", name, err)
+	}
+
+	status := make(map[string]any)
+	_ = exp.Status.ParseAppStatus(app, &status)
+
+	fn(status)
+
+	exp.Status.SetAppStatus(app, status)
+	e.Status = exp.Status
+
+	c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
+
+	if err := store.Update(c); err != nil {
 		return fmt.Errorf("saving experiment config: %w", err)
 	}
 

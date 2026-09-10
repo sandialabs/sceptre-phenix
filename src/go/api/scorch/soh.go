@@ -86,12 +86,12 @@ func (s SOH) check(ctx context.Context, stage Action) error {
 	}
 
 	var (
-		exp = &s.options.Exp
-		md  SOHMetadata
+		name = s.options.Exp.Metadata.Name
+		md   SOHMetadata
 	)
 
 	update := scorch.ComponentUpdate{ //nolint:exhaustruct // partial update
-		Exp:     exp.Spec.ExperimentName(),
+		Exp:     s.options.Exp.Spec.ExperimentName(),
 		CmpName: s.options.Name,
 		CmpType: s.options.Type,
 		Run:     s.options.Run,
@@ -104,6 +104,22 @@ func (s SOH) check(ctx context.Context, stage Action) error {
 	updateComponent := func(msg string) {
 		update.Output = []byte(msg)
 		scorch.UpdateComponent(update)
+	}
+
+	err := mapstructure.Decode(s.options.Meta, &md)
+	if err != nil {
+		updateComponent("Unable to parse metadata for this component.\n")
+
+		return fmt.Errorf("decoding soh component metadata: %w", err)
+	}
+
+	// The run-wide experiment copy is a snapshot taken when the run started;
+	// the checks below and the app itself need the current status.
+	exp, err := experiment.Get(name)
+	if err != nil {
+		updateComponent("Unable to load the experiment.\n")
+
+		return fmt.Errorf("getting experiment %s: %w", name, err)
 	}
 
 	if !soh.Configured(exp) {
@@ -126,13 +142,6 @@ func (s SOH) check(ctx context.Context, stage Action) error {
 		}
 
 		return nil
-	}
-
-	err := mapstructure.Decode(s.options.Meta, &md)
-	if err != nil {
-		updateComponent("Unable to parse metadata for this component.\n")
-
-		return fmt.Errorf("decoding soh component metadata: %w", err)
 	}
 
 	if md.C2Timeout != "" {
@@ -166,7 +175,12 @@ func (s SOH) check(ctx context.Context, stage Action) error {
 
 	plog.RemoveHandler(handlerName)
 
-	exp, _ = experiment.Get(exp.Metadata.Name)
+	exp, err = experiment.Get(name)
+	if err != nil {
+		updateComponent("Unable to reload the experiment for results.\n")
+
+		return fmt.Errorf("getting experiment %s after checks: %w", name, err)
+	}
 
 	var results map[string]any
 
@@ -188,7 +202,7 @@ func (s SOH) check(ctx context.Context, stage Action) error {
 			runDir,
 			s.options.Name,
 			fmt.Sprintf("loop-%d-count-%d", s.options.Loop, s.options.Count),
-			"soh.json",
+			fmt.Sprintf("soh-%s.json", stage),
 		)
 	)
 
