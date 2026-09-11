@@ -1016,6 +1016,17 @@ func Save(opts ...SaveOption) error {
 // Reconfigure executes the 'configure' stage for all apps the given experiment
 // is configured to use. It returns any errors encountered while reconfiguring
 // the experiment.
+//
+// Reconfigure is intended to be called after an experiment's stored topology,
+// scenario, or deployment settings have changed (e.g. via the config or
+// workflow APIs), not as a general on-demand debugging tool. Unlike
+// Trigger(ctx, name, app.ActionConfigure), it: refuses to run against a
+// running experiment; persists the experiment via config.Update so config
+// validation and any registered config hooks run; deletes the experiment's
+// minimega bridge (when not using the GRE mesh) so it gets recreated with the
+// current settings; and always applies to every app, without support for
+// filtering to specific apps. Use Trigger for manually re-running a single
+// app's (or apps') configure hook on demand, e.g. for debugging.
 func Reconfigure(name string) error {
 	var err error
 	c, _ := store.NewConfig("experiment/" + name)
@@ -1056,12 +1067,25 @@ func Reconfigure(name string) error {
 	return nil
 }
 
-// TriggerRunning executes the 'running' stage for the given apps in the given
-// experiment. If no apps are passed, then all experiment apps will have their
-// 'running' stage triggered.
-func TriggerRunning(ctx context.Context, name string, apps ...string) error {
-	var err error
-	c, _ := store.NewConfig("experiment/" + name)
+// Trigger executes the given lifecycle stage for the selected apps in an
+// experiment. If no apps are passed, the stage is triggered for all apps.
+//
+// Trigger is intended for manually invoking a lifecycle stage for a specific
+// app (or apps) on demand, e.g. for debugging. For the 'configure' stage in
+// particular, it is not a replacement for Reconfigure: Trigger doesn't
+// validate the experiment config, run config hooks, reset the minimega
+// bridge, or refuse to run against a running experiment. Use Reconfigure
+// after an experiment's stored topology, scenario, or deployment settings
+// have changed.
+func Trigger(ctx context.Context, name string, stage app.Action, apps ...string) error {
+	if !stage.Valid() {
+		return fmt.Errorf("invalid app lifecycle stage %q", stage)
+	}
+
+	c, err := store.NewConfig("experiment/" + name)
+	if err != nil {
+		return fmt.Errorf("creating experiment config for %s: %w", name, err)
+	}
 
 	err = store.Get(c)
 	if err != nil {
@@ -1073,18 +1097,85 @@ func TriggerRunning(ctx context.Context, name string, apps ...string) error {
 		return fmt.Errorf("decoding experiment from config: %w", err2)
 	}
 
-	if !exp.Running() {
+	if stage == app.ActionRunning && !exp.Running() {
 		return errors.New("experiment is not running")
+	}
+
+	if err := validateTriggerApps(exp, stage, apps); err != nil {
+		return err
 	}
 
 	err = app.ApplyApps(
 		ctx,
 		exp,
-		app.Stage(app.ActionRunning),
+		app.Stage(stage),
 		app.FilterApp(apps...),
+		app.Trigger(),
 	)
 	if err != nil {
-		return fmt.Errorf("triggering apps for experiment: %w", err)
+		return fmt.Errorf("triggering %s stage for experiment apps: %w", stage, err)
+	}
+
+	// Running-stage apps persist their status as they execute and reload the
+	// experiment between apps.
+	if stage == app.ActionRunning {
+		return nil
+	}
+
+	if err := exp.WriteToStore(false); err != nil {
+		return fmt.Errorf("saving experiment after triggering %s stage: %w", stage, err)
+	}
+
+	return nil
+}
+
+// TriggerRunning executes the 'running' stage for the given apps in the given
+// experiment. If no apps are passed, then all experiment apps will have their
+// 'running' stage triggered.
+func TriggerRunning(ctx context.Context, name string, apps ...string) error {
+	return Trigger(ctx, name, app.ActionRunning, apps...)
+}
+
+// validateTriggerApps ensures the given apps are part of the experiment and
+// that the requested lifecycle stage is applicable to each of them. If no
+// apps are given (meaning "all apps"), it instead ensures at least one app in
+// the experiment supports the requested stage.
+func validateTriggerApps(exp *types.Experiment, stage app.Action, apps []string) error {
+	if len(apps) == 0 {
+		for _, name := range app.ExperimentApps(exp) {
+			if app.StageApplicable(stage, name) {
+				return nil
+			}
+		}
+
+		return fmt.Errorf(
+			"the %s stage is not applicable for any app in experiment %s",
+			stage,
+			exp.Metadata.Name,
+		)
+	}
+
+	known := make(map[string]struct{})
+	for _, name := range app.ExperimentApps(exp) {
+		known[name] = struct{}{}
+	}
+
+	for _, name := range apps {
+		if _, ok := known[name]; !ok {
+			return fmt.Errorf(
+				"app %s is not part of experiment %s",
+				name,
+				exp.Metadata.Name,
+			)
+		}
+
+		if !app.StageApplicable(stage, name) {
+			return fmt.Errorf(
+				"the %s stage is not applicable for app %s",
+				stage,
+				name,
+			)
+		}
 	}
 
 	return nil
