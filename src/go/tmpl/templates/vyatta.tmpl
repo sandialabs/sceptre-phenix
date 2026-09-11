@@ -8,6 +8,7 @@
 {{- $emulators := index . "emulators" -}}
 {{- $snat := index . "snat" -}}
 {{- $dnat := index . "dnat" -}}
+{{- $syslog := index . "syslog" -}}
 {{- if $vyos -}}
 #!/bin/vbash
 source /opt/vyatta/etc/functions/script-template
@@ -262,6 +263,15 @@ set system host-name {{ $node.RouterName }}
 set system name-server {{ $dnsServer }}
     {{- end }}
 {{- end }}
+    {{- if $syslog }}
+        {{- range $remote := $syslog }}
+set system syslog remote {{ $remote.Address }} facility {{ $remote.Facility }} level {{ $remote.Level }}
+set system syslog remote {{ $remote.Address }} protocol {{ $remote.Protocol }}
+            {{- if $remote.Port }}
+set system syslog remote {{ $remote.Address }} port {{ $remote.Port }}
+            {{- end }}
+        {{- end }}
+    {{- end }}
 commit
 save
 exit
