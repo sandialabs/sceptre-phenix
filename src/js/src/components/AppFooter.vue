@@ -19,13 +19,15 @@ component.
 </template>
 
 <script>
+  import { formatVersion } from '@/utils/version.js';
+
   export default {
     async created() {
       try {
         let resp = await fetch(this.$router.resolve({ name: 'version' }).href);
         let version = await resp.json();
 
-        this.version = `Version ${version.commit} (built on ${version.buildDate})`;
+        this.version = formatVersion(version);
       } catch (err) {
         console.log(`ERROR getting version: ${err}`);
       }

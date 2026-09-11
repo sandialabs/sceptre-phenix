@@ -57,6 +57,7 @@ jobs:
             MM_MIN_REV=${{ env.MM_REV }}
             PHENIX_COMMIT=${{ env.sha }}
             PHENIX_TAG=${{ steps.meta.outputs.version }}
+            PHENIX_REPO=${{ github.event.pull_request.head.repo.full_name || github.repository }}
             APPS_REPO=github.com/${{ github.event_name == 'repository_dispatch' && github.event.client_payload.repo || 'sandialabs/sceptre-phenix-apps' }}
             APPS_BRANCH=main
           push: ${{ github.event_name != 'pull_request' }}
@@ -134,12 +135,14 @@ jobs:
       - name: Build Podman image (through the Go build stage)
         # Stops at gobuilder: the final stage pulls flaky external resources (filebeat, vmdb2, Kali keyring).
         env:
+          PHENIX_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           SHA: ${{ env.sha }}
         run: |
           podman build \
             -f podman/Containerfile \
             --target gobuilder \
             --build-arg PHENIX_COMMIT="$SHA" \
-            --build-arg PHENIX_VERSION=ci \
+            --build-arg PHENIX_TAG=ci \
+            --build-arg PHENIX_REPO="$PHENIX_REPO" \
             -t phenix-podman-ci \
             .

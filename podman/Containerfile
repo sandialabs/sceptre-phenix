@@ -58,9 +58,10 @@ RUN /tmp/install-certs.sh
 
 ARG PHENIX_COMMIT
 ARG PHENIX_TAG
+ARG PHENIX_REPO
 
 # Build phenix binary (skip UI build since artifacts are already copied)
-RUN COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} make bin/phenix SKIP_UI=1
+RUN COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} REPO=${PHENIX_REPO} make bin/phenix SKIP_UI=1
 RUN make -C src/go phenix-tunneler
 
 # Allow installing from a fork of sceptre-phenix-apps that could

@@ -1,6 +1,7 @@
-# Default version number to git commit hash if not set.
+# Default build metadata to embedded values generated at build time.
 COMMIT := $(or $(COMMIT),$(shell git log -1 --format="%h"))
-TAG    := $(or $(TAG),$(shell git log -1 --format="%h"))
+TAG    := $(or $(TAG),$(shell git tag --points-at HEAD | head -n 1),$(shell git branch --show-current),$(COMMIT))
+REPO   ?= $(shell git config --get remote.origin.url 2>/dev/null | awk -F'github.com[:/]' '{print $$2}' | sed 's/\.git$$//')
 DATE   := $(shell date -u)
 
 SOURCES   := $(shell find . -name '*.go')
@@ -141,7 +142,7 @@ web/rbac/known_policy.go: $(UISOURCES)
 phenix: bin/phenix
 bin/phenix: $(SOURCES) generate
 	mkdir -p bin
-	CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -X 'phenix/version.Tag=$(TAG)' -X 'phenix/version.Date=$(DATE)' -s -w" -trimpath -o bin/phenix main.go
+	CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-X 'phenix/version.Commit=$(COMMIT)' -X 'phenix/version.Tag=$(TAG)' -X 'phenix/version.Date=$(DATE)' -X 'phenix/version.Repo=$(REPO)' -s -w" -trimpath -o bin/phenix main.go
 
 phenix-debug: bin/phenix-debug
 bin/phenix-debug: $(SOURCES) generate
