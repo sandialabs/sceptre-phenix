@@ -28,6 +28,7 @@ import (
 
 const allExperiments = "all"
 const scheduleArgs = 2
+const triggerArgs = 2
 
 func expNameCompletion(includeAll bool) func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -774,7 +775,16 @@ func newExperimentReconfigureCmd() *cobra.Command {
   Used to rerun the 'configure' stage of all the apps (both default and user)
   for the given experiment (as long as it's not running). Using 'all' instead
   of a specific experiment name will reconfigure all non-running
-  experiments.`
+  experiments.
+
+  This differs from 'phenix experiment trigger configure' in that it re-runs
+  config validation and any registered config hooks, deletes the experiment's
+  minimega bridge so it gets recreated with current settings, and always
+  applies to all apps. Use this after editing an experiment's stored topology,
+  scenario, or deployment settings. Use 'trigger configure' to manually re-run
+  a specific app's (or apps') configure hook on demand for debugging; note it
+  does not validate the config, run config hooks, reset the minimega bridge,
+  or guard against running experiments the way 'reconfigure' does.`
 
 	cmd := &cobra.Command{
 		Use:               "reconfigure <experiment name>",
@@ -846,102 +856,264 @@ func newExperimentReconfigureCmd() *cobra.Command {
 	return cmd
 }
 
+func experimentTriggerCompletion(
+	stageArg bool,
+) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if stageArg && len(args) == 0 {
+			var matches []string
+			for _, stage := range app.Actions() {
+				for _, value := range []string{string(stage), stage.Shorthand()} {
+					if strings.HasPrefix(value, toComplete) {
+						matches = append(matches, value)
+					}
+				}
+			}
+
+			return matches, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		expArg := 0
+
+		var stage app.Action
+
+		if stageArg {
+			expArg = 1
+
+			var ok bool
+
+			stage, ok = app.ParseAction(args[0])
+			if !ok {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+		} else {
+			stage = app.ActionRunning
+		}
+
+		if len(args) == expArg {
+			return expNameCompletion(true)(cmd, nil, toComplete)
+		}
+
+		name := args[expArg]
+
+		var candidates []string
+
+		if name == allExperiments {
+			candidates = append(app.DefaultApps(), app.List()...)
+		} else {
+			_ = store.Init(store.Endpoint(viper.GetString("store.endpoint")))
+
+			exp, err := experiment.Get(name)
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+
+			candidates = app.ExperimentApps(exp)
+		}
+
+		var matches []string
+
+		for _, a := range candidates {
+			if !app.StageApplicable(stage, a) {
+				continue
+			}
+
+			if strings.HasPrefix(a, toComplete) {
+				matches = append(matches, a)
+			}
+		}
+
+		return matches, cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
+func triggerExperimentApps(
+	ctx context.Context,
+	stage app.Action,
+	name string,
+	apps []string,
+) error {
+	var experiments []types.Experiment
+
+	if name == allExperiments {
+		var err error
+
+		experiments, err = experiment.List()
+		if err != nil {
+			err := util.HumanizeError(
+				err,
+				"%s",
+				fmt.Sprintf("Unable to trigger the %s stage for apps in all experiments", stage),
+			)
+
+			return err.Humanized()
+		}
+	} else {
+		exp, err := experiment.Get(name)
+		if err != nil {
+			err := util.HumanizeError(
+				err,
+				"%s",
+				fmt.Sprintf(
+					"Unable to trigger the %s stage for apps in the %s experiment",
+					stage,
+					name,
+				),
+			)
+
+			return err.Humanized()
+		}
+
+		experiments = []types.Experiment{*exp}
+	}
+
+	ctx = app.SetContextTriggerCLI(ctx)
+
+	var processedCount int
+
+	for _, exp := range experiments {
+		if stage == app.ActionRunning && !exp.Running() {
+			plog.Warn(
+				plog.TypeSystem,
+				"not triggering the running stage for apps in stopped experiment",
+				"exp",
+				exp.Metadata.Name,
+			)
+
+			continue
+		}
+
+		err := experiment.Trigger(ctx, exp.Metadata.Name, stage, apps...)
+		if err != nil {
+			err := util.HumanizeError(
+				err,
+				"%s",
+				fmt.Sprintf(
+					"Unable to trigger the %s stage for apps in the %s experiment",
+					stage,
+					exp.Metadata.Name,
+				),
+			)
+
+			return err.Humanized()
+		}
+
+		processedCount++
+
+		plog.Info(
+			plog.TypeSystem,
+			fmt.Sprintf("%s stage triggered for apps", stage),
+			"exp",
+			exp.Metadata.Name,
+		)
+	}
+
+	if processedCount == 0 && name == allExperiments && stage == app.ActionRunning {
+		plog.Warn(
+			plog.TypeSystem,
+			"no running experiments found for trigger request",
+		)
+	}
+
+	return nil
+}
+
+func experimentLifecycleChoices() string {
+	actions := app.Actions()
+	choices := make([]string, 0, len(actions))
+
+	for _, action := range actions {
+		choices = append(
+			choices,
+			fmt.Sprintf("%s (%s)", action, action.Shorthand()),
+		)
+	}
+
+	return strings.Join(choices, ", ")
+}
+
+func parseExperimentLifecycle(value string) (app.Action, error) {
+	action, ok := app.ParseAction(value)
+	if !ok {
+		return "", fmt.Errorf(
+			"invalid lifecycle %q (valid lifecycles and shorthands: %s)",
+			value,
+			experimentLifecycleChoices(),
+		)
+	}
+
+	return action, nil
+}
+
+func newExperimentTriggerCmd() *cobra.Command {
+	desc := fmt.Sprintf(`Trigger an app lifecycle stage in an experiment
+
+  Used to manually trigger the "configure", "pre-start", "post-start", "running",
+  or "cleanup" stage of an app (or apps) for the given experiment on demand.
+  Using 'all' instead of a specific experiment name triggers the stage for the
+  given app(s) in all experiments. Providing no apps triggers the stage for all
+  apps in the experiment(s). The "running" stage is skipped for stopped
+  experiments.
+
+  Triggering the "configure" stage is not the same as
+  'phenix experiment reconfigure': this command does not validate the
+  experiment config, run config hooks, reset the minimega bridge, or guard
+  against running experiments. Use 'phenix experiment reconfigure' after
+  editing an experiment's stored topology, scenario, or deployment settings.
+
+  Valid lifecycles and shorthands: %s.`, experimentLifecycleChoices())
+
+	validateArgs := func(cmd *cobra.Command, args []string) error {
+		if err := cobra.MinimumNArgs(triggerArgs)(cmd, args); err != nil {
+			return err
+		}
+
+		_, err := parseExperimentLifecycle(args[0])
+		return err
+	}
+
+	cmd := &cobra.Command{
+		Use:               "trigger <lifecycle> <experiment name> [<app name> ...]",
+		Short:             "Trigger lifecycle stage for app(s) in experiment",
+		Long:              desc,
+		ValidArgsFunction: experimentTriggerCompletion(true),
+		Args:              argsWithUsage(validateArgs),
+		RunE: func(_ *cobra.Command, args []string) error {
+			ctx := sigterm.CancelContext(context.Background())
+
+			stage, err := parseExperimentLifecycle(args[0])
+			if err != nil {
+				return err
+			}
+
+			return triggerExperimentApps(ctx, stage, args[1], args[2:])
+		},
+	}
+
+	return cmd
+}
+
 func newExperimentTriggerRunningCmd() *cobra.Command {
 	desc := `Trigger an app's "running" stage in an experiment
 
-	Used to manually trigger the "running" stage of an app (or apps) for the
-	given experiment on demand. Using 'all' instead of a specific experiment
-	name will trigger the "running" stage of the given app(s) for all running
-	experiments. Providing no apps will cause all apps for the experiment(s) to
-	be run.`
+  Used to manually trigger the "running" stage of an app (or apps) for the
+  given experiment on demand. Using 'all' instead of a specific experiment
+  name will trigger the "running" stage of the given app(s) for all running
+  experiments. Providing no apps will cause all apps for the experiment(s) to
+  be run.`
 
 	cmd := &cobra.Command{
-		Use:     "trigger-running <experiment name> [<app name> ...]",
-		Aliases: []string{"trig"},
-		Short:   "Trigger running stage for app(s) in experiment",
-		Long:    desc,
-		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			if len(args) == 0 {
-				return expNameCompletion(true)(cmd, args, toComplete)
-			}
-			var matches []string
-			for _, a := range app.List() {
-				if strings.HasPrefix(a, toComplete) {
-					matches = append(matches, a)
-				}
-			}
-			return matches, cobra.ShellCompDirectiveNoFileComp
-		},
-		Args: argsWithUsage(cobra.MinimumNArgs(1)),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			var (
-				name        = args[0]
-				experiments []types.Experiment
+		Use:               "trigger-running <experiment name> [<app name> ...]",
+		Aliases:           []string{"trig"},
+		Short:             "Trigger running stage for app(s) in experiment",
+		Long:              desc,
+		Deprecated:        "use 'phenix exp trigger running' instead",
+		ValidArgsFunction: experimentTriggerCompletion(false),
+		Args:              argsWithUsage(cobra.MinimumNArgs(1)),
+		RunE: func(_ *cobra.Command, args []string) error {
+			ctx := sigterm.CancelContext(context.Background())
 
-				ctx = sigterm.CancelContext(context.Background())
-			)
-
-			if name == allExperiments {
-				var err error
-
-				experiments, err = experiment.List()
-				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"Unable to trigger running stage for apps in all experiments",
-					)
-
-					return err.Humanized()
-				}
-			} else {
-				exp, err := experiment.Get(name)
-				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to trigger the running stage for apps in the "+name+" experiment",
-					)
-
-					return err.Humanized()
-				}
-
-				experiments = []types.Experiment{*exp}
-			}
-
-			ctx = app.SetContextTriggerCLI(ctx)
-
-			for _, exp := range experiments {
-				if !exp.Running() {
-					plog.Warn(
-						plog.TypeSystem,
-						"not triggering the running stage for apps in stopped experiment",
-						"exp",
-						exp.Metadata.Name,
-					)
-
-					continue
-				}
-
-				err := experiment.TriggerRunning(ctx, exp.Metadata.Name, args[1:]...)
-				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to trigger the running stage for apps in the "+exp.Metadata.Name+" experiment",
-					)
-
-					return err.Humanized()
-				}
-
-				plog.Info(
-					plog.TypeSystem,
-					"running stage triggered for apps",
-					"exp",
-					exp.Metadata.Name,
-				)
-			}
-
-			return nil
+			return triggerExperimentApps(ctx, app.ActionRunning, args[0], args[1:])
 		},
 	}
 
@@ -1027,6 +1199,7 @@ func init() { //nolint:gochecknoinits // cobra command
 	experimentCmd.AddCommand(newExperimentStopCmd())
 	experimentCmd.AddCommand(newExperimentRestartCmd())
 	experimentCmd.AddCommand(newExperimentReconfigureCmd())
+	experimentCmd.AddCommand(newExperimentTriggerCmd())
 	experimentCmd.AddCommand(newExperimentTriggerRunningCmd())
 	experimentCmd.AddCommand(newExperimentScorchCmd())
 
