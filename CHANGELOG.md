@@ -2,9 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
+
 ## [1.0.0]
 
 ### Changed
+
 - Removed the unsupported `Printer` and `Server` topology node types.
 
 ### Fixed
