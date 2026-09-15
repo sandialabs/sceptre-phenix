@@ -267,6 +267,11 @@ linters:
       # Default: 30 (but we recommend 10-20)
       min-complexity: 241 # used to be 20, good luck to someone willing to fix this ¯\_(ツ)_/¯
 
+    goconst:
+      min-len: 5
+      min-occurrences: 10
+      ignore-tests: true
+
     gocritic:
       # Settings passed to gocritic.
       # The settings key is the name of a supported gocritic checker.
