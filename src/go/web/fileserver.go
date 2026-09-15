@@ -379,8 +379,7 @@ func loginFileServerUser(r *http.Request, req *LoginRequest) (string, error) {
 		method = http.MethodPost
 	}
 
-	loginReq := httptest.NewRequest(method, "/login", body)
-	loginReq = loginReq.WithContext(r.Context())
+	loginReq := httptest.NewRequestWithContext(r.Context(), method, "/login", body)
 	loginReq.Header = r.Header.Clone()
 
 	if req != nil {
