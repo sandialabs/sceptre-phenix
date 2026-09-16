@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [1.0.0]
 
 ### Changed
+
 - Removed the unsupported `Printer` and `Server` topology node types.
 
 ### Fixed
@@ -76,6 +77,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Web UI VM Interfaces**: Preserve the experiment's configured bridge when reconnecting a disconnected VM interface.
 - **Web UI**: Removed non-functional packet-capture controls from the IP column header and renamed the IPv4 column to IP.
 - **Web UI VNC Tab**: Excluded external/HIL nodes and "Do Not Boot" (DNB) nodes from the VNC tab in the running experiment view.
 - **VM Snapshots**: Replaced deprecated minimega `vm migrate` commands with `vm save` and `vm config state` for snapshot, restore, and redeploy workflows.
