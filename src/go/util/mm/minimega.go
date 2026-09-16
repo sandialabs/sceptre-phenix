@@ -601,7 +601,7 @@ func (Minimega) ConnectVMInterface(opts ...Option) error {
 	o := NewOptions(opts...)
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
-	cmd.Command = fmt.Sprintf("vm net connect %s %d %s", o.vm, o.connectIface, o.connectVLAN)
+	cmd.Command = connectVMInterfaceCommand(o)
 
 	err := mmcli.ErrorResponse(mmcli.Run(cmd))
 	if err != nil {
@@ -616,6 +616,15 @@ func (Minimega) ConnectVMInterface(opts ...Option) error {
 	}
 
 	return nil
+}
+
+func connectVMInterfaceCommand(o options) string {
+	cmd := fmt.Sprintf("vm net connect %s %d %s", o.vm, o.connectIface, o.connectVLAN)
+	if o.bridge != "" {
+		cmd += " " + o.bridge
+	}
+
+	return cmd
 }
 
 func (Minimega) DisconnectVMInterface(opts ...Option) error {

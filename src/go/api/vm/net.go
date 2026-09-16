@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"phenix/api/experiment"
 	"phenix/util/mm"
 )
 
@@ -19,11 +20,17 @@ func Connect(expName, vmName string, iface int, vlan string) error {
 		return errors.New("no VM name provided")
 	}
 
-	err := mm.ConnectVMInterface(
+	exp, err := experiment.Get(expName)
+	if err != nil {
+		return fmt.Errorf("getting experiment %s: %w", expName, err)
+	}
+
+	err = mm.ConnectVMInterface(
 		mm.NS(expName),
 		mm.VMName(vmName),
 		mm.ConnectInterface(iface),
 		mm.ConnectVLAN(vlan),
+		mm.Bridge(exp.Spec.DefaultBridge()),
 	)
 	if err != nil {
 		return fmt.Errorf("connecting VM interface to VLAN: %w", err)
