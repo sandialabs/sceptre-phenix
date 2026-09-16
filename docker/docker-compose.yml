@@ -15,7 +15,7 @@ services:
       context: ../
       dockerfile: docker/Dockerfile
       args:
-        MM_MIN_REV: ${MM_REV:-aecea71}
+        MM_MIN_REV: ${MM_REV:-master}
         PHENIX_WEB_AUTH: disabled
     command:
       - phenix
