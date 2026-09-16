@@ -126,12 +126,10 @@ Actions.prototype.init = function()
                         success: function (data) {
                             // Dynamically update path to pictures used when a file is imported.
                             var stencilPath = window.parent.STENCIL_PATH;
-                            var imageEquals = "image=";
-                            var vmPath = "/virtual_machines"
-                            var partialPath = imageEquals + stencilPath;
-                            var fullPath = partialPath + vmPath;
-                            const regex = /image=/g;
-                            var cleanData = data.replace(regex, fullPath)
+                            var cleanData = data.replace(
+                                /image=[^;"]*(\/(?:virtual_machines|containers)\/)/g,
+                                'image=' + stencilPath + '$1'
+                            );
 
                             var doc = mxUtils.parseXml(cleanData);
                             editor.graph.setSelectionCells(editor.graph.importGraphModel(doc.documentElement));
