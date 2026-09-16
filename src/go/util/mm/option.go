@@ -27,8 +27,9 @@ type options struct {
 	connectIface int
 	connectVLAN  string
 
-	captureIface int
-	captureFile  string
+	captureIface    int
+	captureIfaceSet bool
+	captureFile     string
 
 	screenshotSize string
 
@@ -123,6 +124,7 @@ func DisconnectInterface(i int) Option {
 func CaptureInterface(i int) Option {
 	return func(o *options) {
 		o.captureIface = i
+		o.captureIfaceSet = true
 	}
 }
 

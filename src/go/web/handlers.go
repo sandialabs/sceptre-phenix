@@ -2625,14 +2625,19 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// StopVMCaptures - DELETE /experiments/{exp}/vms/{name}/captures.
+// StopVMCaptures - DELETE /experiments/{exp}/vms/{name}/captures[?iface={iface}].
+//
+// If the iface query parameter is provided, only the packet capture running
+// on that interface is stopped, leaving any other running captures for the
+// VM untouched. Otherwise, all packet captures for the VM are stopped.
 func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 	var (
-		ctx  = r.Context()
-		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
-		name = vars["name"]
+		ctx      = r.Context()
+		role     = middleware.RoleFromContext(ctx)
+		vars     = mux.Vars(r)
+		exp      = vars["exp"]
+		name     = vars["name"]
+		ifaceStr = r.URL.Query().Get("iface")
 	)
 
 	if !role.Allowed("vms/captures", "delete", fmt.Sprintf("%s/%s", exp, name)) {
@@ -2652,7 +2657,34 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := vm.StopCaptures(exp, name)
+	var (
+		err  error
+		body json.RawMessage
+	)
+
+	if ifaceStr == "" {
+		err = vm.StopCaptures(exp, name)
+	} else {
+		var iface int
+
+		iface, err = strconv.Atoi(ifaceStr)
+		if err != nil {
+			http.Error(w, "iface query parameter must be an integer", http.StatusBadRequest)
+
+			return
+		}
+
+		if err = vm.StopCapture(exp, name, iface); err == nil {
+			body, err = json.Marshal(map[string]int{"interface": iface})
+			if err != nil {
+				plog.Error(plog.TypeSystem, "marshaling capture stop result", "err", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+
+				return
+			}
+		}
+	}
+
 	if err != nil {
 		plog.Error(
 			plog.TypeSystem,
@@ -2661,6 +2693,8 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 			exp,
 			"name",
 			name,
+			"iface",
+			ifaceStr,
 			"err",
 			err,
 		)
@@ -2672,7 +2706,7 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 	broker.Broadcast(
 		bt.NewRequestPolicy("vms/captures", "delete", fmt.Sprintf("%s/%s", exp, name)),
 		bt.NewResource("experiment/vm/capture", fmt.Sprintf("%s/%s", exp, name), "stop"),
-		nil,
+		body,
 	)
 
 	user := middleware.UserFromContext(ctx)
@@ -2685,6 +2719,8 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) {
 		exp,
 		"vm",
 		name,
+		"iface",
+		ifaceStr,
 	)
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -33,6 +33,7 @@ const (
 	startCaptureArgs       = 4
 	startSubnetArgs        = 2
 	stopCaptureArgs        = 2
+	stopCaptureIfaceArgs   = 3
 	stopSubnetArgs         = 2
 	stopAllArgs            = 1
 	memSnapArgs            = 3
@@ -921,28 +922,46 @@ func newVMCaptureCmd() *cobra.Command {
 	}
 
 	startVMCapture := &cobra.Command{
-		Use:               "start <experiment name> <vm name> <iface index> <output file>",
-		Short:             "Start a packet capture for a VM specifying the interface index and using given output file as name of capture file",
+		Use:               "start <experiment name> <vm name> <iface name/index> <output file>",
+		Short:             "Start a packet capture for a VM specifying the interface (by name or index) and using given output file as name of capture file",
 		ValidArgsFunction: vmArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != startCaptureArgs {
 				return errors.New(
-					"must provide an experiment name, VM name, iface index, and output file",
+					"must provide an experiment name, VM name, iface name/index, and output file",
 				)
 			}
 
 			var (
-				expName = args[0]
-				vmName  = args[1]
-				out     = args[3]
+				expName  = args[0]
+				vmName   = args[1]
+				ifaceArg = args[2]
+				out      = args[3]
 			)
 
-			iface, err := strconv.Atoi(args[2])
+			v, err := vm.Get(expName, vmName)
 			if err != nil {
-				return errors.New("the network interface index must be an integer")
+				err := util.HumanizeError(
+					err,
+					"%s",
+					"Unable to get details for the "+vmName+" VM",
+				)
+
+				return err.Humanized()
 			}
 
-			if err := vm.StartCapture(expName, vmName, iface, out); err != nil {
+			iface, err := vm.ResolveInterface(v, ifaceArg)
+			if err != nil {
+				err := util.HumanizeError(
+					err,
+					"%s",
+					"Unable to resolve interface "+ifaceArg+" on the "+vmName+" VM",
+				)
+
+				return err.Humanized()
+			}
+
+			if err := vm.StartCaptureForVM(v, expName, vmName, iface, out); err != nil {
 				err := util.HumanizeError(
 					err,
 					"%s",
@@ -1037,18 +1056,74 @@ func newVMCaptureCmd() *cobra.Command {
 	}
 
 	stopVMCaptures := &cobra.Command{
-		Use:               "stop <experiment name> <vm name>",
-		Short:             "Stop all packet captures for the specified VM",
+		Use:   "stop <experiment name> <vm name> [iface name/index]",
+		Short: "Stop packet captures for the specified VM",
+		Long: `Stop packet captures for the specified VM
+
+  If an interface name or index is provided, only the packet capture running
+  on that interface is stopped, leaving any other running captures for the VM
+  untouched. Otherwise, all packet captures for the VM are stopped.`,
 		ValidArgsFunction: vmArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != stopCaptureArgs {
-				return errors.New("must provide an experiment and VM name")
+			if len(args) != stopCaptureArgs && len(args) != stopCaptureIfaceArgs {
+				return errors.New(
+					"must provide an experiment name and VM name, and may optionally provide an iface name/index",
+				)
 			}
 
 			var (
 				expName = args[0]
 				vmName  = args[1]
 			)
+
+			if len(args) == stopCaptureIfaceArgs {
+				ifaceArg := args[2]
+
+				v, err := vm.Get(expName, vmName)
+				if err != nil {
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to get details for the "+vmName+" VM",
+					)
+
+					return err.Humanized()
+				}
+
+				iface, err := vm.ResolveInterface(v, ifaceArg)
+				if err != nil {
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to resolve interface "+ifaceArg+" on the "+vmName+" VM",
+					)
+
+					return err.Humanized()
+				}
+
+				if err := vm.StopCapture(expName, vmName, iface); err != nil {
+					err := util.HumanizeError(
+						err,
+						"%s",
+						"Unable to stop the packet capture on the "+vmName+" VM",
+					)
+
+					return err.Humanized()
+				}
+
+				plog.Info(
+					plog.TypeSystem,
+					"vm packet capture stopped",
+					"iface",
+					iface,
+					"vm",
+					vmName,
+					"exp",
+					expName,
+				)
+
+				return nil
+			}
 
 			err := vm.StopCaptures(expName, vmName)
 			if err != nil {
