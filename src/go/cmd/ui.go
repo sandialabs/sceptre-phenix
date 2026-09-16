@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -15,6 +16,25 @@ import (
 const defaultJWTLifetime = 24 * time.Hour
 
 var uiCmd *cobra.Command //nolint:gochecknoglobals // ui command
+
+func resolveUIBasePath(configured string, flagChanged bool) string {
+	if flagChanged {
+		return configured
+	}
+
+	// Viper resolves the standard prefixed environment variable into configured.
+	if value, ok := os.LookupEnv("PHENIX_UI_BASE_PATH"); ok && value != "" {
+		return configured
+	}
+
+	for _, name := range []string{"PHENIX_BASE_PATH", "BASE_PATH"} {
+		if value, ok := os.LookupEnv(name); ok && value != "" {
+			return value
+		}
+	}
+
+	return configured
+}
 
 //nolint:funlen // command definition
 func newUICmd() *cobra.Command {
@@ -33,7 +53,10 @@ func newUICmd() *cobra.Command {
 
 			opts := []web.ServerOption{
 				web.ServeOnEndpoint(viper.GetString("ui.listen-endpoint")),
-				web.ServeBasePath(viper.GetString("ui.base-path")),
+				web.ServeBasePath(resolveUIBasePath(
+					viper.GetString("ui.base-path"),
+					cmd.Flags().Changed("base-path"),
+				)),
 				web.ServeFileServerEndpoint(viper.GetString("ui.file-server-endpoint")),
 				web.ServeWithJWTKey(viper.GetString("ui.jwt-signing-key")),
 				web.ServeWithJWTLifetime(viper.GetDuration("ui.jwt-lifetime")),

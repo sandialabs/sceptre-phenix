@@ -30,8 +30,23 @@ The easiest way to get phēnix running is using Docker.
 > docker pull ghcr.io/sandialabs/sceptre-phenix/phenix:main
 > ```
 
-> [!IMPORTANT]
-> currently the main image available on GHCR defaults to having UI authentication disabled. If you want to enable authentication, you'll need to build the image yourself, setting the PHENIX_WEB_AUTH=enabled Docker build argument. See [issue #4](https://github.com/sandialabs/sceptre-phenix/issues/4) for additional details.
+The bundled UI configures itself from the `phenix ui` runtime settings, so the
+same image supports every authentication mode and base path:
+
+| UI mode | Runtime setting |
+|---|---|
+| Authentication disabled | Leave `--jwt-signing-key` empty |
+| Password authentication | Set `--jwt-signing-key` to a secret |
+| Proxy authentication | Set `--jwt-signing-key proxy-jwt` |
+
+Use `--base-path` when serving behind a reverse proxy. In containers, the
+equivalent environment variables are `PHENIX_UI_JWT_SIGNING_KEY` and
+`PHENIX_UI_BASE_PATH`. The legacy `PHENIX_BASE_PATH` and `BASE_PATH` names are
+also accepted for base-path compatibility.
+
+The browser setting only selects the matching UI flow. Authentication remains
+enforced independently by the server on every protected API request, so
+changing browser-visible configuration cannot disable or bypass it.
 
 To build the phēnix container image from source (does not require installing local dependencies):
 

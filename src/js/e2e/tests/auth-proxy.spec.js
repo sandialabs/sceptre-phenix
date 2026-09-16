@@ -1,5 +1,5 @@
-// Proxy-auth signup flow. Opt-in: needs the UI built with VITE_AUTH=proxy and
-// the server started with --jwt-signing-key proxy-jwt, e.g.:
+// Proxy-auth signup flow. Opt-in: needs the server started with
+// --jwt-signing-key proxy-jwt, e.g.:
 //
 //   phenix ui --jwt-signing-key proxy-jwt
 //   E2E_AUTH_MODE=proxy npx playwright test auth-proxy

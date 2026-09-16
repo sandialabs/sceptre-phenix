@@ -1,9 +1,9 @@
 import axios from 'axios';
 import { usePhenixStore } from '@/store.js';
+import { basePath } from '@/runtimeConfig.js';
 
 const axiosInstance = axios.create({
-  // BASE_URL is the app's base path, slash-terminated (see vite.config.js)
-  baseURL: `${import.meta.env.BASE_URL}api/v1/`,
+  baseURL: `${basePath}api/v1/`,
 });
 
 axiosInstance.interceptors.request.use((config) => {

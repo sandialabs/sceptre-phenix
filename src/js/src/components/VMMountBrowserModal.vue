@@ -119,6 +119,7 @@
   import axiosInstance from '@/utils/axios.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import { usePhenixStore } from '@/store';
+  import { basePath } from '@/runtimeConfig.js';
 
   export default {
     mixins: [formattingMixin],
@@ -254,7 +255,7 @@
           message: `Download ${path}?`,
           onConfirm: () => {
             window.open(
-              `${import.meta.env.BASE_URL}api/v1/experiments/${this.targetExp}/vms/${this.targetVm}/files/download?token=${usePhenixStore().token}&path=${encodeURIComponent(path)}`,
+              `${basePath}api/v1/experiments/${this.targetExp}/vms/${this.targetVm}/files/download?token=${usePhenixStore().token}&path=${encodeURIComponent(path)}`,
               '_blank',
             );
           },
