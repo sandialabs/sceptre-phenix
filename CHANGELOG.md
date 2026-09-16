@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
   - **Topology Endpoints**: Added `POST /api/v1/builder/topologies` and `PUT /api/v1/builder/topologies/{name}` to create and save a topology and its diagram without touching an experiment; both refuse the write while an experiment built from that topology is running.
   - **Default Disk Images**: Added the `$DEFAULT_VM_IMAGE` and `$DEFAULT_ROUTER_IMAGE` experiment variables, which set the disk image new VM and router nodes are created with.
   - **API Documentation**: Documented the Builder routes in `openapi.yml`, which previously carried none of them.
+- **Documentation Sources**: Consolidate the phēnix MkDocs site into this repository so documentation changes can ship with the code they describe.
 
 ### Changed
 

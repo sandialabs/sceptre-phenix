@@ -13,6 +13,8 @@ README.md       @cmulk @activeshadow @glattercj @GhostofGoes @mgaliar
 
 # Misc directories
 /.github/       @cmulk @mgaliar @GhostofGoes @activeshadow @glattercj
+# TODO: Update documentation code owners.
+/docs/
 /examples/      @nblair2 @glattercj
 /scripts/       @glattercj
 
