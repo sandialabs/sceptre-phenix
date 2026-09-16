@@ -116,11 +116,12 @@ backend. Review generated diffs before submission.
 | Config interfaces and fields | `src/go/types/interfaces/`, `src/go/types/version/` |
 | YAML config schemas | `src/go/types/version/schemas/{v0,v1,v2}.yaml` |
 | CLI and REST implementation | `src/go/cmd/`, `src/go/web/server.go` |
+| Narrative docs source | [`docs/`](docs/) |
 | Internet-hosted narrative docs | [phenix.sceptre.dev](https://phenix.sceptre.dev/latest/) |
 | minimega commands and behavior | [API docs](https://sandia-minimega.github.io/), [source](https://github.com/sandia-minimega/minimega) |
 | Official apps and SCORCH components | [`sceptre-phenix-apps`](https://github.com/sandialabs/sceptre-phenix-apps) |
 | Image configs, overlays, scripts | [`sceptre-phenix-images`](https://github.com/sandialabs/sceptre-phenix-images) |
-| Source for phenix.sceptre.dev | [`sceptre-phenix-docs`](https://github.com/sandialabs/sceptre-phenix-docs) |
+| Source for phenix.sceptre.dev | [`docs/`](docs/) |
 | Reusable topologies | [`sceptre-phenix-topologies`](https://github.com/sandialabs/sceptre-phenix-topologies) |
 
 Consult minimega documentation and source whenever code constructs commands or
@@ -137,8 +138,7 @@ image, documentation, or topology details.
 - Update `CHANGELOG.md` for code or behavior changes and `CODEOWNERS` for new
   areas or ownership changes.
 - New user-facing features need a minimal README example and documentation in
-  [`sceptre-phenix-docs`](https://github.com/sandialabs/sceptre-phenix-docs).
-  Existing changes may also require docs; cross-link both pull requests.
+  [`docs/`](docs/).
 - Keep API docs, schemas, examples, and the phēnix skill aligned with behavior.
 - Use issue and PR templates under `.github/`. Keep PR descriptions concise:
   purpose, relevant changes, related issue, and reviewer context only.
