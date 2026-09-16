@@ -1,5 +1,6 @@
 /// <reference types="vite/types/importMeta.d.ts" />
 import { usePhenixStore } from '@/store.js';
+import { basePath } from '@/runtimeConfig.js';
 import { ToastProgrammatic as Toast } from 'buefy';
 
 let globalWs: WebSocket = null;
@@ -27,7 +28,7 @@ function reconnectDelayMs(): number {
 
 function getUrl(): string {
   const store = usePhenixStore();
-  let path = `${import.meta.env.BASE_URL}api/v1/ws`;
+  let path = `${basePath}api/v1/ws`;
   if (store.token) {
     path += `?token=${store.token}`;
   }

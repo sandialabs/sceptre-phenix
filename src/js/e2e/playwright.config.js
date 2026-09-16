@@ -1,8 +1,7 @@
 const { defineConfig } = require('@playwright/test');
 
 // Target server: a running `phenix ui` (any deployment). Override with
-// E2E_BASE_URL. Tests assume the UI was built with VITE_AUTH=disabled unless
-// the env-gated auth specs are enabled (see README).
+// E2E_BASE_URL. The server configures the UI authentication mode at runtime.
 module.exports = defineConfig({
   testDir: './tests',
   timeout: 120000,

@@ -7,6 +7,7 @@
   } from './utils/websocket';
   import AppHeader from '@/components/AppHeader.vue';
   import AppFooter from '@/components/AppFooter.vue';
+  import { authMode } from '@/runtimeConfig.js';
   import { onUnmounted, onMounted } from 'vue';
   import router from '@/router';
   import { usePhenixStore } from '@/store';
@@ -29,7 +30,7 @@
 
   onMounted(() => {
     // connect websockets once user has authenticated (or auth disabled)
-    if (import.meta.env.VITE_AUTH === 'disabled' || store.auth) {
+    if (authMode === 'disabled' || store.auth) {
       connectWebsocket();
       timeout.fetchAndStart();
     } else {

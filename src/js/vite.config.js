@@ -9,13 +9,17 @@ export default defineConfig(({ mode }) => {
   process.env = {
     ...process.env,
     ...loadEnv(mode, process.cwd()),
-    VITE_FAVICON: mode === 'development' ? '/favicon_dev.ico' : '/favicon.ico',
+    VITE_FAVICON: mode === 'development' ? 'favicon_dev.ico' : 'favicon.ico',
   };
+  const configuredBasePath = (process.env.VITE_BASE_PATH || '/').replace(
+    /\/?$/,
+    '/',
+  );
+
   return {
-    // normalize to a trailing slash: import.meta.env.BASE_URL is replaced
-    // with this raw value (not Vite's slash-normalized resolved base), and
-    // code concatenates paths onto it (e.g. `${BASE_URL}api/v1/`)
-    base: (process.env.VITE_BASE_PATH || '/').replace(/\/?$/, '/'),
+    // Production assets are relative to the base element injected by phenix.
+    // Development still honors VITE_BASE_PATH because Vite serves index.html.
+    base: mode === 'development' ? configuredBasePath : './',
     assetsDir: 'assets',
     plugins: [vue(), vueDevTools()],
     resolve: {

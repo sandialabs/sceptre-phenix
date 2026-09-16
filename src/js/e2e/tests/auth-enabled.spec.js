@@ -1,6 +1,5 @@
-// Password-auth (enabled mode) sign-in flows. Opt-in: needs the UI built with
-// VITE_AUTH=enabled and the server started with a signing key and a known
-// admin, e.g.:
+// Password-auth (enabled mode) sign-in flows. Opt-in: needs the server started
+// with a signing key and a known admin, e.g.:
 //
 //   phenix ui --jwt-signing-key secret --users 'e2e-admin:Testpass1!:Global Admin'
 //   E2E_AUTH_MODE=enabled npx playwright test auth-enabled
