@@ -106,7 +106,7 @@ Defines the static network: a list of `nodes` (VMs, routers, firewalls, or
 external/physical nodes) and their hardware, network interfaces, and boot
 behavior. Key node fields:
 
-- `type`: `VirtualMachine | Firewall | Printer | Router | Server | ...`
+- `type`: `VirtualMachine | Firewall | Router | Switch`
 - `general.hostname`, `general.vm_type` (`kvm` or `container`, default `kvm`),
   `general.do_not_boot`, `general.snapshot`
 - `hardware.os_type`: `linux | windows | centos | rhel | minirouter | vyatta | vyos`
