@@ -723,7 +723,6 @@
   import Windows from '@/assets/imgs/windows.svg';
   import Router from '@/assets/imgs/router.svg';
   import Firewall from '@/assets/imgs/firewall.svg';
-  import Printer from '@/assets/imgs/printer.svg';
   import VLAN from '@/assets/imgs/vlan.svg';
 
   import axiosInstance from '@/utils/axios.js';
@@ -1058,18 +1057,6 @@
           .attr('height', 50)
           .append('svg:image')
           .attr('xlink:href', Firewall)
-          .attr('width', 30)
-          .attr('height', 30)
-          .attr('x', 0)
-          .attr('y', 0);
-
-        defs
-          .append('svg:pattern')
-          .attr('id', 'printer')
-          .attr('width', 50)
-          .attr('height', 50)
-          .append('svg:image')
-          .attr('xlink:href', Printer)
           .attr('width', 30)
           .attr('height', 30)
           .attr('x', 0)
