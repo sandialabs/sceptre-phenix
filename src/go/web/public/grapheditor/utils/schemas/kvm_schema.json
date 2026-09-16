@@ -62,9 +62,7 @@
       "enum": [
         "VirtualMachine",
         "Firewall",
-        "Printer",
         "Router",
-        "Server",
         "Switch"
       ],
       "default": "VirtualMachine",
