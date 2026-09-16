@@ -5,6 +5,8 @@ rules:
   indentation:
     indent-sequences: consistent
     spaces: 2
+    ignore: |
+      docs/mkdocs.yml
   line-length:
     max: 120
     allow-non-breakable-words: true
@@ -12,6 +14,7 @@ rules:
     ignore: |
       .github/workflows/
       .golangci.yml
+      docs/mkdocs.yml
       src/go/.golangci.yml
       examples/
       src/go/api/config/default/

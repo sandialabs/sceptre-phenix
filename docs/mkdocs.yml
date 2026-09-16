@@ -1,0 +1,103 @@
+site_name: 'phenix documentation'
+site_description: 'A place for phenix users to call home.'
+site_author: 'activeshadow and dnkcom'
+strict: true
+
+repo_name: 'sandialabs/sceptre-phenix'
+repo_url: 'https://github.com/sandialabs/sceptre-phenix'
+edit_uri: 'https://github.com/sandialabs/sceptre-phenix/edit/main/docs/content'
+docs_dir: content
+
+theme:
+  name: 'material'
+  language: 'en'
+  feature:
+    tabs: true
+  features:
+    - content.code.copy
+  favicon: images/favicon.ico
+  logo: images/phenix.png
+  palette:
+    - scheme: default
+      media: "(prefers-color-scheme: light)"
+      primary: 'deep orange'
+      accent: 'brown'
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      media: "(prefers-color-scheme: dark)"
+      primary: 'deep orange'
+      accent: 'brown'
+      toggle:
+        icon: material/brightness-3
+        name: Switch to light mode
+  custom_dir: 'theme'
+  include_sidebar: true
+
+extra:
+  social:
+    - icon: 'fontawesome/brands/github'
+      link: 'https://github.com/sandialabs/sceptre-phenix'
+    - icon: 'fontawesome/solid/gear'
+      link: '/swagger.html'
+  version:
+    provider: mike
+
+extra_css:
+  - stylesheets/style.css
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - codehilite:
+      guess_lang: false
+  - footnotes
+  - toc:
+      permalink: true
+  - pymdownx.snippets:
+      base_path: !relative $config_dir/..
+      check_paths: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Configuration:
+    - Files: configuration.md
+    - Settings: settings.md
+    - Logging: logging.md
+  - Experiments:
+    - Overview: experiments.md
+    - VMs: vms.md
+    - VM Actions: vm-multi-action.md
+    - Images: image.md
+  - Apps:
+    - Overview: apps.md
+    - Examples: examples.md
+    - Scorch: scorch.md
+    - State of Health: state-of-health.md
+  - Networking:
+    - Bridge Mode: bridge-mode.md
+    - Netflow: netflow.md
+    - Tunneler: tunneler.md
+  - Integrations:
+    - API: api.md
+    - Git Workflow: git-workflow.md
+  - Administration:
+    - Users: user-administration.md
+  - Reference:
+    - minimega: minimega.md
+    - Troubleshooting: troubleshooting.md
+    - Schema: schema.md

@@ -56,7 +56,7 @@ args = [
   "ue,ot,ues,fo,nd,ist,te,parm,parms,ser,iif,iam,nin,filetest",
   # vendored UI assets and generated/binary content are noisy for codespell
   "--skip",
-  "*.svg,*.lock,*.sum,src/js/yarn.lock,src/js/dist/*,src/go/web/public/*,src/go/web/proto/*.pb.go,src/go/store/mock.go,src/go/web/rbac/known_policy.go,**/*.min.js,**/*.min.css"
+  "*.svg,*.lock,*.sum,docs/content/images/*,docs/content/javascripts/*,docs/content/stylesheets/*,docs/theme/*,src/js/yarn.lock,src/js/dist/*,src/go/web/public/*,src/go/web/proto/*.pb.go,src/go/store/mock.go,src/go/web/rbac/known_policy.go,**/*.min.js,**/*.min.css"
 ]
 priority = "lint"
 
@@ -136,7 +136,6 @@ args = [
     "--disable",
     "MD013,MD033,MD041,MD024",  # MD013: line length, MD033: inline HTML, MD041: first line heading, MD024: multiple headers with the same content
 ]
-# vendored UI docs (novnc, xterm.js) are third-party content, not ours to fix
 exclude = '^src/go/web/public/'
 priority = "format"
 
@@ -218,6 +217,7 @@ priority = "fixers"
 
 [[repos.hooks]]
 id = "check-added-large-files"
+args = ["--maxkb=1024"]
 priority = "format"
 
 [[repos.hooks]]
@@ -244,6 +244,9 @@ priority = "fixers"
 
 [[repos.hooks]]
 id = "check-yaml"
+# docs/mkdocs.yml uses python tags (e.g. !!python/name) that pyyaml rejects;
+# yamllint already validates structure.
+exclude = '^docs/mkdocs\.yml$'
 priority = "format"
 
 [[repos.hooks]]
