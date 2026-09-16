@@ -50,13 +50,17 @@ are only available to Global Administrator or Global Viewer.
         >Logs</b-navbar-item
       >
       <b-navbar-item
-        v-if="auth && roleAllowed('experiments', 'list')"
+        v-if="
+          auth &&
+          roleAllowed('scorch', 'get') &&
+          roleAllowed('experiments', 'list')
+        "
         tag="router-link"
         :to="{ name: 'scorch' }"
         >Scorch</b-navbar-item
       >
       <b-navbar-item
-        v-if="auth && roleAllowed('experiments', 'list')"
+        v-if="auth && roleAllowed('builder', 'get')"
         tag="a"
         :href="builderLoc()"
         target="_blank"
@@ -70,7 +74,7 @@ are only available to Global Administrator or Global Viewer.
         >Console</b-navbar-item
       >
       <b-navbar-item
-        v-if="auth && tunneler"
+        v-if="auth && tunneler && roleAllowed('tunneler', 'get')"
         tag="router-link"
         :to="{ name: 'tunneler' }">
         Tunneler
@@ -149,7 +153,7 @@ are only available to Global Administrator or Global Viewer.
         const phenixStore = usePhenixStore();
         return this.$router.resolve({
           name: 'builder',
-          params: { token: phenixStore.token },
+          query: { token: phenixStore.token },
         }).href;
       },
     },
