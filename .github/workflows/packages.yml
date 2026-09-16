@@ -8,7 +8,7 @@ on:
   repository_dispatch:
     types: [apps-update]
 env:
-  MM_REV: aecea71
+  MM_REV: master
 permissions:
   contents: read
 concurrency:
