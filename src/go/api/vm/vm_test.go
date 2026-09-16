@@ -22,6 +22,17 @@ func (m listMM) GetVMInfo(...mm.Option) mm.VMs {
 	return m.vms
 }
 
+type connectMM struct {
+	mm.MM
+
+	capturedOpts []mm.Option
+}
+
+func (m *connectMM) ConnectVMInterface(opts ...mm.Option) error {
+	m.capturedOpts = opts
+	return nil
+}
+
 // getTestExperiment builds a store mock backing a minimal experiment with one
 // topology node and one scenario app that targets the node with metadata, and
 // makes it the phenix default store for the duration of the test.
@@ -39,6 +50,7 @@ func getTestExperiment(t *testing.T, vmName string, appMetadata map[string]any, 
 		},
 		Spec: map[string]any{
 			"experimentName": "test-experiment",
+			"defaultBridge":  "phenix",
 			"topology": map[string]any{
 				"nodes": []map[string]any{
 					{
@@ -176,6 +188,32 @@ func TestListExcludesKilledVMsFromRunningExperiment(t *testing.T) {
 				t.Fatalf("vm.List returned %d VMs, want %d: %#v", len(got), test.want, got)
 			}
 		})
+	}
+}
+
+func TestConnectUsesExperimentDefaultBridge(t *testing.T) {
+	getTestExperiment(t, "test-vm", nil, "")
+
+	originalMM := mm.DefaultMM
+	t.Cleanup(func() { mm.DefaultMM = originalMM }) //nolint:reassign // restore test double
+
+	fakeMM := new(connectMM)
+	mm.DefaultMM = fakeMM //nolint:reassign // install test double
+
+	// Test that Connect() successfully calls ConnectVMInterface with options
+	if err := vm.Connect("test-experiment", "test-vm", 0, "EXP_1"); err != nil {
+		t.Fatalf("vm.Connect returned error: %v", err)
+	}
+
+	if len(fakeMM.capturedOpts) == 0 {
+		t.Fatal("expected ConnectVMInterface to be called with options including bridge")
+	}
+}
+
+func TestConnectHandlesExperimentLookupError(t *testing.T) {
+	// Don't call getTestExperiment, so the experiment doesn't exist in the store
+	if err := vm.Connect("nonexistent-experiment", "test-vm", 0, "EXP_1"); err == nil {
+		t.Fatal("expected Connect to return error for nonexistent experiment")
 	}
 }
 
