@@ -34,6 +34,16 @@ vi.mock('@/store.js', () => {
             verbs: ['delete'],
           },
           {
+            resources: ['vms'],
+            resourceNames: ['expA/*'],
+            verbs: ['update'],
+          },
+          {
+            resources: ['vms'],
+            resourceNames: ['*/vm1'],
+            verbs: ['create'],
+          },
+          {
             resources: ['things'],
             resourceNames: ['*', '!thing1'],
             verbs: ['*'],
@@ -78,9 +88,20 @@ test('resource name restriction', () => {
   expect(roleAllowed('experiments', 'patch', 'expA')).toBe(false);
 });
 
-test('resourceName single wildcard DOES apply', () => {
+test('resourceName single wildcard does not cross namespace boundaries', () => {
   expect(roleAllowed('vms', 'delete', 'vm1')).toBe(true);
-  expect(roleAllowed('vms', 'delete', 'expA/vm1')).toBe(true);
+  expect(roleAllowed('vms', 'delete', 'expA/vm1')).toBe(false);
+});
+
+test('resourceName can allow one namespace', () => {
+  expect(roleAllowed('vms', 'update', 'expA/vm1')).toBe(true);
+  expect(roleAllowed('vms', 'update', 'expB/vm1')).toBe(false);
+});
+
+test('resourceName can allow one name across namespaces', () => {
+  expect(roleAllowed('vms', 'create', 'expA/vm1')).toBe(true);
+  expect(roleAllowed('vms', 'create', 'expB/vm1')).toBe(true);
+  expect(roleAllowed('vms', 'create', 'expA/vm2')).toBe(false);
 });
 
 test('resourceName negation', () => {
