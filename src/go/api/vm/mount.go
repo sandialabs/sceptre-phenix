@@ -1,14 +1,15 @@
 package vm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"phenix/api/experiment"
+	"phenix/app"
 	"phenix/util/mm"
 	"phenix/util/plog"
 )
@@ -109,15 +110,14 @@ func Unmount(expName, vmName string) error {
 // the case where it's already mounted. It is used by both the CLI (via Mount)
 // and the `POST /experiments/{exp}/vms/{name}/mount` API endpoint.
 func MountFilesystem(expName, vmName string) error {
-	_, err := mm.ExecC2Command(
+	err := mm.MountFilesystem(
 		mm.C2NS(expName),
 		mm.C2VM(vmName),
-		mm.C2Mount(),
 		mm.C2IDClientsByUUID(),
 		mm.C2Timeout(MountTimeout),
 	)
 
-	if err != nil && !strings.Contains(err.Error(), "already connected") {
+	if err != nil {
 		return fmt.Errorf("mounting VM filesystem: %w", err)
 	}
 
@@ -128,10 +128,9 @@ func MountFilesystem(expName, vmName string) error {
 // used by both the CLI (via Unmount) and the `POST
 // /experiments/{exp}/vms/{name}/unmount` API endpoint.
 func UnmountFilesystem(expName, vmName string) error {
-	_, err := mm.ExecC2Command(
+	err := mm.UnmountFilesystem(
 		mm.C2NS(expName),
 		mm.C2VM(vmName),
-		mm.C2Unmount(),
 		mm.C2Timeout(MountTimeout),
 		mm.C2SkipActiveClientCheck(true),
 	)
@@ -184,4 +183,30 @@ func unmountExperiment(expName string) {
 			err,
 		)
 	}
+}
+
+// TriggerAutoMountForDelayedStart automatically mounts the given VM's
+// filesystem if its topology node has a "user" delay configured and has
+// auto-mount enabled. It is intended to be called after a user-delayed node
+// has been manually started (e.g. via the CLI's `vm resume` or the web UI's
+// start action), since such nodes are skipped during the experiment's normal
+// post-start auto-mount pass because they aren't running yet.
+//
+// Non-delayed nodes, and nodes without auto-mount configured, are ignored.
+func TriggerAutoMountForDelayedStart(ctx context.Context, expName, vmName string) error {
+	exp, err := experiment.Get(expName)
+	if err != nil {
+		return fmt.Errorf("getting experiment to check for delayed auto-mount: %w", err)
+	}
+
+	node := exp.Spec.Topology().FindNodeByName(vmName)
+	if node == nil || node.Delay() == nil || !node.Delay().User() {
+		return nil
+	}
+
+	if err := app.TriggerAutoMount(ctx, expName, node); err != nil {
+		return fmt.Errorf("auto-mounting delayed VM %s: %w", vmName, err)
+	}
+
+	return nil
 }

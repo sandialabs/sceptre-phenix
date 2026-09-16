@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"phenix/tmpl"
 	"phenix/types"
@@ -18,6 +19,7 @@ import (
 	"phenix/util/plog"
 	"phenix/util/pubsub"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/mitchellh/mapstructure"
 
 	ifaces "phenix/types/interfaces"
@@ -29,7 +31,10 @@ const (
 	tunnelConfigPartsPortHost     = 2
 	tunnelConfigPartsPortHostDest = 3
 
+	autoMountAnnotation    = "phenix/auto-mount"
+	autoMountNodeType      = "VirtualMachine"
 	startupViaCCAnnotation = "phenix/startup-via-cc"
+	startupMountTimeout    = 30 * time.Second
 
 	linuxHostnameInjectDst  = "/etc/phenix/startup/1_hostname-start.sh"
 	linuxTimezoneInjectDst  = "/etc/phenix/startup/2_timezone-start.sh"
@@ -41,7 +46,9 @@ const (
 	windowsSchedulerDst            = "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/startup_scheduler.cmd"
 )
 
-type Startup struct{}
+type Startup struct {
+	dryRun bool
+}
 
 type startupC2Executor string
 
@@ -54,9 +61,32 @@ type commandSetter interface {
 	SetCommands([]string)
 }
 
-var startupMMFullPath = mm.GetMMFullPath //nolint:gochecknoglobals // overridden by tests
+var (
+	startupMMFullPath = mm.GetMMFullPath //nolint:gochecknoglobals // overridden by tests
 
-func (Startup) Init(...Option) error {
+	startupMountFilesystem = func(ctx context.Context, expName, vmName string) error { //nolint:gochecknoglobals // overridden by tests
+		return mm.MountFilesystem(
+			mm.C2Context(ctx),
+			mm.C2NS(expName),
+			mm.C2VM(vmName),
+			mm.C2IDClientsByUUID(),
+			mm.C2Timeout(startupMountTimeout),
+		)
+	}
+
+	startupUnmountFilesystem = func(ctx context.Context, expName, vmName string) error { //nolint:gochecknoglobals // overridden by tests
+		return mm.UnmountFilesystem(
+			mm.C2Context(ctx),
+			mm.C2NS(expName),
+			mm.C2VM(vmName),
+			mm.C2SkipActiveClientCheck(true),
+		)
+	}
+)
+
+func (s *Startup) Init(opts ...Option) error {
+	s.dryRun = NewOptions(opts...).DryRun
+
 	return nil
 }
 
@@ -516,10 +546,178 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
+// autoMountEnabled reports whether the node has auto-mount enabled. The
+// annotation value must be a boolean; any other type is an error.
+func autoMountEnabled(node ifaces.NodeSpec) (bool, error) {
+	val, ok := node.GetAnnotation(autoMountAnnotation)
+	if !ok {
+		return false, nil
+	}
+
+	enabled, valid := val.(bool)
+	if !valid {
+		return false, fmt.Errorf(
+			"%s annotation for node %s must be a boolean",
+			autoMountAnnotation,
+			node.General().Hostname(),
+		)
+	}
+
+	return enabled, nil
+}
+
+// TriggerAutoMount mounts the given node's filesystem if it has auto-mount
+// configured. Unlike the automatic post-start pass, this does not skip
+// user-delayed nodes, since it is intended to be called once such a node has
+// actually been started (e.g. in response to a manual VM start/resume
+// action). The underlying mount is idempotent, so calling this for a node
+// that is already mounted is safe.
+func TriggerAutoMount(ctx context.Context, expName string, node ifaces.NodeSpec) error {
+	return autoMountNode(ctx, false, expName, node, false)
+}
+
+func (s *Startup) autoMountNode(
+	ctx context.Context,
+	expName string,
+	node ifaces.NodeSpec,
+) error {
+	return autoMountNode(ctx, s.dryRun, expName, node, true)
+}
+
+// autoMountNode mounts node's filesystem if it has auto-mount configured. If
+// skipUserDelayed is true, nodes with a user delay are skipped with a
+// warning (since the VM likely isn't running yet); set it to false when
+// calling after a user-delayed node has just been started.
+func autoMountNode(
+	ctx context.Context,
+	dryRun bool,
+	expName string,
+	node ifaces.NodeSpec,
+	skipUserDelayed bool,
+) error {
+	enabled, err := autoMountEnabled(node)
+	if err != nil {
+		return err
+	}
+
+	if !enabled {
+		return nil
+	}
+
+	hostname := node.General().Hostname()
+
+	if autoMountSkipped(ctx, expName, hostname, node, skipUserDelayed) {
+		return nil
+	}
+
+	if dryRun {
+		return nil
+	}
+
+	if err := startupMountFilesystem(ctx, expName, hostname); err != nil {
+		return fmt.Errorf("auto-mounting VM %s: %w", hostname, err)
+	}
+
+	plog.Info(
+		plog.TypeAction,
+		"vm automatically mounted",
+		"exp",
+		expName,
+		"vm",
+		hostname,
+		"path",
+		mm.GetLocalMountPath(expName, hostname),
+	)
+
+	return nil
+}
+
+func autoMountSkipped(
+	ctx context.Context,
+	expName string,
+	hostname string,
+	node ifaces.NodeSpec,
+	skipUserDelayed bool,
+) bool {
+	if !strings.EqualFold(node.Type(), autoMountNodeType) {
+		plog.Warn(
+			plog.TypeSystem,
+			"skipping auto-mount: node type does not support filesystem mounts",
+			"exp", expName,
+			"node", hostname,
+			"type", node.Type(),
+		)
+
+		notes.AddWarnings(ctx, false, fmt.Errorf(
+			"skipping auto-mount for node %s: node type %s does not support filesystem mounts",
+			hostname,
+			node.Type(),
+		))
+
+		return true
+	}
+
+	if doNotBoot := node.General().DoNotBoot(); doNotBoot != nil && *doNotBoot {
+		plog.Warn(
+			plog.TypeSystem,
+			"skipping auto-mount: node is configured not to boot",
+			"exp", expName,
+			"node", hostname,
+		)
+
+		notes.AddWarnings(ctx, false, fmt.Errorf(
+			"skipping auto-mount for node %s: node is configured not to boot",
+			hostname,
+		))
+
+		return true
+	}
+
+	if skipUserDelayed && node.Delay() != nil && node.Delay().User() {
+		plog.Warn(
+			plog.TypeSystem,
+			"skipping auto-mount: user-delayed node not started",
+			"exp", expName,
+			"node", hostname,
+		)
+
+		notes.AddWarnings(ctx, false, fmt.Errorf(
+			"skipping auto-mount for user-delayed node %s (will be mounted once the node is manually started)",
+			hostname,
+		))
+
+		return true
+	}
+
+	if node.Hardware() != nil && strings.EqualFold(node.Hardware().OSType(), "minirouter") {
+		plog.Warn(
+			plog.TypeSystem,
+			"skipping auto-mount: node does not support filesystem mounts",
+			"exp", expName,
+			"node", hostname,
+			"os_type", node.Hardware().OSType(),
+		)
+
+		notes.AddWarnings(ctx, false, fmt.Errorf(
+			"skipping auto-mount for node %s: %s does not support filesystem mounts",
+			hostname,
+			node.Hardware().OSType(),
+		))
+
+		return true
+	}
+
+	return false
+}
+
+func (s *Startup) PostStart(ctx context.Context, exp *types.Experiment) error {
 	for _, node := range exp.Spec.Topology().Nodes() {
 		if node.External() {
 			continue
+		}
+
+		if err := s.autoMountNode(ctx, exp.Metadata.Name, node); err != nil {
+			return err
 		}
 
 		// The autotunnel annotation is independent of default apps, so it is
@@ -596,6 +794,43 @@ func (Startup) Running(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func (Startup) Cleanup(ctx context.Context, exp *types.Experiment) error {
-	return nil
+func (s *Startup) Cleanup(ctx context.Context, exp *types.Experiment) error {
+	if s.dryRun {
+		return nil
+	}
+
+	var errs error
+
+	for _, node := range exp.Spec.Topology().Nodes() {
+		if node.External() {
+			continue
+		}
+
+		enabled, err := autoMountEnabled(node)
+		if err != nil || !enabled {
+			continue
+		}
+
+		if !strings.EqualFold(node.Type(), autoMountNodeType) {
+			continue
+		}
+
+		if doNotBoot := node.General().DoNotBoot(); doNotBoot != nil && *doNotBoot {
+			continue
+		}
+
+		if node.Hardware() != nil && strings.EqualFold(node.Hardware().OSType(), "minirouter") {
+			continue
+		}
+
+		hostname := node.General().Hostname()
+		if err := startupUnmountFilesystem(ctx, exp.Metadata.Name, hostname); err != nil {
+			errs = multierror.Append(
+				errs,
+				fmt.Errorf("unmounting automatically mounted VM %s: %w", hostname, err),
+			)
+		}
+	}
+
+	return errs //nolint:wrapcheck // returning multierror
 }

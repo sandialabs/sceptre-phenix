@@ -1805,6 +1805,18 @@ func StartVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := vm.TriggerAutoMountForDelayedStart(ctx, expName, name); err != nil {
+		broker.Broadcast(
+			bt.NewRequestPolicy("vms/start", "update", fullName),
+			bt.NewResource("experiment/vm", name, "errorStarting"),
+			nil,
+		)
+
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
 	exp, err := experiment.Get(expName)
 	if err != nil {
 		broker.Broadcast(
