@@ -77,21 +77,15 @@
             "title": "Type",
             "enum": [
               "Firewall",
-              "Printer",
-              "Server",
               "Switch",
               "Router",
-              "SCEPTRE",
               "VirtualMachine"
             ],
             "default": "VirtualMachine",
             "examples": [
               "Firewall",
-              "Printer",
-              "Server",
               "Switch",
               "Router",
-              "SCEPTRE",
               "VirtualMachine"
             ],
             "pattern": "^(.*)$"

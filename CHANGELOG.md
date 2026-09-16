@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [1.0.0]
 
 ### Changed
+
 - Removed the unsupported `Printer` and `Server` topology node types.
 
 ### Fixed
