@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
+- **Web UI Settings**: Expose runtime settings and read-only phenix environment variables in the Settings tab.
 
 ## [1.0.0]
 
