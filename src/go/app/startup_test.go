@@ -116,16 +116,62 @@ func TestStartupPreStartWindowsC2Commands(t *testing.T) {
 	if !hasInjection(node, windowsStartupInjectDst) {
 		t.Fatalf("expected Windows startup script injection to remain for inject partition 0")
 	}
-	if hasInjection(node, legacyWindowsStartupWrapperDst) {
-		t.Fatalf("unexpected Windows startup wrapper injection")
+	if hasInjection(node, windowsStartupWrapperDst) {
+		t.Fatalf("unexpected Windows startup wrapper injection with C2 delivery")
 	}
 	if hasInjection(node, windowsSchedulerDst) || hasInjection(node, "/"+windowsSchedulerDst) {
-		t.Fatalf("unexpected Windows Start Menu scheduler injection")
+		t.Fatalf("unexpected Windows Start Menu scheduler injection with C2 delivery")
 	}
 
 	staged := filepath.Join(mmDir, "exp1", "win1-startup.ps1")
 	if _, err := os.Stat(staged); err != nil {
 		t.Fatalf("expected staged Windows script %s: %v", staged, err)
+	}
+}
+
+func TestStartupPreStartWindowsWrapperInjections(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]any
+		wantWrapper bool
+	}{
+		{
+			name:        "disk injection",
+			wantWrapper: true,
+		},
+		{
+			name:        "startup via cc suppresses wrapper",
+			annotations: map[string]any{startupViaCCAnnotation: true},
+			wantWrapper: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := newStartupTestNode(t, "win1", osWindows, true, 1)
+			node.AnnotationsF = tt.annotations
+
+			exp, mmDir := newStartupTestExperiment(t, node, nil)
+			runStartupPreStart(t, exp, mmDir)
+
+			for _, dst := range []string{windowsStartupWrapperDst, windowsSchedulerDst} {
+				if got := hasInjection(node, dst); got != tt.wantWrapper {
+					t.Fatalf("injection %q present = %v, want %v", dst, got, tt.wantWrapper)
+				}
+			}
+
+			if !tt.wantWrapper {
+				return
+			}
+
+			startupDir := filepath.Join(exp.Spec.BaseDir(), "startup")
+
+			for _, asset := range []string{windowsStartupWrapperAsset, windowsSchedulerAsset} {
+				if _, err := os.Stat(filepath.Join(startupDir, asset)); err != nil {
+					t.Fatalf("expected restored asset %s: %v", asset, err)
+				}
+			}
+		})
 	}
 }
 
@@ -135,7 +181,7 @@ func TestStartupPreStartAnnotationPreservesUnrelatedInjections(t *testing.T) {
 	node.InjectionsF = []*v1.Injection{
 		{SrcF: "user-file", DstF: "/etc/user-file"},
 		{SrcF: "old-hostname", DstF: linuxHostnameInjectDst},
-		{SrcF: "old-wrapper", DstF: legacyWindowsStartupWrapperDst},
+		{SrcF: "old-wrapper", DstF: windowsStartupWrapperDst},
 		{SrcF: "old-scheduler", DstF: windowsSchedulerDst},
 	}
 
@@ -148,22 +194,22 @@ func TestStartupPreStartAnnotationPreservesUnrelatedInjections(t *testing.T) {
 	if hasInjection(node, linuxHostnameInjectDst) {
 		t.Fatalf("unexpected startup app injection")
 	}
-	if hasInjection(node, legacyWindowsStartupWrapperDst) {
-		t.Fatalf("unexpected stale Windows startup wrapper injection")
+	if hasInjection(node, windowsStartupWrapperDst) {
+		t.Fatalf("unexpected Windows startup wrapper injection")
 	}
 	if hasInjection(node, windowsSchedulerDst) {
-		t.Fatalf("unexpected stale scheduler injection")
+		t.Fatalf("unexpected scheduler injection")
 	}
 	if !hasCommand(node, "send exp1/linux1-hostname.sh") {
 		t.Fatalf("expected startup C2 send command")
 	}
 }
 
-func TestStartupPreStartRemovesLegacyWindowsStartupInjectionsWithoutAnnotation(t *testing.T) {
-	node := newStartupTestNode(t, "win1", osWindows, true, 1)
+func TestStartupPreStartRemovesWindowsWrapperInjectionsForC2Delivery(t *testing.T) {
+	node := newStartupTestNode(t, "win1", osWindows, true, 0)
 	node.InjectionsF = []*v1.Injection{
 		{SrcF: "user-file", DstF: "/etc/user-file"},
-		{SrcF: "old-wrapper", DstF: legacyWindowsStartupWrapperDst},
+		{SrcF: "old-wrapper", DstF: windowsStartupWrapperDst},
 		{SrcF: "old-scheduler", DstF: windowsSchedulerDst},
 		{SrcF: "old-scheduler-abs", DstF: "/" + windowsSchedulerDst},
 	}
@@ -177,14 +223,14 @@ func TestStartupPreStartRemovesLegacyWindowsStartupInjectionsWithoutAnnotation(t
 	if !hasInjection(node, windowsStartupInjectDst) {
 		t.Fatalf("expected current Windows startup injection to remain")
 	}
-	if hasInjection(node, legacyWindowsStartupWrapperDst) {
-		t.Fatalf("unexpected stale Windows startup wrapper injection")
+	if hasInjection(node, windowsStartupWrapperDst) {
+		t.Fatalf("unexpected Windows startup wrapper injection with C2 delivery")
 	}
 	if hasInjection(node, windowsSchedulerDst) || hasInjection(node, "/"+windowsSchedulerDst) {
-		t.Fatalf("unexpected stale Windows Start Menu scheduler injection")
+		t.Fatalf("unexpected Windows Start Menu scheduler injection with C2 delivery")
 	}
-	if hasCommand(node, "send exp1/win1-startup.ps1") {
-		t.Fatalf("unexpected startup C2 command")
+	if !hasCommand(node, "send exp1/win1-startup.ps1") {
+		t.Fatalf("expected startup C2 command")
 	}
 }
 

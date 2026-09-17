@@ -37,8 +37,13 @@ const (
 	linuxDomainInjectDst    = "/etc/phenix/startup/4_domain-start.sh"
 	windowsStartupInjectDst = "/phenix/startup/20-startup.ps1"
 
-	legacyWindowsStartupWrapperDst = "/phenix/phenix-startup.ps1"
-	windowsSchedulerDst            = "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/startup_scheduler.cmd"
+	// The Windows startup wrapper runs every script staged in
+	// /phenix/startup, and the Start Menu scheduler registers the wrapper as
+	// an on-start scheduled task.
+	windowsStartupWrapperAsset = "phenix-startup.ps1"
+	windowsStartupWrapperDst   = "/phenix/" + windowsStartupWrapperAsset
+	windowsSchedulerAsset      = "startup-scheduler.cmd"
+	windowsSchedulerDst        = "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/startup_scheduler.cmd"
 )
 
 type Startup struct{}
@@ -127,6 +132,26 @@ func addStartupInject(node ifaces.NodeSpec, src, dst string, suppress bool) {
 	}
 
 	node.AddInject(src, dst, "0644", "")
+}
+
+// addWindowsStartupWrapperInjects restores the Windows startup wrapper and the
+// Start Menu scheduler that registers it as an on-start scheduled task.
+func addWindowsStartupWrapperInjects(node ifaces.NodeSpec, startupDir string, suppress bool) error {
+	err := tmpl.RestoreAsset(startupDir, windowsStartupWrapperAsset)
+	if err != nil {
+		return fmt.Errorf("restoring phenix startup script: %w", err)
+	}
+
+	addStartupInject(node, startupDir+"/"+windowsStartupWrapperAsset, windowsStartupWrapperDst, suppress)
+
+	err = tmpl.RestoreAsset(startupDir, windowsSchedulerAsset)
+	if err != nil {
+		return fmt.Errorf("restoring windows startup scheduler: %w", err)
+	}
+
+	addStartupInject(node, startupDir+"/"+windowsSchedulerAsset, windowsSchedulerDst, suppress)
+
+	return nil
 }
 
 // addStartupC2Script stages a generated startup script and queues its C2 commands.
@@ -225,23 +250,24 @@ func startupC2ScriptNames(hostname string) []string {
 // removeStartupInjections removes only injections owned by the startup app.
 func removeStartupInjections(node ifaces.NodeSpec) {
 	removeInjectionDestinations(node, map[string]struct{}{
-		linuxHostnameInjectDst:  {},
-		linuxTimezoneInjectDst:  {},
-		linuxIfaceInjectDst:     {},
-		linuxDomainInjectDst:    {},
-		windowsStartupInjectDst: {},
+		linuxHostnameInjectDst:    {},
+		linuxTimezoneInjectDst:    {},
+		linuxIfaceInjectDst:       {},
+		linuxDomainInjectDst:      {},
+		windowsStartupInjectDst:   {},
+		windowsStartupWrapperDst:  {},
+		windowsSchedulerDst:       {},
+		"/" + windowsSchedulerDst: {},
 	})
 }
 
-// removeLegacyWindowsStartupInjections cleans stale startup-owned Windows
-// wrapper and Start Menu injections.
-// TODO: remove this migration helper after existing environments have had
-// enough startup runs to drop those old entries.
-func removeLegacyWindowsStartupInjections(node ifaces.NodeSpec) {
+// removeWindowsStartupWrapperInjections removes the startup-owned Windows
+// wrapper and Start Menu scheduler injections.
+func removeWindowsStartupWrapperInjections(node ifaces.NodeSpec) {
 	removeInjectionDestinations(node, map[string]struct{}{
-		legacyWindowsStartupWrapperDst: {},
-		windowsSchedulerDst:            {},
-		"/" + windowsSchedulerDst:      {},
+		windowsStartupWrapperDst:  {},
+		windowsSchedulerDst:       {},
+		"/" + windowsSchedulerDst: {},
 	})
 }
 
@@ -376,7 +402,6 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 		suppressStartupInjects := startupViaCCEnabled(node)
 
 		removeStartupC2Commands(exp, node)
-		removeLegacyWindowsStartupInjections(node)
 
 		if suppressStartupInjects {
 			removeStartupInjections(node)
@@ -480,6 +505,16 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 			startupFile := startupDir + "/" + node.General().Hostname() + "-startup.ps1"
 
 			addStartupInject(node, startupFile, windowsStartupInjectDst, suppressStartupInjects)
+
+			// The wrapper runs every script staged in /phenix/startup, and the
+			// Start Menu scheduler registers the wrapper as an on-start
+			// scheduled task. C2 delivery executes the generated script
+			// directly, so neither is needed then.
+			if useC2 {
+				removeWindowsStartupWrapperInjections(node)
+			} else if err := addWindowsStartupWrapperInjects(node, startupDir, suppressStartupInjects); err != nil {
+				return err
+			}
 
 			// Temporary struct to send to the Windows Startup template.
 			data := struct {
