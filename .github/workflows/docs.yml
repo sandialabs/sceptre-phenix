@@ -1,0 +1,138 @@
+name: Publish Documentation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'src/go/web/public/docs/openapi.yml'
+      - 'src/go/types/version/schemas/v2.yaml'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'src/go/web/public/docs/openapi.yml'
+      - 'src/go/types/version/schemas/v2.yaml'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build Documentation
+    if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Build API documentation
+        working-directory: .
+        run: |
+          npx --yes @redocly/cli@2.53.2 build-docs \
+            src/go/web/public/docs/openapi.yml \
+            --output=/tmp/swagger.html \
+            --title='phenix API'
+      - name: Build documentation
+        run: mkdocs build --strict
+
+  publish:
+    name: Build Published Documentation
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Build API documentation
+        working-directory: .
+        run: |
+          npx --yes @redocly/cli@2.53.2 build-docs \
+            src/go/web/public/docs/openapi.yml \
+            --output=/tmp/swagger.html \
+            --title='phenix API'
+      - name: Configure Git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Prepare latest documentation
+        working-directory: .
+        run: |
+          cp docs/CNAME /tmp/CNAME
+          mike deploy --config-file docs/mkdocs.yml --update-aliases latest
+          mike set-default --config-file docs/mkdocs.yml latest
+          git switch gh-pages
+          cp /tmp/CNAME CNAME
+          cp /tmp/swagger.html swagger.html
+          git add CNAME swagger.html
+          if ! git diff --cached --quiet; then
+            git commit --message='docs: update Pages root assets'
+          fi
+      - name: Publish GitHub Pages branch
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+      - name: Export published site
+        working-directory: .
+        run: |
+          mkdir -p /tmp/pages
+          git archive HEAD | tar -x -C /tmp/pages
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: /tmp/pages
+          include-hidden-files: true
+
+  deploy:
+    name: Deploy GitHub Pages
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
