@@ -1,0 +1,32 @@
+# Scenario for examples/topology.yaml: a user app with per-host config plus
+# a default app (startup) given extra metadata for one host.
+# Create it with:  phenix config create scenario.yaml
+# Then:            phenix experiment create demo -t example -s example
+# Field reference:  https://phenix.sceptre.dev/latest/configuration/#scenario
+apiVersion: phenix.sandia.gov/v2
+kind: Scenario
+metadata:
+  name: example
+  annotations:
+    topology: example # topology this scenario is written against
+spec:
+  apps:
+    # User app: phenix runs the executable `phenix-app-example` found on PATH.
+    - name: example
+      metadata:
+        mode: demo # app-wide config, schema defined by the app
+      hosts:
+        - hostname: server-00
+          metadata:
+            role: web # per-host config, schema defined by the app
+      runPeriodically: 60s # only honored by the UI/API or `experiment start --honor-run-periodically`
+    # Default app: always runs; here it only receives extra per-host metadata.
+    - name: startup
+      hosts:
+        - hostname: client-00
+          metadata:
+            domain_controller:
+              domain: example.com
+              ip: 192.168.10.10
+              username: admin
+              password: ChangeMe
