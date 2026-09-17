@@ -23,8 +23,10 @@ The closest `AGENTS.md` adds area-specific rules; this file remains binding.
 Before answering usage questions or changing CLI commands, REST routes,
 configuration resources, experiments, VMs, images, VLANs, settings, apps,
 SCORCH, minimega integration, or cyber-range workflows, read
-[`skills/phenix/SKILL.md`](skills/phenix/SKILL.md). Use code as final authority
-when guidance differs, and update the skill when behavior changes.
+[`skills/phenix/SKILL.md`](skills/phenix/SKILL.md). For `phenix image`, `Image`
+configs, build scripts, overlays, or vmdb2 work, also read
+[`skills/phenix-image/SKILL.md`](skills/phenix-image/SKILL.md). Use code as final
+authority when guidance differs, and update the skills when behavior changes.
 
 ## Architecture
 
