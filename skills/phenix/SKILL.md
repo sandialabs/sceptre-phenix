@@ -1,7 +1,7 @@
 ---
 name: phenix
-description: 'Guide for using the phenix CLI and REST/web API to build and run cyber ranges, cyber experiments, and network/system emulation environments. Covers Topology (nodes, VMs, networks), Scenario (apps assigned to hosts), and Experiment (topology + scenario deployed via minimega) resources. Use when asked about phenix, phēnix, SCEPTRE, cyber range, cyber experimentation, emulation, minimega, SCORCH, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui).'
-license: GPL-3.0-only (see LICENSE)
+description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and cyber experiments on minimega: Topology, Scenario, and Experiment configs, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util).'
+license: GPL-3.0-only
 ---
 
 # phenix CLI and Web API
@@ -12,76 +12,17 @@ three config resources — **Topology**, **Scenario**, **Experiment** — plus
 supporting resources — **Image**, **User**, **Role** — all stored as
 versioned YAML/JSON "configs" (`apiVersion`/`kind`/`metadata`/`spec`, Kubernetes-style).
 
-## Running phenix
+Detailed references and examples, loaded only when needed:
 
-**Docker (typical deployment, preferred):** phenix normally runs as the
-`phenix` container alongside a `minimega` container (see `docker/docker-compose.yml`
-and the README's "Running with Docker" section). The `phenix ui` process inside
-the container is both the CLI binary and the long-running web server — the
-`phenix` CLI subcommands are invoked by `docker exec`-ing into the running
-container, not by installing a separate binary on the host:
-
-```bash
-docker exec phenix phenix experiment list
-```
-
-(Omit `-it`/interactive-TTY flags for agentic/scripted use — they're only
-needed for an interactive human shell.) For interactive human use, install
-the bundled wrapper script instead of aliasing `docker exec` yourself, so
-shell completion and TTY allocation work correctly:
-
-```bash
-make install-wrapper   # installs scripts/phenix-wrapper.sh to /usr/local/bin/phenix
-source <(phenix completion bash)   # now works like a native binary
-```
-
-See `README.md` ("Running with Docker (Preferred)" and "Shell Completion")
-and `scripts/phenix-wrapper.sh` for details.
-
-**Local binary (development):** build and run `phenix` directly on the host
-(no Docker), typically against a local `bolt://` store and a locally-running
-`minimega`:
-
-```bash
-make build              # builds the phenix binary (see Makefile)
-./phenix ui             # or run any phenix subcommand directly
-```
-
-See `README.md` ("Local Development" / "Build") for prerequisites (Go, Python,
-Node.js/Yarn, protoc) and `make help` for the full list of dev targets.
-
-## When to Use This Skill
-
-- User asks to create/edit/deploy/start/stop a phenix experiment, topology, or scenario.
-- User mentions a cyber range, cyber experimentation, network emulation, or minimega VMs.
-- User wants to run `phenix` CLI commands or call the phenix web API (`/api/v1/...`).
-- User asks about phenix apps (ntp, serial, startup, vrouter, SCORCH, user apps) or scheduling algorithms.
-- User wants to build/manage phenix disk images (pair with the `phenix-image` skill
-  for build scripts, overlays, and vmdb2 troubleshooting).
-
-## Querying the Web API
-
-`phenix ui` serves the web UI and REST API together on the same port —
-`0.0.0.0:3000` by default (`ui.listen-endpoint` / `--listen-endpoint`,
-`PHENIX_UI_LISTEN_ENDPOINT`). All API routes live under `/api/v1` on that
-port (see the [Web API Reference](#web-api-reference) below for the route
-table).
-
-Typical flow with `curl` against a local/default deployment:
-
-```bash
-# 1. Log in to obtain a JWT (GET with basic auth, or POST with a JSON body)
-TOKEN=$(curl -s -u admin:password http://localhost:3000/api/v1/login | jq -r .token)
-# or: TOKEN=$(curl -s -X POST -d '{"username":"admin","password":"password"}' \
-#            http://localhost:3000/api/v1/login | jq -r .token)
-
-# 2. Use the token on every subsequent request via the custom auth header
-curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
-```
-
-If accessing phenix inside its Docker container from the host, the container
-uses `network_mode: host` in the default compose file, so `localhost:3000`
-on the host reaches it directly (no port mapping/publishing needed).
+| Need | Reference |
+|---|---|
+| Global flags, every subcommand and flag | [`references/cli.md`](references/cli.md) |
+| REST auth modes and the full route table | [`references/web-api.md`](references/web-api.md) |
+| `runPeriodically`, `fromScenario`, app catalog | [`references/scenario.md`](references/scenario.md) |
+| Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
+| App environment variables | [`references/app-environment.md`](references/app-environment.md) |
+| Copyable Topology and Scenario configs | [`examples/topology.yaml`](examples/topology.yaml), [`examples/scenario.yaml`](examples/scenario.yaml) |
+| Image build scripts, overlays, vmdb2 troubleshooting | sibling [`phenix-image`](../phenix-image/SKILL.md) skill |
 
 ## Core Concepts
 
@@ -105,18 +46,21 @@ Configs are referenced everywhere as `<kind>/<name>` (lowercase kind), e.g.
 
 Defines the static network: a list of `nodes` (VMs, routers, firewalls, or
 external/physical nodes) and their hardware, network interfaces, and boot
-behavior. Key node fields:
+behavior. Key node fields (see [`examples/topology.yaml`](examples/topology.yaml)
+for a complete, copyable two-node topology):
 
 - `type`: `VirtualMachine | Firewall | Router | Switch`
 - `general.hostname`, `general.vm_type` (`kvm` or `container`, default `kvm`),
   `general.do_not_boot`, `general.snapshot`
-- `hardware.os_type`: `linux | windows | centos | rhel | minirouter | vyatta | vyos`
+- `hardware.os_type`: `linux | windows | centos | rhel | minirouter | vyatta | vyos | other`
 - `hardware.vcpus`, `hardware.memory`, `hardware.drives[].image` (disk image name/path)
-- `network.interfaces[]`: `name`, `vlan`, `type: ethernet`, `proto: static|ospf|dhcp`,
-  `address`, `mask`, `gateway`, `bridge`
+- `network.interfaces[]`: `name`, `vlan`, `type: ethernet`, `proto: static|dhcp|manual`
+  (router/firewall interfaces also accept `ospf`), `address`, `mask`, `gateway`, `bridge`
 - `network.rulesets[]`: firewall rules with `action: accept|drop|reject`
 - `injections[]` / `deletions[]`: files to inject into or remove from the disk image before boot
 - `delay`: boot delay (timer, user-ack, or C2/miniccc-based)
+- `annotations`: free-form hints for apps; the ones the default apps read are in
+  [`references/annotations.md`](references/annotations.md)
 - An `external` node represents a physical/non-minimega host in the topology (not scheduled/booted).
 - `includeTopologies`: a top-level (spec-level, not per-node) list of other topology
   configs to merge into this one — entries can be a stored config name or a file path
@@ -131,7 +75,8 @@ as needed rather than relying on the summary above.
 ### Scenario
 
 Assigns **apps** to run against hosts in a topology, without hardcoding the
-topology itself — the same scenario can be reused across topologies. Structure:
+topology itself — the same scenario can be reused across topologies. Structure
+(see [`examples/scenario.yaml`](examples/scenario.yaml) for a complete one):
 
 ```yaml
 apiVersion: phenix.sandia.gov/v2
@@ -146,301 +91,171 @@ spec:
       hosts:                  # optional; omit if the app has no per-host config
         - hostname: node1
           metadata: {...}     # per-host app config
-      runPeriodically: 30s    # optional; re-run app on an interval
+      runPeriodically: 30s    # optional; only honored by the UI/API or `start --honor-run-periodically`
       disabled: false
 ```
 
-`fromScenario` lets one scenario inherit an app's `assetDir`/`metadata`/`hosts`/
-`disabled`/`runPeriodically` from another stored scenario config by name
-(`- name: my-app` + `fromScenario: other-scenario`). The referenced scenario
-must have a `topology` annotation matching the topology this scenario is used
-with, and must contain an app with the same `name`. This is how a shared
-"base" scenario can be layered under per-experiment overrides without
-duplicating app config.
-
-Built-in apps that always run for every experiment: `ntp`, `serial`, `startup`,
-`vrouter`. Additional/optional apps (e.g. `user-shell`, SCORCH, monitoring
-apps like `packetbeat`/`elasticsearch`, `caldera`, `scale`, `wireguard`,
-`otsim`, `helics`) are added explicitly in the scenario's `apps` list; many of
-these live in the companion `sceptre-phenix-apps` repo (Python apps under
-`phenix_apps/apps/`). List available apps with `phenix experiment apps`.
-
-**Node annotations**: `annotations` is a free-form `map[string]any` on a
-Topology node (`spec.nodes[].annotations`), used to pass out-of-band hints to
-apps without adding first-class schema fields. Apps read them via
-`node.GetAnnotation("key")` and interpret the value however they define it.
-Annotations used by phenix's own default apps:
-
-- `phenix/default-apps: false` — skips the `ntp`, `serial`, `startup`, and
-  `vrouter` default apps for that specific node on every lifecycle stage,
-  while still letting phenix/minimega manage the VM normally. User apps from
-  the scenario are unaffected. Omit the annotation (or set it `true`) to keep
-  the default behavior.
-- `phenix/startup-autotunnel` (`startup` app, `post-start` stage) — a list of
-  strings, each describing a port forward to auto-create for the node once it
-  boots, e.g. `["8080", "8080:9090", "8080:10.0.0.5:9090"]`. Each entry is
-  `sport[:dhost]:dport` — port-only forwards `sport` to `127.0.0.1:sport`;
-  `sport:dport` forwards to `127.0.0.1:dport`; `sport:dhost:dport` forwards to
-  an arbitrary destination host/port. Malformed entries are logged and skipped.
-- `phenix/startup-via-cc` (`startup` app, `pre-start` stage) — when truthy,
-  the generated startup scripts are delivered and executed over minimega C2
-  (`send` plus `exec-once`) instead of being injected into the disk, and all
-  startup-owned injections (including the Windows wrapper and Start Menu
-  scheduler) are removed. C2 delivery is also used automatically when the
-  node's first drive has `inject_partition: 0`, in which case the startup
-  injections themselves are left in place.
-- `vrouter/vyos-password` (`vrouter` app) — overrides the default `vyos`
-  login password used when templating the boot config for a VyOS router node.
-- `vrouter/enable-ssh` (`vrouter` app) — an interface name or IP address; when
-  set, SSH access is enabled on the router templated to listen on that
-  interface's address (or the literal IP given).
-
-For the full scenario/app reference (per-app metadata schemas, `runPeriodically`
-semantics, SCORCH scenario format), pull in
-[Sceptre Phenix Scenario Configuration](https://phenix.sceptre.dev/latest/configuration/#scenario)
-and [Apps](https://phenix.sceptre.dev/latest/apps/) as needed.
+Built-in apps `ntp`, `serial`, `startup`, and `vrouter` always run; every
+other app is listed explicitly in `apps` (`phenix experiment apps` shows what
+is available). `runPeriodically` semantics, `fromScenario` inheritance, and
+the optional app catalog are in [`references/scenario.md`](references/scenario.md).
 
 ### Experiment
 
 Combines a Topology + (optional) Scenario into a runnable, stateful
-experiment with a base directory, VLAN pool, bridge name, and deploy mode.
+experiment. `phenix experiment create` copies the referenced topology and
+scenario specs into the experiment config, so later edits to the stored
+topology/scenario do not affect an existing experiment. Spec fields, with the
+`experiment create` flag or command that sets each:
+
+```yaml
+apiVersion: phenix.sandia.gov/v1
+kind: Experiment
+metadata:
+  name: my-exp
+spec:
+  experimentName: my-exp
+  baseDir: /phenix/experiments/my-exp   # -d/--base-dir; experiment working directory
+  defaultBridge: phenix                 # -b/--default-bridge; minimega bridge name
+  topology: {...}                       # -t; embedded copy of the Topology spec
+  scenario: {...}                       # -s; embedded copy of the Scenario spec
+  vlans:
+    aliases: {EXP-1: 101}               # phenix vlan alias
+    min: 100                            # --vlan-min / phenix vlan range
+    max: 200                            # --vlan-max
+  schedules: {server-00: compute-01}    # phenix experiment schedule <exp> <algorithm>
+  deployMode: all                       # inherited from --deploy-mode / config.yaml
+  useGREMesh: false                     # inherited from --use-gre-mesh
+```
+
 Lifecycle: `create` → `schedule` (assign VMs to cluster hosts) → `start`
 (deploy VMs via minimega) → `stop` → `restart`/`reconfigure` → `delete`.
-An experiment also tracks runtime `status` (VM/app state) once started.
+An experiment also tracks runtime `status` (start time, per-VM schedule,
+per-app state, allocated VLANs) once started. The same fields are editable
+through `PATCH /api/v1/experiments/{name}` on a stopped experiment.
 
-## CLI Reference
+## CLI Overview
 
-### Global flags and configuration precedence
+Command groups: `config` (stored configs), `experiment` (lifecycle), `vm`
+(running VMs), `image` (vmdb2 disk images), `vlan` (per-experiment VLAN
+aliases/ranges), plus `mm`, `settings`, `ui`, `util`, `completion`, and
+`version`. Every subcommand accepts the persistent flags documented in
+[`references/cli.md`](references/cli.md), which also lists each subcommand's
+own flags.
 
-Every subcommand accepts these persistent flags (bound to viper, so each also
-has a matching config-file key and `PHENIX_*` env var):
-
-| Flag | Config key / Env var | Default | Description |
-|---|---|---|---|
-| `--store.endpoint` | `store.endpoint` / `PHENIX_STORE_ENDPOINT` | `bolt:///etc/phenix/store.bdb` (root) or `bolt://~/.phenix.bdb` (non-root) | Data store endpoint (`bolt://...` or `etcd://host:port`) |
-| `--base-dir.phenix` | `base-dir.phenix` / `PHENIX_BASE_DIR_PHENIX` | `/phenix` | Base phēnix data directory |
-| `--base-dir.minimega` | `base-dir.minimega` / `PHENIX_BASE_DIR_MINIMEGA` | `/tmp/minimega` | Base minimega directory |
-| `--hostname-suffixes` | `hostname-suffixes` | `-minimega,-phenix` | Hostname suffixes to strip |
-| `--log.level` | `log.level` / `PHENIX_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` — use `--log.level=debug` for verbose troubleshooting output |
-| `--log.console` | `log.console` / `PHENIX_LOG_CONSOLE` | `stderr` | Console log destination: `stderr`, `stdout`, or a file path |
-| `--log.system.path` | `log.system.path` / `PHENIX_LOG_SYSTEM_PATH` | `/var/log/phenix/phenix.log` | Persistent JSON system log path (used by UI) |
-| `--log.system.max-size` | `log.system.max-size` / `PHENIX_LOG_SYSTEM_MAX_SIZE` | `100` | Max log file size (MB) before rotation |
-| `--log.system.max-backups` | `log.system.max-backups` / `PHENIX_LOG_SYSTEM_MAX_BACKUPS` | `3` | Number of rotated log files to retain |
-| `--log.system.max-age` | `log.system.max-age` / `PHENIX_LOG_SYSTEM_MAX_AGE` | `90` | Max age (days) to retain old logs |
-| `--bridge-mode` | `bridge-mode` | (unset) | `manual` (user/`phenix`-named bridge) or `auto` (experiment-named bridge) |
-| `--deploy-mode` | `deploy-mode` | (unset) | `all`, `no-headnode`, or `only-headnode` — which minimega VMs to deploy |
-| `--use-gre-mesh` | `use-gre-mesh` | `false` | Use GRE tunnels between mesh nodes for VLAN trunking |
-| `--unix-socket` | `unix-socket` | `/tmp/phenix.sock` | Unix socket to listen on (`ui`) or connect to (other commands, to inherit server-set options) |
-
-Precedence (highest to lowest): **1. command-line flag** → **2. `config.yaml`**
-(managed with `phenix settings set`/`unset`, hot-reloaded) → **3. environment
-variable** (`PHENIX_*`) → **4. built-in default**. See
-[Settings & Configuration](https://phenix.sceptre.dev/latest/settings/) for the
-full settings reference, including UI-only settings (`ui.logs.level`,
-`ui.features`, `ui.file-server-endpoint`) not exposed as root-level CLI flags.
-
-`phenix ui --features vm-mount` (equivalently `ui.features: vm-mount` in
-`config.yaml`, or `PHENIX_UI_FEATURES=vm-mount`) enables the optional
-"VM mount" UI feature, which lets users transfer files to and from a running
-VM's filesystem directly from the web UI (backed by the `/experiments/{exp}/vms/{name}/mount`,
-`/unmount`, `/files`, `/files/download`, `/files/upload` API routes). It's
-disabled by default and requires restarting `phenix ui` to take effect.
-
-### `phenix config` — manage stored configs (topology/scenario/experiment/image/user/role)
+A topology and scenario go from YAML to running VMs like this:
 
 ```bash
-phenix config list <kind|all>                      # table of stored configs
-phenix config get <kind>/<name> [-o yaml|json] [-p] # dump a config
-phenix config create </path/to/file.yaml> ...       # create from file(s) or dir; validates against schema
-phenix config create --skip-validation <file>       # skip schema validation
-phenix config edit <kind>/<name> [--force]          # open in $EDITOR
-phenix config delete <kind>/<name> ...              # delete one or more specific configs by kind/name
-phenix config delete all [kind]                     # delete every stored config, or every config of one kind
+phenix config create topology.yaml scenario.yaml   # validates against the schema
+phenix experiment create my-exp -t my-topology -s my-scenario
+phenix experiment schedule my-exp round-robin      # assign VMs to cluster hosts
+phenix experiment start my-exp                     # deploy via minimega
+phenix vm info my-exp                              # verify VMs booted
+phenix experiment trigger running my-exp           # re-fire a lifecycle stage on demand
+phenix experiment stop my-exp
 ```
 
-### `phenix experiment` — experiment lifecycle
+## Running phenix
+
+**Docker (typical deployment):** phenix runs as the `phenix` container
+alongside a `minimega` container (`docker/docker-compose.yml`). The `phenix ui`
+process inside it is both the CLI binary and the web server, so CLI commands
+are run with `docker exec` rather than a host-installed binary:
 
 ```bash
-phenix experiment list
-phenix experiment apps                              # list available apps
-phenix experiment schedulers                        # list scheduling algorithms
-phenix experiment create <exp> -t <topology> [-s <scenario>] [-d <base-dir>] \
-  [--disabled-apps app1,app2] [--vlan-min N] [--vlan-max N] [-b <bridge>]
-phenix experiment edit <exp>
-phenix experiment delete <exp>
-phenix experiment schedule <exp> <algorithm>         # e.g. round-robin, isolate-experiment, subnet-compute
-phenix experiment start <exp>
-phenix experiment stop <exp>
-phenix experiment restart <exp>
-phenix experiment reconfigure <exp>
-phenix experiment trigger-running <exp> [app ...]    # re-fire "running" stage for app(s)
-phenix experiment scorch <exp>                       # run a SCORCH pipeline for the experiment
+docker exec phenix phenix experiment list   # no -it for scripted/agentic use
 ```
 
-`-t`/`-s` accept either the name of an already-stored config or a path to a
-YAML/JSON file (in which case it's auto-created as a config first).
+For interactive human use, `make install-wrapper` installs
+`scripts/phenix-wrapper.sh` as `/usr/local/bin/phenix` so shell completion and
+TTY allocation work. See `README.md` ("Running with Docker").
 
-### `phenix vm` — manage running VMs within an experiment
+**Local binary (development):** `make build` produces `bin/phenix`; run any
+subcommand from it, typically against a local `bolt://` store and a local
+`minimega`. See `README.md` ("Local Development") for prerequisites and
+`make help` for targets.
+
+## Querying the Web API
+
+`phenix ui` serves the web UI and REST API on one port, `0.0.0.0:3000` by
+default, with every route under `/api/v1`. Auth is off unless
+`--jwt-signing-key` is set (it is empty by default and in the bundled compose
+file), in which case the server serves every request as `global-admin` and
+plain `curl http://localhost:3000/api/v1/experiments` works. When a key is
+set, log in and send the JWT in the custom `X-Phenix-Auth-Token` header:
 
 ```bash
-phenix vm info <exp> [vm]                            # table of VM(s)
-phenix vm pause|resume|restart|shutdown|kill <exp> [vm]
-phenix vm reset-disk <exp> [vm]
-phenix vm redeploy <exp> [vm]
-phenix vm set <exp> [vm] --<key> <value>             # change VM config (cpu, memory, disk, etc)
-phenix vm net connect <exp> <vm> <iface index> <vlan id>
-phenix vm net disconnect <exp> <vm> <iface index>
-phenix vm capture start <exp> <vm> <iface index> <output file>
-phenix vm capture start-subnet <exp> <subnet>
-phenix vm capture stop <exp> <vm>
-phenix vm capture stop-subnet <exp> <subnet>
-phenix vm capture stop-all <exp>
-phenix vm memory-snapshot <exp> <vm> <path>
+TOKEN=$(curl -s -u admin:password http://localhost:3000/api/v1/login | jq -r .token)
+curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
 ```
 
-### `phenix image` — disk image (vmdb2) configuration and builds
-
-```bash
-phenix image list
-phenix image create <name> [-s 10G] [-v minbase] [-r jammy] [-m <mirror>] \
-  [-f qcow2] [-c] [-R] [-O overlay1,overlay2] [-P pkg1,pkg2] [-T script1,script2] \
-  [-k arg1,arg2] [--skip-default-pkgs] [--no-virtuals]
-phenix image create-from <existing> <new>
-phenix image edit <name>
-phenix image build <name>
-phenix image delete <name>
-phenix image append|remove|update <name> ...
-phenix image inject-miniexe <path/to/exe> <path/to/disk>
-```
-
-Default variant/release/mirror are `minbase`/`jammy`/Ubuntu archive; `-f`
-supports `qcow2` (default) and other formats vmdb2 supports. For build scripts,
-overlays, `Image` config fields, vmdb2 environment, and build troubleshooting,
-read the sibling [`phenix-image`](../phenix-image/SKILL.md) skill.
-
-### `phenix vlan` — VLAN aliasing/ranges per experiment
-
-```bash
-phenix vlan alias <exp> <alias name> <vlan id>   # view (no value) or set an alias
-phenix vlan range <exp> <range min> <range max>  # view or set the VLAN pool range
-```
-
-### Other subcommands
-
-```bash
-phenix mm <minimega args>...     # pass raw commands to (or attach to) minimega
-phenix settings list|get|set|unset [key] [value]
-phenix settings db ...            # legacy BoltDB-backed settings
-phenix ui                         # run the phenix web UI/API server
-phenix completion bash|zsh|fish|powershell
-phenix version
-```
-
-## Web API Reference
-
-Base path: `/api/v1`. Auth: `X-Phenix-Auth-Token: <jwt>` header (obtained via
-`POST /api/v1/login`), NOT the standard `Authorization` header. All routes
-below are relative to the base path.
-
-| Resource | Routes |
-|---|---|
-| Configs | `GET/POST /configs`, `GET/PUT/DELETE /configs/{kind}/{name}`, `POST /configs/download` |
-| Schemas | `GET /schemas/{version}`, `GET /schemas/{kind}/{version}` |
-| Experiments | `GET/POST /experiments`, `DELETE /experiments/{name}`, `GET /experiments/{name}/topology`, `POST /experiments/{name}/trigger`, `GET/POST /experiments/{name}/schedule`, `GET /experiments/{name}/soh` (state of health) |
-| VMs | `GET/PATCH /experiments/{exp}/vms`, `GET/PATCH/DELETE /experiments/{exp}/vms/{name}`, plus `/start`, `/stop`, `/restart`, `/redeploy`, `/shutdown`, `/reset`, `/vnc`, `/vnc/ws`, `/screenshot.png`, `/captures`, `/snapshots`, `/commit`, `/memorySnapshot`, `/forwards` |
-| Disks | `GET/POST/DELETE /disks`, `/disks/snapshot`, `/disks/rebase`, `/disks/resize`, `/disks/commit`, `/disks/clone`, `/disks/rename`, `/disks/download` |
-| Misc lookups | `GET /vms` (all experiments), `GET /applications`, `GET /topologies`, `GET /topologies/{topo}/scenarios`, `GET /hosts` |
-| Users/Roles/Auth | `GET/POST /users`, `GET/PATCH/DELETE /users/{username}`, `POST /users/{username}/tokens`, `GET /roles`, `POST /signup`, `GET/POST /login`, `GET /logout` |
-| Realtime | `GET /ws` (websocket broker for UI events/logs), `GET /logs` |
-| SCORCH | `/experiments/{name}/scorch/terminals*`, `/experiments/{name}/scorch/components/.../ws` |
-| Settings | `GET/POST /settings`, `GET /settings/password` |
-| Builder | `GET /builder`, `POST /builder/save`, `GET /builder/topologies[/{name}]` |
-| Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode) |
-
-Prefer the equivalent `phenix` CLI command over calling the web API directly
-unless the user explicitly needs the HTTP interface (e.g. scripting against a
-running `phenix ui` server, or building a UI integration).
+[`references/web-api.md`](references/web-api.md) has the route table, the
+`?token=` query-parameter alternative, and proxy/dev auth modes.
 
 ## Gotchas
 
-- **Kind names in `config`/`experiment` commands are case-insensitive but must be one of**
-  `topology, scenario, experiment, image, user, role` (plus `all` where supported) —
-  anything else errors before hitting the store.
-- **`phenix experiment create -t/-s` auto-creates configs from file paths.** If you pass a
-  path (has a file extension) instead of an existing config name, it runs `config create`
-  with validation first, then uses the resulting config name — so a typo'd path silently
-  becomes "config not found" further down the pipeline.
-- **`vm_type` default is `kvm`, not `container`** — don't assume container semantics unless
-  the topology explicitly sets `general.vm_type: container`.
-- **Auth uses a custom header, not `Authorization`.** Web API calls must use
-  `X-Phenix-Auth-Token`; standard bearer-token tooling will silently 401.
+- **`phenix experiment create -t/-s` accept a stored config name or a file path.** When the
+  value is a path (has a file extension), phenix runs `config create` with validation
+  first, then uses the resulting config name — so a typo'd path silently becomes
+  "config not found" further down the pipeline.
+- **`vm_type` default is `kvm`, not `container`** — do not assume container semantics
+  unless the topology explicitly sets `general.vm_type: container`.
 - **Store endpoint changes the whole world.** `--store.endpoint` (bolt or etcd) determines
   which configs/experiments are visible — commands against the wrong endpoint will report
   "no configs found" rather than an obvious connection error.
 - **Deleting `config.yaml` while phenix is running breaks the file watcher** (hot-reload of
-  log level, deploy-mode, etc. stops working). Use `phenix settings unset --all` instead of
-  removing the file.
+  log level, deploy-mode, etc. stops working). `phenix settings unset <key>` rewrites the
+  file in place and leaves the watcher intact; `phenix settings unset --all` deletes the
+  file outright, so it has the same effect as removing it by hand and any running phenix
+  process needs a restart afterwards.
 - **Scenario `apiVersion` differs from Topology/Experiment** — Scenario currently uses
   `phenix.sandia.gov/v2` while Topology/Image typically use `v1`; mixing them up in a
   hand-written config causes schema validation failures.
 - **`phenix config edit` on a running experiment's config requires `--force`** — edits are
   normally blocked once an experiment exists to avoid drift between the stored config and
   the deployed state.
+- **`phenix experiment trigger-running` is deprecated** — use
+  `phenix experiment trigger running <exp> [app ...]`, which also reaches the
+  `configure`, `pre-start`, `post-start`, and `cleanup` stages.
 
 ## Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|
-| `expects the configuration kind to be one of [...]` | Kind in `<kind>/<name>` argument is misspelled or unsupported; check spelling against the list above. |
+| `expects the configuration kind to be one of [...]` | Kind in `<kind>/<name>` is misspelled or unsupported. Kinds are case-insensitive but must be one of `topology, scenario, experiment, image, user, role` (plus `all` where supported). |
 | `Unable to create configuration from <path>` | File isn't valid YAML/JSON, fails schema validation, or path doesn't exist. Try `--skip-validation` to isolate schema vs. parse errors. |
-| Experiment `create` succeeds but `start` fails to boot VMs | Check `phenix vm info <exp>` and minimega directly via `phenix mm <cmd>`; also verify disk images referenced in the topology exist (`phenix image list`, `phenix disk` API). |
-| Web API calls return 401 | Confirm you're sending `X-Phenix-Auth-Token`, obtained fresh from `POST /api/v1/login`, not a stale token or `Authorization` header. |
+| Experiment `create` succeeds but `start` fails to boot VMs | Re-run with `phenix experiment start --dry-run <exp>` to see what would be sent to minimega, check `phenix vm info <exp>` and minimega directly via `phenix mm <cmd>`, and verify the disk images referenced in the topology exist (`phenix image list` for image configs, `GET /api/v1/disks` for disk files present on the headnode). |
+| Web API calls return 401 | That server has a JWT signing key configured, so auth is on: send a current token in `X-Phenix-Auth-Token` (or `?token=`), not in `Authorization` — standard bearer-token tooling silently 401s. Re-login if the token expired. A server started without a signing key never returns 401. |
 | `configuration not updated` after `phenix config edit` | No changes were saved in the editor — this is expected, not an error. |
 | Settings changes via `phenix settings set` don't seem to apply | Command-line flags always win over the config file; unset the flag or use `phenix settings unset <key>` to fall back to the file/env value. |
 
-## Environment Variables (phenix apps)
+## Writing phenix apps
 
-When phenix launches an app (built-in or user app from a scenario), it sets
-environment variables the app subprocess reads for its configuration — these
-matter when writing or debugging a phenix app, not when just running the CLI:
+A custom user app is an executable phenix shells out to. For phenix to find
+it at all, it must meet three requirements (`src/go/app/doc.go`):
 
-| Environment Variable | Value | Description |
-|---|---|---|
-| `PHENIX_DIR` | `base-dir.phenix` | Base phēnix data directory |
-| `PHENIX_FILES_DIR` | experiment files directory | Where the app reads/writes experiment files |
-| `PHENIX_LOG_LEVEL` | phēnix's own value, else `DEBUG` | App log verbosity |
-| `PHENIX_LOG_FILE` | `stderr` | App logs stream back to phēnix rather than to a file |
-| `PHENIX_DRYRUN` | `true`/`false` | Whether the run is a dry run |
-| `PHENIX_STORE_ENDPOINT` | `store.endpoint` | Data store endpoint (user apps only) |
-| `PHENIX_SCORCH_STARTTIME` | run start time | SCORCH components only |
-| `PHENIX_TEMP_DIR` | `/tmp/phenix` | App temporary directory (inherited from phenix process) |
-| `MM_FILEPATH` | `/phenix/images` | Base minimega file path (inherited) |
-| `MM_SOCKET_PATH` | `/tmp/minimega/minimega` | minimega command socket (inherited) |
+1. Be on the `PATH` of the process running phenix.
+2. Be executable.
+3. Be named `phenix-app-<name>`, where `<name>` is the app name used in the
+   scenario's `apps[].name` field — a scenario app named `foo` resolves to the
+   executable `phenix-app-foo`. A missing executable fails the stage with
+   `external user app phenix-app-<name> does not exist in your path`.
 
-Apps drive VMs over minimega's `cc` (command-and-control/miniccc) channel;
-these bound how long an app waits (seconds) and are also inherited from the
-phenix process:
+Apps receive experiment JSON on stdin and one lifecycle argument, emit
+experiment JSON on stdout and JSON logs on stderr, and exit 0 on success. A
+non-zero exit fails the stage, except exit code 101, which reschedules the
+experiment using the scheduler named on stdout and re-runs the app. Apps read
+their configuration from the environment variables listed in
+[`references/app-environment.md`](references/app-environment.md).
 
-| Environment Variable | Default | Description |
-|---|---|---|
-| `PHENIX_CC_POLL_RATE` | `2.0` | Interval between `cc` polls |
-| `PHENIX_CC_CLIENT_GRACE` | `300.0` | Wait for a miniccc client to register before failing |
-| `PHENIX_CC_SEND_GRACE` | `300.0` | Wait for a file send or component start to be acknowledged |
-| `PHENIX_CC_CMD_GRACE` | `0.0` | Wait for a command response (`0` waits indefinitely, supervised by client liveness) |
-| `PHENIX_CC_EXITCODE_GRACE` | `10.0` | Wait for an exit code once the response is counted |
-| `PHENIX_CC_LIVENESS_INTERVAL` | `10.0` | Interval between client-liveness checks during an unbounded wait |
-| `PHENIX_CC_LOG_INTERVAL` | `10.0` | Delay before the first "still waiting" log line |
-| `PHENIX_CC_LOG_MAX_INTERVAL` | `320.0` | Ceiling for that interval, which doubles each time |
-
-See [phēnix Apps Environment Variables](https://phenix.sceptre.dev/latest/settings/#phenix-apps-environment-variables)
-for the authoritative reference.
+`phenix util app-json <exp>` prints the exact JSON a user app receives on stdin
+for that experiment, which is the fastest way to test an app outside phenix:
+`phenix util app-json my-exp | phenix-app-foo configure`. Runnable Go and
+Python reference apps live in the repository's `examples/` directory
+(`examples/go/main.go`, `examples/python/app.py`, with `examples/TUTORIAL.md`).
 
 ## Contributing
 
-Follow [`AGENTS.md`](../../AGENTS.md#change-management) for repository change,
-documentation, branch, commit, and pull request requirements.
-
-## References
-
-See [`AGENTS.md`](../../AGENTS.md#documentation-and-references) for the
-repository documentation map and companion phēnix repositories.
+When changing this repository, read `AGENTS.md` at the repository root first;
+its "Change Management" section sets branch, commit, changelog, and pull
+request requirements. Behavior changes must be reflected in this skill.
