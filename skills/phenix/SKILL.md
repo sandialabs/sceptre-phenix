@@ -181,11 +181,13 @@ Annotations used by phenix's own default apps:
   `sport[:dhost]:dport` — port-only forwards `sport` to `127.0.0.1:sport`;
   `sport:dport` forwards to `127.0.0.1:dport`; `sport:dhost:dport` forwards to
   an arbitrary destination host/port. Malformed entries are logged and skipped.
-- `windows-version` (`startup` app, `post-start` stage) — set to `10` (string
-  or number) on a Windows node to force phenix to explicitly run
-  `phenix-startup.ps1` via a C2 command, since Windows 10 doesn't
-  auto-execute scripts placed in the startup folder like older Windows
-  versions do.
+- `phenix/startup-via-cc` (`startup` app, `pre-start` stage) — when truthy,
+  the generated startup scripts are delivered and executed over minimega C2
+  (`send` plus `exec-once`) instead of being injected into the disk, and all
+  startup-owned injections (including the Windows wrapper and Start Menu
+  scheduler) are removed. C2 delivery is also used automatically when the
+  node's first drive has `inject_partition: 0`, in which case the startup
+  injections themselves are left in place.
 - `vrouter/vyos-password` (`vrouter` app) — overrides the default `vyos`
   login password used when templating the boot config for a VyOS router node.
 - `vrouter/enable-ssh` (`vrouter` app) — an interface name or IP address; when
