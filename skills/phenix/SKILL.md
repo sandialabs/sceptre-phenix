@@ -56,7 +56,8 @@ Node.js/Yarn, protoc) and `make help` for the full list of dev targets.
 - User mentions a cyber range, cyber experimentation, network emulation, or minimega VMs.
 - User wants to run `phenix` CLI commands or call the phenix web API (`/api/v1/...`).
 - User asks about phenix apps (ntp, serial, startup, vrouter, SCORCH, user apps) or scheduling algorithms.
-- User wants to build/manage phenix disk images.
+- User wants to build/manage phenix disk images (pair with the `phenix-image` skill
+  for build scripts, overlays, and vmdb2 troubleshooting).
 
 ## Querying the Web API
 
@@ -311,7 +312,9 @@ phenix image inject-miniexe <path/to/exe> <path/to/disk>
 ```
 
 Default variant/release/mirror are `minbase`/`jammy`/Ubuntu archive; `-f`
-supports `qcow2` (default) and other formats vmdb2 supports.
+supports `qcow2` (default) and other formats vmdb2 supports. For build scripts,
+overlays, `Image` config fields, vmdb2 environment, and build troubleshooting,
+read the sibling [`phenix-image`](../phenix-image/SKILL.md) skill.
 
 ### `phenix vlan` — VLAN aliasing/ranges per experiment
 
