@@ -157,6 +157,31 @@ cd sceptre-phenix
 make build
 ```
 
+### Automatically Mount VM Filesystems
+
+Set `phenix/auto-mount: true` on a VM topology node to mount its filesystem on
+the headnode after the VM starts and its miniccc agent becomes available:
+
+```yaml
+spec:
+  nodes:
+    - type: VirtualMachine
+      annotations:
+        phenix/auto-mount: true
+      general:
+        hostname: vm1
+```
+
+The filesystem is mounted at `<mount-dir>/<experiment>/<vm>` (for example,
+`/phenix/mounts/helloworld/vm1`). Set the base path with `--mount-dir` or
+`PHENIX_MOUNT_DIR`. The annotation value must be a boolean; experiment startup
+fails if it isn't, or if an opted-in VM's miniccc-backed mount cannot be
+created. Non-VM nodes, nodes that are configured not to boot, nodes that don't
+support a miniccc agent (e.g. `minirouter`), or nodes that are user-delayed are
+skipped with a warning instead of failing the experiment. User-delayed nodes are
+mounted once they are manually started (e.g. via `phenix vm resume` or the web
+UI).
+
 ## Logging & Configuration
 
 phēnix features a centralized, structured, and dynamic logging system. This system aggregates logs from the core daemon, internal Go services, and external Python/Go user applications into a unified stream that can be routed to files, the console, and the web UI.

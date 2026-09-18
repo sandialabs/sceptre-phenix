@@ -29,6 +29,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - **Tunneler Web Interface**: Add a local web dashboard for listing, enabling, disabling, and moving listeners, with live WebSocket updates.
+- **VM Auto-Mount**: VM topology nodes annotated with `phenix/auto-mount: true` now mount their filesystems on the headnode after startup. Non-VM nodes, nodes that don't boot, nodes that don't support a miniccc agent (e.g. `minirouter`), or nodes that are user-delayed are skipped with a warning; user-delayed nodes are mounted once manually started via `phenix vm resume` or the web UI.
 - **CLI Command Aliases**: Added `exp del`, `exp trig`, `exp res`, `exp rec`, `image del`, `config del`, and `vm res`.
 - **Centralized Logging Architecture**: Implemented a unified logging system where phēnix core aggregates logs from internal services and external apps.
 - **Dynamic Configuration**: Integrated `viper` with `fsnotify` to allow hot-swapping of configuration settings (e.g., log levels) without restarting services.
