@@ -200,8 +200,12 @@ func Start(opts ...ServerOption) error {
 	// OPTIONS method needed for CORS
 	api.Handle("/builder/topologies", weberror.ErrorHandler(GetBuilderTopologies)).
 		Methods("GET", "OPTIONS")
+	api.Handle("/builder/topologies", weberror.ErrorHandler(CreateBuilderTopology)).
+		Methods("POST", "OPTIONS")
 	api.Handle("/builder/topologies/{name}", weberror.ErrorHandler(GetBuilderTopology)).
 		Methods("GET", "OPTIONS")
+	api.Handle("/builder/topologies/{name}", weberror.ErrorHandler(UpdateBuilderTopology)).
+		Methods("PUT", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(GetConfigs)).Methods("GET", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(CreateConfig)).Methods("POST", "OPTIONS")
 	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(GetConfig)).Methods("GET", "OPTIONS")

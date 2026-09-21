@@ -4,9 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Topology Builder**: Added `POST /api/v1/builder/topologies` and `PUT /api/v1/builder/topologies/{name}` to create and save a Builder topology and its diagram without creating or updating an experiment. Both refuse the write while an experiment built from that topology is running.
+
 ### Changed
 
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
+- **Topology Builder**: The export dialog now offers only the XML and SVG formats the server can actually produce; PNG, GIF, JPEG, and PDF have been removed.
+- **Topology Builder**: Saving an experiment from Builder rebuilds its VLAN aliases from the saved topology, keeping the IDs the diagram does not carry and dropping aliases the topology no longer references.
+
+### Fixed
+
+- **Topology Builder**:
+  - **Annotation Loss**: Saving a topology from Builder replaced the config's entire metadata annotation map, discarding every annotation other than `builder-xml`. Builder saves now update only the diagram and spec.
+  - **Node Types**: Importing JSON overwrote each node's phēnix `type` (`VirtualMachine`, `Router`, …) with `kvm` or `container`. Icon selection now reads `general.vm_type` and leaves `type` untouched.
+  - **Stencil Paths**: Importing a diagram rewrote every `image=` reference to the virtual-machine stencil directory, breaking container icons and double-prefixing correct paths. Fixed in both import paths (`js/Actions.js` and `open.html`).
+  - **Validation Errors**: A schema-invalid topology crashed the Builder handlers with a nil-pointer dereference instead of returning a validation error, because `errors.Unwrap` yields nil for the multi-wrapped error `types.ValidateConfigSpec` returns.
+  - **Downloads**: `POST /builder/save` serves `application/xml`/`image/svg+xml` instead of `text/plain`, encodes the attachment filename correctly, and rejects empty or unsupported requests.
+  - **Request Validation**: Builder requests missing a name, topology, or diagram are now rejected before the data store is modified.
+  - **Scenario Membership**: Adding a topology to a scenario now matches topology names exactly rather than by substring, and no longer creates duplicate or empty entries.
+  - **Authorization**: Using a scenario from Builder now requires update permission on that scenario, not just read permission, and creating a topology from Builder authorizes the named topology rather than the `configs` resource as a whole.
+  - **VLAN Aliases Discarded**: Updating an experiment whose stored config carried no `vlans` key wrote its rebuilt aliases to a throwaway value and lost them; the experiment spec is now initialized first.
+  - **Node Type Absent on Import**: JSON import left `node.type` unset after it stopped being overwritten, and the schema requires it; it now keeps a valid role or falls back to `VirtualMachine`.
+  - **Created Topology Location**: The `201` response from `POST /api/v1/builder/topologies` built its `Location` header assuming the API is mounted at the server root, ignoring the configured base path.
 
 ## [1.0.0]
 

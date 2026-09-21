@@ -23,14 +23,28 @@
 				reader.onload = function(e)
 				{
 					// Dynamically update path to pictures used when a file is imported.
+					// Saving strips an image's directory, so rebuild it from the file
+					// name: container artwork ends in _container, everything else lives
+					// with the virtual machines. Keep this in step with the matching
+					// rewrite in js/Actions.js.
 					var stencilPath = window.parent.STENCIL_PATH;
-					var imageEquals = "image=";
-					var vmPath = "/virtual_machines"
-					var partialPath = imageEquals + stencilPath;
-					var fullPath = partialPath + vmPath;
 					var importedXML =  e.target.result;
-					const regex = /image=/g;
-					var cleanXML = importedXML.replace(regex, fullPath)
+					var cleanXML = importedXML.replace(/image=([^;"]*)/g, function (match, path) {
+						if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(path)) {
+							return match;
+						}
+
+						var name = path.substring(path.lastIndexOf('/') + 1);
+
+						if (name === '') {
+							return match;
+						}
+
+						var dir = /_container\.[^.\/]+$/.test(name) ?
+							'/containers/' : '/virtual_machines/';
+
+						return 'image=' + stencilPath + dir + name;
+					});
 					window.parent.openFile.setData(cleanXML, file.name);
 				};
 				reader.onerror = function(e)

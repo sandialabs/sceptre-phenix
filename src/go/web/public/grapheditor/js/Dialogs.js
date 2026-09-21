@@ -998,30 +998,6 @@ var ExportDialog = function(editorUi)
     var imageFormatSelect = document.createElement('select');
     imageFormatSelect.style.width = '180px';
 
-    var pngOption = document.createElement('option');
-    pngOption.setAttribute('value', 'png');
-    mxUtils.write(pngOption, mxResources.get('formatPng'));
-    imageFormatSelect.appendChild(pngOption);
-
-    var gifOption = document.createElement('option');
-    
-    if (ExportDialog.showGifOption)
-    {
-        gifOption.setAttribute('value', 'gif');
-        mxUtils.write(gifOption, mxResources.get('formatGif'));
-        imageFormatSelect.appendChild(gifOption);
-    }
-    
-    var jpgOption = document.createElement('option');
-    jpgOption.setAttribute('value', 'jpg');
-    mxUtils.write(jpgOption, mxResources.get('formatJpg'));
-    imageFormatSelect.appendChild(jpgOption);
-
-    var pdfOption = document.createElement('option');
-    pdfOption.setAttribute('value', 'pdf');
-    mxUtils.write(pdfOption, mxResources.get('formatPdf'));
-    imageFormatSelect.appendChild(pdfOption);
-    
     var svgOption = document.createElement('option');
     svgOption.setAttribute('value', 'svg');
     mxUtils.write(svgOption, mxResources.get('formatSvg'));
@@ -1424,11 +1400,6 @@ var ExportDialog = function(editorUi)
  * Remembers last value for border.
  */
 ExportDialog.lastBorderValue = 0;
-
-/**
- * Global switches for the export dialog.
- */
-ExportDialog.showGifOption = true;
 
 /**
  * Global switches for the export dialog.
@@ -2342,6 +2313,39 @@ var EditDataDialog = function(ui, cell)
 };
 
 /**
+ * Extracts a displayable message from a failed phenix API request. The API
+ * normally answers with a JSON body carrying a `message`, but authorization
+ * failures, proxies, and empty responses do not, and parsing those blindly
+ * throws inside the error handler and leaves the user with no dialog at all.
+ */
+function builderErrorMessage(xhr)
+{
+    try
+    {
+        var err = JSON.parse(xhr.responseText);
+
+        if (err && err.message)
+        {
+            return err.message;
+        }
+    }
+    catch (e)
+    {
+        // fall through to the generic message below
+    }
+
+    // The result is interpolated into newDiv.html(), so a non-JSON body must
+    // not be able to carry markup into the dialog.
+    if (xhr.responseText)
+    {
+        return mxUtils.htmlEntities(xhr.responseText);
+    }
+
+    return xhr.status ?
+        mxUtils.htmlEntities(xhr.status + ' ' + xhr.statusText) : 'unknown error';
+};
+
+/**
  * Constructs a new JSONEditor dialog for model JSON
  */
 var viewJSONDialog = function(ui)
@@ -2670,11 +2674,17 @@ var viewJSONDialog = function(ui)
                             ui.hideDialog.apply(ui, arguments);
                         },
                         error: function (e) {
-                            const err = JSON.parse( e.responseText );
+                            var err = null;
+
+                            try {
+                                err = JSON.parse( e.responseText );
+                            } catch (parseErr) {
+                                err = null;
+                            }
 
                             console.log(err);
 
-                            if ( err.metadata && err.metadata.type ) {
+                            if ( err && err.metadata && err.metadata.type ) {
                                 var msg = [
                                     'The', err.metadata.type, 'was not added to the phēnix store due to the following error:',
                                     '<blockquote>', err.message, '</blockquote>'
@@ -2688,7 +2698,7 @@ var viewJSONDialog = function(ui)
                             } else {
                                 var msg = [
                                     'There was an error adding the topology or scenario to the phēnix store:',
-                                    '<blockquote>', err.message, '</blockquote>'
+                                    '<blockquote>', builderErrorMessage(e), '</blockquote>'
                                 ]
 
                                 newDiv.html(msg.join(' '));
@@ -2698,33 +2708,42 @@ var viewJSONDialog = function(ui)
                             ui.hideDialog.apply(ui, arguments);
                         }
                     });
-                } else { // creating topology only
-                    json.metadata.annotations = { 'builder-xml': xml };
+                } else { // topology only, no experiment
+                    // Both paths go through the Builder endpoints rather than
+                    // /configs: the server owns the config's apiVersion, kind,
+                    // and builder-xml annotation, and an update there leaves the
+                    // rest of the stored metadata -- other annotations, labels,
+                    // creation time -- untouched.
+                    var updating = json.metadata.name == window.currentTopology;
+                    var url      = `${window.PHENIX_API_PATH}/builder/topologies`;
+                    var method   = 'post';
+                    var payload  = {
+                        topology: { nodes: json.spec.nodes },
+                        name: json.metadata.name,
+                        builderXML: xml
+                    };
 
-                    var url    = `${window.PHENIX_API_PATH}/configs`;
-                    var method = 'post';
-
-                    if (json.metadata.name == window.currentTopology) { 
-                        url    = `${url}/topology/${json.metadata.name}`;
-                        method = 'put'; 
+                    if (updating) {
+                        url = `${url}/${encodeURIComponent(json.metadata.name)}`;
+                        method = 'put';
                     }
+
+                    var verb = updating ? 'saved to' : 'added to';
 
                     $.ajax({
                         url: url,
                         type: method,
-                        data: JSON.stringify(json),
+                        data: JSON.stringify(payload),
                         headers,
                         success: function () {
-                            newDiv.html('The ' + json.metadata.name + ' topology was added to phēnix store');
+                            newDiv.html('The ' + json.metadata.name + ' topology was ' + verb + ' phēnix store');
                             newDiv.dialog({title: 'Success'}).parent().addClass('ui-state-highlight');
                             ui.hideDialog.apply(ui, arguments);
                         },
                         error: function (e) {
-                            const err = JSON.parse( e.responseText );
-
                             var msg = [
-                                'There was an error adding the topology to the phēnix store:',
-                                '<blockquote>', err.message, '</blockquote>'
+                                'There was an error saving the topology to the phēnix store:',
+                                '<blockquote>', builderErrorMessage(e), '</blockquote>'
                             ]
 
                             newDiv.html(msg.join(' '));
@@ -4577,16 +4596,24 @@ var ImportJSONDialog = function(graph, ui) {
                         device = 'desktop';
                     }
                     node.device = device;
-                    // default to type kvm
-                    var type = node.type || 'kvm';
-                    type = type.toLowerCase();
-                    if (!types.includes(type)) {
-                        type = 'kvm';
+                    // VM implementation controls the icon variant; node.type is
+                    // the phēnix role and must not be overwritten with it. The
+                    // schema requires type and constrains it to these roles, so
+                    // fall back to the schema default instead of leaving it out.
+                    var roles = ['VirtualMachine', 'Firewall', 'Router', 'Switch'];
+                    var role = roles.find(function (r) {
+                        return typeof node.type === 'string' &&
+                            r.toLowerCase() === node.type.toLowerCase();
+                    });
+                    node.type = role || 'VirtualMachine';
+                    var vmType = node.general && node.general.vm_type || 'kvm';
+                    vmType = vmType.toLowerCase();
+                    if (!types.includes(vmType)) {
+                        vmType = 'kvm';
                     }
-                    node.type = type;
                     // build node styling string based on device and type
-                    var imageDir = (type == 'kvm') ? "/virtual_machines" : "/containers";
-                    var imageType = (type == 'kvm') ? "vm" : "container";
+                    var imageDir = (vmType == 'kvm') ? "/virtual_machines" : "/containers";
+                    var imageType = (vmType == 'kvm') ? "vm" : "container";
                     var styleString = vertexStyleString + stencilsDir + imageDir + "/" + device + "_blue_" + imageType + ".png";
                     obj.style = styleString;
                     obj.geometry = {width: 80, height: 80};
@@ -4620,7 +4647,7 @@ var ImportJSONDialog = function(graph, ui) {
                         for (var i = 0; i < ifaces.length; i++) {
                             var name = ifaces[i].vlan;
                             if (!vlans[name]) {
-                                var vlan = {"id": 'auto', "name": name, "type": type};
+                                var vlan = {"id": 'auto', "name": name, "type": vmType};
                                 vlan.targets = [];
                                 vlans[name] = vlan;
                             }

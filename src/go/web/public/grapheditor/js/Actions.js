@@ -125,13 +125,26 @@ Actions.prototype.init = function()
                         headers,
                         success: function (data) {
                             // Dynamically update path to pictures used when a file is imported.
+                            // Saving strips an image's directory, so rebuild it from the file
+                            // name: container artwork ends in _container, everything else lives
+                            // with the virtual machines.
                             var stencilPath = window.parent.STENCIL_PATH;
-                            var imageEquals = "image=";
-                            var vmPath = "/virtual_machines"
-                            var partialPath = imageEquals + stencilPath;
-                            var fullPath = partialPath + vmPath;
-                            const regex = /image=/g;
-                            var cleanData = data.replace(regex, fullPath)
+                            var cleanData = data.replace(/image=([^;"]*)/g, function (match, path) {
+                                if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(path)) {
+                                    return match;
+                                }
+
+                                var file = path.substring(path.lastIndexOf('/') + 1);
+
+                                if (file === '') {
+                                    return match;
+                                }
+
+                                var dir = /_container\.[^.\/]+$/.test(file) ?
+                                    '/containers/' : '/virtual_machines/';
+
+                                return 'image=' + stencilPath + dir + file;
+                            });
 
                             var doc = mxUtils.parseXml(cleanData);
                             editor.graph.setSelectionCells(editor.graph.importGraphModel(doc.documentElement));

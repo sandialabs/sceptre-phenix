@@ -26,6 +26,13 @@ SCORCH, minimega integration, or cyber-range workflows, read
 [`skills/phenix/SKILL.md`](skills/phenix/SKILL.md). Use code as final authority
 when guidance differs, and update the skill when behavior changes.
 
+`SKILL.md` stays broad and always loaded; deep, area-specific material lives in
+`skills/phenix/references/` and is read only when that area is in scope — for
+example [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md)
+for the graphical topology Builder. Put new detail in the matching reference
+file rather than growing `SKILL.md`, and leave a one-line pointer to it from
+`SKILL.md`.
+
 ## Architecture
 
 - `src/go/main.go` starts commands from `src/go/cmd/`.
@@ -139,7 +146,8 @@ image, documentation, or topology details.
 - New user-facing features need a minimal README example and documentation in
   [`sceptre-phenix-docs`](https://github.com/sandialabs/sceptre-phenix-docs).
   Existing changes may also require docs; cross-link both pull requests.
-- Keep API docs, schemas, examples, and the phēnix skill aligned with behavior.
+- Keep API docs, schemas, examples, and the phēnix skill (`SKILL.md` and its
+  `references/`) aligned with behavior.
 - Use issue and PR templates under `.github/`. Keep PR descriptions concise:
   purpose, relevant changes, related issue, and reviewer context only.
 
