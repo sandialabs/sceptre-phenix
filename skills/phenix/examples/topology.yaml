@@ -1,0 +1,46 @@
+# Minimal two-node topology: a Linux server and a Windows client on one VLAN.
+# Create it with:  phenix config create topology.yaml
+# Field reference:  https://phenix.sceptre.dev/latest/configuration/#topology
+apiVersion: phenix.sandia.gov/v1
+kind: Topology
+metadata:
+  name: example
+spec:
+  nodes:
+    - type: VirtualMachine
+      general:
+        hostname: server-00
+        snapshot: true # non-persistent disk; phenix sets true when omitted
+      hardware:
+        os_type: linux
+        vcpus: 2
+        memory: 2048
+        drives:
+          - image: ubuntu.qc2 # image name under <base-dir.phenix>/images
+      injections:
+        - src: /phenix/injects/motd # file on the headnode
+          dst: /etc/motd # path inside the VM disk
+      network:
+        interfaces:
+          - name: IF0
+            type: ethernet
+            vlan: EXP-1 # VLAN alias; phenix allocates the id from the pool
+            proto: static
+            address: 192.168.10.10
+            mask: 24
+            gateway: 192.168.10.1
+    - type: VirtualMachine
+      general:
+        hostname: client-00
+      hardware:
+        os_type: windows
+        drives:
+          - image: win10.qc2
+      delay:
+        timer: 30s # boot 30s after the other nodes
+      network:
+        interfaces:
+          - name: IF0
+            type: ethernet
+            vlan: EXP-1
+            proto: dhcp
