@@ -8,14 +8,14 @@ FROM ghcr.io/sandia-minimega/minimega:${MM_MIN_REV} AS minimega
 
 
 # ** jsbuilder **
-FROM docker.io/library/node:24.16.0 AS jsbuilder
+FROM docker.io/library/node:24.21.0 AS jsbuilder
 
 ARG INSTALL_CERTS=
 COPY docker/install-certs.sh /tmp/install-certs.sh
 RUN /tmp/install-certs.sh && \
   yarn config set cafile /etc/ssl/certs/ca-certificates.crt
 
-RUN npm install -g @redocly/cli@2.48.0
+RUN npm install -g @redocly/cli@2.54.2
 
 COPY ./src/js /phenix/src/js
 
@@ -37,7 +37,7 @@ RUN npx @redocly/cli build-docs openapi.yml -o index.html --title 'phenix API'
 
 
 # ** gobuilder **
-FROM docker.io/library/golang:1.24.1 AS gobuilder
+FROM docker.io/library/golang:1.24.13 AS gobuilder
 
 RUN apt-get update \
   && apt-get install -y protobuf-compiler xz-utils
@@ -120,20 +120,32 @@ ARG INSTALL_CERTS=
 COPY docker/install-certs.sh /tmp/install-certs.sh
 RUN /tmp/install-certs.sh
 
-RUN git clone https://gitlab.com/glattercj/vmdb2 /opt/vmdb2
+# Pin vmdb2 to a reviewed commit so builds are reproducible and an upstream
+# force-push cannot silently change code that runs as root during image builds.
+ARG VMDB2_REV=255da2eb0767bf82e7736be869ea315b4619e6c6
+RUN git clone https://gitlab.com/glattercj/vmdb2 /opt/vmdb2 \
+  && git -C /opt/vmdb2 checkout --quiet ${VMDB2_REV}
 RUN ln -s /opt/vmdb2/vmdb2 /usr/bin/vmdb2
 
 # needed to build Kali images with phenix
 RUN wget --progress=dot:giga https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
 
 # used by scorch
-RUN wget --progress=dot:giga -O glow.tgz https://github.com/charmbracelet/glow/releases/download/v1.5.0/glow_1.5.0_Linux_x86_64.tar.gz \
-  && tar -xzf glow.tgz glow \
+ARG GLOW_VERSION=2.1.2
+ARG GLOW_SHA256=6063d4f2af8a82a5f4bba0831e165de9381660aa8b41df4816d0106a265b07d5
+RUN wget --progress=dot:giga -O glow.tgz \
+  "https://github.com/charmbracelet/glow/releases/download/v${GLOW_VERSION}/glow_${GLOW_VERSION}_Linux_x86_64.tar.gz" \
+  && echo "${GLOW_SHA256}  glow.tgz" | sha256sum -c - \
+  && tar -xzf glow.tgz --strip-components=1 "glow_${GLOW_VERSION}_Linux_x86_64/glow" \
   && mv glow /usr/local/bin/glow \
   && rm glow.tgz
 
 # used by scorch
-RUN wget --progress=dot:giga -O filebeat.deb https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.17.5-amd64.deb \
+ARG FILEBEAT_VERSION=7.17.28
+ARG FILEBEAT_SHA512=82055852cc3d8c19e863142f7fc2e3ab3e1db9c48dcb86c0ecdceb0ad64f396c62205ebddd3b9715c62dd7f2a0661b405f425a20a075eb843fa402177d153bf7
+RUN wget --progress=dot:giga -O filebeat.deb \
+  "https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-${FILEBEAT_VERSION}-amd64.deb" \
+  && echo "${FILEBEAT_SHA512}  filebeat.deb" | sha512sum -c - \
   && dpkg -i filebeat.deb \
   && rm filebeat.deb
 

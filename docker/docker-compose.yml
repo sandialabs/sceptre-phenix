@@ -8,6 +8,14 @@ x-common: &common
       max-file: "5"
       max-size: "10m"
 
+# Defaults for services that do not need host privileges: no privilege
+# escalation through setuid binaries, and no Linux capabilities at all.
+x-hardened: &hardened
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
 services:
   phenix:
     image: ghcr.io/sandialabs/sceptre-phenix/phenix:main
@@ -23,6 +31,9 @@ services:
       - --hostname-suffixes=-minimega,-phenix
       - --minimega-console
     container_name: phenix
+    # phenix builds VM images and manipulates host network namespaces, so it
+    # runs privileged. privileged already grants every capability and device,
+    # so never add cap_add here.
     privileged: true
     pid: host
     <<: *common
@@ -42,9 +53,10 @@ services:
   minimega:
     image: ghcr.io/sandia-minimega/minimega:master
     container_name: minimega
+    # minimega creates bridges, taps, and VMs on the host, so it runs
+    # privileged. privileged already grants every capability, so `cap_add: ALL`
+    # is redundant and only hides that from anyone auditing this file.
     privileged: true
-    cap_add:
-      - ALL
     tty: true
     <<: *common
     volumes:
@@ -68,25 +80,51 @@ services:
       MM_LOGFILE: /var/log/phenix/minimega.log
       MM_ABSSNAPSHOT: true # needed for phenix VM backing image and snapshot functions
   es:
-    image: elasticsearch:7.17.5
+    image: elasticsearch:7.17.28
     container_name: es
-    <<: *common
+    <<: [*common, *hardened]
     volumes:
       - /phenix/share/elasticsearch/data:/usr/share/elasticsearch/data
     environment:
       discovery.type: single-node
+      # This Elasticsearch runs without authentication, and the services use
+      # host networking, so it binds to loopback only. Override PHENIX_ES_BIND
+      # (for example with 0.0.0.0) to let experiment VMs ship data to it, and
+      # turn on authentication before doing so.
+      network.host: ${PHENIX_ES_BIND:-127.0.0.1}
     depends_on:
-      - volume-permissions-manager
+      volume-permissions-manager:
+        condition: service_completed_successfully
   kibana:
-    image: kibana:7.17.5
+    image: kibana:7.17.28
     container_name: kibana
-    <<: *common
+    <<: [*common, *hardened]
     environment:
       ELASTICSEARCH_HOSTS: http://localhost:9200
+      # Kibana also runs without authentication and is reachable by anyone who
+      # can reach this host on port 5601. Set PHENIX_KIBANA_BIND to 127.0.0.1
+      # to restrict it to the host and reach it through an SSH tunnel.
+      SERVER_HOST: ${PHENIX_KIBANA_BIND:-0.0.0.0}
     depends_on:
       - es
   volume-permissions-manager:
-    image: alpine:latest
-    command: sh -c "chmod -R 777 /usr/share/elasticsearch"
+    image: alpine:3.24
+    # Elasticsearch runs as uid 1000, gid 0. Give that account ownership of the
+    # data directory instead of making every file world-writable, and scope the
+    # change to the mounted data directory.
+    command: >
+      sh -c "chown -R 1000:0 /usr/share/elasticsearch/data
+      && chmod -R u=rwX,g=rwX,o= /usr/share/elasticsearch/data"
+    restart: "no"
+    network_mode: none
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
     volumes:
       - /phenix/share/elasticsearch/data:/usr/share/elasticsearch/data

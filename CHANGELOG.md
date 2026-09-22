@@ -7,6 +7,19 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
+- **Container Image**: Updated baked-in dependencies: Node.js 24.16.0 to 24.21.0, Go 1.24.1 to 1.24.13, `@redocly/cli` 2.48.0 to 2.54.2, glow 1.5.0 to 2.1.2, and filebeat 7.17.5 to 7.17.28.
+- **Docker Compose**: Updated Elasticsearch and Kibana from 7.17.5 to 7.17.28 and pinned the volume permissions helper to `alpine:3.24` instead of `alpine:latest`.
+
+### Security
+
+- **Docker Compose**:
+  - Elasticsearch now binds to loopback by default instead of every host interface, because it runs without authentication. Set `PHENIX_ES_BIND` (for example to `0.0.0.0`) when experiment VMs must ship data to it. `PHENIX_KIBANA_BIND` similarly controls the Kibana bind address, which still defaults to `0.0.0.0`.
+  - The Elasticsearch data directory is now owned by uid 1000 with group-writable permissions instead of being made world-writable (`chmod -R 777`), and Elasticsearch waits for that helper to finish before starting.
+  - Non-privileged services (Elasticsearch, Kibana, and the volume permissions helper) drop all Linux capabilities and set `no-new-privileges`. The helper also runs with a read-only root filesystem and no network.
+  - Removed the redundant `cap_add: ALL` from the minimega service, which `privileged: true` already grants.
+- **Container Image**:
+  - glow and filebeat downloads are now verified against pinned SHA-256 and SHA-512 checksums.
+  - vmdb2 is pinned to a specific commit instead of tracking the default branch of its upstream repository.
 
 ## [1.0.0]
 
