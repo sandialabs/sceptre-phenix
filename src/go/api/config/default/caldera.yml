@@ -98,7 +98,7 @@ spec:
           #     - python3-pip
           ##############################################################################
           # --------------------------------------------------- Caldera ----------------------------------------------------
-          git clone https://github.com/mitre/caldera.git --branch 5.2.0 --recursive /opt/caldera
+          git clone https://github.com/apache/caldera.git --branch 5.2.0 --recursive /opt/caldera
           cd /opt/caldera
           # Get extra plugins
           git submodule add -b facts https://github.com/activeshadow/caldera-modbus.git plugins/modbus

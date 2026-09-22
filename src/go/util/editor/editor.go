@@ -1,4 +1,4 @@
-// Taken from https://samrapdev.com/capturing-sensitive-input-with-editor-in-golang-from-the-cli/
+// Taken from https://web.archive.org/web/20210513150923/https://samrapdev.com/capturing-sensitive-input-with-editor-in-golang-from-the-cli/
 
 package editor
 

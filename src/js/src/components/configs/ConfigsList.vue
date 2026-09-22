@@ -162,7 +162,7 @@
       v-model:checked-rows="selectedConfigs"
       :loading="isWaiting"
       ref="cfgTable">
-      <!-- docs currently wrong with checked rows, see: https://github.com/ntohq/buefy-next/issues/278 -->
+      <!-- docs currently wrong with checked rows, see: https://github.com/buefy/buefy/issues/4102 -->
       <!-- <b-loading :is-full-page="false" v-model="isWaiting"></b-loading> -->
 
       <template #empty>

@@ -49,7 +49,7 @@ the root target does.
   silently recover.
 - Use `phenix/util/plog` for core logs with the correct `LogType` and structured
   key/value fields.
-- Consult [minimega API docs](https://sandia-minimega.github.io/) and
+- Consult [minimega API docs](https://sandia-minimega.github.io/minimega/reference/minimega/) and
   [source](https://github.com/sandia-minimega/minimega) before changing code
   that constructs commands or depends on minimega behavior.
 
