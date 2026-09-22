@@ -118,10 +118,13 @@ jobs:
     outputs:
       image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
 
-  # Mirrors the Docker build so the Containerfile can't silently drift.
+  # Mirrors the Docker build so the Containerfile can't silently drift, then
+  # runs the finished image to catch a container that builds but cannot start.
+  # Nothing is published: the image only ever exists on the runner.
   build-podman:
-    name: Build Podman Image
+    name: Build and Smoke Test Podman Image
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       contents: read
     steps:
@@ -132,17 +135,46 @@ jobs:
           persist-credentials: false
       - name: Get short SHA
         run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
-      - name: Build Podman image (through the Go build stage)
-        # Stops at gobuilder: the final stage pulls flaky external resources (filebeat, vmdb2, Kali keyring).
+      - name: Free disk space
+        # The full image plus its build stages do not fit next to the runner's
+        # preinstalled Android, .NET, and Haskell toolchains.
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h /
+      - name: Build Podman image
+        # The final stage pulls external resources (filebeat, vmdb2, the Kali
+        # keyring), so retry before failing the job on a flaky fetch.
         env:
+          MM_MIN_REV: ${{ env.MM_REV }}
           PHENIX_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           SHA: ${{ env.sha }}
         run: |
-          podman build \
-            -f podman/Containerfile \
-            --target gobuilder \
-            --build-arg PHENIX_COMMIT="$SHA" \
-            --build-arg PHENIX_TAG=ci \
-            --build-arg PHENIX_REPO="$PHENIX_REPO" \
-            -t phenix-podman-ci \
-            .
+          for attempt in 1 2 3; do
+            echo "::group::podman build attempt ${attempt}"
+            if podman build \
+              -f podman/Containerfile \
+              --build-arg MM_MIN_REV="$MM_MIN_REV" \
+              --build-arg PHENIX_COMMIT="$SHA" \
+              --build-arg PHENIX_TAG=ci \
+              --build-arg PHENIX_REPO="$PHENIX_REPO" \
+              -t phenix-podman-ci \
+              .; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            echo "podman build attempt ${attempt} failed"
+            sleep 30
+          done
+          echo "podman build failed after 3 attempts"
+          exit 1
+      - name: Smoke test the image
+        run: |
+          set -x
+          podman run --rm phenix-podman-ci phenix version
+          podman run --rm phenix-podman-ci phenix help
+          podman run --rm phenix-podman-ci sh -c \
+            'command -v phenix && command -v glow && command -v filebeat && test -x /usr/bin/vmdb2'
+          podman run --rm phenix-podman-ci python3 -c 'import minimega, phenix_apps'
+      - name: Report image size
+        run: podman images phenix-podman-ci
