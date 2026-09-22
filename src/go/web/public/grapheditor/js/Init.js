@@ -23,6 +23,55 @@ window.STYLE_PATH = window.STYLE_PATH || 'styles';
 window.CSS_PATH = window.CSS_PATH || 'styles';
 window.OPEN_FORM = window.OPEN_FORM || 'open.html';
 
+/**
+ * Restores the stencil directory on image= styles.
+ *
+ * mxObjectCodec.encodeObject drops an image's directory when a diagram is
+ * encoded, keeping stored XML independent of where phenix is served from. Every
+ * path that decodes that XML back into the graph has to put the directory back,
+ * or the cells render with a missing image. Container artwork ends in
+ * _container; everything else lives with the virtual machines.
+ *
+ * Callers: js/Actions.js (import), js/Dialogs.js (Edit Diagram) and open.html,
+ * which reaches this through window.parent. Keep it here so the three cannot
+ * drift apart again.
+ */
+window.phenixRestoreStencilPaths = function(xml)
+{
+    if (xml == null)
+    {
+        return xml;
+    }
+
+    var stencilPath = window.STENCIL_PATH ||
+        (window.parent != null ? window.parent.STENCIL_PATH : null);
+
+    if (!stencilPath)
+    {
+        return xml;
+    }
+
+    return xml.replace(/image=([^;"]*)/g, function(match, path)
+    {
+        // Leave absolute references (http:, data:, ...) alone.
+        if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(path))
+        {
+            return match;
+        }
+
+        var name = path.substring(path.lastIndexOf('/') + 1);
+
+        if (name === '')
+        {
+            return match;
+        }
+
+        var dir = /_container\.[^.\/]+$/.test(name) ? '/containers/' : '/virtual_machines/';
+
+        return 'image=' + stencilPath + dir + name;
+    });
+};
+
 // Sets the base path, the UI language via URL param and configures the
 // supported languages to avoid 404s. The loading of all core language
 // resources is disabled as all required resources are in grapheditor.
@@ -32,4 +81,4 @@ window.OPEN_FORM = window.OPEN_FORM || 'open.html';
 // each properties file since only one file is loaded.
 window.mxBasePath = window.mxBasePath || '../../../src';
 window.mxLanguage = window.mxLanguage || urlParams['lang'];
-window.mxLanguages = window.mxLanguages || ['de'];
+window.mxLanguages = window.mxLanguages || ['de', 'se'];

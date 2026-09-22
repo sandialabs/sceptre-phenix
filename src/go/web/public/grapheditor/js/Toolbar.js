@@ -171,7 +171,6 @@ Toolbar.prototype.init = function()
     }
 
     this.addSeparator();
-
     var insertMenu = this.addMenu('', mxResources.get('insert') + ' (' + mxResources.get('doubleClickTooltip') + ')', true, 'insert', null, true);
     this.addDropDownArrow(insertMenu, 'geSprite-plus', 38, 48, -4, -3, 36, -8);
 
@@ -186,6 +185,139 @@ Toolbar.prototype.init = function()
     // add action to edit experiment variables
     // var elts = this.addItems(['-', 'editVariables']);
     // elts[0].setAttribute('title', mxResources.get('editVariables'));
+};
+
+/**
+ * Adds the toolbar elements.
+ */
+Toolbar.prototype.addTableDropDown = function()
+{
+	this.addSeparator();
+	
+	// KNOWN: All table stuff does not work with undo/redo
+	// KNOWN: Lost focus after click on submenu with text (not icon) in quirks and IE8. This is because the TD seems
+	// to catch the focus on click in these browsers. NOTE: Workaround in mxPopupMenu for icon items (without text).
+	var menuElt = this.addMenuFunction('geIcon geSprite geSprite-table', mxResources.get('table'), false, mxUtils.bind(this, function(menu)
+	{
+		var graph = this.editorUi.editor.graph;
+		var cell = graph.getSelectionCell();
+
+		if (!graph.isTableCell(cell) && !graph.isTableRow(cell) && !graph.isTable(cell))
+		{
+			this.editorUi.menus.addInsertTableCellItem(menu);
+    	}
+		else
+    	{
+			var elt = menu.addItem('', null, mxUtils.bind(this, function()
+			{
+				try
+				{
+					graph.insertTableColumn(cell, true);
+				}
+				catch (e)
+				{
+					this.editorUi.handleError(e);
+				}
+			}), null, 'geIcon geSprite geSprite-insertcolumnbefore');
+			elt.setAttribute('title', mxResources.get('insertColumnBefore'));
+			
+			elt = menu.addItem('', null, mxUtils.bind(this, function()
+			{	
+				try
+				{
+					graph.insertTableColumn(cell, false);
+				}
+				catch (e)
+				{
+					this.editorUi.handleError(e);
+				}
+			}), null, 'geIcon geSprite geSprite-insertcolumnafter');
+			elt.setAttribute('title', mxResources.get('insertColumnAfter'));
+
+			elt = menu.addItem('Delete column', null, mxUtils.bind(this, function()
+			{
+				if (cell != null)
+				{
+					try
+					{
+						graph.deleteTableColumn(cell);
+					}
+					catch (e)
+					{
+						this.editorUi.handleError(e);
+					}
+				}
+			}), null, 'geIcon geSprite geSprite-deletecolumn');
+			elt.setAttribute('title', mxResources.get('deleteColumn'));
+			
+			elt = menu.addItem('', null, mxUtils.bind(this, function()
+			{
+				try
+				{
+					graph.insertTableRow(cell, true);
+				}
+				catch (e)
+				{
+					this.editorUi.handleError(e);
+				}
+			}), null, 'geIcon geSprite geSprite-insertrowbefore');
+			elt.setAttribute('title', mxResources.get('insertRowBefore'));
+
+			elt = menu.addItem('', null, mxUtils.bind(this, function()
+			{
+				try
+				{
+					graph.insertTableRow(cell, false);
+				}
+				catch (e)
+				{
+					this.editorUi.handleError(e);
+				}
+			}), null, 'geIcon geSprite geSprite-insertrowafter');
+			elt.setAttribute('title', mxResources.get('insertRowAfter'));
+
+			elt = menu.addItem('', null, mxUtils.bind(this, function()
+			{
+				try
+				{
+					graph.deleteTableRow(cell);
+				}
+				catch (e)
+				{
+					this.editorUi.handleError(e);
+				}
+			}), null, 'geIcon geSprite geSprite-deleterow');
+			elt.setAttribute('title', mxResources.get('deleteRow'));
+    	}
+	}));
+	
+	menuElt.style.position = 'relative';
+	menuElt.style.whiteSpace = 'nowrap';
+	menuElt.style.overflow = 'hidden';
+	menuElt.innerHTML = '<div class="geSprite geSprite-table" style="margin-left:-2px;"></div>' + this.dropdownImageHtml;
+	menuElt.style.width = (mxClient.IS_QUIRKS) ? '50px' : '30px';
+
+	// Fix for item size in kennedy theme
+	if (EditorUi.compactUi)
+	{
+		menuElt.getElementsByTagName('img')[0].style.left = '22px';
+		menuElt.getElementsByTagName('img')[0].style.top = '5px';
+	}
+	
+	// Connects to insert menu enabled state
+	var menu = this.editorUi.menus.get('insert');
+	
+	// Workaround for possible not a function
+	// when extending HTML objects
+	if (menu != null && typeof menuElt.setEnabled === 'function')
+	{
+		menu.addListener('stateChanged', function()
+		{
+			menuElt.setEnabled(menu.enabled);
+		});
+	}
+	
+	return menuElt;
 };
 
 /**
@@ -237,7 +369,7 @@ Toolbar.prototype.setFontSize = function(value)
     if (this.sizeMenu != null)
     {
         this.sizeMenu.innerHTML = '<div style="width:24px;overflow:hidden;display:inline-block;">' +
-            value + '</div>' + this.dropdownImageHtml;
+			mxUtils.htmlEntities(value) + '</div>' + this.dropdownImageHtml;
     }
 };
 
@@ -423,7 +555,6 @@ Toolbar.prototype.createTextToolbar = function()
     
     this.addSeparator();
     
-    // FIXME: Uses geButton here and geLabel in main menu
     var insertMenu = this.addMenuFunction('', mxResources.get('insert'), true, mxUtils.bind(this, function(menu)
     {
         menu.addItem(mxResources.get('insertLink'), null, mxUtils.bind(this, function()
@@ -470,6 +601,27 @@ Toolbar.prototype.createTextToolbar = function()
 
         if (row == null)
         {
+			function createTable(rows, cols)
+			{
+				var html = ['<table>'];
+				
+				for (var i = 0; i < rows; i++)
+				{
+					html.push('<tr>');
+					
+					for (var j = 0; j < cols; j++)
+					{
+						html.push('<td><br></td>');
+					}
+					
+					html.push('</tr>');
+				}
+				
+				html.push('</table>');
+				
+				return html.join('');
+			};
+			
             this.editorUi.menus.addInsertTableItem(menu);
         }
         else
@@ -678,7 +830,9 @@ Toolbar.prototype.addMenu = function(label, tooltip, showLabels, name, c, showAl
         menu.funct.apply(menu, arguments);
     }, c, showAll);
     
-    if (!ignoreState)
+	// Workaround for possible not a function
+	// when extending HTML objects
+	if (!ignoreState && typeof elt.setEnabled === 'function')
     {
         menu.addListener('stateChanged', function()
         {
@@ -766,7 +920,9 @@ Toolbar.prototype.addItem = function(sprite, key, c, ignoreDisabled)
         
         elt = this.addButton(sprite, tooltip, action.funct, c);
 
-        if (!ignoreDisabled)
+		// Workaround for possible not a function
+		// when extending HTML objects
+		if (!ignoreDisabled && typeof elt.setEnabled === 'function')
         {
             elt.setEnabled(action.enabled);
             

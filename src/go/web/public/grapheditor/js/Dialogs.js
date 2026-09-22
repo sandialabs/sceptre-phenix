@@ -46,6 +46,30 @@ var ColorDialog = function(editorUi, color, apply, cancelFn)
         document.body.appendChild(input);
     }
     
+	var applyFunction = (apply != null) ? apply : this.createApplyFunction();
+	
+	function doApply()
+	{
+		var color = input.value;
+		
+		// Blocks any non-alphabetic chars in colors
+		if (/(^#?[a-zA-Z0-9]*$)/.test(color))
+		{
+			if (color != 'none' && color.charAt(0) != '#')
+			{
+				color = '#' + color;
+			}
+
+			ColorDialog.addRecentColor((color != 'none') ? color.substring(1) : color, 12);
+			applyFunction(color);
+			editorUi.hideDialog();
+		}
+		else
+		{
+			editorUi.handleError({message: mxResources.get('invalidInput')});	
+		}
+	};
+	
     this.init = function()
     {
         if (!mxClient.IS_TOUCH)
@@ -54,16 +78,16 @@ var ColorDialog = function(editorUi, color, apply, cancelFn)
         }
     };
 
-    var picker = new jscolor.color(input);
+	var picker = new mxJSColor.color(input);
     picker.pickerOnfocus = false;
     picker.showPicker();
 
     var div = document.createElement('div');
-    jscolor.picker.box.style.position = 'relative';
-    jscolor.picker.box.style.width = '230px';
-    jscolor.picker.box.style.height = '100px';
-    jscolor.picker.box.style.paddingBottom = '10px';
-    div.appendChild(jscolor.picker.box);
+	mxJSColor.picker.box.style.position = 'relative';
+	mxJSColor.picker.box.style.width = '230px';
+	mxJSColor.picker.box.style.height = '100px';
+	mxJSColor.picker.box.style.paddingBottom = '10px';
+	div.appendChild(mxJSColor.picker.box);
 
     var center = document.createElement('center');
     
@@ -135,6 +159,8 @@ var ColorDialog = function(editorUi, color, apply, cancelFn)
                                 picker.fromString(clr);
                             }
                         });
+						
+						mxEvent.addListener(td, 'dblclick', doApply);
                     }
                 })(presets[row * rowLength + i]);
             }
@@ -203,29 +229,7 @@ var ColorDialog = function(editorUi, color, apply, cancelFn)
         buttons.appendChild(cancelBtn);
     }
     
-    var applyFunction = (apply != null) ? apply : this.createApplyFunction();
-    
-    var applyBtn = mxUtils.button(mxResources.get('apply'), function()
-    {
-        var color = input.value;
-        
-        // Blocks any non-alphabetic chars in colors
-        if (/(^#?[a-zA-Z0-9]*$)/.test(color))
-        {
-            if (color != 'none' && color.charAt(0) != '#')
-            {
-                color = '#' + color;
-            }
-
-            ColorDialog.addRecentColor((color != 'none') ? color.substring(1) : color, 12);
-            applyFunction(color);
-            editorUi.hideDialog();
-        }
-        else
-        {
-            editorUi.handleError({message: mxResources.get('invalidInput')});   
-        }
-    });
+	var applyBtn = mxUtils.button(mxResources.get('apply'), doApply);
     applyBtn.className = 'geBtn gePrimaryBtn';
     buttons.appendChild(applyBtn);
     
@@ -372,261 +376,6 @@ var AboutDialog = function(editorUi)
     div.appendChild(closeBtn);
     
     this.container = div;
-};
-
-/**
- * Constructs a new filename dialog.
- */
-var FilenameDialog = function(editorUi, filename, buttonText, fn, label, validateFn, content, helpLink, closeOnBtn, cancelFn, hints, w)
-{
-    closeOnBtn = (closeOnBtn != null) ? closeOnBtn : true;
-    var row, td;
-    
-    var table = document.createElement('table');
-    var tbody = document.createElement('tbody');
-    table.style.marginTop = '8px';
-    
-    row = document.createElement('tr');
-    
-    td = document.createElement('td');
-    td.style.whiteSpace = 'nowrap';
-    td.style.fontSize = '10pt';
-    td.style.width = '120px';
-    mxUtils.write(td, (label || mxResources.get('filename')) + ':');
-    
-    row.appendChild(td);
-    
-    var nameInput = document.createElement('input');
-    nameInput.setAttribute('value', filename || '');
-    nameInput.style.marginLeft = '4px';
-    nameInput.style.width = (w != null) ? w + 'px' : '180px';
-    
-    var genericBtn = mxUtils.button(buttonText, function()
-    {
-        if (validateFn == null || validateFn(nameInput.value))
-        {
-            if (closeOnBtn)
-            {
-                editorUi.hideDialog();
-            }
-            
-            fn(nameInput.value);
-        }
-    });
-    genericBtn.className = 'geBtn gePrimaryBtn';
-    
-    this.init = function()
-    {
-        if (label == null && content != null)
-        {
-            return;
-        }
-        
-        nameInput.focus();
-        
-        if (mxClient.IS_GC || mxClient.IS_FF || document.documentMode >= 5 || mxClient.IS_QUIRKS)
-        {
-            nameInput.select();
-        }
-        else
-        {
-            document.execCommand('selectAll', false, null);
-        }
-        
-        // Installs drag and drop handler for links
-        if (Graph.fileSupport)
-        {
-            // Setup the dnd listeners
-            var dlg = table.parentNode;
-            
-            if (dlg != null)
-            {
-                var graph = editorUi.editor.graph;
-                var dropElt = null;
-                    
-                mxEvent.addListener(dlg, 'dragleave', function(evt)
-                {
-                    if (dropElt != null)
-                    {
-                        dropElt.style.backgroundColor = '';
-                        dropElt = null;
-                    }
-                    
-                    evt.stopPropagation();
-                    evt.preventDefault();
-                });
-                
-                mxEvent.addListener(dlg, 'dragover', mxUtils.bind(this, function(evt)
-                {
-                    // IE 10 does not implement pointer-events so it can't have a drop highlight
-                    if (dropElt == null && (!mxClient.IS_IE || document.documentMode > 10))
-                    {
-                        dropElt = nameInput;
-                        dropElt.style.backgroundColor = '#ebf2f9';
-                    }
-                    
-                    evt.stopPropagation();
-                    evt.preventDefault();
-                }));
-                        
-                mxEvent.addListener(dlg, 'drop', mxUtils.bind(this, function(evt)
-                {
-                    if (dropElt != null)
-                    {
-                        dropElt.style.backgroundColor = '';
-                        dropElt = null;
-                    }
-    
-                    if (mxUtils.indexOf(evt.dataTransfer.types, 'text/uri-list') >= 0)
-                    {
-                        nameInput.value = decodeURIComponent(evt.dataTransfer.getData('text/uri-list'));
-                        genericBtn.click();
-                    }
-    
-                    evt.stopPropagation();
-                    evt.preventDefault();
-                }));
-            }
-        }
-    };
-
-    td = document.createElement('td');
-    td.style.whiteSpace = 'nowrap';
-    td.appendChild(nameInput);
-    row.appendChild(td);
-    
-    if (label != null || content == null)
-    {
-        tbody.appendChild(row);
-        
-        if (hints != null)
-        {
-            td.appendChild(FilenameDialog.createTypeHint(editorUi, nameInput, hints));
-        }
-    }
-    
-    if (content != null)
-    {
-        row = document.createElement('tr');
-        td = document.createElement('td');
-        td.colSpan = 2;
-        td.appendChild(content);
-        row.appendChild(td);
-        tbody.appendChild(row);
-    }
-    
-    row = document.createElement('tr');
-    td = document.createElement('td');
-    td.colSpan = 2;
-    td.style.paddingTop = '20px';
-    td.style.whiteSpace = 'nowrap';
-    td.setAttribute('align', 'right');
-    
-    var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
-    {
-        editorUi.hideDialog();
-        
-        if (cancelFn != null)
-        {
-            cancelFn();
-        }
-    });
-    cancelBtn.className = 'geBtn';
-    
-    if (editorUi.editor.cancelFirst)
-    {
-        td.appendChild(cancelBtn);
-    }
-    
-    if (helpLink != null)
-    {
-        var helpBtn = mxUtils.button(mxResources.get('help'), function()
-        {
-            editorUi.editor.graph.openLink(helpLink);
-        });
-        
-        helpBtn.className = 'geBtn';    
-        td.appendChild(helpBtn);
-    }
-
-    mxEvent.addListener(nameInput, 'keypress', function(e)
-    {
-        if (e.keyCode == 13)
-        {
-            genericBtn.click();
-        }
-    });
-    
-    td.appendChild(genericBtn);
-    
-    if (!editorUi.editor.cancelFirst)
-    {
-        td.appendChild(cancelBtn);
-    }
-
-    row.appendChild(td);
-    tbody.appendChild(row);
-    table.appendChild(tbody);
-    
-    this.container = table;
-};
-
-/**
- *
- */
-FilenameDialog.filenameHelpLink = null;
-
-/**
- *
- */
-FilenameDialog.createTypeHint = function(ui, nameInput, hints)
-{
-    var hint = document.createElement('img');
-    hint.style.cssText = 'vertical-align:top;height:16px;width:16px;margin-left:4px;background-repeat:no-repeat;background-position:center bottom;cursor:pointer;';
-    mxUtils.setOpacity(hint, 70);
-    
-    var nameChanged = function()
-    {
-        hint.setAttribute('src', Editor.helpImage);
-        hint.setAttribute('title', mxResources.get('help'));
-        
-        for (var i = 0; i < hints.length; i++)
-        {
-            if (hints[i].ext.length > 0 &&
-                nameInput.value.substring(nameInput.value.length -
-                        hints[i].ext.length - 1) == '.' + hints[i].ext)
-            {
-                hint.setAttribute('src',  mxClient.imageBasePath + '/warning.png');
-                hint.setAttribute('title', mxResources.get(hints[i].title));
-                break;
-            }
-        }
-    };
-    
-    mxEvent.addListener(nameInput, 'keyup', nameChanged);
-    mxEvent.addListener(nameInput, 'change', nameChanged);
-    mxEvent.addListener(hint, 'click', function(evt)
-    {
-        var title = hint.getAttribute('title');
-        
-        if (hint.getAttribute('src') == Editor.helpImage)
-        {
-            ui.editor.graph.openLink(FilenameDialog.filenameHelpLink);
-        }
-        else if (title != '')
-        {
-            ui.showError(null, title, mxResources.get('help'), function()
-            {
-                ui.editor.graph.openLink(FilenameDialog.filenameHelpLink);
-            }, null, mxResources.get('ok'), null, null, null, 340, 90);
-        }
-        
-        mxEvent.consume(evt);
-    });
-    
-    nameChanged();
-    
-    return hint;
 };
 
 /**
@@ -877,7 +626,9 @@ var EditDiagramDialog = function(editorUi)
     var okBtn = mxUtils.button(mxResources.get('ok'), function()
     {
         // Removes all illegal control characters before parsing
-        var data = Graph.zapGremlins(mxUtils.trim(textarea.value));
+        // Stored XML carries image= styles without their directory, so restore
+        // them before the model is parsed or the cells lose their icons.
+        var data = window.phenixRestoreStencilPaths(Graph.zapGremlins(mxUtils.trim(textarea.value)));
         var error = null;
         
         if (select.value == 'new')
@@ -998,30 +749,6 @@ var ExportDialog = function(editorUi)
     var imageFormatSelect = document.createElement('select');
     imageFormatSelect.style.width = '180px';
 
-    var pngOption = document.createElement('option');
-    pngOption.setAttribute('value', 'png');
-    mxUtils.write(pngOption, mxResources.get('formatPng'));
-    imageFormatSelect.appendChild(pngOption);
-
-    var gifOption = document.createElement('option');
-    
-    if (ExportDialog.showGifOption)
-    {
-        gifOption.setAttribute('value', 'gif');
-        mxUtils.write(gifOption, mxResources.get('formatGif'));
-        imageFormatSelect.appendChild(gifOption);
-    }
-    
-    var jpgOption = document.createElement('option');
-    jpgOption.setAttribute('value', 'jpg');
-    mxUtils.write(jpgOption, mxResources.get('formatJpg'));
-    imageFormatSelect.appendChild(jpgOption);
-
-    var pdfOption = document.createElement('option');
-    pdfOption.setAttribute('value', 'pdf');
-    mxUtils.write(pdfOption, mxResources.get('formatPdf'));
-    imageFormatSelect.appendChild(pdfOption);
-    
     var svgOption = document.createElement('option');
     svgOption.setAttribute('value', 'svg');
     mxUtils.write(svgOption, mxResources.get('formatSvg'));
@@ -1257,7 +984,7 @@ var ExportDialog = function(editorUi)
             borderInput.removeAttribute('disabled');
         }
         
-        if (imageFormatSelect.value === 'png' || imageFormatSelect.value === 'svg')
+		if (imageFormatSelect.value === 'png' || imageFormatSelect.value === 'svg' || imageFormatSelect.value === 'pdf')
         {
             transparentCheckbox.removeAttribute('disabled');
         }
@@ -1382,7 +1109,7 @@ var ExportDialog = function(editorUi)
             var bg = graph.background;
             var dpi = Math.max(1, parseInt(customDpi.value));
             
-            if ((format == 'svg' || format == 'png') && transparentCheckbox.checked)
+			if ((format == 'svg' || format == 'png' || format == 'pdf') && transparentCheckbox.checked)
             {
                 bg = null;
             }
@@ -1424,11 +1151,6 @@ var ExportDialog = function(editorUi)
  * Remembers last value for border.
  */
 ExportDialog.lastBorderValue = 0;
-
-/**
- * Global switches for the export dialog.
- */
-ExportDialog.showGifOption = true;
 
 /**
  * Global switches for the export dialog.
@@ -1716,6 +1438,17 @@ function checkValue(graph, cell, ui) {
             if (type === 'kvm') {
                 if (typeof schemaVars.hardware === 'undefined') schemaVars.hardware = {};
                 schemaVars.hardware.os_type = 'linux';
+
+                // The kvm schema serves every node type, so its drive default
+                // covers virtual machines. Routers get their own variable.
+                if (nodeType === 'Router') {
+                    if (!Array.isArray(schemaVars.hardware.drives) ||
+                        schemaVars.hardware.drives.length === 0) {
+                        schemaVars.hardware.drives = [{}];
+                    }
+
+                    schemaVars.hardware.drives[0].image = '$DEFAULT_ROUTER_IMAGE';
+                }
             }
 
         } else {
@@ -2147,7 +1880,10 @@ var EditDataDialog = function(ui, cell)
 
         var editorContainer = document.createElement('div');
         editorContainer.setAttribute('id', 'jsoneditor');
-        editorContainer.style.height = '100%';
+        // Leave room for the absolutely positioned button row below, or the
+        // editor renders underneath it and looks clipped.
+        editorContainer.style.height = 'calc(100% - 96px)';
+        editorContainer.style.overflow = 'auto';
         editorContainer.style.position = 'relative';
         editorContainer.style['max-width'] ="600px";
 
@@ -2297,7 +2033,7 @@ var EditDataDialog = function(ui, cell)
         this.container = div;
 
         // show dialog only after editor is created
-        ui.showDialog(this.container, 480, 420, true, false, null, false); 
+        ui.showDialog(this.container, 480, 560, true, false, null, false); 
 
         // hack to resolve jsoneditor bug where disabled field is enabled when using properties dropdown
         // adds listeners to dynamically-created elements in jsoneditor window
@@ -2339,6 +2075,39 @@ var EditDataDialog = function(ui, cell)
         loadConfig();
     };
 
+};
+
+/**
+ * Extracts a displayable message from a failed phenix API request. The API
+ * normally answers with a JSON body carrying a `message`, but authorization
+ * failures, proxies, and empty responses do not, and parsing those blindly
+ * throws inside the error handler and leaves the user with no dialog at all.
+ */
+function builderErrorMessage(xhr)
+{
+    try
+    {
+        var err = JSON.parse(xhr.responseText);
+
+        if (err && err.message)
+        {
+            return err.message;
+        }
+    }
+    catch (e)
+    {
+        // fall through to the generic message below
+    }
+
+    // The result is interpolated into newDiv.html(), so a non-JSON body must
+    // not be able to carry markup into the dialog.
+    if (xhr.responseText)
+    {
+        return mxUtils.htmlEntities(xhr.responseText);
+    }
+
+    return xhr.status ?
+        mxUtils.htmlEntities(xhr.status + ' ' + xhr.statusText) : 'unknown error';
 };
 
 /**
@@ -2542,6 +2311,7 @@ var viewJSONDialog = function(ui)
         textarea.style.resize = 'none';
         textarea.style.width = '100%';
         textarea.style.height = '420px';
+        textarea.style.maxHeight = '50vh';
         textarea.style.lineHeight = 'initial';
         textarea.style.marginBottom = '16px';
         // textarea.setAttribute('onkeyup', 'autoHeight(this)');
@@ -2670,11 +2440,17 @@ var viewJSONDialog = function(ui)
                             ui.hideDialog.apply(ui, arguments);
                         },
                         error: function (e) {
-                            const err = JSON.parse( e.responseText );
+                            var err = null;
+
+                            try {
+                                err = JSON.parse( e.responseText );
+                            } catch (parseErr) {
+                                err = null;
+                            }
 
                             console.log(err);
 
-                            if ( err.metadata && err.metadata.type ) {
+                            if ( err && err.metadata && err.metadata.type ) {
                                 var msg = [
                                     'The', err.metadata.type, 'was not added to the phēnix store due to the following error:',
                                     '<blockquote>', err.message, '</blockquote>'
@@ -2688,7 +2464,7 @@ var viewJSONDialog = function(ui)
                             } else {
                                 var msg = [
                                     'There was an error adding the topology or scenario to the phēnix store:',
-                                    '<blockquote>', err.message, '</blockquote>'
+                                    '<blockquote>', builderErrorMessage(e), '</blockquote>'
                                 ]
 
                                 newDiv.html(msg.join(' '));
@@ -2698,33 +2474,42 @@ var viewJSONDialog = function(ui)
                             ui.hideDialog.apply(ui, arguments);
                         }
                     });
-                } else { // creating topology only
-                    json.metadata.annotations = { 'builder-xml': xml };
+                } else { // topology only, no experiment
+                    // Both paths go through the Builder endpoints rather than
+                    // /configs: the server owns the config's apiVersion, kind,
+                    // and builder-xml annotation, and an update there leaves the
+                    // rest of the stored metadata -- other annotations, labels,
+                    // creation time -- untouched.
+                    var updating = json.metadata.name == window.currentTopology;
+                    var url      = `${window.PHENIX_API_PATH}/builder/topologies`;
+                    var method   = 'post';
+                    var payload  = {
+                        topology: { nodes: json.spec.nodes },
+                        name: json.metadata.name,
+                        builderXML: xml
+                    };
 
-                    var url    = `${window.PHENIX_API_PATH}/configs`;
-                    var method = 'post';
-
-                    if (json.metadata.name == window.currentTopology) { 
-                        url    = `${url}/topology/${json.metadata.name}`;
-                        method = 'put'; 
+                    if (updating) {
+                        url = `${url}/${encodeURIComponent(json.metadata.name)}`;
+                        method = 'put';
                     }
+
+                    var verb = updating ? 'saved to' : 'added to';
 
                     $.ajax({
                         url: url,
                         type: method,
-                        data: JSON.stringify(json),
+                        data: JSON.stringify(payload),
                         headers,
                         success: function () {
-                            newDiv.html('The ' + json.metadata.name + ' topology was added to phēnix store');
+                            newDiv.html('The ' + json.metadata.name + ' topology was ' + verb + ' phēnix store');
                             newDiv.dialog({title: 'Success'}).parent().addClass('ui-state-highlight');
                             ui.hideDialog.apply(ui, arguments);
                         },
                         error: function (e) {
-                            const err = JSON.parse( e.responseText );
-
                             var msg = [
-                                'There was an error adding the topology to the phēnix store:',
-                                '<blockquote>', err.message, '</blockquote>'
+                                'There was an error saving the topology to the phēnix store:',
+                                '<blockquote>', builderErrorMessage(e), '</blockquote>'
                             ]
 
                             newDiv.html(msg.join(' '));
@@ -2786,7 +2571,7 @@ var viewJSONDialog = function(ui)
         this.container = div;
 
         // show dialog only after editor is created
-        ui.showDialog(this.container, 480, 460, true, false, null, false); 
+        ui.showDialog(this.container, 480, 620, true, false, null, false); 
         progressDestroy();
 
     };
@@ -3145,7 +2930,6 @@ var LayersWindow = function(editorUi, x, y, w, h)
 
     var layerCount = null;
     var selectionLayer = null;
-    
     var ldiv = document.createElement('div');
     
     ldiv.className = 'geToolbarContainer';
@@ -3221,16 +3005,16 @@ var LayersWindow = function(editorUi, x, y, w, h)
     ldiv.appendChild(removeLink);
 
     var insertLink = link.cloneNode();
-    insertLink.setAttribute('title', mxUtils.trim(mxResources.get('moveSelectionTo', [''])));
+	insertLink.setAttribute('title', mxUtils.trim(mxResources.get('moveSelectionTo', ['...'])));
     insertLink.innerHTML = '<div class="geSprite geSprite-insert" style="display:inline-block;"></div>';
     
     mxEvent.addListener(insertLink, 'click', function(evt)
     {
         if (graph.isEnabled() && !graph.isSelectionEmpty())
         {
-            editorUi.editor.graph.popupMenuHandler.hideMenu();
+			var offset = mxUtils.getOffset(insertLink);
             
-            var menu = new mxPopupMenu(mxUtils.bind(this, function(menu, parent)
+			editorUi.showPopupMenu(mxUtils.bind(this, function(menu, parent)
             {
                 for (var i = layerCount - 1; i >= 0; i--)
                 {
@@ -3249,24 +3033,7 @@ var LayersWindow = function(editorUi, x, y, w, h)
                         
                     }))(graph.model.getChildAt(graph.model.root, i));
                 }
-            }));
-            menu.div.className += ' geMenubarMenu';
-            menu.smartSeparators = true;
-            menu.showDisabled = true;
-            menu.autoExpand = true;
-            
-            // Disables autoexpand and destroys menu when hidden
-            menu.hideMenu = mxUtils.bind(this, function()
-            {
-                mxPopupMenu.prototype.hideMenu.apply(menu, arguments);
-                menu.destroy();
-            });
-    
-            var offset = mxUtils.getOffset(insertLink);
-            menu.popup(offset.x, offset.y + insertLink.offsetHeight, null, evt);
-            
-            // Allows hiding by clicking on document
-            editorUi.setCurrentMenu(menu);
+			}), offset.x, offset.y + insertLink.offsetHeight, evt);
         }
     });
 
@@ -3376,7 +3143,6 @@ var LayersWindow = function(editorUi, x, y, w, h)
     }
     
     ldiv.appendChild(addLink);
-
     div.appendChild(ldiv);  
     
     function refresh()
@@ -3447,8 +3213,7 @@ var LayersWindow = function(editorUi, x, y, w, h)
             btn.style.padding = '4px';
             btn.setAttribute('title', mxResources.get('lockUnlock'));
 
-            var state = graph.view.getState(child);
-                var style = (state != null) ? state.style : graph.getCellStyle(child);
+			var style = graph.getCurrentCellStyle(child);
 
             if (mxUtils.getValue(style, 'locked', '0') == '1')
             {
@@ -3619,7 +3384,6 @@ var LayersWindow = function(editorUi, x, y, w, h)
                     {
                         graph.setDefaultParent(defaultParent);
                         graph.view.setCurrentRoot(null);
-                        refresh();
                     }
                 });
             }
@@ -3649,10 +3413,8 @@ var LayersWindow = function(editorUi, x, y, w, h)
     };
 
     refresh();
-    graph.model.addListener(mxEvent.CHANGE, function()
-    {
-        refresh();
-    });
+	graph.model.addListener(mxEvent.CHANGE, refresh);
+	graph.addListener('defaultParentChanged', refresh);
 
     graph.selectionModel.addListener(mxEvent.CHANGE, function()
     {
@@ -3673,6 +3435,11 @@ var LayersWindow = function(editorUi, x, y, w, h)
     this.window.setResizable(true);
     this.window.setClosable(true);
     this.window.setVisible(true);
+
+	this.init = function()
+	{
+		listDiv.scrollTop = listDiv.scrollHeight - listDiv.clientHeight;	
+	};
 
     this.window.addListener(mxEvent.SHOW, mxUtils.bind(this, function()
     {
@@ -3742,6 +3509,7 @@ var EditMiniConfigDialog = function(editorUi,vertices,edges)
         textarea.style.resize = 'none';
         textarea.style.width = '100%';
         textarea.style.height = '420px';
+        textarea.style.maxHeight = '50vh';
         textarea.style.lineHeight = 'initial';
         textarea.style.marginBottom = '16px';
 
@@ -4145,6 +3913,9 @@ var MiniResponseDialog = function(editorUi)
 {
     var div = document.createElement('div');
     div.style.overflow = 'auto';
+    // Leave room for the absolutely positioned button row below, or the last
+    // rows of the response scroll underneath it.
+    div.style.paddingBottom = '96px';
 
     var header = document.createElement('h2');
     header.textContent = "Minimega Response";
@@ -4273,6 +4044,8 @@ MiniResponseDialog.showNewWindowOption = true;
 window.experiment_vars = [
     {name: "DEFAULT_MEMORY", value:"2048"},
     {name: "DEFAULT_VCPU", value:"1"},
+    {name: "DEFAULT_VM_IMAGE", value:"ubuntu.qc2"},
+    {name: "DEFAULT_ROUTER_IMAGE", value:"vyos.qc2"},
 ];
 
 var VariablesDialog = function(ui)
@@ -4310,7 +4083,10 @@ var VariablesDialog = function(ui)
 
         var editorContainer = document.createElement('div');
         editorContainer.setAttribute('id', 'jsoneditor');
-        editorContainer.style.height = '100%';
+        // Leave room for the absolutely positioned button row below, or the
+        // editor renders underneath it and looks clipped.
+        editorContainer.style.height = 'calc(100% - 96px)';
+        editorContainer.style.overflow = 'auto';
         editorContainer.style.position = 'relative';
         editorContainer.style['max-width'] ="600px";
 
@@ -4377,7 +4153,7 @@ var VariablesDialog = function(ui)
         this.container = div;
 
         // show dialog only after editor is created
-        ui.showDialog(this.container, 480, 420, true, false, null, false); 
+        ui.showDialog(this.container, 480, 560, true, false, null, false); 
 
     };
 
@@ -4409,7 +4185,10 @@ var ImportJSONDialog = function(graph, ui) {
 
     var editorContainer = document.createElement('div');
     editorContainer.setAttribute('id', 'jsoneditor');
-    editorContainer.style.height = '100%';
+    // Leave room for the absolutely positioned button row below, or the
+    // editor renders underneath it and looks clipped.
+    editorContainer.style.height = 'calc(100% - 96px)';
+    editorContainer.style.overflow = 'auto';
     editorContainer.style.position = 'relative';
     // editorContainer.style['max-width'] ="600px";
     // editorContainer.style.display = 'none';
@@ -4427,6 +4206,7 @@ var ImportJSONDialog = function(graph, ui) {
     textarea.style.resize = 'none';
     textarea.style.width = '100%';
     textarea.style.height = '420px';
+    textarea.style.maxHeight = '50vh';
     textarea.style.lineHeight = 'initial';
     textarea.style.marginBottom = '16px';
 
@@ -4577,16 +4357,24 @@ var ImportJSONDialog = function(graph, ui) {
                         device = 'desktop';
                     }
                     node.device = device;
-                    // default to type kvm
-                    var type = node.type || 'kvm';
-                    type = type.toLowerCase();
-                    if (!types.includes(type)) {
-                        type = 'kvm';
+                    // VM implementation controls the icon variant; node.type is
+                    // the phēnix role and must not be overwritten with it. The
+                    // schema requires type and constrains it to these roles, so
+                    // fall back to the schema default instead of leaving it out.
+                    var roles = ['VirtualMachine', 'Firewall', 'Router', 'Switch'];
+                    var role = roles.find(function (r) {
+                        return typeof node.type === 'string' &&
+                            r.toLowerCase() === node.type.toLowerCase();
+                    });
+                    node.type = role || 'VirtualMachine';
+                    var vmType = node.general && node.general.vm_type || 'kvm';
+                    vmType = vmType.toLowerCase();
+                    if (!types.includes(vmType)) {
+                        vmType = 'kvm';
                     }
-                    node.type = type;
                     // build node styling string based on device and type
-                    var imageDir = (type == 'kvm') ? "/virtual_machines" : "/containers";
-                    var imageType = (type == 'kvm') ? "vm" : "container";
+                    var imageDir = (vmType == 'kvm') ? "/virtual_machines" : "/containers";
+                    var imageType = (vmType == 'kvm') ? "vm" : "container";
                     var styleString = vertexStyleString + stencilsDir + imageDir + "/" + device + "_blue_" + imageType + ".png";
                     obj.style = styleString;
                     obj.geometry = {width: 80, height: 80};
@@ -4620,7 +4408,7 @@ var ImportJSONDialog = function(graph, ui) {
                         for (var i = 0; i < ifaces.length; i++) {
                             var name = ifaces[i].vlan;
                             if (!vlans[name]) {
-                                var vlan = {"id": 'auto', "name": name, "type": type};
+                                var vlan = {"id": 'auto', "name": name, "type": vmType};
                                 vlan.targets = [];
                                 vlans[name] = vlan;
                             }

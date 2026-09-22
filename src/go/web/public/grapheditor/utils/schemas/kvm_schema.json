@@ -211,6 +211,7 @@
                 "type": "string",
                 "title": "Image",
                 "minLength": 1,
+                "default": "$DEFAULT_VM_IMAGE",
                 "examples": [
                   "ubuntu.qc2"
                 ],

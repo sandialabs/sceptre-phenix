@@ -124,6 +124,18 @@ Editor.pageCounter = 0;
 Editor.useLocalStorage = typeof(Storage) != 'undefined' && mxClient.IS_IOS;
 
 /**
+ * 
+ */
+Editor.moveImage = (mxClient.IS_SVG) ? 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjI4cHgiIGhlaWdodD0iMjhweCI+PGc+PC9nPjxnPjxnPjxnPjxwYXRoIHRyYW5zZm9ybT0idHJhbnNsYXRlKDIuNCwyLjQpc2NhbGUoMC44KXJvdGF0ZSg0NSwxMiwxMikiIHN0cm9rZT0iIzI5YjZmMiIgZmlsbD0iIzI5YjZmMiIgZD0iTTE1LDNsMi4zLDIuM2wtMi44OSwyLjg3bDEuNDIsMS40MkwxOC43LDYuN0wyMSw5VjNIMTV6IE0zLDlsMi4zLTIuM2wyLjg3LDIuODlsMS40Mi0xLjQyTDYuNyw1LjNMOSwzSDNWOXogTTksMjEgbC0yLjMtMi4zbDIuODktMi44N2wtMS40Mi0xLjQyTDUuMywxNy4zTDMsMTV2Nkg5eiBNMjEsMTVsLTIuMywyLjNsLTIuODctMi44OWwtMS40MiwxLjQybDIuODksMi44N0wxNSwyMWg2VjE1eiIvPjwvZz48L2c+PC9nPjwvc3ZnPgo=' :
+	IMAGE_PATH + '/move.png';
+
+/**
+ * 
+ */
+Editor.rowMoveImage = (mxClient.IS_SVG) ? 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAcAAAAEBAMAAACw6DhOAAAAGFBMVEUzMzP///9tbW1QUFCKiopBQUF8fHxfX1/IXlmXAAAAFElEQVQImWNgNVdzYBAUFBRggLMAEzYBy29kEPgAAAAASUVORK5CYII=' :
+	IMAGE_PATH + '/thumb_horz.png';
+
+/**
  * Images below are for lightbox and embedding toolbars.
  */
 Editor.helpImage = (mxClient.IS_SVG) ? 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij48cGF0aCBmaWxsPSJub25lIiBkPSJNMCAwaDI0djI0SDB6Ii8+PHBhdGggZD0iTTExIDE4aDJ2LTJoLTJ2MnptMS0xNkM2LjQ4IDIgMiA2LjQ4IDIgMTJzNC40OCAxMCAxMCAxMCAxMC00LjQ4IDEwLTEwUzE3LjUyIDIgMTIgMnptMCAxOGMtNC40MSAwLTgtMy41OS04LThzMy41OS04IDgtOCA4IDMuNTkgOCA4LTMuNTkgOC04IDh6bTAtMTRjLTIuMjEgMC00IDEuNzktNCA0aDJjMC0xLjEuOS0yIDItMnMyIC45IDIgMmMwIDItMyAxLjc1LTMgNWgyYzAtMi4yNSAzLTIuNSAzLTUgMC0yLjIxLTEuNzktNC00LTR6Ii8+PC9zdmc+' :
@@ -234,6 +246,18 @@ Editor.backLargeImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgC
  * Specifies the image to be used for the back button.
  */
 Editor.fullscreenLargeImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAllBMVEUAAAD////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////AJcWoAAAAMXRSTlMA+wIFxPWPCIb446tnUxmsoIykgxTe29jQnpKBe2MNsZhVTR/KyLuWbFhEPjUq7L9z+bQj+gAAAWxJREFUOMttk4l2gkAMRTODCO4FtQgIbnWpS9v8/881iZFh8R51NO8GJ+gAjMN8zuTRFSw04cIOHQcqFHH6oaQFGxf0jeBjEgB8Y52TpW9Ag4zB5QICWOtHrgwGuFZBcw+gPP0MFS7+iiD5inOmDIQS9sZgTwUzwEzyxhxHVEEU7NdDUXsqUPtqjIgR2IZSCT4upzSeIeOdcMHnfDsx3giPoezfU6MrQGB5//SckLEG2xYscK4GfnUFqaix39zrwooaOD/cXoYuvHKQIc7pzd3HVPusp6t2FAW/RmjMonbl8vwHDeZo/GkleJC7e+p5XA/rAq1X/V10wKag04rBpa2/d0LL4OYYceOEtsG5jyMntI1wS+N1BGcQBl/CoLoPOl9ABrW/BP53e1bwSJHHlkIVchJwmHwyyfJ4kIvEnKtwkxNSEct83KSChT7WiWgDZ3ccZ0BM4tloJow2YUAtifNT3njnyD+y/pMsnP4DN3Y4yl1Gyk0AAAAASUVORK5CYII=';
+
+/**
+ * All fill styles supported by rough.js.
+ */
+Editor.roughFillStyles = [{val: 'auto', dispName: 'Auto'}, {val: 'hachure', dispName: 'Hachure'}, {val: 'solid', dispName: 'Solid'},
+	{val: 'zigzag', dispName: 'ZigZag'}, {val: 'cross-hatch', dispName: 'Cross Hatch'}, {val: 'dots', dispName: 'Dots'},
+	{val: 'dashed', dispName: 'Dashed'}, {val: 'zigzag-line', dispName: 'ZigZag Line'}];
+
+/**
+ * Graph themes for the format panel.
+ */
+Editor.themes = null;
 
 /**
  * Specifies the image URL to be used for the transparent background.
@@ -686,7 +710,14 @@ Editor.prototype.createUndoManager = function()
     // Keeps the selection in sync with the history
     var undoHandler = function(sender, evt)
     {
-        var cand = graph.getSelectionCellsForChanges(evt.getProperty('edit').changes);
+		var cand = graph.getSelectionCellsForChanges(evt.getProperty('edit').changes, function(change)
+		{
+			// Only selects changes to the cell hierarchy
+			return !(change instanceof mxChildChange);
+		});
+		
+		if (cand.length > 0)
+		{
         var model = graph.getModel();
         var cells = [];
         
@@ -699,6 +730,7 @@ Editor.prototype.createUndoManager = function()
         }
         
         graph.setSelectionCells(cells);
+		}
     };
     
     undoMgr.addListener(mxEvent.UNDO, undoHandler);
@@ -789,7 +821,10 @@ OpenFile.prototype.cancel = function(cancel)
 /**
  * Basic dialogs that are available in the viewer (print dialog).
  */
-function Dialog(editorUi, elt, w, h, modal, closable, onClose, noScroll, transparent, onResize, ignoreBgClick)
+// phenix: added hideCloseImage. Upstream ties the corner close image and
+// click-outside-to-close together under `closable`, so a dialog that supplies
+// its own Close button had to give up backdrop dismissal to drop the image.
+function Dialog(editorUi, elt, w, h, modal, closable, onClose, noScroll, transparent, onResize, ignoreBgClick, hideCloseImage)
 {
     var dx = 0;
     
@@ -883,23 +918,28 @@ function Dialog(editorUi, elt, w, h, modal, closable, onClose, noScroll, transpa
     
     if (closable)
     {
-        var img = document.createElement('img');
-
-        img.setAttribute('src', Dialog.prototype.closeImage);
-        img.setAttribute('title', mxResources.get('close'));
-        img.className = 'geDialogClose';
-        img.style.top = (top + 14) + 'px';
-        img.style.left = (left + w + 38 - dx) + 'px';
-        img.style.zIndex = this.zIndex;
-        
-        mxEvent.addListener(img, 'click', mxUtils.bind(this, function()
+        // phenix: hideCloseImage keeps the dialog dismissible without drawing
+        // the corner image. Both later uses of this.dialogImg are null-guarded.
+        if (!hideCloseImage)
         {
-            editorUi.hideDialog(true);
-        }));
-        
-        document.body.appendChild(img);
-        this.dialogImg = img;
-        
+            var img = document.createElement('img');
+
+            img.setAttribute('src', Dialog.prototype.closeImage);
+            img.setAttribute('title', mxResources.get('close'));
+            img.className = 'geDialogClose';
+            img.style.top = (top + 14) + 'px';
+            img.style.left = (left + w + 38 - dx) + 'px';
+            img.style.zIndex = this.zIndex;
+
+            mxEvent.addListener(img, 'click', mxUtils.bind(this, function()
+            {
+                editorUi.hideDialog(true);
+            }));
+
+            document.body.appendChild(img);
+            this.dialogImg = img;
+        }
+
         if (!ignoreBgClick)
         {
             var mouseDownSeen = false;
@@ -1579,23 +1619,26 @@ var PageSetupDialog = function(editorUi)
         {
             changeImageLink.removeAttribute('title');
             changeImageLink.style.fontSize = '';
-            changeImageLink.innerHTML = mxResources.get('change') + '...';
+			changeImageLink.innerHTML = mxUtils.htmlEntities(mxResources.get('change')) + '...';
         }
         else
         {
             changeImageLink.setAttribute('title', newBackgroundImage.src);
             changeImageLink.style.fontSize = '11px';
-            changeImageLink.innerHTML = newBackgroundImage.src.substring(0, 42) + '...';
+			changeImageLink.innerHTML = mxUtils.htmlEntities(newBackgroundImage.src.substring(0, 42)) + '...';
         }
     };
     
     mxEvent.addListener(changeImageLink, 'click', function(evt)
     {
-        editorUi.showBackgroundImageDialog(function(image)
+		editorUi.showBackgroundImageDialog(function(image, failed)
+		{
+			if (!failed)
         {
             newBackgroundImage = image;
             updateBackgroundImage();
-        });
+			}
+		}, newBackgroundImage);
         
         mxEvent.consume(evt);
     });
@@ -1627,10 +1670,11 @@ var PageSetupDialog = function(editorUi)
     var applyBtn = mxUtils.button(mxResources.get('apply'), function()
     {
         editorUi.hideDialog();
+		var gridSize = parseInt(gridSizeInput.value);
         
-        if (graph.gridSize !== gridSizeInput.value)
+		if (!isNaN(gridSize) && graph.gridSize !== gridSize)
         {
-            graph.setGridSize(parseInt(gridSizeInput.value));
+			graph.setGridSize(gridSize);
         }
 
         var change = new ChangePageSetup(editorUi, newBackgroundColor,
@@ -1958,10 +2002,347 @@ PageSetupDialog.getFormats = function()
             {key: 'a7', title: 'A7 (74 mm x 105 mm)', format: new mxRectangle(0, 0, 291, 413)},
             {key: 'b4', title: 'B4 (250 mm x 353 mm)', format: new mxRectangle(0, 0, 980, 1390)},
             {key: 'b5', title: 'B5 (176 mm x 250 mm)', format: new mxRectangle(0, 0, 690, 980)},
-            {key: '16-9', title: '16:9 (1600 x 900)', format: new mxRectangle(0, 0, 1600, 900)},
-            {key: '16-10', title: '16:10 (1920 x 1200)', format: new mxRectangle(0, 0, 1920, 1200)},
-            {key: '4-3', title: '4:3 (1600 x 1200)', format: new mxRectangle(0, 0, 1600, 1200)},
+	        {key: '16-9', title: '16:9 (1600 x 900)', format: new mxRectangle(0, 0, 900, 1600)},
+	        {key: '16-10', title: '16:10 (1920 x 1200)', format: new mxRectangle(0, 0, 1200, 1920)},
+	        {key: '4-3', title: '4:3 (1600 x 1200)', format: new mxRectangle(0, 0, 1200, 1600)},
             {key: 'custom', title: mxResources.get('custom'), format: null}];
+};
+
+/**
+ * Constructs a new filename dialog.
+ */
+var FilenameDialog = function(editorUi, filename, buttonText, fn, label, validateFn, content, helpLink, closeOnBtn, cancelFn, hints, w)
+{
+	closeOnBtn = (closeOnBtn != null) ? closeOnBtn : true;
+	var row, td;
+	
+	var table = document.createElement('table');
+	var tbody = document.createElement('tbody');
+	table.style.marginTop = '8px';
+	
+	row = document.createElement('tr');
+	
+	td = document.createElement('td');
+	td.style.whiteSpace = 'nowrap';
+	td.style.fontSize = '10pt';
+	td.style.width = (hints) ? '80px' : '120px';
+	mxUtils.write(td, (label || mxResources.get('filename')) + ':');
+	
+	row.appendChild(td);
+	
+	var nameInput = document.createElement('input');
+	nameInput.setAttribute('value', filename || '');
+	nameInput.style.marginLeft = '4px';
+	nameInput.style.width = (w != null) ? w + 'px' : '180px';
+	
+	var genericBtn = mxUtils.button(buttonText, function()
+	{
+		if (validateFn == null || validateFn(nameInput.value))
+		{
+			if (closeOnBtn)
+			{
+				editorUi.hideDialog();
+			}
+			
+			fn(nameInput.value);
+		}
+	});
+	genericBtn.className = 'geBtn gePrimaryBtn';
+	
+	this.init = function()
+	{
+		if (label == null && content != null)
+		{
+			return;
+		}
+		
+		nameInput.focus();
+		
+		if (mxClient.IS_GC || mxClient.IS_FF || document.documentMode >= 5 || mxClient.IS_QUIRKS)
+		{
+			nameInput.select();
+		}
+		else
+		{
+			document.execCommand('selectAll', false, null);
+		}
+		
+		// Installs drag and drop handler for links
+		if (Graph.fileSupport)
+		{
+			// Setup the dnd listeners
+			var dlg = table.parentNode;
+			
+			if (dlg != null)
+			{
+				var graph = editorUi.editor.graph;
+				var dropElt = null;
+					
+				mxEvent.addListener(dlg, 'dragleave', function(evt)
+				{
+					if (dropElt != null)
+				    {
+						dropElt.style.backgroundColor = '';
+				    	dropElt = null;
+				    }
+				    
+					evt.stopPropagation();
+					evt.preventDefault();
+				});
+				
+				mxEvent.addListener(dlg, 'dragover', mxUtils.bind(this, function(evt)
+				{
+					// IE 10 does not implement pointer-events so it can't have a drop highlight
+					if (dropElt == null && (!mxClient.IS_IE || document.documentMode > 10))
+					{
+						dropElt = nameInput;
+						dropElt.style.backgroundColor = '#ebf2f9';
+					}
+					
+					evt.stopPropagation();
+					evt.preventDefault();
+				}));
+						
+				mxEvent.addListener(dlg, 'drop', mxUtils.bind(this, function(evt)
+				{
+				    if (dropElt != null)
+				    {
+						dropElt.style.backgroundColor = '';
+				    	dropElt = null;
+				    }
+	
+				    if (mxUtils.indexOf(evt.dataTransfer.types, 'text/uri-list') >= 0)
+				    {
+				    	nameInput.value = decodeURIComponent(evt.dataTransfer.getData('text/uri-list'));
+				    	genericBtn.click();
+				    }
+	
+				    evt.stopPropagation();
+				    evt.preventDefault();
+				}));
+			}
+		}
+	};
+
+	td = document.createElement('td');
+	td.style.whiteSpace = 'nowrap';
+	td.appendChild(nameInput);
+	row.appendChild(td);
+	
+	if (label != null || content == null)
+	{
+		tbody.appendChild(row);
+		
+		if (hints != null)
+		{
+			if (editorUi.editor.diagramFileTypes != null)
+			{
+				var typeSelect = FilenameDialog.createFileTypes(editorUi, nameInput, editorUi.editor.diagramFileTypes);
+				typeSelect.style.marginLeft = '6px';
+				typeSelect.style.width = '74px';
+				
+				td.appendChild(typeSelect);
+				nameInput.style.width = (w != null) ? (w - 40) + 'px' : '140px';
+			}
+
+			td.appendChild(FilenameDialog.createTypeHint(editorUi, nameInput, hints));
+		}
+	}
+	
+	if (content != null)
+	{
+		row = document.createElement('tr');
+		td = document.createElement('td');
+		td.colSpan = 2;
+		td.appendChild(content);
+		row.appendChild(td);
+		tbody.appendChild(row);
+	}
+	
+	row = document.createElement('tr');
+	td = document.createElement('td');
+	td.colSpan = 2;
+	td.style.paddingTop = '20px';
+	td.style.whiteSpace = 'nowrap';
+	td.setAttribute('align', 'right');
+	
+	var cancelBtn = mxUtils.button(mxResources.get('cancel'), function()
+	{
+		editorUi.hideDialog();
+		
+		if (cancelFn != null)
+		{
+			cancelFn();
+		}
+	});
+	cancelBtn.className = 'geBtn';
+	
+	if (editorUi.editor.cancelFirst)
+	{
+		td.appendChild(cancelBtn);
+	}
+	
+	if (helpLink != null)
+	{
+		var helpBtn = mxUtils.button(mxResources.get('help'), function()
+		{
+			editorUi.editor.graph.openLink(helpLink);
+		});
+		
+		helpBtn.className = 'geBtn';	
+		td.appendChild(helpBtn);
+	}
+
+	mxEvent.addListener(nameInput, 'keypress', function(e)
+	{
+		if (e.keyCode == 13)
+		{
+			genericBtn.click();
+		}
+	});
+	
+	td.appendChild(genericBtn);
+	
+	if (!editorUi.editor.cancelFirst)
+	{
+		td.appendChild(cancelBtn);
+	}
+
+	row.appendChild(td);
+	tbody.appendChild(row);
+	table.appendChild(tbody);
+	
+	this.container = table;
+};
+
+/**
+ * 
+ */
+FilenameDialog.filenameHelpLink = null;
+
+/**
+ * 
+ */
+FilenameDialog.createTypeHint = function(ui, nameInput, hints)
+{
+	var hint = document.createElement('img');
+	hint.style.cssText = 'vertical-align:top;height:16px;width:16px;margin-left:4px;background-repeat:no-repeat;background-position:center bottom;cursor:pointer;';
+	mxUtils.setOpacity(hint, 70);
+	
+	var nameChanged = function()
+	{
+		hint.setAttribute('src', Editor.helpImage);
+		hint.setAttribute('title', mxResources.get('help'));
+		
+		for (var i = 0; i < hints.length; i++)
+		{
+			if (hints[i].ext.length > 0 && nameInput.value.toLowerCase().substring(
+				nameInput.value.length - hints[i].ext.length - 1) == '.' + hints[i].ext)
+			{
+				hint.setAttribute('src',  mxClient.imageBasePath + '/warning.png');
+				hint.setAttribute('title', mxResources.get(hints[i].title));
+				break;
+			}
+		}
+	};
+	
+	mxEvent.addListener(nameInput, 'keyup', nameChanged);
+	mxEvent.addListener(nameInput, 'change', nameChanged);
+	mxEvent.addListener(hint, 'click', function(evt)
+	{
+		var title = hint.getAttribute('title');
+		
+		if (hint.getAttribute('src') == Editor.helpImage)
+		{
+			ui.editor.graph.openLink(FilenameDialog.filenameHelpLink);
+		}
+		else if (title != '')
+		{
+			ui.showError(null, title, mxResources.get('help'), function()
+			{
+				ui.editor.graph.openLink(FilenameDialog.filenameHelpLink);
+			}, null, mxResources.get('ok'), null, null, null, 340, 90);
+		}
+		
+		mxEvent.consume(evt);
+	});
+	
+	nameChanged();
+	
+	return hint;
+};
+
+/**
+ * 
+ */
+FilenameDialog.createFileTypes = function(editorUi, nameInput, types)
+{
+	var typeSelect = document.createElement('select');
+	
+	for (var i = 0; i < types.length; i++)
+	{
+		var typeOption = document.createElement('option');
+		typeOption.setAttribute('value', i);
+		mxUtils.write(typeOption, mxResources.get(types[i].description) +
+			' (.' + types[i].extension + ')');
+		typeSelect.appendChild(typeOption);
+	}
+			
+	mxEvent.addListener(typeSelect, 'change', function(evt)
+	{
+		var ext = types[typeSelect.value].extension;
+		var idx = nameInput.value.lastIndexOf('.');
+		
+		if (idx > 0)
+		{
+			var ext = types[typeSelect.value].extension;
+			nameInput.value = nameInput.value.substring(0, idx + 1) + ext;
+		}
+		else
+		{
+			nameInput.value = nameInput.value + '.' + ext;
+		}
+		
+		if ('createEvent' in document)
+		{
+		    var changeEvent = document.createEvent('HTMLEvents');
+		    changeEvent.initEvent('change', false, true);
+		    nameInput.dispatchEvent(changeEvent);
+		}
+		else
+		{
+		    nameInput.fireEvent('onchange');
+		}
+	});
+	
+	var nameInputChanged = function(evt)
+	{
+		var idx = nameInput.value.lastIndexOf('.');
+		var active = 0;
+		
+		// Finds current extension
+		if (idx > 0)
+		{
+			var ext = nameInput.value.toLowerCase().substring(idx + 1);
+			
+			for (var i = 0; i < types.length; i++)
+			{
+				if (ext == types[i].extension)
+				{
+					active = i;
+					break;
+				}
+			}
+		}
+		
+		typeSelect.value = active;
+	};
+	
+	mxEvent.addListener(nameInput, 'change', nameInputChanged);
+	mxEvent.addListener(nameInput, 'keyup', nameInputChanged);
+	nameInputChanged();
+	
+	return typeSelect;
 };
 
 /**
@@ -2260,13 +2641,17 @@ PageSetupDialog.getFormats = function()
         drawPageBreaks(this.verticalPageBreaks);
     };
     
-    // Disables removing relative children from parents
+	// Disables removing relative children and table rows and cells from parents
     var mxGraphHandlerShouldRemoveCellsFromParent = mxGraphHandler.prototype.shouldRemoveCellsFromParent;
     mxGraphHandler.prototype.shouldRemoveCellsFromParent = function(parent, cells, evt)
     {
         for (var i = 0; i < cells.length; i++)
         {
-            if (this.graph.getModel().isVertex(cells[i]))
+			if (this.graph.isTableCell(cells[i]) || this.graph.isTableRow(cells[i]))
+			{
+				return false;
+			}
+			else if (this.graph.getModel().isVertex(cells[i]))
             {
                 var geo = this.graph.getCellGeometry(cells[i]);
                 
@@ -2369,101 +2754,67 @@ PageSetupDialog.getFormats = function()
         return result;
     };
 
-    // Selects ancestors before descendants
-    var graphHandlerGetInitialCellForEvent = mxGraphHandler.prototype.getInitialCellForEvent;
-    mxGraphHandler.prototype.getInitialCellForEvent = function(me)
+	/**
+	 * Selects tables before cells and rows.
+	 */
+	var mxGraphHandlerIsPropagateSelectionCell = mxGraphHandler.prototype.isPropagateSelectionCell;
+	mxGraphHandler.prototype.isPropagateSelectionCell = function(cell, immediate, me)
     {
-        var model = this.graph.getModel();
-        var psel = model.getParent(this.graph.getSelectionCell());
-        var cell = graphHandlerGetInitialCellForEvent.apply(this, arguments);
-        var parent = model.getParent(cell);
+		var result = false;
+		var parent = this.graph.model.getParent(cell)
         
-        if (psel == null || (psel != cell && psel != parent))
+		if (immediate)
         {
-            while (!this.graph.isCellSelected(cell) && !this.graph.isCellSelected(parent) &&
-                model.isVertex(parent) && !this.graph.isContainer(parent))
-            {
-                cell = parent;
-                parent = this.graph.getModel().getParent(cell);
+			var geo = (this.graph.model.isEdge(cell)) ? null :
+				this.graph.getCellGeometry(cell);
+			
+			result = !this.graph.model.isEdge(parent) &&
+				!this.graph.isSiblingSelected(cell) &&
+				((geo != null && geo.relative) ||
+				!this.graph.isContainer(parent) ||
+				this.graph.isPart(cell));
             }
+		else
+		{
+			result = mxGraphHandlerIsPropagateSelectionCell.apply(this, arguments);
+			
+			if (this.graph.isTableCell(cell) || this.graph.isTableRow(cell))
+			{
+				var table = parent;
+				
+				if (!this.graph.isTable(table))
+				{
+					table = this.graph.model.getParent(table);
         }
         
-        return cell;
-    };
-    
-    // Selection is delayed to mouseup if ancestor is selected
-    var graphHandlerIsDelayedSelection = mxGraphHandler.prototype.isDelayedSelection;
-    mxGraphHandler.prototype.isDelayedSelection = function(cell, me)
-    {
-        var result = graphHandlerIsDelayedSelection.apply(this, arguments);
-        
-        if (!result)
-        {
-            var model = this.graph.getModel();
-            var parent = model.getParent(cell);
-            
-            while (parent != null)
-            {
-                // Inconsistency for unselected parent swimlane is intended for easier moving
-                // of stack layouts where the container title section is too far away
-                if (this.graph.isCellSelected(parent) && model.isVertex(parent))
-                {
-                    result = true;
-                    break;
-                }
-                
-                parent = model.getParent(parent);
+				result = !this.graph.selectionCellsHandler.isHandled(table) ||
+					(this.graph.isCellSelected(table) && this.graph.isToggleEvent(me.getEvent())) ||
+					(this.graph.isCellSelected(cell) && !this.graph.isToggleEvent(me.getEvent())) ||
+					(this.graph.isTableCell(cell) && this.graph.isCellSelected(parent));
             }
         }
         
         return result;
     };
     
-    // Delayed selection of parent group
-    mxGraphHandler.prototype.selectDelayed = function(me)
-    {
-        if (!this.graph.popupMenuHandler.isPopupTrigger(me))
-        {
-            var cell = me.getCell();
-            
-            if (cell == null)
-            {
-                cell = this.cell;
-            }
-
-            // Selects folded cell for hit on folding icon
-            var state = this.graph.view.getState(cell)
-            
-            if (state != null && me.isSource(state.control))
-            {
-                this.graph.selectCellForEvent(cell, me.getEvent());
-            }
-            else
-            {
-                var model = this.graph.getModel();
-                var parent = model.getParent(cell);
-                
-                while (!this.graph.isCellSelected(parent) && model.isVertex(parent))
-                {
-                    cell = parent;
-                    parent = model.getParent(cell);
-                }
-                
-                this.graph.selectCellForEvent(cell, me.getEvent());
-            }
-        }
-    };
-
-    // Returns last selected ancestor
+	/**
+	 * Returns last selected ancestor
+	 */
     mxPopupMenuHandler.prototype.getCellForPopupEvent = function(me)
     {
         var cell = me.getCell();
         var model = this.graph.getModel();
         var parent = model.getParent(cell);
+		var state = this.graph.view.getState(parent);
+		var selected = this.graph.isCellSelected(cell);
         
-        while (model.isVertex(parent) && !this.graph.isContainer(parent))
+		while (state != null && (model.isVertex(parent) || model.isEdge(parent)))
         {
-            if (this.graph.isCellSelected(parent))
+			var temp = this.graph.isCellSelected(parent);
+			selected = selected || temp;
+			
+			if (temp || (!selected && (this.graph.isTableCell(cell) ||
+				this.graph.isTableRow(cell))))
             {
                 cell = parent;
             }
