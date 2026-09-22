@@ -449,9 +449,10 @@ mxObjectCodec.prototype.encodeObject = function(enc, obj, node)
                 {
                         name = null;
                 }
-                // Replace the path to the image with image=/(image)
-                // This is then used to dynamically update the
-                // path in open.html and Actions.js
+                // phenix: upstream encodes the style verbatim. Drop an
+                // image's directory so stored XML does not depend on where
+                // phenix is served from; every decode path restores it with
+                // window.phenixRestoreStencilPaths (js/Init.js).
                 if(name === "style" && value.includes("image="))
                 {
                         var indexOfFirst = value.indexOf("image=");
