@@ -22,15 +22,11 @@
 				var reader = new FileReader();
 				reader.onload = function(e)
 				{
-					// Dynamically update path to pictures used when a file is imported.
-					var stencilPath = window.parent.STENCIL_PATH;
-					var imageEquals = "image=";
-					var vmPath = "/virtual_machines"
-					var partialPath = imageEquals + stencilPath;
-					var fullPath = partialPath + vmPath;
+					// Saving strips an image's directory; put it back. The shared
+					// implementation lives in js/Init.js, loaded by the parent document.
 					var importedXML =  e.target.result;
-					const regex = /image=/g;
-					var cleanXML = importedXML.replace(regex, fullPath)
+					var cleanXML = (window.parent && window.parent.phenixRestoreStencilPaths) ?
+						window.parent.phenixRestoreStencilPaths(importedXML) : importedXML;
 					window.parent.openFile.setData(cleanXML, file.name);
 				};
 				reader.onerror = function(e)
@@ -135,7 +131,7 @@
 					link.style.fontSize = '14pt';
 					var key = keys[i];
 					window.parent.mxUtils.write(link, key);
-					link.setAttribute('href', 'javascript:void(0);');
+					link.style.cursor = 'pointer';
 					div.appendChild(link);
 					
 					var img = document.createElement('span');

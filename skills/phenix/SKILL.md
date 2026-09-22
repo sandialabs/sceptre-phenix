@@ -1,6 +1,6 @@
 ---
 name: phenix
-description: 'Guide for using the phenix CLI and REST/web API to build and run cyber ranges, cyber experiments, and network/system emulation environments. Covers Topology (nodes, VMs, networks), Scenario (apps assigned to hosts), and Experiment (topology + scenario deployed via minimega) resources. Use when asked about phenix, phēnix, SCEPTRE, cyber range, cyber experimentation, emulation, minimega, SCORCH, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui).'
+description: 'Guide for using the phenix CLI, REST/web API, and graphical topology Builder to build and run cyber ranges, cyber experiments, and network/system emulation environments. Covers Topology (nodes, VMs, networks), Scenario (apps assigned to hosts), Experiment (topology + scenario deployed via minimega), and Builder mxGraph diagrams. Use when asked about phenix, phēnix, SCEPTRE, cyber range, cyber experimentation, emulation, minimega, SCORCH, Builder topology diagrams, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui).'
 license: GPL-3.0-only (see LICENSE)
 ---
 
@@ -58,6 +58,8 @@ Node.js/Yarn, protoc) and `make help` for the full list of dev targets.
 - User asks about phenix apps (ntp, serial, startup, vrouter, SCORCH, user apps) or scheduling algorithms.
 - User wants to build/manage phenix disk images (pair with the `phenix-image` skill
   for build scripts, overlays, and vmdb2 troubleshooting).
+- User wants to draw, edit, or translate a network diagram in the graphical
+  topology Builder — see [`references/builder.md`](./references/builder.md).
 
 ## Querying the Web API
 
@@ -208,6 +210,16 @@ Lifecycle: `create` → `schedule` (assign VMs to cluster hosts) → `start`
 (deploy VMs via minimega) → `stop` → `restart`/`reconfigure` → `delete`.
 An experiment also tracks runtime `status` (VM/app state) once started.
 
+## Topology Builder
+
+Builder is the graphical topology editor at `/builder`, backed by an mxGraph
+XML model stored on the topology config in the `builder-xml` annotation.
+
+**Read [`references/builder.md`](./references/builder.md)** before creating,
+editing, or translating a diagram. It carries the task routing table, the
+endpoints and payloads, the diagram-to-config translation rules, and the
+gotchas.
+
 ## CLI Reference
 
 ### Global flags and configuration precedence
@@ -354,7 +366,7 @@ below are relative to the base path.
 | Realtime | `GET /ws` (websocket broker for UI events/logs), `GET /logs` |
 | SCORCH | `/experiments/{name}/scorch/terminals*`, `/experiments/{name}/scorch/components/.../ws` |
 | Settings | `GET/POST /settings`, `GET /settings/password` |
-| Builder | `GET /builder`, `POST /builder/save`, `GET /builder/topologies[/{name}]` |
+| Builder | `GET /builder`, `POST /builder/save`, `GET /builder/topologies[/{name}]`, `POST /builder/topologies`, `PUT /builder/topologies/{name}` |
 | Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode) |
 
 Prefer the equivalent `phenix` CLI command over calling the web API directly
@@ -441,6 +453,9 @@ Follow [`AGENTS.md`](../../AGENTS.md#change-management) for repository change,
 documentation, branch, commit, and pull request requirements.
 
 ## References
+
+- [`references/builder.md`](./references/builder.md) — graphical topology Builder:
+  mxGraph model, diagram-to-config translation, API payloads, and gotchas.
 
 See [`AGENTS.md`](../../AGENTS.md#documentation-and-references) for the
 repository documentation map and companion phēnix repositories.
