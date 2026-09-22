@@ -23,6 +23,8 @@ tags:
     description: Available phenix user applications
   - name: Topologies
     description: Available phenix topologies
+  - name: Builder
+    description: Graphical topology Builder diagrams and the topologies built from them
   - name: Disks
     description: Available phenix disk images
   - name: Users
@@ -1033,6 +1035,159 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Applications"
+  "/builder/topologies":
+    get:
+      tags:
+        - Builder
+      summary: Get topologies that carry a Builder diagram
+      description: ""
+      operationId: getBuilderTopologies
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Topologies"
+        "403":
+          description: listing topologies not allowed for this user
+    post:
+      tags:
+        - Builder
+      summary: Create a topology and its Builder diagram
+      description: >-
+        Creates the topology config and stores the diagram on it. Does not
+        create an experiment. Refused while an experiment built from a topology
+        of the same name is running.
+      operationId: postBuilderTopology
+      requestBody:
+        description: Builder topology and diagram
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderTopology"
+      responses:
+        "201":
+          description: topology created
+          headers:
+            Location:
+              description: path the new diagram is readable at
+              schema:
+                type: string
+        "400":
+          description: name, topology, or builderXML missing, or the spec is invalid
+        "403":
+          description: creating this topology not allowed for this user
+        "409":
+          description: another Builder write holds this name
+  "/builder/topologies/{name}":
+    get:
+      tags:
+        - Builder
+      summary: Get one Builder diagram
+      description: ""
+      operationId: getBuilderTopology
+      parameters:
+        - name: name
+          in: path
+          description: topology name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/xml:
+              schema:
+                type: string
+        "400":
+          description: the topology does not carry a Builder diagram
+        "403":
+          description: getting this topology not allowed for this user
+        "404":
+          description: topology not found
+        "500":
+          description: reading the topology from the store failed
+    put:
+      tags:
+        - Builder
+      summary: Update a topology and its Builder diagram
+      description: >-
+        Writes only the spec and the diagram, leaving the rest of the stored
+        config's metadata intact. Does not create or update an experiment.
+      operationId: putBuilderTopology
+      parameters:
+        - name: name
+          in: path
+          description: topology name, which takes precedence over the payload
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: topology updated
+        "400":
+          description: >-
+            topology or builderXML missing, the spec is invalid, the topology
+            does not exist, or an experiment built from it is running
+        "403":
+          description: updating this topology not allowed for this user
+        "409":
+          description: another Builder write holds this name
+      requestBody:
+        description: Builder topology and diagram
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderTopology"
+  "/experiments/builder":
+    post:
+      tags:
+        - Builder
+      summary: Create a topology and a same-named experiment from Builder
+      description: ""
+      operationId: postExperimentFromBuilder
+      requestBody:
+        description: Builder topology, diagram, VLAN aliases, and scenario
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderTopology"
+      responses:
+        "200":
+          description: successful operation
+        "400":
+          description: request invalid, or the topology or experiment failed validation
+        "403":
+          description: creating experiments not allowed for this user
+        "409":
+          description: experiment locked for creation
+    put:
+      tags:
+        - Builder
+      summary: Update a Builder topology and its same-named experiment
+      description: ""
+      operationId: putExperimentFromBuilder
+      requestBody:
+        description: Builder topology, diagram, VLAN aliases, and scenario
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderTopology"
+      responses:
+        "200":
+          description: successful operation
+        "400":
+          description: request invalid, or the experiment is running
+        "403":
+          description: updating experiments not allowed for this user
+        "409":
+          description: experiment locked for update
   "/topologies":
     get:
       tags:
@@ -1503,6 +1658,34 @@ components:
           type: array
           items:
             type: string
+    BuilderTopology:
+      type: object
+      required:
+        - topology
+        - builderXML
+      properties:
+        name:
+          type: string
+          description: topology name; ignored by PUT /builder/topologies/{name}
+        topology:
+          type: object
+          description: generated topology spec
+          properties:
+            nodes:
+              type: array
+              items:
+                type: object
+        builderXML:
+          type: string
+          description: mxGraph document for the diagram
+        vlans:
+          type: object
+          description: VLAN alias to ID, used by the experiment endpoints only
+          additionalProperties:
+            type: integer
+        scenario:
+          type: string
+          description: scenario name, used by the experiment endpoints only
     Topologies:
       type: object
       properties:

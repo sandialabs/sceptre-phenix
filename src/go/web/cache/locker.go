@@ -51,6 +51,21 @@ func LockExperimentForUpdate(name string) error {
 	return nil
 }
 
+// LockBuilderTopology locks a Builder topology for creation or update.
+//
+// Builder names a topology and the experiment built from it identically, so
+// this deliberately takes that name's experiment lock: a topology save has to
+// serialize against the experiment Builder endpoints, which write both halves.
+// The reported status therefore names the experiment holding the lock.
+func LockBuilderTopology(name string) error {
+	return LockExperimentForUpdate(name)
+}
+
+// UnlockBuilderTopology releases the lock taken by LockBuilderTopology.
+func UnlockBuilderTopology(name string) {
+	UnlockExperiment(name)
+}
+
 func LockExperimentForDeletion(name string) error {
 	key := "experiment|" + name
 
