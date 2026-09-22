@@ -19,7 +19,7 @@ Please select the type of change your pull request introduces:
 
 ## Checklist
 
-- [ ] This PR conforms to the process detailed in the [Contributing Guide](https://github.com/sandialabs/sceptre-phenix/tree/main/.github/CONTRIBUTING.md).
+- [ ] This PR conforms to the process detailed in the [Contributing Guide](https://github.com/sandialabs/sceptre-phenix/blob/main/.github/CONTRIBUTING.md).
 - [ ] I have included no proprietary/sensitive information in my code or the PR.
 - [ ] I have commented my code, particularly in hard-to-understand areas.
 - [ ] I have made corresponding changes to the documentation.

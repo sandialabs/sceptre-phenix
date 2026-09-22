@@ -170,7 +170,7 @@ linters:
           # Default: []
           deny:
             - pkg: github.com/golang/protobuf
-              desc: Use google.golang.org/protobuf instead, see https://developers.google.com/protocol-buffers/docs/reference/go/faq#modules
+              desc: Use google.golang.org/protobuf instead, see https://protobuf.dev/reference/go/faq#modules
             - pkg: github.com/satori/go.uuid
               desc: Use github.com/google/uuid instead, satori's package is not maintained
             - pkg: github.com/gofrs/uuid$

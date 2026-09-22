@@ -51,7 +51,7 @@ deb:
 	./scripts/build-deb.sh
 
 docker:
-	$(call check-command,docker,Please install Docker (https://docs.docker.com/get-docker/))
+	$(call check-command,docker,Please install Docker (https://docs.docker.com/get-started/get-docker/))
 	@docker info > /dev/null 2>&1 || { echo "Docker daemon is not running"; exit 1; }
 	docker build -t phenix:$(DOCKER_TAG) -f docker/Dockerfile .
 

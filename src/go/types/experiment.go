@@ -181,14 +181,14 @@ func DecodeExperimentFromConfig(c store.Config) (*Experiment, error) {
 		// If we have a decoding error, it's likely due to the embedded topology or
 		// scenario not being the latest version.
 		var (
-			kbArticle = "EX-SC-UPG-01"
-			kbLink    = "https://phenix.sceptre.dev/kb/#article-ex-sc-upg-01"
-			kbError   = fmt.Errorf(
-				"decoding versioned spec for experiment %s: %w\n\nPlease see KB article %s at %s",
+			docSection = "Scenario v1 to v2 Upgrade"
+			docLink    = "https://phenix.sceptre.dev/latest/troubleshooting/#scenario-v1-to-v2-upgrade"
+			kbError    = fmt.Errorf(
+				"decoding versioned spec for experiment %s: %w\n\nPlease see the %q troubleshooting section at %s",
 				c.Metadata.Name,
 				err,
-				kbArticle,
-				kbLink,
+				docSection,
+				docLink,
 			)
 		)
 

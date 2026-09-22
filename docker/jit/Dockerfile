@@ -4,7 +4,7 @@ ARG PHENIX_IMG=ghcr.io/${PHENIX_REPO}/phenix:${PHENIX_BRANCH}
 
 FROM $PHENIX_IMG
 
-# https://docs.docker.com/engine/reference/builder/#understand-how-arg-and-from-interact
+# https://docs.docker.com/reference/dockerfile/#understand-how-arg-and-from-interact
 ARG PHENIX_REPO
 ARG PHENIX_BRANCH
 

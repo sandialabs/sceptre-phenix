@@ -119,7 +119,7 @@ backend. Review generated diffs before submission.
 | YAML config schemas | `src/go/types/version/schemas/{v0,v1,v2}.yaml` |
 | CLI and REST implementation | `src/go/cmd/`, `src/go/web/server.go` |
 | Internet-hosted narrative docs | [phenix.sceptre.dev](https://phenix.sceptre.dev/latest/) |
-| minimega commands and behavior | [API docs](https://sandia-minimega.github.io/), [source](https://github.com/sandia-minimega/minimega) |
+| minimega commands and behavior | [API docs](https://sandia-minimega.github.io/minimega/reference/minimega/), [source](https://github.com/sandia-minimega/minimega) |
 | Official apps and SCORCH components | [`sceptre-phenix-apps`](https://github.com/sandialabs/sceptre-phenix-apps) |
 | Image configs, overlays, scripts | [`sceptre-phenix-images`](https://github.com/sandialabs/sceptre-phenix-images) |
 | Source for phenix.sceptre.dev | [`sceptre-phenix-docs`](https://github.com/sandialabs/sceptre-phenix-docs) |
