@@ -39,6 +39,13 @@ func scorchPolicy(verbs ...string) *v1.PolicySpec {
 	return &v1.PolicySpec{Resources: []string{appNameScorch}, ResourceNames: nil, Verbs: verbs}
 }
 
+// terminalWritePolicy grants typing into Scorch terminals.
+func terminalWritePolicy() *v1.PolicySpec {
+	return &v1.PolicySpec{Resources: []string{"scorch/terminals"}, ResourceNames: nil, Verbs: []string{"write"}}
+}
+
+// TestCanWriteTerminal verifies only scorch/terminals write, not any scorch
+// verb or read-only wildcards, allows typing into Scorch terminals.
 func TestCanWriteTerminal(t *testing.T) {
 	t.Parallel()
 
@@ -48,8 +55,31 @@ func TestCanWriteTerminal(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "scorch post",
-			req:  testRequest(http.MethodGet, nil, scorchPolicy("get", "post")),
+			name: "scorch/terminals write",
+			req:  testRequest(http.MethodGet, nil, scorchPolicy("get"), terminalWritePolicy()),
+			want: true,
+		},
+		{
+			name: "all scorch verbs",
+			req:  testRequest(http.MethodGet, nil, scorchPolicy("*")),
+			want: false,
+		},
+		{
+			name: "read everything",
+			req: testRequest(http.MethodGet, nil, &v1.PolicySpec{
+				Resources:     []string{"*", "*/*"},
+				ResourceNames: []string{"*", "*/*"},
+				Verbs:         []string{"list", "get"},
+			}),
+			want: false,
+		},
+		{
+			name: "everything",
+			req: testRequest(http.MethodGet, nil, &v1.PolicySpec{
+				Resources:     []string{"*", "*/*"},
+				ResourceNames: []string{"*", "*/*"},
+				Verbs:         []string{"*"},
+			}),
 			want: true,
 		},
 		{name: "scorch get only", req: testRequest(http.MethodGet, nil, scorchPolicy("get")), want: false},

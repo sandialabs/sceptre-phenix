@@ -61,6 +61,13 @@ let resourceNameAllowed = (policy, name) => {
   return allowed;
 };
 
+// Typing into and exiting Scorch terminals needs scorch/terminals write, which
+// is separate from controlling Scorch runs because a Scorch terminal is a shell
+// on the phenix server. The server enforces this; the UI only hides controls.
+export function scorchTerminalWriteAllowed() {
+  return roleAllowed('scorch/terminals', 'write');
+}
+
 // Starting a Scorch run needs scorch post and canceling one needs scorch
 // delete, both for an experiment the user can read, matching the server's
 // Scorch pipeline routes.

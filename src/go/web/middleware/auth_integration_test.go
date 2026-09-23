@@ -135,7 +135,7 @@ func TestSignedTokenAuth(t *testing.T) {
 // TestDevAuthServicePermissions checks the built-in roles against the service
 // permissions used by the Builder, Scorch, and Tunneler routes.
 func TestDevAuthServicePermissions(t *testing.T) {
-	initTestStore(t, "experiment-user", "experiment-viewer", "vm-viewer")
+	initTestStore(t, "experiment-user", "experiment-viewer", "vm-viewer", "scorch-admin", "global-viewer")
 
 	tests := []struct {
 		role     string
@@ -158,6 +158,10 @@ func TestDevAuthServicePermissions(t *testing.T) {
 		{"vm-viewer", "builder", "get", http.StatusOK},
 		{"vm-viewer", "scorch", "get", http.StatusForbidden},
 		{"vm-viewer", "tunneler", "get", http.StatusForbidden},
+		{"experiment-user", "scorch/terminals", "write", http.StatusForbidden},
+		{"global-viewer", "scorch/terminals", "write", http.StatusForbidden},
+		{"scorch-admin", "scorch", "post", http.StatusOK},
+		{"scorch-admin", "scorch/terminals", "write", http.StatusOK},
 	}
 
 	for _, test := range tests {

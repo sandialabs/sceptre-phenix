@@ -381,6 +381,9 @@ running `phenix ui` server, or building a UI integration).
   Scorch routes also need read access to the experiment (`experiments get`);
   starting or canceling a run needs `scorch` `post`/`delete` but not
   `experiments/trigger`, except through `trigger?apps=scorch`, which needs both.
+  Typing into or exiting a Scorch terminal needs `scorch/terminals` `write`,
+  kept separate because a Scorch terminal is a shell on the phenix server; by
+  default only Global Admin and Scorch Admin have it.
   Saving a Builder file needs only `builder` `get`; creating or updating an
   experiment from the Builder needs `builder` `post`/`put` plus `experiments`
   `create`/`update`. Custom roles must add these resources. Built-in roles get

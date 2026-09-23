@@ -6,10 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **RBAC**: Protect Builder, Scorch, and Tunneler with the service-level `builder` (`get`, `post`, `put`), `scorch` (`get`, `post`, `delete`), and `tunneler` (`get`) permissions across REST routes, Scorch websocket updates, the standalone Builder and Tunneler download links, and the web UI. Custom roles need these permissions added explicitly.
+- **RBAC**: Protect Builder, Scorch, and Tunneler with the service-level `builder` (`get`, `post`, `put`), `scorch` (`get`, `post`, `delete`), `scorch/terminals` (`write`), and `tunneler` (`get`) permissions across REST routes, Scorch websocket updates, the standalone Builder and Tunneler download links, and the web UI. Custom roles need these permissions added explicitly.
 - **RBAC**: Built-in roles get service access on first startup, once, so administrators can later remove it:
   - Every viewer role (Global Viewer, Experiment Viewer, VM Viewer, and the new Scorch Viewer) can open the Builder and save topology files locally.
-  - Roles that can control VMs (Experiment Admin, Experiment User, and VM Admin) can start and cancel Scorch runs and type into Scorch terminals for their experiments. A Scorch `break` terminal is a shell on the phēnix server, so `scorch` `post` should only go to trusted users.
+  - Roles that can control VMs (Experiment Admin, Experiment User, and VM Admin) can start and cancel Scorch runs for their experiments.
+  - Typing into and exiting Scorch terminals needs the separate `scorch/terminals` `write` permission, which only Global Admin and Scorch Admin have. A Scorch terminal, such as the one a `break` component opens, is a shell running as the phēnix server process, so this permission gives control of the phēnix server.
   - Experiment Admin, Experiment User, and VM Admin can download the Tunneler and create port forwards for their VMs; Experiment User gains `vms/forwards` `create` and `delete`.
 - **RBAC**: New built-in roles, created once on existing installs:
   - **Scorch Viewer**: view Scorch pipelines, component output, read-only Scorch terminals, and Scorch run files for assigned experiments.
@@ -25,10 +26,11 @@ All notable changes to this project will be documented in this file.
 - **RBAC**: Role and user configs saved by phēnix no longer store `resourceNames: null` for unscoped policies, which failed schema validation when an administrator later edited the role.
 - **Web UI**: Permission checks no longer throw for policies with no resource names, and Configs page buttons now check the same `Kind/name` as the server.
 - **Store**: `etcd` no longer panics when checking a store component that has not been initialized.
+- **Users**: Creating a user with a role that doesn't exist, through the Users page, the API, or `--users`, is now rejected instead of storing a user without a role. Creating a user whose name is taken returns `409 Conflict` instead of failing mid-request.
 
 ### Security
 
-- **Scorch**: Scorch terminals and component output now require read access to the experiment, and writable Scorch terminals require `scorch` `post`. Previously, any authenticated user could stream or write to them. Scorch pipeline and terminal websocket updates now go only to users with Scorch access to the experiment instead of every connected user.
+- **Scorch**: Scorch terminals and component output now require read access to the experiment, and typing into or exiting Scorch terminals requires `scorch/terminals` `write`. Previously, any authenticated user could stream or write to them. Scorch pipeline and terminal websocket updates now go only to users with Scorch access to the experiment instead of every connected user.
 - **Scorch**: Starting or canceling Scorch through `POST` or `DELETE /api/v1/experiments/{name}/trigger?apps=scorch` now requires `scorch` `post` or `delete` in addition to `experiments/trigger`. Starting and canceling runs on the Scorch pipeline routes now needs `scorch` `post` or `delete` and read access to the experiment, instead of `experiments/trigger`.
 - **Configs**: `configs create` is now checked against the new config's `Kind/name`, and renaming a config or changing its kind needs `configs create` for the new name. Previously, any role with `configs create` could create User or Role configs and grant itself more access.
 - **Builder**: `PUT /api/v1/experiments/builder` now checks `experiments update` for the named experiment, and `experiments create` when it creates the experiment.

@@ -372,10 +372,15 @@ func terminalWsHandler(t WebTerm) func(*websocket.Conn) {
 	}
 }
 
+// canWriteTerminal reports whether the requester may type into and exit Scorch
+// terminals. This is a separate permission from starting Scorch runs because a
+// terminal, such as the one a break component opens, is a shell running as the
+// phenix server process, which usually runs as root in a privileged container.
+// Writing to it gives full control of the phenix server and bypasses RBAC.
 func canWriteTerminal(r *http.Request) bool {
 	role := middleware.RoleFromContext(r.Context())
 
-	return role.Spec != nil && role.Allowed(appNameScorch, "post")
+	return role.Spec != nil && role.Allowed("scorch/terminals", "write")
 }
 
 // claimTerminalClient consumes a client ID issued by initTerminal and reports

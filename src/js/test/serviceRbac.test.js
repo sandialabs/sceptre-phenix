@@ -1,6 +1,10 @@
 // Service-level RBAC for Builder, Scorch, and Tunneler; mirrors
 // web/middleware RequirePermission and the Scorch pipeline route checks.
-import { roleAllowed, scorchControlAllowed } from '@/utils/rbac.js';
+import {
+  roleAllowed,
+  scorchControlAllowed,
+  scorchTerminalWriteAllowed,
+} from '@/utils/rbac.js';
 import { expect, test, vi } from 'vitest';
 
 const store = vi.hoisted(() => ({ role: null }));
@@ -122,6 +126,33 @@ test('config checks use Kind/name', () => {
 
   expect(roleAllowed('configs', 'update', 'Topology/topo')).toBe(true);
   expect(roleAllowed('configs', 'get', 'User/admin')).toBe(false);
+});
+
+test('Scorch terminal writes need scorch/terminals write', () => {
+  useRole('Scorch Runner', [
+    { resources: ['scorch'], resourceNames: null, verbs: ['*'] },
+  ]);
+  expect(scorchTerminalWriteAllowed()).toBe(false);
+
+  useRole('Global Viewer Terminals', [
+    {
+      resources: ['*', '*/*'],
+      resourceNames: ['*', '*/*'],
+      verbs: ['list', 'get'],
+    },
+  ]);
+  expect(scorchTerminalWriteAllowed()).toBe(false);
+
+  useRole('Scorch Terminal Writer', [
+    { resources: ['scorch'], resourceNames: null, verbs: ['*'] },
+    { resources: ['scorch/terminals'], resourceNames: null, verbs: ['write'] },
+  ]);
+  expect(scorchTerminalWriteAllowed()).toBe(true);
+
+  useRole('Global Admin Terminals', [
+    { resources: ['*', '*/*'], resourceNames: ['*', '*/*'], verbs: ['*'] },
+  ]);
+  expect(scorchTerminalWriteAllowed()).toBe(true);
 });
 
 test('missing role allows nothing', () => {

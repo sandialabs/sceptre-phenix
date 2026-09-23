@@ -26,6 +26,7 @@ var servicePermissionChecks = []servicePermission{ //nolint:gochecknoglobals // 
 	{resource: scorchResource, verb: postVerb},
 	{resource: scorchResource, verb: deleteVerb},
 	{resource: tunnelerResource, verb: getVerb},
+	{resource: "scorch/terminals", verb: "write"},
 }
 
 // loadDefaultRoleConfig reads a built-in role config shipped with phenix.
@@ -130,7 +131,10 @@ func TestDefaultRolesServicePermissions(t *testing.T) {
 			role:    "scorch-viewer",
 			allowed: permissions(map[string][]string{builderResource: {getVerb}, scorchResource: {getVerb}}),
 		},
-		{role: "scorch-admin", allowed: permissions(map[string][]string{scorchResource: scorchAll})},
+		{
+			role:    "scorch-admin",
+			allowed: permissions(map[string][]string{scorchResource: scorchAll, "scorch/terminals": {"write"}}),
+		},
 		{role: "builder", allowed: permissions(map[string][]string{builderResource: all})},
 		{role: "disabled", allowed: nil},
 	}

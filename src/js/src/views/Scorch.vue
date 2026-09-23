@@ -139,7 +139,7 @@
           <vue-terminal :wsPath="terminal.loc"></vue-terminal>
         </section>
         <footer class="modal-card-foot buttons is-right">
-          <div v-if="terminal.ro || !roleAllowed('scorch', 'post')">
+          <div v-if="terminal.ro || !scorchTerminalWriteAllowed()">
             <b-tooltip
               label="this will close but not exit the terminal"
               type="is-light is-left"
@@ -171,12 +171,21 @@
   import { useErrorNotification } from '@/utils/errorNotif';
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
   import { useTable } from '@/utils/useTable.js';
-  import { roleAllowed, scorchControlAllowed } from '@/utils/rbac.js';
+  import {
+    roleAllowed,
+    scorchControlAllowed,
+    scorchTerminalWriteAllowed,
+  } from '@/utils/rbac.js';
 
   export default {
     setup() {
       const { table } = useTable();
-      return { table, roleAllowed, scorchControlAllowed };
+      return {
+        table,
+        roleAllowed,
+        scorchControlAllowed,
+        scorchTerminalWriteAllowed,
+      };
     },
     components: {
       'vue-terminal': Terminal,

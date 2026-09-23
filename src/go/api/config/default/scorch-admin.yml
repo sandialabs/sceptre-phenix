@@ -4,8 +4,8 @@ metadata:
   name: scorch-admin
 spec:
   roleName: Scorch Admin
-  # Everything Scorch Viewer can do, plus start and cancel Scorch runs, write
-  # to and exit Scorch terminals, and watch the VMs Scorch components act on.
+  # Everything Scorch Viewer can do, plus start and cancel Scorch runs, type
+  # into and exit Scorch terminals, and watch the VMs Scorch components act on.
   # Assigning the role scopes it to the user's experiments.
   policies:
   - resources:
@@ -28,9 +28,16 @@ spec:
     - "vms/screenshot"
     verbs:
     - get
-  # scorch post also allows typing into Scorch break terminals, which are
-  # shells on the phenix server.
   - resources:
     - scorch
     verbs:
     - "*"
+  # Type into and exit Scorch terminals. This is separate from scorch because a
+  # Scorch terminal, such as the one a break component opens, is a shell running
+  # as the phenix server process, usually as root in a privileged container.
+  # Anyone with this permission controls the phenix server and can bypass RBAC,
+  # so only assign this role to users trusted with that access.
+  - resources:
+    - "scorch/terminals"
+    verbs:
+    - write

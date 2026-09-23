@@ -88,9 +88,28 @@ func ConfigureUsers(users []string) error {
 			continue
 		}
 
+		// Don't store a user whose role doesn't exist.
+		if _, err := rbac.RoleFromConfig(rname); err != nil {
+			plog.Error(
+				plog.TypeSecurity,
+				"not creating default user with unknown role",
+				"user",
+				uname,
+				"role",
+				rname,
+			)
+
+			continue
+		}
+
 		plog.Info(plog.TypeSecurity, "creating default user", "user", uname, "role", rname)
 
 		user := rbac.NewUser(uname, pword)
+		if user == nil {
+			plog.Error(plog.TypeSecurity, "creating default user", "user", uname)
+
+			continue
+		}
 
 		setUserRole(user, rname, creds[3:]...)
 	}
@@ -356,7 +375,7 @@ func Start(opts ...ServerOption) error {
 		Methods("GET", "OPTIONS")
 	api.Handle(
 		"/experiments/{name}/scorch/terminals/{pid}/exit/{id}",
-		middleware.RequirePermission("scorch", "post")(
+		middleware.RequirePermission("scorch/terminals", "write")(
 			http.HandlerFunc(scorch.ExitTerminal),
 		),
 	).
