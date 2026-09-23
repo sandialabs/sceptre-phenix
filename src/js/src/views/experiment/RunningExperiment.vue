@@ -34,7 +34,10 @@
               v-for="(snap, index) in expModal.snapshots"
               :key="index"
               class="vm-modal-list-row">
-              <b-tooltip label="restore this snapshot" type="is-light is-right">
+              <b-tooltip
+                v-if="roleAllowed('vms/snapshots', 'update', expModal.fullName)"
+                label="restore this snapshot"
+                type="is-light is-right">
                 <b-icon
                   class="is-clickable"
                   icon="play-circle"
@@ -159,7 +162,7 @@
           </div>
           <div
             v-if="
-              roleAllowed('vms/snapshot', 'create', expModal.fullName) &&
+              roleAllowed('vms/snapshots', 'create', expModal.fullName) &&
               !showModifyStateBar &&
               expModal.vm.running &&
               expModal.vm.snapshot
@@ -688,7 +691,7 @@
             vmSelectedArray.every((vm) =>
               roleAllowed(
                 'vms/snapshots',
-                'update',
+                'create',
                 experiment.name + '/' + vm,
               ),
             ) && !showModifyStateBar
