@@ -7,6 +7,10 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
+- **Topology validation**: Reject node hostnames that can't work as a node name, and warn about ones that may cause problems. External nodes are exempt.
+  - `all` fails validation. It is minimega's wildcard VM target. A casing such as `All` logs a warning.
+  - All-digit names fail validation. minimega reads them as a VM count or VM ID.
+  - `phenix`, in any casing, fails validation for Windows nodes, because the node's startup script collides with the `phenix-startup.ps1` startup wrapper. For other OS types it logs a warning, because `phenix image` builds images with the hostname `phenix`.
 
 ## [1.0.0]
 

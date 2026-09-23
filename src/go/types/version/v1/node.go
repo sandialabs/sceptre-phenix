@@ -10,6 +10,7 @@ import (
 	"time"
 
 	ifaces "phenix/types/interfaces"
+	"phenix/util/plog"
 )
 
 type Node struct {
@@ -591,6 +592,26 @@ func (n Node) validate() error {
 		}
 
 		return nil
+	}
+
+	// External nodes are skipped above because minimega never launches them.
+	var osType string
+	if n.HardwareF != nil {
+		osType = n.HardwareF.OSTypeF
+	}
+
+	warning, err := checkHostnameKeywords(n.GeneralF.HostnameF, osType)
+	if err != nil {
+		return err
+	}
+
+	if warning != "" {
+		plog.Warn(
+			plog.TypeSystem,
+			"node hostname may cause problems; consider renaming the node",
+			"node", n.GeneralF.HostnameF,
+			"reason", warning,
+		)
 	}
 
 	if n.NetworkF == nil {
