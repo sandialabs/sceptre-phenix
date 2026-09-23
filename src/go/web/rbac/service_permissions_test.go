@@ -226,7 +226,7 @@ func TestAssignedDefaultRolesScope(t *testing.T) {
 			{"configs", "create", "Topology/topo", true},
 			{"configs", "update", "Scenario/scn", true},
 			{"configs", "get", "Experiment/exp-b", true},
-			{"configs", "create", "Image/img", true},
+			{"configs", "create", "Image/img", false},
 			{"configs", "delete", "Topology/topo", false},
 			{"configs", "create", "User/admin", false},
 			{"configs", "update", "User/admin", false},

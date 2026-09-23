@@ -16,6 +16,8 @@ spec:
         - vms/*
       verbs:
         - '*'
+    # scorch post also allows typing into Scorch break terminals, which are
+    # shells on the phenix server.
     - resources:
         - scorch
       verbs:

@@ -9,12 +9,12 @@ All notable changes to this project will be documented in this file.
 - **RBAC**: Protect Builder, Scorch, and Tunneler with the service-level `builder` (`get`, `post`, `put`), `scorch` (`get`, `post`, `delete`), and `tunneler` (`get`) permissions across REST routes, Scorch websocket updates, the standalone Builder and Tunneler download links, and the web UI. Custom roles need these permissions added explicitly.
 - **RBAC**: Built-in roles get service access on first startup, once, so administrators can later remove it:
   - Every viewer role (Global Viewer, Experiment Viewer, VM Viewer, and the new Scorch Viewer) can open the Builder and save topology files locally.
-  - Roles that can control VMs (Experiment Admin, Experiment User, and VM Admin) can start and cancel Scorch runs and type into Scorch terminals for their experiments.
+  - Roles that can control VMs (Experiment Admin, Experiment User, and VM Admin) can start and cancel Scorch runs and type into Scorch terminals for their experiments. A Scorch `break` terminal is a shell on the phēnix server, so `scorch` `post` should only go to trusted users.
   - Experiment Admin, Experiment User, and VM Admin can download the Tunneler and create port forwards for their VMs; Experiment User gains `vms/forwards` `create` and `delete`.
 - **RBAC**: New built-in roles, created once on existing installs:
   - **Scorch Viewer**: view Scorch pipelines, component output, read-only Scorch terminals, and Scorch run files for assigned experiments.
   - **Scorch Admin**: everything Scorch Viewer can do, plus start and cancel runs, write to Scorch terminals, and view VMs and screenshots for assigned experiments.
-  - **Builder**: use the Builder and the Configs page for Topology, Scenario, Experiment, and Image configs, create and update experiments, and list disks, topologies, scenarios, applications, hosts, and options. Not scoped to experiments, and cannot read or change User or Role configs.
+  - **Builder**: use the Builder and the Configs page for Topology, Scenario, and Experiment configs, create and update experiments, and list disks, topologies, scenarios, applications, hosts, and options. Not scoped to experiments, and cannot read or change User, Role, or Image configs.
 
 ### Changed
 
