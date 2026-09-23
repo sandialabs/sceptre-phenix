@@ -97,8 +97,10 @@ func (r *Role) SetResourceNames(names ...string) error {
 	}
 
 	for _, policy := range r.Spec.Policies {
+		// A policy that came with its own resource names keeps them. Returning here
+		// instead would leave every policy after it without any.
 		if policy.ResourceNames != nil {
-			return fmt.Errorf("%w: resource names already exist for policy", ErrResourceNameExists)
+			continue
 		}
 
 		for _, name := range names {
