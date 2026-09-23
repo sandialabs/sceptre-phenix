@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
   - **mxGraph**: Updated the vendored mxGraph from 4.1.0 to 4.2.2, the final release before the project was archived. Upstream changed the modifier that deletes a cell together with its connected edges from Shift to Ctrl.
   - **Editor**: The sidebar node palettes now open expanded, the export dialog offers only the XML and SVG formats the server can produce, and the Help button opens the phēnix documentation instead of the defunct `minimega.org`.
 - **Topology validation**: Reject the node hostnames `all`, all-digit names, and `phenix` on Windows nodes, and warn about hostnames that may cause problems.
+- **Topology schema**: Require node hostnames to be at least 2 characters long.
 
 ### Fixed
 
