@@ -208,6 +208,8 @@ graph TD
 
 Logging settings are managed via the `phenix settings` command, which modifies the `config.yaml` file. Changes are applied **dynamically** (hot-swapped) without restarting the service.
 
+Runtime settings are also available in the web UI Settings tab. The UI shows effective runtime values, their matching environment variables, whether a restart is required, and the current `PHENIX_*`/`MM_*` environment values. Environment variables are read-only in the UI, and sensitive values are masked.
+
 #### Settings Reference
 
 | Setting Key | Environment Variable | Default | Description |
@@ -247,6 +249,9 @@ phenix settings set log.level debug
 
 # Revert a setting to default
 phenix settings unset log.level
+
+# Configure the same setting from the web UI
+# Open Settings → Runtime Settings → Logging → log.level
 
 # Reset all settings
 phenix settings unset --all

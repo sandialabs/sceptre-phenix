@@ -4237,6 +4237,79 @@ func SetSettings(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
+// SetRuntimeSetting - POST /settings/runtime.
+func SetRuntimeSetting(w http.ResponseWriter, r *http.Request) {
+	var (
+		ctx  = r.Context()
+		role = middleware.RoleFromContext(ctx)
+	)
+
+	if !role.Allowed("settings", "update") {
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(plog.TypeSecurity, "setting runtime setting not allowed", "user", user)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "reading request body", "err", err)
+		http.Error(
+			w,
+			http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError,
+		)
+
+		return
+	}
+
+	var update settings.RuntimeSettingUpdate
+	if err := json.Unmarshal(body, &update); err != nil {
+		plog.Error(plog.TypeSystem, "unmarshaling runtime setting request body", "err", err)
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+
+		return
+	}
+
+	if err := settings.SetRuntimeSetting(update); err != nil {
+		plog.Error(plog.TypeSystem, "updating runtime setting", "key", update.Key, "err", err)
+		http.Error(w, "Error updating runtime setting", http.StatusInternalServerError)
+
+		return
+	}
+
+	user := middleware.UserFromContext(ctx)
+	plog.Info(plog.TypeSystem, "runtime setting changed", "user", user, "key", update.Key)
+}
+
+// UnsetRuntimeSetting - DELETE /settings/runtime?key=<key>.
+func UnsetRuntimeSetting(w http.ResponseWriter, r *http.Request) {
+	var (
+		ctx  = r.Context()
+		role = middleware.RoleFromContext(ctx)
+		key  = r.URL.Query().Get("key")
+	)
+
+	if !role.Allowed("settings", "update") {
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(plog.TypeSecurity, "unsetting runtime setting not allowed", "user", user)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
+	if err := settings.UnsetRuntimeSetting(key); err != nil {
+		plog.Error(plog.TypeSystem, "unsetting runtime setting", "key", key, "err", err)
+		http.Error(w, "Error unsetting runtime setting", http.StatusInternalServerError)
+
+		return
+	}
+
+	user := middleware.UserFromContext(ctx)
+	plog.Info(plog.TypeSystem, "runtime setting unset", "user", user, "key", key)
+}
+
 // GetPasswordRequirements - GET /settings/password.
 func GetPasswordRequirements(w http.ResponseWriter, r *http.Request) {
 	_ = settings.SetDefaults()

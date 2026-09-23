@@ -238,6 +238,9 @@ variable** (`PHENIX_*`) → **4. built-in default**. See
 [Settings & Configuration](https://phenix.sceptre.dev/latest/settings/) for the
 full settings reference, including UI-only settings (`ui.logs.level`,
 `ui.features`, `ui.file-server-endpoint`) not exposed as root-level CLI flags.
+The web UI Settings tab exposes the same runtime settings, lets users write
+`config.yaml` overrides or reset individual keys, and shows read-only
+`PHENIX_*`/`MM_*` environment values with sensitive values masked.
 
 `phenix ui --features vm-mount` (equivalently `ui.features: vm-mount` in
 `config.yaml`, or `PHENIX_UI_FEATURES=vm-mount`) enables the optional

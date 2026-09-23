@@ -31,6 +31,7 @@ type Settings struct {
 	PasswordSettings PasswordSettings `json:"password_settings"`
 	LoggingSettings  LoggingSettings  `json:"logging_settings"`
 	TimeoutSettings  TimeoutSettings  `json:"timeout_settings"`
+	RuntimeSettings  RuntimeSettings  `json:"runtime_settings"`
 }
 
 func GetSettings() (*Settings, error) {
@@ -57,6 +58,8 @@ func GetSettings() (*Settings, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting timeout settings: %w", err)
 	}
+
+	settings.RuntimeSettings = GetRuntimeSettings()
 
 	return settings, nil
 }

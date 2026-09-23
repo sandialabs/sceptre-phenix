@@ -20,6 +20,7 @@ import (
 
 	"phenix/api/config"
 	_ "phenix/api/scorch"
+	runtimeSettings "phenix/api/settings"
 	"phenix/store"
 	"phenix/util/common"
 	"phenix/util/plog"
@@ -48,6 +49,8 @@ var rootCmd = &cobra.Command{
 	Use:   appName,
 	Short: "A cli application for phēnix",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		registerRuntimeFlagOverrides(cmd.Flags())
+
 		common.UnixSocket = getEffectiveString( //nolint:reassign // configuration injection
 			"unix-socket",
 			cmd.Flags().Changed("unix-socket"),
@@ -562,17 +565,7 @@ func getEffectiveValue(key string) any {
 // getEffectiveSettings returns a map of all settings, prioritizing
 // values in the config file over environment variables.
 func getEffectiveSettings() map[string]any {
-	// Start with base settings (Env > Config > Default)
-	base := viper.AllSettings()
-
-	// Overlay file settings (File > Env)
-	vMerge := viper.New()
-	_ = vMerge.MergeConfigMap(base)
-	if vFile := getFileViper(); vFile != nil {
-		_ = vMerge.MergeConfigMap(vFile.AllSettings())
-	}
-
-	return vMerge.AllSettings()
+	return runtimeSettings.EffectiveRuntimeSettings()
 }
 
 // hideInheritedPersistentFlags marks all inherited persistent flags as hidden
@@ -601,4 +594,48 @@ func addCommandToRoot(cmd *cobra.Command, excludeGlobalFlags bool) {
 	}
 
 	rootCmd.AddCommand(cmd)
+}
+
+func registerRuntimeFlagOverrides(flags *pflag.FlagSet) {
+	flags.Visit(func(flag *pflag.Flag) {
+		key := runtimeSettingKey(flag.Name)
+		if !runtimeSettings.IsRuntimeSettingKey(key) {
+			return
+		}
+
+		runtimeSettings.RegisterRuntimeFlagOverride(key, viper.Get(key))
+	})
+}
+
+func runtimeSettingKey(flagName string) string {
+	switch flagName {
+	case "base-path":
+		return "ui.base-path"
+	case "features":
+		return "ui.features"
+	case "file-server-endpoint":
+		return "ui.file-server-endpoint"
+	case "jwt-lifetime":
+		return "ui.jwt-lifetime"
+	case "jwt-signing-key":
+		return "ui.jwt-signing-key"
+	case "listen-endpoint":
+		return "ui.listen-endpoint"
+	case "logs.level":
+		return "ui.logs.level"
+	case "logs.minimega-path":
+		return "ui.logs.minimega-path"
+	case "minimega-console":
+		return "ui.minimega-console"
+	case "proxy-auth-header":
+		return "ui.proxy-auth-header"
+	case "tls-cert":
+		return "ui.tls-cert"
+	case "tls-key":
+		return "ui.tls-key"
+	case "users":
+		return "ui.users"
+	default:
+		return flagName
+	}
 }

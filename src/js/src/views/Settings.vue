@@ -91,9 +91,75 @@
           </b-numberinput>
         </b-field>
 
+        <h3>Runtime Settings</h3>
+        <div
+          v-for="group in runtimeSettingGroups"
+          :key="group.name"
+          class="runtime-section">
+          <h4>{{ group.name }}</h4>
+          <b-field
+            v-for="setting in group.settings"
+            :key="setting.key"
+            :label="setting.key"
+            :message="runtimeSettingMessage(setting)">
+            <div class="runtime-setting">
+              <b-switch
+                v-if="setting.type === 'bool'"
+                v-model="runtime_values[setting.key]">
+              </b-switch>
+              <b-numberinput
+                v-else-if="isNumberRuntimeSetting(setting)"
+                v-model="runtime_values[setting.key]"
+                :controls="false"
+                :step="setting.type === 'float64' ? '.5' : '1'"
+                class="custom-small">
+              </b-numberinput>
+              <b-input
+                v-else
+                v-model="runtime_values[setting.key]"
+                :type="setting.sensitive ? 'password' : 'text'"
+                :password-reveal="setting.sensitive"
+                expanded>
+              </b-input>
+              <b-button
+                size="is-small"
+                type="is-primary"
+                native-type="button"
+                @click.prevent="saveRuntimeSetting(setting)">
+                Save
+              </b-button>
+              <b-button
+                size="is-small"
+                native-type="button"
+                @click.prevent="unsetRuntimeSetting(setting)">
+                Reset
+              </b-button>
+            </div>
+          </b-field>
+        </div>
+
+        <h3>Environment Variables</h3>
+        <b-table
+          :data="settings_obj.runtime_settings.environment"
+          :paginated="settings_obj.runtime_settings.environment.length > 10"
+          :per-page="10"
+          striped
+          hoverable>
+          <b-table-column field="name" label="Variable" v-slot="props">
+            {{ props.row.name }}
+          </b-table-column>
+          <b-table-column field="value" label="Value" v-slot="props">
+            <span :class="{ 'has-text-grey': !props.row.set }">
+              {{ props.row.set ? props.row.value : '(not set)' }}
+            </span>
+          </b-table-column>
+        </b-table>
+
         <hr />
         <!-- <b-button @click="getSettings">Reset Form</b-button> -->
-        <b-button @click="sendSettingsToServer">Save Changes</b-button>
+        <b-button native-type="button" @click="sendSettingsToServer">
+          Save Changes
+        </b-button>
       </form>
     </div>
   </section>
@@ -109,14 +175,115 @@
     methods: {
       getSettings() {
         console.log('getting settings');
-        axiosInstance.get('settings').then((response) => {
-          const state = response.data;
-          console.log(state);
-          this.settings_obj = state;
-        });
+        axiosInstance
+          .get('settings')
+          .then((response) => {
+            const state = response.data;
+            console.log(state);
+            this.settings_obj = state;
+            this.setRuntimeValues();
+          })
+          .catch((err) => {
+            useErrorNotification(err);
+          });
       },
       printSettings() {
         console.log(this.settings_obj);
+      },
+      setRuntimeValues() {
+        this.runtime_values = {};
+        this.settings_obj.runtime_settings.settings.forEach((setting) => {
+          if (Array.isArray(setting.value)) {
+            this.runtime_values[setting.key] = setting.value.join(',');
+          } else {
+            this.runtime_values[setting.key] = setting.value;
+          }
+        });
+      },
+      runtimeSettingGroupName(key) {
+        if (key.startsWith('ui.')) {
+          return 'UI';
+        }
+        if (key.startsWith('log.')) {
+          return 'Logging';
+        }
+        if (key.startsWith('base-dir.')) {
+          return 'Base Directories';
+        }
+        if (key.startsWith('store.')) {
+          return 'Store';
+        }
+        return 'General';
+      },
+      runtimeSettingMessage(setting) {
+        const parts = [
+          setting.description,
+          `Env: ${setting.env_var}`,
+          `Source: ${setting.source}`,
+        ];
+        if (setting.restart_required) {
+          parts.push('Restart required');
+        }
+        if (setting.type === '[]string') {
+          parts.push('Use comma-separated values');
+        }
+        return parts.filter(Boolean).join(' | ');
+      },
+      isNumberRuntimeSetting(setting) {
+        return ['int', 'float64'].includes(setting.type);
+      },
+      normalizeRuntimeValue(setting) {
+        const value = this.runtime_values[setting.key];
+        if (setting.type === '[]string') {
+          if (typeof value !== 'string') {
+            return value;
+          }
+          return value
+            .split(',')
+            .map((entry) => entry.trim())
+            .filter((entry) => entry.length > 0);
+        }
+        return value;
+      },
+      saveRuntimeSetting(setting) {
+        axiosInstance
+          .post(
+            'settings/runtime',
+            {
+              key: setting.key,
+              value: this.normalizeRuntimeValue(setting),
+            },
+            { timeout: 0 },
+          )
+          .then(() => {
+            this.$buefy.toast.open({
+              message: `${setting.key} updated`,
+              type: 'is-success',
+              duration: 3000,
+            });
+            this.getSettings();
+          })
+          .catch((err) => {
+            useErrorNotification(err);
+          });
+      },
+      unsetRuntimeSetting(setting) {
+        axiosInstance
+          .delete('settings/runtime', {
+            params: { key: setting.key },
+            timeout: 0,
+          })
+          .then(() => {
+            this.$buefy.toast.open({
+              message: `${setting.key} reset`,
+              type: 'is-success',
+              duration: 3000,
+            });
+            this.getSettings();
+          })
+          .catch((err) => {
+            useErrorNotification(err);
+          });
       },
       sendSettingsToServer() {
         axiosInstance
@@ -154,8 +321,31 @@
             max_file_rotations: 3,
             max_file_size: 100,
           },
+          runtime_settings: {
+            settings: [],
+            environment: [],
+          },
         },
+        runtime_values: {},
       };
+    },
+    computed: {
+      runtimeSettingGroups() {
+        const groups = {};
+        this.settings_obj.runtime_settings.settings.forEach((setting) => {
+          const name = this.runtimeSettingGroupName(setting.key);
+          if (!groups[name]) {
+            groups[name] = [];
+          }
+          groups[name].push(setting);
+        });
+        return Object.keys(groups)
+          .sort()
+          .map((name) => ({
+            name,
+            settings: groups[name],
+          }));
+      },
     },
   };
 </script>
@@ -163,5 +353,14 @@
   .custom-small {
     width: 25%;
     min-width: 150px;
+  }
+  .runtime-section {
+    margin-bottom: 1.5rem;
+  }
+  .runtime-setting {
+    align-items: center;
+    display: flex;
+    gap: 0.5rem;
+    width: 100%;
   }
 </style>

@@ -384,6 +384,8 @@ func Start(opts ...ServerOption) error {
 
 	api.HandleFunc("/settings", GetSettings).Methods("GET", "OPTIONS")
 	api.HandleFunc("/settings", SetSettings).Methods("POST", "OPTIONS")
+	api.HandleFunc("/settings/runtime", SetRuntimeSetting).Methods("POST", "OPTIONS")
+	api.HandleFunc("/settings/runtime", UnsetRuntimeSetting).Methods("DELETE", "OPTIONS")
 	api.HandleFunc("/settings/password", GetPasswordRequirements).Methods("GET", "OPTIONS")
 	api.HandleFunc("/settings/timeout", GetTimeoutSettings).Methods("GET", "OPTIONS")
 
