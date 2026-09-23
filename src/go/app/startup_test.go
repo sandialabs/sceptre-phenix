@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,6 +14,339 @@ import (
 	v1 "phenix/types/version/v1"
 	v2 "phenix/types/version/v2"
 )
+
+func TestStartupPostStartAutoMount(t *testing.T) {
+	mountErr := errors.New("mount failed")
+
+	tests := []struct {
+		name        string
+		annotation  any
+		setAnnot    bool
+		nodeType    string
+		doNotBoot   bool
+		userDelay   bool
+		osType      string
+		dryRun      bool
+		mountErr    error
+		wantMounts  int
+		wantErrText string
+	}{
+		{
+			name:       "enabled bool",
+			annotation: true,
+			setAnnot:   true,
+			wantMounts: 1,
+		},
+		{
+			name:       "disabled bool",
+			annotation: false,
+			setAnnot:   true,
+		},
+		{
+			name: "omitted",
+		},
+		{
+			name:       "dry run",
+			annotation: true,
+			setAnnot:   true,
+			dryRun:     true,
+		},
+		{
+			name:        "invalid string value",
+			annotation:  "true",
+			setAnnot:    true,
+			wantErrText: "phenix/auto-mount annotation for node linux1 must be a boolean",
+		},
+		{
+			name:        "invalid int value",
+			annotation:  1,
+			setAnnot:    true,
+			wantErrText: "phenix/auto-mount annotation for node linux1 must be a boolean",
+		},
+		{
+			name:       "VM does not boot skipped",
+			annotation: true,
+			setAnnot:   true,
+			doNotBoot:  true,
+			wantMounts: 0,
+		},
+		{
+			name:       "non-VM node skipped",
+			annotation: true,
+			setAnnot:   true,
+			nodeType:   "Switch",
+			wantMounts: 0,
+		},
+		{
+			name:       "user-delayed VM skipped",
+			annotation: true,
+			setAnnot:   true,
+			userDelay:  true,
+			wantMounts: 0,
+		},
+		{
+			name:       "minirouter skipped",
+			annotation: true,
+			setAnnot:   true,
+			osType:     "minirouter",
+			wantMounts: 0,
+		},
+		{
+			name:        "mount failure",
+			annotation:  true,
+			setAnnot:    true,
+			mountErr:    mountErr,
+			wantMounts:  1,
+			wantErrText: "auto-mounting VM linux1: mount failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			osType := osLinux
+			if tt.osType != "" {
+				osType = tt.osType
+			}
+
+			node := newStartupTestNode(t, "linux1", osType, true, 1)
+			if tt.nodeType != "" {
+				node.TypeF = tt.nodeType
+			}
+			if tt.setAnnot {
+				node.AnnotationsF = map[string]any{autoMountAnnotation: tt.annotation}
+			}
+			node.GeneralF.DoNotBootF = boolPtr(tt.doNotBoot)
+			if tt.userDelay {
+				node.DelayF = &v1.Delay{UserF: true}
+			}
+
+			exp, _ := newStartupTestExperiment(t, node, nil)
+
+			var mounts [][2]string
+			oldStartupMountFilesystem := startupMountFilesystem
+			startupMountFilesystem = func(_ context.Context, expName, vmName string) error {
+				mounts = append(mounts, [2]string{expName, vmName})
+
+				return tt.mountErr
+			}
+			t.Cleanup(func() {
+				startupMountFilesystem = oldStartupMountFilesystem
+			})
+
+			err := (&Startup{dryRun: tt.dryRun}).PostStart(t.Context(), exp)
+			if tt.wantErrText == "" {
+				if err != nil {
+					t.Fatalf("PostStart() error = %v", err)
+				}
+			} else if err == nil || err.Error() != tt.wantErrText {
+				t.Fatalf("PostStart() error = %v, want %q", err, tt.wantErrText)
+			}
+
+			if len(mounts) != tt.wantMounts {
+				t.Fatalf("PostStart() mount calls = %d, want %d", len(mounts), tt.wantMounts)
+			}
+
+			if tt.wantMounts > 0 && mounts[0] != [2]string{"exp1", "linux1"} {
+				t.Fatalf("PostStart() mount target = %v, want [exp1 linux1]", mounts[0])
+			}
+		})
+	}
+}
+
+// TestTriggerAutoMount verifies the exported entry point used to mount a
+// node's filesystem once a user-delayed node has been manually started. It
+// must NOT skip user-delayed nodes (unlike the automatic post-start pass),
+// since it is specifically invoked to handle that case, but should still
+// respect the other skip conditions (do-not-boot, minirouter) and the
+// boolean-only annotation requirement.
+func TestTriggerAutoMount(t *testing.T) {
+	mountErr := errors.New("mount failed")
+
+	tests := []struct {
+		name        string
+		annotation  any
+		setAnnot    bool
+		nodeType    string
+		doNotBoot   bool
+		osType      string
+		mountErr    error
+		wantMounts  int
+		wantErrText string
+	}{
+		{
+			name:       "user-delayed node mounted once triggered",
+			annotation: true,
+			setAnnot:   true,
+			wantMounts: 1,
+		},
+		{
+			name:     "disabled node not mounted",
+			setAnnot: false,
+		},
+		{
+			name:        "invalid annotation value errors",
+			annotation:  "true",
+			setAnnot:    true,
+			wantErrText: "phenix/auto-mount annotation for node linux1 must be a boolean",
+		},
+		{
+			name:       "do-not-boot node skipped",
+			annotation: true,
+			setAnnot:   true,
+			doNotBoot:  true,
+			wantMounts: 0,
+		},
+		{
+			name:       "non-VM node skipped",
+			annotation: true,
+			setAnnot:   true,
+			nodeType:   "Firewall",
+			wantMounts: 0,
+		},
+		{
+			name:       "minirouter node skipped",
+			annotation: true,
+			setAnnot:   true,
+			osType:     "minirouter",
+			wantMounts: 0,
+		},
+		{
+			name:        "mount failure propagated",
+			annotation:  true,
+			setAnnot:    true,
+			mountErr:    mountErr,
+			wantMounts:  1,
+			wantErrText: "auto-mounting VM linux1: mount failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			osType := osLinux
+			if tt.osType != "" {
+				osType = tt.osType
+			}
+
+			node := newStartupTestNode(t, "linux1", osType, true, 1)
+			if tt.nodeType != "" {
+				node.TypeF = tt.nodeType
+			}
+			if tt.setAnnot {
+				node.AnnotationsF = map[string]any{autoMountAnnotation: tt.annotation}
+			}
+			node.GeneralF.DoNotBootF = boolPtr(tt.doNotBoot)
+			node.DelayF = &v1.Delay{UserF: true}
+
+			var mounts [][2]string
+			oldStartupMountFilesystem := startupMountFilesystem
+			startupMountFilesystem = func(_ context.Context, expName, vmName string) error {
+				mounts = append(mounts, [2]string{expName, vmName})
+
+				return tt.mountErr
+			}
+			t.Cleanup(func() {
+				startupMountFilesystem = oldStartupMountFilesystem
+			})
+
+			err := TriggerAutoMount(t.Context(), "exp1", node)
+			if tt.wantErrText == "" {
+				if err != nil {
+					t.Fatalf("TriggerAutoMount() error = %v", err)
+				}
+			} else if err == nil || err.Error() != tt.wantErrText {
+				t.Fatalf("TriggerAutoMount() error = %v, want %q", err, tt.wantErrText)
+			}
+
+			if len(mounts) != tt.wantMounts {
+				t.Fatalf("TriggerAutoMount() mount calls = %d, want %d", len(mounts), tt.wantMounts)
+			}
+		})
+	}
+}
+
+func TestStartupInitDryRun(t *testing.T) {
+	startup := new(Startup)
+	if err := startup.Init(DryRun(true)); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	if !startup.dryRun {
+		t.Fatal("Init() did not retain dry-run setting")
+	}
+}
+
+func TestStartupCleanupAutoMounts(t *testing.T) {
+	unmountErr := errors.New("unmount failed")
+
+	enabled1 := newStartupTestNode(t, "linux1", osLinux, true, 1)
+	enabled1.AnnotationsF = map[string]any{autoMountAnnotation: true}
+	enabled2 := newStartupTestNode(t, "linux2", osLinux, true, 1)
+	enabled2.AnnotationsF = map[string]any{autoMountAnnotation: true}
+	disabled := newStartupTestNode(t, "linux3", osLinux, true, 1)
+	disabled.AnnotationsF = map[string]any{autoMountAnnotation: false}
+	doNotBoot := newStartupTestNode(t, "linux4", osLinux, true, 1)
+	doNotBoot.AnnotationsF = map[string]any{autoMountAnnotation: true}
+	doNotBoot.GeneralF.DoNotBootF = boolPtr(true)
+	nonVM := newStartupTestNode(t, "switch1", osLinux, true, 1)
+	nonVM.AnnotationsF = map[string]any{autoMountAnnotation: true}
+	nonVM.TypeF = "Switch"
+	minirouter := newStartupTestNode(t, "router1", "minirouter", true, 1)
+	minirouter.AnnotationsF = map[string]any{autoMountAnnotation: true}
+
+	exp, _ := newStartupTestExperiment(t, enabled1, nil)
+	exp.Spec.(*v1.ExperimentSpec).TopologyF.NodesF = []*v1.Node{ //nolint:forcetypeassert // test fixture
+		enabled1,
+		enabled2,
+		disabled,
+		doNotBoot,
+		nonVM,
+		minirouter,
+	}
+
+	var unmounts [][2]string
+	oldStartupUnmountFilesystem := startupUnmountFilesystem
+	startupUnmountFilesystem = func(_ context.Context, expName, vmName string) error {
+		unmounts = append(unmounts, [2]string{expName, vmName})
+		if vmName == "linux1" {
+			return unmountErr
+		}
+
+		return nil
+	}
+	t.Cleanup(func() {
+		startupUnmountFilesystem = oldStartupUnmountFilesystem
+	})
+
+	err := (&Startup{}).Cleanup(t.Context(), exp)
+	if !errors.Is(err, unmountErr) {
+		t.Fatalf("Cleanup() error = %v, want wrapped %v", err, unmountErr)
+	}
+
+	want := [][2]string{{"exp1", "linux1"}, {"exp1", "linux2"}}
+	if !reflect.DeepEqual(unmounts, want) {
+		t.Fatalf("Cleanup() unmounts = %v, want %v", unmounts, want)
+	}
+}
+
+func TestStartupCleanupDryRun(t *testing.T) {
+	node := newStartupTestNode(t, "linux1", osLinux, true, 1)
+	node.AnnotationsF = map[string]any{autoMountAnnotation: true}
+	exp, _ := newStartupTestExperiment(t, node, nil)
+
+	oldStartupUnmountFilesystem := startupUnmountFilesystem
+	startupUnmountFilesystem = func(context.Context, string, string) error {
+		t.Fatal("Cleanup() unmounted during dry run")
+
+		return nil
+	}
+	t.Cleanup(func() {
+		startupUnmountFilesystem = oldStartupUnmountFilesystem
+	})
+
+	if err := (&Startup{dryRun: true}).Cleanup(t.Context(), exp); err != nil {
+		t.Fatalf("Cleanup() error = %v", err)
+	}
+}
 
 func TestStartupPreStartC2TriggerMatrix(t *testing.T) {
 	tests := []struct {

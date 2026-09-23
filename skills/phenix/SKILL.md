@@ -176,6 +176,15 @@ Annotations used by phenix's own default apps:
   while still letting phenix/minimega manage the VM normally. User apps from
   the scenario are unaffected. Omit the annotation (or set it `true`) to keep
   the default behavior.
+- `phenix/auto-mount: true` (`startup` app, `post-start` stage) — waits for the
+  VM's miniccc agent, then mounts its filesystem at
+  `<mount-dir>/<experiment>/<vm>`. The annotation must be a boolean and is
+  honored even when `phenix/default-apps` is `false`. Startup fails if the
+  annotation value isn't a boolean or the opted-in VM's mount cannot be
+  created. Non-VM nodes, nodes configured not to boot, nodes without a miniccc
+  agent (e.g. `minirouter`), and user-delayed nodes are skipped with a warning
+  instead of failing startup; user-delayed nodes are mounted once manually
+  started (via `phenix vm resume` or the web UI).
 - `phenix/startup-autotunnel` (`startup` app, `post-start` stage) — a list of
   strings, each describing a port forward to auto-create for the node once it
   boots, e.g. `["8080", "8080:9090", "8080:10.0.0.5:9090"]`. Each entry is

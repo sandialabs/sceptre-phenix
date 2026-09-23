@@ -718,6 +718,10 @@ func Resume(expName, vmName string) error {
 		return fmt.Errorf("resuming VM: %w", err)
 	}
 
+	if err := TriggerAutoMountForDelayedStart(context.Background(), expName, vmName); err != nil {
+		return err
+	}
+
 	return nil
 }
 

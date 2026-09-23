@@ -790,56 +790,6 @@ func Start(ctx context.Context, opts ...StartOption) error {
 
 			return errors
 		}
-	} else {
-		go func() {
-			defer close(o.errChan)
-
-			if !o.dryrun {
-				if exp.Spec.Topology().HasCommands() {
-					err = mm.ReadScriptFromFile(exp.Spec.ExperimentName(), ccScript)
-					if err != nil {
-						o.errChan <- fmt.Errorf("reading minimega cc script: %w", err)
-
-						err = Stop(exp.Spec.ExperimentName())
-						if err != nil {
-							o.errChan <- fmt.Errorf("stopping experiment: %w", err)
-						}
-
-						return
-					}
-				}
-
-				err = handleDelayedVMs(ctx, exp.Spec.ExperimentName(), delays, c2s)
-				if err != nil {
-					o.errChan <- fmt.Errorf("handling delayed VMs: %w", err)
-
-					// If the context was canceled, the experiment is already being
-					// stopped elsewhere (e.g. via the web UI, which cancels this
-					// context before calling Stop). Calling Stop again here would
-					// race with that in-progress stop and its cleanup, so skip it.
-					if errors.Is(ctx.Err(), context.Canceled) {
-						return
-					}
-
-					err = Stop(exp.Spec.ExperimentName())
-					if err != nil {
-						o.errChan <- fmt.Errorf("stopping experiment: %w", err)
-					}
-
-					return
-				}
-			}
-
-			err = app.ApplyApps(ctx, exp, app.Stage(app.ActionPostStart), app.DryRun(o.dryrun))
-			if err != nil {
-				o.errChan <- fmt.Errorf("applying apps to experiment: %w", err)
-
-				err = Stop(exp.Spec.ExperimentName())
-				if err != nil {
-					o.errChan <- fmt.Errorf("stopping experiment: %w", err)
-				}
-			}
-		}()
 	}
 
 	exp.Status.SetStartTime(start)
@@ -849,7 +799,20 @@ func Start(ctx context.Context, opts ...StartOption) error {
 
 	err = store.Update(c)
 	if err != nil {
+		cleanupErr := app.ApplyApps(
+			context.Background(),
+			exp,
+			app.Stage(app.ActionCleanup),
+			app.DryRun(o.dryrun),
+		)
 		_ = mm.ClearNamespace(exp.Spec.ExperimentName())
+
+		if cleanupErr != nil {
+			return multierror.Append(
+				fmt.Errorf("updating experiment config: %w", err),
+				fmt.Errorf("cleaning up app experiments: %w", cleanupErr),
+			)
+		}
 
 		return fmt.Errorf("updating experiment config: %w", err)
 	}
@@ -858,7 +821,67 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		hook("start", o.name)
 	}
 
+	if o.errChan != nil {
+		go finishAsyncStart(ctx, exp, ccScript, delays, c2s, o.dryrun, o.errChan)
+	}
+
 	return nil
+}
+
+func finishAsyncStart(
+	ctx context.Context,
+	exp *types.Experiment,
+	ccScript string,
+	delays map[string]time.Duration,
+	c2s map[string]map[string]bool,
+	dryRun bool,
+	errChan chan error,
+) {
+	defer close(errChan)
+
+	expName := exp.Spec.ExperimentName()
+
+	if !dryRun {
+		if exp.Spec.Topology().HasCommands() {
+			if err := mm.ReadScriptFromFile(expName, ccScript); err != nil {
+				errChan <- fmt.Errorf("reading minimega cc script: %w", err)
+
+				if err := stopAfterAsyncStartFailure(ctx, expName); err != nil {
+					errChan <- fmt.Errorf("stopping experiment: %w", err)
+				}
+
+				return
+			}
+		}
+
+		if err := handleDelayedVMs(ctx, expName, delays, c2s); err != nil {
+			errChan <- fmt.Errorf("handling delayed VMs: %w", err)
+
+			if err := stopAfterAsyncStartFailure(ctx, expName); err != nil {
+				errChan <- fmt.Errorf("stopping experiment: %w", err)
+			}
+
+			return
+		}
+	}
+
+	if err := app.ApplyApps(ctx, exp, app.Stage(app.ActionPostStart), app.DryRun(dryRun)); err != nil {
+		errChan <- fmt.Errorf("applying apps to experiment: %w", err)
+
+		if err := stopAfterAsyncStartFailure(ctx, expName); err != nil {
+			errChan <- fmt.Errorf("stopping experiment: %w", err)
+		}
+	}
+}
+
+func stopAfterAsyncStartFailure(ctx context.Context, expName string) error {
+	// A canceled start context means another operation already owns stopping
+	// the experiment. Avoid racing its cleanup with a second Stop call.
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return nil
+	}
+
+	return Stop(expName)
 }
 
 // Stop stops the experiment with the given name. Injection snapshots are
