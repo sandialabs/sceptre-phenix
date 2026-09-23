@@ -72,11 +72,12 @@ Typical flow with `curl` against a local/default deployment:
 ```bash
 # 1. Log in to obtain a JWT (GET with basic auth, or POST with a JSON body)
 TOKEN=$(curl -s -u admin:password http://localhost:3000/api/v1/login | jq -r .token)
-# or: TOKEN=$(curl -s -X POST -d '{"username":"admin","password":"password"}' \
+# or: TOKEN=$(curl -s -X POST -d '{"user":"admin","pass":"password"}' \
 #            http://localhost:3000/api/v1/login | jq -r .token)
 
-# 2. Use the token on every subsequent request via the custom auth header
-curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
+# 2. Use the token on every subsequent request via the custom auth header;
+#    the value must be "Bearer <token>" (or pass ?token=<token> instead)
+curl -H "X-Phenix-Auth-Token: Bearer $TOKEN" http://localhost:3000/api/v1/experiments
 ```
 
 If accessing phenix inside its Docker container from the host, the container
@@ -338,7 +339,7 @@ phenix version
 
 ## Web API Reference
 
-Base path: `/api/v1`. Auth: `X-Phenix-Auth-Token: <jwt>` header (obtained via
+Base path: `/api/v1`. Auth: `X-Phenix-Auth-Token: Bearer <jwt>` header (obtained via
 `POST /api/v1/login`), NOT the standard `Authorization` header. All routes
 below are relative to the base path.
 
@@ -373,8 +374,10 @@ running `phenix ui` server, or building a UI integration).
   becomes "config not found" further down the pipeline.
 - **`vm_type` default is `kvm`, not `container`** — don't assume container semantics unless
   the topology explicitly sets `general.vm_type: container`.
-- **Auth uses a custom header, not `Authorization`.** Web API calls must use
-  `X-Phenix-Auth-Token`; standard bearer-token tooling will silently 401.
+- **Auth uses a custom header, not `Authorization`.** Web API calls must send
+  `X-Phenix-Auth-Token: Bearer <token>`; a bare token or the standard
+  `Authorization` header gets a 401. The login body is `{"user","pass"}`, not
+  `{"username","password"}`.
 - **Builder, Scorch, and Tunneler have their own RBAC resources.** Their routes
   first check `builder` (`get`/`post`/`put`), `scorch` (`get`/`post`/`delete`),
   or `tunneler` (`get`), then the usual experiment and config permissions.
