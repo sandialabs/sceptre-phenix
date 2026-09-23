@@ -60,7 +60,9 @@
             <b-tooltip
               label="resource names can include wildcards for broad
                     assignment (ex. *inv*); they can also include `!` to not
-                    allow access to a resource (ex. !*inv*)"
+                    allow access to a resource (ex. !*inv*). VM and config
+                    names are namespaced (ex. exp1/vm1, Topology/foo) and `*`
+                    does not match `/`, so use patterns such as exp1/* or */vm1"
               type="is-light is-left"
               multilined>
               <b-icon icon="question-circle"></b-icon>
@@ -120,7 +122,9 @@
             <b-tooltip
               label="resource names can include wildcards for broad
                     assignment (ex. *inv*); they can also include `!` to not
-                    allow access to a resource (ex. !*inv*)"
+                    allow access to a resource (ex. !*inv*). VM and config
+                    names are namespaced (ex. exp1/vm1, Topology/foo) and `*`
+                    does not match `/`, so use patterns such as exp1/* or */vm1"
               type="is-light is-left"
               multilined>
               <b-icon icon="question-circle"></b-icon>
