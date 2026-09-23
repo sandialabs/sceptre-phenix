@@ -757,8 +757,6 @@ func GetPipeline(w http.ResponseWriter, r *http.Request) error {
 // TODO: change this to `scorch/runs`
 
 // StartPipeline - POST /experiments/{name}/scorch/pipelines/{run}.
-//
-//nolint:funlen // handler
 func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StartPipeline")
 

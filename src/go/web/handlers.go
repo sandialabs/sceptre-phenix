@@ -715,17 +715,7 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
 
 	// Triggering Scorch here starts a Scorch run, so it needs the same service
 	// permission as POST /experiments/{name}/scorch/pipelines/{run}.
-	if appsIncludeScorch(appsFilter) && !role.Allowed("scorch", "post") {
-		plog.Warn(
-			plog.TypeSecurity,
-			"triggering Scorch not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			name,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
-
+	if scorchTriggerForbidden(w, r, appsFilter, "post") {
 		return
 	}
 
@@ -835,17 +825,7 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 
 	// Canceling Scorch here cancels a Scorch run, so it needs the same service
 	// permission as DELETE /experiments/{name}/scorch/pipelines/{run}.
-	if appsIncludeScorch(appsFilter) && !role.Allowed("scorch", "delete") {
-		plog.Warn(
-			plog.TypeSecurity,
-			"canceling Scorch not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			name,
-		)
-		http.Error(w, "forbidden", http.StatusForbidden)
-
+	if scorchTriggerForbidden(w, r, appsFilter, "delete") {
 		return
 	}
 
@@ -883,6 +863,29 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 	)
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// scorchTriggerForbidden writes a 403 and returns true when appsFilter names
+// the Scorch app and the requester's role lacks the scorch permission for verb.
+func scorchTriggerForbidden(w http.ResponseWriter, r *http.Request, appsFilter, verb string) bool {
+	role := middleware.RoleFromContext(r.Context())
+	if !appsIncludeScorch(appsFilter) || role.Allowed("scorch", verb) {
+		return false
+	}
+
+	plog.Warn(
+		plog.TypeSecurity,
+		"triggering Scorch not allowed",
+		"user",
+		middleware.UserFromContext(r.Context()),
+		"exp",
+		mux.Vars(r)["name"],
+		"verb",
+		verb,
+	)
+	http.Error(w, "forbidden", http.StatusForbidden)
+
+	return true
 }
 
 // appsIncludeScorch reports whether a trigger endpoint apps filter names the
