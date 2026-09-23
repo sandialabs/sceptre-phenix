@@ -14,6 +14,10 @@ type (
 const (
 	ComponentConfigs Component = "configs"
 	ComponentStore   Component = "store"
+
+	// ComponentServiceRoles marks that the Builder and Scorch default roles added
+	// after the initial default configs have been created.
+	ComponentServiceRoles Component = "service-roles"
 )
 
 // Store is the interface that identifies all the required functionality for a

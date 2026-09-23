@@ -121,7 +121,26 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) {
 		vars = mux.Vars(r)
 		exp  = vars["exp"]
 		name = vars["name"]
+		role = middleware.RoleFromContext(r.Context())
 	)
+
+	// The websocket is the VNC session itself, so it needs the same permission
+	// as the VNC page; checking only the page left the session open to anyone.
+	if !role.Allowed("vms/vnc", "get", exp+"/"+name) {
+		plog.Warn(
+			plog.TypeSecurity,
+			"vnc access not allowed",
+			"user",
+			middleware.UserFromContext(r.Context()),
+			"exp",
+			exp,
+			"vm",
+			name,
+		)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
 
 	endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(name))
 	if err != nil {

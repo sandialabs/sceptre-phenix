@@ -29,7 +29,10 @@ import (
 	"phenix/web/weberror"
 )
 
-const kindExperiment = "Experiment"
+const (
+	kindExperiment = "Experiment"
+	kindUser       = "User"
+)
 const MaxUploadSize = 1 << 20
 
 // GetConfigs - GET /configs.
@@ -166,11 +169,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
 
-		// TODO: also clear passwords for users
-		if cfg.Kind == kindExperiment {
-			// Clear experiment name... not applicable to end users.
-			delete(cfg.Spec, "experimentName")
-		}
+		redactConfig(cfg)
 
 		body, err := yaml.Marshal(cfg)
 		if err != nil {
@@ -209,11 +208,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
 
-		// TODO: also clear passwords for users
-		if cfg.Kind == kindExperiment {
-			// Clear experiment name... not applicable to end users.
-			delete(cfg.Spec, "experimentName")
-		}
+		redactConfig(cfg)
 
 		body, err := yaml.Marshal(cfg)
 		if err != nil {
@@ -259,6 +254,123 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// configName returns the canonical Kind/name used for config permission
+// checks, falling back to the raw kind when it is unknown so the check still
+// fails closed for kind-scoped roles.
+func configName(c *store.Config) string {
+	if name := store.ConfigFullName(c.Kind, c.Metadata.Name); name != "" {
+		return name
+	}
+
+	return c.FullName()
+}
+
+// authorizeConfigCreate checks that the requester can create a config of this
+// kind and name. Without it, any role with configs create could create User or
+// Role configs and grant itself more access.
+func authorizeConfigCreate(r *http.Request, c *store.Config) error {
+	var (
+		role = middleware.RoleFromContext(r.Context())
+		name = configName(c)
+	)
+
+	if role.Allowed("configs", "create", name) {
+		return nil
+	}
+
+	user := middleware.UserFromContext(r.Context())
+	plog.Warn(plog.TypeSecurity, "creating config not allowed", "user", user, "config", name)
+
+	return weberror.NewWebError(nil, "creating config %s not allowed for %s", name, user).
+		SetStatus(http.StatusForbidden)
+}
+
+// userSecretFields are User config spec fields that hold credentials. The
+// configs API never returns them: the password is a bcrypt hash that can be
+// cracked offline, and each token key is a live API token for the user.
+var userSecretFields = []string{"password", "tokens"} //nolint:gochecknoglobals // constant list
+
+// redactConfig removes fields that must not leave the server from a config the
+// configs API returns.
+func redactConfig(cfg *store.Config) {
+	switch {
+	case cfg.Kind == kindExperiment:
+		// Clear experiment name... not applicable to end users.
+		delete(cfg.Spec, "experimentName")
+	case strings.EqualFold(cfg.Kind, kindUser):
+		for _, field := range userSecretFields {
+			delete(cfg.Spec, field)
+		}
+	}
+}
+
+// keepUserSecrets carries a User config's stored credentials into an update,
+// since the configs API never returns them. Tokens are only managed through
+// the token and logout routes, so any tokens in the update are ignored, and
+// the stored password is kept unless the update sets a new one.
+func keepUserSecrets(name string, c *store.Config) error {
+	if !strings.EqualFold(c.Kind, kindUser) {
+		return nil
+	}
+
+	old, err := store.NewConfig(name)
+	if err != nil {
+		return nil //nolint:nilerr // not an existing config, so there is nothing to keep
+	}
+
+	if err := store.Get(old); err != nil {
+		if errors.Is(err, store.ErrNotExist) {
+			return nil
+		}
+
+		return fmt.Errorf("getting config %s: %w", name, err)
+	}
+
+	if !strings.EqualFold(old.Kind, kindUser) {
+		return nil
+	}
+
+	if c.Spec == nil {
+		c.Spec = make(map[string]any)
+	}
+
+	if tokens, ok := old.Spec["tokens"]; ok {
+		c.Spec["tokens"] = tokens
+	} else {
+		delete(c.Spec, "tokens")
+	}
+
+	if password, _ := c.Spec["password"].(string); password == "" {
+		c.Spec["password"] = old.Spec["password"]
+	}
+
+	return nil
+}
+
+// prepareConfigUpdate checks and completes an update to the config name, from
+// the configs API, before it is stored.
+func prepareConfigUpdate(r *http.Request, name, urlName string, c *store.Config) error {
+	// Renaming a config, or changing its kind, creates a new config, so it
+	// needs the same permission as creating one.
+	if configName(c) != name {
+		if err := authorizeConfigCreate(r, c); err != nil {
+			return err
+		}
+	}
+
+	if c.Kind == kindExperiment {
+		// Reset experiment name in spec since we removed it before sending.
+		c.Spec["experimentName"] = urlName
+	}
+
+	if err := keepUserSecrets(name, c); err != nil {
+		return weberror.NewWebError(err, "unable to read existing config %s", name).
+			SetStatus(http.StatusInternalServerError)
+	}
+
+	return nil
+}
+
 // CreateConfig - POST /configs.
 //
 //nolint:funlen // handler
@@ -289,7 +401,12 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	var (
 		typ  = r.Header.Get("Content-Type")
-		opts = []config.CreateOption{config.CreateWithValidation()}
+		opts = []config.CreateOption{
+			config.CreateWithValidation(),
+			config.CreateWithCheck(func(c *store.Config) error {
+				return authorizeConfigCreate(r, c)
+			}),
+		}
 	)
 
 	switch {
@@ -359,6 +476,11 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	c, err := config.Create(opts...)
 	if err != nil {
+		var webErr *weberror.WebError
+		if errors.As(err, &webErr) {
+			return webErr
+		}
+
 		if errors.Is(err, store.ErrExist) {
 			return weberror.NewWebError(err, "config with same name already exists")
 		}
@@ -456,10 +578,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to get config %s from store", name)
 	}
 
-	if cfg.Kind == kindExperiment {
-		// Clear experiment name... not applicable to end users.
-		delete(cfg.Spec, "experimentName")
-	}
+	redactConfig(cfg)
 
 	var body []byte
 
@@ -622,9 +741,8 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		)
 	}
 
-	if c.Kind == kindExperiment {
-		// Reset experiment name in spec since we removed it before sending.
-		c.Spec["experimentName"] = vars["name"]
+	if err := prepareConfigUpdate(r, name, vars["name"], c); err != nil {
+		return err
 	}
 
 	if err := config.Update(name, c); err != nil {

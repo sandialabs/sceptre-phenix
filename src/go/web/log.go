@@ -46,6 +46,8 @@ func GetLogs(w http.ResponseWriter, r *http.Request) {
 			user,
 		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
 	}
 
 	startTime, err := time.Parse(time.RFC3339, start)
@@ -193,8 +195,9 @@ func PublishPhenixLog(ts time.Time, level, logtype, log string) {
 
 	marshalled, _ := json.Marshal(body)
 
+	// Live logs need the same permission as the Logs tab.
 	broker.Broadcast(
-		nil,
+		bt.NewRequestPolicy("logs", "get", ""),
 		bt.NewResource("log", "phenix", "update"),
 		marshalled,
 	)

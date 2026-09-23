@@ -11,6 +11,7 @@ import (
 	putil "phenix/util"
 	"phenix/util/pubsub"
 	bt "phenix/web/broker/brokertypes"
+	"phenix/web/rbac"
 	"phenix/web/util"
 )
 
@@ -33,38 +34,8 @@ func Start() {
 	for {
 		select {
 		case pub := <-triggerSub:
-			var (
-				trigger, _ = pub.(app.TriggerPublication)
-				typ        = "apps/" + trigger.App
-
-				policy   = bt.NewRequestPolicy("experiments/trigger", "create", trigger.Experiment)
-				resource = bt.NewResource(typ, trigger.Experiment, trigger.State)
-			)
-
-			if trigger.Verb != "" {
-				policy.Verb = trigger.Verb
-			}
-
-			if trigger.Resource != "" {
-				resource.Name = trigger.Resource
-			}
-
-			if trigger.State == triggerStateError {
-				var (
-					humanized *putil.HumanizedError
-					result    []byte
-				)
-
-				if errors.As(trigger.Error, &humanized) {
-					result, _ = json.Marshal(map[string]any{triggerStateError: humanized.Humanized()})
-				} else {
-					result, _ = json.Marshal(map[string]any{triggerStateError: trigger.Error.Error()})
-				}
-
-				broadcast <- bt.Publish{RequestPolicy: policy, Resource: resource, Result: result}
-			} else {
-				broadcast <- bt.Publish{RequestPolicy: policy, Resource: resource, Result: nil}
-			}
+			trigger, _ := pub.(app.TriggerPublication)
+			publishTrigger(trigger)
 		case pub := <-delayedSub:
 			delayed, _ := pub.(string)
 			names := strings.Split(delayed, "/")
@@ -89,7 +60,12 @@ func Start() {
 			policy := bt.NewRequestPolicy("vms/start", "update", strings.Join(names, "_"))
 			resource := bt.NewResource("experiment/vm", delayed, "start")
 
-			broadcast <- bt.Publish{RequestPolicy: policy, Resource: resource, Result: body}
+			broadcast <- bt.Publish{
+				RequestPolicy:   policy,
+				RequestPolicies: nil,
+				Resource:        resource,
+				Result:          body,
+			}
 		case cli := <-register:
 			clients[cli] = true
 		case cli := <-unregister:
@@ -98,34 +74,114 @@ func Start() {
 				delete(clients, cli)
 			}
 		case pub := <-broadcast:
-			for cli := range clients {
-				var (
-					policy = pub.RequestPolicy
-					allow  bool
-				)
+			deliver(clients, pub)
+		}
+	}
+}
 
-				switch {
-				case policy == nil:
-					allow = true
-				case policy.ResourceName == "":
-					allow = cli.role.Allowed(policy.Resource, policy.Verb)
-				default:
-					allow = cli.role.Allowed(policy.Resource, policy.Verb, policy.ResourceName)
-				}
+// deliver sends pub to each client whose role satisfies all of its request
+// policies, dropping clients that cannot keep up.
+func deliver(clients map[*Client]bool, pub bt.Publish) {
+	policies := pub.RequestPolicies
+	if pub.RequestPolicy != nil {
+		policies = append([]*bt.RequestPolicy{pub.RequestPolicy}, policies...)
+	}
 
-				if allow {
-					select {
-					case cli.publish <- pub:
-					default:
-						cli.Stop()
-						delete(clients, cli)
-					}
-				}
+	for cli := range clients {
+		if requestPoliciesAllowed(cli.role, policies) {
+			select {
+			case cli.publish <- pub:
+			default:
+				cli.Stop()
+				delete(clients, cli)
 			}
 		}
 	}
 }
 
+func publishTrigger(trigger app.TriggerPublication) {
+	var (
+		policy   = bt.NewRequestPolicy("experiments/trigger", "create", trigger.Experiment)
+		resource = bt.NewResource("apps/"+trigger.App, trigger.Experiment, trigger.State)
+		result   []byte
+	)
+
+	if trigger.Verb != "" {
+		policy.Verb = trigger.Verb
+	}
+
+	if trigger.Resource != "" {
+		resource.Name = trigger.Resource
+	}
+
+	if trigger.State == triggerStateError {
+		var humanized *putil.HumanizedError
+		if errors.As(trigger.Error, &humanized) {
+			result, _ = json.Marshal(map[string]any{triggerStateError: humanized.Humanized()})
+		} else {
+			result, _ = json.Marshal(map[string]any{triggerStateError: trigger.Error.Error()})
+		}
+	}
+
+	broadcast <- bt.Publish{
+		RequestPolicy:   nil,
+		RequestPolicies: triggerPolicies(trigger.App, policy),
+		Resource:        resource,
+		Result:          result,
+	}
+}
+
 func Broadcast(policy *bt.RequestPolicy, resource *bt.Resource, msg json.RawMessage) {
-	broadcast <- bt.Publish{RequestPolicy: policy, Resource: resource, Result: msg}
+	broadcast <- bt.Publish{
+		RequestPolicy:   policy,
+		RequestPolicies: nil,
+		Resource:        resource,
+		Result:          msg,
+	}
+}
+
+func BroadcastWithPolicies(
+	policies []*bt.RequestPolicy,
+	resource *bt.Resource,
+	msg json.RawMessage,
+) {
+	broadcast <- bt.Publish{
+		RequestPolicy:   nil,
+		RequestPolicies: policies,
+		Resource:        resource,
+		Result:          msg,
+	}
+}
+
+// triggerPolicies returns the policies a client needs to receive an app
+// trigger event. Scorch run events go to everyone who can view Scorch for the
+// experiment, matching Scorch pipeline updates, since Scorch runs are started
+// and canceled with Scorch permissions rather than experiments/trigger.
+func triggerPolicies(appName string, policy *bt.RequestPolicy) []*bt.RequestPolicy {
+	if appName == "scorch" {
+		return []*bt.RequestPolicy{
+			bt.NewRequestPolicy("scorch", "get", ""),
+			bt.NewRequestPolicy("experiments", "get", policy.ResourceName),
+		}
+	}
+
+	return []*bt.RequestPolicy{policy}
+}
+
+func requestPoliciesAllowed(role rbac.Role, policies []*bt.RequestPolicy) bool {
+	for _, policy := range policies {
+		if policy == nil {
+			continue
+		}
+
+		if policy.ResourceName == "" {
+			if !role.Allowed(policy.Resource, policy.Verb) {
+				return false
+			}
+		} else if !role.Allowed(policy.Resource, policy.Verb, policy.ResourceName) {
+			return false
+		}
+	}
+
+	return true
 }

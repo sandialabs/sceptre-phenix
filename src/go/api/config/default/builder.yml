@@ -1,0 +1,66 @@
+apiVersion: phenix.sandia.gov/v1
+kind: Role
+metadata:
+  name: builder
+spec:
+  roleName: Builder
+  # Design topologies and scenarios in the Builder or on the Configs page, and
+  # create or update experiments from them. Every policy names its resources,
+  # so, like the global roles, assigning this role does not scope it to
+  # experiments. Config access excludes User and Role configs, which would let
+  # a user grant themselves more access, and Image configs, whose build scripts
+  # administrators run as root.
+  policies:
+  - resources:
+    - builder
+    resourceNames:
+    - "*"
+    verbs:
+    - get
+    - post
+    - put
+  - resources:
+    - configs
+    resourceNames:
+    - "Topology/*"
+    - "Scenario/*"
+    - "Experiment/*"
+    verbs:
+    - list
+    - get
+    - create
+    - update
+  # create and update are what the Builder needs to create or update an
+  # experiment; they do not allow starting, stopping, or deleting experiments.
+  - resources:
+    - experiments
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+    - get
+    - create
+    - update
+  - resources:
+    - disks
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+    - get
+  - resources:
+    - topologies
+    - scenarios
+    - applications
+    - hosts
+    - options
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+  - resources:
+    - schemas
+    resourceNames:
+    - "*"
+    verbs:
+    - get

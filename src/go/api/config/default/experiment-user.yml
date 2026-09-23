@@ -33,6 +33,13 @@ spec:
     - list
     - create
     - update
+  # Tunneler port forwards. Keep this before the first policy with
+  # resourceNames so assigning the role scopes it to the user's VMs.
+  - resources:
+    - "vms/forwards"
+    verbs:
+    - create
+    - delete
   - resources:
     - "experiments/files"
     verbs:
@@ -43,3 +50,20 @@ spec:
     - "*"
     verbs:
     - list
+  - resources:
+    - builder
+    verbs:
+    - get
+    - post
+  # Start and cancel Scorch runs. Typing into Scorch terminals needs the
+  # separate scorch/terminals write permission, which this role does not have.
+  - resources:
+    - scorch
+    verbs:
+    - get
+    - post
+    - delete
+  - resources:
+    - tunneler
+    verbs:
+    - get

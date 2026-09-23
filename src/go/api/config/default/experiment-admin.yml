@@ -38,3 +38,21 @@ spec:
     - "*"
     verbs:
     - list
+  - resources:
+    - builder
+    verbs:
+    - get
+    - post
+    - put
+  # Start and cancel Scorch runs. Typing into Scorch terminals needs the
+  # separate scorch/terminals write permission, which this role does not have.
+  - resources:
+    - scorch
+    verbs:
+    - get
+    - post
+    - delete
+  - resources:
+    - tunneler
+    verbs:
+    - get

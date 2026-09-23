@@ -88,7 +88,11 @@ func newUICmd() *cobra.Command {
 	uiCmd.Flags().String("file-server-endpoint", "0", "port or host:port to serve experiment file uploads on; port-only binds 127.0.0.1")
 	uiCmd.Flags().
 		String("proxy-auth-header", "", "header containing username when using proxy authentication")
-	uiCmd.Flags().StringSlice("users", nil, "pipe-delimited list of initial users to add")
+	uiCmd.Flags().StringSlice(
+		"users",
+		nil,
+		"initial users to add, as <username>:<password>:<role>[:<resource name>...] (comma-separated or repeated)",
+	)
 	uiCmd.Flags().String("tls-key", "", "path to TLS key file")
 	uiCmd.Flags().String("tls-cert", "", "path to TLS cert file")
 	uiCmd.Flags().Bool("unbundled", false, "serve local public files instead of bundled")

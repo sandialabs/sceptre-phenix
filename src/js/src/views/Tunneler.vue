@@ -63,7 +63,7 @@
         {{ props.row.arch }}
       </b-table-column>
       <b-table-column field="link" label="Download" centered v-slot="props">
-        <a :href="props.row.link" target="_blank">
+        <a :href="props.row.link" @click.prevent="download(props.row)">
           <b-icon icon="file-download" size="is-small"></b-icon>
         </a>
       </b-table-column>
@@ -72,6 +72,11 @@
 </template>
 
 <script>
+  import FileSaver from 'file-saver';
+
+  import axiosInstance from '@/utils/axios.js';
+  import { useErrorNotification } from '@/utils/errorNotif';
+
   export default {
     data() {
       return {
@@ -98,6 +103,26 @@
           },
         ],
       };
+    },
+
+    methods: {
+      download(tunneler) {
+        // Downloads require the auth header, so fetch the file instead of
+        // following the link. The link already includes the base path.
+        axiosInstance
+          .get(tunneler.link, { baseURL: '', responseType: 'blob' })
+          .then((response) => {
+            FileSaver.saveAs(response.data, tunneler.link.split('/').pop());
+          })
+          .catch(async (err) => {
+            // error bodies arrive as blobs because of the response type
+            if (err.response?.data instanceof Blob) {
+              err.response.data = await err.response.data.text();
+            }
+
+            useErrorNotification(err);
+          });
+      },
     },
   };
 </script>

@@ -72,11 +72,12 @@ Typical flow with `curl` against a local/default deployment:
 ```bash
 # 1. Log in to obtain a JWT (GET with basic auth, or POST with a JSON body)
 TOKEN=$(curl -s -u admin:password http://localhost:3000/api/v1/login | jq -r .token)
-# or: TOKEN=$(curl -s -X POST -d '{"username":"admin","password":"password"}' \
+# or: TOKEN=$(curl -s -X POST -d '{"user":"admin","pass":"password"}' \
 #            http://localhost:3000/api/v1/login | jq -r .token)
 
-# 2. Use the token on every subsequent request via the custom auth header
-curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
+# 2. Use the token on every subsequent request via the custom auth header;
+#    the value must be "Bearer <token>" (or pass ?token=<token> instead)
+curl -H "X-Phenix-Auth-Token: Bearer $TOKEN" http://localhost:3000/api/v1/experiments
 ```
 
 If accessing phenix inside its Docker container from the host, the container
@@ -338,7 +339,7 @@ phenix version
 
 ## Web API Reference
 
-Base path: `/api/v1`. Auth: `X-Phenix-Auth-Token: <jwt>` header (obtained via
+Base path: `/api/v1`. Auth: `X-Phenix-Auth-Token: Bearer <jwt>` header (obtained via
 `POST /api/v1/login`), NOT the standard `Authorization` header. All routes
 below are relative to the base path.
 
@@ -352,9 +353,10 @@ below are relative to the base path.
 | Misc lookups | `GET /vms` (all experiments), `GET /applications`, `GET /topologies`, `GET /topologies/{topo}/scenarios`, `GET /hosts` |
 | Users/Roles/Auth | `GET/POST /users`, `GET/PATCH/DELETE /users/{username}`, `POST /users/{username}/tokens`, `GET /roles`, `POST /signup`, `GET/POST /login`, `GET /logout` |
 | Realtime | `GET /ws` (websocket broker for UI events/logs), `GET /logs` |
-| SCORCH | `/experiments/{name}/scorch/terminals*`, `/experiments/{name}/scorch/components/.../ws` |
+| SCORCH | `GET /experiments/{name}/scorch/pipelines[/{run}/{loop}]`, `POST/DELETE /experiments/{name}/scorch/pipelines/{run}`, `/experiments/{name}/scorch/terminals*`, `/experiments/{name}/scorch/components/.../ws` |
 | Settings | `GET/POST /settings`, `GET /settings/password` |
-| Builder | `GET /builder`, `POST /builder/save`, `GET /builder/topologies[/{name}]` |
+| Builder | `GET /builder/topologies[/{name}]`, `POST/PUT /experiments/builder`; outside the base path: `GET /builder`, `POST /builder/save` |
+| Tunneler | Outside the base path: `GET /downloads/tunneler/{name}` (only with the `tunneler-download` feature) |
 | Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode) |
 
 Prefer the equivalent `phenix` CLI command over calling the web API directly
@@ -372,8 +374,34 @@ running `phenix ui` server, or building a UI integration).
   becomes "config not found" further down the pipeline.
 - **`vm_type` default is `kvm`, not `container`** — don't assume container semantics unless
   the topology explicitly sets `general.vm_type: container`.
-- **Auth uses a custom header, not `Authorization`.** Web API calls must use
-  `X-Phenix-Auth-Token`; standard bearer-token tooling will silently 401.
+- **Auth uses a custom header, not `Authorization`.** Web API calls must send
+  `X-Phenix-Auth-Token: Bearer <token>`; a bare token or the standard
+  `Authorization` header gets a 401. The login body is `{"user","pass"}`, not
+  `{"username","password"}`.
+- **Builder, Scorch, and Tunneler have their own RBAC resources.** Their routes
+  first check `builder` (`get`/`post`/`put`), `scorch` (`get`/`post`/`delete`),
+  or `tunneler` (`get`), then the usual experiment and config permissions.
+  Scorch routes also need read access to the experiment (`experiments get`);
+  starting or canceling a run needs `scorch` `post`/`delete` but not
+  `experiments/trigger`, except through `trigger?apps=scorch`, which needs both.
+  Typing into or exiting a Scorch terminal needs `scorch/terminals` `write`,
+  kept separate because a Scorch terminal is a shell on the phenix server; by
+  default only Global Admin and Scorch Admin have it.
+  Saving a Builder file needs only `builder` `get`; creating or updating an
+  experiment from the Builder needs `builder` `post`/`put` plus `experiments`
+  `create`/`update`. Custom roles must add these resources. Built-in roles get
+  them from a one-time startup migration, and the Builder, Scorch Viewer, and
+  Scorch Admin roles are created once on upgrade. `GET /builder` and tunneler
+  downloads take the JWT in the header or as `?token=`; in proxy mode only the
+  proxy-provided header counts.
+- **`configs` permissions are checked against `Kind/name`** (for example
+  `Topology/foo`), so a role's `resourceNames` need `*/*` or kind patterns such
+  as `Topology/*`; `*` alone matches no config. Creating a config, or renaming
+  one or changing its kind, is checked against the new `Kind/name`. User
+  configs from the configs API never include `password` or `tokens`, and
+  updating a User config there keeps the stored ones.
+- **API tokens for another user need `users/tokens` `create`** for that user,
+  in addition to `users` `patch`; your own tokens need only `users` `patch`.
 - **Store endpoint changes the whole world.** `--store.endpoint` (bolt or etcd) determines
   which configs/experiments are visible — commands against the wrong endpoint will report
   "no configs found" rather than an obvious connection error.

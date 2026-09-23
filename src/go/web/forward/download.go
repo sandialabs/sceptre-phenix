@@ -3,7 +3,7 @@ package forward
 import (
 	"net/http"
 	"os"
-	"time"
+	"strconv"
 
 	log "github.com/activeshadow/libminimega/minilog"
 	"github.com/gorilla/mux"
@@ -26,8 +26,19 @@ func GetTunneler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Disposition", "attachment; filename="+name)
+	defer file.Close()
+
+	// Names such as "." or ".." open a directory rather than a tunneler binary.
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		log.Error("tunneler download (%s) is not a regular file", name)
+		http.Error(w, "error opening file", http.StatusBadRequest)
+
+		return
+	}
+
+	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(name))
 	w.Header().Set("Content-Type", "application/octet-stream")
 
-	http.ServeContent(w, r, "", time.Now(), file)
+	http.ServeContent(w, r, "", info.ModTime(), file)
 }

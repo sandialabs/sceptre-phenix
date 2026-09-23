@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -294,6 +296,13 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unmarshaling request body")
 	}
 
+	// This overwrites the topology of the named experiment and creates the
+	// experiment if it does not exist, so check both against the name before
+	// changing anything.
+	if err := authorizeBuilderUpdate(ctx, role, req.Name); err != nil {
+		return err
+	}
+
 	// update existing topology
 
 	topo, _ := store.NewConfig("topology/" + req.Name)
@@ -543,6 +552,28 @@ func UpdateExperimentFromBuilder(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// authorizeBuilderUpdate checks that role can update the named experiment and,
+// when the experiment does not exist yet, create it.
+func authorizeBuilderUpdate(ctx context.Context, role rbac.Role, name string) error {
+	user := middleware.UserFromContext(ctx)
+
+	if !role.Allowed("experiments", "update", name) {
+		plog.Warn(plog.TypeSecurity, "updating experiment from builder not allowed", "user", user, "exp", name)
+
+		return weberror.NewWebError(nil, "updating experiment %s not allowed for %s", name, user).
+			SetStatus(http.StatusForbidden)
+	}
+
+	if _, err := experiment.Get(name); errors.Is(err, store.ErrNotExist) && !role.Allowed("experiments", "create") {
+		plog.Warn(plog.TypeSecurity, "creating experiment from builder not allowed", "user", user, "exp", name)
+
+		return weberror.NewWebError(nil, "creating experiments not allowed for %s", user).
+			SetStatus(http.StatusForbidden)
+	}
+
+	return nil
+}
+
 // SaveBuilderTopology - POST /builder/save.
 func SaveBuilderTopology(w http.ResponseWriter, r *http.Request) {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "SaveBuilderTopology")
@@ -566,7 +597,8 @@ func SaveBuilderTopology(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/plain")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(name))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	plog.Info(plog.TypeAction, "downloading builder file", "file", name, "format", format)
 	http.ServeContent(w, r, "", time.Now(), bytes.NewReader([]byte(data)))
 }

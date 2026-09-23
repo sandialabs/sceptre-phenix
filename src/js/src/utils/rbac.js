@@ -42,7 +42,8 @@ export function roleAllowed(resource, verb, ...names) {
 // should match policy.go#resourceNameAllowed
 let resourceNameAllowed = (policy, name) => {
   var allowed = false;
-  for (const n of policy.resourceNames) {
+  // unscoped policies arrive with null resource names and match no name
+  for (const n of policy.resourceNames ?? []) {
     let negate = n.startsWith('!');
     var n2 = n.replace('!', '');
 
@@ -59,3 +60,20 @@ let resourceNameAllowed = (policy, name) => {
   }
   return allowed;
 };
+
+// Typing into and exiting Scorch terminals needs scorch/terminals write, which
+// is separate from controlling Scorch runs because a Scorch terminal is a shell
+// on the phenix server. The server enforces this; the UI only hides controls.
+export function scorchTerminalWriteAllowed() {
+  return roleAllowed('scorch/terminals', 'write');
+}
+
+// Starting a Scorch run needs scorch post and canceling one needs scorch
+// delete, both for an experiment the user can read, matching the server's
+// Scorch pipeline routes.
+export function scorchControlAllowed(exp, running) {
+  return (
+    roleAllowed('scorch', running ? 'delete' : 'post') &&
+    roleAllowed('experiments', 'get', exp)
+  );
+}

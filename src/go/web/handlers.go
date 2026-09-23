@@ -713,6 +713,12 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Triggering Scorch here starts a Scorch run, so it needs the same service
+	// permission as POST /experiments/{name}/scorch/pipelines/{run}.
+	if scorchTriggerForbidden(w, r, appsFilter, "post") {
+		return
+	}
+
 	go func() {
 		var (
 			md   = make(map[string]any)
@@ -817,6 +823,12 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Canceling Scorch here cancels a Scorch run, so it needs the same service
+	// permission as DELETE /experiments/{name}/scorch/pipelines/{run}.
+	if scorchTriggerForbidden(w, r, appsFilter, "delete") {
+		return
+	}
+
 	go func() {
 		apps := strings.SplitSeq(appsFilter, ",")
 
@@ -851,6 +863,41 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 	)
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// scorchTriggerForbidden writes a 403 and returns true when appsFilter names
+// the Scorch app and the requester's role lacks the scorch permission for verb.
+func scorchTriggerForbidden(w http.ResponseWriter, r *http.Request, appsFilter, verb string) bool {
+	role := middleware.RoleFromContext(r.Context())
+	if !appsIncludeScorch(appsFilter) || role.Allowed("scorch", verb) {
+		return false
+	}
+
+	plog.Warn(
+		plog.TypeSecurity,
+		"triggering Scorch not allowed",
+		"user",
+		middleware.UserFromContext(r.Context()),
+		"exp",
+		mux.Vars(r)["name"],
+		"verb",
+		verb,
+	)
+	http.Error(w, "forbidden", http.StatusForbidden)
+
+	return true
+}
+
+// appsIncludeScorch reports whether a trigger endpoint apps filter names the
+// Scorch app.
+func appsIncludeScorch(appsFilter string) bool {
+	for a := range strings.SplitSeq(appsFilter, ",") {
+		if strings.EqualFold(strings.TrimSpace(a), "scorch") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // GetExperimentSchedule - GET /experiments/{name}/schedule.
@@ -1056,8 +1103,9 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) {
 		allowed  []mm.Capture
 	)
 
+	// VM checks are named <experiment>/<vm>, as for every other VM resource.
 	for _, capture := range captures {
-		if role.Allowed("experiments/captures", "list", capture.VM) {
+		if role.Allowed("experiments/captures", "list", name+"/"+capture.VM) {
 			allowed = append(allowed, capture)
 		}
 	}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/hashicorp/go-multierror"
@@ -58,10 +59,11 @@ func init() { //nolint:gochecknoinits // config hook
 	}
 }
 
-//nolint:cyclop,funlen,gocyclo // complex init logic
-func Init() error {
-	// Ensure all built-in, default configs are present in the store.
-	err := fs.WalkDir(defaultFS, "default", func(path string, d fs.DirEntry, walkErr error) error {
+// CreateDefaults creates the named built-in default configs, such as
+// "role/builder", that are missing from the store. With no names, it creates
+// every missing built-in default config.
+func CreateDefaults(names ...string) error {
+	return fs.WalkDir(defaultFS, "default", func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -87,6 +89,10 @@ func Init() error {
 
 		name := strings.ToLower(c.Kind) + "/" + c.Metadata.Name
 
+		if len(names) > 0 && !slices.Contains(names, name) {
+			return nil
+		}
+
 		// Don't attempt to create this default config again if it already exists in
 		// the store.
 		if _, err := Get(name, false); err == nil {
@@ -100,6 +106,12 @@ func Init() error {
 		}
 		return nil
 	})
+}
+
+//nolint:funlen // complex init logic
+func Init() error {
+	// Ensure all built-in, default configs are present in the store.
+	err := CreateDefaults()
 	if err != nil {
 		return err
 	}
@@ -342,6 +354,12 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 		}
 	default:
 		return nil, errors.New("no config, path, or data provided")
+	}
+
+	if o.check != nil {
+		if err := o.check(c); err != nil {
+			return nil, err
+		}
 	}
 
 	if o.validate {
