@@ -32,7 +32,7 @@ All notable changes to this project will be documented in this file.
 
 - **Scorch**: Scorch terminals and component output now require read access to the experiment, and typing into or exiting Scorch terminals requires `scorch/terminals` `write`. Previously, any authenticated user could stream or write to them. Scorch pipeline and terminal websocket updates now go only to users with Scorch access to the experiment instead of every connected user.
 - **Scorch**: Starting or canceling Scorch through `POST` or `DELETE /api/v1/experiments/{name}/trigger?apps=scorch` now requires `scorch` `post` or `delete` in addition to `experiments/trigger`. Starting and canceling runs on the Scorch pipeline routes now needs `scorch` `post` or `delete` and read access to the experiment, instead of `experiments/trigger`.
-- **Configs**: `configs create` is now checked against the new config's `Kind/name`, and renaming a config or changing its kind needs `configs create` for the new name. Previously, any role with `configs create` could create User or Role configs and grant itself more access.
+- **Configs**: `configs create` is now checked against the new config's `Kind/name`, on both `POST /api/v1/configs` and `POST /api/v1/workflow/configs/{branch}`, and renaming a config or changing its kind needs `configs create` for the new name. Previously, any role with `configs create` could create User or Role configs and grant itself more access.
 - **Builder**: `PUT /api/v1/experiments/builder` now checks `experiments update` for the named experiment, and `experiments create` when it creates the experiment.
 - **Builder / Tunneler**: `GET /builder`, `POST /builder/save`, and `GET /downloads/tunneler/{name}` now require authentication and `builder` `get` or `tunneler` `get`.
 

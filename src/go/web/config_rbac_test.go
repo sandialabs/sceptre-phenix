@@ -105,6 +105,38 @@ func TestCreateConfigChecksKind(t *testing.T) {
 	}
 }
 
+// TestWorkflowUpsertConfigChecksKind verifies the workflow config route checks
+// a new config's kind and name like POST /configs does.
+func TestWorkflowUpsertConfigChecksKind(t *testing.T) {
+	useTestStore(t)
+
+	vars := map[string]string{"branch": "main"}
+
+	tests := []struct {
+		name string
+		body string
+		want int
+	}{
+		{name: "user config", body: configJSON("User", "intruder"), want: http.StatusForbidden},
+		{name: "role config", body: configJSON("Role", "intruder"), want: http.StatusForbidden},
+		// An allowed kind passes the check and fails schema validation instead.
+		{name: "topology config", body: configJSON("Topology", "topo"), want: http.StatusBadRequest},
+	}
+
+	for _, test := range tests {
+		rec := httptest.NewRecorder()
+		req := roleRequest(http.MethodPost, "/workflow/configs/main", test.body, vars, topologyConfigPolicy("create"))
+
+		if got := status(t, rec, WorkflowUpsertConfig(rec, req)); got != test.want {
+			t.Errorf("%s: got status %d, want %d", test.name, got, test.want)
+		}
+	}
+
+	if _, err := rbac.GetUser("intruder"); err == nil {
+		t.Fatal("forbidden request created a user")
+	}
+}
+
 // TestUpdateConfigChecksRename verifies an update that renames a config, or
 // changes its kind, needs permission to create the new config.
 func TestUpdateConfigChecksRename(t *testing.T) {
