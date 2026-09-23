@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
   - A bare pattern such as `vm1` or `*` no longer matches namespaced VM names such as `exp1/vm1`; use `exp1/*` or `*/vm1`.
   - Globstars, braces, and extglobs in patterns no longer match names that the server denies.
   - Config permissions are checked against `<Kind>/<name>`, as the server does.
+  - VM snapshot controls check `vms/snapshots` with the server's verbs: `create` to take a snapshot and `update` to restore one. Roles such as Experiment User now see the snapshot button.
 
 ## [1.0.0]
 
