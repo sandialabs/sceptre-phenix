@@ -16,3 +16,11 @@ spec:
         - vms/*
       verbs:
         - '*'
+    - resources:
+        - scorch
+      verbs:
+        - get
+    - resources:
+        - tunneler
+      verbs:
+        - get

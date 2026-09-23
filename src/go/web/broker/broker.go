@@ -74,20 +74,26 @@ func Start() {
 				delete(clients, cli)
 			}
 		case pub := <-broadcast:
-			for cli := range clients {
-				policies := pub.RequestPolicies
-				if pub.RequestPolicy != nil {
-					policies = append([]*bt.RequestPolicy{pub.RequestPolicy}, policies...)
-				}
+			deliver(clients, pub)
+		}
+	}
+}
 
-				if requestPoliciesAllowed(cli.role, policies) {
-					select {
-					case cli.publish <- pub:
-					default:
-						cli.Stop()
-						delete(clients, cli)
-					}
-				}
+// deliver sends pub to each client whose role satisfies all of its request
+// policies, dropping clients that cannot keep up.
+func deliver(clients map[*Client]bool, pub bt.Publish) {
+	policies := pub.RequestPolicies
+	if pub.RequestPolicy != nil {
+		policies = append([]*bt.RequestPolicy{pub.RequestPolicy}, policies...)
+	}
+
+	for cli := range clients {
+		if requestPoliciesAllowed(cli.role, policies) {
+			select {
+			case cli.publish <- pub:
+			default:
+				cli.Stop()
+				delete(clients, cli)
 			}
 		}
 	}

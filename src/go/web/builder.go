@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -566,7 +567,8 @@ func SaveBuilderTopology(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/plain")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(name))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	plog.Info(plog.TypeAction, "downloading builder file", "file", name, "format", format)
 	http.ServeContent(w, r, "", time.Now(), bytes.NewReader([]byte(data)))
 }

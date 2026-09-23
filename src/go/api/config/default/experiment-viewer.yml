@@ -24,3 +24,11 @@ spec:
     verbs:
     - post
     - delete
+  - resources:
+    - scorch
+    verbs:
+    - get
+  - resources:
+    - tunneler
+    verbs:
+    - get

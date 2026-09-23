@@ -11,7 +11,7 @@
         :nodes="run.nodes"
         :viewer="componentDetail"
         :controller="scorchControl"
-        :controllable="canControl(run)"
+        :controllable="scorchControlAllowed(exp.name, run.running)"
         :rewinder="loopHistory" />
     </div>
     <hr />
@@ -85,7 +85,7 @@
   import axiosInstance from '@/utils/axios.js';
   import { useErrorNotification } from '@/utils/errorNotif';
   import { usePhenixStore } from '@/store.js';
-  import { roleAllowed } from '@/utils/rbac.js';
+  import { roleAllowed, scorchControlAllowed } from '@/utils/rbac.js';
 
   import ScorchKey from '@/components/scorch/ScorchKey.vue';
   import ScorchRun from '@/components/scorch/ScorchRun.vue';
@@ -93,7 +93,7 @@
 
   export default {
     setup() {
-      return { roleAllowed };
+      return { roleAllowed, scorchControlAllowed };
     },
 
     components: {
@@ -112,16 +112,6 @@
     },
 
     methods: {
-      canControl(run) {
-        const verb = run.running ? 'delete' : 'create';
-        const serviceVerb = run.running ? 'delete' : 'post';
-
-        return (
-          roleAllowed('experiments/trigger', verb, this.exp.name) &&
-          roleAllowed('scorch', serviceVerb)
-        );
-      },
-
       scorchControl(exp, runID) {
         let run = this.runs[runID];
         if (run.running) {

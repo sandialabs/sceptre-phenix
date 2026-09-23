@@ -173,21 +173,14 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := mux.Vars(r)["id"]
-
-	mu.Lock()
-	done, ok := termClientIDs[id]
-	mu.Unlock()
-
+	writer, ok := claimTerminalClient(pid, mux.Vars(r)["id"], canWriteTerminal(r))
 	if !ok {
 		http.Error(w, "terminal client ID invalid", http.StatusNotFound)
 
 		return
 	}
 
-	close(done)
-
-	t.RO = rwTerm[pid] != id
+	t.RO = !writer
 
 	plog.Debug(plog.TypeSystem, "starting web terminal streamer", "pid", pid)
 
@@ -208,7 +201,11 @@ func ExitTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if rwTerm[pid] != id {
+	mu.Lock()
+	owner := rwTerm[pid]
+	mu.Unlock()
+
+	if owner != id {
 		plog.Error(
 			plog.TypeSystem,
 			"terminal client doesn't own R/W rights to PTY",
@@ -379,6 +376,32 @@ func canWriteTerminal(r *http.Request) bool {
 	role := middleware.RoleFromContext(r.Context())
 
 	return role.Spec != nil && role.Allowed(appNameScorch, "post")
+}
+
+// claimTerminalClient consumes a client ID issued by initTerminal and reports
+// whether the client may write to the terminal. Client IDs are single use, so
+// a second connection with the same ID is rejected instead of closing the done
+// channel twice.
+func claimTerminalClient(pid int, id string, writable bool) (bool, bool) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	done, ok := termClientIDs[id]
+	if !ok {
+		return false, false
+	}
+
+	delete(termClientIDs, id)
+	close(done)
+
+	owner := rwTerm[pid] == id
+	if owner && !writable {
+		// The role lost Scorch write access after the terminal was initialized,
+		// so release the claim for another writer.
+		delete(rwTerm, pid)
+	}
+
+	return owner && writable, true
 }
 
 func initTerminal(exp string, run, loop int, stage, cmp string, writable bool) (WebTerm, error) {

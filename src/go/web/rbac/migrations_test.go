@@ -192,6 +192,22 @@ func TestEnsureServicePermissions(t *testing.T) {
 				{resource: tunnelerResource, verb: getVerb},
 			},
 		},
+		{
+			name:     "experiment viewer",
+			roleName: experimentViewerRole,
+			permissions: []servicePermission{
+				{resource: scorchResource, verb: getVerb},
+				{resource: tunnelerResource, verb: getVerb},
+			},
+		},
+		{
+			name:     "vm admin",
+			roleName: vmAdminRole,
+			permissions: []servicePermission{
+				{resource: scorchResource, verb: getVerb},
+				{resource: tunnelerResource, verb: getVerb},
+			},
+		},
 	}
 
 	for _, test := range tests {

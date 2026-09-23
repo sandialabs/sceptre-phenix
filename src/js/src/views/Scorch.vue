@@ -94,14 +94,7 @@
       </b-table-column>
       <b-table-column label="Scorch Status" width="100" centered v-slot="props">
         <template
-          v-if="
-            roleAllowed(
-              'experiments/trigger',
-              props.row.scorch.running ? 'delete' : 'create',
-              props.row.name,
-            ) &&
-            roleAllowed('scorch', props.row.scorch.running ? 'delete' : 'post')
-          ">
+          v-if="scorchControlAllowed(props.row.name, props.row.scorch.running)">
           <b-tooltip :label="scorchControlLabel(props.row)" type="is-dark">
             <span
               class="tag is-medium"
@@ -112,6 +105,12 @@
             </span>
           </b-tooltip>
         </template>
+        <span
+          v-else
+          class="tag is-medium"
+          :class="scorchStatusDecorator(props.row)">
+          {{ scorchStatus(props.row) }}
+        </span>
       </b-table-column>
       <b-table-column label="Terminal" width="100" centered v-slot="props">
         <button
@@ -172,12 +171,12 @@
   import { useErrorNotification } from '@/utils/errorNotif';
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
   import { useTable } from '@/utils/useTable.js';
-  import { roleAllowed } from '@/utils/rbac.js';
+  import { roleAllowed, scorchControlAllowed } from '@/utils/rbac.js';
 
   export default {
     setup() {
       const { table } = useTable();
-      return { table, roleAllowed };
+      return { table, roleAllowed, scorchControlAllowed };
     },
     components: {
       'vue-terminal': Terminal,

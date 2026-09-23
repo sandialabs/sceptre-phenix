@@ -59,3 +59,20 @@ let resourceNameAllowed = (policy, name) => {
   }
   return allowed;
 };
+
+// Starting or canceling a Scorch run needs both the experiment trigger
+// permission and the Scorch service permission, matching the server's Scorch
+// pipeline routes.
+export function scorchControlAllowed(exp, running) {
+  if (running) {
+    return (
+      roleAllowed('experiments/trigger', 'delete', exp) &&
+      roleAllowed('scorch', 'delete')
+    );
+  }
+
+  return (
+    roleAllowed('experiments/trigger', 'create', exp) &&
+    roleAllowed('scorch', 'post')
+  );
+}

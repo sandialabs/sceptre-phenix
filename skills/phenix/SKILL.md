@@ -352,9 +352,10 @@ below are relative to the base path.
 | Misc lookups | `GET /vms` (all experiments), `GET /applications`, `GET /topologies`, `GET /topologies/{topo}/scenarios`, `GET /hosts` |
 | Users/Roles/Auth | `GET/POST /users`, `GET/PATCH/DELETE /users/{username}`, `POST /users/{username}/tokens`, `GET /roles`, `POST /signup`, `GET/POST /login`, `GET /logout` |
 | Realtime | `GET /ws` (websocket broker for UI events/logs), `GET /logs` |
-| SCORCH | `/experiments/{name}/scorch/terminals*`, `/experiments/{name}/scorch/components/.../ws` |
+| SCORCH | `GET /experiments/{name}/scorch/pipelines[/{run}/{loop}]`, `POST/DELETE /experiments/{name}/scorch/pipelines/{run}`, `/experiments/{name}/scorch/terminals*`, `/experiments/{name}/scorch/components/.../ws` |
 | Settings | `GET/POST /settings`, `GET /settings/password` |
-| Builder | `GET /builder`, `POST /builder/save`, `GET /builder/topologies[/{name}]` |
+| Builder | `GET /builder/topologies[/{name}]`, `POST/PUT /experiments/builder`; outside the base path: `GET /builder`, `POST /builder/save` |
+| Tunneler | Outside the base path: `GET /downloads/tunneler/{name}` (only with the `tunneler-download` feature) |
 | Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode) |
 
 Prefer the equivalent `phenix` CLI command over calling the web API directly
@@ -374,6 +375,15 @@ running `phenix ui` server, or building a UI integration).
   the topology explicitly sets `general.vm_type: container`.
 - **Auth uses a custom header, not `Authorization`.** Web API calls must use
   `X-Phenix-Auth-Token`; standard bearer-token tooling will silently 401.
+- **Builder, Scorch, and Tunneler have their own RBAC resources.** Their routes
+  first check `builder` (`get`/`post`/`put`), `scorch` (`get`/`post`/`delete`),
+  or `tunneler` (`get`), then the usual experiment and config permissions.
+  Starting or canceling a Scorch run, including `trigger?apps=scorch`, also
+  needs `experiments/trigger` `create`/`delete`. Custom roles must add these
+  resources; the built-in Experiment Admin/User/Viewer and VM Admin roles get
+  them from a one-time startup migration. `GET /builder` and tunneler downloads
+  take the JWT in the header or as `?token=`; in proxy mode only the
+  proxy-provided header counts.
 - **Store endpoint changes the whole world.** `--store.endpoint` (bolt or etcd) determines
   which configs/experiments are visible — commands against the wrong endpoint will report
   "no configs found" rather than an obvious connection error.

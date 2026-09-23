@@ -6,6 +6,7 @@ import (
 
 	"github.com/activeshadow/structs"
 
+	"phenix/store"
 	v1 "phenix/types/version/v1"
 )
 
@@ -15,11 +16,17 @@ const (
 	experimentFilesCreateVerb = "create"
 	experimentFilesResource   = "experiments/files"
 	experimentUserRole        = "Experiment User"
+	experimentViewerRole      = "Experiment Viewer"
 	scorchResource            = "scorch"
 	getVerb                   = "get"
 	postVerb                  = "post"
 	putVerb                   = "put"
 	tunnelerResource          = "tunneler"
+	vmAdminRole               = "VM Admin"
+
+	// servicePermissionsAnnotation marks a role config whose Builder, Scorch,
+	// and Tunneler permissions have been migrated.
+	servicePermissionsAnnotation = "phenix.rbac/service-permissions"
 )
 
 type servicePermission struct {
@@ -38,6 +45,14 @@ var legacyServicePermissions = map[string][]servicePermission{ //nolint:gocheckn
 	experimentUserRole: {
 		{resource: builderResource, verb: getVerb},
 		{resource: builderResource, verb: postVerb},
+		{resource: scorchResource, verb: getVerb},
+		{resource: tunnelerResource, verb: getVerb},
+	},
+	experimentViewerRole: {
+		{resource: scorchResource, verb: getVerb},
+		{resource: tunnelerResource, verb: getVerb},
+	},
+	vmAdminRole: {
 		{resource: scorchResource, verb: getVerb},
 		{resource: tunnelerResource, verb: getVerb},
 	},
@@ -80,19 +95,37 @@ func EnsureExperimentFilesCreatePermission() error {
 	return nil
 }
 
-// EnsureServicePermissions preserves access for built-in roles after adding service-level RBAC.
+// EnsureServicePermissions preserves the Builder, Scorch, and Tunneler access
+// built-in roles, and the users assigned to them, had before those services
+// were protected by RBAC. Each role config is migrated once and then annotated,
+// so an administrator can later remove these permissions without a restart
+// granting them again.
 func EnsureServicePermissions() error {
 	roles, err := GetRoles()
 	if err != nil {
 		return fmt.Errorf("getting roles: %w", err)
 	}
 
+	var (
+		pending      []*Role
+		pendingNames = make(map[string]struct{})
+	)
+
 	for _, role := range roles {
-		if ensureServicePermissions(role.Spec) {
-			if err := role.Save(); err != nil {
-				return fmt.Errorf("saving role %s: %w", role.Spec.Name, err)
-			}
+		if _, ok := legacyServicePermissions[role.Spec.Name]; !ok {
+			continue
 		}
+
+		if role.config.HasAnnotation(servicePermissionsAnnotation) {
+			continue
+		}
+
+		pending = append(pending, role)
+		pendingNames[role.Spec.Name] = struct{}{}
+	}
+
+	if len(pending) == 0 {
+		return nil
 	}
 
 	users, err := GetUsers()
@@ -100,8 +133,18 @@ func EnsureServicePermissions() error {
 		return fmt.Errorf("getting users: %w", err)
 	}
 
+	// Users hold their own copy of their role, so migrate the copies of the
+	// roles migrated in this pass.
 	for _, user := range users {
-		if user.Spec.Role == nil || !ensureServicePermissions(user.Spec.Role) {
+		if user.Spec.Role == nil {
+			continue
+		}
+
+		if _, ok := pendingNames[user.Spec.Role.Name]; !ok {
+			continue
+		}
+
+		if !ensureServicePermissions(user.Spec.Role) {
 			continue
 		}
 
@@ -109,6 +152,22 @@ func EnsureServicePermissions() error {
 
 		if err := user.Save(); err != nil {
 			return fmt.Errorf("saving user %s: %w", user.Username(), err)
+		}
+	}
+
+	// Annotate roles only after their users are migrated, so an interrupted
+	// migration runs again on the next start.
+	for _, role := range pending {
+		ensureServicePermissions(role.Spec)
+
+		if role.config.Metadata.Annotations == nil {
+			role.config.Metadata.Annotations = make(store.Annotations)
+		}
+
+		role.config.Metadata.Annotations[servicePermissionsAnnotation] = "true"
+
+		if err := role.Save(); err != nil {
+			return fmt.Errorf("saving role %s: %w", role.Spec.Name, err)
 		}
 	}
 

@@ -72,7 +72,9 @@
 </template>
 
 <script>
-  import { usePhenixStore } from '@/store.js';
+  import FileSaver from 'file-saver';
+
+  import axiosInstance from '@/utils/axios.js';
   import { useErrorNotification } from '@/utils/errorNotif';
 
   export default {
@@ -104,28 +106,22 @@
     },
 
     methods: {
-      async download(tunneler) {
-        const store = usePhenixStore();
+      download(tunneler) {
+        // Downloads require the auth header, so fetch the file instead of
+        // following the link. The link already includes the base path.
+        axiosInstance
+          .get(tunneler.link, { baseURL: '', responseType: 'blob' })
+          .then((response) => {
+            FileSaver.saveAs(response.data, tunneler.link.split('/').pop());
+          })
+          .catch(async (err) => {
+            // error bodies arrive as blobs because of the response type
+            if (err.response?.data instanceof Blob) {
+              err.response.data = await err.response.data.text();
+            }
 
-        try {
-          const response = await fetch(tunneler.link, {
-            headers: {
-              'X-Phenix-Auth-Token': `bearer ${store.token}`,
-            },
+            useErrorNotification(err);
           });
-          if (!response.ok) {
-            throw new Error(`download failed with status ${response.status}`);
-          }
-
-          const blobURL = URL.createObjectURL(await response.blob());
-          const link = document.createElement('a');
-          link.href = blobURL;
-          link.download = tunneler.link.split('/').pop();
-          link.click();
-          URL.revokeObjectURL(blobURL);
-        } catch (err) {
-          useErrorNotification(err);
-        }
       },
     },
   };

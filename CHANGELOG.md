@@ -4,9 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **RBAC**: Protect Builder, Scorch, and Tunneler with the service-level `builder` (`get`, `post`, `put`), `scorch` (`get`, `post`, `delete`), and `tunneler` (`get`) permissions across REST routes, Scorch websocket updates, the standalone Builder and Tunneler download links, and the web UI. On first startup, the built-in Experiment Admin, Experiment User, Experiment Viewer, and VM Admin roles and their users are migrated once to keep their existing access; custom roles need these permissions added explicitly.
+
 ### Changed
 
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
+
+### Fixed
+
+- **RBAC**: Role and user configs saved by phēnix no longer store `resourceNames: null` for unscoped policies, which failed schema validation when an administrator later edited the role.
+
+### Security
+
+- **Scorch**: Scorch terminals and component output now require read access to the experiment, and writable Scorch terminals require `scorch` `post`. Previously, any authenticated user could stream or write to them. Scorch pipeline and terminal websocket updates now go only to users with Scorch access to the experiment instead of every connected user.
+- **Scorch**: Starting or canceling Scorch through `POST` or `DELETE /api/v1/experiments/{name}/trigger?apps=scorch` now requires the same `scorch` permissions as the Scorch pipeline routes.
+- **Builder / Tunneler**: `GET /builder`, `POST /builder/save`, and `GET /downloads/tunneler/{name}` now require authentication.
 
 ## [1.0.0]
 

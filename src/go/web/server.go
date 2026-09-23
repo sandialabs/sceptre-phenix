@@ -154,7 +154,7 @@ func Start(opts ...ServerOption) error {
 	builderSaveHandler := authMiddleware(
 		middleware.RequirePermission("builder", "post")(http.HandlerFunc(SaveBuilderTopology)),
 	)
-	if o.jwtKey != "" && o.jwtKey != "proxy-jwt" && !strings.HasPrefix(o.jwtKey, "dev|") {
+	if middleware.SignedTokenAuth(o.jwtKey) {
 		builderSaveHandler = middleware.AuthTokenFromForm(builderSaveHandler)
 	}
 

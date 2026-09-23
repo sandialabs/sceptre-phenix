@@ -140,3 +140,81 @@ func TestRequirePermissionRejectsMissingRole(t *testing.T) {
 		t.Fatalf("unexpected status: got %d, want %d", rec.Code, http.StatusForbidden)
 	}
 }
+
+func TestAuthTokenFromFormOnlyReadsPostBody(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		req  *http.Request
+	}{
+		{
+			name: "GET query token",
+			req:  httptest.NewRequest(http.MethodGet, "/builder/save?token=query-token", nil),
+		},
+		{
+			name: "POST query token",
+			req: httptest.NewRequest(
+				http.MethodPost,
+				"/builder/save?token=query-token",
+				strings.NewReader("filename=topology.xml"),
+			),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			test.req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+			handler := AuthTokenFromForm(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				if got := r.Header.Get("X-Phenix-Auth-Token"); got != "" {
+					t.Errorf("query token moved to auth header: %q", got)
+				}
+			}))
+
+			handler.ServeHTTP(rec, test.req)
+		})
+	}
+}
+
+func TestAuthTokenFromFormRejectsMalformedBody(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodPost, "/builder/save", strings.NewReader("token=%zz"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler := AuthTokenFromForm(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("handler called for malformed form body")
+	}))
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("unexpected status: got %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+// TestRequirePermissionAllowsScopedServicePolicy verifies service checks ignore
+// the experiment scope that assigning a role to a user adds to its policies.
+func TestRequirePermissionAllowsScopedServicePolicy(t *testing.T) {
+	t.Parallel()
+
+	role := rbac.Role{Spec: &v1.RoleSpec{
+		Policies: []*v1.PolicySpec{{
+			Resources:     []string{"scorch"},
+			ResourceNames: []string{"exp-a"},
+			Verbs:         []string{"get"},
+		}},
+	}}
+	ctx := context.WithValue(context.Background(), ContextKeyRole, role)
+	req := httptest.NewRequest(http.MethodGet, "/scorch", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	RequirePermission("scorch", "get")(okHandler()).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: got %d, want %d", rec.Code, http.StatusOK)
+	}
+}

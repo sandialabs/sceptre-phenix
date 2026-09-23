@@ -713,6 +713,22 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Triggering Scorch here starts a Scorch run, so it needs the same service
+	// permission as POST /experiments/{name}/scorch/pipelines/{run}.
+	if appsIncludeScorch(appsFilter) && !role.Allowed("scorch", "post") {
+		plog.Warn(
+			plog.TypeSecurity,
+			"triggering Scorch not allowed",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			name,
+		)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
 	go func() {
 		var (
 			md   = make(map[string]any)
@@ -817,6 +833,22 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Canceling Scorch here cancels a Scorch run, so it needs the same service
+	// permission as DELETE /experiments/{name}/scorch/pipelines/{run}.
+	if appsIncludeScorch(appsFilter) && !role.Allowed("scorch", "delete") {
+		plog.Warn(
+			plog.TypeSecurity,
+			"canceling Scorch not allowed",
+			"user",
+			middleware.UserFromContext(ctx),
+			"exp",
+			name,
+		)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
 	go func() {
 		apps := strings.SplitSeq(appsFilter, ",")
 
@@ -851,6 +883,18 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) {
 	)
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// appsIncludeScorch reports whether a trigger endpoint apps filter names the
+// Scorch app.
+func appsIncludeScorch(appsFilter string) bool {
+	for a := range strings.SplitSeq(appsFilter, ",") {
+		if strings.EqualFold(strings.TrimSpace(a), "scorch") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // GetExperimentSchedule - GET /experiments/{name}/schedule.

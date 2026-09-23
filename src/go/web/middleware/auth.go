@@ -89,6 +89,15 @@ func fromPhenixAuthTokenForm(r *http.Request) (string, error) {
 	return r.PostForm.Get("token"), nil
 }
 
+// SignedTokenAuth reports whether jwtKey enables phenix-signed JWT auth rather
+// than disabled, proxy, or development auth.
+func SignedTokenAuth(jwtKey string) bool {
+	return jwtKey != "" && jwtKey != "proxy-jwt" && !strings.HasPrefix(jwtKey, "dev|")
+}
+
+// AuthTokenFromForm moves a "token" POST form value into the phenix auth token
+// header for browser form submissions that cannot set headers. Only use it
+// with signed-JWT auth; proxy auth must only trust proxy-provided headers.
 func AuthTokenFromForm(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Phenix-Auth-Token") == "" {
