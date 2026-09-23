@@ -1103,8 +1103,9 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) {
 		allowed  []mm.Capture
 	)
 
+	// VM checks are named <experiment>/<vm>, as for every other VM resource.
 	for _, capture := range captures {
-		if role.Allowed("experiments/captures", "list", capture.VM) {
+		if role.Allowed("experiments/captures", "list", name+"/"+capture.VM) {
 			allowed = append(allowed, capture)
 		}
 	}

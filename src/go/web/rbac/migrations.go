@@ -19,6 +19,7 @@ const (
 	experimentUserRole        = "Experiment User"
 	experimentViewerRole      = "Experiment Viewer"
 	forwardsResource          = "vms/forwards"
+	mountResource             = "vms/mount"
 	scorchResource            = "scorch"
 	createVerb                = "create"
 	deleteVerb                = "delete"
@@ -165,7 +166,12 @@ func EnsureServicePermissions() error {
 			continue
 		}
 
-		if !ensureServicePermissions(user.Spec.Role) {
+		changed := ensureServicePermissions(user.Spec.Role)
+		if fixExperimentViewerMount(user.Spec.Role, true) {
+			changed = true
+		}
+
+		if !changed {
 			continue
 		}
 
@@ -180,6 +186,7 @@ func EnsureServicePermissions() error {
 	// migration runs again on the next start.
 	for _, role := range pending {
 		ensureServicePermissions(role.Spec)
+		fixExperimentViewerMount(role.Spec, false)
 
 		if role.config.Metadata.Annotations == nil {
 			role.config.Metadata.Annotations = make(store.Annotations)
@@ -193,6 +200,47 @@ func EnsureServicePermissions() error {
 	}
 
 	return nil
+}
+
+// fixExperimentViewerMount repairs the Experiment Viewer vms/mount policy.
+// Older default configs listed it after a policy with resourceNames, and role
+// assignment only scopes the policies before the first named one, so the
+// policy was never scoped and never matched a VM. In a role config it moves
+// the policy ahead of the first named policy; in a user's copy of the role it
+// copies the scope of the user's VM policy.
+func fixExperimentViewerMount(role *v1.RoleSpec, userCopy bool) bool {
+	if role.Name != experimentViewerRole {
+		return false
+	}
+
+	idx := slices.IndexFunc(role.Policies, func(p *v1.PolicySpec) bool {
+		return slices.Equal(p.Resources, []string{mountResource}) && p.ResourceNames == nil
+	})
+	if idx < 0 {
+		return false
+	}
+
+	if userCopy {
+		names := scopeFor(role, mountResource)
+		if names == nil {
+			return false
+		}
+
+		role.Policies[idx].ResourceNames = names
+
+		return true
+	}
+
+	named := slices.IndexFunc(role.Policies, func(p *v1.PolicySpec) bool { return p.ResourceNames != nil })
+	if named < 0 || named > idx {
+		return false
+	}
+
+	policy := role.Policies[idx]
+	role.Policies = slices.Delete(role.Policies, idx, idx+1)
+	role.Policies = slices.Insert(role.Policies, named, policy)
+
+	return true
 }
 
 func ensureServicePermissions(role *v1.RoleSpec) bool {

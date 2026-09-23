@@ -196,6 +196,10 @@ func TestAssignedDefaultRolesScope(t *testing.T) {
 			{"vms/forwards", "create", "exp-b/vm1", false},
 			{"experiments", "get", "exp-b", false},
 		},
+		"experiment-viewer": {
+			{"vms/mount", "post", "exp-a/vm1", true},
+			{"vms/mount", "post", "exp-b/vm1", false},
+		},
 		"experiment-admin": {
 			{"vms/forwards", "create", "exp-a/vm1", true},
 			{"vms/forwards", "create", "exp-b/vm1", false},
@@ -601,5 +605,61 @@ func TestEnsureServicePermissionsMigratesOnce(t *testing.T) {
 
 	if testUserRole(t, "scoped-user").Allowed(scorchResource, getVerb) {
 		t.Error("restart granted revoked Scorch access to the user")
+	}
+}
+
+// legacyExperimentViewer returns an Experiment Viewer role with vms/mount after
+// the named hosts policy, as older default configs had it.
+func legacyExperimentViewer(names ...string) *v1.RoleSpec {
+	return &v1.RoleSpec{
+		Name: experimentViewerRole,
+		Policies: []*v1.PolicySpec{
+			{Resources: []string{"experiments", "experiments/*", "vms", "vms/*"}, ResourceNames: names, Verbs: []string{"list", getVerb}},
+			{Resources: []string{"hosts"}, ResourceNames: []string{"*"}, Verbs: []string{"list"}},
+			{Resources: []string{mountResource}, Verbs: []string{"post", deleteVerb}},
+		},
+	}
+}
+
+// TestFixExperimentViewerMount verifies the migration scopes existing users'
+// vms/mount policy and moves it ahead of named policies in the role config.
+func TestFixExperimentViewerMount(t *testing.T) {
+	t.Parallel()
+
+	user := legacyExperimentViewer("exp-a", "exp-a/*")
+	if (Role{Spec: user}).Allowed(mountResource, "post", "exp-a/vm1") {
+		t.Fatal("legacy mount policy unexpectedly matched")
+	}
+
+	if !fixExperimentViewerMount(user, true) {
+		t.Fatal("expected user copy to change")
+	}
+
+	scoped := Role{Spec: user}
+	if !scoped.Allowed(mountResource, "post", "exp-a/vm1") || scoped.Allowed(mountResource, "post", "exp-b/vm1") {
+		t.Fatal("mount policy not scoped to the user's VMs")
+	}
+
+	if fixExperimentViewerMount(user, true) {
+		t.Fatal("expected repeated fix to be a no-op")
+	}
+
+	role := legacyExperimentViewer()
+	if !fixExperimentViewerMount(role, false) {
+		t.Fatal("expected role config to change")
+	}
+
+	assigned := &Role{Spec: role}
+	_ = assigned.SetResourceNames("exp-a", "exp-a/*")
+
+	if !assigned.Allowed(mountResource, "post", "exp-a/vm1") {
+		t.Fatal("reordered role does not scope vms/mount when assigned")
+	}
+
+	other := legacyExperimentViewer()
+	other.Name = "Custom Role"
+
+	if fixExperimentViewerMount(other, false) {
+		t.Fatal("custom role changed")
 	}
 }

@@ -13,17 +13,19 @@ spec:
     verbs:
     - list
     - get
+  # Keep this before the first policy with resourceNames so assigning the role
+  # scopes it to the user's VMs.
+  - resources:
+    - "vms/mount"
+    verbs:
+    - post
+    - delete
   - resources:
     - hosts
     resourceNames:
     - "*"
     verbs:
     - list
-  - resources:
-    - "vms/mount"
-    verbs:
-    - post
-    - delete
   - resources:
     - builder
     verbs:

@@ -44,7 +44,7 @@ are only available to Global Administrator or Global Viewer.
         >Users</b-navbar-item
       >
       <b-navbar-item
-        v-if="auth && roleAllowed('logs', 'list')"
+        v-if="auth && roleAllowed('logs', 'get')"
         tag="router-link"
         :to="{ name: 'log' }"
         >Logs</b-navbar-item
@@ -80,7 +80,7 @@ are only available to Global Administrator or Global Viewer.
         Tunneler
       </b-navbar-item>
       <b-navbar-item
-        v-if="auth && roleAllowed('settings', 'edit')"
+        v-if="auth && roleAllowed('settings', 'update')"
         tag="router-link"
         :to="{ name: 'settings' }"
         >Settings</b-navbar-item

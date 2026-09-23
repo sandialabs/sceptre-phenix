@@ -418,6 +418,24 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A token for another user lets the requester act as that user, so it needs
+	// its own permission rather than just users patch, which also covers
+	// editing a user's name.
+	if requester := middleware.UserFromContext(ctx); uname != requester &&
+		!role.Allowed("users/tokens", "create", uname) {
+		plog.Warn(
+			plog.TypeSecurity,
+			"creating a token for another user not allowed",
+			"user",
+			requester,
+			"username",
+			uname,
+		)
+		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
+	}
+
 	u, err := rbac.GetUser(uname)
 	if err != nil {
 		plog.Error(

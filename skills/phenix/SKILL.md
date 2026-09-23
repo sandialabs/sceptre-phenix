@@ -397,7 +397,11 @@ running `phenix ui` server, or building a UI integration).
 - **`configs` permissions are checked against `Kind/name`** (for example
   `Topology/foo`), so a role's `resourceNames` need `*/*` or kind patterns such
   as `Topology/*`; `*` alone matches no config. Creating a config, or renaming
-  one or changing its kind, is checked against the new `Kind/name`.
+  one or changing its kind, is checked against the new `Kind/name`. User
+  configs from the configs API never include `password` or `tokens`, and
+  updating a User config there keeps the stored ones.
+- **API tokens for another user need `users/tokens` `create`** for that user,
+  in addition to `users` `patch`; your own tokens need only `users` `patch`.
 - **Store endpoint changes the whole world.** `--store.endpoint` (bolt or etcd) determines
   which configs/experiments are visible — commands against the wrong endpoint will report
   "no configs found" rather than an obvious connection error.

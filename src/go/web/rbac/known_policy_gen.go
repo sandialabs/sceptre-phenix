@@ -5,11 +5,14 @@
 package main
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 )
@@ -38,42 +41,75 @@ var Permissions = []Permission{
 `
 var packageTemplate = template.Must(template.New("").Parse(code))
 
+// checkFuncs are the functions whose first two arguments are a resource and a
+// verb: role.Allowed and middleware.RequirePermission.
+var checkFuncs = map[string]bool{"Allowed": true, "RequirePermission": true}
+
 func main() {
-	var permissions []Permission
-	re := regexp.MustCompile(`(?:role\.Allowed|middleware\.RequirePermission)\("([^"]+)", "([^"]+)"`)
+	files := make(map[string][]*ast.File) // package directory -> files
+	fset := token.NewFileSet()
 
 	err := filepath.Walk("../..", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && strings.HasSuffix(info.Name(), ".go") && !strings.HasSuffix(info.Name(), "_test.go") {
-			content, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			matches := re.FindAllStringSubmatch(string(content), -1)
-			for _, match := range matches {
-				pair := Permission{match[1], match[2]}
-				found := false
-				for _, p := range permissions {
-					if p == pair {
-						found = true
-						break
-					}
-				}
-				if !found {
-					permissions = append(permissions, pair)
-				}
-			}
+
+		if info.IsDir() || !strings.HasSuffix(info.Name(), ".go") || strings.HasSuffix(info.Name(), "_test.go") {
+			return nil
 		}
+
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			return err
+		}
+
+		dir := filepath.Dir(path)
+		files[dir] = append(files[dir], file)
+
 		return nil
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	found := make(map[Permission]bool)
+
+	for _, pkg := range files {
+		consts := stringConsts(pkg)
+
+		for _, file := range pkg {
+			ast.Inspect(file, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok || len(call.Args) < 2 {
+					return true
+				}
+
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || !checkFuncs[sel.Sel.Name] {
+					return true
+				}
+
+				resource, ok1 := stringValue(call.Args[0], consts)
+				verb, ok2 := stringValue(call.Args[1], consts)
+
+				// Checks built from variables, such as a verb passed in by the
+				// caller, can't be resolved and are skipped.
+				if ok1 && ok2 {
+					found[Permission{resource, verb}] = true
+				}
+
+				return true
+			})
+		}
+	}
+
+	permissions := make([]Permission, 0, len(found))
+	for p := range found {
+		permissions = append(permissions, p)
+	}
+
 	// sort checks alphabetically
-	sort.SliceStable(permissions, func(i, j int) bool {
+	sort.Slice(permissions, func(i, j int) bool {
 		if permissions[i].Resource == permissions[j].Resource {
 			return permissions[i].Verb < permissions[j].Verb
 		}
@@ -88,9 +124,64 @@ func main() {
 
 	defer f.Close()
 
-	packageTemplate.Execute(f, struct {
-		Permissions []Permission
-	}{
-		Permissions: permissions,
-	})
+	if err := packageTemplate.Execute(f, struct{ Permissions []Permission }{permissions}); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// stringConsts returns the package-level string constants in a package.
+func stringConsts(pkg []*ast.File) map[string]string {
+	consts := make(map[string]string)
+
+	for _, file := range pkg {
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.CONST {
+				continue
+			}
+
+			for _, spec := range gen.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+
+				for i, name := range vs.Names {
+					if i < len(vs.Values) {
+						if v, ok := literal(vs.Values[i]); ok {
+							consts[name.Name] = v
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return consts
+}
+
+// stringValue resolves a string literal or a string constant in the package.
+func stringValue(expr ast.Expr, consts map[string]string) (string, bool) {
+	if v, ok := literal(expr); ok {
+		return v, true
+	}
+
+	if ident, ok := expr.(*ast.Ident); ok {
+		v, ok := consts[ident.Name]
+
+		return v, ok
+	}
+
+	return "", false
+}
+
+func literal(expr ast.Expr) (string, bool) {
+	lit, ok := expr.(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", false
+	}
+
+	v, err := strconv.Unquote(lit.Value)
+
+	return v, err == nil
 }

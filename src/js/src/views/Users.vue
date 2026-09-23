@@ -236,6 +236,7 @@
         </b-table-column>
         <b-table-column label="Actions" width="150" centered v-slot="props">
           <b-tooltip
+            v-if="canCreateToken(props.row.username)"
             class="action"
             :delay="500"
             label="create new user token"
@@ -334,6 +335,19 @@
     },
 
     methods: {
+      // A token for another user lets the holder act as that user, so it also
+      // needs users/tokens create, matching the server.
+      canCreateToken(username) {
+        if (!roleAllowed('users', 'patch', username)) {
+          return false;
+        }
+
+        return (
+          username === usePhenixStore().username ||
+          roleAllowed('users/tokens', 'create', username)
+        );
+      },
+
       handleWs(msg) {
         // We only care about publishes pertaining to a user resource.
         if (msg.resource.type != 'user') {

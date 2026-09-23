@@ -498,6 +498,11 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusForbidden)
 		}
 
+		if err := keepUserSecrets(name, cfg); err != nil {
+			return weberror.NewWebError(err, "unable to read existing config %s", name).
+				SetStatus(http.StatusInternalServerError)
+		}
+
 		err := config.Update(name, cfg)
 		if err != nil {
 			if errors.Is(err, store.ErrNotExist) {

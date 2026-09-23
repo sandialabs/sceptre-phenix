@@ -27,6 +27,10 @@ All notable changes to this project will be documented in this file.
 - **Web UI**: Permission checks no longer throw for policies with no resource names, and Configs page buttons now check the same `Kind/name` as the server.
 - **Store**: `etcd` no longer panics when checking a store component that has not been initialized.
 - **Users**: Creating a user with a role that doesn't exist, through the Users page, the API, or `--users`, is now rejected instead of storing a user without a role. Creating a user whose name is taken returns `409 Conflict` instead of failing mid-request.
+- **RBAC**: `experiments/captures` `list` now filters captures by `<experiment>/<vm>`, like every other VM check, instead of the bare VM name.
+- **RBAC**: The Experiment Viewer role's `vms/mount` permission now applies to the user's VMs. Its policy came after a policy with resource names, so assigning the role never scoped it. Existing roles and users are fixed on first startup.
+- **Web UI**: The Logs and Settings tabs now check `logs` `get` and `settings` `update`, the permissions the server checks, instead of `logs` `list` and `settings` `edit`.
+- **CLI**: `phenix util role-table` now lists every permission phēnix checks, including the `users` permissions, and `phenix ui --users` help describes the entry format.
 
 ### Security
 
@@ -35,6 +39,10 @@ All notable changes to this project will be documented in this file.
 - **Configs**: `configs create` is now checked against the new config's `Kind/name`, on both `POST /api/v1/configs` and `POST /api/v1/workflow/configs/{branch}`, and renaming a config or changing its kind needs `configs create` for the new name. Previously, any role with `configs create` could create User or Role configs and grant itself more access.
 - **Builder**: `PUT /api/v1/experiments/builder` now checks `experiments update` for the named experiment, and `experiments create` when it creates the experiment.
 - **Builder / Tunneler**: `GET /builder`, `POST /builder/save`, and `GET /downloads/tunneler/{name}` now require authentication and `builder` `get` or `tunneler` `get`.
+- **VNC**: The VNC websocket (`GET /api/v1/experiments/{exp}/vms/{name}/vnc/ws`), which carries the VNC session itself, now requires `vms/vnc` `get` for the VM, like the VNC page. Previously any authenticated user could open a VNC session to any VM.
+- **Logs**: `GET /api/v1/logs` no longer sends logs after rejecting a request without `logs` `get`, and live log messages now go only to users with `logs` `get` instead of every connected user.
+- **Users**: The configs API no longer returns the password hashes and API tokens in User configs. Any role that could read User configs, including Global Viewer, could use another user's token to act as that user. Updating a User config through the configs API keeps its stored password and tokens.
+- **Users**: Creating an API token for another user now needs the new `users/tokens` `create` permission for that user, in addition to `users` `patch`. By default, only Global Admin has it.
 
 ## [1.0.0]
 
