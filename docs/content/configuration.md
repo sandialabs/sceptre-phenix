@@ -96,9 +96,12 @@ spaces. In addition, each node in the topology must:
 - have a disk image assigned
 
 !!! warning
-    Hostnames must be between 1 and 63 characters long, can only contain
+    Hostnames must be between 2 and 63 characters long, can only contain
     alphanumeric characters and hyphens, and cannot begin or end with a hyphen.
-    Hostnames should not be used as a FQDN.
+    Hostnames should not be used as a FQDN. The 2-character minimum comes from
+    guest operating systems: [VyOS](https://docs.vyos.io/en/latest/configuration/system/host-name.html)
+    and [Windows](https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/naming-conventions-for-computer-domain-site-ou#dns-host-names)
+    both reject 1-character hostnames.
 
 ### Optional Values
 
