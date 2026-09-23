@@ -91,6 +91,19 @@ func TestTopologySchema(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "1-character hostname is rejected",
+			node:    withHostname(validNode(), "a"),
+			wantErr: true,
+		},
+		{
+			name: "2-character hostname is valid",
+			node: withHostname(validNode(), "a1"),
+		},
+		{
+			name: "63-character hostname is valid",
+			node: withHostname(validNode(), strings.Repeat("a", 63)),
+		},
+		{
 			name: "invalid vm_type is rejected",
 			node: func() map[string]any {
 				n := validNode()

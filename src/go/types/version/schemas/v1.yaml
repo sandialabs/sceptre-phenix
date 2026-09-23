@@ -224,10 +224,21 @@ components:
           - hostname
           properties:
             hostname:
+              # 2 to 63 letters, digits, and interior hyphens. Guest operating
+              # systems phenix configures reject 1-character hostnames.
+              #
+              # VyOS and Vyatta validate `system host-name` against
+              # `[A-Za-z0-9][-.A-Za-z0-9]*[A-Za-z0-9]`, which needs at least 2
+              # characters:
+              # https://docs.vyos.io/en/latest/configuration/system/host-name.html
+              # https://github.com/vyos/vyos-1x/blob/ed218c254d964775ddf24158ac6520972d575faf/interface-definitions/include/constraint/host-name.xml.i
+              #
+              # Windows DNS host names have a 2-character minimum:
+              # https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/naming-conventions-for-computer-domain-site-ou#dns-host-names
               type: string
-              minLength: 1
+              minLength: 2
               maxLength: 63
-              pattern: '^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$'
+              pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$'
               example: ADServer
             description:
               type: string
