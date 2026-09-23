@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
+- **Topology schema**: Require node hostnames to be at least 2 characters long, in the server schema and the topology builder. VyOS, Vyatta, and Windows reject 1-character hostnames. Configs that use a 1-character hostname now fail validation until the node is renamed.
 
 ## [1.0.0]
 

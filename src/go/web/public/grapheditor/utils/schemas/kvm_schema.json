@@ -82,12 +82,12 @@
           "$id": "#/nodes/properties/general/properties/hostname",
           "type": "string",
           "title": "Hostname",
-          "minLength": 1,
+          "minLength": 2,
           "examples": [
             "ADServer"
           ],
           "maxLength": 63,
-          "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$"
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$"
         },
         "description": {
           "$id": "#/nodes/properties/general/properties/description",
