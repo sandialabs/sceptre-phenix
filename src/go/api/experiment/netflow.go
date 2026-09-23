@@ -1,7 +1,6 @@
 package experiment
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"net"
@@ -14,7 +13,11 @@ import (
 	"phenix/util/plog"
 )
 
-const netflowChannelBufferSize = 100
+const (
+	netflowChannelBufferSize = 100
+	netflowMinFieldCount     = 8
+	netflowMaxDatagramSize   = 65535
+)
 
 type Netflow struct {
 	mu sync.RWMutex
@@ -187,24 +190,25 @@ func StartNetflow(exp string) error {
 	}
 
 	addr := strings.Split(conn.LocalAddr().String(), ":")
-	cmds := []string{
-		"capture netflow mode ascii",
-		fmt.Sprintf(
-			"capture netflow bridge %s udp %s:%s",
-			spec.Spec.DefaultBridge(),
-			mm.Headnode(),
-			addr[1],
-		),
+	// The mode command is already broadcast by minimega. Sending it through
+	// every cluster node can cause overlapping mesh broadcasts while a new
+	// capture is being configured.
+	if err := mm.MeshSend(exp, mm.Headnode(), "capture netflow mode ascii"); err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("setting netflow capture mode: %w", err)
 	}
 
-	for _, cmd := range cmds {
-		for _, node := range cluster {
-			err = mm.MeshSend(exp, node, cmd)
-			if err != nil {
-				_ = conn.Close()
-
-				return fmt.Errorf("starting netflow capture on node %s: %w", node, err)
-			}
+	cmd := fmt.Sprintf(
+		"capture netflow bridge %s udp %s:%s",
+		spec.Spec.DefaultBridge(),
+		mm.Headnode(),
+		addr[1],
+	)
+	for _, node := range cluster {
+		err = mm.MeshSend(exp, node, cmd)
+		if err != nil {
+			_ = conn.Close()
+			return fmt.Errorf("starting netflow capture on node %s: %w", node, err)
 		}
 	}
 
@@ -212,32 +216,88 @@ func StartNetflow(exp string) error {
 	netflows[exp] = flow
 
 	go func() {
-		scanner := bufio.NewScanner(conn)
+		// minimega sends each netflow packet as one datagram of newline-terminated
+		// records. Reading per datagram bounds memory and keeps a malformed
+		// datagram from bleeding into the next one.
+		buf := make([]byte, netflowMaxDatagramSize)
 
-		for scanner.Scan() {
-			fields := strings.Fields(scanner.Text())
+		for {
+			n, err := conn.Read(buf)
+			if err != nil {
+				if !errors.Is(err, net.ErrClosed) {
+					plog.Warn(plog.TypeSystem, "reading netflow capture", "exp", exp, "err", err)
+				}
 
-			body := make(map[string]any)
+				return
+			}
 
-			body["proto"], _ = strconv.Atoi(fields[2])
+			for line := range strings.SplitSeq(string(buf[:n]), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
 
-			src := strings.Split(fields[3], ":")
-			dst := strings.Split(fields[5], ":")
+				body, ok := parseNetflowLine(line)
+				if !ok {
+					plog.Debug(plog.TypeSystem, "dropping malformed netflow line", "exp", exp, "line", line)
+					continue
+				}
 
-			body["src"] = src[0]
-			body["sport"], _ = strconv.Atoi(src[1])
-
-			body["dst"] = dst[0]
-			body["dport"], _ = strconv.Atoi(dst[1])
-
-			body["packets"], _ = strconv.Atoi(fields[6])
-			body["bytes"], _ = strconv.Atoi(fields[7])
-
-			flow.Publish(body)
+				flow.Publish(body)
+			}
 		}
 	}()
 
 	return nil
+}
+
+func parseNetflowLine(line string) (map[string]any, bool) {
+	fields := strings.Fields(line)
+	if len(fields) < netflowMinFieldCount || fields[4] != "<->" {
+		return nil, false
+	}
+
+	proto, err := strconv.Atoi(fields[2])
+	if err != nil || proto < 0 || proto > 255 {
+		return nil, false
+	}
+
+	srcHost, srcPortText, err := net.SplitHostPort(fields[3])
+	if err != nil || net.ParseIP(srcHost) == nil {
+		return nil, false
+	}
+	srcPort, err := strconv.Atoi(srcPortText)
+	if err != nil || srcPort < 0 || srcPort > 65535 {
+		return nil, false
+	}
+
+	dstHost, dstPortText, err := net.SplitHostPort(fields[5])
+	if err != nil || net.ParseIP(dstHost) == nil {
+		return nil, false
+	}
+	dstPort, err := strconv.Atoi(dstPortText)
+	if err != nil || dstPort < 0 || dstPort > 65535 {
+		return nil, false
+	}
+
+	packets, err := strconv.Atoi(fields[6])
+	if err != nil || packets < 0 {
+		return nil, false
+	}
+	bytes, err := strconv.Atoi(fields[7])
+	if err != nil || bytes < 0 {
+		return nil, false
+	}
+
+	return map[string]any{
+		"proto":   proto,
+		"src":     srcHost,
+		"sport":   srcPort,
+		"dst":     dstHost,
+		"dport":   dstPort,
+		"packets": packets,
+		"bytes":   bytes,
+	}, true
 }
 
 func StopNetflow(exp string) error {
