@@ -33,6 +33,13 @@ spec:
     - list
     - create
     - update
+  # Tunneler port forwards. Keep this before the first policy with
+  # resourceNames so assigning the role scopes it to the user's VMs.
+  - resources:
+    - "vms/forwards"
+    verbs:
+    - create
+    - delete
   - resources:
     - "experiments/files"
     verbs:
@@ -52,6 +59,8 @@ spec:
     - scorch
     verbs:
     - get
+    - post
+    - delete
   - resources:
     - tunneler
     verbs:

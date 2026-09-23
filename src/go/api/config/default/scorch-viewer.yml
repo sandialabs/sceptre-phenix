@@ -1,0 +1,29 @@
+apiVersion: phenix.sandia.gov/v1
+kind: Role
+metadata:
+  name: scorch-viewer
+spec:
+  roleName: Scorch Viewer
+  # View Scorch pipelines, component output, read-only Scorch terminals, and
+  # the run files Scorch writes to the experiment files directory. Assigning
+  # the role scopes it to the user's experiments.
+  policies:
+  - resources:
+    - experiments
+    verbs:
+    - list
+    - get
+  - resources:
+    - "experiments/apps"
+    - "experiments/files"
+    verbs:
+    - list
+    - get
+  - resources:
+    - scorch
+    verbs:
+    - get
+  - resources:
+    - builder
+    verbs:
+    - get

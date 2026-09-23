@@ -56,7 +56,7 @@ func (e *Etcd) IsInitialized(component Component) bool {
 	key := fmt.Sprintf("%s/%s", "phenix", string(component))
 
 	resp, err := e.cli.Get(context.Background(), key)
-	if err != nil {
+	if err != nil || len(resp.Kvs) == 0 {
 		return false
 	}
 

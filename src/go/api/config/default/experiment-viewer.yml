@@ -25,6 +25,10 @@ spec:
     - post
     - delete
   - resources:
+    - builder
+    verbs:
+    - get
+  - resources:
     - scorch
     verbs:
     - get

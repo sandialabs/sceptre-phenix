@@ -1,0 +1,34 @@
+apiVersion: phenix.sandia.gov/v1
+kind: Role
+metadata:
+  name: scorch-admin
+spec:
+  roleName: Scorch Admin
+  # Everything Scorch Viewer can do, plus start and cancel Scorch runs, write
+  # to and exit Scorch terminals, and watch the VMs Scorch components act on.
+  # Assigning the role scopes it to the user's experiments.
+  policies:
+  - resources:
+    - experiments
+    verbs:
+    - list
+    - get
+  - resources:
+    - "experiments/apps"
+    - "experiments/files"
+    verbs:
+    - list
+    - get
+  - resources:
+    - vms
+    verbs:
+    - list
+    - get
+  - resources:
+    - "vms/screenshot"
+    verbs:
+    - get
+  - resources:
+    - scorch
+    verbs:
+    - "*"

@@ -259,6 +259,37 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// configName returns the canonical Kind/name used for config permission
+// checks, falling back to the raw kind when it is unknown so the check still
+// fails closed for kind-scoped roles.
+func configName(c *store.Config) string {
+	if name := store.ConfigFullName(c.Kind, c.Metadata.Name); name != "" {
+		return name
+	}
+
+	return c.FullName()
+}
+
+// authorizeConfigCreate checks that the requester can create a config of this
+// kind and name. Without it, any role with configs create could create User or
+// Role configs and grant itself more access.
+func authorizeConfigCreate(r *http.Request, c *store.Config) error {
+	var (
+		role = middleware.RoleFromContext(r.Context())
+		name = configName(c)
+	)
+
+	if role.Allowed("configs", "create", name) {
+		return nil
+	}
+
+	user := middleware.UserFromContext(r.Context())
+	plog.Warn(plog.TypeSecurity, "creating config not allowed", "user", user, "config", name)
+
+	return weberror.NewWebError(nil, "creating config %s not allowed for %s", name, user).
+		SetStatus(http.StatusForbidden)
+}
+
 // CreateConfig - POST /configs.
 //
 //nolint:funlen // handler
@@ -289,7 +320,12 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	var (
 		typ  = r.Header.Get("Content-Type")
-		opts = []config.CreateOption{config.CreateWithValidation()}
+		opts = []config.CreateOption{
+			config.CreateWithValidation(),
+			config.CreateWithCheck(func(c *store.Config) error {
+				return authorizeConfigCreate(r, c)
+			}),
+		}
 	)
 
 	switch {
@@ -359,6 +395,11 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	c, err := config.Create(opts...)
 	if err != nil {
+		var webErr *weberror.WebError
+		if errors.As(err, &webErr) {
+			return webErr
+		}
+
 		if errors.Is(err, store.ErrExist) {
 			return weberror.NewWebError(err, "config with same name already exists")
 		}
@@ -620,6 +661,14 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 			"unknown content type provided when updating config: %s",
 			typ,
 		)
+	}
+
+	// Renaming a config, or changing its kind, creates a new config, so it
+	// needs the same permission as creating one.
+	if configName(c) != name {
+		if err := authorizeConfigCreate(r, c); err != nil {
+			return err
+		}
 	}
 
 	if c.Kind == kindExperiment {

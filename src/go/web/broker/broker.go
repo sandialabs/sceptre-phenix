@@ -153,13 +153,19 @@ func BroadcastWithPolicies(
 	}
 }
 
+// triggerPolicies returns the policies a client needs to receive an app
+// trigger event. Scorch run events go to everyone who can view Scorch for the
+// experiment, matching Scorch pipeline updates, since Scorch runs are started
+// and canceled with Scorch permissions rather than experiments/trigger.
 func triggerPolicies(appName string, policy *bt.RequestPolicy) []*bt.RequestPolicy {
-	policies := []*bt.RequestPolicy{policy}
 	if appName == "scorch" {
-		policies = append(policies, bt.NewRequestPolicy("scorch", "get", ""))
+		return []*bt.RequestPolicy{
+			bt.NewRequestPolicy("scorch", "get", ""),
+			bt.NewRequestPolicy("experiments", "get", policy.ResourceName),
+		}
 	}
 
-	return policies
+	return []*bt.RequestPolicy{policy}
 }
 
 func requestPoliciesAllowed(role rbac.Role, policies []*bt.RequestPolicy) bool {

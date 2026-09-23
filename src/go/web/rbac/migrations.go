@@ -2,6 +2,7 @@ package rbac
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 
 	"github.com/activeshadow/structs"
@@ -17,12 +18,16 @@ const (
 	experimentFilesResource   = "experiments/files"
 	experimentUserRole        = "Experiment User"
 	experimentViewerRole      = "Experiment Viewer"
+	forwardsResource          = "vms/forwards"
 	scorchResource            = "scorch"
+	createVerb                = "create"
+	deleteVerb                = "delete"
 	getVerb                   = "get"
 	postVerb                  = "post"
 	putVerb                   = "put"
 	tunnelerResource          = "tunneler"
 	vmAdminRole               = "VM Admin"
+	vmViewerRole              = "VM Viewer"
 
 	// servicePermissionsAnnotation marks a role config whose Builder, Scorch,
 	// and Tunneler permissions have been migrated.
@@ -34,27 +39,43 @@ type servicePermission struct {
 	verb     string
 }
 
+// legacyServicePermissions lists the permissions each built-in role gets on
+// upgrade; the default role configs grant the same. Viewer roles can open the
+// Builder, and roles that can control VMs can also control Scorch runs, write to
+// Scorch terminals, and use Tunneler port forwards.
 var legacyServicePermissions = map[string][]servicePermission{ //nolint:gochecknoglobals // migration data
 	experimentAdminRole: {
 		{resource: builderResource, verb: getVerb},
 		{resource: builderResource, verb: postVerb},
 		{resource: builderResource, verb: putVerb},
 		{resource: scorchResource, verb: getVerb},
+		{resource: scorchResource, verb: postVerb},
+		{resource: scorchResource, verb: deleteVerb},
 		{resource: tunnelerResource, verb: getVerb},
 	},
 	experimentUserRole: {
 		{resource: builderResource, verb: getVerb},
 		{resource: builderResource, verb: postVerb},
 		{resource: scorchResource, verb: getVerb},
+		{resource: scorchResource, verb: postVerb},
+		{resource: scorchResource, verb: deleteVerb},
 		{resource: tunnelerResource, verb: getVerb},
+		{resource: forwardsResource, verb: createVerb},
+		{resource: forwardsResource, verb: deleteVerb},
 	},
 	experimentViewerRole: {
+		{resource: builderResource, verb: getVerb},
 		{resource: scorchResource, verb: getVerb},
 		{resource: tunnelerResource, verb: getVerb},
 	},
 	vmAdminRole: {
 		{resource: scorchResource, verb: getVerb},
+		{resource: scorchResource, verb: postVerb},
+		{resource: scorchResource, verb: deleteVerb},
 		{resource: tunnelerResource, verb: getVerb},
+	},
+	vmViewerRole: {
+		{resource: builderResource, verb: getVerb},
 	},
 }
 
@@ -186,28 +207,46 @@ func ensureServicePermissions(role *v1.RoleSpec) bool {
 	return changed
 }
 
+// ensurePermission grants permission unless the role already allows it,
+// including through wildcard resources or verbs.
 func ensurePermission(role *v1.RoleSpec, permission servicePermission) bool {
+	if (Role{Spec: role}).Allowed(permission.resource, permission.verb) { //nolint:exhaustruct // partial initialization
+		return false
+	}
+
+	// Extend a policy for only this resource, so other resources in a shared
+	// policy do not gain the verb.
 	for _, policy := range role.Policies {
-		if !slices.Contains(policy.Resources, permission.resource) {
-			continue
+		if slices.Equal(policy.Resources, []string{permission.resource}) {
+			policy.Verbs = append(policy.Verbs, permission.verb)
+
+			return true
 		}
-
-		if slices.Contains(policy.Verbs, permission.verb) {
-			return false
-		}
-
-		policy.Verbs = append(policy.Verbs, permission.verb)
-
-		return true
 	}
 
 	role.Policies = append(role.Policies, &v1.PolicySpec{
 		Resources:     []string{permission.resource},
-		ResourceNames: nil,
+		ResourceNames: scopeFor(role, permission.resource),
 		Verbs:         []string{permission.verb},
 	})
 
 	return true
+}
+
+// scopeFor returns the resource names of the first policy whose resources
+// match resource, so a new vms/forwards policy for a user keeps the scope of
+// the user's vms/* policy. Service resources such as scorch match no other
+// policy and stay unscoped.
+func scopeFor(role *v1.RoleSpec, resource string) []string {
+	for _, policy := range role.Policies {
+		for _, pattern := range policy.Resources {
+			if matched, _ := filepath.Match(pattern, resource); matched {
+				return slices.Clone(policy.ResourceNames)
+			}
+		}
+	}
+
+	return nil
 }
 
 // experimentFilesRole returns true for roles that should allow experiment file uploads.

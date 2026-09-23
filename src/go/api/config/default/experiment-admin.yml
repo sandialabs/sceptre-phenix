@@ -48,6 +48,8 @@ spec:
     - scorch
     verbs:
     - get
+    - post
+    - delete
   - resources:
     - tunneler
     verbs:

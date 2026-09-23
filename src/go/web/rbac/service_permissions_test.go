@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/activeshadow/structs"
@@ -23,12 +24,12 @@ var servicePermissionChecks = []servicePermission{ //nolint:gochecknoglobals // 
 	{resource: builderResource, verb: putVerb},
 	{resource: scorchResource, verb: getVerb},
 	{resource: scorchResource, verb: postVerb},
-	{resource: scorchResource, verb: "delete"},
+	{resource: scorchResource, verb: deleteVerb},
 	{resource: tunnelerResource, verb: getVerb},
 }
 
-// loadDefaultRole decodes a built-in role config shipped with phenix.
-func loadDefaultRole(t *testing.T, name string) *v1.RoleSpec {
+// loadDefaultRoleConfig reads a built-in role config shipped with phenix.
+func loadDefaultRoleConfig(t *testing.T, name string) store.Config {
 	t.Helper()
 
 	body, err := os.ReadFile(filepath.Join("..", "..", "api", "config", "default", name+".yml"))
@@ -41,6 +42,15 @@ func loadDefaultRole(t *testing.T, name string) *v1.RoleSpec {
 		t.Fatalf("parsing default role %s: %v", name, err)
 	}
 
+	return c
+}
+
+// loadDefaultRole decodes a built-in role config shipped with phenix.
+func loadDefaultRole(t *testing.T, name string) *v1.RoleSpec {
+	t.Helper()
+
+	c := loadDefaultRoleConfig(t, name)
+
 	var spec v1.RoleSpec
 	if err := mapstructure.Decode(c.Spec, &spec); err != nil {
 		t.Fatalf("decoding default role %s: %v", name, err)
@@ -49,29 +59,79 @@ func loadDefaultRole(t *testing.T, name string) *v1.RoleSpec {
 	return &spec
 }
 
+// assignDefaultRole returns a built-in role as the Users page assigns it to a
+// user with the given resource names.
+func assignDefaultRole(t *testing.T, name string, names ...string) Role {
+	t.Helper()
+
+	role := &Role{Spec: loadDefaultRole(t, name)}
+
+	// Like the Users page, ignore the error returned for roles whose policies
+	// already name their resources.
+	_ = role.SetResourceNames(names...)
+
+	return *role
+}
+
+func permissions(verbs map[string][]string) []servicePermission {
+	var perms []servicePermission
+
+	for resource, vs := range verbs {
+		for _, verb := range vs {
+			perms = append(perms, servicePermission{resource: resource, verb: verb})
+		}
+	}
+
+	return perms
+}
+
 // TestDefaultRolesServicePermissions pins the service access each built-in role
-// grants, including the write verbs that only Global Admin gets by default.
+// grants.
 func TestDefaultRolesServicePermissions(t *testing.T) {
 	t.Parallel()
+
+	var (
+		all         = []string{getVerb, postVerb, putVerb}
+		scorchAll   = []string{getVerb, postVerb, deleteVerb}
+		readService = map[string][]string{
+			builderResource:  {getVerb},
+			scorchResource:   {getVerb},
+			tunnelerResource: {getVerb},
+		}
+	)
 
 	tests := []struct {
 		role    string
 		allowed []servicePermission
 	}{
 		{role: "global-admin", allowed: servicePermissionChecks},
+		{role: "global-viewer", allowed: permissions(readService)},
 		{
-			role: "global-viewer",
-			allowed: []servicePermission{
-				{resource: builderResource, verb: getVerb},
-				{resource: scorchResource, verb: getVerb},
-				{resource: tunnelerResource, verb: getVerb},
-			},
+			role: "experiment-admin",
+			allowed: permissions(map[string][]string{
+				builderResource: all, scorchResource: scorchAll, tunnelerResource: {getVerb},
+			}),
 		},
-		{role: "experiment-admin", allowed: legacyServicePermissions[experimentAdminRole]},
-		{role: "experiment-user", allowed: legacyServicePermissions[experimentUserRole]},
-		{role: "experiment-viewer", allowed: legacyServicePermissions[experimentViewerRole]},
-		{role: "vm-admin", allowed: legacyServicePermissions[vmAdminRole]},
-		{role: "vm-viewer", allowed: nil},
+		{
+			role: "experiment-user",
+			allowed: permissions(map[string][]string{
+				builderResource:  {getVerb, postVerb},
+				scorchResource:   scorchAll,
+				tunnelerResource: {getVerb},
+			}),
+		},
+		{role: "experiment-viewer", allowed: permissions(readService)},
+		{
+			role:    "vm-admin",
+			allowed: permissions(map[string][]string{scorchResource: scorchAll, tunnelerResource: {getVerb}}),
+		},
+		{role: "vm-viewer", allowed: permissions(map[string][]string{builderResource: {getVerb}})},
+		{
+			role:    "scorch-viewer",
+			allowed: permissions(map[string][]string{builderResource: {getVerb}, scorchResource: {getVerb}}),
+		},
+		{role: "scorch-admin", allowed: permissions(map[string][]string{scorchResource: scorchAll})},
+		{role: "builder", allowed: permissions(map[string][]string{builderResource: all})},
 		{role: "disabled", allowed: nil},
 	}
 
@@ -91,6 +151,117 @@ func TestDefaultRolesServicePermissions(t *testing.T) {
 	}
 }
 
+// TestDefaultRolesValidate verifies every built-in role config passes the Role
+// schema, as it must for administrators to edit it.
+func TestDefaultRolesValidate(t *testing.T) {
+	t.Parallel()
+
+	files, err := filepath.Glob(filepath.Join("..", "..", "api", "config", "default", "*.yml"))
+	if err != nil {
+		t.Fatalf("listing default configs: %v", err)
+	}
+
+	for _, file := range files {
+		name := strings.TrimSuffix(filepath.Base(file), ".yml")
+
+		c := loadDefaultRoleConfig(t, name)
+		if c.Kind != "Role" {
+			continue
+		}
+
+		if err := types.ValidateConfigSpec(c); err != nil {
+			t.Errorf("default role %s fails schema validation: %v", name, err)
+		}
+	}
+}
+
+// TestAssignedDefaultRolesScope checks the new and changed built-in roles after
+// the Users page assigns them to a user of experiment exp-a.
+func TestAssignedDefaultRolesScope(t *testing.T) {
+	t.Parallel()
+
+	type check struct {
+		resource, verb, name string
+		want                 bool
+	}
+
+	tests := map[string][]check{
+		"experiment-user": {
+			{"vms/forwards", "create", "exp-a/vm1", true},
+			{"vms/forwards", "delete", "exp-a/vm1", true},
+			{"vms/forwards", "create", "exp-b/vm1", false},
+			{"experiments", "get", "exp-b", false},
+		},
+		"experiment-admin": {
+			{"vms/forwards", "create", "exp-a/vm1", true},
+			{"vms/forwards", "create", "exp-b/vm1", false},
+		},
+		"vm-admin": {
+			{"vms/forwards", "create", "exp-a/vm1", true},
+			{"vms/forwards", "create", "exp-b/vm1", false},
+		},
+		"scorch-viewer": {
+			{"experiments", "get", "exp-a", true},
+			{"experiments", "get", "exp-b", false},
+			{"experiments/apps", "get", "exp-a", true},
+			{"experiments/files", "get", "exp-a", true},
+			{"experiments/files", "create", "exp-a", false},
+			{"experiments/start", "update", "exp-a", false},
+			{"vms", "list", "exp-a/vm1", false},
+		},
+		"scorch-admin": {
+			{"experiments", "get", "exp-a", true},
+			{"experiments", "get", "exp-b", false},
+			{"experiments/files", "list", "exp-a", true},
+			{"vms", "list", "exp-a/vm1", true},
+			{"vms/screenshot", "get", "exp-a/vm1", true},
+			{"vms/vnc", "get", "exp-a/vm1", false},
+			{"vms", "update", "exp-a/vm1", false},
+			{"experiments/trigger", "create", "exp-a", false},
+		},
+		// Builder ignores the user's experiments, and must never reach User or
+		// Role configs.
+		"builder": {
+			{"configs", "list", "Topology/topo", true},
+			{"configs", "create", "Topology/topo", true},
+			{"configs", "update", "Scenario/scn", true},
+			{"configs", "get", "Experiment/exp-b", true},
+			{"configs", "create", "Image/img", true},
+			{"configs", "delete", "Topology/topo", false},
+			{"configs", "create", "User/admin", false},
+			{"configs", "update", "User/admin", false},
+			{"configs", "create", "Role/global-admin", false},
+			{"configs", "get", "User/admin", false},
+			{"experiments", "list", "exp-b", true},
+			{"experiments", "update", "exp-b", true},
+			{"experiments", "delete", "exp-b", false},
+			{"experiments/start", "update", "exp-b", false},
+			{"topologies", "list", "topo", true},
+			{"scenarios", "list", "scn", true},
+			{"disks", "list", "disk.qc2", true},
+			{"disks", "get", "disk.qc2", true},
+			{"disks", "delete", "disk.qc2", false},
+			{"schemas", "get", "Topology", true},
+			{"vms", "list", "exp-b/vm1", false},
+			{"users", "list", "admin", false},
+		},
+	}
+
+	for name, checks := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			role := assignDefaultRole(t, name, "exp-a", "exp-a/*")
+
+			for _, c := range checks {
+				if got := role.Allowed(c.resource, c.verb, c.name); got != c.want {
+					t.Errorf("%s %s:%s %s: got %t, want %t", name, c.resource, c.verb, c.name, got, c.want)
+				}
+			}
+		})
+	}
+}
+
 // TestDefaultRolesIncludeServiceMigration verifies fresh installs and migrated
 // installs end up with the same service permissions.
 func TestDefaultRolesIncludeServiceMigration(t *testing.T) {
@@ -101,6 +272,7 @@ func TestDefaultRolesIncludeServiceMigration(t *testing.T) {
 		experimentUserRole:   "experiment-user",
 		experimentViewerRole: "experiment-viewer",
 		vmAdminRole:          "vm-admin",
+		vmViewerRole:         "vm-viewer",
 	}
 
 	for name := range legacyServicePermissions {
@@ -142,6 +314,73 @@ func TestEnsurePermissionExtendsExistingPolicy(t *testing.T) {
 
 	if !slices.Equal(role.Policies[0].Verbs, []string{getVerb, postVerb}) {
 		t.Fatalf("unexpected verbs: %v", role.Policies[0].Verbs)
+	}
+}
+
+// TestEnsurePermissionSkipsGrantedPermission verifies wildcard grants, such as
+// Global Viewer's, are not duplicated.
+func TestEnsurePermissionSkipsGrantedPermission(t *testing.T) {
+	t.Parallel()
+
+	role := &v1.RoleSpec{
+		Name: "Global Viewer",
+		Policies: []*v1.PolicySpec{{
+			Resources:     []string{"*", "*/*"},
+			ResourceNames: []string{"*", "*/*"},
+			Verbs:         []string{"list", getVerb},
+		}},
+	}
+
+	if ensurePermission(role, servicePermission{resource: builderResource, verb: getVerb}) {
+		t.Fatal("granted permission was added again")
+	}
+
+	if len(role.Policies) != 1 {
+		t.Fatalf("expected one policy, got %d", len(role.Policies))
+	}
+}
+
+// TestEnsureServicePermissionsScopesForwards verifies a user's new port
+// forward permissions keep the scope of the user's VM policy.
+func TestEnsureServicePermissionsScopesForwards(t *testing.T) {
+	t.Parallel()
+
+	spec := &v1.RoleSpec{
+		Name: experimentUserRole,
+		Policies: []*v1.PolicySpec{
+			{Resources: []string{"experiments", "experiments/*"}, ResourceNames: []string{"exp-a"}, Verbs: []string{"list", getVerb}},
+			{Resources: []string{"vms", "vms/*"}, ResourceNames: []string{"exp-a/*"}, Verbs: []string{"list", getVerb, "patch"}},
+			{Resources: []string{"hosts"}, ResourceNames: []string{"*"}, Verbs: []string{"list"}},
+		},
+	}
+
+	if !ensureServicePermissions(spec) {
+		t.Fatal("expected role to change")
+	}
+
+	role := Role{Spec: spec}
+
+	checks := []struct {
+		verb, name string
+		want       bool
+	}{
+		{createVerb, "exp-a/vm1", true},
+		{deleteVerb, "exp-a/vm1", true},
+		{createVerb, "exp-b/vm1", false},
+	}
+
+	for _, c := range checks {
+		if got := role.Allowed(forwardsResource, c.verb, c.name); got != c.want {
+			t.Errorf("vms/forwards:%s %s: got %t, want %t", c.verb, c.name, got, c.want)
+		}
+	}
+
+	if role.Allowed("vms/redeploy", createVerb, "exp-a/vm1") {
+		t.Error("forward permissions leaked to other VM resources")
+	}
+
+	if !role.Allowed(scorchResource, postVerb) {
+		t.Error("missing Scorch control")
 	}
 }
 

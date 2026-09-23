@@ -769,18 +769,8 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
 	}
 
-	if !role.Allowed("experiments/trigger", "create", name) {
-		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		err := weberror.NewWebError(
-			nil,
-			"starting Scorch runs for experiment %s not allowed for %s",
-			name,
-			user,
-		)
-
-		return err.SetStatus(http.StatusForbidden)
-	}
-
+	// The route requires scorch post; experiment read access scopes it to the
+	// experiments the user can see, as for the other Scorch routes.
 	if !role.Allowed("experiments", "get", name) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 		err := weberror.NewWebError(
@@ -887,7 +877,9 @@ func CancelPipeline(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
 	}
 
-	if !role.Allowed("experiments/trigger", "delete", name) {
+	// The route requires scorch delete; experiment read access scopes it to the
+	// experiments the user can see, as for the other Scorch routes.
+	if !role.Allowed("experiments", "get", name) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 		err := weberror.NewWebError(
 			nil,

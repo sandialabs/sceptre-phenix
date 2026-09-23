@@ -147,12 +147,15 @@ func TestDevAuthServicePermissions(t *testing.T) {
 		{"experiment-user", "builder", "post", http.StatusOK},
 		{"experiment-user", "builder", "put", http.StatusForbidden},
 		{"experiment-user", "scorch", "get", http.StatusOK},
-		{"experiment-user", "scorch", "post", http.StatusForbidden},
-		{"experiment-user", "scorch", "delete", http.StatusForbidden},
+		{"experiment-user", "scorch", "post", http.StatusOK},
+		{"experiment-user", "scorch", "delete", http.StatusOK},
 		{"experiment-user", "tunneler", "get", http.StatusOK},
-		{"experiment-viewer", "builder", "get", http.StatusForbidden},
+		{"experiment-viewer", "builder", "get", http.StatusOK},
+		{"experiment-viewer", "builder", "post", http.StatusForbidden},
 		{"experiment-viewer", "scorch", "get", http.StatusOK},
+		{"experiment-viewer", "scorch", "post", http.StatusForbidden},
 		{"experiment-viewer", "tunneler", "get", http.StatusOK},
+		{"vm-viewer", "builder", "get", http.StatusOK},
 		{"vm-viewer", "scorch", "get", http.StatusForbidden},
 		{"vm-viewer", "tunneler", "get", http.StatusForbidden},
 	}
@@ -176,17 +179,18 @@ func TestDevAuthServicePermissions(t *testing.T) {
 // TestSignedTokenAuthBuilderRoutes exercises the middleware chains the server
 // uses for GET /builder and POST /builder/save with signed JWTs.
 func TestSignedTokenAuthBuilderRoutes(t *testing.T) {
-	initTestStore(t, "experiment-user", "experiment-viewer")
+	initTestStore(t, "experiment-user", "experiment-viewer", "disabled")
 
 	var (
-		userToken   = createTestUser(t, "exp-user", "experiment-user", "test")
-		viewerToken = createTestUser(t, "exp-viewer", "experiment-viewer", "test")
-		forged      = signToken(t, "wrong-key", userClaims("exp-user"))
-		unissued    = signToken(t, testSigningKey, unissuedClaims("exp-user"))
-		auth        = Auth(testSigningKey, "")
-		builder     = auth(RequirePermission("builder", "get")(okHandler()))
-		save        = AuthTokenFromForm(auth(RequirePermission("builder", "post")(okHandler())))
-		saveNoForm  = auth(RequirePermission("builder", "post")(okHandler()))
+		userToken     = createTestUser(t, "exp-user", "experiment-user", "test")
+		viewerToken   = createTestUser(t, "exp-viewer", "experiment-viewer", "test")
+		disabledToken = createTestUser(t, "disabled-user", "disabled", "test")
+		forged        = signToken(t, "wrong-key", userClaims("exp-user"))
+		unissued      = signToken(t, testSigningKey, unissuedClaims("exp-user"))
+		auth          = Auth(testSigningKey, "")
+		builder       = auth(RequirePermission("builder", "get")(okHandler()))
+		save          = AuthTokenFromForm(auth(RequirePermission("builder", "get")(okHandler())))
+		saveNoForm    = auth(RequirePermission("builder", "get")(okHandler()))
 	)
 
 	tests := []struct {
@@ -208,9 +212,15 @@ func TestSignedTokenAuthBuilderRoutes(t *testing.T) {
 			want:    http.StatusForbidden,
 		},
 		{
-			name:    "builder without builder permission",
+			name:    "builder as viewer",
 			handler: builder,
 			req:     httptest.NewRequest(http.MethodGet, "/builder?token="+viewerToken, nil),
+			want:    http.StatusOK,
+		},
+		{
+			name:    "builder without builder permission",
+			handler: builder,
+			req:     httptest.NewRequest(http.MethodGet, "/builder?token="+disabledToken, nil),
 			want:    http.StatusForbidden,
 		},
 		{
@@ -238,9 +248,15 @@ func TestSignedTokenAuthBuilderRoutes(t *testing.T) {
 			want:    http.StatusForbidden,
 		},
 		{
-			name:    "save without builder post permission",
+			name:    "save as viewer",
 			handler: save,
-			req:     saveRequest(url.Values{"token": {viewerToken}}),
+			req:     saveRequest(url.Values{"token": {viewerToken}, "xml": {"<x/>"}}),
+			want:    http.StatusOK,
+		},
+		{
+			name:    "save without builder permission",
+			handler: save,
+			req:     saveRequest(url.Values{"token": {disabledToken}}),
 			want:    http.StatusForbidden,
 		},
 		{

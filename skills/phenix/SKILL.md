@@ -378,12 +378,20 @@ running `phenix ui` server, or building a UI integration).
 - **Builder, Scorch, and Tunneler have their own RBAC resources.** Their routes
   first check `builder` (`get`/`post`/`put`), `scorch` (`get`/`post`/`delete`),
   or `tunneler` (`get`), then the usual experiment and config permissions.
-  Starting or canceling a Scorch run, including `trigger?apps=scorch`, also
-  needs `experiments/trigger` `create`/`delete`. Custom roles must add these
-  resources; the built-in Experiment Admin/User/Viewer and VM Admin roles get
-  them from a one-time startup migration. `GET /builder` and tunneler downloads
-  take the JWT in the header or as `?token=`; in proxy mode only the
+  Scorch routes also need read access to the experiment (`experiments get`);
+  starting or canceling a run needs `scorch` `post`/`delete` but not
+  `experiments/trigger`, except through `trigger?apps=scorch`, which needs both.
+  Saving a Builder file needs only `builder` `get`; creating or updating an
+  experiment from the Builder needs `builder` `post`/`put` plus `experiments`
+  `create`/`update`. Custom roles must add these resources. Built-in roles get
+  them from a one-time startup migration, and the Builder, Scorch Viewer, and
+  Scorch Admin roles are created once on upgrade. `GET /builder` and tunneler
+  downloads take the JWT in the header or as `?token=`; in proxy mode only the
   proxy-provided header counts.
+- **`configs` permissions are checked against `Kind/name`** (for example
+  `Topology/foo`), so a role's `resourceNames` need `*/*` or kind patterns such
+  as `Topology/*`; `*` alone matches no config. Creating a config, or renaming
+  one or changing its kind, is checked against the new `Kind/name`.
 - **Store endpoint changes the whole world.** `--store.endpoint` (bolt or etcd) determines
   which configs/experiments are visible — commands against the wrong endpoint will report
   "no configs found" rather than an obvious connection error.

@@ -124,13 +124,17 @@ func TestDeliverCombinesSinglePolicyAndPolicies(t *testing.T) {
 	}
 }
 
-// TestPublishTriggerRequiresScorchAccess verifies Scorch trigger events also
-// require Scorch access, while other app trigger events do not.
-func TestPublishTriggerRequiresScorchAccess(t *testing.T) {
+// TestPublishTriggerScorchUsesScorchScope verifies Scorch run events go to
+// users who can view Scorch for the experiment, while other app trigger events
+// still require experiments/trigger.
+func TestPublishTriggerScorchUsesScorchScope(t *testing.T) {
 	set, clients := newTestClients(
-		[]*v1.PolicySpec{scorchGet(), policy("experiments/trigger", "create", "exp-a")},
-		[]*v1.PolicySpec{policy("experiments/trigger", "create", "exp-a")},
-		[]*v1.PolicySpec{scorchGet(), policy("experiments/trigger", "create", "exp-b")},
+		// Scorch viewer for exp-a without trigger permission.
+		[]*v1.PolicySpec{scorchGet(), policy("experiments", "get", "exp-a")},
+		// Trigger permission for exp-a without Scorch access.
+		[]*v1.PolicySpec{policy("experiments", "get", "exp-a"), policy("experiments/trigger", "create", "exp-a")},
+		// Scorch viewer for another experiment.
+		[]*v1.PolicySpec{scorchGet(), policy("experiments", "get", "exp-b")},
 	)
 
 	tests := []struct {
@@ -138,7 +142,7 @@ func TestPublishTriggerRequiresScorchAccess(t *testing.T) {
 		want []bool
 	}{
 		{app: "scorch", want: []bool{true, false, false}},
-		{app: "ntp", want: []bool{true, true, false}},
+		{app: "ntp", want: []bool{false, true, false}},
 	}
 
 	for _, test := range tests {
@@ -174,8 +178,19 @@ func TestPublishTriggerError(t *testing.T) {
 		t.Fatalf("unexpected resource: %+v", pub.Resource)
 	}
 
-	if len(pub.RequestPolicies) != 2 || pub.RequestPolicies[0].Verb != "delete" {
+	want := []bt.RequestPolicy{
+		{Resource: "scorch", Verb: "get", ResourceName: ""},
+		{Resource: "experiments", Verb: "get", ResourceName: "exp-a"},
+	}
+
+	if len(pub.RequestPolicies) != len(want) {
 		t.Fatalf("unexpected request policies: %+v", pub.RequestPolicies)
+	}
+
+	for i := range want {
+		if *pub.RequestPolicies[i] != want[i] {
+			t.Fatalf("unexpected request policy %d: %+v", i, pub.RequestPolicies[i])
+		}
 	}
 
 	var result map[string]string

@@ -42,7 +42,8 @@ export function roleAllowed(resource, verb, ...names) {
 // should match policy.go#resourceNameAllowed
 let resourceNameAllowed = (policy, name) => {
   var allowed = false;
-  for (const n of policy.resourceNames) {
+  // unscoped policies arrive with null resource names and match no name
+  for (const n of policy.resourceNames ?? []) {
     let negate = n.startsWith('!');
     var n2 = n.replace('!', '');
 
@@ -60,19 +61,12 @@ let resourceNameAllowed = (policy, name) => {
   return allowed;
 };
 
-// Starting or canceling a Scorch run needs both the experiment trigger
-// permission and the Scorch service permission, matching the server's Scorch
-// pipeline routes.
+// Starting a Scorch run needs scorch post and canceling one needs scorch
+// delete, both for an experiment the user can read, matching the server's
+// Scorch pipeline routes.
 export function scorchControlAllowed(exp, running) {
-  if (running) {
-    return (
-      roleAllowed('experiments/trigger', 'delete', exp) &&
-      roleAllowed('scorch', 'delete')
-    );
-  }
-
   return (
-    roleAllowed('experiments/trigger', 'create', exp) &&
-    roleAllowed('scorch', 'post')
+    roleAllowed('scorch', running ? 'delete' : 'post') &&
+    roleAllowed('experiments', 'get', exp)
   );
 }

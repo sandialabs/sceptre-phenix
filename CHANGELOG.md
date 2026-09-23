@@ -6,7 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **RBAC**: Protect Builder, Scorch, and Tunneler with the service-level `builder` (`get`, `post`, `put`), `scorch` (`get`, `post`, `delete`), and `tunneler` (`get`) permissions across REST routes, Scorch websocket updates, the standalone Builder and Tunneler download links, and the web UI. On first startup, the built-in Experiment Admin, Experiment User, Experiment Viewer, and VM Admin roles and their users are migrated once to keep their existing access; custom roles need these permissions added explicitly.
+- **RBAC**: Protect Builder, Scorch, and Tunneler with the service-level `builder` (`get`, `post`, `put`), `scorch` (`get`, `post`, `delete`), and `tunneler` (`get`) permissions across REST routes, Scorch websocket updates, the standalone Builder and Tunneler download links, and the web UI. Custom roles need these permissions added explicitly.
+- **RBAC**: Built-in roles get service access on first startup, once, so administrators can later remove it:
+  - Every viewer role (Global Viewer, Experiment Viewer, VM Viewer, and the new Scorch Viewer) can open the Builder and save topology files locally.
+  - Roles that can control VMs (Experiment Admin, Experiment User, and VM Admin) can start and cancel Scorch runs and type into Scorch terminals for their experiments.
+  - Experiment Admin, Experiment User, and VM Admin can download the Tunneler and create port forwards for their VMs; Experiment User gains `vms/forwards` `create` and `delete`.
+- **RBAC**: New built-in roles, created once on existing installs:
+  - **Scorch Viewer**: view Scorch pipelines, component output, read-only Scorch terminals, and Scorch run files for assigned experiments.
+  - **Scorch Admin**: everything Scorch Viewer can do, plus start and cancel runs, write to Scorch terminals, and view VMs and screenshots for assigned experiments.
+  - **Builder**: use the Builder and the Configs page for Topology, Scenario, Experiment, and Image configs, create and update experiments, and list disks, topologies, scenarios, applications, hosts, and options. Not scoped to experiments, and cannot read or change User or Role configs.
 
 ### Changed
 
@@ -15,12 +23,16 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - **RBAC**: Role and user configs saved by phēnix no longer store `resourceNames: null` for unscoped policies, which failed schema validation when an administrator later edited the role.
+- **Web UI**: Permission checks no longer throw for policies with no resource names, and Configs page buttons now check the same `Kind/name` as the server.
+- **Store**: `etcd` no longer panics when checking a store component that has not been initialized.
 
 ### Security
 
 - **Scorch**: Scorch terminals and component output now require read access to the experiment, and writable Scorch terminals require `scorch` `post`. Previously, any authenticated user could stream or write to them. Scorch pipeline and terminal websocket updates now go only to users with Scorch access to the experiment instead of every connected user.
-- **Scorch**: Starting or canceling Scorch through `POST` or `DELETE /api/v1/experiments/{name}/trigger?apps=scorch` now requires the same `scorch` permissions as the Scorch pipeline routes.
-- **Builder / Tunneler**: `GET /builder`, `POST /builder/save`, and `GET /downloads/tunneler/{name}` now require authentication.
+- **Scorch**: Starting or canceling Scorch through `POST` or `DELETE /api/v1/experiments/{name}/trigger?apps=scorch` now requires `scorch` `post` or `delete` in addition to `experiments/trigger`. Starting and canceling runs on the Scorch pipeline routes now needs `scorch` `post` or `delete` and read access to the experiment, instead of `experiments/trigger`.
+- **Configs**: `configs create` is now checked against the new config's `Kind/name`, and renaming a config or changing its kind needs `configs create` for the new name. Previously, any role with `configs create` could create User or Role configs and grant itself more access.
+- **Builder**: `PUT /api/v1/experiments/builder` now checks `experiments update` for the named experiment, and `experiments create` when it creates the experiment.
+- **Builder / Tunneler**: `GET /builder`, `POST /builder/save`, and `GET /downloads/tunneler/{name}` now require authentication and `builder` `get` or `tunneler` `get`.
 
 ## [1.0.0]
 

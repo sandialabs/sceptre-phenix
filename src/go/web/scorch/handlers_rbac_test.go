@@ -217,6 +217,51 @@ func TestStreamTerminalRejectsUnknownClientID(t *testing.T) {
 	}
 }
 
+// TestPipelineControlScopedByExperimentRead verifies starting and canceling
+// Scorch runs need read access to the experiment but not experiments/trigger;
+// the routes separately require scorch post or delete.
+func TestPipelineControlScopedByExperimentRead(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		handler func(http.ResponseWriter, *http.Request) error
+		method  string
+		exp     string
+		want    int
+	}{
+		{name: "start out of scope", handler: StartPipeline, method: http.MethodPost, exp: "denied", want: http.StatusForbidden},
+		{name: "cancel out of scope", handler: CancelPipeline, method: http.MethodDelete, exp: "denied", want: http.StatusForbidden},
+		{
+			name:    "cancel in scope without trigger",
+			handler: CancelPipeline,
+			method:  http.MethodDelete,
+			exp:     "allowed",
+			want:    http.StatusNoContent,
+		},
+	}
+
+	for _, test := range tests {
+		rec := httptest.NewRecorder()
+		vars := map[string]string{"name": test.exp, "run": "0"}
+		req := testRequest(test.method, vars, experimentPolicy("allowed"), scorchPolicy("*"))
+
+		err := test.handler(rec, req)
+		got := rec.Code
+
+		var webErr *weberror.WebError
+		if errors.As(err, &webErr) {
+			got = webErr.Status
+		} else if err != nil {
+			t.Fatalf("%s: unexpected error: %v", test.name, err)
+		}
+
+		if got != test.want {
+			t.Errorf("%s: got status %d, want %d", test.name, got, test.want)
+		}
+	}
+}
+
 func TestExitTerminalRequiresWriteClaim(t *testing.T) {
 	const pid = 4000
 

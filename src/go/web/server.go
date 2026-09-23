@@ -151,8 +151,10 @@ func Start(opts ...ServerOption) error {
 		),
 	).Methods("GET")
 
+	// Saving only returns the posted topology as a file download and changes no
+	// server state, so anyone who can open the Builder can save.
 	builderSaveHandler := authMiddleware(
-		middleware.RequirePermission("builder", "post")(http.HandlerFunc(SaveBuilderTopology)),
+		middleware.RequirePermission("builder", "get")(http.HandlerFunc(SaveBuilderTopology)),
 	)
 	if middleware.SignedTokenAuth(o.jwtKey) {
 		builderSaveHandler = middleware.AuthTokenFromForm(builderSaveHandler)

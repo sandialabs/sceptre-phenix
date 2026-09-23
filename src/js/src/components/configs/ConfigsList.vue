@@ -43,7 +43,7 @@
       </section>
       <footer class="modal-card-foot x-modal-dark buttons is-right">
         <button
-          v-if="roleAllowed('configs', 'update', viewer.config.metadata.name)"
+          v-if="roleAllowed('configs', 'update', configName(viewer.config))"
           class="button is-success"
           @click="$emit('edit', viewer.config)">
           Edit Config
@@ -66,7 +66,7 @@
             v-if="
               selectedConfigs.length > 0 &&
               selectedConfigs.every((c) =>
-                roleAllowed('configs', 'get', c.metadata.name),
+                roleAllowed('configs', 'get', configName(c)),
               )
             ">
             <b-tooltip label="download selected configs" type="is-light is-top">
@@ -81,7 +81,7 @@
             v-if="
               selectedConfigs.length > 0 &&
               selectedConfigs.every((c) =>
-                roleAllowed('configs', 'delete', c.metadata.name),
+                roleAllowed('configs', 'delete', configName(c)),
               )
             ">
             <b-tooltip label="delete selected configs" type="is-light is-top">
@@ -188,7 +188,7 @@
         width="400"
         sortable
         v-slot="props">
-        <template v-if="roleAllowed('configs', 'get', props.row.metadata.name)">
+        <template v-if="roleAllowed('configs', 'get', configName(props.row))">
           <b-tooltip label="view config" type="is-dark">
             <div class="field is-clickable">
               <div @click="viewConfig(props.row)">
@@ -222,7 +222,7 @@
           type="is-light"
           multilined>
           <button
-            v-if="roleAllowed('configs', 'update', props.row.metadata.name)"
+            v-if="roleAllowed('configs', 'update', configName(props.row))"
             class="button is-light is-small action"
             @click="$emit('edit', props.row)">
             <b-icon icon="edit"></b-icon>
@@ -235,7 +235,7 @@
           type="is-light"
           multilined>
           <button
-            v-if="roleAllowed('configs', 'get', props.row.metadata.name)"
+            v-if="roleAllowed('configs', 'get', configName(props.row))"
             class="button is-light is-small action"
             @click="download([props.row])">
             <b-icon icon="download"></b-icon>
@@ -248,7 +248,7 @@
           type="is-light"
           multilined>
           <button
-            v-if="roleAllowed('configs', 'delete', props.row.metadata.name)"
+            v-if="roleAllowed('configs', 'delete', configName(props.row))"
             class="button is-light is-small action"
             @click="deleteConfigs([props.row])">
             <b-icon icon="trash"></b-icon>
@@ -349,6 +349,11 @@
       },
     },
     methods: {
+      // Config permissions are checked against Kind/name, as on the server.
+      configName(config) {
+        return `${config.kind}/${config.metadata.name}`;
+      },
+
       updateConfigs() {
         this.isWaiting = true;
         axiosInstance
