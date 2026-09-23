@@ -156,4 +156,7 @@ permissions, supported action versions, lockfile caches, and shared version
 values.
 
 Do not publish artifacts, push images, or create releases under any
-circumstances.
+circumstances. The only exception is packages that a fork's own workflows
+publish to that fork's registry when you push a branch to the fork (for example
+`ghcr.io/<fork-owner>/sceptre-phenix/phenix:<branch>`); pushing branches to a
+fork is allowed.
