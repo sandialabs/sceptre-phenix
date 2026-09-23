@@ -296,9 +296,9 @@ minimega_node:
       properties:
         hostname:
           type: string
-          minLength: 1
+          minLength: 2
           maxLength: 63
-          pattern: '^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$'
+          pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$'
           example: ADServer
         description:
           type: string
