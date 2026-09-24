@@ -422,7 +422,10 @@
               <div>
                 <hr
                   v-if="parseInt(index) > 0"
-                  style="color: #595959; background-color: #595959" />
+                  style="
+                    color: var(--border-subtle);
+                    background-color: var(--border-subtle);
+                  " />
                 Create disk image of the {{ vmI.name }} VM with filename:
                 <br /><br />
                 <b-field
@@ -463,7 +466,10 @@
               <div>
                 <hr
                   v-if="parseInt(index) > 0"
-                  style="color: #595959; background-color: #595959" />
+                  style="
+                    color: var(--border-subtle);
+                    background-color: var(--border-subtle);
+                  " />
                 Create a memory snapshot for the
                 {{ vmI.name }} VM with filename: <br /><br />
                 <b-field
@@ -1413,13 +1419,7 @@
                     style="display: block" />
                 </a>
                 <a
-                  style="
-                    color: whitesmoke;
-                    display: block;
-                    background-color: grey;
-                    text-align: center;
-                    padding: 2px 0px;
-                  "
+                  class="vm-tile-label"
                   @click="getInfo(vm)"
                   >{{ vm.name }}</a
                 >
@@ -4144,6 +4144,16 @@
     },
   };
 </script>
+
+<style scoped>
+  .vm-tile-label {
+    display: block;
+    padding: 2px 0;
+    color: var(--text-primary);
+    text-align: center;
+    background-color: var(--surface-tertiary);
+  }
+</style>
 
 <style scoped>
   .fa-layers-counter {

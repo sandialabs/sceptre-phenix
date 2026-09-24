@@ -1793,7 +1793,7 @@
   }
 
   .dnb {
-    color: #ffffff;
+    color: var(--text-primary);
   }
 
   .fa-layers-counter {

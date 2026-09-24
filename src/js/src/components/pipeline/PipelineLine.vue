@@ -53,6 +53,6 @@
 </script>
 <style lang="css">
   .pipeline-connector {
-    stroke: #949393;
+    stroke: var(--status-neutral);
   }
 </style>

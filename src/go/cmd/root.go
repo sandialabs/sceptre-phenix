@@ -41,6 +41,7 @@ var (
 	hostnameSuffixes   string   //nolint:gochecknoglobals // global flag
 	storeEndpoint      string   //nolint:gochecknoglobals // global flag
 	currentConsoleFile *os.File //nolint:gochecknoglobals // global state
+	configFilePath     string   //nolint:gochecknoglobals // primary runtime config
 )
 
 //nolint:gochecknoglobals // root command
@@ -268,6 +269,7 @@ func init() {
 	// If a config file is found, read it in.
 	err := viper.ReadInConfig()
 	if err == nil {
+		configFilePath = viper.ConfigFileUsed()
 		viper.WatchConfig()
 	} else if errors.As(err, &viper.ConfigFileNotFoundError{}) {
 		// If the config file doesn't exist, create it so we can watch it for
@@ -278,6 +280,7 @@ func init() {
 			_ = viper.SafeWriteConfigAs(targetFile)
 			err := viper.ReadInConfig()
 			if err == nil {
+				configFilePath = viper.ConfigFileUsed()
 				viper.WatchConfig()
 			}
 		}
@@ -377,6 +380,16 @@ func init() {
 					web.PublishPhenixLog,
 				),
 			)
+		}
+
+		defaultThemeChanged := false
+		if uiCmd != nil {
+			defaultThemeChanged = uiCmd.Flags().Changed("default-theme")
+		}
+		if err := web.SetDefaultTheme(
+			getEffectiveString("ui.default-theme", defaultThemeChanged),
+		); err != nil {
+			plog.Error(plog.TypeSystem, "updating UI default theme", "err", err)
 		}
 	})
 
@@ -540,14 +553,29 @@ func getEffectiveBool(key string, flagChanged bool) bool {
 // config file, ignoring environment variables. This allows us to peek
 // at what is explicitly set in the file.
 func getFileViper() *viper.Viper {
-	f := viper.ConfigFileUsed()
+	f := configFilePath
 	if f == "" {
 		return nil
 	}
+
 	v := viper.New()
 	v.SetConfigFile(f)
 	_ = v.ReadInConfig()
 	return v
+}
+
+func getRuntimeConfigFilePath() string {
+	if configFilePath != "" {
+		return configFilePath
+	}
+
+	uid, home := getCurrentUserInfo()
+	targetDir := configDir
+	if uid != "0" {
+		targetDir = filepath.Join(home, ".config", appName)
+	}
+
+	return filepath.Join(targetDir, "config.yaml")
 }
 
 // getEffectiveValue is a generic version of getEffectiveString/Int

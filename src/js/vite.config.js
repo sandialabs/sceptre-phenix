@@ -44,6 +44,11 @@ export default defineConfig(({ mode }) => {
           logLevel: 'debug',
           ws: true,
         },
+        '/theme.js': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+          logLevel: 'debug',
+        },
       },
     },
     css: {

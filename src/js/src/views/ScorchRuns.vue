@@ -447,20 +447,20 @@
 
 <style scoped>
   div.autocomplete :deep(a.dropdown-item) {
-    color: #383838 !important;
+    color: var(--text-primary) !important;
   }
 
   .x-modal-dark {
-    background-color: #5b5b5b;
+    background-color: var(--surface-primary);
   }
 
   .x-modal-dark :deep(p) {
-    color: whitesmoke;
+    color: var(--text-primary);
   }
 
   .x-modal-dark :deep(textarea) {
-    background-color: #686868;
-    color: whitesmoke;
+    color: var(--input-text);
+    background-color: var(--input-background);
   }
 
   .x-config-text {

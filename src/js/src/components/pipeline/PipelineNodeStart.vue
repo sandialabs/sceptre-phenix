@@ -26,12 +26,12 @@
 <style lang="css">
   .pipeline-node-start {
     stroke: none;
-    fill: #8cc04f;
+    fill: var(--status-running);
   }
 
   .pipeline-node-start__text {
     stroke: none;
-    fill: whitesmoke;
+    fill: var(--text-inverse);
     font-size: 14px;
     font-weight: bold;
   }

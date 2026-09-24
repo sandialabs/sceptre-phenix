@@ -84,6 +84,16 @@ are only available to Global Administrator or Global Viewer.
     </template>
 
     <template #end>
+      <div class="navbar-item theme-toggle-item">
+        <button
+          type="button"
+          class="theme-toggle"
+          :aria-label="themeToggleLabel"
+          :title="themeToggleLabel"
+          @click="toggleTheme">
+          <font-awesome-icon :icon="themeIcon" aria-hidden="true" />
+        </button>
+      </div>
       <b-navbar-item v-if="proxyAuth" class="navbar-item" @click="logout"
         >Reauthorize
       </b-navbar-item>
@@ -98,6 +108,7 @@ are only available to Global Administrator or Global Viewer.
   import { usePhenixStore } from '@/store.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import axiosInstance from '@/utils/axios.js';
+  import { useTheme } from '@/utils/theme.js';
 
   export default {
     setup() {
@@ -124,9 +135,31 @@ are only available to Global Administrator or Global Viewer.
       tunneler() {
         return usePhenixStore().features.includes('tunneler-download');
       },
+      activeTheme() {
+        return useTheme().activeTheme.value;
+      },
+      themeIcon() {
+        return this.activeTheme === 'dark' ? 'moon' : 'sun';
+      },
+      themeToggleLabel() {
+        return this.activeTheme === 'dark'
+          ? 'Switch to light mode'
+          : 'Switch to dark mode';
+      },
     },
 
     methods: {
+      toggleTheme() {
+        try {
+          useTheme().toggleTheme();
+        } catch (error) {
+          this.$buefy.toast.open({
+            message: error.message,
+            type: 'is-danger',
+            duration: 5000,
+          });
+        }
+      },
       //  These methods are used to logout a user; or, present
       //  routable link based on a Global user role.
       logout() {
@@ -155,3 +188,33 @@ are only available to Global Administrator or Global Viewer.
     },
   };
 </script>
+
+<style scoped>
+  .theme-toggle-item {
+    display: flex;
+    align-items: center;
+  }
+
+  .theme-toggle {
+    display: inline-flex;
+    width: 2.5rem;
+    height: 2.5rem;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-primary);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 0.375rem;
+    cursor: pointer;
+  }
+
+  .theme-toggle:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
+
+  .theme-toggle:focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+</style>
