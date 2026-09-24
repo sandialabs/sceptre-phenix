@@ -174,6 +174,7 @@
         </b-autocomplete>
         <p class="control">
           <button
+            aria-label="Clear VM search"
             class="button input-button"
             @click="
               searchVMs('');
@@ -186,6 +187,7 @@
       <b-field>
         <b-tooltip label="Start experiment" type="is-light" position="is-top">
           <b-button
+            aria-label="Start experiment"
             v-if="roleAllowed('experiments/start', 'update', experiment.name)"
             class="button is-success"
             icon-right="play"
@@ -200,7 +202,10 @@
           multilined>
           <b-dropdown v-model="algorithm" class="is-right" aria-role="list">
             <template #trigger>
-              <b-button icon-right="bars" class="button is-light"></b-button>
+              <b-button
+                aria-label="Update schedule"
+                icon-right="bars"
+                class="button is-light"></b-button>
             </template>
             <b-dropdown-item
               v-for="(s, index) in schedules"
@@ -226,6 +231,10 @@
             :key="table.key"
             :data="experiment.vms"
             :paginated="table.isPaginated"
+            aria-next-label="Next page"
+            aria-previous-label="Previous page"
+            aria-page-label="Page"
+            aria-current-label="Current page"
             backend-pagination
             :total="table.total"
             :per-page="table.perPage"
@@ -323,6 +332,7 @@
                     </b-select>
                     <p class="control">
                       <b-button
+                        :aria-label="`Unassign host from VM ${props.row.name}`"
                         class="button input-button"
                         icon-right="window-close"
                         @click="unassignHost(props.row.name, props.row.host)">
@@ -557,6 +567,10 @@
           <b-table
             :data="files"
             :paginated="filesTable.isPaginated && filesPaginationNeeded"
+            aria-next-label="Next page"
+            aria-previous-label="Previous page"
+            aria-page-label="Page"
+            aria-current-label="Current page"
             backend-pagination
             :total="filesTable.total"
             :per-page="filesTable.perPage"
@@ -633,6 +647,7 @@
               centered
               v-slot="props">
               <b-button
+                :aria-label="`Download ${props.row.name}`"
                 class="button is-light is-small action"
                 icon-left="file-download"
                 @click="

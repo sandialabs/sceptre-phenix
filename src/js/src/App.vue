@@ -55,8 +55,9 @@
 
 <template>
   <div id="app" @click="timeout.resetTimer" @keydown="timeout.resetTimer">
+    <a class="skip-link" href="#main">Skip to main content</a>
     <app-header></app-header>
-    <main id="main" class="row container is-fullhd px-4">
+    <main id="main" class="row container is-fullhd px-4" tabindex="-1">
       <router-view></router-view>
     </main>
     <app-footer></app-footer>
@@ -73,5 +74,21 @@
     width: 100%;
     max-width: 1500px;
     padding-bottom: 20px;
+  }
+
+  // Visually hidden until it receives keyboard focus.
+  .skip-link {
+    position: absolute;
+    top: -100px;
+    left: 8px;
+    z-index: 100;
+    padding: 8px 12px;
+    color: #20252b;
+    background: #ffd166;
+    border-radius: 4px;
+  }
+
+  .skip-link:focus {
+    top: 8px;
   }
 </style>

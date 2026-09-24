@@ -154,7 +154,11 @@
                 readonly></b-input>
             </b-field>
 
-            <b-button size="is-small" icon-left="copy" @click="copy">
+            <b-button
+              size="is-small"
+              icon-left="copy"
+              aria-label="Copy token"
+              @click="copy">
             </b-button>
 
             <b-field label="Expires">
@@ -200,7 +204,10 @@
     <b-field grouped position="is-right">
       <p v-if="roleAllowed('users', 'create')" class="control">
         <b-tooltip label="create a new user" type="is-light is-left">
-          <button class="button is-light" @click="isCreateActive = true">
+          <button
+            class="button is-light"
+            aria-label="Create a new user"
+            @click="isCreateActive = true">
             <b-icon icon="plus"></b-icon>
           </button>
         </b-tooltip>
@@ -210,6 +217,10 @@
       <b-table
         :data="users"
         :paginated="table.isPaginated"
+        aria-next-label="Next page"
+        aria-previous-label="Previous page"
+        aria-page-label="Page"
+        aria-current-label="Current page"
         :per-page="table.perPage"
         v-model:current-page="table.currentPage"
         :pagination-simple="table.isPaginationSimple"
@@ -247,6 +258,7 @@
             multilined>
             <button
               class="button is-light is-small"
+              :aria-label="`Create token for ${props.row.username}`"
               @click="newToken(props.row.username)">
               <b-icon icon="key"></b-icon>
             </button>
@@ -260,6 +272,7 @@
             <button
               v-if="roleAllowed('users', 'delete', props.row.username)"
               class="button is-light is-small"
+              :aria-label="`Delete user ${props.row.username}`"
               @click="deleteUser(props.row.username)">
               <b-icon icon="trash"></b-icon>
             </button>
@@ -273,6 +286,7 @@
             <button
               v-if="roleAllowed('users', 'patch', props.row.username)"
               class="button is-light is-small"
+              :aria-label="`Edit user ${props.row.username}`"
               @click="editUser(props.row.username)">
               <b-icon icon="pencil"></b-icon>
             </button>

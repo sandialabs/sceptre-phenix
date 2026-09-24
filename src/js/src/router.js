@@ -22,72 +22,91 @@ const router = createRouter({
     {
       path: '/signin',
       name: 'signin',
+      meta: { title: 'Sign in' },
       component: () => import('@/views/SignIn.vue'),
     },
     {
       path: '/experiments',
       name: 'experiments',
+      meta: { title: 'Experiments' },
       component: () => import('@/views/Experiments.vue'),
     },
     {
       path: '/experiment/:id',
       name: 'experiment',
+      meta: { title: 'Experiment' },
       component: () => import('@/views/experiment/Base.vue'),
     },
     {
       path: '/hosts',
       name: 'hosts',
+      meta: { title: 'Hosts' },
       component: () => import('@/views/Hosts.vue'),
     },
     {
       path: '/configs/',
       name: 'configs',
+      meta: { title: 'Configs' },
       component: () => import('@/views/Configs.vue'),
     },
     {
       path: '/disks/',
       name: 'disks',
+      meta: { title: 'Disks' },
       component: () => import('@/views/Disks.vue'),
     },
     {
       path: '/vmtiles',
       name: 'vmtiles',
+      meta: { title: 'VM tiles' },
       component: () => import('@/views/experiment/VMtilesView.vue'),
     },
     {
       path: '/users',
       name: 'users',
+      meta: { title: 'Users' },
       component: () => import('@/views/Users.vue'),
     },
-    { path: '/log', name: 'log', component: () => import('@/views/Logs.vue') },
+    {
+      path: '/log',
+      name: 'log',
+      meta: { title: 'Logs' },
+      component: () => import('@/views/Logs.vue'),
+    },
     {
       path: '/console',
       name: 'console',
+      meta: { title: 'Console' },
       component: () => import('@/views/Console.vue'),
     },
     {
       path: '/scorch',
       name: 'scorch',
+      meta: { title: 'SCORCH' },
       component: () => import('@/views/Scorch.vue'),
     },
     {
       path: '/scorch/:id',
       name: 'scorchruns',
+      meta: { title: 'SCORCH runs' },
       component: () => import('@/views/ScorchRuns.vue'),
     },
     {
       path: '/soh/:id',
       name: 'soh',
+      meta: { title: 'State of health' },
       component: () => import('@/views/StateOfHealth.vue'),
     },
     {
       path: '/settings',
       name: 'settings',
+      meta: { title: 'Settings' },
       component: () => import('@/views/Settings.vue'),
     },
     {
       path: '/tunneler',
       name: 'tunneler',
+      meta: { title: 'Tunneler' },
       component: () => import('@/views/Tunneler.vue'),
     },
 
@@ -96,12 +115,14 @@ const router = createRouter({
       // not part of the route path (passing them worked in Vue Router 3)
       path: '/proxysignup/:username?',
       name: 'proxysignup',
+      meta: { title: 'Sign up' },
       component: () => import('@/views/ProxySignUp.vue'),
       props: true,
     },
     {
       path: '/disabled',
       name: 'disabled',
+      meta: { title: 'Account disabled' },
       component: () => import('@/views/Disabled.vue'),
     },
 
@@ -231,4 +252,9 @@ router.beforeEach(async (to, _, next) => {
     }
   }
 });
+// Give every route its own document title (WCAG 2.4.2 Page Titled).
+router.afterEach((to) => {
+  document.title = to.meta?.title ? `${to.meta.title} - phēnix` : 'phēnix';
+});
+
 export default router;
