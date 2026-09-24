@@ -110,7 +110,7 @@ test('configs: schema selection generates a config template', async ({
   await gotoSeeded(page, '/configs/');
   await settle(page);
 
-  await page.locator('button#main:has(svg[data-icon="plus"])').click();
+  await page.getByRole('button', { name: 'Create a new config' }).click();
   await expect(page.locator('.ace_editor')).toBeVisible({ timeout: 20000 });
 
   const fullSchema = page.waitForResponse(

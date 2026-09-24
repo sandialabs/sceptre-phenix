@@ -130,9 +130,12 @@
 
       <RecycleScroller
         ref="logScroller"
+        role="region"
+        tabindex="0"
+        aria-label="Log messages"
         :items="filteredLogs"
         :item-size="36"
-        key-field="time"
+        key-field="id"
         style="width: 100%; height: 75vh">
         <template v-slot="{ item, index }">
           <div class="columns row">
@@ -299,7 +302,7 @@
         axiosInstance
           .get(query)
           .then((response) => {
-            this.logs = response.data ?? [];
+            this.logs = this.withIds(response.data ?? []);
             this.$nextTick(() => {
               this.$refs.logScroller.scrollToPosition(Number.MAX_SAFE_INTEGER);
               this.isLoading = false;
@@ -332,8 +335,14 @@
       },
       handleWs(msg) {
         if (msg.resource.type == 'log' && this.endNow && !this.isLoading) {
-          this.logs.push(msg.result);
+          this.logs.push(...this.withIds([msg.result]));
         }
+      },
+      // Several log entries can share the same millisecond timestamp, so the
+      // virtual scroller needs its own unique key per entry; reusing `time`
+      // as the key made it drop rows and leave blank gaps.
+      withIds(logs) {
+        return logs.map((log) => ({ ...log, id: this.nextLogId++ }));
       },
       getIconForLevel(level) {
         switch (level) {
@@ -351,6 +360,7 @@
 
     data() {
       return {
+        nextLogId: 0,
         logs: [], // the loaded logs; filtered in computed
         suppressWatch: false, // if true, watches won't trigger call
         startDate: new Date(),

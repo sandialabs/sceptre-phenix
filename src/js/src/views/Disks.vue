@@ -217,13 +217,19 @@
         </b-autocomplete>
 
         <p class="control">
-          <button class="button input-button" @click="filterString = ''">
+          <button
+            class="button input-button"
+            aria-label="Clear disk search"
+            @click="filterString = ''">
             <b-icon icon="window-close"></b-icon>
           </button>
         </p>
       </b-field>
       <b-tooltip label="Refresh List" type="is-light is-left">
-        <button class="button is-light" @click="updateDisks">
+        <button
+          class="button is-light"
+          aria-label="Refresh disk list"
+          @click="updateDisks">
           <b-icon icon="refresh"></b-icon>
         </button>
       </b-tooltip>
@@ -238,6 +244,7 @@
           accept=".qcow2,.qc2,.tgz,.hdd,.iso"
           :disabled="currentUploadProgress != null">
           <span class="file-cta">
+            <span class="is-sr-only">Upload a disk</span>
             <b-icon v-if="currentUploadProgress == null" icon="upload"></b-icon>
             <p v-else style="width: 32px">{{ currentUploadProgress }}%</p>
           </span>
@@ -250,6 +257,10 @@
       @click="rowClick"
       :row-class="(r, i) => 'is-clickable'"
       :paginated="table.isPaginated"
+      aria-next-label="Next page"
+      aria-previous-label="Previous page"
+      aria-page-label="Page"
+      aria-current-label="Current page"
       :per-page="table.perPage"
       v-model:current-page="table.currentPage"
       :pagination-simple="table.isPaginationSimple"

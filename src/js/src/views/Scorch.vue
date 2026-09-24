@@ -10,7 +10,10 @@
         <template #empty> No results found </template>
       </b-autocomplete>
       <p class="control">
-        <button class="button input-button" @click="searchName = ''">
+        <button
+          class="button input-button"
+          aria-label="Clear experiment search"
+          @click="searchName = ''">
           <b-icon icon="window-close"></b-icon>
         </button>
       </p>
@@ -18,6 +21,10 @@
     <b-table
       :data="filteredExperiments"
       :paginated="table.isPaginated"
+      aria-next-label="Next page"
+      aria-previous-label="Previous page"
+      aria-page-label="Page"
+      aria-current-label="Current page"
       :per-page="table.perPage"
       v-model:current-page="table.currentPage"
       :pagination-simple="table.isPaginationSimple"
@@ -108,6 +115,7 @@
       </b-table-column>
       <b-table-column label="Terminal" width="100" centered v-slot="props">
         <button
+          :aria-label="`Open terminal for experiment ${props.row.name}`"
           v-if="roleAllowed('experiments', 'get', props.row.name)"
           class="button is-small is-white"
           @click="showExperimentTerminal(props.row.name)"

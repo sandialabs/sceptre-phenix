@@ -130,3 +130,64 @@ input::placeholder,
 textarea::placeholder {
   opacity: 1;
 }
+
+// Keyboard focus indicator (WCAG 2.4.7 Focus Visible, 1.4.11 Non-text
+// Contrast). The yellow ring has at least 3:1 contrast against every dark
+// surface in the current theme ($background, $background-bis, $background-ter,
+// $scheme-main); the dark inner halo keeps it visible on the light surfaces
+// too (white inputs, hovered/striped table rows using $scheme-main-bis).
+// Class selectors are listed alongside the element selectors so this rule
+// outranks Bulma's `.button:focus { outline: none }` reset.
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible,
+.button:focus-visible,
+.delete:focus-visible,
+.pagination-link:focus-visible,
+.pagination-previous:focus-visible,
+.pagination-next:focus-visible,
+.input:focus,
+.textarea:focus,
+.select select:focus {
+  outline: 3px solid #ffd166;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #1a1a1a;
+}
+
+// Buefy checkboxes, radios and switches keep focus on a visually hidden
+// input; draw the ring on the visible control instead.
+.b-checkbox input:focus-visible + .check,
+.b-radio input:focus-visible + .check,
+.switch input:focus-visible + .check {
+  outline: 3px solid #ffd166;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #1a1a1a;
+}
+
+.upload:focus-within .file-cta {
+  outline: 3px solid #ffd166;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #1a1a1a;
+}
+
+// Buefy renders an unselected b-select placeholder as rgba($grey, 0.7)
+// (#a2a2a2 on white, 2.6:1); use a colour with 4.5:1 on the white input.
+.select.is-empty select {
+  color: #5c6672;
+}
+
+// Bulma's $danger (#f14668) gives only 3.6:1 against white text. Darken the
+// filled danger surfaces instead of $danger itself so has-text-danger keeps
+// its contrast on the dark page background.
+.notification.is-danger,
+.message.is-danger .message-header,
+.button.is-danger:not(.is-outlined):not(.is-inverted) {
+  background-color: #a91f3d;
+  border-color: #a91f3d;
+}
+
+.button.is-danger:not(.is-outlined):not(.is-inverted):hover,
+.button.is-danger:not(.is-outlined):not(.is-inverted):focus {
+  background-color: #8f1a34;
+  border-color: #8f1a34;
+}

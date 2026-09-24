@@ -16,6 +16,10 @@ a CI-built binary, a container, or a full range node.
 
 CI (`.github/workflows/frontend.yml`) builds the UI with `VITE_AUTH=disabled`,
 starts `bin/phenix ui` against a throw-away store, and runs the default set.
+Every route in `routes.spec.js` is also scanned with axe-core (WCAG 2.x A/AA
+rule tags) as rendered against the empty store and fails on any violation.
+Content that only appears with data (table rows, modals, notifications) is
+not covered; the full axe report is attached to each test result.
 
 ## Running locally
 
