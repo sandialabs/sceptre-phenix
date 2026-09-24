@@ -4,7 +4,7 @@ component.
 -->
 
 <template>
-  <div>
+  <footer>
     <hr class="mb-4" />
     <div class="container is-fluid">
       <small>
@@ -15,7 +15,7 @@ component.
         <p style="float: right; color: whitesmoke">{{ version }}</p>
       </small>
     </div>
-  </div>
+  </footer>
 </template>
 
 <script>

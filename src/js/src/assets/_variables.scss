@@ -6,6 +6,9 @@ $logo: #9a4420;
 // derived via: https://m2.material.io/design/color/the-color-system.html#tools-for-picking-colors
 $primary: #da622d;
 $link: #62c0d7;
+// Bulma's default $code (darken($red, 15%) = #da1039) is only 2.5:1 against
+// $background and 4.1:1 against black; #ff7b95 is 5:1 on $background.
+$code: #ff7b95;
 
 $scheme-main: #686868;
 $scheme-main-bis: #b1b1b1;

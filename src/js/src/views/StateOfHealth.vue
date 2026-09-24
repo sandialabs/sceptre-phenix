@@ -374,6 +374,7 @@
               type="is-light is-left"
               :delay="400">
               <b-button
+                aria-label="Edit notes and labels"
                 class="button is-light"
                 icon-left="tag"
                 @click="showTagsModal(detailsModal.vm, detailsModal.tags)" />

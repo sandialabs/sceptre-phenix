@@ -130,6 +130,9 @@
 
       <RecycleScroller
         ref="logScroller"
+        role="region"
+        tabindex="0"
+        aria-label="Log messages"
         :items="filteredLogs"
         :item-size="36"
         key-field="time"

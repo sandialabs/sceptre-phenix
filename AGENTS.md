@@ -132,6 +132,9 @@ image, documentation, or topology details.
 ## Change Management
 
 - Follow `.github/CONTRIBUTING.md`; use Conventional Commit messages.
+- The project is English-only (US dialect): all contributions, including code,
+  comments, documentation, commit messages, and pull requests, are written in
+  English, and every `<html>` tag must include `lang="en-US"`.
 - Branch names use a Conventional Commit type and no `/`, for example
   `feat-add-user-authentication`.
 - Use rebase workflow and one commit per logical feature; PRs normally contain

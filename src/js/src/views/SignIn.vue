@@ -12,32 +12,52 @@ It requires a valid username and password.
         </header>
         <section class="modal-card-body">
           <b-field
+            label-for="signup-username"
             label="User Name"
             :type="{ 'is-danger': userExists }"
             :message="{ 'User already exists': userExists }">
             <b-input
               type="text"
+              id="signup-username"
+              :compat-fallthrough="false"
+              autocomplete="username"
               v-model="username"
               minlength="4"
               maxlength="32"
               autofocus></b-input>
           </b-field>
-          <b-field label="First Name">
-            <b-input type="text" v-model="first_name"></b-input>
+          <b-field label-for="signup-first-name" label="First Name">
+            <b-input
+              type="text"
+              id="signup-first-name"
+              :compat-fallthrough="false"
+              autocomplete="given-name"
+              v-model="first_name"></b-input>
           </b-field>
-          <b-field label="Last Name">
-            <b-input type="text" v-model="last_name"></b-input>
+          <b-field label-for="signup-last-name" label="Last Name">
+            <b-input
+              type="text"
+              id="signup-last-name"
+              :compat-fallthrough="false"
+              autocomplete="family-name"
+              v-model="last_name"></b-input>
           </b-field>
-          <b-field label="Password">
+          <b-field label-for="signup-password" label="Password">
             <b-input
               type="password"
+              id="signup-password"
+              :compat-fallthrough="false"
+              autocomplete="new-password"
               minlength="8"
               maxlength="32"
               v-model="password"></b-input>
           </b-field>
-          <b-field label="Confirm Password">
+          <b-field label-for="signup-confirm-password" label="Confirm Password">
             <b-input
               type="password"
+              id="signup-confirm-password"
+              :compat-fallthrough="false"
+              autocomplete="new-password"
               minlength="8"
               maxlength="32"
               v-model="confirmPassword"
@@ -50,12 +70,21 @@ It requires a valid username and password.
       </div>
     </b-modal>
     <div class="signin-form">
-      <b-field label="Username">
-        <b-input type="text" v-model="username" autofocus></b-input>
+      <b-field label-for="signin-username" label="Username">
+        <b-input
+          type="text"
+          id="signin-username"
+          :compat-fallthrough="false"
+          autocomplete="username"
+          v-model="username"
+          autofocus></b-input>
       </b-field>
-      <b-field label="Password">
+      <b-field label-for="signin-password" label="Password">
         <b-input
           type="password"
+          id="signin-password"
+          :compat-fallthrough="false"
+          autocomplete="current-password"
           v-model="password"
           @keyup.enter="onSubmit"></b-input>
       </b-field>
