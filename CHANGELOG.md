@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Web UI Dark Mode**: Light and dark colour themes for the web UI, selectable per browser from the header toggle and following the operating system preference by default. The server-wide default is configurable with `ui.default-theme` (`phenix settings set ui.default-theme`, `PHENIX_UI_DEFAULT_THEME`, `phenix ui --default-theme`), the Settings page, and `GET/PUT /api/v1/settings/theme`.
+
+### Fixed
+
+- **Settings**: `config.yaml` values now take precedence over environment variables as documented, and `phenix settings set`/`unset` edit the config file phēnix discovered at startup instead of recomputing a default location. Edits preserve comments and key order and replace the file atomically.
+
 ### Changed
 
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.

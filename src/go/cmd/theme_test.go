@@ -4,8 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/spf13/viper"
 )
 
 func TestNormalizeRuntimeDefaultTheme(t *testing.T) {
@@ -22,7 +20,7 @@ func TestNormalizeRuntimeDefaultTheme(t *testing.T) {
 	}
 }
 
-func TestDefaultThemeFlagUsesExplicitPrecedence(t *testing.T) {
+func TestDefaultThemePrecedence(t *testing.T) {
 	configFile := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(
 		configFile,
@@ -34,17 +32,21 @@ func TestDefaultThemeFlagUsesExplicitPrecedence(t *testing.T) {
 
 	previousConfigFilePath := configFilePath
 	configFilePath = configFile
-	viper.Set("ui.default-theme", "light")
-	t.Cleanup(func() {
-		configFilePath = previousConfigFilePath
-		viper.Set("ui.default-theme", "system")
-	})
+	t.Cleanup(func() { configFilePath = previousConfigFilePath })
+	t.Setenv("PHENIX_UI_DEFAULT_THEME", "light")
 
+	// The config file wins over the environment ...
 	if got := getEffectiveString("ui.default-theme", false); got != "dark" {
 		t.Fatalf("file default theme = %q, want dark", got)
 	}
+	// ... unless the flag was given, in which case viper's own precedence
+	// (flag, then environment) applies.
 	if got := getEffectiveString("ui.default-theme", true); got != "light" {
 		t.Fatalf("flag default theme = %q, want light", got)
+	}
+
+	if got := getRuntimeConfigFilePath(); got != configFile {
+		t.Fatalf("runtime config file = %q, want %q", got, configFile)
 	}
 }
 

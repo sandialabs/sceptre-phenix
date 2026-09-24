@@ -983,7 +983,7 @@
             ref="vmTable">
             <template #empty>
               <section class="section">
-                <div class="content has-text-white has-text-centered">
+                <div class="content has-text-centered">
                   Your search turned up empty!
                 </div>
               </section>
@@ -1297,7 +1297,7 @@
             @sort="onFilesSort">
             <template #empty>
               <section class="section">
-                <div class="content has-text-white has-text-centered">
+                <div class="content has-text-centered">
                   No Files Are Available!
                 </div>
               </section>
@@ -1418,11 +1418,7 @@
                     :width="vncWidth"
                     style="display: block" />
                 </a>
-                <a
-                  class="vm-tile-label"
-                  @click="getInfo(vm)"
-                  >{{ vm.name }}</a
-                >
+                <a class="vm-tile-label" @click="getInfo(vm)">{{ vm.name }}</a>
               </div>
             </template>
             <template v-else>Your search turned up empty!</template>

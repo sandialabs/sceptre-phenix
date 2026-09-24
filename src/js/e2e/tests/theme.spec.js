@@ -1,5 +1,10 @@
+// Theme resolution: server default, browser-local override, and system
+// preference. Needs a server whose default theme is not locked by
+// `phenix ui --default-theme`; the suite skips itself otherwise.
 const { test, expect } = require('@playwright/test');
 const { gotoSeeded, settle } = require('./helpers');
+
+let originalDefaultTheme = 'system';
 
 async function setDefaultTheme(request, theme) {
   const response = await request.put('/api/v1/settings/theme', {
@@ -8,17 +13,16 @@ async function setDefaultTheme(request, theme) {
   expect(response.ok(), await response.text()).toBeTruthy();
 }
 
-async function clearLocalTheme(page) {
-  await page.addInitScript(() => {
-    if (!sessionStorage.getItem('phenix.e2e-theme-cleared')) {
-      localStorage.removeItem('phenix.theme');
-      sessionStorage.setItem('phenix.e2e-theme-cleared', 'true');
-    }
-  });
-}
+test.beforeAll(async ({ request }) => {
+  const response = await request.get('/api/v1/settings/theme');
+  expect(response.ok(), await response.text()).toBeTruthy();
+  const current = await response.json();
+  test.skip(current.locked, 'default theme is locked by --default-theme');
+  originalDefaultTheme = current.default_theme;
+});
 
-test.afterEach(async ({ request }) => {
-  await setDefaultTheme(request, 'system');
+test.afterAll(async ({ request }) => {
+  await setDefaultTheme(request, originalDefaultTheme);
 });
 
 test('theme: follows a dark system preference by default', async ({
@@ -27,7 +31,6 @@ test('theme: follows a dark system preference by default', async ({
 }) => {
   await setDefaultTheme(request, 'system');
   await page.emulateMedia({ colorScheme: 'dark' });
-  await clearLocalTheme(page);
   await gotoSeeded(page, '/experiments');
 
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
@@ -42,7 +45,6 @@ test('theme: follows live system changes only in system mode', async ({
 }) => {
   await setDefaultTheme(request, 'system');
   await page.emulateMedia({ colorScheme: 'dark' });
-  await clearLocalTheme(page);
   await gotoSeeded(page, '/experiments');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
@@ -55,7 +57,6 @@ test('theme: local choice overrides the global default and persists', async ({
   request,
 }) => {
   await setDefaultTheme(request, 'light');
-  await clearLocalTheme(page);
   await gotoSeeded(page, '/experiments');
 
   const toggle = page.getByRole('button', { name: 'Switch to dark mode' });
@@ -89,7 +90,6 @@ test('theme: Settings persists the shared global default', async ({
   request,
 }) => {
   await setDefaultTheme(request, 'system');
-  await clearLocalTheme(page);
   await gotoSeeded(page, '/settings');
   await settle(page);
 
@@ -105,12 +105,9 @@ test('theme: Settings persists the shared global default', async ({
   });
 });
 
-test('theme: UI loads without external requests', async ({ page, request }) => {
-  await setDefaultTheme(request, 'system');
+test('theme: UI loads without external requests', async ({ page, baseURL }) => {
   const externalRequests = [];
-  const expectedHost = new URL(
-    process.env.E2E_BASE_URL || 'http://127.0.0.1:3000',
-  ).host;
+  const expectedHost = new URL(baseURL).host;
   page.on('request', (browserRequest) => {
     const url = new URL(browserRequest.url());
     if (

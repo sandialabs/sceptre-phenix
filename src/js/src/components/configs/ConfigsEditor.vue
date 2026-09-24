@@ -625,9 +625,6 @@
   };
 </script>
 <style scoped>
-  .hero.is-light.is-bold {
-    background-image: none;
-  }
   .hero.is-light {
     color: var(--text-primary);
     background-color: var(--surface-secondary);

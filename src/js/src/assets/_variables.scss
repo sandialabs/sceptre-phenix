@@ -1,11 +1,14 @@
 @use 'sass:map';
-@import 'bulma/sass/utilities/_all';
-@import 'buefy/src/scss/utils/_all';
 
 $logo: #9a4420;
 // derived via: https://m2.material.io/design/color/the-color-system.html#tools-for-picking-colors
+// Set before importing the Bulma utilities so the derived $colors map (and
+// everything built from it, e.g. $button-colors) uses them.
 $primary: #da622d;
 $link: #62c0d7;
+
+@import 'bulma/sass/utilities/_all';
+@import 'buefy/src/scss/utils/_all';
 
 $scheme-main: #686868;
 $scheme-main-bis: #b1b1b1;

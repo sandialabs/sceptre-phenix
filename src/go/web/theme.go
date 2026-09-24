@@ -133,6 +133,13 @@ func SetDefaultThemeSetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Saving the Settings page always submits the theme; leave the config
+	// file (and the watcher that reloads it) alone when nothing changed.
+	if response.DefaultTheme == string(mode) {
+		writeDefaultThemeResponse(w, response)
+		return
+	}
+
 	themeMu.RLock()
 	configFile := o.configFile
 	themeMu.RUnlock()

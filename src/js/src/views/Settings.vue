@@ -1,7 +1,7 @@
 <template>
   <section>
     <div class="form-section">
-      <form class="content" @submit.prevent="sendSettingsToServer">
+      <form class="content">
         <h3>Appearance Settings</h3>
         <b-field
           label="Default theme"
@@ -51,7 +51,6 @@
         <b-field>
           Minimum length of password
           <b-numberinput
-            aria-label="Minimum password length"
             v-model="settings_obj.password_settings.min_length"
             class="custom-small"
             min="4"
@@ -68,7 +67,6 @@
         <b-field>
           Time (minutes) to log out users after idle for
           <b-numberinput
-            aria-label="Idle timeout in minutes"
             v-model="settings_obj.timeout_settings.timeout_min"
             :disabled="!settings_obj.timeout_settings.enabled"
             :controls="false"
@@ -79,7 +77,6 @@
         <b-field>
           Display idle user logout with (minutes) left
           <b-numberinput
-            aria-label="Idle logout warning in minutes"
             v-model="settings_obj.timeout_settings.warning_min"
             :disabled="!settings_obj.timeout_settings.enabled"
             :controls="false"
@@ -92,7 +89,6 @@
         <b-field>
           Max log file size (MiB)
           <b-numberinput
-            aria-label="Maximum log file size in MiB"
             v-model="settings_obj.logging_settings.max_file_size"
             :controls="false"
             step="1"
@@ -102,7 +98,6 @@
         <b-field>
           Max number of file rotations (0 for infinite)
           <b-numberinput
-            aria-label="Maximum number of log file rotations"
             v-model="settings_obj.logging_settings.max_file_rotations"
             :controls="false"
             step="1"
@@ -113,7 +108,6 @@
         <b-field>
           Max rotated log file age (0 for infinite)
           <b-numberinput
-            aria-label="Maximum rotated log file age"
             v-model="settings_obj.logging_settings.max_file_age"
             :controls="false"
             step="1"
@@ -124,7 +118,7 @@
 
         <hr />
         <!-- <b-button @click="getSettings">Reset Form</b-button> -->
-        <b-button native-type="submit">Save Changes</b-button>
+        <b-button @click="sendSettingsToServer">Save Changes</b-button>
       </form>
     </div>
   </section>
@@ -141,44 +135,56 @@
     methods: {
       async getSettings() {
         try {
-          const [settingsResponse, themeResponse] = await Promise.all([
-            axiosInstance.get('settings'),
-            axiosInstance.get('settings/theme'),
-          ]);
-          this.settings_obj = settingsResponse.data;
-          this.theme_settings = themeResponse.data;
+          const response = await axiosInstance.get('settings');
+          this.settings_obj = response.data;
+        } catch (error) {
+          useErrorNotification(error);
+        }
+
+        try {
+          const response = await axiosInstance.get('settings/theme');
+          this.applyThemeSettings(response.data);
         } catch (error) {
           useErrorNotification(error);
         }
       },
+      applyThemeSettings(themeSettings) {
+        this.theme_settings = themeSettings;
+        this.saved_default_theme = themeSettings.default_theme;
+        useTheme().setDefaultTheme(themeSettings.default_theme);
+      },
       async sendSettingsToServer() {
+        let saved = true;
+
         try {
-          const updates = [
-            axiosInstance.post('settings', this.settings_obj, { timeout: 0 }),
-          ];
+          await axiosInstance.post('settings', this.settings_obj, {
+            timeout: 0,
+          });
+        } catch (error) {
+          saved = false;
+          useErrorNotification(error);
+        }
 
-          if (!this.theme_settings.locked) {
-            updates.push(
-              axiosInstance.put('settings/theme', {
-                default_theme: this.theme_settings.default_theme,
-              }),
-            );
+        const themeChanged =
+          this.theme_settings.default_theme !== this.saved_default_theme;
+        if (!this.theme_settings.locked && themeChanged) {
+          try {
+            const response = await axiosInstance.put('settings/theme', {
+              default_theme: this.theme_settings.default_theme,
+            });
+            this.applyThemeSettings(response.data);
+          } catch (error) {
+            saved = false;
+            useErrorNotification(error);
           }
+        }
 
-          const responses = await Promise.all(updates);
-          const themeResponse = responses[1];
-          if (themeResponse) {
-            this.theme_settings = themeResponse.data;
-            useTheme().setDefaultTheme(themeResponse.data.default_theme);
-          }
-
+        if (saved) {
           this.$buefy.toast.open({
             message: 'Settings updated',
             type: 'is-success',
             duration: 3000,
           });
-        } catch (error) {
-          useErrorNotification(error);
         }
       },
     },
@@ -207,6 +213,7 @@
           default_theme: 'system',
           locked: false,
         },
+        saved_default_theme: 'system',
       };
     },
   };

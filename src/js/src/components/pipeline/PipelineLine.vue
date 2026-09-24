@@ -36,18 +36,6 @@
           return `url(#idArrow${this.weight})`;
         }
       },
-      color() {
-        switch (this.weight) {
-          case 0:
-            return '#f5f5f5';
-          case 1:
-            return '#f6b44b';
-          case 2:
-            return '#8cc04f';
-          default:
-            break;
-        }
-      },
     },
   };
 </script>

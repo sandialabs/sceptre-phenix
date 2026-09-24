@@ -22,7 +22,7 @@ module.exports = defineConfig({
     },
     {
       name: 'firefox-theme',
-      grep: /theme:/,
+      testMatch: /theme\.spec\.js$/,
       use: { browserName: 'firefox' },
     },
   ],

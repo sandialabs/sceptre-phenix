@@ -49,10 +49,7 @@
           Edit Config
         </button>
         <!-- <button class="button is-info" @click="action( 'dl', { 'kind': viewer.kind, 'metadata': { 'name': viewer.name } } )"> -->
-        <button
-          class="button is-info"
-          aria-label="Download config"
-          @click="download([viewer.config])">
+        <button class="button is-info" @click="download([viewer.config])">
           <b-icon icon="download"></b-icon>
         </button>
         <button class="button is-dark" @click="resetViewer">Exit</button>
@@ -75,7 +72,6 @@
             <b-tooltip label="download selected configs" type="is-light is-top">
               <button
                 class="button is-light action"
-                aria-label="Download selected configs"
                 @click="download(selectedConfigs)">
                 <b-icon icon="download"></b-icon>
               </button>
@@ -91,17 +87,13 @@
             <b-tooltip label="delete selected configs" type="is-light is-top">
               <button
                 class="button is-light action"
-                aria-label="Delete selected configs"
                 @click="deleteConfigs(selectedConfigs)">
                 <b-icon icon="trash"></b-icon>
               </button>
             </b-tooltip>
           </b-field>
           <b-field>
-            <b-select
-              placeholder="Filter on Kind"
-              aria-label="Filter configs by kind"
-              v-model="filterKind">
+            <b-select placeholder="Filter on Kind" v-model="filterKind">
               <option
                 v-for="(k, index) in filterOptions"
                 :key="index"
@@ -124,7 +116,6 @@
                 multilined>
                 <button
                   class="button input-button"
-                  aria-label="Clear config filters"
                   @click="
                     searchQuery = '';
                     filterKind = null;
@@ -138,7 +129,7 @@
             <b-tooltip label="create a new config" type="is-light is-top">
               <button
                 class="button is-light"
-                aria-label="Create a new config"
+                id="main"
                 @click="$emit('create')">
                 <b-icon icon="plus"></b-icon>
               </button>
@@ -148,7 +139,7 @@
             <b-tooltip label="upload a new config" type="is-light is-top">
               <button
                 class="button is-light"
-                aria-label="Upload a new config"
+                id="main"
                 @click="isUploaderModalActive = true">
                 <b-icon icon="upload"></b-icon>
               </button>
@@ -167,6 +158,8 @@
       pagination-simple="true"
       pagination-size="is-small"
       default-sort="kind"
+      checkable
+      v-model:checked-rows="selectedConfigs"
       :loading="isWaiting"
       ref="cfgTable">
       <!-- docs currently wrong with checked rows, see: https://github.com/buefy/buefy/issues/4102 -->
@@ -174,35 +167,11 @@
 
       <template #empty>
         <section class="section">
-          <div class="content has-text-white has-text-centered">
+          <div class="content has-text-centered">
             Your search turned up empty!
           </div>
         </section>
       </template>
-
-      <b-table-column label="Select" centered>
-        <template #header>
-          <b-checkbox
-            :model-value="
-              filteredConfigs.length > 0 &&
-              filteredConfigs.every((config) =>
-                selectedConfigs.includes(config),
-              )
-            "
-            @update:model-value="toggleAllConfigs">
-            <span class="is-sr-only">Select all configs</span>
-          </b-checkbox>
-        </template>
-        <template #default="props">
-          <b-checkbox
-            :model-value="selectedConfigs.includes(props.row)"
-            @update:model-value="toggleConfig(props.row, $event)">
-            <span class="is-sr-only">
-              Select config {{ props.row.metadata.name }}
-            </span>
-          </b-checkbox>
-        </template>
-      </b-table-column>
 
       <b-table-column
         field="kind"
@@ -255,7 +224,6 @@
           <button
             v-if="roleAllowed('configs', 'update', props.row.metadata.name)"
             class="button is-light is-small action"
-            :aria-label="`Edit config ${props.row.metadata.name}`"
             @click="$emit('edit', props.row)">
             <b-icon icon="edit"></b-icon>
           </button>
@@ -269,7 +237,6 @@
           <button
             v-if="roleAllowed('configs', 'get', props.row.metadata.name)"
             class="button is-light is-small action"
-            :aria-label="`Download config ${props.row.metadata.name}`"
             @click="download([props.row])">
             <b-icon icon="download"></b-icon>
           </button>
@@ -283,7 +250,6 @@
           <button
             v-if="roleAllowed('configs', 'delete', props.row.metadata.name)"
             class="button is-light is-small action"
-            :aria-label="`Delete config ${props.row.metadata.name}`"
             @click="deleteConfigs([props.row])">
             <b-icon icon="trash"></b-icon>
           </button>
@@ -383,26 +349,6 @@
       },
     },
     methods: {
-      toggleConfig(config, selected) {
-        if (selected && !this.selectedConfigs.includes(config)) {
-          this.selectedConfigs.push(config);
-        } else if (!selected) {
-          this.selectedConfigs = this.selectedConfigs.filter(
-            (selectedConfig) => selectedConfig !== config,
-          );
-        }
-      },
-      toggleAllConfigs(selected) {
-        if (selected) {
-          this.selectedConfigs = [
-            ...new Set([...this.selectedConfigs, ...this.filteredConfigs]),
-          ];
-        } else {
-          this.selectedConfigs = this.selectedConfigs.filter(
-            (config) => !this.filteredConfigs.includes(config),
-          );
-        }
-      },
       updateConfigs() {
         this.isWaiting = true;
         axiosInstance

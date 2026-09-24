@@ -130,8 +130,6 @@
 
       <RecycleScroller
         ref="logScroller"
-        tabindex="0"
-        aria-label="Log messages"
         :items="filteredLogs"
         :item-size="36"
         key-field="time"
@@ -390,10 +388,6 @@
   /* weird glitch with buefy where back/forward arrow had static position, but relative attrs */
   .datepicker :deep(span) {
     position: relative;
-  }
-
-  .datepicker :deep(.is-selectable) {
-    color: var(--text-primary) !important;
   }
 
   .row {

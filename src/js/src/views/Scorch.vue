@@ -10,10 +10,7 @@
         <template #empty> No results found </template>
       </b-autocomplete>
       <p class="control">
-        <button
-          class="button input-button"
-          aria-label="Clear experiment search"
-          @click="searchName = ''">
+        <button class="button input-button" @click="searchName = ''">
           <b-icon icon="window-close"></b-icon>
         </button>
       </p>
@@ -29,7 +26,7 @@
       default-sort="name">
       <template #empty>
         <section class="section">
-          <div class="content has-text-white has-text-centered">
+          <div class="content has-text-centered">
             Your search turned up empty!
           </div>
         </section>

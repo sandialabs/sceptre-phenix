@@ -63,10 +63,7 @@
         {{ props.row.arch }}
       </b-table-column>
       <b-table-column field="link" label="Download" centered v-slot="props">
-        <a
-          :href="props.row.link"
-          target="_blank"
-          :aria-label="`Download phēnix tunneler for ${props.row.name} ${props.row.arch}`">
+        <a :href="props.row.link" target="_blank">
           <b-icon icon="file-download" size="is-small"></b-icon>
         </a>
       </b-table-column>

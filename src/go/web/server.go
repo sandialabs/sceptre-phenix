@@ -100,7 +100,11 @@ func ConfigureUsers(users []string) error {
 
 //nolint:funlen,maintidx // server startup
 func Start(opts ...ServerOption) error {
+	// The config watcher may already be calling SetDefaultTheme.
+	themeMu.Lock()
 	o = newServerOptions(opts...)
+	themeMu.Unlock()
+
 	fileServerEndpoint, err := normalizeFileServerEndpoint(o.fileServerEndpoint)
 	if err != nil {
 		return fmt.Errorf("invalid ui.file-server-endpoint: %w", err)

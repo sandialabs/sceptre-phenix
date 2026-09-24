@@ -237,7 +237,8 @@ Precedence (highest to lowest): **1. command-line flag** → **2. `config.yaml`*
 variable** (`PHENIX_*`) → **4. built-in default**. See
 [Settings & Configuration](https://phenix.sceptre.dev/latest/settings/) for the
 full settings reference, including UI-only settings (`ui.logs.level`,
-`ui.features`, `ui.file-server-endpoint`) not exposed as root-level CLI flags.
+`ui.features`, `ui.file-server-endpoint`, `ui.default-theme`) not exposed as
+root-level CLI flags.
 
 `phenix ui --features vm-mount` (equivalently `ui.features: vm-mount` in
 `config.yaml`, or `PHENIX_UI_FEATURES=vm-mount`) enables the optional
@@ -245,6 +246,15 @@ full settings reference, including UI-only settings (`ui.logs.level`,
 VM's filesystem directly from the web UI (backed by the `/experiments/{exp}/vms/{name}/mount`,
 `/unmount`, `/files`, `/files/download`, `/files/upload` API routes). It's
 disabled by default and requires restarting `phenix ui` to take effect.
+
+`ui.default-theme` (`phenix settings set ui.default-theme system|light|dark`,
+`PHENIX_UI_DEFAULT_THEME`, or `phenix ui --default-theme`) sets the web UI's
+default colour theme (`system` follows the browser's `prefers-color-scheme`).
+Each browser can override it with the header toggle, stored under `phenix.theme`
+in local storage. The value hot-reloads from `config.yaml` and can be changed
+from the Settings page (`GET/PUT /settings/theme`) unless the `--default-theme`
+flag was given, which locks it. The UI bootstraps the theme from `GET /theme.js`
+before its stylesheet loads to avoid a flash of the wrong theme.
 
 ### `phenix config` — manage stored configs (topology/scenario/experiment/image/user/role)
 
@@ -353,7 +363,7 @@ below are relative to the base path.
 | Users/Roles/Auth | `GET/POST /users`, `GET/PATCH/DELETE /users/{username}`, `POST /users/{username}/tokens`, `GET /roles`, `POST /signup`, `GET/POST /login`, `GET /logout` |
 | Realtime | `GET /ws` (websocket broker for UI events/logs), `GET /logs` |
 | SCORCH | `/experiments/{name}/scorch/terminals*`, `/experiments/{name}/scorch/components/.../ws` |
-| Settings | `GET/POST /settings`, `GET /settings/password` |
+| Settings | `GET/POST /settings`, `GET /settings/password`, `GET /settings/timeout`, `GET/PUT /settings/theme` |
 | Builder | `GET /builder`, `POST /builder/save`, `GET /builder/topologies[/{name}]` |
 | Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode) |
 

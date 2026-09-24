@@ -90,6 +90,11 @@ The header toggle changes only the browser-local choice. The Settings view
 changes the shared server default unless `phenix ui --default-theme` was
 explicitly supplied.
 
+Form fields keep a white background in both themes so their contrast and
+placeholder colour are the same everywhere; only the surrounding surfaces
+change. `color-scheme` is still set per theme so native popups and
+scrollbars match.
+
 All runtime assets are bundled or same-origin; theme behavior requires no
 network access. The sun and moon SVG icons come from Font Awesome Free,
 copyright Fonticons, Inc., and are locally bundled under the CC BY 4.0 icon

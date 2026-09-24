@@ -702,6 +702,7 @@
   </div>
 </template>
 <script>
+  import { useTheme } from '@/utils/theme.js';
   const SOH_STYLE_LABEL_KEY = '__sohStyle';
   import { roleAllowed } from '@/utils/rbac.js';
   import * as d3 from 'd3';
@@ -729,6 +730,7 @@
     },
 
     async created() {
+      this.refreshStatusColors();
       addWsHandler(this.handleWs);
       await this.updateNetwork();
       this.generateGraph();
@@ -814,7 +816,10 @@
                 for (let i = 0; i < this.nodes.length; i++) {
                   if (this.nodes[i].label == vmName) {
                     this.nodes[i].status = 'notrunning';
-                    d3.selectAll('circle').attr('fill', this.updateNodeColor);
+                    d3.selectAll('circle')
+                      .attr('fill', this.updateNodeColor)
+                      .attr('stroke', this.updateNodeBorder)
+                      .attr('stroke-dasharray', this.updateNodeDash);
                   }
                 }
 
@@ -824,7 +829,10 @@
                 for (let i = 0; i < this.nodes.length; i++) {
                   if (this.nodes[i].label == vmName) {
                     this.nodes[i].status = 'running';
-                    d3.selectAll('circle').attr('fill', this.updateNodeColor);
+                    d3.selectAll('circle')
+                      .attr('fill', this.updateNodeColor)
+                      .attr('stroke', this.updateNodeBorder)
+                      .attr('stroke-dasharray', this.updateNodeDash);
                   }
                 }
 
@@ -834,7 +842,10 @@
                 for (let i = 0; i < this.nodes.length; i++) {
                   if (this.nodes[i].label == vmName) {
                     this.nodes[i].status = 'notdeploy';
-                    d3.selectAll('circle').attr('fill', this.updateNodeColor);
+                    d3.selectAll('circle')
+                      .attr('fill', this.updateNodeColor)
+                      .attr('stroke', this.updateNodeBorder)
+                      .attr('stroke-dasharray', this.updateNodeDash);
                   }
                 }
 
@@ -891,22 +902,37 @@
         return 'url(#' + node.image.toLowerCase() + ')';
       },
 
+      // Resolve the theme tokens to concrete colours: b-colorpicker and the
+      // persisted VM styles need hex values, not var() references.
+      refreshStatusColors() {
+        const styles = getComputedStyle(document.documentElement);
+        const token = (name) => styles.getPropertyValue(name).trim();
+        this.statusColors = {
+          running: token('--status-running'),
+          notrunning: token('--status-stopped'),
+          notboot: token('--status-neutral'),
+          notdeploy: token('--status-pending'),
+          external: token('--status-external'),
+          error: token('--brand-primary'),
+        };
+      },
+
       updateNodeBorder(node) {
         if (node.soh && node.soh.errors) {
-          return 'var(--status-pending)';
+          return this.statusColors.error;
         }
 
         return this.updateNodeColor(node);
       },
 
+      // Nodes with SoH errors also get a dashed border so the state does not
+      // rely on colour alone.
+      updateNodeDash(node) {
+        return node.soh && node.soh.errors ? '4 2' : null;
+      },
+
       updateNodeColor(node) {
-        const colors = {
-          running: 'var(--status-running)',
-          notrunning: 'var(--status-stopped)',
-          notboot: 'var(--status-neutral)',
-          notdeploy: 'var(--status-pending)',
-          external: 'var(--status-external)',
-        };
+        const colors = this.statusColors;
 
         if (node.status === 'external') {
           return colors[node.status];
@@ -1071,6 +1097,7 @@
           .join('circle')
           .attr('class', 'circle')
           .attr('stroke', this.updateNodeBorder)
+          .attr('stroke-dasharray', this.updateNodeDash)
           .attr('stroke-width', 1.5)
           .attr('r', 5)
           .attr('fill', this.updateNodeColor)
@@ -1440,6 +1467,12 @@
     },
 
     watch: {
+      activeTheme() {
+        this.refreshStatusColors();
+        d3.selectAll('circle')
+          .attr('fill', this.updateNodeColor)
+          .attr('stroke', this.updateNodeBorder);
+      },
       radioButton: async function (filter) {
         if (filter != '') {
           await this.updateNetwork(filter);
@@ -1451,6 +1484,7 @@
 
     data() {
       return {
+        statusColors: {},
         running: false,
         sohInitialized: false,
         sohRunning: false,
@@ -1483,6 +1517,9 @@
       };
     },
     computed: {
+      activeTheme() {
+        return useTheme().activeTheme.value;
+      },
       styleModalCustomStyle: function () {
         var css = '';
         if (this.styleModal.overrideFill)
@@ -1505,10 +1542,6 @@
 </script>
 
 <style scoped>
-  label.radio:hover {
-    color: var(--text-primary);
-  }
-
   .modal-card-head {
     background-color: var(--surface-primary);
   }

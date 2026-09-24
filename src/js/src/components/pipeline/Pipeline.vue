@@ -196,9 +196,6 @@
     stroke: var(--border-primary);
   }
 
-  .pipeline-node-terminal {
-    fill: var(--status-neutral);
-  }
   .svgResultStatus.no-background .circle-bg {
     opacity: 0;
   }

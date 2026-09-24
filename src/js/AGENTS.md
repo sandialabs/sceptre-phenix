@@ -9,7 +9,8 @@ apply to Vue, JavaScript/TypeScript, Vite, Vitest, and Playwright work under
 - `src/views/`: route-level pages; `src/components/`: small reusable UI.
 - `src/utils/`: shared helpers; `router.js`: routes and guards; `store.js`:
   Pinia state; `main.js`: application setup.
-- Vite proxies `/api/v1`, `/version`, and `/features` to `localhost:3000`.
+- Vite proxies `/api/v1`, `/version`, `/features`, and `/theme.js` to
+  `localhost:3000`.
 - `dist/` is generated output and is copied into `src/go/web/public/`; do not
   treat it as source.
 
@@ -50,7 +51,7 @@ Playwright requires a running `phenix ui`; default URL is
 ```bash
 cd e2e
 npm ci
-npx playwright install --with-deps chromium
+npx playwright install --with-deps chromium firefox
 npx playwright test
 ```
 

@@ -178,3 +178,87 @@ func setThemeOptionsForTest(t *testing.T, value string, locked bool, configFile 
 		themeMu.Unlock()
 	})
 }
+
+func TestGetDefaultThemeSetting(t *testing.T) {
+	setThemeOptionsForTest(t, "dark", true, filepath.Join(t.TempDir(), "config.yaml"))
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/settings/theme", nil)
+	response := httptest.NewRecorder()
+
+	GetDefaultThemeSetting(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if got := strings.TrimSpace(response.Body.String()); got != `{"default_theme":"dark","locked":true}` {
+		t.Fatalf("body = %s", got)
+	}
+}
+
+func TestSetDefaultThemeSettingRejectsBadRequests(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "unknown theme", body: `{"default_theme":"sepia"}`},
+		{name: "unknown field", body: `{"default_theme":"dark","x":1}`},
+		{name: "trailing document", body: `{"default_theme":"dark"} {}`},
+		{name: "not json", body: `dark`},
+		{name: "oversized", body: `{"default_theme":"` + strings.Repeat("d", maxThemeRequestSize) + `"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configFile := filepath.Join(t.TempDir(), "config.yaml")
+			setThemeOptionsForTest(t, "system", false, configFile)
+
+			role := rbac.Role{Spec: &v1.RoleSpec{Name: "theme-admin"}}
+			role.AddPolicy([]string{"settings"}, nil, []string{"update"})
+
+			request := httptest.NewRequest(
+				http.MethodPut,
+				"/api/v1/settings/theme",
+				strings.NewReader(tt.body),
+			)
+			ctx := context.WithValue(request.Context(), middleware.ContextKeyRole, role)
+			response := httptest.NewRecorder()
+
+			SetDefaultThemeSetting(response, request.WithContext(ctx))
+
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d: %s", response.Code, http.StatusBadRequest, response.Body.String())
+			}
+			if _, err := os.Stat(configFile); !os.IsNotExist(err) {
+				t.Fatalf("config should not be created, stat error = %v", err)
+			}
+			if got := currentDefaultTheme().DefaultTheme; got != "system" {
+				t.Fatalf("default theme = %q, want system", got)
+			}
+		})
+	}
+}
+
+func TestSetDefaultThemeSettingIsIdempotent(t *testing.T) {
+	configFile := filepath.Join(t.TempDir(), "config.yaml")
+	setThemeOptionsForTest(t, "dark", false, configFile)
+
+	role := rbac.Role{Spec: &v1.RoleSpec{Name: "theme-admin"}}
+	role.AddPolicy([]string{"settings"}, nil, []string{"update"})
+
+	request := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/settings/theme",
+		strings.NewReader(`{"default_theme":"dark"}`),
+	)
+	ctx := context.WithValue(request.Context(), middleware.ContextKeyRole, role)
+	response := httptest.NewRecorder()
+
+	SetDefaultThemeSetting(response, request.WithContext(ctx))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", response.Code, http.StatusOK, response.Body.String())
+	}
+	if _, err := os.Stat(configFile); !os.IsNotExist(err) {
+		t.Fatalf("config should not be written when the theme is unchanged, stat error = %v", err)
+	}
+}

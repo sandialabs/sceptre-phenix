@@ -26,7 +26,7 @@ export function resolveTheme(localTheme, defaultTheme, systemPrefersDark) {
   return requestedTheme;
 }
 
-function createThemeManager(browser, root) {
+export function createThemeManager(browser, root) {
   const mediaQuery = browser.matchMedia('(prefers-color-scheme: dark)');
   const defaultTheme = ref(
     normalizeDefaultTheme(browser.__PHENIX_DEFAULT_THEME__),

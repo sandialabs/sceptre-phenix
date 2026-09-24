@@ -17,8 +17,8 @@ a CI-built binary, a container, or a full range node.
 
 CI (`.github/workflows/frontend.yml`) builds the UI with `VITE_AUTH=disabled`,
 starts `bin/phenix ui` against a throw-away store, and runs the default set.
-Chromium runs the full suite, including WCAG 2.2 AA scans of every route in
-explicit light and dark themes. Firefox runs the targeted theme suite.
+Chromium runs the full suite, rendering every route in both the light and
+dark theme. Firefox runs only `theme.spec.js`.
 
 ## Running locally
 

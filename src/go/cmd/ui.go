@@ -144,15 +144,8 @@ func newUICmd() *cobra.Command {
 
 	_ = uiCmd.RegisterFlagCompletionFunc(
 		"default-theme",
-		func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			var matches []string
-			for _, value := range theme.Values() {
-				if len(toComplete) == 0 || len(value) >= len(toComplete) &&
-					value[:len(toComplete)] == toComplete {
-					matches = append(matches, value)
-				}
-			}
-			return matches, cobra.ShellCompDirectiveNoFileComp
+		func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+			return theme.Values(), cobra.ShellCompDirectiveNoFileComp
 		},
 	)
 

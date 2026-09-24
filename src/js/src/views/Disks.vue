@@ -217,19 +217,13 @@
         </b-autocomplete>
 
         <p class="control">
-          <button
-            class="button input-button"
-            aria-label="Clear disk search"
-            @click="filterString = ''">
+          <button class="button input-button" @click="filterString = ''">
             <b-icon icon="window-close"></b-icon>
           </button>
         </p>
       </b-field>
       <b-tooltip label="Refresh List" type="is-light is-left">
-        <button
-          class="button is-light"
-          aria-label="Refresh disk list"
-          @click="updateDisks">
+        <button class="button is-light" @click="updateDisks">
           <b-icon icon="refresh"></b-icon>
         </button>
       </b-tooltip>
@@ -238,7 +232,6 @@
         label="Upload a disk"
         type="is-light is-left">
         <b-upload
-          aria-label="Upload a disk"
           class="file-label"
           style="margin-left: 8px"
           @update:modelValue="uploadDisk"
@@ -268,9 +261,7 @@
       default-sort="name">
       <template #empty>
         <section class="section">
-          <div class="content has-text-white has-text-centered">
-            No Disks Found
-          </div>
+          <div class="content has-text-centered">No Disks Found</div>
         </section>
       </template>
 
