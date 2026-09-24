@@ -41,6 +41,8 @@ var (
 	hostnameSuffixes   string   //nolint:gochecknoglobals // global flag
 	storeEndpoint      string   //nolint:gochecknoglobals // global flag
 	currentConsoleFile *os.File //nolint:gochecknoglobals // global state
+	configFilePath     string   //nolint:gochecknoglobals // discovered runtime config file
+	defaultConfigPath  string   //nolint:gochecknoglobals // runtime config file to create when none exists
 )
 
 //nolint:gochecknoglobals // root command
@@ -249,6 +251,8 @@ func init() {
 		defaultStore = fmt.Sprintf("bolt://%s/.phenix.bdb", home)
 	}
 
+	defaultConfigPath = filepath.Join(defaultConfigDir, "config.yaml")
+
 	viper.SetEnvPrefix("PHENIX")
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_", ".", "_"))
 	viper.AutomaticEnv() // read in environment variables that match
@@ -267,20 +271,27 @@ func init() {
 
 	// If a config file is found, read it in.
 	err := viper.ReadInConfig()
-	if err == nil {
+
+	switch {
+	case err == nil:
+		configFilePath = viper.ConfigFileUsed()
 		viper.WatchConfig()
-	} else if errors.As(err, &viper.ConfigFileNotFoundError{}) {
+	case errors.As(err, &viper.ConfigFileNotFoundError{}):
 		// If the config file doesn't exist, create it so we can watch it for
 		// changes at runtime.
 		err := os.MkdirAll(defaultConfigDir, 0o750)
 		if err == nil {
-			targetFile := filepath.Join(defaultConfigDir, "config.yaml")
-			_ = viper.SafeWriteConfigAs(targetFile)
+			_ = viper.SafeWriteConfigAs(defaultConfigPath)
 			err := viper.ReadInConfig()
 			if err == nil {
+				configFilePath = viper.ConfigFileUsed()
 				viper.WatchConfig()
 			}
 		}
+	default:
+		// A config file was found but could not be parsed. Remember where it
+		// is so `phenix settings` edits that file rather than a new one.
+		configFilePath = viper.ConfigFileUsed()
 	}
 
 	viper.SetConfigName("users")
@@ -377,6 +388,16 @@ func init() {
 					web.PublishPhenixLog,
 				),
 			)
+		}
+
+		defaultThemeChanged := false
+		if uiCmd != nil {
+			defaultThemeChanged = uiCmd.Flags().Changed("default-theme")
+		}
+		if err := web.SetDefaultTheme(
+			getEffectiveString("ui.default-theme", defaultThemeChanged),
+		); err != nil {
+			plog.Error(plog.TypeSystem, "updating UI default theme", "err", err)
 		}
 	})
 
@@ -540,14 +561,25 @@ func getEffectiveBool(key string, flagChanged bool) bool {
 // config file, ignoring environment variables. This allows us to peek
 // at what is explicitly set in the file.
 func getFileViper() *viper.Viper {
-	f := viper.ConfigFileUsed()
+	f := configFilePath
 	if f == "" {
 		return nil
 	}
+
 	v := viper.New()
 	v.SetConfigFile(f)
 	_ = v.ReadInConfig()
 	return v
+}
+
+// getRuntimeConfigFilePath returns the config file viper discovered, or the
+// location a new one is created in when none exists.
+func getRuntimeConfigFilePath() string {
+	if configFilePath != "" {
+		return configFilePath
+	}
+
+	return defaultConfigPath
 }
 
 // getEffectiveValue is a generic version of getEffectiveString/Int

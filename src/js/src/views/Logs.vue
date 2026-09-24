@@ -119,7 +119,7 @@
         </b-input>
       </b-field>
     </b-field>
-    <div style="position: relative; background: #484848">
+    <div class="log-viewer">
       <b-loading :is-full-page="false" v-model="isLoading"></b-loading>
       <div class="columns row mb-0 has-text-weight-bold mx-0">
         <div class="log-column level-column">Level</div>
@@ -382,7 +382,7 @@
   }
 
   a.dropdown-item.is-active {
-    background-color: #bdbdbd;
+    background-color: var(--surface-hover);
   }
 
   /* weird glitch with buefy where back/forward arrow had static position, but relative attrs */
@@ -390,15 +390,11 @@
     position: relative;
   }
 
-  .datepicker :deep(.is-selectable) {
-    color: white !important;
-  }
-
   .row {
     width: 100%;
     margin: 0;
     height: 36px;
-    border-bottom: 1px solid white;
+    border-bottom: 1px solid var(--border-subtle);
     line-height: 1.2;
   }
 
@@ -415,7 +411,13 @@
   }
 
   :deep(.vue-recycle-scroller__item-view.hover) {
-    background: #777777 !important;
+    background: var(--surface-hover) !important;
+  }
+
+  .log-viewer {
+    position: relative;
+    color: var(--text-primary);
+    background: var(--surface-primary);
   }
   :deep(.msg-column .b-tooltip .tooltip-content) {
     width: 102% !important;

@@ -246,16 +246,13 @@ It requires a valid username and password.
   .signin-form {
     width: 400px;
     margin: 30px auto;
-    border: 1px solid #eee;
+    border: 1px solid var(--border-subtle);
     padding: 20px;
-    box-shadow: 0 2px 3px #ccc;
+    background: var(--surface-primary);
+    box-shadow: 0 2px 3px var(--shadow);
   }
 
   .signin-form :deep(.label) {
-    color: whitesmoke;
-  }
-
-  label.checkbox:hover {
-    color: whitesmoke;
+    color: var(--text-primary);
   }
 </style>

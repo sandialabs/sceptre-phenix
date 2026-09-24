@@ -240,7 +240,7 @@
             ref="vmTable">
             <template #empty>
               <section class="section">
-                <div class="content has-text-white has-text-centered">
+                <div class="content has-text-centered">
                   Your search turned up empty!
                 </div>
               </section>
@@ -570,7 +570,7 @@
             @sort="onFilesSort">
             <template #empty>
               <section class="section">
-                <div class="content has-text-white has-text-centered">
+                <div class="content has-text-centered">
                   No Files Are Available!
                 </div>
               </section>
@@ -1793,7 +1793,7 @@
   }
 
   .dnb {
-    color: #ffffff;
+    color: var(--text-primary);
   }
 
   .fa-layers-counter {

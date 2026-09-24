@@ -261,9 +261,7 @@
       default-sort="name">
       <template #empty>
         <section class="section">
-          <div class="content has-text-white has-text-centered">
-            No Disks Found
-          </div>
+          <div class="content has-text-centered">No Disks Found</div>
         </section>
       </template>
 
@@ -643,13 +641,13 @@
   }
 
   .action-button {
-    color: dimgray;
+    color: var(--text-secondary);
     padding: 8px;
     cursor: pointer !important;
   }
 
   .action-button:hover {
-    background-color: #ddd;
+    background-color: var(--surface-hover);
   }
 
   .action-separator {
@@ -667,7 +665,7 @@
   .file-cta > p,
   .file-cta:hover {
     border: none;
-    background-color: #686868;
-    color: whitesmoke !important;
+    background-color: var(--surface-secondary);
+    color: var(--text-primary) !important;
   }
 </style>

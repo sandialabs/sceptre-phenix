@@ -167,7 +167,7 @@
 
       <template #empty>
         <section class="section">
-          <div class="content has-text-white has-text-centered">
+          <div class="content has-text-centered">
             Your search turned up empty!
           </div>
         </section>
@@ -545,10 +545,10 @@
 </script>
 <style scoped>
   .x-modal-dark :deep(textarea) {
-    background-color: #686868;
-    color: whitesmoke;
+    color: var(--input-text);
+    background-color: var(--input-background);
   }
   textarea {
-    color: whitesmoke;
+    color: var(--input-text);
   }
 </style>

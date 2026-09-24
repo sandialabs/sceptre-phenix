@@ -2,6 +2,31 @@
   <section>
     <div class="form-section">
       <form class="content">
+        <h3>Appearance Settings</h3>
+        <b-field
+          label="Default theme"
+          label-for="default-theme"
+          message="Used only when this browser has no locally saved theme preference.">
+          <div class="select is-fullwidth">
+            <select
+              id="default-theme"
+              v-model="theme_settings.default_theme"
+              :disabled="theme_settings.locked">
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
+        </b-field>
+        <b-message
+          v-if="theme_settings.locked"
+          type="is-warning"
+          has-icon
+          aria-live="polite">
+          Default theme is controlled by the
+          <code>phenix ui --default-theme</code> command-line flag.
+        </b-message>
+
         <h3>Password Settings</h3>
         <b-field>
           <b-switch v-model="settings_obj.password_settings.lowercase_req">
@@ -101,37 +126,66 @@
 <script>
   import axiosInstance from '@/utils/axios.js';
   import { useErrorNotification } from '@/utils/errorNotif';
+  import { useTheme } from '@/utils/theme.js';
   export default {
     async created() {
       this.getSettings();
     },
 
     methods: {
-      getSettings() {
-        console.log('getting settings');
-        axiosInstance.get('settings').then((response) => {
-          const state = response.data;
-          console.log(state);
-          this.settings_obj = state;
-        });
+      async getSettings() {
+        try {
+          const response = await axiosInstance.get('settings');
+          this.settings_obj = response.data;
+        } catch (error) {
+          useErrorNotification(error);
+        }
+
+        try {
+          const response = await axiosInstance.get('settings/theme');
+          this.applyThemeSettings(response.data);
+        } catch (error) {
+          useErrorNotification(error);
+        }
       },
-      printSettings() {
-        console.log(this.settings_obj);
+      applyThemeSettings(themeSettings) {
+        this.theme_settings = themeSettings;
+        this.saved_default_theme = themeSettings.default_theme;
+        useTheme().setDefaultTheme(themeSettings.default_theme);
       },
-      sendSettingsToServer() {
-        axiosInstance
-          .post('settings', this.settings_obj, { timeout: 0 })
-          .then((resp) => {
-            console.log(resp);
-            this.$buefy.toast.open({
-              message: 'Settings updated',
-              type: 'is-success',
-              duration: 3000,
-            });
-          })
-          .catch((err) => {
-            useErrorNotification(err);
+      async sendSettingsToServer() {
+        let saved = true;
+
+        try {
+          await axiosInstance.post('settings', this.settings_obj, {
+            timeout: 0,
           });
+        } catch (error) {
+          saved = false;
+          useErrorNotification(error);
+        }
+
+        const themeChanged =
+          this.theme_settings.default_theme !== this.saved_default_theme;
+        if (!this.theme_settings.locked && themeChanged) {
+          try {
+            const response = await axiosInstance.put('settings/theme', {
+              default_theme: this.theme_settings.default_theme,
+            });
+            this.applyThemeSettings(response.data);
+          } catch (error) {
+            saved = false;
+            useErrorNotification(error);
+          }
+        }
+
+        if (saved) {
+          this.$buefy.toast.open({
+            message: 'Settings updated',
+            type: 'is-success',
+            duration: 3000,
+          });
+        }
       },
     },
     data() {
@@ -155,6 +209,11 @@
             max_file_size: 100,
           },
         },
+        theme_settings: {
+          default_theme: 'system',
+          locked: false,
+        },
+        saved_default_theme: 'system',
       };
     },
   };

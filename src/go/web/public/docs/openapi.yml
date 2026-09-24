@@ -27,6 +27,8 @@ tags:
     description: Available phenix disk images
   - name: Users
     description: User details and controls
+  - name: Settings
+    description: Runtime settings
 paths:
   "/configs":
     get:
@@ -1289,6 +1291,56 @@ paths:
       responses:
         "204":
           description: successful operation
+  "/settings/theme":
+    get:
+      tags:
+        - Settings
+      summary: Get the default web UI theme
+      description: >-
+        Returns the server-wide default theme and whether it is locked by the
+        `phenix ui --default-theme` flag.
+      operationId: getDefaultTheme
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DefaultTheme"
+    put:
+      tags:
+        - Settings
+      summary: Set the default web UI theme
+      description: >-
+        Persists `ui.default-theme` in the runtime config file. Requires the
+        `settings` `update` permission. Returns 409 when the theme is locked by
+        the `--default-theme` flag.
+      operationId: setDefaultTheme
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - default_theme
+              properties:
+                default_theme:
+                  type: string
+                  enum: [system, light, dark]
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DefaultTheme"
+        "400":
+          description: invalid theme value or request body
+        "403":
+          description: not allowed
+        "409":
+          description: theme is locked by the command-line flag
 externalDocs:
   description: Find out more about Swagger
   url: http://swagger.io
@@ -1296,6 +1348,14 @@ servers:
   - url: http://localhost:3000/api/v1
 components:
   schemas:
+    DefaultTheme:
+      type: object
+      properties:
+        default_theme:
+          type: string
+          enum: [system, light, dark]
+        locked:
+          type: boolean
     Configs:
       type: object
       properties:

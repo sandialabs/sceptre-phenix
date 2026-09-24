@@ -26,7 +26,7 @@
       default-sort="name">
       <template #empty>
         <section class="section">
-          <div class="content has-text-white has-text-centered">
+          <div class="content has-text-centered">
             Your search turned up empty!
           </div>
         </section>
@@ -702,6 +702,6 @@
 </script>
 <style scoped>
   div.autocomplete :deep(a.dropdown-item) {
-    color: #383838 !important;
+    color: var(--text-primary) !important;
   }
 </style>

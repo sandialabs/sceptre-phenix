@@ -1,4 +1,85 @@
+// Dark palette, shared by the explicit theme and the no-JavaScript fallback.
+@mixin dark-theme-tokens {
+  --page-background: #202225;
+  --surface-primary: #303338;
+  --surface-secondary: #3c4046;
+  --surface-tertiary: #4b5058;
+  --surface-hover: #565c65;
+  --surface-overlay: rgb(0 0 0 / 86%);
+  --text-primary: #f5f7fa;
+  --text-secondary: #d5dae0;
+  --text-inverse: #17191c;
+  --border-primary: #c3c9d1;
+  --border-subtle: #747c86;
+  --input-background: #ffffff;
+  --input-text: #20252b;
+  --link-text: #79d8ee;
+  --link-hover: #a6e8f7;
+  --brand-primary: #f07842;
+  --brand-primary-hover: #ff9a6b;
+  --focus-ring: #ffd166;
+  --success-text: #86efac;
+  --warning-text: #fde68a;
+  --danger-text: #fca5a5;
+  --code-background: #17191c;
+  --code-text: #f5f7fa;
+  --shadow: rgb(0 0 0 / 48%);
+  --graph-background: #25282c;
+  --status-running: #8ccc4f;
+  --status-stopped: #ff7279;
+  --status-pending: #ffd479;
+  --status-external: #66c7ff;
+  --status-neutral: #c3c9d1;
+}
+
+:root,
+:root[data-theme='light'] {
+  --page-background: #f4f6f8;
+  --surface-primary: #ffffff;
+  --surface-secondary: #e9edf2;
+  --surface-tertiary: #d8dee6;
+  --surface-hover: #dfe6ee;
+  --surface-overlay: rgb(20 25 31 / 72%);
+  --text-primary: #20252b;
+  --text-secondary: #4b5563;
+  --text-inverse: #ffffff;
+  --border-primary: #66717e;
+  --border-subtle: #aeb7c2;
+  --input-background: #ffffff;
+  --input-text: #20252b;
+  --link-text: #00677f;
+  --link-hover: #004d60;
+  --brand-primary: #b84717;
+  --brand-primary-hover: #933711;
+  --focus-ring: #005fcc;
+  --success-text: #166534;
+  --warning-text: #713f12;
+  --danger-text: #991b1b;
+  --code-background: #e5e9ef;
+  --code-text: #24292f;
+  --shadow: rgb(31 41 55 / 24%);
+  --graph-background: #f8fafc;
+  --status-running: #397300;
+  --status-stopped: #a32116;
+  --status-pending: #8a5700;
+  --status-external: #006399;
+  --status-neutral: #4b5563;
+}
+
+:root[data-theme='dark'] {
+  @include dark-theme-tokens;
+}
+
+// Until /theme.js has set data-theme (or without JavaScript), follow the
+// operating system preference with the full palette.
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    @include dark-theme-tokens;
+  }
+}
+
 html {
+  background-color: var(--page-background);
   background-repeat: no-repeat;
   background-image: url('@/assets/imgs/phenix.png');
 }
@@ -7,6 +88,361 @@ html,
 body {
   margin: 0;
   height: 100%;
+  color: var(--text-primary);
+}
+
+#app,
+.content,
+.content h1,
+.content h2,
+.content h3,
+.content h4,
+.content h5,
+.content h6,
+.title,
+.subtitle,
+.label,
+.checkbox,
+.radio,
+.table,
+.table th,
+.navbar-item,
+.navbar-link {
+  color: var(--text-primary);
+}
+
+a,
+.content a {
+  color: var(--link-text);
+}
+
+a:hover,
+.content a:hover {
+  color: var(--link-hover);
+}
+
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible,
+.input:focus,
+.textarea:focus,
+.select select:focus {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.navbar,
+.navbar-menu {
+  background-color: var(--surface-tertiary);
+}
+
+.navbar-dropdown,
+.dropdown-content,
+.card,
+.box,
+.panel,
+.modal-card-body,
+.modal-card-head,
+.modal-card-foot {
+  color: var(--text-primary);
+  background-color: var(--surface-primary);
+}
+
+.navbar-divider,
+.dropdown-divider,
+hr {
+  background-color: var(--border-subtle);
+}
+
+.navbar-burger {
+  color: var(--text-primary);
+}
+
+.table {
+  background-color: var(--surface-primary);
+}
+
+.table td,
+.table th {
+  border-color: var(--border-subtle);
+}
+
+// Bulma sets `.table thead th` (and `strong`) to $text-strong, which the
+// legacy grey theme defines as white.
+.table thead th,
+.table thead td,
+.table tfoot th,
+.content table th,
+.content table thead th,
+.content table thead td,
+.content table tfoot th,
+strong,
+.card-header-title {
+  color: var(--text-primary);
+}
+
+// Buefy's mobile cards (<= 768px) otherwise keep the grey theme background.
+.b-table .table-wrapper.has-mobile-cards tr:not([class*='is-']),
+.b-table .table-wrapper.has-mobile-cards tr:not([class*='is-']):hover {
+  background-color: var(--surface-primary);
+}
+
+.b-table .table-wrapper.has-mobile-cards td {
+  border-bottom-color: var(--border-subtle);
+}
+
+.table.is-hoverable tbody tr:not(.is-selected):hover {
+  background-color: var(--surface-hover);
+}
+
+.input,
+.textarea,
+.select select {
+  color: var(--input-text);
+  background-color: var(--input-background);
+  border-color: var(--border-primary);
+}
+
+.input[disabled],
+.textarea[disabled],
+.select select[disabled],
+fieldset[disabled] .input,
+fieldset[disabled] .textarea {
+  color: var(--text-secondary);
+  background-color: var(--surface-secondary);
+  border-color: var(--border-subtle);
+}
+
+// Input fields stay white in both themes (see src/js/README.md); the
+// placeholder colour is chosen for that white field.
+.input::placeholder,
+.textarea::placeholder {
+  color: #5c6672;
+}
+
+.datepicker .dropdown-content {
+  background-color: var(--surface-primary);
+}
+
+.datepicker .datepicker-table .datepicker-body .datepicker-cell.is-selectable,
+.datepicker .datepicker-header .datepicker-cell {
+  color: var(--text-primary);
+}
+
+.datepicker
+  .datepicker-table
+  .datepicker-body
+  .datepicker-cell.is-selectable:hover:not(.is-selected),
+.datepicker
+  .datepicker-table
+  .datepicker-body
+  .datepicker-cell.is-selectable:focus:not(.is-selected) {
+  color: var(--text-primary);
+  background-color: var(--surface-hover);
+}
+
+.select.is-empty select {
+  color: #5c6672;
+}
+
+.button {
+  color: var(--text-primary);
+  background-color: var(--surface-secondary);
+  border-color: var(--border-primary);
+}
+
+.button:hover,
+.button:focus {
+  color: var(--text-primary);
+  background-color: var(--surface-hover);
+  border-color: var(--focus-ring);
+}
+
+.button.is-text {
+  color: var(--link-text);
+  background-color: transparent;
+  border-color: transparent;
+}
+
+.button.is-text:hover,
+.button.is-text:focus {
+  color: var(--link-hover);
+  background-color: var(--surface-hover);
+  border-color: var(--focus-ring);
+}
+
+.button.is-primary {
+  color: var(--text-inverse);
+  background-color: var(--brand-primary);
+  border-color: var(--brand-primary);
+}
+
+.button.is-primary:hover,
+.button.is-primary:focus {
+  color: var(--text-inverse);
+  background-color: var(--brand-primary-hover);
+  border-color: var(--brand-primary-hover);
+}
+
+.button[disabled],
+fieldset[disabled] .button {
+  color: var(--text-secondary);
+  background-color: var(--surface-secondary);
+  opacity: 0.7;
+}
+
+.tabs a,
+.pagination-link,
+.pagination-next,
+.pagination-previous {
+  color: var(--text-primary);
+  border-color: var(--border-primary);
+}
+
+.tabs li.is-active a {
+  color: var(--link-text);
+  border-color: var(--link-text);
+}
+
+.tabs a:hover {
+  color: var(--link-hover);
+  border-bottom-color: var(--link-hover);
+}
+
+.tabs ul {
+  border-bottom-color: var(--border-subtle);
+}
+
+.pagination-link:hover,
+.pagination-next:hover,
+.pagination-previous:hover {
+  color: var(--link-hover);
+  border-color: var(--link-hover);
+}
+
+.pagination-link.is-current {
+  color: var(--text-inverse);
+  background-color: var(--brand-primary);
+  border-color: var(--brand-primary);
+}
+
+.checkbox:hover,
+.radio:hover {
+  color: var(--text-primary);
+}
+
+.dropdown-item,
+a.dropdown-item,
+button.dropdown-item,
+.autocomplete .dropdown-item {
+  color: var(--text-primary) !important;
+  background-color: var(--surface-primary);
+}
+
+.dropdown-item:hover,
+a.dropdown-item:hover,
+button.dropdown-item:hover,
+.dropdown-item.is-active {
+  color: var(--text-primary) !important;
+  background-color: var(--surface-hover) !important;
+}
+
+.tag:not(body) {
+  color: var(--text-primary);
+  background-color: var(--surface-tertiary);
+}
+
+.message-body,
+.notification {
+  color: var(--text-primary);
+  background-color: var(--surface-secondary);
+}
+
+.notification.is-danger,
+.toast.is-danger,
+.button.is-danger:not(.is-outlined):not(.is-inverted),
+.tag:not(body).is-danger {
+  color: var(--text-inverse);
+  background-color: var(--status-stopped);
+  border-color: var(--status-stopped);
+}
+
+.notification.is-success,
+.toast.is-success,
+.button.is-success:not(.is-outlined):not(.is-inverted),
+.tag:not(body).is-success {
+  color: var(--text-inverse);
+  background-color: var(--status-running);
+  border-color: var(--status-running);
+}
+
+.notification.is-info,
+.toast.is-info,
+.button.is-info:not(.is-outlined):not(.is-inverted),
+.tag:not(body).is-info {
+  color: var(--text-inverse);
+  background-color: var(--status-external);
+  border-color: var(--status-external);
+}
+
+.notification.is-warning,
+.toast.is-warning,
+.button.is-warning:not(.is-outlined):not(.is-inverted),
+.tag:not(body).is-warning {
+  color: var(--text-inverse);
+  background-color: var(--status-pending);
+  border-color: var(--status-pending);
+}
+
+.help.is-danger {
+  color: var(--danger-text);
+}
+
+.help.is-success {
+  color: var(--success-text);
+}
+
+.modal-background {
+  background-color: var(--surface-overlay);
+}
+
+.modal-card-title,
+.help,
+.content blockquote {
+  color: var(--text-secondary);
+}
+
+code {
+  color: var(--code-text);
+  background-color: var(--code-background);
+}
+
+.hero.is-light,
+.hero.is-light.is-bold {
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+}
+
+.hero.is-light .title,
+.hero.is-light .subtitle,
+.hero .title,
+.hero .subtitle {
+  color: var(--text-primary);
+}
+
+.button.is-success.is-outlined {
+  color: var(--success-text);
+  border-color: var(--success-text);
+}
+
+.button.is-warning.is-outlined {
+  color: var(--warning-text);
+  border-color: var(--warning-text);
+}
+
+.button.is-danger.is-outlined {
+  color: var(--danger-text);
+  border-color: var(--danger-text);
 }
 
 ul {
@@ -21,11 +457,11 @@ textarea {
   height: 50px;
   padding: 8px;
   margin: 10px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border-primary);
 }
 
 textarea:focus {
-  border-color: black;
+  border-color: var(--focus-ring);
 }
 
 .top {
@@ -58,7 +494,7 @@ textarea:focus {
   display: block;
   height: 2px;
   width: 10px;
-  background-color: black;
+  background-color: var(--text-primary);
   transition: all 0.25s ease-out;
 }
 
@@ -73,8 +509,8 @@ textarea:focus {
 
 a.navbar-item.router-link-exact-active,
 a.navbar-item:hover {
-  background: $scheme-main !important;
-  color: whitesmoke !important;
+  background: var(--surface-hover) !important;
+  color: var(--text-primary) !important;
 }
 
 div.is-success {
@@ -117,8 +553,9 @@ div.is-success {
   margin: auto;
   max-width: 800px;
 
-  background-color: $background-bis;
+  background-color: var(--surface-primary);
   border-radius: 12px;
+  box-shadow: 0 2px 8px var(--shadow);
 }
 
 //useful for buttons side by side in table
@@ -129,4 +566,31 @@ div.is-success {
 input::placeholder,
 textarea::placeholder {
   opacity: 1;
+}
+
+.graph-surface {
+  margin-top: 10px;
+  color: var(--text-primary);
+  background: var(--graph-background);
+  border: 2px solid var(--border-primary);
+}
+
+.status-running {
+  color: var(--status-running);
+}
+
+.status-stopped {
+  color: var(--status-stopped);
+}
+
+.status-pending {
+  color: var(--status-pending);
+}
+
+.status-external {
+  color: var(--status-external);
+}
+
+.status-neutral {
+  color: var(--status-neutral);
 }

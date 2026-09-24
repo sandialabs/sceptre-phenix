@@ -605,12 +605,7 @@
             </div>
             <div class="column" />
           </div>
-          <div
-            style="
-              margin-top: 10px;
-              border: 2px solid whitesmoke;
-              background: #333;
-            ">
+          <div class="graph-surface">
             <div v-if="nodes == null">
               <section class="hero is-light is-bold is-large">
                 <div class="hero-body">
@@ -636,27 +631,27 @@
                   <img :src="vlan" style="width: 20px; height: 20px" />
                 </div>
                 <div class="column">
-                  <span style="color: whitesmoke">VLAN Segment</span>
+                  <span>VLAN Segment</span>
                 </div>
               </div>
             </div>
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: #4f8f00" />
+                  <b-icon icon="circle" class="status-running" />
                 </div>
                 <div class="column">
-                  <span style="color: whitesmoke">Running</span>
+                  <span>Running</span>
                 </div>
               </div>
             </div>
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: #670b00" />
+                  <b-icon icon="circle" class="status-stopped" />
                 </div>
                 <div class="column">
-                  <span style="color: whitesmoke">Not running</span>
+                  <span>Not running</span>
                 </div>
               </div>
             </div>
@@ -667,30 +662,30 @@
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: black" />
+                  <b-icon icon="circle" class="status-neutral" />
                 </div>
                 <div class="column">
-                  <span style="color: whitesmoke">Not booted</span>
+                  <span>Not booted</span>
                 </div>
               </div>
             </div>
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: #ffd479" />
+                  <b-icon icon="circle" class="status-pending" />
                 </div>
                 <div class="column">
-                  <span style="color: whitesmoke">Not deployed</span>
+                  <span>Not deployed</span>
                 </div>
               </div>
             </div>
             <div class="column is-one-fifth">
               <div class="columns is-variable is-1">
                 <div class="column has-text-right">
-                  <b-icon icon="circle" style="color: #005493" />
+                  <b-icon icon="circle" class="status-external" />
                 </div>
                 <div class="column">
-                  <span style="color: whitesmoke">External</span>
+                  <span>External</span>
                 </div>
               </div>
             </div>
@@ -698,12 +693,7 @@
           </div>
         </b-tab-item>
         <b-tab-item v-if="flows" label="Network Volume">
-          <div
-            style="
-              margin-top: 10px;
-              border: 2px solid whitesmoke;
-              background: #333;
-            ">
+          <div class="graph-surface">
             <div id="chord"></div>
           </div>
         </b-tab-item>
@@ -712,6 +702,7 @@
   </div>
 </template>
 <script>
+  import { useTheme } from '@/utils/theme.js';
   const SOH_STYLE_LABEL_KEY = '__sohStyle';
   import { roleAllowed } from '@/utils/rbac.js';
   import * as d3 from 'd3';
@@ -739,6 +730,7 @@
     },
 
     async created() {
+      this.refreshStatusColors();
       addWsHandler(this.handleWs);
       await this.updateNetwork();
       this.generateGraph();
@@ -824,7 +816,10 @@
                 for (let i = 0; i < this.nodes.length; i++) {
                   if (this.nodes[i].label == vmName) {
                     this.nodes[i].status = 'notrunning';
-                    d3.selectAll('circle').attr('fill', this.updateNodeColor);
+                    d3.selectAll('circle')
+                      .attr('fill', this.updateNodeColor)
+                      .attr('stroke', this.updateNodeBorder)
+                      .attr('stroke-dasharray', this.updateNodeDash);
                   }
                 }
 
@@ -834,7 +829,10 @@
                 for (let i = 0; i < this.nodes.length; i++) {
                   if (this.nodes[i].label == vmName) {
                     this.nodes[i].status = 'running';
-                    d3.selectAll('circle').attr('fill', this.updateNodeColor);
+                    d3.selectAll('circle')
+                      .attr('fill', this.updateNodeColor)
+                      .attr('stroke', this.updateNodeBorder)
+                      .attr('stroke-dasharray', this.updateNodeDash);
                   }
                 }
 
@@ -844,7 +842,10 @@
                 for (let i = 0; i < this.nodes.length; i++) {
                   if (this.nodes[i].label == vmName) {
                     this.nodes[i].status = 'notdeploy';
-                    d3.selectAll('circle').attr('fill', this.updateNodeColor);
+                    d3.selectAll('circle')
+                      .attr('fill', this.updateNodeColor)
+                      .attr('stroke', this.updateNodeBorder)
+                      .attr('stroke-dasharray', this.updateNodeDash);
                   }
                 }
 
@@ -901,22 +902,37 @@
         return 'url(#' + node.image.toLowerCase() + ')';
       },
 
+      // Resolve the theme tokens to concrete colours: b-colorpicker and the
+      // persisted VM styles need hex values, not var() references.
+      refreshStatusColors() {
+        const styles = getComputedStyle(document.documentElement);
+        const token = (name) => styles.getPropertyValue(name).trim();
+        this.statusColors = {
+          running: token('--status-running'),
+          notrunning: token('--status-stopped'),
+          notboot: token('--status-neutral'),
+          notdeploy: token('--status-pending'),
+          external: token('--status-external'),
+          error: token('--brand-primary'),
+        };
+      },
+
       updateNodeBorder(node) {
         if (node.soh && node.soh.errors) {
-          return '#FF9900'; // orange
+          return this.statusColors.error;
         }
 
         return this.updateNodeColor(node);
       },
 
+      // Nodes with SoH errors also get a dashed border so the state does not
+      // rely on colour alone.
+      updateNodeDash(node) {
+        return node.soh && node.soh.errors ? '4 2' : null;
+      },
+
       updateNodeColor(node) {
-        const colors = {
-          running: '#4F8F00', // green
-          notrunning: '#670b00', // red
-          notboot: 'black',
-          notdeploy: '#FFD479', // yellow
-          external: '#005493', // blue
-        };
+        const colors = this.statusColors;
 
         if (node.status === 'external') {
           return colors[node.status];
@@ -981,7 +997,7 @@
 
         const link = g
           .append('g')
-          .attr('stroke', '#999')
+          .attr('stroke', 'var(--border-subtle)')
           .attr('stroke-opacity', 0.6)
           .selectAll('line')
           .data(links)
@@ -1081,6 +1097,7 @@
           .join('circle')
           .attr('class', 'circle')
           .attr('stroke', this.updateNodeBorder)
+          .attr('stroke-dasharray', this.updateNodeDash)
           .attr('stroke-width', 1.5)
           .attr('r', 5)
           .attr('fill', this.updateNodeColor)
@@ -1102,7 +1119,7 @@
           .join('text')
           .text((d) => d.label)
           .style('text-anchor', 'start')
-          .style('fill', 'whitesmoke')
+          .style('fill', 'var(--text-primary)')
           .style('font-size', '6px');
 
         simulation.on('tick', () => {
@@ -1282,7 +1299,7 @@
           .append('text')
           .attr('x', 8)
           .attr('dy', '0.35em')
-          .attr('fill', 'whitesmoke')
+          .attr('fill', 'var(--text-primary)')
           .attr('transform', (d) =>
             d.angle > Math.PI ? 'rotate(180) translate(-16)' : null,
           )
@@ -1292,7 +1309,7 @@
         group
           .select('text')
           .attr('font-weight', 'bold')
-          .attr('fill', 'whitesmoke')
+          .attr('fill', 'var(--text-primary)')
           .text(function (d) {
             return this.getAttribute('text-anchor') === 'end'
               ? `↑ ${names[d.index]}`
@@ -1450,6 +1467,12 @@
     },
 
     watch: {
+      activeTheme() {
+        this.refreshStatusColors();
+        d3.selectAll('circle')
+          .attr('fill', this.updateNodeColor)
+          .attr('stroke', this.updateNodeBorder);
+      },
       radioButton: async function (filter) {
         if (filter != '') {
           await this.updateNetwork(filter);
@@ -1461,6 +1484,7 @@
 
     data() {
       return {
+        statusColors: {},
         running: false,
         sohInitialized: false,
         sohRunning: false,
@@ -1493,6 +1517,9 @@
       };
     },
     computed: {
+      activeTheme() {
+        return useTheme().activeTheme.value;
+      },
       styleModalCustomStyle: function () {
         var css = '';
         if (this.styleModal.overrideFill)
@@ -1515,20 +1542,16 @@
 </script>
 
 <style scoped>
-  label.radio:hover {
-    color: whitesmoke;
-  }
-
   .modal-card-head {
-    background-color: #686868;
+    background-color: var(--surface-primary);
   }
 
   .modal-card-title {
-    color: whitesmoke;
+    color: var(--text-primary);
   }
 
   li::marker {
-    color: black;
+    color: var(--text-primary);
   }
 
   ul {

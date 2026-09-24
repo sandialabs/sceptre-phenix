@@ -22,7 +22,7 @@ import {
     faPlayCircle, faStopCircle, faPause, faDatabase, faSave, faCamera, faHistory, faSkullCrossbones, faUndoAlt, 
     faSyncAlt, faPowerOff, faPencil, faArrowRight, faArrowLeft, faCompactDisc, faCheckCircle, faHdd, faMinus, faTerminal,
     faPaintbrush, faTv, faCircle, faRefresh, faCaretDown, faTimesCircle, faAngleLeft, faAngleRight, faCopy,
-    faTableColumns, faArrowPointer
+    faTableColumns, faArrowPointer, faSun, faMoon
 } from '@fortawesome/free-solid-svg-icons'
 
 // prettier-ignore
@@ -33,11 +33,14 @@ library.add(
     faPlayCircle, faStopCircle, faPause, faDatabase, faSave, faCamera, faHistory, faSkullCrossbones, faUndoAlt, 
     faSyncAlt, faPowerOff, faPencil, faArrowRight, faArrowLeft, faCompactDisc, faCheckCircle, faHdd, faMinus, faTerminal,
     faPaintbrush, faTv, faCircle, faRefresh, faCaretDown, faTimesCircle, faAngleLeft, faAngleRight, faCopy,
-    faTableColumns, faArrowPointer
+    faTableColumns, faArrowPointer, faSun, faMoon
 )
 
 import App from './App.vue';
 import router from './router.js';
+import { initializeTheme } from '@/utils/theme.js';
+
+initializeTheme();
 
 const app = createApp(App);
 

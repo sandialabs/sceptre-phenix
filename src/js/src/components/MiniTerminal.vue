@@ -9,6 +9,7 @@
   import { Terminal } from '@xterm/xterm';
   import { FitAddon } from '@xterm/addon-fit';
   import { AttachAddon } from '@xterm/addon-attach';
+  import { useTheme } from '@/utils/theme.js';
 
   import '@xterm/xterm/css/xterm.css';
 
@@ -27,6 +28,17 @@
         this.teardownSocket();
         this.setupTerminal();
       },
+      activeTheme() {
+        if (this.term) {
+          this.term.options.theme = this.getTerminalTheme();
+        }
+      },
+    },
+
+    computed: {
+      activeTheme() {
+        return useTheme().activeTheme.value;
+      },
     },
 
     beforeUnmount() {
@@ -35,7 +47,7 @@
     },
 
     mounted() {
-      const term = new Terminal();
+      const term = new Terminal({ theme: this.getTerminalTheme() });
 
       this.fit = new FitAddon();
       term.loadAddon(this.fit);
@@ -61,6 +73,17 @@
       this.setupTerminal();
     },
     methods: {
+      getTerminalTheme() {
+        const styles = getComputedStyle(document.documentElement);
+        return {
+          background: styles.getPropertyValue('--graph-background').trim(),
+          foreground: styles.getPropertyValue('--text-primary').trim(),
+          cursor: styles.getPropertyValue('--focus-ring').trim(),
+          selectionBackground: styles
+            .getPropertyValue('--surface-hover')
+            .trim(),
+        };
+      },
       setupTerminal() {
         this.socket = new WebSocket(this.getWsUrl());
 

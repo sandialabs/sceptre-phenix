@@ -104,7 +104,7 @@
 
 <style scoped lang="scss">
   p {
-    color: whitesmoke !important;
+    color: var(--text-primary) !important;
   }
 
   div#quick-start {
@@ -113,6 +113,7 @@
   }
 
   code {
-    background-color: black;
+    color: var(--code-text);
+    background-color: var(--code-background);
   }
 </style>

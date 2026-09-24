@@ -53,7 +53,7 @@ rev = "v2.4.2"
 id = "codespell"
 args = [
   "--ignore-words-list",
-  "ue,ot,ues,fo,nd,ist,te,parm,parms,ser,iif,iam,nin,filetest",
+  "ue,ot,ues,fo,nd,ist,te,parm,parms,ser,iif,iam,nin,filetest,afterall",
   # vendored UI assets and generated/binary content are noisy for codespell
   "--skip",
   "*.svg,*.lock,*.sum,src/js/yarn.lock,src/js/dist/*,src/go/web/public/*,src/go/web/proto/*.pb.go,src/go/store/mock.go,src/go/web/rbac/known_policy.go,**/*.min.js,**/*.min.css"

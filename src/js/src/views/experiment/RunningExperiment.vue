@@ -422,7 +422,10 @@
               <div>
                 <hr
                   v-if="parseInt(index) > 0"
-                  style="color: #595959; background-color: #595959" />
+                  style="
+                    color: var(--border-subtle);
+                    background-color: var(--border-subtle);
+                  " />
                 Create disk image of the {{ vmI.name }} VM with filename:
                 <br /><br />
                 <b-field
@@ -463,7 +466,10 @@
               <div>
                 <hr
                   v-if="parseInt(index) > 0"
-                  style="color: #595959; background-color: #595959" />
+                  style="
+                    color: var(--border-subtle);
+                    background-color: var(--border-subtle);
+                  " />
                 Create a memory snapshot for the
                 {{ vmI.name }} VM with filename: <br /><br />
                 <b-field
@@ -977,7 +983,7 @@
             ref="vmTable">
             <template #empty>
               <section class="section">
-                <div class="content has-text-white has-text-centered">
+                <div class="content has-text-centered">
                   Your search turned up empty!
                 </div>
               </section>
@@ -1291,7 +1297,7 @@
             @sort="onFilesSort">
             <template #empty>
               <section class="section">
-                <div class="content has-text-white has-text-centered">
+                <div class="content has-text-centered">
                   No Files Are Available!
                 </div>
               </section>
@@ -1412,17 +1418,7 @@
                     :width="vncWidth"
                     style="display: block" />
                 </a>
-                <a
-                  style="
-                    color: whitesmoke;
-                    display: block;
-                    background-color: grey;
-                    text-align: center;
-                    padding: 2px 0px;
-                  "
-                  @click="getInfo(vm)"
-                  >{{ vm.name }}</a
-                >
+                <a class="vm-tile-label" @click="getInfo(vm)">{{ vm.name }}</a>
               </div>
             </template>
             <template v-else>Your search turned up empty!</template>
@@ -4144,6 +4140,16 @@
     },
   };
 </script>
+
+<style scoped>
+  .vm-tile-label {
+    display: block;
+    padding: 2px 0;
+    color: var(--text-primary);
+    text-align: center;
+    background-color: var(--surface-tertiary);
+  }
+</style>
 
 <style scoped>
   .fa-layers-counter {

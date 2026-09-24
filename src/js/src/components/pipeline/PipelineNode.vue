@@ -20,14 +20,14 @@
         <circle cx="0" cy="0" r="12" :class="'circle-bg ' + status"></circle>
         <g class="result-status-glyph">
           <polygon
-            fill="white"
+            fill="var(--text-inverse)"
             v-if="status == 'failure'"
             points="4.67 -3.73 3.73 -4.67 0 -0.94 -3.73 -4.67 -4.67 -3.73 -0.94 0 -4.67 3.73 -3.73 4.67 0 0.94 3.73 4.67 4.67 3.73 0.94 0">
           </polygon>
         </g>
         <g class="result-status-glyph" v-if="status == 'success'">
           <polygon
-            fill="white"
+            fill="var(--text-inverse)"
             points="-2.00 2.80 -4.80 0.00 -5.73 0.933 -2.00 4.67 6.00 -3.33 5.07 -4.27">
           </polygon>
         </g>
@@ -164,35 +164,35 @@
     transform: translateZ(0);
   }
   .svgResultStatus > circle {
-    stroke: white;
+    stroke: var(--border-primary);
     stroke-width: 2px;
   }
   .svgResultStatus > circle.success {
-    fill: #8cc04f;
+    fill: var(--status-running);
   }
   .svgResultStatus > circle.failure {
-    fill: #d54c53;
+    fill: var(--status-stopped);
   }
   .svgResultStatus > circle.unstable {
-    fill: #f6b44b;
+    fill: var(--status-pending);
   }
   .svgResultStatus > circle.aborted {
-    fill: #949393;
+    fill: var(--status-neutral);
   }
   .svgResultStatus > circle.paused {
-    fill: #24b0d5;
+    fill: var(--status-external);
   }
   .svgResultStatus > circle.unknown {
-    fill: #686868;
+    fill: var(--status-neutral);
   }
   .svgResultStatus > circle.running {
-    fill: #fff;
+    fill: var(--surface-primary);
   }
 
   .pipeline-node-label {
     /* font: 14px sans-serif; */
     font-size: 14px;
-    fill: whitesmoke;
+    fill: var(--text-primary);
     width: 100px;
     overflow: hidden;
     overflow-wrap: break-word;
@@ -205,13 +205,13 @@
   }
 
   .running {
-    fill: #8ccc4f;
+    fill: var(--status-running);
     animation: rotating 2s linear infinite;
     animation-iteration-count: infinite;
   }
 
   .background {
-    fill: #f6b44b;
+    fill: var(--status-pending);
     animation: rotating 2s linear infinite;
     animation-iteration-count: infinite;
   }
