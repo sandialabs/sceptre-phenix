@@ -27,6 +27,7 @@
         </b-table-column>
         <template #footer v-if="canEdit()">
           <b-button
+            aria-label="Add note"
             icon-right="plus"
             type="is-text"
             size="is-small"
@@ -67,6 +68,7 @@
         </b-table-column>
         <template #footer v-if="canEdit()">
           <b-button
+            aria-label="Add tag"
             icon-right="plus"
             type="is-text"
             size="is-small"

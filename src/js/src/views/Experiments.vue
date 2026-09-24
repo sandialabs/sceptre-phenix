@@ -169,7 +169,10 @@
             <template #empty> No results found </template>
           </b-autocomplete>
           <p class="control">
-            <button class="button input-button" @click="searchName = ''">
+            <button
+              aria-label="Clear experiment search"
+              class="button input-button"
+              @click="searchName = ''">
               <b-icon icon="window-close"></b-icon>
             </button>
           </p>
@@ -177,6 +180,7 @@
         <p v-if="roleAllowed('experiments', 'create')" class="control">
           <b-tooltip label="create a new experiment" type="is-light" multilined>
             <button
+              aria-label="Create a new experiment"
               class="button is-light"
               @click="
                 updateTopologies();
@@ -191,6 +195,10 @@
         <b-table
           :data="filteredExperiments"
           :paginated="table.isPaginated"
+          aria-next-label="Next page"
+          aria-previous-label="Previous page"
+          aria-page-label="Page"
+          aria-current-label="Current page"
           :per-page="table.perPage"
           v-model:current-page="table.currentPage"
           :pagination-simple="table.isPaginationSimple"
@@ -304,6 +312,7 @@
               type="is-light"
               multilined>
               <button
+                :aria-label="`Delete experiment ${props.row.name}`"
                 v-if="roleAllowed('experiments', 'delete', props.row.name)"
                 class="button is-light is-small"
                 :disabled="updating(props.row.status)"

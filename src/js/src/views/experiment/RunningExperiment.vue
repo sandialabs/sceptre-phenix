@@ -78,6 +78,7 @@
             <template v-if="!expModal.vm.running">
               <b-tooltip label="start" type="is-light">
                 <b-button
+                  :aria-label="`Start VM ${expModal.vm.name}`"
                   class="button is-success"
                   icon-left="play"
                   @click="startVm(expModal.vm.name)">
@@ -87,6 +88,7 @@
             <template v-else>
               <b-tooltip label="pause" type="is-light">
                 <b-button
+                  :aria-label="`Pause VM ${expModal.vm.name}`"
                   class="button is-warning"
                   icon-left="pause"
                   @click="pauseVm(expModal.vm.name)">
@@ -109,6 +111,7 @@
               "
               type="is-light">
               <b-button
+                :aria-label="`Mount VM ${expModal.vm.name}`"
                 class="button is-light"
                 icon-left="hdd"
                 @click="showMountDialog(expModal.vm.name)"
@@ -124,6 +127,7 @@
             ">
             <b-tooltip label="create port forward" type="is-light">
               <b-button
+                :aria-label="`Create port forward for VM ${expModal.vm.name}`"
                 class="button is-light"
                 icon-left="arrow-right"
                 @click="showPortForwardDialog(expModal.vm.name)"
@@ -139,6 +143,7 @@
             ">
             <b-tooltip label="create memory snapshot" type="is-light">
               <b-button
+                :aria-label="`Create memory snapshot of VM ${expModal.vm.name}`"
                 class="button is-light"
                 icon-left="database"
                 @click="queueMemorySnapshotVMs(expModal.vm.name)">
@@ -154,6 +159,7 @@
             ">
             <b-tooltip label="create backing image" type="is-light">
               <b-button
+                :aria-label="`Create backing image for VM ${expModal.vm.name}`"
                 class="button is-light"
                 icon-left="save"
                 @click="diskImage(expModal.vm.name)">
@@ -169,6 +175,7 @@
             ">
             <b-tooltip label="create vm snapshot" type="is-light">
               <b-button
+                :aria-label="`Create snapshot of VM ${expModal.vm.name}`"
                 class="button is-light"
                 icon-left="camera"
                 @click="captureSnapshot(expModal.vm.name)">
@@ -184,6 +191,7 @@
             ">
             <b-tooltip :label="getOpticalDiscLabel()" type="is-light">
               <b-button
+                :aria-label="`Change optical disc for VM ${expModal.vm.name}`"
                 class="button is-light"
                 icon-left="compact-disc"
                 @click="showChangeDisc(expModal.vm)">
@@ -194,6 +202,7 @@
           <div v-if="!showModifyStateBar">
             <b-tooltip label="modify state" type="is-light">
               <b-button
+                :aria-label="`Modify state of VM ${expModal.vm.name}`"
                 class="button is-light"
                 icon-left="edit"
                 @click="showModifyStateBar = true">
@@ -206,6 +215,7 @@
               label="redeploy"
               type="is-light">
               <b-button
+                :aria-label="`Redeploy VM ${expModal.vm.name}`"
                 class="button is-success"
                 icon-left="history"
                 @click="redeploy(expModal.vm.name)">
@@ -220,6 +230,7 @@
               label="reset disk state"
               type="is-light">
               <b-button
+                :aria-label="`Reset disk state of VM ${expModal.vm.name}`"
                 class="button is-success"
                 icon-left="undo-alt"
                 @click="resetVmState(expModal.vm.name)">
@@ -231,6 +242,7 @@
               label="restart"
               type="is-light">
               <b-button
+                :aria-label="`Restart VM ${expModal.vm.name}`"
                 class="button is-success"
                 icon-left="sync-alt"
                 @click="restartVm(expModal.vm.name)">
@@ -242,6 +254,7 @@
               label="shutdown"
               type="is-light">
               <b-button
+                :aria-label="`Shut down VM ${expModal.vm.name}`"
                 class="button is-danger"
                 icon-left="power-off"
                 @click="shutdownVm(expModal.vm.name)">
@@ -253,6 +266,7 @@
               label="kill"
               type="is-light">
               <b-button
+                :aria-label="`Kill VM ${expModal.vm.name}`"
                 class="button is-danger"
                 icon-left="skull-crossbones"
                 @click="killVm(expModal.vm.name)">
@@ -261,6 +275,7 @@
 
             <b-tooltip label="close  toolbar" type="is-light">
               <b-button
+                aria-label="Close state actions"
                 class="button is-light"
                 icon-left="window-close"
                 @click="showModifyStateBar = false">
@@ -647,6 +662,7 @@
           <b-field>
             <b-tooltip label="pause" type="is-light">
               <b-button
+                aria-label="Pause selected VMs"
                 class="button is-warning"
                 icon-left="pause"
                 @click="processMultiVmAction(vmActions.pause)">
@@ -666,6 +682,7 @@
           ">
           <b-tooltip label="create memory snapshot" type="is-light">
             <b-button
+              aria-label="Create memory snapshots of selected VMs"
               class="button is-light"
               icon-left="database"
               @click="processMultiVmAction(vmActions.createMemorySnapshot)">
@@ -680,6 +697,7 @@
           ">
           <b-tooltip label="create backing image" type="is-light">
             <b-button
+              aria-label="Create backing images for selected VMs"
               class="button is-light"
               icon-left="save"
               @click="processMultiVmAction(vmActions.createBacking)">
@@ -698,6 +716,7 @@
           ">
           <b-tooltip label="create vm snapshot" type="is-light">
             <b-button
+              aria-label="Create snapshots of selected VMs"
               class="button is-light"
               icon-left="camera"
               @click="processMultiVmAction(vmActions.captureSnapshot)">
@@ -707,6 +726,7 @@
         <b-field v-if="!showModifyStateBar">
           <b-tooltip label="modify state" type="is-light">
             <b-button
+              aria-label="Modify state of selected VMs"
               class="button is-light"
               icon-left="edit"
               @click="showModifyStateBar = true">
@@ -728,6 +748,7 @@
               label="redeploy"
               type="is-light">
               <b-button
+                aria-label="Redeploy selected VMs"
                 class="button is-success"
                 icon-left="history"
                 @click="processMultiVmAction(vmActions.redeploy)">
@@ -749,6 +770,7 @@
               label="reset disk state"
               type="is-light">
               <b-button
+                aria-label="Reset disk state of selected VMs"
                 class="button is-success"
                 icon-left="undo-alt"
                 @click="processMultiVmAction(vmActions.resetState)">
@@ -770,6 +792,7 @@
               label="restart"
               type="is-light">
               <b-button
+                aria-label="Restart selected VMs"
                 class="button is-success"
                 icon-left="sync-alt"
                 @click="processMultiVmAction(vmActions.restart)">
@@ -790,6 +813,7 @@
               label="restart"
               type="is-light">
               <b-button
+                aria-label="Restart selected VMs"
                 class="button is-success"
                 icon-left="sync-alt"
                 @click="processMultiVmAction(vmActions.restart)">
@@ -810,6 +834,7 @@
               label="shutdown"
               type="is-light">
               <b-button
+                aria-label="Shut down selected VMs"
                 class="button is-danger"
                 icon-left="power-off"
                 @click="processMultiVmAction(vmActions.shutdown)">
@@ -826,6 +851,7 @@
               label="kill"
               type="is-light">
               <b-button
+                aria-label="Kill selected VMs"
                 class="button is-danger"
                 icon-left="skull-crossbones"
                 @click="processMultiVmAction(vmActions.kill)">
@@ -835,6 +861,7 @@
           <b-field>
             <b-tooltip label="close toolbar" type="is-light">
               <b-button
+                aria-label="Close state actions"
                 class="button is-light"
                 icon-left="window-close"
                 @click="showModifyStateBar = false">
@@ -851,6 +878,11 @@
         <b-field>
           <b-tooltip :label="netflow.tooltip" type="is-light">
             <button
+              :aria-label="
+                netflow.capturing
+                  ? 'Stop netflow capture'
+                  : 'Start netflow capture'
+              "
               :class="`button ${netflow.capturing ? 'is-danger' : 'is-success'}`"
               @click="handleNetflow(!netflow.capturing)">
               <b-icon icon="circle-nodes"></b-icon>
@@ -884,6 +916,7 @@
           </b-autocomplete>
           <p class="control">
             <button
+              aria-label="Clear VM search"
               class="button input-button"
               @click="
                 searchVMs('');
@@ -897,6 +930,7 @@
         <b-field>
           <b-tooltip label="stop the experiment" type="is-light" :delay="500">
             <b-button
+              aria-label="Stop experiment"
               v-if="roleAllowed('experiments/stop', 'update', experiment.name)"
               class="button is-danger"
               icon-right="stop"
@@ -967,6 +1001,10 @@
           <b-table
             :data="experiment.vms"
             :paginated="table.isPaginated"
+            aria-next-label="Next page"
+            aria-previous-label="Previous page"
+            aria-page-label="Page"
+            aria-current-label="Current page"
             backend-pagination
             :total="table.total"
             :per-page="table.perPage"
@@ -1281,6 +1319,10 @@
           <b-table
             :data="files"
             :paginated="filesTable.isPaginated"
+            aria-next-label="Next page"
+            aria-previous-label="Previous page"
+            aria-page-label="Page"
+            aria-current-label="Current page"
             backend-pagination
             :total="filesTable.total"
             :per-page="filesTable.perPage"

@@ -8,7 +8,7 @@ export async function useErrorNotification(error) {
     message = error.message;
   } else if (error.response.headers.get('content-type') == 'application/json') {
     let msg = error.response.data;
-    message = `<h2><b>Error:</b> ${msg.message}</h2>`;
+    message = `<p><strong>Error:</strong> ${msg.message}</p>`;
 
     if (msg.cause) {
       let cause = msg.cause.replace(/\n/g, '<br>').replace(/\t/g, '&emsp;');
@@ -36,6 +36,9 @@ export async function useErrorNotification(error) {
     hasIcon: true,
     position: 'is-top',
     indefinite: true,
-    message: message,
+    ariaCloseLabel: 'Dismiss error',
+    // Buefy renders the notice as an <article>, which may not carry role=alert;
+    // wrap the text instead so assistive technology announces it.
+    message: `<div role="alert">${message}</div>`,
   });
 }

@@ -1,7 +1,7 @@
 <template>
   <section>
     <div class="form-section">
-      <form class="content">
+      <form class="content" @submit.prevent="sendSettingsToServer">
         <h3>Password Settings</h3>
         <b-field>
           <b-switch v-model="settings_obj.password_settings.lowercase_req">
@@ -24,8 +24,11 @@
           </b-switch>
         </b-field>
         <b-field>
-          Minimum length of password
+          <span id="settings-password-min-length"
+            >Minimum length of password</span
+          >
           <b-numberinput
+            aria-labelledby="settings-password-min-length"
             v-model="settings_obj.password_settings.min_length"
             class="custom-small"
             min="4"
@@ -40,8 +43,11 @@
           </b-switch>
         </b-field>
         <b-field>
-          Time (minutes) to log out users after idle for
+          <span id="settings-idle-timeout"
+            >Time (minutes) to log out users after idle for</span
+          >
           <b-numberinput
+            aria-labelledby="settings-idle-timeout"
             v-model="settings_obj.timeout_settings.timeout_min"
             :disabled="!settings_obj.timeout_settings.enabled"
             :controls="false"
@@ -50,8 +56,11 @@
           </b-numberinput>
         </b-field>
         <b-field>
-          Display idle user logout with (minutes) left
+          <span id="settings-idle-warning"
+            >Display idle user logout with (minutes) left</span
+          >
           <b-numberinput
+            aria-labelledby="settings-idle-warning"
             v-model="settings_obj.timeout_settings.warning_min"
             :disabled="!settings_obj.timeout_settings.enabled"
             :controls="false"
@@ -62,8 +71,9 @@
 
         <h3>File Logging Settings</h3>
         <b-field>
-          Max log file size (MiB)
+          <span id="settings-log-max-size">Max log file size (MiB)</span>
           <b-numberinput
+            aria-labelledby="settings-log-max-size"
             v-model="settings_obj.logging_settings.max_file_size"
             :controls="false"
             step="1"
@@ -71,8 +81,11 @@
           </b-numberinput>
         </b-field>
         <b-field>
-          Max number of file rotations (0 for infinite)
+          <span id="settings-log-max-rotations"
+            >Max number of file rotations (0 for infinite)</span
+          >
           <b-numberinput
+            aria-labelledby="settings-log-max-rotations"
             v-model="settings_obj.logging_settings.max_file_rotations"
             :controls="false"
             step="1"
@@ -81,8 +94,11 @@
           </b-numberinput>
         </b-field>
         <b-field>
-          Max rotated log file age (0 for infinite)
+          <span id="settings-log-max-age"
+            >Max rotated log file age (0 for infinite)</span
+          >
           <b-numberinput
+            aria-labelledby="settings-log-max-age"
             v-model="settings_obj.logging_settings.max_file_age"
             :controls="false"
             step="1"
@@ -93,7 +109,7 @@
 
         <hr />
         <!-- <b-button @click="getSettings">Reset Form</b-button> -->
-        <b-button @click="sendSettingsToServer">Save Changes</b-button>
+        <b-button native-type="submit">Save Changes</b-button>
       </form>
     </div>
   </section>

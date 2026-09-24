@@ -38,6 +38,8 @@ The development server needs a backend on `localhost:3000`.
 - Use existing Pinia, router, Axios, Buefy, and component patterns.
 - Import Font Awesome icons individually in `src/main.js`; never import the
   entire icon set.
+- UI changes must meet WCAG 2.2 AA accessibility guidelines; the Playwright
+  routes smoke test enforces this with axe-core (see [e2e/README.md](e2e/README.md)).
 - Authentication is selected at build time with
   `VITE_AUTH=enabled|disabled|proxy`. Validate the affected mode and keep UI,
   REST, websocket, and RBAC behavior aligned.
@@ -54,7 +56,9 @@ npx playwright install --with-deps chromium
 npx playwright test
 ```
 
-Default smoke tests need only a server. Lifecycle tests additionally need
+Default smoke tests need only a server. `routes.spec.js` also runs an
+axe-core WCAG 2.x A/AA scan on every route; fix violations in the UI
+(accessible names, contrast, ARIA) rather than excluding rules. Lifecycle tests additionally need
 minimega, VM images, and a topology (`E2E_LIFECYCLE=1`). Auth suites require a
 matching `VITE_AUTH` build and signing key. See `e2e/README.md`; report missing
 prerequisites instead of silently skipping checks.

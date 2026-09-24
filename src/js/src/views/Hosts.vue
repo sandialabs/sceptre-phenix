@@ -10,6 +10,10 @@ available for experiments, the number of VMs, and host uptime.
     <b-table
       :data="hosts"
       :paginated="table.isPaginated"
+      aria-next-label="Next page"
+      aria-previous-label="Previous page"
+      aria-page-label="Page"
+      aria-current-label="Current page"
       :per-page="table.perPage"
       v-model:current-page="table.currentPage"
       :pagination-simple="table.isPaginationSimple"
