@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
 
+### Security
+
+- **Workflow configs**: `POST /api/v1/workflow/configs/{branch}` no longer exposes server environment variables in its errors.
+
 ## [1.0.0]
 
 ### Changed
