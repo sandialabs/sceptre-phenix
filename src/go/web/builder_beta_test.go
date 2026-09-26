@@ -1736,7 +1736,8 @@ func TestBuilderBetaCleanupWarningOmitsCause(t *testing.T) { //nolint:parallelte
 
 // TestBuilderBetaUnreadableDraft asserts that a draft whose metadata no longer
 // validates (here, a field this version does not know) neither breaks the
-// listing nor stays undeletable.
+// listing nor stays undeletable: it is listed apart, as damaged, to those who
+// may see it, with whether they may delete it.
 func TestBuilderBetaUnreadableDraft(t *testing.T) { //nolint:paralleltest // mutates package options
 	harness := newBuilderBetaHarness(t)
 	good := harness.createDraft(builderBetaTestOwner, "good")
@@ -1757,9 +1758,13 @@ func TestBuilderBetaUnreadableDraft(t *testing.T) { //nolint:paralleltest // mut
 		t.Fatalf("list status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
 	}
 
-	var listing struct {
-		Drafts []builderDraftResponse `json:"drafts"`
+	type damagedListing struct {
+		Drafts  []builderDraftResponse        `json:"drafts"`
+		Shared  []builderDraftResponse        `json:"shared"`
+		Damaged []builderDamagedDraftResponse `json:"damaged"`
 	}
+
+	var listing damagedListing
 
 	harness.decode(recorder, &listing)
 
@@ -1767,8 +1772,53 @@ func TestBuilderBetaUnreadableDraft(t *testing.T) { //nolint:paralleltest // mut
 		t.Errorf("drafts = %+v, want only the readable %q", listing.Drafts, good.ID)
 	}
 
-	path := "/builder/drafts/" + builderBetaTestOwner + "/" + bad.ID
+	// It is listed apart, with what can still be read of it and the ETag
+	// that deletes it.
+	if len(listing.Damaged) != 1 {
+		t.Fatalf("damaged = %+v, want the unreadable %q", listing.Damaged, bad.ID)
+	}
+
+	listed := listing.Damaged[0]
+	if listed.ID != bad.ID || listed.Owner != builderBetaTestOwner || listed.Title != "bad" ||
+		listed.Updated == nil || listed.ETag == "" || listed.ETag == bad.ETag || !listed.CanDelete {
+		t.Errorf("damaged = %+v, want %q owned by %q, titled, dated, deletable at its current ETag",
+			listed, bad.ID, builderBetaTestOwner)
+	}
+
+	// Others see it as they see readable drafts: with cross-user list
+	// permission only, and deletable only with cross-user delete permission.
+	listOnly := builderBetaRole(
+		builderBetaPolicy([]string{"configs"}, []string{"*"}, []string{"list", "get", "delete"}),
+		builderBetaPolicy([]string{"builder-drafts"}, []string{"*", "*/*"}, []string{"list", "get"}),
+	)
 	owner := builderBetaOwnerRole()
+
+	for _, peer := range []struct {
+		name      string
+		role      *rbac.Role
+		damaged   int
+		canDelete bool
+	}{
+		{name: "no cross-user permission", role: &owner, damaged: 0, canDelete: false},
+		{name: "cross-user list", role: &listOnly, damaged: 1, canDelete: false},
+		{name: "cross-user delete", role: nil, damaged: 1, canDelete: true},
+	} {
+		recorder = harness.do(builderBetaRequest{
+			method: http.MethodGet, path: "/builder/drafts", user: builderBetaTestPeer, role: peer.role,
+		})
+
+		var seen damagedListing
+
+		harness.decode(recorder, &seen)
+
+		if len(seen.Damaged) != peer.damaged ||
+			(peer.damaged > 0 && seen.Damaged[0].CanDelete != peer.canDelete) {
+			t.Errorf("%s: damaged = %+v, want %d with canDelete %t",
+				peer.name, seen.Damaged, peer.damaged, peer.canDelete)
+		}
+	}
+
+	path := "/builder/drafts/" + builderBetaTestOwner + "/" + bad.ID
 
 	// Another user without cross-user permission still cannot see it.
 	recorder = harness.do(builderBetaRequest{
@@ -1779,17 +1829,16 @@ func TestBuilderBetaUnreadableDraft(t *testing.T) { //nolint:paralleltest // mut
 		t.Fatalf("peer delete status = %d, want %d: %s", recorder.Code, http.StatusNotFound, recorder.Body)
 	}
 
-	// The draft can be neither listed nor read, so its owner learns its
-	// current ETag from the refusal of the one they had.
+	// The refusal of a stale ETag names the current one, as the listing does.
 	recorder = harness.do(builderBetaRequest{method: http.MethodDelete, path: path, user: builderBetaTestOwner, ifMatch: bad.ETag})
 
 	current := recorder.Header().Get("ETag")
-	if recorder.Code != http.StatusPreconditionFailed || current == "" || current == bad.ETag {
-		t.Fatalf("stale delete = %d with ETag %q, want %d with the current ETag: %s",
-			recorder.Code, current, http.StatusPreconditionFailed, recorder.Body)
+	if recorder.Code != http.StatusPreconditionFailed || current != listed.ETag {
+		t.Fatalf("stale delete = %d with ETag %q, want %d with the listed ETag %q: %s",
+			recorder.Code, current, http.StatusPreconditionFailed, listed.ETag, recorder.Body)
 	}
 
-	recorder = harness.do(builderBetaRequest{method: http.MethodDelete, path: path, user: builderBetaTestOwner, ifMatch: current})
+	recorder = harness.do(builderBetaRequest{method: http.MethodDelete, path: path, user: builderBetaTestOwner, ifMatch: listed.ETag})
 
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("delete status = %d, want %d: %s", recorder.Code, http.StatusNoContent, recorder.Body)

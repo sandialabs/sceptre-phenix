@@ -75,7 +75,7 @@ describe('inspector schemas', () => {
     );
   });
 
-  // R35: the Inspector asks for its schema on every document change, and a
+  // The Inspector asks for its schema on every document change, and a
   // new object each time was compiled again by JSON Forms and kept by ajv.
   test('an element kind has one schema object, compiled once', () => {
     const validator = createFormValidator();
@@ -101,7 +101,7 @@ describe('inspector schemas', () => {
     expect(validator._cache.size).toBe(compiled);
   });
 
-  // R34: labels and annotations are node fields phenix reads that its
+  // Labels and annotations are node fields phenix reads that its
   // schema leaves out, and `advanced` has no fields of its own: each is
   // edited as keys and values. An imported node's are null.
   test('labels, annotations and advanced settings are maps of keys and values', () => {
@@ -432,7 +432,7 @@ describe('node spec fields in the Inspector', () => {
   });
 
   // A VLAN is its interface's connection, which an interface may not have
-  // yet (R31). The diagram checks and publishing refuse it instead.
+  // yet. The diagram checks and publishing refuse it instead.
   test('the form leaves an interface VLAN optional, which the phenix schema requires', () => {
     const spec = deviceSpec({});
     const validate = createFormValidator().compile(spec);

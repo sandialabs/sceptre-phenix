@@ -7,15 +7,16 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - **Builder Flow** (beta, `--features builder-beta`): New topology editor at `/builder-beta`, next to the existing Builder.
-  - **Editing**: Devices, switches, notes, and groups; connections between devices and switches; Router and Firewall templates; copy, paste, and duplicate; undo and redo; auto-layout (ELK layered, Network cards, Dagre, or Standard); moving nodes between groups; colors for networks, notes, groups, and connections.
-  - **Inspector**: Form for every node field, with descriptions, warnings, and editable labels, annotations, and advanced settings; drive image suggestions from the server's disks.
-  - **Checks**: A list of the diagram's errors and warnings that links to the nodes involved.
+  - **Editing**: Devices, switches, notes, and groups; connections between devices and switches; Router and Firewall templates; copy, paste, and duplicate; undo and redo; layouts (ELK layered, Network cards, Dagre, or Standard), chosen for each draft from the toolbar; Auto-group, by network or by name; moving nodes between groups; colors for networks, notes, groups, and connections.
+  - **Canvas**: Connections follow the routes the ELK layout draws, and connections into the same switch bend apart. Choosing an outline row shows its nodes.
+  - **Inspector**: Form for every node field, with descriptions, warnings, and editable labels, annotations, and advanced settings; drive image suggestions from the server's disks; drop-downs show their default, such as "Default (kvm)".
+  - **Checks**: A list of the diagram's errors and warnings that links to the nodes involved. Nodes with errors or warnings are marked on the canvas.
   - **Command palette and shortcuts**: Command palette (⌘K or Ctrl+K) and customizable keyboard shortcuts.
-  - **Settings**: Theme, auto-layout algorithm, minimap, zoom, motion, and shortcut settings, kept in the browser.
+  - **Settings**: Theme, default layout for drafts, minimap, zoom, motion, and shortcut settings, kept in the browser.
   - **Focus mode**: Hides the navigation bar and fills the screen (⇧⌘F or Ctrl+Shift+F).
-  - **Drafts**: Drafts save automatically, work offline, and keep the last 50 changes. Logging out clears drafts saved in the browser and keeps preferences such as the theme and shortcuts.
+  - **Drafts**: Drafts save automatically, work offline, and keep the last 50 changes. Drafts the server cannot read are listed, with Delete. Open and Back to drafts show a spinner while they wait. Logging out, or signing in as another user, clears drafts saved in the browser and keeps preferences such as the theme and shortcuts.
   - **Import and export**: Import topologies and experiments; upload and download diagrams as JSON or YAML; export images as PNG or SVG.
-  - **Publishing**: Publish topologies, scenarios, and experiments, and publish again after more edits.
+  - **Publishing**: Publish topologies, scenarios, and experiments, and publish again after more edits. Publish asks before it replaces an existing config.
   - **Included topologies**: Shown as read-only nodes and kept as references when published.
   - **Permissions**: Actions a role cannot perform are hidden. Importing an uploaded config needs `configs` `create`; other users' drafts need `builder-drafts` permissions.
   - **Accessibility**: Keyboard and screen reader support (WCAG 2.2 AA).

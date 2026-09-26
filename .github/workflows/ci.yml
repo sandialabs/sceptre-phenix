@@ -5,11 +5,13 @@ on:
     branches: ['**']
     paths:
       - 'src/go/**'
+      - 'src/js/src/builder/schema/**'
       - 'Makefile'
       - '.github/workflows/ci.yml'
   pull_request:
     paths:
       - 'src/go/**'
+      - 'src/js/src/builder/schema/**'
       - 'Makefile'
       - '.github/workflows/ci.yml'
 
@@ -40,6 +42,13 @@ jobs:
       - name: Generate code
         working-directory: src/go
         run: make generate
+      - name: Check the Builder schema bundle is current
+        run: |
+          if [ -n "$(git status --porcelain -- src/js/src/builder/schema)" ]; then
+            git diff -- src/js/src/builder/schema
+            echo "::error::src/js/src/builder/schema differs from the Go builder schema: run make generate in src/go and commit the result"
+            exit 1
+          fi
       - name: Run tests with coverage
         working-directory: src/go
         run: make test

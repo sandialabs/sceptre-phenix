@@ -309,7 +309,7 @@ func TestPutPublishedDocumentRepairsCorruptContent(t *testing.T) {
 	}
 }
 
-func TestDeletePublishedDocumentKeepsConcurrentCopies(t *testing.T) {
+func TestDeletingPublishedDocumentKeepsConcurrentCopies(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 
@@ -328,8 +328,8 @@ func TestDeletePublishedDocumentKeepsConcurrentCopies(t *testing.T) {
 		return nil
 	}
 
-	if err := h.service.DeletePublishedDocument(ctx, first.ID); err != nil {
-		t.Fatalf("DeletePublishedDocument returned error: %s", fmtErr(err))
+	if err := h.service.deletePublishedDocument(ctx, first.ID); err != nil {
+		t.Fatalf("deletePublishedDocument returned error: %s", fmtErr(err))
 	}
 
 	h.store.failDelete = nil
@@ -611,8 +611,8 @@ func TestPublishedDocumentValidation(t *testing.T) {
 		t.Fatalf("GetPublishedDocument error = %s, want ErrNotFound", fmtErr(err))
 	}
 
-	if err := h.service.DeletePublishedDocument(ctx, "../escape"); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("DeletePublishedDocument with an unsafe ID error = %s, want ErrInvalid", fmtErr(err))
+	if err := h.service.deletePublishedDocument(ctx, "../escape"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("deletePublishedDocument with an unsafe ID error = %s, want ErrInvalid", fmtErr(err))
 	}
 }
 

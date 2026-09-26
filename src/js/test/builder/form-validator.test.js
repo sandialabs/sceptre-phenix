@@ -218,7 +218,7 @@ describe('plain-language errors', () => {
   });
 });
 
-// R1: errors an element had already, on fields an edit leaves as they were,
+// Errors an element had already, on fields an edit leaves as they were,
 // do not keep the edit from being applied. A node spec of a phenix
 // experiment has several: phenix accepts it, the form's schema does not.
 describe('errors that count against a working copy', () => {

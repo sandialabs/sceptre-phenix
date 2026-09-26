@@ -502,7 +502,7 @@ func (s *Service) VerifyPublishedDocument(ctx context.Context, ref DocumentRefer
 	return data, nil
 }
 
-// DeletePublishedDocument removes a published document and its chunks. Removal
+// deletePublishedDocument removes a published document and its chunks. Removal
 // of a document that is still referenced by a config is the caller's decision;
 // this package does not read configs.
 //
@@ -511,7 +511,7 @@ func (s *Service) VerifyPublishedDocument(ctx context.Context, ref DocumentRefer
 // ID in the meantime, by this process or another sharing the store, is never
 // touched. A document whose metadata cannot be decoded names no payload; its
 // chunks are left to [Service.CleanupOrphanedChunks].
-func (s *Service) DeletePublishedDocument(ctx context.Context, documentID string) error {
+func (s *Service) deletePublishedDocument(ctx context.Context, documentID string) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("deleting published document %s: %w", documentID, err)
 	}

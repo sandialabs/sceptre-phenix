@@ -495,6 +495,10 @@ export function readPublishResult(response) {
  */
 export function createBuilderApi(http = axiosInstance) {
   return {
+    /**
+     * Lists the drafts the user may see. Those the server can no longer read
+     * are listed apart, marked damaged: they can only be deleted.
+     */
     async listDrafts() {
       const response = await http.get(DRAFTS_PATH);
       const data = response.data || {};
@@ -503,6 +507,9 @@ export function createBuilderApi(http = axiosInstance) {
         mine: data.drafts || data.mine || [],
         shared: data.shared || [],
         published: data.published || [],
+        damaged: (Array.isArray(data.damaged) ? data.damaged : []).map(
+          (draft) => ({ ...draft, damaged: true }),
+        ),
       };
     },
 
@@ -510,7 +517,9 @@ export function createBuilderApi(http = axiosInstance) {
      * Creates a draft from a complete document.
      *
      * @param {{owner?: string, title?: string, sourceToken?: string,
-     *   document: object, summary?: string}} request
+     *   forkOf?: string, document: object, summary?: string}} request
+     *   forkOf: "<owner>/<draft id>" of a draft the new one forks, whose
+     *   source and last publication it takes in place of sourceToken
      */
     async createDraft(request) {
       checkUploadSize(request);

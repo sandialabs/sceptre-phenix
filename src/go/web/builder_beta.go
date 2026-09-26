@@ -557,12 +557,20 @@ func (b *builderBetaAPI) draftFor(
 	verb builderBetaVerb,
 	action string,
 ) (*bapi.DraftMetadata, error) {
-	var (
-		vars    = mux.Vars(r)
-		owner   = vars["owner"]
-		draftID = vars["draft"]
-		name    = builderBetaDraftName(owner, draftID)
-	)
+	vars := mux.Vars(r)
+
+	return b.namedDraft(r, actor, verb, action, vars["owner"], vars["draft"])
+}
+
+// namedDraft is [builderBetaAPI.draftFor] for a draft named by its owner and
+// ID rather than by the request path.
+func (b *builderBetaAPI) namedDraft(
+	r *http.Request,
+	actor builderBetaActor,
+	verb builderBetaVerb,
+	action, owner, draftID string,
+) (*bapi.DraftMetadata, error) {
+	name := builderBetaDraftName(owner, draftID)
 
 	if !builderBetaBaseAllowed(actor.role, verb) {
 		return nil, builderBetaForbidden(actor, action)

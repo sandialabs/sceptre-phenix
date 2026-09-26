@@ -126,6 +126,16 @@ type PublicationState struct {
 	PublishedBy string    `json:"publishedBy"`
 }
 
+// ForkedPublication records the last publication of a draft another draft
+// forks, as it was when the fork was made.
+type ForkedPublication struct {
+	// DocumentID is the published document of that publication.
+	DocumentID string `json:"documentId"`
+	// TopologyTarget and ExperimentTarget are the configs it published.
+	TopologyTarget   string `json:"topologyTarget"`
+	ExperimentTarget string `json:"experimentTarget,omitempty"`
+}
+
 // DraftMetadata is the persisted state of a draft. The document bytes of every
 // snapshot are stored separately as immutable chunks.
 type DraftMetadata struct {
@@ -148,6 +158,9 @@ type DraftMetadata struct {
 	Cursor int `json:"cursor"`
 	// Publication is the last publication of this draft, if any.
 	Publication *PublicationState `json:"publication,omitempty"`
+	// Forked is what the draft this one forks had published when it was
+	// forked, if anything. It is an opaque record to this package.
+	Forked *ForkedPublication `json:"forked,omitempty"`
 
 	// Revision is the store record revision this metadata was read at. It is
 	// never serialized: it is filled in from the record on read and is what
@@ -315,6 +328,11 @@ func (d *DraftMetadata) Clone() *DraftMetadata {
 	if d.Publication != nil {
 		publication := *d.Publication
 		clone.Publication = &publication
+	}
+
+	if d.Forked != nil {
+		forked := *d.Forked
+		clone.Forked = &forked
 	}
 
 	return &clone

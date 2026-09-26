@@ -28,7 +28,7 @@ PATH := $(GOBIN):$(PATH)
 # Export GOBIN env variable so `go install` picks it up correctly.
 export GOBIN
 
-.PHONY: all check-protoc clean generate generate-mocks generate-protobuf go-generate help install install-dev phenix phenix-debug phenix-tunneler test
+.PHONY: all check-protoc clean generate generate-builder-schema generate-mocks generate-protobuf go-generate help install install-dev phenix phenix-debug phenix-tunneler test
 .DEFAULT_GOAL := help
 
 help:
@@ -50,6 +50,7 @@ help:
 	@echo "  generate-mocks     - Generate mocks"
 	@echo "  generate-protobuf  - Generate protobufs"
 	@echo "  go-generate        - Run go generate"
+	@echo "  generate-builder-schema - Write the web UI's Builder Flow schema bundle"
 	@echo ""
 	@echo "Installation targets:"
 	@echo "  install            - Install Go module dependencies"
@@ -63,7 +64,13 @@ help:
 
 all: test
 
-generate: generate-mocks generate-protobuf go-generate
+generate: generate-mocks generate-protobuf go-generate generate-builder-schema
+
+# The web UI's copy of the Builder Flow document schema, which embeds the v1
+# and v2 config schemas, is committed. CI regenerates it and fails when the
+# result differs from what is committed.
+generate-builder-schema:
+	go test ./types/builder -run '^TestFrontendSchemaBundleMatchesSchemaJSON$$' -count=1 -update-frontend-schema
 
 test:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))

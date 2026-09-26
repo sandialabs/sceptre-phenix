@@ -65,7 +65,8 @@ async function fillField(field, value) {
 }
 
 // Activates Apply from the keyboard. A mouse click right after an edit is
-// lost to a layout shift; the known-defect test for N2 covers that path.
+// lost to a layout shift; the switch step of the selection-kinds test
+// covers that path.
 async function applyEdits(builder) {
   const apply = builder.inspector.getByTestId('inspector-apply');
   await expect(apply).toBeEnabled();
@@ -281,8 +282,8 @@ test.describe('Builder Beta inspector', () => {
           );
         // The subject names what is edited, and nothing about the schema.
         await expect.soft(subject(builder)).toHaveText('Device node');
-        // Apply copies it into the spec, so the spec's copy is read-only
-        // (R80): it was editable, and Apply silently reverted it.
+        // Apply copies it into the spec, so the spec's copy is read-only:
+        // were it editable, Apply would silently revert it.
         await expect.soft(specHostname).not.toBeEditable();
         await expect.soft(specHostname).not.toHaveAttribute('aria-required');
       });
@@ -494,6 +495,19 @@ test.describe('Builder Beta inspector', () => {
         const drives = hardware
           .locator('fieldset.array-list')
           .filter({ has: page.locator('legend', { hasText: 'Drives' }) });
+        // Unset, a choice names the value it comes to, marked as the
+        // default as a text field's is.
+        const cacheMode = drives
+          .getByRole('group', { name: /^Drive 1\b/ })
+          .getByLabel('Cache mode');
+        await expect
+          .soft(cacheMode.locator('option:checked'))
+          .toHaveText('Default (writeback)');
+        await expect
+          .soft(cacheMode)
+          .toHaveAccessibleDescription(
+            /\. Default: The default, used while the field is empty\.$/,
+          );
         await drives.getByRole('button', { name: 'Add drive' }).click();
         const second = drives.getByRole('group', { name: 'Drive 2' });
         await expect.soft(second.getByLabel('Cache mode')).toBeFocused();
@@ -512,7 +526,8 @@ test.describe('Builder Beta inspector', () => {
         const memoryDefault = hardware
           .locator('[data-path="spec.hardware.memory"]')
           .getByTestId('inspector-field-default');
-        await expect.soft(memory).toHaveAttribute('type', 'number');
+        await expect.soft(memory).toHaveRole('spinbutton');
+        await expect.soft(memory).toHaveAttribute('inputmode', 'numeric');
         await expect.soft(memory).toHaveValue('512');
         await expect.soft(memoryDefault).toHaveText(/^Default/);
         await expect
@@ -560,8 +575,14 @@ test.describe('Builder Beta inspector', () => {
           await expect.soft(vcpus).toHaveAttribute('aria-invalid', 'true');
           await expect.soft(apply).toBeDisabled();
         }
-        await setNumber(builder, 'VCPUs', 2);
+        // Spaces around a whole number are dropped, which Firefox's number
+        // input refused as no number, and the arrow keys step it.
+        await setNumber(builder, 'VCPUs', ' 3 ');
+        await expect.soft(vcpus).toHaveValue('3');
         await expect.soft(vcpus).not.toHaveAttribute('aria-invalid');
+        await vcpus.press('ArrowDown');
+        await expect.soft(vcpus).toHaveValue('2');
+        await expect.soft(vcpus).toHaveAttribute('aria-valuenow', '2');
         await expect.soft(memory).toHaveValue('4096');
         await builder.inspector.getByLabel(/^Type/).selectOption('Router');
 
@@ -1104,7 +1125,7 @@ test.describe('Builder Beta inspector', () => {
         await fillField(builder.inspector.getByLabel(/^Name/), 'MGMT');
         await fillField(builder.inspector.getByLabel('VLAN alias'), '101');
         // Pointer path: one click on Apply, straight from a field that has
-        // not committed yet, applies it (N2). Click where Apply is drawn, as
+        // not committed yet, applies it. Click where Apply is drawn, as
         // a pointer does, without waiting for it to settle.
         await builder.inspector
           .getByLabel('Description')
@@ -1358,7 +1379,7 @@ test.describe('Builder Beta inspector', () => {
         );
       await page.keyboard.press('Escape');
 
-      // R16: an edit left unapplied is no reason to lose the interface
+      // An edit left unapplied is no reason to lose the interface
       // added meanwhile. Apply, in the next step, keeps both; it used to put
       // the form's copy of the device, without the interface, over it.
       await fillField(
@@ -1381,7 +1402,7 @@ test.describe('Builder Beta inspector', () => {
         .toHaveAttribute('title', 'eth0, not connected');
     });
 
-    // R31: the phenix schema requires the VLAN that an interface not
+    // The phenix schema requires the VLAN that an interface not
     // connected yet does not have. The form leaves it optional, so the
     // device's other fields still apply.
     await test.step('the device takes edits while an interface is not connected', async () => {
@@ -1419,7 +1440,7 @@ test.describe('Builder Beta inspector', () => {
       const picked = page.locator('#connect-interface');
 
       // A device picked again, or another, never keeps the interface picked
-      // for the last (R98).
+      // for the last.
       await device.selectOption({ index: 1 });
       await picked.selectOption({ label: 'eth0' });
       await device.selectOption({ index: 0 });
@@ -1427,7 +1448,7 @@ test.describe('Builder Beta inspector', () => {
       await device.selectOption({ index: 1 });
       await expect.soft(picked).toHaveValue('');
 
-      // R16: connected while an edit is unapplied, it stays connected once
+      // Connected while an edit is unapplied, it stays connected once
       // the edit is applied.
       await fillField(
         specGroup(builder, 'General').getByLabel('Description'),
@@ -1449,7 +1470,7 @@ test.describe('Builder Beta inspector', () => {
       await expect.soft(builder.summary).toContainText('1 connection');
       await expect.soft(rows).toHaveText(['eth0 — network EXP']);
       // Connect keeps focus and scrolls neither the page nor the canvas
-      // away (V14).
+      // away.
       await expect.soft(connect).toBeFocused();
       expect
         .soft(await view(), 'the page and canvas after Connect')
@@ -1482,7 +1503,7 @@ test.describe('Builder Beta inspector', () => {
         });
 
       // The node's interface is a named group whose kind picker is named
-      // and offers named kinds (N3). The node's list is named apart from
+      // and offers named kinds. The node's list is named apart from
       // the Connection points list, which acts without Apply.
       const iface = builder.inspector
         .getByRole('group', { name: 'Interfaces', exact: true })
@@ -1523,8 +1544,8 @@ test.describe('Builder Beta inspector', () => {
       // An MTU outside what phenix applies cannot be applied; 0 leaves it
       // unset.
       const mtu = first.getByLabel('MTU');
-      await expect.soft(mtu).toHaveAttribute('min', '0');
-      await expect.soft(mtu).toHaveAttribute('max', '16000');
+      await expect.soft(mtu).toHaveAttribute('aria-valuemin', '0');
+      await expect.soft(mtu).toHaveAttribute('aria-valuemax', '16000');
       await fillField(mtu, '-1');
       await expect
         .soft(builder.inspector.getByTestId('inspector-error-list'))
@@ -1644,7 +1665,7 @@ test.describe('Builder Beta inspector', () => {
       });
       await builder.selectInOutline('node');
 
-      // An emptied VLAN applies too (R31), and disconnects the interface
+      // An emptied VLAN applies too, and disconnects the interface
       // in the same edit. Undo connects it again for the steps that follow.
       await fillField(vlan, '');
       await applyEdits(builder);
@@ -1822,7 +1843,7 @@ test.describe('Builder Beta inspector', () => {
       await builder.selectInOutline('node');
     });
 
-    // R47: a selection change never drops unapplied edits silently. Valid
+    // A selection change never drops unapplied edits silently. Valid
     // edits are applied to the element they were made on; invalid ones are
     // discarded; either way the live region says which.
     await test.step('a selection change applies or discards unapplied edits, and says which', async () => {
@@ -1922,7 +1943,7 @@ test.describe('Builder Beta inspector', () => {
   });
 
   // Both ways to rename a network, the inspector and F2 on the switch's
-  // outline row, rename its switch everywhere (R37). A soft poll after
+  // outline row, rename its switch everywhere. A soft poll after
   // each rename shows which places still show the old name.
   test('a switch shows its network name after a rename', async ({
     page,
@@ -1971,7 +1992,7 @@ test.describe('Builder Beta inspector', () => {
       .toEqual(showing('CORE'));
   });
 
-  // R1, V6, R34. The device comes from a phenix experiment, whose node
+  // The device comes from a phenix experiment, whose node
   // specs carry values phenix accepts and the form's schema does not
   // (advanced null, mac "", gateway ""): they kept every edit of it from
   // being applied. Its rarely used fields are in a section that starts

@@ -12,13 +12,21 @@
 
   A color the user gave the connection itself replaces the network's; its
   dash pattern and label still name the network.
+
+  The line follows the route a layout drew for it (edge.route) while the
+  route still starts and ends at its handles, with rounded bends. Otherwise
+  it steps across at one bend; the lines into one switch each bend in a
+  column of their own (data.lane, see edgeLanes), not all in one.
+
+  Vue Flow passes more attributes than these props, and the edge has several
+  root elements, so none are inherited.
 -->
 <template>
   <!-- A wide, invisible stroke under the line, so a pointer does not have to
        hit the line itself (WCAG 2.5.8). -->
   <path
     class="builder-edge__hit"
-    :d="path[0]"
+    :d="line.d"
     fill="none"
     stroke="transparent"
     stroke-width="24"
@@ -27,7 +35,7 @@
        it to the hit area, which keeps its width while the edge has focus. -->
   <path
     class="builder-edge__focus"
-    :d="path[0]"
+    :d="line.d"
     fill="none"
     pointer-events="none" />
   <!-- A casing under a line whose chosen color would fade into the canvas
@@ -40,7 +48,7 @@
       'is-low-dark': casing.dark,
       'is-selected': selected,
     }"
-    :d="path[0]"
+    :d="line.d"
     fill="none"
     :stroke-dasharray="style.dashArray"
     pointer-events="none" />
@@ -52,18 +60,19 @@
       { 'builder-edge--custom': color, 'is-selected': selected },
     ]"
     :style="color ? { '--bx-edge-color': color } : undefined"
-    :d="path[0]"
+    :d="line.d"
     fill="none"
     :stroke-dasharray="style.dashArray"
     :data-network="style.label"
-    :data-pattern="style.pattern" />
+    :data-pattern="style.pattern"
+    :data-routed="line.routed ? 'true' : undefined" />
   <EdgeLabelRenderer>
     <div
       v-if="label"
       class="builder-edge__label nodrag nopan"
       :class="{ 'is-selected': selected }"
       :style="{
-        transform: `translate(-50%, -50%) translate(${path[1]}px, ${path[2]}px)`,
+        transform: `translate(-50%, -50%) translate(${line.x}px, ${line.y}px)`,
       }"
       :data-edge-id="id"
       aria-hidden="true">
@@ -81,6 +90,18 @@
     drawnColor,
     needsCasing,
   } from '@/builder/colors.js';
+  import { fitRoute, routePath } from '@/builder/routes.js';
+
+  defineOptions({ inheritAttrs: false });
+
+  // How far a route's end may be from its handle and still be followed: a
+  // node dragged further, not yet dropped, has left it.
+  const ROUTE_TOLERANCE = 4;
+  // Room between the bends of lines into one switch, and the least a line
+  // runs straight out of its handle and into the other before it bends
+  // (Vue Flow's own).
+  const LANE_GAP = 10;
+  const STUB = 20;
 
   const props = defineProps({
     id: { type: String, required: true },
@@ -143,7 +164,24 @@
     ];
   }
 
-  const path = computed(() => {
+  // The column a line bends in: its own, among the lines that share its end
+  // at a switch, spread about the middle, closer together when there is
+  // little room. Undefined for the middle.
+  function bendX(sourceX, targetX) {
+    const lane = props.data.lane;
+    const room = targetX - sourceX - 2 * STUB;
+
+    if (!lane || lane.count < 2 || room <= 0) {
+      return undefined;
+    }
+
+    const gap = Math.min(LANE_GAP, room / (lane.count - 1));
+
+    return (sourceX + targetX) / 2 + (lane.index - (lane.count - 1) / 2) * gap;
+  }
+
+  // The line's path, where its label goes, and whether it follows a route.
+  const line = computed(() => {
     const [sourceX, sourceY] = atHandleCentre(
       props.sourceX,
       props.sourceY,
@@ -159,7 +197,20 @@
       props.targetHandleId,
     );
 
-    return getSmoothStepPath({
+    const route = fitRoute(
+      props.data.edge?.route,
+      { x: sourceX, y: sourceY },
+      { x: targetX, y: targetY },
+      ROUTE_TOLERANCE,
+    );
+
+    if (route) {
+      const drawn = routePath(route, 8);
+
+      return { d: drawn.path, x: drawn.labelX, y: drawn.labelY, routed: true };
+    }
+
+    const [d, x, y] = getSmoothStepPath({
       sourceX,
       sourceY,
       sourcePosition: props.sourcePosition,
@@ -167,6 +218,9 @@
       targetY,
       targetPosition: props.targetPosition,
       borderRadius: 8,
+      centerX: bendX(sourceX, targetX),
     });
+
+    return { d, x, y, routed: false };
   });
 </script>

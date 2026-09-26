@@ -90,7 +90,7 @@ describe('error classification', () => {
     expect(classifyError(httpError(412))).toBe('conflict');
     expect(classifyError(httpError(428))).toBe('conflict');
     expect(classifyError(httpError(403))).toBe('forbidden');
-    // An ended session is not a refusal of this user (R41).
+    // An ended session is not a refusal of this user.
     expect(classifyError(httpError(401))).toBe('unauthenticated');
     expect(errorMessage('unauthenticated', httpError(401))).toBe(
       'Your session has ended. Sign in again to continue.',
@@ -218,7 +218,7 @@ describe('envelopes', () => {
   });
 
   // A compressing proxy rewrites the header, which the server's If-Match
-  // then refuses; the body keeps the server's own tag (R27).
+  // then refuses; the body keeps the server's own tag.
   test('etags are read from the body before a header a proxy rewrote', () => {
     const draft = { id: 'd1', owner: 'alice', etag: '"3"' };
 
@@ -256,7 +256,7 @@ describe('envelopes', () => {
     expect(envelope.etag).toBe('"7"');
 
     // A save answers with the draft alone: its history is unknown, not
-    // empty (R83).
+    // empty.
     const saved = readEnvelope({
       data: { id: 'd1', owner: 'alice', cursor: 1, snapshotId: 's2' },
       headers: { etag: '"8"' },
@@ -296,7 +296,7 @@ describe('client', () => {
 
   // The server refuses a body over its limit before reading all of it, and
   // Firefox then reports a reset connection, which read as offline. Such an
-  // upload is refused here, before it is sent, and says why (N11).
+  // upload is refused here, before it is sent, and says why.
   test('an upload the server would refuse for its size is not sent', async () => {
     const http = fakeHttp();
     const api = createBuilderApi(http);
@@ -490,7 +490,7 @@ describe('client', () => {
     expect(result.topology).toEqual({ name: 'core' });
   });
 
-  test('drafts are grouped into mine, shared and published', async () => {
+  test('drafts are grouped into mine, shared and published, and the damaged are marked', async () => {
     const http = fakeHttp({
       'get builder/drafts': {
         data: { drafts: [{ id: 'a' }], shared: [{ id: 'b' }] },
@@ -502,7 +502,20 @@ describe('client', () => {
       mine: [{ id: 'a' }],
       shared: [{ id: 'b' }],
       published: [],
+      damaged: [],
     });
+
+    const damaged = { id: 'c', owner: 'alice', etag: '"7"', canDelete: true };
+    const withDamaged = fakeHttp({
+      'get builder/drafts': {
+        data: { drafts: [], shared: [], damaged: [damaged] },
+        headers: {},
+      },
+    });
+
+    await expect(
+      createBuilderApi(withDamaged).listDrafts(),
+    ).resolves.toMatchObject({ damaged: [{ ...damaged, damaged: true }] });
   });
 
   test('generate returns the document and its warnings', async () => {

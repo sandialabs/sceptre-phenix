@@ -22,6 +22,7 @@
     <span v-if="data.comment" class="builder-node__comment">
       {{ data.comment }}
     </span>
+    <node-issue-mark v-if="data.issue" :node-id="id" :issue="data.issue" />
   </div>
 </template>
 
@@ -29,8 +30,13 @@
   import { computed } from 'vue';
 
   import BuilderIcon from '../BuilderIcon.vue';
+  import NodeIssueMark from './NodeIssueMark.vue';
 
   import { drawnColor } from '@/builder/colors.js';
+
+  // Vue Flow passes its node state as attributes as well; none belong on
+  // the node's element.
+  defineOptions({ inheritAttrs: false });
 
   const props = defineProps({
     id: { type: String, required: true },

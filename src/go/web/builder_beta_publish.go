@@ -806,9 +806,7 @@ func experimentHoldsDraftPublication(meta *bapi.DraftMetadata, exp *store.Config
 		return false, false, nil //nolint:nilerr // an unreadable record vouches for nothing
 	}
 
-	owned := record.DraftID == meta.ID ||
-		(record.DocumentID != "" && record.DocumentID == openedDocumentID(meta)) ||
-		(record.DocumentID != "" && meta.Publication != nil && record.DocumentID == meta.Publication.DocumentID)
+	owned := record.DraftID == meta.ID || draftOwnsDocument(meta, record.DocumentID)
 	if !owned {
 		return false, false, nil
 	}
@@ -848,23 +846,71 @@ func draftDocumentReference(
 
 	owned := ref.DraftID == meta.ID ||
 		ref.Digest == snapshot.Manifest.Digest ||
-		(meta.Publication != nil && ref.ID == meta.Publication.DocumentID) ||
-		ref.ID == openedDocumentID(meta)
+		draftOwnsDocument(meta, ref.ID)
 
 	return ref, owned
 }
 
+// draftOwnsDocument reports whether a published document is one of this
+// draft's own: the one it was opened from, the one it last published, or the
+// one the draft it forks had last published when it was forked.
+func draftOwnsDocument(meta *bapi.DraftMetadata, id string) bool {
+	return id != "" &&
+		(id == openedDocumentID(meta) ||
+			(meta.Publication != nil && id == meta.Publication.DocumentID) ||
+			(meta.Forked != nil && id == meta.Forked.DocumentID))
+}
+
+// builderDocTokenPrefix starts the source token of a draft opened from a
+// published document: "builder-doc/<document id>".
+const builderDocTokenPrefix = "builder-doc/"
+
 // openedDocumentID returns the ID of the published document a draft was
 // opened from, from its "builder-doc/<document id>" source token, or "".
 func openedDocumentID(meta *bapi.DraftMetadata) string {
-	const tokenPrefix = "builder-doc/"
-
-	id, ok := strings.CutPrefix(meta.SourceToken, tokenPrefix)
+	id, ok := strings.CutPrefix(meta.SourceToken, builderDocTokenPrefix)
 	if !ok {
 		return ""
 	}
 
 	return id
+}
+
+// forkOrigin returns the source token and the forked publication of a new
+// draft that forks the draft named "<owner>/<draft id>", as saving an
+// editor's history as a new draft does: that draft's own source token, and
+// its last publication (or else what it had forked). The fork may then
+// update what that draft published or was opened from, as long as nothing
+// else has changed it since (see [draftDocumentReference] and
+// [experimentHoldsDraftPublication]), but not what that draft publishes
+// later. Its source token is not the published document's, so opening that
+// published diagram does not open the fork as the user's draft of it. Only a
+// caller who may read that draft, its owner or one holding "builder-drafts"
+// "get" for it, gets its identity; for anyone else it is a draft that does
+// not exist (see [builderBetaAPI.draftFor]).
+func (b *builderBetaAPI) forkOrigin(
+	r *http.Request,
+	actor builderBetaActor,
+	forkOf string,
+) (string, *bapi.ForkedPublication, error) {
+	owner, draftID, _ := strings.Cut(forkOf, "/")
+
+	meta, err := b.namedDraft(r, actor, builderBetaVerbGet, "forking a builder draft", owner, draftID)
+	if err != nil {
+		return "", nil, err
+	}
+
+	forked := meta.Forked
+
+	if meta.Publication != nil && meta.Publication.DocumentID != "" {
+		forked = &bapi.ForkedPublication{
+			DocumentID:       meta.Publication.DocumentID,
+			TopologyTarget:   meta.Publication.TopologyTarget,
+			ExperimentTarget: meta.Publication.ExperimentTarget,
+		}
+	}
+
+	return meta.SourceToken, forked, nil
 }
 
 // holdsDraftDocument reports whether a topology config holds a document of

@@ -123,8 +123,9 @@ async function freezeTimers(page) {
 }
 
 // Saves a renamed diagram with one device, has another editor write a newer
-// snapshot, then adds a second device so the page hits the ETag conflict, and
-// resolves it by forking. Returns the original draft, the fork and the title.
+// snapshot and publish it as topology `title`, then adds a second device so
+// the page hits the ETag conflict, and resolves it by forking. Returns the
+// original draft, the fork and the title.
 async function forkAfterConflict(builder, testInfo) {
   await builder.open();
   const draft = await builder.createBlank();
@@ -139,12 +140,19 @@ async function forkAfterConflict(builder, testInfo) {
     ...doc,
     description: 'Changed elsewhere',
   }));
+  builder.tracker.config('Topology', title);
+  const current = await builder.request.get(draftPath(draft));
+  const published = await builder.request.post(`${draftPath(draft)}/publish`, {
+    headers: { 'If-Match': current.headers().etag },
+    data: { mode: 'topology', topology: { name: title, action: 'create' } },
+  });
+  expect(published.ok(), await published.text()).toBeTruthy();
 
   await addDevices(builder, 1);
   await expect(builder.page.getByTestId('builder-conflict')).toBeVisible();
 
   // The fork's snapshots take a moment, so an edit made meanwhile would land
-  // while the new draft is being written (R39).
+  // while the new draft is being written.
   let slow = true;
   await builder.page.route(
     (url) => url.pathname.endsWith('/snapshots'),
@@ -163,8 +171,17 @@ async function forkAfterConflict(builder, testInfo) {
       new URL(response.url()).pathname === `${API}/builder/drafts`,
   );
   await builder.page.getByTestId('conflict-fork').click();
-  const body = await (await forked).json();
+  const response = await forked;
+  const body = await response.json();
   expect(body.id).not.toBe(draft.id);
+  // It forks the draft, so the server gives it what the draft published,
+  // but not the published diagram's source token: opening that diagram
+  // opens the draft that published it, not this one.
+  expect
+    .soft(response.request().postDataJSON().forkOf)
+    .toBe(`${draft.owner}/${draft.id}`);
+  expect.soft(body.forked?.documentId).toBeTruthy();
+  expect.soft(body.sourceToken || '').not.toMatch(/^builder-doc\//);
 
   // An edit while the history is saved is refused and said so, instead of
   // being left out of the new draft.
@@ -277,7 +294,7 @@ test.describe('Builder Beta persistence', () => {
 
         // The server discarded the undone snapshot when the switch was
         // appended. The creation snapshot comes first; its summary is not
-        // checked (V4).
+        // checked.
         const snapshots = await listSnapshots(builder.request, draft);
         expect.soft(snapshots).toHaveLength(4);
         expect
@@ -663,7 +680,7 @@ test.describe('Builder Beta persistence', () => {
     );
     await expectCounts(builder, { devices: 2 });
 
-    await test.step('the fork is titled as a local copy (N8)', async () => {
+    await test.step('the fork is titled as a local copy', async () => {
       expect((await builder.serverDraft(draft)).title).toBe(title);
       expect((await builder.serverDraft(fork)).title).toBe(
         `${title} (local copy)`,
@@ -671,7 +688,7 @@ test.describe('Builder Beta persistence', () => {
     });
 
     // The new draft replays the history on screen: the diagram as it was
-    // opened (no edit to name), the rename, then two devices (R39).
+    // opened (no edit to name), the rename, then two devices.
     await expectServerCounts(builder, fork, { devices: 2 });
     const summaries = (await listSnapshots(builder.request, fork)).map(
       (snapshot) => snapshot.summary || '',
@@ -688,7 +705,7 @@ test.describe('Builder Beta persistence', () => {
     expect(original.description).toBe('Changed elsewhere');
     expect(countKind(original, 'device')).toBe(1);
 
-    await test.step('undo and redo move the new draft’s cursor (R39)', async () => {
+    await test.step('undo and redo move the new draft’s cursor', async () => {
       await builder.toolbar('undo').click();
       await expectCounts(builder, { devices: 1 });
       await expectServerCounts(builder, fork, { devices: 1 });
@@ -705,6 +722,29 @@ test.describe('Builder Beta persistence', () => {
     await builder.waitSaved();
     expect(countKind(await builder.serverDocument(draft), 'device')).toBe(1);
 
+    await test.step('the new draft updates the topology the draft published', async () => {
+      const dialog = await builder.openDialog('publish');
+      await dialog.getByTestId('publish-name').fill(title);
+      const submit = dialog.getByTestId('publish-submit');
+      await expect(submit).toHaveText('Update topology');
+      const published = builder.page.waitForResponse(
+        (candidate) =>
+          candidate.request().method() === 'POST' &&
+          new URL(candidate.url()).pathname.endsWith('/publish'),
+      );
+      await submit.click();
+      await builder.page.getByTestId('confirm-accept').click();
+      const response = await published;
+      expect(response.status(), await response.text()).toBe(200);
+      await expect
+        .soft(dialog.getByTestId('publish-summary'))
+        .toHaveText('Published. Every stage succeeded.');
+      const topology = await builder.config('Topology', title);
+      expect.soft(topology?.spec?.nodes).toHaveLength(3);
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(builder.dialog).toHaveCount(0);
+    });
+
     await builder.backToDrafts();
     await builder.page.getByTestId('drafts-tab-mine').click();
     await expect(
@@ -716,7 +756,7 @@ test.describe('Builder Beta persistence', () => {
     expectNoFatal(issues);
   });
 
-  test('toolbar Undo and Redo follow the history and move the server cursor (R14)', async ({
+  test('toolbar Undo and Redo follow the history and move the server cursor', async ({
     builder,
     page,
   }) => {
@@ -742,7 +782,7 @@ test.describe('Builder Beta persistence', () => {
     await expectServerCounts(builder, draft, { devices: 2 });
 
     // The shortcuts work outside the canvas too, as the toolbar's
-    // aria-keyshortcuts promise (R91): here from a palette button.
+    // aria-keyshortcuts promise: here from a palette button.
     await builder.palette('device').focus();
     await page.keyboard.press('ControlOrMeta+z');
     await expectCounts(builder, { devices: 1 });
@@ -801,7 +841,7 @@ test.describe('Builder Beta persistence', () => {
     await expect.soft(name).toBeFocused();
   });
 
-  test('History entries are readable: no raw ids, no double numbering (V4)', async ({
+  test('History entries are readable: no raw ids, no double numbering', async ({
     builder,
   }) => {
     await builder.open();
@@ -879,10 +919,7 @@ test.describe('Builder Beta persistence', () => {
       .toBeGreaterThanOrEqual(marker.width);
   });
 
-  test('edits made offline survive a reload (R12)', async ({
-    builder,
-    page,
-  }) => {
+  test('edits made offline survive a reload', async ({ builder, page }) => {
     await builder.open();
     const draft = await builder.createBlank();
 
@@ -893,7 +930,7 @@ test.describe('Builder Beta persistence', () => {
     );
 
     // Each edit's snapshot is a record of its own, written once; the draft
-    // record keeps the queue and no snapshot (R88).
+    // record keeps the queue and no snapshot.
     const local = await localDrafts(page);
     expect(local.drafts).toHaveLength(1);
     expect(local.drafts[0].queue).toHaveLength(2);
@@ -903,7 +940,7 @@ test.describe('Builder Beta persistence', () => {
     expect(local.entries).toBe(2);
 
     // Reload while the draft routes still fail, so nothing reaches the
-    // server before the page is gone. The browser asks first (R57).
+    // server before the page is gone. The browser asks first.
     const prompts = [];
     page.once('dialog', (dialog) => {
       prompts.push(dialog.type());
@@ -923,12 +960,12 @@ test.describe('Builder Beta persistence', () => {
     await builder.waitSaved();
     await expectServerCounts(builder, draft, { devices: 2 });
 
-    // Once saved, nothing of the draft is left on this device (R86).
+    // Once saved, nothing of the draft is left on this device.
     await expect
       .poll(() => localDrafts(page))
       .toEqual({ drafts: [], entries: 0 });
 
-    await test.step('a save whose answer never came is not a conflict after a reload (R84)', async () => {
+    await test.step('a save whose answer never came is not a conflict after a reload', async () => {
       // The server stores the snapshot, but the page is gone before the
       // answer arrives, so the edit is still queued on this device.
       const stored = [];
@@ -970,7 +1007,7 @@ test.describe('Builder Beta persistence', () => {
         .toEqual({ drafts: [], entries: 0 });
     });
 
-    await test.step('an undo made offline is what reopens after a reload (R83)', async () => {
+    await test.step('an undo made offline is what reopens after a reload', async () => {
       await addDevices(builder, 1);
       await expectServerCounts(builder, draft, { devices: 4 });
       await builder.waitSaved();
@@ -999,7 +1036,7 @@ test.describe('Builder Beta persistence', () => {
     });
   });
 
-  test('a snapshot the server rejects does not block later saves (R13)', async ({
+  test('a snapshot the server rejects does not block later saves', async ({
     builder,
     page,
   }) => {
@@ -1056,7 +1093,7 @@ test.describe('Builder Beta persistence', () => {
     // offered; the status says what to change instead.
     await expect.soft(builder.toolbar('retry')).toHaveCount(0);
     // The status gives the server's reason and what to do, never the id
-    // from the server's message (A14), and it is announced.
+    // from the server's message, and it is announced.
     await expect
       .soft(builder.saveState)
       .toContainText(
@@ -1098,11 +1135,12 @@ test.describe('Builder Beta persistence', () => {
     await expectCounts(builder, { devices: 1 });
   });
 
-  test('leaving the editor with unsaved changes asks first, and logging out clears them (R57, R86, R87)', async ({
+  test('leaving the editor with unsaved changes asks first, and logging out clears them', async ({
     builder,
     page,
+    request,
   }) => {
-    // With a blank draft listed, the new one is numbered apart from it (V10).
+    // With a blank draft listed, the new one is numbered apart from it.
     await builder.seedDraft(blankDocument('Untitled topology'));
     await builder.open();
     const mine = page.getByTestId('drafts-list-mine');
@@ -1113,7 +1151,7 @@ test.describe('Builder Beta persistence', () => {
       (text) => text.trim(),
     );
 
-    // A double click on Blank diagram makes one draft (R95).
+    // A double click on Blank diagram makes one draft.
     const creates = [];
     const onRequest = (request) => {
       if (
@@ -1212,12 +1250,14 @@ test.describe('Builder Beta persistence', () => {
           '[{"id":"drafts.open","choices":["My Drafts:admin:d1"]}]',
         );
       });
+      // The user the data belongs to, named at sign-in, goes with it.
       expect(await kept()).toEqual({
         keys: [
           'phenix.builder.recentCommands',
           'phenix.builder.settings',
           'phenix.builder.shortcuts',
           'phenix.builder.theme',
+          'phenix.builder.user',
         ],
         drafts: 1,
       });
@@ -1229,11 +1269,14 @@ test.describe('Builder Beta persistence', () => {
       );
       await page.locator('.navbar-item', { hasText: 'Logout' }).click();
       await expect(page).toHaveURL(/\/signin$/);
+      // Without authentication the app signs in again at once, and names
+      // that user.
       await expect.poll(kept).toEqual({
         keys: [
           'phenix.builder.settings',
           'phenix.builder.shortcuts',
           'phenix.builder.theme',
+          'phenix.builder.user',
         ],
         drafts: 0,
       });
@@ -1241,7 +1284,36 @@ test.describe('Builder Beta persistence', () => {
 
     await test.step('the draft reopens as the server has it, with the preferences kept', async () => {
       await page.unroute(DRAFT_ROUTES);
-      await builder.openDraft(draft);
+      await builder.open();
+      // While a slow draft opens, its Open says so and takes no second
+      // click; the editor's heading takes focus once it shows.
+      const reads = [];
+      const read = (url) =>
+        url.pathname.endsWith(`/builder/drafts/${draft.owner}/${draft.id}`);
+      await page.route(read, async (route) => {
+        reads.push(route.request().method());
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await route.fallback();
+      });
+      const open = page.getByTestId(`draft-open-${draft.id}`);
+      await open.click();
+      await expect.soft(open).toHaveAttribute('aria-busy', 'true');
+      await expect.soft(open).toHaveAttribute('aria-disabled', 'true');
+      await expect
+        .soft(open)
+        .toHaveAccessibleName(/^Opening Untitled topology/);
+      await expect
+        .soft(open.locator('.builder-toolbar__spinner'))
+        .toBeVisible();
+      await expect
+        .soft(builder.liveRegion)
+        .toContainText(/Opening Untitled topology \d+…/);
+      await open.click({ force: true });
+      await expect(builder.canvas).toBeVisible();
+      await expect.soft(page.getByRole('heading', { level: 1 })).toBeFocused();
+      expect.soft(reads, 'draft reads').toEqual(['GET']);
+      await page.unroute(read);
+      await builder.waitSaved();
       await expectCounts(builder, { devices: 0 });
       await expect.soft(builder.liveRegion).not.toContainText('Recovered');
       await expect
@@ -1266,15 +1338,54 @@ test.describe('Builder Beta persistence', () => {
       );
       await addDevices(builder, 1);
       await back.click();
+      // Meanwhile the button says it is saving, and takes no second click.
+      const saving = page.getByTestId('editor-back');
+      await expect.soft(saving).toHaveAccessibleName('Saving…');
+      await expect.soft(saving).toHaveAttribute('aria-busy', 'true');
+      await expect.soft(saving).toHaveAttribute('aria-disabled', 'true');
+      await expect
+        .soft(builder.liveRegion)
+        .toContainText('Saving your changes…');
       await expect(confirm).toBeVisible();
       // Once the server has the change, there is nothing left to ask about.
       await expect(confirm).toBeHidden({ timeout: 10000 });
       await expect(page.getByTestId('drafts-list-mine')).toBeVisible();
+      // The draft was listed: the landing shows at once, and focus goes to
+      // its card.
+      await expect
+        .soft(page.getByTestId(`draft-open-${draft.id}`))
+        .toBeFocused();
       await expectServerCounts(builder, draft, { devices: 1 });
+    });
+
+    await test.step('a draft deleted elsewhere meanwhile leaves focus on the landing', async () => {
+      await page.getByTestId(`draft-open-${draft.id}`).click();
+      await expect(builder.canvas).toBeVisible();
+      const current = await request.get(draftPath(draft));
+      const deleted = await request.delete(draftPath(draft), {
+        headers: { 'If-Match': current.headers().etag },
+      });
+      expect(deleted.ok(), await deleted.text()).toBeTruthy();
+
+      // The landing shows the listed card at once, and the lists read
+      // behind it drop it: focus goes to the card in its place or the tab.
+      await back.click();
+      await expect(page.getByTestId(`draft-open-${draft.id}`)).toHaveCount(0);
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            Boolean(
+              document.activeElement?.closest(
+                '[role="tabpanel"], [role="tablist"]',
+              ),
+            ),
+          ),
+        )
+        .toBe(true);
     });
   });
 
-  test('a ?topology= link edits one draft of the diagram, which a reload reopens (R42, R54, R71)', async ({
+  test('a ?topology= link edits one draft of the diagram, which a reload reopens', async ({
     builder,
     page,
     tracker,

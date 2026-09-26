@@ -5,6 +5,7 @@ import { describe, expect, test } from 'vitest';
 import {
   absolutePosition,
   EDGE_HINT_ID,
+  edgeLanes,
   FLOW_NODE_TYPES,
   freeSpot,
   fromFlowConnection,
@@ -15,14 +16,17 @@ import {
   networkStyle,
   NETWORK_PATTERNS,
   nodeAriaLabel,
+  nodeIssueId,
   relativePosition,
   SWITCH_HANDLE_ID,
   toFlowEdges,
   toFlowNodes,
+  withSelection,
 } from '@/builder/adapters/vueflow.js';
 import {
   addNetwork,
   addNode,
+  connect,
   DEFAULT_NETWORK_COLORS,
   groupNodes,
   updateEdge,
@@ -110,6 +114,39 @@ describe('flow nodes', () => {
     expect(attrs(alpha.id)).toHaveProperty('aria-roledescription', undefined);
   });
 
+  test('a selection copies only the nodes and connections it changes', () => {
+    const { doc, alpha, bravo, edge } = sampleDocument();
+    const nodes = toFlowNodes(doc);
+    const selected = withSelection(nodes, [alpha.id]);
+    const find = (list, id) => list.find((node) => node.id === id);
+
+    expect(find(selected, alpha.id)).toMatchObject({
+      selected: true,
+      domAttributes: { role: 'button', 'aria-pressed': 'true' },
+    });
+    expect(find(selected, alpha.id).data).toBe(find(nodes, alpha.id).data);
+    // The rest are the very same objects, so Vue Flow redraws none of them.
+    expect(find(selected, bravo.id)).toBe(find(nodes, bravo.id));
+    expect(withSelection(selected, [])).toEqual(nodes);
+    expect(withSelection(toFlowEdges(doc), [edge.id])[0].domAttributes).toEqual(
+      toFlowEdges(doc, { selectedIds: [edge.id] })[0].domAttributes,
+    );
+  });
+
+  test('a node the diagram checks flag carries what they found, and is described by it', () => {
+    const { doc, alpha, bravo } = sampleDocument();
+    const issue = { level: 'error', text: '1 error: hostname is required.' };
+    const nodes = toFlowNodes(doc, { issues: new Map([[alpha.id, issue]]) });
+    const find = (id) => nodes.find((node) => node.id === id);
+
+    expect(find(alpha.id).data.issue).toBe(issue);
+    expect(find(alpha.id).domAttributes['aria-describedby']).toBe(
+      `${nodeIssueId(alpha.id)} ${NODE_HINT_ID}`,
+    );
+    expect(find(bravo.id).data.issue).toBeNull();
+    expect(find(bravo.id).domAttributes['aria-describedby']).toBe(NODE_HINT_ID);
+  });
+
   test('canvas and outline name every kind of node the same way', () => {
     const { doc, alpha, bravo } = sampleDocument();
     const grouped = groupNodes(doc, [alpha.id, bravo.id]).doc;
@@ -179,6 +216,39 @@ describe('flow edges', () => {
       'aria-describedby': EDGE_HINT_ID,
     });
     expect(selected.domAttributes['aria-pressed']).toBe('true');
+  });
+
+  // Lines drawn without a route bend each in a column of their own; with
+  // the other end nearest the switch's handle bending first, none crosses.
+  test('connections that share a switch bend in lanes of their own', () => {
+    const { doc, sw, bravo, edge } = sampleDocument();
+    let next = addNode(doc, {
+      kind: 'device',
+      hostname: 'charlie',
+      position: { x: 0, y: -400 },
+    }).doc;
+    const charlie = next.nodes.find((node) => node.label === 'charlie');
+
+    next = connect(next, { sourceNodeId: bravo.id, targetNodeId: sw.id }).doc;
+    next = connect(next, { sourceNodeId: sw.id, targetNodeId: charlie.id }).doc;
+
+    const into = (id) =>
+      next.edges.find(
+        (entry) => entry.sourceNodeId === id && entry.targetNodeId === sw.id,
+      ).id;
+    const lanes = edgeLanes(next);
+
+    // Alpha sits level with the switch, bravo 200 below it.
+    expect(lanes.get(edge.id)).toEqual({ index: 0, count: 2 });
+    expect(lanes.get(into(bravo.id))).toEqual({ index: 1, count: 2 });
+    // The only connection out of the switch has a column to itself.
+    expect(
+      lanes.has(next.edges.find((e) => e.targetNodeId === charlie.id).id),
+    ).toBe(false);
+    expect(
+      toFlowEdges(next).find((entry) => entry.id === edge.id).data.lane,
+    ).toEqual({ index: 0, count: 2 });
+    expect(toFlowEdges(doc)[0].data.lane).toBeNull();
   });
 
   test('a connection label is part of its name', () => {
@@ -269,7 +339,7 @@ function hsl(hex) {
   };
 }
 
-// R93: the colors people give networks, notes and groups are drawn.
+// The colors people give networks, notes and groups are drawn.
 describe('colors', () => {
   test('a network color the user chose is drawn; the picked ones use tokens', () => {
     expect(customNetworkColor('#ff0000')).toBe('#ff0000');

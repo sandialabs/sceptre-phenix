@@ -182,7 +182,9 @@ test.describe('command palette', () => {
           .soft(commands.message)
           .toHaveText('Ungroup is unavailable. Select a group first.');
         await expect.soft(commands.dialog).toBeVisible();
-        await expect.soft(commands.count).toHaveText('3 results');
+        // Group selection, Ungroup, Auto-group by network and by name, and
+        // Add group.
+        await expect.soft(commands.count).toHaveText('5 results');
         await page.keyboard.press('Escape');
         await expect.soft(builder.canvas).toBeFocused();
       });

@@ -15,10 +15,13 @@ import (
 
 // builderDraftRequest creates a draft. The owner is always the authenticated
 // user: it may be sent for symmetry with the response, but never to create a
-// draft on somebody else's behalf.
+// draft on somebody else's behalf. ForkOf, "<owner>/<draft id>", names a
+// draft the new one forks, whose source and last publication it takes in
+// place of SourceToken (see [builderBetaAPI.forkOrigin]).
 type builderDraftRequest struct {
 	Title       string          `json:"title"`
 	SourceToken string          `json:"sourceToken"`
+	ForkOf      string          `json:"forkOf"`
 	Summary     string          `json:"summary"`
 	Owner       string          `json:"owner"`
 	Document    json.RawMessage `json:"document"`
@@ -77,6 +80,9 @@ type builderDraftResponse struct {
 	History      []builderSnapshotResponse `json:"history,omitempty"`
 
 	Publication *builderPublicationResponse `json:"publication,omitempty"`
+	// Forked is what the draft this one forks had published when it was
+	// forked, which this draft may update too.
+	Forked *bapi.ForkedPublication `json:"forked,omitempty"`
 }
 
 // builderPublicationResponse is the JSON view of a draft's last publication.
@@ -152,6 +158,11 @@ func newBuilderDraftResponse(meta *bapi.DraftMetadata) builderDraftResponse {
 		}
 	}
 
+	if meta.Forked != nil {
+		forked := *meta.Forked
+		response.Forked = &forked
+	}
+
 	return response
 }
 
@@ -175,8 +186,10 @@ func newBuilderSnapshotResponse(
 // listDrafts - GET /builder/drafts.
 //
 // The response separates the caller's own drafts from the drafts of other users
-// the caller is explicitly allowed to see. Drafts the caller may not see are
-// never counted, described, or otherwise hinted at.
+// the caller is explicitly allowed to see, and lists apart the drafts of either
+// kind whose metadata this server can no longer read, which can only be
+// deleted. Drafts the caller may not see are never counted, described, or
+// otherwise hinted at.
 func (b *builderBetaAPI) listDrafts(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderBetaListDrafts")
 
@@ -189,28 +202,96 @@ func (b *builderBetaAPI) listDrafts(w http.ResponseWriter, r *http.Request) erro
 		return builderBetaForbidden(actor, "listing builder drafts")
 	}
 
-	ctx := r.Context()
-
-	owned, err := b.drafts.ListDraftsByOwner(ctx, actor.user)
+	drafts, damaged, err := b.drafts.ListDraftsWithDamaged(r.Context())
 	if err != nil {
 		return builderBetaWebError(err, "unable to list builder drafts")
 	}
 
-	mine := make([]builderDraftResponse, 0, len(owned))
+	var (
+		mine   = []builderDraftResponse{}
+		shared = []builderDraftResponse{}
+	)
 
-	for i := range owned {
-		mine = append(mine, newBuilderDraftResponse(&owned[i]))
-	}
+	for i := range drafts {
+		draft := &drafts[i]
 
-	shared, err := b.sharedDrafts(r, actor)
-	if err != nil {
-		return err
+		switch {
+		case draft.Owner == actor.user:
+			mine = append(mine, newBuilderDraftResponse(draft))
+		case builderBetaListsOthers(actor, draft.Owner, draft.ID):
+			response := newBuilderDraftResponse(draft)
+			response.ReadOnly = builderDraftReadOnly(actor, draft)
+			shared = append(shared, response)
+		}
 	}
 
 	return builderBetaWriteJSON(w, http.StatusOK, "", map[string]any{
-		"drafts": mine,
-		"shared": shared,
+		"drafts":  mine,
+		"shared":  shared,
+		"damaged": builderDamagedDrafts(actor, damaged),
 	})
+}
+
+// builderBetaListsOthers reports whether the caller may list a draft of
+// another user. The check by name is skipped entirely when the caller holds no
+// cross-user list permission at all.
+func builderBetaListsOthers(actor builderBetaActor, owner, draftID string) bool {
+	return builderBetaCrossUserAllowed(actor.role, builderBetaVerbList) &&
+		builderBetaCrossUserAllowed(actor.role, builderBetaVerbList, builderBetaDraftName(owner, draftID))
+}
+
+// builderDamagedDraftResponse is the JSON view of a draft whose metadata this
+// server can no longer read: what could still be read of it, and whether the
+// caller may delete it, which is all that can be done with it.
+type builderDamagedDraftResponse struct {
+	ID        string     `json:"id"`
+	Owner     string     `json:"owner"`
+	Title     string     `json:"title,omitempty"`
+	Updated   *time.Time `json:"updated,omitempty"`
+	ETag      string     `json:"etag"`
+	CanDelete bool       `json:"canDelete"`
+}
+
+// builderDamagedDrafts returns the damaged drafts the caller may see, as
+// [builderBetaAPI.listDrafts] lists readable ones: the caller's own, and those
+// of other users the caller may list. A draft whose owner cannot be read is
+// left out: no request can name it.
+func builderDamagedDrafts(actor builderBetaActor, damaged []bapi.DamagedDraft) []builderDamagedDraftResponse {
+	responses := []builderDamagedDraftResponse{}
+
+	for i := range damaged {
+		draft := &damaged[i]
+
+		if draft.Owner == "" || !builderBetaIDPattern.MatchString(draft.ID) {
+			continue
+		}
+
+		if draft.Owner != actor.user && !builderBetaListsOthers(actor, draft.Owner, draft.ID) {
+			continue
+		}
+
+		response := builderDamagedDraftResponse{
+			ID:      draft.ID,
+			Owner:   draft.Owner,
+			Title:   draft.Title,
+			Updated: nil,
+			ETag:    draft.ETag(),
+			CanDelete: builderBetaBaseAllowed(actor.role, builderBetaVerbDelete) &&
+				(draft.Owner == actor.user || builderBetaCrossUserAllowed(
+					actor.role,
+					builderBetaVerbDelete,
+					builderBetaDraftName(draft.Owner, draft.ID),
+				)),
+		}
+
+		if !draft.Updated.IsZero() {
+			response.Updated = &draft.Updated
+		}
+
+		responses = append(responses, response)
+	}
+
+	return responses
 }
 
 // createDraft - POST /builder/drafts.
@@ -243,11 +324,22 @@ func (b *builderBetaAPI) createDraft(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 
+	sourceToken := request.SourceToken
+
+	var forked *bapi.ForkedPublication
+
+	if request.ForkOf != "" {
+		if sourceToken, forked, err = b.forkOrigin(r, actor, request.ForkOf); err != nil {
+			return err
+		}
+	}
+
 	meta, err := b.drafts.CreateDraft(r.Context(), bapi.CreateDraftRequest{
 		Owner:       actor.user,
 		Actor:       actor.user,
 		Title:       request.Title,
-		SourceToken: request.SourceToken,
+		SourceToken: sourceToken,
+		Forked:      forked,
 		Document:    document,
 		Summary:     request.Summary,
 		ID:          "",
@@ -537,43 +629,4 @@ func (b *builderBetaAPI) updateCursor(w http.ResponseWriter, r *http.Request) er
 	}
 
 	return builderBetaWriteJSON(w, http.StatusOK, updated.ETag(), newBuilderDraftResponse(updated))
-}
-
-// sharedDrafts returns the drafts of other users the caller is explicitly
-// allowed to list. The full listing is skipped entirely when the caller holds
-// no cross-user list permission at all.
-func (b *builderBetaAPI) sharedDrafts(
-	r *http.Request,
-	actor builderBetaActor,
-) ([]builderDraftResponse, error) {
-	shared := []builderDraftResponse{}
-
-	if !builderBetaCrossUserAllowed(actor.role, builderBetaVerbList) {
-		return shared, nil
-	}
-
-	drafts, err := b.drafts.ListDrafts(r.Context())
-	if err != nil {
-		return nil, builderBetaWebError(err, "unable to list builder drafts")
-	}
-
-	for i := range drafts {
-		draft := &drafts[i]
-
-		if draft.Owner == actor.user {
-			continue
-		}
-
-		name := builderBetaDraftName(draft.Owner, draft.ID)
-
-		if !builderBetaCrossUserAllowed(actor.role, builderBetaVerbList, name) {
-			continue
-		}
-
-		response := newBuilderDraftResponse(draft)
-		response.ReadOnly = builderDraftReadOnly(actor, draft)
-		shared = append(shared, response)
-	}
-
-	return shared, nil
 }

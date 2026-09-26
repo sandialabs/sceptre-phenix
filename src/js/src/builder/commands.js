@@ -43,7 +43,9 @@ import { nextTick, toRaw } from 'vue';
 
 import { count, listOf } from './announce.js';
 import { DEVICE_TEMPLATES, PALETTE, kindMeta, nodeIconKey } from './catalog.js';
+import { GROUPING_STRATEGIES } from './grouping.js';
 import { HELP_URL } from './help.js';
+import { LAYOUT_ALGORITHMS, layoutAlgorithm } from './layouts/index.js';
 import {
   ariaKey,
   currentPlatform,
@@ -128,7 +130,7 @@ export const VIEW_API = [
   // () the part of the canvas in view, in flow coordinates: {x, y, width,
   // height}, or null
   'visibleArea',
-  'revealNode', // (id) pans a node into view, leaving focus where it is
+  'revealNode', // (id or ids) brings nodes into view, leaving focus as it is
   // () before a save: commits the focused text field, as its change event
   // would, and settles the Inspector's unapplied edits; resolves to why
   // some stay unapplied ('1 field needs attention'), or ''
@@ -792,6 +794,38 @@ function theme(value, title) {
   };
 }
 
+// Lays the diagram out with one layout, which the draft then keeps (the
+// toolbar's layout menu has the same choices).
+function layoutChoice({ id, label, summary }) {
+  return {
+    id: `structure.layout.${id}`,
+    title: `Layout: ${label}`,
+    group: 'Structure',
+    keywords: ['auto layout', 'arrange', 'algorithm'],
+    when: editable,
+    detail: ({ store }) =>
+      store.currentLayout === id ? `${summary} · Current layout` : summary,
+    run: ({ store }) => store.layout({ algorithm: id }),
+  };
+}
+
+// Auto-group with one strategy (the toolbar's Auto-group menu has the same
+// choices).
+function autoGroupChoice({ id, label, summary }) {
+  return {
+    id: `structure.autoGroup.${id}`,
+    title: `Auto-group ${label.toLowerCase()}`,
+    group: 'Structure',
+    keywords: ['auto group', 'cluster', 'organize'],
+    when: editable,
+    detail: ({ store }) =>
+      store.selection.nodes.length
+        ? `${summary} · Selected nodes only`
+        : summary,
+    run: ({ store }) => store.autoGroup(id),
+  };
+}
+
 function landingTab(id, title) {
   return {
     id: `drafts.tab.${id}`,
@@ -1126,25 +1160,29 @@ export const COMMANDS = [
         : READ_ONLY,
     run: ({ store }) => ungroupSelection(store),
   },
+  ...GROUPING_STRATEGIES.map(autoGroupChoice),
   {
+    // Runs the draft's layout again; each layout has a command of its own.
     id: 'structure.layout',
     title: 'Auto layout',
     group: 'Structure',
     keywords: ['arrange', 'tidy', 'organize'],
     when: editable,
-    detail: () => 'Arrange the nodes automatically',
+    detail: ({ store }) =>
+      `Arrange the nodes with ${layoutAlgorithm(store.currentLayout)?.label || 'the current layout'}`,
     run: ({ store }) => store.layout(),
   },
+  ...LAYOUT_ALGORITHMS.map(layoutChoice),
   {
     id: 'structure.restoreLayout',
-    title: 'Restore layout',
+    title: 'Restore previous layout',
     group: 'Structure',
     keywords: ['undo layout', 'arrange'],
     when: (ctx) =>
       editable(ctx) === true
         ? ctx.store.canRestoreLayout || 'There is no earlier layout to restore.'
         : READ_ONLY,
-    detail: () => 'Put every node back where it was before Auto layout',
+    detail: () => 'Put every node back where it was before the last layout',
     run: ({ store }) => store.restoreLayout(),
   },
   {

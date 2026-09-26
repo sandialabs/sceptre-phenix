@@ -4,6 +4,7 @@
 // draft cursor points at and re-runs its own validation. The editor only
 // describes *what* to write, which is what these helpers build.
 
+import { listOf } from './announce.js';
 import { sentence } from './api.js';
 import { LEGACY_ANNOTATION } from './configs.js';
 
@@ -103,7 +104,9 @@ const PUBLISHED_TOKEN = 'builder-doc/';
  *
  * An experiment is updated from its own source, unless that was an upload,
  * or when the draft last published it, with a topology that still holds that
- * publication. The server also refuses an experiment changed by anyone else
+ * publication. A draft saved as a new draft from another (forked) may also
+ * update what that draft had published when it was forked, as though it
+ * had published it. The server also refuses an experiment changed by anyone else
  * since the draft published it. It accepts an unchanged republish of an
  * experiment only when the stored spec still equals the draft's projection,
  * and creating an experiment fills in defaults, so the client cannot predict
@@ -112,12 +115,13 @@ const PUBLISHED_TOKEN = 'builder-doc/';
  * @param {string} kind 'topology' or 'experiment'
  * @param {string} name existing config name
  * @param {object} draft source: the document's source; id, sourceToken,
- *   digest (of the saved snapshot) and publication (the last one), from the
- *   draft record; documents: the current published diagrams
+ *   digest (of the saved snapshot), publication (the last one) and forked
+ *   (the forked draft's), from the draft record; documents: the current
+ *   published diagrams
  * @returns {boolean}
  */
 export function draftCanUpdate(kind, name, draft = {}) {
-  const { source, digest = '', documents = [], publication } = draft;
+  const { source, digest = '', documents = [], publication, forked } = draft;
   const token = String(draft.sourceToken || '');
   const uploaded = token.startsWith(UPLOADED_TOKEN);
   const opened = token.startsWith(PUBLISHED_TOKEN)
@@ -133,6 +137,7 @@ export function draftCanUpdate(kind, name, draft = {}) {
         entry.target === topology &&
         ((draft.id && entry.draftId === draft.id) ||
           (publication?.documentId && entry.id === publication.documentId) ||
+          (forked?.documentId && entry.id === forked.documentId) ||
           (opened && entry.id === opened) ||
           (digest && entry.digest === digest)),
     );
@@ -140,9 +145,12 @@ export function draftCanUpdate(kind, name, draft = {}) {
   if (kind === 'experiment') {
     return (
       (!uploaded && source?.kind === 'experiment' && source.name === name) ||
-      (Boolean(publication?.experimentTarget) &&
-        publication.experimentTarget === name &&
-        holdsOwn(publication.topologyTarget))
+      [publication, forked].some(
+        (published) =>
+          Boolean(published?.experimentTarget) &&
+          published.experimentTarget === name &&
+          holdsOwn(published.topologyTarget),
+      )
     );
   }
 
@@ -230,6 +238,60 @@ export function targetHint(kind, exists, blocker = '') {
   return blocker
     ? `${article(kind)} ${kind} with this name ${blockedReason(kind, blocker)}`
     : `${article(kind)} ${kind} with this name exists and will be updated.`;
+}
+
+/**
+ * The name of the button that publishes, which says what it does, so
+ * overwriting an existing config is stated on the control that does it:
+ * "Update topology", "Create topology and update experiment".
+ *
+ * @param {'create'|'update'} topology what happens to the topology
+ * @param {'create'|'update'} [experiment] and to the experiment, when one
+ *   is published
+ * @returns {string}
+ */
+export function publishLabel(topology, experiment) {
+  const first = topology === 'update' ? 'Update' : 'Create';
+
+  if (!experiment) {
+    return `${first} topology`;
+  }
+
+  const second = experiment === 'update' ? 'update' : 'create';
+
+  return second === first.toLowerCase()
+    ? `${first} topology and experiment`
+    : `${first} topology and ${second} experiment`;
+}
+
+/**
+ * The confirmation Publish asks for before it replaces configs on the
+ * server, which no one can undo: phenix keeps no earlier version of a
+ * config. It names each config replaced; an intent that only creates, or
+ * uses a stored scenario as it is, needs none. Its button repeats the
+ * publish label, adding the scenario when that is replaced too.
+ *
+ * @param {object} intent as buildPublishIntent() builds it
+ * @returns {{title: string, message: string, confirmLabel: string}|null}
+ */
+export function overwriteConfirmation(intent) {
+  const replaced = ['topology', 'scenario', 'experiment']
+    .filter((kind) => intent?.[kind]?.action === 'update')
+    .map((kind) => ({ kind, name: intent[kind].name }));
+
+  if (replaced.length === 0) {
+    return null;
+  }
+
+  return {
+    title: `Replace ${listOf(replaced.map(({ kind, name }) => `${kind} ${name}`))}?`,
+    message:
+      `Publishing replaces ${listOf(replaced.map(({ kind, name }) => `the ${kind} "${name}"`))} ` +
+      'on the server with this diagram. This cannot be undone.',
+    confirmLabel:
+      publishLabel(intent.topology.action, intent.experiment?.action) +
+      (intent.scenario?.action === 'update' ? ', replace scenario' : ''),
+  };
 }
 
 /**

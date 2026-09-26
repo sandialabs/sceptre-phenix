@@ -4,8 +4,10 @@ import {
   buildOutline,
   connectionList,
   diagramCounts,
+  labelIndex,
   networkOutline,
   outlineLabel,
+  rowNodeIds,
 } from '@/builder/outline.js';
 import {
   addNetwork,
@@ -51,6 +53,24 @@ describe('semantic outline', () => {
     expect(outline.filter((item) => item.id === alpha.id)).toHaveLength(0);
   });
 
+  test('a row stands for its node, a group with its members, a switch with its network', () => {
+    const { doc, sw, alpha, bravo } = sampleDocument();
+    const inner = groupNodes(doc, [bravo.id]);
+    const outer = groupNodes(inner.doc, [inner.group.id]);
+    const grouped = outer.doc;
+    const sorted = (ids) => [...ids].sort();
+
+    expect(rowNodeIds(grouped, alpha.id)).toEqual([alpha.id]);
+    expect(sorted(rowNodeIds(grouped, outer.group.id))).toEqual(
+      sorted([outer.group.id, inner.group.id, bravo.id]),
+    );
+    // Bravo is on no network: the switch's network is the switch and alpha.
+    expect(sorted(rowNodeIds(grouped, sw.id))).toEqual(
+      sorted([sw.id, alpha.id]),
+    );
+    expect(rowNodeIds(grouped, 'gone')).toEqual([]);
+  });
+
   test('accessible names name the network, not just a colour', () => {
     const { doc, sw, alpha, bravo } = sampleDocument();
     const switchNode = doc.nodes.find((node) => node.id === sw.id);
@@ -87,6 +107,13 @@ describe('semantic outline', () => {
     expect(outlineLabel(next, findNode(next, bravo.id))).toBe(
       'Device bravo, 0 connections',
     );
+
+    // Looked up once for every node, the names are the same.
+    const index = labelIndex(next);
+
+    for (const node of next.nodes) {
+      expect(outlineLabel(next, node, index)).toBe(outlineLabel(next, node));
+    }
   });
 
   test('the comment is part of the accessible name', () => {

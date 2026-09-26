@@ -14,7 +14,6 @@ func TestDeterministicIDsAreUUIDs(t *testing.T) {
 		"SwitchNodeID":      builder.SwitchNodeID("EXP"),
 		"NetworkID":         builder.NetworkID("EXP"),
 		"NoteNodeID":        builder.NoteNodeID("note-key"),
-		"GroupNodeID":       builder.GroupNodeID("group-key"),
 		"InterfaceHandleID": builder.InterfaceHandleID("router", "eth0", 0),
 		"EdgeID": builder.EdgeID(
 			builder.DeviceNodeID("router"),

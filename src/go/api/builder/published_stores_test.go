@@ -167,8 +167,8 @@ func testPublishedDocumentsOnRecordStore(t *testing.T, hooked *hookedStore) {
 		}
 	}
 
-	if err := service.DeletePublishedDocument(ctx, doc.ID); err != nil {
-		t.Fatalf("DeletePublishedDocument returned error: %s", fmtErr(err))
+	if err := service.deletePublishedDocument(ctx, doc.ID); err != nil {
+		t.Fatalf("deletePublishedDocument returned error: %s", fmtErr(err))
 	}
 
 	hooked.beforeDeletePrefix = nil

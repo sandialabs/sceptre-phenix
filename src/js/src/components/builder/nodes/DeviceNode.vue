@@ -48,6 +48,8 @@
       {{ comment }}
     </div>
 
+    <node-issue-mark v-if="data.issue" :node-id="id" :issue="data.issue" />
+
     <!-- Handles are pointer-only: the outline's Connect form is the keyboard
          path, so they are hidden from assistive technology. -->
     <Handle
@@ -94,9 +96,14 @@
   import { Handle, Position } from '@vue-flow/core';
 
   import BuilderIcon from '../BuilderIcon.vue';
+  import NodeIssueMark from './NodeIssueMark.vue';
   import { useNodeTooltip } from './nodeTooltip.js';
 
   import { NEW_INTERFACE_HANDLE_ID } from '@/builder/adapters/vueflow.js';
+
+  // Vue Flow passes its node state as attributes as well; none belong on
+  // the node's element.
+  defineOptions({ inheritAttrs: false });
 
   const props = defineProps({
     id: { type: String, required: true },

@@ -35,6 +35,8 @@
       {{ comment }}
     </div>
 
+    <node-issue-mark v-if="data.issue" :node-id="id" :issue="data.issue" />
+
     <Handle
       id="bus"
       type="target"
@@ -57,9 +59,14 @@
   import { Handle, Position } from '@vue-flow/core';
 
   import BuilderIcon from '../BuilderIcon.vue';
+  import NodeIssueMark from './NodeIssueMark.vue';
   import { useNodeTooltip } from './nodeTooltip.js';
 
   import { drawnNetworkColor } from '@/builder/colors.js';
+
+  // Vue Flow passes its node state as attributes as well; none belong on
+  // the node's element.
+  defineOptions({ inheritAttrs: false });
 
   const props = defineProps({
     id: { type: String, required: true },

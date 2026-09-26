@@ -6,7 +6,7 @@ import { iconKeyForSpec } from '@/builder/catalog.js';
 
 // The server derives a generated device's icon from the same table
 // (TestIconKeyForSpecMatchesFrontEnd in types/builder), so a node gets the
-// same icon whether it was made here or generated there (R66).
+// same icon whether it was made here or generated there.
 describe('icon keys shared with the server', () => {
   const table = JSON.parse(
     readFileSync(

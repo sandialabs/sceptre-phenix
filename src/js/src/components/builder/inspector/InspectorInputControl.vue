@@ -27,11 +27,16 @@
   is one line of values separated by commas: one value is stored as text,
   several as a list, and a list stays a list.
 
-  Text a number field cannot read (letters, which Firefox lets through) is
-  not committed: the field says it must be a number, and Apply waits for
-  it, rather than the value being cleared. So is a number a whole-number
-  field cannot take (1.5, 1e3), which was cut to 1: the field says it must
-  be a whole number.
+  A whole-number field is a text field with a number keyboard (inputmode
+  numeric), read as a spin button whose bounds are the field's, and its
+  text is trimmed as it commits: Firefox's number input took " 3 " for no
+  number at all. The arrow keys step it by one within its bounds, as they
+  step a number input, and each step commits as theirs did (see step).
+
+  Text a number field cannot read (letters) is not committed: the field
+  says it must be a number, and Apply waits for it, rather than the value
+  being cleared. So is a number a whole-number field cannot take (1.5,
+  1e3), which was cut to 1: the field says it must be a whole number.
 
   A text or number field shows the text typed in it until it commits (see
   useFieldText), so nothing that re-renders it puts its data back over that
@@ -65,11 +70,23 @@
       "
       @change="onChange" />
     <input
-      v-else-if="kind === 'integer' || kind === 'number'"
+      v-else-if="kind === 'integer'"
+      v-bind="{ ...attrs, ...spin }"
+      type="text"
+      class="input"
+      :value="text"
+      @mousedown="onPress"
+      @focus="selectDefault"
+      @mouseup="keepSelected"
+      @keydown="step"
+      @input="onInput"
+      @change="commit" />
+    <input
+      v-else-if="kind === 'number'"
       v-bind="attrs"
       :type="storedText ? 'text' : 'number'"
       class="input"
-      :step="kind === 'integer' ? 1 : 'any'"
+      step="any"
       :min="numberSchema.minimum"
       :max="numberSchema.maximum"
       :value="text"
@@ -176,7 +193,8 @@
   // either: a change event from the field as it shows it (Enter in it after
   // it was emptied, or leaving it) leaves it unset.
   function adapt(target) {
-    const text = target.value;
+    // A number field's text counts without the spaces around it.
+    const text = numeric.value ? target.value.trim() : target.value;
 
     if (
       fallback.value &&
@@ -193,7 +211,7 @@
         return readList(text);
       case 'integer':
       case 'number': {
-        if (text.trim() === '') {
+        if (text === '') {
           return undefined;
         }
 
@@ -275,6 +293,61 @@
     return Number.isNaN(number) || (noNumber && !storedText.value)
       ? `${control.value.label || 'Value'} must be ${whole ? 'a whole number' : 'a number'}`
       : '';
+  }
+
+  // A whole-number field holding a number reads as a spin button: its
+  // bounds and the number it shows. A template's field holds text.
+  const spin = computed(() => {
+    if (storedText.value) {
+      return {};
+    }
+
+    const shown = readNumberText(text.value, true);
+
+    return {
+      role: 'spinbutton',
+      inputmode: 'numeric',
+      'aria-valuemin': numberSchema.value?.minimum,
+      'aria-valuemax': numberSchema.value?.maximum,
+      'aria-valuenow': Number.isInteger(shown) ? shown : undefined,
+    };
+  });
+
+  // ArrowUp and ArrowDown step a whole number by one, within the field's
+  // bounds, and an empty field from 0, as a number input's arrow keys do.
+  // Like theirs, each step is typed and committed at once: the input and
+  // change events tell the Inspector the field was edited. Text that is no
+  // whole number, and a template, are left to the keys' usual work.
+  function step(event) {
+    const up = event.key === 'ArrowUp';
+
+    if (
+      (!up && event.key !== 'ArrowDown') ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      locked.value ||
+      storedText.value
+    ) {
+      return;
+    }
+
+    const field = event.target;
+    const typed = field.value.trim();
+    const current = typed === '' ? 0 : readNumberText(typed, true);
+
+    if (!Number.isInteger(current)) {
+      return;
+    }
+
+    const { minimum = -Infinity, maximum = Infinity } =
+      numberSchema.value || {};
+    const next = Math.min(Math.max(current + (up ? 1 : -1), minimum), maximum);
+
+    event.preventDefault();
+    field.value = String(next);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    field.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   // Committed, the field shows its value as the form reads it, also when

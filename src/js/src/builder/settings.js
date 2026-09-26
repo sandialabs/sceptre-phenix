@@ -22,13 +22,14 @@ export const SETTINGS_STORAGE_KEY = 'phenix.builder.settings';
 
 // The zoom a diagram opens with: 100% from the diagram's origin, or the
 // whole diagram fitted to the canvas.
-export const OPEN_ZOOMS = Object.freeze(['actual', 'fit']);
+const OPEN_ZOOMS = Object.freeze(['actual', 'fit']);
 
 const isBoolean = (value) => typeof value === 'boolean';
 
 // Each setting's default, and the values it takes.
 const SETTINGS = {
-  // The algorithm Auto layout arranges the diagram with (layouts/index.js).
+  // The layout for drafts that have not chosen one of their own
+  // (layouts/index.js, documentLayout).
   layoutAlgorithm: {
     default: DEFAULT_LAYOUT_ALGORITHM,
     valid: (value) => Boolean(layoutAlgorithm(value)),

@@ -81,6 +81,7 @@ function fakeStore(overrides = {}) {
     'clearSelection',
     'layout',
     'restoreLayout',
+    'autoGroup',
     'saveNow',
     'addNode',
     'connect',
@@ -351,7 +352,10 @@ describe('availability', () => {
       'structure.group',
       'structure.ungroup',
       'structure.layout',
+      'structure.layout.cards',
       'structure.restoreLayout',
+      'structure.autoGroup.network',
+      'structure.autoGroup.name',
       'structure.connect',
       'structure.disconnect',
       'add.device',
@@ -376,7 +380,7 @@ describe('availability', () => {
       expect(availability(id, ctx), id).toBe(true);
     }
 
-    // A role that may not create drafts or publish gets neither (R29).
+    // A role that may not create drafts or publish gets neither.
     const viewer = { canCreateDrafts: false, canPublish: false };
     const editor = context({ store: viewer });
     const landing = context({ store: viewer, view: { editing: false } });
@@ -476,6 +480,45 @@ describe('running', () => {
     // So is Focus mode, whose keys turn it off again.
     expect(runCommand('view.focusMode', viewer)).toBe(true);
     expect(viewer.view.toggleFocusMode).toHaveBeenCalledOnce();
+  });
+
+  test('a command per layout lays out with it, and one per Auto-group way', () => {
+    const ctx = context({ store: { currentLayout: 'cards' } });
+    const layouts = COMMANDS.filter((command) =>
+      command.id.startsWith('structure.layout.'),
+    );
+
+    expect(layouts.map((command) => command.title)).toEqual([
+      'Layout: ELK layered',
+      'Layout: Network cards',
+      'Layout: Dagre',
+      'Layout: Standard',
+    ]);
+    // The draft's layout is marked, and can run again.
+    expect(commandTitle('structure.layout.cards', ctx)).toBe(
+      'Layout: Network cards',
+    );
+    expect(getCommand('structure.layout.cards').detail(ctx)).toBe(
+      'A card per network, on a grid · Current layout',
+    );
+    expect(getCommand('structure.layout').detail(ctx)).toBe(
+      'Arrange the nodes with Network cards',
+    );
+    expect(runCommand('structure.layout.cards', ctx)).toBe(true);
+    expect(ctx.store.layout).toHaveBeenLastCalledWith({ algorithm: 'cards' });
+    expect(runCommand('structure.layout.dagre', ctx)).toBe(true);
+    expect(ctx.store.layout).toHaveBeenLastCalledWith({ algorithm: 'dagre' });
+    // Auto layout runs the draft's layout.
+    expect(runCommand('structure.layout', ctx)).toBe(true);
+    expect(ctx.store.layout).toHaveBeenLastCalledWith();
+
+    expect(runCommand('structure.autoGroup.network', ctx)).toBe(true);
+    expect(ctx.store.autoGroup).toHaveBeenLastCalledWith('network');
+    expect(runCommand('structure.autoGroup.name', ctx)).toBe(true);
+    expect(ctx.store.autoGroup).toHaveBeenLastCalledWith('name');
+    expect(getCommand('structure.autoGroup.name').title).toBe(
+      'Auto-group by name',
+    );
   });
 
   test('a command that asks for a choice opens the palette on it', () => {

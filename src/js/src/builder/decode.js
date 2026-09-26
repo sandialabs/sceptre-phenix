@@ -38,6 +38,7 @@ const DOCUMENT_KEYS = new Set([
   'grid',
   'scenario',
   'source',
+  'layout',
 ]);
 
 const NODE_KEYS = new Set([
@@ -74,7 +75,9 @@ const EDGE_KEYS = new Set([
   'networkId',
   'label',
   'color',
+  'route',
 ]);
+const POINT_KEYS = new Set(['x', 'y']);
 const VIEWPORT_KEYS = new Set(['x', 'y', 'zoom']);
 const GRID_KEYS = new Set(['enabled', 'size', 'snap']);
 const SCENARIO_KEYS = new Set([
@@ -206,6 +209,12 @@ export function decodeDocument(value) {
 
   value.edges.forEach((edge, index) => {
     rejectUnknown(edge, EDGE_KEYS, `edges[${index}]`);
+
+    if (Array.isArray(edge.route)) {
+      edge.route.forEach((point, i) => {
+        rejectUnknown(point, POINT_KEYS, `edges[${index}].route[${i}]`);
+      });
+    }
   });
 
   if (value.viewport !== undefined) {
@@ -228,6 +237,17 @@ export function decodeDocument(value) {
 
   doc.viewport = doc.viewport || { x: 0, y: 0, zoom: 1 };
   doc.grid = doc.grid || { enabled: true, size: 16, snap: true };
+
+  // Null is none, as Go decodes it.
+  if (doc.layout === null) {
+    delete doc.layout;
+  }
+
+  doc.edges.forEach((edge) => {
+    if (edge && edge.route === null) {
+      delete edge.route;
+    }
+  });
 
   return doc;
 }

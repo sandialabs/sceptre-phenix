@@ -53,6 +53,7 @@ const DEVICE_TYPES = {
 export function buildOutline(doc) {
   const nodes = (doc?.nodes || []).slice().sort(compareNodes);
   const byParent = new Map();
+  const index = labelIndex(doc);
 
   nodes.forEach((node) => {
     const key = node.parentId || '';
@@ -77,13 +78,64 @@ export function buildOutline(doc) {
           includedFrom: includedFrom(node),
           networkId:
             node.kind === 'switch' ? node.switch?.networkId : undefined,
-          accessibleName: outlineLabel(doc, node),
+          accessibleName: outlineLabel(doc, node, index),
           children:
             node.kind === 'group' ? build(node.id, depth + 1, seen) : [],
         };
       });
 
   return build('', 0, new Set());
+}
+
+/**
+ * The nodes an outline row stands for on the canvas: a group with every
+ * node in it, a switch with its network (each switch of the network and
+ * each node connected on it), and anything else alone.
+ *
+ * @param {object} doc
+ * @param {string} id the row's node
+ * @returns {string[]} node ids, the row's own first; none when it is gone
+ */
+export function rowNodeIds(doc, id) {
+  const nodes = doc?.nodes || [];
+  const node = findNode(doc, id);
+  const ids = new Set([id]);
+
+  if (!node) {
+    return [];
+  }
+
+  if (node.kind === 'group') {
+    for (let grew = true; grew; ) {
+      grew = false;
+
+      for (const entry of nodes) {
+        if (ids.has(entry.parentId) && !ids.has(entry.id)) {
+          ids.add(entry.id);
+          grew = true;
+        }
+      }
+    }
+  }
+
+  const networkId = node.kind === 'switch' ? node.switch?.networkId : '';
+
+  if (networkId) {
+    for (const entry of nodes) {
+      if (entry.kind === 'switch' && entry.switch?.networkId === networkId) {
+        ids.add(entry.id);
+      }
+    }
+
+    for (const edge of doc.edges || []) {
+      if (edge.networkId === networkId) {
+        ids.add(edge.sourceNodeId);
+        ids.add(edge.targetNodeId);
+      }
+    }
+  }
+
+  return [...ids];
 }
 
 function compareNodes(a, b) {
@@ -151,6 +203,71 @@ export function connectionList(doc) {
 }
 
 /**
+ * What outlineLabel looks up, gathered once for a whole document: each
+ * node's connections, each group's member count, and the nodes and
+ * networks by id. Naming every node then stays linear in the size of the
+ * document.
+ *
+ * @param {object} doc
+ * @returns {{links: Function, members: Function, node: Function,
+ *   network: Function}} lookups by id
+ */
+export function labelIndex(doc) {
+  const links = new Map();
+  const members = new Map();
+  const nodes = new Map();
+  const networks = new Map();
+
+  for (const edge of doc?.edges || []) {
+    for (const id of new Set([edge.sourceNodeId, edge.targetNodeId])) {
+      if (!links.has(id)) {
+        links.set(id, []);
+      }
+
+      links.get(id).push(edge);
+    }
+  }
+
+  // The first of an id, as findNode and findNetwork find it.
+  for (const node of doc?.nodes || []) {
+    if (!nodes.has(node.id)) {
+      nodes.set(node.id, node);
+    }
+
+    if (node.parentId) {
+      members.set(node.parentId, (members.get(node.parentId) || 0) + 1);
+    }
+  }
+
+  for (const network of doc?.networks || []) {
+    if (!networks.has(network.id)) {
+      networks.set(network.id, network);
+    }
+  }
+
+  return {
+    links: (id) => links.get(id) || [],
+    members: (id) => members.get(id) || 0,
+    node: (id) => nodes.get(id),
+    network: (id) => networks.get(id),
+  };
+}
+
+// The same lookups, each a scan of the document: for naming one node.
+function scanIndex(doc) {
+  return {
+    links: (id) =>
+      (doc?.edges || []).filter(
+        (edge) => edge.sourceNodeId === id || edge.targetNodeId === id,
+      ),
+    members: (id) =>
+      (doc?.nodes || []).filter((entry) => entry.parentId === id).length,
+    node: (id) => findNode(doc, id),
+    network: (id) => findNetwork(doc, id),
+  };
+}
+
+/**
  * Accessible name for a node: kind, label, device type, the topology an
  * included device comes from, group, a switch's network, link or member
  * count and the networks a device is on, as "Device node, 2 connections,
@@ -158,12 +275,11 @@ export function connectionList(doc) {
  *
  * @param {object} doc
  * @param {object} node
+ * @param {object} [index] labelIndex(doc), when naming many nodes
  * @returns {string}
  */
-export function outlineLabel(doc, node) {
-  const links = (doc?.edges || []).filter(
-    (edge) => edge.sourceNodeId === node.id || edge.targetNodeId === node.id,
-  );
+export function outlineLabel(doc, node, index = scanIndex(doc)) {
+  const links = index.links(node.id);
   const parts = [nodeName(node)];
   const type = deviceType(node);
 
@@ -175,14 +291,14 @@ export function outlineLabel(doc, node) {
     parts.push(`from included topology ${includedFrom(node)}, read only`);
   }
 
-  const parent = node.parentId ? findNode(doc, node.parentId) : null;
+  const parent = node.parentId ? index.node(node.parentId) : null;
 
   if (parent) {
     parts.push(`in ${nodeName(parent)}`);
   }
 
   if (node.kind === 'switch') {
-    const network = findNetwork(doc, node.switch?.networkId);
+    const network = index.network(node.switch?.networkId);
 
     parts.push(`network ${network ? network.name : 'unassigned'}`);
 
@@ -192,9 +308,7 @@ export function outlineLabel(doc, node) {
   }
 
   if (node.kind === 'group') {
-    const members = (doc?.nodes || []).filter(
-      (entry) => entry.parentId === node.id,
-    ).length;
+    const members = index.members(node.id);
 
     parts.push(members === 1 ? '1 member' : `${members} members`);
   }
@@ -205,7 +319,7 @@ export function outlineLabel(doc, node) {
     );
   }
 
-  const networks = node.kind === 'device' ? networkNames(doc, links) : [];
+  const networks = node.kind === 'device' ? networkNames(index, links) : [];
 
   if (networks.length) {
     parts.push(`on ${listOf(networks)}`);
@@ -222,9 +336,9 @@ export function outlineLabel(doc, node) {
 
 // The names of the networks the connections are on, once each, sorted as
 // the Networks list sorts them.
-function networkNames(doc, links) {
+function networkNames(index, links) {
   const names = new Set(
-    links.map((edge) => findNetwork(doc, edge.networkId)?.name).filter(Boolean),
+    links.map((edge) => index.network(edge.networkId)?.name).filter(Boolean),
   );
 
   return [...names].sort((a, b) =>

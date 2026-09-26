@@ -252,6 +252,7 @@ VM's filesystem directly from the web UI (backed by the `/experiments/{exp}/vms/
 `phenix ui --features builder-beta` enables Builder Flow, the Vue Flow
 topology editor (a beta), at `/builder-beta` and its draft/document APIs. It
 leaves the legacy `/builder` route available for `builder-xml` topologies.
+Builder Flow has no `phenix` CLI command: use the REST API or the web UI.
 Drafts autosave separately from phenix configs; only the explicit Publish action
 creates or updates topology, scenario, or experiment configs. Its Router and
 Firewall device templates create `minirouter` nodes (image `minirouter.qc2`)
@@ -270,8 +271,13 @@ that draft; with the feature off, Configs explains that the topology can only
 be edited in Builder Flow. The Inspector also edits a node's labels,
 annotations, and advanced (minimega `vm config`) settings. Logging out removes
 Builder Flow's local drafts (IndexedDB `phenix-builder`) and recent commands
-from the browser, and keeps its preferences (`phenix.builder.theme`,
-`phenix.builder.panes` and `phenix.builder.shortcuts` in localStorage).
+from the browser, as does signing in as a different user (`phenix.builder.user`
+names whose data the browser holds), and keeps its preferences
+(`phenix.builder.theme`, `phenix.builder.panes`, `phenix.builder.shortcuts` and
+`phenix.builder.settings` in localStorage). A draft keeps its own layout choice
+in its document's `layout`; the Settings layout is the default for drafts
+without one. A document may also hold each connection's `route` as a layout
+drew it; publishing and export ignore both.
 
 Draft owners can manage their own drafts. Cross-user access uses the
 `builder-drafts` RBAC resource with `{owner}/{draft-id}` resource names. A role
@@ -297,10 +303,11 @@ never disclosed. Every mutation after creation requires an `If-Match` header
 carrying the quoted ETag the previous response returned: a missing or malformed
 tag is `400`, a stale one `412`. Draft responses also carry the tag in their
 body as `etag`; prefer it, since a compressing proxy can rewrite the header
-(`W/"3"`, `"3-gzip"`). A `412` on `DELETE` carries the draft's current
-`ETag`, since a draft whose metadata this server can no longer read (written by
-a newer phenix, say) is left out of listings and cannot be read, but its owner
-can still delete it.
+(`W/"3"`, `"3-gzip"`). `GET /builder/drafts` also returns `damaged`: drafts
+whose metadata this server can no longer read (written by a newer phenix, say),
+with `id`, `owner`, `etag`, `canDelete`, and `title` and `updated` when they
+can be read. They cannot be opened, only deleted with that `etag`; a `412` on
+`DELETE` also carries the current `ETag`.
 
 A snapshot append (`POST /builder/drafts/{owner}/{draft}/snapshots`) may carry
 `opId`, the client's id for the save (1-128 letters, digits, `.`, `-`, `_`,
@@ -377,16 +384,22 @@ to that exact stored source: one imported from it, or one that published it (or
 was opened from the published diagram that did), with nothing else having
 changed it since. Otherwise the update gets 409, for example `topology <name>
 changed after this draft published it` or `experiment <name> changed after this
-draft published it`. A published topology names its document in its
-`builder-doc` annotation; a published experiment records the draft and document
-that published it, and its digest after the configure stage, in its
-`builder-experiment` annotation, so any later change to its spec counts. An
-Experiment update then runs the apps' configure stage, as
-`PUT /configs` does. A failed configure stage leaves the experiment unchanged
-and is reported as a `partial` result, and an experiment found running once its
-lock is held is too. An Experiment create is refused with 422 before anything is
-written if its name is `all` (in any case), or longer than 15 characters in auto
-bridge mode. A name outside the config naming rule is refused with 400.
+draft published it`. `POST /builder/drafts` accepts
+`forkOf: "<owner>/<draft id>"`, which saving the editor's history as a new
+draft sends: the new draft takes that draft's source token and records its last
+publication as `forked`, so it can update what that draft published or was
+opened from (not what that draft publishes later). The caller must be able to
+read that draft (owner or `builder-drafts` `get`), otherwise 404. A published
+topology names its document in its `builder-doc` annotation; a published
+experiment records the draft and document that published it, and its digest
+after the configure stage, in its `builder-experiment` annotation, so any later
+change to its spec counts. An Experiment update then runs the apps' configure
+stage, as `PUT /configs` does. A failed configure stage leaves the experiment
+unchanged and is reported as a `partial` result, and an experiment found
+running once its lock is held is too. An Experiment create is refused with 422
+before anything is written if its name is `all` (in any case), or longer than
+15 characters in auto bridge mode. A name outside the config naming rule is
+refused with 400.
 
 Publish answers 422 when an interface of a device that is not external has no
 VLAN, and the error `message` names the devices and interfaces (the first three,

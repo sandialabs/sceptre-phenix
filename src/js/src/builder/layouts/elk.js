@@ -5,6 +5,10 @@
 // a connection leaves its source's right side and enters its target's left
 // side, so ELK runs every line left to right.
 //
+// ELK routes the connections inside a cluster around its nodes, and those
+// routes are kept (see layoutScopes). One between clusters it does not
+// route, laid out as they are one at a time: the canvas draws it itself.
+//
 // elkjs is large (about 440 KB gzipped), so it is loaded only when this
 // layout first runs, and it runs in a Web Worker, off the main thread. The
 // worker stays for the next layout until the Builder closes or the session
@@ -31,6 +35,8 @@ const CLUSTER_OPTIONS = {
   'elk.padding': '[top=32,left=24,bottom=24,right=24]',
   'elk.spacing.nodeNode': 24,
   'elk.layered.spacing.nodeNodeBetweenLayers': 64,
+  // Lines bend clear of the handles, not beside them.
+  'elk.layered.spacing.edgeNodeBetweenLayers': 24,
 };
 
 const ROOT_OPTIONS = {
@@ -45,6 +51,8 @@ const ROOT_OPTIONS = {
   'elk.spacing.componentComponent': 80,
   'elk.aspectRatio': 1.6,
   'elk.randomSeed': 1,
+  // Routes in the root's coordinates, as the corners are summed up.
+  'elk.json.edgeCoords': 'ROOT',
 };
 
 /**
@@ -53,7 +61,7 @@ const ROOT_OPTIONS = {
  * @param {object} scope see layoutScopes
  * @returns {object} ELK JSON graph
  */
-export function elkGraph({ items, edges, networks }) {
+function elkGraph({ items, edges, networks }) {
   const ports = new Map(items.map((item) => [item.id, new Map()]));
   const byId = new Map(items.map((item) => [item.id, item]));
 
@@ -143,6 +151,26 @@ function cornersOf(graph) {
   walk(graph, 0, 0);
 
   return positions;
+}
+
+// Each connection's route, from the graph ELK laid out: the points of its
+// one section, source port to target port.
+function routesOf(graph) {
+  const routes = new Map();
+
+  for (const edge of graph.edges || []) {
+    const [section, ...more] = edge.sections || [];
+
+    if (section && !more.length) {
+      routes.set(edge.id, [
+        section.startPoint,
+        ...(section.bendPoints || []),
+        section.endPoint,
+      ]);
+    }
+  }
+
+  return routes;
 }
 
 // --- the engine --------------------------------------------------------------
@@ -263,7 +291,8 @@ onBuilderSessionEnd(stopLayoutEngine);
  * @param {object} doc builder document
  * @param {object} [options] elk: an ELK instance to lay out with, in place
  *   of the worker
- * @returns {Promise<{positions: object, sizes: object}>} see layoutScopes
+ * @returns {Promise<{positions: object, sizes: object, routes?: object}>}
+ *   see layoutScopes
  */
 export async function layout(doc, options = {}) {
   // One engine for every scope: one stopped meanwhile fails the rest,
@@ -273,6 +302,8 @@ export async function layout(doc, options = {}) {
   return layoutScopes(doc, async (scope) => {
     elk ||= await elkEngine();
 
-    return cornersOf(await elk.layout(elkGraph(scope)));
+    const laid = await elk.layout(elkGraph(scope));
+
+    return { positions: cornersOf(laid), routes: routesOf(laid) };
   });
 }

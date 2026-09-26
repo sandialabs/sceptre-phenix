@@ -244,7 +244,6 @@ func TestDeterministicIDsAreDistinctAndStable(t *testing.T) {
 		"switch":    builder.SwitchNodeID("example"),
 		"network":   builder.NetworkID("example"),
 		"note":      builder.NoteNodeID("example"),
-		"group":     builder.GroupNodeID("example"),
 		"handle":    builder.InterfaceHandleID("example", "eth0", 0),
 		"handle-1":  builder.InterfaceHandleID("example", "eth0", 1),
 		"handle-ab": builder.InterfaceHandleID("exampleeth0", "", 0),

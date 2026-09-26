@@ -4,7 +4,10 @@
   Options carry their label as text: the vanilla renderer's <option label>
   with no text content has no accessible name in Chromium. An empty-string
   choice, which phenix reads as "use the default", is named "Default" and
-  stands in for the vanilla renderer's separate unnamed empty option.
+  stands in for the vanilla renderer's separate unnamed empty option. It
+  names the value the field comes to, "Default (kvm)", where there is one
+  (see useFieldDefault), and while it is chosen the field says "Default",
+  as a text or number field showing its default does.
 
   A locked field (see useInspectorLocked), which a select cannot show, is a
   read-only text input holding the chosen option's name.
@@ -16,6 +19,7 @@
     :ids="ids"
     :error-text="errorText"
     :warnings="warnings"
+    :fallback="fallback"
     :changed="changed">
     <input
       v-if="locked"
@@ -45,10 +49,16 @@
   import { rendererProps, useJsonFormsControl } from '@jsonforms/vue';
 
   import InspectorField from './InspectorField.vue';
-  import { useInspectorControl } from './control.js';
+  import {
+    useFieldDefault,
+    useInspectorControl,
+    useUnsetValue,
+  } from './control.js';
 
   const props = defineProps(rendererProps());
   const input = useJsonFormsControl(props);
+  const fallback = useFieldDefault(input.control);
+  const unset = useUnsetValue(input.control);
 
   const choices = computed(() => {
     const schema = input.control.value.schema || {};
@@ -60,15 +70,25 @@
       : (schema.enum ?? (schema.const === undefined ? [] : [schema.const])).map(
           (value) => ({ value, label: String(value) }),
         );
+    // The choice that stands for no value, named after the value the
+    // field then comes to, as its choice names it.
+    const fallbackValue = unset.value?.value;
+    const empty =
+      fallbackValue === undefined
+        ? undefined
+        : `Default (${
+            values.find((choice) => choice.value === fallbackValue)?.label ??
+            String(fallbackValue)
+          })`;
     const named = values.map((choice) => ({
       ...choice,
       key: String(choice.value),
-      label: choice.value === '' ? 'Default' : choice.label,
+      label: choice.value === '' ? (empty ?? 'Default') : choice.label,
     }));
 
     return named.some((choice) => choice.value === '')
       ? named
-      : [{ value: undefined, key: '', label: 'Not set' }, ...named];
+      : [{ value: undefined, key: '', label: empty ?? 'Not set' }, ...named];
   });
 
   const {
@@ -83,6 +103,7 @@
   } = useInspectorControl(
     input,
     (target) => choices.value[target.selectedIndex]?.value,
+    { fallback },
   );
 
   const selected = computed(() =>

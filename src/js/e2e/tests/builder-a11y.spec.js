@@ -9,10 +9,13 @@
 // check. Checks that do not gate the next step are soft, so one failure does
 // not hide the others.
 
+const crypto = require('crypto');
+
 const {
   test,
   expect,
   backdropPoint,
+  blankDocument,
   expectAccessible,
   expectNoFatal,
   invisibleText,
@@ -1017,7 +1020,7 @@ for (const scheme of ['light', 'dark']) {
 
       await test.step('the editor titles the page and its heading takes focus', async () => {
         const heading = page.getByRole('heading', { level: 1 });
-        // Blank drafts are numbered after the first (V10).
+        // Blank drafts are numbered after the first.
         await expect
           .soft(heading)
           .toHaveText(/^Untitled topology( \d+)? – Builder Flow\s*$/);
@@ -1194,7 +1197,7 @@ for (const scheme of ['light', 'dark']) {
         'Device node',
       );
       // And the node's More settings section, open, with a row of its
-      // names and values (R34).
+      // names and values.
       await builder.inspector
         .getByTestId('inspector-section')
         .locator('summary')
@@ -1206,7 +1209,7 @@ for (const scheme of ['light', 'dark']) {
 
       // axe reports text colored like its background as incomplete, not as
       // a violation: Bulma once drew Inspector labels and "Error:" prefixes
-      // white on white in the light theme (V1, R44).
+      // white on white in the light theme.
       await test.step('no text is colored like its background', async () => {
         const found = await invisibleText(page);
         expect
@@ -1360,6 +1363,26 @@ for (const scheme of ['light', 'dark']) {
         await expect.soft(buttons.last()).toBeFocused();
         await expect.soft(tabStops).toHaveCount(1);
         await expect.soft(tabStops).toBeFocused();
+
+        // The menu buttons are in the sequence; Down opens a menu, whose
+        // items are not in it, and Escape closes the menu onto its button.
+        await builder.toolbar('ungroup').focus();
+        await page.keyboard.press('ArrowRight');
+        await expect.soft(builder.toolbar('auto-group')).toBeFocused();
+        await page.keyboard.press('ArrowRight');
+        await expect.soft(builder.toolbar('layout')).toBeFocused();
+        await page.keyboard.press('ArrowDown');
+        await expect
+          .soft(page.getByRole('menuitemradio', { name: 'ELK layered' }))
+          .toBeFocused();
+        await expectAccessible(page, {
+          soft: true,
+          label: `axe on the layout menu (${scheme})`,
+        });
+        await page.keyboard.press('Escape');
+        await expect.soft(builder.toolbar('layout')).toBeFocused();
+        await expect.soft(page.getByRole('menu')).toHaveCount(0);
+        await expect.soft(tabStops).toHaveCount(1);
 
         for (const { action } of DIALOGS) {
           await expect
@@ -1745,11 +1768,27 @@ test.describe('themes and canvas controls', () => {
         await expect(input).toHaveCount(0);
       });
 
+      await test.step('a node the diagram checks flag is marked, and says why', async () => {
+        // A device on no network yet: a warning, drawn as a triangle.
+        const device = page.locator('.vue-flow__node-builderDevice');
+
+        await expect
+          .soft(device.getByTestId('node-issue'))
+          .toHaveAttribute('data-level', 'warning');
+        await expect
+          .soft(device)
+          .toHaveAccessibleDescription(
+            /^1 warning: device "node" has no interfaces\. Return selects/,
+          );
+      });
+
       await test.step('JSON Forms array buttons', async () => {
         // A connection gives the Interfaces array an item with its own toolbar.
         await addWithKeyboard(builder, 'switch', 2);
         await connectWithKeyboard(builder);
         await builder.expectSummary('1 connection');
+        // Connected, the device has nothing to mark.
+        await expect.soft(page.getByTestId('node-issue')).toHaveCount(0);
         await builder.selectInOutline('node');
         await expect
           .soft(
@@ -1766,6 +1805,30 @@ test.describe('themes and canvas controls', () => {
           'array buttons',
         );
       });
+
+      // Forced colors draw a box's background in the system's color; the
+      // switch's color swatch keeps its own.
+      if (page.context().browser()?.browserType().name() === 'chromium') {
+        await test.step('forced colors keep a switch’s color swatch', async () => {
+          const swatch = page.locator('.builder-node__swatch');
+          const color = () =>
+            swatch.evaluate(
+              (element) => getComputedStyle(element).backgroundColor,
+            );
+          const shown = await color();
+
+          await page.emulateMedia({ forcedColors: 'active' });
+          await expect
+            .poll(() =>
+              page.evaluate(
+                () => matchMedia('(forced-colors: active)').matches,
+              ),
+            )
+            .toBe(true);
+          expect.soft(await color()).toBe(shown);
+          await page.emulateMedia({ forcedColors: 'none' });
+        });
+      }
       expectNoFatal(issues);
     },
   );
@@ -1828,6 +1891,17 @@ test.describe('themes and canvas controls', () => {
       await zoomIn.press('Enter');
       await zoomIn.press('Enter');
       await expect.poll(() => nodesOutsideCanvas(page)).not.toEqual([]);
+
+      // An outline row whose node is out of view brings it into view, at the
+      // same zoom, and keeps focus.
+      const [outside] = await nodesOutsideCanvas(page);
+      const zoomed = await zoomLevel(page);
+      const outsideRow = page.getByTestId(`outline-item-${outside}`);
+      await outsideRow.press('Enter');
+      await expect.poll(() => nodesOutsideCanvas(page)).not.toContain(outside);
+      await expect.soft(outsideRow).toBeFocused();
+      expect.soft(await zoomLevel(page)).toBe(zoomed);
+
       await fit.press('Enter');
       await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
 
@@ -1877,7 +1951,7 @@ test.describe('themes and canvas controls', () => {
       const opener = page.getByTestId('editor-settings');
       const settings = page.getByTestId('settings-dialog');
       const layout = settings.getByRole('combobox', {
-        name: 'Auto layout algorithm',
+        name: 'Default layout for drafts',
       });
       const showMinimap = settings.getByRole('switch', {
         name: 'Show the minimap',
@@ -1923,6 +1997,10 @@ test.describe('themes and canvas controls', () => {
       });
       await page.keyboard.press('Escape');
       await expect.soft(opener).toBeFocused();
+      // A draft with no layout of its own takes the default.
+      await expect
+        .soft(page.getByTestId('toolbar-layout'))
+        .toHaveAccessibleName('Dagre layout');
 
       // Zoomed in, Reset view fits the diagram, as Shift+1 does.
       await page.getByTestId('editor-reset-view').click();
@@ -2026,6 +2104,79 @@ test.describe('themes and canvas controls', () => {
       await expect.soft(reset).toHaveAttribute('aria-disabled', 'true');
       expect(await stored()).toBeNull();
       await page.keyboard.press('Escape');
+    });
+
+    await test.step('a switch row whose network cannot fit on screen brings its switch into view', async () => {
+      const id = () => crypto.randomUUID();
+      const network = { id: id(), name: 'tall-net' };
+      const sw = {
+        id: id(),
+        kind: 'switch',
+        label: 'tall-net',
+        position: { x: 3000, y: 0 },
+        switch: { networkId: network.id },
+      };
+      // Even at the least zoom, the network runs past the top and bottom.
+      const devices = [0, 9000].map((y, index) => ({
+        id: id(),
+        kind: 'device',
+        label: `far-${index}`,
+        position: { x: 0, y },
+        device: {
+          hostname: `far-${index}`,
+          spec: {
+            type: 'VirtualMachine',
+            general: { hostname: `far-${index}`, vm_type: 'kvm' },
+            hardware: { os_type: 'linux', drives: [{ image: 'ubuntu.qc2' }] },
+            network: {
+              interfaces: [
+                {
+                  name: 'eth0',
+                  proto: 'dhcp',
+                  type: 'ethernet',
+                  vlan: 'tall-net',
+                },
+              ],
+            },
+          },
+          interfaces: [{ id: id(), name: 'eth0', index: 0 }],
+        },
+      }));
+      const tall = await builder.seedDraft(
+        blankDocument(`tall-${Date.now()}`, {
+          nodes: [...devices, sw],
+          networks: [network],
+          edges: devices.map((device) => ({
+            id: id(),
+            sourceNodeId: device.id,
+            sourceHandleId: device.device.interfaces[0].id,
+            targetNodeId: sw.id,
+            networkId: network.id,
+          })),
+        }),
+      );
+      await builder.openDraft(tall);
+
+      const row = page.getByTestId(`outline-item-${sw.id}`);
+      await row.press('Enter');
+      const switchInView = () =>
+        page.locator('.vue-flow').evaluate((flow, switchId) => {
+          const pane = flow.getBoundingClientRect();
+          const node = flow.querySelector(
+            `.vue-flow__node[data-id="${CSS.escape(switchId)}"]`,
+          );
+          const box = node?.getBoundingClientRect();
+
+          return Boolean(
+            box &&
+              box.top >= pane.top &&
+              box.bottom <= pane.bottom &&
+              box.left >= pane.left &&
+              box.right <= pane.right,
+          );
+        }, sw.id);
+      await expect.poll(switchInView).toBe(true);
+      await expect.soft(row).toBeFocused();
     });
     expectNoFatal(issues);
   });

@@ -75,6 +75,73 @@ function elementTitle(doc, collection, index) {
 }
 
 /**
+ * What the diagram checks say about each node, for the canvas: whether any
+ * is an error, and the node's description of them, as "1 error: hostname
+ * is required." An issue about a network is about its first switch, as in
+ * issueNodeId.
+ *
+ * @param {object} doc
+ * @param {object[]} issues
+ * @returns {Map<string, {level: 'error'|'warning', text: string}>} by node
+ *   id, for the nodes with any
+ */
+export function nodeIssueSummaries(doc, issues = []) {
+  const summaries = new Map();
+
+  if (!issues.length) {
+    return summaries;
+  }
+
+  // Each network's first switch, looked up once rather than per issue.
+  const hubs = new Map();
+
+  for (const node of doc?.nodes || []) {
+    const networkId = node.kind === 'switch' ? node.switch?.networkId : '';
+
+    if (networkId && !hubs.has(networkId)) {
+      hubs.set(networkId, node.id);
+    }
+  }
+
+  const about = new Map();
+
+  for (const entry of issues) {
+    const id = entry.nodeId || hubs.get(entry.networkId) || '';
+
+    if (!id) {
+      continue;
+    }
+
+    if (!about.has(id)) {
+      about.set(id, []);
+    }
+
+    about.get(id).push(entry);
+  }
+
+  about.forEach((entries, id) => {
+    const counts = issueCounts(entries);
+    const part = (level, n) => {
+      const texts = entries
+        .filter((entry) => (entry.level === 'error') === (level === 'error'))
+        .map((entry) => ownText(doc, entry));
+
+      return n ? `${count(n, level)}: ${texts.join('; ')}` : '';
+    };
+
+    summaries.set(id, {
+      level: counts.errors ? 'error' : 'warning',
+      text: [part('error', counts.errors), part('warning', counts.warnings)]
+        .filter(Boolean)
+        .map((sentence) => `${sentence}.`)
+        .join(' '),
+    });
+  });
+
+  return summaries;
+}
+
+/**
  * The issues about what the Inspector shows, each with its text: a node's
  * (a switch's include its network's), a connection's, or for the diagram,
  * those about no node or connection. Errors come first.

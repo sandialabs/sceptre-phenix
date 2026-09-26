@@ -68,7 +68,7 @@
 
     <h3 class="builder-settings__heading">Canvas</h3>
     <div class="builder-field">
-      <label for="settings-layout">Auto layout algorithm</label>
+      <label for="settings-layout">Default layout for drafts</label>
       <select
         id="settings-layout"
         :value="builderSettings.layoutAlgorithm"
@@ -84,7 +84,8 @@
       </select>
       <p id="settings-layout-hint" class="builder-hint">
         {{ layoutAlgorithm(builderSettings.layoutAlgorithm)?.description }}
-        Auto layout arranges the diagram with it.
+        Drafts use it until you choose a layout for them in the toolbar’s layout
+        menu; that choice is saved with the draft.
       </p>
     </div>
     <div class="builder-field">

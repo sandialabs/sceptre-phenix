@@ -75,6 +75,11 @@ type Document struct {
 	Grid        Grid         `json:"grid"`
 	Scenario    *ScenarioRef `json:"scenario,omitempty"`
 	Source      *Source      `json:"source,omitempty"`
+	// Layout is the id of the automatic layout chosen for this document, which
+	// the editor runs in place of the viewer's default. Empty means the
+	// viewer's default; an id the editor does not know is ignored. It is
+	// presentation only and never written to a config.
+	Layout string `json:"layout,omitempty"`
 }
 
 // Node is a single item on the canvas. Exactly one of the kind-specific payload
@@ -171,6 +176,10 @@ type Edge struct {
 	// Color is drawn in place of the network's color. Like Label, it is
 	// presentation only and never written to a topology spec.
 	Color string `json:"color,omitempty"`
+	// Route is the path an automatic layout drew for the edge, in absolute
+	// canvas coordinates from the source handle to the target handle. The
+	// editor drops it once either end moves. Presentation only.
+	Route []Position `json:"route,omitempty"`
 }
 
 // Position is a canvas coordinate.

@@ -236,7 +236,7 @@ test('Configs still labels a Builder Beta topology and shows it read-only', asyn
   expectNoFatal(issues);
 });
 
-test('Configs edit of a Builder Beta topology explains why it cannot open (R70)', async ({
+test('Configs edit of a Builder Beta topology explains why it cannot open', async ({
   page,
   request,
   tracker,

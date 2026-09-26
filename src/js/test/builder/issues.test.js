@@ -6,6 +6,7 @@ import {
   issueGroups,
   issueNodeId,
   issuesAbout,
+  nodeIssueSummaries,
 } from '@/builder/issues.js';
 import { validateDocument } from '@/builder/validate.js';
 
@@ -71,6 +72,37 @@ describe('diagram checks', () => {
     expect(issueNodeId(doc, { networkId: sw.switch.networkId })).toBe(sw.id);
     expect(issueNodeId(doc, { networkId: 'n-lone' })).toBe('');
     expect(issueNodeId(doc, { path: 'id' })).toBe('');
+  });
+
+  test('the canvas marks each node they are about, and says what they are', () => {
+    const { doc, issues, alpha, bravo, sw } = brokenSample();
+    const marks = nodeIssueSummaries(doc, issues);
+
+    expect(marks.get(bravo.id)).toEqual({
+      level: 'error',
+      text:
+        '1 error: duplicate hostname "alpha" (also device alpha #1). ' +
+        '1 warning: interface "eth0" of "alpha" is not connected to a network and has no VLAN, so it cannot be published: connect it, or type a VLAN for it.',
+    });
+    expect(marks.get(alpha.id)).toEqual({
+      level: 'warning',
+      text:
+        '2 warnings: interface "eth9" of "alpha" is not connected to a network; ' +
+        'interface "eth9" of "alpha" uses VLAN "GHOST", which is not a network in this diagram.',
+    });
+    // A network with no switch marks no node; one with a switch marks it.
+    expect([...marks.keys()].sort()).toEqual([alpha.id, bravo.id].sort());
+    expect(
+      nodeIssueSummaries(doc, [
+        {
+          level: 'warning',
+          message: 'network warning',
+          path: '',
+          networkId: sw.switch.networkId,
+        },
+      ]).get(sw.id),
+    ).toEqual({ level: 'warning', text: '1 warning: network warning.' });
+    expect(nodeIssueSummaries(doc, []).size).toBe(0);
   });
 
   test('the Inspector gets the issues of what it shows, errors first', () => {

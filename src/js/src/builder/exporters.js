@@ -103,11 +103,13 @@ export function computeExportViewport(bounds, options = {}) {
 
 /**
  * Editing affordances that an image of the diagram leaves out: connection
- * handles (a device's "+" new-interface handle is one too) and a
- * connection's pointer hit area and keyboard focus band.
+ * handles (a device's "+" new-interface handle is one too), a
+ * connection's pointer hit area and keyboard focus band, and the marks and
+ * text of what the diagram checks found.
  */
 const EXPORT_EXCLUDED_SELECTOR =
-  '.vue-flow__handle, .builder-edge__hit, .builder-edge__focus';
+  '.vue-flow__handle, .builder-edge__hit, .builder-edge__focus, ' +
+  '.builder-node__issue, .builder-node__issue-text';
 
 /**
  * Classes that mark a selected node, connection or connection label: the

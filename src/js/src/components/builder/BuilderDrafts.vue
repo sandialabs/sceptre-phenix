@@ -11,7 +11,10 @@
   The ways to start make a draft, so a role that cannot create drafts does
   not get them. While a draft is being made or opened (busy), the buttons
   that would make or open another are aria-disabled: they keep focus, and a
-  second click does nothing.
+  second click does nothing. The Open of the one being opened says so.
+
+  A draft the server can no longer read (damaged) is listed on its tab too,
+  with why it cannot be opened, and Delete when the user may delete it.
 -->
 <template>
   <section ref="rootEl" aria-labelledby="drafts-title">
@@ -143,21 +146,43 @@
           <p v-if="item.description" class="builder-card__meta">
             {{ item.description }}
           </p>
+          <p
+            v-if="item.damaged"
+            class="builder-drafts__damaged"
+            :data-testid="`draft-damaged-${item.id}`">
+            <builder-icon name="warning" :size="14" />
+            This draft cannot be read, so it cannot be opened. A newer version
+            of phenix may have saved it.
+          </p>
 
           <div class="builder-drafts__actions">
+            <!-- While it opens: a turning ring and Opening… (see
+                 builder.css; reduced motion stops the ring turning). Both
+                 labels hold the button's width; the hidden one is not
+                 named. -->
             <button
+              v-if="!item.damaged"
               type="button"
               class="builder-button"
               :data-testid="`draft-open-${item.id}`"
-              :aria-label="`Open ${cardName(item)}`"
+              :aria-label="`${isOpening(item) ? 'Opening' : 'Open'} ${cardName(item)}`"
               :aria-disabled="busy || undefined"
-              @click="busy || $emit('open', item)">
-              Open
+              :aria-busy="isOpening(item) || undefined"
+              @click="busy || $emit('open', item, itemLabel(item))">
+              <span
+                v-if="isOpening(item)"
+                class="builder-toolbar__spinner"
+                aria-hidden="true"></span>
+              <span class="builder-button__swap">
+                <span :class="{ 'is-off': isOpening(item) }">Open</span>
+                <span :class="{ 'is-off': !isOpening(item) }">Opening…</span>
+              </span>
             </button>
             <button
-              v-if="tab.id === 'mine' && canDelete"
+              v-if="mayDelete(tab, item)"
               type="button"
               class="builder-button builder-button--danger"
+              :data-testid="`draft-delete-${item.id}`"
               :aria-label="`Delete ${cardName(item)}`"
               aria-haspopup="dialog"
               @click="confirming = item">
@@ -178,6 +203,19 @@
       @confirm="confirmDelete" />
   </section>
 </template>
+
+<script>
+  /**
+   * Names a listed draft or published diagram apart from every other one,
+   * for the view to say which it is opening.
+   *
+   * @param {{owner?: string, id: string}} item
+   * @returns {string}
+   */
+  export function cardKey(item) {
+    return `${item?.owner || ''}/${item?.id || ''}`;
+  }
+</script>
 
 <script setup>
   import { computed, nextTick, ref, watch } from 'vue';
@@ -202,6 +240,14 @@
     canDelete: { type: Boolean, default: true },
     // A draft is being made or opened.
     busy: { type: Boolean, default: false },
+    // The draft or published diagram being opened, as cardKey names it.
+    opening: { type: String, default: '' },
+    // The drafts the server can no longer read: the user's own (mine) and
+    // other users' (shared), each with whether the user may delete it.
+    damaged: {
+      type: Object,
+      default: () => ({ mine: [], shared: [] }),
+    },
   });
 
   const emit = defineEmits([
@@ -220,8 +266,26 @@
   // The first key of the command palette, shown on its button.
   const paletteKey = computed(() => commandKeys('palette.open')[0] || '');
 
+  // A damaged draft whose title cannot be read is not named by its id.
   function itemLabel(item) {
-    return item.name || item.title || item.target || item.id;
+    return (
+      item.name ||
+      item.title ||
+      item.target ||
+      (item.damaged ? 'Damaged draft' : item.id)
+    );
+  }
+
+  function isOpening(item) {
+    return Boolean(props.opening) && props.opening === cardKey(item);
+  }
+
+  // Delete is on the user's own drafts, if the role may delete them, and on
+  // a damaged draft whenever the server says the user may delete it.
+  function mayDelete(tab, item) {
+    return item.damaged
+      ? Boolean(item.canDelete)
+      : tab.id === 'mine' && props.canDelete;
   }
 
   // Drafts are listed with when they last changed, published diagrams with
@@ -247,11 +311,12 @@
       : itemLabel(item);
   }
 
+  // Damaged drafts follow the readable ones on their tab.
   const tabs = computed(() => [
     {
       id: 'mine',
       label: 'My Drafts',
-      items: props.mine,
+      items: [...props.mine, ...(props.damaged.mine || [])],
       empty: props.canCreate
         ? 'You have no drafts yet. Start from a blank diagram.'
         : 'You have no drafts.',
@@ -259,7 +324,7 @@
     {
       id: 'shared',
       label: 'Shared Drafts',
-      items: props.shared,
+      items: [...props.shared, ...(props.damaged.shared || [])],
       empty: 'No drafts have been shared with you.',
     },
     {
@@ -302,8 +367,8 @@
   }
 
   /**
-   * Focuses the Open button of a listed draft or diagram, switching to its
-   * tab first.
+   * Focuses the Open button of a listed draft or diagram, or the Delete
+   * button of a damaged draft, switching to its tab first.
    *
    * @param {string} id
    * @returns {Promise<boolean>} whether the button took focus
@@ -319,7 +384,7 @@
     active.value = tab.id;
     await nextTick();
     const button = rootEl.value?.querySelector(
-      `[data-testid="draft-open-${CSS.escape(id)}"]`,
+      `[data-testid="draft-open-${CSS.escape(id)}"], [data-testid="draft-delete-${CSS.escape(id)}"]`,
     );
     button?.focus();
 
@@ -337,26 +402,50 @@
     requestDelete(item);
   }
 
-  // Deleting a card removes the focused Delete button. Once the list no
-  // longer holds the draft, focus moves to the card that took its place, or
-  // to the tab when none is left (WCAG 2.4.3). A delete that failed leaves
-  // focus alone. The draft is named as on its card, with its time, since
-  // most drafts share a title.
+  // Deleting a card removes the focused Delete button, and a card with focus
+  // on it can leave its list when the lists are read again (deleted
+  // elsewhere, say). Once its tab no longer holds the draft, focus moves to
+  // the card that took its place, or to the tab when none is left (WCAG
+  // 2.4.3). A delete that failed leaves focus alone. The draft is named as
+  // on its card, with its time, since most drafts share a title.
   let deleting = null;
 
   function requestDelete(item) {
+    const tab = tabs.value.find((entry) => entry.items.includes(item));
+
     deleting = {
       id: item.id,
-      index: props.mine.findIndex((entry) => entry.id === item.id),
+      tab: tab?.id || active.value,
+      index: tab ? tab.items.indexOf(item) : 0,
     };
     emit('delete', item, cardName(item));
   }
 
+  // The card focus is on, as requestDelete records one. Read before the
+  // lists re-render.
+  function focusedCard() {
+    const card = document.activeElement?.closest?.('.builder-card');
+    const button = card?.querySelector(
+      '[data-testid^="draft-open-"], [data-testid^="draft-delete-"]',
+    );
+    if (!button || !rootEl.value?.contains(card)) {
+      return null;
+    }
+
+    return {
+      id: button.dataset.testid.replace(/^draft-(open|delete)-/, ''),
+      tab: active.value,
+      index: [...card.parentElement.children].indexOf(card),
+    };
+  }
+
   watch(
-    () => props.mine,
-    async (items) => {
-      const pending = deleting;
+    () => [props.mine, props.shared, props.damaged, props.published],
+    async () => {
+      const pending = deleting || focusedCard();
       deleting = null;
+      const items =
+        tabs.value.find((entry) => entry.id === pending?.tab)?.items || [];
       if (!pending || items.some((item) => item.id === pending.id)) {
         return;
       }
@@ -413,5 +502,22 @@
   .builder-card h2 {
     font-weight: 700;
     margin: 0 0 0.25rem;
+  }
+
+  /* The warning sign is decorative: the text says the same. */
+  .builder-drafts__damaged {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    margin: 0 0 0.4rem;
+  }
+
+  .builder-drafts__damaged > :first-child {
+    flex: none;
+    margin-top: 0.15em;
+  }
+
+  .builder-button[aria-busy='true'] {
+    cursor: progress;
   }
 </style>

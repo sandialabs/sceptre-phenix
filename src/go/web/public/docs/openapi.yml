@@ -1336,8 +1336,10 @@ paths:
       description: >
         Requires `configs` `list`. Returns the caller's own drafts, and
         separately the drafts of other users the caller holds `builder-drafts`
-        `list` for. Drafts the caller may not see are never counted or
-        described.
+        `list` for. Drafts of either kind whose metadata this server can no
+        longer read (for example, written by a newer phenix) are listed apart,
+        as damaged: they cannot be opened, only deleted. Drafts the caller may
+        not see are never counted or described.
       operationId: getBuilderDrafts
       responses:
         "200":
@@ -1445,9 +1447,8 @@ paths:
           description: >
             The If-Match header does not name the draft's current revision.
             The caller may delete the draft, so the response carries its
-            current ETag: a draft whose metadata this server can no longer
-            read is neither listed nor readable, and this is how its owner
-            learns the ETag that deletes it.
+            current ETag, as the listing does for a draft whose metadata this
+            server can no longer read, which cannot be read on its own.
           headers:
             ETag:
               $ref: "#/components/headers/BuilderETag"
@@ -2145,6 +2146,14 @@ components:
         sourceToken:
           description: the config the draft was imported from, as `<kind>/<name>`
           type: string
+        forkOf:
+          description: >
+            a draft the new one forks, as `<owner>/<draft id>`, which the caller
+            must be able to read (404 otherwise). The new draft takes its
+            source token in place of `sourceToken`, and records its last
+            publication as `forked`, so publishing the new draft can update
+            what that draft published or was opened from.
+          type: string
         owner:
           description: optional; when set, it must be the caller
           type: string
@@ -2238,6 +2247,18 @@ components:
             $ref: "#/components/schemas/BuilderSnapshot"
         publication:
           $ref: "#/components/schemas/BuilderPublication"
+        forked:
+          description: >
+            for a draft created with `forkOf`, what that draft had last
+            published when it was forked, which this draft may update too
+          type: object
+          properties:
+            documentId:
+              type: string
+            topologyTarget:
+              type: string
+            experimentTarget:
+              type: string
     BuilderDrafts:
       type: object
       properties:
@@ -2251,6 +2272,36 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BuilderDraft"
+        damaged:
+          description: >
+            drafts, the caller's own or of other users the caller may list,
+            whose metadata this server can no longer read
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderDamagedDraft"
+    BuilderDamagedDraft:
+      description: >
+        What can still be read of a draft whose metadata this server can no
+        longer read. It cannot be opened, only deleted with its ETag.
+      type: object
+      properties:
+        id:
+          type: string
+        owner:
+          type: string
+        title:
+          description: present when it can still be read
+          type: string
+        updated:
+          description: present when it can still be read
+          type: string
+          format: date-time
+        etag:
+          description: the If-Match value that deletes the draft
+          type: string
+        canDelete:
+          description: whether the caller may delete the draft
+          type: boolean
     BuilderSnapshot:
       type: object
       properties:

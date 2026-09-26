@@ -4,6 +4,10 @@ import {
   applyLayout,
   computeLayout,
   LAYOUT_DEFAULTS,
+  layoutChanges,
+  restoreLayoutChanges,
+  withGeometry,
+  withLayoutChoice,
 } from '@/builder/layout.js';
 import {
   addNode,
@@ -129,7 +133,7 @@ describe('automatic layout', () => {
     }
   });
 
-  // R56: moving a node into a group or out of one after a layout puts it
+  // Moving a node into a group or out of one after a layout puts it
   // on no other node, and a group that grows moves what it would cover.
   test('moving a node into or out of a laid-out group overlaps nothing', () => {
     const check = (doc, message) => {
@@ -218,7 +222,7 @@ describe('automatic layout', () => {
   });
 });
 
-// Where a palette click or an Add command puts a node (R94).
+// Where a palette click or an Add command puts a node.
 describe('the next free spot', () => {
   const boxOf = (node) => ({ ...node.position, ...sizeOf(node) });
   const overlaps = (a, b) =>
@@ -276,5 +280,44 @@ describe('the next free spot', () => {
       expect(Math.abs(box.y % 16)).toBe(0);
       doc = added.doc;
     }
+  });
+});
+
+describe('what a layout leaves in the document', () => {
+  test('keeps routes it can draw, and the layout choice, and puts both back', () => {
+    const { doc, edge } = sampleDocument();
+    const route = [
+      { x: 0, y: 0 },
+      { x: 30, y: 0 },
+    ];
+
+    // A route of one point, or with a point off the canvas, is not kept.
+    for (const drawn of [[{ x: 0, y: 0 }], [route[0], { x: NaN, y: 1 }]]) {
+      const laid = withGeometry(doc, {
+        positions: {},
+        routes: { [edge.id]: drawn },
+      });
+
+      expect(laid.edges[0].route).toBeUndefined();
+    }
+
+    const laid = withLayoutChoice(
+      withGeometry(doc, { positions: {}, routes: { [edge.id]: route } }),
+      'dagre',
+    );
+
+    expect(laid.edges[0].route).toEqual(route);
+    expect(laid.layout).toBe('dagre');
+    expect('layout' in withLayoutChoice(laid, '')).toBe(false);
+
+    const changes = layoutChanges(doc, laid);
+
+    expect(changes).toEqual({
+      geometry: {},
+      routes: { [edge.id]: null },
+      layout: { id: null },
+    });
+    expect(restoreLayoutChanges(laid, changes)).toEqual(doc);
+    expect(layoutChanges(doc, doc)).toBeNull();
   });
 });

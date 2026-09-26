@@ -800,7 +800,7 @@ test.describe('export and import', () => {
       });
       await expect.soft(error).toHaveText(tooLarge);
 
-      // Submitting the oversized file keeps the size error (N9). The submit
+      // Submitting the oversized file keeps the size error. The submit
       // handler runs in the click task; a later task sees its DOM update.
       await dialog.getByTestId('import-submit').click();
       await page.evaluate(() => null);
@@ -811,7 +811,7 @@ test.describe('export and import', () => {
 
     // The Topology and Experiment refusals name the kind and point at
     // Import on the drafts page. Their article is checked by the "an before
-    // Experiment" test (N10).
+    // Experiment" test.
     const name = uniqueName(testInfo, 'paste');
     const refusals = [
       ['empty text', '   ', 'Nothing to upload: the document is empty.'],
@@ -939,8 +939,9 @@ test.describe('export and import', () => {
     });
 
     // Each path opens a document that has not been opened before: a second
-    // copy of an opened document is a separate defect (R42, R54; see
-    // builder-persistence.spec.js), so its fix may not create a new draft.
+    // copy of an opened document is a separate defect (see the ?topology=
+    // link test in builder-persistence.spec.js), so its fix may not create
+    // a new draft.
     const linked = await publishDiagram(request, tracker, name);
     const imported = await publishDiagram(
       request,
@@ -1006,7 +1007,7 @@ test.describe('export and import', () => {
     // Under 2 KB of YAML that would expand to about 11 MB (more than twice
     // the 5 MiB import limit): four levels of ten aliases over a
     // 1000-character string. The import refuses aliases before they expand
-    // (R82). Kept this small so a regression cannot hang the runner: it
+    //. Kept this small so a regression cannot hang the runner: it
     // would close the dialog and fail later with a 413 banner.
     const leaf = 'x'.repeat(1000);
     const ten = (ref) => `[${Array(10).fill(`*${ref}`).join(', ')}]`;
@@ -1062,7 +1063,7 @@ test.describe('export and import', () => {
     );
   });
 
-  test('Import and Generate copy use "an" before Experiment (N10)', async ({
+  test('Import and Generate copy use "an" before Experiment', async ({
     page,
     builder,
   }) => {
@@ -1124,7 +1125,7 @@ test.describe('generate', () => {
     childConfig.spec.includeTopologies = [nested];
     await seedConfig(request, tracker, childConfig);
     // The root's hosts are a Firewall and a Router, node types that the
-    // import and the publication keep (R4).
+    // import and the publication keep.
     const rootNodes = sharedVlanNodes();
     rootNodes[0].type = 'Firewall';
     rootNodes[1].type = 'Router';
@@ -1295,6 +1296,8 @@ test.describe('generate', () => {
           new URL(response.url()).pathname.endsWith('/publish'),
       );
       await publish.getByTestId('publish-submit').click();
+      // Publish asks before it replaces the topology.
+      await page.getByTestId('confirm-accept').click();
       const response = await published;
       expect(response.status(), await response.text()).toBe(200);
       await expect
@@ -1481,7 +1484,7 @@ test.describe('generate', () => {
     const draft = await (await created).json();
 
     // The stored icons first: phenix stores "external": null on every VM
-    // of an experiment, which marked them all external (R21).
+    // of an experiment, which marked them all external.
     expect(iconsOf(await builder.serverDocument(draft))).toEqual(expected);
     const devices = builder.nodes('device');
     await expect(devices).toHaveCount(2);
@@ -1685,7 +1688,7 @@ test.describe('generate', () => {
   });
 
   // minimega VLAN names are case sensitive, so EXP and exp are two isolated
-  // segments, which one network would merge on publish (R22).
+  // segments, which one network would merge on publish.
   test('keeps VLANs that differ only by case as separate networks', async ({
     page,
     builder,
@@ -1725,11 +1728,11 @@ test.describe('generate', () => {
       tag: '@known-defect',
     },
     async ({ page, builder }, testInfo) => {
-      // R5 now limits uploads to users who may create configs, who can reach
+      // Uploads are limited to users who may create configs, who can reach
       // the same substitution through POST /configs; removing it is left to
       // the maintainers (see sandialabs/sceptre-phenix#436).
       knownDefect(
-        'generate expands ${VAR} from the server environment for users who may create configs (R5)',
+        'generate expands ${VAR} from the server environment for users who may create configs (sandialabs/sceptre-phenix#436)',
       );
       await builder.open();
       const name = uniqueName(testInfo, 'env');
@@ -1917,10 +1920,79 @@ test.describe('drafts landing', () => {
       await expect.soft(errorBanner(page)).toHaveCount(0);
       expect.soft((await request.get(path)).status(), 'server copy').toBe(404);
     });
+
+    await test.step('a draft the server cannot read is listed with why, and Delete removes it', async () => {
+      const unreadable = await builder.seedDraft(
+        blankDocument(`${title} unreadable`),
+      );
+      const LIST = '**/api/v1/builder/drafts';
+      // The server lists it as it lists a draft whose record it can no
+      // longer read: apart, with what it can read and the ETag.
+      await page.route(LIST, async (route) => {
+        if (route.request().method() !== 'GET') {
+          return route.fallback();
+        }
+
+        const response = await route.fetch();
+        const body = await response.json();
+        const listed = body.drafts.find((item) => item.id === unreadable.id);
+
+        body.drafts = body.drafts.filter((item) => item !== listed);
+        body.damaged = listed
+          ? [
+              {
+                id: listed.id,
+                owner: listed.owner,
+                title: listed.title,
+                updated: listed.updated,
+                etag: listed.etag,
+                canDelete: true,
+              },
+            ]
+          : [];
+
+        return route.fulfill({ response, json: body });
+      });
+      await showPageAgain(page);
+
+      const card = page.getByTestId('drafts-list-mine').locator('li', {
+        has: page.getByTestId(`draft-damaged-${unreadable.id}`),
+      });
+      await expect(card).toContainText(
+        'This draft cannot be read, so it cannot be opened.',
+      );
+      await expect
+        .soft(card.getByTestId(`draft-open-${unreadable.id}`))
+        .toHaveCount(0);
+
+      const remove = card.getByRole('button', {
+        name: new RegExp(`^Delete ${title} unreadable, updated \\S`),
+      });
+      const deleted = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'DELETE' &&
+          new URL(response.url()).pathname.endsWith(draftPath(unreadable)),
+      );
+      await remove.click();
+      await page
+        .getByRole('alertdialog')
+        .getByRole('button', { name: 'Delete draft' })
+        .click();
+      expect.soft((await deleted).status(), 'DELETE status').toBe(204);
+      await expect(card).toHaveCount(0);
+      // Its card has gone: focus moves on rather than falling to <body>.
+      await expect
+        .soft(page.locator('body'), 'focus after the delete')
+        .not.toBeFocused();
+      expect
+        .soft((await request.get(draftPath(unreadable))).status())
+        .toBe(404);
+      await page.unroute(LIST);
+    });
     expectNoFatal(issues);
   });
 
-  test('asks for confirmation before deleting a draft (R43)', async ({
+  test('asks for confirmation before deleting a draft', async ({
     page,
     request,
     builder,

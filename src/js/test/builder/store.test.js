@@ -146,7 +146,7 @@ describe('documents', () => {
     expect(store.canUndo).toBe(false);
   });
 
-  // R37: a draft saved while a renamed network's switch kept its old name
+  // A draft saved while a renamed network's switch kept its old name
   // opens with the switch named after its network.
   test('a switch still labelled with an old network name is named after its network', () => {
     const { doc, sw } = sampleDocument();
@@ -164,7 +164,7 @@ describe('documents', () => {
 
 describe('editing commits', () => {
   // The History object is not reactive; a getter read once must still follow
-  // every later edit, undo and redo (R14).
+  // every later edit, undo and redo.
   test('Undo and Redo availability follows the history', async () => {
     await withDraft();
     const undo = computed(() => store.canUndo);
@@ -322,7 +322,7 @@ describe('editing commits', () => {
     expect(store.history.size).toBe(entries + 1);
 
     // Nor is ungrouping a node that is not a group, moving a node to the
-    // group it is in, or resizing a node to its size (R56).
+    // group it is in, or resizing a node to its size.
     const size = { width: 200, height: 100 };
     store.resizeNode(node.id, size);
     expect(store.announcement).toBe('Resized a to 200 by 100');
@@ -494,7 +494,7 @@ describe('editing commits', () => {
   });
 
   // Past its byte limit the server keeps fewer snapshots than the undo
-  // history does, and refuses a move to one it dropped (R19).
+  // history does, and refuses a move to one it dropped.
   test('undo stops at the oldest snapshot the server keeps', async () => {
     await withDraft();
 
@@ -595,7 +595,7 @@ describe('editing commits', () => {
   });
 
   // A save answers without the history, which is kept rather than emptied,
-  // so History and a restore still find its snapshots (R83).
+  // so History and a restore still find its snapshots.
   test('a save keeps the server history it does not carry', async () => {
     await withDraft();
     store.serverHistory = [{ id: 's1' }];
@@ -799,7 +799,7 @@ describe('editing commits', () => {
     expect(store.history.entries[1].serverSnapshotId).toBe('s3');
 
     // Undo goes back to the snapshot the server kept, not the abandoned
-    // one it dropped (R83).
+    // one it dropped.
     store.undo();
     await store.saveNow();
     expect(api.moveCursor).toHaveBeenLastCalledWith(
@@ -813,7 +813,7 @@ describe('editing commits', () => {
 
   // A session that ended while a save was under way left it queued; the
   // server holds it under its operation id, so it is neither sent again nor
-  // reported as a conflict, and the rest of the queue goes on (R84).
+  // reported as a conflict, and the rest of the queue goes on.
   test('a recovered save the server already holds is not a conflict', async () => {
     const sent = createDocument({ name: 'Sent' });
     const later = { ...sent, name: 'Later' };
@@ -1028,7 +1028,7 @@ describe('conflicts', () => {
 
     await store.resolveConflict('fork', { title: 'Recovered' });
 
-    // The server titles a draft after its document's name (N8).
+    // The server titles a draft after its document's name.
     const renamed = expect.objectContaining({
       document: expect.objectContaining({ name: 'Recovered' }),
     });
@@ -1047,8 +1047,8 @@ describe('conflicts', () => {
     expect(store.draftId).toBe('d1');
   });
 
-  // The fork of a draft another user owns is the actor's (R38), and undo in
-  // it moves the fork's cursor to the fork's own snapshots (R39).
+  // The fork of a draft another user owns is the actor's, and undo in
+  // it moves the fork's cursor to the fork's own snapshots.
   test('after forking a shared draft, undo moves the fork’s cursor', async () => {
     await store.initAutosave({ owner: 'bob', draftId: 'd1', etag: '"1"' });
     store.history.currentEntry().serverSnapshotId = 's1';
@@ -1089,7 +1089,7 @@ describe('conflicts', () => {
     expect(state.status).toBe('saved');
   });
 
-  // An edit made while the fork is saved would be left out of it (R39).
+  // An edit made while the fork is saved would be left out of it.
   test('an edit made while saving the history as a new draft is refused, not lost', async () => {
     await withDraft();
     api.appendSnapshot.mockRejectedValueOnce(
@@ -1155,7 +1155,7 @@ describe('conflicts', () => {
     );
   });
 
-  // " (local copy)" must not take a name past the server's limit (N8).
+  // " (local copy)" must not take a name past the server's limit.
   test('the fork of a diagram with a long name is titled within the name limit', async () => {
     const bytes = (text) => new TextEncoder().encode(text).length;
 
@@ -1239,7 +1239,7 @@ describe('server data', () => {
     expect(store.doc).toBe(before);
   });
 
-  test('a published diagram opens read only; editing it makes one draft, then reopens that draft (R29, R71)', async () => {
+  test('a published diagram opens read only; editing it makes one draft, then reopens that draft', async () => {
     store.serverHistory = [{ id: 'old' }];
 
     const viewed = await store.viewPublishedDocument('published-1');
@@ -1581,7 +1581,7 @@ describe('server data', () => {
   });
 
   // Two edits made within one save's latency are both saved before the
-  // publish goes out, rather than the publish being refused (R85).
+  // publish goes out, rather than the publish being refused.
   test('edits made just before publishing are all saved first', async () => {
     await withDraft();
     let revision = 1;
@@ -1611,7 +1611,7 @@ describe('server data', () => {
 
   // An edit made while a publish is under way (the dialog was closed) is
   // saved after it, against the ETag the publish answered with, so the
-  // user's own publish is never reported as a conflict (R40).
+  // user's own publish is never reported as a conflict.
   test('an edit made while publishing is saved after it', async () => {
     await withDraft();
     let finish;
@@ -1868,7 +1868,7 @@ describe('server data', () => {
 
   test('deleting a draft passes its ETag', async () => {
     // What this device kept for the draft goes with it, whoever edited it
-    // here, and nothing else does (R86).
+    // here, and nothing else does.
     const keep = (actor, owner, draftId) =>
       device.store.put({
         key: `${actor}::${owner}::${draftId}`,

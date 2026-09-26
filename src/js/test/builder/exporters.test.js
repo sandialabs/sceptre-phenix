@@ -176,6 +176,8 @@ function fakeCanvas() {
                 'div',
                 'vue-flow__handle builder-handle builder-handle--new',
               ),
+              fakeElement('span', 'builder-node__issue'),
+              fakeElement('span', 'builder-node__issue-text'),
             ],
           }),
         ],
@@ -283,6 +285,8 @@ describe('image export content', () => {
       'vue-flow__handle',
       'builder-edge__hit',
       'builder-edge__focus',
+      'builder-node__issue',
+      'builder-node__issue-text',
       'is-selected',
       'selected',
     ]) {

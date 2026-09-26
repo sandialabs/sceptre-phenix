@@ -179,13 +179,13 @@ describe('one commit, one snapshot', () => {
 
     await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
 
-    // Once the queue drains, nothing is left on this device (R86).
+    // Once the queue drains, nothing is left on this device.
     expect(await store.all()).toEqual([]);
     expect(store.snapshots.size).toBe(0);
   });
 
   // An edit writes its own snapshot once, and the draft record keeps no
-  // snapshot, however long the history is (R88).
+  // snapshot, however long the history is.
   test('each snapshot is stored once, apart from the draft record', async () => {
     const store = memoryStore();
     const { queue } = await attached({ store, isOnline: () => false });
@@ -235,7 +235,7 @@ describe('recovery', () => {
   });
 
   // A session that never saw a save's answer (the tab closed, or another
-  // draft was opened) finds the snapshot by its operation id (R84).
+  // draft was opened) finds the snapshot by its operation id.
   test('operations the server already holds are recognised by their id', () => {
     const queue = [
       { kind: 'snapshot', opId: 'c1', commitId: 'c1' },
@@ -260,7 +260,7 @@ describe('recovery', () => {
   });
 
   // An edit undone before a later edit is on no branch the server keeps, so
-  // the recovered history leaves it out (R83).
+  // the recovered history leaves it out.
   test('the recovered history follows the queue as the server does', () => {
     const base = { id: 'b', serverSnapshotId: 's1' };
     const entries = ['x', 'y', 'z'].map((id) => ({ id }));
@@ -312,7 +312,7 @@ describe('recovery', () => {
 
   // The entry an undo goes back to may be the draft as it was opened, which
   // was never saved from this device: it is stored with the queue, first,
-  // so a reload can show it (R83).
+  // so a reload can show it.
   test('an undo to the draft as opened is stored with the queue', async () => {
     const store = memoryStore();
     const { queue } = await attached({ store, isOnline: () => false });
@@ -380,7 +380,7 @@ describe('recovery', () => {
     });
 
     // The server stored the snapshot, so the device must not keep it queued
-    // against the old ETag, or reopening the draft reports a conflict (R84).
+    // against the old ETag, or reopening the draft reports a conflict.
     test('a save that settles after dispose is still recorded', async () => {
       let resolveRequest;
       const store = memoryStore();
@@ -473,8 +473,14 @@ describe('failure states', () => {
 
     const created = await queue.forkLocalHistory({ title: 'Recovered' });
 
+    // The new draft forks the conflicting one, so the server gives it that
+    // draft's source, and it may update what that draft published.
     expect(api.createDraft).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Recovered', document: doc }),
+      expect.objectContaining({
+        title: 'Recovered',
+        document: doc,
+        forkOf: 'alice/d1',
+      }),
     );
     expect(created.draft.id).toBe('d2');
     expect(queue.record.draftId).toBe('d2');
@@ -484,8 +490,8 @@ describe('failure states', () => {
 
   // The fork saves the history on screen, in order, with its cursor on the
   // entry shown, and every entry learns its snapshot in the new draft, so
-  // undo there never names the old draft's snapshots (R39). The new draft
-  // is the actor's: the server refuses one for anybody else (R38).
+  // undo there never names the old draft's snapshots. The new draft
+  // is the actor's: the server refuses one for anybody else.
   test('a fork of a shared draft is the actor’s, with the history on screen', async () => {
     const store = memoryStore();
     let revision = 0;
@@ -528,6 +534,7 @@ describe('failure states', () => {
     });
 
     expect(api.createDraft.mock.calls[0][0]).not.toHaveProperty('owner');
+    expect(api.createDraft.mock.calls[0][0].forkOf).toBe('bob/d1');
     expect(api.createDraft.mock.calls[0][0].summary).toBeUndefined();
     expect(
       api.appendSnapshot.mock.calls
@@ -557,6 +564,41 @@ describe('failure states', () => {
     expect(await store.all()).toEqual([]);
   });
 
+  // A draft the server no longer has, or no longer lets this user read,
+  // has no source to give: the history is saved as a draft of its own.
+  test('a fork of a draft that is gone still saves the history', async () => {
+    const missing = Object.assign(new Error('not found'), {
+      response: { status: 404, data: {} },
+    });
+    const api = fakeApi({
+      createDraft: vi
+        .fn()
+        .mockRejectedValueOnce(missing)
+        .mockResolvedValue({
+          draft: { id: 'd2', owner: 'alice' },
+          etag: '"1"',
+        }),
+    });
+    const { queue } = await attached({ api });
+
+    await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+
+    const created = await queue.forkLocalHistory({ title: 'Recovered' });
+
+    expect(api.createDraft).toHaveBeenCalledTimes(2);
+    expect(api.createDraft.mock.calls[0][0].forkOf).toBe('alice/d1');
+    expect(api.createDraft.mock.calls[1][0]).not.toHaveProperty('forkOf');
+    expect(api.createDraft.mock.calls[1][0].title).toBe('Recovered');
+    expect(created.draft.id).toBe('d2');
+
+    // Any other refusal is the answer.
+    api.createDraft.mockRejectedValueOnce(conflict());
+    await expect(queue.forkLocalHistory({ title: 'Again' })).rejects.toThrow(
+      'conflict',
+    );
+    expect(api.createDraft).toHaveBeenCalledTimes(3);
+  });
+
   test('discarding local work is an explicit choice', async () => {
     const api = fakeApi({
       appendSnapshot: vi.fn(async () => {
@@ -577,7 +619,7 @@ describe('failure states', () => {
   });
 
   // A publish holds the queue, so no save lands between it and the ETag it
-  // answers with (R40).
+  // answers with.
   test('a held queue keeps edits and sends them once released', async () => {
     const api = fakeApi();
     const { queue } = await attached({ api });
@@ -599,7 +641,7 @@ describe('failure states', () => {
   });
 
   // An expired session is not a refusal of this user: Retry saving stays,
-  // and the queue is kept (R41).
+  // and the queue is kept.
   test('an ended session keeps the queue and offers Retry saving', async () => {
     const timers = [];
     const api = fakeApi();
@@ -883,7 +925,7 @@ describe('refused snapshots', () => {
     expect(api.appendSnapshot.mock.calls[1][2].summary).toBe('fix');
   });
 
-  test('an oversized snapshot is not retried, and the next edit replaces it (R19)', async () => {
+  test('an oversized snapshot is not retried, and the next edit replaces it', async () => {
     const timers = [];
     const store = memoryStore();
     const big = { ...doc, name: 'big' };
@@ -936,7 +978,7 @@ describe('refused snapshots', () => {
   });
 
   // The server drops its oldest snapshots past its byte limit, so it may no
-  // longer hold the one an undo goes back to (R19).
+  // longer hold the one an undo goes back to.
   test('an undo to a snapshot the server no longer keeps does not block later edits', async () => {
     const api = fakeApi({
       moveCursor: vi.fn(async () => {
@@ -970,8 +1012,8 @@ describe('refused snapshots', () => {
 describe('local storage', () => {
   // Version 1 of the database kept every entry's snapshot in the draft
   // record. Upgrading keeps only what the queue can replay, with each
-  // snapshot a record of its own (R88), and drops records with nothing
-  // queued (R86).
+  // snapshot a record of its own, and drops records with nothing
+  // queued.
   test('version 1 records are split, keeping what the queue needs', () => {
     const v1 = {
       key: 'alice::alice::d1',
@@ -1012,7 +1054,7 @@ describe('local storage', () => {
   // The queue changes its live record in place, and its snapshots come from
   // the editor's reactive state. The store keeps structured clones of plain
   // data, as IndexedDB does, so what it holds is what was stored, whatever
-  // the caller does next (R89).
+  // the caller does next.
   test('the memory store keeps what was stored, as IndexedDB does', async () => {
     const store = createMemoryStore();
     const { name } = doc;

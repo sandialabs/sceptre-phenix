@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/gofrs/uuid/v5"
@@ -59,6 +60,8 @@ type CreateDraftRequest struct {
 	Title string
 	// SourceToken optionally records the config the document was imported from.
 	SourceToken string
+	// Forked optionally records what the draft this one forks had published.
+	Forked *ForkedPublication
 	// Document holds a JSON encoded builder document. It is decoded, validated,
 	// and canonicalized before anything is stored.
 	Document []byte
@@ -186,25 +189,43 @@ func uuidSource() (string, error) {
 	return id.String(), nil
 }
 
+// DamagedDraft is what can still be read of a draft whose metadata no longer
+// decodes or validates, for example one written by a newer phenix. Its ID
+// and revision always; its owner, title and last update when the record
+// still holds them in a usable form. Such a draft can only be deleted, and
+// only when its owner can be read (see [Service.GetDraftOwner]).
+type DamagedDraft struct {
+	ID       string
+	Owner    string
+	Title    string
+	Updated  time.Time
+	Revision int64
+}
+
+// ETag returns the entity tag that deletes the draft, as [DraftMetadata.ETag]
+// does for a readable one.
+func (d *DamagedDraft) ETag() string {
+	return `"` + strconv.FormatInt(d.Revision, 10) + `"`
+}
+
 // ListDrafts returns the metadata of every draft, ordered by draft ID. It is
 // intended for administrative callers; use [Service.ListDraftsByOwner] for
 // per-user views.
 //
 // A draft whose metadata fails to decode or validate is logged and left out,
 // so one damaged record, or one written by a newer version, never hides every
-// other draft. Its owner can still delete it (see [Service.GetDraftOwner]).
+// other draft. [Service.ListDraftsWithDamaged] also returns what can be read
+// of such drafts, so their owners can delete them.
 func (s *Service) ListDrafts(ctx context.Context) ([]DraftMetadata, error) {
-	drafts, _, err := s.listDrafts(ctx)
+	drafts, _, err := s.ListDraftsWithDamaged(ctx)
 
 	return drafts, err
 }
 
-// listDrafts lists every draft whose metadata decodes and validates, and the
-// IDs of the drafts whose metadata does not, which it logs with the revision
-// their owner needs to delete them. A caller that removes content no listed
-// draft references must not mistake such a draft's content for orphaned
-// content.
-func (s *Service) listDrafts(ctx context.Context) ([]DraftMetadata, []string, error) {
+// ListDraftsWithDamaged returns what [Service.ListDrafts] does and, apart,
+// what can still be read of every draft whose metadata does not decode or
+// validate, both ordered by draft ID. Each such draft is logged.
+func (s *Service) ListDraftsWithDamaged(ctx context.Context) ([]DraftMetadata, []DamagedDraft, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, fmt.Errorf("listing drafts: %w", err)
 	}
@@ -215,8 +236,8 @@ func (s *Service) listDrafts(ctx context.Context) ([]DraftMetadata, []string, er
 	}
 
 	var (
-		drafts     = make([]DraftMetadata, 0, len(records))
-		unreadable []string
+		drafts  = make([]DraftMetadata, 0, len(records))
+		damaged []DamagedDraft
 	)
 
 	for _, record := range records {
@@ -230,7 +251,7 @@ func (s *Service) listDrafts(ctx context.Context) ([]DraftMetadata, []string, er
 				"err", err,
 			)
 
-			unreadable = append(unreadable, record.Key)
+			damaged = append(damaged, readDamagedDraft(record))
 
 			continue
 		}
@@ -238,7 +259,64 @@ func (s *Service) listDrafts(ctx context.Context) ([]DraftMetadata, []string, er
 		drafts = append(drafts, *meta)
 	}
 
+	return drafts, damaged, nil
+}
+
+// listDrafts lists every draft whose metadata decodes and validates, and the
+// IDs of the drafts whose metadata does not. A caller that removes content no
+// listed draft references must not mistake such a draft's content for
+// orphaned content.
+func (s *Service) listDrafts(ctx context.Context) ([]DraftMetadata, []string, error) {
+	drafts, damaged, err := s.ListDraftsWithDamaged(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	unreadable := make([]string, 0, len(damaged))
+
+	for i := range damaged {
+		unreadable = append(unreadable, damaged[i].ID)
+	}
+
 	return drafts, unreadable, nil
+}
+
+// readDamagedDraft reads what it can of a draft record whose metadata does not
+// decode or validate. Each field is read on its own, so one of the wrong type
+// does not hide the others, and a field that would not pass validation is
+// left empty.
+func readDamagedDraft(record store.Record) DamagedDraft {
+	damaged := DamagedDraft{ //nolint:exhaustruct // the rest is read below, if it can be
+		ID:       record.Key,
+		Revision: record.Revision,
+	}
+
+	var fields map[string]json.RawMessage
+
+	if json.Unmarshal(record.Value, &fields) != nil {
+		return damaged
+	}
+
+	var (
+		owner, title string
+		updated      time.Time
+	)
+
+	if json.Unmarshal(fields["owner"], &owner) == nil &&
+		validateText("owner", owner, MaxOwnerLength, true) == nil {
+		damaged.Owner = owner
+	}
+
+	if json.Unmarshal(fields["title"], &title) == nil &&
+		validateText("title", title, MaxTitleLength, false) == nil {
+		damaged.Title = title
+	}
+
+	if json.Unmarshal(fields["updated"], &updated) == nil {
+		damaged.Updated = updated
+	}
+
+	return damaged
 }
 
 // ListDraftsByOwner returns the metadata of every draft owned by the given
@@ -303,21 +381,17 @@ func (s *Service) GetDraftOwner(ctx context.Context, draftID string) (*DraftMeta
 		return nil, storeError(kindDraft, draftID, store.AnyRevision, err)
 	}
 
-	var header struct {
-		Owner string `json:"owner"`
-	}
+	// Read as a damaged draft is listed, so every one listed with an owner
+	// can be deleted.
+	damaged := readDamagedDraft(record)
 
-	if err := json.Unmarshal(record.Value, &header); err != nil {
-		return nil, newCorruptError(kindDraft, draftID, "metadata is not valid JSON: "+err.Error())
-	}
-
-	if validateText("owner", header.Owner, MaxOwnerLength, true) != nil {
+	if damaged.Owner == "" {
 		return nil, newCorruptError(kindDraft, draftID, "metadata has no usable owner")
 	}
 
 	return &DraftMetadata{ //nolint:exhaustruct // only the fields an owner check needs
 		ID:       draftID,
-		Owner:    header.Owner,
+		Owner:    damaged.Owner,
 		Revision: record.Revision,
 	}, nil
 }
@@ -405,7 +479,13 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dra
 		History:        []SnapshotManifest{manifest},
 		Cursor:         0,
 		Publication:    nil,
+		Forked:         nil,
 		Revision:       store.AnyRevision,
+	}
+
+	if req.Forked != nil {
+		forked := *req.Forked
+		meta.Forked = &forked
 	}
 
 	// Metadata is encoded (and size checked) before anything durable is

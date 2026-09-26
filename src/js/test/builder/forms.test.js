@@ -51,7 +51,7 @@ describe('generated UI schemas', () => {
     expect(JSON.stringify(ui)).toContain('#/properties/spec');
   });
 
-  // V6: the node spec's groups came in the schema's order (Advanced,
+  // The node spec's groups came in the schema's order (Advanced,
   // Commands, Delay first) and Type last. The fields looked for most come
   // first now, and those rarely set in a section that starts closed.
   test("a device's spec shows the fields looked for most first", () => {
@@ -102,7 +102,7 @@ describe('generated UI schemas', () => {
     ]);
   });
 
-  // R35: the same object each time, which JSON Forms does not render again.
+  // The same object each time, which JSON Forms does not render again.
   test('are the same object for the same element kind and lock', () => {
     const device = uiSchemaForKind(builderSchemaV1, 'device', {
       spec: { type: 'Router' },
@@ -174,7 +174,7 @@ describe('inspector working copy', () => {
     expect(target.data).toEqual({ name: 'Sample', description: '' });
   });
 
-  // Apply announces "Updated <name>" (A72).
+  // Apply announces "Updated <name>".
   test('names what it edits, for announcements', () => {
     const { doc, alpha, sw, edge } = sampleDocument();
     const note = addNode(doc, { kind: 'note', text: 'a' });
@@ -599,7 +599,7 @@ describe('which fields a working copy changed', () => {
   });
 });
 
-// R16: Apply, Save now and a selection change merge the working copy's edits
+// Apply, Save now and a selection change merge the working copy's edits
 // into the element as it is then, rather than put the working copy over it.
 describe('merging a working copy into the element as it is now', () => {
   const selection = (node) => ({ type: 'node', id: node.id });
@@ -706,7 +706,7 @@ describe('merging a working copy into the element as it is now', () => {
   });
 });
 
-// R32: the form was the only way to rename an interface, and a rename
+// The form was the only way to rename an interface, and a rename
 // minted a new handle, which lost the interface its connection.
 describe('renaming an interface in the Inspector', () => {
   test('keeps its handle and its connection', () => {
@@ -728,7 +728,7 @@ describe('renaming an interface in the Inspector', () => {
     expect(connectionChanges(doc, next, alpha.id)).toEqual([]);
   });
 
-  // R32: a connected interface removed while another is added is no
+  // A connected interface removed while another is added is no
   // rename, so the new one is not said to be disconnected.
   test('an interface replaced by a new one does not take its handle', () => {
     const { doc, alpha } = sampleDocument();

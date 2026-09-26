@@ -30,6 +30,10 @@ the root target does.
 ## Generation and Compatibility
 
 - Run `make generate` after protobuf, store-interface, or RBAC policy changes.
+- Run `make generate` (or `make generate-builder-schema`) after changing
+  `types/builder/` or the config schemas in `types/version/schemas/`: it
+  rewrites the web UI's committed Builder Flow schema bundle,
+  `../js/src/builder/schema/builder-v1.schema.json`, which CI checks.
 - Never manually edit `store/mock.go`, `web/proto/*.pb.go`, or
   `web/rbac/known_policy.go`; include regenerated outputs in the change.
 - Preserve bundled third-party assets under `web/public/` unless explicitly
