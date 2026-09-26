@@ -109,6 +109,13 @@ tests for behavior changes. Report checks you cannot run; do not silently skip
 requirements such as Docker, minimega, VM images, root privileges, or a running
 backend. Review generated diffs before submission.
 
+Services started for local testing (`phenix ui`, Vite, Playwright targets,
+scratch servers) must not listen on ports 9200, 5601, 3000, 3001, or 9001
+unless a hardcoded value requires it or the user asks; choose another free port
+and pass it explicitly, for example
+`phenix ui --listen-endpoint 127.0.0.1:3080` with
+`E2E_BASE_URL=http://127.0.0.1:3080`.
+
 ## Documentation and References
 
 | Need | Reference |

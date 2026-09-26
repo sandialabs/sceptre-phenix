@@ -1,0 +1,1889 @@
+/*
+ * Builder Beta styles.
+ *
+ * Scoped to .builder-root so the beta editor can carry its own theme without
+ * changing the rest of phenix. Colors come from custom properties keyed off
+ * [data-builder-theme], which BuilderBeta.vue sets from the persisted
+ * phenix.builder.theme preference (defaulting to the OS preference).
+ */
+
+.builder-root {
+  --bx-bg: #ffffff;
+  --bx-bg-alt: #f4f6f9;
+  --bx-surface: #ffffff;
+  --bx-border: #c7ced9;
+  --bx-border-strong: #7b8494;
+  /* Text fields share the panel's fill, so only their border shows where
+     they are: it must reach 3:1 against the panel (WCAG 1.4.11). */
+  --bx-field-border: #7b8494;
+  --bx-text: #1b2330;
+  --bx-text-muted: #4d5768;
+  --bx-accent: #1f5fa9;
+  --bx-accent-contrast: #ffffff;
+  --bx-danger: #a4262c;
+  --bx-warning: #8a5300;
+  --bx-success: #1a6b3c;
+  --bx-focus: #0a58ca;
+  --bx-disabled-primary: #667085;
+  --bx-disabled-primary-text: #ffffff;
+  --bx-grid: #dfe4ec;
+  /* A selected canvas node's fill: text keeps 4.5:1 on it. */
+  --bx-selected-bg: #e4ecf5;
+  --bx-minimap-mask: rgba(27, 35, 48, 0.12);
+  --bx-shadow: 0 1px 3px rgba(16, 24, 40, 0.16);
+  --bx-radius: 6px;
+  --bx-motion: 150ms;
+
+  /* The network colors, one for each color addNetwork picks, in its order
+     (DEFAULT_NETWORK_COLORS in model.js: blue, orange, green, purple, red,
+     teal, olive, plum). Each keeps 3:1 against the canvas and its grid. */
+  --bx-net-0: #1f5fa9;
+  --bx-net-1: #8a5300;
+  --bx-net-2: #1a6b3c;
+  --bx-net-3: #7b3fa0;
+  --bx-net-4: #a4262c;
+  --bx-net-5: #0f6f7a;
+  --bx-net-6: #5c5f00;
+  --bx-net-7: #8e3f7e;
+
+  color: var(--bx-text);
+  background: var(--bx-bg);
+
+  /* The route is full-bleed (see App.vue): the Builder fills the viewport
+     under the header. The drafts landing scrolls; the editor fits the window
+     and its side panels scroll on their own, so it scrolls only when the
+     window is too short for a usable canvas. */
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.75rem 1rem;
+  overflow: auto;
+}
+
+/* The editor's column breakpoints query its own width in rem, so text
+   enlarged on its own (WCAG 1.4.4) stacks the columns before the canvas is
+   squeezed out. */
+.builder-root--editing {
+  container: builder-editor / inline-size;
+}
+
+/* Undo phenix-wide element styles that are not meant for the Builder:
+   _general.scss sets every list to two columns and gives textareas a fixed
+   size and margin, which pushed outline rows and form fields out of their
+   boxes. */
+.builder-root ul,
+.builder-root ol {
+  columns: auto;
+  -webkit-columns: auto;
+}
+
+.builder-root textarea {
+  display: block;
+  height: auto;
+  min-height: 3.5rem;
+  margin: 0;
+}
+
+/* Bulma colors strong and .label with $text-strong, which phenix sets to
+   white for its dark shell; in the light theme that drew Inspector labels
+   and "Error:" prefixes white on white. */
+.builder-root strong,
+.builder-root label,
+.builder-root legend,
+.builder-root .label {
+  color: inherit;
+}
+
+.builder-root[data-builder-theme='dark'] {
+  --bx-bg: #12171f;
+  --bx-bg-alt: #1a212b;
+  --bx-surface: #1e2631;
+  --bx-border: #3a4553;
+  --bx-border-strong: #7b8798;
+  --bx-field-border: #7b8798;
+  --bx-text: #e8edf5;
+  --bx-text-muted: #b3bdcc;
+  --bx-accent: #7fb2f0;
+  --bx-accent-contrast: #10151c;
+  --bx-danger: #ef8b90;
+  --bx-warning: #e5b567;
+  --bx-success: #7fd1a1;
+  --bx-focus: #9dc4ff;
+  --bx-disabled-primary: #526071;
+  --bx-disabled-primary-text: #ffffff;
+  --bx-grid: #27303c;
+  --bx-selected-bg: #2d3b4e;
+  --bx-minimap-mask: rgba(0, 0, 0, 0.45);
+  --bx-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+
+  --bx-net-0: #7fb2f0;
+  --bx-net-1: #e5b567;
+  --bx-net-2: #7fd1a1;
+  --bx-net-3: #c9a0ee;
+  --bx-net-4: #ef8b90;
+  --bx-net-5: #6fd0d8;
+  --bx-net-6: #cfd07a;
+  --bx-net-7: #e39ad0;
+}
+
+.builder-root :focus-visible {
+  outline: 3px solid var(--bx-focus);
+  outline-offset: 2px;
+}
+
+.builder-visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.builder-skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 40;
+  padding: 0.5rem 0.75rem;
+  background: var(--bx-accent);
+  color: var(--bx-accent-contrast);
+  border-radius: var(--bx-radius);
+}
+
+.builder-skip-link:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+}
+
+.builder-root button,
+.builder-root select,
+.builder-root input,
+.builder-root textarea {
+  font: inherit;
+  color: var(--bx-text);
+}
+
+.builder-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--bx-border);
+  border-radius: var(--bx-radius);
+  background: var(--bx-surface);
+  cursor: pointer;
+  transition: background var(--bx-motion) ease-in-out;
+}
+
+.builder-button:hover:not(:disabled, [aria-disabled='true']) {
+  background: var(--bx-bg-alt);
+}
+
+/* Toolbar buttons that do not apply are aria-disabled, so they keep focus. */
+.builder-button:disabled,
+.builder-button[aria-disabled='true'] {
+  background: var(--bx-bg-alt);
+  color: var(--bx-text-muted);
+  cursor: not-allowed;
+}
+
+.builder-root .builder-button--primary {
+  background: var(--bx-accent);
+  border-color: var(--bx-accent);
+  color: var(--bx-accent-contrast);
+}
+
+.builder-root
+  .builder-button--primary:hover:not(:disabled, [aria-disabled='true']) {
+  background: var(--bx-accent);
+  border-color: var(--bx-accent);
+  box-shadow: inset 0 0 0 1px var(--bx-accent-contrast);
+}
+
+.builder-root .builder-button--primary:disabled,
+.builder-root .builder-button--primary[aria-disabled='true'] {
+  background: var(--bx-disabled-primary);
+  border-color: var(--bx-disabled-primary);
+  color: var(--bx-disabled-primary-text);
+}
+
+.builder-button--danger {
+  border-color: var(--bx-danger);
+  color: var(--bx-danger);
+}
+
+.builder-button[aria-pressed='true'] {
+  border-color: var(--bx-border-strong);
+  background: var(--bx-bg-alt);
+  box-shadow: inset 0 0 0 1px var(--bx-border-strong);
+}
+
+.builder-panel {
+  background: var(--bx-surface);
+  border: 1px solid var(--bx-border);
+  border-radius: var(--bx-radius);
+  box-shadow: var(--bx-shadow);
+}
+
+/* Canvas ------------------------------------------------------------------ */
+
+.builder-canvas {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  background: var(--bx-bg-alt);
+}
+
+/* The diagram fills what the Keyboard help bar below it leaves. */
+.builder-canvas .builder-canvas__flow {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* Vue Flow's zoom controls and minimap ship light-only colors; draw them from
+   the Builder theme so they stay legible in dark mode, with a clear frame. */
+.builder-canvas .vue-flow__controls {
+  overflow: hidden;
+  border: 1px solid var(--bx-border-strong);
+  border-radius: var(--bx-radius);
+  box-shadow: var(--bx-shadow);
+}
+
+.builder-canvas .vue-flow__controls-button {
+  width: 18px;
+  height: 18px;
+  border-bottom: 1px solid var(--bx-border);
+  background: var(--bx-surface);
+  color: var(--bx-text);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.builder-canvas .vue-flow__controls-button:last-child {
+  border-bottom: 0;
+}
+
+.builder-canvas .vue-flow__controls-button:hover {
+  background: var(--bx-bg-alt);
+}
+
+/* The frame clips its overflow, so the focus ring is drawn inside the
+   button. */
+.builder-canvas .vue-flow__controls-button:focus-visible {
+  outline-offset: -3px;
+}
+
+/* A zoom button at its limit stays focusable; it only looks inactive. */
+.builder-canvas .vue-flow__controls-button[aria-disabled='true'] {
+  background: var(--bx-surface);
+  color: var(--bx-text-muted);
+  cursor: not-allowed;
+}
+
+.builder-canvas__fit-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.builder-canvas .vue-flow__minimap {
+  overflow: hidden;
+  border: 1px solid var(--bx-border-strong);
+  border-radius: var(--bx-radius);
+  background-color: var(--bx-surface);
+  box-shadow: var(--bx-shadow);
+}
+
+/* The mask shades everything outside the visible area; its stroke outlines
+   the visible area itself. */
+.builder-canvas .vue-flow__minimap-mask {
+  fill: var(--bx-minimap-mask);
+  stroke: var(--bx-accent);
+  stroke-width: 2px;
+}
+
+.builder-canvas .vue-flow__minimap-node {
+  stroke: var(--bx-border-strong);
+  stroke-width: 1px;
+}
+
+/* Switches are pills in the minimap, as on the canvas, so the two kinds
+   differ by shape as well as color. */
+.builder-canvas .vue-flow__minimap-node.builder-minimap-switch {
+  rx: 999px;
+  ry: 999px;
+}
+
+.builder-node {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 100%;
+  height: 100%;
+  padding: 0.4rem 0.5rem;
+  line-height: 1.25;
+  border: 2px solid var(--bx-border-strong);
+  border-radius: var(--bx-radius);
+  background: var(--bx-surface);
+  color: var(--bx-text);
+  box-shadow: var(--bx-shadow);
+  text-align: left;
+  cursor: grab;
+}
+
+/* Keyboard focus and selection look different (WCAG 2.4.7). Focus is a ring
+   around the node, clear of it: Vue Flow's wrapper holds focus, and its theme
+   removes the wrapper's outline. Selection fills the node, thickens its
+   border and adds a check mark. */
+.builder-canvas .vue-flow__node:focus-visible {
+  outline: none;
+}
+
+.builder-canvas .vue-flow__node:focus-visible > .builder-node {
+  outline: 3px solid var(--bx-focus);
+  outline-offset: 3px;
+}
+
+.builder-node.is-selected {
+  border-color: var(--bx-accent);
+  background: var(--bx-selected-bg);
+  box-shadow:
+    inset 0 0 0 2px var(--bx-accent),
+    var(--bx-shadow);
+}
+
+.builder-node.is-selected::after {
+  content: '\2713';
+  content: '\2713' / '';
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bx-accent);
+  color: var(--bx-accent-contrast);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* What the diagram checks found about a node, on its top left corner (the
+   selection's check mark takes the other): a cross for errors, a triangle
+   for warnings, so the two differ by shape as well as color. */
+.builder-node__issue {
+  position: absolute;
+  top: -9px;
+  left: -9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: var(--bx-surface);
+  color: var(--bx-danger);
+  pointer-events: none;
+}
+
+.builder-node__issue[data-level='warning'] {
+  color: var(--bx-warning);
+}
+
+/* Bolder than other icons, as the mark is small. */
+.builder-node__issue .builder-icon {
+  stroke-width: 3;
+}
+
+.builder-node__header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  font-weight: 600;
+}
+
+/* Node text never leaves the node box; the full text stays in the node's
+   accessible name and in the inspector. */
+.builder-node__label,
+.builder-node__meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.builder-node__text {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 0.75rem;
+  color: var(--bx-text-muted);
+}
+
+.builder-node__line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.builder-node__kind {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--bx-text-muted);
+}
+
+.builder-node__meta {
+  font-size: 0.75rem;
+  color: var(--bx-text-muted);
+}
+
+/* A device from an included topology is read only. The dashed border and the
+   "Included from" line tell it apart without relying on color. */
+.builder-node--included {
+  border-style: dashed;
+}
+
+.builder-node__origin {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-style: italic;
+  color: var(--bx-text-muted);
+}
+
+.builder-node--switch {
+  justify-content: center;
+  padding: 0.2rem 1.1rem;
+  border-radius: 999px;
+  border-style: double;
+  border-width: 4px;
+}
+
+.builder-node--note {
+  border-style: dashed;
+  background: var(--bx-bg-alt);
+}
+
+.builder-node--group {
+  border-style: dashed;
+  border-width: 2px;
+  background: transparent;
+  cursor: default;
+}
+
+.builder-node__comment {
+  font-size: 0.75rem;
+  color: var(--bx-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.builder-tooltip {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  bottom: calc(100% + 6px);
+  max-width: 260px;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--bx-border);
+  border-radius: var(--bx-radius);
+  background: var(--bx-surface);
+  color: var(--bx-text);
+  box-shadow: var(--bx-shadow);
+  font-size: 0.78rem;
+  white-space: normal;
+}
+
+/* A node's comment tooltip sits inside the node. This strip spans the gap
+   down to the node, so the pointer can move onto the tooltip without leaving
+   the node and closing it (WCAG 1.4.13). */
+.builder-tooltip--node::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: 8px;
+}
+
+.builder-canvas .vue-flow__handle.builder-handle {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--bx-border-strong);
+  background: var(--bx-surface);
+}
+
+/* A larger, invisible hit area around every handle so connections are easy
+   to start. */
+.builder-canvas .vue-flow__handle.builder-handle::before {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+}
+
+.builder-canvas .vue-flow__handle.builder-handle.connecting:not(.valid) {
+  border-color: var(--bx-danger);
+}
+
+/* Why a canvas gesture did nothing. It stays until it is dismissed or the
+   next connection starts (WCAG 2.2.1). */
+.builder-canvas__notice {
+  position: absolute;
+  z-index: 6;
+  top: 0.75rem;
+  left: 50%;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  max-width: min(36rem, 90%);
+  padding: 0.35rem 0.35rem 0.35rem 0.75rem;
+  transform: translateX(-50%);
+  border: 1px solid var(--bx-danger);
+  border-radius: var(--bx-radius);
+  background: var(--bx-surface);
+  color: var(--bx-text);
+  box-shadow: var(--bx-shadow);
+  font-size: 0.85rem;
+}
+
+.builder-canvas__notice-text {
+  margin: 0;
+  padding-top: 0.1rem;
+}
+
+.builder-canvas__notice-close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--bx-border-strong);
+  border-radius: var(--bx-radius);
+  background: var(--bx-surface);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.builder-canvas__notice-close:hover {
+  background: var(--bx-bg-alt);
+}
+
+/* The canvas's keyboard help: a bar below the diagram, in normal flow, so
+   it never covers a node, a connection or the notice (WCAG 2.4.11). Open, it
+   takes at most half the canvas and scrolls under its summary. */
+.builder-canvas__help {
+  flex: none;
+  max-height: 50%;
+  overflow-y: auto;
+  border-top: 1px solid var(--bx-border);
+  border-radius: 0 0 var(--bx-radius) var(--bx-radius);
+  background: var(--bx-surface);
+  font-size: 0.8rem;
+}
+
+.builder-canvas__help summary {
+  position: sticky;
+  top: 0;
+  padding: 0.25rem 0.5rem;
+  background: var(--bx-surface);
+  cursor: pointer;
+}
+
+/* The bar clips its overflow, so the focus ring is drawn inside. */
+.builder-canvas__help summary:focus-visible {
+  outline-offset: -3px;
+}
+
+.builder-canvas__help ul {
+  margin: 0;
+  padding: 0 0.75rem 0.5rem 1.75rem;
+  columns: 20rem auto;
+  column-gap: 2rem;
+  list-style: disc;
+}
+
+.builder-canvas__help li {
+  break-inside: avoid;
+}
+
+.builder-canvas__help-more {
+  margin: 0;
+  padding: 0 0.75rem 0.5rem;
+}
+
+/* As specific as the size above, so Vue Flow's round default, loaded after
+   this file, does not win. */
+.builder-canvas .vue-flow__handle.builder-handle--bus {
+  border-radius: 2px;
+}
+
+/* A device's "connect on a new interface" handle: a round + at the bottom. */
+.builder-canvas .vue-flow__handle.builder-handle--new {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--bx-border-strong);
+  border-radius: 50%;
+  background: var(--bx-surface);
+  color: var(--bx-text);
+}
+
+.builder-canvas .builder-handle--new::after {
+  content: '+';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.builder-canvas .builder-handle--new:hover,
+.builder-canvas .vue-flow__handle.connecting.valid,
+.builder-canvas .vue-flow__handle.valid {
+  border-color: var(--bx-accent);
+  background: var(--bx-accent);
+  color: var(--bx-accent-contrast);
+}
+
+/* Network edges: color plus dash pattern plus a text label. Lines are 2px
+   wide, 4px when selected. */
+.builder-canvas .builder-edge {
+  stroke-width: 2px;
+}
+
+.builder-canvas .builder-edge.is-selected {
+  stroke-width: 4px;
+}
+
+/* A focused connection gets a solid band under its line, which neither a
+   plain nor a selected connection has. Vue Flow removes the outline. The
+   band is a path of its own that the pointer passes through, so the wider
+   hit area under it keeps its size (WCAG 2.5.8). */
+.builder-canvas .builder-edge__focus {
+  stroke: none;
+}
+
+.builder-canvas .vue-flow__edge:focus-visible .builder-edge__focus {
+  stroke: var(--bx-focus);
+  stroke-width: 10px;
+}
+
+.builder-edge__label {
+  position: absolute;
+  padding: 0 0.25rem;
+  border: 1px solid var(--bx-border-strong);
+  border-radius: var(--bx-radius);
+  background: var(--bx-surface);
+  color: var(--bx-text);
+  font-size: 0.72rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.builder-edge__label.is-selected {
+  border-color: var(--bx-accent);
+  font-weight: 700;
+}
+
+/* Labels sit above the nodes, so a node never hides which network a line
+   belongs to. A click on a label reaches the line under it. */
+.builder-canvas .vue-flow__edge-labels {
+  z-index: 2000;
+}
+
+.builder-edge--network-0 {
+  stroke: var(--bx-net-0);
+}
+.builder-edge--network-1 {
+  stroke: var(--bx-net-1);
+}
+.builder-edge--network-2 {
+  stroke: var(--bx-net-2);
+}
+.builder-edge--network-3 {
+  stroke: var(--bx-net-3);
+}
+.builder-edge--network-4 {
+  stroke: var(--bx-net-4);
+}
+.builder-edge--network-5 {
+  stroke: var(--bx-net-5);
+}
+.builder-edge--network-6 {
+  stroke: var(--bx-net-6);
+}
+.builder-edge--network-7 {
+  stroke: var(--bx-net-7);
+}
+
+/* A color the user gave the network or the connection (see colors.js), in
+   place of its token. No more specific than the forced-colors rules below,
+   which replace it. */
+.builder-canvas .builder-edge--custom {
+  stroke: var(--bx-edge-color);
+}
+
+/* A casing in the text color under a line whose chosen color would not keep
+   3:1 against the canvas in the theme shown. */
+.builder-canvas .builder-edge__casing {
+  stroke: var(--bx-edge-casing, none);
+  stroke-width: 4px;
+}
+
+.builder-canvas .builder-edge__casing.is-selected {
+  stroke-width: 6px;
+}
+
+.builder-root:not([data-builder-theme='dark'])
+  .builder-edge__casing.is-low-light,
+.builder-root[data-builder-theme='dark'] .builder-edge__casing.is-low-dark {
+  --bx-edge-casing: var(--bx-text);
+}
+
+/* A switch's network color and a note's or group's own, shown beside the
+   names that say the same (see colors.js). The swatch keeps a border, so
+   any color shows on it, forced colors too, which keep its color. */
+.builder-node__swatch {
+  flex: none;
+  align-self: center;
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 1px solid var(--bx-border-strong);
+  border-radius: 2px;
+  background: var(--bx-swatch);
+  forced-color-adjust: none;
+}
+
+.builder-node__accent {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 5px;
+  border-radius: var(--bx-radius) var(--bx-radius) 0 0;
+  background: var(--bx-node-accent);
+  pointer-events: none;
+}
+
+/* Forced colors (Windows contrast themes) drop box shadows and backgrounds
+   but leave SVG colors alone, so canvas state is redrawn in system colors.
+   The pressed toolbar buttons and selected outline rows are here too, to keep
+   every forced-colors rule in one place. */
+@media (forced-colors: active) {
+  .builder-node.is-selected {
+    border-color: Highlight;
+  }
+
+  .builder-node.is-selected::after {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  /* The swatch keeps its color; its frame is the system's text color, so
+     it shows on the system's background. */
+  .builder-node__swatch {
+    border-color: CanvasText;
+  }
+
+  .builder-canvas .builder-edge {
+    stroke: CanvasText;
+  }
+
+  .builder-canvas .builder-edge.is-selected {
+    stroke: Highlight;
+  }
+
+  .builder-canvas .builder-edge__casing {
+    stroke: none;
+  }
+
+  .builder-canvas .vue-flow__edge:focus-visible .builder-edge__focus {
+    stroke: CanvasText;
+  }
+
+  .builder-canvas .vue-flow__background path {
+    stroke: GrayText;
+  }
+
+  .builder-canvas .vue-flow__minimap-node {
+    fill: CanvasText;
+  }
+
+  .builder-canvas .vue-flow__minimap-mask {
+    stroke: Highlight;
+  }
+
+  /* .builder-root outranks the plain rules later in this file. */
+  .builder-root .builder-button[aria-pressed='true'],
+  .builder-root .builder-outline__item[aria-pressed='true'],
+  .builder-root .builder-outline__item[aria-selected='true'] {
+    border-color: Highlight;
+  }
+
+  /* One color for the whole ring would hide the spinner's turn; the track
+     takes the button's background instead. */
+  .builder-root .builder-toolbar__spinner {
+    border-color: ButtonFace;
+    border-top-color: ButtonText;
+  }
+
+  /* Forced colors draw transparent borders, so only the selected tab keeps
+     its frame and bar. */
+  .builder-root .builder-tab {
+    border-color: Canvas;
+  }
+
+  .builder-root .builder-tab[aria-selected='true'] {
+    border-color: CanvasText;
+    border-top-color: Highlight;
+  }
+
+  /* The Inspector's suggestion in view, in the system's highlight; the bar
+     that marks it otherwise would be drawn on every suggestion. */
+  .builder-root .builder-inspector .inspector-combobox__option {
+    border-left-color: Canvas;
+  }
+
+  .builder-root
+    .builder-inspector
+    .inspector-combobox__option[aria-selected='true'] {
+    forced-color-adjust: none;
+    border-left-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  /* The Inspector's changed fields and chosen color, in the system's
+     highlight. */
+  .builder-root .builder-inspector .control--changed::before,
+  .builder-root
+    .builder-inspector
+    .inspector-color__option[aria-pressed='true'] {
+    border-color: Highlight;
+  }
+}
+
+/* Layout ------------------------------------------------------------------ */
+
+/* The side columns take the width a viewer chose with the splitters beside
+   the canvas (BuilderPanes.vue sets --builder-pane-start and
+   --builder-pane-end), or the default width for the window. Either stays
+   within what the window allows: each side column keeps its minimum and the
+   canvas keeps 20rem, the Inspector giving way first. The rem values match
+   builder/panes.js. */
+.builder-layout {
+  --builder-pane-start-default: 15rem;
+  --builder-pane-end-default: 22rem;
+  --builder-pane-start-used: clamp(
+    11rem,
+    var(--builder-pane-start, var(--builder-pane-start-default)),
+    100% - 36.5rem
+  );
+  --builder-pane-end-used: clamp(
+    15rem,
+    var(--builder-pane-end, var(--builder-pane-end-default)),
+    100% - var(--builder-pane-start-used) - 21.5rem
+  );
+
+  display: grid;
+  flex: 1 1 auto;
+  /* The splitters are the gaps between the columns. */
+  grid-template-columns:
+    var(--builder-pane-start-used) 0.75rem minmax(0, 1fr) 0.75rem
+    var(--builder-pane-end-used);
+  row-gap: 0.75rem;
+  align-items: stretch;
+  /* In a short window the canvas keeps a usable height, and the editor
+     scrolls instead. */
+  min-height: min(18rem, 75vh);
+}
+
+.builder-layout__side {
+  /* Visually hidden text low in a panel stays inside the panel's own
+     scrolling instead of making the whole editor scroll. */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.builder-layout__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The gap between a side column and the canvas holds the column's Widen
+   toggle, and below it the splitter. */
+.builder-layout__gutter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* At least 24px square (WCAG 2.5.8), so it lies over the edges of the
+   columns beside the gap, and above them. */
+.builder-layout__toggle {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  justify-content: center;
+  width: max(1.5rem, 24px);
+  height: max(1.5rem, 24px);
+  padding: 0;
+}
+
+/* A splitter's grip, and a line along it while it is hovered, dragged or
+   focused, show where to take hold. Both are borders, which forced colors
+   keep. The splitter is above the canvas beside it, so its grab area can
+   reach over the canvas's edge. */
+.builder-splitter {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1 1 auto;
+  align-self: stretch;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  border-radius: var(--bx-radius);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.builder-splitter::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(50% - 1px);
+}
+
+/* The grab area: 24px wide however narrow the gap (WCAG 2.5.8), and drawn
+   nowhere. It reaches over the edge of the canvas rather than of the side
+   column, which keeps its scrollbar. */
+.builder-splitter::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+}
+
+.builder-splitter--start::after {
+  right: min(0px, 100% - 24px);
+}
+
+.builder-splitter--end::after {
+  left: min(0px, 100% - 24px);
+}
+
+.builder-splitter__grip {
+  width: 2px;
+  height: 2.5rem;
+  border-inline: 2px solid var(--bx-border-strong);
+}
+
+.builder-splitter:hover::before,
+.builder-splitter:active::before,
+.builder-splitter:focus-visible::before {
+  border-left: 2px solid var(--bx-accent);
+}
+
+.builder-splitter:hover .builder-splitter__grip,
+.builder-splitter:active .builder-splitter__grip,
+.builder-splitter:focus-visible .builder-splitter__grip {
+  border-color: var(--bx-accent);
+}
+
+/* The ring is drawn inside the splitter, so the columns beside it cannot
+   cover it. */
+.builder-splitter:focus-visible {
+  outline-offset: -3px;
+}
+
+/* While a splitter is dragged, the pointer keeps its shape over the canvas
+   and the panels, and no text is selected. */
+.builder-layout.is-resizing,
+.builder-layout.is-resizing * {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* At the default text size these match 1200px and 900px windows. */
+@container builder-editor (max-width: 73rem) {
+  .builder-layout {
+    --builder-pane-start-default: 13rem;
+    --builder-pane-end-default: 18rem;
+  }
+}
+
+/* Too narrow for three columns: stack them, without splitters or their
+   toggles, and let the page scroll. */
+@container builder-editor (max-width: 54.25rem) {
+  .builder-layout {
+    flex: none;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .builder-layout__gutter {
+    display: none;
+  }
+
+  .builder-layout__main {
+    height: 70vh;
+  }
+
+  .builder-layout__side {
+    overflow: visible;
+  }
+
+  /* Keep long outlines and forms from pushing the canvas far down. */
+  .builder-outline,
+  .builder-inspector {
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+}
+
+.builder-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.5rem;
+}
+
+.builder-toolbar .builder-button {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.9rem;
+}
+
+/* A button whose label changes (the layout button's layout names, a busy
+   button's wait) stacks its labels in one cell, so it keeps one width and
+   does not reflow the toolbar out from under the pointer. Hidden text is
+   not in the accessible name. */
+.builder-button__swap {
+  display: inline-grid;
+}
+
+.builder-button__swap > * {
+  grid-area: 1 / 1;
+}
+
+.builder-button__swap > .is-off {
+  visibility: hidden;
+}
+
+/* A busy button, such as the layout button while a layout runs: a ring the
+   size of the icon it replaces, so the button keeps its width. Reduced
+   motion stops it turning (see the end of this file); the ring and the
+   pointer still show the wait, and aria-busy says it. */
+.builder-toolbar__spinner {
+  flex: none;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--bx-border);
+  border-top-color: var(--bx-accent);
+  border-radius: 50%;
+  animation: builder-toolbar-spin 0.8s linear infinite;
+}
+
+@keyframes builder-toolbar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.builder-toolbar .builder-button[aria-busy='true'] {
+  cursor: progress;
+}
+
+.builder-toolbar__group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  padding-right: 0.5rem;
+  border-right: 1px solid var(--bx-border);
+}
+
+/* The last group has no rule after it: the tooltips follow it in the DOM,
+   so it is not the last child. History and Commands keep to the right end
+   of the last row, with the rule before them rather than after the group
+   before, which may end the row above. */
+.builder-toolbar__group:not(:has(~ .builder-toolbar__group)),
+.builder-toolbar__group:has(+ .builder-toolbar__group--end) {
+  border-right: 0;
+}
+
+.builder-toolbar__group--end {
+  margin-inline-start: auto;
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--bx-border);
+}
+
+/* Browsers' own placeholder colors can fall below 4.5:1. */
+.builder-root input::placeholder {
+  color: var(--bx-text-muted);
+  opacity: 1;
+}
+
+.builder-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--bx-text-muted);
+}
+
+.builder-status__dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  border: 1px solid var(--bx-border-strong);
+  background: var(--bx-text-muted);
+}
+
+.builder-status--conflict .builder-status__dot,
+.builder-status--error .builder-status__dot {
+  background: var(--bx-danger);
+}
+
+.builder-status--saved .builder-status__dot {
+  background: var(--bx-success);
+}
+
+/* Outline ----------------------------------------------------------------- */
+
+.builder-outline {
+  padding: 0.5rem;
+}
+
+.builder-outline ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.builder-outline__item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid transparent;
+  border-radius: var(--bx-radius);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.builder-outline__item[aria-pressed='true'] {
+  border-color: var(--bx-border-strong);
+  background: var(--bx-bg-alt);
+  font-weight: 600;
+}
+
+/* Network rows and a row being renamed are not buttons. */
+.builder-outline__item--static,
+div.builder-outline__item {
+  cursor: default;
+}
+
+.builder-outline__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.builder-outline__kind,
+.builder-outline__count {
+  flex: none;
+  font-size: 0.7rem;
+}
+
+.builder-outline__kind {
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.builder-outline__rename {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+/* A group's members: one level in, with a rule that shows where the group
+   ends. The ".builder-outline ul" reset above would otherwise win. */
+.builder-outline .builder-outline__members {
+  margin-left: 0.6rem;
+  padding-left: 0.3rem;
+  border-left: 1px solid var(--bx-border-strong);
+}
+
+/* Inspector --------------------------------------------------------------- */
+
+.builder-inspector {
+  min-width: 0;
+  padding: 0.6rem;
+  overflow-wrap: anywhere;
+}
+
+.builder-inspector .vertical-layout-item,
+.builder-inspector .control {
+  margin-bottom: 0.6rem;
+}
+
+.builder-inspector label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+
+.builder-inspector button:not(.builder-button),
+.builder-outline__rename {
+  border: 1px solid var(--bx-border-strong);
+  border-radius: var(--bx-radius);
+  background: var(--bx-surface);
+  color: var(--bx-text);
+}
+
+.builder-inspector button:not(.builder-button):hover:not(:disabled) {
+  background: var(--bx-bg-alt);
+}
+
+.builder-inspector input,
+.builder-inspector select,
+.builder-inspector textarea {
+  width: 100%;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--bx-field-border);
+  border-radius: var(--bx-radius);
+  background: var(--bx-surface);
+}
+
+/* A read-only field (the node spec's hostname, every field of an included
+   device) keeps its text readable but does not look like a box to type in. */
+.builder-inspector input[readonly],
+.builder-inspector textarea[readonly] {
+  border-style: dashed;
+  background: var(--bx-bg-alt);
+  color: var(--bx-text);
+}
+
+/* A full-width, padded checkbox draws as an empty text box, and so does one
+   without its own appearance (Bulma's .input), checked or not. */
+.builder-inspector input[type='checkbox'] {
+  appearance: auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  accent-color: var(--bx-accent);
+}
+
+.builder-inspector fieldset,
+.builder-inspector .group {
+  border: 1px solid var(--bx-border);
+  border-radius: var(--bx-radius);
+  padding: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.builder-inspector legend,
+.builder-inspector .group-label {
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 0 0.25rem;
+}
+
+.builder-inspector .validation,
+.builder-inspector .error {
+  color: var(--bx-danger);
+  font-size: 0.78rem;
+}
+
+.builder-inspector .control .error,
+.builder-inspector .array-list > .error {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  margin: 0.15rem 0 0;
+  font-weight: 600;
+}
+
+/* A warning leaves the field valid: it is in the warning color, says
+   "Warning:" and has a triangle, where an error has a cross. */
+.builder-inspector .control .warning,
+.builder-inspector .array-list > .warning {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  margin: 0.15rem 0 0;
+  color: var(--bx-warning);
+  font-size: 0.78rem;
+}
+
+/* A label with a description has it as a tooltip, and a dotted underline to
+   say so. */
+.builder-inspector .label--described {
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
+  cursor: help;
+}
+
+/* A drive image field's suggestions, in a list under the field. The one in
+   view is marked by a bar as well as its fill. */
+.builder-inspector .inspector-combobox {
+  position: relative;
+}
+
+.builder-inspector .inspector-combobox__listbox {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 2px);
+  right: 0;
+  left: 0;
+  max-height: 12rem;
+  margin: 0;
+  padding: 0.2rem 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--bx-border-strong);
+  border-radius: var(--bx-radius);
+  background: var(--bx-surface);
+  box-shadow: var(--bx-shadow);
+}
+
+.builder-inspector .inspector-combobox__option {
+  padding: 0.25rem 0.5rem;
+  border-left: 3px solid transparent;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.builder-inspector .inspector-combobox__option[aria-selected='true'] {
+  border-left-color: var(--bx-accent);
+  background: var(--bx-selected-bg);
+}
+
+.builder-inspector .description,
+.builder-inspector__hint {
+  margin: 0.15rem 0 0;
+  font-size: 0.75rem;
+  color: var(--bx-text-muted);
+}
+
+.builder-inspector__hint {
+  margin: 0 0 0.5rem;
+}
+
+/* A field with an error is marked by more than its message: a thicker
+   border in the danger color. */
+.builder-inspector [aria-invalid='true'] {
+  border-color: var(--bx-danger);
+  box-shadow: inset 0 0 0 1px var(--bx-danger);
+}
+
+/* Apply, Cancel and Move stay focusable when they cannot act
+   (aria-disabled), so they need the disabled look without :disabled. */
+.builder-inspector .builder-button[aria-disabled='true'] {
+  background: var(--bx-bg-alt);
+  color: var(--bx-text-muted);
+  cursor: not-allowed;
+}
+
+.builder-inspector .builder-button--primary[aria-disabled='true'] {
+  background: var(--bx-disabled-primary);
+  border-color: var(--bx-disabled-primary);
+  color: var(--bx-disabled-primary-text);
+}
+
+.builder-inspector button:not(.builder-button):disabled {
+  border-color: var(--bx-border);
+  background: var(--bx-bg-alt);
+  color: var(--bx-text-muted);
+  cursor: not-allowed;
+}
+
+.builder-inspector__error-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bx-danger);
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* List fields: each item is a group with a toolbar of 24px icon buttons. */
+.builder-inspector .array-list-item-toolbar {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.35rem;
+}
+
+.builder-inspector .array-list-item-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0.15rem;
+}
+
+.builder-inspector .array-list-item-label {
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.builder-inspector .array-list-no-data {
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  color: var(--bx-text-muted);
+}
+
+.builder-inspector .array-list-add {
+  margin-top: 0.25rem;
+}
+
+/* While Apply and Cancel stick to the bottom of the scrolling panel (see
+   BuilderInspector.vue), a field that takes focus is scrolled clear of them
+   (WCAG 2.4.11), by their height as BuilderInspector measures it: two rows
+   at phone width while errors show. The panel scrolls in the three-column
+   layout, the Inspector itself once the columns stack. */
+.builder-layout__side:has(> .builder-inspector .builder-inspector__actions),
+.builder-inspector:has(.builder-inspector__actions) {
+  scroll-padding-bottom: calc(
+    var(--builder-inspector-actions, 4.5rem) + 0.5rem
+  );
+}
+
+/* A field the working copy changed has a bar at its side, until the change
+   is applied or cancelled. A border, which forced colors keep. */
+.builder-inspector .control--changed {
+  position: relative;
+}
+
+.builder-inspector .control--changed::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -0.4rem;
+  border-left: 3px solid var(--bx-accent);
+  border-radius: 2px;
+}
+
+/* A field showing its default: the value in the muted text color, and
+   "Default" beside it. */
+.builder-inspector .wrapper--default {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.builder-inspector .wrapper--default > :is(input, textarea) {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--bx-text-muted);
+}
+
+.builder-inspector .wrapper--default > input[type='checkbox'] {
+  flex: none;
+}
+
+.builder-inspector .control__default {
+  flex: none;
+  padding: 0 0.3rem;
+  border: 1px dashed var(--bx-border-strong);
+  border-radius: var(--bx-radius);
+  font-size: 0.72rem;
+  color: var(--bx-text-muted);
+}
+
+/* A color field: its swatch button, then the text field, and the picker
+   under them. */
+.builder-inspector .inspector-color {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.builder-inspector .inspector-color > input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.builder-inspector button.inspector-color__trigger,
+.builder-inspector button.inspector-color__option {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 3px;
+  border: 1px solid var(--bx-field-border);
+  border-radius: var(--bx-radius);
+  background: var(--bx-surface);
+  cursor: pointer;
+}
+
+.builder-inspector .inspector-color__chip {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--bx-border-strong);
+  border-radius: 3px;
+  /* The color is what is being chosen, in forced colors mode as well. */
+  forced-color-adjust: none;
+}
+
+/* No color: a slash across an empty chip. */
+.builder-inspector .inspector-color__chip.is-none {
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 1px),
+    var(--bx-text-muted) calc(50% - 1px),
+    var(--bx-text-muted) calc(50% + 1px),
+    transparent calc(50% + 1px)
+  );
+}
+
+/* Scrolled into view as it opens, clear of the window's edge. */
+.builder-inspector .inspector-color__popup {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  scroll-margin: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--bx-border-strong);
+  border-radius: var(--bx-radius);
+  background: var(--bx-surface);
+  box-shadow: var(--bx-shadow);
+}
+
+.builder-inspector .inspector-color__palette {
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  gap: 0.3rem;
+}
+
+/* The field's color is marked by a thicker frame as well as the pressed
+   state. */
+.builder-inspector button.inspector-color__option[aria-pressed='true'] {
+  border: 2px solid var(--bx-text);
+  padding: 2px;
+}
+
+.builder-inspector .inspector-color__custom {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-weight: 400;
+}
+
+.builder-inspector .inspector-color__custom input[type='color'] {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--bx-field-border);
+  cursor: pointer;
+}
+
+.builder-inspector .inspector-color__none {
+  align-self: flex-start;
+}
+
+/* Palette ----------------------------------------------------------------- */
+
+.builder-palette {
+  padding: 0.5rem;
+}
+
+.builder-palette__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 0.3rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--bx-border);
+  border-radius: var(--bx-radius);
+  background: var(--bx-surface);
+  cursor: grab;
+  text-align: left;
+}
+
+.builder-palette__item:hover:not(:disabled) {
+  background: var(--bx-bg-alt);
+}
+
+.builder-palette__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.builder-palette__hint {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--bx-text-muted);
+}
+
+/* The Help link on the drafts landing and in the editor header: a link
+   drawn as a button, in the button's colors rather than a link's. */
+.builder-help-link,
+.builder-help-link:hover {
+  color: var(--bx-text);
+  text-decoration: none;
+}
+
+/* A help button beside a heading: its tooltip shows on hover and focus. */
+.builder-help-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--bx-text-muted);
+  cursor: help;
+}
+
+.builder-help-button:hover {
+  background: var(--bx-bg-alt);
+  color: var(--bx-text);
+}
+
+/* Palette descriptions and the zoom buttons' names are shown on hover and
+   focus (see fixedTooltip.js). The tooltip is fixed to the viewport so the
+   scrolling side panel cannot clip it. */
+.builder-tooltip--fixed {
+  position: fixed;
+  bottom: auto;
+  z-index: 50;
+  pointer-events: none;
+}
+
+/* Drafts landing ---------------------------------------------------------- */
+
+.builder-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--bx-border);
+  margin-bottom: 0.75rem;
+}
+
+/* Every tab has the same text and the same borders, so choosing one moves
+   nothing: bold text on the selected tab widened it, which looked like its
+   text grew and pushed the tabs after it along. The selected tab is marked
+   by its frame and a bar along its top instead. */
+.builder-tab {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid transparent;
+  border-top-width: 3px;
+  border-bottom: none;
+  border-radius: var(--bx-radius) var(--bx-radius) 0 0;
+  background: none;
+  cursor: pointer;
+}
+
+.builder-tab[aria-selected='true'] {
+  border-color: var(--bx-border);
+  border-top-color: var(--bx-accent);
+  background: var(--bx-surface);
+}
+
+.builder-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.75rem;
+}
+
+.builder-card {
+  min-width: 0;
+  padding: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.builder-card__meta {
+  font-size: 0.8rem;
+  color: var(--bx-text-muted);
+}
+
+/* A native <dialog> opened with showModal(): it sits in the top layer, so no
+   ancestor's stacking or containment can clip it, and the page behind it is
+   inert. The top layer does not change inheritance, so the theme's custom
+   properties still apply; the user agent's own dialog colors do not. */
+.builder-dialog {
+  width: min(46rem, 92vw);
+  max-height: 86vh;
+  overflow: auto;
+  padding: 1rem;
+  color: var(--bx-text);
+  background: var(--bx-surface);
+  border: 1px solid var(--bx-border);
+  border-radius: var(--bx-radius);
+}
+
+.builder-dialog::backdrop {
+  background: rgba(9, 12, 18, 0.55);
+}
+
+.builder-dialog .builder-hint {
+  font-size: 0.85em;
+  color: var(--bx-text-muted);
+}
+
+/* History entries can share a name (the same change in the same second), so
+   the list number tells them apart. The numbers sit outside the entries, in
+   the list's own padding; without it the dialog clips their first digits.
+   2.75em holds three digits: a draft saved before the server lowered its
+   limit to 50 snapshots holds up to 100. */
+.builder-history {
+  margin: 0;
+  padding-inline-start: 2.75em;
+}
+
+.builder-history li + li {
+  margin-top: 0.25rem;
+}
+
+/* A dialog's status and error regions are rendered, empty, from the start,
+   so screen readers already know them when the first message arrives. They
+   take no room until then. A message can quote a long unbroken value, such
+   as a digest, so it wraps anywhere rather than overflow a narrow dialog. */
+.builder-dialog__message {
+  margin: 0.5rem 0;
+  overflow-wrap: anywhere;
+}
+
+.builder-dialog__message:empty {
+  margin: 0;
+}
+
+.builder-dialog__error {
+  color: var(--bx-danger);
+}
+
+.builder-field {
+  margin-bottom: 0.6rem;
+}
+
+.builder-field label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-bottom: 0.2rem;
+}
+
+.builder-field input:not([type='radio']):not([type='checkbox']),
+.builder-field select,
+.builder-field textarea {
+  width: 100%;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--bx-field-border);
+  border-radius: var(--bx-radius);
+  background: var(--bx-surface);
+}
+
+/* One radio button per row, beside its own text rather than above it. Rows
+   are tall enough that the small buttons sit at least 24px apart (WCAG
+   2.5.8). */
+.builder-field .builder-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.75rem;
+  margin-bottom: 0;
+  font-weight: 400;
+}
+
+.builder-issues {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.8rem;
+}
+
+.builder-issues li[data-level='error'] {
+  color: var(--bx-danger);
+}
+
+.builder-issues li[data-level='warning'] {
+  color: var(--bx-warning);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .builder-root *,
+  .builder-root *::before,
+  .builder-root *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.builder-root[data-builder-reduced-motion='true'] *,
+.builder-root[data-builder-reduced-motion='true'] *::before,
+.builder-root[data-builder-reduced-motion='true'] *::after {
+  transition: none !important;
+  animation: none !important;
+}

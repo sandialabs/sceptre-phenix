@@ -1,0 +1,128 @@
+{
+  "apiVersion": "phenix.sandia.gov/v1",
+  "kind": "Experiment",
+  "metadata": {
+    "name": "builder-experiment",
+    "annotations": {
+      "topology": "builder-fixture",
+      "scenario": "builder-scenario"
+    }
+  },
+  "spec": {
+    "experimentName": "builder-experiment",
+    "baseDir": "/phenix/experiments/builder-experiment",
+    "defaultBridge": "phenix",
+    "topology": {
+      "nodes": [
+        {
+          "type": "VirtualMachine",
+          "general": {
+            "hostname": "router",
+            "description": "core router"
+          },
+          "hardware": {
+            "os_type": "linux",
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ]
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "type": "ethernet",
+                "proto": "static",
+                "address": "10.0.0.1",
+                "mask": 24,
+                "vlan": "EXP"
+              },
+              {
+                "name": "eth1",
+                "type": "ethernet",
+                "proto": "dhcp"
+              }
+            ]
+          }
+        },
+        {
+          "type": "VirtualMachine",
+          "general": {
+            "hostname": "host-a"
+          },
+          "hardware": {
+            "os_type": "linux",
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ]
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "type": "ethernet",
+                "proto": "static",
+                "address": "10.0.0.2",
+                "mask": 24,
+                "vlan": "EXP"
+              }
+            ]
+          }
+        },
+        {
+          "type": "VirtualMachine",
+          "general": {
+            "hostname": "sensor"
+          },
+          "hardware": {
+            "os_type": "linux",
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ]
+          },
+          "network": {
+            "interfaces": [
+              {
+                "name": "eth0",
+                "type": "ethernet",
+                "proto": "static",
+                "address": "10.0.9.2",
+                "mask": 24,
+                "vlan": "SENSOR"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "scenario": {
+      "apps": [
+        {
+          "name": "ntp",
+          "hosts": [
+            {
+              "hostname": "router",
+              "metadata": {
+                "server": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "vlans": {
+      "aliases": {
+        "EXP": 101,
+        "SENSOR": 0,
+        "RESERVED": 250
+      },
+      "min": 100,
+      "max": 300
+    }
+  }
+}

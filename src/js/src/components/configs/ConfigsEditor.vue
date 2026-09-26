@@ -151,6 +151,9 @@
   import { debounce } from 'lodash-es';
 
   import axiosInstance from '@/utils/axios.js';
+  import { usePhenixStore } from '@/store.js';
+  import { BUILDER_BETA_FEATURE, isFeatureEnabled } from '@/utils/features.js';
+  import { BETA_ANNOTATION, builderAnnotation } from '@/builder/configs.js';
 
   export default {
     expose: ['confirmResetEditor'],
@@ -185,15 +188,52 @@
 
         axiosInstance
           .get('configs/' + name, { headers: { Accept: 'application/json' } })
-          .then((response) => {
+          .then(async (response) => {
             if (this.isBuilderTopology(response.data)) {
+              if (builderAnnotation(response.data) === BETA_ANNOTATION) {
+                // Only Builder Flow edits it. Where this server does not
+                // offer it, the user stays here and is told why, instead of
+                // being sent on to a route that turns them away.
+                const unavailable = await this.builderFlowUnavailable();
+
+                this.editor.isLoading = false;
+                if (unavailable) {
+                  this.$buefy.dialog.alert({
+                    title: 'Built by Builder Flow',
+                    message: `This topology was built in Builder Flow, so it can only be edited there, and ${unavailable} Select its name in the list to view it read only.`,
+                    confirmText: 'OK',
+                    type: 'is-warning',
+                    hasIcon: true,
+                    onConfirm: () => this.$emit('is-done', ''),
+                  });
+                  return;
+                }
+
+                const router = this.$router;
+                const destination = {
+                  name: 'builder-beta',
+                  query: { topology: response.data.metadata.name },
+                };
+
+                // No message: an empty one would open an empty toast. The
+                // Builder announces the draft it opens.
+                this.$emit('is-done', '');
+                await router.push(destination);
+                return;
+              }
+
+              this.editor.isLoading = false;
               this.$buefy.dialog.alert({
-                title: 'Built by Builder',
-                message: 'This configuration can only be edited in Builder',
+                title: `Built by ${this.builderName(response.data)}`,
+                message: `This configuration can only be edited in ${this.builderName(
+                  response.data,
+                )}`,
                 confirmText: 'OK',
                 type: 'is-warning',
                 hasIcon: true,
+                onConfirm: () => this.$emit('is-done', ''),
               });
+              return;
             } else {
               this.config.obj = response.data;
               this.config.str = this.getConfigStr('yaml');
@@ -498,12 +538,24 @@
         this.isWaiting = false;
       },
       isBuilderTopology(cfg) {
-        if (cfg.kind == 'Topology') {
-          if ('annotations' in cfg.metadata) {
-            return 'builder-xml' in cfg.metadata.annotations;
-          }
+        return builderAnnotation(cfg) !== null;
+      },
+      // Why Builder Flow cannot open a topology here, or '' when it can.
+      async builderFlowUnavailable() {
+        try {
+          const features = await usePhenixStore().ensureFeatures();
+
+          return isFeatureEnabled(features, BUILDER_BETA_FEATURE)
+            ? ''
+            : 'Builder Flow is not enabled on this phenix server.';
+        } catch {
+          return 'whether Builder Flow is enabled on this phenix server could not be checked. Reload the page to try again.';
         }
-        return false;
+      },
+      builderName(cfg) {
+        return builderAnnotation(cfg) === BETA_ANNOTATION
+          ? 'Builder Flow'
+          : 'Builder';
       },
     },
     computed: {

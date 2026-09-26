@@ -27,6 +27,16 @@ tags:
     description: Available phenix disk images
   - name: Users
     description: User details and controls
+  - name: Builder Flow
+    description: >
+      Builder Flow (beta) drafts, snapshots, generation and publication. These
+      routes exist only when the server is started with the builder-beta
+      feature (`phenix ui --features builder-beta`); without it, every one of
+      them answers 404. Each operation needs the `configs` permission its
+      description names, so Builder Flow access never exceeds config access.
+      An operation on another user's draft additionally needs the
+      `builder-drafts` permission of the same verb for the resource name
+      `{owner}/{draft}`, and is answered with 404, never 403, without it.
 paths:
   "/configs":
     get:
@@ -290,6 +300,12 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+        "404":
+          description: there is no schema for this kind or version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
   "/experiments":
     get:
       tags:
@@ -462,7 +478,7 @@ paths:
           description: name of phenix experiment to update schedule for
           required: true
           schema:
-            type: name
+            type: string
       requestBody:
         description: scheduling algorithm to use
         required: true
@@ -1159,7 +1175,7 @@ paths:
           schema:
             type: string
       requestBody:
-        description: user paramaters
+        description: user parameters
         required: true
         content:
           application/json:
@@ -1289,6 +1305,533 @@ paths:
       responses:
         "204":
           description: successful operation
+  "/schemas/builder/v1":
+    get:
+      tags:
+        - Builder Flow
+        - Schemas
+      summary: Get the JSON Schema of Builder Flow documents
+      description: >
+        Requires the `schemas` `get` permission for `builder`. Without the
+        builder-beta feature the request reaches `/schemas/{kind}/{version}`,
+        which also answers 404 because there is no config kind named builder.
+      operationId: getBuilderSchema
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+  "/builder/drafts":
+    get:
+      tags:
+        - Builder Flow
+      summary: List Builder Flow drafts
+      description: >
+        Requires `configs` `list`. Returns the caller's own drafts, and
+        separately the drafts of other users the caller holds `builder-drafts`
+        `list` for. Drafts of either kind whose metadata this server can no
+        longer read (for example, written by a newer phenix) are listed apart,
+        as damaged: they cannot be opened, only deleted. Drafts the caller may
+        not see are never counted or described.
+      operationId: getBuilderDrafts
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderDrafts"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+    post:
+      tags:
+        - Builder Flow
+      summary: Create a Builder Flow draft
+      description: >
+        Requires `configs` `create`. The draft is owned by the caller and holds
+        the document as its first snapshot. Nothing is published.
+      operationId: postBuilderDrafts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderDraftCreate"
+      responses:
+        "201":
+          description: draft created
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderETag"
+            Location:
+              schema:
+                description: location of the new draft
+                type: string
+                format: uri-reference
+            Warning:
+              $ref: "#/components/headers/BuilderWarning"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderDraft"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+        "413":
+          $ref: "#/components/responses/BuilderTooLarge"
+        "422":
+          $ref: "#/components/responses/BuilderUnprocessable"
+  "/builder/drafts/{owner}/{draft}":
+    parameters:
+      - $ref: "#/components/parameters/BuilderDraftOwner"
+      - $ref: "#/components/parameters/BuilderDraftID"
+    get:
+      tags:
+        - Builder Flow
+      summary: Get a Builder Flow draft with its current document
+      description: >
+        Requires `configs` `get`, and `builder-drafts` `get` for another
+        user's draft.
+      operationId: getBuilderDraft
+      responses:
+        "200":
+          description: successful operation
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderDraft"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+    delete:
+      tags:
+        - Builder Flow
+      summary: Delete a Builder Flow draft
+      description: >
+        Requires `configs` `delete`, and `builder-drafts` `delete` for another
+        user's draft. Published configs are not affected.
+      operationId: deleteBuilderDraft
+      parameters:
+        - $ref: "#/components/parameters/BuilderIfMatch"
+      responses:
+        "204":
+          description: draft deleted
+          headers:
+            Warning:
+              $ref: "#/components/headers/BuilderWarning"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+        "409":
+          $ref: "#/components/responses/BuilderConflict"
+        "412":
+          description: >
+            The If-Match header does not name the draft's current revision.
+            The caller may delete the draft, so the response carries its
+            current ETag, as the listing does for a draft whose metadata this
+            server can no longer read, which cannot be read on its own.
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+  "/builder/drafts/{owner}/{draft}/snapshots":
+    parameters:
+      - $ref: "#/components/parameters/BuilderDraftOwner"
+      - $ref: "#/components/parameters/BuilderDraftID"
+    get:
+      tags:
+        - Builder Flow
+      summary: List the snapshots of a Builder Flow draft
+      description: >
+        Requires `configs` `get`, and `builder-drafts` `get` for another
+        user's draft. Snapshots are listed oldest first; `cursor` is the index
+        of the current one.
+      operationId: getBuilderDraftSnapshots
+      responses:
+        "200":
+          description: successful operation
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderSnapshots"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+    post:
+      tags:
+        - Builder Flow
+      summary: Save a Builder Flow draft
+      description: >
+        Requires `configs` `update`, and `builder-drafts` `update` for another
+        user's draft. Appends the document as a new snapshot, discards any
+        snapshots after the cursor (the redo branch), and moves the cursor to
+        the new snapshot. A draft keeps at most 50 snapshots of at most 50 MiB
+        in total; the oldest are dropped to make room for the new one.
+      operationId: postBuilderDraftSnapshots
+      parameters:
+        - $ref: "#/components/parameters/BuilderIfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderSnapshotCreate"
+      responses:
+        "201":
+          description: snapshot appended; the draft without its document
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderETag"
+            Warning:
+              $ref: "#/components/headers/BuilderWarning"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderDraft"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+        "409":
+          $ref: "#/components/responses/BuilderConflict"
+        "412":
+          $ref: "#/components/responses/BuilderPreconditionFailed"
+        "413":
+          $ref: "#/components/responses/BuilderTooLarge"
+        "422":
+          $ref: "#/components/responses/BuilderUnprocessable"
+  "/builder/drafts/{owner}/{draft}/snapshots/{snapshot}":
+    parameters:
+      - $ref: "#/components/parameters/BuilderDraftOwner"
+      - $ref: "#/components/parameters/BuilderDraftID"
+      - name: snapshot
+        in: path
+        description: snapshot ID, or `current` for the snapshot the cursor points at
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - Builder Flow
+      summary: Get one snapshot of a Builder Flow draft with its document
+      description: >
+        Requires `configs` `get`, and `builder-drafts` `get` for another
+        user's draft.
+      operationId: getBuilderDraftSnapshot
+      responses:
+        "200":
+          description: successful operation
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderSnapshotDocument"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+  "/builder/drafts/{owner}/{draft}/cursor":
+    parameters:
+      - $ref: "#/components/parameters/BuilderDraftOwner"
+      - $ref: "#/components/parameters/BuilderDraftID"
+    patch:
+      tags:
+        - Builder Flow
+      summary: Move the cursor of a Builder Flow draft (undo and redo)
+      description: >
+        Requires `configs` `update`, and `builder-drafts` `update` for another
+        user's draft. No snapshot is discarded. PUT is accepted as well.
+      operationId: patchBuilderDraftCursor
+      parameters:
+        - $ref: "#/components/parameters/BuilderIfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderCursorMove"
+      responses:
+        "200":
+          description: cursor moved; the draft without its document
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderETag"
+            Warning:
+              $ref: "#/components/headers/BuilderWarning"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderDraft"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+        "409":
+          $ref: "#/components/responses/BuilderConflict"
+        "412":
+          $ref: "#/components/responses/BuilderPreconditionFailed"
+        "422":
+          $ref: "#/components/responses/BuilderUnprocessable"
+    put:
+      tags:
+        - Builder Flow
+      summary: Move the cursor of a Builder Flow draft (undo and redo)
+      description: The same operation as PATCH.
+      operationId: putBuilderDraftCursor
+      parameters:
+        - $ref: "#/components/parameters/BuilderIfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderCursorMove"
+      responses:
+        "200":
+          description: cursor moved; the draft without its document
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderETag"
+            Warning:
+              $ref: "#/components/headers/BuilderWarning"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderDraft"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+        "409":
+          $ref: "#/components/responses/BuilderConflict"
+        "412":
+          $ref: "#/components/responses/BuilderPreconditionFailed"
+        "422":
+          $ref: "#/components/responses/BuilderUnprocessable"
+  "/builder/drafts/{owner}/{draft}/publish":
+    parameters:
+      - $ref: "#/components/parameters/BuilderDraftOwner"
+      - $ref: "#/components/parameters/BuilderDraftID"
+    post:
+      tags:
+        - Builder Flow
+      summary: Publish a Builder Flow draft to phenix configs
+      description: >
+        The only Builder Flow operation that writes configs. It publishes the
+        draft's current snapshot; the request carries intent only. Requires
+        `configs` `update` (and `builder-drafts` `update` for another user's
+        draft), `configs` `create` or `update` on each target config according
+        to its action, and `experiments` `create` or `update` for an
+        experiment target. Repeating a publication that already completed,
+        with the If-Match it was sent with, answers 200 with every stage
+        skipped. A draft updates an existing topology or experiment only when
+        it was imported from it, or when it published it (or was opened from
+        the published diagram that did) and nothing else changed it since;
+        any other update is refused with 409. A published experiment records
+        which draft and published document published it, and its digest once
+        its apps' configure stage ran, in its `builder-experiment`
+        annotation; an experiment update runs that stage, as an update
+        through `/configs` does. When a stage fails after earlier stages were
+        written, the response is 409 or 500 with a result whose status is
+        `partial`. When the published document was stored but content it
+        replaces could not be removed, the publication goes on and answers
+        with a `Warning` header and a warning in the result.
+      operationId: postBuilderDraftPublish
+      parameters:
+        - $ref: "#/components/parameters/BuilderIfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderPublishRequest"
+      responses:
+        "200":
+          description: publication succeeded
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderETag"
+            Warning:
+              $ref: "#/components/headers/BuilderWarning"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderPublishResult"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+        "409":
+          description: >
+            A target config or the draft changed since the publication was
+            prepared, or a stage failed on such a conflict after earlier stages
+            were written (a `partial` result).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/WebError"
+                  - $ref: "#/components/schemas/BuilderPublishResult"
+        "412":
+          $ref: "#/components/responses/BuilderPreconditionFailed"
+        "422":
+          $ref: "#/components/responses/BuilderUnprocessable"
+        "500":
+          description: >
+            A stage failed after earlier stages were written (a `partial`
+            result), or the draft could not be read.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/WebError"
+                  - $ref: "#/components/schemas/BuilderPublishResult"
+  "/builder/sources":
+    get:
+      tags:
+        - Builder Flow
+      summary: List the configs Builder Flow can use as sources
+      description: >
+        Requires `configs` `list`. Topologies and experiments can be imported
+        with POST /builder/generate; scenarios and images are offered for
+        selection only. Each config is filtered by `configs` `list` for its
+        name and, for topologies, experiments and scenarios, by the `list`
+        permission of that resource.
+      operationId: getBuilderSources
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderSources"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+  "/builder/generate":
+    post:
+      tags:
+        - Builder Flow
+      summary: Import a Builder Flow document from a Topology or Experiment config
+      description: >
+        Converts a stored config (`source`) or an uploaded one (`content`)
+        into a document and returns it; nothing is written. Requires `configs`
+        `get`. A stored source also needs `configs` `get` for its name and the
+        `topologies` or `experiments` `list` permission for it. Uploaded
+        content needs `configs` `create`, because it is parsed as POST
+        /configs parses a config, including the substitution of `${NAME}` from
+        the server's environment (see Security Considerations in the phenix
+        README).
+      operationId: postBuilderGenerate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderGenerateRequest"
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderGenerateResult"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+        "413":
+          $ref: "#/components/responses/BuilderTooLarge"
+        "422":
+          $ref: "#/components/responses/BuilderUnprocessable"
+  "/builder/documents":
+    get:
+      tags:
+        - Builder Flow
+      summary: List published Builder Flow documents
+      description: >
+        Requires `configs` `list`. Lists the documents that configs currently
+        reference in their `builder-doc` annotation, filtered by `configs`
+        `list` for the config each one was published to.
+      operationId: getBuilderDocuments
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderPublishedDocuments"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+  "/builder/documents/{document}":
+    get:
+      tags:
+        - Builder Flow
+      summary: Get a published Builder Flow document
+      description: >
+        Requires `configs` `get` for the config the document was published
+        to. A document the caller may not read, or that no config references
+        any more, is answered with 404.
+      operationId: getBuilderDocument
+      parameters:
+        - name: document
+          in: path
+          description: published document ID
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderPublishedDocument"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
 externalDocs:
   description: Find out more about Swagger
   url: http://swagger.io
@@ -1416,7 +1959,7 @@ components:
           items:
             $ref: "#/components/schemas/Capture"
         running:
-          type: bool
+          type: boolean
         uptime:
           type: number
           format: float
@@ -1563,3 +2106,554 @@ components:
           type: string
         token:
           type: string
+    WebError:
+      type: object
+      properties:
+        message:
+          type: string
+        cause:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    BuilderDocument:
+      description: >
+        A Builder Flow document. GET /schemas/builder/v1 serves its complete
+        JSON Schema.
+      type: object
+      additionalProperties: true
+      properties:
+        "$schema":
+          type: string
+          enum:
+            - https://phenix.sandia.gov/schemas/builder/v1
+        revision:
+          type: integer
+        id:
+          type: string
+        name:
+          type: string
+    BuilderDraftCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+        summary:
+          description: summary of the first snapshot
+          type: string
+        sourceToken:
+          description: the config the draft was imported from, as `<kind>/<name>`
+          type: string
+        forkOf:
+          description: >
+            a draft the new one forks, as `<owner>/<draft id>`, which the caller
+            must be able to read (404 otherwise). The new draft takes its
+            source token in place of `sourceToken`, and records its last
+            publication as `forked`, so publishing the new draft can update
+            what that draft published or was opened from.
+          type: string
+        owner:
+          description: optional; when set, it must be the caller
+          type: string
+        document:
+          $ref: "#/components/schemas/BuilderDocument"
+      required:
+        - document
+    BuilderSnapshotCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        summary:
+          type: string
+        document:
+          $ref: "#/components/schemas/BuilderDocument"
+        opId:
+          description: >
+            the client's id for this save, kept with the snapshot, so a
+            client that never saw the response can tell it was stored
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+      required:
+        - document
+    BuilderCursorMove:
+      description: exactly one of `index` and `snapshotId`
+      type: object
+      additionalProperties: false
+      properties:
+        index:
+          description: index of the snapshot to move to, oldest first
+          type: integer
+          minimum: 0
+        snapshotId:
+          type: string
+    BuilderDraft:
+      type: object
+      properties:
+        id:
+          type: string
+        owner:
+          type: string
+        title:
+          type: string
+        sourceToken:
+          type: string
+        created:
+          type: string
+          format: date-time
+        updated:
+          type: string
+          format: date-time
+        lastModifiedBy:
+          type: string
+        cursor:
+          description: index of the current snapshot
+          type: integer
+        snapshots:
+          description: number of snapshots the draft keeps
+          type: integer
+        snapshotId:
+          description: ID of the current snapshot
+          type: string
+        digest:
+          description: digest of the current snapshot's document
+          type: string
+        size:
+          description: size in bytes of the current snapshot's document
+          type: integer
+        historyBytes:
+          description: total size in bytes of the snapshots the draft keeps
+          type: integer
+        dirty:
+          description: whether the current snapshot differs from the last publication
+          type: boolean
+        canUndo:
+          type: boolean
+        canRedo:
+          type: boolean
+        readOnly:
+          description: whether the caller may not update the draft
+          type: boolean
+        etag:
+          description: the value of the ETag header for this revision
+          type: string
+        document:
+          $ref: "#/components/schemas/BuilderDocument"
+        history:
+          description: the snapshots, oldest first (GET of one draft only)
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderSnapshot"
+        publication:
+          $ref: "#/components/schemas/BuilderPublication"
+        forked:
+          description: >
+            for a draft created with `forkOf`, what that draft had last
+            published when it was forked, which this draft may update too
+          type: object
+          properties:
+            documentId:
+              type: string
+            topologyTarget:
+              type: string
+            experimentTarget:
+              type: string
+    BuilderDrafts:
+      type: object
+      properties:
+        drafts:
+          description: the caller's own drafts
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderDraft"
+        shared:
+          description: drafts of other users the caller may list
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderDraft"
+        damaged:
+          description: >
+            drafts, the caller's own or of other users the caller may list,
+            whose metadata this server can no longer read
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderDamagedDraft"
+    BuilderDamagedDraft:
+      description: >
+        What can still be read of a draft whose metadata this server can no
+        longer read. It cannot be opened, only deleted with its ETag.
+      type: object
+      properties:
+        id:
+          type: string
+        owner:
+          type: string
+        title:
+          description: present when it can still be read
+          type: string
+        updated:
+          description: present when it can still be read
+          type: string
+          format: date-time
+        etag:
+          description: the If-Match value that deletes the draft
+          type: string
+        canDelete:
+          description: whether the caller may delete the draft
+          type: boolean
+    BuilderSnapshot:
+      type: object
+      properties:
+        id:
+          type: string
+        digest:
+          type: string
+        size:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        summary:
+          type: string
+        opId:
+          description: the client's id for the save that stored the snapshot
+          type: string
+        current:
+          type: boolean
+    BuilderSnapshots:
+      type: object
+      properties:
+        snapshots:
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderSnapshot"
+        cursor:
+          type: integer
+    BuilderSnapshotDocument:
+      type: object
+      properties:
+        snapshot:
+          $ref: "#/components/schemas/BuilderSnapshot"
+        document:
+          $ref: "#/components/schemas/BuilderDocument"
+    BuilderPublication:
+      description: the draft's last publication
+      type: object
+      properties:
+        mode:
+          type: string
+          enum:
+            - topology
+            - topology-experiment
+        topologyTarget:
+          type: string
+        topologyAction:
+          type: string
+        experimentTarget:
+          type: string
+        scenarioTarget:
+          type: string
+        snapshotId:
+          type: string
+        digest:
+          type: string
+        documentId:
+          type: string
+        publishedAt:
+          type: string
+          format: date-time
+        publishedBy:
+          type: string
+    BuilderPublishTarget:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          description: config name
+          type: string
+        action:
+          description: >
+            create a new config or update an existing one. A scenario target
+            the document references as stored uses `use`: the stored spec is
+            kept and the topology is added to its `topology` annotation, which
+            needs `configs` `update`.
+          type: string
+          enum:
+            - create
+            - update
+            - use
+        expectedDigest:
+          description: >
+            Scenario targets with action `update` only, and required when the
+            document's own scenario replaces a stored one: the `sha256:` digest
+            of the stored scenario the update was prepared against. A scenario
+            that changed since is refused with 409.
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
+      required:
+        - name
+        - action
+    BuilderPublishRequest:
+      description: >
+        `topology` mode publishes the topology only. `topology-experiment`
+        mode also requires an experiment target and may name a scenario
+        target.
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum:
+            - topology
+            - topology-experiment
+        topology:
+          $ref: "#/components/schemas/BuilderPublishTarget"
+        scenario:
+          $ref: "#/components/schemas/BuilderPublishTarget"
+        experiment:
+          $ref: "#/components/schemas/BuilderPublishTarget"
+      required:
+        - mode
+        - topology
+    BuilderPublishStage:
+      type: object
+      properties:
+        name:
+          description: document, topology, scenario, experiment or draft
+          type: string
+        status:
+          description: created, updated, skipped, ok or failed
+          type: string
+        message:
+          type: string
+        config:
+          description: the config the stage wrote, as `<Kind>/<name>`
+          type: string
+    BuilderPublishResult:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - succeeded
+            - partial
+        stages:
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderPublishStage"
+        warnings:
+          type: array
+          items:
+            type: string
+        errors:
+          type: array
+          items:
+            type: string
+        topology:
+          $ref: "#/components/schemas/BuilderPublishTarget"
+        scenario:
+          $ref: "#/components/schemas/BuilderPublishTarget"
+        experiment:
+          $ref: "#/components/schemas/BuilderPublishTarget"
+        draft:
+          $ref: "#/components/schemas/BuilderDraft"
+    BuilderSource:
+      type: object
+      properties:
+        kind:
+          type: string
+        name:
+          type: string
+        fullName:
+          type: string
+        apiVersion:
+          type: string
+        created:
+          type: string
+        updated:
+          type: string
+        digest:
+          type: string
+        stored:
+          description: false for a config generated from uploaded content
+          type: boolean
+        builder:
+          description: >
+            the builder annotation the config carries, if any: `builder-doc`
+            (Builder Flow) or `builder-xml` (legacy Builder)
+          type: string
+        generatable:
+          description: whether POST /builder/generate accepts this config
+          type: boolean
+    BuilderSources:
+      type: object
+      properties:
+        topologies:
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderSource"
+        experiments:
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderSource"
+        scenarios:
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderSource"
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderSource"
+    BuilderGenerateRequest:
+      description: exactly one of `source` and `content`
+      type: object
+      additionalProperties: false
+      properties:
+        source:
+          description: a stored Topology or Experiment config, as `<Kind>/<name>`
+          type: string
+        content:
+          description: a Topology or Experiment config as JSON or YAML text
+          type: string
+    BuilderGenerateResult:
+      type: object
+      properties:
+        document:
+          $ref: "#/components/schemas/BuilderDocument"
+        warnings:
+          description: what the document left out or changed
+          type: array
+          items:
+            type: string
+        source:
+          $ref: "#/components/schemas/BuilderSource"
+    BuilderPublishedDocument:
+      type: object
+      properties:
+        id:
+          type: string
+        digest:
+          type: string
+        size:
+          type: integer
+        target:
+          description: name of the config the document was published to
+          type: string
+        kind:
+          type: string
+        config:
+          description: the config the document was published to, as `<Kind>/<name>`
+          type: string
+        draftId:
+          type: string
+        snapshotId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        document:
+          $ref: "#/components/schemas/BuilderDocument"
+    BuilderPublishedDocuments:
+      type: object
+      properties:
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderPublishedDocument"
+  parameters:
+    BuilderDraftOwner:
+      name: owner
+      in: path
+      description: the user that owns the draft
+      required: true
+      schema:
+        type: string
+    BuilderDraftID:
+      name: draft
+      in: path
+      description: draft ID
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    BuilderIfMatch:
+      name: If-Match
+      in: header
+      description: >
+        The ETag of the draft revision the change is based on: exactly one
+        strong, quoted entity tag, such as `"3"`. A missing header, a wildcard
+        or a weak tag is rejected with 400; a tag naming any other revision is
+        rejected with 412.
+      required: true
+      schema:
+        type: string
+  headers:
+    BuilderETag:
+      description: the draft's revision as a quoted entity tag, for the next If-Match
+      schema:
+        type: string
+    BuilderWarning:
+      description: >
+        Set when the change succeeded but removing the content it superseded
+        failed. The cause is logged on the server only.
+      schema:
+        type: string
+  responses:
+    BuilderBadRequest:
+      description: >
+        The request is malformed: its body is not a single JSON value of the
+        expected shape (unknown fields are rejected), or its If-Match header is
+        missing or not a single strong entity tag.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WebError"
+    BuilderForbidden:
+      description: The caller's role lacks a permission the operation requires.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WebError"
+    BuilderNotFound:
+      description: >
+        The resource does not exist; or it is another user's draft the caller
+        may not see, answered as if it did not exist; or the server runs
+        without the builder-beta feature, so the route does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WebError"
+    BuilderConflict:
+      description: The draft or a target config changed while the request was handled.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WebError"
+    BuilderPreconditionFailed:
+      description: The If-Match header does not name the draft's current revision.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WebError"
+    BuilderTooLarge:
+      description: >
+        The request body or the document exceeds the server's size limits.
+        The snapshot history never does: its oldest snapshots are dropped
+        instead.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WebError"
+    BuilderUnprocessable:
+      description: >
+        The request is well formed but cannot be applied, for example a
+        document that fails validation or a config that cannot be converted.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WebError"

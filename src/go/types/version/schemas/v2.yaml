@@ -297,7 +297,7 @@ components:
               oneOf:
               - type: integer
               - type: string
-              default: 1024
+              default: 512
               example: 8192
             os_type:
               type: string
@@ -618,7 +618,7 @@ components:
               oneOf:
               - type: integer
               - type: string
-              default: 1024
+              default: 512
               example: 8192
             os_type:
               type: string

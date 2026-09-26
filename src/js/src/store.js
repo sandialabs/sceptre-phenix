@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import router from '@/router';
+import { endBuilderSession, startBuilderSession } from '@/builder/session.js';
 
 export const usePhenixStore = defineStore('phenix', {
   state: () => ({
@@ -17,9 +18,61 @@ export const usePhenixStore = defineStore('phenix', {
       sessionStorage.getItem('phenix.auth') === 'true',
     next: null,
     features: [],
+    featuresLoaded: false,
+    featuresPromise: null,
+    featuresError: null,
   }),
   actions: {
+    // Single-flight fetch of /features so feature-gated routes can await a
+    // deterministic answer instead of racing App.vue's initial request.
+    ensureFeatures(fetchImpl) {
+      if (this.featuresLoaded) {
+        return Promise.resolve(this.features);
+      }
+
+      if (!this.featuresPromise) {
+        const doFetch =
+          fetchImpl ||
+          (() =>
+            fetch(router.resolve({ name: 'features' }).href).then((resp) => {
+              if (!resp.ok) {
+                throw new Error(
+                  `feature request failed with status ${resp.status}`,
+                );
+              }
+
+              return resp.json();
+            }));
+
+        this.featuresPromise = Promise.resolve()
+          .then(doFetch)
+          .then((data) => {
+            if (!Array.isArray(data?.features)) {
+              throw new Error('feature response does not contain a list');
+            }
+
+            this.features = data.features;
+            this.featuresLoaded = true;
+            this.featuresError = null;
+            return this.features;
+          })
+          .catch((error) => {
+            this.featuresError =
+              error instanceof Error ? error.message : String(error);
+            this.featuresPromise = null;
+            throw error;
+          });
+      }
+
+      return this.featuresPromise;
+    },
+
     login(loginResponse, remember, navigate = true) {
+      // Builder Flow data another user left on this device, by closing the
+      // browser without logging out, goes before this user's session
+      // starts; its preferences stay, as at logout.
+      startBuilderSession(loginResponse.user.username);
+
       this.username = loginResponse.user.username;
       this.token = loginResponse.token;
       this.role = loginResponse.user.role;
@@ -67,6 +120,12 @@ export const usePhenixStore = defineStore('phenix', {
       sessionStorage.removeItem('phenix.token');
       sessionStorage.removeItem('phenix.role');
       sessionStorage.removeItem('phenix.auth');
+
+      // Builder Flow's drafts, lists and recent commands on this device go
+      // too, before the sign-in page shows; its preferences stay (every
+      // logout, including the idle timeout's and an expired token's, comes
+      // through here).
+      endBuilderSession();
 
       router.replace('/signin');
     },

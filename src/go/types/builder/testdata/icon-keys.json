@@ -1,0 +1,28 @@
+{
+  "description": "Icon keys a node spec gets, from iconKeyForSpec in generate.go and in the front end's catalog.js alike; the empty key generate.go gives is the front end's default, server. Read by TestIconKeyForSpecMatchesFrontEnd and catalog.test.js.",
+  "cases": [
+    { "spec": { "external": true }, "iconKey": "external" },
+    { "spec": { "external": null, "hardware": { "os_type": "linux" } }, "iconKey": "linux" },
+    { "spec": { "external": false, "hardware": { "os_type": "windows" } }, "iconKey": "windows" },
+    { "spec": { "type": "VirtualMachine", "hardware": { "os_type": "centos" } }, "iconKey": "centos" },
+    { "spec": { "hardware": { "os_type": "Windows" } }, "iconKey": "windows" },
+    { "spec": { "hardware": { "os_type": "rhel" } }, "iconKey": "redhat" },
+    { "spec": { "hardware": { "os_type": "minirouter" } }, "iconKey": "router" },
+    { "spec": { "hardware": { "os_type": "vyatta" } }, "iconKey": "router" },
+    { "spec": { "hardware": { "os_type": "vyos" } }, "iconKey": "router" },
+    { "spec": { "hardware": { "os_type": "other" } }, "iconKey": "server" },
+    { "spec": { "hardware": { "os_type": "redhat" } }, "iconKey": "server" },
+    { "spec": { "general": { "vm_type": "container" }, "hardware": { "os_type": "linux" } }, "iconKey": "container" },
+    { "spec": { "general": { "vm_type": "kvm" }, "hardware": { "os_type": "vyos" } }, "iconKey": "router" },
+    { "spec": { "type": "VirtualMachine" }, "iconKey": "server" },
+    { "spec": { "type": "Router", "hardware": { "os_type": "linux" } }, "iconKey": "router" },
+    { "spec": { "type": "Firewall", "hardware": { "os_type": "minirouter" } }, "iconKey": "firewall" },
+    { "spec": { "type": "Switch" }, "iconKey": "switch" },
+    { "spec": { "type": "Server", "hardware": { "os_type": "windows" } }, "iconKey": "server" },
+    { "spec": { "type": "Desktop", "hardware": { "os_type": "centos" } }, "iconKey": "desktop" },
+    { "spec": { "type": "Printer" }, "iconKey": "printer" },
+    { "spec": { "type": "container", "hardware": { "os_type": "linux" } }, "iconKey": "container" },
+    { "spec": { "type": "Unknown", "hardware": { "os_type": "vyos" } }, "iconKey": "router" },
+    { "spec": {}, "iconKey": "server" }
+  ]
+}

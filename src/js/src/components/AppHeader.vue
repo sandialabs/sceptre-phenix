@@ -64,6 +64,15 @@ are only available to Global Administrator or Global Viewer.
         >Builder</b-navbar-item
       >
       <b-navbar-item
+        v-if="auth && builderBeta && roleAllowed('configs', 'list')"
+        tag="router-link"
+        :to="{ name: 'builder-beta' }"
+        data-testid="nav-builder-beta"
+        >Builder Flow
+        <!-- The tag is part of the link's name: "Builder Flow beta". -->
+        <b-tag class="ml-1" type="is-info is-light">beta</b-tag>
+      </b-navbar-item>
+      <b-navbar-item
         v-if="auth && roleAllowed('miniconsole', 'post')"
         tag="router-link"
         :to="{ name: 'console' }"
@@ -98,6 +107,7 @@ are only available to Global Administrator or Global Viewer.
   import { usePhenixStore } from '@/store.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import axiosInstance from '@/utils/axios.js';
+  import { BUILDER_BETA_FEATURE, isFeatureEnabled } from '@/utils/features.js';
 
   export default {
     setup() {
@@ -123,6 +133,13 @@ are only available to Global Administrator or Global Viewer.
 
       tunneler() {
         return usePhenixStore().features.includes('tunneler-download');
+      },
+
+      builderBeta() {
+        return isFeatureEnabled(
+          usePhenixStore().features,
+          BUILDER_BETA_FEATURE,
+        );
       },
     },
 
