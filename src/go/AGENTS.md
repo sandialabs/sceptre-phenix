@@ -29,9 +29,11 @@ the root target does.
 
 ## Generation and Compatibility
 
-- Run `make generate` after protobuf, store-interface, or RBAC policy changes.
-- Never manually edit `store/mock.go`, `web/proto/*.pb.go`, or
-  `web/rbac/known_policy.go`; include regenerated outputs in the change.
+- Run `make generate` after protobuf, store-interface, RBAC policy, or
+  embedded OpenAPI schema (`types/version/schemas/`, `types/schema.go`) changes.
+- Never manually edit `store/mock.go`, `web/proto/*.pb.go`,
+  `web/rbac/known_policy.go`, or the repository's `schemas/*.schema.json`;
+  include regenerated outputs in the change.
 - Preserve bundled third-party assets under `web/public/` unless explicitly
   upgrading or replacing them.
 - Config changes must keep versioned structs, interfaces, YAML/JSON tags,

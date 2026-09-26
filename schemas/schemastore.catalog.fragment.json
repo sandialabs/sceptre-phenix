@@ -1,0 +1,36 @@
+[
+  {
+    "name": "phenix Topology",
+    "description": "phenix Topology config (apiVersion phenix.sandia.gov/v1)",
+    "fileMatch": ["**/phenix-configs/**/topology.yml", "**/phenix-configs/**/topology.yaml"],
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/topology.schema.json"
+  },
+  {
+    "name": "phenix Scenario",
+    "description": "phenix Scenario config (apiVersion phenix.sandia.gov/v2)",
+    "fileMatch": ["**/phenix-configs/**/scenario.yml", "**/phenix-configs/**/scenario.yaml"],
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/scenario.schema.json"
+  },
+  {
+    "name": "phenix Experiment",
+    "description": "phenix Experiment config (apiVersion phenix.sandia.gov/v1)",
+    "fileMatch": ["**/phenix-configs/**/experiment.yml", "**/phenix-configs/**/experiment.yaml"],
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/experiment.schema.json"
+  },
+  {
+    "name": "phenix Image",
+    "description": "phenix Image config (apiVersion phenix.sandia.gov/v1)",
+    "fileMatch": ["**/phenix-images/*.yml", "**/phenix-images/*.yaml"],
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/image.schema.json"
+  },
+  {
+    "name": "phenix Role",
+    "description": "phenix Role config (apiVersion phenix.sandia.gov/v1)",
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/role.schema.json"
+  },
+  {
+    "name": "phenix User",
+    "description": "phenix User config (apiVersion phenix.sandia.gov/v1)",
+    "url": "https://raw.githubusercontent.com/sandialabs/sceptre-phenix/main/schemas/user.schema.json"
+  }
+]
