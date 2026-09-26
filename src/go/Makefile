@@ -28,7 +28,7 @@ PATH := $(GOBIN):$(PATH)
 # Export GOBIN env variable so `go install` picks it up correctly.
 export GOBIN
 
-.PHONY: all check-protoc clean generate generate-mocks generate-protobuf go-generate help install install-dev phenix phenix-debug phenix-tunneler test
+.PHONY: all check-protoc clean generate generate-mocks generate-protobuf generate-schemas go-generate help install install-dev phenix phenix-debug phenix-tunneler test
 .DEFAULT_GOAL := help
 
 help:
@@ -49,6 +49,7 @@ help:
 	@echo "  generate           - Run all code generation tools"
 	@echo "  generate-mocks     - Generate mocks"
 	@echo "  generate-protobuf  - Generate protobufs"
+	@echo "  generate-schemas   - Export the JSON schemas in schemas/ for editors and SchemaStore"
 	@echo "  go-generate        - Run go generate"
 	@echo ""
 	@echo "Installation targets:"
@@ -63,7 +64,12 @@ help:
 
 all: test
 
-generate: generate-mocks generate-protobuf go-generate
+generate: generate-mocks generate-protobuf go-generate generate-schemas
+
+# The committed schemas/ files, exported from the embedded OpenAPI schemas.
+# CI regenerates them and fails when the result differs from what is committed.
+generate-schemas:
+	go run ./tools/schema-export -out ../../schemas
 
 test:
 	$(call check-command,go,Please install Go 1.24+ (https://go.dev/doc/install))

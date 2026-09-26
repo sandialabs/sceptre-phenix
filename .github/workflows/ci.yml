@@ -5,11 +5,13 @@ on:
     branches: ['**']
     paths:
       - 'src/go/**'
+      - 'schemas/**'
       - 'Makefile'
       - '.github/workflows/ci.yml'
   pull_request:
     paths:
       - 'src/go/**'
+      - 'schemas/**'
       - 'Makefile'
       - '.github/workflows/ci.yml'
 
@@ -40,6 +42,14 @@ jobs:
       - name: Generate code
         working-directory: src/go
         run: make generate
+      - name: Check the exported JSON schemas are current
+        run: |
+          if [ -n "$(git status --porcelain -- schemas)" ]; then
+            git status --short -- schemas
+            git diff -- schemas
+            echo "::error::schemas/ differs from the embedded OpenAPI schemas: run make generate and commit the result"
+            exit 1
+          fi
       - name: Run tests with coverage
         working-directory: src/go
         run: make test

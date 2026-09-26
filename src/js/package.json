@@ -42,6 +42,8 @@
     "@eslint/js": "^10.0.1",
     "@vitejs/plugin-vue": "^5.2.3",
     "@vue/eslint-config-prettier": "^10.2.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^2.1.1",
     "eslint": "^10.9.1",
     "eslint-plugin-vue": "^10.10.0",
     "globals": "^17.11.0",
