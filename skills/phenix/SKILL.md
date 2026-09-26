@@ -50,7 +50,10 @@ external/physical nodes) and their hardware, network interfaces, and boot
 behavior. Key node fields (see [`examples/topology.yaml`](examples/topology.yaml)
 for a complete, copyable two-node topology):
 
-- `type`: `VirtualMachine | Firewall | Router | Switch`
+- `type`: `VirtualMachine | Firewall | Router | Switch`. The `vrouter` app
+  configures routing and rulesets only on `Router` and `Firewall` nodes whose
+  `hardware.os_type` is `minirouter`, `vyatta`, or `vyos` (`linux` there is
+  deprecated: it writes a Vyatta config into the image)
 - `general.hostname`, `general.vm_type` (`kvm` or `container`, default `kvm`),
   `general.do_not_boot`, `general.snapshot`
 - `hardware.os_type`: `linux | windows | centos | rhel | minirouter | vyatta | vyos | other`
@@ -213,7 +216,9 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
   unless the topology explicitly sets `general.vm_type: container`.
 - **Store endpoint changes the whole world.** `--store.endpoint` (bolt or etcd) determines
   which configs/experiments are visible — commands against the wrong endpoint will report
-  "no configs found" rather than an obvious connection error.
+  "no configs found" rather than an obvious connection error. An etcd store is compacted by
+  phenix every retention/10 unless `compaction-retention=0`; then the operator must run etcd
+  with auto-compaction.
 - **Deleting `config.yaml` while phenix is running breaks the file watcher** (hot-reload of
   log level, deploy-mode, etc. stops working). `phenix settings unset <key>` rewrites the
   file in place and leaves the watcher intact; `phenix settings unset --all` deletes the

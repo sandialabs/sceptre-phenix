@@ -41,7 +41,7 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
 | Resource | Routes |
 |---|---|
 | Configs | `GET/POST /configs`, `GET/PUT/DELETE /configs/{kind}/{name}`, `POST /configs/download` |
-| Schemas | `GET /schemas/{version}`, `GET /schemas/{kind}/{version}` |
+| Schemas | `GET /schemas/{version}`, `GET /schemas/{kind}/{version}` (404 for an unknown kind or version) |
 | Experiments | `GET/POST /experiments`, `GET /experiments/{name}`, `PATCH /experiments/{name}`, `DELETE /experiments/{name}`, `POST /experiments/{name}/start`, `POST /experiments/{name}/stop`, `GET /experiments/{name}/apps`, `POST/PUT /experiments/builder` |
 | Experiment detail | `GET /experiments/{name}/topology`, `GET /experiments/{name}/topology/search`, `POST/DELETE /experiments/{name}/trigger`, `GET/POST /experiments/{name}/schedule`, `GET /experiments/{name}/soh` (state of health), `GET /experiments/{name}/captures`, `GET /experiments/{name}/files`, `GET /experiments/{name}/files/{filename}` |
 | Netflow | `GET/POST/DELETE /experiments/{exp}/netflow`, `GET /experiments/{exp}/netflow/ws` |
@@ -55,7 +55,12 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
 | SCORCH | `GET /experiments/{name}/scorch/pipelines`, `GET /experiments/{name}/scorch/pipelines/{run}/{loop}`, `POST/DELETE /experiments/{name}/scorch/pipelines/{run}`, `GET /experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}[/ws]`, `/experiments/{name}/scorch/terminals*` |
 | Settings | `GET/POST /settings`, `GET /settings/password`, `GET /settings/timeout` |
 | Builder | `GET/POST /builder/topologies`, `GET/PUT /builder/topologies/{name}`; the builder UI itself is served from the server root as `GET /builder` and `POST /builder/save` (outside `/api/v1`). Payloads and workflow are in [`builder.md`](builder.md) |
+| Builder Flow (only with the `builder-beta` feature enabled) | `GET /schemas/builder/v1`, `GET/POST /builder/drafts`, `GET/DELETE /builder/drafts/{owner}/{draft}`, `GET/POST /builder/drafts/{owner}/{draft}/snapshots`, `GET /builder/drafts/{owner}/{draft}/snapshots/{snapshot\|current}`, `PATCH/PUT /builder/drafts/{owner}/{draft}/cursor`, `POST /builder/drafts/{owner}/{draft}/publish`, `GET /builder/sources`, `POST /builder/generate`, `GET /builder/documents[/{document}]` |
 | Workflow | `POST /workflow/apply/{branch}`, `POST /workflow/configs/{branch}` |
 | Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode) |
+
+Unmatched `/api/v1/*` requests return a JSON `404`; only non-API routes fall
+through to the SPA index. A route behind a disabled feature flag is therefore a
+real `404`, not `200 text/html`.
 
 `src/go/web/server.go` is the authoritative route list.

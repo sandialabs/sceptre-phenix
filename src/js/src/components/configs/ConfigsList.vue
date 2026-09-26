@@ -233,16 +233,16 @@
             </div>
           </b-tooltip>
           &nbsp;
-          <b-tag type="is-info" v-if="isBuilderTopology(props.row)"
-            >builder</b-tag
-          >
+          <b-tag type="is-info is-light" v-if="builderTag(props.row)">{{
+            builderTag(props.row)
+          }}</b-tag>
         </template>
         <template v-else>
           {{ props.row.metadata.name }}
           &nbsp;
-          <b-tag type="is-info" v-if="isBuilderTopology(props.row)"
-            >builder</b-tag
-          >
+          <b-tag type="is-info is-light" v-if="builderTag(props.row)">{{
+            builderTag(props.row)
+          }}</b-tag>
         </template>
       </b-table-column>
 
@@ -261,6 +261,7 @@
             v-if="roleAllowed('configs', 'update', configFullName(props.row))"
             class="button is-light is-small action"
             :aria-label="`Edit config ${props.row.metadata.name}`"
+            :data-config-edit="configFullName(props.row)"
             @click="$emit('edit', props.row)">
             <b-icon icon="edit"></b-icon>
           </button>
@@ -313,9 +314,16 @@
   import FileSaver from 'file-saver';
   import { roleAllowed } from '@/utils/rbac.js';
   import { useErrorNotification } from '@/utils/errorNotif';
+  import { builderTagLabel } from '@/builder/configs.js';
 
   export default {
     emits: ['edit', 'create'],
+    props: {
+      // The config ("Kind/name") whose edit button takes focus once the
+      // list shows it: the one the editor that closed was opened for, so
+      // focus does not fall to the page.
+      focusConfig: { type: String, default: '' },
+    },
     setup() {
       return { roleAllowed };
     },
@@ -412,10 +420,21 @@
         this.isWaiting = true;
         axiosInstance
           .get('configs')
-          .then((response) => {
+          .then(async (response) => {
             const state = response.data;
             this.configs = state.configs === null ? [] : state.configs;
             this.isWaiting = false;
+
+            // The list has several root elements, so it is searched from
+            // the document.
+            if (this.focusConfig) {
+              await this.$nextTick();
+              document
+                .querySelector(
+                  `[data-config-edit="${CSS.escape(this.focusConfig)}"]`,
+                )
+                ?.focus();
+            }
           })
           .catch(() => {
             this.isWaiting = false;
@@ -425,14 +444,10 @@
       configFullName(cfg) {
         return `${cfg.kind}/${cfg.metadata.name}`;
       },
-      isBuilderTopology(cfg) {
-        if (cfg.kind == 'Topology') {
-          if ('annotations' in cfg.metadata) {
-            return 'builder-xml' in cfg.metadata.annotations;
-          }
-        }
-
-        return false;
+      // distinguishes beta builder documents (builder-doc) from legacy
+      // builder diagrams (builder-xml)
+      builderTag(cfg) {
+        return builderTagLabel(cfg);
       },
       download(configList) {
         const configs = configList.map(this.configFullName);

@@ -1,6 +1,8 @@
 package web
 
 import (
+	"errors"
+	"io/fs"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -138,9 +140,16 @@ func GetSchema(w http.ResponseWriter, r *http.Request) error {
 
 	schema, err := version.GetVersionedSchemaForKind(kind, ver)
 	if err != nil {
-		err := weberror.NewWebError(err, "unable to get version %s of schema for %s", ver, kind)
+		webErr := weberror.NewWebError(err, "unable to get version %s of schema for %s", ver, kind)
 
-		return err.SetStatus(http.StatusInternalServerError)
+		// A kind or version with no schema is a missing resource, not a server
+		// failure. This also answers /schemas/builder/v1 when the builder-beta
+		// feature is off, which leaves only this route to match it.
+		if errors.Is(err, version.ErrInvalidKind) || errors.Is(err, fs.ErrNotExist) {
+			return webErr.SetStatus(http.StatusNotFound)
+		}
+
+		return webErr.SetStatus(http.StatusInternalServerError)
 	}
 
 	var body []byte

@@ -16,6 +16,10 @@ type Etcd struct {
 	endpoints []string
 
 	cli *clientv3.Client
+
+	// compactor keeps the cluster's history bounded; nil when compaction is
+	// disabled. See [DefaultEtcdCompactionRetention].
+	compactor *etcdCompactor
 }
 
 func NewEtcd() Store { //nolint:ireturn // factory
@@ -34,6 +38,11 @@ func (e *Etcd) Init(opts ...Option) error {
 		return fmt.Errorf("invalid scheme '%s' for Etcd endpoint", u.Scheme)
 	}
 
+	retention, err := EtcdCompactionRetention(u.Query())
+	if err != nil {
+		return err
+	}
+
 	e.endpoints = []string{u.Host + u.Path}
 
 	cfg := clientv3.Config{ //nolint:exhaustruct // partial initialization
@@ -49,6 +58,11 @@ func (e *Etcd) Init(opts ...Option) error {
 		return fmt.Errorf("initializing component %s: %w", ComponentStore, err)
 	}
 
+	if retention > 0 {
+		e.compactor = newEtcdCompactor(e.cli, retention, time.Now)
+		e.compactor.start(e.compactor.interval())
+	}
+
 	return nil
 }
 
@@ -56,7 +70,7 @@ func (e *Etcd) IsInitialized(component Component) bool {
 	key := fmt.Sprintf("%s/%s", "phenix", string(component))
 
 	resp, err := e.cli.Get(context.Background(), key)
-	if err != nil {
+	if err != nil || len(resp.Kvs) == 0 {
 		return false
 	}
 
@@ -73,6 +87,10 @@ func (e *Etcd) InitializeComponent(component Component) error {
 }
 
 func (e Etcd) Close() error {
+	if e.compactor != nil {
+		e.compactor.stop()
+	}
+
 	return e.cli.Close()
 }
 
@@ -111,7 +129,7 @@ func (e Etcd) Get(c *Config) error {
 	}
 
 	if resp.Count == 0 {
-		return fmt.Errorf("config %s not found", key)
+		return fmt.Errorf("config %s not found: %w", key, ErrNotExist)
 	}
 
 	entry := resp.Kvs[0]
@@ -127,7 +145,7 @@ func (e Etcd) Create(c *Config) error {
 	key := fmt.Sprintf("%s/%s", strings.ToLower(c.Kind), c.Metadata.Name)
 
 	if resp, _ := e.cli.Get(context.Background(), key); resp.Count != 0 {
-		return fmt.Errorf("config %s/%s already exists", c.Kind, c.Metadata.Name)
+		return fmt.Errorf("config %s/%s already exists: %w", c.Kind, c.Metadata.Name, ErrExist)
 	}
 
 	now := time.Now().Format(time.RFC3339)
@@ -151,7 +169,7 @@ func (e Etcd) Update(c *Config) error {
 	key := fmt.Sprintf("%s/%s", strings.ToLower(c.Kind), c.Metadata.Name)
 
 	if resp, _ := e.cli.Get(context.Background(), key); resp.Count == 0 {
-		return fmt.Errorf("config %s/%s doesn't exist", c.Kind, c.Metadata.Name)
+		return fmt.Errorf("config %s/%s doesn't exist: %w", c.Kind, c.Metadata.Name, ErrNotExist)
 	}
 
 	now := time.Now().Format(time.RFC3339)

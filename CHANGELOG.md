@@ -10,11 +10,27 @@ All notable changes to this project will be documented in this file.
   - **Topology Endpoints**: Added `POST /api/v1/builder/topologies` and `PUT /api/v1/builder/topologies/{name}` to create and save a topology and its diagram without touching an experiment; both refuse the write while an experiment built from that topology is running.
   - **Default Disk Images**: Added the `$DEFAULT_VM_IMAGE` and `$DEFAULT_ROUTER_IMAGE` experiment variables, which set the disk image new VM and router nodes are created with.
   - **API Documentation**: Documented the Builder routes in `openapi.yml`, which previously carried none of them.
+- **Builder Flow** (beta, `--features builder-beta`): New topology editor at `/builder-beta`, next to the existing Builder.
+  - **Editing**: Devices, switches, notes, and groups; connections between devices and switches; Router and Firewall templates; copy, paste, and duplicate; undo and redo; auto-layout (ELK layered, Network cards, Dagre, or Standard); moving nodes between groups; colors for networks, notes, groups, and connections.
+  - **Inspector**: Form for every node field, with descriptions, warnings, and editable labels, annotations, and advanced settings; drive image suggestions from the server's disks.
+  - **Checks**: A list of the diagram's errors and warnings that links to the nodes involved.
+  - **Command palette and shortcuts**: Command palette (⌘K or Ctrl+K) and customizable keyboard shortcuts.
+  - **Settings**: Theme, auto-layout algorithm, minimap, zoom, motion, and shortcut settings, kept in the browser.
+  - **Focus mode**: Hides the navigation bar and fills the screen (⇧⌘F or Ctrl+Shift+F).
+  - **Drafts**: Drafts save automatically, work offline, and keep the last 50 changes. Logging out clears drafts saved in the browser and keeps preferences such as the theme and shortcuts.
+  - **Import and export**: Import topologies and experiments; upload and download diagrams as JSON or YAML; export images as PNG or SVG.
+  - **Publishing**: Publish topologies, scenarios, and experiments, and publish again after more edits.
+  - **Included topologies**: Shown as read-only nodes and kept as references when published.
+  - **Permissions**: Actions a role cannot perform are hidden. Importing an uploaded config needs `configs` `create`; other users' drafts need `builder-drafts` permissions.
+  - **Accessibility**: Keyboard and screen reader support (WCAG 2.2 AA).
+  - **API docs**: Builder Flow routes in the OpenAPI document at `/docs/`.
+- **etcd**: Automatic history compaction, set with `compaction-retention` on the store endpoint (default 1 hour; `0` turns it off).
 
 ### Changed
 
 - **Web UI Accessibility**: Declared the page language, added accessible names to icon-only buttons, links, and form controls, labelled the config selection checkboxes, made the log viewer keyboard-scrollable, added a visible keyboard focus indicator, a skip link, per-route page titles, and pagination control names, fixed low-contrast placeholder, danger, and code colours, made the Settings form submit on Enter, and added an axe-core WCAG 2.2 AA scan of every route to the browser smoke tests.
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
+- **Config Schemas**: Descriptions for node and interface fields in the v1 schema; defaults shown as phenix applies them (`general.snapshot` `true`, `hardware.memory` 512).
 - **Topology Builder**:
   - **mxGraph**: Updated the vendored mxGraph from 4.1.0 to 4.2.2, the final release before the project was archived. Upstream changed the modifier that deletes a cell together with its connected edges from Shift to Ctrl.
   - **Editor**: The sidebar node palettes now open expanded, the export dialog offers only the XML and SVG formats the server can produce, and the Help button opens the phēnix documentation instead of the defunct `minimega.org`.
@@ -33,19 +49,21 @@ All notable changes to this project will be documented in this file.
   - **Authorization**: Using a scenario now requires update permission on it, creating a topology authorizes the named topology rather than the `configs` resource as a whole, and requests missing a name, topology, or diagram are rejected before the data store is touched.
   - **Scenario Membership**: Adding a topology to a scenario now matches names exactly rather than by substring, and no longer creates duplicate or empty entries.
   - **Clipped Dialogs and Panels**: Dialog buttons rendered outside their dialogs, dialog content rendered underneath pinned button rows, and the format panel cut off its buttons, option rows and tab title. The About dialog also drew a redundant corner close image next to its own Close button.
-
-### Fixed
-
 - **Web UI**: The log viewer no longer leaves blank gaps between entries when several log messages share the same millisecond timestamp.
 - **Web UI RBAC**: Match resource names with the same namespace-aware semantics as the server, so the UI no longer shows controls the server would reject.
   - A bare pattern such as `vm1` or `*` no longer matches namespaced VM names such as `exp1/vm1`; use `exp1/*` or `*/vm1`.
   - Globstars, braces, and extglobs in patterns no longer match names that the server denies.
   - Config permissions are checked against `<Kind>/<name>`, as the server does.
   - VM snapshot controls check `vms/snapshots` with the server's verbs: `create` to take a snapshot and `update` to restore one. Roles such as Experiment User now see the snapshot button.
-
-### Fixed
-
+- **etcd store**: Crash at startup with an empty etcd; wrong errors for missing or existing configs.
+- **Config Schemas**: Invalid v1 schema (empty `pattern` on a serial interface's `device`).
+- **Schemas API**: Unknown schemas return 404 instead of 500.
+- **API docs**: The OpenAPI document is valid again.
 - **vrouter**: Set VyOS and Vyatta router hostnames exactly as written in the topology instead of lowercasing them and replacing `.` and `_` with `-`, so the guest hostname matches the minimega VM name. Firewall nodes already behaved this way.
+
+### Security
+
+- **Workflow configs**: `POST /api/v1/workflow/configs/{branch}` no longer exposes server environment variables in its errors.
 
 ## [1.0.0]
 

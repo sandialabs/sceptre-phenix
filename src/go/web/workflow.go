@@ -421,6 +421,28 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		scope   = vars["branch"]
 	)
 
+	// Parsing substitutes ${NAME} references with the server's environment
+	// variables, and a parse error quotes the text it failed on, so only a
+	// caller who may create or update configs gets as far as parsing. The
+	// checks for the named config below still apply.
+	if !role.Allowed("configs", "create") && !role.Allowed("configs", "update") {
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		plog.Warn(
+			plog.TypeSecurity,
+			"creating or updating config not allowed",
+			"user",
+			user,
+		)
+
+		err := weberror.NewWebError(
+			nil,
+			"creating or updating configs not allowed for %s",
+			user,
+		)
+
+		return err.SetStatus(http.StatusForbidden)
+	}
+
 	var (
 		typ = r.Header.Get("Content-Type")
 		cfg *store.Config
