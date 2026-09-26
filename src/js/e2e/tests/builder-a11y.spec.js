@@ -1778,7 +1778,7 @@ test.describe('themes and canvas controls', () => {
         await expect
           .soft(device)
           .toHaveAccessibleDescription(
-            /^1 warning: device "node" has no interfaces\. Return selects/,
+            /^1 warning: device "node" has no interfaces\. (?:Return|Enter) selects/,
           );
       });
 
