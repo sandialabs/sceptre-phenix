@@ -63,6 +63,10 @@ func (b Break) breakPoint(ctx context.Context, stage Action) error {
 	}
 
 	if md.Tap != nil {
+		if err := md.Tap.External.Firewall.Validate(); err != nil {
+			return fmt.Errorf("validating external access firewall for break tap: %w", err)
+		}
+
 		pairs := discoverUsedPairs()
 		md.Tap.Init(b.options.Exp.Spec.DefaultBridge(), tap.Experiment(exp), tap.UsedPairs(pairs))
 
