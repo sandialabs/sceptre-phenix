@@ -136,8 +136,14 @@ async function fillPublish(page, { topology, experiment }) {
 
 // Submits the Publish dialog, expects the publish call to answer `status` and
 // returns the response body. The body is the assertion message, so a wrong
-// status shows the server's reason.
+// status shows the server's reason. An update is confirmed first: Publish
+// asks before it replaces a config, an uploaded scenario's too.
 async function expectPublish(page, status) {
+  const submit = page.getByTestId('publish-submit');
+  const scenarioUpdate = page.getByTestId('publish-scenario-update');
+  const updates =
+    /update/i.test(await submit.textContent()) ||
+    ((await scenarioUpdate.count()) > 0 && (await scenarioUpdate.isChecked()));
   const pending = page.waitForResponse(
     (candidate) =>
       candidate.request().method() === 'POST' &&
@@ -145,7 +151,10 @@ async function expectPublish(page, status) {
         new URL(candidate.url()).pathname,
       ),
   );
-  await page.getByTestId('publish-submit').click();
+  await submit.click();
+  if (updates) {
+    await page.getByTestId('confirm-accept').click();
+  }
   const response = await pending;
   const body = await response.text();
   expect(response.status(), body).toBe(status);
@@ -438,9 +447,37 @@ test('topology-only publish refuses a legacy topology, writes the diagram and of
       .soft(topologyHint(page))
       .toHaveText('A topology with this name exists and will be updated.');
     // The button says it overwrites, not just "Publish".
+    const submit = page.getByTestId('publish-submit');
+    await expect.soft(submit).toHaveText('Update topology');
+
+    // No one can undo an update, so Publish asks first, naming what it
+    // replaces, with focus on Cancel. Escape returns to the form, focus
+    // with it, and nothing is sent.
+    const sent = watchPublishes(page);
+    await submit.press('Enter');
+    const confirm = page.getByRole('alertdialog', {
+      name: `Replace topology ${topology}?`,
+    });
     await expect
-      .soft(page.getByTestId('publish-submit'))
+      .soft(confirm)
+      .toHaveAccessibleDescription(
+        `Publishing replaces the topology "${topology}" on the server with this diagram. ` +
+          'This cannot be undone.',
+      );
+    await expect.soft(confirm.getByTestId('confirm-cancel')).toBeFocused();
+    await expect
+      .soft(confirm.getByTestId('confirm-accept'))
       .toHaveText('Update topology');
+    await expectAccessible(page, {
+      include: '[data-testid="builder-confirm"]',
+      soft: true,
+      label: 'Publish confirmation',
+    });
+    await page.keyboard.press('Escape');
+    await expect(confirm).toHaveCount(0);
+    await expect.soft(builder.dialog).toBeVisible();
+    await expect.soft(submit).toBeFocused();
+    expect.soft(sent, 'publish requests').toEqual([]);
 
     // Nothing changed since the last publish, so the server treats the update
     // as already applied.
@@ -617,7 +654,7 @@ test('uploaded scenario can update an existing scenario config', async ({
 
   const draft = await openLab(builder, topology);
 
-  await test.step('a v1 scenario upload is refused, on its field (R23)', async () => {
+  await test.step('a v1 scenario upload is refused, on its field', async () => {
     const dialog = await builder.openDialog('scenario');
     await dialog.getByTestId('scenario-kind-uploaded').check();
     const file = dialog.getByTestId('scenario-file');
@@ -764,12 +801,12 @@ test('stored scenario can be attached and published with an experiment', async (
     expect(published.status(), await published.text()).toBe(200);
     expect((await published.json()).status).toBe('succeeded');
 
-    // R6: edited and published again, twice, the draft updates the
+    // Edited and published again, twice, the draft updates the
     // topology and the experiment it changed, which it was imported from.
     // The first publish changed nothing in the experiment, so the second
     // changes it, and the third finds it changed by the draft itself. The
     // schema allows memory as a string, which the experiment update decodes
-    // as phenix does, to a number (R64).
+    // as phenix does, to a number.
     let etag = published.headers().etag;
     for (const memory of [4096, '8192']) {
       const edited = await builder.request.post(
@@ -924,7 +961,7 @@ test('update hint is current right after publishing in the same session', async 
   });
 });
 
-// R6: a draft updates the topology it published, however often it is
+// A draft updates the topology it published, however often it is
 // edited and published again.
 test('a draft can publish an update after further edits', async ({
   page,
@@ -1082,7 +1119,7 @@ test('router and firewall templates publish with node types Router and Firewall'
 
 // --- disconnected interfaces ----------------------------------------------------
 
-// R20: phenix stores a topology with an interface VLAN of "", and minimega
+// phenix stores a topology with an interface VLAN of "", and minimega
 // refuses it only when the experiment starts. The draft keeps such an
 // interface, as a warning, but publishing refuses it, in the dialog and on
 // the server, and says which interface to fix. Typing its VLAN connects it,
@@ -1340,7 +1377,7 @@ test('a partial publication lists the failed stage and lets the user go back', a
   expectNoFatal(issues);
 });
 
-// R25: the server refuses an experiment name experiment.Create would
+// The server refuses an experiment name experiment.Create would
 // refuse before it writes the document or the topology.
 test('an invalid experiment name is refused before any config is written', async ({
   page,

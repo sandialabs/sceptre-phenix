@@ -92,17 +92,32 @@ export const INSPECTOR_DEFAULTS = Symbol('inspector-defaults');
  *   undefined while the field has a value, or has no default
  */
 export function useFieldDefault(control) {
-  const defaults = inject(INSPECTOR_DEFAULTS, () => ref(() => undefined), true);
+  const unset = useUnsetValue(control);
 
   return computed(() => {
-    const { data, path, schema } = control.value;
+    const { data } = control.value;
 
-    if (data !== undefined && data !== null && data !== '') {
-      return undefined;
-    }
-
-    return unref(defaults)?.(path, schema);
+    return data !== undefined && data !== null && data !== ''
+      ? undefined
+      : unset.value;
   });
+}
+
+/**
+ * What a field comes to with no value (see useFieldDefault), whether or not
+ * it has one now: for a choice that stands for no value, which names it
+ * (see InspectorEnumControl).
+ *
+ * @param {import('vue').ComputedRef<object>} control
+ * @returns {import('vue').ComputedRef<{value: unknown, note: string}|undefined>}
+ *   undefined for a field with no default
+ */
+export function useUnsetValue(control) {
+  const defaults = inject(INSPECTOR_DEFAULTS, () => ref(() => undefined), true);
+
+  return computed(() =>
+    unref(defaults)?.(control.value.path, control.value.schema),
+  );
 }
 
 // Provided by BuilderInspector: whether the working copy changed the value

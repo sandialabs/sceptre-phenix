@@ -37,7 +37,7 @@ describe('document validation', () => {
     expect(paths(doc)).toEqual(expect.arrayContaining(['$schema', 'revision']));
   });
 
-  test('the name is bounded the way the server bounds a draft title (R61)', () => {
+  test('the name is bounded the way the server bounds a draft title', () => {
     const named = (name) => ({ ...createDocument(), name });
 
     expect(paths(named('n'.repeat(MAX_NAME_BYTES)))).toEqual([]);
@@ -59,7 +59,7 @@ describe('document validation', () => {
       networks: [
         { id: 'n1', name: 'EXP' },
         { id: 'n2', name: 'EXP' },
-        // minimega VLAN names are case sensitive (R22).
+        // minimega VLAN names are case sensitive.
         { id: 'n3', name: 'exp' },
         { id: 'n4', name: 'has space' },
       ],
@@ -606,8 +606,7 @@ describe('scenario references', () => {
 });
 
 // The documents validate.go must agree on (TestValidationCorpus in
-// types/builder), run through parseDocument as the editor opens a document
-// (R65).
+// types/builder), run through parseDocument as the editor opens a document.
 describe('the validation corpus shared with the server', () => {
   const testdata = new URL(
     '../../../go/types/builder/testdata/',

@@ -231,7 +231,15 @@
 </template>
 
 <script setup>
-  import { computed, nextTick, provide, reactive, ref, watch } from 'vue';
+  import {
+    computed,
+    inject,
+    nextTick,
+    provide,
+    reactive,
+    ref,
+    watch,
+  } from 'vue';
 
   import BuilderIcon from './BuilderIcon.vue';
   import BuilderOutlineList from './BuilderOutlineList.vue';
@@ -248,7 +256,11 @@
     nodeLabel,
   } from '@/builder/model.js';
   import { outlineHint, textFieldCommand } from '@/builder/commands.js';
-  import { buildOutline, networkOutline } from '@/builder/outline.js';
+  import {
+    buildOutline,
+    networkOutline,
+    rowNodeIds,
+  } from '@/builder/outline.js';
   import { pressSelection } from '@/builder/selection.js';
   import { useBuilderStore } from '@/builder/store.js';
 
@@ -257,6 +269,9 @@
   const GROUP_ERROR_ID = 'regroup-error';
 
   const store = useBuilderStore();
+  // The view's command context (BuilderBeta.vue), whose view brings nodes
+  // into view on the canvas.
+  const commands = inject('builderCommands', null);
 
   // Id of the row that holds the outline's single tab stop.
   const activeId = ref('');
@@ -474,10 +489,22 @@
     });
   }
 
-  function iconFor(item) {
-    const node = findNode(store.doc, item.id);
+  // Each row's icon, worked out once per document: every row asks again
+  // whenever the selection changes.
+  const iconKeys = computed(() => {
+    const keys = new Map();
 
-    return nodeIconKey(node || { kind: item.kind });
+    for (const node of store.doc.nodes || []) {
+      if (!keys.has(node.id)) {
+        keys.set(node.id, nodeIconKey(node));
+      }
+    }
+
+    return keys;
+  });
+
+  function iconFor(item) {
+    return iconKeys.value.get(item.id) || nodeIconKey({ kind: item.kind });
   }
 
   function isSelected(id) {
@@ -514,7 +541,9 @@
   // A plain click, Enter or Space selects or deselects the row; with Shift,
   // Ctrl or Cmd it toggles the row in the selection. The row takes focus, so
   // a row activated from screen reader browse mode is the one that F2 and
-  // Delete then act on.
+  // Delete then act on. The canvas shows the row's nodes, a group's members
+  // and a switch's network with them, when any is out of view; focus stays
+  // on the row.
   function onRowClick(item, event) {
     const row = document.getElementById(rowId(item.id));
 
@@ -523,6 +552,7 @@
     }
 
     pressRow(item, event.shiftKey || event.ctrlKey || event.metaKey);
+    commands?.view?.revealNode?.(rowNodeIds(store.doc, item.id));
   }
 
   // Bound to each row rather than the list, so the rename field that takes a

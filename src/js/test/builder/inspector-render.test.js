@@ -193,18 +193,47 @@ describe('inspector field accessibility', () => {
     expect(html).not.toContain('oneOf-');
     expect(html).toContain('>Interface kind<');
 
-    // Memory and VCPUs, a number or text to phenix, are number fields with
-    // no picker for their kind; an unset one shows the value phenix gives
-    // it, marked as the default and not stored (VCPUs is not set here).
+    // The choice that leaves a field unset names the value phenix then
+    // uses, and an unset choice is described by it and marked "Default",
+    // as a text or number field showing its default is. OS type is set.
+    const choices = (key) =>
+      /<select[^>]*>([\s\S]*?)<\/select>/
+        .exec(html.slice(html.indexOf(`${key}-input`) - 200))?.[1]
+        .match(/<option[^>]*>[^<]*<\/option>/g)
+        .map((option) => option.replace(/<[^>]+>/g, '').trim());
+    const select = (key) =>
+      tags(html, 'select').find((tag) => tag.includes(`${key}-input`));
+    expect(choices('vm_type')).toEqual(['kvm', 'container', 'Default (kvm)']);
+    expect(select('vm_type')).toMatch(
+      /aria-describedby="[^"]*vm_type-default"/,
+    );
+    expect(choices('cache_mode')).toContain('Default (writeback)');
+    expect(choices('os_type')?.[0]).toBe('Default (linux)');
+    expect(select('os_type')).not.toContain('-default');
+
+    // Memory and VCPUs, a number or text to phenix, are whole-number fields
+    // with no picker for their kind: text fields with a number keyboard,
+    // read as spin buttons. An unset one shows the value phenix gives it,
+    // marked as the default and not stored (VCPUs is not set here).
     const [memory] = tags(html, 'input').filter((tag) =>
       tag.includes('memory-input'),
     );
     const [vcpus] = tags(html, 'input').filter((tag) =>
       tag.includes('vcpus-input'),
     );
-    expect(memory).toMatch(/type="number"[^>]*min="1"[^>]*value="512"/);
+    for (const attribute of [
+      'role="spinbutton"',
+      'inputmode="numeric"',
+      'aria-valuemin="1"',
+      'aria-valuenow="512"',
+      'type="text"',
+      'value="512"',
+    ]) {
+      expect(memory).toContain(attribute);
+    }
+    expect(memory).not.toMatch(/\s(min|max|step)=/);
     expect(memory).not.toContain('-default');
-    expect(vcpus).toMatch(/type="number"[^>]*value="1"/);
+    expect(vcpus).toMatch(/aria-valuenow="1"[^>]*type="text"[^>]*value="1"/);
     expect(vcpus).toMatch(/aria-describedby="[^"]*vcpus-default\b/);
     expect(html).not.toMatch(/<option[^>]*>\s*(Megabytes|Whole number)\s*</);
     expect(html).not.toContain('(megabytes)');
@@ -220,7 +249,7 @@ describe('inspector field accessibility', () => {
     expect(html).not.toContain('🗙');
   });
 
-  // R34, V6: labels, annotations and advanced settings are rows of a named
+  // Labels, annotations and advanced settings are rows of a named
   // name and value, in the section of rarely used fields, which says what
   // it holds and how much of it is set.
   test('keys and values are named rows in the More settings section', async () => {
@@ -306,8 +335,25 @@ describe('inspector field accessibility', () => {
     const { html } = await renderDeviceForm([dhcp('eth0', 'EXP')]);
     const [mtu] = tags(html, 'input').filter((tag) => tag.includes('mtu'));
 
-    expect(mtu).toContain('min="0"');
-    expect(mtu).toContain('max="16000"');
+    expect(mtu).toContain('aria-valuemin="0"');
+    expect(mtu).toContain('aria-valuemax="16000"');
+
+    // A template is text, in a text field that is no spin button.
+    const template = await renderDeviceForm([], {
+      spec: {
+        hardware: {
+          os_type: 'linux',
+          vcpus: '{{ .VCPUs }}',
+          drives: [{ image: 'a.qc2' }],
+        },
+      },
+    });
+    const [vcpus] = tags(template.html, 'input').filter((tag) =>
+      tag.includes('vcpus-input'),
+    );
+
+    expect(vcpus).toContain('value="{{ .VCPUs }}"');
+    expect(vcpus).not.toMatch(/role=|inputmode=|aria-value/);
   });
 
   // A warning does not block Apply: it is tied to its field but does not
@@ -395,7 +441,7 @@ async function renderInspector({ readOnly = false, schema = {} } = {}) {
   return renderToString(app);
 }
 
-// The whole Inspector for a device of a draft opened read-only (A38): its own
+// The whole Inspector for a device of a draft opened read-only: its own
 // buttons and fields are disabled as well as the JSON Forms ones.
 test('a read-only draft disables every Inspector control', async () => {
   const html = await renderInspector({ readOnly: true });

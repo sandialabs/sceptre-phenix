@@ -1,6 +1,7 @@
 // Builder Beta canvas and editing commands: palette adds (click and drag),
 // node and connection gestures, delete, clipboard, keyboard selection and
-// nudging, groups, auto layout, and inspector edits of notes and groups.
+// nudging, groups, the layout menu and Auto-group, and inspector edits of
+// notes and groups.
 //
 // Every test starts from its own blank draft; the `tracker` fixture deletes it
 // afterwards. Persisted state is read back through the drafts API so a test
@@ -353,7 +354,7 @@ test.describe('Builder Beta canvas editing', () => {
         image: 'windows10.qc2',
       },
       // phenix's vrouter app configures only these two types, and those
-      // through a router OS type (R4).
+      // through a router OS type.
       router: {
         type: 'Router',
         iconKey: 'router',
@@ -383,7 +384,7 @@ test.describe('Builder Beta canvas editing', () => {
     expect(external.device.spec.external).toBe(true);
     expect(external.device.spec.type).toBe('HIL');
 
-    // Click placement never puts a node on another (R94), after a deletion
+    // Click placement never puts a node on another, after a deletion
     // either, and puts it in view after a pan.
     // Each kind's default size (model.js DEFAULT_SIZES).
     const SIZES = {
@@ -521,7 +522,7 @@ test.describe('Builder Beta canvas editing', () => {
       await expect(builder.nodes('device')).toHaveCount(1);
       await expectPersisted(builder, draft, (doc) => doc.nodes.length, 1);
 
-      // The node a click on the template adds (R46).
+      // The node a click on the template adds.
       const [device] = devicesOf(await builder.serverDocument(draft));
       expect(device.device.hostname).toBe('router');
       expect(device.device.iconKey).toBe('router');
@@ -927,7 +928,7 @@ test.describe('Builder Beta canvas editing', () => {
       await expect
         .soft(canvasNode(page, noteId))
         .toContainText('Remember uplink');
-      // Named after its text, once (N15), and drawn in its color (R93).
+      // Named after its text, once, and drawn in its color.
       await expect
         .soft(flowNode(page, noteId))
         .toHaveAccessibleName('Note: Remember uplink');
@@ -978,7 +979,7 @@ test.describe('Builder Beta canvas editing', () => {
       );
     });
 
-    await test.step("a network's color is its connections' and its switch's (R93)", async () => {
+    await test.step("a network's color is its connections' and its switch's", async () => {
       await builder.selectInOutline('EXP');
       await commitField(
         builder.inspector.getByLabel('Color', { exact: true }),
@@ -1137,7 +1138,7 @@ test.describe('Builder Beta canvas editing', () => {
       const edge = page.locator('g.vue-flow__edge');
       await expect(page.locator('.builder-edge__label')).toHaveText('EXP');
       // Handles are 12px targets, and a switch's bus is square: Vue Flow's
-      // round 6px default does not win (R96).
+      // round 6px default does not win.
       await expect
         .soft(page.locator('.builder-handle--bus').first())
         .toHaveCSS('border-radius', '2px');
@@ -1146,7 +1147,7 @@ test.describe('Builder Beta canvas editing', () => {
         .toHaveCSS('width', '12px');
 
       await test.step('a clicked connection takes focus, so Delete removes it', async () => {
-        // A click beside the line, clear of its label, reaches it (R97).
+        // A click beside the line, clear of its label, reaches it.
         const beside = await page
           .locator('path.builder-edge')
           .evaluate((path) => {
@@ -1398,7 +1399,7 @@ test.describe('Builder Beta canvas editing', () => {
       );
     });
 
-    await test.step('the outline moves a member out of its group and back, and Alt+Shift+arrows resize the group (R56)', async () => {
+    await test.step('the outline moves a member out of its group and back, and Alt+Shift+arrows resize the group', async () => {
       const node = page.locator('#regroup-node');
       const group = page.locator('#regroup-group');
       const move = page.getByTestId('outline-regroup-submit');
@@ -1431,7 +1432,7 @@ test.describe('Builder Beta canvas editing', () => {
             n.x + n.width <= g.x + g.width &&
             n.y + n.height <= g.y + g.height,
           outside: apart(n, g),
-          // It lands on no other node (R56).
+          // It lands on no other node.
           clear: doc.nodes
             .filter((entry) => entry.kind !== 'group' && entry.id !== second)
             .every((entry) => apart(box(entry.id), n)),
@@ -1580,7 +1581,7 @@ test.describe('Builder Beta canvas editing', () => {
         { soft: true },
       );
 
-      // Ungroup is only for a group: with a device selected it is off (R56).
+      // Ungroup is only for a group: with a device selected it is off.
       // Focus is on a member's outline row, where Enter selects it.
       await expect(page.locator(':focus')).toHaveAttribute(
         'data-testid',
@@ -1697,7 +1698,7 @@ test.describe('Builder Beta canvas editing', () => {
       );
       const doc = await builder.serverDocument(draft);
       const origin = byHostname(doc, 'node').position;
-      // Each paste of the same node cascades past the copies before it (N15).
+      // Each paste of the same node cascades past the copies before it.
       for (const [step, hostname] of ['node-2', 'node-3', 'node-4'].entries()) {
         const copy = byHostname(doc, hostname);
         const offset = 40 * (step + 1);
@@ -1712,7 +1713,7 @@ test.describe('Builder Beta canvas editing', () => {
     },
   );
 
-  // R79: a copy is named after its own hostname, not its source's.
+  // A copy is named after its own hostname, not its source's.
   test('a duplicated device is labelled with its own hostname', async ({
     page,
     builder,
@@ -1899,7 +1900,7 @@ test.describe('Builder Beta canvas editing', () => {
 
   // ELK, the default layout, runs in a Web Worker: in Firefox too.
   test(
-    'auto layout is deterministic, undoes in one step and can be put back',
+    'the layout menu lays out, keeps the choice with the draft, undoes in one step and can put it back; Auto-group groups',
     { tag: '@cross-browser' },
     async ({ page, builder, issues }) => {
       const draft = await blankDraft(builder);
@@ -1923,17 +1924,44 @@ test.describe('Builder Beta canvas editing', () => {
         }
       });
 
+      // A menu button named after the draft's layout: the Settings default
+      // while the draft has none of its own.
       const layoutButton = builder.toolbar('layout');
-      await expect(layoutButton).toHaveAccessibleName('Auto layout');
+      const menu = page.getByRole('menu', { name: 'ELK layered layout' });
+      const item = (name) =>
+        page.getByRole('menuitemradio', { name, exact: true });
+      const restore = page.getByRole('menuitem', {
+        name: 'Restore previous layout',
+      });
+      await expect(layoutButton).toHaveAccessibleName('ELK layered layout');
       await expect(layoutButton).toHaveAccessibleDescription(
-        'Arrange the nodes automatically',
+        'Choose a layout, or run it again',
       );
+      await expect(layoutButton).toHaveAttribute('aria-haspopup', 'menu');
+      await expect(layoutButton).toHaveAttribute('aria-expanded', 'false');
       // At this width the toolbar only just fits, so a wider label would wrap
       // the button onto another row, out from under the pointer.
       const viewport = page.viewportSize();
       await page.setViewportSize({ ...viewport, width: 776 });
       await layoutButton.scrollIntoViewIfNeeded();
       const box = await layoutButton.boundingBox();
+
+      // The menu lists the layouts, the draft's checked, each with what it
+      // does, and opens on its first.
+      await layoutButton.click();
+      await expect(layoutButton).toHaveAttribute('aria-expanded', 'true');
+      await expect(menu.getByRole('menuitemradio')).toHaveText([
+        /^ELK layered/,
+        /^Network cards/,
+        /^Dagre/,
+        /^Standard/,
+      ]);
+      await expect(item('ELK layered')).toBeFocused();
+      await expect.soft(item('ELK layered')).toBeChecked();
+      await expect
+        .soft(item('Dagre'))
+        .toHaveAccessibleDescription('Networks in layers, left to right');
+      await expect.soft(restore).toHaveCount(0);
 
       // ELK loads as the first layout runs. Held back, it shows the layout
       // under way: the button is busy, with a ring in place of its icon,
@@ -1947,7 +1975,10 @@ test.describe('Builder Beta canvas editing', () => {
         await released;
         await route.continue();
       });
-      await layoutButton.click();
+      // Choosing the checked layout runs it again, and the draft keeps it.
+      await item('ELK layered').click();
+      await expect(menu).toHaveCount(0);
+      await expect(layoutButton).toBeFocused();
       await expect.soft(layoutButton).toHaveAttribute('aria-busy', 'true');
       await expect
         .soft(layoutButton.locator('.builder-toolbar__spinner'))
@@ -1957,15 +1988,10 @@ test.describe('Builder Beta canvas editing', () => {
         .toEqual(box);
       release();
       await expect(builder.liveRegion).toContainText(
-        'Applied automatic layout',
+        'Applied ELK layered layout',
       );
       await expect.soft(layoutButton).not.toHaveAttribute('aria-busy');
       await page.unroute(elk);
-      // Right after a layout, the same button offers to put it back.
-      await expect(layoutButton).toHaveAccessibleName('Restore layout');
-      await expect(layoutButton).toHaveAccessibleDescription(
-        'Put every node back where it was before Auto layout',
-      );
       expect(await layoutButton.boundingBox(), 'the button stays put').toEqual(
         box,
       );
@@ -1976,7 +2002,9 @@ test.describe('Builder Beta canvas editing', () => {
         })
         .not.toEqual(initial);
       await builder.waitSaved();
-      const laidOut = positions(await builder.serverDocument(draft));
+      const laidOutDoc = await builder.serverDocument(draft);
+      const laidOut = positions(laidOutDoc);
+      expect.soft(laidOutDoc.layout, 'the draft keeps its layout').toBe('elk');
       // ELK, the default, runs lines left to right: the switch right of the
       // devices it connects.
       const [switchId] = await nodeIds(builder, 'switch', 1);
@@ -1986,6 +2014,22 @@ test.describe('Builder Beta canvas editing', () => {
       const below = (placed) =>
         devices.every((id) => placed[switchId].y >= placed[id].y + 96);
       expect(rightOf(laidOut), 'ELK puts the switch right').toBe(true);
+      // ELK routes the connections too, and the canvas draws them so.
+      const routed = page.locator('path.builder-edge[data-routed="true"]');
+      expect
+        .soft(laidOutDoc.edges.filter((edge) => edge.route?.length >= 2))
+        .toHaveLength(2);
+      await expect.soft(routed).toHaveCount(2);
+
+      // Right after a layout, the menu offers to put the previous one back,
+      // last; Escape closes the menu onto its button.
+      await layoutButton.press('ArrowUp');
+      await expect(restore).toBeFocused();
+      await expect
+        .soft(restore)
+        .toHaveAccessibleDescription('Put every node back where it was');
+      await page.keyboard.press('Escape');
+      await expect(layoutButton).toBeFocused();
 
       // Move a node away, then lay out again: the result does not depend on the
       // starting positions.
@@ -1997,8 +2041,18 @@ test.describe('Builder Beta canvas editing', () => {
         [deviceId]: { x: laidOut[deviceId].x + 10, y: laidOut[deviceId].y },
       };
       await expectPersisted(builder, draft, positions, nudged);
+      // The moved device's connection loses its route; the other keeps it.
+      await expect.soft(routed).toHaveCount(1);
+      await expectPersisted(
+        builder,
+        draft,
+        (doc) => doc.edges.filter((edge) => edge.route).length,
+        1,
+      );
       // Any other edit drops the layout to put back.
-      await expect(layoutButton).toHaveAccessibleName('Auto layout');
+      await layoutButton.click();
+      await expect(item('ELK layered')).toBeFocused();
+      await expect(restore).toHaveCount(0);
 
       const uploads = [];
       const onRequest = (request) => {
@@ -2010,7 +2064,7 @@ test.describe('Builder Beta canvas editing', () => {
         }
       };
       page.on('request', onRequest);
-      await builder.toolbar('layout').click();
+      await page.keyboard.press('Enter');
       await expectPersisted(builder, draft, positions, laidOut);
       await builder.waitSaved();
       page.off('request', onRequest);
@@ -2020,31 +2074,33 @@ test.describe('Builder Beta canvas editing', () => {
       await focusNode(page, deviceId);
       await page.keyboard.press('ControlOrMeta+z');
       await expect(builder.liveRegion).toContainText(
-        'Undid Applied automatic layout.',
+        'Undid Applied ELK layered layout.',
       );
       await expect(flowNode(page, deviceId)).toHaveCSS(
         'transform',
         `matrix(1, 0, 0, 1, ${nudged[deviceId].x}, ${nudged[deviceId].y})`,
       );
       await expectPersisted(builder, draft, positions, nudged);
-      // So does an undo.
-      await expect(layoutButton).toHaveAccessibleName('Auto layout');
 
-      // From the keyboard: lay out, then press the same button again to put
-      // every node back, as one snapshot, with focus kept on the button.
+      // From the keyboard: Down opens the menu on its first layout, Enter
+      // lays out; Up opens it on Restore previous layout, which puts every
+      // node back as one snapshot, with focus kept on the button.
       await layoutButton.focus();
+      await page.keyboard.press('ArrowDown');
+      await expect(item('ELK layered')).toBeFocused();
       await page.keyboard.press('Enter');
-      await expect(layoutButton).toHaveAccessibleName('Restore layout');
+      await expect(layoutButton).toBeFocused();
       await expectPersisted(builder, draft, positions, laidOut);
       await builder.waitSaved();
       uploads.length = 0;
       page.on('request', onRequest);
+      await page.keyboard.press('ArrowUp');
+      await expect(restore).toBeFocused();
       await page.keyboard.press('Enter');
       await expect(builder.liveRegion).toContainText(
         'Restored previous layout',
       );
       await expect(layoutButton).toBeFocused();
-      await expect(layoutButton).toHaveAccessibleName('Auto layout');
       await expect(flowNode(page, deviceId)).toHaveCSS(
         'transform',
         `matrix(1, 0, 0, 1, ${nudged[deviceId].x}, ${nudged[deviceId].y})`,
@@ -2058,26 +2114,115 @@ test.describe('Builder Beta canvas editing', () => {
         closed: 0,
       });
 
-      // Auto layout follows the Settings dialog's algorithm: Standard, the
-      // original, puts the switch below the devices.
-      await page.getByRole('button', { name: 'Settings', exact: true }).click();
-      const settings = page.getByTestId('settings-dialog');
-      await settings
-        .getByLabel('Auto layout algorithm')
-        .selectOption('standard');
-      await settings.getByRole('button', { name: 'Done' }).click();
-      await expect(settings).toBeHidden();
-      await layoutButton.click();
-      await expect(builder.liveRegion).toContainText(
-        'Applied automatic layout',
-      );
-      await expect(layoutButton).toHaveAccessibleName('Restore layout');
+      // Another layout, by its letter: Standard, the original, puts the
+      // switch below the devices. The draft keeps it, and it comes before
+      // the Settings default.
+      await layoutButton.press('Enter');
+      await page.keyboard.press('s');
+      await expect(item('Standard')).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(builder.liveRegion).toContainText('Applied Standard layout');
+      await expect(layoutButton).toHaveAccessibleName('Standard layout');
       await expectPersisted(
         builder,
         draft,
-        (doc) => below(positions(doc)) && !rightOf(positions(doc)),
+        (doc) =>
+          doc.layout === 'standard' &&
+          below(positions(doc)) &&
+          !rightOf(positions(doc)),
         true,
       );
+      await page.getByRole('button', { name: 'Settings', exact: true }).click();
+      const settings = page.getByTestId('settings-dialog');
+      await settings
+        .getByLabel('Default layout for drafts')
+        .selectOption('dagre');
+      await settings.getByRole('button', { name: 'Done' }).click();
+      await expect(settings).toBeHidden();
+      await expect(layoutButton).toHaveAccessibleName('Standard layout');
+
+      // The command palette has a command for each layout.
+      await page.keyboard.press('ControlOrMeta+k');
+      const search = page.getByRole('combobox', { name: /Search commands/ });
+      await search.fill('Layout: Network cards');
+      await page.keyboard.press('Enter');
+      await expect(builder.liveRegion).toContainText(
+        'Applied Network cards layout',
+      );
+      await expect(layoutButton).toHaveAccessibleName('Network cards layout');
+      await expectPersisted(builder, draft, (doc) => doc.layout, 'cards');
+
+      // An undo from the open menu takes Restore previous layout away while
+      // it has focus: focus goes to the item now last, not to the page.
+      await layoutButton.press('ArrowUp');
+      await expect(restore).toBeFocused();
+      await page.keyboard.press('ControlOrMeta+z');
+      await expect(builder.liveRegion).toContainText(
+        'Undid Applied Network cards layout.',
+      );
+      await expect(restore).toHaveCount(0);
+      await expect(item('Standard')).toBeFocused();
+      await expect.soft(item('Standard')).toBeChecked();
+      await page.keyboard.press('Escape');
+      await expect(layoutButton).toBeFocused();
+
+      await test.step('Auto-group groups by network or by name, each in one undoable step', async () => {
+        const autoGroup = builder.toolbar('auto-group');
+        const groupMenu = page.getByRole('menu', { name: 'Auto-group' });
+        const groups = (doc) =>
+          doc.nodes
+            .filter((node) => node.kind === 'group')
+            .map((group) => ({
+              title: group.group.title,
+              members: doc.nodes.filter((node) => node.parentId === group.id)
+                .length,
+            }));
+
+        await expect.soft(autoGroup).toHaveAttribute('aria-haspopup', 'menu');
+        await autoGroup.click();
+        await expect(groupMenu.getByRole('menuitem')).toHaveText([
+          /^By network/,
+          /^By name/,
+        ]);
+        await groupMenu.getByRole('menuitem', { name: 'By network' }).click();
+        await expect(builder.liveRegion).toContainText(
+          'Created 1 group by network',
+        );
+        await expect.soft(autoGroup).toBeFocused();
+        // The switch's network names it, and it holds the switch and both
+        // devices.
+        await expectPersisted(builder, draft, groups, [
+          { title: 'EXP', members: 3 },
+        ]);
+
+        // Grouped already, nothing changes, and it says so.
+        await autoGroup.press('Enter');
+        await page.keyboard.press('Enter');
+        await expect(builder.liveRegion).toContainText(
+          'Nothing to group: no ungrouped nodes share a network.',
+        );
+
+        await focusNode(page, deviceId);
+        await page.keyboard.press('ControlOrMeta+z');
+        await expect(builder.liveRegion).toContainText(
+          'Undid Created 1 group by network.',
+        );
+        await expectPersisted(builder, draft, groups, []);
+
+        // By name, from the keyboard: node and node-2 are one family, and
+        // the switch stays out.
+        await autoGroup.press('ArrowUp');
+        await expect(
+          groupMenu.getByRole('menuitem', { name: 'By name' }),
+        ).toBeFocused();
+        await page.keyboard.press('Enter');
+        await expect(builder.liveRegion).toContainText(
+          'Created 1 group by name',
+        );
+        await expectPersisted(builder, draft, groups, [
+          { title: 'node', members: 2 },
+        ]);
+      });
 
       // Leaving the Builder ends ELK's worker.
       await builder.waitSaved();

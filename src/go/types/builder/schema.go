@@ -92,6 +92,10 @@ func Schema() (map[string]any, error) {
 			"grid":         ref("grid"),
 			"scenario":     ref("scenario"),
 			"source":       ref("source"),
+			"layout": stringDef(
+				"Automatic layout chosen for this document, run in place of the viewer's default. " +
+					"An id the editor does not know is ignored. Never published.",
+			),
 		},
 	)
 
@@ -612,8 +616,20 @@ func edgeDef() map[string]any {
 			keyNetworkID:     ref("identifier"),
 			"label":          stringDef(""),
 			keyColor:         stringDef("Drawn in place of the network's color."),
+			"route":          routeDef(),
 		},
 	)
+}
+
+// routeDef builds the schema of an edge route: the points an automatic layout
+// drew the edge through, from the source handle to the target handle.
+func routeDef() map[string]any {
+	def := arrayDef(ref(keyPosition))
+	def[keyDescription] = "Path an automatic layout drew, in absolute canvas coordinates " +
+		"from the source handle to the target handle. Never published."
+	def["minItems"] = minRoutePoints
+
+	return def
 }
 
 func scenarioDef() map[string]any {

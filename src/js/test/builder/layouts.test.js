@@ -17,6 +17,7 @@ import {
   setParent,
   sizeOf,
 } from '@/builder/model.js';
+import { handleOffsetY } from '@/builder/routes.js';
 import { endBuilderSession } from '@/builder/session.js';
 
 // Four networks joined by firewalls, as a small range is: every device a
@@ -261,6 +262,58 @@ describe.each(NETWORK_LAYOUTS)('the %s layout', (id) => {
       // A laid-out diagram lays out the same again.
       expect(await laidOut(id, laid)).toEqual(laid);
     }
+  });
+});
+
+describe('the ELK layout', () => {
+  test('routes the connections in a network from handle to handle, across and down', async () => {
+    const { doc, sw, dev } = range();
+    // WEB-1 and WEB-2 with their switch in a group: routed inside it.
+    const grouped = groupNodes(doc, [
+      sw.DMZ.id,
+      dev['WEB-1'].id,
+      dev['WEB-2'].id,
+    ]).doc;
+    const laid = withGeometry(grouped, await runLayout('elk', grouped));
+    const byId = new Map(laid.nodes.map((node) => [node.id, node]));
+    const between = (source, target) =>
+      laid.edges.find(
+        (edge) =>
+          edge.sourceNodeId === source.id && edge.targetNodeId === target.id,
+      );
+    const routed = laid.edges.filter((edge) => edge.route);
+
+    for (const edge of routed) {
+      const source = byId.get(edge.sourceNodeId);
+      const target = byId.get(edge.targetNodeId);
+      const { route } = edge;
+
+      expect(route[0]).toEqual({
+        x: source.position.x + sizeOf(source).width,
+        y: source.position.y + handleOffsetY(source, edge.sourceHandleId),
+      });
+      expect(route[route.length - 1]).toEqual({
+        x: target.position.x,
+        y: target.position.y + handleOffsetY(target, edge.targetHandleId),
+      });
+      route.slice(1).forEach((point, index) => {
+        expect(
+          point.x === route[index].x || point.y === route[index].y,
+          'across or down',
+        ).toBe(true);
+      });
+    }
+
+    expect(between(dev['WEB-1'], sw.DMZ).route).toBeDefined();
+    expect(between(dev['IT-WS-1'], sw.CORP).route).toBeDefined();
+    // From a switch, too.
+    expect(between(sw.OT, dev['HMI-2']).route).toBeDefined();
+    // Between networks, and out of the group, ELK draws no route.
+    expect(between(dev['FW-OT'], sw.CORP).route).toBeUndefined();
+    expect(between(dev['FW-CORP'], sw.DMZ).route).toBeUndefined();
+    // The other layouts draw none.
+    expect((await runLayout('cards', doc)).routes).toBeUndefined();
+    expect((await runLayout('dagre', doc)).routes).toBeUndefined();
   });
 });
 

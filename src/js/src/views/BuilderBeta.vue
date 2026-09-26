@@ -50,6 +50,8 @@
         :can-create="store.canCreateDrafts"
         :can-delete="store.canDeleteDrafts"
         :busy="busy"
+        :opening="opening"
+        :damaged="damagedDrafts"
         @blank="startBlank"
         @import="openLanding('import')"
         @generate="openLanding('generate')"
@@ -66,13 +68,27 @@
         <h1 ref="editorHeading" class="builder-visually-hidden" tabindex="-1">
           {{ diagramName }} – Builder Flow
         </h1>
+        <!-- While it waits for the saves, then for the lists: a turning
+             ring in place of the arrow (reduced motion stops it turning)
+             and what it waits for. The labels hold the button's width; the
+             hidden ones are not named. -->
         <button
           type="button"
           class="builder-button"
           data-testid="editor-back"
+          :aria-disabled="Boolean(closing) || undefined"
+          :aria-busy="Boolean(closing) || undefined"
           @click="closeEditor">
-          <builder-icon name="arrow-left" :size="14" />
-          Back to drafts
+          <span
+            v-if="closing"
+            class="builder-toolbar__spinner"
+            aria-hidden="true"></span>
+          <builder-icon v-else name="arrow-left" :size="14" />
+          <span class="builder-button__swap">
+            <span :class="{ 'is-off': closing }">Back to drafts</span>
+            <span :class="{ 'is-off': closing !== 'saving' }">Saving…</span>
+            <span :class="{ 'is-off': closing !== 'loading' }">Loading…</span>
+          </span>
         </button>
         <!-- Its label is read rather than shown; a tooltip gives it on
              hover. -->
@@ -414,7 +430,9 @@
   import BuilderCommandPalette from '@/components/builder/BuilderCommandPalette.vue';
   import BuilderConfirm from '@/components/builder/BuilderConfirm.vue';
   import BuilderCounts from '@/components/builder/BuilderCounts.vue';
-  import BuilderDrafts from '@/components/builder/BuilderDrafts.vue';
+  import BuilderDrafts, {
+    cardKey,
+  } from '@/components/builder/BuilderDrafts.vue';
   import BuilderIcon from '@/components/builder/BuilderIcon.vue';
   import BuilderInspector from '@/components/builder/BuilderInspector.vue';
   import BuilderLiveRegion from '@/components/builder/BuilderLiveRegion.vue';
@@ -512,6 +530,10 @@
   // A draft is being made or opened: the landing's buttons that would make
   // or open another wait for it (see whileBusy).
   const busy = ref(false);
+  // The listed draft or diagram being opened (see cardKey), whose Open says
+  // so, and what Back to drafts is waiting for: 'saving' or 'loading'.
+  const opening = ref('');
+  const closing = ref('');
   let stopWatchingSystemTheme = () => {};
   let stopFollowingShortcuts = () => {};
   let stopFollowingFullScreen = () => {};
@@ -699,11 +721,17 @@
     }, RELIST_DELAY_MS);
   }
 
-  // closeEditor has just read the lists when it shows the landing.
+  // closeEditor has just read the lists when it shows the landing, or is
+  // reading them.
   const LISTED_FRESH_MS = 1000;
 
   watch(editing, (now, before) => {
-    if (!now && before && Date.now() - listedAt >= LISTED_FRESH_MS) {
+    if (
+      !now &&
+      before &&
+      !listing &&
+      Date.now() - listedAt >= LISTED_FRESH_MS
+    ) {
       relist();
     }
   });
@@ -723,6 +751,18 @@
       busy.value = false;
     }
   }
+
+  // The drafts the server can no longer read, on the tab a readable one
+  // would be on: the user's own, or shared.
+  const damagedDrafts = computed(() => {
+    const user = usePhenixStore().username;
+    const all = store.drafts.damaged || [];
+
+    return {
+      mine: all.filter((item) => item.owner === user),
+      shared: all.filter((item) => item.owner !== user),
+    };
+  });
 
   // Blank drafts are numbered, so the landing can tell them apart.
   function untitledName() {
@@ -756,18 +796,78 @@
     dialog.value = which;
   }
 
-  // A published diagram opens read only, with no draft.
-  function openDraft(item) {
-    return whileBusy(async () => {
-      let opened = null;
+  /**
+   * Resolves once the browser has painted what changed so far, so a busy
+   * button shows its spinner before a large diagram's long first render; at
+   * once in a hidden tab, which paints nothing.
+   *
+   * @returns {Promise<void>}
+   */
+  function afterPaint() {
+    if (document.visibilityState === 'hidden') {
+      return Promise.resolve();
+    }
 
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => setTimeout(resolve, 0));
+    });
+  }
+
+  // How long a wait lasts before the live region says what it is for. A
+  // shorter one says nothing: its button has shown it, and what it ends
+  // with is then heard at once rather than after the wait's message.
+  const WAIT_ANNOUNCE_MS = 1000;
+
+  /**
+   * Says what a wait is for once it has lasted WAIT_ANNOUNCE_MS.
+   *
+   * @param {string} message
+   * @returns {() => void} ends the wait, saying nothing if it was short
+   */
+  function announceWait(message) {
+    const timer = setTimeout(
+      () => store.announce(message, { slot: 'busy' }),
+      WAIT_ANNOUNCE_MS,
+    );
+
+    return () => clearTimeout(timer);
+  }
+
+  // Opens a listed draft or diagram with `open`, while its Open says so, as
+  // the live region does if it takes a while. The editor's heading takes
+  // focus once it shows (see the watch on editing); a failure leaves the
+  // landing, and focus, as they were, and the page alert says why.
+  function openListed(item, name, open) {
+    return whileBusy(async () => {
+      opening.value = cardKey(item);
+      const waited = announceWait(`Opening ${name}…`);
+
+      try {
+        const opened = await open();
+
+        if (opened) {
+          await afterPaint();
+        }
+
+        editing.value = Boolean(opened);
+      } finally {
+        waited();
+        opening.value = '';
+      }
+    });
+  }
+
+  // A published diagram opens read only, with no draft. The landing names
+  // the item as its card does (label).
+  function openDraft(item, label = '') {
+    const name = label || item.name || item.title || item.target || 'the draft';
+
+    return openListed(item, name, () => {
       if (item.owner && item.id) {
-        opened = await store.loadDraft(item.owner, item.id);
-      } else if (item.id) {
-        opened = await store.viewPublishedDocument(item.id);
+        return store.loadDraft(item.owner, item.id);
       }
 
-      editing.value = Boolean(opened);
+      return item.id ? store.viewPublishedDocument(item.id) : null;
     });
   }
 
@@ -971,21 +1071,62 @@
     }
   }
 
-  // The lists are refreshed before the landing replaces the editor, so focus
-  // can move from "Back to drafts" straight to the closed draft's card, or
-  // the published diagram's.
-  async function closeEditor() {
-    if (!(await mayLeave())) {
-      return;
-    }
+  // Whether the lists hold a draft or published diagram.
+  function inLists(id) {
+    return [store.drafts.mine, store.drafts.shared, store.documents].some(
+      (items) => (items || []).some((item) => item.id === id),
+    );
+  }
 
-    const closed = store.published?.id || store.draftId;
+  // Back to drafts. What is not saved yet is sent first (see mayLeave),
+  // which the button says, as the live region does if it takes a while. The
+  // landing then replaces the editor, and focus moves from the button
+  // straight to the closed draft's card, or the published diagram's: at once
+  // when the lists hold it, while they are read again behind the landing;
+  // otherwise once they are read, which the button says too. Staying gives
+  // the button back. Asked twice at once, it closes once.
+  let closeRun = null;
 
-    await refresh();
-    editing.value = false;
-    await nextTick();
-    if (!(await drafts.value?.focusDraft(closed))) {
-      drafts.value?.focusActiveTab();
+  function closeEditor() {
+    closeRun ||= leaveEditor().finally(() => {
+      closeRun = null;
+    });
+
+    return closeRun;
+  }
+
+  async function leaveEditor() {
+    let waited = () => {};
+
+    try {
+      if (unsavedWork()) {
+        closing.value = 'saving';
+        waited = announceWait('Saving your changes…');
+      }
+
+      if (!(await mayLeave())) {
+        return;
+      }
+
+      const closed = store.published?.id || store.draftId;
+
+      waited();
+      if (inLists(closed)) {
+        refresh();
+      } else {
+        closing.value = 'loading';
+        waited = announceWait('Loading your drafts…');
+        await refresh();
+      }
+
+      editing.value = false;
+      await nextTick();
+      if (!(await drafts.value?.focusDraft(closed))) {
+        drafts.value?.focusActiveTab();
+      }
+    } finally {
+      waited();
+      closing.value = '';
     }
   }
 
@@ -1258,16 +1399,14 @@
       return;
     }
 
-    await whileBusy(async () => {
-      const opened = store.canCreateDrafts
-        ? await store.openPublishedDocument(published.id, {
+    await openListed(published, `topology ${topology}`, () =>
+      store.canCreateDrafts
+        ? store.openPublishedDocument(published.id, {
             announcement: `Opened topology ${topology} in Builder Flow as a new draft.`,
             resumed: `Opened topology ${topology} in Builder Flow, in your draft of it.`,
           })
-        : await store.viewPublishedDocument(published.id);
-
-      editing.value = Boolean(opened);
-    });
+        : store.viewPublishedDocument(published.id),
+    );
   }
 
   // Where the address names a diagram, it follows the draft that is open,
@@ -1513,6 +1652,10 @@
     outline: 3px solid var(--bx-focus);
     outline-offset: 2px;
     border-radius: var(--bx-radius);
+  }
+
+  .builder-header .builder-button[aria-busy='true'] {
+    cursor: progress;
   }
 
   /* 13rem wide, or down to 8rem to stay beside Back to drafts in a narrow

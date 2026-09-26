@@ -16,12 +16,8 @@
 // target's left side (a device interface or a switch bus), so a layout that
 // puts each target to the right of its source draws no line backwards.
 
-import {
-  DEFAULT_GRID_SIZE,
-  deviceHandles,
-  nodeLabel,
-  sizeOf,
-} from '../model.js';
+import { DEFAULT_GRID_SIZE, nodeLabel, sizeOf } from '../model.js';
+import { fitRoute, handleOffsetY } from '../routes.js';
 
 // Positions are on the Builder's grid, and every gap a layout leaves is at
 // least a grid step, so snapping puts no node on another.
@@ -142,21 +138,6 @@ function parentsOf(nodes, nodeById) {
   }
 
   return parents;
-}
-
-// Where a connection meets a node's side, from the node's top: at the
-// interface's handle on a device (DeviceNode.vue spaces them evenly), and
-// halfway down anything else.
-function handleY(node, handleId) {
-  const { height } = sizeOf(node);
-  const handles = deviceHandles(node);
-  const index = handles.findIndex((handle) => handle.id === handleId);
-
-  if (index < 0) {
-    return height / 2;
-  }
-
-  return (height * (index + 1)) / (handles.length + 1);
 }
 
 // The document's connections and networks, as the layouts read them.
@@ -334,11 +315,17 @@ export function packRanks(ranks, spacing) {
  * - networks: network id -> {id, name, index}.
  * It returns each item's top-left corner (a Map, or a Promise of one), in
  * any coordinates: the result is moved to the scope's corner and snapped.
+ * A layout that routes the connections too returns {positions, routes}
+ * instead: the corners, and each connection's points (a Map by edge id) in
+ * the same coordinates, from its source port to its target port. A route
+ * is kept for a connection between two nodes of the scope, not one to a
+ * group, and moved onto the handles of the nodes as snapped (fitRoute).
  *
  * @param {object} doc builder document
  * @param {function} arrange
- * @returns {Promise<{positions: object, sizes: object}>} each node's
- *   top-left corner, and the size of each group with members, by node id
+ * @returns {Promise<{positions: object, sizes: object, routes?: object}>}
+ *   each node's top-left corner, and the size of each group with members,
+ *   by node id; and each route kept, by edge id, in absolute coordinates
  */
 export async function layoutScopes(doc, arrange) {
   const nodes = [...(doc.nodes || [])].sort(byId);
@@ -478,7 +465,7 @@ export async function layoutScopes(doc, arrange) {
     if (item.id === end) {
       return {
         id: `${item.id}:${node.kind === 'device' ? handle : ''}:${role}`,
-        y: handleY(node, handle),
+        y: handleOffsetY(node, handle),
       };
     }
 
@@ -487,11 +474,16 @@ export async function layoutScopes(doc, arrange) {
 
     return {
       id: `${item.id}:${edge.id}:${role}`,
-      y: Math.min(item.height, Math.max(0, inside.y + handleY(node, handle))),
+      y: Math.min(
+        item.height,
+        Math.max(0, inside.y + handleOffsetY(node, handle)),
+      ),
     };
   };
 
   let top = new Map();
+  // Scope -> each route in it, from the scope's corner.
+  const routes = new Map();
 
   for (const scope of order) {
     const items = members.get(scope).map(itemOf);
@@ -499,6 +491,8 @@ export async function layoutScopes(doc, arrange) {
     const placedIds = new Set(connected.map((item) => item.id));
     const itemById = new Map(items.map((item) => [item.id, item]));
     const scoped = [];
+    // The connections whose ends are both nodes of the scope.
+    const direct = new Set();
 
     for (const edge of edges) {
       const source = inScope(edge.source, scope);
@@ -519,12 +513,17 @@ export async function layoutScopes(doc, arrange) {
           sourcePort: portOf(itemById.get(source), edge, 'source'),
           targetPort: portOf(itemById.get(target), edge, 'target'),
         });
+
+        if (source === edge.source && target === edge.target) {
+          direct.add(edge.id);
+        }
       }
     }
 
-    const arranged = connected.length
+    const result = connected.length
       ? await arrange({ items: connected, edges: scoped, networks })
       : new Map();
+    const arranged = result instanceof Map ? result : result.positions;
     const left = Math.min(...connected.map((item) => arranged.get(item.id).x));
     const up = Math.min(...connected.map((item) => arranged.get(item.id).y));
     const local = new Map(
@@ -534,6 +533,33 @@ export async function layoutScopes(doc, arrange) {
         return [item.id, { x: snap(at.x - left), y: snap(at.y - up) }];
       }),
     );
+    const scopeRoutes = new Map();
+
+    for (const edge of result instanceof Map ? [] : scoped) {
+      const points = result.routes?.get(edge.id);
+
+      if (!points || !direct.has(edge.id)) {
+        continue;
+      }
+
+      const from = local.get(edge.source);
+      const to = local.get(edge.target);
+      const route = fitRoute(
+        points.map((point) => ({ x: point.x - left, y: point.y - up })),
+        {
+          x: from.x + itemById.get(edge.source).width,
+          y: from.y + edge.sourcePort.y,
+        },
+        { x: to.x, y: to.y + edge.targetPort.y },
+      );
+
+      if (route) {
+        scopeRoutes.set(edge.id, route);
+      }
+    }
+
+    routes.set(scope, scopeRoutes);
+
     const main = extent(connected, local);
     const loose = items.filter((item) => !placedIds.has(item.id));
 
@@ -584,5 +610,26 @@ export async function layoutScopes(doc, arrange) {
     });
   });
 
-  return { positions, sizes };
+  const drawn = {};
+  const round = (value) => Math.round(value * 100) / 100;
+
+  routes.forEach((list, scope) => {
+    const origin = scope
+      ? {
+          x: positions[scope].x + GROUP_PADDING,
+          y: positions[scope].y + GROUP_PADDING,
+        }
+      : ORIGIN;
+
+    list.forEach((points, id) => {
+      drawn[id] = points.map((point) => ({
+        x: round(origin.x + point.x),
+        y: round(origin.y + point.y),
+      }));
+    });
+  });
+
+  return Object.keys(drawn).length
+    ? { positions, sizes, routes: drawn }
+    : { positions, sizes };
 }

@@ -108,10 +108,10 @@ describe('settling unapplied edits before a save', () => {
     expect(store.canRedo).toBe(false);
   });
 
-  // R16: edits merge into the element as it is now, so what changed it
+  // Edits merge into the element as it is now, so what changed it
   // meanwhile stays: they used to be kept back, or, applied, to put the
   // working copy over it.
-  // R34: a key/value row with no name, or a name used above it, is kept out
+  // A key/value row with no name, or a name used above it, is kept out
   // of the working copy until it is fixed, and must not be lost unsaid.
   test('rows a renderer holds back keep the edits from being applied', async () => {
     const { report, settle, errors, description } = await editedInspector();
@@ -178,7 +178,7 @@ describe('settling unapplied edits before a save', () => {
   });
 });
 
-// R1: a device generated from a phenix experiment carries values phenix
+// A device generated from a phenix experiment carries values phenix
 // accepts and the form's schema does not (advanced null, mac "", gateway
 // "", ruleset_in ""), which kept every edit of it from being applied.
 // Errors on fields an edit leaves as they were count no more; one on a

@@ -953,6 +953,35 @@ test(
         expect.soft(box.width, `${item} tooltip width`).toBeGreaterThan(120);
       }
     });
+
+    await test.step('in a 320px window the name stays beside Back to drafts and toolbar menus open on screen', async () => {
+      const smallest = { width: 320, height: 800 };
+      await resize(page, smallest);
+
+      // Back to drafts is as wide as its longest busy label.
+      const [back, name] = await Promise.all([
+        page.getByTestId('editor-back').boundingBox(),
+        page.locator('#builder-doc-name').boundingBox(),
+      ]);
+      expect
+        .soft(name.y, 'name beside Back to drafts')
+        .toBeLessThan(back.y + back.height);
+
+      for (const id of ['toolbar-auto-group', 'toolbar-layout']) {
+        const button = page.getByTestId(id);
+        await button.focus();
+        await page.keyboard.press('ArrowDown');
+        const menu = page.getByTestId(`${id}-menu`);
+        await expect(menu).toBeVisible();
+        const box = await menu.boundingBox();
+        expect.soft(box.x, `${id} menu left`).toBeGreaterThanOrEqual(0);
+        expect
+          .soft(box.x + box.width, `${id} menu right`)
+          .toBeLessThanOrEqual(smallest.width);
+        await page.keyboard.press('Escape');
+        await expect.soft(button).toBeFocused();
+      }
+    });
   },
 );
 

@@ -70,6 +70,8 @@ const ICONS = {
   'edit.delete': 'trash',
   'structure.group': 'group',
   'structure.ungroup': 'ungroup',
+  'structure.autoGroup.network': 'auto-group',
+  'structure.autoGroup.name': 'auto-group',
   'structure.restoreLayout': 'undo',
   'structure.connect': 'link',
   'structure.disconnect': 'close',

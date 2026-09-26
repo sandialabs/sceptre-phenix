@@ -26,6 +26,11 @@ const STORES = [STORE_NAME, ENTRY_STORE];
 // store the draft again.
 let generation = 0;
 
+// The last clearBuilderDatabase(). A store opens the database once it has
+// settled, so a Builder opened just after a sign-in neither reads the
+// records it clears nor writes records it would clear.
+let clearing = Promise.resolve(true);
+
 /**
  * Key that scopes an entry to both the acting user and the draft owner, so a
  * shared draft opened by two different users never shares queue state.
@@ -235,9 +240,11 @@ export function createDraftStore(options = {}) {
 
   const db = () => {
     if (!dbPromise) {
-      dbPromise = openBuilderDb(options.factory, () => {
-        dbPromise = null;
-      });
+      dbPromise = clearing.then(() =>
+        openBuilderDb(options.factory, () => {
+          dbPromise = null;
+        }),
+      );
     }
     return dbPromise;
   };
@@ -371,9 +378,14 @@ function deleteDatabase(idb) {
  * @param {object} [options] factory
  * @returns {Promise<boolean>} whether the records are gone
  */
-export async function clearBuilderDatabase(options = {}) {
+export function clearBuilderDatabase(options = {}) {
   generation += 1;
+  clearing = clearRecords(options);
 
+  return clearing;
+}
+
+async function clearRecords(options) {
   const idb = factoryOf(options.factory);
 
   if (!idb) {

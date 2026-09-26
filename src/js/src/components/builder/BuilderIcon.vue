@@ -124,6 +124,11 @@
       '<rect x="3" y="4" width="18" height="16" rx="2" stroke-dasharray="4 3"/>',
     ungroup:
       '<rect x="3" y="4" width="8" height="8" rx="1.5"/><rect x="13" y="12" width="8" height="8" rx="1.5"/>',
+    // A group gathering nodes on its own: Auto-group.
+    'auto-group':
+      '<rect x="3" y="4" width="18" height="16" rx="2" stroke-dasharray="4 3"/><circle cx="9" cy="10" r="1.6"/><circle cx="15" cy="10" r="1.6"/><circle cx="12" cy="15" r="1.6"/>',
+    // A menu button's arrow.
+    'chevron-down': '<path d="M6 9l6 6 6-6"/>',
     keyboard:
       '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>',
     // A gear: Settings.

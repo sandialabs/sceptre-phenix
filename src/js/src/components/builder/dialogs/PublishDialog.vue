@@ -15,6 +15,11 @@
   updateBlocker), so the hints and the submit button promise an update only
   then, and any other existing name is refused on its field before anything
   is sent.
+
+  An update replaces a config on the server, which no one can undo, so
+  Publish asks first, in an alert dialog that names each config replaced
+  (see overwriteConfirmation). Nothing is sent until the user confirms;
+  Cancel, Escape or a click outside return to the form, focus with them.
 -->
 <template>
   <builder-dialog
@@ -255,12 +260,22 @@
       data-testid="publish-status">
       <span v-if="status.text" :key="status.key">{{ status.text }}</span>
     </p>
+
+    <builder-confirm
+      v-if="confirming"
+      id="publish-confirm"
+      :title="confirming.title"
+      :message="confirming.message"
+      :confirm-label="confirming.confirmLabel"
+      @confirm="confirmOverwrite"
+      @cancel="confirming = null" />
   </builder-dialog>
 </template>
 
 <script setup>
   import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
+  import BuilderConfirm from '../BuilderConfirm.vue';
   import BuilderDialog from '../BuilderDialog.vue';
   import { useFieldError, useMessage } from './message.js';
 
@@ -270,7 +285,9 @@
     buildPublishIntent,
     configName,
     describePublishResult,
+    overwriteConfirmation,
     publishChecks,
+    publishLabel,
     scenarioNames as readScenarioNames,
     stageFailed,
     targetHint,
@@ -293,6 +310,8 @@
   const result = ref(null);
   const submitButton = ref(null);
   const resultSummary = ref(null);
+  // The confirmation shown before an update, with the intent it sends.
+  const confirming = ref(null);
 
   const scenario = computed(() => store.doc.scenario || null);
 
@@ -423,19 +442,15 @@
       return 'Publishing…';
     }
 
-    const topology =
-      topologyExists.value && !topologyBlocker.value ? 'Update' : 'Create';
+    const action = (exists, blocker) =>
+      exists && !blocker ? 'update' : 'create';
 
-    if (form.mode !== 'topology-experiment') {
-      return `${topology} topology`;
-    }
-
-    const experiment =
-      experimentExists.value && !experimentBlocker.value ? 'update' : 'create';
-
-    return experiment === topology.toLowerCase()
-      ? `${topology} topology and experiment`
-      : `${topology} topology and ${experiment} experiment`;
+    return publishLabel(
+      action(topologyExists.value, topologyBlocker.value),
+      form.mode === 'topology-experiment'
+        ? action(experimentExists.value, experimentBlocker.value)
+        : undefined,
+    );
   });
 
   const resultText = computed(() => describePublishResult(result.value));
@@ -474,6 +489,34 @@
       return;
     }
 
+    const overwrite = overwriteConfirmation(intent);
+
+    if (overwrite) {
+      busy.value = false;
+      confirming.value = { ...overwrite, intent };
+
+      return;
+    }
+
+    await send(intent);
+  }
+
+  // The confirmation closes, which returns focus to the form, before the
+  // intent it was shown for is sent.
+  async function confirmOverwrite() {
+    // A second click before the confirmation closes sends nothing more.
+    if (!confirming.value || busy.value) {
+      return;
+    }
+
+    const { intent } = confirming.value;
+
+    confirming.value = null;
+    busy.value = true;
+    await send(intent);
+  }
+
+  async function send(intent) {
     status.set('Publishing…');
 
     const published = await store.publish(intent);

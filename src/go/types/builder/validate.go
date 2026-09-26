@@ -17,6 +17,9 @@ const maxVLANAlias = 4094
 // the draft title.
 const MaxNameBytes = 512
 
+// minRoutePoints is the fewest points an edge route may hold: its two ends.
+const minRoutePoints = 2
+
 // Issue is a single validation failure, located by a JSON-ish path within the
 // document.
 type Issue struct {
@@ -88,7 +91,8 @@ type validator struct {
 //     in a document whose source includes no topologies,
 //   - a malformed [Source.Digest],
 //   - non-finite geometry, and sizes, zoom, or grid spacing that are not
-//     strictly positive.
+//     strictly positive,
+//   - an edge route with fewer than two points.
 //
 // It returns nil or a *[ValidationError].
 func (d *Document) Validate() error {
@@ -477,6 +481,8 @@ func (v *validator) validateEdges() {
 			seenIDs[foldKey(edge.ID)] = i
 		}
 
+		v.validateRoute(path+".route", edge.Route)
+
 		source, sourceOK := v.nodesByID[edge.SourceNodeID]
 		if !sourceOK {
 			v.addf(path+".sourceNodeId", "unknown node %q", edge.SourceNodeID)
@@ -547,6 +553,28 @@ func (v *validator) validateEdges() {
 				"network %q does not match network %q of switch %q",
 				edge.NetworkID, switchNode.Switch.NetworkID, switchNode.ID,
 			)
+		}
+	}
+}
+
+// validateRoute checks an edge route: absent, or at least its two ends, every
+// point a finite coordinate.
+func (v *validator) validateRoute(path string, route []Position) {
+	if route == nil {
+		return
+	}
+
+	if len(route) < minRoutePoints {
+		v.addf(path, "a route must have at least %d points", minRoutePoints)
+
+		return
+	}
+
+	for _, point := range route {
+		if !finite(point.X) || !finite(point.Y) {
+			v.addf(path, "route points must be finite numbers")
+
+			return
 		}
 	}
 }

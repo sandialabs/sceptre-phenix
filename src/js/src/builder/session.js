@@ -6,8 +6,10 @@
 // their owners and nodes by id; once loaded, its modules also hold the
 // drafts listed for the user and the open diagram in memory. What belongs
 // to the user may not outlive the session on a shared workstation, so
-// logout clears it, whether or not the Builder is open. The preferences say
-// nothing about the user or their work, and stay for this browser.
+// logout clears it, whether or not the Builder is open, and so does the
+// next sign-in of another user when the browser was closed without logging
+// out. The preferences say nothing about the user or their work, and stay
+// for this browser.
 //
 // This module is loaded with the app, so it stays small: the Builder's
 // modules register what they hold in memory when they are first loaded, and
@@ -16,6 +18,12 @@
 import { clearBuilderDatabase } from './idb.js';
 
 const BUILDER_STORAGE_PREFIX = 'phenix.builder.';
+
+/**
+ * The user the Builder data in this browser belongs to, written at sign-in.
+ * It is not a preference, so logout clears it with the rest.
+ */
+export const BUILDER_USER_KEY = 'phenix.builder.user';
 
 /**
  * The phenix.builder.* keys logout leaves in place: preferences of this
@@ -109,4 +117,42 @@ export function endBuilderSession({
   }
 
   return clearDatabase();
+}
+
+/**
+ * Starts the Builder session of the user signing in. What another user left
+ * in this browser, by closing it without logging out, is cleared first, as
+ * logout would have (see endBuilderSession): the preferences stay. Data no
+ * user is named for is cleared too. The local drafts database waits for the
+ * clearing (see idb.js), so the Builder cannot read the previous user's
+ * drafts, however soon it loads.
+ *
+ * @param {string} username the user signing in
+ * @param {object} [options] localStorage, sessionStorage and clearDatabase,
+ *   for tests
+ * @returns {Promise<boolean>|null} the clearing, or null when the data was
+ *   this user's already
+ */
+export function startBuilderSession(username, options = {}) {
+  const { localStorage = storageOf('localStorage') } = options;
+  let previous = null;
+
+  try {
+    previous = localStorage?.getItem(BUILDER_USER_KEY) ?? null;
+  } catch {
+    // Blocked storage names no one, and holds nothing of ours.
+  }
+
+  const cleared =
+    previous === username
+      ? null
+      : endBuilderSession({ ...options, localStorage });
+
+  try {
+    localStorage?.setItem(BUILDER_USER_KEY, username);
+  } catch {
+    // The next sign-in clears everything again.
+  }
+
+  return cleared;
 }

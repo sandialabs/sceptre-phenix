@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
 vi.mock('@/utils/axios.js', () => ({ default: {} }));
+// The app store's sign-in navigates; nothing here needs the real router.
+vi.mock('@/router', () => ({ default: { replace: vi.fn() } }));
 
 // The signed-in user, reactive as the real store is, so the permission
 // getters follow a role change.
@@ -31,6 +33,7 @@ import {
   setShortcut,
   SHORTCUTS_STORAGE_KEY,
 } from '@/builder/keymap.js';
+import { clearBuilderDatabase, createDraftStore } from '@/builder/idb.js';
 import { PANES_STORAGE_KEY } from '@/builder/panes.js';
 import { SETTINGS_STORAGE_KEY } from '@/builder/settings.js';
 import {
@@ -40,7 +43,9 @@ import {
 } from '@/builder/recent.js';
 import {
   BUILDER_PREFERENCE_KEYS,
+  BUILDER_USER_KEY,
   endBuilderSession,
+  startBuilderSession,
 } from '@/builder/session.js';
 import { useBuilderStore } from '@/builder/store.js';
 import { THEME_STORAGE_KEY } from '@/builder/theme.js';
@@ -80,7 +85,7 @@ beforeEach(() => {
 });
 
 describe('logout', () => {
-  test("clears what Builder Flow kept here of the user's: keys, lists, recent commands, the open diagram and local drafts, but not the preferences (R86, R87)", async () => {
+  test("clears what Builder Flow kept here of the user's: keys, lists, recent commands, the open diagram and local drafts, but not the preferences", async () => {
     // The preferences are the modules' own keys, and the recent commands,
     // which name drafts and nodes, are not among them.
     expect([...BUILDER_PREFERENCE_KEYS].sort()).toEqual(
@@ -169,7 +174,7 @@ describe('logout', () => {
     expect(keymapState.overrides['palette.open']).toEqual(['Mod+J']);
   });
 
-  test('a draft that opens after logout is not shown to the next user (R87)', async () => {
+  test('a draft that opens after logout is not shown to the next user', async () => {
     let answer;
     api.getDraft.mockImplementationOnce(
       () =>
@@ -198,7 +203,7 @@ describe('logout', () => {
     expect(store.theme).toBe('light');
   });
 
-  test('a listing that answers after logout is not shown to the next user (R87)', async () => {
+  test('a listing that answers after logout is not shown to the next user', async () => {
     let answer;
     api.listDrafts.mockImplementationOnce(
       () =>
@@ -238,8 +243,119 @@ describe('logout', () => {
   });
 });
 
+describe('sign-in', () => {
+  // What a user leaves in this browser: preferences, recent commands and
+  // an open draft listed in memory.
+  function leftBehind(user) {
+    store.drafts = {
+      mine: [{ id: 'd1', owner: user, title: 'Secret lab' }],
+      shared: [],
+      published: [],
+    };
+
+    return memoryStorage({
+      ...(user ? { [BUILDER_USER_KEY]: user } : {}),
+      'phenix.builder.theme': 'dark',
+      [RECENT_STORAGE_KEY]: '[{"id":"drafts.open","choices":["x"]}]',
+    });
+  }
+
+  test("clears another user's Builder data before the next user's session starts, but not the preferences", async () => {
+    for (const previous of ['alice', null]) {
+      const local = leftBehind(previous);
+      const clearDatabase = vi.fn(async () => true);
+
+      await expect(
+        startBuilderSession('bob', {
+          localStorage: local,
+          sessionStorage: memoryStorage(),
+          clearDatabase,
+        }),
+      ).resolves.toBe(true);
+
+      expect(clearDatabase, `left by ${previous}`).toHaveBeenCalledTimes(1);
+      expect(Object.fromEntries(local.map)).toEqual({
+        'phenix.builder.theme': 'dark',
+        [BUILDER_USER_KEY]: 'bob',
+      });
+      expect(store.drafts.mine).toEqual([]);
+    }
+  });
+
+  test("keeps the user's own Builder data when the same user signs in again", () => {
+    const local = leftBehind('alice');
+    const clearDatabase = vi.fn(async () => true);
+
+    expect(
+      startBuilderSession('alice', { localStorage: local, clearDatabase }),
+    ).toBeNull();
+    expect(clearDatabase).not.toHaveBeenCalled();
+    expect(local.map.get(RECENT_STORAGE_KEY)).toContain('drafts.open');
+    expect(store.drafts.mine).toHaveLength(1);
+  });
+
+  test('the local drafts database is not opened until a clearing under way has ended', async () => {
+    // An IndexedDB whose requests answer when the test says.
+    const opened = [];
+    const factory = {
+      open() {
+        const request = {};
+        opened.push(request);
+
+        return request;
+      },
+    };
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    const clearing = clearBuilderDatabase({ factory });
+    const reading = createDraftStore({ factory }).all();
+    await settle();
+    expect(opened, 'opened by the clearing alone').toHaveLength(1);
+
+    const transaction = { objectStore: () => ({ clear() {} }) };
+    opened[0].result = { transaction: () => transaction, close() {} };
+    opened[0].onsuccess();
+    await settle();
+    transaction.oncomplete();
+    await expect(clearing).resolves.toBe(true);
+    await settle();
+    expect(opened, 'opened by the store once cleared').toHaveLength(2);
+
+    opened[1].onerror();
+    await expect(reading).resolves.toEqual([]);
+  });
+
+  test("the app's sign-in starts the Builder session of the user signing in", async () => {
+    const local = leftBehind('alice');
+
+    vi.stubGlobal('localStorage', local);
+    vi.stubGlobal('sessionStorage', memoryStorage());
+
+    try {
+      const { usePhenixStore: useAppStore } =
+        await vi.importActual('@/store.js');
+
+      useAppStore().login(
+        {
+          token: 'token',
+          user: { username: 'bob', role: { name: 'Global Admin' } },
+        },
+        false,
+        false,
+      );
+
+      expect(local.map.get(BUILDER_USER_KEY)).toBe('bob');
+      expect(local.map.has(RECENT_STORAGE_KEY)).toBe(false);
+      expect(local.map.get('phenix.builder.theme')).toBe('dark');
+      expect(store.drafts.mine).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe('permissions', () => {
-  test('follow the signed-in role (R29)', () => {
+  test('follow the signed-in role', () => {
     const phenix = usePhenixStore();
 
     phenix.role = {

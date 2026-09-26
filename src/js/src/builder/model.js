@@ -19,7 +19,7 @@ export const SCHEMA_URI = 'https://phenix.sandia.gov/schemas/builder/v1';
 export const SCHEMA_REVISION = 1;
 export const DEFAULT_GRID_SIZE = 16;
 
-export const DEFAULT_SIZES = {
+const DEFAULT_SIZES = {
   device: { width: 160, height: 96 },
   switch: { width: 180, height: 72 },
   note: { width: 200, height: 120 },
@@ -735,7 +735,7 @@ export function updateNode(doc, id, patch = {}) {
   };
 
   if (node.kind !== 'device') {
-    return next;
+    return dropStaleRoutes(doc, next);
   }
 
   const live = new Set(deviceHandles(updated).map((handle) => handle.id));
@@ -751,8 +751,11 @@ export function updateNode(doc, id, patch = {}) {
 
   // A spec applied from the Inspector sets the connections its changed
   // VLANs name.
-  return syncInterfaceVLANs(
-    patch.device?.spec ? connectByVLAN(pruned, id, node) : pruned,
+  return dropStaleRoutes(
+    doc,
+    syncInterfaceVLANs(
+      patch.device?.spec ? connectByVLAN(pruned, id, node) : pruned,
+    ),
   );
 }
 
@@ -813,6 +816,84 @@ function reconcileDeviceHandles(device, sameNetwork = () => true) {
   });
 }
 
+// Whether a node's connections meet it where they did: same place, size and
+// group, and for a device the same interfaces in the same order, as its
+// handles are spaced along its sides by them.
+function sameAnchors(a, b) {
+  const sizeA = sizeOf(a);
+  const sizeB = sizeOf(b);
+  const handles = (node) =>
+    deviceHandles(node)
+      .map((handle) => handle.id)
+      .join('\n');
+
+  return (
+    a.position?.x === b.position?.x &&
+    a.position?.y === b.position?.y &&
+    sizeA.width === sizeB.width &&
+    sizeA.height === sizeB.height &&
+    (a.parentId || '') === (b.parentId || '') &&
+    handles(a) === handles(b)
+  );
+}
+
+/**
+ * Drops the route a layout drew (edge.route) from each connection whose ends
+ * moved between two versions of a document: an end node moved, was resized
+ * or changed group, a device end's interfaces changed, or the connection
+ * changed handles. The canvas then draws it as any other.
+ *
+ * @param {object} before document
+ * @param {object} after the same document, changed
+ * @returns {object} after, without those routes
+ */
+export function dropStaleRoutes(before, after) {
+  const edges = after?.edges || [];
+
+  if (before === after || !edges.some((edge) => edge.route)) {
+    return after;
+  }
+
+  const was = new Map((before?.nodes || []).map((node) => [node.id, node]));
+  const moved = new Set();
+
+  for (const node of after.nodes || []) {
+    const old = was.get(node.id);
+
+    if (old !== node && (!old || !sameAnchors(old, node))) {
+      moved.add(node.id);
+    }
+  }
+
+  const wasEdge = new Map((before?.edges || []).map((edge) => [edge.id, edge]));
+  let dropped = false;
+  const kept = edges.map((edge) => {
+    const old = wasEdge.get(edge.id);
+    const stale =
+      edge.route &&
+      (moved.has(edge.sourceNodeId) ||
+        moved.has(edge.targetNodeId) ||
+        !old ||
+        old.sourceNodeId !== edge.sourceNodeId ||
+        old.targetNodeId !== edge.targetNodeId ||
+        (old.sourceHandleId || '') !== (edge.sourceHandleId || '') ||
+        (old.targetHandleId || '') !== (edge.targetHandleId || ''));
+
+    if (!stale) {
+      return edge;
+    }
+
+    const rest = { ...edge };
+
+    delete rest.route;
+    dropped = true;
+
+    return rest;
+  });
+
+  return dropped ? { ...after, edges: kept } : after;
+}
+
 /**
  * Moves a single node.
  *
@@ -866,7 +947,7 @@ export function moveNodes(doc, moves = []) {
     }
   }
 
-  return {
+  return dropStaleRoutes(doc, {
     ...doc,
     nodes: nodes.map((node) => {
       const position = byId.get(node.id);
@@ -887,7 +968,7 @@ export function moveNodes(doc, moves = []) {
           }
         : node;
     }),
-  };
+  });
 }
 
 // Every node nested under a group, at any depth.
@@ -1317,7 +1398,7 @@ export function setParent(doc, id, parentId) {
   let next = position ? moveNodes(regrouped, [{ id, position }]) : regrouped;
 
   if (!grow) {
-    return next;
+    return dropStaleRoutes(doc, next);
   }
 
   // The group, and each group it is in, grows to hold the node, and moves
@@ -1328,7 +1409,7 @@ export function setParent(doc, id, parentId) {
     next = clearGroup(fitGroups(next, [group.id]), group.id);
   }
 
-  return next;
+  return dropStaleRoutes(doc, next);
 }
 
 /**
@@ -1415,12 +1496,12 @@ export function groupNodes(doc, ids, options = {}) {
   const memberIds = new Set(members.map((node) => node.id));
 
   return {
-    doc: {
+    doc: dropStaleRoutes(doc, {
       ...created.doc,
       nodes: created.doc.nodes.map((node) =>
         memberIds.has(node.id) ? { ...node, parentId: created.node.id } : node,
       ),
-    },
+    }),
     group: created.node,
   };
 }
@@ -1440,7 +1521,7 @@ export function ungroup(doc, groupId) {
     return doc;
   }
 
-  return {
+  return dropStaleRoutes(doc, {
     ...doc,
     nodes: doc.nodes
       .filter((node) => node.id !== groupId)
@@ -1459,7 +1540,7 @@ export function ungroup(doc, groupId) {
 
         return updated;
       }),
-  };
+  });
 }
 
 // The nodes a removal of `ids` takes: those nodes and every node nested in
@@ -1577,7 +1658,10 @@ export function removeElements(doc, selection = {}) {
     .filter((edge) => !remaining.has(edge.id))
     .flatMap((edge) => [edge.sourceHandleId, edge.targetHandleId]);
 
-  return clearInterfaceVLANs(syncInterfaceVLANs(pruned), disconnected);
+  return dropStaleRoutes(
+    doc,
+    clearInterfaceVLANs(syncInterfaceVLANs(pruned), disconnected),
+  );
 }
 
 // --- interfaces ------------------------------------------------------------
@@ -1645,10 +1729,10 @@ export function addInterface(doc, nodeId, init = {}) {
   });
 
   return {
-    doc: {
+    doc: dropStaleRoutes(doc, {
       ...doc,
       nodes: doc.nodes.map((entry) => (entry.id === nodeId ? copy : entry)),
-    },
+    }),
     handle,
   };
 }
@@ -1708,14 +1792,14 @@ export function removeInterface(doc, nodeId, handleId) {
       );
   }
 
-  return {
+  return dropStaleRoutes(doc, {
     ...doc,
     nodes: doc.nodes.map((entry) => (entry.id === nodeId ? copy : entry)),
     edges: (doc.edges || []).filter(
       (edge) =>
         edge.sourceHandleId !== handleId && edge.targetHandleId !== handleId,
     ),
-  };
+  });
 }
 
 /**

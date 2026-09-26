@@ -42,12 +42,6 @@ func NoteNodeID(key string) string {
 	return deterministicID("note", key)
 }
 
-// GroupNodeID returns the deterministic node ID of a group, keyed by an
-// arbitrary caller-supplied key.
-func GroupNodeID(key string) string {
-	return deterministicID("group", key)
-}
-
 // InterfaceHandleID returns the deterministic handle ID for an interface of a
 // device. The index is included so unnamed interfaces still receive stable,
 // unique handles.

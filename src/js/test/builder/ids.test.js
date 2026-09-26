@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 // A page served over plain HTTP from another host is not a secure context:
-// the browser leaves crypto.randomUUID and crypto.subtle out (R8).
+// the browser leaves crypto.randomUUID and crypto.subtle out.
 function insecureContext() {
   vi.stubGlobal('crypto', {
     getRandomValues: (array) => webcrypto.getRandomValues(array),

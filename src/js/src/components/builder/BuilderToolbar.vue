@@ -4,17 +4,22 @@
   Every control is a labelled button. Its tooltip gives its keyboard
   shortcut, if it has one, from the command registry (commands.js), so the
   keys are this platform's and follow the user's changes. The groups, left
-  to right: undo and redo, the clipboard, grouping, layout and scenario, the
-  ways out (Export, Upload, Publish), the view, then History and Commands at
-  the right end. Edits are saved as they are made, so there is no Save
-  button (Save now is a key and a command); the save state shows in the
-  editor header (BuilderBeta.vue), and Retry saving shows at the end, while
-  a save needs it.
+  to right: undo and redo, the clipboard, grouping (Group, Ungroup and the
+  Auto-group menu), the layout menu and scenario, the ways out (Export,
+  Upload, Publish), the view, then History and Commands at the right end.
+  The layout menu is named after the draft's layout; it lays the diagram out
+  with the one chosen, which the draft keeps, and after a layout it offers
+  to put the previous one back. Edits are saved as they are made, so there
+  is no Save button (Save now is a key and a command); the save state shows
+  in the editor header (BuilderBeta.vue), and Retry saving shows at the end,
+  while a save needs it.
 
   It follows the APG toolbar pattern: the toolbar is one Tab stop, and the
   arrow keys, Home and End move between its buttons. Unavailable buttons are
   aria-disabled rather than disabled, so they stay in that sequence and a
-  button that becomes unavailable while focused keeps focus.
+  button that becomes unavailable while focused keeps focus. The two menu
+  buttons (BuilderMenuButton.vue) are buttons in that sequence; Down and Up
+  open their menus.
 -->
 <template>
   <div
@@ -128,37 +133,59 @@
         <builder-icon name="ungroup" :size="14" />
         Ungroup
       </button>
+      <builder-menu-button
+        testid="toolbar-auto-group"
+        :items="autoGroupItems"
+        :disabled="off.autoGroup"
+        :busy="store.autoGrouping"
+        :aria-describedby="
+          tips.autoGroup.description ? 'toolbar-tip-autoGroup' : undefined
+        "
+        v-on="tipFor('autoGroup')"
+        @toggle="onMenuToggle('autoGroup', $event)"
+        @select="store.autoGroup($event.id)">
+        <span
+          v-if="store.autoGrouping"
+          class="builder-toolbar__spinner"
+          aria-hidden="true"></span>
+        <builder-icon v-else name="auto-group" :size="14" />
+        Auto-group
+      </builder-menu-button>
     </div>
 
     <div class="builder-toolbar__group">
-      <button
-        type="button"
-        class="builder-button"
-        data-testid="toolbar-layout"
-        :aria-disabled="off.layout || undefined"
-        :aria-busy="store.layoutRunning || undefined"
-        :aria-keyshortcuts="tips.layout.aria"
+      <!-- Named after the draft's layout, with "layout" after it for screen
+           readers. While a layout runs, a turning ring in place of the icon;
+           reduced motion stops it turning (see builder.css). -->
+      <builder-menu-button
+        testid="toolbar-layout"
+        :items="layoutItems"
+        :disabled="off.layout"
+        :busy="store.layoutRunning && !store.autoGrouping"
+        :aria-label="`${currentLayout.label} layout`"
         :aria-describedby="
           tips.layout.description ? 'toolbar-tip-layout' : undefined
         "
         v-on="tipFor('layout')"
-        @click="run('layout', layoutOrRestore)">
-        <!-- While a layout runs, a turning ring in place of the icon;
-             reduced motion stops it turning (see builder.css). -->
+        @toggle="onMenuToggle('layout', $event)"
+        @select="chooseLayout">
         <span
-          v-if="store.layoutRunning"
+          v-if="store.layoutRunning && !store.autoGrouping"
           class="builder-toolbar__spinner"
           aria-hidden="true"></span>
-        <builder-icon v-else :name="layoutButton.icon" :size="14" />
-        <!-- Both labels hold the button's width, so it stays under the
-             pointer when its label changes; the hidden one is not named. -->
+        <builder-icon v-else name="layout" :size="14" />
+        <!-- Every layout's name holds the button's width, so it stays under
+             the pointer when the layout changes; the hidden ones are not
+             shown or named. -->
         <span class="builder-button__swap">
-          <span :class="{ 'is-off': store.canRestoreLayout }">Auto layout</span>
-          <span :class="{ 'is-off': !store.canRestoreLayout }">
-            Restore layout
+          <span
+            v-for="algorithm in LAYOUT_ALGORITHMS"
+            :key="algorithm.id"
+            :class="{ 'is-off': algorithm.id !== currentLayout.id }">
+            {{ algorithm.label }}
           </span>
         </span>
-      </button>
+      </builder-menu-button>
       <button
         type="button"
         class="builder-button"
@@ -335,6 +362,7 @@
 
   import BuilderIcon from './BuilderIcon.vue';
   import BuilderKeycaps from './BuilderKeycaps.vue';
+  import BuilderMenuButton from './BuilderMenuButton.vue';
   import { useFixedTooltip } from './fixedTooltip.js';
 
   import {
@@ -345,6 +373,11 @@
     ungroupSelection,
     withShortcut,
   } from '@/builder/commands.js';
+  import { GROUPING_STRATEGIES } from '@/builder/grouping.js';
+  import {
+    LAYOUT_ALGORITHMS,
+    layoutAlgorithm,
+  } from '@/builder/layouts/index.js';
   import { rowTarget } from '@/builder/roving.js';
   import { useBuilderStore } from '@/builder/store.js';
   import {
@@ -393,6 +426,7 @@
     delete: store.readOnly || !hasSelection.value,
     group: store.readOnly || !store.selection.nodes.length,
     ungroup: store.readOnly || !selectedGroup.value,
+    autoGroup: store.readOnly,
     layout: store.readOnly,
     scenario: store.readOnly,
     // Upload makes a new draft; Publish writes configs (see the store's
@@ -407,23 +441,54 @@
     }
   }
 
-  // Right after an automatic layout, the same button puts the previous
-  // layout back, until the diagram changes some other way. It stays one
-  // element, so focus and the toolbar's Tab stop stay on it.
-  const layoutButton = computed(() =>
-    store.canRestoreLayout
-      ? {
-          icon: 'undo',
-          title: 'Put every node back where it was before Auto layout',
-        }
-      : { icon: 'layout', title: 'Arrange the nodes automatically' },
-  );
+  // --- menus -------------------------------------------------------------------
 
-  function layoutOrRestore() {
-    if (store.canRestoreLayout) {
+  const currentLayout = computed(() => layoutAlgorithm(store.currentLayout));
+
+  // The layouts, the draft's checked; choosing one runs it and the draft
+  // keeps it, the checked one included. Right after a layout, until the
+  // diagram changes some other way, the previous one can be put back.
+  const layoutItems = computed(() => [
+    ...LAYOUT_ALGORITHMS.map((algorithm) => ({
+      id: algorithm.id,
+      label: algorithm.label,
+      description: algorithm.summary,
+      checked: algorithm.id === store.currentLayout,
+    })),
+    ...(store.canRestoreLayout
+      ? [
+          {
+            id: 'restore',
+            label: 'Restore previous layout',
+            description: 'Put every node back where it was',
+            separator: true,
+          },
+        ]
+      : []),
+  ]);
+
+  function chooseLayout(item) {
+    if (item.id === 'restore') {
       store.restoreLayout();
     } else {
-      store.layout();
+      store.layout({ algorithm: item.id });
+    }
+  }
+
+  const autoGroupItems = GROUPING_STRATEGIES.map((strategy) => ({
+    id: strategy.id,
+    label: strategy.label,
+    description: strategy.summary,
+  }));
+
+  // The menu that is open, whose button shows no tooltip over it.
+  const openMenu = ref('');
+
+  function onMenuToggle(key, open) {
+    openMenu.value = open ? key : '';
+
+    if (open) {
+      hideTip();
     }
   }
 
@@ -548,7 +613,8 @@
 
   // Per button: the tooltip's text ('' for none), the description screen
   // readers get in its place (the keys: the name is the button's own), and
-  // aria-keyshortcuts. Auto layout's tooltip says what it does, keys or not.
+  // aria-keyshortcuts. The menus' tooltips say what they do, keys or not;
+  // the layout's keys run the layout again rather than open its menu.
   const tips = computed(() => {
     const entries = Object.entries(TIPS).map(([key, entry]) => {
       const keys = shortcutLabel(entry.command);
@@ -562,24 +628,21 @@
         },
       ];
     });
-    const layoutCommand = store.canRestoreLayout
-      ? 'structure.restoreLayout'
-      : 'structure.layout';
-    const layoutKeys = shortcutLabel(layoutCommand);
-    const layoutText = layoutKeys
-      ? `${layoutButton.value.title} (${layoutKeys})`
-      : layoutButton.value.title;
+    const layoutKeys = shortcutLabel('structure.layout');
+    const layoutText = `Choose a layout, or run it again${
+      layoutKeys ? `. ${layoutKeys} runs it again` : ''
+    }`;
+    const autoGroupText = store.selection.nodes.length
+      ? 'Group the selected nodes automatically'
+      : 'Group the ungrouped nodes automatically';
     // The theme button's keys are those of the palette's command for the
     // theme it moves to; its name says the rest.
     const themeCommand = `view.theme.${themeButton.value.next}`;
 
     return {
       ...Object.fromEntries(entries),
-      layout: {
-        text: layoutText,
-        description: layoutText,
-        aria: ariaShortcuts(layoutCommand),
-      },
+      layout: { text: layoutText, description: layoutText },
+      autoGroup: { text: autoGroupText, description: autoGroupText },
       theme: {
         text: withShortcut(themeButton.value.tip, themeCommand),
         description: shortcutLabel(themeCommand),
@@ -595,10 +658,11 @@
   // The button whose tooltip is shown.
   let shown = null;
 
-  // Read when shown, so a tooltip follows the button's state.
+  // Read when shown, so a tooltip follows the button's state. None over an
+  // open menu.
   function tipFor(key) {
     const show = (event) => {
-      if (tips.value[key].text) {
+      if (tips.value[key].text && openMenu.value !== key) {
         shown = { key, target: event.currentTarget };
         showTip(event, tips.value[key].text);
       }
@@ -613,8 +677,8 @@
   }
 
   // A press from the keyboard leaves the tooltip up, so when the press
-  // changes what the button does next (Auto layout, the theme), the
-  // tooltip changes with it rather than describing the press just made.
+  // changes what the button does next (the theme), the tooltip changes
+  // with it rather than describing the press just made.
   watch(
     () => Boolean(tip.value) && shown && tips.value[shown.key].text,
     (text) => {

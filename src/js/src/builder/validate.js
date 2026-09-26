@@ -117,6 +117,42 @@ function validateHeader(doc, issues) {
   if (!finite(grid.size) || grid.size <= 0) {
     issue(issues, 'grid.size', 'grid size must be a positive finite number');
   }
+
+  // Any string, or none: an id the editor does not know is ignored (see
+  // documentLayout in layouts/index.js).
+  if (
+    doc.layout !== undefined &&
+    doc.layout !== null &&
+    typeof doc.layout !== 'string'
+  ) {
+    issue(issues, 'layout', 'layout must be a string');
+  }
+}
+
+// The fewest points an edge route may hold: its two ends (minRoutePoints in
+// validate.go).
+const MIN_ROUTE_POINTS = 2;
+
+// Absent, or at least its two ends, every point a finite coordinate
+// (validateRoute in validate.go). Null is none, as Go decodes it.
+function validateRoute(route, path, issues) {
+  if (route === undefined || route === null) {
+    return;
+  }
+
+  if (!Array.isArray(route) || route.length < MIN_ROUTE_POINTS) {
+    issue(
+      issues,
+      path,
+      `a route must have at least ${MIN_ROUTE_POINTS} points`,
+    );
+
+    return;
+  }
+
+  if (!route.every((point) => finite(point?.x) && finite(point?.y))) {
+    issue(issues, path, 'route points must be finite numbers');
+  }
 }
 
 function validateNetworks(doc, issues, networksById) {
@@ -474,6 +510,7 @@ function validateEdges(doc, issues, nodesById, networksById) {
     }
 
     validateUUID(issues, `${path}.id`, 'edge', edge.id);
+    validateRoute(edge.route, `${path}.route`, issues);
 
     if (!nodesById.has(edge.sourceNodeId)) {
       issue(

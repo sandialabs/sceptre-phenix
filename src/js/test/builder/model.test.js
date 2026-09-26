@@ -107,7 +107,7 @@ describe('nodes', () => {
 
   // phenix's vrouter app configures only nodes of type Router or Firewall
   // (app/vrouter.go), and those through a router OS type, so the templates
-  // named after them must say both (R4).
+  // named after them must say both.
   test.each([
     ['server', 'VirtualMachine', 'linux'],
     ['workstation', 'VirtualMachine', 'windows'],
@@ -275,7 +275,7 @@ describe('networks', () => {
     expect(renamed.networks[0].name).toBe('CORE');
   });
 
-  // R37: the switch is named after its network wherever a node is named.
+  // The switch is named after its network wherever a node is named.
   test('a switch is named after its network, renamed or not', () => {
     const { doc, network, sw } = sampleDocument();
     const second = addNode(doc, {
@@ -439,7 +439,7 @@ describe('interfaces', () => {
     ]);
   });
 
-  // R79 and N15: a copy is named after its own hostname, and pasting again
+  // A copy is named after its own hostname, and pasting again
   // cascades instead of stacking copies on each other.
   test('each paste is named after its own hostname and lands clear of the last', () => {
     const { doc, alpha } = sampleDocument();
@@ -627,7 +627,7 @@ describe('interface VLANs', () => {
     ]);
 
     // A network of that very name wins over one differing only by case:
-    // minimega keeps such VLANs apart (R22).
+    // minimega keeps such VLANs apart.
     const lower = addNode(
       { ...doc, networks: [...doc.networks, { id: 'net-lower', name: 'exp' }] },
       { kind: 'switch', networkId: 'net-lower' },
@@ -1154,6 +1154,78 @@ describe('moving nodes', () => {
   });
 });
 
+describe('routes a layout drew', () => {
+  test('a connection keeps its route only while its ends stay where they were', () => {
+    const { doc, sw, alpha, bravo, edge } = sampleDocument();
+    const route = [
+      { x: 160, y: 48 },
+      { x: 180, y: 48 },
+      { x: 180, y: 36 },
+      { x: 200, y: 36 },
+    ];
+    const withRoute = (next) => ({
+      ...next,
+      edges: next.edges.map((entry) => ({ ...entry, route })),
+    });
+    const routed = withRoute(doc);
+    const routeOf = (next) => findEdge(next, edge.id)?.route;
+    const alphaAt = findNode(routed, alpha.id).position;
+
+    // Edits that leave its ends where they were keep it.
+    for (const next of [
+      moveNodes(routed, [{ id: bravo.id, position: { x: 0, y: 400 } }]),
+      moveNodes(routed, [{ id: alpha.id, position: { ...alphaAt } }]),
+      updateNode(routed, alpha.id, { device: { hostname: 'alpha-2' } }),
+      updateEdge(routed, edge.id, { label: 'uplink' }),
+    ]) {
+      expect(routeOf(next)).toBe(route);
+    }
+
+    // An end moved, resized, put in a group or given another interface,
+    // whose handles then move down its side, drops it.
+    for (const next of [
+      moveNodes(routed, [{ id: alpha.id, position: { x: 16, y: 0 } }]),
+      moveNodes(routed, [{ id: sw.id, position: { x: 200, y: 16 } }]),
+      updateNode(routed, sw.id, { size: { width: 240, height: 72 } }),
+      groupNodes(routed, [alpha.id]).doc,
+      addInterface(routed, alpha.id).doc,
+    ]) {
+      expect(findEdge(next, edge.id)).toBeDefined();
+      expect(routeOf(next)).toBeUndefined();
+    }
+
+    // A pasted copy of a routed connection is drawn from its new place.
+    const pasted = pasteClipboard(
+      routed,
+      copySelection(routed, { nodes: [alpha.id, sw.id] }),
+    ).doc;
+    const copies = pasted.edges.filter(
+      (entry) => !routed.edges.some((old) => old.id === entry.id),
+    );
+
+    expect(copies).toHaveLength(1);
+    expect(copies[0].route).toBeUndefined();
+
+    // So does its group moving it, or its leaving the group.
+    const grouped = groupNodes(doc, [alpha.id]);
+    const inGroup = withRoute(grouped.doc);
+    const group = findNode(inGroup, grouped.group.id);
+
+    for (const next of [
+      moveNodes(inGroup, [
+        {
+          id: group.id,
+          position: { x: group.position.x + 32, y: group.position.y },
+        },
+      ]),
+      ungroup(inGroup, group.id),
+      setParent(inGroup, alpha.id, null),
+    ]) {
+      expect(routeOf(next)).toBeUndefined();
+    }
+  });
+});
+
 describe('grouping and deletion', () => {
   test('grouping reparents nodes and ungrouping restores positions', () => {
     const { doc, alpha, bravo } = sampleDocument();
@@ -1165,7 +1237,7 @@ describe('grouping and deletion', () => {
       grouped.doc.nodes.find((node) => node.id === alpha.id).parentId,
     ).toBe(groupNode.id);
 
-    // Each new group has a title of its own (R56).
+    // Each new group has a title of its own.
     expect(groupNode.group.title).toBe('Group');
     expect(
       groupNodes(ungroup(grouped.doc, groupNode.id), [alpha.id]).group.group
@@ -1185,7 +1257,7 @@ describe('grouping and deletion', () => {
     );
   });
 
-  // R56: a node moves into a group, between groups and out of one, and its
+  // A node moves into a group, between groups and out of one, and its
   // place on the canvas follows.
   describe("changing a node's group", () => {
     const boxOf = (node) => ({ ...node.position, ...sizeOf(node) });
@@ -1285,7 +1357,7 @@ describe('grouping and deletion', () => {
     });
   });
 
-  // N15: a note is named after its text, not "Note".
+  // A note is named after its text, not "Note".
   test('a note is named after its first line', () => {
     const doc = createDocument();
     const blank = addNode(doc, { kind: 'note' }).node;

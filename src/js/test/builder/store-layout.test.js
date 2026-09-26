@@ -7,15 +7,28 @@ vi.mock('@/store.js', () => ({
   usePhenixStore: () => ({ username: 'alice' }),
 }));
 
+// The real layouts, which a test can replace for one run.
+vi.mock('@/builder/layouts/index.js', async (importOriginal) => {
+  const actual = await importOriginal();
+
+  return { ...actual, runLayout: vi.fn(actual.runLayout) };
+});
+
 import { withGeometry } from '@/builder/layout.js';
-import { LayoutError, runLayout } from '@/builder/layouts/index.js';
+import {
+  LAYOUT_ALGORITHMS,
+  LayoutError,
+  runLayout,
+} from '@/builder/layouts/index.js';
 import { resetSettings, setSetting } from '@/builder/settings.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument } from './fixtures.js';
 
-// Auto layout runs the algorithm the settings choose, and may finish later
-// (ELK runs in a Web Worker in the browser).
+const labelOf = (id) => LAYOUT_ALGORITHMS.find((a) => a.id === id).label;
+
+// Auto layout runs the draft's own layout, or else the one the settings
+// choose, and may finish later (ELK runs in a Web Worker in the browser).
 describe('automatic layout in the store', () => {
   let store;
 
@@ -40,10 +53,114 @@ describe('automatic layout in the store', () => {
 
       expect(entry).not.toBeNull();
       expect(store.doc).toEqual(withGeometry(doc, await runLayout(id, doc)));
-      expect(store.announcement).toBe('Applied automatic layout');
+      expect(store.announcement).toBe(`Applied ${labelOf(id)} layout`);
       expect(store.canRestoreLayout).toBe(true);
+      // The setting is the viewer's; the draft keeps no choice of its own.
+      expect(store.doc.layout).toBeUndefined();
+      expect(store.currentLayout).toBe(id);
     },
   );
+
+  test('the draft’s own layout comes before the setting', async () => {
+    setSetting('layoutAlgorithm', 'standard', null);
+    expect(store.currentLayout).toBe('standard');
+
+    store.setDocument({ ...sampleDocument().doc, layout: 'cards' });
+    expect(store.currentLayout).toBe('cards');
+    await store.layout();
+    expect(runLayout).toHaveBeenLastCalledWith('cards', expect.anything(), {});
+    expect(store.announcement).toBe('Applied Network cards layout');
+
+    // One this Builder does not know is ignored, and kept.
+    store.setDocument({ ...sampleDocument().doc, layout: 'radial' });
+    expect(store.currentLayout).toBe('standard');
+    await store.layout();
+    expect(runLayout).toHaveBeenLastCalledWith(
+      'standard',
+      expect.anything(),
+      {},
+    );
+    expect(store.doc.layout).toBe('radial');
+  });
+
+  test('a chosen layout is kept with the draft in the same commit', async () => {
+    const before = store.doc;
+    const entries = store.history.size;
+
+    await store.layout({ algorithm: 'dagre' });
+
+    expect(store.doc.layout).toBe('dagre');
+    expect(store.currentLayout).toBe('dagre');
+    expect(store.doc).toEqual({
+      ...withGeometry(before, await runLayout('dagre', before)),
+      layout: 'dagre',
+    });
+    expect(store.history.size).toBe(entries + 1);
+
+    // Chosen again, it runs again: laid out already, it changes nothing.
+    expect(await store.layout({ algorithm: 'dagre' })).toBeNull();
+    expect(store.announcement).toBe('The diagram is already laid out.');
+    expect(store.history.size).toBe(entries + 1);
+
+    // One undo takes back the positions and the choice.
+    store.undo();
+    expect(store.doc).toEqual(before);
+    expect(store.currentLayout).toBe('elk');
+
+    // Restore puts the choice back too.
+    await store.layout({ algorithm: 'cards' });
+    expect(store.doc.layout).toBe('cards');
+    store.restoreLayout();
+    expect(store.doc).toEqual(before);
+  });
+
+  test('choosing the layout already in place keeps the choice alone', async () => {
+    await store.layout();
+    const laid = store.doc;
+
+    expect(await store.layout({ algorithm: 'elk' })).not.toBeNull();
+    expect(store.announcement).toBe('Chose ELK layered layout');
+    expect(store.doc).toEqual({ ...laid, layout: 'elk' });
+  });
+
+  test('keeps the routes a layout draws, and drops stale ones', async () => {
+    const { doc, edge } = sampleDocument();
+    const stale = [
+      { x: 1, y: 1 },
+      { x: 2, y: 2 },
+    ];
+
+    store.setDocument({
+      ...doc,
+      edges: doc.edges.map((entry) => ({ ...entry, route: stale })),
+    });
+    const before = store.doc;
+    const route = [
+      { x: 10, y: 20 },
+      { x: 40, y: 20 },
+      { x: 40, y: 60 },
+    ];
+
+    runLayout.mockImplementationOnce(async () => ({
+      positions: {},
+      routes: { [edge.id]: route, gone: route },
+    }));
+    await store.layout();
+    expect(store.doc.edges.find((e) => e.id === edge.id).route).toEqual(route);
+
+    // A layout that draws none drops the routes it would leave behind.
+    runLayout.mockImplementationOnce(async () => ({ positions: {} }));
+    await store.layout();
+    expect(store.doc.edges.every((e) => e.route === undefined)).toBe(true);
+
+    // Restore puts the routes back as they were.
+    store.restoreLayout();
+    expect(store.doc.edges.find((e) => e.id === edge.id).route).toEqual(route);
+    store.undo();
+    store.undo();
+    store.undo();
+    expect(store.doc).toEqual(before);
+  });
 
   test('is busy while it runs, and turns a second request away', async () => {
     const entries = store.history.size;

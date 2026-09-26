@@ -86,11 +86,21 @@ func TestSchemaDefinesBuilderStructures(t *testing.T) {
 
 	for _, name := range []string{
 		"sourceNodeId", "sourceHandleId", "targetNodeId", "targetHandleId", "networkId",
-		"label", "color",
+		"label", "color", "route",
 	} {
 		if _, ok := edgeProps[name]; !ok {
 			t.Fatalf("edge schema has no %q property", name)
 		}
+	}
+
+	route := mapAt(t, edgeProps, "route")
+	if route["minItems"] != 2 || mapAt(t, route, "items")["$ref"] != "#/$defs/position" {
+		t.Fatalf("edge route is not a list of at least two positions: %v", route)
+	}
+
+	layout := mapAt(t, mapAt(t, mustSchema(t), "properties"), "layout")
+	if layout["type"] != "string" || containsAny(mustSchema(t)["required"], "layout") {
+		t.Fatalf("document layout is not an optional string: %v", layout)
 	}
 
 	iconKey := mapAt(t, defs, "iconKey")
@@ -238,8 +248,7 @@ func TestFrontendSchemaBundleMatchesSchemaJSON(t *testing.T) {
 
 	if !bytes.Equal(got, want) {
 		t.Fatalf(
-			"%s is out of date; regenerate it with "+
-				"go test ./types/builder -run TestFrontendSchemaBundleMatchesSchemaJSON -update-frontend-schema",
+			"%s is out of date; regenerate it with make generate-builder-schema (or make generate) in src/go",
 			frontendSchemaBundle,
 		)
 	}

@@ -188,7 +188,7 @@
 </template>
 
 <script setup>
-  import { computed, inject, nextTick, ref } from 'vue';
+  import { computed, inject, markRaw, nextTick, ref } from 'vue';
   import { ConnectionMode, VueFlow, useVueFlow } from '@vue-flow/core';
   import { Background } from '@vue-flow/background';
   import { ControlButton, Controls } from '@vue-flow/controls';
@@ -212,7 +212,9 @@
     runCommand,
     shortcutLabel,
   } from '@/builder/commands.js';
+  import { nodeIssueSummaries } from '@/builder/issues.js';
   import {
+    boundsOf,
     canConnect,
     findNode,
     groupMinimumSize,
@@ -231,6 +233,7 @@
     hiddenArea,
     toFlowEdges,
     toFlowNodes,
+    withSelection,
   } from '@/builder/adapters/vueflow.js';
   import {
     PALETTE_MIME,
@@ -251,6 +254,7 @@
   const store = useBuilderStore();
   const root = ref(null);
   const {
+    fitBounds,
     fitView,
     project,
     setViewport,
@@ -300,20 +304,33 @@
     };
   }
 
-  const nodeTypes = {
-    builderDevice: DeviceNode,
-    builderSwitch: SwitchNode,
-    builderNote: NoteNode,
-    builderGroup: GroupNode,
-  };
+  // Components, never made reactive: Vue Flow would otherwise wrap them.
+  const nodeTypes = markRaw({
+    builderDevice: markRaw(DeviceNode),
+    builderSwitch: markRaw(SwitchNode),
+    builderNote: markRaw(NoteNode),
+    builderGroup: markRaw(GroupNode),
+  });
 
-  const edgeTypes = { builderNetwork: NetworkEdge };
+  const edgeTypes = markRaw({ builderNetwork: markRaw(NetworkEdge) });
 
+  // What the diagram checks found about each node, which marks it.
+  const nodeIssues = computed(() =>
+    nodeIssueSummaries(store.doc, store.issues),
+  );
+
+  // The graph follows the document; the selection then changes only the
+  // nodes and connections it selects or deselects, so a click on a large
+  // diagram redraws those alone (see withSelection).
+  const baseNodes = computed(() =>
+    toFlowNodes(store.doc, { issues: nodeIssues.value }),
+  );
+  const baseEdges = computed(() => toFlowEdges(store.doc));
   const flowNodes = computed(() =>
-    toFlowNodes(store.doc, { selectedIds: store.selection.nodes }),
+    withSelection(baseNodes.value, store.selection.nodes),
   );
   const flowEdges = computed(() =>
-    toFlowEdges(store.doc, { selectedIds: store.selection.edges }),
+    withSelection(baseEdges.value, store.selection.edges),
   );
 
   const gridEnabled = computed(() => store.doc.grid?.enabled !== false);
@@ -919,11 +936,7 @@
     }
 
     const box = targetBox(element, pane);
-    const overlays = [
-      ...root.value.querySelectorAll(
-        '.vue-flow__minimap, .vue-flow__controls, .builder-canvas__notice',
-      ),
-    ].map((overlay) => overlay.getBoundingClientRect());
+    const overlays = overlayBoxes();
 
     if (hiddenArea(box, pane, overlays) === 0) {
       return;
@@ -940,6 +953,90 @@
       // A straight pan. The default smooth path zooms out on the way, so a
       // reveal that interrupts another would keep a smaller zoom each time.
       { duration: props.reducedMotion ? 0 : 200, interpolate: 'linear' },
+    );
+  }
+
+  // What floats over the pane: the minimap, the zoom controls, the notice.
+  function overlayBoxes() {
+    return [
+      ...(root.value?.querySelectorAll(
+        '.vue-flow__minimap, .vue-flow__controls, .builder-canvas__notice',
+      ) || []),
+    ].map((overlay) => overlay.getBoundingClientRect());
+  }
+
+  // Room kept around nodes brought into view, in screen pixels.
+  const REVEAL_MARGIN = 24;
+  // Room fitBounds keeps around them, as a share of their size.
+  const REVEAL_PADDING = 0.1;
+
+  // Brings nodes into view, leaving focus where it is. When any of them is
+  // outside the pane or under what floats over it, the view centers on them
+  // all: at the same zoom when they fit, or zoomed out to fit them. When
+  // they would not fit even at the least zoom, the first of them (an
+  // outline row's own node) is brought into view alone instead. They are
+  // found in the document, so they need not be drawn yet.
+  function revealNodes(ids) {
+    const pane = vueFlowRef.value?.getBoundingClientRect();
+    const wanted = new Set(ids);
+    const nodes = (store.doc.nodes || []).filter((node) => wanted.has(node.id));
+
+    if (!pane?.width || !pane?.height || !nodes.length) {
+      return;
+    }
+
+    const { x, y, zoom } = viewport.value;
+    const overlays = overlayBoxes();
+    const onScreen = (node) => {
+      const { width, height } = sizeOf(node);
+      const left = pane.left + x + node.position.x * zoom;
+      const top = pane.top + y + node.position.y * zoom;
+
+      return {
+        left,
+        top,
+        right: left + width * zoom,
+        bottom: top + height * zoom,
+      };
+    };
+
+    if (
+      nodes.every((node) => hiddenArea(onScreen(node), pane, overlays) === 0)
+    ) {
+      return;
+    }
+
+    const bounds = boundsOf(nodes);
+    const width = bounds.width * zoom + 2 * REVEAL_MARGIN;
+    const height = bounds.height * zoom + 2 * REVEAL_MARGIN;
+    const duration = props.reducedMotion ? 0 : 200;
+
+    if (width > pane.width || height > pane.height) {
+      // The zoom fitBounds would take for them.
+      const fit = Math.min(
+        pane.width / (bounds.width * (1 + REVEAL_PADDING)),
+        pane.height / (bounds.height * (1 + REVEAL_PADDING)),
+      );
+
+      if (fit < MIN_ZOOM && nodes.length > 1) {
+        revealNodes([ids[0]]);
+      } else {
+        fitBounds(bounds, { padding: REVEAL_PADDING, duration });
+      }
+
+      return;
+    }
+
+    const spot = freeSpot(pane, width, height, overlays);
+
+    setViewport(
+      {
+        x: spot.x - (bounds.x + bounds.width / 2) * zoom,
+        y: spot.y - (bounds.y + bounds.height / 2) * zoom,
+        zoom,
+      },
+      // A straight pan, as reveal's.
+      { duration, interpolate: 'linear' },
     );
   }
 
@@ -1037,12 +1134,13 @@
     };
   }
 
-  // Pans a node just added into view once Vue Flow has drawn it, leaving
-  // focus where it is (on the palette entry that added it).
-  async function revealNode(id) {
+  // Brings a node, or several, into view once Vue Flow has drawn them,
+  // leaving focus where it is: a node just added (on the palette entry that
+  // added it), or the nodes of an outline row (on the row).
+  async function revealNode(ids) {
     await nextTick();
     await nextTick();
-    requestAnimationFrame(() => reveal(nodeElement(id)));
+    requestAnimationFrame(() => revealNodes([ids].flat()));
   }
 
   defineExpose({

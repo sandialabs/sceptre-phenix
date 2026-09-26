@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import router from '@/router';
-import { endBuilderSession } from '@/builder/session.js';
+import { endBuilderSession, startBuilderSession } from '@/builder/session.js';
 
 export const usePhenixStore = defineStore('phenix', {
   state: () => ({
@@ -68,6 +68,11 @@ export const usePhenixStore = defineStore('phenix', {
     },
 
     login(loginResponse, remember, navigate = true) {
+      // Builder Flow data another user left on this device, by closing the
+      // browser without logging out, goes before this user's session
+      // starts; its preferences stay, as at logout.
+      startBuilderSession(loginResponse.user.username);
+
       this.username = loginResponse.user.username;
       this.token = loginResponse.token;
       this.role = loginResponse.user.role;

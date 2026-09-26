@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
@@ -1456,6 +1457,211 @@ func TestBuilderBetaPublishAgainAfterEdits(t *testing.T) { //nolint:paralleltest
 			}
 		})
 	}
+}
+
+// forkBuilderDraft creates a draft for the user that forks the draft named
+// forkOf ("<owner>/<draft id>"), as saving the editor's history as a new
+// draft does, and returns the answer.
+func forkBuilderDraft(
+	t *testing.T,
+	harness *builderBetaHarness,
+	user string,
+	role *rbac.Role,
+	forkOf string,
+	document *bdoc.Document,
+) *httptest.ResponseRecorder {
+	t.Helper()
+
+	data, err := bapi.EncodeDocument(document)
+	if err != nil {
+		t.Fatalf("EncodeDocument returned error: %v", err)
+	}
+
+	body, err := json.Marshal(map[string]any{"forkOf": forkOf, "document": json.RawMessage(data)})
+	if err != nil {
+		t.Fatalf("encoding fork request: %v", err)
+	}
+
+	return harness.do(builderBetaRequest{
+		method: http.MethodPost, path: "/builder/drafts", body: string(body), user: user, role: role,
+	})
+}
+
+// TestBuilderBetaPublishForkUpdatesWhatItsDraftPublished saves a draft's
+// edited history as a new draft, as the editor does when the draft changed
+// on the server, and publishes it. The fork updates the topology the draft
+// published, and the experiment with it, for the draft's owner and for
+// another user who may read the draft, but not what the draft publishes
+// after the fork. Nobody who may not read the draft can fork it, and so
+// claim what it published.
+func TestBuilderBetaPublishForkUpdatesWhatItsDraftPublished(t *testing.T) { //nolint:paralleltest // mutates feature options
+	const update = `{"mode":"topology","topology":{"name":"lab","action":"update"}}`
+
+	// Draft "original" publishes topology lab with node a, with the body
+	// given or the topology alone, and the fork starts from what it
+	// published.
+	start := func(t *testing.T, body ...string) (*builderBetaHarness, builderDraftResponse, *bdoc.Document) {
+		t.Helper()
+
+		body = append(body, `{"mode":"topology","topology":{"name":"lab","action":"create"}}`)
+		harness := newBuilderBetaHarness(t)
+		document := bdoc.NewDocument("lab")
+		original := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "a")
+		published, _ := publishBuilderDraft(t, harness, original, body[0], http.StatusOK)
+
+		return harness, published.Draft, document
+	}
+
+	// Forks the draft as the user. The fork keeps the draft's source token,
+	// so opening the published diagram does not find it, and records what
+	// the draft last published.
+	fork := func(
+		t *testing.T, harness *builderBetaHarness, user string, original builderDraftResponse, document *bdoc.Document,
+	) builderDraftResponse {
+		t.Helper()
+
+		recorder := forkBuilderDraft(t, harness, user, nil, original.Owner+"/"+original.ID, document)
+		if recorder.Code != http.StatusCreated {
+			t.Fatalf("fork: status = %d: %s", recorder.Code, recorder.Body.String())
+		}
+
+		var forked builderDraftResponse
+		harness.decode(recorder, &forked)
+
+		if forked.SourceToken != original.SourceToken {
+			t.Fatalf("fork source token = %q, want the draft's %q", forked.SourceToken, original.SourceToken)
+		}
+
+		if want := original.Publication; forked.Forked == nil || *forked.Forked != (bapi.ForkedPublication{
+			DocumentID: want.DocumentID, TopologyTarget: want.TopologyTarget, ExperimentTarget: want.ExperimentTarget,
+		}) {
+			t.Fatalf("fork's forked publication = %+v, want the draft's %+v", forked.Forked, want)
+		}
+
+		return forked
+	}
+
+	// Adds node b to the fork and publishes it with the body, as the fork's
+	// owner, which must be answered with the status; returns the reason for
+	// a refusal.
+	publishFork := func(
+		t *testing.T, harness *builderBetaHarness, forked builderDraftResponse, document *bdoc.Document,
+		body string, status int,
+	) string {
+		t.Helper()
+
+		document.Nodes = append(document.Nodes, bdoc.Node{
+			ID: bdoc.DeviceNodeID("b"), Kind: bdoc.NodeKindDevice, Label: "b",
+			Device: &bdoc.Device{Hostname: "b", Spec: includeNode("b"), Interfaces: []bdoc.InterfaceHandle{}},
+		})
+
+		data, err := bapi.EncodeDocument(document)
+		if err != nil {
+			t.Fatalf("EncodeDocument returned error: %v", err)
+		}
+
+		path := "/builder/drafts/" + forked.Owner + "/" + forked.ID
+		recorder := harness.do(builderBetaRequest{
+			method: http.MethodPost, path: path + "/snapshots", body: `{"summary":"added b","document":` + string(data) + `}`,
+			user: forked.Owner, ifMatch: forked.ETag,
+		})
+		if recorder.Code != http.StatusCreated {
+			t.Fatalf("saving the fork's edit: status = %d: %s", recorder.Code, recorder.Body.String())
+		}
+
+		harness.decode(recorder, &forked)
+
+		recorder = harness.do(builderBetaRequest{
+			method: http.MethodPost, path: path + "/publish", body: body, user: forked.Owner, ifMatch: forked.ETag,
+		})
+		if recorder.Code != status {
+			t.Fatalf("publishing the fork: status = %d, want %d: %s", recorder.Code, status, recorder.Body.String())
+		}
+
+		var refusal struct {
+			Message string `json:"message"`
+		}
+		harness.decode(recorder, &refusal)
+
+		return refusal.Message
+	}
+
+	for _, user := range []string{builderBetaTestOwner, builderBetaTestPeer} {
+		t.Run("forked by "+user, func(t *testing.T) {
+			harness, original, document := start(t)
+
+			publishFork(t, harness, fork(t, harness, user, original, document), document, update, http.StatusOK)
+
+			if got := topologyHostnames(t, harness, "lab"); !slices.Equal(got, []string{"a", "b"}) {
+				t.Fatalf("topology nodes = %v, want a and b", got)
+			}
+		})
+	}
+
+	t.Run("with the experiment the draft published", func(t *testing.T) {
+		harness, original, document := start(t, `{"mode":"topology-experiment",`+
+			`"topology":{"name":"lab","action":"create"},"experiment":{"name":"exp","action":"create"}}`)
+
+		publishFork(t, harness, fork(t, harness, builderBetaTestOwner, original, document), document,
+			`{"mode":"topology-experiment","topology":{"name":"lab","action":"update"},`+
+				`"experiment":{"name":"exp","action":"update"}}`, http.StatusOK)
+
+		if !slices.Equal(harness.reconfigured, []string{"exp"}) {
+			t.Fatalf("configured = %v, want exp updated", harness.reconfigured)
+		}
+	})
+
+	t.Run("published again after the fork", func(t *testing.T) {
+		harness, original, document := start(t)
+		forked := *document
+		forked.Nodes = slices.Clone(document.Nodes)
+		draft := fork(t, harness, builderBetaTestOwner, original, &forked)
+
+		// The original draft publishes again, so lab no longer holds what it
+		// published when it was forked.
+		edited := editBuilderDraft(t, harness, original, document, "c")
+		publishBuilderDraft(t, harness, edited, update, http.StatusOK)
+
+		writes := harness.configWrites
+		if reason := publishFork(t, harness, draft, &forked, update, http.StatusConflict); reason !=
+			"topology lab is not the source this draft was loaded from" {
+			t.Fatalf("refusal = %q, want the fork refused", reason)
+		}
+
+		if harness.configWrites != writes {
+			t.Fatalf("the refused fork wrote %d configs", harness.configWrites-writes)
+		}
+	})
+
+	t.Run("refused to a user who may not read the draft", func(t *testing.T) {
+		harness, original, document := start(t)
+		owner := builderBetaOwnerRole()
+
+		for _, forkOf := range []string{
+			original.Owner + "/" + original.ID,
+			original.Owner + "/id-missing",
+			original.ID,
+		} {
+			recorder := forkBuilderDraft(t, harness, builderBetaTestPeer, &owner, forkOf, document)
+			if recorder.Code != http.StatusNotFound {
+				t.Errorf("fork of %q: status = %d, want %d: %s",
+					forkOf, recorder.Code, http.StatusNotFound, recorder.Body.String())
+			}
+		}
+
+		recorder := harness.do(builderBetaRequest{
+			method: http.MethodGet, path: "/builder/drafts", user: builderBetaTestPeer, role: &owner,
+		})
+
+		var listing struct {
+			Drafts []builderDraftResponse `json:"drafts"`
+		}
+		harness.decode(recorder, &listing)
+
+		if len(listing.Drafts) != 0 {
+			t.Fatalf("drafts = %+v, want none created by a refused fork", listing.Drafts)
+		}
+	})
 }
 
 // labExperimentFixture returns topology "lab" with node a, and experiment

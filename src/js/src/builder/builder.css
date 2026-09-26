@@ -383,6 +383,34 @@
   pointer-events: none;
 }
 
+/* What the diagram checks found about a node, on its top left corner (the
+   selection's check mark takes the other): a cross for errors, a triangle
+   for warnings, so the two differ by shape as well as color. */
+.builder-node__issue {
+  position: absolute;
+  top: -9px;
+  left: -9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: var(--bx-surface);
+  color: var(--bx-danger);
+  pointer-events: none;
+}
+
+.builder-node__issue[data-level='warning'] {
+  color: var(--bx-warning);
+}
+
+/* Bolder than other icons, as the mark is small. */
+.builder-node__issue .builder-icon {
+  stroke-width: 3;
+}
+
 .builder-node__header {
   display: flex;
   align-items: center;
@@ -743,7 +771,7 @@
 
 /* A switch's network color and a note's or group's own, shown beside the
    names that say the same (see colors.js). The swatch keeps a border, so
-   any color shows on it. */
+   any color shows on it, forced colors too, which keep its color. */
 .builder-node__swatch {
   flex: none;
   align-self: center;
@@ -752,6 +780,7 @@
   border: 1px solid var(--bx-border-strong);
   border-radius: 2px;
   background: var(--bx-swatch);
+  forced-color-adjust: none;
 }
 
 .builder-node__accent {
@@ -778,6 +807,12 @@
     forced-color-adjust: none;
     background: Highlight;
     color: HighlightText;
+  }
+
+  /* The swatch keeps its color; its frame is the system's text color, so
+     it shows on the system's background. */
+  .builder-node__swatch {
+    border-color: CanvasText;
   }
 
   .builder-canvas .builder-edge {
@@ -815,7 +850,7 @@
     border-color: Highlight;
   }
 
-  /* One color for the whole ring would hide Auto layout's turn; the track
+  /* One color for the whole ring would hide the spinner's turn; the track
      takes the button's background instead. */
   .builder-root .builder-toolbar__spinner {
     border-color: ButtonFace;
@@ -1063,9 +1098,10 @@
   font-size: 0.9rem;
 }
 
-/* A button whose label changes (Auto layout / Restore layout) stacks both
-   labels in one cell, so it keeps one width and does not reflow the toolbar
-   out from under the pointer. Hidden text is not in the accessible name. */
+/* A button whose label changes (the layout button's layout names, a busy
+   button's wait) stacks its labels in one cell, so it keeps one width and
+   does not reflow the toolbar out from under the pointer. Hidden text is
+   not in the accessible name. */
 .builder-button__swap {
   display: inline-grid;
 }
@@ -1078,10 +1114,10 @@
   visibility: hidden;
 }
 
-/* Auto layout while a layout runs: a ring the size of the icon it
-   replaces, so the button keeps its width. Reduced motion stops it turning
-   (see the end of this file); the ring and the pointer still show the wait,
-   and aria-busy says it. */
+/* A busy button, such as the layout button while a layout runs: a ring the
+   size of the icon it replaces, so the button keeps its width. Reduced
+   motion stops it turning (see the end of this file); the ring and the
+   pointer still show the wait, and aria-busy says it. */
 .builder-toolbar__spinner {
   flex: none;
   box-sizing: border-box;

@@ -2,6 +2,7 @@ package builder_test
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"phenix/store"
@@ -140,6 +141,65 @@ func TestDocumentRoundTripThroughJSON(t *testing.T) {
 	if asJSON(t, before.Spec) != asJSON(t, after.Spec) {
 		t.Fatalf("mapped spec changed across the JSON round trip:\nbefore: %s\nafter: %s",
 			asJSON(t, before.Spec), asJSON(t, after.Spec))
+	}
+}
+
+// TestLayoutAndRouteRoundTripUnpublished covers the presentation a layout
+// leaves in a document: the draft's own layout choice and each edge's route
+// survive encoding and decoding, and the published topology does not change.
+func TestLayoutAndRouteRoundTripUnpublished(t *testing.T) {
+	config := loadConfig(t, "experiment.json")
+
+	plain, _ := documentFromConfig(t, config)
+	laid, _ := documentFromConfig(t, config)
+
+	if len(laid.Edges) == 0 {
+		t.Fatal("the fixture has no edges to route")
+	}
+
+	laid.Layout = "cards"
+	laid.Edges[0].Route = []builder.Position{{X: 10, Y: 20}, {X: 60, Y: 20}, {X: 60, Y: 80.5}}
+
+	data, err := builder.Encode(laid)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+
+	decoded, err := builder.Parse(data)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if !reflect.DeepEqual(laid, decoded) {
+		t.Fatalf("JSON round trip changed the document:\nbefore: %s\nafter: %s",
+			asJSON(t, laid), asJSON(t, decoded))
+	}
+
+	want, err := plain.ToTopology()
+	if err != nil {
+		t.Fatalf("ToTopology: %v", err)
+	}
+
+	got, err := decoded.ToTopology()
+	if err != nil {
+		t.Fatalf("ToTopology: %v", err)
+	}
+
+	if asJSON(t, got.Spec) != asJSON(t, want.Spec) {
+		t.Fatalf("layout or route reached the topology:\nwant: %s\ngot:  %s",
+			asJSON(t, want.Spec), asJSON(t, got.Spec))
+	}
+
+	// Absent, neither is written.
+	encoded, err := builder.Encode(plain)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+
+	for _, key := range []string{`"layout"`, `"route"`} {
+		if strings.Contains(string(encoded), key) {
+			t.Fatalf("a document without %s encodes one: %s", key, encoded)
+		}
 	}
 }
 

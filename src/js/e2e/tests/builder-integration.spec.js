@@ -374,7 +374,7 @@ test.describe('header', () => {
       page.getByRole('heading', { name: 'Builder Flow' }),
     ).toBeVisible();
 
-    await test.step('over plain HTTP from another host the editor works (R8)', async () => {
+    await test.step('over plain HTTP from another host the editor works', async () => {
       // Browsers offer crypto.randomUUID and crypto.subtle only in a secure
       // context, and treat localhost as secure, so the server is reached
       // through a made-up host that Playwright routes to it. A page of its
@@ -527,7 +527,7 @@ test.describe('Configs page', () => {
       await editConfig(page, beta);
       const draft = await (await created).json();
       await expect(builder.canvas).toBeVisible({ timeout: 20000 });
-      // The ?topology= link Configs followed now names the draft (R42).
+      // The ?topology= link Configs followed now names the draft.
       await expect
         .soft(page)
         .toHaveURL(
@@ -549,7 +549,7 @@ test.describe('Configs page', () => {
         .toEqual(['host-a']);
     });
 
-    await test.step('Back to drafts refreshes the Published tab, which opens read only until edited (R29)', async () => {
+    await test.step('Back to drafts refreshes the Published tab, which opens read only until edited', async () => {
       // Published while the editor is open, after the landing page loaded its
       // lists: only the refresh on leaving the editor can list it.
       const later = uniqueName(testInfo, 'later');
@@ -617,7 +617,7 @@ test.describe('Configs page', () => {
         .toMatch(/^builder-doc\//);
     });
 
-    await test.step('a role that may not create drafts only views the diagram (R29, R70)', async () => {
+    await test.step('a role that may not create drafts only views the diagram', async () => {
       // The UI takes the role from the session, as a sign-in leaves it. This
       // one may edit configs but not create drafts; the server, with
       // authentication off, would allow anything, so no request may try.
@@ -677,7 +677,7 @@ test.describe('Configs page', () => {
     expectNoFatal(issues);
   });
 
-  test('returning from a Builder topology edit shows no empty toast (R75)', async ({
+  test('returning from a Builder topology edit shows no empty toast', async ({
     page,
     request,
     tracker,

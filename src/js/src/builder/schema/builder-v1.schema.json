@@ -59,6 +59,14 @@
         "networkId": {
           "$ref": "#/$defs/identifier"
         },
+        "route": {
+          "description": "Path an automatic layout drew, in absolute canvas coordinates from the source handle to the target handle. Never published.",
+          "items": {
+            "$ref": "#/$defs/position"
+          },
+          "minItems": 2,
+          "type": "array"
+        },
         "sourceHandleId": {
           "allOf": [
             {
@@ -3192,6 +3200,10 @@
     },
     "id": {
       "$ref": "#/$defs/identifier"
+    },
+    "layout": {
+      "description": "Automatic layout chosen for this document, run in place of the viewer's default. An id the editor does not know is ignored. Never published.",
+      "type": "string"
     },
     "name": {
       "maxLength": 512,

@@ -911,6 +911,11 @@ export function createAutosave(options = {}) {
      * refuses to create one for anybody else, such as the owner of a shared
      * draft.
      *
+     * The new draft forks the conflicting one (forkOf), so the server gives
+     * it that draft's source and last publication: publishing it can update
+     * what that draft published or was opened from. Should that draft be gone, or no
+     * longer readable, the history is still saved, as a draft of its own.
+     *
      * @param {object} [options] title; entries and index: the history to
      *   save and its current entry (the queue's own entries by default)
      * @returns {Promise<object>} new draft envelope, with snapshotIds: the
@@ -926,13 +931,25 @@ export function createAutosave(options = {}) {
       const last = entries.length - 1;
       const index = Math.min(Math.max(options.index ?? last, 0), last);
       const [first, ...rest] = entries;
-      const created = await api.createDraft({
+      const request = {
         title: options.title || first.snapshot?.name || 'Recovered diagram',
         document: first.snapshot,
         // An editor history starts at the document as opened, which names
         // no edit.
         summary: first.label === 'initial' ? undefined : first.label,
-      });
+      };
+      const created = await api
+        .createDraft({
+          ...request,
+          forkOf: `${record.owner}/${record.draftId}`,
+        })
+        .catch((error) => {
+          if (classifyError(error) !== 'missing') {
+            throw error;
+          }
+
+          return api.createDraft(request);
+        });
 
       let etag = created.etag;
       // The draft as the last request left it.

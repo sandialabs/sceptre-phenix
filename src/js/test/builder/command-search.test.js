@@ -151,18 +151,28 @@ describe('a command search', () => {
     const [structure, add] = results.groups;
 
     expect(labels(results).slice(0, 2)).toEqual(['Structure', 'Add']);
-    expect(titles(structure)).toEqual(['Group selection', 'Ungroup']);
+    expect(titles(structure)).toEqual([
+      'Group selection',
+      'Auto-group by network',
+      'Auto-group by name',
+      'Ungroup',
+    ]);
     expect(structure.items[0].ranges).toEqual([[0, 5]]);
     expect(structure.items[0].disabled).toBe(
       'Select at least one node to group.',
     );
-    expect(structure.items[1].disabled).toBe('Select a group first.');
+    expect(structure.items[3].disabled).toBe('Select a group first.');
     expect(titles(add)).toEqual(['Add group']);
   });
 
   test('matches letters in order, and keywords without marking them', () => {
     const [first] = paletteResults(context(), { query: 'grp' }).groups;
-    expect(titles(first)).toEqual(['Group selection', 'Ungroup']);
+    expect(titles(first)).toEqual([
+      'Group selection',
+      'Ungroup',
+      'Auto-group by network',
+      'Auto-group by name',
+    ]);
 
     const [layout] = paletteResults(context(), { query: 'arrange' }).groups;
     expect(layout.items[0].title).toBe('Auto layout');

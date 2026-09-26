@@ -297,6 +297,102 @@
         }
       ],
       "error": "name"
+    },
+    {
+      "name": "the draft's own layout",
+      "set": [
+        {
+          "path": [
+            "layout"
+          ],
+          "value": "cards"
+        }
+      ]
+    },
+    {
+      "name": "a layout the editor does not know, which it ignores",
+      "set": [
+        {
+          "path": [
+            "layout"
+          ],
+          "value": "radial"
+        }
+      ]
+    },
+    {
+      "name": "a layout that is not a string",
+      "set": [
+        {
+          "path": [
+            "layout"
+          ],
+          "value": 5
+        }
+      ],
+      "error": "layout"
+    },
+    {
+      "name": "connection with a route",
+      "set": [
+        {
+          "path": [
+            "edges",
+            0,
+            "route"
+          ],
+          "value": [
+            {
+              "x": 120,
+              "y": 40
+            },
+            {
+              "x": 180,
+              "y": 40
+            },
+            {
+              "x": 180,
+              "y": 200
+            },
+            {
+              "x": 240,
+              "y": 200
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "null route, which Go decodes as none",
+      "set": [
+        {
+          "path": [
+            "edges",
+            0,
+            "route"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "route of one point",
+      "set": [
+        {
+          "path": [
+            "edges",
+            0,
+            "route"
+          ],
+          "value": [
+            {
+              "x": 0,
+              "y": 0
+            }
+          ]
+        }
+      ],
+      "error": "edges[0].route"
     }
   ]
 }

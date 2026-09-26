@@ -73,6 +73,38 @@ describe('strict decoding', () => {
 
     expect(() => decodeDocument(payload)).toThrowError(/exactly one/i);
   });
+
+  test('keeps the draft layout and edge routes, and reads null as none', () => {
+    const { doc } = sampleDocument();
+    const route = [
+      { x: 0, y: 0 },
+      { x: 40, y: 0 },
+      { x: 40, y: 30 },
+    ];
+    const payload = JSON.parse(JSON.stringify(doc));
+
+    payload.layout = 'cards';
+    payload.edges[0].route = route;
+
+    const decoded = parseDocument(payload);
+
+    expect(decoded.layout).toBe('cards');
+    expect(decoded.edges[0].route).toEqual(route);
+
+    payload.layout = null;
+    payload.edges[0].route = null;
+
+    const cleared = parseDocument(payload);
+
+    expect('layout' in cleared).toBe(false);
+    expect('route' in cleared.edges[0]).toBe(false);
+
+    payload.edges[0].route = [{ x: 0, y: 0, z: 1 }, route[1]];
+
+    expect(() => decodeDocument(payload)).toThrowError(
+      /edges\[0\]\.route\[0\]: unknown field "z"/,
+    );
+  });
 });
 
 describe('import', () => {
@@ -101,7 +133,7 @@ describe('import', () => {
     expect(result.error).toMatch(/\bUse Import on the drafts page\b/);
     expect(result.error).toMatch(/^A Topology config is not/);
 
-    // The article follows the kind (N10).
+    // The article follows the kind.
     expect(
       parseImport(JSON.stringify({ kind: 'Experiment', metadata: {} })).error,
     ).toMatch(/^An Experiment config is not a Builder document\./);
@@ -151,7 +183,7 @@ describe('import', () => {
 
   // An alias is its anchor's value itself, which each copy of the document
   // expands once per alias: nine levels of ten aliases, in under 1 KB, are a
-  // billion values (R82). An asterisk that is not an alias is kept.
+  // billion values. An asterisk that is not an alias is kept.
   test('YAML aliases are refused before they expand', () => {
     const bomb = [
       'l0: &l0 x',

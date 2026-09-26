@@ -28,10 +28,21 @@ import {
 } from './autosave.js';
 import { copySelection, pasteClipboard } from './clipboard.js';
 import { DocumentError, parseDocument } from './decode.js';
+import { applyGroups, nothingToGroup, planGroups } from './grouping.js';
 import { History, DEFAULT_HISTORY_LIMIT } from './history.js';
 import { createDraftStore } from './idb.js';
-import { changedGeometry, restoreGeometry, withGeometry } from './layout.js';
-import { LayoutError, runLayout } from './layouts/index.js';
+import {
+  layoutChanges,
+  restoreLayoutChanges,
+  withGeometry,
+  withLayoutChoice,
+} from './layout.js';
+import {
+  LayoutError,
+  documentLayout,
+  layoutAlgorithm,
+  runLayout,
+} from './layouts/index.js';
 import { publishRefusal } from './publish.js';
 import {
   builderSchemaV1,
@@ -107,6 +118,83 @@ async function forgetLocalDraft(owner, id) {
         .map((record) => local.remove(record.key)),
     );
   } catch {}
+}
+
+// What a layout run is for, as the viewer knows it, and what is dropped
+// when the diagram changes before it ends.
+const LAYOUT_TASKS = {
+  layout: { name: 'Auto layout', dropped: 'the layout was not applied' },
+  group: { name: 'Auto-group', dropped: 'no groups were made' },
+};
+
+// Lays `doc` out for layout or autoGroup (`task`, a LAYOUT_TASKS key). A
+// layout can finish later (ELK runs in a Web Worker): until it does,
+// layoutRunning is set and another request is turned away. Resolves to the
+// geometry, or to null, with the reason told, when the draft is read only,
+// another layout runs, the layout fails, or the diagram changes meanwhile:
+// that diagram keeps the change, and the layout, made for what it was, is
+// dropped.
+async function layOut(store, doc, id, options, task) {
+  const { name, dropped } = LAYOUT_TASKS[task];
+
+  if (store.readOnly) {
+    // The page alert reads it, as for any edit (see commit).
+    store.setError('This draft is read only.');
+
+    return null;
+  }
+
+  if (store.layoutRunning) {
+    store.announce(
+      `${store.autoGrouping ? 'Auto-group' : 'Auto layout'} is still running.`,
+    );
+
+    return null;
+  }
+
+  const { history } = store;
+  const entryId = history.currentEntry().id;
+  let laid;
+
+  store.layoutRunning = true;
+  store.autoGrouping = task === 'group';
+
+  try {
+    laid = await runLayout(id, doc, options);
+  } catch (error) {
+    // Stopped as the Builder closed or the session ended (see
+    // stopLayoutEngine): there is no one to tell.
+    if (error?.name === 'AbortError') {
+      return null;
+    }
+
+    // A layout library's own words mean nothing to the viewer: they go to
+    // the console.
+    const known = error instanceof LayoutError;
+
+    if (!known) {
+      console.error(`${name} failed.`, error);
+    }
+
+    store.setError(
+      `${name} failed. ${known ? error.message : 'The layout could not be computed.'}`,
+    );
+
+    return null;
+  } finally {
+    store.layoutRunning = false;
+    store.autoGrouping = false;
+  }
+
+  // Another edit, an undo or another document since: panning and zooming
+  // change no entry.
+  if (store.history !== history || history.currentEntry().id !== entryId) {
+    store.announce(`The diagram changed during ${name}, so ${dropped}.`);
+
+    return null;
+  }
+
+  return laid;
 }
 
 // Bumped when the session ends (see endSession), so a listing that answers
@@ -186,13 +274,16 @@ export const useBuilderStore = defineStore('builder', {
     saveAnnounced: null,
     selection: emptySelection(),
     clipboard: null,
-    // Where the last automatic layout moved nodes from (changedGeometry), and
-    // the history entry that layout made. It can be put back only while that
-    // entry is current: any other edit, an undo or redo, or another document
-    // drops it, so a restore never moves nodes to stale positions.
+    // What the last automatic layout changed (layoutChanges: where it moved
+    // nodes from, the routes and layout choice it replaced), and the history
+    // entry that layout made. It can be put back only while that entry is
+    // current: any other edit, an undo or redo, or another document drops
+    // it, so a restore never moves nodes to stale positions.
     layoutRestore: null,
-    // Whether an automatic layout is under way (see layout).
+    // Whether an automatic layout is under way (see layout), and whether it
+    // is Auto-group's (see autoGroup).
     layoutRunning: false,
+    autoGrouping: false,
     schema: builderSchemaV1,
     schemaSource: 'bundled',
     schemaError: '',
@@ -205,7 +296,13 @@ export const useBuilderStore = defineStore('builder', {
     // What Publish needs to know about the draft record: its id, the config
     // it was loaded from, the saved snapshot's digest and its last
     // publication (see draftCanUpdate in publish.js).
-    draftRecord: { id: '', sourceToken: '', digest: '', publication: null },
+    draftRecord: {
+      id: '',
+      sourceToken: '',
+      digest: '',
+      publication: null,
+      forked: null,
+    },
     readOnly: false,
     // The published diagram shown read only, with no draft of its own yet
     // ({id, name, target}; see viewPublishedDocument), or null.
@@ -259,7 +356,11 @@ export const useBuilderStore = defineStore('builder', {
   getters: {
     canUndo: (state) => state.historyVersion >= 0 && state.history.canUndo(),
     canRedo: (state) => state.historyVersion >= 0 && state.history.canRedo(),
-    // Whether Auto layout offers to put the previous layout back instead.
+    // The layout the diagram is laid out with: the draft's own choice, or
+    // the viewer's default (see documentLayout).
+    currentLayout: (state) =>
+      documentLayout(state.doc, builderSettings.layoutAlgorithm),
+    // Whether the layout menu offers to put the previous layout back.
     canRestoreLayout: (state) =>
       state.historyVersion >= 0 &&
       !state.readOnly &&
@@ -349,6 +450,7 @@ export const useBuilderStore = defineStore('builder', {
         sourceToken: draft.sourceToken || '',
         digest: draft.digest || '',
         publication: draft.publication || null,
+        forked: draft.forked || null,
       };
     },
 
@@ -637,7 +739,7 @@ export const useBuilderStore = defineStore('builder', {
 
       try {
         // A switch is named after its network, whatever label a document
-        // saved or imported with another name still carries (R37).
+        // saved or imported with another name still carries.
         document = namedSwitches(parseDocument(payload));
       } catch (error) {
         // The page alert (or the dialog that called this) reads it.
@@ -2030,103 +2132,106 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * Lays the diagram out with the algorithm the settings choose, as one
-     * commit, which the same toolbar button can then put back (see
-     * restoreLayout). A layout that moves nothing is not an edit, as in
-     * moveNodes: no undo step, no snapshot, and no restore.
+     * Lays the diagram out, as one commit, which the layout menu can then put
+     * back (see restoreLayout). With an algorithm, the layout menu's choice,
+     * the draft keeps it as its own layout in the same commit; without one,
+     * the draft's layout runs again (currentLayout). A layout that changes
+     * nothing is not an edit, as in moveNodes: no undo step, no snapshot, and
+     * no restore. See layOut for a layout that finishes later.
      *
-     * A layout can finish later (ELK runs in a Web Worker). Until it does,
-     * layoutRunning is set and another request is turned away. A diagram
-     * that changes meanwhile keeps the change, and the layout, made for
-     * what the diagram was, is dropped.
-     *
-     * @param {object} [options] algorithm: a LAYOUT_ALGORITHMS id to use in
-     *   place of the setting; the rest go to the algorithm
+     * @param {object} [options] algorithm: a LAYOUT_ALGORITHMS id to run and
+     *   keep as the draft's layout; the rest go to the algorithm
      * @returns {Promise<object|null>} the history entry, or null when
-     *   nothing moved or the layout was not applied
+     *   nothing changed or the layout was not applied
      */
     async layout({ algorithm, ...options } = {}) {
-      if (this.readOnly) {
-        // The page alert reads it, as for any edit (see commit).
-        this.setError('This draft is read only.');
+      const chosen = layoutAlgorithm(algorithm) ? algorithm : '';
+      const id = chosen || this.currentLayout;
+      const laid = await layOut(this, this.doc, id, options, 'layout');
 
+      if (!laid) {
         return null;
       }
 
-      if (this.layoutRunning) {
-        this.announce('Auto layout is still running.');
+      const next = withLayoutChoice(
+        withGeometry(this.doc, laid),
+        chosen || this.doc.layout,
+      );
+      const changes = layoutChanges(this.doc, next);
+      const name = layoutAlgorithm(id).label;
 
-        return null;
-      }
-
-      const { history } = this;
-      const entryId = history.currentEntry().id;
-      let laid;
-
-      this.layoutRunning = true;
-
-      try {
-        laid = await runLayout(
-          algorithm || builderSettings.layoutAlgorithm,
-          this.doc,
-          options,
-        );
-      } catch (error) {
-        // Stopped as the Builder closed or the session ended (see
-        // stopLayoutEngine): there is no one to tell.
-        if (error?.name === 'AbortError') {
-          return null;
-        }
-
-        // A layout library's own words mean nothing to the viewer: they go
-        // to the console.
-        const known = error instanceof LayoutError;
-
-        if (!known) {
-          console.error('Auto layout failed.', error);
-        }
-
-        this.setError(
-          `Auto layout failed. ${known ? error.message : 'The layout could not be computed.'}`,
-        );
-
-        return null;
-      } finally {
-        this.layoutRunning = false;
-      }
-
-      // Another edit, an undo or another document since: panning and
-      // zooming change no entry.
-      if (this.history !== history || history.currentEntry().id !== entryId) {
-        this.announce(
-          'The diagram changed during Auto layout, so the layout was not applied.',
-        );
-
-        return null;
-      }
-
-      const next = withGeometry(this.doc, laid);
-      const geometry = changedGeometry(this.doc, next);
-
-      if (Object.keys(geometry).length === 0) {
+      if (!changes) {
         this.announce('The diagram is already laid out.');
 
         return null;
       }
 
-      const entry = this.commit(next, 'Applied automatic layout');
+      const moved =
+        Object.keys(changes.geometry).length > 0 ||
+        Object.keys(changes.routes).length > 0;
+      const entry = this.commit(
+        next,
+        moved ? `Applied ${name} layout` : `Chose ${name} layout`,
+      );
 
       if (entry) {
-        this.layoutRestore = { entryId: entry.id, geometry };
+        this.layoutRestore = { entryId: entry.id, ...changes };
       }
 
       return entry;
     },
 
     /**
-     * Puts back what the last automatic layout moved, as one commit that
-     * undo reverses like any other. Only offered while the diagram is still
-     * exactly what that layout left (see canRestoreLayout).
+     * Auto-group: puts the ungrouped devices and switches (the selected
+     * ones, when nodes are selected) into new groups, by network or by name
+     * (see grouping.js), then lays the diagram out with its layout so the
+     * groups do not overlap, all as one commit. The selection stays as it
+     * was. Nothing to group is no edit, and says so.
+     *
+     * @param {string} [strategy] a GROUPING_STRATEGIES id
+     * @param {object} [options] for the layout
+     * @returns {Promise<object[]|null>} the groups made, or null
+     */
+    async autoGroup(strategy = 'network', options = {}) {
+      const selected = this.selection.nodes.length > 0;
+      const planned = this.readOnly
+        ? []
+        : planGroups(this.doc, strategy, { selection: this.selection.nodes });
+
+      if (!this.readOnly && !this.layoutRunning && planned.length === 0) {
+        this.announce(nothingToGroup(strategy, { selected }));
+
+        return null;
+      }
+
+      const grouped = applyGroups(this.doc, planned);
+      const laid = await layOut(
+        this,
+        grouped.doc,
+        this.currentLayout,
+        options,
+        'group',
+      );
+
+      if (!laid) {
+        return null;
+      }
+
+      const how = strategy === 'name' ? 'by name' : 'by network';
+
+      this.commit(
+        withGeometry(grouped.doc, laid),
+        `Created ${count(grouped.groups.length, 'group')} ${how}`,
+      );
+
+      return grouped.groups;
+    },
+
+    /**
+     * Puts back what the last automatic layout changed, its layout choice
+     * included, as one commit that undo reverses like any other. Only
+     * offered while the diagram is still exactly what that layout left (see
+     * canRestoreLayout).
      *
      * @returns {object|null} the history entry, or null when there is none
      */
@@ -2139,7 +2244,7 @@ export const useBuilderStore = defineStore('builder', {
 
       // commit() drops the saved layout, so it is put back only once.
       return this.commit(
-        restoreGeometry(this.doc, this.layoutRestore.geometry),
+        restoreLayoutChanges(this.doc, this.layoutRestore),
         'Restored previous layout',
       );
     },

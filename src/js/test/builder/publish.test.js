@@ -7,7 +7,9 @@ import {
   configNameProblem,
   describePublishResult,
   draftCanUpdate,
+  overwriteConfirmation,
   publishChecks,
+  publishLabel,
   publishRefusal,
   scenarioNames,
   stageFailed,
@@ -32,6 +34,8 @@ describe('publish intent', () => {
       topology: { name: 'core', action: 'create' },
     });
     expect(Object.keys(intent)).not.toContain('document');
+    // Creating replaces nothing, so Publish does not ask first.
+    expect(overwriteConfirmation(intent)).toBeNull();
   });
 
   test('an existing config name becomes an update', () => {
@@ -53,6 +57,19 @@ describe('publish intent', () => {
 
     expect(intent.topology).toEqual({ name: 'core', action: 'update' });
     expect(intent.experiment).toEqual({ name: 'exp', action: 'update' });
+    // No one can undo an update, so Publish asks first, naming what it
+    // replaces, and its button says what it does.
+    expect(overwriteConfirmation(intent)).toEqual({
+      title: 'Replace topology core and experiment exp?',
+      message:
+        'Publishing replaces the topology "core" and the experiment "exp" ' +
+        'on the server with this diagram. This cannot be undone.',
+      confirmLabel: 'Update topology and experiment',
+    });
+    expect(publishLabel('create', 'update')).toBe(
+      'Create topology and update experiment',
+    );
+    expect(publishLabel('update')).toBe('Update topology');
   });
 
   // The server refuses these updates, so the dialog must not send them or
@@ -142,6 +159,7 @@ describe('publish intent', () => {
     );
 
     expect(intent.scenario).toEqual({ name: 'sc', action: 'use' });
+    expect(overwriteConfirmation(intent)).toBeNull();
   });
 
   test('an uploaded scenario needs an explicit target', () => {
@@ -177,6 +195,10 @@ describe('publish intent', () => {
       name: 'sc',
       action: 'update',
       expectedDigest: `sha256:${'a'.repeat(64)}`,
+    });
+    expect(overwriteConfirmation(chosen.intent)).toMatchObject({
+      title: 'Replace scenario sc?',
+      confirmLabel: 'Create topology and experiment, replace scenario',
     });
   });
 
@@ -330,7 +352,7 @@ describe('which configs a draft may update', () => {
     ).toBe(true);
   });
 
-  test('a draft updates what it published, after further edits too (R6)', () => {
+  test('a draft updates what it published, after further edits too', () => {
     const draft = {
       id: 'd1',
       digest: 'sha256:edited',
@@ -365,6 +387,28 @@ describe('which configs a draft may update', () => {
 
     // Not once the topology was published from another diagram: then the
     // experiment is no longer this draft's either.
+    const superseded = { ...draft, documents: [published('p2', 'core')] };
+    expect(draftCanUpdate('topology', 'core', superseded)).toBe(false);
+    expect(draftCanUpdate('experiment', 'exp', superseded)).toBe(false);
+  });
+
+  test('a draft saved as a new draft from another updates what that one had published', () => {
+    const draft = {
+      id: 'fork',
+      digest: 'sha256:edited',
+      source: { kind: 'manual' },
+      forked: {
+        topologyTarget: 'core',
+        experimentTarget: 'exp',
+        documentId: 'p1',
+      },
+      documents: [published('p1', 'core')],
+    };
+
+    expect(draftCanUpdate('topology', 'core', draft)).toBe(true);
+    expect(draftCanUpdate('experiment', 'exp', draft)).toBe(true);
+    expect(draftCanUpdate('experiment', 'other', draft)).toBe(false);
+    // Not once the other draft, or anything else, published it again.
     const superseded = { ...draft, documents: [published('p2', 'core')] };
     expect(draftCanUpdate('topology', 'core', superseded)).toBe(false);
     expect(draftCanUpdate('experiment', 'exp', superseded)).toBe(false);
@@ -615,7 +659,7 @@ describe('publish refusals', () => {
     );
   });
 
-  test('a refused experiment name names its field (R25)', () => {
+  test('a refused experiment name names its field', () => {
     expect(
       publishRefusal(
         'Experiment all is reserved: phenix uses it to mean every experiment.',
@@ -629,7 +673,7 @@ describe('publish refusals', () => {
   });
 });
 
-// R20: phenix stores a topology with an interface VLAN of "", and minimega
+// phenix stores a topology with an interface VLAN of "", and minimega
 // refuses it when the experiment starts.
 describe('publish checks', () => {
   test('an interface with no VLAN is an error in the Publish dialog only', () => {

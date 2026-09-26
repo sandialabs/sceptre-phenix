@@ -195,6 +195,62 @@ func TestCorruptDraftIsSkippedAndCanBeDeleted(t *testing.T) {
 	}
 }
 
+// TestDamagedDraftsAreListedWithWhatCanBeRead asserts that a draft whose
+// metadata does not decode is listed apart with what can still be read of
+// it, each field on its own, and the revision that deletes it; and that the
+// owner check a delete makes reads the owner as the listing does.
+func TestDamagedDraftsAreListedWithWhatCanBeRead(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	good := createTestDraft(t, h, "good")
+	bad := createTestDraft(t, h, "bad")
+
+	record, err := h.store.GetRecord(NamespaceDrafts, bad.ID)
+	if err != nil {
+		t.Fatalf("GetRecord returned error: %v", err)
+	}
+
+	h.store.setValue(NamespaceDrafts, bad.ID, append(bytes.TrimSuffix(record.Value, []byte("}")), `,"future":true}`...))
+
+	readable, damaged, err := h.service.ListDraftsWithDamaged(ctx)
+	if err != nil || len(readable) != 1 || readable[0].ID != good.ID {
+		t.Fatalf("ListDraftsWithDamaged = %+v, %s; want only %s readable", readable, fmtErr(err), good.ID)
+	}
+
+	if len(damaged) != 1 || damaged[0].ID != bad.ID || damaged[0].Owner != testOwner ||
+		damaged[0].Title != bad.Title || !damaged[0].Updated.Equal(bad.Updated) ||
+		damaged[0].ETag() != bad.ETag() {
+		t.Fatalf("damaged = %+v, want %s owned by %s, titled %q, at ETag %s",
+			damaged, bad.ID, testOwner, bad.Title, bad.ETag())
+	}
+
+	for _, value := range []struct {
+		name, json, owner, title string
+		ownerErr                 bool
+	}{
+		// One field of the wrong type leaves only itself out.
+		{name: "wrong types", json: `{"owner":"alice","title":42,"updated":"yesterday"}`, owner: testOwner},
+		// So does one that would not pass validation.
+		{name: "unusable owner", json: `{"owner":"al\u0000ice","title":"ok"}`, title: "ok", ownerErr: true},
+		// A record that is not JSON leaves only its ID.
+		{name: "not JSON", json: "{not json", ownerErr: true},
+	} {
+		h.store.setValue(NamespaceDrafts, bad.ID, []byte(value.json))
+
+		_, damaged, err = h.service.ListDraftsWithDamaged(ctx)
+		if err != nil || len(damaged) != 1 || damaged[0].ID != bad.ID || damaged[0].Owner != value.owner ||
+			damaged[0].Title != value.title || !damaged[0].Updated.IsZero() {
+			t.Errorf("%s: damaged = %+v, %s; want owner %q, title %q and no date",
+				value.name, damaged, fmtErr(err), value.owner, value.title)
+		}
+
+		if _, err := h.service.GetDraftOwner(ctx, bad.ID); errors.Is(err, ErrCorrupt) != value.ownerErr {
+			t.Errorf("%s: GetDraftOwner error = %s, want ErrCorrupt %t", value.name, fmtErr(err), value.ownerErr)
+		}
+	}
+}
+
 func TestAppendSnapshotAdvancesHistoryAndRecordsActor(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()

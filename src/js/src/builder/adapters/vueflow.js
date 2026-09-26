@@ -22,7 +22,8 @@ import {
   sizeOf,
   specInterfaceFor,
 } from '../model.js';
-import { outlineLabel } from '../outline.js';
+import { labelIndex, outlineLabel } from '../outline.js';
+import { handleOffsetY } from '../routes.js';
 
 export const FLOW_NODE_TYPES = {
   device: 'builderDevice',
@@ -51,6 +52,17 @@ const NETWORK_TOKEN_COUNT = 8;
 // instructions, which describe keys the Builder handles differently.
 export const NODE_HINT_ID = 'builder-canvas-node-hint';
 export const EDGE_HINT_ID = 'builder-canvas-edge-hint';
+
+/**
+ * Id of the hidden text that says what the diagram checks found about a
+ * node (see NodeIssueMark.vue), which describes the node.
+ *
+ * @param {string} nodeId
+ * @returns {string}
+ */
+export function nodeIssueId(nodeId) {
+  return `builder-node-issues-${nodeId}`;
+}
 
 /**
  * Deterministic visual treatment for a network. Documents with the same
@@ -93,14 +105,15 @@ export function networkStyle(doc, networkId) {
  *
  * @param {object} doc
  * @param {object} node
+ * @param {Function} [find] looks a node up by id
  * @returns {{x: number, y: number}}
  */
-export function relativePosition(doc, node) {
+export function relativePosition(doc, node, find = (id) => findNode(doc, id)) {
   if (!node.parentId) {
     return { ...node.position };
   }
 
-  const parent = findNode(doc, node.parentId);
+  const parent = find(node.parentId);
 
   if (!parent) {
     return { ...node.position };
@@ -133,15 +146,30 @@ export function absolutePosition(doc, parentId, position) {
   };
 }
 
+// The network of each connected handle, by handle id.
+function handleNetworks(doc) {
+  const connected = new Map();
+
+  (doc.edges || []).forEach((edge) => {
+    [edge.sourceHandleId, edge.targetHandleId].filter(Boolean).forEach((id) => {
+      connected.set(id, edge.networkId);
+    });
+  });
+
+  return connected;
+}
+
 /**
  * Handles exposed by a node: one per device interface handle, and a single bus
  * handle for switches.
  *
  * @param {object} doc
  * @param {object} node
+ * @param {Map} [connected] each connected handle's network, when the handles
+ *   of many nodes are wanted
  * @returns {{id: string, label: string, kind: string}[]}
  */
-export function handlesFor(doc, node) {
+export function handlesFor(doc, node, connected = handleNetworks(doc)) {
   if (node.kind === 'switch') {
     const network = networkOfSwitch(doc, node);
 
@@ -157,14 +185,6 @@ export function handlesFor(doc, node) {
   if (node.kind !== 'device') {
     return [];
   }
-
-  const connected = new Map();
-
-  (doc.edges || []).forEach((edge) => {
-    [edge.sourceHandleId, edge.targetHandleId].filter(Boolean).forEach((id) => {
-      connected.set(id, edge.networkId);
-    });
-  });
 
   return deviceHandles(node).map((handle) => {
     const iface = specInterfaceFor(node, handle.id);
@@ -186,14 +206,19 @@ export function handlesFor(doc, node) {
 }
 
 /**
- * Converts model nodes into Vue Flow nodes.
+ * Converts model nodes into Vue Flow nodes. A node the diagram checks flag
+ * carries what they found (data.issue), and is described by it as well.
  *
  * @param {object} doc
- * @param {object} [options] selectedIds
+ * @param {object} [options] selectedIds; issues: nodeIssueSummaries by
+ *   node id
  * @returns {object[]}
  */
 export function toFlowNodes(doc, options = {}) {
   const selected = new Set(options.selectedIds || []);
+  const issues = options.issues || new Map();
+  const index = labelIndex(doc);
+  const connected = handleNetworks(doc);
 
   // Parents must be registered before children in Vue Flow.
   const ordered = [...(doc.nodes || [])].sort((a, b) => {
@@ -217,17 +242,18 @@ export function toFlowNodes(doc, options = {}) {
 
   return ordered.map((node) => {
     const size = sizeOf(node);
+    const issue = issues.get(node.id) || null;
 
     return {
       id: node.id,
       type: FLOW_NODE_TYPES[node.kind] || FLOW_NODE_TYPES.device,
-      position: relativePosition(doc, node),
+      position: relativePosition(doc, node, index.node),
       selected: selected.has(node.id),
       parentNode: node.parentId || undefined,
       expandParent: Boolean(node.parentId),
       zIndex: node.kind === 'group' ? 0 : 1,
       style: { width: `${size.width}px`, height: `${size.height}px` },
-      ariaLabel: nodeAriaLabel(doc, node),
+      ariaLabel: nodeAriaLabel(doc, node, index),
       // Vue Flow spreads these over its own wrapper attributes. The wrapper
       // is the node's only Tab stop, a toggle button pressed while the node is
       // selected; undefined removes Vue Flow's role description.
@@ -235,7 +261,9 @@ export function toFlowNodes(doc, options = {}) {
         role: 'button',
         'aria-pressed': String(selected.has(node.id)),
         'aria-roledescription': undefined,
-        'aria-describedby': NODE_HINT_ID,
+        'aria-describedby': issue
+          ? `${nodeIssueId(node.id)} ${NODE_HINT_ID}`
+          : NODE_HINT_ID,
       },
       data: {
         node,
@@ -250,9 +278,38 @@ export function toFlowNodes(doc, options = {}) {
           node.kind === 'switch'
             ? networkStyle(doc, node.switch?.networkId)
             : undefined,
-        handles: handlesFor(doc, node),
+        handles: handlesFor(doc, node, connected),
+        issue,
       },
     };
+  });
+}
+
+/**
+ * Flow nodes or edges with a selection applied. Only those it changes are
+ * copied; the rest stay the very objects they were, so Vue Flow redraws
+ * only what the selection changed.
+ *
+ * @param {object[]} items from toFlowNodes or toFlowEdges
+ * @param {string[]} [selectedIds]
+ * @returns {object[]}
+ */
+export function withSelection(items, selectedIds = []) {
+  const selected = new Set(selectedIds);
+
+  return items.map((item) => {
+    const pressed = selected.has(item.id);
+
+    return pressed === item.selected
+      ? item
+      : {
+          ...item,
+          selected: pressed,
+          domAttributes: {
+            ...item.domAttributes,
+            'aria-pressed': String(pressed),
+          },
+        };
   });
 }
 
@@ -262,10 +319,81 @@ export function toFlowNodes(doc, options = {}) {
  *
  * @param {object} doc
  * @param {object} node
+ * @param {object} [index] labelIndex(doc), when naming many nodes
  * @returns {string}
  */
-export function nodeAriaLabel(doc, node) {
-  return outlineLabel(doc, node);
+export function nodeAriaLabel(doc, node, index) {
+  return outlineLabel(doc, node, index);
+}
+
+// Where a connection meets a node's side, in canvas coordinates.
+function anchorY(node, handleId) {
+  return (node.position?.y || 0) + handleOffsetY(node, handleId);
+}
+
+/**
+ * The bend of each connection that shares its end at a switch with others,
+ * as {index, count}: a connection drawn without a route bends in a column of
+ * its own (see NetworkEdge.vue), so the lines into one switch do not run
+ * down one column. Into a switch, the connection whose other end is nearest
+ * the switch's handle, up or down, bends first (leftmost), so no line
+ * crosses another on its way; out of one, it bends last.
+ *
+ * @param {object} doc
+ * @param {Map} [nodeById]
+ * @returns {Map<string, {index: number, count: number}>} by edge id, for the
+ *   connections that share such an end
+ */
+export function edgeLanes(doc, nodeById) {
+  const nodes =
+    nodeById || new Map((doc.nodes || []).map((node) => [node.id, node]));
+  const hubs = new Map();
+
+  for (const edge of doc.edges || []) {
+    const source = nodes.get(edge.sourceNodeId);
+    const target = nodes.get(edge.targetNodeId);
+    const key =
+      (target?.kind === 'switch' && `in:${target.id}`) ||
+      (source?.kind === 'switch' && `out:${source.id}`) ||
+      '';
+
+    if (!key || !source || !target) {
+      continue;
+    }
+
+    const rise = Math.abs(
+      anchorY(target, edge.targetHandleId) -
+        anchorY(source, edge.sourceHandleId),
+    );
+
+    if (!hubs.has(key)) {
+      hubs.set(key, []);
+    }
+
+    hubs.get(key).push({ id: edge.id, rise });
+  }
+
+  const lanes = new Map();
+
+  hubs.forEach((list, key) => {
+    if (list.length < 2) {
+      return;
+    }
+
+    const out = key.startsWith('out:');
+
+    list
+      .sort(
+        (a, b) =>
+          (out ? b.rise - a.rise : a.rise - b.rise) ||
+          (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+      )
+      .forEach((entry, index) => {
+        lanes.set(entry.id, { index, count: list.length });
+      });
+  });
+
+  return lanes;
 }
 
 /**
@@ -277,11 +405,29 @@ export function nodeAriaLabel(doc, node) {
  */
 export function toFlowEdges(doc, options = {}) {
   const selected = new Set(options.selectedIds || []);
+  // The first of an id, as findNode finds it.
+  const nodeById = new Map();
+
+  for (const node of doc.nodes || []) {
+    if (!nodeById.has(node.id)) {
+      nodeById.set(node.id, node);
+    }
+  }
+
+  const styles = new Map();
+  const styleOf = (id) => {
+    if (!styles.has(id)) {
+      styles.set(id, networkStyle(doc, id));
+    }
+
+    return styles.get(id);
+  };
+  const lanes = edgeLanes(doc, nodeById);
 
   return (doc.edges || []).map((edge) => {
-    const style = networkStyle(doc, edge.networkId);
-    const source = findNode(doc, edge.sourceNodeId);
-    const target = findNode(doc, edge.targetNodeId);
+    const style = styleOf(edge.networkId);
+    const source = nodeById.get(edge.sourceNodeId);
+    const target = nodeById.get(edge.targetNodeId);
     const network = findNetwork(doc, edge.networkId);
     const labelled =
       edge.label && edge.label !== network?.name
@@ -311,7 +457,7 @@ export function toFlowEdges(doc, options = {}) {
         'aria-roledescription': undefined,
         'aria-describedby': EDGE_HINT_ID,
       },
-      data: { edge, network, style },
+      data: { edge, network, style, lane: lanes.get(edge.id) || null },
     };
   });
 }
