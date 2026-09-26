@@ -1,9 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router';
 
-import { ToastProgrammatic as Toast } from 'buefy';
+import {
+  SnackbarProgrammatic as Snackbar,
+  ToastProgrammatic as Toast,
+} from 'buefy';
 
 import { usePhenixStore } from '@/store.js';
 import axiosInstance from '@/utils/axios.js';
+import { BUILDER_BETA_FEATURE, createFeatureGuard } from '@/utils/features.js';
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -89,6 +93,45 @@ const router = createRouter({
       path: '/tunneler',
       name: 'tunneler',
       component: () => import('@/views/Tunneler.vue'),
+    },
+    {
+      // Builder Flow. `beforeEnter` runs before Vue Router resolves the async
+      // component, so a disabled feature flag denies the route without ever
+      // downloading the editor chunk.
+      path: '/builder-beta',
+      name: 'builder-beta',
+      component: () => import('@/views/BuilderBeta.vue'),
+      // The editor fills the viewport below the header, so App.vue drops the
+      // page container, its padding and the footer for this route.
+      meta: { fullBleed: true },
+      // The redirect is explained by a notice that stays until it is
+      // dismissed: a timed toast can vanish before it is read (WCAG 2.2.1).
+      // Without an action button the snackbar keeps role=alert.
+      beforeEnter: createFeatureGuard({
+        flag: BUILDER_BETA_FEATURE,
+        ensureFeatures: () => usePhenixStore().ensureFeatures(),
+        fallback: { name: 'home' },
+        onDenied: () => {
+          new Snackbar().open({
+            message: 'Builder Flow is not enabled on this phenix server.',
+            type: 'is-warning',
+            indefinite: true,
+            actionText: null,
+            cancelText: 'Dismiss',
+          });
+        },
+        onError: (error) => {
+          console.error('Unable to load server features.', error);
+          new Snackbar().open({
+            message:
+              'Unable to verify whether Builder Flow is enabled. Reload the page to try again.',
+            type: 'is-danger',
+            indefinite: true,
+            actionText: null,
+            cancelText: 'Dismiss',
+          });
+        },
+      }),
     },
 
     {

@@ -107,12 +107,16 @@ Defines the static network: a list of `nodes` (VMs, routers, firewalls, or
 external/physical nodes) and their hardware, network interfaces, and boot
 behavior. Key node fields:
 
-- `type`: `VirtualMachine | Firewall | Router | Switch`
+- `type`: `VirtualMachine | Firewall | Router | Switch`. The `vrouter` app
+  configures routing and rulesets only on `Router` and `Firewall` nodes whose
+  `hardware.os_type` is `minirouter`, `vyatta`, or `vyos` (`linux` there is
+  deprecated: it writes a Vyatta config into the image)
 - `general.hostname`, `general.vm_type` (`kvm` or `container`, default `kvm`),
   `general.do_not_boot`, `general.snapshot`
 - `hardware.os_type`: `linux | windows | centos | rhel | minirouter | vyatta | vyos`
 - `hardware.vcpus`, `hardware.memory`, `hardware.drives[].image` (disk image name/path)
-- `network.interfaces[]`: `name`, `vlan`, `type: ethernet`, `proto: static|ospf|dhcp`,
+- `network.interfaces[]`: `name`, `vlan`, `type: ethernet`,
+  `proto: static|ospf|dhcp|manual` (`manual` brings it up with no address),
   `address`, `mask`, `gateway`, `bridge`
 - `network.rulesets[]`: firewall rules with `action: accept|drop|reject`
 - `injections[]` / `deletions[]`: files to inject into or remove from the disk image before boot
@@ -217,7 +221,7 @@ has a matching config-file key and `PHENIX_*` env var):
 
 | Flag | Config key / Env var | Default | Description |
 |---|---|---|---|
-| `--store.endpoint` | `store.endpoint` / `PHENIX_STORE_ENDPOINT` | `bolt:///etc/phenix/store.bdb` (root) or `bolt://~/.phenix.bdb` (non-root) | Data store endpoint (`bolt://...` or `etcd://host:port`) |
+| `--store.endpoint` | `store.endpoint` / `PHENIX_STORE_ENDPOINT` | `bolt:///etc/phenix/store.bdb` (root) or `bolt://~/.phenix.bdb` (non-root) | Data store endpoint (`bolt://...` or `etcd://host:port`; etcd accepts `?compaction-retention=<duration>`, default `1h`, `0` disables phenix's cluster-wide history compaction) |
 | `--base-dir.phenix` | `base-dir.phenix` / `PHENIX_BASE_DIR_PHENIX` | `/phenix` | Base phēnix data directory |
 | `--base-dir.minimega` | `base-dir.minimega` / `PHENIX_BASE_DIR_MINIMEGA` | `/tmp/minimega` | Base minimega directory |
 | `--hostname-suffixes` | `hostname-suffixes` | `-minimega,-phenix` | Hostname suffixes to strip |
@@ -243,8 +247,158 @@ full settings reference, including UI-only settings (`ui.logs.level`,
 `config.yaml`, or `PHENIX_UI_FEATURES=vm-mount`) enables the optional
 "VM mount" UI feature, which lets users transfer files to and from a running
 VM's filesystem directly from the web UI (backed by the `/experiments/{exp}/vms/{name}/mount`,
-`/unmount`, `/files`, `/files/download`, `/files/upload` API routes). It's
-disabled by default and requires restarting `phenix ui` to take effect.
+`/unmount`, `/files`, `/files/download`, `/files/upload` API routes).
+
+`phenix ui --features builder-beta` enables Builder Flow, the Vue Flow
+topology editor (a beta), at `/builder-beta` and its draft/document APIs. It
+leaves the legacy `/builder` route available for `builder-xml` topologies.
+Drafts autosave separately from phenix configs; only the explicit Publish action
+creates or updates topology, scenario, or experiment configs. Its Router and
+Firewall device templates create `minirouter` nodes (image `minirouter.qc2`)
+of type `Router` and `Firewall`, which the `vrouter` app configures. The
+Inspector suggests drive images, and the diagram checks flag a missing one,
+from `GET /disks`; without the `disks` `list` permission it does neither.
+
+Builder Flow works over plain HTTP as well as HTTPS. A published diagram
+opens read only; Edit as a draft creates a draft from it (or reopens the draft
+made from it before), which needs `configs` `create`, so a role with only
+`list`/`get` can view drafts and published diagrams but cannot create, import,
+upload, or publish. Configs' edit button for a Builder Flow topology links to
+`/builder-beta?topology=<name>`, which opens the user's draft of it (making one
+the first time) and then names it as `?draft=<owner>/<id>`, so a reload reopens
+that draft; with the feature off, Configs explains that the topology can only
+be edited in Builder Flow. The Inspector also edits a node's labels,
+annotations, and advanced (minimega `vm config`) settings. Logging out removes
+Builder Flow's local drafts (IndexedDB `phenix-builder`) and recent commands
+from the browser, and keeps its preferences (`phenix.builder.theme`,
+`phenix.builder.panes` and `phenix.builder.shortcuts` in localStorage).
+
+Draft owners can manage their own drafts. Cross-user access uses the
+`builder-drafts` RBAC resource with `{owner}/{draft-id}` resource names. A role
+that may inspect and modify every draft needs an explicit policy like:
+
+```yaml
+- resources: [builder-drafts]
+  resourceNames: ["*/*"]
+  verbs: [list, get, update, delete]
+```
+
+`create` is deliberately not a `builder-drafts` verb: a draft is always created
+for the authenticated user, never on somebody else's behalf. Resource names are
+matched with `filepath.Match`, which does not match `/`, so a bare `"*"` never
+matches a `{owner}/{draft-id}` name — use `"*/*"` (as `global-admin` does) or an
+explicit `alice/*`.
+
+Every Builder Flow request also needs the base `configs` permission of the verb
+it performs (`list`, `get`, `create`, `update`, `delete`), so builder access can
+never exceed a user's config access. A cross-user request that fails the
+`builder-drafts` check is answered with `404`, not `403`, so draft existence is
+never disclosed. Every mutation after creation requires an `If-Match` header
+carrying the quoted ETag the previous response returned: a missing or malformed
+tag is `400`, a stale one `412`. Draft responses also carry the tag in their
+body as `etag`; prefer it, since a compressing proxy can rewrite the header
+(`W/"3"`, `"3-gzip"`). A `412` on `DELETE` carries the draft's current
+`ETag`, since a draft whose metadata this server can no longer read (written by
+a newer phenix, say) is left out of listings and cannot be read, but its owner
+can still delete it.
+
+A snapshot append (`POST /builder/drafts/{owner}/{draft}/snapshots`) may carry
+`opId`, the client's id for the save (1-128 letters, digits, `.`, `-`, `_`,
+starting with a letter or digit). The snapshot manifest keeps it, and snapshot
+listings return it, so a client whose response was lost can tell the snapshot
+was stored. A draft keeps at most 50 snapshots and 50 MiB of them; past either,
+the oldest are dropped. The UI keeps unsaved Builder Flow edits in the browser's
+`phenix-builder` IndexedDB database only until the server confirms them.
+
+Publishing still requires the applicable config, scenario, and experiment
+permissions; Builder draft access does not bypass them.
+
+A mutation whose durable write succeeded but whose superseded content could not
+be removed returns its normal success status, body, and new `ETag`, plus a
+`Warning: 199` header naming the operation; the cause is logged, never sent.
+Failing such a request would only make the client retry with a stale tag.
+
+`GET /builder/sources` groups configs by kind: `topologies` and `experiments`
+(what a document can be generated from, reported as `generatable: true`),
+`scenarios` (selectable when publishing) and `images` (node property editing).
+Each config is filtered through the `configs` permission *and* the kind specific
+`list` permission that already gates the kind elsewhere (`topologies`,
+`experiments`, `scenarios`); `Image` configs have no kind specific vocabulary,
+so `configs` is their only gate. Generating from a non-generatable kind is
+`422`. VLANs are derived from the document and are not a config kind.
+
+`POST /builder/generate` accepts either `{"source":"Topology/name"}` (or an
+Experiment source) or `{"content":"..."}` containing an uploaded JSON/YAML
+Topology or Experiment. Uploaded sources are reported as `stored: false` and
+receive uploaded provenance, so they can create publication targets but cannot
+authorize a Topology or Experiment update. Uploaded `content` needs `configs`
+`create` (a stored `source` needs only read permissions): uploads are parsed
+like `POST /configs`, including `${NAME}` / `${NAME:default}` substitution from
+the server's environment, so anyone allowed to create configs can read the
+server's environment variables (sandialabs/sceptre-phenix#436 describes this).
+
+Generation resolves a Topology's `includeTopologies` recursively, the way
+phenix merges them, and adds the included nodes as devices marked
+`device.includedFrom: <defining topology>`; for an Experiment, whose topology
+phenix already merged, the included nodes are recognized and marked instead
+(a hostname the experiment's own topology defines is never marked). When an
+include cannot be read now, a node that neither the experiment's own topology
+nor a readable include defines is marked as coming from it (from the first,
+when several cannot be read).
+Includes are read from the config store only (never file paths), under the
+caller's `configs` `get` and `topologies` `list` permissions; a missing,
+forbidden, cyclic, or repeated include, or a hostname that collides with
+another topology's, is reported as a warning. Included devices are read only in
+the editor (they can be moved, not changed, deleted, or reconnected), and
+publishing omits them and writes `includeTopologies` instead, so a round trip
+does not duplicate them. The exception is an Experiment whose own topology
+and one of whose includes both cannot be read: that include's nodes cannot be
+told from the topology's own, so they are imported as its own (with a warning)
+and a topology publish copies them in, where phenix finds them twice. Publish
+answers 409 when an included topology now defines a hostname the published
+topology also defines, and an experiment update, which merges the includes
+itself, answers 403 or 422 for an include the caller may not read or that is
+not a stored topology.
+
+A stored scenario reference carries the config's `apiVersion` and content
+`digest` as `GET /builder/sources` lists them, never its content. Generating
+from a stored Experiment whose `scenario` annotation names a Scenario the
+caller may list produces such a reference, so the draft publishes back with
+scenario action `use`. If that Scenario is missing or hidden from the caller,
+or the Experiment was uploaded, the Experiment's embedded copy is attached as
+an uploaded scenario of the same name, with a warning: an uploaded Experiment
+is never bound to this server's Scenario of that name, which may differ.
+
+Publishing an uploaded Scenario with action `update` requires
+`scenario.expectedDigest`, copied from a fresh matching entry returned by
+`GET /builder/sources`. A digest mismatch is a conflict; never retry it with a
+guessed digest. Topology and Experiment updates likewise require a draft tied
+to that exact stored source: one imported from it, or one that published it (or
+was opened from the published diagram that did), with nothing else having
+changed it since. Otherwise the update gets 409, for example `topology <name>
+changed after this draft published it` or `experiment <name> changed after this
+draft published it`. A published topology names its document in its
+`builder-doc` annotation; a published experiment records the draft and document
+that published it, and its digest after the configure stage, in its
+`builder-experiment` annotation, so any later change to its spec counts. An
+Experiment update then runs the apps' configure stage, as
+`PUT /configs` does. A failed configure stage leaves the experiment unchanged
+and is reported as a `partial` result, and an experiment found running once its
+lock is held is too. An Experiment create is refused with 422 before anything is
+written if its name is `all` (in any case), or longer than 15 characters in auto
+bridge mode. A name outside the config naming rule is refused with 400.
+
+Publish answers 422 when an interface of a device that is not external has no
+VLAN, and the error `message` names the devices and interfaces (the first three,
+then how many more; by position, such as `#2`, when unnamed or when two share a
+name): phenix would store such a topology, but minimega refuses the interface
+when the experiment starts. Connect the interface or give it a VLAN. A VLAN
+that names no network of the document still publishes as it is, since phenix
+allocates VLANs by name and matches them exactly (`exp` is not network `EXP`).
+Drafts keep such interfaces; the editor flags them as warnings.
+
+Features are disabled by default and require restarting `phenix ui` after
+changing `ui.features`.
 
 ### `phenix config` — manage stored configs (topology/scenario/experiment/image/user/role)
 
@@ -345,7 +499,7 @@ below are relative to the base path.
 | Resource | Routes |
 |---|---|
 | Configs | `GET/POST /configs`, `GET/PUT/DELETE /configs/{kind}/{name}`, `POST /configs/download` |
-| Schemas | `GET /schemas/{version}`, `GET /schemas/{kind}/{version}` |
+| Schemas | `GET /schemas/{version}`, `GET /schemas/{kind}/{version}` (404 for an unknown kind or version) |
 | Experiments | `GET/POST /experiments`, `DELETE /experiments/{name}`, `GET /experiments/{name}/topology`, `POST /experiments/{name}/trigger`, `GET/POST /experiments/{name}/schedule`, `GET /experiments/{name}/soh` (state of health) |
 | VMs | `GET/PATCH /experiments/{exp}/vms`, `GET/PATCH/DELETE /experiments/{exp}/vms/{name}`, plus `/start`, `/stop`, `/restart`, `/redeploy`, `/shutdown`, `/reset`, `/vnc`, `/vnc/ws`, `/screenshot.png`, `/captures`, `/snapshots`, `/commit`, `/memorySnapshot`, `/forwards` |
 | Disks | `GET/POST/DELETE /disks`, `/disks/snapshot`, `/disks/rebase`, `/disks/resize`, `/disks/commit`, `/disks/clone`, `/disks/rename`, `/disks/download` |
@@ -355,7 +509,12 @@ below are relative to the base path.
 | SCORCH | `/experiments/{name}/scorch/terminals*`, `/experiments/{name}/scorch/components/.../ws` |
 | Settings | `GET/POST /settings`, `GET /settings/password` |
 | Builder | `GET /builder`, `POST /builder/save`, `GET /builder/topologies[/{name}]` |
+| Builder Flow (`builder-beta` feature only) | `GET /schemas/builder/v1`, `GET/POST /builder/drafts`, `GET/DELETE /builder/drafts/{owner}/{draft}`, `GET/POST /builder/drafts/{owner}/{draft}/snapshots`, `GET /builder/drafts/{owner}/{draft}/snapshots/{snapshot\|current}`, `PATCH/PUT /builder/drafts/{owner}/{draft}/cursor`, `POST /builder/drafts/{owner}/{draft}/publish`, `GET /builder/sources`, `POST /builder/generate`, `GET /builder/documents[/{document}]` |
 | Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode) |
+
+Unmatched `/api/v1/*` requests return a JSON `404`; only non-API routes fall
+through to the SPA index. A route behind a disabled feature flag is therefore a
+real `404`, not `200 text/html`.
 
 Prefer the equivalent `phenix` CLI command over calling the web API directly
 unless the user explicitly needs the HTTP interface (e.g. scripting against a
@@ -376,7 +535,9 @@ running `phenix ui` server, or building a UI integration).
   `X-Phenix-Auth-Token`; standard bearer-token tooling will silently 401.
 - **Store endpoint changes the whole world.** `--store.endpoint` (bolt or etcd) determines
   which configs/experiments are visible — commands against the wrong endpoint will report
-  "no configs found" rather than an obvious connection error.
+  "no configs found" rather than an obvious connection error. An etcd store is compacted by
+  phenix every retention/10 unless `compaction-retention=0`; then the operator must run etcd
+  with auto-compaction.
 - **Deleting `config.yaml` while phenix is running breaks the file watcher** (hot-reload of
   log level, deploy-mode, etc. stops working). Use `phenix settings unset --all` instead of
   removing the file.

@@ -1,0 +1,302 @@
+{
+  "description": "Documents validate.go and the front end's validate.js must agree on. Each case changes document.json: every set entry puts value at path (object keys and array indexes). A case with an error is refused by both, with an issue at that path; one without is accepted by both. Read by TestValidationCorpus and validate.test.js.",
+  "document": "document.json",
+  "cases": [
+    {
+      "name": "the fixture"
+    },
+    {
+      "name": "zero zoom",
+      "set": [
+        {
+          "path": [
+            "viewport",
+            "zoom"
+          ],
+          "value": 0
+        }
+      ],
+      "error": "viewport.zoom"
+    },
+    {
+      "name": "zero grid size",
+      "set": [
+        {
+          "path": [
+            "grid",
+            "size"
+          ],
+          "value": 0
+        }
+      ],
+      "error": "grid.size"
+    },
+    {
+      "name": "zero node width",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            0,
+            "size"
+          ],
+          "value": {
+            "width": 0,
+            "height": 10
+          }
+        }
+      ],
+      "error": "nodes[0].size"
+    },
+    {
+      "name": "document ID that is not a UUID",
+      "set": [
+        {
+          "path": [
+            "id"
+          ],
+          "value": "doc-1"
+        }
+      ],
+      "error": "id"
+    },
+    {
+      "name": "node ID that is not a UUID",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4,
+            "id"
+          ],
+          "value": "n1"
+        }
+      ],
+      "error": "nodes[4].id"
+    },
+    {
+      "name": "network ID that is not a UUID",
+      "set": [
+        {
+          "path": [
+            "networks",
+            1,
+            "id"
+          ],
+          "value": "net-reserved"
+        }
+      ],
+      "error": "networks[1].id"
+    },
+    {
+      "name": "edge ID that is not a UUID",
+      "set": [
+        {
+          "path": [
+            "edges",
+            0,
+            "id"
+          ],
+          "value": "e1"
+        }
+      ],
+      "error": "edges[0].id"
+    },
+    {
+      "name": "connection with a color of its own",
+      "set": [
+        {
+          "path": [
+            "edges",
+            0,
+            "color"
+          ],
+          "value": "#c0392b"
+        }
+      ]
+    },
+    {
+      "name": "interface handle ID that is not a UUID",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "interfaces",
+            1,
+            "id"
+          ],
+          "value": "h-eth1"
+        }
+      ],
+      "error": "nodes[1].device.interfaces[1].id"
+    },
+    {
+      "name": "uppercase UUIDs",
+      "set": [
+        {
+          "path": [
+            "id"
+          ],
+          "value": "49D876D1-571A-5B5C-91B7-AADF5BB5209C"
+        }
+      ]
+    },
+    {
+      "name": "malformed source digest",
+      "set": [
+        {
+          "path": [
+            "source",
+            "digest"
+          ],
+          "value": "sha256:abc"
+        }
+      ],
+      "error": "source.digest"
+    },
+    {
+      "name": "null source digest, which Go decodes as none",
+      "set": [
+        {
+          "path": [
+            "source",
+            "digest"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "included topology name with whitespace",
+      "set": [
+        {
+          "path": [
+            "source",
+            "includeTopologies"
+          ],
+          "value": [
+            "shared services"
+          ]
+        }
+      ],
+      "error": "source.includeTopologies[0]"
+    },
+    {
+      "name": "included topologies that are not a list",
+      "set": [
+        {
+          "path": [
+            "source",
+            "includeTopologies"
+          ],
+          "value": "shared"
+        }
+      ],
+      "error": "source.includeTopologies"
+    },
+    {
+      "name": "network name with a tab",
+      "set": [
+        {
+          "path": [
+            "networks",
+            1,
+            "name"
+          ],
+          "value": "RES\tERVED"
+        }
+      ],
+      "error": "networks[1].name"
+    },
+    {
+      "name": "network name with a carriage return, which validate.go does not count as whitespace",
+      "set": [
+        {
+          "path": [
+            "networks",
+            1,
+            "name"
+          ],
+          "value": "RES\rERVED"
+        }
+      ]
+    },
+    {
+      "name": "networks differing only by case, which minimega keeps apart",
+      "set": [
+        {
+          "path": [
+            "networks",
+            1,
+            "name"
+          ],
+          "value": "exp"
+        }
+      ]
+    },
+    {
+      "name": "networks of the same name",
+      "set": [
+        {
+          "path": [
+            "networks",
+            1,
+            "name"
+          ],
+          "value": "EXP"
+        }
+      ],
+      "error": "networks[1].name"
+    },
+    {
+      "name": "null edges",
+      "set": [
+        {
+          "path": [
+            "edges"
+          ],
+          "value": null
+        }
+      ],
+      "error": "edges"
+    },
+    {
+      "name": "null nodes",
+      "set": [
+        {
+          "path": [
+            "nodes"
+          ],
+          "value": null
+        }
+      ],
+      "error": "nodes"
+    },
+    {
+      "name": "document name with a tab, which a draft title cannot hold",
+      "set": [
+        {
+          "path": [
+            "name"
+          ],
+          "value": "my\ttopology"
+        }
+      ],
+      "error": "name"
+    },
+    {
+      "name": "document name of 514 bytes in 257 characters",
+      "set": [
+        {
+          "path": [
+            "name"
+          ],
+          "value": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        }
+      ],
+      "error": "name"
+    }
+  ]
+}

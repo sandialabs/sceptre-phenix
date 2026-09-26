@@ -76,6 +76,7 @@ jobs:
       - name: Start phenix UI
         run: |
           ./bin/phenix ui --store.endpoint bolt:///tmp/phenix-e2e.bdb \
+            --features builder-beta \
             --listen-endpoint 127.0.0.1:3000 &> /tmp/phenix-ui.log &
           timeout 30 bash -c \
             'until curl -sf http://127.0.0.1:3000/api/v1/experiments > /dev/null; do sleep 1; done'
@@ -83,13 +84,28 @@ jobs:
         working-directory: src/js/e2e
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium firefox
       - name: Run e2e smoke tests
         working-directory: src/js/e2e
         run: npx playwright test
+      - name: Start phenix UI without Builder Beta
+        run: |
+          ./bin/phenix ui --store.endpoint bolt:///tmp/phenix-e2e-off.bdb \
+            --unix-socket /tmp/phenix-off.sock \
+            --listen-endpoint 127.0.0.1:3001 &> /tmp/phenix-ui-off.log &
+          timeout 30 bash -c \
+            'until curl -sf http://127.0.0.1:3001/api/v1/experiments > /dev/null; do sleep 1; done'
+      - name: Run Builder Beta feature-off tests
+        working-directory: src/js/e2e
+        env:
+          E2E_BASE_URL: http://127.0.0.1:3001
+          E2E_BUILDER_BETA: 'off'
+        run: npx playwright test builder-feature-off
       - name: Server log
         if: failure()
-        run: tail -100 /tmp/phenix-ui.log
+        run: |
+          tail -100 /tmp/phenix-ui.log
+          tail -50 /tmp/phenix-ui-off.log 2>/dev/null || true
       - name: Upload failure artifacts
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
