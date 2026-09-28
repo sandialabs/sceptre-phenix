@@ -1014,6 +1014,62 @@ test('a draft can publish an update after further edits', async ({
     });
   }
 
+  await test.step('Inspector changes not applied are published, and ones it cannot apply block Publish and Export', async () => {
+    await builder.selectInOutline('server');
+    const memory = builder.inspector
+      .locator('legend.group-label', { hasText: /^Hardware$/ })
+      .locator('xpath=..')
+      .getByLabel('Memory', { exact: true });
+    await memory.fill('lots');
+    await memory.blur();
+
+    // Publish and Export say what blocks them, rather than leave the
+    // changes out.
+    const dialog = await openPublish(builder);
+    const blocked =
+      'Your changes to Device server in the Inspector cannot be published until Memory is fixed. Fix or cancel them first.';
+    await expect
+      .soft(page.getByTestId('publish-unapplied'))
+      .toHaveText(blocked);
+    await expect.soft(dialog).toHaveAccessibleDescription(blocked);
+    await expect.soft(page.getByTestId('publish-submit')).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(builder.dialog).toHaveCount(0);
+    await builder.openDialog('export');
+    await expect
+      .soft(page.getByTestId('export-unapplied'))
+      .toHaveText(/ cannot be exported until Memory is fixed\. /);
+    await expect.soft(page.getByTestId('export-json')).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(builder.dialog).toHaveCount(0);
+
+    // Valid, they are saved as one edit before the dialog opens.
+    await memory.fill('4096');
+    await memory.blur();
+    await openPublish(builder);
+    await expect.soft(page.getByTestId('publish-unapplied')).toHaveCount(0);
+    await expectPublish(page, 200);
+    await expect(page.getByTestId('publish-result')).toContainText(
+      'Every stage succeeded',
+    );
+    const config = await builder.config('Topology', topology);
+    expect.soft(nodesByHostname(config).server?.hardware?.memory).toBe(4096);
+    await closeButton(page).click();
+    await expect
+      .soft(builder.inspector.getByTestId('inspector-apply'))
+      .toHaveCount(0);
+    const history = await builder.openDialog('history');
+    await expect
+      .soft(
+        history.getByRole('button', {
+          name: /^Restore Saved unapplied changes to Device server, .+, Automatic$/,
+        }),
+      )
+      .toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(builder.dialog).toHaveCount(0);
+  });
+
   await test.step('a topology someone else changed since is not overwritten', async () => {
     const theirs = await builder.config('Topology', topology);
     theirs.spec.nodes[0].general.description = 'their change';

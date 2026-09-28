@@ -216,9 +216,9 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
   unless the topology explicitly sets `general.vm_type: container`.
 - **Store endpoint changes the whole world.** `--store.endpoint` (bolt or etcd) determines
   which configs/experiments are visible — commands against the wrong endpoint will report
-  "no configs found" rather than an obvious connection error. An etcd store is compacted by
-  phenix every retention/10 unless `compaction-retention=0`; then the operator must run etcd
-  with auto-compaction.
+  "no configs found" rather than an obvious connection error. Every etcd store is compacted by
+  phenix, cluster-wide and whether or not `builder-beta` is on, every retention/10 unless
+  `compaction-retention=0`; then the operator must run etcd with auto-compaction.
 - **Deleting `config.yaml` while phenix is running breaks the file watcher** (hot-reload of
   log level, deploy-mode, etc. stops working). `phenix settings unset <key>` rewrites the
   file in place and leaves the watcher intact; `phenix settings unset --all` deletes the

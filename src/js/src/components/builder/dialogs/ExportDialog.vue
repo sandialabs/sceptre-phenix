@@ -6,12 +6,24 @@
 
   Image exports always cover the whole diagram (all node bounds), not just the
   part currently visible on screen.
+
+  The Inspector's unapplied edits are saved before the dialog opens (see
+  leave.js). Edits it cannot apply keep every export from being made,
+  rather than being left out, and the dialog says so as it opens.
 -->
 <template>
   <builder-dialog
     title="Export diagram"
     title-id="export-dialog-title"
+    :describedby="unapplied ? 'export-unapplied' : ''"
     @close="$emit('close')">
+    <p
+      v-if="unapplied"
+      id="export-unapplied"
+      class="builder-field builder-dialog__error"
+      data-testid="export-unapplied">
+      {{ unappliedBlock(unapplied, 'exported') }}
+    </p>
     <p class="builder-field">
       Diagram bounds: {{ bounds.width }} × {{ bounds.height }} px
     </p>
@@ -21,6 +33,7 @@
         type="button"
         class="builder-button"
         data-testid="export-json"
+        :disabled="Boolean(unapplied)"
         @click="exportText('json')">
         <builder-icon name="download" :size="14" />
         Builder JSON
@@ -29,6 +42,7 @@
         type="button"
         class="builder-button"
         data-testid="export-yaml"
+        :disabled="Boolean(unapplied)"
         @click="exportText('yaml')">
         <builder-icon name="download" :size="14" />
         Builder YAML
@@ -37,6 +51,7 @@
         type="button"
         class="builder-button"
         data-testid="export-png"
+        :disabled="Boolean(unapplied)"
         :aria-disabled="busy ? 'true' : undefined"
         @click="exportImageAs('png')">
         <builder-icon name="image" :size="14" />
@@ -46,6 +61,7 @@
         type="button"
         class="builder-button"
         data-testid="export-svg"
+        :disabled="Boolean(unapplied)"
         :aria-disabled="busy ? 'true' : undefined"
         @click="exportImageAs('svg')">
         <builder-icon name="image" :size="14" />
@@ -87,10 +103,13 @@
     toJSONString,
     toYAMLString,
   } from '@/builder/exporters.js';
+  import { unappliedBlock } from '@/builder/leave.js';
   import { useBuilderStore } from '@/builder/store.js';
 
   const props = defineProps({
     viewportElement: { type: Function, default: () => null },
+    // The Inspector's edits that could not be applied (see leave.js).
+    unapplied: { type: Object, default: null },
   });
 
   defineEmits(['close']);

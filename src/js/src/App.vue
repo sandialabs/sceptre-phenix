@@ -7,6 +7,7 @@
   } from './utils/websocket';
   import AppHeader from '@/components/AppHeader.vue';
   import AppFooter from '@/components/AppFooter.vue';
+  import LogoutWarning from '@/components/LogoutWarning.vue';
   import { computed, onUnmounted, onMounted } from 'vue';
   import { useRoute } from 'vue-router';
   import { usePhenixStore } from '@/store';
@@ -72,6 +73,9 @@
       <router-view></router-view>
     </main>
     <app-footer v-if="!fullBleed"></app-footer>
+    <!-- Before a logout would delete Builder Flow changes the server does
+         not have, on any page (see utils/logout.js). -->
+    <logout-warning></logout-warning>
   </div>
 </template>
 <style lang="scss" scoped>

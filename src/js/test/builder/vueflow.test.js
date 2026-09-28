@@ -1,11 +1,14 @@
 import { readFileSync } from 'node:fs';
 
+import { getTransformForBounds } from '@vue-flow/core';
 import { describe, expect, test } from 'vitest';
 
 import {
   absolutePosition,
   EDGE_HINT_ID,
   edgeLanes,
+  fitZoom,
+  flowChanges,
   FLOW_NODE_TYPES,
   freeSpot,
   fromFlowConnection,
@@ -22,6 +25,7 @@ import {
   toFlowEdges,
   toFlowNodes,
   withSelection,
+  zoomFloor,
 } from '@/builder/adapters/vueflow.js';
 import {
   addNetwork,
@@ -29,10 +33,13 @@ import {
   connect,
   DEFAULT_NETWORK_COLORS,
   groupNodes,
+  moveNode,
+  removeElements,
   updateEdge,
   updateNode,
 } from '@/builder/model.js';
 import { outlineLabel } from '@/builder/outline.js';
+import { keepUnchanged } from '@/builder/stable.js';
 import {
   contrastRatio,
   customNetworkColor,
@@ -487,5 +494,142 @@ describe('keeping keyboard focus in view', () => {
 
     expect(spot.hidden).toBe(150 * 30);
     expect(spot.y).toBe(40);
+  });
+});
+
+describe('handing Vue Flow only what changed', () => {
+  // The flow nodes of an edited document, keeping those it left alone.
+  const after = (before, doc, options) =>
+    keepUnchanged(toFlowNodes(doc, options), before);
+  const ids = (items) => items.map((item) => item.id);
+  const NODE_KEYS = ['type', 'parentNode'];
+
+  test('a new selection changes only the nodes it presses or releases', () => {
+    const { doc, alpha, bravo, sw } = sampleDocument();
+    const nodes = toFlowNodes(doc);
+    const first = withSelection(nodes, [alpha.id, sw.id]);
+    // As the canvas does: a node still selected stays the same object.
+    const changes = flowChanges(
+      first,
+      keepUnchanged(withSelection(nodes, [bravo.id, sw.id]), first),
+      NODE_KEYS,
+    );
+
+    expect(ids(changes.changed)).toEqual([alpha.id, bravo.id]);
+    expect(changes).toMatchObject({
+      added: [],
+      removed: [],
+      reordered: false,
+      rebuild: false,
+    });
+  });
+
+  test('an edit changes only the nodes it touched', () => {
+    const { doc, alpha, bravo } = sampleDocument();
+    const before = toFlowNodes(doc);
+    const moved = after(before, moveNode(doc, alpha.id, { x: 48, y: 96 }));
+    const removed = after(before, removeElements(doc, { nodes: [bravo.id] }));
+    const added = addNode(doc, { kind: 'note', text: 'later' });
+
+    expect(ids(flowChanges(before, moved, NODE_KEYS).changed)).toEqual([
+      alpha.id,
+    ]);
+    expect(flowChanges(before, removed, NODE_KEYS)).toMatchObject({
+      changed: [],
+      removed: [bravo.id],
+      reordered: false,
+      rebuild: false,
+    });
+    expect(
+      flowChanges(before, after(before, added.doc), NODE_KEYS),
+    ).toMatchObject({
+      added: [{ id: added.node.id }],
+      changed: [],
+      reordered: false,
+      rebuild: false,
+    });
+    // Nothing changed: the same list.
+    expect(after(before, doc)).toBe(before);
+  });
+
+  test('a new group goes before the nodes, so the list is put in order', () => {
+    const { doc } = sampleDocument();
+    const before = toFlowNodes(doc);
+    const { doc: next } = addNode(doc, { kind: 'group' });
+
+    expect(flowChanges(before, after(before, next), NODE_KEYS)).toMatchObject({
+      reordered: true,
+      rebuild: false,
+    });
+  });
+
+  test('a node that moves into a group, or a repeated id, takes the whole list', () => {
+    const { doc, alpha, bravo } = sampleDocument();
+    const before = toFlowNodes(doc);
+    const grouped = after(before, groupNodes(doc, [alpha.id, bravo.id]).doc);
+
+    expect(flowChanges(before, grouped, NODE_KEYS).rebuild).toBe(true);
+    expect(flowChanges(before, [...before, before[0]], NODE_KEYS).rebuild).toBe(
+      true,
+    );
+  });
+
+  test('a connection that changes its ends takes the whole list', () => {
+    const { doc, edge } = sampleDocument();
+    const before = toFlowEdges(doc);
+    const relabelled = keepUnchanged(
+      toFlowEdges(updateEdge(doc, edge.id, { label: 'uplink' })),
+      before,
+    );
+    const ends = ['source', 'target', 'sourceHandle', 'targetHandle'];
+
+    expect(flowChanges(before, relabelled, ends)).toMatchObject({
+      changed: [{ id: edge.id }],
+      rebuild: false,
+    });
+    expect(
+      flowChanges(before, [{ ...before[0], target: 'elsewhere' }], ends)
+        .rebuild,
+    ).toBe(true);
+  });
+});
+
+describe('fitting large diagrams', () => {
+  const pane = { width: 790, height: 646 };
+
+  test('the fitted zoom is the one Vue Flow takes', () => {
+    for (const bounds of [
+      { x: 0, y: 0, width: 400, height: 300 },
+      { x: -120, y: 40, width: 9000, height: 2400 },
+      { x: 0, y: 0, width: 1800, height: 7000 },
+    ]) {
+      const { zoom } = getTransformForBounds(
+        bounds,
+        pane.width,
+        pane.height,
+        0,
+        Infinity,
+        0.1,
+      );
+
+      expect(fitZoom(bounds, pane)).toBeCloseTo(zoom, 10);
+    }
+
+    expect(fitZoom({ width: 0, height: 0 }, pane)).toBe(Infinity);
+    expect(fitZoom({ width: 10, height: 10 }, { width: 0, height: 0 })).toBe(
+      Infinity,
+    );
+  });
+
+  test('the least zoom goes below its usual limit only for a diagram that needs it', () => {
+    const small = { width: 800, height: 600 };
+    const large = { width: 9000, height: 2400 };
+
+    expect(zoomFloor(small, pane, 0.2)).toBe(0.2);
+    expect(zoomFloor(large, pane, 0.2)).toBeLessThan(0.2);
+    // Zooming out by hand reaches past the fitted zoom.
+    expect(zoomFloor(large, pane, 0.2)).toBeLessThan(fitZoom(large, pane));
+    // Before the pane has a size, the usual limit.
+    expect(zoomFloor(large, { width: 0, height: 0 }, 0.2)).toBe(0.2);
   });
 });

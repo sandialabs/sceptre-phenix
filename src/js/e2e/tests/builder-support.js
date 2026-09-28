@@ -681,7 +681,9 @@ module.exports = {
   publishTopology,
   seedConfig,
   seedDraft,
+  signIn,
   test,
   uniqueName,
+  USER_PASS,
   visit,
 };

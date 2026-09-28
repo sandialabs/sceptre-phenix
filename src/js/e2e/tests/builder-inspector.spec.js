@@ -1080,6 +1080,27 @@ test.describe('Builder Beta inspector', () => {
           )
           .toEqual({ x: 481, y: 320 });
         await expect.soft(x).toHaveValue('481');
+
+        // Spaces around a number are no reason to drop it: Firefox's
+        // number input took " 3 " for no number at all. The arrow keys
+        // still step a field by one.
+        await x.fill('');
+        await x.pressSequentially(' 3 ');
+        await expect.soft(x).toHaveValue(' 3 ');
+        await expect.soft(x).toHaveRole('spinbutton');
+        await expect.soft(x).toHaveAttribute('aria-valuenow', '3');
+        await x.press('Enter');
+        await expect.soft
+          .poll(
+            () => persisted((doc) => nodeOf(doc, 'note')?.position),
+            PERSIST,
+          )
+          .toEqual({ x: 3, y: 320 });
+        await expect.soft(x).toHaveValue('3');
+        await y.press('ArrowUp');
+        await expect.soft(y).toHaveValue('321');
+        await y.press('ArrowDown');
+        await expect.soft(y).toHaveValue('320');
       });
 
       await test.step('group', async () => {

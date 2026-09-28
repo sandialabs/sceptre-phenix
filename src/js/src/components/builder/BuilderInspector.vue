@@ -118,6 +118,7 @@
           :readonly="store.readOnly || lock.all"
           validation-mode="NoValidation"
           :additional-errors="validation.errors"
+          :middleware="middleware"
           @change="onChange" />
 
         <div
@@ -268,26 +269,25 @@
           Position
         </h3>
         <p id="inspector-position-hint" hidden>{{ positionHint }}</p>
+        <!-- Text fields read as numbers, like the whole-number fields (see
+             InspectorInputControl): Firefox's number input took " 3 " for
+             no number at all. No numeric keyboard: a phone's has no minus
+             sign, and a position can be negative. -->
         <div class="builder-inspector__position-fields">
-          <div class="builder-field">
-            <label for="inspector-position-x">X</label>
+          <div v-for="axis in ['x', 'y']" :key="axis" class="builder-field">
+            <label :for="`inspector-position-${axis}`">{{
+              axis.toUpperCase()
+            }}</label>
             <input
-              id="inspector-position-x"
-              v-model.number="position.x"
-              type="number"
-              step="1"
+              :id="`inspector-position-${axis}`"
+              v-model="position[axis]"
+              type="text"
+              role="spinbutton"
+              autocomplete="off"
+              :aria-valuenow="shownPosition(axis)"
               aria-describedby="inspector-position-hint"
-              :disabled="store.readOnly" />
-          </div>
-          <div class="builder-field">
-            <label for="inspector-position-y">Y</label>
-            <input
-              id="inspector-position-y"
-              v-model.number="position.y"
-              type="number"
-              step="1"
-              aria-describedby="inspector-position-hint"
-              :disabled="store.readOnly" />
+              :disabled="store.readOnly"
+              @keydown="stepPosition($event, axis)" />
           </div>
           <button
             type="submit"
@@ -314,6 +314,7 @@
     shallowRef,
     watch,
   } from 'vue';
+  import { UPDATE_DATA } from '@jsonforms/core';
   import { JsonForms } from '@jsonforms/vue';
 
   import BuilderIcon from './BuilderIcon.vue';
@@ -329,6 +330,7 @@
     INSPECTOR_NEW_ITEM,
     INSPECTOR_RESETS,
     INSPECTOR_SUGGESTIONS,
+    readNumberText,
   } from './inspector/control.js';
   import { heldCommit, keyEffect } from './inspector/heldCommit.js';
 
@@ -353,10 +355,16 @@
   import { drawnColor, drawnNetworkColor } from '@/builder/colors.js';
   import {
     createFormValidator,
+    fieldLabel,
     workingCopyErrors,
   } from '@/builder/form-validator.js';
+  import { SAVED_UNAPPLIED } from '@/builder/history.js';
   import { countsText, issueCounts, issuesAbout } from '@/builder/issues.js';
-  import { connectionChanges, findNetwork } from '@/builder/model.js';
+  import {
+    connectionChanges,
+    findNetwork,
+    moveNodes,
+  } from '@/builder/model.js';
   import { schemaForKind } from '@/builder/schema.js';
   import { useBuilderStore } from '@/builder/store.js';
   import { deviceFieldWarnings } from '@/builder/validate.js';
@@ -626,6 +634,7 @@
 
     draft.value = JSON.parse(JSON.stringify(data));
     loaded.value = data;
+    unsent = null;
     dirty.value = false;
     typing.value = false;
     resets.value += 1;
@@ -752,6 +761,106 @@
     return '';
   }
 
+  /**
+   * Saves unapplied edits before the diagram is left or read whole: Back to
+   * drafts, another page, Upload, a reload, Publish and Export (see
+   * leave.js). Valid edits, and a position typed and not moved to, are
+   * applied as one edit named SAVED_UNAPPLIED, which the History dialog
+   * marks; like a save, this applies them while a redo is pending too. It
+   * works at once, as a reload cannot wait: a field's change JSON Forms has
+   * not sent yet is taken first (see catchUp). Edits that cannot be applied
+   * stay in the form.
+   *
+   * @returns {{title: string, fields: string[]}|null} the element's title
+   *   and the fields whose edits cannot be applied, or null
+   */
+  function saveUnapplied() {
+    catchUp();
+    icon.flush();
+
+    const element =
+      editing && !store.readOnly
+        ? inspectorTarget(store.doc, editing.selection)
+        : null;
+
+    if (!element) {
+      return null;
+    }
+
+    const edited = dirty.value || localErrors.value.length > 0;
+    const found = edited ? failing(element) : [];
+    const blocked = [
+      ...found.map((error) => fieldName(element, error.path)),
+      ...unreadablePosition(),
+    ];
+    let next = edited && found.length === 0 ? applied(element) : null;
+
+    // The Position fields are the selected node's, which the form is
+    // editing too.
+    if (canMove.value && editing.selection.id === target.value?.target?.id) {
+      next = moveNodes(next || store.doc, [
+        { id: editing.selection.id, position: { ...moveTo.value } },
+      ]);
+    }
+
+    // A commit refused while a conflict is resolved leaves them unapplied.
+    if (
+      next &&
+      store.commit(
+        next,
+        appliedLabel(`${SAVED_UNAPPLIED} to ${editing.title}`, next, editing),
+      ) &&
+      edited &&
+      found.length === 0
+    ) {
+      dirty.value = false;
+    }
+
+    return blocked.length > 0
+      ? { title: editing.title, fields: [...new Set(blocked)] }
+      : null;
+  }
+
+  // A field's name for a list of those that need fixing: "Memory", or
+  // "MAC address (Interface 1)".
+  function fieldName(element, path) {
+    const { label, context } = fieldLabel(schemaFor(element), path);
+
+    return context ? `${label} (${context})` : label;
+  }
+
+  // The Position fields holding text that is no number.
+  function unreadablePosition() {
+    return ['x', 'y']
+      .filter(
+        (axis) =>
+          position.value[axis].trim() !== '' &&
+          !Number.isFinite(typedPosition.value[axis]),
+      )
+      .map((axis) => `Position ${axis.toUpperCase()}`);
+  }
+
+  // JSON Forms takes a field's change at once, and sends its data to
+  // onChange on its next update. A reload does not wait for that: the data
+  // it holds and has not sent is kept here (see middleware) and taken now.
+  let unsent = null;
+
+  function middleware(state, action, reducer) {
+    const next = reducer(state, action);
+
+    if (action.type === UPDATE_DATA) {
+      unsent = next.data;
+    }
+
+    return next;
+  }
+
+  function catchUp() {
+    if (unsent) {
+      onChange({ data: unsent });
+    }
+  }
+
   // What applying edits says, and undoes as: the edit, and each connection
   // an interface VLAN it set made, moved or removed (see connectByVLAN).
   function appliedLabel(label, next, { selection: applied }) {
@@ -791,6 +900,8 @@
     if (!event) {
       return;
     }
+
+    unsent = null;
 
     const next = JSON.stringify(event.data ?? {});
 
@@ -1283,7 +1394,8 @@
       : 'Interfaces with a handle on the canvas to connect from. Adding, disconnecting or removing one takes effect at once, without Apply.',
   );
 
-  const position = ref({ x: 0, y: 0 });
+  // The text of the X and Y fields.
+  const position = ref({ x: '0', y: '0' });
   const nodePosition = computed(() =>
     selection.value.type === 'node' ? target.value?.target?.position : null,
   );
@@ -1292,28 +1404,71 @@
     () => [formKey.value, nodePosition.value?.x, nodePosition.value?.y],
     () => {
       position.value = {
-        x: Math.round(nodePosition.value?.x ?? 0),
-        y: Math.round(nodePosition.value?.y ?? 0),
+        x: String(Math.round(nodePosition.value?.x ?? 0)),
+        y: String(Math.round(nodePosition.value?.y ?? 0)),
       };
     },
     { immediate: true },
   );
 
-  // Where Move puts the node, in whole canvas pixels: the form is
-  // novalidate, so a fraction typed in a field (step 1) reaches here.
+  // The numbers typed, spaces around them left out; undefined for text
+  // that is no number.
+  const typedPosition = computed(() => ({
+    x: readNumberText(position.value.x, false),
+    y: readNumberText(position.value.y, false),
+  }));
+
+  // Where Move puts the node, in whole canvas pixels: a fraction typed in
+  // a field reaches here.
   const moveTo = computed(() => ({
-    x: Math.round(position.value.x),
-    y: Math.round(position.value.y),
+    x: Math.round(typedPosition.value.x),
+    y: Math.round(typedPosition.value.y),
   }));
 
   const canMove = computed(
     () =>
       !store.readOnly &&
-      Number.isFinite(position.value.x) &&
-      Number.isFinite(position.value.y) &&
+      Number.isFinite(typedPosition.value.x) &&
+      Number.isFinite(typedPosition.value.y) &&
       (moveTo.value.x !== Math.round(nodePosition.value?.x ?? 0) ||
         moveTo.value.y !== Math.round(nodePosition.value?.y ?? 0)),
   );
+
+  // The number a field shows, for its spin button role.
+  function shownPosition(axis) {
+    const shown = typedPosition.value[axis];
+
+    return Number.isFinite(shown) ? shown : undefined;
+  }
+
+  // ArrowUp and ArrowDown step a field to the next whole pixel, and an
+  // empty one from 0, as a number input's arrow keys did. Text that is no
+  // number is left to the keys' usual work.
+  function stepPosition(event, axis) {
+    const up = event.key === 'ArrowUp';
+
+    if (
+      (!up && event.key !== 'ArrowDown') ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey
+    ) {
+      return;
+    }
+
+    const typed = position.value[axis].trim();
+    const current = typed === '' ? 0 : readNumberText(typed, false);
+
+    if (!Number.isFinite(current)) {
+      return;
+    }
+
+    event.preventDefault();
+    position.value = {
+      ...position.value,
+      [axis]: String(up ? Math.floor(current) + 1 : Math.ceil(current) - 1),
+    };
+  }
 
   function move() {
     if (!canMove.value) {
@@ -1421,7 +1576,7 @@
     },
   );
 
-  defineExpose({ apply, cancel, settle, draft, errors });
+  defineExpose({ apply, cancel, settle, saveUnapplied, draft, errors });
 </script>
 
 <style scoped>

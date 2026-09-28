@@ -1,15 +1,18 @@
 // What the Inspector does with unapplied edits before a save (settle, which
-// Save now and its key call through view.settleEdits).
+// Save now and its key call through view.settleEdits), and before the
+// diagram is left or read whole (saveUnapplied, see leave.js).
 
 import { describe, expect, test, vi } from 'vitest';
 import { createSSRApp, h } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import { createPinia } from 'pinia';
+import { UPDATE_DATA } from '@jsonforms/core';
 
 import BuilderInspector from '@/components/builder/BuilderInspector.vue';
 import { INSPECTOR_LOCAL_PROBLEMS } from '@/components/builder/inspector/control.js';
 
 import { inspectorTarget } from '@/builder/adapters/forms.js';
+import { savedAutomatically } from '@/builder/history.js';
 import { addNode, findNode, updateNode } from '@/builder/model.js';
 import { useBuilderStore } from '@/builder/store.js';
 
@@ -56,6 +59,10 @@ async function openInspector(doc, node, edit) {
   return {
     store,
     settle: instance.exposed.settle,
+    saveUnapplied: instance.exposed.saveUnapplied,
+    // The Inspector's own state: the Position fields' text, and the
+    // middleware JSON Forms runs every change of its data through.
+    setup: instance.setupState,
     errors: () => instance.exposed.errors.value,
     spec: () => inspectorTarget(store.doc, selection)?.data.spec,
     // As a renderer reports rows that are not in the working copy.
@@ -225,5 +232,203 @@ describe('a device imported from a phenix experiment', () => {
     ]);
     expect(settle()).toBe('1 field needs attention');
     expect(spec().network.interfaces[0].mac).toBe('');
+  });
+});
+
+describe('saving unapplied edits before leaving or reading the diagram', () => {
+  test('valid edits are applied as one edit marked as saved automatically', async () => {
+    const { store, saveUnapplied, description } = await editedInspector();
+    const version = store.historyVersion;
+
+    expect(saveUnapplied()).toBeNull();
+    expect(description()).toBe('Edited');
+    expect(store.historyVersion).toBe(version + 1);
+    expect(store.history.undoLabel()).toBe(
+      'Saved unapplied changes to Device alpha',
+    );
+    expect(savedAutomatically(store.history.undoLabel())).toBe(true);
+
+    // Nothing is left to save.
+    expect(saveUnapplied()).toBeNull();
+    expect(store.historyVersion).toBe(version + 1);
+  });
+
+  test('nothing unapplied makes no edit', async () => {
+    const { doc, alpha } = sampleDocument();
+    const { store, saveUnapplied } = await openInspector(doc, alpha, () => {});
+    const version = store.historyVersion;
+
+    expect(saveUnapplied()).toBeNull();
+    expect(store.historyVersion).toBe(version);
+  });
+
+  test('edits are applied while a redo is pending, clearing Redo', async () => {
+    const { store, bravo, saveUnapplied, description } =
+      await editedInspector();
+
+    store.commit(
+      updateNode(store.doc, bravo.id, { position: { x: 40, y: 200 } }),
+      'Moved bravo',
+    );
+    store.undo();
+
+    expect(saveUnapplied()).toBeNull();
+    expect(description()).toBe('Edited');
+    expect(store.canRedo).toBe(false);
+  });
+
+  test('edits that fail their checks are kept, and their fields named', async () => {
+    const { doc, alpha } = sampleDocument();
+    const { store, saveUnapplied, errors, spec } = await openInspector(
+      doc,
+      alpha,
+      (data) => {
+        data.spec.network.interfaces[0].mac = 'zz';
+        data.spec.general = { ...data.spec.general, description: 'Kept' };
+      },
+    );
+    const version = store.historyVersion;
+
+    expect(saveUnapplied()).toEqual({
+      title: 'Device alpha',
+      fields: ['MAC address (Interface 1)'],
+    });
+    expect(store.historyVersion).toBe(version);
+    expect(spec().general?.description).not.toBe('Kept');
+    // Still in the form, to fix or cancel.
+    expect(errors()).toHaveLength(1);
+  });
+
+  test('rows a renderer holds back are named by their field', async () => {
+    const { report, saveUnapplied, description } = await editedInspector();
+
+    report('spec.hardware.memory', [
+      {
+        path: 'spec.hardware.memory',
+        message: 'Memory must be a whole number',
+      },
+    ]);
+
+    expect(saveUnapplied()).toEqual({
+      title: 'Device alpha',
+      fields: ['Memory'],
+    });
+    expect(description()).not.toBe('Edited');
+  });
+
+  // A reload cannot wait for JSON Forms' next update, which sends the
+  // change a field just committed.
+  test('a change JSON Forms has not sent yet is saved too', async () => {
+    const { doc, alpha } = sampleDocument();
+    const { store, setup, saveUnapplied } = await openInspector(
+      doc,
+      alpha,
+      () => {},
+    );
+    const selection = { type: 'node', id: alpha.id };
+    const data = JSON.parse(
+      JSON.stringify(inspectorTarget(store.doc, selection).data),
+    );
+
+    data.spec.hardware = { ...data.spec.hardware, memory: 4096 };
+    setup.middleware({ data: {} }, { type: UPDATE_DATA }, () => ({ data }));
+
+    expect(saveUnapplied()).toBeNull();
+    expect(
+      inspectorTarget(store.doc, selection).data.spec.hardware.memory,
+    ).toBe(4096);
+    expect(store.history.undoLabel()).toBe(
+      'Saved unapplied changes to Device alpha',
+    );
+  });
+
+  test('a position typed and not moved to is saved in the same edit', async () => {
+    const { store, alpha, setup, saveUnapplied, description } =
+      await editedInspector();
+    const version = store.historyVersion;
+
+    setup.position = { x: ' 40 ', y: '-12.6' };
+
+    expect(saveUnapplied()).toBeNull();
+    expect(store.historyVersion).toBe(version + 1);
+    expect(description()).toBe('Edited');
+    expect(findNode(store.doc, alpha.id).position).toEqual({ x: 40, y: -13 });
+  });
+
+  test('a position that is no number is named, and the valid edits saved', async () => {
+    const { store, alpha, setup, saveUnapplied, description } =
+      await editedInspector();
+
+    setup.position = { x: '4O', y: '0' };
+
+    expect(saveUnapplied()).toEqual({
+      title: 'Device alpha',
+      fields: ['Position X'],
+    });
+    expect(description()).toBe('Edited');
+    expect(findNode(store.doc, alpha.id).position).toEqual({ x: 0, y: 0 });
+  });
+
+  test('a read-only draft saves nothing', async () => {
+    const { store, saveUnapplied, description } = await editedInspector();
+
+    store.readOnly = true;
+
+    expect(saveUnapplied()).toBeNull();
+    expect(description()).not.toBe('Edited');
+  });
+});
+
+// Position X and Y are text read as numbers: Firefox's number input took
+// " 3 " for no number at all.
+describe('the Position fields', () => {
+  async function positioned() {
+    const { doc, alpha } = sampleDocument();
+
+    return openInspector(doc, alpha, () => {});
+  }
+
+  test('take a number with spaces around it', async () => {
+    const { setup } = await positioned();
+
+    setup.position = { x: ' 3 ', y: '0' };
+
+    expect(setup.canMove).toBe(true);
+    expect(setup.moveTo).toEqual({ x: 3, y: 0 });
+    expect(setup.shownPosition('x')).toBe(3);
+  });
+
+  test('do not move to text that is no number', async () => {
+    const { setup } = await positioned();
+
+    setup.position = { x: '3px', y: '0' };
+
+    expect(setup.canMove).toBe(false);
+    expect(setup.shownPosition('x')).toBeUndefined();
+  });
+
+  test('ArrowUp and ArrowDown step to the next whole pixel', async () => {
+    const { setup } = await positioned();
+    const press = (key, axis = 'x') => {
+      const event = { key, preventDefault: vi.fn() };
+
+      setup.stepPosition(event, axis);
+
+      return event;
+    };
+
+    setup.position = { x: ' 480.5 ', y: '' };
+    press('ArrowUp');
+    expect(setup.position.x).toBe('481');
+    press('ArrowDown');
+    press('ArrowDown');
+    expect(setup.position.x).toBe('479');
+    // An empty field steps from 0.
+    press('ArrowDown', 'y');
+    expect(setup.position.y).toBe('-1');
+    // Text that is no number is left alone.
+    setup.position = { x: 'abc', y: '0' };
+    expect(press('ArrowUp').preventDefault).not.toHaveBeenCalled();
+    expect(setup.position.x).toBe('abc');
   });
 });

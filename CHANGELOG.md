@@ -12,13 +12,13 @@ All notable changes to this project will be documented in this file.
   - **API Documentation**: Documented the Builder routes in `openapi.yml`, which previously carried none of them.
 - **Builder Flow** (beta, `--features builder-beta`): New topology editor at `/builder-beta`, next to the existing Builder.
   - **Editing**: Devices, switches, notes, and groups; connections between devices and switches; Router and Firewall templates; copy, paste, and duplicate; undo and redo; layouts (ELK layered, Network cards, Dagre, or Standard), chosen for each draft from the toolbar; Auto-group, by network or by name; moving nodes between groups; colors for networks, notes, groups, and connections.
-  - **Canvas**: Connections follow the routes the ELK layout draws, and connections into the same switch bend apart. Choosing an outline row shows its nodes.
-  - **Inspector**: Form for every node field, with descriptions, warnings, and editable labels, annotations, and advanced settings; drive image suggestions from the server's disks; drop-downs show their default, such as "Default (kvm)".
+  - **Canvas**: Connections follow the routes the ELK layout draws, and connections into the same switch bend apart. Choosing an outline row shows its nodes. Fit, Reset view, and outline rows show large diagrams whole.
+  - **Inspector**: Form for every node field, with descriptions, warnings, and editable labels, annotations, and advanced settings; drive image suggestions from the server's disks; drop-downs show their default, such as "Default (kvm)". Changes not applied are saved when you leave the diagram, publish, or export it, and History marks them Automatic.
   - **Checks**: A list of the diagram's errors and warnings that links to the nodes involved. Nodes with errors or warnings are marked on the canvas.
   - **Command palette and shortcuts**: Command palette (⌘K or Ctrl+K) and customizable keyboard shortcuts.
   - **Settings**: Theme, default layout for drafts, minimap, zoom, motion, and shortcut settings, kept in the browser.
   - **Focus mode**: Hides the navigation bar and fills the screen (⇧⌘F or Ctrl+Shift+F).
-  - **Drafts**: Drafts save automatically, work offline, and keep the last 50 changes. Drafts the server cannot read are listed, with Delete. Open and Back to drafts show a spinner while they wait. Logging out, or signing in as another user, clears drafts saved in the browser and keeps preferences such as the theme and shortcuts.
+  - **Drafts**: Drafts save automatically, work offline, and keep the last 50 changes. Drafts the server cannot read are listed, with Delete. Open and Back to drafts show a spinner while they wait. Logging out, or signing in as another user, clears drafts saved in the browser and keeps preferences such as the theme and shortcuts. Logging out first warns when changes have not reached the server, and offers Export. The idle timeout and an expired session show the warning for a minute, then log out.
   - **Import and export**: Import topologies and experiments; upload and download diagrams as JSON or YAML; export images as PNG or SVG.
   - **Publishing**: Publish topologies, scenarios, and experiments, and publish again after more edits. Publish asks before it replaces an existing config.
   - **Included topologies**: Shown as read-only nodes and kept as references when published.
@@ -26,7 +26,7 @@ All notable changes to this project will be documented in this file.
   - **Permissions**: Actions a role cannot perform are hidden. Importing an uploaded config needs `configs` `create`; other users' drafts must be shared with you or need `builder-drafts` permissions.
   - **Accessibility**: Keyboard and screen reader support (WCAG 2.2 AA).
   - **API docs**: Builder Flow routes in the OpenAPI document at `/docs/`.
-- **etcd**: Automatic history compaction, set with `compaction-retention` on the store endpoint (default 1 hour; `0` turns it off).
+- **etcd**: Automatic history compaction for every etcd store, even with Builder Flow off. It compacts the whole etcd cluster. Set it with `compaction-retention` on the store endpoint (default 1 hour; `0` turns it off).
 
 ### Changed
 
@@ -62,6 +62,7 @@ All notable changes to this project will be documented in this file.
 - **Schemas API**: Unknown schemas return 404 instead of 500.
 - **API docs**: The OpenAPI document is valid again.
 - **Settings**: Password checks on a new server no longer fail when several requests arrive at once.
+- **Web UI**: The header's Logout can be reached with the keyboard, and says when logging out fails.
 - **vrouter**: Set VyOS and Vyatta router hostnames exactly as written in the topology instead of lowercasing them and replacing `.` and `_` with `-`, so the guest hostname matches the minimega VM name. Firewall nodes already behaved this way.
 
 ### Security

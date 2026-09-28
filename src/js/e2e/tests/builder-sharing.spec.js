@@ -11,14 +11,19 @@
 //
 // The UI is the one the other specs use (VITE_AUTH=disabled). Each user's
 // session is set up as a sign-in leaves it, in a browser of their own (see
-// sharingUsers in builder-support.js).
+// sharingUsers in builder-support.js). Logging out with changes the server
+// does not have is tested here too, as it needs such a session.
+const fs = require('fs');
+
 const {
   API,
   SAVED,
+  USER_PASS,
   blankDocument,
   draftPath,
   expect,
   expectAccessible,
+  signIn,
   test,
   visit,
 } = require('./builder-support');
@@ -626,3 +631,142 @@ test('mistakes and changes from elsewhere in the Share dialog', async ({
     await expect(narrow).toBeHidden();
   });
 });
+
+test(
+  'logging out with a change the server does not have warns first, and an idle logout waits a minute',
+  { tag: '@cross-browser' },
+  async ({ sharingUsers, playwright }, testInfo) => {
+    test.setTimeout(120000);
+    const { owner } = sharingUsers;
+    const { page } = owner;
+    const draft = await seedDraft(owner, 'Logout lab');
+    const logout = page.getByRole('button', { name: 'Logout' });
+    const records = () =>
+      page.evaluate(
+        () =>
+          new Promise((resolve) => {
+            const request = indexedDB.open('phenix-builder');
+            request.onsuccess = () => {
+              const db = request.result;
+              const all = db
+                .transaction('drafts')
+                .objectStore('drafts')
+                .getAll();
+              all.onsuccess = () => {
+                db.close();
+                resolve(all.result.map((record) => record.queue.length));
+              };
+            };
+          }),
+      );
+
+    // The idle timeout, shortened to a minute. The page's clock runs as
+    // usual until the idle steps stop it, and then moves only when a step
+    // moves it on, so the seconds left are the ones the step expects.
+    await page.clock.install();
+    await page.route('**/api/v1/settings/timeout', (route) =>
+      route.fulfill({
+        json: { enabled: true, timeout_min: 1, warning_min: 0 },
+      }),
+    );
+    await openOwn(owner, draft);
+    await page.route('**/api/v1/builder/drafts/**', (route) => route.abort());
+    await page.getByTestId('palette-device').click();
+    await expect(page.getByTestId('builder-save-state')).toContainText(
+      'Offline: 1 change kept on this device',
+    );
+
+    await test.step('Logout sends the change first, then asks, and waits', async () => {
+      const warning = page.getByRole('alertdialog', {
+        name: 'Log out with unsaved changes?',
+      });
+
+      await logout.click();
+      await expect(warning).toBeVisible();
+      await expect
+        .soft(warning)
+        .toHaveAccessibleDescription(
+          '1 change to Builder Flow drafts has not reached the server. Logging out deletes it from this browser. Use Export to keep a copy.',
+        );
+      await expect
+        .soft(warning.getByRole('button', { name: 'Stay signed in' }))
+        .toBeFocused();
+      await expect
+        .soft(warning.getByTestId('logout-warning-countdown'))
+        .toHaveCount(0);
+
+      const [file] = await Promise.all([
+        page.waitForEvent('download'),
+        warning.getByRole('button', { name: 'Export' }).click(),
+      ]);
+      expect.soft(file.suggestedFilename()).toBe('logout-lab.json');
+      const exported = JSON.parse(fs.readFileSync(await file.path(), 'utf8'));
+      expect
+        .soft(exported.nodes.filter((node) => node.kind === 'device'))
+        .toHaveLength(1);
+
+      await warning.getByRole('button', { name: 'Stay signed in' }).click();
+      await expect(warning).toBeHidden();
+      await expect.soft(logout, 'focus after Stay signed in').toBeFocused();
+      expect(await records()).toEqual([1]);
+    });
+
+    const idle = page.getByRole('alertdialog', {
+      name: 'You will be logged out',
+    });
+
+    await test.step('an idle minute warns for another, said again near its end, and Stay signed in keeps the session', async () => {
+      await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+      await page.clock.fastForward('01:00');
+      await expect(idle).toBeVisible();
+      await expect
+        .soft(idle)
+        .toHaveAccessibleDescription(
+          'You have been inactive for a while. 1 change to Builder Flow drafts has not reached the server. Logging out deletes it from this browser. Use Export to keep a copy. Logging out in 60 seconds.',
+        );
+      await expect
+        .soft(idle.getByRole('button', { name: 'Stay signed in' }))
+        .toBeFocused();
+      await expect
+        .soft(page.getByTestId('logout-warning-notice'))
+        .toHaveText('');
+
+      await page.clock.fastForward('00:50');
+      await expect
+        .soft(page.getByTestId('logout-warning-countdown'))
+        .toHaveText('Logging out in 10 seconds.');
+      await expect
+        .soft(page.getByTestId('logout-warning-notice'))
+        .toHaveText('Logging out in 10 seconds.');
+
+      await idle.getByRole('button', { name: 'Stay signed in' }).click();
+      await expect(idle).toBeHidden();
+      await expect(page.getByTestId('builder-canvas')).toBeVisible();
+      await page.clock.fastForward('00:30');
+      await expect(idle).toBeHidden();
+    });
+
+    await test.step('left alone, it logs out once the minute is up, and the change goes with the session', async () => {
+      await page.clock.fastForward('00:31');
+      await expect(idle).toBeVisible();
+      await page.clock.fastForward('01:00');
+      await expect(page).toHaveURL(/\/signin$/);
+      await expect.poll(records).toEqual([]);
+      // The server has forgotten the session.
+      expect((await owner.api.get(`${API}/builder/drafts`)).status()).toBe(401);
+    });
+
+    // The session the fixture cleans up with is gone.
+    const guest = await playwright.request.newContext({
+      baseURL: testInfo.project.use.baseURL,
+    });
+    const again = await signIn(guest, owner.username, USER_PASS);
+    const headers = { 'X-Phenix-Auth-Token': `bearer ${again.token}` };
+    const read = await guest.get(draftPath(draft), { headers });
+    const removed = await guest.delete(draftPath(draft), {
+      headers: { ...headers, 'If-Match': read.headers().etag },
+    });
+    expect.soft(removed.ok(), await removed.text()).toBeTruthy();
+    await guest.dispose();
+  },
+);

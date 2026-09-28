@@ -2106,7 +2106,7 @@ test.describe('themes and canvas controls', () => {
       await page.keyboard.press('Escape');
     });
 
-    await test.step('a switch row whose network cannot fit on screen brings its switch into view', async () => {
+    await test.step('a switch row brings its whole network into view, however far apart its nodes are', async () => {
       const id = () => crypto.randomUUID();
       const network = { id: id(), name: 'tall-net' };
       const sw = {
@@ -2116,7 +2116,7 @@ test.describe('themes and canvas controls', () => {
         position: { x: 3000, y: 0 },
         switch: { networkId: network.id },
       };
-      // Even at the least zoom, the network runs past the top and bottom.
+      // Far below 0.2 zoom is needed to show the network whole.
       const devices = [0, 9000].map((y, index) => ({
         id: id(),
         kind: 'device',
@@ -2158,24 +2158,157 @@ test.describe('themes and canvas controls', () => {
       await builder.openDraft(tall);
 
       const row = page.getByTestId(`outline-item-${sw.id}`);
+      await expect.poll(() => nodesOutsideCanvas(page)).not.toEqual([]);
       await row.press('Enter');
-      const switchInView = () =>
-        page.locator('.vue-flow').evaluate((flow, switchId) => {
-          const pane = flow.getBoundingClientRect();
-          const node = flow.querySelector(
-            `.vue-flow__node[data-id="${CSS.escape(switchId)}"]`,
-          );
-          const box = node?.getBoundingClientRect();
+      await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
+      await expect.soft(row).toBeFocused();
+    });
 
-          return Boolean(
-            box &&
-              box.top >= pane.top &&
-              box.bottom <= pane.bottom &&
-              box.left >= pane.left &&
-              box.right <= pane.right,
-          );
-        }, sw.id);
-      await expect.poll(switchInView).toBe(true);
+    await test.step('a large diagram is shown whole by Fit, the fit opening zoom, Reset view, zooming out and its outline', async () => {
+      const level = (value) => Math.round(value * 1000) / 1000;
+      const id = () => crypto.randomUUID();
+      const network = { id: id(), name: 'wide-net' };
+      const sw = {
+        id: id(),
+        kind: 'switch',
+        label: 'wide-net',
+        position: { x: 3600, y: -300 },
+        switch: { networkId: network.id },
+      };
+      // 491 devices in 25 columns, each connected to the one switch: in a
+      // 1440 by 900 window, it takes a zoom of about 0.09 to see them all.
+      const devices = Array.from({ length: 491 }, (_, index) => {
+        const hostname = `wide-${index + 1}`;
+
+        return {
+          id: id(),
+          kind: 'device',
+          label: hostname,
+          position: { x: (index % 25) * 300, y: Math.floor(index / 25) * 140 },
+          device: {
+            hostname,
+            spec: {
+              type: 'VirtualMachine',
+              general: { hostname, vm_type: 'kvm' },
+              hardware: {
+                os_type: 'linux',
+                drives: [{ image: 'ubuntu.qc2' }],
+              },
+              network: {
+                interfaces: [
+                  {
+                    name: 'eth0',
+                    proto: 'dhcp',
+                    type: 'ethernet',
+                    vlan: 'wide-net',
+                  },
+                ],
+              },
+            },
+            interfaces: [{ id: id(), name: 'eth0', index: 0 }],
+          },
+        };
+      });
+      const wide = await builder.seedDraft(
+        blankDocument(`wide-${Date.now()}`, {
+          nodes: [...devices, sw],
+          networks: [network],
+          edges: devices.map((device) => ({
+            id: id(),
+            sourceNodeId: device.id,
+            sourceHandleId: device.device.interfaces[0].id,
+            targetNodeId: sw.id,
+            networkId: network.id,
+          })),
+        }),
+      );
+      const controls = page.getByRole('group', {
+        name: 'Canvas zoom controls',
+      });
+      const zoomIn = controls.getByRole('button', { name: 'Zoom in' });
+      const zoomOut = controls.getByRole('button', { name: 'Zoom out' });
+      const fit = controls.getByRole('button', { name: 'Fit diagram to view' });
+      // Each press zooms in by 1.2.
+      const zoomInBy = async (presses) => {
+        const target = (await zoomLevel(page)) * 1.2 ** presses;
+
+        for (let press = 0; press < presses; press += 1) {
+          await zoomIn.press('Enter');
+        }
+        await expect.poll(() => zoomLevel(page)).toBeGreaterThan(target * 0.99);
+      };
+
+      // Opened with the zoom that fits it.
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.getByTestId('editor-settings').press('Enter');
+      await page
+        .getByTestId('settings-dialog')
+        .getByRole('radio', { name: 'Fit the whole diagram in view' })
+        .check();
+      await page.keyboard.press('Escape');
+      await builder.openDraft(wide);
+      await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
+      const fitted = level(await zoomLevel(page));
+      expect(fitted, 'below the usual least zoom').toBeLessThan(0.2);
+      await expect.soft(zoomOut).not.toHaveAttribute('aria-disabled');
+
+      await zoomInBy(2);
+      await expect.poll(() => nodesOutsideCanvas(page)).not.toEqual([]);
+      await fit.press('Enter');
+      await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
+      await expect.poll(async () => level(await zoomLevel(page))).toBe(fitted);
+
+      // Zooming out by hand goes past the fitted zoom, then stops, and says
+      // so.
+      await zoomInBy(2);
+      for (let press = 0; press < 12; press += 1) {
+        await zoomOut.press('Enter');
+      }
+      await expect.soft(zoomOut).toHaveAttribute('aria-disabled', 'true');
+      await expect.soft(zoomOut).toBeFocused();
+      await expect.soft(zoomIn).not.toHaveAttribute('aria-disabled');
+      expect
+        .soft(await zoomLevel(page), 'zoomed out past the fitted zoom')
+        .toBeLessThan(fitted);
+      await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
+
+      // A larger window raises the least zoom past this one; scrolling out
+      // then keeps the zoom rather than zooming in to the new least.
+      const least = await zoomLevel(page);
+      const frames = () =>
+        page.evaluate(
+          () =>
+            new Promise((resolve) =>
+              requestAnimationFrame(() => requestAnimationFrame(resolve)),
+            ),
+        );
+      await page.setViewportSize({ width: 1920, height: 1200 });
+      await frames();
+      const canvasBox = await page.locator('.vue-flow__pane').boundingBox();
+      await page.mouse.move(
+        canvasBox.x + canvasBox.width / 2,
+        canvasBox.y + canvasBox.height / 2,
+      );
+      await page.mouse.wheel(0, 400);
+      await frames();
+      await expect.soft(zoomOut).toHaveAttribute('aria-disabled', 'true');
+      expect(await zoomLevel(page), 'scrolling out did not zoom in').toBe(
+        least,
+      );
+      await page.setViewportSize({ width: 1440, height: 900 });
+
+      await zoomInBy(5);
+      await expect.poll(() => nodesOutsideCanvas(page)).not.toEqual([]);
+      await page.getByTestId('editor-reset-view').click();
+      await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
+      await expect.poll(async () => level(await zoomLevel(page))).toBe(fitted);
+
+      // The switch's row shows its network: every node.
+      await zoomInBy(2);
+      await expect.poll(() => nodesOutsideCanvas(page)).not.toEqual([]);
+      const row = page.getByTestId(`outline-item-${sw.id}`);
+      await row.press('Enter');
+      await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
       await expect.soft(row).toBeFocused();
     });
     expectNoFatal(issues);

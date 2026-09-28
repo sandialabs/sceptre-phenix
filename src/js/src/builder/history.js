@@ -14,6 +14,22 @@ import { newId } from './ids.js';
 
 export const DEFAULT_HISTORY_LIMIT = 50;
 
+// What an edit is named when the Builder applied it for the user: the
+// Inspector's unapplied edits, saved before the diagram is left or read
+// whole (see leave.js). The History dialog marks its snapshots.
+export const SAVED_UNAPPLIED = 'Saved unapplied changes';
+
+/**
+ * Whether a snapshot's summary names an edit the Builder applied for the
+ * user (SAVED_UNAPPLIED).
+ *
+ * @param {string} [summary]
+ * @returns {boolean}
+ */
+export function savedAutomatically(summary) {
+  return String(summary || '').startsWith(`${SAVED_UNAPPLIED} `);
+}
+
 export class History {
   /**
    * @param {*} initial first snapshot

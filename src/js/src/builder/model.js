@@ -1852,11 +1852,16 @@ export function renameInterface(doc, nodeId, handleId, name) {
  * @param {object} doc
  * @param {object} connection sourceNodeId, sourceHandleId, targetNodeId,
  *   targetHandleId
+ * @param {Function} [find] looks a node up by id, for many connections
  * @returns {{device: object, handleId: string, switchNode: object}|null}
  */
-export function edgeEndpoints(doc, connection = {}) {
-  const source = findNode(doc, connection.sourceNodeId);
-  const target = findNode(doc, connection.targetNodeId);
+export function edgeEndpoints(
+  doc,
+  connection = {},
+  find = (id) => findNode(doc, id),
+) {
+  const source = find(connection.sourceNodeId);
+  const target = find(connection.targetNodeId);
 
   if (!source || !target || source.id === target.id) {
     return null;
@@ -2588,9 +2593,20 @@ export function documentSummary(doc) {
   );
   const theirs = (edge) =>
     included.has(edge.sourceNodeId) || included.has(edge.targetNodeId);
-  // Used, and only by included devices.
-  const onlyTheirs = (connections) =>
-    connections.length > 0 && connections.every(theirs);
+  // Whether each node and each network is used only by included devices,
+  // by id, from one pass over the connections: false once any other
+  // connection uses it.
+  const nodeTheirs = new Map();
+  const networkTheirs = new Map();
+  const use = (map, id, edge) =>
+    map.set(id, (map.get(id) ?? true) && theirs(edge));
+
+  for (const edge of edges) {
+    use(nodeTheirs, edge.sourceNodeId, edge);
+    use(nodeTheirs, edge.targetNodeId, edge);
+    use(networkTheirs, edge.networkId, edge);
+  }
+
   const switches = nodes.filter((node) => node.kind === 'switch');
   const networks = doc?.networks || [];
 
@@ -2598,19 +2614,12 @@ export function documentSummary(doc) {
     devices: nodes.filter((node) => node.kind === 'device').length,
     included: included.size,
     switches: switches.length,
-    includedSwitches: switches.filter((node) =>
-      onlyTheirs(
-        edges.filter(
-          (edge) =>
-            edge.sourceNodeId === node.id || edge.targetNodeId === node.id,
-        ),
-      ),
-    ).length,
+    includedSwitches: switches.filter((node) => nodeTheirs.get(node.id)).length,
     notes: nodes.filter((node) => node.kind === 'note').length,
     groups: nodes.filter((node) => node.kind === 'group').length,
     networks: networks.length,
     includedNetworks: networks.filter((network) =>
-      onlyTheirs(edges.filter((edge) => edge.networkId === network.id)),
+      networkTheirs.get(network.id),
     ).length,
     links: edges.length,
     includedLinks: edges.filter(theirs).length,

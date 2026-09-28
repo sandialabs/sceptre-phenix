@@ -13,10 +13,8 @@ import { networkColorToken } from '../colors.js';
 import { stableHash } from '../ids.js';
 import {
   deviceHandles,
-  findNetwork,
   findNode,
   includedFrom,
-  networkOfSwitch,
   nodeComment,
   nodeLabel,
   sizeOf,
@@ -76,10 +74,38 @@ export function nodeIssueId(nodeId) {
  *   label: string, color: string, alias: number|undefined}}
  */
 export function networkStyle(doc, networkId) {
-  const network = findNetwork(doc, networkId);
   const index = (doc?.networks || []).findIndex(
     (entry) => entry.id === networkId,
   );
+
+  return styleAt(doc?.networks?.[index], networkId, index);
+}
+
+// Each network's style by id, worked out once, for a whole document.
+function networkStyles(doc) {
+  const places = new Map();
+  const styles = new Map();
+
+  (doc?.networks || []).forEach((network, index) => {
+    if (!places.has(network.id)) {
+      places.set(network.id, index);
+    }
+  });
+
+  return (networkId) => {
+    if (!styles.has(networkId)) {
+      const index = places.has(networkId) ? places.get(networkId) : -1;
+
+      styles.set(networkId, styleAt(doc?.networks?.[index], networkId, index));
+    }
+
+    return styles.get(networkId);
+  };
+}
+
+// The style of the network at `index` of the document's networks (-1 when
+// it has none of that id).
+function styleAt(network, networkId, index) {
   const seed = index >= 0 ? index : stableHash(networkId || 'network');
   // The pattern shifts by one every time the colors wrap, so no two of the
   // first 32 networks share both color and pattern.
@@ -146,32 +172,19 @@ export function absolutePosition(doc, parentId, position) {
   };
 }
 
-// The network of each connected handle, by handle id.
-function handleNetworks(doc) {
-  const connected = new Map();
-
-  (doc.edges || []).forEach((edge) => {
-    [edge.sourceHandleId, edge.targetHandleId].filter(Boolean).forEach((id) => {
-      connected.set(id, edge.networkId);
-    });
-  });
-
-  return connected;
-}
-
 /**
  * Handles exposed by a node: one per device interface handle, and a single bus
  * handle for switches.
  *
  * @param {object} doc
  * @param {object} node
- * @param {Map} [connected] each connected handle's network, when the handles
- *   of many nodes are wanted
+ * @param {object} [index] labelIndex(doc), when the handles of many nodes
+ *   are wanted
  * @returns {{id: string, label: string, kind: string}[]}
  */
-export function handlesFor(doc, node, connected = handleNetworks(doc)) {
+export function handlesFor(doc, node, index = labelIndex(doc)) {
   if (node.kind === 'switch') {
-    const network = networkOfSwitch(doc, node);
+    const network = index.network(node.switch?.networkId);
 
     return [
       {
@@ -188,15 +201,16 @@ export function handlesFor(doc, node, connected = handleNetworks(doc)) {
 
   return deviceHandles(node).map((handle) => {
     const iface = specInterfaceFor(node, handle.id);
-    const network = findNetwork(doc, connected.get(handle.id));
+    const connection = index.handle(handle.id);
+    const network = connection && index.network(connection.networkId);
 
     return {
       id: handle.id,
       name: handle.name,
       index: handle.index,
       kind: 'interface',
-      connected: connected.has(handle.id),
-      networkId: connected.get(handle.id),
+      connected: Boolean(connection),
+      networkId: connection?.networkId,
       label: network
         ? `${handle.name} on network ${network.name}`
         : `${handle.name}, not connected`,
@@ -218,7 +232,7 @@ export function toFlowNodes(doc, options = {}) {
   const selected = new Set(options.selectedIds || []);
   const issues = options.issues || new Map();
   const index = labelIndex(doc);
-  const connected = handleNetworks(doc);
+  const styleOf = networkStyles(doc);
 
   // Parents must be registered before children in Vue Flow.
   const ordered = [...(doc.nodes || [])].sort((a, b) => {
@@ -273,12 +287,12 @@ export function toFlowNodes(doc, options = {}) {
         comment: nodeComment(node),
         includedFrom: includedFrom(node),
         network:
-          node.kind === 'switch' ? networkOfSwitch(doc, node) : undefined,
-        networkStyle:
           node.kind === 'switch'
-            ? networkStyle(doc, node.switch?.networkId)
+            ? index.network(node.switch?.networkId)
             : undefined,
-        handles: handlesFor(doc, node, connected),
+        networkStyle:
+          node.kind === 'switch' ? styleOf(node.switch?.networkId) : undefined,
+        handles: handlesFor(doc, node, index),
         issue,
       },
     };
@@ -311,6 +325,54 @@ export function withSelection(items, selectedIds = []) {
           },
         };
   });
+}
+
+/**
+ * What Vue Flow has to change to go from one list of flow nodes (or edges)
+ * to the next: the items to add, the kept items that changed and the ids
+ * that left. An unchanged item is the same object in both lists (see
+ * withSelection and keepUnchanged), so the work is the size of the change.
+ * `reordered` is set when the next list is not the kept items in their
+ * old order followed by the added ones. `rebuild` asks for the whole list
+ * instead: ids repeat, or a kept item changed one of the `fixed` keys,
+ * which Vue Flow works out only for a whole list.
+ *
+ * @param {object[]} previous
+ * @param {object[]} next
+ * @param {string[]} [fixed] keys whose change needs a rebuild
+ * @returns {{added: object[], changed: object[], removed: string[],
+ *   reordered: boolean, rebuild: boolean}}
+ */
+export function flowChanges(previous, next, fixed = []) {
+  const before = new Map(previous.map((item) => [item.id, item]));
+  const ids = new Set(next.map((item) => item.id));
+  const added = [];
+  const changed = [];
+  let rebuild = before.size !== previous.length || ids.size !== next.length;
+
+  for (const item of next) {
+    const old = before.get(item.id);
+
+    if (!old) {
+      added.push(item);
+    } else if (old !== item) {
+      changed.push(item);
+      rebuild ||= fixed.some((key) => old[key] !== item[key]);
+    }
+  }
+
+  const removed = previous
+    .filter((item) => !ids.has(item.id))
+    .map((item) => item.id);
+  const order = [...previous.filter((item) => ids.has(item.id)), ...added];
+
+  return {
+    added,
+    changed,
+    removed,
+    reordered: order.some((item, index) => item.id !== next[index]?.id),
+    rebuild,
+  };
 }
 
 /**
@@ -405,7 +467,7 @@ export function edgeLanes(doc, nodeById) {
  */
 export function toFlowEdges(doc, options = {}) {
   const selected = new Set(options.selectedIds || []);
-  // The first of an id, as findNode finds it.
+  // The first of an id, as findNode and findNetwork find it.
   const nodeById = new Map();
 
   for (const node of doc.nodes || []) {
@@ -414,21 +476,22 @@ export function toFlowEdges(doc, options = {}) {
     }
   }
 
-  const styles = new Map();
-  const styleOf = (id) => {
-    if (!styles.has(id)) {
-      styles.set(id, networkStyle(doc, id));
-    }
+  const networks = new Map();
 
-    return styles.get(id);
-  };
+  for (const network of doc.networks || []) {
+    if (!networks.has(network.id)) {
+      networks.set(network.id, network);
+    }
+  }
+
+  const styleOf = networkStyles(doc);
   const lanes = edgeLanes(doc, nodeById);
 
   return (doc.edges || []).map((edge) => {
     const style = styleOf(edge.networkId);
     const source = nodeById.get(edge.sourceNodeId);
     const target = nodeById.get(edge.targetNodeId);
-    const network = findNetwork(doc, edge.networkId);
+    const network = networks.get(edge.networkId);
     const labelled =
       edge.label && edge.label !== network?.name
         ? `, labelled ${edge.label}`
@@ -555,4 +618,45 @@ export function freeSpot(pane, width, height, overlays = []) {
   }
 
   return { x: best.x, y: best.y, hidden: best.hidden };
+}
+
+// Room Vue Flow's fit view leaves around a diagram, as a share of its size.
+const FIT_PADDING = 0.1;
+
+/**
+ * The zoom at which Vue Flow's fit view shows a box whole in a pane, with
+ * the room it leaves around it.
+ *
+ * @param {{width: number, height: number}} bounds in flow coordinates
+ * @param {{width: number, height: number}} pane in screen pixels
+ * @param {number} [padding] as Vue Flow takes it
+ * @returns {number} Infinity when either has no size
+ */
+export function fitZoom(bounds, pane, padding = FIT_PADDING) {
+  if (!bounds?.width || !bounds?.height || !pane?.width || !pane?.height) {
+    return Infinity;
+  }
+
+  // Vue Flow's own sum, which rounds the room down to whole pixels.
+  const room = (length) =>
+    length - 2 * Math.floor((length - length / (1 + padding)) * 0.5);
+
+  return Math.min(
+    room(pane.width) / bounds.width,
+    room(pane.height) / bounds.height,
+  );
+}
+
+/**
+ * The least zoom the canvas allows: `least`, or half the zoom that fits
+ * the diagram when that is less, so that Fit, and zooming out by hand,
+ * can always show a large diagram whole.
+ *
+ * @param {{width: number, height: number}} bounds the diagram's
+ * @param {{width: number, height: number}} pane
+ * @param {number} least
+ * @returns {number}
+ */
+export function zoomFloor(bounds, pane, least) {
+  return Math.min(least, fitZoom(bounds, pane) / 2);
 }

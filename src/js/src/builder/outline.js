@@ -9,6 +9,7 @@
 // its connections on the canvas.
 
 import { count, listOf } from './announce.js';
+import { nodeIconKey } from './catalog.js';
 import {
   deviceHandles,
   documentSummary,
@@ -73,6 +74,7 @@ export function buildOutline(doc) {
           id: node.id,
           kind: node.kind,
           label: nodeLabel(node),
+          iconKey: nodeIconKey(node),
           depth,
           description: nodeComment(node),
           includedFrom: includedFrom(node),
@@ -203,17 +205,20 @@ export function connectionList(doc) {
 }
 
 /**
- * What outlineLabel looks up, gathered once for a whole document: each
- * node's connections, each group's member count, and the nodes and
- * networks by id. Naming every node then stays linear in the size of the
- * document.
+ * What outlineLabel and the canvas's handles (handlesFor) look up, gathered
+ * once for a whole document: each node's connections, the network of each
+ * connected handle, each group's member count, and the nodes and networks
+ * by id. Naming and drawing every node then stays linear in the size of
+ * the document.
  *
  * @param {object} doc
- * @returns {{links: Function, members: Function, node: Function,
- *   network: Function}} lookups by id
+ * @returns {{links: Function, handle: Function, members: Function,
+ *   node: Function, network: Function}} lookups by id; handle gives
+ *   {networkId} for a connected handle, else null
  */
 export function labelIndex(doc) {
   const links = new Map();
+  const handles = new Map();
   const members = new Map();
   const nodes = new Map();
   const networks = new Map();
@@ -225,6 +230,13 @@ export function labelIndex(doc) {
       }
 
       links.get(id).push(edge);
+    }
+
+    // A handle in more than one connection is on the last one's network.
+    for (const id of [edge.sourceHandleId, edge.targetHandleId]) {
+      if (id) {
+        handles.set(id, edge.networkId);
+      }
     }
   }
 
@@ -247,6 +259,7 @@ export function labelIndex(doc) {
 
   return {
     links: (id) => links.get(id) || [],
+    handle: (id) => (handles.has(id) ? { networkId: handles.get(id) } : null),
     members: (id) => members.get(id) || 0,
     node: (id) => nodes.get(id),
     network: (id) => networks.get(id),
@@ -418,25 +431,29 @@ function capitalize(value) {
  * @returns {object[]}
  */
 export function networkOutline(doc) {
+  const index = labelIndex(doc);
+  // The hostnames of the devices connected on each network.
+  const hosts = new Map();
+
+  for (const edge of doc?.edges || []) {
+    if (!hosts.has(edge.networkId)) {
+      hosts.set(edge.networkId, new Set());
+    }
+
+    for (const id of [edge.sourceNodeId, edge.targetNodeId]) {
+      const node = index.node(id);
+
+      if (node?.kind === 'device') {
+        hosts.get(edge.networkId).add(node.device.hostname);
+      }
+    }
+  }
+
   return (doc?.networks || [])
     .slice()
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
     .map((network) => {
-      const edges = (doc.edges || []).filter(
-        (edge) => edge.networkId === network.id,
-      );
-      const members = new Set();
-
-      edges.forEach((edge) => {
-        [edge.sourceNodeId, edge.targetNodeId].forEach((id) => {
-          const node = findNode(doc, id);
-
-          if (node?.kind === 'device') {
-            members.add(node.device.hostname);
-          }
-        });
-      });
-
+      const members = hosts.get(network.id) || new Set();
       const alias = network.alias ? `, VLAN alias ${network.alias}` : '';
       const devices =
         members.size === 1 ? '1 device' : `${members.size} devices`;

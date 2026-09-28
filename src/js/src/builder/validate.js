@@ -541,7 +541,7 @@ function validateEdges(doc, issues, nodesById, networksById) {
       return;
     }
 
-    const endpoints = edgeEndpoints(doc, edge);
+    const endpoints = edgeEndpoints(doc, edge, (id) => nodesById.get(id));
 
     if (!endpoints || !endpoints.handleId) {
       issue(
@@ -888,13 +888,13 @@ function hasVLAN(iface) {
  * An interface's VLAN is published as it is, and phenix matches VLAN names
  * exactly, so only a network of that very name is the one it is put on.
  *
- * @param {object} doc
  * @param {object} node device node
  * @param {Set<string>} connected ids of the connected interface handles
+ * @param {object} networks networksByName(doc)
  * @returns {{index: number, message: string, blocksPublish?: true}[]} index
  *   is the interface's in the spec
  */
-function interfaceWarnings(doc, node, connected) {
+function interfaceWarnings(node, connected, networks) {
   const interfaces = specInterfaces(node);
   const names = interfaces.map((iface) =>
     typeof iface?.name === 'string' ? iface.name : '',
@@ -903,7 +903,6 @@ function interfaceWarnings(doc, node, connected) {
     deviceHandles(node).map((handle) => [handle.name, handle]),
   );
   const external = node.device.spec?.external != null;
-  const networks = (doc.networks || []).filter((network) => network?.name);
   const warnings = [];
 
   interfaces.forEach((iface, index) => {
@@ -964,8 +963,8 @@ function interfaceWarnings(doc, node, connected) {
     }
 
     const vlan = String(iface.vlan).trim();
-    const network = networks.find((entry) => entry.name === vlan);
-    const cased = networks.find((entry) => fold(entry.name) === fold(vlan));
+    const network = networks.exact.get(vlan);
+    const cased = networks.folded.get(fold(vlan));
 
     if (network) {
       warn(
@@ -981,6 +980,24 @@ function interfaceWarnings(doc, node, connected) {
   });
 
   return warnings;
+}
+
+// The named networks by name, and by name in one case: the first of each.
+function networksByName(doc) {
+  const exact = new Map();
+  const folded = new Map();
+
+  for (const network of doc.networks || []) {
+    if (network?.name && !exact.has(network.name)) {
+      exact.set(network.name, network);
+    }
+
+    if (network?.name && !folded.has(fold(network.name))) {
+      folded.set(fold(network.name), network);
+    }
+  }
+
+  return { exact, folded };
 }
 
 /**
@@ -1002,6 +1019,7 @@ function collectWarnings(doc, issues, context) {
       [edge.sourceHandleId, edge.targetHandleId].filter(Boolean),
     ),
   );
+  const networks = networksByName(doc);
 
   (doc.nodes || []).forEach((node, index) => {
     // An included device is its own topology's to fix, not this diagram's.
@@ -1031,7 +1049,7 @@ function collectWarnings(doc, issues, context) {
       return;
     }
 
-    interfaceWarnings(doc, node, connected).forEach(
+    interfaceWarnings(node, connected, networks).forEach(
       ({ index: position, message, ...extra }) => {
         issue(
           issues,
@@ -1044,12 +1062,14 @@ function collectWarnings(doc, issues, context) {
     );
   });
 
-  (doc.networks || []).forEach((network, index) => {
-    const hasSwitch = (doc.nodes || []).some(
-      (node) => node.kind === 'switch' && node.switch?.networkId === network.id,
-    );
+  const switched = new Set(
+    (doc.nodes || [])
+      .filter((node) => node.kind === 'switch')
+      .map((node) => node.switch?.networkId),
+  );
 
-    if (!hasSwitch) {
+  (doc.networks || []).forEach((network, index) => {
+    if (!switched.has(network.id)) {
       issue(
         issues,
         `networks[${index}]`,

@@ -66,24 +66,31 @@
     :data-network="style.label"
     :data-pattern="style.pattern"
     :data-routed="line.routed ? 'true' : undefined" />
-  <EdgeLabelRenderer>
-    <div
-      v-if="label"
-      class="builder-edge__label nodrag nopan"
-      :class="{ 'is-selected': selected }"
-      :style="{
-        transform: `translate(-50%, -50%) translate(${line.x}px, ${line.y}px)`,
-      }"
-      :data-edge-id="id"
-      aria-hidden="true">
-      {{ label }}
-    </div>
-  </EdgeLabelRenderer>
+  <!-- Moved to Vue Flow's label layer, found once for the canvas (see
+       BuilderCanvas.vue) rather than by each edge, as Vue Flow's
+       EdgeLabelRenderer does; the foreignObject gives the label HTML's
+       namespace. -->
+  <svg v-if="label && labelLayer">
+    <foreignObject height="0" width="0">
+      <Teleport :to="labelLayer">
+        <div
+          class="builder-edge__label nodrag nopan"
+          :class="{ 'is-selected': selected }"
+          :style="{
+            transform: `translate(-50%, -50%) translate(${line.x}px, ${line.y}px)`,
+          }"
+          :data-edge-id="id"
+          aria-hidden="true">
+          {{ label }}
+        </div>
+      </Teleport>
+    </foreignObject>
+  </svg>
 </template>
 
 <script setup>
-  import { computed } from 'vue';
-  import { EdgeLabelRenderer, getSmoothStepPath } from '@vue-flow/core';
+  import { computed, inject } from 'vue';
+  import { getSmoothStepPath } from '@vue-flow/core';
 
   import {
     customNetworkColor,
@@ -119,6 +126,9 @@
     label: { type: String, default: '' },
     selected: { type: Boolean, default: false },
   });
+
+  // Vue Flow's layer for edge labels, once the canvas has it.
+  const labelLayer = inject('builderEdgeLabels', null);
 
   const style = computed(
     () => props.data.style || { token: 0, pattern: 'solid', label: '' },

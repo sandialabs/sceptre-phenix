@@ -289,7 +289,7 @@
             class="builder-button builder-button--primary"
             data-testid="conflict-export"
             aria-haspopup="dialog"
-            @click="dialog = 'export'">
+            @click="openDialog('export')">
             Export
           </button>
           <button
@@ -341,7 +341,7 @@
             class="builder-button"
             data-testid="access-lost-export"
             aria-haspopup="dialog"
-            @click="dialog = 'export'">
+            @click="openDialog('export')">
             Export
           </button>
         </div>
@@ -356,14 +356,14 @@
         @cancel="confirmingDiscard = false"
         @confirm="discardLocal" />
 
-      <!-- Leaving a draft whose edits the server does not have yet asks
-           first (see mayLeave). -->
+      <!-- Leaving a draft whose edits the server does not have yet, or
+           the Inspector cannot apply, asks first (see mayLeave). -->
       <builder-confirm
         v-if="leaving"
         id="leave-unsaved"
         title="Leave with unsaved changes?"
         :message="leaveMessage"
-        confirm-label="Leave anyway"
+        :confirm-label="unsaveable ? 'Leave without them' : 'Leave anyway'"
         cancel-label="Stay"
         @cancel="settleLeave(false)"
         @confirm="settleLeave(true)" />
@@ -406,9 +406,9 @@
 
       <builder-toolbar
         :minimap="showMinimap"
-        @publish="dialog = 'publish'"
+        @publish="openDialog('publish')"
         @share="dialog = 'share'"
-        @export="dialog = 'export'"
+        @export="openDialog('export')"
         @import="openUpload"
         @scenario="dialog = 'scenario'"
         @history="openHistory"
@@ -437,7 +437,10 @@
       </builder-panes>
     </template>
 
-    <publish-dialog v-if="dialog === 'publish'" @close="dialog = ''" />
+    <publish-dialog
+      v-if="dialog === 'publish'"
+      :unapplied="unappliedBefore"
+      @close="dialog = ''" />
     <!-- Share, for the open draft (the toolbar and the palette) or a draft
          of mine on the landing. -->
     <share-dialog
@@ -458,6 +461,7 @@
     <export-dialog
       v-if="dialog === 'export'"
       :viewport-element="viewportElement"
+      :unapplied="unappliedBefore"
       @close="dialog = ''" />
     <scenario-dialog v-if="dialog === 'scenario'" @close="dialog = ''" />
 
@@ -557,6 +561,7 @@
   import { HELP_URL } from '@/builder/help.js';
   import { uniqueName } from '@/builder/ids.js';
   import { followShortcutSettings } from '@/builder/keymap.js';
+  import { createLeaveGuard, unappliedText } from '@/builder/leave.js';
   import { stopLayoutEngine } from '@/builder/layouts/index.js';
   // Not builderSettings: <builder-settings> would name it as well as the
   // dialog.
@@ -566,8 +571,9 @@
     conflictMessage as describeConflict,
     shareLink,
   } from '@/builder/share.js';
+  import { registerOpenDraft } from '@/builder/session.js';
   import { useBuilderStore } from '@/builder/store.js';
-  import { usePhenixStore } from '@/store.js';
+  import { tokenExpired, usePhenixStore } from '@/store.js';
 
   const store = useBuilderStore();
   const route = useRoute();
@@ -1134,43 +1140,69 @@
     store.setInfo({ name });
   }
 
-  // Edits the server does not have yet: queued, or being sent.
-  function unsavedWork() {
-    return (
-      editing.value &&
-      !store.readOnly &&
-      (store.saveState.pending > 0 || store.saveState.status === 'saving')
-    );
-  }
-
-  // How long leaving waits for a save under way before it asks.
-  const LEAVE_SAVE_WAIT_MS = 2000;
-
-  // The resolver of the Leave question while it is asked (see mayLeave).
+  // The resolver of the Leave question while it is asked, and the
+  // Inspector's edits it names, which cannot be applied.
   const leaving = ref(null);
-  let leaveCheck = null;
+  const unsaveable = ref(null);
+
+  // Leaving saves what the Inspector holds unapplied and waits for the save
+  // (see leave.js); the question is asked only when some of it is not
+  // saved yet.
+  const leaveGuard = createLeaveGuard({
+    store,
+    editing: () => editing.value,
+    saveUnapplied,
+    ask(unapplied) {
+      unsaveable.value = unapplied;
+
+      return new Promise((resolve) => {
+        leaving.value = resolve;
+      });
+    },
+    sessionOver() {
+      const phenix = usePhenixStore();
+
+      return !phenix.auth || tokenExpired(phenix.token);
+    },
+  });
+  const { unsavedWork, mayLeave } = leaveGuard;
+
+  // Logging out saves and counts the same work (see session.js).
+  const unregisterOpenDraft = registerOpenDraft({
+    store,
+    editing: () => editing.value,
+    saveUnapplied,
+    describe: unappliedText,
+  });
 
   const leaveMessage = computed(() => {
     const one = store.saveState.pending === 1;
+    const queued = unsavedWork()
+      ? `Your ${unsavedSummary.value}. ${
+          store.saveState.storageFailed
+            ? `Leaving loses ${one ? 'it' : 'them'}.`
+            : `${one ? 'It is' : 'They are'} saved when you next open this draft in this browser, unless you log out first.`
+        }`
+      : '';
 
-    return `Your ${unsavedSummary.value}. ${
-      store.saveState.storageFailed
-        ? `Leaving loses ${one ? 'it' : 'them'}.`
-        : `${one ? 'It is' : 'They are'} saved when you next open this draft in this browser, unless you log out first.`
-    }`;
+    return [unsaveable.value && unappliedText(unsaveable.value), queued]
+      .filter(Boolean)
+      .join(' ');
   });
 
   function settleLeave(leave) {
     const resolve = leaving.value;
 
     leaving.value = null;
+    unsaveable.value = null;
     resolve?.(leave);
   }
 
   // A save that lands while the question is asked leaves nothing to lose:
-  // leaving goes ahead, rather than asking about no changes.
+  // leaving goes ahead, rather than asking about no changes. Edits the
+  // Inspector cannot apply stay unsaved.
   watch(
-    () => Boolean(leaving.value) && !unsavedWork(),
+    () => Boolean(leaving.value) && !unsaveable.value && !unsavedWork(),
     (saved) => {
       if (saved) {
         settleLeave(true);
@@ -1178,66 +1210,39 @@
     },
   );
 
-  async function askToLeave() {
-    if (!unsavedWork()) {
-      return true;
-    }
-
-    // A save that fails says so in the save state; leaving still asks.
-    let timer;
-    await Promise.race([
-      store.saveNow().catch(() => null),
-      new Promise((resolve) => {
-        timer = setTimeout(resolve, LEAVE_SAVE_WAIT_MS);
-      }),
-    ]);
-    clearTimeout(timer);
-
-    if (!unsavedWork()) {
-      return true;
-    }
-
-    return new Promise((resolve) => {
-      leaving.value = resolve;
-    });
-  }
-
-  /**
-   * Whether the draft may be left: for the drafts, another page, or a new
-   * draft (Upload). What is not saved yet is sent first; if the server
-   * still lacks some of it, the user is asked, since it is then kept only
-   * on this device. Asked twice at once, it asks once.
-   *
-   * @returns {Promise<boolean>}
-   */
-  function mayLeave() {
-    if (!leaveCheck) {
-      leaveCheck = askToLeave().finally(() => {
-        leaveCheck = null;
-      });
-    }
-
-    return leaveCheck;
-  }
-
   // Closing or reloading the tab asks too, in the browser's own words.
   function onBeforeUnload(event) {
-    if (unsavedWork()) {
-      event.preventDefault();
-      // Some browsers ask only when returnValue is set.
-      event.returnValue = '';
-    }
+    leaveGuard.beforeUnload(event);
   }
 
   // So does following a link out of the Builder. A logout has ended the
-  // Builder session already (see endBuilderSession) and is not held up.
-  onBeforeRouteLeave(() => !usePhenixStore().auth || mayLeave());
+  // Builder session already (see endBuilderSession) and is not held up;
+  // with an expired token, the router shows the logout's warning instead.
+  onBeforeRouteLeave(() => leaveGuard.mayFollowLink());
 
   // Upload makes a new draft, which leaves this one.
   async function openUpload() {
     if (await mayLeave()) {
       dialog.value = 'import';
     }
+  }
+
+  // Publish and Export read the whole diagram, so what the Inspector holds
+  // unapplied is saved first; edits it cannot apply, the dialog names in
+  // place of leaving them out.
+  const READS_DIAGRAM = ['publish', 'export'];
+  const unappliedBefore = ref(null);
+
+  function openDialog(name) {
+    if (name === 'import' && editing.value) {
+      return openUpload();
+    }
+
+    if (READS_DIAGRAM.includes(name)) {
+      unappliedBefore.value = editing.value ? saveUnapplied() : null;
+    }
+
+    dialog.value = name;
   }
 
   // Whether the lists hold a draft or published diagram.
@@ -1266,14 +1271,13 @@
 
   async function leaveEditor() {
     let waited = () => {};
+    const saving = () => {
+      closing.value = 'saving';
+      waited = announceWait('Saving your changes…');
+    };
 
     try {
-      if (unsavedWork()) {
-        closing.value = 'saving';
-        waited = announceWait('Saving your changes…');
-      }
-
-      if (!(await mayLeave())) {
+      if (!(await mayLeave({ saving }))) {
         return;
       }
 
@@ -1634,24 +1638,43 @@
   const TYPED_FIELD =
     'textarea, input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"], [type="file"])';
 
-  // Before a save: the focused field commits what it holds, as its change
-  // event would (the Diagram name commits only on change), and the
-  // Inspector settles its unapplied edits. Resolves to why some stay
-  // unapplied, or ''.
-  async function settleEdits() {
+  // The focused field commits what it holds, as its change event would (the
+  // Diagram name commits only on change). Returns whether it was sent one.
+  function commitFocusedField() {
     const field = document.activeElement;
 
     if (
-      field?.matches?.(TYPED_FIELD) &&
-      !field.readOnly &&
-      rootEl.value?.contains(field) &&
-      !field.closest('dialog')
+      !field?.matches?.(TYPED_FIELD) ||
+      field.readOnly ||
+      !rootEl.value?.contains(field) ||
+      field.closest('dialog')
     ) {
-      field.dispatchEvent(new Event('change', { bubbles: true }));
+      return false;
+    }
+
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+
+    return true;
+  }
+
+  // Before a save: the focused field commits, and the Inspector settles its
+  // unapplied edits. Resolves to why some stay unapplied, or ''.
+  async function settleEdits() {
+    if (commitFocusedField()) {
       await nextTick();
     }
 
     return (await inspector.value?.settle?.()) || '';
+  }
+
+  // Before the diagram is left or read whole: the focused field commits,
+  // and the Inspector saves its unapplied edits (see saveUnapplied there),
+  // at once, as a reload cannot wait. Returns what cannot be saved, or
+  // null.
+  function saveUnapplied() {
+    commitFocusedField();
+
+    return inspector.value?.saveUnapplied?.() || null;
   }
 
   // What the commands (builder/commands.js) can do to this view.
@@ -1677,13 +1700,7 @@
     get focusMode() {
       return focusMode.on;
     },
-    openDialog(name) {
-      if (name === 'import' && editing.value) {
-        return openUpload();
-      }
-
-      dialog.value = name;
-    },
+    openDialog,
     openPalette({ query = '', command = '' } = {}) {
       paletteRequest.value = { query, command };
       dialog.value = 'commands';
@@ -1798,6 +1815,7 @@
     relistWhenListed = false;
     stopWatchingSystemTheme();
     store.autosave?.dispose();
+    unregisterOpenDraft();
     // ELK's worker stays while the Builder is open (see layouts/elk.js).
     stopLayoutEngine();
   });

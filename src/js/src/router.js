@@ -5,7 +5,7 @@ import {
   ToastProgrammatic as Toast,
 } from 'buefy';
 
-import { usePhenixStore } from '@/store.js';
+import { tokenExpired, usePhenixStore } from '@/store.js';
 import axiosInstance from '@/utils/axios.js';
 import { BUILDER_BETA_FEATURE, createFeatureGuard } from '@/utils/features.js';
 
@@ -255,17 +255,22 @@ router.beforeEach(async (to, _, next) => {
     } else if (to.name === 'signin') {
       // No need to go to the signin route if already authorized.
       router.replace('/');
-    } else if (
-      Date.now() >=
-      JSON.parse(atob(store.token.split('.')[1])).exp * 1000
-    ) {
+    } else if (tokenExpired(store.token)) {
       // handle expired JWT by logging user out: https://stackoverflow.com/a/69058154
-      new Toast().open({
-        message: `Token is expired. Log in again`,
-        type: 'is-warning',
-        duration: 5000,
-      });
-      store.logout();
+      // The page stays while a warning about Builder Flow changes the
+      // server does not have is shown (see utils/logout.js); the logout
+      // then goes to the sign-in page.
+      if (!store.loggingOut) {
+        new Toast().open({
+          message: `Token is expired. Log in again`,
+          type: 'is-warning',
+          duration: 5000,
+        });
+      }
+
+      store.requestLogout('expired');
+      next(false);
+      return;
     }
 
     next();

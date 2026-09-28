@@ -20,11 +20,16 @@
   Publish asks first, in an alert dialog that names each config replaced
   (see overwriteConfirmation). Nothing is sent until the user confirms;
   Cancel, Escape or a click outside return to the form, focus with them.
+
+  The Inspector's unapplied edits are saved before the dialog opens (see
+  leave.js). Edits it cannot apply keep Publish from sending, rather than
+  being left out, and the dialog says so as it opens.
 -->
 <template>
   <builder-dialog
     title="Publish diagram"
     title-id="publish-dialog-title"
+    :describedby="unapplied ? 'publish-unapplied' : ''"
     @close="$emit('close')">
     <form v-if="!result" novalidate @submit.prevent="submit">
       <fieldset class="builder-field">
@@ -166,6 +171,13 @@
 
       <div class="builder-field">
         <h3>Checks</h3>
+        <p
+          v-if="unapplied"
+          id="publish-unapplied"
+          class="builder-dialog__error"
+          data-testid="publish-unapplied">
+          {{ unappliedBlock(unapplied, 'published') }}
+        </p>
         <p>{{ summaryText }}</p>
         <ul v-if="issues.length" class="builder-issues">
           <li
@@ -280,6 +292,7 @@
   import { useFieldError, useMessage } from './message.js';
 
   import { count, listOf } from '@/builder/announce.js';
+  import { unappliedBlock } from '@/builder/leave.js';
   import {
     CONFIG_NAME_RULE,
     buildPublishIntent,
@@ -294,6 +307,11 @@
     updateBlocker,
   } from '@/builder/publish.js';
   import { useBuilderStore } from '@/builder/store.js';
+
+  const props = defineProps({
+    // The Inspector's edits that could not be applied (see leave.js).
+    unapplied: { type: Object, default: null },
+  });
 
   const emit = defineEmits(['close', 'published']);
 
@@ -400,7 +418,9 @@
   const failed = computed(() =>
     issues.value.some((issue) => issue.level === 'error'),
   );
-  const blocked = computed(() => failed.value || store.readOnly);
+  const blocked = computed(
+    () => failed.value || store.readOnly || Boolean(props.unapplied),
+  );
 
   // Devices from included topologies are not written to the topology: it
   // names those topologies in includeTopologies instead. Their connections,

@@ -262,6 +262,7 @@
     rowNodeIds,
   } from '@/builder/outline.js';
   import { pressSelection } from '@/builder/selection.js';
+  import { keepUnchanged } from '@/builder/stable.js';
   import { useBuilderStore } from '@/builder/store.js';
 
   const HINT_ID = 'outline-hint';
@@ -288,7 +289,11 @@
   // Why Move did nothing; `missing` when no node was chosen.
   const groupError = reactive({ text: '', missing: false, seq: 0 });
 
-  const outline = computed(() => buildOutline(store.doc));
+  // Rows an edit leaves as they were stay the same objects, so only the
+  // rows it changed are drawn again (see keepUnchanged).
+  const outline = computed((previous) =>
+    keepUnchanged(buildOutline(store.doc), previous, 'children'),
+  );
   const hint = computed(() => outlineHint({ readOnly: store.readOnly }));
   const networks = computed(() => networkOutline(store.doc));
 
@@ -446,15 +451,39 @@
     }
   });
 
+  // The rows that are pressed, hold the tab stop and are being renamed, as
+  // sets each row asks about its own id: a click then draws again only the
+  // rows whose answer it changed, rather than every row.
+  const pressedIds = idSet(() => [...store.selection.nodes]);
+  const rovingIds = idSet(() => [rovingId.value]);
+  const renamingIds = idSet(() => [renamingId.value].filter(Boolean));
+
+  function idSet(source) {
+    const set = reactive(new Set());
+
+    watch(
+      source,
+      (ids) => {
+        const next = new Set(ids);
+
+        [...set].filter((id) => !next.has(id)).forEach((id) => set.delete(id));
+        next.forEach((id) => set.add(id));
+      },
+      { immediate: true, flush: 'sync' },
+    );
+
+    return set;
+  }
+
   provide(
     'builderOutline',
     reactive({
-      rovingId,
-      renamingId,
       renameValue,
       rowId,
       iconFor,
-      isSelected,
+      isPressed: (id) => pressedIds.has(id),
+      isRoving: (id) => rovingIds.has(id),
+      isRenaming: (id) => renamingIds.has(id),
       onRowClick,
       onRowKeydown,
       onRowFocus,
@@ -489,22 +518,10 @@
     });
   }
 
-  // Each row's icon, worked out once per document: every row asks again
-  // whenever the selection changes.
-  const iconKeys = computed(() => {
-    const keys = new Map();
-
-    for (const node of store.doc.nodes || []) {
-      if (!keys.has(node.id)) {
-        keys.set(node.id, nodeIconKey(node));
-      }
-    }
-
-    return keys;
-  });
-
+  // Each row carries its icon (see buildOutline), so an edit draws again
+  // only the rows it changed.
   function iconFor(item) {
-    return iconKeys.value.get(item.id) || nodeIconKey({ kind: item.kind });
+    return item.iconKey || nodeIconKey({ kind: item.kind });
   }
 
   function isSelected(id) {

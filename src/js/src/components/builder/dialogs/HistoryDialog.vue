@@ -8,6 +8,11 @@
   marked busy; the status then says how many snapshots there are. A failed
   read is reported here, with a button to read again, rather than by the
   page alert behind the dialog.
+
+  A snapshot of edits the Builder applied for the user (the Inspector's
+  unapplied edits, saved before the diagram was left, published or
+  exported; see leave.js) is marked Automatic, in its name too, and a line
+  under the list says what that means.
 -->
 <template>
   <builder-dialog
@@ -34,10 +39,24 @@
               class="builder-button"
               :aria-disabled="restoring || undefined"
               @click="restore(entry)">
-              Restore {{ snapshotName(entry, index) }}
+              <span>Restore {{ snapshotName(entry, index) }}</span>
+              <span
+                v-if="automatic(entry)"
+                class="builder-history__auto"
+                data-testid="history-automatic">
+                <builder-icon name="save" :size="12" />
+                <span class="builder-visually-hidden">, </span>Automatic
+              </span>
             </button>
           </li>
         </ol>
+        <p
+          v-if="listed && store.serverHistory.some(automatic)"
+          class="builder-hint"
+          data-testid="history-automatic-hint">
+          Automatic: changes you had not applied in the Inspector, saved for you
+          before you left, published or exported the diagram.
+        </p>
       </div>
 
       <!-- Shown while something is under way, or when there is nothing to
@@ -84,6 +103,7 @@
 
   import { count } from '@/builder/announce.js';
   import { formatTimestamp } from '@/builder/format.js';
+  import { savedAutomatically } from '@/builder/history.js';
   import { useBuilderStore } from '@/builder/store.js';
 
   const emit = defineEmits(['close']);
@@ -130,6 +150,11 @@
     return [change, formatTimestamp(entry.createdAt, { seconds: true })]
       .filter(Boolean)
       .join(', ');
+  }
+
+  // A snapshot of edits the Builder applied for the user.
+  function automatic(entry) {
+    return savedAutomatically(entry.summary);
   }
 
   // Try again goes while the list is read, so focus moves to the dialog
@@ -199,6 +224,24 @@
     display: flex;
     justify-content: flex-end;
     gap: 0.5rem;
+  }
+
+  /* The mark of a snapshot the Builder saved for the user. Its border
+     shows in forced colors too, and it wraps under the name when the
+     dialog is narrow. */
+  .builder-history .builder-button {
+    flex-wrap: wrap;
+  }
+
+  .builder-history__auto {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0 0.3rem;
+    border: 1px solid var(--bx-border-strong);
+    border-radius: var(--bx-radius);
+    font-size: 0.75rem;
   }
 
   /* Forced colors draw every border in one color, which would hide the

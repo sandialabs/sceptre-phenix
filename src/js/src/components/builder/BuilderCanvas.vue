@@ -56,14 +56,14 @@
          help below is closed. -->
     <p id="builder-canvas-help-summary" hidden>{{ hints.canvas }}</p>
 
+    <!-- The nodes and connections are handed to Vue Flow as they change
+         (see syncNodes), not bound here. -->
     <VueFlow
       class="builder-canvas__flow"
-      :nodes="flowNodes"
-      :edges="flowEdges"
       :node-types="nodeTypes"
       :edge-types="edgeTypes"
       :default-viewport="START_VIEWPORT"
-      :min-zoom="MIN_ZOOM"
+      :min-zoom="minZoom"
       :max-zoom="MAX_ZOOM"
       :snap-to-grid="snapToGrid"
       :snap-grid="snapGrid"
@@ -128,7 +128,7 @@
           <ControlButton
             class="vue-flow__controls-fitview"
             v-on="zoomTip('Fit diagram to view', 'view.fit')"
-            @click="fitView()">
+            @click="fitDiagram()">
             <svg
               class="builder-canvas__fit-icon"
               viewBox="0 0 24 24"
@@ -188,7 +188,17 @@
 </template>
 
 <script setup>
-  import { computed, inject, markRaw, nextTick, ref } from 'vue';
+  import {
+    computed,
+    inject,
+    markRaw,
+    nextTick,
+    onMounted,
+    provide,
+    ref,
+    shallowRef,
+    watch,
+  } from 'vue';
   import { ConnectionMode, VueFlow, useVueFlow } from '@vue-flow/core';
   import { Background } from '@vue-flow/background';
   import { ControlButton, Controls } from '@vue-flow/controls';
@@ -223,17 +233,20 @@
   } from '@/builder/model.js';
   import { pressSelection } from '@/builder/selection.js';
   import { builderSettings } from '@/builder/settings.js';
+  import { keepUnchanged } from '@/builder/stable.js';
   import { useBuilderStore } from '@/builder/store.js';
   import {
     EDGE_HINT_ID,
     NODE_HINT_ID,
     absolutePosition,
+    flowChanges,
     freeSpot,
     fromFlowConnection,
     hiddenArea,
     toFlowEdges,
     toFlowNodes,
     withSelection,
+    zoomFloor,
   } from '@/builder/adapters/vueflow.js';
   import {
     PALETTE_MIME,
@@ -246,6 +259,8 @@
     reducedMotion: { type: Boolean, default: false },
   });
 
+  // The least zoom, unless a diagram needs less to be seen whole (see
+  // minZoom).
   const MIN_ZOOM = 0.2;
   const MAX_ZOOM = 2;
   // The zoom and pan the canvas opens with.
@@ -254,10 +269,20 @@
   const store = useBuilderStore();
   const root = ref(null);
   const {
+    addEdges,
+    addNodes,
+    dimensions,
+    findEdge: findFlowEdge,
+    findNode: findFlowNode,
     fitBounds,
     fitView,
+    nodes: graphNodes,
     project,
+    removeEdges,
+    setEdges,
+    setNodes,
     setViewport,
+    updateNode: updateFlowNode,
     viewport,
     vueFlowRef,
     zoomIn,
@@ -280,8 +305,19 @@
     }
   }
 
+  // Below MIN_ZOOM when that is what it takes to show the whole diagram in
+  // the pane, as Fit does.
+  const diagramFloor = computed(() =>
+    zoomFloor(boundsOf(store.doc.nodes || []), dimensions.value, MIN_ZOOM),
+  );
+  // A floor that rises past the zoom (a larger window, a smaller diagram)
+  // waits there: zooming out never zooms in.
+  const minZoom = computed(() =>
+    Math.min(diagramFloor.value, viewport.value.zoom),
+  );
+
   const atMaxZoom = computed(() => viewport.value.zoom >= MAX_ZOOM);
-  const atMinZoom = computed(() => viewport.value.zoom <= MIN_ZOOM);
+  const atMinZoom = computed(() => viewport.value.zoom <= minZoom.value);
 
   // The zoom buttons' names and keys, as tooltips (WCAG 1.4.13); the
   // palette's entries show theirs the same way. The keys work on the
@@ -314,24 +350,134 @@
 
   const edgeTypes = markRaw({ builderNetwork: markRaw(NetworkEdge) });
 
+  // Vue Flow's layer for edge labels, looked up once for all the edges
+  // (see NetworkEdge.vue). It is drawn with the canvas.
+  const labelLayer = shallowRef(null);
+
+  provide('builderEdgeLabels', labelLayer);
+
+  onMounted(() => {
+    labelLayer.value =
+      root.value?.querySelector('.vue-flow__edge-labels') || null;
+  });
+
   // What the diagram checks found about each node, which marks it.
   const nodeIssues = computed(() =>
     nodeIssueSummaries(store.doc, store.issues),
   );
 
-  // The graph follows the document; the selection then changes only the
-  // nodes and connections it selects or deselects, so a click on a large
-  // diagram redraws those alone (see withSelection).
-  const baseNodes = computed(() =>
-    toFlowNodes(store.doc, { issues: nodeIssues.value }),
+  // The graph follows the document. An edit changes only the nodes and
+  // connections it touches, and the selection only those it selects or
+  // deselects: the rest stay the same objects (see keepUnchanged and
+  // withSelection).
+  const baseNodes = computed((previous) =>
+    keepUnchanged(
+      toFlowNodes(store.doc, { issues: nodeIssues.value }),
+      previous,
+    ),
   );
-  const baseEdges = computed(() => toFlowEdges(store.doc));
-  const flowNodes = computed(() =>
-    withSelection(baseNodes.value, store.selection.nodes),
+  const baseEdges = computed((previous) =>
+    keepUnchanged(toFlowEdges(store.doc), previous),
   );
-  const flowEdges = computed(() =>
-    withSelection(baseEdges.value, store.selection.edges),
+  const flowNodes = computed((previous) =>
+    keepUnchanged(
+      withSelection(baseNodes.value, store.selection.nodes),
+      previous,
+    ),
   );
+  const flowEdges = computed((previous) =>
+    keepUnchanged(
+      withSelection(baseEdges.value, store.selection.edges),
+      previous,
+    ),
+  );
+
+  // Vue Flow is handed only what changed, so a click or an edit on a large
+  // diagram redraws only what it changed. Given a whole list, Vue Flow
+  // remakes every item, and finds each node's group by a search of all
+  // the nodes. Nodes come before the connections that end at them.
+  watch(
+    [flowNodes, flowEdges],
+    ([nodes, edges], [nodesBefore, edgesBefore]) => {
+      syncNodes(nodes, nodesBefore);
+      syncEdges(edges, edgesBefore);
+    },
+    { immediate: true },
+  );
+
+  // A node that moved into or out of a group, or one Vue Flow does not
+  // have, takes the whole list.
+  function syncNodes(nodes, before) {
+    const changes =
+      before && flowChanges(before, nodes, ['type', 'parentNode']);
+
+    if (
+      !changes ||
+      changes.rebuild ||
+      changes.changed.some((item) => !findFlowNode(item.id))
+    ) {
+      setNodes(nodes);
+
+      return;
+    }
+
+    changes.changed.forEach((item) => updateFlowNode(item.id, item));
+
+    // Vue Flow grows a group while a member is dragged past its edge. Once
+    // the member lands, the group is drawn as the document has it again.
+    const groups = new Set(changes.changed.map((item) => item.parentNode));
+
+    nodes
+      .filter((item) => groups.has(item.id))
+      .forEach((item) => updateFlowNode(item.id, item));
+
+    if (changes.added.length) {
+      addNodes(changes.added);
+    }
+
+    // Vue Flow draws its nodes, and Tab reaches them, in its list's order.
+    if (changes.removed.length || changes.reordered) {
+      graphNodes.value = nodes
+        .map((item) => findFlowNode(item.id))
+        .filter(Boolean);
+    }
+  }
+
+  // A connection that changed its ends, or one Vue Flow does not have,
+  // takes the whole list, as does a new order.
+  function syncEdges(edges, before) {
+    const changes =
+      before &&
+      flowChanges(before, edges, [
+        'source',
+        'target',
+        'sourceHandle',
+        'targetHandle',
+      ]);
+
+    if (
+      !changes ||
+      changes.rebuild ||
+      changes.reordered ||
+      changes.changed.some((item) => !findFlowEdge(item.id))
+    ) {
+      setEdges(edges);
+
+      return;
+    }
+
+    changes.changed.forEach((item) =>
+      Object.assign(findFlowEdge(item.id), item),
+    );
+
+    if (changes.removed.length) {
+      removeEdges(changes.removed);
+    }
+
+    if (changes.added.length) {
+      addEdges(changes.added);
+    }
+  }
 
   const gridEnabled = computed(() => store.doc.grid?.enabled !== false);
   const gridSize = computed(() => store.doc.grid?.size || 16);
@@ -972,10 +1118,9 @@
 
   // Brings nodes into view, leaving focus where it is. When any of them is
   // outside the pane or under what floats over it, the view centers on them
-  // all: at the same zoom when they fit, or zoomed out to fit them. When
-  // they would not fit even at the least zoom, the first of them (an
-  // outline row's own node) is brought into view alone instead. They are
-  // found in the document, so they need not be drawn yet.
+  // all: at the same zoom when they fit, or zoomed out to fit them, which
+  // the least zoom always allows (see zoomFloor). They are found in the
+  // document, so they need not be drawn yet.
   function revealNodes(ids) {
     const pane = vueFlowRef.value?.getBoundingClientRect();
     const wanted = new Set(ids);
@@ -1012,17 +1157,7 @@
     const duration = props.reducedMotion ? 0 : 200;
 
     if (width > pane.width || height > pane.height) {
-      // The zoom fitBounds would take for them.
-      const fit = Math.min(
-        pane.width / (bounds.width * (1 + REVEAL_PADDING)),
-        pane.height / (bounds.height * (1 + REVEAL_PADDING)),
-      );
-
-      if (fit < MIN_ZOOM && nodes.length > 1) {
-        revealNodes([ids[0]]);
-      } else {
-        fitBounds(bounds, { padding: REVEAL_PADDING, duration });
-      }
+      fitBounds(bounds, { padding: REVEAL_PADDING, duration });
 
       return;
     }
@@ -1076,8 +1211,14 @@
   function onNodesInitialized() {
     if (fitWhenMeasured) {
       fitWhenMeasured = false;
-      fitView();
+      fitDiagram();
     }
+  }
+
+  // Fit: the whole diagram in view, at whatever zoom that takes. The least
+  // zoom is given as well, in case Vue Flow has not had it yet.
+  function fitDiagram(options = {}) {
+    return fitView({ ...options, minZoom: diagramFloor.value });
   }
 
   // Reset view: the zoom and pan the canvas opens with, which the
@@ -1086,7 +1227,7 @@
     const duration = props.reducedMotion ? 0 : 200;
 
     if (builderSettings.openZoom === 'fit' && store.doc.nodes.length) {
-      fitView({ duration });
+      fitDiagram({ duration });
     } else {
       setViewport(START_VIEWPORT, { duration });
     }
@@ -1145,7 +1286,7 @@
 
   defineExpose({
     viewportElement,
-    fitView,
+    fitView: fitDiagram,
     zoomIn: zoomInView,
     zoomOut: zoomOutView,
     atMaxZoom,

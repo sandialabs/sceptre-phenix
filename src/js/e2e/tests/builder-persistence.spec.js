@@ -5,6 +5,8 @@
 // draft's history cursor. The tests therefore check both what the editor shows
 // and what the server holds, reading the draft through the API.
 
+const fs = require('fs');
+
 const {
   test,
   expect,
@@ -82,6 +84,14 @@ async function addDevices(builder, count) {
     await builder.palette('device').click();
     await expectCounts(builder, { devices: start + index });
   }
+}
+
+// The Inspector's Memory field, of the device it shows.
+function memoryField(builder) {
+  return builder.inspector
+    .locator('legend.group-label', { hasText: /^Hardware$/ })
+    .locator('xpath=..')
+    .getByLabel('Memory', { exact: true });
 }
 
 // Vue Flow's wrapper around the device with this label: the node's one
@@ -1040,6 +1050,40 @@ test.describe('Builder Beta persistence', () => {
       await expectServerCounts(builder, draft, { devices: 3 });
       await expect.soft(builder.toolbar('redo')).toBeEnabled();
     });
+
+    await test.step('Inspector changes typed and not applied are kept by a reload made offline', async () => {
+      await builder.selectInOutline('node');
+      await page.route(DRAFT_ROUTES, (route) => route.abort());
+      // Focus stays in the field, which has not committed its text yet.
+      await memoryField(builder).fill('4096');
+      await expect.soft(memoryField(builder)).toBeFocused();
+
+      const prompts = [];
+      page.once('dialog', (dialog) => {
+        prompts.push(dialog.type());
+        dialog.accept().catch(() => {});
+      });
+      await page.reload();
+      expect
+        .soft(prompts, 'prompt before the reload')
+        .toEqual(['beforeunload']);
+      await expect(
+        page.getByRole('heading', { name: 'Builder Flow' }),
+      ).toBeVisible({ timeout: 20000 });
+      await page.unroute(DRAFT_ROUTES);
+      await page.getByTestId(`draft-open-${draft.id}`).click();
+      await builder.selectInOutline('node');
+      await expect.soft(memoryField(builder)).toHaveValue('4096');
+      await builder.waitSaved();
+
+      const device = (await builder.serverDocument(draft)).nodes.find(
+        (node) => node.label === 'node',
+      );
+      expect.soft(device?.device?.spec?.hardware?.memory).toBe(4096);
+      expect
+        .soft((await listSnapshots(builder.request, draft)).at(-1).summary)
+        .toBe('Saved unapplied changes to Device node');
+    });
   });
 
   test('a snapshot the server rejects does not block later saves', async ({
@@ -1218,7 +1262,7 @@ test.describe('Builder Beta persistence', () => {
       await expect(page).toHaveURL(/\/experiments$/);
     });
 
-    await test.step('logging out, with the Builder closed, clears what it kept here but the preferences', async () => {
+    await test.step('logging out, with the Builder closed, warns of the change the server lacks, then clears what it kept here but the preferences', async () => {
       const kept = () =>
         page.evaluate(
           () =>
@@ -1273,7 +1317,68 @@ test.describe('Builder Beta persistence', () => {
       await page.route('**/api/v1/logout', (route) =>
         route.fulfill({ status: 204 }),
       );
-      await page.locator('.navbar-item', { hasText: 'Logout' }).click();
+      const logout = page.getByRole('button', { name: 'Logout' });
+      const warning = page.getByRole('alertdialog', {
+        name: 'Log out with unsaved changes?',
+      });
+
+      // The change queued offline is sent first, which fails again, so
+      // logging out asks, in the Builder's theme, and waits for an answer.
+      await logout.click();
+      await expect(warning).toBeVisible();
+      await expect
+        .soft(warning)
+        .toHaveAccessibleDescription(
+          '1 change to Builder Flow drafts has not reached the server. Logging out deletes it from this browser. Use Export to keep a copy.',
+        );
+      await expect.soft(warning).toHaveAttribute('data-theme', 'dark');
+      await expect
+        .soft(warning.getByRole('button', { name: 'Stay signed in' }))
+        .toBeFocused();
+      await expect
+        .soft(warning.getByRole('button'))
+        .toHaveText(['Export', 'Stay signed in', 'Log out anyway']);
+
+      // Export saves the diagram the queued change leaves.
+      const [file] = await Promise.all([
+        page.waitForEvent('download'),
+        warning.getByRole('button', { name: 'Export' }).click(),
+      ]);
+      const name = `${title.toLowerCase().replace(/ /g, '-')}.json`;
+      expect.soft(file.suggestedFilename()).toBe(name);
+      const exported = JSON.parse(fs.readFileSync(await file.path(), 'utf8'));
+      expect
+        .soft(exported.nodes.filter((node) => node.kind === 'device'))
+        .toHaveLength(1);
+      await expect
+        .soft(warning.getByRole('status'))
+        .toHaveText(`Saved ${name}.`);
+
+      await warning.getByRole('button', { name: 'Stay signed in' }).click();
+      await expect(warning).toBeHidden();
+      await expect.soft(logout, 'focus after Stay signed in').toBeFocused();
+      await expect.soft(page).toHaveURL(/\/experiments$/);
+      expect((await kept()).drafts).toBe(1);
+
+      // A logout the server does not answer keeps the session, says so,
+      // and gives focus back to Logout.
+      await page.unroute('**/api/v1/logout');
+      await page.route('**/api/v1/logout', (route) => route.abort());
+      await logout.click();
+      await warning.getByRole('button', { name: 'Log out anyway' }).click();
+      await expect
+        .soft(page.getByRole('alert').filter({ hasText: 'Could not log out' }))
+        .toHaveText('Could not log out. Check your connection and try again.');
+      await expect.soft(logout, 'focus after a failed logout').toBeFocused();
+      await expect.soft(page).toHaveURL(/\/experiments$/);
+      expect((await kept()).drafts).toBe(1);
+      await page.unroute('**/api/v1/logout');
+      await page.route('**/api/v1/logout', (route) =>
+        route.fulfill({ status: 204 }),
+      );
+
+      await logout.click();
+      await warning.getByRole('button', { name: 'Log out anyway' }).click();
       await expect(page).toHaveURL(/\/signin$/);
       // Without authentication the app signs in again at once, and names
       // that user.
@@ -1362,6 +1467,78 @@ test.describe('Builder Beta persistence', () => {
         .soft(page.getByTestId(`draft-open-${draft.id}`))
         .toBeFocused();
       await expectServerCounts(builder, draft, { devices: 1 });
+    });
+
+    await test.step('Inspector changes not applied are saved on Back to drafts, and History marks them', async () => {
+      const open = page.getByTestId(`draft-open-${draft.id}`);
+      await open.click();
+      await expect(builder.canvas).toBeVisible();
+      await builder.waitSaved();
+      await builder.selectInOutline('node');
+      await memoryField(builder).fill('4096');
+      await memoryField(builder).blur();
+      await expect(
+        builder.inspector.getByTestId('inspector-apply'),
+      ).toBeVisible();
+
+      // Nothing is left to ask about: the changes are saved as one edit.
+      await back.click();
+      await expect(builder.landingHeading).toBeVisible({ timeout: 20000 });
+      await expect.soft(confirm).toHaveCount(0);
+      await expect.soft(open).toBeFocused();
+      const device = (await builder.serverDocument(draft)).nodes.find(
+        (node) => node.kind === 'device',
+      );
+      expect.soft(device?.device?.spec?.hardware?.memory).toBe(4096);
+      expect
+        .soft((await listSnapshots(request, draft)).at(-1).summary)
+        .toBe('Saved unapplied changes to Device node');
+
+      await open.click();
+      await expect(builder.canvas).toBeVisible();
+      await builder.selectInOutline('node');
+      await expect.soft(memoryField(builder)).toHaveValue('4096');
+      const dialog = await builder.openDialog('history');
+      const saved = dialog.getByRole('button', {
+        name: /^Restore Saved unapplied changes to Device node, .+, Automatic$/,
+      });
+      await expect(saved).toBeVisible();
+      await expect.soft(saved.getByTestId('history-automatic')).toBeVisible();
+      await expect
+        .soft(dialog.getByTestId('history-automatic-hint'))
+        .toHaveText(
+          'Automatic: changes you had not applied in the Inspector, saved for you before you left, published or exported the diagram.',
+        );
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+    });
+
+    await test.step('Inspector changes that cannot be applied keep the question, naming their fields', async () => {
+      await memoryField(builder).fill('lots');
+      await memoryField(builder).blur();
+      await back.click();
+      await expect(confirm).toBeVisible();
+      await expect
+        .soft(confirm)
+        .toHaveAccessibleDescription(
+          'Your changes to Device node in the Inspector cannot be saved until Memory is fixed.',
+        );
+      await expect
+        .soft(confirm.getByRole('button', { name: 'Stay' }))
+        .toBeFocused();
+      await expect
+        .soft(confirm.getByRole('button', { name: 'Leave without them' }))
+        .toBeVisible();
+      await confirm.getByRole('button', { name: 'Stay' }).click();
+      await expect(confirm).toBeHidden();
+      await expect.soft(back, 'focus after Stay').toBeFocused();
+      await expect.soft(memoryField(builder)).toHaveValue('lots');
+      await builder.inspector.getByTestId('inspector-cancel').click();
+      await expect(
+        builder.inspector.getByTestId('inspector-apply'),
+      ).toHaveCount(0);
+      await back.click();
+      await expect(builder.landingHeading).toBeVisible();
     });
 
     await test.step('a draft deleted elsewhere meanwhile leaves focus on the landing', async () => {

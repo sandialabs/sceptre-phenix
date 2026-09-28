@@ -61,15 +61,22 @@ upload, or publish. Configs' edit button for a Builder Flow topology links to
 the first time) and then names it as `?draft=<owner>/<id>`, so a reload reopens
 that draft; with the feature off, Configs explains that the topology can only
 be edited in Builder Flow. The Inspector also edits a node's labels,
-annotations, and advanced (minimega `vm config`) settings. Logging out removes
-Builder Flow's local drafts (IndexedDB `phenix-builder`) and recent commands
-from the browser, as does signing in as a different user (`phenix.builder.user`
-names whose data the browser holds), and keeps its preferences
-(`phenix.builder.theme`, `phenix.builder.panes`, `phenix.builder.shortcuts` and
-`phenix.builder.settings` in localStorage). A draft keeps its own layout choice
-in its document's `layout`; the Settings layout is the default for drafts
-without one. A document may also hold each connection's `route` as a layout
-drew it; publishing and export ignore both.
+annotations, and advanced (minimega `vm config`) settings. Leaving a draft,
+publishing, or exporting first saves Inspector changes that were not applied,
+as a draft snapshot with the summary `Saved unapplied changes to <node>`.
+Logging out removes Builder Flow's local drafts (IndexedDB `phenix-builder`)
+and recent commands from the browser, as does signing in as a different user
+(`phenix.builder.user` names whose data the browser holds), and keeps its
+preferences (`phenix.builder.theme`, `phenix.builder.panes`,
+`phenix.builder.shortcuts` and `phenix.builder.settings` in localStorage).
+Logging out first sends changes still queued in the browser; if some remain,
+a warning offers Export (one file per draft), Stay signed in (not once the
+token has expired) and Log out anyway. The idle timeout and an expired token
+show it for one minute (an expired token's only while the tab is visible),
+then log out. A draft keeps its own layout choice in its document's `layout`;
+the Settings layout is the default for drafts without one. A document may also
+hold each connection's `route` as a layout drew it; publishing and export
+ignore both.
 
 Draft owners can manage their own drafts. An owner can share a draft with
 named users as `view` or `edit`. `GET /builder/drafts/{owner}/{draft}/shares`
