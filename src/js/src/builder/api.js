@@ -12,6 +12,8 @@
 
 import axiosInstance from '@/utils/axios.js';
 
+import { sessionEnded } from './signin.js';
+
 export const DRAFTS_PATH = 'builder/drafts';
 export const SOURCES_PATH = 'builder/sources';
 export const GENERATE_PATH = 'builder/generate';
@@ -867,4 +869,34 @@ export function createBuilderApi(http = axiosInstance) {
   };
 }
 
-export const builderApi = createBuilderApi();
+/**
+ * An HTTP client that says when the server refuses the session (401), so
+ * the Builder can offer to sign in again (see signin.js). Each request is
+ * otherwise the client's own, and fails as it would.
+ *
+ * @param {object} http axios-compatible client
+ * @param {(error: object) => void} [ended] called for each 401
+ * @returns {object} client
+ */
+export function watchSession(http, ended = sessionEnded) {
+  const method =
+    (name) =>
+    (...args) =>
+      http[name](...args).catch((error) => {
+        if (error?.response?.status === 401) {
+          ended(error);
+        }
+
+        throw error;
+      });
+
+  return {
+    get: method('get'),
+    post: method('post'),
+    put: method('put'),
+    patch: method('patch'),
+    delete: method('delete'),
+  };
+}
+
+export const builderApi = createBuilderApi(watchSession(axiosInstance));

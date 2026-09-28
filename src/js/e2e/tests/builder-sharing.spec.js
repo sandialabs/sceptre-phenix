@@ -11,8 +11,9 @@
 //
 // The UI is the one the other specs use (VITE_AUTH=disabled). Each user's
 // session is set up as a sign-in leaves it, in a browser of their own (see
-// sharingUsers in builder-support.js). Logging out with changes the server
-// does not have is tested here too, as it needs such a session.
+// sharingUsers in builder-support.js). Signing in again without leaving
+// the Builder, and logging out with changes the server does not have, are
+// tested here too, as they need such a session.
 const fs = require('fs');
 
 const {
@@ -767,7 +768,7 @@ test('mistakes and changes from elsewhere in the Share dialog', async ({
 });
 
 test(
-  'logging out with a change the server does not have warns first, and an idle logout waits a minute',
+  'a session the server ends signs in again in place; logging out with a change the server does not have warns first, and an idle logout waits a minute',
   { tag: '@cross-browser' },
   async ({ sharingUsers, playwright }, testInfo) => {
     test.setTimeout(120000);
@@ -804,6 +805,78 @@ test(
       }),
     );
     await openOwn(owner, draft);
+
+    await test.step('a session the server ended signs in again in place, and the change it refused is saved then', async () => {
+      const dialog = page.getByRole('dialog', { name: 'Sign in again' });
+      const password = dialog.getByLabel('Password');
+      const saveState = page.getByTestId('builder-save-state');
+      const live = page.getByTestId('builder-live-region');
+      // Logging out would remove the Builder's keys, this tab's id among
+      // them (see builder/session.js).
+      const tabId = () =>
+        page.evaluate(() => sessionStorage.getItem('phenix.builder.tab'));
+      const tab = await tabId();
+
+      expect(tab).toBeTruthy();
+
+      // The server forgets the page's session, as a logout elsewhere does.
+      expect((await owner.api.get(`${API}/logout`)).status()).toBe(204);
+      await page.getByTestId('palette-switch').click();
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toHaveAccessibleDescription(
+        'Your session has ended. Sign in again to keep working; changes not saved yet stay in this browser until then.',
+      );
+      await expect(dialog.getByLabel('Username')).toHaveValue(owner.username);
+      await expect(dialog.getByLabel('Username')).not.toBeEditable();
+      await expect(password).toBeFocused();
+      await expect(saveState).toContainText(
+        'Not saved: your session has ended. Sign in again to save your changes.',
+      );
+      expect(await records()).toEqual([1]);
+      await expectAccessible(page, {
+        include: '[data-testid="builder-signin"]',
+        label: 'Sign in again',
+      });
+
+      await password.fill('not-the-password');
+      await password.press('Enter');
+      await expect(dialog.getByTestId('signin-error')).toHaveText(
+        'The password is incorrect.',
+      );
+      await expect(password).toBeFocused();
+      await expect(password).toHaveAttribute('aria-invalid', 'true');
+
+      // Cancel keeps the change here; Retry saving asks again.
+      await dialog.getByRole('button', { name: 'Cancel' }).click();
+      await expect(dialog).toBeHidden();
+      await expect(page.getByTestId('builder-signin-notice')).toBeVisible();
+      expect(await records()).toEqual([1]);
+      await page.getByTestId('toolbar-retry').click();
+      await expect(dialog).toBeVisible();
+
+      await password.fill(USER_PASS);
+      await dialog.getByRole('button', { name: 'Sign in' }).click();
+      await expect(dialog).toBeHidden();
+      await expect(live).toContainText('Signed in again. Saving your changes.');
+      await expect(saveState).toContainText(SAVED);
+      await expect(page.getByTestId('builder-signin-notice')).toBeHidden();
+      await expect(page).toHaveURL(/\/builder-beta/);
+      expect(await tabId()).toBe(tab);
+
+      // The server has the change, read with the page's new session.
+      const saved = await page.evaluate(async (path) => {
+        const response = await fetch(path, {
+          headers: {
+            'X-Phenix-Auth-Token': `bearer ${sessionStorage.getItem('phenix.token')}`,
+          },
+        });
+        const body = await response.json();
+
+        return body.document.nodes.map((node) => node.kind);
+      }, draftPath(draft));
+      expect(saved).toContain('switch');
+    });
+
     await page.route('**/api/v1/builder/drafts/**', (route) => route.abort());
     await page.getByTestId('palette-device').click();
     await expect(page.getByTestId('builder-save-state')).toContainText(

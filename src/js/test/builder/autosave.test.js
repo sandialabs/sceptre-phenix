@@ -669,6 +669,7 @@ describe('failure states', () => {
     expect(state).toMatchObject({
       status: 'error',
       retryable: true,
+      signInNeeded: true,
       pending: 1,
     });
     expect(describeState(state)).toBe(
@@ -677,7 +678,57 @@ describe('failure states', () => {
     // The same credentials are refused every time: no timer retry.
     expect(timers).toHaveLength(0);
 
-    expect(await queue.retry()).toMatchObject({ status: 'saved', pending: 0 });
+    expect(await queue.retry()).toMatchObject({
+      status: 'saved',
+      signInNeeded: false,
+      pending: 0,
+    });
+  });
+
+  // Where the Builder can ask for the password again (see signin.js), the
+  // queue waits for it, keeping every edit, and signing in resumes it.
+  test('an ended session waits for the user to sign in again, and then sends everything queued', async () => {
+    let signedIn = false;
+    const timers = [];
+    const api = fakeApi();
+    const send = api.appendSnapshot;
+    api.appendSnapshot = vi.fn((...args) =>
+      signedIn
+        ? send(...args)
+        : Promise.reject(
+            Object.assign(new Error('unauthorized'), {
+              response: { status: 401, data: 'user token error' },
+            }),
+          ),
+    );
+    const { queue, store } = await attached({
+      api,
+      setTimeout: (fn) => timers.push(fn),
+      extra: { signInHere: () => true },
+    });
+
+    await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+    const state = await queue.commit({ id: 'c2', label: 'two', snapshot: doc });
+
+    expect(state).toMatchObject({
+      status: 'error',
+      signInNeeded: true,
+      pending: 2,
+    });
+    expect(describeState(state)).toBe(
+      'Not saved: your session has ended. Sign in again to save your changes.',
+    );
+    expect(timers).toHaveLength(0);
+    expect((await store.all())[0].queue).toHaveLength(2);
+
+    signedIn = true;
+    await expect(queue.retry()).resolves.toMatchObject({
+      status: 'saved',
+      pending: 0,
+    });
+    expect(
+      api.appendSnapshot.mock.calls.slice(-2).map((call) => call[2].summary),
+    ).toEqual(['one', 'two']);
   });
 
   test('offline work is retried and never lost', async () => {

@@ -313,7 +313,8 @@
       default: () => ({ mine: [], others: [] }),
     },
     // How the saves of drafts closed while being saved go on, by cardKey:
-    // kind ('saving', 'saved', 'retrying', 'waiting' or 'stopped') and text.
+    // kind ('saving', 'saved', 'retrying', 'waiting', 'signin' or
+    // 'stopped') and text.
     saves: { type: Object, default: () => ({}) },
   });
 
@@ -644,7 +645,8 @@
   }
 
   .builder-drafts__save--retrying,
-  .builder-drafts__save--waiting {
+  .builder-drafts__save--waiting,
+  .builder-drafts__save--signin {
     color: var(--bx-warning);
   }
 

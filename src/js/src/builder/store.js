@@ -52,6 +52,7 @@ import {
 } from './schema.js';
 import { onBuilderSessionEnd } from './session.js';
 import { builderSettings } from './settings.js';
+import { requestSignIn, signIn, signInAvailable } from './signin.js';
 import { builderTabs } from './tabs.js';
 import { MAX_NAME_BYTES, validateDocument } from './validate.js';
 import {
@@ -659,6 +660,7 @@ export const useBuilderStore = defineStore('builder', {
           actor: phenix.username || 'anonymous',
           // Other tabs with the draft open (see tabs.js).
           tabs: builderTabs,
+          signInHere: signInAvailable,
           onState: (state) => {
             this.saveState = state;
 
@@ -1184,6 +1186,17 @@ export const useBuilderStore = defineStore('builder', {
         return this.saveState;
       }
 
+      // Save now while the session is over opens the sign-in, as Retry
+      // saving does.
+      if (
+        announce &&
+        this.saveState.signInNeeded &&
+        signIn.needed &&
+        requestSignIn()
+      ) {
+        return this.saveState;
+      }
+
       const before = this.saveAnnouncementSeq;
 
       // Anything already queued is awaited first so callers (publish) see the
@@ -1200,11 +1213,19 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
+     * Sends the queue again. While the session is over, the same token
+     * would be refused again: the sign-in opens instead, where it can (see
+     * signin.js), and signing in sends the queue.
+     *
      * @param {object} [options] announce: say how the retry ended (the
      *   toolbar's Retry saving), even when it failed the same way again
      */
     async retrySave({ announce = false } = {}) {
       if (!this.autosave) {
+        return this.saveState;
+      }
+
+      if (this.saveState.signInNeeded && signIn.needed && requestSignIn()) {
         return this.saveState;
       }
 

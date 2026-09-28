@@ -98,6 +98,9 @@ export function initialState() {
     // or oversized snapshot, a deleted draft), so Retry saving is not
     // offered for it.
     retryable: true,
+    // True while an error is the server refusing the session (401): the
+    // queue waits for the user to sign in again (see signin.js).
+    signInNeeded: false,
     // During a conflict: who saved the draft last, when the server said.
     lastModifiedBy: '',
     // Why a draft someone shared can no longer be saved: 'view-only' (the
@@ -390,7 +393,8 @@ const OTHER_TAB_CHOSEN = 'You chose to save the changes made in another tab.';
  * @param {object} options api, store, actor, onState, onDraft, now, setTimeout,
  *   clearTimeout, isOnline, addOnlineListener, historyLimit; tabs: the
  *   other tabs of this browser (builderTabs in tabs.js), which a queue
- *   without one ignores
+ *   without one ignores; signInHere: () => whether the Builder can ask
+ *   for the password again once the session has ended (see signin.js)
  * @returns {object} queue
  */
 export function createAutosave(options = {}) {
@@ -401,6 +405,7 @@ export function createAutosave(options = {}) {
     now = () => new Date().toISOString(),
     historyLimit = DEFAULT_HISTORY_LIMIT,
     tabs = null,
+    signInHere = () => false,
   } = options;
   // Replaced when the draft is closed and the queue goes on sending (see
   // observe).
@@ -451,7 +456,9 @@ export function createAutosave(options = {}) {
   let waitingForTabs = false;
 
   // A conflict that is the user's choice of another tab's changes says so
-  // (otherTab) until the queue leaves it.
+  // (otherTab) until the queue leaves it; an error that is the session
+  // ending (signInNeeded) until another status, or another error, replaces
+  // it.
   const emit = (patch = {}) => {
     const conflicted = (patch.status || state.status) === 'conflict';
 
@@ -461,6 +468,9 @@ export function createAutosave(options = {}) {
       pending: record ? record.queue.length : 0,
       changedAt: record?.changedAt || null,
       otherTab: conflicted && Boolean(patch.otherTab ?? state.otherTab),
+      signInNeeded: patch.status
+        ? patch.status === 'error' && Boolean(patch.signInNeeded)
+        : state.signInNeeded,
       tab,
       tabs: coordinator ? coordinator.peers() : [],
       versions: coordinator ? coordinator.versions() : [],
@@ -963,15 +973,18 @@ export function createAutosave(options = {}) {
 
       // The session ended (401). Sending again succeeds once the user is
       // signed in again, so the queue stays retryable, but not on a timer:
-      // the same credentials are refused every time.
+      // the same credentials are refused every time. Where the Builder can
+      // ask for the password again, it resumes the queue once it has it.
       if (kind === 'unauthenticated') {
         cancelRetry();
 
         return emit({
           status: 'error',
           retryable: true,
-          message:
-            'Could not save: your session has ended. Use Export to keep a copy of the diagram, then sign in again.',
+          signInNeeded: true,
+          message: signInHere()
+            ? 'Not saved: your session has ended. Sign in again to save your changes.'
+            : 'Could not save: your session has ended. Use Export to keep a copy of the diagram, then sign in again.',
         });
       }
 

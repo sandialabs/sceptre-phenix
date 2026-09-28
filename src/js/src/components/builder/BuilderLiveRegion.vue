@@ -48,19 +48,23 @@
   // Store announcements arrive synchronously, so two made in the same tick
   // are both queued rather than the second replacing the first. A save-state
   // message still waiting when the save state has moved on is dropped, so
-  // "Offline" is never spoken after the conflict that followed it.
+  // "Offline" is never spoken after the conflict that followed it, nor that
+  // the session has ended once the user has signed in again.
   watch(
     () => store.announcementSeq,
     () => {
       const slot = store.announcementSlot;
       const status = store.saveState.status;
+      const ended = store.saveState.signInNeeded;
 
       announcer.push(
         store.announcement,
         slot === 'save'
           ? {
               slot,
-              stale: () => staleSaveMessage(status, store.saveState.status),
+              stale: () =>
+                staleSaveMessage(status, store.saveState.status) ||
+                (ended && !store.saveState.signInNeeded),
             }
           : { slot },
       );

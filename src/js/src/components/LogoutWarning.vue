@@ -9,8 +9,10 @@
   and in the tab's title: the countdown is read with the description when
   the dialog opens, and once more near the end, not every second. Export
   saves one draft per click, as a browser may block a second download
-  from one click. It takes the Builder's theme, which follows the
-  system's unless the viewer chose one.
+  from one click. On the Builder's page, a session that expired can sign
+  in again there, which stops the countdown and opens the Builder's
+  sign-in (see builder/signin.js). It takes the Builder's theme, which
+  follows the system's unless the viewer chose one.
 -->
 <template>
   <dialog
@@ -64,6 +66,14 @@
         {{ text.stay }}
       </button>
       <button
+        v-if="warning.canSignIn"
+        ref="signInButton"
+        type="button"
+        data-testid="logout-warning-signin"
+        @click="signInAgain">
+        {{ text.signIn }}
+      </button>
+      <button
         ref="confirmButton"
         type="button"
         class="logout-warning__danger"
@@ -91,11 +101,12 @@
 
   const panel = ref(null);
   const stayButton = ref(null);
+  const signInButton = ref(null);
   const confirmButton = ref(null);
   const status = ref('');
   const theme = ref('light');
   // Where focus was when the warning opened, and whether the user chose to
-  // stay: any other close logs out.
+  // stay or to sign in again: any other close logs out.
   let previous = null;
   let staying = false;
 
@@ -123,6 +134,13 @@
   function stay() {
     staying = Boolean(warning.value?.canStay);
     phenix.answerLogoutWarning('stay');
+  }
+
+  // The Builder's sign-in opens once the warning has gone, and gives focus
+  // back where it was when it closes.
+  function signInAgain() {
+    staying = Boolean(warning.value?.canSignIn);
+    phenix.answerLogoutWarning('signin');
   }
 
   function logOut() {
@@ -174,6 +192,7 @@
   function firstChoice() {
     return (
       stayButton.value ||
+      signInButton.value ||
       panel.value?.querySelector('[data-testid="logout-warning-export"]') ||
       confirmButton.value
     );

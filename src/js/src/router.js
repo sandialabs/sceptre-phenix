@@ -5,6 +5,7 @@ import {
   ToastProgrammatic as Toast,
 } from 'buefy';
 
+import { expiredNavigation, signIn } from '@/builder/signin.js';
 import { tokenExpired, usePhenixStore } from '@/store.js';
 import axiosInstance from '@/utils/axios.js';
 import { BUILDER_BETA_FEATURE, createFeatureGuard } from '@/utils/features.js';
@@ -205,7 +206,7 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach(async (to, _, next) => {
+router.beforeEach(async (to, from, next) => {
   const store = usePhenixStore();
 
   if (import.meta.env.VITE_AUTH === 'disabled' || !import.meta.env.VITE_AUTH) {
@@ -255,7 +256,21 @@ router.beforeEach(async (to, _, next) => {
     } else if (to.name === 'signin') {
       // No need to go to the signin route if already authorized.
       router.replace('/');
-    } else if (tokenExpired(store.token)) {
+    } else if (signIn.open || tokenExpired(store.token)) {
+      // Builder Flow asks for the password again in place, and nothing
+      // logs out or leaves the page meanwhile (see builder/signin.js).
+      const builder = expiredNavigation(to, from);
+
+      if (builder === 'go') {
+        next();
+        return;
+      }
+
+      if (builder === 'stay') {
+        next(false);
+        return;
+      }
+
       // handle expired JWT by logging user out: https://stackoverflow.com/a/69058154
       // The page stays while a warning about Builder Flow changes the
       // server does not have is shown (see utils/logout.js); the logout

@@ -15,6 +15,7 @@ import { SAVED_UNAPPLIED, savedAutomatically } from '@/builder/history.js';
 import { createMemoryStore } from '@/builder/idb.js';
 import {
   LEAVE_SAVE_WAIT_MS,
+  backgroundSaveAnnouncement,
   backgroundSaveCard,
   createBackgroundSaves,
   createLeaveGuard,
@@ -490,6 +491,18 @@ describe('saves in the background', () => {
       kind: 'stopped',
       text: 'Not saved: 2 changes kept on this device. Open the draft to see why.',
     });
+    // The session ended: nothing retries until the user signs in again,
+    // which sends them.
+    expect(
+      card({ status: 'error', retryable: true, signInNeeded: true }),
+    ).toEqual({
+      kind: 'signin',
+      text: 'Not saved yet: sign in again to save 2 changes.',
+      stop: false,
+    });
+    expect(backgroundSaveAnnouncement('signin', 'Lab')).toBe(
+      'Your changes to Lab are not saved yet: sign in again to save them.',
+    );
     expect(card({ status: 'conflict', otherTab: true }).text).toBe(
       "Not saved: you chose another tab's changes. Open it to keep yours as a new draft.",
     );

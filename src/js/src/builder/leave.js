@@ -264,7 +264,8 @@ export function queueBusy(queue) {
  * @param {object} state queue state
  * @returns {{kind: string, text: string, stop: boolean}} kind: 'saving',
  *   'saved', 'retrying' (offline or failed, sent again automatically),
- *   'waiting' (for the choice of which tab's changes to save) or
+ *   'waiting' (for the choice of which tab's changes to save), 'signin'
+ *   (the session ended; sent again once the user signs in again) or
  *   'stopped'
  */
 export function backgroundSaveCard(state) {
@@ -274,6 +275,14 @@ export function backgroundSaveCard(state) {
     return {
       kind: 'waiting',
       text: 'Not saved yet: another tab has changes to this draft too. Open it to choose which to save.',
+      stop: false,
+    };
+  }
+
+  if (state.status === 'error' && state.signInNeeded) {
+    return {
+      kind: 'signin',
+      text: `Not saved yet: sign in again to save ${changes(pending)}.`,
       stop: false,
     };
   }
@@ -330,6 +339,8 @@ export function backgroundSaveAnnouncement(kind, name) {
       return `Could not save your changes to ${name} yet. Saving retries automatically.`;
     case 'waiting':
       return `Your changes to ${name} are not saved yet: another tab has changes to it too.`;
+    case 'signin':
+      return `Your changes to ${name} are not saved yet: sign in again to save them.`;
     case 'stopped':
       return `Could not save your changes to ${name}. Open it to see why.`;
     default:

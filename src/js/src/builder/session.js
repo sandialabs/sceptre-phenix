@@ -22,6 +22,10 @@
 // queues still send them (see createBackgroundSaves in leave.js), and
 // those queued in IndexedDB, or in an unload copy, for any other draft,
 // which are there whether or not the Builder is open.
+//
+// Signing in again without leaving the Builder (see signin.js) clears
+// nothing: the queues send what the server refused meanwhile (see
+// resumeBuilderSaves).
 
 import { clearBuilderDatabase, createDraftStore } from './idb.js';
 
@@ -378,6 +382,33 @@ export async function unsentBuilderWork({
     ),
     unapplied: blocked ? draft.describe(blocked) : '',
     drafts: fileNames(await unsentDrafts(draftStore, username, draft)),
+  };
+}
+
+/**
+ * Sends again, once the user has signed in again without leaving the
+ * Builder (see signin.js), what the server refused while the session was
+ * over: the open draft's changes, and those of drafts closed for the
+ * drafts. Nothing is cleared.
+ *
+ * @returns {{changes: number, sent: Promise<void>}} how many changes wait
+ *   to be sent, and the sends
+ */
+export function resumeBuilderSaves() {
+  const draft = openDraft?.editing() ? openDraft : null;
+  const refused = (state) => Boolean(state?.signInNeeded);
+  const open = refused(draft?.store.saveState) ? openQueue(draft).pending : 0;
+  const closed = closedQueues().filter((queue) => refused(queue.state));
+
+  return {
+    changes: closed.reduce(
+      (sum, queue) => sum + queue.record.queue.length,
+      open,
+    ),
+    sent: Promise.all([
+      open > 0 ? draft.store.retrySave() : null,
+      ...closed.map((queue) => queue.retry()),
+    ]).then(() => {}),
   };
 }
 

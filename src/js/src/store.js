@@ -5,6 +5,7 @@ import {
   startBuilderSession,
   unsentBuilderWork,
 } from '@/builder/session.js';
+import { requestSignIn, signInAvailable } from '@/builder/signin.js';
 import axiosInstance from '@/utils/axios.js';
 import { createLogoutFlow } from '@/utils/logout.js';
 
@@ -24,10 +25,14 @@ export function tokenExpired(token) {
 }
 
 // Logging out warns first while Builder Flow holds changes the server does
-// not have (see utils/logout.js).
+// not have (see utils/logout.js). On the Builder's page, the warning of a
+// session that expired offers to sign in again there (see
+// builder/signin.js).
 const logoutFlow = createLogoutFlow({
   findUnsent: ({ send }) =>
     unsentBuilderWork({ username: usePhenixStore().username, send }),
+  canSignIn: signInAvailable,
+  signIn: requestSignIn,
   async finish(reason) {
     // The server forgets the token first; it no longer knows an expired
     // one, and says so (401) when asked.
@@ -162,6 +167,38 @@ export const usePhenixStore = defineStore('phenix', {
       }
     },
     /**
+     * Takes the new token of the user signing in again without leaving the
+     * page (see builder/signin.js), kept where their sign-in kept the last
+     * one. Nothing else changes: the user is the same, so Builder Flow's
+     * data in this browser stays, and so does the page.
+     *
+     * @param {object} loginResponse as the sign-in page's
+     * @returns {boolean} false for another user's, which is not taken
+     */
+    renewLogin(loginResponse) {
+      if (loginResponse?.user?.username !== this.username) {
+        return false;
+      }
+
+      this.token = loginResponse.token;
+      this.role = loginResponse.user.role;
+
+      const storages = [sessionStorage];
+
+      // Remember me kept the last token in localStorage too.
+      if (localStorage.getItem('phenix.token') !== null) {
+        storages.push(localStorage);
+      }
+
+      for (const storage of storages) {
+        storage.setItem('phenix.token', this.token);
+        storage.setItem('phenix.role', JSON.stringify(this.role));
+      }
+
+      return true;
+    },
+
+    /**
      * Logs out: the header's Logout, the idle timeout, and an expired or
      * refused token. When Builder Flow holds changes the server does not
      * have, a warning comes first (see utils/logout.js).
@@ -178,7 +215,7 @@ export const usePhenixStore = defineStore('phenix', {
       });
     },
 
-    /** @param {'stay'|'logout'} choice the warning's answer */
+    /** @param {'stay'|'signin'|'logout'} choice the warning's answer */
     answerLogoutWarning(choice) {
       logoutFlow.answer(choice);
     },

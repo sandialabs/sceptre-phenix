@@ -29,6 +29,7 @@ import {
   snapshotPath,
   SOURCES_PATH,
   TooLargeError,
+  watchSession,
 } from '@/builder/api.js';
 
 import { sampleDocument } from './fixtures.js';
@@ -110,6 +111,29 @@ describe('error classification', () => {
     expect(classifyError(httpError(422))).toBe('invalid');
     expect(classifyError(httpError(500))).toBe('error');
     expect(classifyError(new Error('network'))).toBe('offline');
+  });
+
+  // The Builder then offers to sign in again (see signin.js).
+  test('says when the server refuses the session, and fails as the client does', async () => {
+    const ended = vi.fn();
+    const http = watchSession(
+      fakeHttp({
+        'post builder/drafts': httpError(401),
+        'get builder/sources': httpError(403),
+      }),
+      ended,
+    );
+    const api = createBuilderApi(http);
+
+    await expect(api.createDraft({ document: {} })).rejects.toMatchObject({
+      response: { status: 401 },
+    });
+    expect(ended).toHaveBeenCalledOnce();
+    await expect(api.getSources()).rejects.toMatchObject({
+      response: { status: 403 },
+    });
+    await expect(api.listDrafts()).resolves.toMatchObject({ mine: [] });
+    expect(ended).toHaveBeenCalledOnce();
   });
 
   test('messages explain what happened', () => {

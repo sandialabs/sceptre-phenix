@@ -40,6 +40,10 @@
       </button>
     </div>
 
+    <!-- Signing in again when the session ends, without leaving the page
+         (see builder/signin.js). -->
+    <builder-sign-in @signed-in="afterSignIn" />
+
     <template v-if="!editing">
       <builder-drafts
         ref="drafts"
@@ -569,6 +573,7 @@
   import BuilderPanes from '@/components/builder/BuilderPanes.vue';
   import BuilderSettings from '@/components/builder/BuilderSettings.vue';
   import BuilderShortcuts from '@/components/builder/BuilderShortcuts.vue';
+  import BuilderSignIn from '@/components/builder/BuilderSignIn.vue';
   import BuilderTabsDialog from '@/components/builder/BuilderTabsDialog.vue';
   import BuilderToolbar from '@/components/builder/BuilderToolbar.vue';
   import ExportDialog from '@/components/builder/dialogs/ExportDialog.vue';
@@ -628,6 +633,7 @@
     queuedDiagram,
     registerOpenDraft,
   } from '@/builder/session.js';
+  import { signIn } from '@/builder/signin.js';
   import { forkTitle, useBuilderStore } from '@/builder/store.js';
   import {
     applyChoice,
@@ -1260,10 +1266,11 @@
         leaving.value = resolve;
       });
     },
+    // Signing in again holds the page (see builder/signin.js).
     sessionOver() {
       const phenix = usePhenixStore();
 
-      return !phenix.auth || tokenExpired(phenix.token);
+      return !phenix.auth || tokenExpired(phenix.token) || signIn.open;
     },
   });
   const { unsavedWork, mayLeave, mayClose } = leaveGuard;
@@ -1448,6 +1455,27 @@
 
   function cycleTheme() {
     store.cycleTheme(rootEl.value);
+  }
+
+  // Signed in again: the lists refused meanwhile are read again, and focus
+  // that went with the dialog, or with what opened it, goes to the view's
+  // heading or tabs rather than to <body>.
+  async function afterSignIn() {
+    if (!editing.value) {
+      refresh();
+    }
+
+    await nextTick();
+
+    const active = document.activeElement;
+
+    if (!active || active === document.body) {
+      if (editing.value) {
+        editorHeading.value?.focus();
+      } else {
+        drafts.value?.focusActiveTab();
+      }
+    }
   }
 
   // --- other tabs --------------------------------------------------------------

@@ -20,7 +20,10 @@ vi.mock('@/builder/api.js', async (importOriginal) => {
   return { ...actual, builderApi: api };
 });
 
+import { createPinia } from 'pinia';
+
 import LogoutWarning from '@/components/LogoutWarning.vue';
+import BuilderSignIn from '@/components/builder/BuilderSignIn.vue';
 import { createMemoryStore, draftKey } from '@/builder/idb.js';
 import {
   LOGOUT_SEND_WAIT_MS,
@@ -30,6 +33,7 @@ import {
   registerQueue,
   unsentBuilderWork,
 } from '@/builder/session.js';
+import { hostSignIn, signIn } from '@/builder/signin.js';
 import { ANSWER_WAIT_MS, answerPresence, openChannel } from '@/builder/tabs.js';
 import {
   LOGOUT_COUNTDOWN_S,
@@ -46,19 +50,24 @@ afterEach(() => {
 
 // A logout flow whose search finds `unsent`, recording what it shows, on a
 // page that is hidden while `page.hidden`; page.change() says it changed.
+// With `canSignIn`, the page can sign in again (the Builder's).
 function setup({
   unsent = { changes: 0, unapplied: '' },
   finished = true,
+  canSignIn = false,
 } = {}) {
   const shown = [];
   const findUnsent = vi.fn(async () => unsent);
   const finish = vi.fn(async () => finished);
   const busy = vi.fn();
+  const signIn = vi.fn();
   const page = { hidden: false, change: () => {} };
   const flow = createLogoutFlow({
     findUnsent,
     finish,
     busy,
+    canSignIn: () => canSignIn,
+    signIn,
     show: (warning) => shown.push(warning),
     visibility: {
       hidden: () => page.hidden,
@@ -73,6 +82,7 @@ function setup({
     findUnsent,
     finish,
     busy,
+    signIn,
     shown,
     page,
     last: () => shown.at(-1),
@@ -125,6 +135,7 @@ describe('logging out', () => {
       unapplied: '',
       drafts: [],
       canStay: true,
+      canSignIn: false,
       secondsLeft: null,
       notice: '',
     });
@@ -260,6 +271,77 @@ describe('logging out', () => {
     flow.answer('logout');
     await expect(outcome).resolves.toBe('logged-out');
     expect(finish).toHaveBeenCalledWith('expired');
+  });
+
+  test("on the Builder's page, an expired session's warning offers to sign in again there: it stops the countdown, and the sign-in opens once the logout has ended", async () => {
+    const { flow, finish, busy, signIn, last } = setup({
+      unsent: { changes: 1 },
+      canSignIn: true,
+    });
+    const outcome = flow.request('expired');
+
+    await pass();
+    expect(last()).toMatchObject({
+      reason: 'expired',
+      canStay: false,
+      canSignIn: true,
+      secondsLeft: LOGOUT_COUNTDOWN_S,
+    });
+
+    await pass(30000);
+    flow.answer('signin');
+    await expect(outcome).resolves.toBe('stayed');
+    expect(last()).toBeNull();
+    expect(signIn).toHaveBeenCalledOnce();
+    // Opened once nothing logs out any more.
+    expect(busy.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      signIn.mock.invocationCallOrder[0],
+    );
+
+    await pass(2 * LOGOUT_COUNTDOWN_S * 1000);
+    expect(finish).not.toHaveBeenCalled();
+  });
+
+  test('only an automatic logout of an expired session offers to sign in again', async () => {
+    // The idle timeout's, until the session expires meanwhile.
+    let { flow, signIn, last } = setup({
+      unsent: { changes: 1 },
+      canSignIn: true,
+    });
+    const idle = flow.request('idle');
+
+    await pass();
+    expect(last()).toMatchObject({ canStay: true, canSignIn: false });
+    flow.answer('signin');
+    expect(last()).not.toBeNull();
+
+    flow.request('expired');
+    expect(last()).toMatchObject({ canStay: false, canSignIn: true });
+    flow.answer('signin');
+    await expect(idle).resolves.toBe('stayed');
+    expect(signIn).toHaveBeenCalledOnce();
+
+    // A logout the user asked for stays one, as does any logout on a page
+    // that cannot sign in again.
+    for (const options of [
+      { canSignIn: true, request: ['expired', { countdown: false }] },
+      { canSignIn: false, request: ['expired'] },
+    ]) {
+      ({ flow, signIn, last } = setup({
+        unsent: { changes: 1 },
+        canSignIn: options.canSignIn,
+      }));
+
+      const outcome = flow.request(...options.request);
+
+      await pass();
+      expect(last()).toMatchObject({ canSignIn: false });
+      flow.answer('signin');
+      expect(last()).not.toBeNull();
+      flow.answer('logout');
+      await expect(outcome).resolves.toBe('logged-out');
+      expect(signIn).not.toHaveBeenCalled();
+    }
   });
 
   test("an expired session's minute waits while the page is hidden; the idle timeout's does not", async () => {
@@ -400,6 +482,7 @@ describe('the warning', () => {
         '1 change to Builder Flow drafts has not reached the server. Logging out deletes it from this browser. Use Export to keep a copy.',
       confirm: 'Log out anyway',
       stay: 'Stay signed in',
+      signIn: 'Sign in again',
     });
 
     expect(
@@ -491,6 +574,33 @@ describe('the warning', () => {
     ).toBe(
       '1 change to Builder Flow drafts has not reached the server. Logging out deletes it from this browser.',
     );
+
+    // On the Builder's page, signing in again keeps them, and fixes the
+    // Inspector's.
+    expect(
+      logoutWarningText({
+        reason: 'expired',
+        changes: 2,
+        unapplied: '',
+        drafts,
+        canStay: false,
+        canSignIn: true,
+        secondsLeft: 60,
+      }).message,
+    ).toBe(
+      '2 changes to Builder Flow drafts have not reached the server. Sign in again to save them. Logging out deletes them from this browser. Use Export to keep a copy.',
+    );
+    expect(
+      logoutWarningText({
+        reason: 'expired',
+        changes: 0,
+        unapplied,
+        drafts: [],
+        canStay: false,
+        canSignIn: true,
+        secondsLeft: 60,
+      }).message,
+    ).toBe(`${unapplied} Logging out loses them. Sign in again to fix them.`);
 
     expect(countdownText(60)).toBe('Logging out in 60 seconds.');
     expect(countdownText(1)).toBe('Logging out in 1 second.');
@@ -607,6 +717,23 @@ describe('the warning', () => {
     );
     expect(html).toContain('To sign in again, you must log out.');
     expect(html).not.toContain('Stay signed in');
+    expect(html).not.toContain('Sign in again');
+  });
+
+  test("offers Sign in again, before Log out now, when the Builder's page can sign in again", async () => {
+    const html = await render({
+      ...idle,
+      reason: 'expired',
+      canStay: false,
+      canSignIn: true,
+    });
+
+    expect(buttons(html)).toEqual(['Export', 'Sign in again', 'Log out now']);
+    expect(tag(html, 'data-testid="logout-warning-signin"')).toContain(
+      'type="button"',
+    );
+    expect(html).toContain('Sign in again to save them.');
+    expect(html).not.toContain('you must log out');
   });
 
   test('a logout the user asked for has no countdown', async () => {
@@ -621,6 +748,74 @@ describe('the warning', () => {
 
   test('is not there without a warning', async () => {
     expect(await render(null)).not.toContain('<dialog');
+  });
+});
+
+// Signing in again without leaving the Builder (see builder/signin.js).
+describe("the Builder's sign-in", () => {
+  async function render(state) {
+    phenix.state = reactive({
+      username: 'alice',
+      auth: true,
+      token: `h.${btoa(JSON.stringify({ exp: 4102444800 }))}.s`,
+      loggingOut: false,
+    });
+    Object.assign(signIn, state);
+
+    const app = createSSRApp({ render: () => h(BuilderSignIn) });
+
+    app.use(createPinia());
+
+    try {
+      return await renderToString(app);
+    } finally {
+      // A server render never unmounts: the page it hosted goes, as
+      // another's would, and takes the dialog's state with it.
+      hostSignIn({ available: () => false })();
+    }
+  }
+
+  const tag = (html, pattern) =>
+    html.match(new RegExp(`<[a-z0-9]+\\b[^>]*${pattern}[^>]*>`))?.[0] || '';
+
+  test("asks for the same user's password in a labelled modal form, the username shown, not typed", async () => {
+    const html = await render({ open: true, needed: true });
+    const dialog = tag(html, 'data-testid="builder-signin"');
+
+    expect(dialog).toMatch(/^<dialog/);
+    expect(dialog).toContain('aria-modal="true"');
+    expect(dialog).toContain('aria-labelledby="builder-signin-title"');
+    expect(dialog).toContain('aria-describedby="builder-signin-message"');
+    expect(html).toMatch(/<h2 id="builder-signin-title"[^>]*>Sign in again</);
+
+    const user = tag(html, 'id="builder-signin-user"');
+
+    expect(user).toContain('value="alice"');
+    expect(user).toContain('readonly');
+    expect(user).toContain('autocomplete="username"');
+    expect(html).toMatch(/<label for="builder-signin-user"[^>]*>Username</);
+
+    const password = tag(html, 'id="builder-signin-password"');
+
+    expect(password).toContain('type="password"');
+    expect(password).toContain('autocomplete="current-password"');
+    expect(html).toMatch(/<label for="builder-signin-password"[^>]*>Password</);
+    // Rendered, empty, from the start, so it is known before its first
+    // message.
+    expect(tag(html, 'id="builder-signin-error"')).toContain('role="alert"');
+    expect(tag(html, 'data-testid="signin-submit"')).toContain('type="submit"');
+    expect(html).not.toContain('builder-signin-notice');
+  });
+
+  test('once declined, a notice offers it again; nothing shows while the session goes on', async () => {
+    const html = await render({ needed: true, declined: true });
+
+    expect(html).toContain('data-testid="builder-signin-notice"');
+    expect(tag(html, 'data-testid="signin-again"')).toContain(
+      'aria-haspopup="dialog"',
+    );
+    expect(html).not.toContain('<dialog');
+    expect(await render({})).not.toMatch(/<(dialog|div)/);
   });
 });
 

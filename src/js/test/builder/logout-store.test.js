@@ -1,8 +1,9 @@
 // Every way the app logs out goes through the warning when Builder Flow
 // holds changes the server does not have: the header's Logout (the app
-// store), the idle timeout, and a token the server refuses.
+// store), the idle timeout, and a token the server refuses. On the
+// Builder's page, the user can sign in again there instead.
 
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
 const http = vi.hoisted(() => ({ get: vi.fn() }));
@@ -21,7 +22,19 @@ vi.mock('buefy', () => ({
   },
 }));
 
-import { registerOpenDraft } from '@/builder/session.js';
+import { registerOpenDraft, resumeBuilderSaves } from '@/builder/session.js';
+import {
+  declineSignIn,
+  expiredNavigation,
+  hostSignIn,
+  requestSignIn,
+  sessionEnded,
+  signIn,
+  signInAgain,
+  signInError,
+  signedIn,
+} from '@/builder/signin.js';
+import { useBuilderStore } from '@/builder/store.js';
 import { tokenExpired, usePhenixStore } from '@/store.js';
 import { useErrorNotification } from '@/utils/errorNotif.js';
 import { TimeoutTool } from '@/utils/timeout.js';
@@ -269,4 +282,179 @@ test('a token the server calls invalid logs out as an expired one does', async (
     },
   });
   expect(request).toHaveBeenCalledWith('expired');
+});
+
+// Builder Flow asks for the password again in place when the session ends
+// (see builder/signin.js): nothing logs out, and nothing is cleared.
+describe('signing in again on the Builder page', () => {
+  let unhost = () => {};
+
+  // The Builder's page, open; `busy` while a logout is under way.
+  function host({ available = true, busy = false } = {}) {
+    unhost = hostSignIn({ available: () => available, busy: () => busy });
+  }
+
+  afterEach(() => {
+    unhost();
+  });
+
+  test('a refused request opens it; once declined, only the user opens it again', () => {
+    expect(sessionEnded()).toBe(false);
+    expect(signIn.open).toBe(false);
+
+    host();
+    expect(sessionEnded()).toBe(true);
+    expect(signIn).toMatchObject({ open: true, needed: true });
+
+    declineSignIn();
+    expect(sessionEnded()).toBe(false);
+    expect(signIn).toMatchObject({ open: false, needed: true });
+
+    expect(requestSignIn()).toBe(true);
+    expect(signIn.open).toBe(true);
+
+    // Leaving the Builder closes it.
+    unhost();
+    expect(signIn).toMatchObject({ open: false, needed: false });
+
+    // Not while a logout is under way, nor without a password sign-in.
+    host({ busy: true });
+    expect(sessionEnded()).toBe(false);
+    expect(requestSignIn()).toBe(false);
+    unhost();
+    host({ available: false });
+    expect(requestSignIn()).toBe(false);
+  });
+
+  test('the router neither logs out nor leaves the page while it is open', () => {
+    const builder = { name: 'builder-beta' };
+    const configs = { name: 'configs' };
+
+    // Without the Builder, an expired token logs out as before.
+    expect(expiredNavigation(builder, builder)).toBe('logout');
+
+    host();
+    // Within the Builder: the address changes, and the sign-in opens.
+    expect(expiredNavigation(builder, builder)).toBe('go');
+    expect(signIn.open).toBe(true);
+    expect(expiredNavigation(configs, builder)).toBe('stay');
+
+    // Declined: the Builder's own navigation still goes; leaving it logs
+    // out, through the warning, which offers to sign in again.
+    declineSignIn();
+    expect(expiredNavigation(builder, builder)).toBe('go');
+    expect(signIn.open).toBe(false);
+    expect(expiredNavigation(configs, builder)).toBe('logout');
+  });
+
+  test('signing in keeps the new token where the last was kept, resumes the unsent queue at once, and clears nothing', async () => {
+    localStorage.setItem('phenix.builder.user', 'alice');
+    localStorage.setItem('phenix.builder.recent', '["palette.open"]');
+
+    const retrySave = vi.fn(async () => {});
+    const unregister = registerOpenDraft({
+      store: {
+        readOnly: false,
+        saveState: { status: 'error', signInNeeded: true },
+        autosave: { record: { key: 'k', queue: [{}, {}] } },
+        retrySave,
+      },
+      editing: () => true,
+      saveUnapplied: () => null,
+      describe: () => '',
+    });
+    const post = vi.fn(async () => ({
+      data: {
+        token: 'renewed',
+        user: { username: 'alice', role: { name: 'Admin' } },
+      },
+    }));
+
+    host();
+    sessionEnded();
+
+    try {
+      const { changes } = await signInAgain({
+        username: store.username,
+        password: 'secret',
+        renew: (response) => store.renewLogin(response),
+        resume: resumeBuilderSaves,
+        post,
+      });
+
+      expect(post).toHaveBeenCalledWith({ user: 'alice', pass: 'secret' });
+      expect(changes).toBe(2);
+      expect(retrySave).toHaveBeenCalledOnce();
+      expect(signIn).toMatchObject({ open: false, needed: false });
+      expect(store).toMatchObject({ auth: true, token: 'renewed' });
+      expect(sessionStorage.getItem('phenix.token')).toBe('renewed');
+      // Remember me was not chosen: localStorage keeps no token.
+      expect(localStorage.getItem('phenix.token')).toBeNull();
+      expect(localStorage.getItem('phenix.builder.user')).toBe('alice');
+      expect(localStorage.getItem('phenix.builder.recent')).not.toBeNull();
+      expect(router.replace).not.toHaveBeenCalled();
+    } finally {
+      unregister();
+    }
+  });
+
+  test('a wrong password, or a token for someone else, changes nothing', async () => {
+    host();
+    sessionEnded();
+
+    const wrong = Object.assign(new Error('401'), {
+      response: { status: 401, data: 'invalid creds' },
+    });
+    const refused = signInAgain({
+      username: 'alice',
+      password: 'wrong',
+      renew: (response) => store.renewLogin(response),
+      resume: vi.fn(),
+      post: async () => {
+        throw wrong;
+      },
+    });
+
+    await expect(refused).rejects.toBe(wrong);
+    expect(signInError(wrong)).toBe('The password is incorrect.');
+
+    const bob = signInAgain({
+      username: 'alice',
+      password: 'secret',
+      renew: (response) => store.renewLogin(response),
+      resume: vi.fn(),
+      post: async () => ({ data: { token: 'b', user: { username: 'bob' } } }),
+    });
+
+    await expect(bob).rejects.toMatchObject({ anotherUser: true });
+    expect(store).toMatchObject({ username: 'alice', token: 'token' });
+    expect(signIn).toMatchObject({ open: true, needed: true });
+    expect(signInError(new Error('Network Error'))).toBe(
+      'The server could not be reached. Check the connection and try again.',
+    );
+  });
+
+  test('Retry saving opens it while the session is over, rather than sending the same token again', async () => {
+    const builder = useBuilderStore();
+    const retry = vi.fn(async () => ({ status: 'saved' }));
+
+    builder.autosave = { retry, dispose() {} };
+    builder.saveState = {
+      ...builder.saveState,
+      status: 'error',
+      signInNeeded: true,
+    };
+    host();
+    sessionEnded();
+    declineSignIn();
+
+    await builder.retrySave({ announce: true });
+    expect(signIn.open).toBe(true);
+    expect(retry).not.toHaveBeenCalled();
+
+    // Signed in again: it sends.
+    signedIn();
+    await builder.retrySave();
+    expect(retry).toHaveBeenCalledOnce();
+  });
 });

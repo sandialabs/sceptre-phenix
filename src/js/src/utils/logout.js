@@ -8,7 +8,10 @@
 // the app starts (the idle timeout, an expired or invalid token) shows the
 // same warning for a minute, then logs out; the tab's title counts down
 // too, so a hidden tab shows it. Without such changes, logging out goes
-// ahead at once, as before.
+// ahead at once, as before. On the Builder's page, the warning of a
+// session that expired also offers to sign in again there, which keeps the
+// changes and sends them (see builder/signin.js); a logout the user asked
+// for does not.
 
 // How long an automatic logout waits, in seconds, and how many are left
 // when that is announced again.
@@ -58,8 +61,10 @@ export function countdownTitle(title, secondsLeft) {
  *
  * @param {object} warning reason, changes (not sent), unapplied (what the
  *   Inspector cannot apply, as a sentence, or ''), drafts (those Export can
- *   save), canStay, secondsLeft (null without a countdown)
- * @returns {{title: string, message: string, confirm: string, stay: string}}
+ *   save), canStay, canSignIn (sign in again without leaving the page),
+ *   secondsLeft (null without a countdown)
+ * @returns {{title: string, message: string, confirm: string, stay: string,
+ *   signIn: string}}
  */
 export function logoutWarningText({
   reason,
@@ -67,17 +72,20 @@ export function logoutWarningText({
   unapplied,
   drafts = [],
   canStay,
+  canSignIn = false,
   secondsLeft = null,
 }) {
   const one = changes === 1;
   const lead = {
     manual: '',
     idle: 'You have been inactive for a while.',
-    expired: 'To sign in again, you must log out.',
+    expired: canSignIn ? '' : 'To sign in again, you must log out.',
   }[reason];
   const unsent = changes
     ? `${changes} change${one ? '' : 's'} to Builder Flow drafts ${one ? 'has' : 'have'} not reached the server.`
     : '';
+  const resume =
+    canSignIn && changes ? `Sign in again to save ${one ? 'it' : 'them'}.` : '';
   const lost =
     changes === 1 && !unapplied
       ? 'Logging out deletes it from this browser.'
@@ -90,7 +98,9 @@ export function logoutWarningText({
       ? 'Use Export to keep a copy.'
       : unapplied && canStay
         ? 'Stay signed in to fix them.'
-        : '';
+        : unapplied && canSignIn
+          ? 'Sign in again to fix them.'
+          : '';
 
   return {
     title: {
@@ -98,9 +108,12 @@ export function logoutWarningText({
       idle: 'You will be logged out',
       expired: 'Your session has expired',
     }[reason],
-    message: [lead, unsent, unapplied, lost, keep].filter(Boolean).join(' '),
+    message: [lead, unsent, resume, unapplied, lost, keep]
+      .filter(Boolean)
+      .join(' '),
     confirm: typeof secondsLeft === 'number' ? 'Log out now' : 'Log out anyway',
     stay: 'Stay signed in',
+    signIn: 'Sign in again',
   };
 }
 
@@ -124,6 +137,9 @@ const pageVisibility = {
  * @param {(warning: object|null) => void} options.show shows the warning, a
  *   new object on every change, or null to close it
  * @param {(busy: boolean) => void} [options.busy] a logout is under way
+ * @param {() => boolean} [options.canSignIn] whether the user can sign in
+ *   again without leaving the page (see builder/signin.js)
+ * @param {() => void} [options.signIn] asks for the password again there
  * @param {() => number} [options.now]
  * @param {object} [options.timers] setTimeout, clearTimeout, setInterval,
  *   clearInterval
@@ -136,6 +152,8 @@ export function createLogoutFlow({
   finish,
   show,
   busy = () => {},
+  canSignIn = () => false,
+  signIn = () => {},
   now = () => Date.now(),
   timers = globalThis,
   visibility = pageVisibility,
@@ -219,6 +237,12 @@ export function createLogoutFlow({
     followVisibility();
   }
 
+  // An automatic logout of a session that expired offers to sign in again
+  // where the page can (see the header).
+  function offersSignIn() {
+    return current.reason === 'expired' && !current.manual && canSignIn();
+  }
+
   function ask(unsent) {
     return new Promise((resolve) => {
       current.resolve = resolve;
@@ -228,6 +252,7 @@ export function createLogoutFlow({
         unapplied: unsent.unapplied || '',
         drafts: unsent.drafts || [],
         canStay: current.reason !== 'expired',
+        canSignIn: offersSignIn(),
         secondsLeft: null,
         notice: '',
       };
@@ -249,7 +274,14 @@ export function createLogoutFlow({
       }).catch(() => ({ changes: 0, unapplied: '' }));
 
       if (unsent.changes > 0 || unsent.unapplied) {
-        if ((await ask(unsent)) === 'stay') {
+        const choice = await ask(unsent);
+
+        // Signing in again keeps the session too, once this logout ends.
+        if (choice === 'signin') {
+          flow.signIn = true;
+        }
+
+        if (choice !== 'logout') {
           return 'stayed';
         }
       }
@@ -279,6 +311,7 @@ export function createLogoutFlow({
 
     warning.reason = reason;
     warning.canStay = reason !== 'expired';
+    warning.canSignIn = offersSignIn();
 
     if (current.countdown && warning.secondsLeft === null) {
       startCountdown();
@@ -292,11 +325,15 @@ export function createLogoutFlow({
   /**
    * Answers the warning.
    *
-   * @param {'stay'|'logout'} choice stay is refused when the session cannot
-   *   go on
+   * @param {'stay'|'signin'|'logout'} choice stay is refused when the
+   *   session cannot go on, and signin when the warning does not offer it
    */
   function answer(choice) {
-    if (!current?.resolve || (choice === 'stay' && !current.warning.canStay)) {
+    if (
+      !current?.resolve ||
+      (choice === 'stay' && !current.warning.canStay) ||
+      (choice === 'signin' && !current.warning.canSignIn)
+    ) {
       return;
     }
 
@@ -317,7 +354,8 @@ export function createLogoutFlow({
      * @param {'manual'|'idle'|'expired'} [reason]
      * @param {object} [options] countdown: whether the warning ends by
      *   itself after a minute; by default, unless the user asked
-     * @returns {Promise<'logged-out'|'stayed'|'failed'>}
+     * @returns {Promise<'logged-out'|'stayed'|'failed'>} stayed too when
+     *   the user chose to sign in again, which then opens
      */
     request(reason = 'manual', { countdown = reason !== 'manual' } = {}) {
       if (current) {
@@ -326,12 +364,17 @@ export function createLogoutFlow({
         return current.promise;
       }
 
-      const flow = { reason, countdown };
+      // The user asked for it: a manual logout stays one.
+      const flow = { reason, countdown, manual: !countdown, signIn: false };
 
       current = flow;
       flow.promise = run(flow).finally(() => {
         if (current === flow) {
           current = null;
+        }
+
+        if (flow.signIn) {
+          signIn();
         }
       });
 
