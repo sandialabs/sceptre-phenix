@@ -537,7 +537,8 @@ async function deleteOwnDrafts(api, username) {
 
 // A role that may read and change configs, and so make, change and delete
 // drafts of its own, and read the schemas and disks the editor offers; it
-// may not see other users' drafts (no builder-drafts) or list users. Then
+// may list only the users made for this test (whom the Share dialog then
+// offers), and may not see other users' drafts (no builder-drafts). Then
 // one user with it for each of SHARING_PARTS, named for the test, each
 // signed in with a browser context of its own (the session as a sign-in
 // leaves it) and an API client. Everything is deleted afterwards.
@@ -567,6 +568,11 @@ async function sharingUsers({ browser, playwright }, use, testInfo) {
           },
           { resources: ['schemas'], resourceNames: ['*'], verbs: ['get'] },
           { resources: ['disks'], resourceNames: ['*'], verbs: ['list'] },
+          {
+            resources: ['users'],
+            resourceNames: [`*-${nonce}`],
+            verbs: ['list'],
+          },
         ],
       },
     },
