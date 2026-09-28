@@ -3,6 +3,7 @@ package builder_test
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"phenix/store"
 	"phenix/types"
 	"phenix/types/builder"
+	"phenix/util/common"
 )
 
 func TestFromTopologyConfig(t *testing.T) {
@@ -340,6 +342,70 @@ func TestFromStoredExperiment(t *testing.T) {
 
 	if err := types.ValidateConfigSpec(*config); err != nil {
 		t.Fatalf("the projection fails the phenix topology schema: %v", err)
+	}
+}
+
+// Starting an experiment stores the injections its apps add (startup, ntp,
+// vrouter and others), whose sources are files under the experiment's base
+// directory. Importing it keeps only the injections of the topology itself.
+func TestFromStartedExperimentDropsAppInjections(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		baseDir func(spec map[string]any) string
+	}{
+		{name: "stored base directory", baseDir: func(spec map[string]any) string {
+			spec["baseDir"] = "/srv/phenix/experiments/stored-experiment"
+
+			return "/srv/phenix/experiments/stored-experiment"
+		}},
+		{name: "default base directory", baseDir: func(spec map[string]any) string {
+			delete(spec, "baseDir")
+
+			return common.PhenixBase + "/experiments/stored-experiment"
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			config := storedExperiment(t)
+			dir := tt.baseDir(config.Spec)
+
+			topology, ok := config.Spec["topology"].(map[string]any)
+			if !ok {
+				t.Fatalf("stored experiment has no topology: %s", asJSON(t, config.Spec))
+			}
+
+			own := []any{
+				map[string]any{"src": "configs/router.conf", "dst": "/etc/router.conf"},
+				map[string]any{"src": "/phenix/images/banner.txt", "dst": "/etc/motd"},
+				map[string]any{"src": dir + "-old/startup/router.sh", "dst": "/etc/old.sh"},
+			}
+
+			router := storedNode(t, topology, "router")
+			router["injections"] = append(slices.Clone(own),
+				map[string]any{"src": dir + "/startup/router-interfaces.sh", "dst": "/etc/phenix/startup/1.sh"},
+				map[string]any{"src": dir + "/ntp/router_ntp", "dst": "/etc/ntp.conf"},
+			)
+			storedNode(t, topology, "host-a")["injections"] = []any{
+				map[string]any{"src": dir + "/startup/host-a-timezone.ps1", "dst": "/phenix/startup/tz.ps1"},
+			}
+
+			doc, warnings := documentFromConfig(t, config)
+
+			if got := nodeByHostname(t, doc, "router").Device.Spec["injections"]; !reflect.DeepEqual(got, own) {
+				t.Fatalf("router injections = %s, want the topology's own %s", asJSON(t, got), asJSON(t, own))
+			}
+
+			if got, ok := nodeByHostname(t, doc, "host-a").Device.Spec["injections"]; ok {
+				t.Fatalf("host-a injections = %s, want none", asJSON(t, got))
+			}
+
+			if containsSubstring(warnings, "inject") {
+				t.Fatalf("warnings = %v, want the app injections dropped silently", warnings)
+			}
+
+			if got, _ := router["injections"].([]any); len(got) != len(own)+2 {
+				t.Fatalf("the experiment config was changed: %s", asJSON(t, router["injections"]))
+			}
+		})
 	}
 }
 

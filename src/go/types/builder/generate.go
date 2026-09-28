@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path"
 	"slices"
 	"sort"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"phenix/store"
 	"phenix/types"
 	"phenix/types/version"
+	"phenix/util/common"
 )
 
 // Layout constants for generated documents. Positions are deterministic so a
@@ -71,6 +73,8 @@ func WithTopologyLoader(load TopologyLoader) GenerateOption {
 //   - every interface declaring a VLAN is connected to that VLAN's switch,
 //   - interfaces without a VLAN are preserved unconnected,
 //   - experiment VLAN aliases and scenarios are imported when available,
+//   - the injections an experiment's apps added when it started, whose
+//     sources are under the experiment's base directory, are dropped,
 //   - included topologies are resolved when a loader is given (see
 //     [WithTopologyLoader]); their devices are marked [Device.IncludedFrom]
 //     and connected to the VLAN switches like any other device.
@@ -127,6 +131,7 @@ func FromConfig(config store.Config, options ...GenerateOption) (*Document, []st
 			return nil, nil, fmt.Errorf("reading experiment topology: %w", err)
 		}
 
+		dropAppInjections(topology, experimentBaseDir(spec, config.Metadata.Name))
 		gen.importTopology(topology, config.Metadata.Annotations["topology"])
 		gen.importVLANs(spec["vlans"])
 
@@ -1089,6 +1094,58 @@ func (g *generator) importScenario(value any, name string) error {
 	}
 
 	return nil
+}
+
+// experimentBaseDir returns the directory phenix keeps an experiment's files
+// in: its baseDir, or the one phenix gives an experiment without one.
+func experimentBaseDir(spec map[string]any, name string) string {
+	if dir, _ := spec["baseDir"].(string); dir != "" {
+		return dir
+	}
+
+	return common.PhenixBase + "/experiments/" + name
+}
+
+// dropAppInjections removes from every node of an experiment's topology the
+// injections whose source is a file under the experiment's base directory.
+// Apps such as startup, ntp and vrouter add those when the experiment starts,
+// and a topology published from the document must not point at another
+// experiment's files. The injections the topology declares itself, with
+// relative sources or sources elsewhere, are kept.
+func dropAppInjections(topology map[string]any, baseDir string) {
+	dir := path.Clean(baseDir)
+	if !path.IsAbs(dir) || dir == "/" {
+		return
+	}
+
+	nodes, _ := topology[keyNodes].([]any)
+
+	for _, entry := range nodes {
+		node, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		injections, ok := node["injections"].([]any)
+		if !ok {
+			continue
+		}
+
+		kept := slices.DeleteFunc(slices.Clone(injections), func(injection any) bool {
+			spec, _ := injection.(map[string]any)
+			src, _ := spec["src"].(string)
+
+			return path.IsAbs(src) && strings.HasPrefix(path.Clean(src), dir+"/")
+		})
+
+		switch {
+		case len(kept) == len(injections):
+		case len(kept) == 0:
+			delete(node, "injections")
+		default:
+			node["injections"] = kept
+		}
+	}
 }
 
 // warnUnrepresentedExperimentFields reports experiment settings the builder
