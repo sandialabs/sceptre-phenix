@@ -1758,6 +1758,9 @@
   let shown = null;
 
   // Read when shown, so a tooltip follows the keys and the header's width.
+  // The pointer leaving a button hides only that button's tooltip: when
+  // focus mode's full screen moves the header's buttons, one can leave the
+  // pointer while another, which has focus, shows its tooltip.
   function headerTip(key) {
     const show = (event) => {
       const text = headerText(key, event.currentTarget);
@@ -1765,10 +1768,15 @@
       shown = { key, target: event.currentTarget, text };
       showTip(event, text);
     };
+    const leave = (event) => {
+      if (event.currentTarget === shown?.target) {
+        scheduleHide();
+      }
+    };
 
     return {
       mouseenter: show,
-      mouseleave: scheduleHide,
+      mouseleave: leave,
       focus: show,
       blur: hideTip,
     };
