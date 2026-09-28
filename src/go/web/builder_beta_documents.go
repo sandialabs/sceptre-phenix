@@ -74,28 +74,9 @@ func (b *builderBetaAPI) getDocument(w http.ResponseWriter, r *http.Request) err
 
 	documentID := mux.Vars(r)["document"]
 
-	document, err := b.drafts.GetPublishedDocument(r.Context(), documentID)
+	document, err := b.readableDocument(r, actor, documentID)
 	if err != nil {
-		if errors.Is(err, bapi.ErrNotFound) || errors.Is(err, bapi.ErrInvalid) {
-			return builderBetaNotFound("document", documentID)
-		}
-
-		return builderBetaWebError(err, "unable to get builder document %s", documentID)
-	}
-
-	// A document the caller may not read is indistinguishable from one that
-	// does not exist.
-	if !builderBetaBaseAllowed(actor.role, builderBetaVerbGet, builderBetaConfigName(document)) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"builder flow document request not allowed",
-			"user",
-			actor.user,
-			"document",
-			documentID,
-		)
-
-		return builderBetaNotFound("document", documentID)
+		return err
 	}
 
 	reference, current, err := b.currentBuilderDocument(document)
@@ -115,6 +96,39 @@ func (b *builderBetaAPI) getDocument(w http.ResponseWriter, r *http.Request) err
 	response.Document = data
 
 	return builderBetaWriteJSON(w, http.StatusOK, "", response)
+}
+
+// readableDocument returns the published document with this ID if the caller
+// may get the config it was published to. A document the caller may not read
+// is indistinguishable from one that does not exist.
+func (b *builderBetaAPI) readableDocument(
+	r *http.Request,
+	actor builderBetaActor,
+	documentID string,
+) (*bapi.PublishedDocument, error) {
+	document, err := b.drafts.GetPublishedDocument(r.Context(), documentID)
+	if err != nil {
+		if errors.Is(err, bapi.ErrNotFound) || errors.Is(err, bapi.ErrInvalid) {
+			return nil, builderBetaNotFound("document", documentID)
+		}
+
+		return nil, builderBetaWebError(err, "unable to get builder document %s", documentID)
+	}
+
+	if !builderBetaBaseAllowed(actor.role, builderBetaVerbGet, builderBetaConfigName(document)) {
+		plog.Warn(
+			plog.TypeSecurity,
+			"builder flow document request not allowed",
+			"user",
+			actor.user,
+			"document",
+			documentID,
+		)
+
+		return nil, builderBetaNotFound("document", documentID)
+	}
+
+	return document, nil
 }
 
 // currentBuilderDocument verifies that a published record is the document the

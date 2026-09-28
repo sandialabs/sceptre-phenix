@@ -10,13 +10,19 @@ import ExportDialog from '@/components/builder/dialogs/ExportDialog.vue';
 import HistoryDialog from '@/components/builder/dialogs/HistoryDialog.vue';
 import PublishDialog from '@/components/builder/dialogs/PublishDialog.vue';
 
+import { createAutosave } from '@/builder/autosave.js';
 import { SAVED_UNAPPLIED, savedAutomatically } from '@/builder/history.js';
+import { createMemoryStore } from '@/builder/idb.js';
 import {
   LEAVE_SAVE_WAIT_MS,
+  backgroundSaveCard,
+  createBackgroundSaves,
   createLeaveGuard,
+  queueBusy,
   unappliedBlock,
   unappliedText,
 } from '@/builder/leave.js';
+import { endBuilderSession } from '@/builder/session.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument } from './fixtures.js';
@@ -37,11 +43,14 @@ function setup({
   saveFails = false,
   answer = true,
   session = { over: false },
+  editing = true,
+  background = null,
+  storageFailed = false,
 } = {}) {
   const store = {
     readOnly: false,
     historyVersion: 0,
-    saveState: { status: pending ? 'idle' : 'saved', pending },
+    saveState: { status: pending ? 'idle' : 'saved', pending, storageFailed },
     saveNow: vi.fn(
       () =>
         new Promise((resolve, reject) => {
@@ -72,10 +81,11 @@ function setup({
   const ask = vi.fn(async () => answer);
   const guard = createLeaveGuard({
     store,
-    editing: () => true,
+    editing: () => editing,
     saveUnapplied,
     ask,
     sessionOver: () => session.over,
+    background,
   });
 
   return { store, guard, saveUnapplied, ask };
@@ -178,6 +188,322 @@ describe('leaving a draft', () => {
     expect(guard.unsavedWork()).toBe(true);
     store.readOnly = true;
     expect(guard.unsavedWork()).toBe(false);
+  });
+});
+
+describe('closing a draft for the drafts', () => {
+  test('the queue is not waited for: it goes on sending in the background', async () => {
+    const { store, guard, saveUnapplied, ask } = setup({
+      unapplied: true,
+      pending: 2,
+      saveMs: LEAVE_SAVE_WAIT_MS * 2,
+    });
+
+    await expect(guard.mayClose({ saving: vi.fn() })).resolves.toBe(true);
+    expect(saveUnapplied).toHaveBeenCalledTimes(1);
+    expect(store.saveNow).not.toHaveBeenCalled();
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  test('edits that cannot be applied still ask', async () => {
+    const blocked = { title: 'Device alpha', fields: ['Memory'] };
+    const { guard, ask } = setup({ blocked, pending: 1, answer: false });
+
+    await expect(guard.mayClose()).resolves.toBe(false);
+    expect(ask).toHaveBeenCalledWith(blocked, 'close');
+  });
+
+  test('a queue this device cannot keep is sent first, as the page would lose it', async () => {
+    const { store, guard } = setup({ unapplied: true, storageFailed: true });
+
+    await expect(guard.mayClose()).resolves.toBe(true);
+    expect(store.saveNow).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('leaving the Builder while drafts closed before are being saved', () => {
+  function behind({ pending = 1, drains = true } = {}) {
+    const background = {
+      left: pending,
+      pending: () => background.left,
+      flush: vi.fn(async () => {
+        if (drains) {
+          background.left = 0;
+        } else {
+          await new Promise(() => {});
+        }
+      }),
+      keepForUnload: vi.fn(() => true),
+    };
+
+    return background;
+  }
+
+  test('waits for their saves, and asks while the server lacks some', async () => {
+    const saved = behind();
+    const first = setup({ editing: false, background: saved });
+
+    await expect(first.guard.mayFollowLink()).resolves.toBe(true);
+    expect(saved.flush).toHaveBeenCalledTimes(1);
+    expect(first.ask).not.toHaveBeenCalled();
+
+    vi.useFakeTimers();
+    const stuck = behind({ pending: 2, drains: false });
+    const second = setup({ editing: false, background: stuck, answer: false });
+    const left = second.guard.mayFollowLink();
+
+    await vi.advanceTimersByTimeAsync(LEAVE_SAVE_WAIT_MS);
+    await expect(left).resolves.toBe(false);
+    expect(second.ask).toHaveBeenCalledWith(null, 'all');
+  });
+
+  test('Upload, which leaves only the open draft, does not wait for them', async () => {
+    const stuck = behind({ drains: false });
+    const { guard, ask } = setup({ background: stuck });
+
+    await expect(guard.mayLeave()).resolves.toBe(true);
+    expect(stuck.flush).not.toHaveBeenCalled();
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  test('closing the tab keeps what they may not have stored, and the browser asks', () => {
+    const sending = behind();
+    const { guard } = setup({ editing: false, background: sending });
+    const event = { preventDefault: vi.fn(), returnValue: undefined };
+
+    expect(guard.beforeUnload(event)).toBe(true);
+    expect(sending.keepForUnload).toHaveBeenCalledTimes(1);
+    expect(event.preventDefault).toHaveBeenCalled();
+  });
+});
+
+describe('saves in the background', () => {
+  const doc = { name: 'Lab', nodes: [], edges: [] };
+
+  // A queue of a draft being edited, whose saves wait for `release` while
+  // `holding`.
+  async function editedQueue({ online = true } = {}) {
+    const gate = { holding: false, waiting: [] };
+    const api = {
+      appendSnapshot: vi.fn(async () => {
+        if (gate.holding) {
+          await new Promise((resolve) => gate.waiting.push(resolve));
+        }
+
+        return { draft: { snapshotId: 's2' }, etag: '"2"' };
+      }),
+    };
+    const device = createMemoryStore();
+    const queue = createAutosave({
+      api,
+      store: device,
+      actor: 'alice',
+      isOnline: () => online,
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+    });
+
+    await queue.attach({ owner: 'alice', draftId: 'd1', etag: '"1"' });
+    gate.release = () => {
+      gate.holding = false;
+      gate.waiting.splice(0).forEach((resolve) => resolve());
+    };
+
+    return { queue, api, device, gate };
+  }
+
+  function saves() {
+    const seen = { cards: {}, said: [], saved: 0 };
+    const background = createBackgroundSaves({
+      onChange: (cards) => {
+        seen.cards = cards;
+      },
+      announce: (message) => seen.said.push(message),
+      saved: () => {
+        seen.saved += 1;
+      },
+    });
+
+    return { background, seen };
+  }
+
+  test('go on once the draft is closed, and its card says how, until they are done', async () => {
+    const { queue, api, gate } = await editedQueue();
+    const { background, seen } = saves();
+
+    gate.holding = true;
+    queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+    const second = queue.commit({ id: 'c2', label: 'two', snapshot: doc });
+
+    await vi.waitFor(() => expect(api.appendSnapshot).toHaveBeenCalled());
+    background.take(queue, { owner: 'alice', id: 'd1', name: 'Lab' });
+
+    expect(seen.cards).toEqual({
+      'alice/d1': { kind: 'saving', text: 'Saving 2 changes…', pending: 2 },
+    });
+    expect(background.pending()).toBe(2);
+    expect(seen.said).toEqual([]);
+
+    gate.release();
+    await second;
+    await queue.idle();
+
+    expect(api.appendSnapshot).toHaveBeenCalledTimes(2);
+    expect(seen.cards['alice/d1']).toEqual({
+      kind: 'saved',
+      text: 'All changes saved.',
+      pending: 0,
+    });
+    expect(seen.said).toEqual(['Saved your changes to Lab.']);
+    expect(seen.saved).toBe(1);
+    expect(background.pending()).toBe(0);
+  });
+
+  test('the card counts down as each change is saved', async () => {
+    const { queue, api, gate } = await editedQueue();
+    const { background, seen } = saves();
+
+    gate.holding = true;
+    queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+    queue.commit({ id: 'c2', label: 'two', snapshot: doc });
+    const last = queue.commit({ id: 'c3', label: 'three', snapshot: doc });
+
+    await vi.waitFor(() => expect(api.appendSnapshot).toHaveBeenCalled());
+    background.take(queue, { owner: 'alice', id: 'd1', name: 'Lab' });
+    expect(seen.cards['alice/d1'].text).toBe('Saving 3 changes…');
+
+    gate.waiting.shift()();
+    await vi.waitFor(() => expect(api.appendSnapshot).toHaveBeenCalledTimes(2));
+    expect(seen.cards['alice/d1']).toEqual({
+      kind: 'saving',
+      text: 'Saving 2 changes…',
+      pending: 2,
+    });
+
+    gate.release();
+    await last;
+    await queue.idle();
+    expect(seen.cards['alice/d1'].kind).toBe('saved');
+  });
+
+  // The edit Back to drafts applies (the Inspector's) is queued as the
+  // draft closes, before the local store has it.
+  test('an edit queued as the draft closes is sent too', async () => {
+    const { queue, api } = await editedQueue();
+    const { background, seen } = saves();
+
+    const committing = queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+
+    expect(queueBusy(queue)).toBe(true);
+    background.take(queue, { owner: 'alice', id: 'd1', name: 'Lab' });
+    expect(seen.cards['alice/d1']).toMatchObject({
+      kind: 'saving',
+      pending: 1,
+    });
+
+    await committing;
+    await queue.idle();
+    expect(api.appendSnapshot).toHaveBeenCalledTimes(1);
+    expect(seen.cards['alice/d1'].kind).toBe('saved');
+  });
+
+  test('offline, the card says the changes are kept; a problem only the user can solve ends them', async () => {
+    const { queue } = await editedQueue({ online: false });
+    const { background, seen } = saves();
+
+    await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+    background.take(queue, { owner: 'alice', id: 'd1', name: 'Lab' });
+    expect(seen.cards['alice/d1']).toEqual({
+      kind: 'retrying',
+      text: 'Offline: 1 change kept on this device. Saving retries automatically.',
+      pending: 1,
+    });
+
+    queue.conflict();
+    expect(seen.cards['alice/d1']).toMatchObject({
+      kind: 'stopped',
+      text: 'Not saved: this draft changed on the server. Open it to keep your changes.',
+      pending: 0,
+    });
+    expect(seen.said).toEqual([
+      'Could not save your changes to Lab. Open it to see why.',
+    ]);
+    expect(background.pending()).toBe(0);
+  });
+
+  test("opening the draft again ends them once the send under way settles; the draft's queue finds the rest", async () => {
+    const { queue, api, device, gate } = await editedQueue();
+    const { background, seen } = saves();
+
+    gate.holding = true;
+    queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+    queue.commit({ id: 'c2', label: 'two', snapshot: doc });
+    await vi.waitFor(() => expect(api.appendSnapshot).toHaveBeenCalled());
+    background.take(queue, { owner: 'alice', id: 'd1', name: 'Lab' });
+
+    const released = background.release('alice', 'd1');
+
+    expect(seen.cards).toEqual({});
+    gate.release();
+    await released;
+
+    // The one under way was sent; the other is left to the draft's queue.
+    expect(api.appendSnapshot).toHaveBeenCalledTimes(1);
+    const reopened = createAutosave({ api, store: device, actor: 'alice' });
+
+    await reopened.attach({ owner: 'alice', draftId: 'd1', etag: '"2"' });
+    expect(reopened.record.queue.map((op) => op.opId)).toEqual(['c2']);
+  });
+
+  test('end with the session', async () => {
+    const { queue } = await editedQueue({ online: false });
+    const { background, seen } = saves();
+
+    await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+    background.take(queue, { owner: 'alice', id: 'd1', name: 'Lab' });
+    await endBuilderSession({
+      localStorage: null,
+      sessionStorage: null,
+      clearDatabase: async () => true,
+    });
+
+    expect(seen.cards).toEqual({});
+    expect(background.pending()).toBe(0);
+  });
+
+  test('cards say what each state means for the changes', () => {
+    const card = (state) => backgroundSaveCard({ pending: 2, ...state });
+
+    expect(card({ status: 'saving' }).text).toBe('Saving 2 changes…');
+    expect(
+      card({
+        status: 'error',
+        retryable: true,
+        message:
+          'Could not save your changes. Down. Saving retries automatically.',
+      }),
+    ).toMatchObject({
+      kind: 'retrying',
+      text: 'Could not save your changes. Down. Saving retries automatically.',
+    });
+    expect(card({ status: 'error', retryable: false })).toMatchObject({
+      kind: 'stopped',
+      text: 'Not saved: 2 changes kept on this device. Open the draft to see why.',
+    });
+    expect(card({ status: 'conflict', otherTab: true }).text).toBe(
+      "Not saved: you chose another tab's changes. Open it to keep yours as a new draft.",
+    );
+    expect(card({ status: 'forbidden' }).text).toBe(
+      'Not saved: you can no longer save changes to this draft. Open it to keep a copy.',
+    );
+    expect(card({ status: 'idle', heldForTabs: true })).toMatchObject({
+      kind: 'waiting',
+      stop: false,
+    });
+    expect(card({ status: 'saved', pending: 0 })).toMatchObject({
+      kind: 'saved',
+      stop: true,
+    });
   });
 });
 

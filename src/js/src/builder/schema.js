@@ -855,10 +855,8 @@ function kindSchema(bundle, kind, context = {}) {
             ...(defs.group?.properties?.color || { type: 'string' }),
             title: 'Color',
           },
-          collapsed: {
-            ...(defs.group?.properties?.collapsed || { type: 'boolean' }),
-            title: 'Collapsed',
-          },
+          // Not `collapsed`: the canvas does not draw a collapsed group yet.
+          // A document that has it keeps it (applyFormData in forms.js).
         },
       };
     case 'edge':

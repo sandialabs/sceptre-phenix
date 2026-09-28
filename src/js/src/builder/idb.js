@@ -6,6 +6,8 @@
 // a write that cannot happen throws, so the queue never claims to have kept
 // work it did not keep.
 //
+// Each tab keeps a record of its own for a draft (see tabRecordKey and
+// tabs.js), so two tabs editing one draft never write each other's queue.
 // A draft's record keeps only what its queue needs to replay: the queue, the
 // ETag it was based on, and the metadata of the history entries the queue
 // refers to. Each entry's document snapshot is a record of its own, keyed by
@@ -20,9 +22,9 @@
 // hold (see keepForUnload in autosave.js). Reads merge it into the database's
 // record (see mergeUnloadCopy), unless the database was written after it,
 // and the queue removes it once the database holds what it copied. It is
-// keyed by the draft record's key, so by user and
-// draft, under phenix.builder., which logout and another user's sign-in
-// clear (see session.js).
+// keyed by the draft record's key, so by user, draft and tab, under
+// phenix.builder., which logout and another user's sign-in clear (see
+// session.js).
 
 const DB_NAME = 'phenix-builder';
 // Version 1 kept every entry's snapshot inside the draft record; version 2
@@ -54,6 +56,18 @@ let clearing = Promise.resolve(true);
  */
 export function draftKey(actor, owner, id) {
   return `${actor || 'anonymous'}::${owner || 'unknown'}::${id || 'new'}`;
+}
+
+/**
+ * Key of one tab's record of a draft (see tabs.js). A record kept before
+ * tabs had ids, or by a queue with no tab, has the draft's key alone.
+ *
+ * @param {string} key draftKey()
+ * @param {string} [tab] the tab's id
+ * @returns {string}
+ */
+export function tabRecordKey(key, tab) {
+  return tab ? `${key}#${tab}` : key;
 }
 
 function promisify(request) {
@@ -300,6 +314,20 @@ function withUnloadCopies(records, storage) {
   ];
 }
 
+// A record, with its unload copy merged in (see mergeUnloadCopy), as it is
+// moved to another key; undefined when there is neither.
+function movedRecord(record, copy, key, patch) {
+  const merged = mergeUnloadCopy(record, copy);
+
+  if (!merged) {
+    return undefined;
+  }
+
+  const { fromUnload: _, ...moved } = merged;
+
+  return { ...moved, ...patch, key };
+}
+
 /**
  * Splits a draft record as version 1 stored it, with every history entry's
  * snapshot inline, into the version 2 draft record and its entry records.
@@ -441,7 +469,7 @@ function openBuilderDb(factory, onClose) {
  * @param {object} [options] factory; storage: the Storage that keeps the
  *   unload copies, the page's localStorage by default
  * @returns {{put: Function, get: Function, remove: Function, all: Function,
- *   keep: Function, release: Function}}
+ *   rekey: Function, keep: Function, release: Function}}
  */
 export function createDraftStore(options = {}) {
   const born = generation;
@@ -569,6 +597,69 @@ export function createDraftStore(options = {}) {
     },
 
     /**
+     * Moves a draft record, with its entry snapshots and its unload copy
+     * merged in, to another key, in one transaction: a tab takes the queue
+     * a closed tab left (see tabs.js).
+     *
+     * @param {string} from
+     * @param {string} to
+     * @param {object} [patch] what the moved record changes (its tab)
+     * @returns {Promise<object|undefined>} the record as moved, if any
+     * @throws {Error} when it could not be moved
+     */
+    async rekey(from, to, patch = {}) {
+      const kept = storage();
+      const tx = await writing();
+      const done = completion(tx);
+      const drafts = tx.objectStore(STORE_NAME);
+      const entries = tx.objectStore(ENTRY_STORE);
+      const found = drafts.get(from);
+      const snapshots = entries.index('draft').getAll(from);
+      let moved;
+      // The unload copy taken, put back if the move fails.
+      let copy = null;
+
+      // Requests settle in the order they were made, so both are read. Two
+      // moves of one record, by this page or another, run one after the
+      // other. The unload copy is taken as the record is read, not once
+      // the move is complete, which the other page may not wait for: the
+      // second move finds neither.
+      snapshots.onsuccess = () => {
+        copy = readUnloadCopy(kept, from);
+        removeUnloadCopy(kept, from);
+        moved = movedRecord(
+          found.result
+            ? joinEntries(found.result, snapshots.result)
+            : undefined,
+          copy,
+          to,
+          patch,
+        );
+
+        if (!moved) {
+          return;
+        }
+
+        snapshots.result.forEach((entry) => entries.delete([from, entry.id]));
+        drafts.delete(from);
+        moved.entries.forEach((entry) => entries.put(storedEntry(to, entry)));
+        drafts.put(storedRecord(moved));
+      };
+
+      try {
+        await done;
+      } catch (error) {
+        if (copy) {
+          writeUnloadCopy(kept, copy, copy.entries);
+        }
+
+        throw error;
+      }
+
+      return moved;
+    },
+
+    /**
      * Writes a draft record's unload copy at once, as the page is left (see
      * writeUnloadCopy). A store made before the drafts on this device were
      * cleared writes none.
@@ -665,14 +756,14 @@ async function clearRecords(options) {
  * @param {object} [options] storage: the Storage that keeps the unload
  *   copies; without one, none is kept
  * @returns {{put: Function, get: Function, remove: Function, all: Function,
- *   keep: Function, release: Function, snapshots: Map}}
+ *   rekey: Function, keep: Function, release: Function, snapshots: Map}}
  */
 export function createMemoryStore({ storage = null } = {}) {
   const records = new Map();
   // Draft key to a map of commit id to entry record.
   const snapshots = new Map();
 
-  return {
+  const memory = {
     snapshots,
     async put(record, { write = [], drop = [] } = {}) {
       const stored = structuredClone(storedRecord(record));
@@ -706,6 +797,29 @@ export function createMemoryStore({ storage = null } = {}) {
     async all() {
       return withUnloadCopies(structuredClone([...records.values()]), storage);
     },
+    async rekey(from, to, patch = {}) {
+      const moved = movedRecord(
+        records.has(from)
+          ? joinEntries(
+              structuredClone(records.get(from)),
+              structuredClone([...(snapshots.get(from)?.values() || [])]),
+            )
+          : undefined,
+        readUnloadCopy(storage, from),
+        to,
+        patch,
+      );
+
+      records.delete(from);
+      snapshots.delete(from);
+      removeUnloadCopy(storage, from);
+
+      if (moved) {
+        await memory.put(moved, { write: moved.entries });
+      }
+
+      return moved;
+    },
     keep(record, { write = [] } = {}) {
       return writeUnloadCopy(storage, record, write);
     },
@@ -713,4 +827,6 @@ export function createMemoryStore({ storage = null } = {}) {
       removeUnloadCopy(storage, key);
     },
   };
+
+  return memory;
 }

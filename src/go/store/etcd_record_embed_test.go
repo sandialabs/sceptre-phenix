@@ -3,6 +3,8 @@ package store
 import (
 	"testing"
 
+	"go.etcd.io/etcd/v3/embed"
+
 	"phenix/store/recordtest"
 )
 
@@ -11,10 +13,10 @@ type embeddedEtcd struct {
 	*recordtest.EtcdServer
 }
 
-func startEmbeddedEtcd(t *testing.T) *embeddedEtcd {
+func startEmbeddedEtcd(t *testing.T, configure ...func(*embed.Config)) *embeddedEtcd {
 	t.Helper()
 
-	return &embeddedEtcd{EtcdServer: recordtest.StartEtcd(t)}
+	return &embeddedEtcd{EtcdServer: recordtest.StartEtcd(t, configure...)}
 }
 
 // open returns a store connected to the server, closed when the test ends.

@@ -7,10 +7,13 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  connectionStep,
   flowChanges,
+  nodeInDirection,
   toFlowEdges,
   toFlowNodes,
   withSelection,
+  withTabStop,
 } from '@/builder/adapters/vueflow.js';
 import { nodeIssueSummaries } from '@/builder/issues.js';
 import {
@@ -111,6 +114,10 @@ const WORK = {
   'network list': (doc) => networkOutline(doc),
   'header counts': (doc) => diagramCounts(doc),
   'diagram checks': (doc) => nodeIssueSummaries(doc, validateDocument(doc)),
+  'an arrow key on the canvas': (doc) =>
+    nodeInDirection(doc, { x: 0, y: 0 }, 'ArrowRight', doc.nodes[0].id),
+  'Page Down on the canvas': (doc) =>
+    connectionStep(doc, doc.nodes[0].id, null, 1),
 };
 
 describe('work on a large diagram', () => {
@@ -158,6 +165,23 @@ describe('work on a large diagram', () => {
       [first.id, second.id],
     );
     expect(flowChanges(base, moved).changed.map((item) => item.id)).toEqual([
+      second.id,
+    ]);
+  });
+
+  // The canvas is one Tab stop, not one per node and connection.
+  test('the canvas has one Tab stop, and moving it hands Vue Flow two nodes', () => {
+    const base = toFlowNodes(small);
+    const [first, second] = small.nodes;
+    const stops = (list) =>
+      list.filter((item) => item.domAttributes.tabindex === 0).length;
+    const before = withTabStop(base, first.id);
+    const after = keepUnchanged(withTabStop(base, second.id), before);
+
+    expect(stops(base) + stops(toFlowEdges(small))).toBe(0);
+    expect(stops(before)).toBe(1);
+    expect(flowChanges(before, after).changed.map((item) => item.id)).toEqual([
+      first.id,
       second.id,
     ]);
   });

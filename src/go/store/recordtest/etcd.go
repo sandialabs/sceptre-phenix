@@ -30,9 +30,10 @@ type EtcdServer struct {
 }
 
 // StartEtcd starts an in-process etcd server on loopback ports the kernel
-// picks, so it never collides with a real etcd or another test. The server
-// stops when the test ends.
-func StartEtcd(tb testing.TB) *EtcdServer {
+// picks, so it never collides with a real etcd or another test. Each configure
+// function may change the server's configuration, such as its space quota,
+// before it starts. The server stops when the test ends.
+func StartEtcd(tb testing.TB, configure ...func(*embed.Config)) *EtcdServer {
 	tb.Helper()
 
 	// etcd warns about a data directory other users can read.
@@ -51,6 +52,10 @@ func StartEtcd(tb testing.TB) *EtcdServer {
 	cfg.LogLevel = "error"
 	cfg.LogOutputs = []string{"stderr"}
 	cfg.UnsafeNoFsync = true
+
+	for _, fn := range configure {
+		fn(cfg)
+	}
 
 	server, err := embed.StartEtcd(cfg)
 	if err != nil {

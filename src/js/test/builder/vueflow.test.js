@@ -5,8 +5,10 @@ import { describe, expect, test } from 'vitest';
 
 import {
   absolutePosition,
+  connectionStep,
   EDGE_HINT_ID,
   edgeLanes,
+  fitPadding,
   fitZoom,
   flowChanges,
   FLOW_NODE_TYPES,
@@ -14,17 +16,22 @@ import {
   fromFlowConnection,
   handlesFor,
   hiddenArea,
+  itemPoint,
+  nearestNode,
   NEW_INTERFACE_HANDLE_ID,
   NODE_HINT_ID,
   networkStyle,
   NETWORK_PATTERNS,
   nodeAriaLabel,
+  nodeInDirection,
   nodeIssueId,
+  nodePoint,
   relativePosition,
   SWITCH_HANDLE_ID,
   toFlowEdges,
   toFlowNodes,
   withSelection,
+  withTabStop,
   zoomFloor,
 } from '@/builder/adapters/vueflow.js';
 import {
@@ -104,14 +111,15 @@ describe('flow nodes', () => {
     expect(nodeAriaLabel(next, next.nodes[2])).toBeTruthy();
   });
 
-  // Vue Flow spreads domAttributes over its focusable wrapper, the node's
-  // only Tab stop.
+  // Vue Flow spreads domAttributes over its focusable wrapper, out of the
+  // Tab order until it is the canvas's Tab stop.
   test('the wrapper is a toggle button pressed while the node is selected', () => {
     const { doc, alpha, bravo } = sampleDocument();
     const nodes = toFlowNodes(doc, { selectedIds: [alpha.id] });
     const attrs = (id) => nodes.find((node) => node.id === id).domAttributes;
 
     expect(attrs(alpha.id)).toMatchObject({
+      tabindex: -1,
       role: 'button',
       'aria-pressed': 'true',
       'aria-describedby': NODE_HINT_ID,
@@ -138,6 +146,31 @@ describe('flow nodes', () => {
     expect(withSelection(toFlowEdges(doc), [edge.id])[0].domAttributes).toEqual(
       toFlowEdges(doc, { selectedIds: [edge.id] })[0].domAttributes,
     );
+  });
+
+  // The canvas is one Tab stop, which moves as focus does (a roving
+  // tabindex): one item at a time takes tabindex 0.
+  test('the Tab stop copies only the one item it moves to', () => {
+    const { doc, alpha, bravo, edge } = sampleDocument();
+    const nodes = toFlowNodes(doc);
+    const stopped = withTabStop(nodes, alpha.id);
+    const find = (list, id) => list.find((node) => node.id === id);
+
+    expect(find(stopped, alpha.id).domAttributes).toEqual({
+      ...find(nodes, alpha.id).domAttributes,
+      tabindex: 0,
+    });
+    expect(find(stopped, bravo.id)).toBe(find(nodes, bravo.id));
+    expect(
+      stopped.filter((node) => node.domAttributes.tabindex === 0),
+    ).toHaveLength(1);
+    // Moved on, the old stop is the very item it was before.
+    const moved = keepUnchanged(withTabStop(nodes, bravo.id), stopped);
+    expect(find(moved, alpha.id)).toBe(find(nodes, alpha.id));
+    expect(withTabStop(nodes, null)).toBe(nodes);
+    expect(
+      withTabStop(toFlowEdges(doc), edge.id)[0].domAttributes.tabindex,
+    ).toBe(0);
   });
 
   test('a node the diagram checks flag carries what they found, and is described by it', () => {
@@ -210,14 +243,15 @@ describe('flow edges', () => {
     expect(edge.ariaLabel).toContain('Network EXP from alpha to');
   });
 
-  // Vue Flow writes tabIndex in camel case, which SVG ignores.
+  // Vue Flow writes tabIndex in camel case, which SVG ignores. A connection
+  // is in the Tab order only as the canvas's Tab stop (withTabStop).
   test('connections take focus and report their selection', () => {
     const { doc, edge: model } = sampleDocument();
     const [plain] = toFlowEdges(doc);
     const [selected] = toFlowEdges(doc, { selectedIds: [model.id] });
 
     expect(plain.domAttributes).toMatchObject({
-      tabindex: 0,
+      tabindex: -1,
       role: 'button',
       'aria-pressed': 'false',
       'aria-describedby': EDGE_HINT_ID,
@@ -497,6 +531,121 @@ describe('keeping keyboard focus in view', () => {
   });
 });
 
+describe('moving keyboard focus between nodes', () => {
+  // Nodes 100 by 100 at the given top left corners, named by id.
+  const node = (
+    id,
+    x,
+    y,
+    kind = 'device',
+    size = { width: 100, height: 100 },
+  ) => ({
+    id,
+    kind,
+    position: { x, y },
+    size,
+  });
+  // A row of three, a node below the middle one, and one down and far to
+  // the right, off the row's line.
+  const grid = {
+    nodes: [
+      node('left', 0, 0),
+      node('middle', 200, 0),
+      node('right', 400, 0),
+      node('below', 200, 200),
+      node('far', 700, 90),
+    ],
+    edges: [
+      { id: 'e1', sourceNodeId: 'left', targetNodeId: 'middle' },
+      { id: 'e2', sourceNodeId: 'below', targetNodeId: 'middle' },
+      { id: 'e3', sourceNodeId: 'middle', targetNodeId: 'right' },
+    ],
+  };
+  const from = (id, key) =>
+    nodeInDirection(grid, itemPoint(grid, { kind: 'nodes', id }), key, id);
+
+  test('an arrow key goes to the nearest node that way, in line first', () => {
+    expect(from('left', 'ArrowRight')).toBe('middle');
+    expect(from('middle', 'ArrowRight')).toBe('right');
+    expect(from('middle', 'ArrowDown')).toBe('below');
+    expect(from('below', 'ArrowUp')).toBe('middle');
+    expect(from('middle', 'ArrowLeft')).toBe('left');
+    // The node in line comes before a nearer one off to the side.
+    expect(from('right', 'ArrowRight')).toBe('far');
+    expect(from('below', 'ArrowRight')).toBe('right');
+    // Nothing lies that way: focus stays.
+    expect(from('left', 'ArrowLeft')).toBeNull();
+    expect(from('middle', 'ArrowUp')).toBeNull();
+    expect(nodeInDirection(grid, { x: 0, y: 0 }, 'Tab')).toBeNull();
+  });
+
+  test('from a connection, the arrow keys start halfway along it', () => {
+    const point = itemPoint(grid, { kind: 'edges', id: 'e2' });
+
+    expect(point).toEqual({ x: 250, y: 150 });
+    expect(nodeInDirection(grid, point, 'ArrowDown')).toBe('below');
+    expect(nodeInDirection(grid, point, 'ArrowUp')).toBe('middle');
+    expect(itemPoint(grid, { kind: 'edges', id: 'gone' })).toBeNull();
+    expect(itemPoint(grid, { kind: 'nodes', id: 'gone' })).toBeNull();
+  });
+
+  test('a group is where its title is, so Up from a member reaches it', () => {
+    const doc = {
+      nodes: [
+        node('group', 0, 0, 'group', { width: 400, height: 300 }),
+        node('member', 150, 60),
+        node('other', 280, 60),
+      ],
+      edges: [],
+    };
+    const up = (id) =>
+      nodeInDirection(
+        doc,
+        itemPoint(doc, { kind: 'nodes', id }),
+        'ArrowUp',
+        id,
+      );
+
+    expect(nodePoint(doc.nodes[0])).toEqual({ x: 200, y: 0 });
+    expect(up('member')).toBe('group');
+    expect(up('other')).toBe('group');
+    expect(
+      nodeInDirection(doc, nodePoint(doc.nodes[0]), 'ArrowDown', 'group'),
+    ).toBe('member');
+  });
+
+  test('nodes at the same point are reached in the document order', () => {
+    const doc = {
+      nodes: [node('a', 0, 0), node('b', 0, 0), node('c', 0, 0)],
+      edges: [],
+    };
+    const go = (id, key) => nodeInDirection(doc, { x: 50, y: 50 }, key, id);
+
+    expect(go('a', 'ArrowRight')).toBe('b');
+    expect(go('b', 'ArrowDown')).toBe('c');
+    expect(go('c', 'ArrowLeft')).toBe('b');
+    expect(go('b', 'ArrowUp')).toBe('a');
+    expect(go('c', 'ArrowRight')).toBeNull();
+  });
+
+  test('from the canvas itself, the node nearest a point', () => {
+    expect(nearestNode(grid, { x: 260, y: 260 })).toBe('below');
+    expect(nearestNode(grid, { x: -500, y: -500 })).toBe('left');
+    expect(nearestNode({ nodes: [] }, { x: 0, y: 0 })).toBeNull();
+  });
+
+  test('Page Down and Page Up go round a node’s connections', () => {
+    expect(connectionStep(grid, 'middle', null, 1)).toBe('e1');
+    expect(connectionStep(grid, 'middle', 'e1', 1)).toBe('e2');
+    expect(connectionStep(grid, 'middle', 'e3', 1)).toBe('e1');
+    expect(connectionStep(grid, 'middle', null, -1)).toBe('e3');
+    expect(connectionStep(grid, 'middle', 'e1', -1)).toBe('e3');
+    // A connection of another node starts from the first.
+    expect(connectionStep(grid, 'left', 'e3', 1)).toBe('e1');
+    expect(connectionStep(grid, 'far', null, 1)).toBeNull();
+  });
+});
+
 describe('handing Vue Flow only what changed', () => {
   // The flow nodes of an edited document, keeping those it left alone.
   const after = (before, doc, options) =>
@@ -619,6 +768,109 @@ describe('fitting large diagrams', () => {
     expect(fitZoom({ width: 10, height: 10 }, { width: 0, height: 0 })).toBe(
       Infinity,
     );
+  });
+
+  // Vue Flow's fit view takes a padding for each side, in pixels.
+  test('the fitted zoom with room on each side is the one Vue Flow takes', () => {
+    const bounds = { x: -120, y: 40, width: 9000, height: 2400 };
+    const room = { top: 30, right: 250, bottom: 36, left: 70 };
+    const { zoom } = getTransformForBounds(
+      bounds,
+      pane.width,
+      pane.height,
+      0,
+      Infinity,
+      {
+        top: `${room.top}px`,
+        right: `${room.right}px`,
+        bottom: `${room.bottom}px`,
+        left: `${room.left}px`,
+      },
+    );
+
+    expect(fitZoom(bounds, pane, room)).toBeCloseTo(zoom, 10);
+    expect(fitZoom(bounds, pane, { ...room, left: 600 })).toBe(0);
+  });
+
+  test('a fit keeps the nodes clear of the minimap and the zoom controls', () => {
+    const screen = { left: 100, top: 50, width: 790, height: 646 };
+    Object.assign(screen, {
+      right: screen.left + screen.width,
+      bottom: screen.top + screen.height,
+    });
+    const box = (left, top, width, height) => ({
+      left,
+      top,
+      width,
+      height,
+      right: left + width,
+      bottom: top + height,
+    });
+    // Vue Flow's corners, 15px in: controls bottom left, minimap bottom
+    // right.
+    const controls = box(115, 625, 20, 56);
+    const minimap = box(675, 531, 200, 150);
+    const clear = (bounds, overlays) => {
+      const room = fitPadding(bounds, screen, overlays);
+      const view = getTransformForBounds(
+        bounds,
+        screen.width,
+        screen.height,
+        0,
+        2,
+        Object.fromEntries(
+          Object.entries(room).map(([side, px]) => [side, `${px}px`]),
+        ),
+      );
+      const shown = box(
+        screen.left + view.x + bounds.x * view.zoom,
+        screen.top + view.y + bounds.y * view.zoom,
+        bounds.width * view.zoom,
+        bounds.height * view.zoom,
+      );
+
+      return {
+        room,
+        zoom: view.zoom,
+        hidden: hiddenArea(shown, screen, overlays),
+      };
+    };
+
+    for (const bounds of [
+      { x: 0, y: 0, width: 7360, height: 2756 },
+      { x: 0, y: 0, width: 800, height: 3000 },
+      { x: -50, y: -50, width: 400, height: 300 },
+    ]) {
+      const plain = fitZoom(bounds, screen);
+      const fit = clear(bounds, [controls, minimap]);
+
+      expect(fit.hidden, JSON.stringify(bounds)).toBe(0);
+      expect(fit.zoom).toBeLessThanOrEqual(plain);
+    }
+
+    // A wide diagram keeps the room below the overlays; a tall one, beside
+    // them, where the room costs less.
+    const wide = clear({ x: 0, y: 0, width: 7360, height: 2756 }, [
+      controls,
+      minimap,
+    ]).room;
+    expect(wide.bottom).toBeGreaterThan(150);
+    expect(wide.right).toBeLessThan(50);
+    const tall = clear({ x: 0, y: 0, width: 800, height: 3000 }, [
+      controls,
+      minimap,
+    ]).room;
+    expect(tall.right).toBeGreaterThan(200);
+    expect(tall.bottom).toBeLessThan(50);
+
+    // With the minimap hidden, only the controls take room, on one side.
+    const bare = fitPadding({ x: 0, y: 0, width: 7360, height: 2756 }, screen, [
+      controls,
+    ]);
+    const base = fitPadding({ x: 0, y: 0, width: 7360, height: 2756 }, screen);
+    expect(bare.right).toBe(base.right);
+    expect(bare.top).toBe(base.top);
+    expect(bare.left + bare.bottom).toBeGreaterThan(base.left + base.bottom);
   });
 
   test('the least zoom goes below its usual limit only for a diagram that needs it', () => {

@@ -210,12 +210,12 @@ async function buildConnectedDiagram(builder, title) {
   await builder.rename(title);
   await builder.palette('switch').click();
   await builder.palette('device').click();
-  // A new node is selected, and arrow keys move it 10px.
+  // A new node is selected, and Shift with an arrow key moves it 10px.
   const device = flowNode(builder, 'device');
   await expect(device).toBeVisible();
   await device.focus();
   for (let step = 0; step < 16; step += 1) {
-    await builder.page.keyboard.press('ArrowDown');
+    await builder.page.keyboard.press('Shift+ArrowDown');
   }
   await builder.connect();
   await builder.expectSummary('1 device, 1 switch, 1 network, 1 connection');
@@ -1897,12 +1897,33 @@ test.describe('drafts landing', () => {
       await expect.soft(errorBanner(page)).toHaveCount(0);
     });
 
-    await test.step('Delete removes it from My Drafts and the server', async () => {
-      const deleted = page.waitForResponse(
-        (response) =>
+    await test.step('Delete removes it from My Drafts and the server, although it changed since the list was read', async () => {
+      // The card's ETag is then older than the server's, as it is right
+      // after Back to drafts until the list is read again.
+      const current = await request.get(path);
+      expect(current.ok(), await current.text()).toBeTruthy();
+      const { document } = await current.json();
+      const changed = await request.post(`${path}/snapshots`, {
+        headers: { 'If-Match': current.headers().etag },
+        data: {
+          summary: 'Changed elsewhere',
+          document: {
+            ...(typeof document === 'string' ? JSON.parse(document) : document),
+            viewport: { x: 40, y: 40, zoom: 1 },
+          },
+        },
+      });
+      expect(changed.ok(), await changed.text()).toBeTruthy();
+
+      const deletes = [];
+      page.on('response', (response) => {
+        if (
           response.request().method() === 'DELETE' &&
-          new URL(response.url()).pathname.endsWith(path),
-      );
+          new URL(response.url()).pathname.endsWith(path)
+        ) {
+          deletes.push(response.status());
+        }
+      });
       await page.getByRole('button', { name: `Delete ${title}` }).click();
       // Named with its time, as on its card: most drafts share a title.
       await page
@@ -1911,9 +1932,10 @@ test.describe('drafts landing', () => {
         })
         .getByRole('button', { name: 'Delete draft' })
         .click();
-      expect.soft((await deleted).ok(), 'DELETE response').toBeTruthy();
 
       await expect.soft(draftCard(page, draft.id)).toHaveCount(0);
+      // Refused for the old ETag, the draft is read again and deleted.
+      expect.soft(deletes, 'DELETE statuses').toEqual([412, 204]);
       await expect
         .soft(builder.liveRegion)
         .toContainText(new RegExp(`Deleted draft ${title}, updated .+\\.`));

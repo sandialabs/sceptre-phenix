@@ -5,58 +5,65 @@ It requires a valid username and password.
 
 <template>
   <div id="signin">
-    <b-modal v-model="signUpModal" has-modal-card>
+    <b-modal
+      v-model="signUpModal"
+      has-modal-card
+      aria-role="dialog"
+      aria-modal
+      aria-label="Create a New Account"
+      close-button-aria-label="Close"
+      :auto-focus="false">
       <div class="modal-card">
         <header class="modal-card-head">
           <p class="modal-card-title">Create a New Account</p>
         </header>
         <section class="modal-card-body">
           <b-field
-            label-for="signup-username"
             label="User Name"
+            label-for="signup-username"
             :type="{ 'is-danger': userExists }"
             :message="{ 'User already exists': userExists }">
             <b-input
-              type="text"
               id="signup-username"
               :compat-fallthrough="false"
+              ref="signupUsername"
+              type="text"
               autocomplete="username"
               v-model="username"
               minlength="4"
-              maxlength="32"
-              autofocus></b-input>
+              maxlength="32"></b-input>
           </b-field>
-          <b-field label-for="signup-first-name" label="First Name">
+          <b-field label="First Name" label-for="signup-first-name">
             <b-input
-              type="text"
               id="signup-first-name"
               :compat-fallthrough="false"
+              type="text"
               autocomplete="given-name"
               v-model="first_name"></b-input>
           </b-field>
-          <b-field label-for="signup-last-name" label="Last Name">
+          <b-field label="Last Name" label-for="signup-last-name">
             <b-input
-              type="text"
               id="signup-last-name"
               :compat-fallthrough="false"
+              type="text"
               autocomplete="family-name"
               v-model="last_name"></b-input>
           </b-field>
-          <b-field label-for="signup-password" label="Password">
+          <b-field label="Password" label-for="signup-password">
             <b-input
-              type="password"
               id="signup-password"
               :compat-fallthrough="false"
+              type="password"
               autocomplete="new-password"
               minlength="8"
               maxlength="32"
               v-model="password"></b-input>
           </b-field>
-          <b-field label-for="signup-confirm-password" label="Confirm Password">
+          <b-field label="Confirm Password" label-for="signup-confirm-password">
             <b-input
-              type="password"
               id="signup-confirm-password"
               :compat-fallthrough="false"
+              type="password"
               autocomplete="new-password"
               minlength="8"
               maxlength="32"
@@ -70,20 +77,20 @@ It requires a valid username and password.
       </div>
     </b-modal>
     <div class="signin-form">
-      <b-field label-for="signin-username" label="Username">
+      <b-field label="Username" label-for="signin-username">
         <b-input
-          type="text"
           id="signin-username"
           :compat-fallthrough="false"
+          ref="username"
+          type="text"
           autocomplete="username"
-          v-model="username"
-          autofocus></b-input>
+          v-model="username"></b-input>
       </b-field>
-      <b-field label-for="signin-password" label="Password">
+      <b-field label="Password" label-for="signin-password">
         <b-input
-          type="password"
           id="signin-password"
           :compat-fallthrough="false"
+          type="password"
           autocomplete="current-password"
           v-model="password"
           @keyup.enter="onSubmit"></b-input>
@@ -98,6 +105,7 @@ It requires a valid username and password.
       <br />
       <button class="button" @click="onSubmit">Submit</button>
       <button
+        ref="createAccount"
         class="button is-pulled-right is-small is-text"
         @click="signUpModal = true">
         Create Account
@@ -255,6 +263,24 @@ It requires a valid username and password.
       },
     },
 
+    // The autofocus attribute works only on a full page load, not after an
+    // in-app logout.
+    mounted() {
+      this.$refs.username.focus();
+    },
+
+    watch: {
+      // Focus goes to the dialog's first field as it opens, and back to the
+      // button that opened it as it closes.
+      signUpModal(open) {
+        this.$nextTick(() =>
+          open
+            ? this.$refs.signupUsername?.focus()
+            : this.$refs.createAccount?.focus(),
+        );
+      },
+    },
+
     data() {
       return {
         signUpModal: false,
@@ -274,6 +300,7 @@ It requires a valid username and password.
 <style scoped>
   .signin-form {
     width: 400px;
+    max-width: calc(100% - 32px);
     margin: 30px auto;
     border: 1px solid #eee;
     padding: 20px;

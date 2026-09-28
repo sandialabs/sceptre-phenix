@@ -729,7 +729,7 @@ const RESERVED_KEYS = [
 ];
 
 // Keys that already move around and operate the Builder's controls. The
-// controls take them with modifiers too (⌘⌫ deletes on the canvas, ⌥↑ moves
+// controls take them with modifiers too (⌘⌫ deletes on the canvas, ⇧↑ moves
 // nodes, ⌘Return selects an outline row), and before the view's shortcuts
 // see them, so none of them is a shortcut with any modifiers.
 const OPERATING_KEYS = new Set([

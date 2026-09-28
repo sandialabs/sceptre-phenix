@@ -11,12 +11,14 @@ const {
   test,
   expect,
   blankDocument,
+  expectAccessible,
   expectNoFatal,
   uniqueName,
   visit,
   draftPath,
   publishTopology,
   API,
+  BuilderPage,
   SAVED,
 } = require('./builder-support');
 
@@ -522,19 +524,27 @@ test.describe('Builder Beta persistence', () => {
       });
 
       await test.step('a server error is reported and Retry saving recovers', async () => {
+        // As the server answers once etcd is out of space.
+        const outOfSpace =
+          'etcd is out of space: phenix cannot save changes until an administrator frees space (compact and defragment etcd, then clear its NOSPACE alarm)';
         await page.route(SNAPSHOTS, (route) =>
           route.request().method() === 'POST'
             ? route.fulfill({
-                status: 500,
+                status: 507,
                 contentType: 'application/json',
-                body: JSON.stringify({ error: 'Simulated storage failure' }),
+                body: JSON.stringify({
+                  message: outOfSpace,
+                  cause: `${outOfSpace}: etcdserver: mvcc: database space exceeded`,
+                }),
               })
             : route.fallback(),
         );
         await builder.palette('device').click();
         await expect
           .soft(builder.saveState)
-          .toHaveText(/Simulated storage failure/);
+          .toContainText(
+            'Could not save your changes. Etcd is out of space: phenix cannot save changes until an administrator frees space (compact and defragment etcd, then clear its NOSPACE alarm). Saving retries automatically.',
+          );
         await expect(builder.toolbar('retry')).toBeVisible();
         // The message wraps, and the header's buttons, labelled or not,
         // keep one height rather than growing with its row.
@@ -1104,6 +1114,193 @@ test.describe('Builder Beta persistence', () => {
     });
   });
 
+  test(
+    'a draft open in two tabs warns, keeps the changes of each, and asks which to save',
+    { tag: '@cross-browser' },
+    async ({ builder, page, request, tracker }, testInfo) => {
+      const title = uniqueName(testInfo, 'tabs');
+      const draft = await builder.seedDraft(blankDocument(title));
+      await builder.openDraft(draft);
+      const second = await page.context().newPage();
+      tracker.watch(second);
+      const other = new BuilderPage(second, request, tracker);
+      await other.openDraft(draft);
+      const notice = (tab) => tab.page.getByTestId('builder-tabs');
+      const choice = (tab) =>
+        tab.page.getByRole('dialog', { name: 'Choose which changes to save' });
+
+      await test.step('each tab says the draft is open in the other', async () => {
+        for (const tab of [builder, other]) {
+          await expect(notice(tab)).toHaveText(
+            'This draft is also open in another tab, where all changes are saved. Changes made in both tabs cannot both be kept.',
+          );
+        }
+      });
+
+      await test.step('offline, each tab keeps its own changes, and says what the other holds', async () => {
+        await page.context().setOffline(true);
+        await addDevices(builder, 1);
+        await expect(builder.saveState).toHaveText(
+          /Offline: 1 change kept on this device/,
+        );
+        await addDevices(other, 2);
+        await expect(other.saveState).toHaveText(
+          /Offline: 2 changes kept on this device/,
+        );
+        await expect(notice(builder)).toContainText(
+          'This draft is also open in another tab, which has 2 changes not saved yet.',
+        );
+        await expect(notice(other)).toContainText(
+          'which has 1 change not saved yet.',
+        );
+        // A queue per tab on this device: neither replaced the other's.
+        await expect
+          .poll(async () =>
+            (await localDrafts(page)).drafts
+              .filter((record) => record.draftId === draft.id)
+              .map((record) => record.queue.length)
+              .sort(),
+          )
+          .toEqual([1, 2]);
+      });
+
+      await test.step('back online, neither saves: each asks which changes to save', async () => {
+        await page.context().setOffline(false);
+        const dialog = choice(builder);
+        await expect(dialog).toBeVisible();
+        await expect(choice(other)).toBeVisible();
+        await expect
+          .soft(builder.saveState)
+          .toHaveText('1 change not saved yet. Choose which changes to save.');
+        const group = dialog.getByRole('group', { name: 'Version to save' });
+        await expect(group.getByRole('radio')).toHaveCount(2);
+        const mine = group.getByRole('radio', {
+          name: /^This tab: 1 change, last at \S.*\d/,
+        });
+        await expect(mine).toBeChecked();
+        // Focus starts on the version picked.
+        await expect.soft(mine).toBeFocused();
+        await expect
+          .soft(
+            group.getByRole('radio', {
+              name: /^Another tab: 2 changes, last at \S.*\d/,
+            }),
+          )
+          .not.toBeChecked();
+        await expect
+          .soft(
+            dialog.getByRole('button', { name: "Export this tab's changes" }),
+          )
+          .toBeVisible();
+        await expectAccessible(page, {
+          include: '[data-testid="tabs-choice"]',
+          soft: true,
+          label: 'the choice of which changes to save',
+        });
+        await expectServerCounts(builder, draft, { devices: 0 });
+      });
+
+      await test.step("the other tab's changes chosen, they are saved, and this tab's go to a new draft", async () => {
+        const dialog = choice(builder);
+        await dialog.getByRole('radio', { name: /^Another tab/ }).check();
+        await dialog.getByRole('button', { name: 'Save this version' }).click();
+        await expect(dialog).toBeHidden({ timeout: 20000 });
+        await expect(choice(other)).toBeHidden();
+        await expectServerCounts(builder, draft, { devices: 2 });
+        await other.waitSaved();
+
+        const copy = `${title} (local copy)`;
+        await expect(page.getByTestId('builder-name')).toHaveValue(copy);
+        await builder.waitSaved();
+        const fork = (await listMine(request)).find(
+          (item) => item.title === copy,
+        );
+        expect(fork, 'the new draft').toBeTruthy();
+        await expectServerCounts(builder, fork, { devices: 1 });
+
+        // The tabs no longer have the same draft open, and focus stayed in
+        // the page.
+        await expect.soft(notice(builder)).toHaveCount(0);
+        await expect.soft(notice(other)).toHaveCount(0);
+        expect
+          .soft(
+            await page.evaluate(
+              () =>
+                document.activeElement &&
+                document.activeElement !== document.body,
+            ),
+          )
+          .toBe(true);
+      });
+
+      await test.step('a tab closed with changes leaves them to the next tab that opens the draft', async () => {
+        await page.context().setOffline(true);
+        await addDevices(other, 1);
+        await expect(other.saveState).toHaveText(
+          /Offline: 1 change kept on this device/,
+        );
+        await second.close({ runBeforeUnload: false });
+        await page.context().setOffline(false);
+
+        await builder.backToDrafts();
+        await page.getByTestId(`draft-open-${draft.id}`).click();
+        await expect(builder.canvas).toBeVisible();
+        await expect
+          .soft(builder.liveRegion)
+          .toContainText('Recovered 1 unsaved change from this device.');
+        await builder.waitSaved();
+        await expectServerCounts(builder, draft, { devices: 3 });
+        await expect
+          .poll(async () =>
+            (await localDrafts(page)).drafts.filter(
+              (record) => record.draftId === draft.id,
+            ),
+          )
+          .toEqual([]);
+      });
+
+      await test.step('a tab that closes while the user chooses leaves its changes to choose', async () => {
+        const third = await page.context().newPage();
+        tracker.watch(third);
+        const last = new BuilderPage(third, request, tracker);
+        await last.openDraft(draft);
+        await expect(notice(builder)).toContainText(
+          'This draft is also open in another tab',
+        );
+        await page.context().setOffline(true);
+        await addDevices(builder, 1);
+        await addDevices(last, 2);
+        await expect(notice(builder)).toContainText(
+          'which has 2 changes not saved yet.',
+        );
+        await page.context().setOffline(false);
+        const dialog = choice(builder);
+        await expect(dialog).toBeVisible();
+        await expect(choice(last)).toBeVisible();
+
+        await third.close({ runBeforeUnload: false });
+        const group = dialog.getByRole('group', { name: 'Version to save' });
+        await expect(
+          group.getByRole('radio', { name: /^A closed tab: 2 changes/ }),
+        ).toBeVisible();
+        await expect(group.getByRole('radio')).toHaveCount(2);
+        await expect(builder.saveState).toHaveText(
+          '1 change not saved yet. Choose which changes to save.',
+        );
+        await expectServerCounts(builder, draft, { devices: 3 });
+
+        await group.getByRole('radio', { name: /^This tab/ }).check();
+        await dialog.getByRole('button', { name: 'Save this version' }).click();
+        await expect(dialog).toBeHidden({ timeout: 20000 });
+        await builder.waitSaved();
+        await expectServerCounts(builder, draft, { devices: 4 });
+        await expect
+          .soft(builder.liveRegion)
+          .toContainText('Saved the changes a closed tab left as a new draft.');
+      });
+    },
+  );
+
   test('a snapshot the server rejects does not block later saves', async ({
     builder,
     page,
@@ -1256,26 +1453,40 @@ test.describe('Builder Beta persistence', () => {
       name: 'Leave with unsaved changes?',
     });
 
-    await test.step('Back to drafts asks, and Stay keeps the editor', async () => {
+    await test.step("Back to drafts goes at once, and the draft's card says the change is kept", async () => {
       await back.click();
+      await expect(builder.landingHeading).toBeVisible();
+      await expect.soft(confirm).toHaveCount(0);
+      const kept =
+        'Offline: 1 change kept on this device. Saving retries automatically.';
+      const open = page.getByTestId(`draft-open-${draft.id}`);
+      await expect
+        .soft(page.getByTestId(`draft-save-${draft.id}`))
+        .toHaveText(kept);
+      // Focus goes to the card, whose Open is the way back to the change.
+      await expect.soft(open).toBeFocused();
+      await expect.soft(open).toHaveAccessibleDescription(kept);
+    });
+
+    await test.step('another page asks, as the change is not saved yet; Stay keeps the drafts and Leave anyway goes there', async () => {
+      const experiments = page.getByRole('link', { name: 'Experiments' });
+      await experiments.click();
       await expect(confirm).toBeVisible();
       await expect
         .soft(confirm)
-        .toContainText('Your 1 unsaved change is kept on this device.');
+        .toHaveAccessibleDescription(
+          'Your 1 unsaved change to a draft you closed is kept on this device. It is saved when you next open that draft in this browser, unless you log out first.',
+        );
       // Focus starts on the choice that keeps the work.
       await expect
         .soft(confirm.getByRole('button', { name: 'Stay' }))
         .toBeFocused();
       await confirm.getByRole('button', { name: 'Stay' }).click();
       await expect(confirm).toBeHidden();
-      await expect(builder.canvas).toBeVisible();
-      await expect.soft(back, 'focus after Stay').toBeFocused();
-    });
-
-    await test.step('another page asks too, and Leave anyway goes there', async () => {
-      await page.getByRole('link', { name: 'Experiments' }).click();
-      await expect(confirm).toBeVisible();
       await expect.soft(page).toHaveURL(/\/builder-beta$/);
+      await expect.soft(builder.landingHeading).toBeVisible();
+
+      await experiments.click();
       await confirm.getByRole('button', { name: 'Leave anyway' }).click();
       await expect(page).toHaveURL(/\/experiments$/);
     });
@@ -1456,8 +1667,7 @@ test.describe('Builder Beta persistence', () => {
         .toHaveAttribute('aria-pressed', 'false');
     });
 
-    await test.step('a save that lands while it asks leaves at once', async () => {
-      // The save takes longer than leaving waits for it before it asks.
+    await test.step('Back to drafts does not wait for a slow save: the card says it goes on, then that it is done', async () => {
       await page.route(
         (url) => url.pathname.endsWith('/snapshots'),
         async (route) => {
@@ -1467,24 +1677,28 @@ test.describe('Builder Beta persistence', () => {
       );
       await addDevices(builder, 1);
       await back.click();
-      // Meanwhile the button says it is saving, and takes no second click.
-      const saving = page.getByTestId('editor-back');
-      await expect.soft(saving).toHaveAccessibleName('Saving…');
-      await expect.soft(saving).toHaveAttribute('aria-busy', 'true');
-      await expect.soft(saving).toHaveAttribute('aria-disabled', 'true');
-      await expect
-        .soft(builder.liveRegion)
-        .toContainText('Saving your changes…');
-      await expect(confirm).toBeVisible();
-      // Once the server has the change, there is nothing left to ask about.
-      await expect(confirm).toBeHidden({ timeout: 10000 });
-      await expect(page.getByTestId('drafts-list-mine')).toBeVisible();
       // The draft was listed: the landing shows at once, and focus goes to
-      // its card.
+      // its card, which says the change is being sent.
+      await expect(page.getByTestId('drafts-list-mine')).toBeVisible();
+      const card = page.getByTestId(`draft-save-${draft.id}`);
+      await expect(card).toHaveText('Saving 1 change…');
+      await expect.soft(confirm).toHaveCount(0);
+      await expect
+        .soft(card.locator('.builder-toolbar__spinner'))
+        .toBeVisible();
       await expect
         .soft(page.getByTestId(`draft-open-${draft.id}`))
         .toBeFocused();
+      await expect(card).toHaveText('All changes saved.', { timeout: 10000 });
+      await expect
+        .soft(builder.liveRegion)
+        .toContainText(/Saved your changes to Untitled topology \d+\./);
       await expectServerCounts(builder, draft, { devices: 1 });
+      await expectAccessible(page, {
+        include: '[data-testid="drafts-list-mine"]',
+        soft: true,
+        label: 'a card saying its changes are saved',
+      });
     });
 
     await test.step('Inspector changes not applied are saved on Back to drafts, and History marks them', async () => {
@@ -1499,11 +1713,16 @@ test.describe('Builder Beta persistence', () => {
         builder.inspector.getByTestId('inspector-apply'),
       ).toBeVisible();
 
-      // Nothing is left to ask about: the changes are saved as one edit.
+      // Nothing is left to ask about: the changes are saved as one edit,
+      // sent once the landing shows.
       await back.click();
       await expect(builder.landingHeading).toBeVisible({ timeout: 20000 });
       await expect.soft(confirm).toHaveCount(0);
       await expect.soft(open).toBeFocused();
+      await expect(page.getByTestId(`draft-save-${draft.id}`)).toHaveText(
+        'All changes saved.',
+        { timeout: 20000 },
+      );
       const device = (await builder.serverDocument(draft)).nodes.find(
         (node) => node.kind === 'device',
       );

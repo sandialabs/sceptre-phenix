@@ -752,10 +752,16 @@
 
     const next = applied(previous);
 
-    store.commit(
-      next,
-      appliedLabel(`Applied changes to ${editing.title}`, next, editing),
-    );
+    // A commit refused while a conflict is resolved leaves them unapplied.
+    if (
+      !store.commit(
+        next,
+        appliedLabel(`Applied changes to ${editing.title}`, next, editing),
+      )
+    ) {
+      return 'the conflict is being resolved';
+    }
+
     dirty.value = false;
 
     return '';

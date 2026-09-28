@@ -66,16 +66,6 @@ async function addWithKeyboard(builder, item, count) {
   }
 }
 
-// Blank draft with one device ("node") and one switch ("EXP").
-async function deviceAndSwitch(builder) {
-  await builder.open();
-  const draft = await builder.createBlank();
-  await addWithKeyboard(builder, 'device', 1);
-  await addWithKeyboard(builder, 'switch', 2);
-
-  return draft;
-}
-
 // Connects through the outline's keyboard form: select the device and switch,
 // then press Enter on Connect.
 async function connectWithKeyboard(builder, device = 'node') {
@@ -200,6 +190,25 @@ async function nodesOutsideCanvas(page) {
           box.bottom > bounds.bottom + 1,
       )
       .map(({ id }) => id);
+  });
+}
+
+// Canvas nodes drawn under the minimap or the zoom controls, which float
+// over the canvas.
+async function nodesUnderOverlays(page) {
+  return page.locator('.vue-flow').evaluate((flow) => {
+    const overlays = [
+      ...flow.querySelectorAll('.vue-flow__minimap, .vue-flow__controls'),
+    ].map((overlay) => overlay.getBoundingClientRect());
+    const overlap = (a, b) =>
+      Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 &&
+      Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+
+    return [...flow.querySelectorAll('.vue-flow__node')]
+      .filter((node) =>
+        overlays.some((box) => overlap(node.getBoundingClientRect(), box)),
+      )
+      .map((node) => node.dataset.id);
   });
 }
 
@@ -910,44 +919,195 @@ test.describe('keyboard-only authoring', () => {
     },
   );
 
-  test('a canvas node is one tab stop, and its focus ring differs from selection', async ({
-    page,
-    builder,
-  }) => {
-    await deviceAndSwitch(builder);
-    await builder.selectInOutline('EXP');
-    const id = await rowNodeId(builder, 'node');
-    const node = page.locator(`.vue-flow__node[data-id="${id}"]`);
+  test(
+    'the canvas is one Tab stop that the arrow keys and Page Down move through, and focus looks different from selection',
+    { tag: '@cross-browser' },
+    async ({ page, builder, issues }) => {
+      // Two devices in a row with a note beyond them, and the switch below
+      // the first device, connected to both.
+      const id = () => crypto.randomUUID();
+      const network = { id: id(), name: 'EXP' };
+      const device = (hostname, position) => ({
+        id: id(),
+        kind: 'device',
+        label: hostname,
+        position,
+        device: {
+          hostname,
+          spec: {
+            type: 'VirtualMachine',
+            general: { hostname, vm_type: 'kvm' },
+            hardware: { os_type: 'linux', drives: [{ image: 'ubuntu.qc2' }] },
+            network: {
+              interfaces: [
+                { name: 'eth0', proto: 'dhcp', type: 'ethernet', vlan: 'EXP' },
+              ],
+            },
+          },
+          interfaces: [{ id: id(), name: 'eth0', index: 0 }],
+        },
+      });
+      const left = device('left', { x: 0, y: 0 });
+      const right = device('right', { x: 480, y: 0 });
+      const note = {
+        id: id(),
+        kind: 'note',
+        label: 'Lab notes',
+        position: { x: 960, y: 0 },
+        note: { text: 'Lab notes', color: '' },
+      };
+      const sw = {
+        id: id(),
+        kind: 'switch',
+        label: 'EXP',
+        position: { x: -10, y: 240 },
+        switch: { networkId: network.id },
+      };
+      const [toLeft, toRight] = [left, right].map((end) => ({
+        id: id(),
+        sourceNodeId: end.id,
+        sourceHandleId: end.device.interfaces[0].id,
+        targetNodeId: sw.id,
+        networkId: network.id,
+      }));
+      const draft = await builder.seedDraft(
+        blankDocument(`canvas-keys-${Date.now()}`, {
+          nodes: [left, right, note, sw],
+          networks: [network],
+          edges: [toLeft, toRight],
+        }),
+      );
+      await builder.openDraft(draft);
 
-    // The splitter between the Outline and the canvas is the last stop
-    // before the canvas.
-    await page
-      .getByRole('separator', { name: 'Resize Add nodes and Outline' })
-      .focus();
-    const unfocused = await nodeFocusLook(page, id);
+      const node = (item) =>
+        page.locator(`.vue-flow__node[data-id="${item.id}"]`);
+      const edge = (item) =>
+        page.locator(`.vue-flow__edge[data-id="${item.id}"]`);
+      const items = builder.canvas.locator('.vue-flow__node, .vue-flow__edge');
+      const stops = items.and(page.locator('[tabindex="0"]'));
+      const zoomIn = page.getByRole('button', { name: 'Zoom in' });
 
-    // The canvas follows the outline in tab order; its first stop is the
-    // (unselected) device's Vue Flow wrapper, a toggle button.
-    await page.keyboard.press('Tab');
-    expect(await focusedNodeId(page)).toBe(id);
-    await expect.soft(node).toBeFocused();
-    await expect.soft(node).toHaveAttribute('aria-pressed', 'false');
-    const focused = await nodeFocusLook(page, id);
-    expect
-      .soft(focused, 'focusing the node must change its appearance')
-      .not.toBe(unfocused);
+      await test.step('Tab reaches the canvas once, and leaves it for the zoom controls', async () => {
+        await page
+          .getByRole('separator', { name: 'Resize Add nodes and Outline' })
+          .focus();
+        await page.keyboard.press('Tab');
+        await expect(builder.canvas).toBeFocused();
+        await expect
+          .soft(builder.canvas)
+          .toHaveAccessibleDescription(/^Arrow keys move to the nodes/);
+        // Every node and connection takes focus, but none is a Tab stop.
+        await expect.soft(items).toHaveCount(6);
+        await expect.soft(stops).toHaveCount(0);
+        await page.keyboard.press('Tab');
+        await expect.soft(zoomIn).toBeFocused();
+        await page.keyboard.press('Shift+Tab');
+        await expect(builder.canvas).toBeFocused();
+      });
 
-    // Enter selects it, and the next Tab leaves the node.
-    await page.keyboard.press('Enter');
-    await expect.soft(node).toHaveAttribute('aria-pressed', 'true');
-    await page.keyboard.press('Tab');
-    expect
-      .soft(await focusedNodeId(page), 'the next Tab must leave the node')
-      .not.toBe(id);
-    expect
-      .soft(await nodeFocusLook(page, id), 'selection must not look like focus')
-      .not.toBe(focused);
-  });
+      await test.step('from the canvas, an arrow key goes to a node, which becomes the Tab stop', async () => {
+        await page.keyboard.press('ArrowDown');
+        const first = await focusedNodeId(page);
+        expect([left.id, right.id, note.id, sw.id]).toContain(first);
+        await expect.soft(stops).toHaveCount(1);
+        await expect.soft(builder.canvas).toHaveAttribute('tabindex', '-1');
+      });
+
+      await test.step('arrow keys move to the nearest node that way', async () => {
+        await node(left).focus();
+        const moves = [
+          ['ArrowRight', right],
+          ['ArrowRight', note],
+          ['ArrowRight', note],
+          ['ArrowLeft', right],
+          ['ArrowLeft', left],
+          ['ArrowDown', sw],
+          ['ArrowUp', left],
+        ];
+        for (const [key, to] of moves) {
+          await page.keyboard.press(key);
+          await expect(node(to), `${key} to ${to.label}`).toBeFocused();
+        }
+        await expect.soft(stops).toHaveCount(1);
+        await expect.soft(node(left)).toHaveAttribute('tabindex', '0');
+      });
+
+      await test.step('Page Down and Page Up go round a node’s connections, and arrow keys go back to the nodes', async () => {
+        await page.keyboard.press('ArrowDown');
+        await expect(node(sw)).toBeFocused();
+        await page.keyboard.press('PageDown');
+        await expect(edge(toLeft)).toBeFocused();
+        await expect
+          .soft(edge(toLeft))
+          .toHaveAccessibleName('Network EXP from left to EXP');
+        await page.keyboard.press('PageDown');
+        await expect(edge(toRight)).toBeFocused();
+        await page.keyboard.press('PageDown');
+        await expect(edge(toLeft)).toBeFocused();
+        await page.keyboard.press('PageUp');
+        await expect(edge(toRight)).toBeFocused();
+        await expect.soft(stops).toHaveCount(1);
+        await expect
+          .soft(edge(toRight))
+          .toHaveAccessibleDescription(
+            /^Arrow keys move to the nodes, Page Down to the next connection\./,
+          );
+        // Halfway along the connection, the right device lies to the right.
+        await page.keyboard.press('ArrowRight');
+        await expect(node(right)).toBeFocused();
+        await page.keyboard.press('PageUp');
+        await expect(edge(toRight)).toBeFocused();
+
+        await node(note).focus();
+        await page.keyboard.press('PageDown');
+        await expect.soft(node(note)).toBeFocused();
+        await expect
+          .soft(builder.liveRegion)
+          .toContainText('Lab notes has no connections.');
+      });
+
+      await test.step('Tab leaves the canvas and Shift+Tab comes back to the same node; focus looks different from selection', async () => {
+        await node(left).focus();
+        await zoomIn.focus();
+        const unfocused = await nodeFocusLook(page, left.id);
+        await page.keyboard.press('Shift+Tab');
+        await expect(node(left)).toBeFocused();
+        await expect.soft(node(left)).toHaveAttribute('aria-pressed', 'false');
+        const focused = await nodeFocusLook(page, left.id);
+        expect
+          .soft(focused, 'focusing the node must change its appearance')
+          .not.toBe(unfocused);
+
+        // Shift and an arrow key move only selected nodes, and say so.
+        await page.keyboard.press('Shift+ArrowRight');
+        await expect
+          .soft(builder.liveRegion)
+          .toContainText('Select the nodes to move first.');
+
+        // Enter selects it, and the next Tab leaves the canvas.
+        await page.keyboard.press('Enter');
+        await expect.soft(node(left)).toHaveAttribute('aria-pressed', 'true');
+        await page.keyboard.press('Tab');
+        await expect.soft(zoomIn).toBeFocused();
+        expect
+          .soft(
+            await nodeFocusLook(page, left.id),
+            'selection must not look like focus',
+          )
+          .not.toBe(focused);
+      });
+
+      await test.step('Delete moves focus to the nearest node, which becomes the Tab stop', async () => {
+        await node(note).focus();
+        await page.keyboard.press('Delete');
+        await expect(node(note)).toHaveCount(0);
+        await expect.soft(node(right)).toBeFocused();
+        await expect.soft(stops).toHaveCount(1);
+        await expect.soft(node(right)).toHaveAttribute('tabindex', '0');
+      });
+      expectNoFatal(issues);
+    },
+  );
 });
 
 // --- axe scans in both themes -------------------------------------------------
@@ -1778,7 +1938,7 @@ test.describe('themes and canvas controls', () => {
         await expect
           .soft(device)
           .toHaveAccessibleDescription(
-            /^1 warning: device "node" has no interfaces\. (?:Return|Enter) selects/,
+            /^1 warning: device "node" has no interfaces\. Arrow keys move between nodes/,
           );
       });
 
@@ -1904,6 +2064,12 @@ test.describe('themes and canvas controls', () => {
 
       await fit.press('Enter');
       await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
+      await expect.poll(() => nodesUnderOverlays(page)).toEqual([]);
+
+      // The last device is the canvas's Tab stop, once it has had focus.
+      const last = page.locator('.vue-flow__node').last();
+      const lastId = await last.getAttribute('data-id');
+      await last.focus();
 
       // At its limit a zoom button stays focusable and reports that it is
       // unavailable, so focus never falls to the page.
@@ -1920,7 +2086,7 @@ test.describe('themes and canvas controls', () => {
       const focusedId = await page.evaluate(
         () => document.activeElement?.closest('.vue-flow__node')?.dataset.id,
       );
-      expect(focusedId, 'Shift+Tab reaches the last device').toBeTruthy();
+      expect(focusedId, 'Shift+Tab reaches the last device').toBe(lastId);
       await expect
         .poll(() => nodesOutsideCanvas(page))
         .not.toContain(focusedId);
@@ -2164,9 +2330,13 @@ test.describe('themes and canvas controls', () => {
       await expect.soft(row).toBeFocused();
     });
 
-    await test.step('a large diagram is shown whole by Fit, the fit opening zoom, Reset view, zooming out and its outline', async () => {
+    // Its corner devices sit where the zoom controls and the minimap float,
+    // so each fit must keep them clear of both.
+    await test.step('a large diagram is shown whole, clear of the minimap and zoom controls, by Fit, the fit opening zoom, Reset view, zooming out and its outline', async () => {
       const level = (value) => Math.round(value * 1000) / 1000;
       const id = () => crypto.randomUUID();
+      await page.setViewportSize({ width: 1440, height: 900 });
+      const pane = await page.locator('.vue-flow').boundingBox();
       const network = { id: id(), name: 'wide-net' };
       const sw = {
         id: id(),
@@ -2175,15 +2345,19 @@ test.describe('themes and canvas controls', () => {
         position: { x: 3600, y: -300 },
         switch: { networkId: network.id },
       };
-      // Four devices at the corners of a 7200 by 2660 area, each connected
-      // to the one switch: in a 1440 by 900 window, it takes a zoom of about
+      // Four devices at the corners of a 7200 wide area, each connected to
+      // the one switch: in a 1440 by 900 window, it takes a zoom of about
       // 0.1 to see them all. Few nodes keep the draft quick to open on a
-      // slow machine; how far apart they are is what sets the zoom.
+      // slow machine; how far apart they are is what sets the zoom. The
+      // diagram, switch and all, has the pane's shape, so a fit into the
+      // whole pane would put the bottom corners under the zoom controls and
+      // the minimap.
+      const bottom = Math.round((7360 * pane.height) / pane.width) - 396;
       const corners = [
         { x: 0, y: 0 },
         { x: 7200, y: 0 },
-        { x: 0, y: 2660 },
-        { x: 7200, y: 2660 },
+        { x: 0, y: bottom },
+        { x: 7200, y: bottom },
       ];
       const devices = corners.map((position, index) => {
         const hostname = `wide-${index + 1}`;
@@ -2247,7 +2421,6 @@ test.describe('themes and canvas controls', () => {
       };
 
       // Opened with the zoom that fits it.
-      await page.setViewportSize({ width: 1440, height: 900 });
       await page.getByTestId('editor-settings').press('Enter');
       await page
         .getByTestId('settings-dialog')
@@ -2256,6 +2429,7 @@ test.describe('themes and canvas controls', () => {
       await page.keyboard.press('Escape');
       await builder.openDraft(wide);
       await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
+      await expect.poll(() => nodesUnderOverlays(page)).toEqual([]);
       const fitted = level(await zoomLevel(page));
       expect(fitted, 'below the usual least zoom').toBeLessThan(0.2);
       await expect.soft(zoomOut).not.toHaveAttribute('aria-disabled');
@@ -2264,6 +2438,20 @@ test.describe('themes and canvas controls', () => {
       await expect.poll(() => nodesOutsideCanvas(page)).not.toEqual([]);
       await fit.press('Enter');
       await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
+      await expect.poll(async () => level(await zoomLevel(page))).toBe(fitted);
+      await expect.poll(() => nodesUnderOverlays(page)).toEqual([]);
+
+      // With the minimap hidden, Fit keeps no room for it: the diagram is
+      // larger.
+      const minimapToggle = page.getByTestId('toolbar-minimap');
+      await minimapToggle.click();
+      await fit.press('Enter');
+      await expect
+        .poll(async () => level(await zoomLevel(page)))
+        .toBeGreaterThan(fitted);
+      await expect.poll(() => nodesUnderOverlays(page)).toEqual([]);
+      await minimapToggle.click();
+      await fit.press('Enter');
       await expect.poll(async () => level(await zoomLevel(page))).toBe(fitted);
 
       // Zooming out by hand goes past the fitted zoom, then stops, and says
@@ -2310,6 +2498,7 @@ test.describe('themes and canvas controls', () => {
       await page.getByTestId('editor-reset-view').click();
       await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
       await expect.poll(async () => level(await zoomLevel(page))).toBe(fitted);
+      await expect.poll(() => nodesUnderOverlays(page)).toEqual([]);
 
       // The switch's row shows its network: every node.
       await zoomInBy(2);
@@ -2317,6 +2506,7 @@ test.describe('themes and canvas controls', () => {
       const row = page.getByTestId(`outline-item-${sw.id}`);
       await row.press('Enter');
       await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
+      await expect.poll(() => nodesUnderOverlays(page)).toEqual([]);
       await expect.soft(row).toBeFocused();
     });
     expectNoFatal(issues);

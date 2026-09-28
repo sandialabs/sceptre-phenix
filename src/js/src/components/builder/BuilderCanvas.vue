@@ -6,10 +6,22 @@
   from the document. Keyboard equivalents exist for every pointer gesture, and
   the semantic outline (BuilderOutline.vue) covers everything drag does.
 
-  Every node and connection is one Tab stop: Vue Flow's wrapper element,
-  named and described by adapters/vueflow.js. Vue Flow's own keyboard layer is
-  off; this component handles the keys, so the hints it gives are the keys
-  that work.
+  The diagram is one Tab stop (a roving tabindex): the node or connection
+  that last had focus, or else the canvas itself. The arrow keys move focus
+  to the nearest node in their direction, and Page Down and Page Up through
+  a node's connections; Shift with an arrow key moves the selected nodes.
+  Each node and connection is Vue Flow's wrapper element, named and
+  described by adapters/vueflow.js. Vue Flow's own keyboard layer is off;
+  this component handles the keys, so the hints it gives are the keys that
+  work.
+
+  Accepted deviation, as in BuilderOutlineList.vue: the nodes are not each
+  a Tab stop, and the canvas has no composite role. In screen reader
+  browse mode (NVDA, JAWS) the arrow keys and Page Down move the virtual
+  cursor, not the focus, so Tab leaves the canvas. The Keyboard help says
+  to turn on the screen reader's focus mode for these keys, or to use the
+  Outline, which lists every node and connection. Activating a node in browse mode (Enter) selects and
+  focuses it.
 -->
 <template>
   <section
@@ -19,7 +31,7 @@
     data-testid="builder-canvas"
     aria-labelledby="builder-canvas-title"
     aria-describedby="builder-canvas-help-summary"
-    tabindex="-1"
+    :tabindex="tabStop ? -1 : 0"
     @keydown="onKeydown"
     @focusin="onFocusIn"
     @pointerdown.capture="startGesture"
@@ -76,6 +88,8 @@
       :delete-key-code="null"
       :multi-selection-key-code="'Shift'"
       :disable-keyboard-a11y="true"
+      :nodes-focusable="false"
+      :edges-focusable="false"
       @connect="onConnect"
       @connect-start="onConnectStart"
       @connect-end="onConnectEnd"
@@ -199,7 +213,12 @@
     shallowRef,
     watch,
   } from 'vue';
-  import { ConnectionMode, VueFlow, useVueFlow } from '@vue-flow/core';
+  import {
+    ConnectionMode,
+    VueFlow,
+    getTransformForBounds,
+    useVueFlow,
+  } from '@vue-flow/core';
   import { Background } from '@vue-flow/background';
   import { ControlButton, Controls } from '@vue-flow/controls';
   import { MiniMap } from '@vue-flow/minimap';
@@ -226,12 +245,13 @@
   import {
     boundsOf,
     canConnect,
+    findEdge,
     findNode,
     groupMinimumSize,
     nodeLabel,
     sizeOf,
   } from '@/builder/model.js';
-  import { pressSelection } from '@/builder/selection.js';
+  import { pressSelection, selectionItemName } from '@/builder/selection.js';
   import { builderSettings } from '@/builder/settings.js';
   import { keepUnchanged } from '@/builder/stable.js';
   import { useBuilderStore } from '@/builder/store.js';
@@ -239,13 +259,20 @@
     EDGE_HINT_ID,
     NODE_HINT_ID,
     absolutePosition,
+    connectionStep,
+    fitPadding,
+    fitZoom,
     flowChanges,
     freeSpot,
     fromFlowConnection,
     hiddenArea,
+    itemPoint,
+    nearestNode,
+    nodeInDirection,
     toFlowEdges,
     toFlowNodes,
     withSelection,
+    withTabStop,
     zoomFloor,
   } from '@/builder/adapters/vueflow.js';
   import {
@@ -274,7 +301,6 @@
     dimensions,
     findEdge: findFlowEdge,
     findNode: findFlowNode,
-    fitBounds,
     fitView,
     nodes: graphNodes,
     project,
@@ -366,10 +392,27 @@
     nodeIssueSummaries(store.doc, store.issues),
   );
 
+  // The canvas's one Tab stop: the node or connection that last had focus,
+  // while the diagram still has it, or else (null) the canvas itself. The
+  // others take focus from the arrow keys, Page Down and Page Up, a click
+  // or Go to node, but not from Tab.
+  const lastFocused = shallowRef(null);
+  const tabStop = computed(() => {
+    const item = lastFocused.value;
+    const list = item?.kind === 'edges' ? store.doc.edges : store.doc.nodes;
+
+    return item && (list || []).some((entry) => entry.id === item.id)
+      ? item
+      : null;
+  });
+  const tabStopOf = (kind) =>
+    tabStop.value?.kind === kind ? tabStop.value.id : null;
+
   // The graph follows the document. An edit changes only the nodes and
-  // connections it touches, and the selection only those it selects or
-  // deselects: the rest stay the same objects (see keepUnchanged and
-  // withSelection).
+  // connections it touches, the selection only those it selects or
+  // deselects, and a new Tab stop only the old and the new one: the rest
+  // stay the same objects (see keepUnchanged, withSelection and
+  // withTabStop).
   const baseNodes = computed((previous) =>
     keepUnchanged(
       toFlowNodes(store.doc, { issues: nodeIssues.value }),
@@ -381,13 +424,19 @@
   );
   const flowNodes = computed((previous) =>
     keepUnchanged(
-      withSelection(baseNodes.value, store.selection.nodes),
+      withTabStop(
+        withSelection(baseNodes.value, store.selection.nodes),
+        tabStopOf('nodes'),
+      ),
       previous,
     ),
   );
   const flowEdges = computed((previous) =>
     keepUnchanged(
-      withSelection(baseEdges.value, store.selection.edges),
+      withTabStop(
+        withSelection(baseEdges.value, store.selection.edges),
+        tabStopOf('edges'),
+      ),
       previous,
     ),
   );
@@ -788,9 +837,7 @@
   // focus it here and Delete then removes it.
   function onEdgeClick({ event, edge }) {
     clickItem({ kind: 'edges', id: edge.id }, event);
-    root.value
-      ?.querySelector(`.vue-flow__edge[data-id="${CSS.escape(edge.id)}"]`)
-      ?.focus({ preventScroll: true });
+    edgeElement(edge.id)?.focus({ preventScroll: true });
   }
 
   function onPaneClick() {
@@ -866,21 +913,12 @@
     }
   }
 
-  // The wrappers that take focus, in Tab order: connections, then nodes.
-  function focusableItems() {
-    return [
-      ...(root.value?.querySelectorAll(
-        '.vue-flow__edge[tabindex="0"], .vue-flow__node[tabindex="0"]',
-      ) || []),
-    ];
-  }
-
   // Delete removes the focused item. When that item is part of the selection,
   // or the canvas itself has focus, it removes the whole selection.
-  // Focus then moves to the item that took the deleted one's place, or to the
-  // canvas itself, never to the page.
+  // Focus then moves to the node nearest the deleted item, or to the canvas
+  // itself, never to the page.
   async function deleteFromKeyboard(item) {
-    const position = focusableItems().indexOf(document.activeElement);
+    const from = item && itemPoint(store.doc, item);
 
     if (item && !isSelected(item)) {
       // The rest of the selection stays selected (store.remove keeps it).
@@ -899,14 +937,112 @@
       return;
     }
 
-    const items = focusableItems();
-    const next = items[Math.min(Math.max(position, 0), items.length - 1)];
-    (next || root.value)?.focus();
+    const id = from && nearestNode(store.doc, from);
+    ((id && nodeElement(id)) || root.value)?.focus();
   }
+
+  // Focus moved by a key: onFocusIn brings a :focus-visible item into view,
+  // and this any other.
+  function focusItem(element) {
+    element.focus({ preventScroll: true });
+
+    if (!element.matches(':focus-visible')) {
+      reveal(element);
+    }
+  }
+
+  // The middle of what the pane shows, in flow coordinates.
+  function viewMiddle() {
+    const area = visibleArea();
+
+    return area
+      ? { x: area.x + area.width / 2, y: area.y + area.height / 2 }
+      : null;
+  }
+
+  // An arrow key moves focus from a node or connection to the nearest node
+  // that way, and from the canvas itself to the node nearest the middle of
+  // the view. Where no node lies that way, focus stays.
+  function moveFocus(item, key) {
+    const from = item ? itemPoint(store.doc, item) : viewMiddle();
+    const id =
+      from &&
+      (item
+        ? nodeInDirection(
+            store.doc,
+            from,
+            key,
+            item.kind === 'nodes' ? item.id : undefined,
+          )
+        : nearestNode(store.doc, from));
+    const element = id && nodeElement(id);
+
+    if (element) {
+      focusItem(element);
+    }
+  }
+
+  // The node whose connections Page Down and Page Up go through: the one
+  // that last had focus, while focus is on one of its connections.
+  let connectionsOf = null;
+
+  // Page Down and Page Up move focus through the connections of the focused
+  // node, or of the node focus came from to the focused connection (its
+  // device end when it came from elsewhere), round from last to first.
+  function stepConnections(item, step) {
+    if (!item) {
+      return;
+    }
+
+    let nodeId = item.id;
+
+    if (item.kind === 'edges') {
+      const edge = findEdge(store.doc, item.id);
+
+      if (!edge) {
+        return;
+      }
+
+      nodeId = [edge.sourceNodeId, edge.targetNodeId].includes(connectionsOf)
+        ? connectionsOf
+        : edge.sourceNodeId;
+    }
+
+    const next = connectionStep(
+      store.doc,
+      nodeId,
+      item.kind === 'edges' ? item.id : null,
+      step,
+    );
+
+    if (!next) {
+      const name = selectionItemName(store.doc, { kind: 'nodes', id: nodeId });
+
+      store.announce(`${name} has no connections.`);
+      return;
+    }
+
+    connectionsOf = nodeId;
+    const element = edgeElement(next);
+
+    if (element) {
+      focusItem(element);
+    }
+  }
+
+  const ARROWS = {
+    ArrowUp: { x: 0, y: -1 },
+    ArrowDown: { x: 0, y: 1 },
+    ArrowLeft: { x: -1, y: 0 },
+    ArrowRight: { x: 1, y: 0 },
+  };
+  // How far Shift with an arrow key moves the selected nodes.
+  const MOVE_STEP = 10;
 
   function onKeydown(event) {
     const item = itemOf(event.target);
     const meta = event.ctrlKey || event.metaKey;
+    const arrow = ARROWS[event.key];
 
     // The keys act only on a node, a connection or the canvas itself. On the
     // canvas's own controls (the zoom buttons, the Keyboard help and the
@@ -931,11 +1067,26 @@
       return;
     }
 
-    if (store.readOnly) {
+    // Moving focus is not editing either. Alt with Left or Right goes back
+    // or forward in the browser, so an arrow key with any modifier is left
+    // alone here; Shift with one moves nodes, below.
+    const plain = !meta && !event.altKey && !event.shiftKey;
+
+    if (arrow && plain) {
+      event.preventDefault();
+      moveFocus(item, event.key);
       return;
     }
 
-    const step = event.shiftKey ? 1 : 10;
+    if ((event.key === 'PageDown' || event.key === 'PageUp') && plain) {
+      event.preventDefault();
+      stepConnections(item, event.key === 'PageDown' ? 1 : -1);
+      return;
+    }
+
+    if (store.readOnly) {
+      return;
+    }
 
     if (event.key === 'Delete' || event.key === 'Backspace') {
       if (
@@ -950,9 +1101,9 @@
     }
 
     // Alt (Option) and Shift with an arrow key resize the selected group,
-    // from the same places the arrow keys move it.
+    // from the same places Shift and an arrow key move it.
     if (
-      event.key.startsWith('Arrow') &&
+      arrow &&
       event.altKey &&
       event.shiftKey &&
       !meta &&
@@ -963,26 +1114,18 @@
       return;
     }
 
-    // Arrow keys move the selection, but not from an item outside it: the
-    // focused node would stay put while nodes elsewhere moved.
-    if (
-      event.key.startsWith('Arrow') &&
-      store.selection.nodes.length &&
-      (!item || isSelected(item))
-    ) {
-      const delta = {
-        ArrowUp: { x: 0, y: -step },
-        ArrowDown: { x: 0, y: step },
-        ArrowLeft: { x: -step, y: 0 },
-        ArrowRight: { x: step, y: 0 },
-      }[event.key];
+    // Shift and an arrow key move the selection, but not from an item
+    // outside it: the focused node would stay put while nodes elsewhere
+    // moved.
+    if (arrow && event.shiftKey && !event.altKey && !meta) {
+      event.preventDefault();
 
-      if (!delta) {
+      if (!store.selection.nodes.length || (item && !isSelected(item))) {
+        store.announce('Select the nodes to move first.');
         return;
       }
 
-      event.preventDefault();
-      store.nudgeSelection(delta.x, delta.y);
+      store.nudgeSelection(arrow.x * MOVE_STEP, arrow.y * MOVE_STEP);
 
       // A nudge can carry a node under the minimap or off screen: keep the
       // focused item in view or, when the canvas itself has focus, the one
@@ -1072,6 +1215,12 @@
     );
   }
 
+  function edgeElement(id) {
+    return root.value?.querySelector(
+      `.vue-flow__edge[data-id="${CSS.escape(id)}"]`,
+    );
+  }
+
   // Only a node or a connection is kept in view. The canvas section itself is
   // taller than the pane, so "revealing" it would pan the whole diagram.
   function reveal(element) {
@@ -1102,25 +1251,52 @@
     );
   }
 
-  // What floats over the pane: the minimap, the zoom controls, the notice.
-  function overlayBoxes() {
-    return [
-      ...(root.value?.querySelectorAll(
-        '.vue-flow__minimap, .vue-flow__controls, .builder-canvas__notice',
-      ) || []),
-    ].map((overlay) => overlay.getBoundingClientRect());
+  // What floats over the pane: the minimap and the zoom controls, in its
+  // corners, and the notice.
+  const CORNER_OVERLAYS = '.vue-flow__minimap, .vue-flow__controls';
+
+  function overlayBoxes(
+    selector = `${CORNER_OVERLAYS}, .builder-canvas__notice`,
+  ) {
+    return [...(root.value?.querySelectorAll(selector) || [])].map((overlay) =>
+      overlay.getBoundingClientRect(),
+    );
   }
 
   // Room kept around nodes brought into view, in screen pixels.
   const REVEAL_MARGIN = 24;
-  // Room fitBounds keeps around them, as a share of their size.
-  const REVEAL_PADDING = 0.1;
+
+  // The room, on each side of the pane, to fit nodes with bounds `bounds`
+  // into it clear of the overlays (see fitPadding). Null before the pane has
+  // a size.
+  function fitRoom(bounds, overlays) {
+    const pane = vueFlowRef.value?.getBoundingClientRect();
+
+    if (!pane?.width || !pane?.height) {
+      return null;
+    }
+
+    const room = fitPadding(bounds, pane, overlays);
+
+    return {
+      pane,
+      zoom: fitZoom(bounds, pane, room),
+      // As Vue Flow takes it: pixels, not a share of the pane.
+      padding: {
+        top: `${room.top}px`,
+        right: `${room.right}px`,
+        bottom: `${room.bottom}px`,
+        left: `${room.left}px`,
+      },
+    };
+  }
 
   // Brings nodes into view, leaving focus where it is. When any of them is
   // outside the pane or under what floats over it, the view centers on them
-  // all: at the same zoom when they fit, or zoomed out to fit them, which
-  // the least zoom always allows (see zoomFloor). They are found in the
-  // document, so they need not be drawn yet.
+  // all: at the same zoom when they fit clear of what floats over the pane,
+  // or else zoomed out to fit them, which the least zoom always allows (see
+  // zoomFloor). They are found in the document, so they need not be drawn
+  // yet.
   function revealNodes(ids) {
     const pane = vueFlowRef.value?.getBoundingClientRect();
     const wanted = new Set(ids);
@@ -1155,14 +1331,27 @@
     const width = bounds.width * zoom + 2 * REVEAL_MARGIN;
     const height = bounds.height * zoom + 2 * REVEAL_MARGIN;
     const duration = props.reducedMotion ? 0 : 200;
+    const spot =
+      width <= pane.width &&
+      height <= pane.height &&
+      freeSpot(pane, width, height, overlays);
 
-    if (width > pane.width || height > pane.height) {
-      fitBounds(bounds, { padding: REVEAL_PADDING, duration });
+    if (!spot || spot.hidden > 0) {
+      // Zoomed out, never in.
+      setViewport(
+        getTransformForBounds(
+          bounds,
+          pane.width,
+          pane.height,
+          0,
+          Math.min(zoom, MAX_ZOOM),
+          fitRoom(bounds, overlays).padding,
+        ),
+        { duration },
+      );
 
       return;
     }
-
-    const spot = freeSpot(pane, width, height, overlays);
 
     setViewport(
       {
@@ -1175,10 +1364,28 @@
     );
   }
 
-  // Only keyboard focus pans: a click that focuses a node must not move the
-  // canvas under the pointer.
+  // A node or connection that takes focus, by any means, becomes the
+  // canvas's Tab stop. Only keyboard focus pans: a click that focuses a node
+  // must not move the canvas under the pointer.
   function onFocusIn(event) {
-    if (itemOf(event.target) && event.target.matches(':focus-visible')) {
+    const item = itemOf(event.target);
+
+    if (!item) {
+      return;
+    }
+
+    if (
+      item.kind !== lastFocused.value?.kind ||
+      item.id !== lastFocused.value?.id
+    ) {
+      lastFocused.value = item;
+    }
+
+    if (item.kind === 'nodes') {
+      connectionsOf = item.id;
+    }
+
+    if (event.target.matches(':focus-visible')) {
       reveal(event.target);
     }
   }
@@ -1215,10 +1422,19 @@
     }
   }
 
-  // Fit: the whole diagram in view, at whatever zoom that takes. The least
-  // zoom is given as well, in case Vue Flow has not had it yet.
+  // Fit: the whole diagram in view, at whatever zoom that takes, and clear
+  // of the minimap and the zoom controls (see fitPadding). The least zoom is
+  // given as well, in case Vue Flow has not had it yet, or less when that is
+  // what the room takes.
   function fitDiagram(options = {}) {
-    return fitView({ ...options, minZoom: diagramFloor.value });
+    const bounds = boundsOf(store.doc.nodes || []);
+    const fit = fitRoom(bounds, overlayBoxes(CORNER_OVERLAYS));
+
+    return fitView({
+      ...options,
+      ...(fit && { padding: fit.padding }),
+      minZoom: Math.min(diagramFloor.value, fit?.zoom ?? Infinity),
+    });
   }
 
   // Reset view: the zoom and pan the canvas opens with, which the

@@ -869,8 +869,46 @@ describe('keys and hints', () => {
       /renames|removes/,
     );
     expect(canvasHints({ readOnly: false, platform: 'mac' }).node).toBe(
-      'Return selects or deselects, ⇧Return adds to the selection, Escape ' +
-        'clears the selection. Arrow keys move the selected nodes, Delete removes.',
+      'Arrow keys move between nodes, Page Down through this node’s ' +
+        'connections. Return selects or deselects, ⇧Return adds to the ' +
+        'selection, Escape clears the selection. Shift and an arrow key ' +
+        'move the selected nodes, Delete removes.',
+    );
+  });
+
+  // The canvas is one Tab stop: the arrow keys move focus, Page Down and
+  // Page Up go through a node's connections, and Shift with an arrow key
+  // moves the selected nodes.
+  test('the canvas help and hints give the keys that move focus and nodes', () => {
+    const help = (readOnly, platform) =>
+      canvasHelp({ readOnly, platform }).join('\n');
+
+    expect(help(false, 'other')).toContain('The diagram is one Tab stop.');
+    expect(help(false, 'other')).toContain(
+      'Page Down and Page Up move through the focused node’s connections.',
+    );
+    expect(help(false, 'mac')).toContain(
+      'Page Down and Page Up (Fn with Down Arrow and Up Arrow) move through',
+    );
+    expect(help(false, 'other')).toContain(
+      'Shift with the arrow keys moves the selected nodes 10 pixels.',
+    );
+    expect(help(false, 'other')).not.toMatch(/Tab moves|1 pixel/);
+    expect(help(true, 'mac')).toContain(
+      'With a screen reader, turn on its focus mode (forms mode in JAWS) for these keys, or use the Outline.',
+    );
+    expect(help(true, 'other')).toContain(
+      'Arrow keys move to the nearest node',
+    );
+    expect(help(true, 'other')).not.toContain('moves the selected nodes');
+
+    const hints = canvasHints({ readOnly: false, platform: 'other' });
+    expect(hints.edge).toMatch(
+      /^Arrow keys move to the nodes, Page Down to the next connection\./,
+    );
+    expect(hints.canvas).toMatch(/^Arrow keys move to the nodes, and Enter/);
+    expect(canvasHints({ readOnly: true, platform: 'other' }).node).not.toMatch(
+      /arrow key move|removes/,
     );
   });
 

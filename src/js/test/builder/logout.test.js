@@ -27,6 +27,7 @@ import {
   diagramFile,
   draftExport,
   registerOpenDraft,
+  registerQueue,
   unsentBuilderWork,
 } from '@/builder/session.js';
 import {
@@ -820,6 +821,7 @@ describe("the Builder's changes this browser holds", () => {
       send: true,
       draftStore,
       sendQueued,
+      openTabs: async () => new Set(),
     });
 
     await pass(LOGOUT_SEND_WAIT_MS - 1);
@@ -844,6 +846,39 @@ describe("the Builder's changes this browser holds", () => {
     // Without sending, nothing is sent.
     await unsentBuilderWork({ username: 'alice', draftStore, sendQueued });
     expect(sendQueued).toHaveBeenCalledTimes(1);
+  });
+
+  // Another open tab sends its own changes, once the user chooses which to
+  // save (see tabs.js): logout counts them, but sends only the queues no
+  // open tab holds.
+  test("another open tab's changes count, but are left to that tab to send", async () => {
+    const open = {
+      ...record('alice', 'alice', 'd2', [snapshot('b'), snapshot('c')]),
+      key: `${draftKey('alice', 'alice', 'd2')}#B`,
+      tab: 'B',
+    };
+    const closed = {
+      ...record('alice', 'alice', 'd2', [snapshot('z')]),
+      key: `${draftKey('alice', 'alice', 'd2')}#Z`,
+      tab: 'Z',
+    };
+    const draftStore = await stored(open, closed);
+    const sendQueued = vi.fn(async () => {});
+
+    await expect(
+      unsentBuilderWork({
+        username: 'alice',
+        send: true,
+        draftStore,
+        sendQueued,
+        openTabs: async () => new Set(['B']),
+      }),
+    ).resolves.toMatchObject({ changes: 3 });
+    expect(sendQueued).toHaveBeenCalledWith(
+      [expect.objectContaining({ key: closed.key })],
+      'alice',
+      draftStore,
+    );
   });
 
   test('a draft that is not open is sent by a save queue of its own', async () => {
@@ -875,6 +910,62 @@ describe("the Builder's changes this browser holds", () => {
       '"e1"',
     );
     await expect(draftStore.all()).resolves.toEqual([]);
+  });
+
+  // Back to drafts leaves the draft's queue sending in the background: it
+  // sends its own changes, which count once, and Export has them.
+  test('a draft closed while its changes are sent is sent by its own queue, and counts once', async () => {
+    const closed = record(
+      'alice',
+      'alice',
+      'd2',
+      [snapshot('b'), snapshot('c')],
+      [entry('b', 'Closed lab'), entry('c', 'Closed lab 2')],
+    );
+    const draftStore = await stored(
+      closed,
+      record('alice', 'alice', 'd3', [snapshot('d')]),
+    );
+    const queue = {
+      record: structuredClone(closed),
+      flush: vi.fn(async () => {
+        queue.record.queue = queue.record.queue.slice(1);
+      }),
+    };
+    const sendQueued = vi.fn(async () => {});
+
+    unregister = registerQueue(queue);
+
+    await expect(
+      unsentBuilderWork({ username: 'alice', draftStore }),
+    ).resolves.toEqual({
+      changes: 3,
+      unapplied: '',
+      drafts: [{ key: closed.key, name: 'closed-lab-2.json' }],
+    });
+    await expect(
+      draftExport({
+        username: 'alice',
+        key: closed.key,
+        name: 'closed-lab-2.json',
+        draftStore,
+      }),
+    ).resolves.toMatchObject({ text: expect.stringContaining('Closed lab 2') });
+
+    await expect(
+      unsentBuilderWork({
+        username: 'alice',
+        send: true,
+        draftStore,
+        sendQueued,
+      }),
+    ).resolves.toMatchObject({ changes: 2 });
+    expect(queue.flush).toHaveBeenCalledTimes(1);
+    expect(sendQueued).toHaveBeenCalledWith(
+      [expect.objectContaining({ draftId: 'd3' })],
+      'alice',
+      draftStore,
+    );
   });
 
   test('Export has the diagram each queue leaves, and the open one as it is shown', async () => {

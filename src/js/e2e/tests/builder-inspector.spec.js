@@ -665,7 +665,7 @@ test.describe('Builder Beta inspector', () => {
 
         await page.getByRole('heading', { name: 'Outline' }).hover();
 
-        // Keyboard: the node's one Tab stop shows it too.
+        // Keyboard: the focused node shows it too.
         await wrapper.focus();
         await expect.soft(tooltip).toHaveText('Front end web server');
         await page.keyboard.press('Shift+Tab');
@@ -1106,9 +1106,8 @@ test.describe('Builder Beta inspector', () => {
       await test.step('group', async () => {
         await builder.selectInOutline('Group');
         await expect.soft(subject(builder)).toHaveText(/^\s*Group\b/);
-        await expect
-          .soft(fields)
-          .toHaveText([/^Title/, /^Color/, /^Collapsed/]);
+        // No Collapsed: the canvas does not draw a collapsed group.
+        await expect.soft(fields).toHaveText([/^Title/, /^Color/]);
         const title = builder.inspector.getByLabel('Title');
         await expect.soft(title).toHaveValue('Group');
 

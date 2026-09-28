@@ -3,14 +3,19 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"go.etcd.io/etcd/v3/clientv3"
+	"go.etcd.io/etcd/v3/etcdserver/api/v3rpc/rpctypes"
 	"go.etcd.io/etcd/v3/mvcc/mvccpb"
+
+	"phenix/util/plog"
 )
 
 // etcdRecordRoot is the key space records are stored under. Config keys are
@@ -19,6 +24,20 @@ import (
 const etcdRecordRoot = "phenix/records"
 
 const etcdRecordKeyPageSize = 1000
+
+// ErrRecordNoSpace is returned by an Etcd record write that etcd refused
+// because its database reached its space quota. etcd then raises a NOSPACE
+// alarm and refuses writes until an administrator frees space and clears the
+// alarm. The error etcd returned stays wrapped.
+var ErrRecordNoSpace = errors.New(
+	"etcd is out of space: phenix cannot save changes until an administrator frees space " +
+		"(compact and defragment etcd, then clear its NOSPACE alarm)",
+)
+
+// etcdRecordNoSpaceLogged is set once a record write refused for lack of space
+// is logged, and cleared by the next record write etcd accepts, so an outage is
+// logged once and not once per refused write.
+var etcdRecordNoSpaceLogged atomic.Bool //nolint:gochecknoglobals // shared by every Etcd store in the process
 
 // etcdRecordEnvelope is the encoded representation of a record value. The
 // revision of a record is not stored in the envelope; etcd's ModRevision is
@@ -288,8 +307,10 @@ func (e Etcd) CreateRecord(namespace, key string, value []byte) (Record, error) 
 
 	resp, err := e.cli.Txn(context.Background()).If(cmp).Then(then).Else(els).Commit()
 	if err != nil {
-		return Record{}, fmt.Errorf("creating record %s/%s in Etcd: %w", namespace, key, err)
+		return Record{}, fmt.Errorf("creating record %s/%s in Etcd: %w", namespace, key, etcdRecordWriteError(err))
 	}
+
+	etcdRecordNoSpaceLogged.Store(false)
 
 	if !resp.Succeeded {
 		return Record{}, NewRecordExistError(namespace, key)
@@ -321,8 +342,10 @@ func (e Etcd) UpdateRecord(namespace, key string, value []byte, expectedRevision
 
 	resp, err := e.cli.Txn(context.Background()).If(cmp).Then(then).Else(els).Commit()
 	if err != nil {
-		return Record{}, fmt.Errorf("updating record %s/%s in Etcd: %w", namespace, key, err)
+		return Record{}, fmt.Errorf("updating record %s/%s in Etcd: %w", namespace, key, etcdRecordWriteError(err))
 	}
+
+	etcdRecordNoSpaceLogged.Store(false)
 
 	if !resp.Succeeded {
 		kvs := etcdTxnResponseKvs(resp)
@@ -344,7 +367,7 @@ func (e Etcd) DeleteRecord(namespace, key string, expectedRevision int64) error 
 
 	resp, err := e.cli.Txn(context.Background()).If(cmp).Then(then).Else(els).Commit()
 	if err != nil {
-		return fmt.Errorf("deleting record %s/%s in Etcd: %w", namespace, key, err)
+		return fmt.Errorf("deleting record %s/%s in Etcd: %w", namespace, key, etcdRecordWriteError(err))
 	}
 
 	if !resp.Succeeded {
@@ -371,6 +394,25 @@ func (e Etcd) DeleteRecordPrefix(namespace, prefix string) (int, error) {
 	}
 
 	return int(resp.Deleted), nil
+}
+
+// etcdRecordWriteError wraps a failed record write in [ErrRecordNoSpace] when
+// etcd refused it for lack of space, since etcd's own message does not say what
+// to do, and logs the first such failure since etcd last accepted a record
+// write. Any other error is returned as it is. etcd checks its quota only for
+// puts and transactions, so a plain delete is never refused for lack of space.
+func etcdRecordWriteError(err error) error {
+	if !errors.Is(err, rpctypes.ErrNoSpace) {
+		return err
+	}
+
+	err = fmt.Errorf("%w: %w", ErrRecordNoSpace, err)
+
+	if etcdRecordNoSpaceLogged.CompareAndSwap(false, true) {
+		plog.Warn(plog.TypeSystem, "writing records to Etcd", "err", err)
+	}
+
+	return err
 }
 
 func etcdTxnResponseKvs(resp *clientv3.TxnResponse) []*mvccpb.KeyValue {

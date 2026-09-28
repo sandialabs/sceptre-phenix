@@ -57,18 +57,31 @@ test('wrong password shows incorrect-credentials toast', async ({ page }) => {
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 });
 
-test('login lands on experiments', async ({ page }) => {
-  const issues = [];
-  attachCapture(page, issues);
-  await page.goto('/signin');
-  await settle(page);
-  await page.locator('.signin-form input[type="text"]').fill(ADMIN_USER);
-  await page.locator('.signin-form input[type="password"]').fill(ADMIN_PASS);
-  await page.getByRole('button', { name: 'Submit' }).click();
-  await expect(page).toHaveURL(/\/experiments/, { timeout: 15000 });
-  const fatal = filterKnown403s(fatalOf(issues));
-  expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
-});
+test(
+  'login lands on experiments',
+  { tag: '@cross-browser' },
+  async ({ page }) => {
+    const issues = [];
+    attachCapture(page, issues);
+    await page.goto('/signin');
+    await settle(page);
+    await page.locator('.signin-form input[type="text"]').fill(ADMIN_USER);
+    await page.locator('.signin-form input[type="password"]').fill(ADMIN_PASS);
+    await page.getByRole('button', { name: 'Submit' }).click();
+    await expect(page).toHaveURL(/\/experiments/, { timeout: 15000 });
+
+    // After a logout in the app, which is no page load, typing starts in the
+    // Username field again.
+    await page.getByTestId('nav-logout').click();
+    await expect(page).toHaveURL(/\/signin/, { timeout: 15000 });
+    await expect(
+      page.locator('.signin-form').getByLabel('Username', { exact: true }),
+    ).toBeFocused();
+
+    const fatal = filterKnown403s(fatalOf(issues));
+    expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
+  },
+);
 
 test('create account via signup modal lands on disabled page', async ({
   page,
@@ -79,17 +92,36 @@ test('create account via signup modal lands on disabled page', async ({
   await page.goto('/signin');
   await settle(page);
 
-  await page.getByRole('button', { name: 'Create Account' }).click();
+  const createAccount = page.getByRole('button', { name: 'Create Account' });
+  const dialog = page.getByRole('dialog', { name: 'Create a New Account' });
+
+  // The dialog is named, focus starts in its first field, and closing it
+  // puts focus back on the button that opened it.
+  await createAccount.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute('aria-modal', 'true');
+  await expect(dialog.getByLabel('User Name', { exact: true })).toBeFocused();
+  await expect(dialog.getByRole('button', { name: 'Close' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(createAccount).toBeFocused();
+  // Reopened while it closes, the dialog keeps stale fields: its content
+  // goes only once it has closed.
   await expect(
     page.getByText('Create a New Account', { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
+
+  await createAccount.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('User Name', { exact: true })).toBeFocused();
 
   const modal = page.locator('.modal-card');
-  await modal.locator('input[type="text"]').nth(0).fill('e2e-signup');
-  await modal.locator('input[type="text"]').nth(1).fill('E2E');
-  await modal.locator('input[type="text"]').nth(2).fill('Signup');
-  await modal.locator('input[type="password"]').nth(0).fill('Testpass1!');
-  await modal.locator('input[type="password"]').nth(1).fill('Testpass1!');
+  await modal.getByLabel('User Name', { exact: true }).fill('e2e-signup');
+  await modal.getByLabel('First Name', { exact: true }).fill('E2E');
+  await modal.getByLabel('Last Name', { exact: true }).fill('Signup');
+  await modal.getByLabel('Password', { exact: true }).fill('Testpass1!');
+  await modal
+    .getByLabel('Confirm Password', { exact: true })
+    .fill('Testpass1!');
   await page.getByRole('button', { name: 'Create User' }).click();
 
   // fresh self-signup users get the Disabled role until an admin assigns one

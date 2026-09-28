@@ -731,6 +731,43 @@ describe('failure states', () => {
     expect(delays[0]).toBe(RETRY_DELAYS[0]);
   });
 
+  // The server's answer once etcd is out of space (builderBetaWebError).
+  test('a server out of space says so and keeps retrying', async () => {
+    const reason =
+      'etcd is out of space: phenix cannot save changes until an administrator frees space (compact and defragment etcd, then clear its NOSPACE alarm)';
+    const delays = [];
+    const api = fakeApi({
+      appendSnapshot: vi.fn(async () => {
+        throw Object.assign(new Error('insufficient storage'), {
+          response: {
+            status: 507,
+            data: {
+              message: reason,
+              cause: `draft "d1": updating record builder.drafts/d1 in Etcd: ${reason}: etcdserver: mvcc: database space exceeded`,
+            },
+          },
+        });
+      }),
+    });
+    const { queue } = await attached({
+      api,
+      setTimeout: (_, ms) => {
+        delays.push(ms);
+
+        return delays.length;
+      },
+    });
+
+    const state = await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+
+    expect(state.status).toBe('error');
+    expect(state.retryable).toBe(true);
+    expect(delays[0]).toBe(RETRY_DELAYS[0]);
+    expect(describeState(state)).toBe(
+      'Could not save your changes. Etcd is out of space: phenix cannot save changes until an administrator frees space (compact and defragment etcd, then clear its NOSPACE alarm). Saving retries automatically.',
+    );
+  });
+
   test('an explicit retry waits for the send already under way', async () => {
     let fail;
     const api = fakeApi();

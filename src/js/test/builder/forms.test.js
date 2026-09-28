@@ -242,6 +242,34 @@ describe('applying a working copy', () => {
     });
   });
 
+  // The canvas does not draw a collapsed group, so the Inspector does not
+  // offer the field; a document that has it keeps it.
+  test('a group has no Collapsed field, and keeps the value it has', () => {
+    let { doc } = sampleDocument();
+    const group = addNode(doc, { kind: 'group', title: 'Core' });
+    doc = updateNode(group.doc, group.node.id, { group: { collapsed: true } });
+    const selection = { type: 'node', id: group.node.id };
+
+    expect(
+      Object.keys(schemaForKind(builderSchemaV1, 'group').properties),
+    ).toEqual(['title', 'color']);
+    expect(
+      JSON.stringify(uiSchemaForKind(builderSchemaV1, 'group')),
+    ).not.toContain('collapsed');
+    expect(inspectorTarget(doc, selection).data).toEqual({
+      title: 'Core',
+      color: '',
+    });
+
+    const next = applyFormData(doc, selection, { title: 'Edge', color: '' });
+
+    expect(findNode(next, group.node.id).group).toEqual({
+      title: 'Edge',
+      color: '',
+      collapsed: true,
+    });
+  });
+
   // A field emptied in the form loses its key; the element shows an unset
   // value as ''. Emptying a field that was empty is no change.
   test('an emptied field is no change from an unset one', () => {

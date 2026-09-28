@@ -131,7 +131,10 @@ starting with a letter or digit). The snapshot manifest keeps it, and snapshot
 listings return it, so a client whose response was lost can tell the snapshot
 was stored. A draft keeps at most 50 snapshots and 50 MiB of them; past either,
 the oldest are dropped. The UI keeps unsaved Builder Flow edits in the browser's
-`phenix-builder` IndexedDB database only until the server confirms them.
+`phenix-builder` IndexedDB database only until the server confirms them. Each
+browser tab keeps its own queue of a draft (the tab's id is `phenix.builder.tab`
+in sessionStorage). When more than one tab holds unsaved changes to one draft,
+the user chooses which to save, and the others are saved as new drafts.
 
 Publishing still requires the applicable config, scenario, and experiment
 permissions; Builder draft access does not bypass them.
@@ -205,7 +208,9 @@ draft published it`. `POST /builder/drafts` accepts
 draft sends: the new draft takes that draft's source token and records its last
 publication as `forked`, so it can update what that draft published or was
 opened from (not what that draft publishes later). The caller must be able to
-read that draft (owner, a share, or `builder-drafts` `get`), otherwise 404. A published
+read that draft (owner, a share, or `builder-drafts` `get`), otherwise 404. A
+`sourceToken` of `builder-doc/<document id>` needs `configs` `get` for the config
+that document was published to, otherwise 404. A published
 topology names its document in its `builder-doc` annotation; a published
 experiment records the draft and document that published it, and its digest
 after the configure stage, in its `builder-experiment` annotation, so any later

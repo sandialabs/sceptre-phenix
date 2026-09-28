@@ -52,6 +52,7 @@ import {
 } from './schema.js';
 import { onBuilderSessionEnd } from './session.js';
 import { builderSettings } from './settings.js';
+import { builderTabs } from './tabs.js';
 import { MAX_NAME_BYTES, validateDocument } from './validate.js';
 import {
   addInterface,
@@ -251,7 +252,7 @@ function draftsOfDocument(drafts, id) {
 // without splitting a character, so the title still fits it.
 const FORK_SUFFIX = ' (local copy)';
 
-function forkTitle(name) {
+export function forkTitle(name) {
   const encoder = new TextEncoder();
   const room = MAX_NAME_BYTES - encoder.encode(FORK_SUFFIX).length;
   let base = '';
@@ -652,6 +653,8 @@ export const useBuilderStore = defineStore('builder', {
           api: builderApi,
           store: createDraftStore(),
           actor: phenix.username || 'anonymous',
+          // Other tabs with the draft open (see tabs.js).
+          tabs: builderTabs,
           onState: (state) => {
             this.saveState = state;
 
@@ -1297,6 +1300,10 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
+     * Deletes a draft. A card's ETag can be older than the server's, as it
+     * is right after Back to drafts until the list is read again: the
+     * draft is then read again and deleted with its current ETag, once.
+     *
      * @param {string} owner
      * @param {string} id
      * @param {string} [etag]
@@ -1305,15 +1312,33 @@ export const useBuilderStore = defineStore('builder', {
     async deleteDraft(owner, id, etag, title = '') {
       this.clearError();
 
+      let retried = false;
+
       try {
-        await builderApi.deleteDraft(owner, id, etag);
+        try {
+          await builderApi.deleteDraft(owner, id, etag);
+        } catch (error) {
+          if (error?.response?.status !== 412) {
+            throw error;
+          }
+
+          const current = await builderApi.getDraft(owner, id);
+
+          retried = true;
+          await builderApi.deleteDraft(owner, id, current.etag);
+        }
+
         await forgetLocalDraft(owner, id);
         this.announce(title ? `Deleted draft ${title}.` : 'Draft deleted.');
         await this.fetchDrafts();
 
         return true;
       } catch (error) {
-        this.setError(this.describeError(error, 'delete the draft'));
+        this.setError(
+          retried && classifyError(error) === 'conflict'
+            ? 'Could not delete the draft. It changed on the server while it was being deleted. Try again.'
+            : this.describeError(error, 'delete the draft'),
+        );
 
         return false;
       }

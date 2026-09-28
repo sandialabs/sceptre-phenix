@@ -698,6 +698,63 @@ func TestBuilderBetaCreateDraftForOtherUser(t *testing.T) { //nolint:paralleltes
 	}
 }
 
+// TestBuilderBetaCreateDraftFromPublishedDocument asserts a new draft may name
+// a published document as its source only when the caller may get the config
+// it was published to. Any other document is answered as one that does not
+// exist, and no draft is created.
+func TestBuilderBetaCreateDraftFromPublishedDocument(t *testing.T) { //nolint:paralleltest // mutates package options
+	harness := newBuilderBetaHarness(t)
+	secret := builderBetaPublish(t, harness, "secret")
+	public := builderBetaPublish(t, harness, "public")
+
+	role := builderBetaRole(builderBetaPolicy(
+		[]string{"configs"},
+		[]string{"Topology/public"},
+		[]string{"list", "get", "create"},
+	))
+
+	document := string(builderBetaDocument(t, "topo"))
+
+	create := func(token string) *httptest.ResponseRecorder {
+		return harness.do(builderBetaRequest{
+			method: http.MethodPost,
+			path:   "/builder/drafts",
+			body:   `{"sourceToken":"` + token + `","document":` + document + `}`,
+			user:   builderBetaTestOwner,
+			role:   &role,
+		})
+	}
+
+	for _, id := range []string{secret.ID, "missing"} {
+		recorder := create(builderDocTokenPrefix + id)
+
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("document %s: status = %d, want %d: %s", id, recorder.Code, http.StatusNotFound, recorder.Body)
+		}
+
+		if want := "document " + id + " not found"; !strings.Contains(recorder.Body.String(), want) {
+			t.Errorf("document %s: body = %s, want %q", id, recorder.Body, want)
+		}
+	}
+
+	if count := harness.store.count(bapi.NamespaceDrafts); count != 0 {
+		t.Fatalf("stored drafts = %d, want 0", count)
+	}
+
+	recorder := create(builderDocTokenPrefix + public.ID)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusCreated, recorder.Body)
+	}
+
+	var draft builderDraftResponse
+
+	harness.decode(recorder, &draft)
+
+	if draft.SourceToken != builderDocTokenPrefix+public.ID {
+		t.Errorf("source token = %q, want %q", draft.SourceToken, builderDocTokenPrefix+public.ID)
+	}
+}
+
 func TestBuilderBetaCreateDraftRequests(t *testing.T) { //nolint:paralleltest // mutates package options
 	harness := newBuilderBetaHarness(t)
 
@@ -1428,6 +1485,11 @@ func TestBuilderBetaErrorStatuses(t *testing.T) {
 			err:    fmt.Errorf("appending snapshot: %w", bapi.ErrTooLarge),
 			status: http.StatusRequestEntityTooLarge,
 		},
+		{
+			name:   "out of space",
+			err:    fmt.Errorf("writing chunk: %w", store.ErrRecordNoSpace),
+			status: http.StatusInsufficientStorage,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1440,6 +1502,51 @@ func TestBuilderBetaErrorStatuses(t *testing.T) {
 				t.Fatalf("status = %d, want %d", webErr.Status, tt.status)
 			}
 		})
+	}
+}
+
+// TestBuilderBetaSaveWhenEtcdIsOutOfSpace asserts a save etcd refused for lack
+// of space says so plainly, and that the same save works once space is freed.
+func TestBuilderBetaSaveWhenEtcdIsOutOfSpace(t *testing.T) { //nolint:paralleltest // mutates package options
+	harness := newBuilderBetaHarness(t)
+	draft := harness.createDraft(builderBetaTestOwner, "first")
+
+	save := func() *httptest.ResponseRecorder {
+		return harness.do(builderBetaRequest{
+			method:  http.MethodPost,
+			path:    "/builder/drafts/" + builderBetaTestOwner + "/" + draft.ID + "/snapshots",
+			body:    `{"document":` + string(builderBetaDocument(t, "second")) + `}`,
+			user:    builderBetaTestOwner,
+			role:    nil,
+			ifMatch: draft.ETag,
+		})
+	}
+
+	// What the Etcd store returns once etcd is out of space.
+	harness.store.beforeUpdate = func(namespace, key string) error {
+		return fmt.Errorf(
+			"updating record %s/%s in Etcd: %w: %w", namespace, key,
+			store.ErrRecordNoSpace, errors.New("etcdserver: mvcc: database space exceeded"),
+		)
+	}
+
+	recorder := save()
+	if recorder.Code != http.StatusInsufficientStorage {
+		t.Fatalf("save: status = %d, want %d: %s", recorder.Code, http.StatusInsufficientStorage, recorder.Body)
+	}
+
+	var refused weberror.WebError
+
+	harness.decode(recorder, &refused)
+
+	if refused.Message != store.ErrRecordNoSpace.Error() {
+		t.Fatalf("save: message = %q, want %q", refused.Message, store.ErrRecordNoSpace.Error())
+	}
+
+	harness.store.beforeUpdate = nil
+
+	if recorder := save(); recorder.Code != http.StatusCreated {
+		t.Fatalf("save after freeing space: status = %d, want %d: %s", recorder.Code, http.StatusCreated, recorder.Body)
 	}
 }
 
@@ -1574,6 +1681,51 @@ func TestBuilderBetaRoutesDocumented(t *testing.T) { //nolint:paralleltest // mu
 
 	if operations == 0 {
 		t.Fatal("no Builder Beta routes were registered")
+	}
+}
+
+// TestBuilderBetaOutOfSpaceDocumented asserts every Builder Beta route that
+// writes draft records documents the 507 answer etcd running out of space
+// gets (see builderBetaWebError).
+func TestBuilderBetaOutOfSpaceDocumented(t *testing.T) {
+	t.Parallel()
+
+	source, err := os.ReadFile("public/docs/openapi.yml")
+	if err != nil {
+		t.Fatalf("reading openapi.yml: %v", err)
+	}
+
+	var spec struct {
+		Paths map[string]map[string]any `yaml:"paths"`
+	}
+
+	if err := yaml.Unmarshal(source, &spec); err != nil {
+		t.Fatalf("parsing openapi.yml: %v", err)
+	}
+
+	// yaml.v2 decodes nested maps with keys of any type.
+	documents507 := func(path, method string) bool {
+		operation, _ := spec.Paths[path][method].(map[any]any)
+		responses, _ := operation["responses"].(map[any]any)
+		_, ok := responses["507"]
+
+		return ok
+	}
+
+	draft := "/builder/drafts/{owner}/{draft}"
+
+	for _, operation := range []struct{ path, method string }{
+		{"/builder/drafts", "post"},
+		{draft, "delete"},
+		{draft + "/snapshots", "post"},
+		{draft + "/cursor", "patch"},
+		{draft + "/cursor", "put"},
+		{draft + "/publish", "post"},
+		{draft + "/shares", "put"},
+	} {
+		if !documents507(operation.path, operation.method) {
+			t.Errorf("openapi.yml does not document 507 for %s %s", operation.method, operation.path)
+		}
 	}
 }
 

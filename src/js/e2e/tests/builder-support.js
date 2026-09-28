@@ -361,7 +361,8 @@ class BuilderPage {
 
   async backToDrafts() {
     await this.page.getByRole('button', { name: 'Back to drafts' }).click();
-    // A save still in flight holds the landing back until it lands.
+    // A save still in flight goes on behind the landing, which the draft's
+    // card says; the lists may take a moment to read.
     await expect(this.landingHeading).toBeVisible({ timeout: 20000 });
   }
 

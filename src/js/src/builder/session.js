@@ -18,9 +18,10 @@
 //
 // Clearing also deletes edits the server never received, so logout first
 // asks this module for them (see utils/logout.js): the open draft's, which
-// the Builder view registers, and those queued in IndexedDB, or in an
-// unload copy, for any other draft, which are there whether or not the
-// Builder is open.
+// the Builder view registers, those of drafts closed for the drafts whose
+// queues still send them (see createBackgroundSaves in leave.js), and
+// those queued in IndexedDB, or in an unload copy, for any other draft,
+// which are there whether or not the Builder is open.
 
 import { clearBuilderDatabase, createDraftStore } from './idb.js';
 
@@ -195,6 +196,24 @@ function editedDraft() {
   return openDraft?.editing() && !openDraft.store.readOnly ? openDraft : null;
 }
 
+// The save queues of drafts closed for the drafts, still sending (see
+// registerQueue).
+const backgroundQueues = new Set();
+
+/**
+ * Registers the save queue of a draft closed for the drafts, which goes on
+ * sending (see createBackgroundSaves in leave.js), so logout counts and
+ * sends its changes with it rather than by a queue of its own.
+ *
+ * @param {object} queue
+ * @returns {() => void} unregisters it
+ */
+export function registerQueue(queue) {
+  backgroundQueues.add(queue);
+
+  return () => backgroundQueues.delete(queue);
+}
+
 // The open draft's queue: its record's key, and how many changes it holds.
 function openQueue(draft) {
   const record = draft?.store.autosave?.record;
@@ -202,22 +221,33 @@ function openQueue(draft) {
   return { key: record?.key, pending: record?.queue?.length || 0 };
 }
 
+// The queues of drafts closed for the drafts, with their records.
+function closedQueues() {
+  return [...backgroundQueues].filter((queue) => queue.record);
+}
+
 // The records in IndexedDB holding changes of `username`'s not sent yet,
-// but the open draft's (`skip`): the Builder holds its queue.
+// but those the Builder holds the queues of (`skip`, their keys).
 async function queuedRecords(draftStore, username, skip) {
   const records = await draftStore.all().catch(() => []);
 
   return records.filter(
     (record) =>
       record.actor === username &&
-      record.key !== skip &&
+      !skip.includes(record.key) &&
       (record.queue?.length || 0) > 0,
   );
 }
 
-// Sends each record's queue, in order, by a queue of its own; a conflict or
-// a refusal leaves it queued, as it would in the Builder. The modules that
-// send are loaded only now: offline they may not load, and nothing is sent.
+// The keys of the records the Builder holds the queues of.
+function heldKeys(open, closed) {
+  return [open.key, ...closed.map((queue) => queue.record.key)].filter(Boolean);
+}
+
+// Sends each record's queue, in order, by a queue of its own bound to the
+// record; a conflict or a refusal leaves it queued, as it would in the
+// Builder. The modules that send are loaded only now: offline they may not
+// load, and nothing is sent.
 async function sendRecords(records, username, draftStore) {
   const [{ createAutosave }, { builderApi }] = await Promise.all([
     import('./autosave.js'),
@@ -233,13 +263,42 @@ async function sendRecords(records, username, draftStore) {
       });
 
       try {
-        await queue.attach({ owner: record.owner, draftId: record.draftId });
+        await queue.attach({
+          owner: record.owner,
+          draftId: record.draftId,
+          key: record.key,
+        });
         await queue.flush();
       } finally {
         queue.dispose();
       }
     }),
   );
+}
+
+// The ids of this browser's other open tabs, which send their own queues
+// once the user chooses which changes to save (see tabs.js): none where
+// there are no Web Locks. Loaded only now, as the modules that send are.
+async function otherOpenTabs() {
+  if (typeof navigator === 'undefined' || !navigator.locks?.query) {
+    return new Set();
+  }
+
+  const { builderTabs } = await import('./tabs.js');
+
+  return builderTabs.others();
+}
+
+// Sends the queued records no other open tab holds (see sendRecords).
+async function sendOwnRecords(records, username, draftStore, send, openTabs) {
+  const others = await openTabs();
+  const own = records.filter(
+    (record) => !record.tab || !others.has(record.tab),
+  );
+
+  if (own.length > 0) {
+    await send(own, username, draftStore);
+  }
 }
 
 // Settles once `work` does, or after `ms`; never rejects.
@@ -259,10 +318,11 @@ function within(work, ms) {
  * queued in this browser, the open draft's and every other draft's, and
  * the Inspector edits that cannot be applied. The Inspector edits that can
  * be are saved first, as leaving saves them. With `send`, the queued
- * changes are sent first, waiting for them at most `wait`.
+ * changes are sent first, waiting for them at most `wait`, but those
+ * another open tab holds: that tab sends them.
  *
- * @param {object} options username, send, wait; draftStore and sendQueued,
- *   for tests
+ * @param {object} options username, send, wait; draftStore, sendQueued and
+ *   openTabs, for tests
  * @returns {Promise<{changes: number, unapplied: string, drafts: object[]}>}
  *   unapplied: a sentence naming the Inspector edits, or ''; drafts: those
  *   Export can save, as {key, name} (see draftExport)
@@ -273,39 +333,63 @@ export async function unsentBuilderWork({
   wait = LOGOUT_SEND_WAIT_MS,
   draftStore = createDraftStore(),
   sendQueued = sendRecords,
+  openTabs = otherOpenTabs,
 } = {}) {
   const draft = editedDraft();
   const blocked = draft?.saveUnapplied() || null;
 
   if (send) {
-    const { key, pending } = openQueue(draft);
-    const records = await queuedRecords(draftStore, username, key);
+    const open = openQueue(draft);
+    const closed = closedQueues();
+    const records = await queuedRecords(
+      draftStore,
+      username,
+      heldKeys(open, closed),
+    );
 
     await within(
       Promise.all([
-        pending > 0 ? draft.store.saveNow() : null,
-        records.length > 0 ? sendQueued(records, username, draftStore) : null,
+        open.pending > 0 ? draft.store.saveNow() : null,
+        ...closed.map((queue) =>
+          queue.record.queue.length > 0 ? queue.flush() : null,
+        ),
+        records.length > 0
+          ? sendOwnRecords(records, username, draftStore, sendQueued, openTabs)
+          : null,
       ]),
       wait,
     );
   }
 
   const open = openQueue(draft);
-  const records = await queuedRecords(draftStore, username, open.key);
+  const closed = closedQueues();
+  const records = await queuedRecords(
+    draftStore,
+    username,
+    heldKeys(open, closed),
+  );
 
   return {
     changes: records.reduce(
       (sum, record) => sum + record.queue.length,
-      open.pending,
+      closed.reduce(
+        (sum, queue) => sum + queue.record.queue.length,
+        open.pending,
+      ),
     ),
     unapplied: blocked ? draft.describe(blocked) : '',
     drafts: fileNames(await unsentDrafts(draftStore, username, draft)),
   };
 }
 
-// The diagram a queued record leaves: the one its last change this browser
-// holds made current.
-function queuedDiagram(record) {
+/**
+ * The diagram a queued record leaves: the one its last change this browser
+ * holds made current.
+ *
+ * @param {object} record a draft record, its entries with their snapshots
+ * @returns {object|null}
+ */
+export function queuedDiagram(record) {
   const entries = record.entries || [];
   let diagram = null;
 
@@ -328,10 +412,23 @@ function queuedDiagram(record) {
 // be applied are in none of them.
 async function unsentDrafts(draftStore, username, draft) {
   const open = openQueue(draft);
+  const closed = closedQueues();
   const drafts =
     open.pending > 0 ? [{ key: open.key, doc: draft.store.doc }] : [];
 
-  for (const record of await queuedRecords(draftStore, username, open.key)) {
+  for (const queue of closed) {
+    const doc = queue.record.queue.length > 0 && queuedDiagram(queue.record);
+
+    if (doc) {
+      drafts.push({ key: queue.record.key, doc });
+    }
+  }
+
+  for (const record of await queuedRecords(
+    draftStore,
+    username,
+    heldKeys(open, closed),
+  )) {
     const doc = queuedDiagram((await draftStore.get(record.key)) || {});
 
     if (doc) {
@@ -377,10 +474,13 @@ export async function draftExport({
   draftStore = createDraftStore(),
 }) {
   const draft = editedDraft();
+  const closed = closedQueues().find((queue) => queue.record.key === key);
   let doc;
 
   if (draft && key === openQueue(draft).key) {
     doc = draft.store.doc;
+  } else if (closed) {
+    doc = queuedDiagram(closed.record);
   } else {
     const record = await draftStore.get(key).catch(() => null);
 

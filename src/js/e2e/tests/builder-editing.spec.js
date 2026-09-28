@@ -110,8 +110,8 @@ function canvasNode(page, id) {
   return page.locator(`[data-testid="builder-node"][data-node-id="${id}"]`);
 }
 
-// Moves focus into the canvas so its keyboard shortcuts apply. A node's one
-// Tab stop is Vue Flow's wrapper around it. Vue Flow keeps a new node
+// Moves focus into the canvas so its keyboard shortcuts apply. A node takes
+// focus on Vue Flow's wrapper around it. Vue Flow keeps a new node
 // `visibility: hidden` until it is measured, and focus() on a hidden element
 // is silently ignored, so wait for it to show and confirm the focus.
 async function focusNode(page, id) {
@@ -1378,12 +1378,12 @@ test.describe('Builder Beta canvas editing', () => {
       }
     });
 
-    await test.step('an arrow key moves the group together with its members', async () => {
+    await test.step('Shift and an arrow key move the group together with its members', async () => {
       const before = positions(grouped);
       const moved = (id) => ({ x: before[id].x + 10, y: before[id].y });
 
       await focusNode(page, groupId);
-      await page.keyboard.press('ArrowRight');
+      await page.keyboard.press('Shift+ArrowRight');
 
       await expectPersisted(
         builder,
@@ -1763,7 +1763,7 @@ test.describe('Builder Beta canvas editing', () => {
     expect(specNames).toEqual(['eth0']);
   });
 
-  test('arrow keys nudge by 10px and Shift+arrow by 1px', async ({
+  test('Shift and an arrow key move the selected nodes 10px; an arrow key alone moves focus', async ({
     page,
     builder,
     issues,
@@ -1780,19 +1780,14 @@ test.describe('Builder Beta canvas editing', () => {
 
     await canvasNode(page, first).click();
     // Key, expected offset from the start, and whether to check the saved
-    // position there. The server is checked where earlier moves do not cancel
-    // out, so each kind of nudge is proven saved: (10, 10) after the plain
-    // arrows, (1, 1) after the Shift arrows, and the end of the sequence.
+    // position there: where earlier moves do not cancel out, and at the
+    // end of the sequence.
     const moves = [
-      ['ArrowRight', 10, 0],
-      ['ArrowDown', 10, 10, true],
-      ['ArrowLeft', 0, 10],
-      ['ArrowUp', 0, 0],
-      ['Shift+ArrowRight', 1, 0],
-      ['Shift+ArrowDown', 1, 1, true],
-      ['Shift+ArrowLeft', 0, 1],
+      ['Shift+ArrowRight', 10, 0],
+      ['Shift+ArrowDown', 10, 10, true],
+      ['Shift+ArrowLeft', 0, 10],
       ['Shift+ArrowUp', 0, 0],
-      ['Shift+ArrowRight', 1, 0, true],
+      ['Shift+ArrowRight', 10, 0, true],
     ];
     for (const [key, dx, dy, saved] of moves) {
       await page.keyboard.press(key);
@@ -1812,38 +1807,63 @@ test.describe('Builder Beta canvas editing', () => {
       }
     }
     // The announcement names the node and where it went.
-    const end = at(first, 1, 0);
+    const end = at(first, 10, 0);
     await expect(builder.liveRegion).toContainText(
       `Moved node to x ${end.x}, y ${end.y}`,
     );
 
-    // An arrow key on a node outside the selection moves nothing: the
-    // selected node would move out of sight of the focused one.
-    await focusNode(page, second);
-    await page.keyboard.press('ArrowRight');
+    // An arrow key alone moves focus to the other node, and moves nothing.
+    const dx = start[second].x - start[first].x;
+    const dy = start[second].y - start[first].y;
+    const toward =
+      Math.abs(dx) >= Math.abs(dy)
+        ? dx > 0
+          ? 'ArrowRight'
+          : 'ArrowLeft'
+        : dy > 0
+          ? 'ArrowDown'
+          : 'ArrowUp';
+    await page.keyboard.press(toward);
+    await expect(flowNode(page, second)).toBeFocused();
     await expect(flowNode(page, first)).toHaveCSS(
       'transform',
       `matrix(1, 0, 0, 1, ${end.x}, ${end.y})`,
     );
 
-    // A multi-node nudge moves every selected node once, as one commit.
+    // Shift and an arrow key on a node outside the selection move nothing,
+    // and say why: the selected node would move out of sight of the
+    // focused one.
+    await page.keyboard.press('Shift+ArrowRight');
+    await expect(builder.liveRegion).toContainText(
+      'Select the nodes to move first.',
+    );
+    await expect(flowNode(page, first)).toHaveCSS(
+      'transform',
+      `matrix(1, 0, 0, 1, ${end.x}, ${end.y})`,
+    );
+
+    // A multi-node move moves every selected node once, as one commit.
     await page.keyboard.press('ControlOrMeta+a');
-    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Shift+ArrowRight');
     await expect(builder.liveRegion).toContainText('Moved 2 nodes right by 10');
 
-    // From the canvas itself, as after the skip link, arrow keys move the
-    // selection and leave the view alone. With the Keyboard help open the
-    // canvas is taller than the diagram, and keeping the canvas "in view"
-    // once panned the diagram up on every press.
+    // From the canvas itself, as after the skip link, Shift and the arrow
+    // keys move the selection and leave the view alone. With the Keyboard
+    // help open the canvas is taller than the diagram, and keeping the
+    // canvas "in view" once panned the diagram up on every press.
     await page.getByTestId('canvas-help').locator('summary').click();
+    // Screen readers in browse mode keep the arrow keys: the help says so.
+    await expect(page.locator('#builder-canvas-help')).toContainText(
+      'With a screen reader, turn on its focus mode',
+    );
     await builder.canvas.focus();
     const view = page.locator('.vue-flow__transformationpane');
     const viewBefore = await view.evaluate(
       (element) => element.style.transform,
     );
     for (const [key, dx] of [
-      ['ArrowLeft', 0],
-      ['ArrowRight', 10],
+      ['Shift+ArrowLeft', 0],
+      ['Shift+ArrowRight', 10],
     ]) {
       await page.keyboard.press(key);
       const want = at(second, dx, 0);
@@ -1881,6 +1901,7 @@ test.describe('Builder Beta canvas editing', () => {
     // Keys on the canvas's own controls keep their own meaning: an arrow key
     // or Delete on a zoom button never edits the diagram.
     await builder.canvas.getByRole('button', { name: 'Zoom in' }).focus();
+    await page.keyboard.press('Shift+ArrowRight');
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Delete');
     await expect(builder.nodes('device')).toHaveCount(2);
@@ -1891,14 +1912,13 @@ test.describe('Builder Beta canvas editing', () => {
     );
 
     await expectPersisted(builder, draft, positions, {
-      [first]: at(first, 11, 0),
+      [first]: at(first, 20, 0),
       [second]: at(second, 10, 0),
     });
 
     expectNoFatal(issues);
   });
 
-  // ELK, the default layout, runs in a Web Worker: in Firefox too.
   test(
     'the layout menu lays out, keeps the choice with the draft, undoes in one step and can put it back; Auto-group groups',
     { tag: '@cross-browser' },
@@ -2035,7 +2055,7 @@ test.describe('Builder Beta canvas editing', () => {
       // starting positions.
       const [deviceId] = await nodeIds(builder, 'device', 2);
       await canvasNode(page, deviceId).click();
-      await page.keyboard.press('ArrowRight');
+      await page.keyboard.press('Shift+ArrowRight');
       const nudged = {
         ...laidOut,
         [deviceId]: { x: laidOut[deviceId].x + 10, y: laidOut[deviceId].y },

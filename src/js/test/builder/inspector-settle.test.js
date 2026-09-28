@@ -183,6 +183,22 @@ describe('settling unapplied edits before a save', () => {
 
     expect(settle()).toBe('Device alpha is no longer in the diagram');
   });
+
+  // While a conflict is resolved, the store refuses every edit. The typed
+  // values stay in the form, to be applied once it is resolved.
+  test('edits the store refuses stay unapplied, and it says why', async () => {
+    const { store, settle, description } = await editedInspector();
+
+    store.resolvingConflict = true;
+
+    expect(settle()).toBe('the conflict is being resolved');
+    expect(description()).not.toBe('Edited');
+
+    store.resolvingConflict = false;
+
+    expect(settle()).toBe('');
+    expect(description()).toBe('Edited');
+  });
 });
 
 // A device generated from a phenix experiment carries values phenix

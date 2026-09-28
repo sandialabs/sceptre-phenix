@@ -269,9 +269,11 @@ export function toFlowNodes(doc, options = {}) {
       style: { width: `${size.width}px`, height: `${size.height}px` },
       ariaLabel: nodeAriaLabel(doc, node, index),
       // Vue Flow spreads these over its own wrapper attributes. The wrapper
-      // is the node's only Tab stop, a toggle button pressed while the node is
-      // selected; undefined removes Vue Flow's role description.
+      // is a toggle button pressed while the node is selected, which takes
+      // focus but is out of the Tab order unless it is the canvas's one Tab
+      // stop (withTabStop); undefined removes Vue Flow's role description.
       domAttributes: {
+        tabindex: -1,
         role: 'button',
         'aria-pressed': String(selected.has(node.id)),
         'aria-roledescription': undefined,
@@ -325,6 +327,27 @@ export function withSelection(items, selectedIds = []) {
           },
         };
   });
+}
+
+/**
+ * Flow nodes or edges with the canvas's one Tab stop applied (a roving
+ * tabindex): the item of `id` takes tabindex 0. Only that item is copied,
+ * as in withSelection.
+ *
+ * @param {object[]} items from toFlowNodes or toFlowEdges
+ * @param {string|null} [id]
+ * @returns {object[]}
+ */
+export function withTabStop(items, id) {
+  if (!id) {
+    return items;
+  }
+
+  return items.map((item) =>
+    item.id === id
+      ? { ...item, domAttributes: { ...item.domAttributes, tabindex: 0 } }
+      : item,
+  );
 }
 
 /**
@@ -512,9 +535,10 @@ export function toFlowEdges(doc, options = {}) {
         `${target ? nodeLabel(target) : edge.targetNodeId}${labelled}`,
       // Vue Flow writes tabIndex in camel case, which an SVG element ignores,
       // so connections could never take focus. Like nodes, a connection is a
-      // toggle button pressed while it is selected.
+      // toggle button pressed while it is selected, out of the Tab order
+      // unless it is the canvas's Tab stop.
       domAttributes: {
-        tabindex: 0,
+        tabindex: -1,
         role: 'button',
         'aria-pressed': String(selected.has(edge.id)),
         'aria-roledescription': undefined,
@@ -620,6 +644,186 @@ export function freeSpot(pane, width, height, overlays = []) {
   return { x: best.x, y: best.y, hidden: best.hidden };
 }
 
+// --- moving keyboard focus between nodes ------------------------------------
+//
+// The canvas is one Tab stop (withTabStop). The arrow keys move focus to the
+// nearest node in their direction, and Page Down and Page Up through a
+// node's connections. Points are in flow coordinates.
+
+/**
+ * Where a node is, for the arrow keys: its centre, or, for a group, the
+ * middle of its top edge, where its title is, so Up from a member reaches
+ * the group.
+ *
+ * @param {object} node
+ * @returns {{x: number, y: number}}
+ */
+export function nodePoint(node) {
+  const { width, height } = sizeOf(node);
+  const x = (node.position?.x || 0) + width / 2;
+  const top = node.position?.y || 0;
+
+  return { x, y: node.kind === 'group' ? top : top + height / 2 };
+}
+
+/**
+ * Where a node or connection is, for the arrow keys: see nodePoint; a
+ * connection is halfway between the centres of its ends.
+ *
+ * @param {object} doc
+ * @param {{kind: 'nodes'|'edges', id: string}} item
+ * @returns {{x: number, y: number}|null}
+ */
+export function itemPoint(doc, { kind, id }) {
+  if (kind === 'nodes') {
+    const node = findNode(doc, id);
+
+    return node ? nodePoint(node) : null;
+  }
+
+  const edge = (doc.edges || []).find((entry) => entry.id === id);
+  // Devices and switches, so nodePoint is their centre.
+  const ends = [edge?.sourceNodeId, edge?.targetNodeId]
+    .map((end) => end && findNode(doc, end))
+    .filter(Boolean)
+    .map(nodePoint);
+
+  if (!ends.length) {
+    return null;
+  }
+
+  return {
+    x: ends.reduce((sum, point) => sum + point.x, 0) / ends.length,
+    y: ends.reduce((sum, point) => sum + point.y, 0) / ends.length,
+  };
+}
+
+// Each arrow key's distance along it and across it, from an offset.
+const ARROW_AXES = {
+  ArrowRight: ({ x, y }) => [x, Math.abs(y)],
+  ArrowLeft: ({ x, y }) => [-x, Math.abs(y)],
+  ArrowDown: ({ x, y }) => [y, Math.abs(x)],
+  ArrowUp: ({ x, y }) => [-y, Math.abs(x)],
+};
+
+// A step across the arrow's direction counts this many steps along it, so
+// a node in line comes before a nearer one off to the side.
+const ACROSS_WEIGHT = 2;
+
+/**
+ * The node an arrow key moves focus to: of the nodes whose point
+ * (nodePoint) lies that way from `from`, the nearest, with distance across
+ * the direction counted twice. A node at the very same point as the focused
+ * one comes first: the next in the document for Right and Down, the
+ * previous for Left and Up, so every node can be reached.
+ *
+ * @param {object} doc
+ * @param {{x: number, y: number}} from
+ * @param {string} key ArrowUp, ArrowDown, ArrowLeft or ArrowRight
+ * @param {string} [fromId] the focused node, which is never the answer
+ * @returns {string|null} the node's id, or null when none lies that way
+ */
+export function nodeInDirection(doc, from, key, fromId) {
+  const measure = ARROW_AXES[key];
+
+  if (!measure || !from) {
+    return null;
+  }
+
+  const nodes = doc.nodes || [];
+  const at = fromId ? nodes.findIndex((node) => node.id === fromId) : -1;
+  const forward = key === 'ArrowRight' || key === 'ArrowDown';
+  let best = null;
+
+  nodes.forEach((node, index) => {
+    if (node.id === fromId) {
+      return;
+    }
+
+    const point = nodePoint(node);
+    const [along, across] = measure({
+      x: point.x - from.x,
+      y: point.y - from.y,
+    });
+    const samePoint = along === 0 && across === 0;
+
+    if (
+      along <= 0 &&
+      !(samePoint && at >= 0 && (forward ? index > at : index < at))
+    ) {
+      return;
+    }
+
+    const score = along + ACROSS_WEIGHT * across;
+
+    if (
+      !best ||
+      score < best.score ||
+      (samePoint && !forward && score === best.score)
+    ) {
+      best = { id: node.id, score };
+    }
+  });
+
+  return best?.id ?? null;
+}
+
+/**
+ * The node nearest a point, in any direction.
+ *
+ * @param {object} doc
+ * @param {{x: number, y: number}} point
+ * @returns {string|null}
+ */
+export function nearestNode(doc, point) {
+  let best = null;
+
+  for (const node of doc.nodes || []) {
+    const at = nodePoint(node);
+    const distance = Math.hypot(at.x - point.x, at.y - point.y);
+
+    if (!best || distance < best.distance) {
+      best = { id: node.id, distance };
+    }
+  }
+
+  return best?.id ?? null;
+}
+
+/**
+ * The connection Page Down (step 1) or Page Up (-1) moves focus to among a
+ * node's connections, in the document's order and round from the last to
+ * the first: from `edgeId`, or from the node itself when that is not one
+ * of them.
+ *
+ * @param {object} doc
+ * @param {string} nodeId
+ * @param {string|null} edgeId
+ * @param {1|-1} step
+ * @returns {string|null} null when the node has no connections
+ */
+export function connectionStep(doc, nodeId, edgeId, step) {
+  const edges = (doc.edges || []).filter(
+    (edge) => edge.sourceNodeId === nodeId || edge.targetNodeId === nodeId,
+  );
+
+  if (!edges.length) {
+    return null;
+  }
+
+  const at = edges.findIndex((edge) => edge.id === edgeId);
+  const next =
+    at === -1
+      ? step > 0
+        ? 0
+        : edges.length - 1
+      : (at + step + edges.length) % edges.length;
+
+  return edges[next].id;
+}
+
+// --- fitting nodes into view ------------------------------------------------
+
 // Room Vue Flow's fit view leaves around a diagram, as a share of its size.
 const FIT_PADDING = 0.1;
 
@@ -629,12 +833,24 @@ const FIT_PADDING = 0.1;
  *
  * @param {{width: number, height: number}} bounds in flow coordinates
  * @param {{width: number, height: number}} pane in screen pixels
- * @param {number} [padding] as Vue Flow takes it
- * @returns {number} Infinity when either has no size
+ * @param {number|{top: number, right: number, bottom: number, left: number}}
+ *   [padding] as Vue Flow takes it: a share of the pane, or pixels on each
+ *   side (see fitPadding)
+ * @returns {number} Infinity when either has no size, 0 when the room
+ *   leaves nothing to show the box in
  */
 export function fitZoom(bounds, pane, padding = FIT_PADDING) {
   if (!bounds?.width || !bounds?.height || !pane?.width || !pane?.height) {
     return Infinity;
+  }
+
+  if (typeof padding === 'object') {
+    const width = pane.width - padding.left - padding.right;
+    const height = pane.height - padding.top - padding.bottom;
+
+    return width > 0 && height > 0
+      ? Math.min(width / bounds.width, height / bounds.height)
+      : 0;
   }
 
   // Vue Flow's own sum, which rounds the room down to whole pixels.
@@ -645,6 +861,67 @@ export function fitZoom(bounds, pane, padding = FIT_PADDING) {
     room(pane.width) / bounds.width,
     room(pane.height) / bounds.height,
   );
+}
+
+/**
+ * The room, in whole pixels on each side, to fit nodes into a pane with:
+ * Vue Flow's own (a share of the pane, as fitZoom has it), and more on a
+ * side for each box that floats over the pane (the minimap, the zoom
+ * controls), so no node ends up under one. Each box is kept clear on one
+ * of the two sides it sits against, whichever lets the nodes be larger.
+ * Vue Flow's fit view takes the result as its padding, in pixels.
+ *
+ * @param {{width: number, height: number}} bounds the nodes', in flow
+ *   coordinates
+ * @param {object} pane box, in screen pixels
+ * @param {object[]} [overlays] boxes, in screen pixels
+ * @param {number} [padding] Vue Flow's room, as a share
+ * @returns {{top: number, right: number, bottom: number, left: number}}
+ */
+export function fitPadding(bounds, pane, overlays = [], padding = FIT_PADDING) {
+  const share = (length) => Math.floor((length - length / (1 + padding)) * 0.5);
+  const base = {
+    top: share(pane.height),
+    right: share(pane.width),
+    bottom: share(pane.height),
+    left: share(pane.width),
+  };
+  // Each box's two ways to be kept clear: [side, pixels from that edge].
+  const ways = overlays
+    .filter((box) => overlapArea(box, pane) > 0)
+    .map((box) => [
+      box.top + box.bottom > pane.top + pane.bottom
+        ? ['bottom', pane.bottom - box.top]
+        : ['top', box.bottom - pane.top],
+      box.left + box.right > pane.left + pane.right
+        ? ['right', pane.right - box.left]
+        : ['left', box.right - pane.left],
+    ]);
+  let best = { room: base, zoom: 0 };
+
+  for (let pick = 0; pick < 2 ** ways.length; pick += 1) {
+    const extra = { top: 0, right: 0, bottom: 0, left: 0 };
+
+    ways.forEach((choices, index) => {
+      const [side, pixels] = choices[(pick >> index) & 1];
+
+      extra[side] = Math.max(extra[side], Math.ceil(pixels));
+    });
+
+    const room = {
+      top: base.top + extra.top,
+      right: base.right + extra.right,
+      bottom: base.bottom + extra.bottom,
+      left: base.left + extra.left,
+    };
+    const zoom = fitZoom(bounds, pane, room);
+
+    if (zoom > best.zoom) {
+      best = { room, zoom };
+    }
+  }
+
+  return best.room;
 }
 
 /**

@@ -25,10 +25,15 @@
 // the draft snapshot append and the draft history cursor move, both of which
 // are ordered, awaited and carry If-Match. "Cursor" here means the position in
 // the draft's own undo history, not a collaborator's caret.
+//
+// Other tabs of this browser are another matter (see tabs.js). Each tab
+// keeps its own local record of a draft, and while another tab, or a queue
+// a closed tab left, holds changes to the draft the server does not have,
+// this queue does not send its own: the user chooses which to save.
 
 import { classifyError, errorMessage, sentence } from './api.js';
 import { DEFAULT_HISTORY_LIMIT } from './history.js';
-import { draftKey } from './idb.js';
+import { draftKey, tabRecordKey } from './idb.js';
 
 export const RETRY_DELAYS = [1000, 2000, 5000, 15000, 30000];
 
@@ -100,6 +105,18 @@ export function initialState() {
     // configs) or 'gone' (no longer shared with them, or deleted); ''
     // otherwise. The queue is then blocked, as when forbidden.
     accessLost: '',
+    // When the last change was queued.
+    changedAt: null,
+    // The other tabs (see tabs.js): this tab's id; the other tabs with the
+    // draft open, each with its state; the other versions of the draft's
+    // unsaved changes, in other tabs or left by closed tabs; whether the
+    // queue waits for the user to choose which to save; and whether a
+    // conflict is the user's choice of another version.
+    tab: '',
+    tabs: [],
+    versions: [],
+    heldForTabs: false,
+    otherTab: false,
   };
 }
 
@@ -297,12 +314,18 @@ export function describeState(state) {
         ? `Offline: ${changes(state.pending)} not stored anywhere yet. Keep this tab open; saving retries automatically.`
         : `Offline: ${changes(state.pending)} kept on this device. Saving retries automatically.`;
     case 'conflict':
-      return 'This draft changed on the server';
+      return state.otherTab
+        ? "Not saved: you chose another tab's changes"
+        : 'This draft changed on the server';
     case 'forbidden':
       return 'You cannot save changes to this draft';
     case 'error':
       return state.message || 'Changes could not be saved';
     default:
+      if (state.heldForTabs && state.pending > 0) {
+        return `${changes(state.pending)} not saved yet. Choose which changes to save.`;
+      }
+
       return state.pending > 0
         ? `${state.pending} unsaved change${state.pending === 1 ? '' : 's'}`
         : 'Ready';
@@ -357,11 +380,17 @@ export function staleSaveMessage(announced, current) {
   return announced !== current && !['idle', 'saving'].includes(current);
 }
 
+// Why a queue no longer sends: the user chose another version of the
+// draft's unsaved changes (see tabs.js).
+const OTHER_TAB_CHOSEN = 'You chose to save the changes made in another tab.';
+
 /**
  * Creates the autosave queue.
  *
  * @param {object} options api, store, actor, onState, onDraft, now, setTimeout,
- *   clearTimeout, isOnline, addOnlineListener, historyLimit
+ *   clearTimeout, isOnline, addOnlineListener, historyLimit; tabs: the
+ *   other tabs of this browser (builderTabs in tabs.js), which a queue
+ *   without one ignores
  * @returns {object} queue
  */
 export function createAutosave(options = {}) {
@@ -369,11 +398,14 @@ export function createAutosave(options = {}) {
     api,
     store,
     actor = '',
-    onState = () => {},
-    onDraft = () => {},
     now = () => new Date().toISOString(),
     historyLimit = DEFAULT_HISTORY_LIMIT,
+    tabs = null,
   } = options;
+  // Replaced when the draft is closed and the queue goes on sending (see
+  // observe).
+  let onState = options.onState || (() => {});
+  let onDraft = options.onDraft || (() => {});
 
   const timer = {
     set: options.setTimeout || ((fn, ms) => setTimeout(fn, ms)),
@@ -412,15 +444,166 @@ export function createAutosave(options = {}) {
   // Operations the server has confirmed, so a caller can tell whether any
   // was sent while it waited on a request of its own.
   let sent = 0;
+  // This tab's id, the other tabs with the draft open (see tabs.js), and
+  // whether a send waits for the user to choose which changes to save.
+  let tab = '';
+  let coordinator = null;
+  let waitingForTabs = false;
 
+  // A conflict that is the user's choice of another tab's changes says so
+  // (otherTab) until the queue leaves it.
   const emit = (patch = {}) => {
-    state = { ...state, ...patch, pending: record ? record.queue.length : 0 };
+    const conflicted = (patch.status || state.status) === 'conflict';
+
+    state = {
+      ...state,
+      ...patch,
+      pending: record ? record.queue.length : 0,
+      changedAt: record?.changedAt || null,
+      otherTab: conflicted && Boolean(patch.otherTab ?? state.otherTab),
+      tab,
+      tabs: coordinator ? coordinator.peers() : [],
+      versions: coordinator ? coordinator.versions() : [],
+      heldForTabs: waitingForTabs,
+    };
+    coordinator?.publish(state);
     if (!disposed) {
       onState(state);
     }
 
     return state;
   };
+
+  // The key of this tab's record of a draft.
+  function ownKey(owner, draftId) {
+    return tabRecordKey(draftKey(actor, owner, draftId), tab);
+  }
+
+  // Tells the other tabs with the draft open about this queue, and hears
+  // theirs (see tabs.js): one coordinator per draft. `held` is the record
+  // this tab holds of it, whose changes its first message says: a tab that
+  // said none, as it reloads, would let another send its own.
+  function connect(owner, draftId, held) {
+    const draft = `${owner}/${draftId}`;
+
+    if (!tabs || coordinator?.draft === draft) {
+      return;
+    }
+
+    coordinator?.close();
+    coordinator = tabs.open({
+      actor,
+      owner,
+      draftId,
+      tab,
+      state: {
+        pending: held?.queue?.length || 0,
+        changedAt: held?.changedAt || held?.updatedAt || null,
+      },
+      // This user's records of the draft, but this tab's.
+      records: async () =>
+        ((await store?.all?.()) || []).filter(
+          (item) =>
+            item.actor === actor &&
+            item.owner === owner &&
+            item.draftId === draftId &&
+            item.key !== ownKey(owner, draftId),
+        ),
+      onChange: tabsChanged,
+    });
+    coordinator.draft = draft;
+  }
+
+  // Reading the queues closed tabs left before a held send goes (see
+  // tabsChanged).
+  let rechecking = null;
+
+  // The other tabs changed: their states, the queues closed tabs left, or
+  // the user's choice of which changes to save.
+  function tabsChanged() {
+    if (disposed || !record || !coordinator) {
+      return;
+    }
+
+    // Another version was chosen: this one can no longer be sent to the
+    // draft, and waits to be saved as a new draft.
+    if (
+      coordinator.lost() &&
+      record.queue.length > 0 &&
+      !['conflict', 'forbidden'].includes(state.status)
+    ) {
+      cancelRetry();
+      waitingForTabs = false;
+      emit({
+        status: 'conflict',
+        message: OTHER_TAB_CHOSEN,
+        lastModifiedBy: '',
+        otherTab: true,
+      });
+
+      return;
+    }
+
+    // Nothing seems to stand in the way of a held send: the queues closed
+    // tabs left are read first, as a tab that has just gone may have left
+    // its changes.
+    if (
+      waitingForTabs &&
+      !rechecking &&
+      !coordinator.blocked(record.queue.length)
+    ) {
+      const checking = coordinator;
+
+      rechecking = checking
+        .scan()
+        .catch(() => {})
+        .then(() => {
+          rechecking = null;
+
+          if (
+            !disposed &&
+            record &&
+            coordinator === checking &&
+            waitingForTabs &&
+            !checking.blocked(record.queue.length)
+          ) {
+            waitingForTabs = false;
+            emit();
+            flush();
+          }
+        });
+    }
+
+    emit();
+  }
+
+  /**
+   * Takes the queue a closed tab left of the draft, when it is the only
+   * version of the draft's unsaved changes: this tab's record holds none.
+   * A tab reloaded without its id finds its queue so (see tabs.js). With
+   * more, none is taken: the user chooses which to save.
+   *
+   * @param {string} key this tab's record key
+   */
+  async function takeClosedQueue(key) {
+    const own = await store.get(key).catch(() => undefined);
+    const closed = await coordinator.scan();
+
+    if (own?.queue?.length || closed.length !== 1 || !store.rekey) {
+      return;
+    }
+
+    // Two tabs taking it at once: the database runs one move after the
+    // other, and the second finds nothing to move.
+    try {
+      if (await store.rekey(closed[0].key, key, { tab })) {
+        await coordinator.scan();
+        coordinator.recordsChanged();
+      }
+    } catch {
+      // It stays the closed tab's, and the user chooses.
+    }
+  }
 
   // Local persistence must never reject into a caller that cannot handle it:
   // the queue lives in memory too, so a storage failure is recorded in the
@@ -682,6 +865,17 @@ export function createAutosave(options = {}) {
         return emit({ status: 'offline', online: false });
       }
 
+      // Another tab, or a queue a closed tab left, holds changes to this
+      // draft too: nothing is sent until the user chooses (see tabs.js).
+      if (coordinator?.blocked(record.queue.length)) {
+        waitingForTabs = true;
+        cancelRetry();
+
+        return emit({ status: 'idle', online: true, message: '' });
+      }
+
+      waitingForTabs = false;
+
       if (!background) {
         emit({ status: 'saving', online: true, message: '' });
       }
@@ -717,6 +911,9 @@ export function createAutosave(options = {}) {
         if (!disposed) {
           onDraft(envelope, op);
         }
+
+        // Each change sent counts: the draft's card, and the other tabs.
+        emit();
       }
 
       retries = 0;
@@ -963,20 +1160,39 @@ export function createAutosave(options = {}) {
      * Binds the queue to a draft, replacing any local record.
      *
      * @param {object} draft owner, draftId, etag, entries, cursor, and
-     *   serverHead: headOf() the envelope etag came with, when known
+     *   serverHead: headOf() the envelope etag came with, when known; key:
+     *   the record to bind to, when not this tab's (a record another page
+     *   left, which logout sends)
      */
     async attach(draft) {
-      const key = draftKey(actor, draft.owner, draft.draftId);
+      tab = tabs ? await tabs.tab() : '';
+
+      const key = draft.key || ownKey(draft.owner, draft.draftId);
       // Any log this device already holds for the draft is kept unless the
       // caller passes a replacement: attaching must never be the reason local
       // work disappears.
       const explicit = draft.entries !== undefined || draft.queue !== undefined;
+
+      if (!draft.key) {
+        const own =
+          explicit || !store
+            ? draft
+            : await store.get(key).catch(() => undefined);
+
+        connect(draft.owner, draft.draftId, own);
+
+        if (!explicit && coordinator && store) {
+          await takeClosedQueue(key);
+        }
+      }
+
       // Read either way: what the store holds is not written again.
-      const existing = await this.recover(draft.owner, draft.draftId);
+      const existing = store ? (await store.get(key)) || null : null;
       const hasPending = !explicit && (existing?.queue || []).length > 0;
 
       record = {
         key,
+        tab: draft.key ? existing?.tab || '' : tab,
         actor,
         owner: draft.owner,
         draftId: draft.draftId,
@@ -988,6 +1204,7 @@ export function createAutosave(options = {}) {
         cursor: draft.cursor ?? existing?.cursor ?? 0,
         entries: draft.entries ?? existing?.entries ?? [],
         queue: draft.queue ?? existing?.queue ?? [],
+        changedAt: existing?.changedAt || existing?.updatedAt || null,
         updatedAt: now(),
       };
       // A record merged with an unload copy may reference snapshots the
@@ -1021,8 +1238,9 @@ export function createAutosave(options = {}) {
     },
 
     /**
-     * Reads any locally stored record for a draft, so an interrupted session
-     * can restore its full ordered history and pending queue.
+     * Reads this tab's locally stored record for a draft, so an interrupted
+     * session can restore its full ordered history and pending queue. Call
+     * it once attached: attaching finds the tab's id.
      *
      * @param {string} owner
      * @param {string} draftId
@@ -1033,7 +1251,7 @@ export function createAutosave(options = {}) {
         return null;
       }
 
-      const found = await store.get(draftKey(actor, owner, draftId));
+      const found = await store.get(ownKey(owner, draftId));
 
       return found || null;
     },
@@ -1080,6 +1298,7 @@ export function createAutosave(options = {}) {
           label: entry.label,
         },
       ];
+      record.changedAt = now();
 
       trimEntries();
       await persist();
@@ -1137,6 +1356,7 @@ export function createAutosave(options = {}) {
           commitId: target.commitId,
         },
       ];
+      record.changedAt = now();
 
       await persist();
 
@@ -1149,7 +1369,12 @@ export function createAutosave(options = {}) {
     ) {
       cancelRetry();
 
-      return emit({ status: 'conflict', message, lastModifiedBy: '' });
+      return emit({
+        status: 'conflict',
+        message,
+        lastModifiedBy: '',
+        otherTab: false,
+      });
     },
 
     /**
@@ -1299,8 +1524,10 @@ export function createAutosave(options = {}) {
 
       const previous = record.key;
 
+      connect(owner, draftId);
       record = {
-        key: draftKey(actor, owner, draftId),
+        key: ownKey(owner, draftId),
+        tab,
         actor,
         owner,
         draftId,
@@ -1405,6 +1632,54 @@ export function createAutosave(options = {}) {
     keepForUnload,
 
     /**
+     * Sends the queue's states and saves to other callbacks, and tells the
+     * other tabs whether the draft is still open here: a draft closed for
+     * the drafts goes on sending in the background (see
+     * createBackgroundSaves in leave.js).
+     *
+     * @param {object} callbacks onState, onDraft
+     * @param {object} [options] open: whether the draft is open in the editor
+     */
+    observe(callbacks = {}, { open = true } = {}) {
+      onState = callbacks.onState || (() => {});
+      onDraft = callbacks.onDraft || (() => {});
+      coordinator?.setOpen(open);
+    },
+
+    /**
+     * Tells every tab which version of the draft's unsaved changes the user
+     * chose to save (see applyChoice in tabs.js); this queue sends its own
+     * only if they are the ones chosen.
+     *
+     * @param {string} id a version's id: `tab:<id>` or `record:<key>`
+     */
+    chooseVersion(id) {
+      coordinator?.choose(id);
+    },
+
+    /**
+     * Whether another tab with this id has the draft open (see live in
+     * tabs.js).
+     *
+     * @param {string} id
+     * @returns {Promise<boolean>}
+     */
+    async tabOpen(id) {
+      return coordinator ? coordinator.live(id) : false;
+    },
+
+    /**
+     * Reads the queues closed tabs left again, and has the other tabs read
+     * them, once some were saved as new drafts or taken.
+     *
+     * @returns {Promise<void>}
+     */
+    async rescan() {
+      await coordinator?.scan();
+      coordinator?.recordsChanged();
+    },
+
+    /**
      * Starts listening for connectivity changes so a queue parked offline
      * drains as soon as the browser reconnects, and for the page being
      * left, which keeps what the store may not hold yet (see
@@ -1446,10 +1721,12 @@ export function createAutosave(options = {}) {
       return detachOnline;
     },
 
-    /** Stops listeners and pending retries. */
+    /** Stops listeners and pending retries, and leaves the other tabs. */
     dispose() {
       disposed = true;
       cancelRetry();
+      coordinator?.close();
+      coordinator = null;
 
       if (detachOnline) {
         detachOnline();

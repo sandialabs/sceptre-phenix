@@ -21,6 +21,11 @@
   The user's own drafts say who they are shared with, and have Share when
   the server says the user may share them (canShare). Other users' drafts
   say what the user may do with them, and only open.
+
+  A draft closed while its changes were being saved says how the saves go
+  on (saves, see createBackgroundSaves in builder/leave.js): being saved,
+  saved, or why not, which its Open button is described by. Opening it
+  again is the way back to changes that could not be saved.
 -->
 <template>
   <section ref="rootEl" aria-labelledby="drafts-title">
@@ -163,6 +168,24 @@
           <p v-if="item.description" class="builder-card__meta">
             {{ item.description }}
           </p>
+          <!-- The ring turns while the changes are sent; reduced motion
+               stops it (see builder.css). The warning sign is decorative. -->
+          <p
+            v-if="saveOf(item)"
+            :id="`draft-save-${item.id}`"
+            class="builder-drafts__save"
+            :class="`builder-drafts__save--${saveOf(item).kind}`"
+            :data-testid="`draft-save-${item.id}`">
+            <span
+              v-if="saveOf(item).kind === 'saving'"
+              class="builder-toolbar__spinner"
+              aria-hidden="true"></span>
+            <builder-icon
+              v-else
+              :name="saveOf(item).kind === 'saved' ? 'check' : 'warning'"
+              :size="14" />
+            <span>{{ saveOf(item).text }}</span>
+          </p>
           <p
             v-if="item.damaged"
             class="builder-drafts__damaged"
@@ -183,6 +206,9 @@
               class="builder-button"
               :data-testid="`draft-open-${item.id}`"
               :aria-label="`${isOpening(item) ? 'Opening' : 'Open'} ${cardName(item)}`"
+              :aria-describedby="
+                saveOf(item) ? `draft-save-${item.id}` : undefined
+              "
               :aria-disabled="busy || undefined"
               :aria-busy="isOpening(item) || undefined"
               @click="busy || $emit('open', item, itemLabel(item))">
@@ -286,6 +312,9 @@
       type: Object,
       default: () => ({ mine: [], others: [] }),
     },
+    // How the saves of drafts closed while being saved go on, by cardKey:
+    // kind ('saving', 'saved', 'retrying', 'waiting' or 'stopped') and text.
+    saves: { type: Object, default: () => ({}) },
   });
 
   const emit = defineEmits([
@@ -317,6 +346,11 @@
 
   function isOpening(item) {
     return Boolean(props.opening) && props.opening === cardKey(item);
+  }
+
+  // How the saves of a draft closed while being saved go on, if they do.
+  function saveOf(item) {
+    return (item.owner && props.saves[cardKey(item)]) || null;
   }
 
   // Delete is on the user's own drafts, if the role may delete them, and on
@@ -590,6 +624,32 @@
   .builder-drafts__damaged > :first-child {
     flex: none;
     margin-top: 0.15em;
+  }
+
+  .builder-drafts__save {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    margin: 0 0 0.4rem;
+    overflow-wrap: anywhere;
+  }
+
+  .builder-drafts__save > :first-child {
+    flex: none;
+    margin-top: 0.15em;
+  }
+
+  .builder-drafts__save--saved {
+    color: var(--bx-success);
+  }
+
+  .builder-drafts__save--retrying,
+  .builder-drafts__save--waiting {
+    color: var(--bx-warning);
+  }
+
+  .builder-drafts__save--stopped {
+    color: var(--bx-danger);
   }
 
   .builder-button[aria-busy='true'] {

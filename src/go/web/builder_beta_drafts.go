@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -418,6 +419,13 @@ func (b *builderBetaAPI) createDraft(w http.ResponseWriter, r *http.Request) err
 
 	if request.ForkOf != "" {
 		if sourceToken, forked, err = b.forkOrigin(r, actor, request.ForkOf); err != nil {
+			return err
+		}
+	} else if id, opened := strings.CutPrefix(sourceToken, builderDocTokenPrefix); opened {
+		// A draft opened from a published document may update the config it
+		// was published to (see [draftOwnsDocument]), so only a caller who
+		// may read that document may name it.
+		if _, err = b.readableDocument(r, actor, id); err != nil {
 			return err
 		}
 	}

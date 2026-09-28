@@ -1898,6 +1898,50 @@ describe('server data', () => {
     ]);
   });
 
+  // A card's ETag is older than the server's right after Back to drafts,
+  // until the list is read again.
+  test('deleting with an old ETag reads the draft again and deletes it', async () => {
+    const changed = () =>
+      Object.assign(new Error('changed'), { response: { status: 412 } });
+
+    api.deleteDraft.mockRejectedValueOnce(changed());
+    api.getDraft.mockResolvedValueOnce({ draft: { id: 'd1' }, etag: '"2"' });
+
+    expect(await store.deleteDraft('alice', 'd1', '"1"', 'Lab network')).toBe(
+      true,
+    );
+    expect(api.getDraft).toHaveBeenCalledWith('alice', 'd1');
+    expect(api.deleteDraft).toHaveBeenLastCalledWith('alice', 'd1', '"2"');
+    expect(store.announcement).toBe('Deleted draft Lab network.');
+    expect(store.error).toBe('');
+
+    // Once only: a draft that changes again is left, and the alert says so.
+    api.deleteDraft.mockClear();
+    api.deleteDraft
+      .mockRejectedValueOnce(changed())
+      .mockRejectedValueOnce(changed());
+    api.getDraft.mockResolvedValueOnce({ draft: { id: 'd1' }, etag: '"3"' });
+
+    expect(await store.deleteDraft('alice', 'd1', '"2"')).toBe(false);
+    expect(api.deleteDraft).toHaveBeenCalledTimes(2);
+    expect(store.error).toBe(
+      'Could not delete the draft. It changed on the server while it was being deleted. Try again.',
+    );
+
+    // A draft gone meanwhile says so.
+    api.deleteDraft.mockClear();
+    api.deleteDraft.mockRejectedValueOnce(changed());
+    api.getDraft.mockRejectedValueOnce(
+      Object.assign(new Error('gone'), { response: { status: 404 } }),
+    );
+
+    expect(await store.deleteDraft('alice', 'd1', '"2"')).toBe(false);
+    expect(api.deleteDraft).toHaveBeenCalledTimes(1);
+    expect(store.error).toBe(
+      'Could not delete the draft. This draft no longer exists on the server.',
+    );
+  });
+
   test('a page error is cleared when the operation next succeeds', async () => {
     api.listDrafts.mockRejectedValueOnce(
       Object.assign(new Error('boom'), {

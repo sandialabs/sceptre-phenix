@@ -218,7 +218,10 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
   which configs/experiments are visible — commands against the wrong endpoint will report
   "no configs found" rather than an obvious connection error. Every etcd store is compacted by
   phenix, cluster-wide and whether or not `builder-beta` is on, every retention/10 unless
-  `compaction-retention=0`; then the operator must run etcd with auto-compaction.
+  `compaction-retention=0`; then the operator must run etcd with auto-compaction. When etcd
+  reaches its space quota it refuses writes (`mvcc: database space exceeded`; Builder Flow
+  saves answer 507 with `etcd is out of space: ...` and retry); compact and defragment etcd,
+  then `etcdctl alarm disarm`.
 - **Deleting `config.yaml` while phenix is running breaks the file watcher** (hot-reload of
   log level, deploy-mode, etc. stops working). `phenix settings unset <key>` rewrites the
   file in place and leaves the watcher intact; `phenix settings unset --all` deletes the

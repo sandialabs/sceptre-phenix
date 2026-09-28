@@ -676,7 +676,6 @@ export function inspectorTarget(doc, selection) {
         data: {
           title: node.group?.title || '',
           color: node.group?.color || '',
-          collapsed: Boolean(node.group?.collapsed),
         },
       };
     default:
@@ -986,12 +985,9 @@ export function applyFormData(doc, selection, data) {
         note: { text: data.text ?? '', color: data.color ?? '' },
       });
     case 'group':
+      // updateNode keeps the group's other fields, such as `collapsed`.
       return updateNode(doc, target.target.id, {
-        group: {
-          title: data.title ?? '',
-          color: data.color ?? '',
-          collapsed: Boolean(data.collapsed),
-        },
+        group: { title: data.title ?? '', color: data.color ?? '' },
       });
     default:
       return doc;

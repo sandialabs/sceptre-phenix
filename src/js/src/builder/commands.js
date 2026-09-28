@@ -1091,8 +1091,10 @@ export const COMMANDS = [
     palette: false,
   },
   {
-    id: 'selection.nudge',
-    title: 'Move the selected nodes 10 pixels',
+    // The canvas is one Tab stop; these move focus inside it
+    // (BuilderCanvas.vue).
+    id: 'canvas.move',
+    title: 'Move to the nearest node that way',
     group: 'Selection',
     keys: ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'],
     scope: 'canvas',
@@ -1101,8 +1103,18 @@ export const COMMANDS = [
     palette: false,
   },
   {
-    id: 'selection.nudgeFine',
-    title: 'Move the selected nodes 1 pixel',
+    id: 'canvas.connections',
+    title: 'Move through the focused node’s connections',
+    group: 'Selection',
+    keys: ['PageDown', 'PageUp'],
+    scope: 'canvas',
+    local: true,
+    fixed: true,
+    palette: false,
+  },
+  {
+    id: 'selection.nudge',
+    title: 'Move the selected nodes 10 pixels',
     group: 'Selection',
     keys: [
       'Shift+ArrowLeft',
@@ -2135,8 +2147,19 @@ export function canvasHelp({ readOnly, platform = currentPlatform() }) {
     );
   }
 
+  const [down, up] = commandKeys('canvas.connections', { platform }).map(
+    (key) => keyText(key, platform),
+  );
+
   lines.push(
-    'Tab moves between the connections and nodes.',
+    'The diagram is one Tab stop. Arrow keys move to the nearest node that ' +
+      'way, and from the canvas itself to the node nearest the middle of ' +
+      'the view.',
+    `${down} and ${up}` +
+      (platform === 'mac' ? ' (Fn with Down Arrow and Up Arrow)' : '') +
+      ' move through the focused node’s connections.',
+    'With a screen reader, turn on its focus mode (forms mode in JAWS) for ' +
+      'these keys, or use the Outline.',
     `${text('selection.press')} selects the focused item alone, or deselects ` +
       'it when it is the only selected item. ' +
       `${text('selection.toggle')} adds it to the selection or removes it.`,
@@ -2145,7 +2168,8 @@ export function canvasHelp({ readOnly, platform = currentPlatform() }) {
 
   if (!readOnly) {
     lines.push(
-      'Arrow keys move the selected nodes 10 pixels, and with Shift 1 pixel.',
+      'Shift with the arrow keys moves the selected nodes 10 pixels. For an ' +
+        'exact position, use Position in the Inspector.',
       `${platform === 'mac' ? 'Option' : 'Alt'} and Shift with the arrow ` +
         'keys resize the selected group 10 pixels: Right and Down grow it, ' +
         'Left and Up shrink it.',
@@ -2226,16 +2250,19 @@ export function canvasHints({ readOnly, platform = currentPlatform() }) {
     `${first('selection.press')} selects or deselects, ` +
     `${first('selection.toggle')} adds to the selection, ` +
     `${first('selection.clear')} clears the selection.`;
+  const next = first('canvas.connections');
+  const node = `Arrow keys move between nodes, ${next} through this node’s connections. ${select}`;
+  const edge = `Arrow keys move to the nodes, ${next} to the next connection. ${select}`;
   const canvas =
-    `Tab moves between the connections and nodes, and ${first('selection.press')} ` +
+    `Arrow keys move to the nodes, and ${first('selection.press')} ` +
     'selects the focused one. The Keyboard help below the canvas lists every key.';
   const remove = first('edit.delete');
 
   return readOnly
-    ? { node: select, edge: select, canvas: `Read-only draft. ${canvas}` }
+    ? { node, edge, canvas: `Read-only draft. ${canvas}` }
     : {
-        node: `${select} Arrow keys move the selected nodes, ${remove} removes.`,
-        edge: `${select} ${remove} removes. Edit the label in the Inspector.`,
+        node: `${node} Shift and an arrow key move the selected nodes, ${remove} removes.`,
+        edge: `${edge} ${remove} removes. Edit the label in the Inspector.`,
         canvas,
       };
 }

@@ -1,9 +1,9 @@
 <!--
   Device node: icon + hostname + interface handles.
 
-  Vue Flow's wrapper around this component is the node's single Tab stop and
-  carries its accessible name (see adapters/vueflow.js), so nothing in here is
-  focusable. The comment (spec.general.description) ends that name and is
+  Vue Flow's wrapper around this component takes focus (the canvas's roving
+  Tab stop, see BuilderCanvas.vue) and carries its accessible name (see
+  adapters/vueflow.js), so nothing in here is focusable. The comment (spec.general.description) ends that name and is
   shown to sighted users as a tooltip on hover and focus.
 
   A device from an included topology is read only: it says where it comes

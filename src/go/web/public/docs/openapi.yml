@@ -1526,7 +1526,9 @@ paths:
         Requires `configs` `create`. The draft is owned by the caller and holds
         the document as its first snapshot. Nothing is published. With
         `forkOf`, the caller must be able to read that draft: own it, have it
-        shared with them, or hold `builder-drafts` `get` for it.
+        shared with them, or hold `builder-drafts` `get` for it. With a
+        `sourceToken` naming a published document, the caller must hold
+        `configs` `get` for the config it was published to.
       operationId: postBuilderDrafts
       requestBody:
         required: true
@@ -1561,6 +1563,8 @@ paths:
           $ref: "#/components/responses/BuilderTooLarge"
         "422":
           $ref: "#/components/responses/BuilderUnprocessable"
+        "507":
+          $ref: "#/components/responses/BuilderInsufficientStorage"
   "/builder/drafts/{owner}/{draft}":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
@@ -1627,6 +1631,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WebError"
+        "507":
+          $ref: "#/components/responses/BuilderInsufficientStorage"
   "/builder/drafts/{owner}/{draft}/snapshots":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
@@ -1700,6 +1706,8 @@ paths:
           $ref: "#/components/responses/BuilderTooLarge"
         "422":
           $ref: "#/components/responses/BuilderUnprocessable"
+        "507":
+          $ref: "#/components/responses/BuilderInsufficientStorage"
   "/builder/drafts/{owner}/{draft}/snapshots/{snapshot}":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
@@ -1777,6 +1785,8 @@ paths:
           $ref: "#/components/responses/BuilderPreconditionFailed"
         "422":
           $ref: "#/components/responses/BuilderUnprocessable"
+        "507":
+          $ref: "#/components/responses/BuilderInsufficientStorage"
     put:
       tags:
         - Builder Flow
@@ -1815,6 +1825,8 @@ paths:
           $ref: "#/components/responses/BuilderPreconditionFailed"
         "422":
           $ref: "#/components/responses/BuilderUnprocessable"
+        "507":
+          $ref: "#/components/responses/BuilderInsufficientStorage"
   "/builder/drafts/{owner}/{draft}/publish":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
@@ -1896,6 +1908,8 @@ paths:
                 oneOf:
                   - $ref: "#/components/schemas/WebError"
                   - $ref: "#/components/schemas/BuilderPublishResult"
+        "507":
+          $ref: "#/components/responses/BuilderInsufficientStorage"
   "/builder/drafts/{owner}/{draft}/shares":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
@@ -2010,6 +2024,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WebError"
+        "507":
+          $ref: "#/components/responses/BuilderInsufficientStorage"
   "/builder/sources":
     get:
       tags:
@@ -2460,7 +2476,11 @@ components:
           description: summary of the first snapshot
           type: string
         sourceToken:
-          description: the config the draft was imported from, as `<kind>/<name>`
+          description: >
+            the config the draft was imported from, as `<kind>/<name>`, or the
+            published document it was opened from, as
+            `builder-doc/<document id>`, which the caller must be able to read
+            (404 otherwise)
           type: string
         forkOf:
           description: >
@@ -3121,6 +3141,14 @@ components:
       description: >
         The request is well formed but cannot be applied, for example a
         document that fails validation or a config that cannot be converted.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WebError"
+    BuilderInsufficientStorage:
+      description: >
+        etcd is out of space, so nothing was saved. `message` says what an
+        administrator must do. The same request succeeds once space is freed.
       content:
         application/json:
           schema:

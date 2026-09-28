@@ -1,9 +1,9 @@
 <!--
   Builder Beta view.
 
-  Owns the editor shell: theme, live regions, conflict banner, dialogs and the
-  drafts landing. The legacy /builder editor is untouched and still reachable
-  from the header.
+  Owns the editor shell: theme, live regions, conflict banner, the notice
+  of other tabs with the draft open, dialogs and the drafts landing. The
+  legacy /builder editor is untouched and still reachable from the header.
 -->
 <template>
   <div
@@ -53,6 +53,7 @@
         :busy="busy"
         :opening="opening"
         :damaged="store.damagedDrafts"
+        :saves="backgroundCards"
         @blank="startBlank"
         @import="openLanding('import')"
         @generate="openLanding('generate')"
@@ -246,16 +247,46 @@
         </div>
       </div>
 
+      <!-- Other tabs of this browser with the draft open, and changes
+           closed tabs left to it (see builder/tabs.js). Not a live region:
+           its counts change with the other tabs' edits. Another tab opening
+           the draft, and a choice to make, are announced instead. The
+           warning sign is decorative. -->
+      <div
+        v-if="tabsText"
+        class="builder-panel builder-tabs-notice"
+        data-testid="builder-tabs">
+        <p>
+          <builder-icon name="warning" :size="14" />
+          <span>{{ tabsText }}</span>
+        </p>
+        <button
+          v-if="store.saveState.versions.length"
+          type="button"
+          class="builder-button"
+          data-testid="tabs-choose"
+          aria-haspopup="dialog"
+          @click="dialog = 'tabs'">
+          Choose which to save
+        </button>
+      </div>
+
       <!-- Not modal: the diagram stays readable (and exportable) while the
            user decides. The explanation is an alert, and focus moves to the
-           heading, so the two choices are the next Tab stops. -->
+           heading, so the two choices are the next Tab stops. A conflict
+           can be the user's choice of another tab's changes too (see
+           builder/tabs.js). -->
       <section
         v-if="store.hasConflict"
         class="builder-panel builder-conflict"
         aria-labelledby="conflict-title"
         data-testid="builder-conflict">
         <h2 id="conflict-title" ref="conflictHeading" tabindex="-1">
-          This draft changed on the server
+          {{
+            store.saveState.otherTab
+              ? "You chose another tab's changes"
+              : 'This draft changed on the server'
+          }}
         </h2>
         <!-- The alert stays unchanged while the panel is open; the count
              below changes with every edit and must not be re-announced. -->
@@ -356,18 +387,6 @@
         @cancel="confirmingDiscard = false"
         @confirm="discardLocal" />
 
-      <!-- Leaving a draft whose edits the server does not have yet, or
-           the Inspector cannot apply, asks first (see mayLeave). -->
-      <builder-confirm
-        v-if="leaving"
-        id="leave-unsaved"
-        title="Leave with unsaved changes?"
-        :message="leaveMessage"
-        :confirm-label="unsaveable ? 'Leave without them' : 'Leave anyway'"
-        cancel-label="Stay"
-        @cancel="settleLeave(false)"
-        @confirm="settleLeave(true)" />
-
       <!-- A published diagram opens read only, with no draft of its own:
            one is made only when the user chooses to edit it. The
            live region has said it opened read only. -->
@@ -467,6 +486,30 @@
 
     <history-dialog v-if="dialog === 'history'" @close="dialog = ''" />
 
+    <!-- Which tab's changes to save, when more than one holds some (see
+         builder/tabs.js). -->
+    <builder-tabs-dialog
+      v-if="dialog === 'tabs'"
+      :rows="tabRows"
+      :can-create="store.canCreateDrafts"
+      :busy="choosing"
+      :export-version="exportVersion"
+      @choose="chooseVersion"
+      @close="dialog = ''" />
+
+    <!-- Leaving a draft whose edits the server does not have yet, or the
+         Inspector cannot apply, asks first (see leave.js); so does leaving
+         the Builder while drafts closed before are still being saved. -->
+    <builder-confirm
+      v-if="leaving"
+      id="leave-unsaved"
+      title="Leave with unsaved changes?"
+      :message="leaveMessage"
+      :confirm-label="unsaveable ? 'Leave without them' : 'Leave anyway'"
+      cancel-label="Stay"
+      @cancel="settleLeave(false)"
+      @confirm="settleLeave(true)" />
+
     <!-- The command palette, opened by the palette.open command (Mod+K), the
          Commands buttons and commands that ask for a choice, through
          commandView.openPalette, which leaves what to show first in
@@ -526,6 +569,7 @@
   import BuilderPanes from '@/components/builder/BuilderPanes.vue';
   import BuilderSettings from '@/components/builder/BuilderSettings.vue';
   import BuilderShortcuts from '@/components/builder/BuilderShortcuts.vue';
+  import BuilderTabsDialog from '@/components/builder/BuilderTabsDialog.vue';
   import BuilderToolbar from '@/components/builder/BuilderToolbar.vue';
   import ExportDialog from '@/components/builder/dialogs/ExportDialog.vue';
   import GenerateDialog from '@/components/builder/dialogs/GenerateDialog.vue';
@@ -543,6 +587,7 @@
     watchSystemTheme,
   } from '@/builder/theme.js';
   import { count } from '@/builder/announce.js';
+  import { builderApi } from '@/builder/api.js';
   import {
     TYPING,
     ariaShortcuts,
@@ -558,10 +603,17 @@
     focusMode,
     followFullScreen,
   } from '@/builder/focusMode.js';
+  import { formatTimestamp } from '@/builder/format.js';
   import { HELP_URL } from '@/builder/help.js';
+  import { createDraftStore } from '@/builder/idb.js';
   import { uniqueName } from '@/builder/ids.js';
   import { followShortcutSettings } from '@/builder/keymap.js';
-  import { createLeaveGuard, unappliedText } from '@/builder/leave.js';
+  import {
+    createBackgroundSaves,
+    createLeaveGuard,
+    queueBusy,
+    unappliedText,
+  } from '@/builder/leave.js';
   import { stopLayoutEngine } from '@/builder/layouts/index.js';
   // Not builderSettings: <builder-settings> would name it as well as the
   // dialog.
@@ -571,8 +623,19 @@
     conflictMessage as describeConflict,
     shareLink,
   } from '@/builder/share.js';
-  import { registerOpenDraft } from '@/builder/session.js';
-  import { useBuilderStore } from '@/builder/store.js';
+  import {
+    diagramFile,
+    queuedDiagram,
+    registerOpenDraft,
+  } from '@/builder/session.js';
+  import { forkTitle, useBuilderStore } from '@/builder/store.js';
+  import {
+    applyChoice,
+    choiceRows,
+    forkClosedQueue,
+    needsChoice,
+    tabsNotice,
+  } from '@/builder/tabs.js';
   import { tokenExpired, usePhenixStore } from '@/store.js';
 
   const store = useBuilderStore();
@@ -727,10 +790,12 @@
     Boolean(import.meta.env.VITE_AUTH) &&
     import.meta.env.VITE_AUTH !== 'disabled';
   const conflictMessage = computed(() =>
-    describeConflict(
-      signedIn ? store.saveState.lastModifiedBy : '',
-      usePhenixStore().username,
-    ),
+    store.saveState.otherTab
+      ? 'You chose to save the changes made in another tab, so the changes here cannot be saved to this draft.'
+      : describeConflict(
+          signedIn ? store.saveState.lastModifiedBy : '',
+          usePhenixStore().username,
+        ),
   );
 
   // Why a draft someone shared can no longer be saved (see accessLost in
@@ -1032,8 +1097,12 @@
   function openDraft(item, label = '') {
     const name = label || item.name || item.title || item.target || 'the draft';
 
-    return openListed(item, name, () => {
+    return openListed(item, name, async () => {
       if (item.owner && item.id) {
+        // Its saves in the background end, and the draft's own queue takes
+        // over what is left (see createBackgroundSaves).
+        await background.release(item.owner, item.id);
+
         return store.loadDraft(item.owner, item.id);
       }
 
@@ -1058,6 +1127,7 @@
   // refreshes the list after a delete; refreshing here too would clear the
   // error of a delete that failed.
   async function deleteDraft(item, label) {
+    await background.release(item.owner, item.id);
     await store.deleteDraft(
       item.owner,
       item.id,
@@ -1140,20 +1210,51 @@
     store.setInfo({ name });
   }
 
-  // The resolver of the Leave question while it is asked, and the
-  // Inspector's edits it names, which cannot be applied.
+  // The saves of drafts closed for the drafts, which go on in the
+  // background, and what each card says of them (see
+  // createBackgroundSaves). Once a draft's are done, the lists are read
+  // again, for the time it changed.
+  const backgroundCards = ref({});
+  const background = createBackgroundSaves({
+    onChange(cards) {
+      backgroundCards.value = cards;
+    },
+    announce: (message) => store.announce(message),
+    saved: () => relist(),
+  });
+
+  // The changes still being sent in the background, and of how many drafts.
+  const backgroundPending = computed(() => {
+    const sending = Object.values(backgroundCards.value).filter(
+      (card) => card.pending > 0,
+    );
+
+    return {
+      changes: sending.reduce((sum, card) => sum + card.pending, 0),
+      drafts: sending.length,
+    };
+  });
+
+  // The resolver of the Leave question while it is asked, the Inspector's
+  // edits it names, which cannot be applied, and what is left (see ask in
+  // leave.js): '' the open draft, 'close' the open draft for the drafts,
+  // 'all' the Builder, with the saves of drafts closed before.
   const leaving = ref(null);
   const unsaveable = ref(null);
+  const leavingScope = ref('');
 
   // Leaving saves what the Inspector holds unapplied and waits for the save
   // (see leave.js); the question is asked only when some of it is not
-  // saved yet.
+  // saved yet. Back to drafts does not wait: the save goes on in the
+  // background.
   const leaveGuard = createLeaveGuard({
     store,
     editing: () => editing.value,
     saveUnapplied,
-    ask(unapplied) {
+    background,
+    ask(unapplied, scope = '') {
       unsaveable.value = unapplied;
+      leavingScope.value = scope;
 
       return new Promise((resolve) => {
         leaving.value = resolve;
@@ -1165,7 +1266,7 @@
       return !phenix.auth || tokenExpired(phenix.token);
     },
   });
-  const { unsavedWork, mayLeave } = leaveGuard;
+  const { unsavedWork, mayLeave, mayClose } = leaveGuard;
 
   // Logging out saves and counts the same work (see session.js).
   const unregisterOpenDraft = registerOpenDraft({
@@ -1175,17 +1276,27 @@
     describe: unappliedText,
   });
 
+  // Back to drafts leaves the queued changes to be sent in the background,
+  // so its question names only the Inspector's edits.
   const leaveMessage = computed(() => {
     const one = store.saveState.pending === 1;
-    const queued = unsavedWork()
-      ? `Your ${unsavedSummary.value}. ${
-          store.saveState.storageFailed
-            ? `Leaving loses ${one ? 'it' : 'them'}.`
-            : `${one ? 'It is' : 'They are'} saved when you next open this draft in this browser, unless you log out first.`
-        }`
+    const queued =
+      leavingScope.value !== 'close' && unsavedWork()
+        ? `Your ${unsavedSummary.value}. ${
+            store.saveState.storageFailed
+              ? `Leaving loses ${one ? 'it' : 'them'}.`
+              : `${one ? 'It is' : 'They are'} saved when you next open this draft in this browser, unless you log out first.`
+          }`
+        : '';
+    const { changes, drafts: closed } =
+      leavingScope.value === 'all'
+        ? backgroundPending.value
+        : { changes: 0, drafts: 0 };
+    const behind = changes
+      ? `Your ${count(changes, 'unsaved change')} to ${closed === 1 ? 'a draft you closed' : 'drafts you closed'} ${changes === 1 ? 'is' : 'are'} kept on this device. ${changes === 1 ? 'It is' : 'They are'} saved when you next open ${closed === 1 ? 'that draft' : 'those drafts'} in this browser, unless you log out first.`
       : '';
 
-    return [unsaveable.value && unappliedText(unsaveable.value), queued]
+    return [unsaveable.value && unappliedText(unsaveable.value), queued, behind]
       .filter(Boolean)
       .join(' ');
   });
@@ -1195,6 +1306,7 @@
 
     leaving.value = null;
     unsaveable.value = null;
+    leavingScope.value = '';
     resolve?.(leave);
   }
 
@@ -1202,7 +1314,11 @@
   // leaving goes ahead, rather than asking about no changes. Edits the
   // Inspector cannot apply stay unsaved.
   watch(
-    () => Boolean(leaving.value) && !unsaveable.value && !unsavedWork(),
+    () =>
+      Boolean(leaving.value) &&
+      !unsaveable.value &&
+      !unsavedWork() &&
+      !(leavingScope.value === 'all' && backgroundPending.value.changes > 0),
     (saved) => {
       if (saved) {
         settleLeave(true);
@@ -1252,13 +1368,16 @@
     );
   }
 
-  // Back to drafts. What is not saved yet is sent first (see mayLeave),
-  // which the button says, as the live region does if it takes a while. The
-  // landing then replaces the editor, and focus moves from the button
-  // straight to the closed draft's card, or the published diagram's: at once
-  // when the lists hold it, while they are read again behind the landing;
-  // otherwise once they are read, which the button says too. Staying gives
-  // the button back. Asked twice at once, it closes once.
+  // Back to drafts. What the Inspector holds unapplied is saved, and what
+  // is not sent yet goes on being sent in the background (see mayClose and
+  // sendInBackground), the draft's card saying how it goes. Only when this
+  // device cannot keep it is it sent first, which the button says, as the
+  // live region does if it takes a while. The landing then replaces the
+  // editor, and focus moves from the button straight to the closed draft's
+  // card, or the published diagram's: at once when the lists hold it,
+  // while they are read again behind the landing; otherwise once they are
+  // read, which the button says too. Staying gives the button back. Asked
+  // twice at once, it closes once.
   let closeRun = null;
 
   function closeEditor() {
@@ -1277,13 +1396,14 @@
     };
 
     try {
-      if (!(await mayLeave({ saving }))) {
+      if (!(await mayClose({ saving }))) {
         return;
       }
 
       const closed = store.published?.id || store.draftId;
 
       waited();
+      sendInBackground();
       if (inLists(closed)) {
         refresh();
       } else {
@@ -1303,8 +1423,220 @@
     }
   }
 
+  // The closed draft's queue goes on sending what is left, in the
+  // background (see createBackgroundSaves). One with nothing left stops,
+  // and the other tabs hear that the draft is no longer open here.
+  function sendInBackground() {
+    const queue = store.autosave;
+
+    if (!queue) {
+      return;
+    }
+
+    store.autosave = null;
+
+    if (queueBusy(queue)) {
+      background.take(queue, {
+        owner: store.owner,
+        id: store.draftId,
+        name: diagramName.value,
+      });
+    } else {
+      queue.dispose();
+    }
+  }
+
   function cycleTheme() {
     store.cycleTheme(rootEl.value);
+  }
+
+  // --- other tabs --------------------------------------------------------------
+
+  // Other tabs of this browser with the draft open, and the changes closed
+  // tabs left to it (see builder/tabs.js).
+  const tabsText = computed(() =>
+    editing.value ? tabsNotice(store.saveState) : '',
+  );
+  const tabRows = computed(() =>
+    choiceRows(store.saveState, (value) =>
+      formatTimestamp(value, { seconds: true }),
+    ),
+  );
+  // The choice is being carried out.
+  const choosing = ref(false);
+
+  // Another tab opening the draft, or the draft opening while another tab
+  // has it, is said once.
+  watch(
+    () =>
+      editing.value && (store.saveState.tabs || []).some((peer) => peer.open),
+    (now) => {
+      if (now) {
+        store.announce('This draft is also open in another tab.');
+      }
+    },
+  );
+
+  // A send waits for the user's choice, or closed tabs left more than one
+  // version: the choice opens, unless the user is typing or in another
+  // dialog. The notice's button opens it then, and the live region says so.
+  watch(
+    () => editing.value && needsChoice(store.saveState),
+    (now) => {
+      if (!now || dialog.value === 'tabs') {
+        return;
+      }
+
+      if (
+        !dialog.value &&
+        !leaving.value &&
+        !confirmingDiscard.value &&
+        !document.activeElement?.matches?.(TYPING)
+      ) {
+        dialog.value = 'tabs';
+      } else {
+        store.announce(
+          'This draft has unsaved changes in another tab. Choose which to save.',
+        );
+      }
+    },
+    { flush: 'post' },
+  );
+
+  // Nothing left to choose between: the other tabs sent their changes, or
+  // kept them. The choice closes. When another tab's were chosen, the
+  // conflict panel's alert says so instead.
+  watch(
+    () =>
+      dialog.value === 'tabs' &&
+      !choosing.value &&
+      (store.saveState.versions || []).length === 0,
+    (gone) => {
+      if (!gone) {
+        return;
+      }
+
+      dialog.value = '';
+
+      if (!store.saveState.otherTab) {
+        store.announce(
+          'Nothing is left to choose: the other changes were saved or kept.',
+        );
+      }
+    },
+  );
+
+  // The choice closed, and the control focus goes back to went with it (the
+  // notice's button goes with the versions): focus moves to the editor's
+  // heading rather than falling to <body>.
+  watch(dialog, async (now, before) => {
+    if (before !== 'tabs' || now) {
+      return;
+    }
+
+    await nextTick();
+
+    if (
+      editing.value &&
+      (!document.activeElement || document.activeElement === document.body)
+    ) {
+      editorHeading.value?.focus();
+    }
+  });
+
+  // The user chose another tab's changes: this tab's are saved as a new
+  // draft, as the conflict panel's Save my history as a new draft does. A
+  // role that cannot make drafts keeps the panel, which offers Export.
+  watch(
+    () =>
+      editing.value && store.hasConflict && Boolean(store.saveState.otherTab),
+    (now) => {
+      if (now && !choosing.value && store.canCreateDrafts) {
+        resolveConflict('fork');
+      }
+    },
+  );
+
+  // Saves the version the user chose; the others are kept as new drafts, or
+  // deleted from this browser for a role that cannot make drafts, which the
+  // dialog says first (see applyChoice). The dialog stays open, busy, until
+  // it is done. Focus then goes back where it was, or to the editor's
+  // heading when that is gone (see the watch on the dialog).
+  async function chooseVersion(id) {
+    if (choosing.value || !store.autosave) {
+      return;
+    }
+
+    const { owner, draftId } = store;
+    const local = createDraftStore();
+    const actor = usePhenixStore().username || 'anonymous';
+    const creates = store.canCreateDrafts;
+    let outcome = null;
+
+    choosing.value = true;
+
+    try {
+      outcome = await applyChoice({
+        choice: id,
+        rows: tabRows.value,
+        queue: store.autosave,
+        keepMine: async () =>
+          Boolean(await store.resolveConflict(creates ? 'fork' : 'reload')),
+        keepClosed: (version) =>
+          creates
+            ? forkClosedQueue({
+                api: builderApi,
+                store: local,
+                actor,
+                key: version.key,
+                title: forkTitle,
+              })
+            : local.remove(version.key),
+        reopen: () => store.loadDraft(owner, draftId),
+      });
+    } catch (error) {
+      store.setError(store.describeError(error, 'save the changes you chose'));
+    } finally {
+      choosing.value = false;
+    }
+
+    // The tab chosen has gone: its changes are listed as a closed tab's,
+    // and the choice stays open.
+    if (outcome?.gone) {
+      store.announce('That tab has closed. Choose again.');
+
+      return;
+    }
+
+    dialog.value = '';
+
+    // A failure the page alert has said already leaves no outcome.
+    if (outcome?.failed.length > 0) {
+      store.setError(
+        'Could not save the changes a closed tab left as a new draft. They are kept in this browser.',
+      );
+    } else if (creates && outcome?.kept.length > 0) {
+      store.announce(
+        outcome.kept.length === 1
+          ? 'Saved the changes a closed tab left as a new draft.'
+          : `Saved the changes ${outcome.kept.length} closed tabs left as new drafts.`,
+      );
+    }
+  }
+
+  // The file Export saves for a version this tab holds: the diagram as it
+  // is shown, or as a closed tab's changes leave it.
+  async function exportVersion(row) {
+    if (row.where === 'this') {
+      return diagramFile(store.doc);
+    }
+
+    const record = await createDraftStore()
+      .get(row.key)
+      .catch(() => null);
+    const doc = record ? queuedDiagram(record) : null;
+
+    return doc ? diagramFile(doc) : null;
   }
 
   // --- header -----------------------------------------------------------------
@@ -1815,6 +2147,7 @@
     relistWhenListed = false;
     stopWatchingSystemTheme();
     store.autosave?.dispose();
+    background.dispose();
     unregisterOpenDraft();
     // ELK's worker stays while the Builder is open (see layouts/elk.js).
     stopLayoutEngine();
@@ -1932,6 +2265,33 @@
   .builder-conflict h2 {
     font-weight: 700;
     margin: 0 0 0.25rem;
+  }
+
+  /* The warning sign beside the text, then the button, which wraps below
+     in a narrow window. */
+  .builder-tabs-notice {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem 0.6rem;
+    padding: 0.6rem 0.75rem;
+  }
+
+  .builder-tabs-notice p {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    flex: 1 1 16rem;
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .builder-tabs-notice p > :first-child {
+    flex: none;
+    margin-top: 0.2em;
+    color: var(--bx-warning);
   }
 
   .builder-conflict__actions,
