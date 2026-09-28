@@ -105,6 +105,10 @@ const (
 	builderBetaViaRole  = "role"
 )
 
+// builderBetaAccessOwner is how responses report a caller's access to its own
+// draft; access through a share is reported as the share's access.
+const builderBetaAccessOwner = "owner"
+
 // builderBetaRoleGrants is what the "builder-drafts" permission of a role
 // grants on one draft of another user.
 type builderBetaRoleGrants struct {
@@ -433,7 +437,7 @@ func (a builderBetaAccess) denial(verb builderBetaVerb) string {
 func (a builderBetaAccess) name() string {
 	switch a.level {
 	case builderBetaLevelOwner:
-		return "owner"
+		return builderBetaAccessOwner
 	case builderBetaLevelEdit:
 		return string(bapi.ShareEdit)
 	case builderBetaLevelView:
