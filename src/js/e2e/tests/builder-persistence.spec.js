@@ -1,5 +1,5 @@
 // Builder Beta persistence: undo and redo, the server history cursor, the
-// History dialog, autosave states, ETag conflicts and local recovery.
+// Draft History dialog, autosave states, ETag conflicts and local recovery.
 //
 // Every edit in the Builder is one server snapshot, and undo/redo move the
 // draft's history cursor. The tests therefore check both what the editor shows
@@ -346,7 +346,7 @@ test.describe('Builder Beta persistence', () => {
     },
   );
 
-  test('History lists the server snapshots and restores one', async ({
+  test('Draft History lists the server snapshots and restores one', async ({
     builder,
     issues,
   }) => {
@@ -376,8 +376,8 @@ test.describe('Builder Beta persistence', () => {
         : route.fallback();
     });
 
-    // History opens at once, while the list is read: the list's place is
-    // busy, and the status, which describes the dialog, says it loads.
+    // Draft History opens at once, while the list is read: the list's place
+    // is busy, and the status, which describes the dialog, says it loads.
     const dialog = await builder.openDialog('history');
     const status = page.getByTestId('history-status');
     const content = page.getByTestId('history-content');
@@ -875,7 +875,7 @@ test.describe('Builder Beta persistence', () => {
     await expect.soft(name).toBeFocused();
   });
 
-  test('History entries are readable: a table of number, name, date and user, with no raw ids', async ({
+  test('Draft History entries are readable: a table of number, name, date and user, with no raw ids', async ({
     builder,
     page,
   }) => {
@@ -964,7 +964,7 @@ test.describe('Builder Beta persistence', () => {
     await expect.soft(restore).toBeInViewport({ ratio: 1 });
   });
 
-  test('History deletes a snapshot after asking, but never the current one', async ({
+  test('Draft History deletes a snapshot after asking, but never the current one', async ({
     builder,
     issues,
     page,
@@ -1798,7 +1798,7 @@ test.describe('Builder Beta persistence', () => {
       });
     });
 
-    await test.step('Inspector changes not applied are saved on Back to drafts, and History marks them', async () => {
+    await test.step('Inspector changes not applied are saved on Back to drafts, and Draft History marks them', async () => {
       const open = page.getByTestId(`draft-open-${draft.id}`);
       await open.click();
       await expect(builder.canvas).toBeVisible();
