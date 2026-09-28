@@ -32,7 +32,7 @@
         ref="legendLabel"
         class="array-list-label"
         :class="{ 'label--described': Boolean(control.description) }"
-        @mouseenter="tooltip?.show(legendLabel)"
+        @mouseenter="tooltip?.show(legendLabel, $event)"
         @mouseleave="tooltip?.scheduleHide()"
         >{{ label }}</span
       >

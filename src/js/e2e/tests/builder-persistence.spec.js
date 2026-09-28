@@ -944,6 +944,37 @@ test.describe('Builder Beta persistence', () => {
       .soft(page.getByTestId('history-tooltip'))
       .toHaveText('Restore');
 
+    // Beside the row's actions, Restore's before them and Delete's after:
+    // each covers neither button, and the pointer moves onto it without
+    // crossing the other one, which would replace it.
+    await restore.blur();
+    for (const [action, text] of [
+      ['history-restore', 'Restore'],
+      ['history-delete', 'Delete'],
+    ]) {
+      const tooltip = page.getByTestId('history-tooltip');
+      await first.getByTestId(action).hover();
+      await expect(tooltip).toHaveText(text);
+      const shown = await tooltip.boundingBox();
+      const cell = await first
+        .locator('td', { has: page.getByTestId('history-restore') })
+        .boundingBox();
+      expect
+        .soft(
+          shown.x + shown.width <= cell.x || shown.x >= cell.x + cell.width,
+          `${text} is beside the actions`,
+        )
+        .toBe(true);
+      await page.mouse.move(
+        shown.x + shown.width / 2,
+        shown.y + shown.height / 2,
+        { steps: 10 },
+      );
+      await expect.soft(tooltip).toHaveText(text);
+      await page.mouse.move(0, 0);
+      await expect(tooltip).toHaveCount(0);
+    }
+
     // At 390 pixels wide the page does not scroll sideways: the table
     // scrolls in its own box, which the keys reach, and the actions stay in
     // view.

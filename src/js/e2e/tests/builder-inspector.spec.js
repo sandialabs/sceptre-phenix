@@ -325,6 +325,40 @@ test.describe('Builder Beta inspector', () => {
         await page.keyboard.press('Escape');
         await expect.soft(tip).toHaveCount(0);
         await expect.soft(snapshot).toBeFocused();
+
+        // Stacked at phone width, the tooltip is above its label, over the
+        // field before it. The pointer moving onto it keeps it, rather than
+        // bringing up that field's.
+        const viewport = page.viewportSize();
+        await page.setViewportSize({ width: 320, height: 640 });
+        await label.scrollIntoViewIfNeeded();
+        await label.hover();
+        await expect(tip).toHaveText(text);
+        const above = await tip.boundingBox();
+        await page.mouse.move(above.x + 10, above.y + 4, { steps: 8 });
+        await expect.soft(tip).toHaveText(text);
+        await page.keyboard.press('Escape');
+
+        // With the pointer left there, Tab scrolls fields under it: each
+        // shows its own tooltip, not that of the label under the pointer.
+        await snapshot.focus();
+        for (let step = 0; step < 4; step += 1) {
+          await page.keyboard.press('Tab');
+          const shown = await page.evaluate(() => {
+            const field = document.activeElement;
+            const own = (field.getAttribute('aria-describedby') || '')
+              .split(' ')
+              .map((id) => document.getElementById(id)?.textContent.trim())
+              .join(' ');
+            const tooltip = document.querySelector(
+              '[data-testid="inspector-tooltip"]',
+            );
+
+            return { own, tip: tooltip?.textContent.trim() || '' };
+          });
+          expect.soft(shown.own).toContain(shown.tip);
+        }
+        await page.setViewportSize(viewport);
       });
 
       await test.step('Cancel discards unapplied edits and announces it', async () => {

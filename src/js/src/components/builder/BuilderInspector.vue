@@ -196,7 +196,7 @@
         <h3
           ref="ifacesTitle"
           class="label--described"
-          @mouseenter="ifacesTip?.show(ifacesTitle)"
+          @mouseenter="ifacesTip?.show(ifacesTitle, $event)"
           @mouseleave="ifacesTip?.scheduleHide()">
           Connection points
         </h3>
@@ -264,7 +264,7 @@
           id="inspector-position-title"
           ref="positionTitle"
           class="label--described"
-          @mouseenter="positionTip?.show(positionTitle)"
+          @mouseenter="positionTip?.show(positionTitle, $event)"
           @mouseleave="positionTip?.scheduleHide()">
           Position
         </h3>

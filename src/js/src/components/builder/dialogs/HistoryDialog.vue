@@ -370,8 +370,12 @@
 
   // --- tooltips --------------------------------------------------------
 
+  // Beside the row's actions, Restore's before them and Delete's after, so
+  // a tooltip covers neither button and the pointer moves onto it without
+  // crossing the other one.
   const { tip, tipEl, showTip, scheduleHide, hideTip } = useFixedTooltip({
     side: 'end',
+    beside: (button) => button.closest('td'),
   });
 
   function tipFor(text) {

@@ -1,6 +1,6 @@
 <!--
   The description tooltip of an Inspector field or list (see fieldTooltip.js).
-  The field calls show(anchor), scheduleHide(), hide() and
+  The field calls show(anchor, event), scheduleHide(), hide() and
   onFocusIn(event, anchor) on it; the tooltip's state is its own, so it
   changes without re-rendering the field.
 -->

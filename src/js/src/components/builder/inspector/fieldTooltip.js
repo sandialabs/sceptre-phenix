@@ -7,14 +7,15 @@
 // Screen readers get the description once, as the field's accessible
 // description (aria-describedby, to a hidden element), so the tooltip itself
 // is aria-hidden. One field's tooltip shows at a time: pointing at a label
-// while another field has focus replaces that field's tooltip.
+// while another field has focus replaces that field's tooltip, unless the
+// pointer is on that tooltip, which may cover the label.
 //
 // InspectorTooltip.vue renders it, so that showing, moving and hiding it
 // re-renders only the tooltip, not the field.
 
 import { unref } from 'vue';
 
-import { useFixedTooltip } from '../fixedTooltip.js';
+import { useFixedTooltip, whenPointed } from '../fixedTooltip.js';
 
 // Hides the field tooltip showing, if any.
 let hideShown = null;
@@ -31,20 +32,23 @@ export function useFieldTooltip(text) {
   /**
    * @param {HTMLElement} anchor the label (or legend) the tooltip belongs
    *   to, and is placed beside
+   * @param {Event} [event] the mouseenter that shows it (see whenPointed)
    */
-  function show(anchor) {
+  function show(anchor, event) {
     const content = typeof text === 'function' ? text() : unref(text);
 
     if (!content || !anchor) {
       return;
     }
 
-    if (hideShown && hideShown !== hideTip) {
-      hideShown();
-    }
+    whenPointed(event, () => {
+      if (hideShown && hideShown !== hideTip) {
+        hideShown();
+      }
 
-    hideShown = hideTip;
-    showTip({ currentTarget: anchor }, content);
+      hideShown = hideTip;
+      showTip({ currentTarget: anchor }, content);
+    });
   }
 
   // Focus shows it when the browser shows focus: from the keyboard, and in

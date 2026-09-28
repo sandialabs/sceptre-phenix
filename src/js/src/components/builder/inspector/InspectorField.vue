@@ -36,7 +36,7 @@
         required: control.required,
         'label--described': Boolean(control.description),
       }"
-      @mouseenter="tooltip?.show(label)"
+      @mouseenter="tooltip?.show(label, $event)"
       @mouseleave="tooltip?.scheduleHide()"
       >{{ control.label || 'Value'
       }}<span v-if="control.required" class="asterisk" aria-hidden="true">
