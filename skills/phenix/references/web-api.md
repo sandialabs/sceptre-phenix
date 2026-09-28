@@ -55,7 +55,7 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
 | SCORCH | `GET /experiments/{name}/scorch/pipelines`, `GET /experiments/{name}/scorch/pipelines/{run}/{loop}`, `POST/DELETE /experiments/{name}/scorch/pipelines/{run}`, `GET /experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}[/ws]`, `/experiments/{name}/scorch/terminals*` |
 | Settings | `GET/POST /settings`, `GET /settings/password`, `GET /settings/timeout` |
 | Builder | `GET/POST /builder/topologies`, `GET/PUT /builder/topologies/{name}`; the builder UI itself is served from the server root as `GET /builder` and `POST /builder/save` (outside `/api/v1`). Payloads and workflow are in [`builder.md`](builder.md) |
-| Builder Flow (only with the `builder-beta` feature enabled) | `GET /schemas/builder/v1`, `GET/POST /builder/drafts`, `GET/DELETE /builder/drafts/{owner}/{draft}`, `GET/POST /builder/drafts/{owner}/{draft}/snapshots`, `GET /builder/drafts/{owner}/{draft}/snapshots/{snapshot\|current}`, `PATCH/PUT /builder/drafts/{owner}/{draft}/cursor`, `POST /builder/drafts/{owner}/{draft}/publish`, `GET/PUT /builder/drafts/{owner}/{draft}/shares`, `GET /builder/sources`, `POST /builder/generate`, `GET /builder/documents[/{document}]` |
+| Builder Flow (only with the `builder-beta` feature enabled) | `/builder/drafts…`, `/builder/sources`, `/builder/generate`, `/builder/documents`, `/schemas/builder/v1`; full list in [`builder-flow.md`](builder-flow.md#routes) |
 | Workflow | `POST /workflow/apply/{branch}`, `POST /workflow/configs/{branch}` |
 | Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode) |
 

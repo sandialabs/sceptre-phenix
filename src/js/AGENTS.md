@@ -65,6 +65,11 @@ minimega, VM images, and a topology (`E2E_LIFECYCLE=1`). Auth suites require a
 matching `VITE_AUTH` build and signing key. See `e2e/README.md`; report missing
 prerequisites instead of silently skipping checks.
 
+Before changing Builder Flow (`src/builder/`, `src/components/builder/`,
+`src/views/BuilderBeta.vue`, or the `builder*` e2e specs, which need their own
+server setup), read
+[`../../skills/phenix/references/builder-flow.md`](../../skills/phenix/references/builder-flow.md).
+
 ## CI
 
 `.github/workflows/frontend.yml` runs Vitest and builds the UI, then builds and

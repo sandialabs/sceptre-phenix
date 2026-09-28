@@ -25,8 +25,14 @@ configuration resources, experiments, VMs, images, VLANs, settings, apps,
 SCORCH, minimega integration, or cyber-range workflows, read
 [`skills/phenix/SKILL.md`](skills/phenix/SKILL.md). For `phenix image`, `Image`
 configs, build scripts, overlays, or vmdb2 work, also read
-[`skills/phenix-image/SKILL.md`](skills/phenix-image/SKILL.md). Use code as final
-authority when guidance differs, and update the skills when behavior changes.
+[`skills/phenix-image/SKILL.md`](skills/phenix-image/SKILL.md). For Builder Flow,
+the `builder-beta` web topology editor (its routes, drafts, sharing, publishing,
+or its code in `src/go/api/builder/`, `src/go/types/builder/`,
+`src/go/web/builder_beta*.go`, `src/js/src/builder/`,
+`src/js/src/components/builder/`, or `src/js/src/views/BuilderBeta.vue`), also
+read [`skills/phenix/references/builder-flow.md`](skills/phenix/references/builder-flow.md).
+Use code as final authority when guidance differs, and update the skills when
+behavior changes.
 
 `SKILL.md` stays broad and always loaded; deep, area-specific material lives in
 `skills/phenix/references/` and is read only when that area is in scope — for

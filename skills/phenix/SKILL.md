@@ -1,6 +1,6 @@
 ---
 name: phenix
-description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util).'
+description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, Builder Flow (the web topology editor), or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util).'
 license: GPL-3.0-only
 ---
 
@@ -22,6 +22,7 @@ Detailed references and examples, loaded only when needed:
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
 | Graphical topology Builder: diagram model, translation to configs, endpoints, gotchas | [`references/builder.md`](references/builder.md) |
+| Builder Flow, the `builder-beta` web topology editor: drafts, sharing, publishing, routes, its code | [`references/builder-flow.md`](references/builder-flow.md) |
 | Copyable Topology and Scenario configs | [`examples/topology.yaml`](examples/topology.yaml), [`examples/scenario.yaml`](examples/scenario.yaml) |
 | Image build scripts, overlays, vmdb2 troubleshooting | sibling [`phenix-image`](../phenix-image/SKILL.md) skill |
 
@@ -219,9 +220,8 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
   "no configs found" rather than an obvious connection error. Every etcd store is compacted by
   phenix, cluster-wide and whether or not `builder-beta` is on, every retention/10 unless
   `compaction-retention=0`; then the operator must run etcd with auto-compaction. When etcd
-  reaches its space quota it refuses writes (`mvcc: database space exceeded`; Builder Flow
-  saves answer 507 with `etcd is out of space: ...` and retry); compact and defragment etcd,
-  then `etcdctl alarm disarm`.
+  reaches its space quota it refuses writes (`mvcc: database space exceeded`); compact and
+  defragment etcd, then `etcdctl alarm disarm`.
 - **Deleting `config.yaml` while phenix is running breaks the file watcher** (hot-reload of
   log level, deploy-mode, etc. stops working). `phenix settings unset <key>` rewrites the
   file in place and leaves the watcher intact; `phenix settings unset --all` deletes the
