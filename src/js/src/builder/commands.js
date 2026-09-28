@@ -19,6 +19,8 @@
 //             outline rows): listed for reference, never dispatched
 //   fixed     its keys cannot be customized (local ones never can)
 //   palette   false keeps it out of the command palette
+//   offered(ctx)  false keeps it out of the palette for now (Share on a
+//             draft the user can neither share nor was shared)
 //   when(ctx) true, or the reason it cannot run now, in words
 //   run(ctx, choice, picked)
 //   choices(ctx, picked)  for a command that asks for more first: the
@@ -99,12 +101,13 @@ export const SCOPES = {
 export const VIEW_API = [
   'editing', // boolean: the editor is open (false: the drafts landing)
   'dialog', // string: the open dialog, '' for none
-  'draftsTab', // string: the landing's shown tab: mine, shared or published
+  // string: the landing's shown tab: mine, shared, published or others
+  'draftsTab',
   'showMinimap', // boolean
   'canZoomIn', // boolean
   'canZoomOut', // boolean
   'focusMode', // boolean: focus mode is on (see focusMode.js)
-  'openDialog', // (name) publish, export, import, scenario
+  'openDialog', // (name) publish, export, import, scenario, share
   'openPalette', // ({query, command}) the command palette: dialog 'commands'
   'openShortcuts', // () the shortcut sheet: dialog 'shortcuts'
   'openSettings', // () the Builder settings: dialog 'settings'
@@ -113,7 +116,7 @@ export const VIEW_API = [
   'startBlank', // () a new blank draft
   'openDraft', // (item) a listed draft or published diagram
   'closeEditor', // () back to the drafts
-  'showDraftsTab', // (id) mine, shared or published
+  'showDraftsTab', // (id) mine, shared, published or others
   'toggleMinimap', // ()
   'toggleFocusMode', // () turns focus mode on or off, and says which
   // () the view as a new session shows it: default column widths, the
@@ -771,8 +774,9 @@ function draftChoices(store) {
 
   return [
     ...from(store.drafts?.mine, 'My Drafts'),
-    ...from(store.drafts?.shared, 'Shared Drafts'),
+    ...from(store.drafts?.shared, 'Shared with me'),
     ...from(store.documents, 'Published Diagrams'),
+    ...from(store.drafts?.others, "Other users' drafts"),
   ];
 }
 
@@ -826,17 +830,32 @@ function autoGroupChoice({ id, label, summary }) {
   };
 }
 
-function landingTab(id, title) {
+// `empty(ctx)`, for a tab shown only while it lists something, is the
+// reason it cannot be shown when it lists nothing.
+function landingTab(id, title, empty = () => '') {
   return {
     id: `drafts.tab.${id}`,
     title: `Show ${title}`,
     group: 'Drafts',
     keywords: ['tab', 'list'],
     views: LANDING,
-    when: ({ view }) =>
-      view.draftsTab === id ? 'This tab is already shown.' : true,
+    when: (ctx) =>
+      empty(ctx) ||
+      (ctx.view.draftsTab === id ? 'This tab is already shown.' : true),
     run: ({ view }) => view.showDraftsTab(id),
   };
+}
+
+// Share: the owner's, who may share; a draft shared with the user says who
+// may. Anyone else's draft, and a diagram with no draft, are not offered it.
+function shareable({ store }) {
+  if (store.canShare) {
+    return true;
+  }
+
+  return store.sharedBy
+    ? `Only ${store.sharedBy} can change who has access.`
+    : 'Only the owner can share this draft.';
 }
 
 export const COMMANDS = [
@@ -1527,6 +1546,16 @@ export const COMMANDS = [
     detail: () => 'Topology, scenario or experiment',
     run: ({ view }) => view.openDialog('publish'),
   },
+  {
+    id: 'draft.share',
+    title: 'Share…',
+    group: 'Draft',
+    keywords: ['access', 'people', 'users', 'collaborate', 'permissions'],
+    detail: () => 'Who can view or edit this draft',
+    offered: ({ store }) => Boolean(store.canShare || store.sharedBy),
+    when: shareable,
+    run: ({ view }) => view.openDialog('share'),
+  },
 
   // --- Drafts landing
   {
@@ -1572,8 +1601,14 @@ export const COMMANDS = [
     run: ({ view }, choice) => view.openDraft(choice.value),
   },
   landingTab('mine', 'My Drafts'),
-  landingTab('shared', 'Shared Drafts'),
+  landingTab('shared', 'Shared with me'),
   landingTab('published', 'Published Diagrams'),
+  landingTab('others', "Other users' drafts", ({ store }) =>
+    (store.drafts?.others || []).length ||
+    (store.damagedDrafts?.others || []).length
+      ? ''
+      : "No other users' drafts are listed.",
+  ),
 ];
 
 const BY_ID = new Map(COMMANDS.map((command) => [command.id, command]));
@@ -1615,7 +1650,10 @@ export function paletteCommands(ctx) {
   const view = viewOf(ctx);
 
   return COMMANDS.filter(
-    (command) => command.palette !== false && viewsOf(command).includes(view),
+    (command) =>
+      command.palette !== false &&
+      viewsOf(command).includes(view) &&
+      command.offered?.(ctx) !== false,
   );
 }
 

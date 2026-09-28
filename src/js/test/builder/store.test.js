@@ -72,6 +72,13 @@ const api = vi.hoisted(() => ({
   })),
   getSchema: vi.fn(async () => ({ $defs: { device: { type: 'object' } } })),
   listDisks: vi.fn(async () => ['ubuntu.qc2']),
+  getShares: vi.fn(async () => ({
+    shares: [],
+    sharesEtag: '"shares-0"',
+    maxShares: 25,
+  })),
+  updateShares: vi.fn(),
+  listUsers: vi.fn(async () => []),
 }));
 
 vi.mock('@/builder/api.js', async (importOriginal) => {
@@ -1909,6 +1916,266 @@ describe('server data', () => {
 
     await store.fetchDrafts();
     expect(store.error).toBe('');
+  });
+});
+
+// A draft as GET /builder/drafts/{owner}/{draft} answers, with how the
+// user reaches it.
+function readDraft(draft, { etag = '"1"', snapshots = 1 } = {}) {
+  return {
+    draft: {
+      id: 'd1',
+      owner: 'alice',
+      snapshotId: `s${snapshots}`,
+      cursor: snapshots - 1,
+      snapshots,
+      readOnly: false,
+      ...draft,
+    },
+    document: sampleDocument().doc,
+    history: Array.from({ length: snapshots }, (_, index) => ({
+      id: `s${index + 1}`,
+    })),
+    cursor: snapshots - 1,
+    etag,
+  };
+}
+
+describe('sharing', () => {
+  test('an opened draft says whose it is and what the user may do', async () => {
+    api.getDraft.mockResolvedValueOnce(
+      readDraft({
+        access: 'owner',
+        canShare: true,
+        shares: [{ user: 'bob', access: 'edit' }],
+      }),
+    );
+    await store.loadDraft('alice', 'd1');
+
+    expect(store.isOwner).toBe(true);
+    expect(store.canShare).toBe(true);
+    expect(store.shareCapable).toBe(true);
+    expect(store.shares).toEqual([{ user: 'bob', access: 'edit' }]);
+    expect(store.sharedBy).toBe('');
+
+    const name = sampleDocument().doc.name;
+
+    api.getDraft.mockResolvedValueOnce(
+      readDraft({ owner: 'bob', access: 'edit', via: 'share' }),
+    );
+    await store.loadDraft('bob', 'd1');
+
+    expect(store.isOwner).toBe(false);
+    expect(store.canShare).toBe(false);
+    expect(store.shares).toEqual([]);
+    expect(store.sharedBy).toBe('bob');
+    expect(store.announcement).toBe(
+      `Opened bob's draft ${name}. You can edit it; others may be editing too.`,
+    );
+
+    api.getDraft.mockResolvedValueOnce(
+      readDraft({ owner: 'bob', access: 'view', via: 'share', readOnly: true }),
+    );
+    await store.loadDraft('bob', 'd1');
+
+    expect(store.readOnly).toBe(true);
+    expect(store.announcement).toBe(`Opened bob's draft ${name}, view only.`);
+
+    // Missing or not shared: the same words, as the server answers the same.
+    const missing = Object.assign(new Error('missing'), {
+      response: { status: 404, data: { message: 'draft bob/d1 not found' } },
+    });
+    api.listDrafts.mockClear();
+    api.listDrafts.mockResolvedValueOnce({
+      mine: [],
+      shared: [],
+      others: [],
+      published: [],
+      damaged: [],
+    });
+    api.getDraft.mockRejectedValueOnce(missing);
+    await store.loadDraft('bob', 'd1');
+    expect(store.error).toBe(
+      'This draft does not exist, or it is not shared with you.',
+    );
+    // The lists are read again, so the card leaves them; the alert stays.
+    expect(api.listDrafts).toHaveBeenCalledTimes(1);
+    expect(store.drafts.shared).toEqual([]);
+
+    api.getDraft.mockRejectedValueOnce(missing);
+    await store.loadDraft('alice', 'd1');
+    expect(store.error).toMatch(/^Could not load the draft\./);
+    expect(api.listDrafts).toHaveBeenCalledTimes(1);
+  });
+
+  test('a draft just made may be shared when the user may share any', async () => {
+    api.listDrafts.mockResolvedValueOnce({
+      mine: [{ id: 'd0', owner: 'alice', canShare: true }],
+      shared: [],
+      others: [],
+      published: [],
+      damaged: [],
+    });
+    await store.fetchDrafts();
+    api.listDrafts.mockClear();
+
+    await store.createDraft({ title: 'New' });
+
+    expect(store.canShare).toBe(true);
+    expect(store.isOwner).toBe(true);
+    expect(api.listDrafts).not.toHaveBeenCalled();
+
+    // Unknown until the lists hold a draft of the user's: they are read
+    // again once the new draft exists.
+    store.shareCapable = null;
+    api.listDrafts.mockResolvedValueOnce({
+      mine: [{ id: 'd1', owner: 'alice', canShare: false }],
+      shared: [],
+      others: [],
+      published: [],
+      damaged: [],
+    });
+    await store.createDraft({ title: 'Another' });
+    await vi.waitFor(() => expect(store.shareCapable).toBe(false));
+    expect(store.canShare).toBe(false);
+  });
+
+  test('a share saved for the open draft keeps the ETag only over the same content', async () => {
+    api.getDraft.mockResolvedValueOnce(
+      readDraft({ access: 'owner', canShare: true }),
+    );
+    await store.loadDraft('alice', 'd1');
+
+    const answer = (draft, etag) => ({
+      shares: draft.shares,
+      sharesEtag: '"shares-1"',
+      maxShares: 25,
+      draft: { ...draft, etag },
+      etag,
+    });
+    const same = readDraft({
+      access: 'owner',
+      canShare: true,
+      shares: [{ user: 'bob', access: 'view' }],
+    }).draft;
+
+    api.updateShares.mockResolvedValueOnce(answer(same, '"2"'));
+    const saved = await store.saveShares(
+      { owner: 'alice', id: 'd1' },
+      [{ user: 'bob', access: 'view' }],
+      '"shares-0"',
+    );
+
+    expect(api.updateShares).toHaveBeenCalledWith(
+      'alice',
+      'd1',
+      [{ user: 'bob', access: 'view' }],
+      '"shares-0"',
+    );
+    expect(saved.sharesEtag).toBe('"shares-1"');
+    expect(store.shares).toEqual([{ user: 'bob', access: 'view' }]);
+    expect(store.etag).toBe('"2"');
+    expect(store.autosave.record.etag).toBe('"2"');
+
+    // Someone saved in between: their ETag is not taken.
+    const moved = readDraft(
+      { access: 'owner', canShare: true },
+      { snapshots: 2 },
+    ).draft;
+    api.updateShares.mockResolvedValueOnce(answer(moved, '"4"'));
+    await store.saveShares({ owner: 'alice', id: 'd1' }, [], '"shares-1"');
+
+    expect(store.shares).toEqual([]);
+    expect(store.autosave.record.etag).toBe('"2"');
+  });
+
+  test('a listed draft takes the draft a share change answered with', async () => {
+    await store.fetchDrafts();
+    store.drafts.mine = [
+      { id: 'd5', owner: 'alice', etag: '"1"', shares: [{ user: 'bob' }] },
+      { id: 'd6', owner: 'alice', etag: '"1"' },
+    ];
+    api.updateShares.mockResolvedValueOnce({
+      shares: [],
+      sharesEtag: '"shares-2"',
+      maxShares: 25,
+      draft: { id: 'd5', owner: 'alice', etag: '"7"', canShare: true },
+      etag: '"7"',
+    });
+
+    await store.saveShares({ owner: 'alice', id: 'd5' }, [], '"shares-1"');
+
+    expect(store.drafts.mine[0]).toEqual({
+      id: 'd5',
+      owner: 'alice',
+      etag: '"7"',
+      canShare: true,
+      shares: [],
+    });
+    expect(store.drafts.mine[1].etag).toBe('"1"');
+    expect(store.drafts.shared).toHaveLength(1);
+  });
+
+  test('losing access to a shared draft makes it read only, and a fork keeps the work', async () => {
+    api.getDraft.mockResolvedValueOnce(
+      readDraft({ owner: 'bob', access: 'edit', via: 'share' }),
+    );
+    await store.loadDraft('bob', 'd1');
+    api.appendSnapshot.mockRejectedValueOnce(
+      Object.assign(new Error('refused'), { response: { status: 403 } }),
+    );
+    api.getDraft.mockResolvedValueOnce(
+      readDraft({ owner: 'bob', access: 'view', via: 'share', readOnly: true }),
+    );
+
+    store.addNode({ kind: 'device', hostname: 'alpha' });
+    await store.saveNow();
+
+    expect(store.accessLost).toBe('view-only');
+    expect(store.readOnly).toBe(true);
+    expect(store.access).toBe('view');
+    expect(store.saveState.status).toBe('forbidden');
+    // An edit now is refused rather than kept where no one can save it.
+    expect(store.commit(store.doc, 'Nothing')).toBeNull();
+
+    api.createDraft.mockResolvedValueOnce({
+      draft: { id: 'd9', owner: 'alice', snapshotId: 'f0' },
+      document: null,
+      history: null,
+      cursor: 0,
+      etag: '"1"',
+    });
+    await store.resolveConflict('fork', { title: 'Mine now' });
+
+    expect(api.createDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ forkOf: 'bob/d1' }),
+    );
+    expect(store.owner).toBe('alice');
+    expect(store.draftId).toBe('d9');
+    expect(store.readOnly).toBe(false);
+    expect(store.accessLost).toBe('');
+    expect(store.isOwner).toBe(true);
+  });
+
+  test('a share taken away names no one who shared it', async () => {
+    api.getDraft.mockResolvedValueOnce(
+      readDraft({ owner: 'bob', access: 'edit', via: 'share' }),
+    );
+    await store.loadDraft('bob', 'd1');
+    expect(store.sharedBy).toBe('bob');
+
+    const missing = Object.assign(new Error('missing'), {
+      response: { status: 404, data: { message: 'draft bob/d1 not found' } },
+    });
+    api.appendSnapshot.mockRejectedValueOnce(missing);
+    api.getDraft.mockRejectedValueOnce(missing);
+
+    store.addNode({ kind: 'device', hostname: 'alpha' });
+    await store.saveNow();
+
+    expect(store.accessLost).toBe('gone');
+    // No chip, no Share button, and no palette command name bob any more.
+    expect(store.sharedBy).toBe('');
   });
 });
 

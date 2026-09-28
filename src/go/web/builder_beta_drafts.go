@@ -83,6 +83,25 @@ type builderDraftResponse struct {
 	// Forked is what the draft this one forks had published when it was
 	// forked, which this draft may update too.
 	Forked *bapi.ForkedPublication `json:"forked,omitempty"`
+
+	// Access is what the caller may do with the draft: "owner", "edit" or
+	// "view". Via is where the caller's access to another user's draft comes
+	// from: "share" or "role". Both are reported by the listing and by GET
+	// of one draft only (see [builderDraftAccessFields]).
+	Access string `json:"access,omitempty"`
+	Via    string `json:"via,omitempty"`
+	// CanShare reports whether the caller, its owner, may change who the
+	// draft is shared with, and Shares whom it is shared with. Only the owner
+	// is told either.
+	CanShare bool                `json:"canShare,omitempty"`
+	Shares   []builderDraftShare `json:"shares,omitempty"`
+}
+
+// builderDraftShare is one user a draft is shared with, as its owner sees it
+// in a draft response.
+type builderDraftShare struct {
+	User   string `json:"user"`
+	Access string `json:"access"`
 }
 
 // builderPublicationResponse is the JSON view of a draft's last publication.
@@ -183,13 +202,47 @@ func newBuilderSnapshotResponse(
 	}
 }
 
+// builderDraftAccessFields fills in what the caller may do with a draft: its
+// access, where access to another user's draft comes from, and whether the
+// draft is read only for the caller; and, for its owner only, whether the
+// caller may share it and whom it is shared with, stale shares included.
+func builderDraftAccessFields(
+	response *builderDraftResponse,
+	actor builderBetaActor,
+	access builderBetaAccess,
+	meta *bapi.DraftMetadata,
+	canShare bool,
+) {
+	response.Access = access.name()
+	response.ReadOnly = builderDraftReadOnly(actor, access)
+
+	if !access.owner() {
+		response.Via = access.via
+
+		return
+	}
+
+	response.CanShare = canShare
+
+	if meta.Sharing == nil || len(meta.Sharing.Entries) == 0 {
+		return
+	}
+
+	response.Shares = make([]builderDraftShare, 0, len(meta.Sharing.Entries))
+
+	for _, entry := range meta.Sharing.Entries {
+		response.Shares = append(response.Shares, builderDraftShare{User: entry.User, Access: string(entry.Access)})
+	}
+}
+
 // listDrafts - GET /builder/drafts.
 //
 // The response separates the caller's own drafts from the drafts of other users
-// the caller is explicitly allowed to see, and lists apart the drafts of either
-// kind whose metadata this server can no longer read, which can only be
-// deleted. Drafts the caller may not see are never counted, described, or
-// otherwise hinted at.
+// shared with the caller or the caller is explicitly allowed to list, and
+// lists apart the drafts whose metadata this server can no longer read, which
+// can only be deleted: the caller's own, and those of other users the caller
+// may list, never because of a share. Drafts the caller may not see are never
+// counted, described, or otherwise hinted at.
 func (b *builderBetaAPI) listDrafts(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderBetaListDrafts")
 
@@ -207,22 +260,10 @@ func (b *builderBetaAPI) listDrafts(w http.ResponseWriter, r *http.Request) erro
 		return builderBetaWebError(err, "unable to list builder drafts")
 	}
 
-	var (
-		mine   = []builderDraftResponse{}
-		shared = []builderDraftResponse{}
-	)
-
-	for i := range drafts {
-		draft := &drafts[i]
-
-		switch {
-		case draft.Owner == actor.user:
-			mine = append(mine, newBuilderDraftResponse(draft))
-		case builderBetaListsOthers(actor, draft.Owner, draft.ID):
-			response := newBuilderDraftResponse(draft)
-			response.ReadOnly = builderDraftReadOnly(actor, draft)
-			shared = append(shared, response)
-		}
+	mine, shared, err := b.partitionDrafts(actor, drafts)
+	if err != nil {
+		return weberror.NewWebError(err, "unable to list builder drafts").
+			SetStatus(http.StatusInternalServerError)
 	}
 
 	return builderBetaWriteJSON(w, http.StatusOK, "", map[string]any{
@@ -230,6 +271,53 @@ func (b *builderBetaAPI) listDrafts(w http.ResponseWriter, r *http.Request) erro
 		"shared":  shared,
 		"damaged": builderDamagedDrafts(actor, damaged),
 	})
+}
+
+// partitionDrafts returns the responses of the caller's own drafts, and of the
+// drafts of other users shared with the caller or its role lets it list. The
+// caller's account is read at most once, and only when a draft needs it.
+func (b *builderBetaAPI) partitionDrafts(
+	actor builderBetaActor,
+	drafts []bapi.DraftMetadata,
+) ([]builderDraftResponse, []builderDraftResponse, error) {
+	var (
+		mine    = []builderDraftResponse{}
+		shared  = []builderDraftResponse{}
+		account = b.accountOnce(actor.user)
+		roles   = builderBetaHoldsRoleGrants(actor.role)
+	)
+
+	for i := range drafts {
+		draft := &drafts[i]
+
+		var grants builderBetaRoleGrants
+		if roles && draft.Owner != actor.user {
+			grants = builderBetaRoleGrantsFor(actor.role, builderBetaDraftName(draft.Owner, draft.ID))
+		}
+
+		access, err := builderBetaDraftAccess(actor, draft, grants, account)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		switch {
+		case access.owner():
+			canShare, err := b.canShare(actor, account)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			response := newBuilderDraftResponse(draft)
+			builderDraftAccessFields(&response, actor, access, draft, canShare)
+			mine = append(mine, response)
+		case access.via == builderBetaViaShare || access.rbac.canList:
+			response := newBuilderDraftResponse(draft)
+			builderDraftAccessFields(&response, actor, access, draft, false)
+			shared = append(shared, response)
+		}
+	}
+
+	return mine, shared, nil
 }
 
 // builderBetaListsOthers reports whether the caller may list a draft of
@@ -368,7 +456,7 @@ func (b *builderBetaAPI) getDraft(w http.ResponseWriter, r *http.Request) error 
 		return builderBetaForbidden(actor, "getting a builder draft")
 	}
 
-	meta, err := b.draftFor(r, actor, builderBetaVerbGet, "getting a builder draft")
+	meta, access, err := b.draftAccessFor(r, actor, builderBetaVerbGet, "getting a builder draft")
 	if err != nil {
 		return err
 	}
@@ -378,25 +466,38 @@ func (b *builderBetaAPI) getDraft(w http.ResponseWriter, r *http.Request) error 
 		return builderBetaWebError(err, "unable to get the current document of builder draft %s", meta.ID)
 	}
 
+	canShare := false
+
+	if access.owner() {
+		if canShare, err = b.canShare(actor, b.accountOnce(actor.user)); err != nil {
+			return weberror.NewWebError(err, "unable to get builder draft %s", meta.ID).
+				SetStatus(http.StatusInternalServerError)
+		}
+	} else {
+		plog.Info(
+			plog.TypeAction,
+			"opened shared builder draft",
+			"user", actor.user,
+			"owner", meta.Owner,
+			"draft", meta.ID,
+			"access", access.name(),
+			"via", access.via,
+		)
+	}
+
 	response := newBuilderDraftResponse(meta)
-	response.ReadOnly = builderDraftReadOnly(actor, meta)
+	builderDraftAccessFields(&response, actor, access, meta, canShare)
 	response.Document = snapshot.Data
 	response.History = builderSnapshotHistory(meta)
 
 	return builderBetaWriteJSON(w, http.StatusOK, meta.ETag(), response)
 }
 
-func builderDraftReadOnly(actor builderBetaActor, meta *bapi.DraftMetadata) bool {
-	if !builderBetaBaseAllowed(actor.role, builderBetaVerbUpdate) {
-		return true
-	}
-
-	return meta.Owner != actor.user &&
-		!builderBetaCrossUserAllowed(
-			actor.role,
-			builderBetaVerbUpdate,
-			builderBetaDraftName(meta.Owner, meta.ID),
-		)
+// builderDraftReadOnly reports whether the caller may not change a draft it
+// may see: its access does not allow updates, or its role cannot update
+// configs, even when a share gives it edit access.
+func builderDraftReadOnly(actor builderBetaActor, access builderBetaAccess) bool {
+	return !access.allows(builderBetaVerbUpdate) || !builderBetaBaseAllowed(actor.role, builderBetaVerbUpdate)
 }
 
 // deleteDraft - DELETE /builder/drafts/{owner}/{draft}.

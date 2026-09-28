@@ -431,6 +431,62 @@ describe('availability', () => {
       'This tab is already shown.',
     );
     expect(availability('drafts.tab.shared', landing)).toBe(true);
+    expect(getCommand('drafts.tab.shared').title).toBe('Show Shared with me');
+    // Other users' drafts is a tab only while it lists something.
+    expect(availability('drafts.tab.others', landing)).toBe(
+      "No other users' drafts are listed.",
+    );
+    expect(
+      availability(
+        'drafts.tab.others',
+        context({
+          view: { editing: false, draftsTab: 'mine' },
+          store: { damagedDrafts: { mine: [], others: [{ id: 'x' }] } },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  test('Share is the owner’s; a draft shared with the user says whose', () => {
+    const owner = context({ store: { canShare: true } });
+    const recipient = context({ store: { sharedBy: 'alice' } });
+    const neither = context();
+    const listed = (ctx) =>
+      paletteCommands(ctx).some((command) => command.id === 'draft.share');
+
+    expect(availability('draft.share', owner)).toBe(true);
+    expect(runCommand('draft.share', owner)).toBe(true);
+    expect(owner.view.openDialog).toHaveBeenCalledWith('share');
+    expect(listed(owner)).toBe(true);
+
+    expect(availability('draft.share', recipient)).toBe(
+      'Only alice can change who has access.',
+    );
+    expect(listed(recipient)).toBe(true);
+
+    // Not offered on anyone else's draft, or a diagram with no draft.
+    expect(listed(neither)).toBe(false);
+    expect(getCommand('draft.share').keys).toBeUndefined();
+
+    // The lists' drafts, shared and others' included, can be opened.
+    const landing = context({
+      view: { editing: false },
+      store: {
+        drafts: {
+          mine: [{ id: 'a', owner: 'me', title: 'Mine' }],
+          shared: [{ id: 'b', owner: 'bob', title: 'Theirs' }],
+          others: [{ id: 'c', owner: 'carol', title: 'Seen' }],
+        },
+      },
+    });
+    const [command] = paletteCommands(landing).filter(
+      (entry) => entry.id === 'drafts.open',
+    );
+    expect(command.choices(landing).map((choice) => choice.detail)).toEqual([
+      'My Drafts · Owner: me',
+      'Shared with me · Owner: bob',
+      "Other users' drafts · Owner: carol",
+    ]);
   });
 
   test('titles follow the state', () => {

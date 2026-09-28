@@ -953,9 +953,15 @@ test.describe('Builder Beta persistence', () => {
     ).toBeVisible({ timeout: 20000 });
     await page.unroute(DRAFT_ROUTES);
     await expectServerCounts(builder, draft, { devices: 0 });
+    // With authentication off no one has an account to share with, so
+    // there is no Share, on the cards or in the toolbar.
+    await expect
+      .soft(page.locator('[data-testid^="draft-share-"]'))
+      .toHaveCount(0);
 
     await page.getByTestId(`draft-open-${draft.id}`).click();
     await expect(builder.canvas).toBeVisible();
+    await expect.soft(page.getByTestId('toolbar-share')).toHaveCount(0);
     await expectCounts(builder, { devices: 2 });
     await builder.waitSaved();
     await expectServerCounts(builder, draft, { devices: 2 });

@@ -134,7 +134,7 @@ describe('with nothing typed', () => {
         'Import…',
         'Upload…',
         'Builder Flow help',
-        'Show Shared Drafts',
+        'Show Shared with me',
       ]),
     );
     expect(all).not.toContain('Go to node');

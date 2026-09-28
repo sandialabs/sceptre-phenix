@@ -190,7 +190,11 @@ func validateDraftMetadata(key string, meta *DraftMetadata) error {
 		return newCorruptError(kindDraft, key, fmt.Sprintf("history holds %d bytes, more than %d", total, MaxDraftHistoryBytes))
 	}
 
-	return validatePublicationState(key, meta)
+	if err := validatePublicationState(key, meta); err != nil {
+		return err
+	}
+
+	return validateSharingState(key, meta)
 }
 
 // validatePublicationState validates recorded publication state against the
@@ -245,6 +249,49 @@ func validatePublicationState(key string, meta *DraftMetadata) error {
 	}
 
 	return newCorruptError(kindDraft, key, fmt.Sprintf("publication names snapshot %q, which is not in the history", state.SnapshotID))
+}
+
+// validateSharingState validates who a stored draft is shared with. A record
+// that fails is damaged, like any other: shares are never read leniently, so
+// a tampered list grants nobody anything.
+func validateSharingState(key string, meta *DraftMetadata) error {
+	state := meta.Sharing
+	if state == nil {
+		return nil
+	}
+
+	switch {
+	case state.Version < 1:
+		return newCorruptError(kindDraft, key, fmt.Sprintf("sharing has version %d", state.Version))
+	case len(state.Entries) > maxStoredShares:
+		return newCorruptError(
+			kindDraft, key,
+			fmt.Sprintf("sharing holds %d users, more than %d", len(state.Entries), maxStoredShares),
+		)
+	case validateText("updatedBy", state.UpdatedBy, MaxOwnerLength, true) != nil:
+		return newCorruptError(kindDraft, key, "sharing has no usable actor")
+	}
+
+	for i := range state.Entries {
+		entry := state.Entries[i]
+
+		switch {
+		case ValidateShareUser(entry.User) != nil:
+			return newCorruptError(kindDraft, key, fmt.Sprintf("share %d names an invalid user", i))
+		case entry.User == meta.Owner:
+			return newCorruptError(kindDraft, key, fmt.Sprintf("share %d names the owner", i))
+		case i > 0 && entry.User <= state.Entries[i-1].User:
+			return newCorruptError(kindDraft, key, fmt.Sprintf("share %d is out of order or repeats a user", i))
+		case !entry.Access.Valid():
+			return newCorruptError(kindDraft, key, fmt.Sprintf("share %d has unknown access %q", i, entry.Access))
+		case validateText("userCreated", entry.UserCreated, maxUserCreatedLength, true) != nil:
+			return newCorruptError(kindDraft, key, fmt.Sprintf("share %d has no usable account binding", i))
+		case validateText("grantedBy", entry.GrantedBy, MaxOwnerLength, true) != nil:
+			return newCorruptError(kindDraft, key, fmt.Sprintf("share %d has no usable actor", i))
+		}
+	}
+
+	return nil
 }
 
 // validatePublishedMetadata fully validates a decoded published document

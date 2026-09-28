@@ -2,6 +2,7 @@ package builder
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -161,6 +162,11 @@ type DraftMetadata struct {
 	// Forked is what the draft this one forks had published when it was
 	// forked, if anything. It is an opaque record to this package.
 	Forked *ForkedPublication `json:"forked,omitempty"`
+	// Sharing is who the owner shared the draft with, once it has ever been
+	// shared (see [Service.UpdateShares]). It lives in the draft record, so
+	// changing it changes the draft's revision: a save authorized by a share
+	// that has since been removed can never land.
+	Sharing *SharingState `json:"sharing,omitempty"`
 
 	// Revision is the store record revision this metadata was read at. It is
 	// never serialized: it is filled in from the record on read and is what
@@ -333,6 +339,12 @@ func (d *DraftMetadata) Clone() *DraftMetadata {
 	if d.Forked != nil {
 		forked := *d.Forked
 		clone.Forked = &forked
+	}
+
+	if d.Sharing != nil {
+		sharing := *d.Sharing
+		sharing.Entries = slices.Clone(d.Sharing.Entries)
+		clone.Sharing = &sharing
 	}
 
 	return &clone

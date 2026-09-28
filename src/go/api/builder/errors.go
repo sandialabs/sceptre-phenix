@@ -35,6 +35,10 @@ var (
 	// removing content that is no longer referenced failed. Operations returning
 	// a value still return it alongside a cleanup error.
 	ErrCleanup = errors.New("builder: cleanup failed")
+
+	// ErrBusy is returned when an operation gave up because the draft kept
+	// changing under it. Trying again later may succeed.
+	ErrBusy = errors.New("builder: busy, try again")
 )
 
 type (

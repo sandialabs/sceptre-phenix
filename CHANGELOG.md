@@ -22,7 +22,8 @@ All notable changes to this project will be documented in this file.
   - **Import and export**: Import topologies and experiments; upload and download diagrams as JSON or YAML; export images as PNG or SVG.
   - **Publishing**: Publish topologies, scenarios, and experiments, and publish again after more edits. Publish asks before it replaces an existing config.
   - **Included topologies**: Shown as read-only nodes and kept as references when published.
-  - **Permissions**: Actions a role cannot perform are hidden. Importing an uploaded config needs `configs` `create`; other users' drafts need `builder-drafts` permissions.
+  - **Sharing**: Share a draft with other users as view-only or editable. Drafts shared with you are listed under Shared with me.
+  - **Permissions**: Actions a role cannot perform are hidden. Importing an uploaded config needs `configs` `create`; other users' drafts must be shared with you or need `builder-drafts` permissions.
   - **Accessibility**: Keyboard and screen reader support (WCAG 2.2 AA).
   - **API docs**: Builder Flow routes in the OpenAPI document at `/docs/`.
 - **etcd**: Automatic history compaction, set with `compaction-retention` on the store endpoint (default 1 hour; `0` turns it off).
@@ -60,6 +61,7 @@ All notable changes to this project will be documented in this file.
 - **Config Schemas**: Invalid v1 schema (empty `pattern` on a serial interface's `device`).
 - **Schemas API**: Unknown schemas return 404 instead of 500.
 - **API docs**: The OpenAPI document is valid again.
+- **Settings**: Password checks on a new server no longer fail when several requests arrive at once.
 - **vrouter**: Set VyOS and Vyatta router hostnames exactly as written in the topology instead of lowercasing them and replacing `.` and `_` with `-`, so the guest hostname matches the minimega VM name. Firewall nodes already behaved this way.
 
 ### Security

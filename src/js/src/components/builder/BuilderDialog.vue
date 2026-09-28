@@ -15,6 +15,7 @@
     data-testid="builder-dialog"
     aria-modal="true"
     :aria-labelledby="titleId"
+    :aria-describedby="describedby || undefined"
     tabindex="-1"
     @cancel.prevent="$emit('close')"
     @keydown="onKeydown"
@@ -48,6 +49,8 @@
     // and the Close button to the content: for a dialog whose first row is
     // its own heading, such as the command palette's search field.
     hideHeader: { type: Boolean, default: false },
+    // The id of the text that describes the dialog, read with its title.
+    describedby: { type: String, default: '' },
   });
 
   const emit = defineEmits(['close']);
@@ -177,9 +180,17 @@
     margin-bottom: 0.75rem;
   }
 
+  /* Titles can carry a user's draft name; wrap it anywhere so a long,
+     unbroken name never pushes Close off a narrow screen. */
   .builder-dialog__header h2 {
     font-size: 1.05rem;
     font-weight: 700;
     margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .builder-dialog__header .builder-button {
+    flex: none;
   }
 </style>

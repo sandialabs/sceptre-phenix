@@ -20,8 +20,11 @@ import {
   readEnvelope,
   readPublishResult,
   readETag,
+  readShares,
   SCHEMA_PATH,
   serverReason,
+  shareErrors,
+  sharesPath,
   snapshotPath,
   SOURCES_PATH,
   TooLargeError,
@@ -50,6 +53,7 @@ function fakeHttp(responses = {}) {
     get: handler('get'),
     post: handler('post'),
     patch: handler('patch'),
+    put: handler('put'),
     delete: handler('delete'),
   };
 }
@@ -76,6 +80,7 @@ describe('routes', () => {
     );
     expect(cursorPath('alice', 'd1')).toBe('builder/drafts/alice/d1/cursor');
     expect(publishPath('alice', 'd1')).toBe('builder/drafts/alice/d1/publish');
+    expect(sharesPath('alice', 'd1')).toBe('builder/drafts/alice/d1/shares');
     expect(documentPath('doc 1')).toBe('builder/documents/doc%201');
   });
 
@@ -291,7 +296,8 @@ describe('client', () => {
     expect(http.calls[0].body.summary).toBe('Added a device');
     expect(http.calls[0].config.headers['If-Match']).toBe('"1"');
     expect(envelope.etag).toBe('"2"');
-    expect(http.put).toBeUndefined();
+    // The only PUT is the share list's.
+    expect(http.calls.some((call) => call.method === 'put')).toBe(false);
   });
 
   // The server refuses a body over its limit before reading all of it, and
@@ -354,6 +360,118 @@ describe('client', () => {
 
     expect(http.calls[0].method).toBe('delete');
     expect(http.calls[0].body.headers['If-Match']).toBe('"3"');
+  });
+
+  // The share list has a tag of its own, read from the body before the
+  // header; an update answers with the draft, whose ETag is in its body and
+  // never the share list's header.
+  test('share lists are read and replaced with their own tag', async () => {
+    const http = fakeHttp({
+      'get builder/drafts/al%20ice/d1/shares': {
+        data: {
+          shares: [
+            { user: 'bob', access: 'edit', grantedAt: 't', stale: false },
+            { user: 'carol', access: 'view', stale: true },
+            { access: 'edit' },
+          ],
+          sharesEtag: '"shares-3"',
+          maxShares: 25,
+        },
+        headers: { etag: 'W/"shares-3"' },
+      },
+      'put builder/drafts/al%20ice/d1/shares': {
+        data: {
+          shares: [{ user: 'bob', access: 'view' }],
+          sharesEtag: '"shares-4"',
+          maxShares: 25,
+          draft: { id: 'd1', owner: 'al ice', etag: '"57"', shares: [] },
+        },
+        headers: { etag: '"shares-4"' },
+      },
+    });
+    const api = createBuilderApi(http);
+
+    await expect(api.getShares('al ice', 'd1')).resolves.toEqual({
+      shares: [
+        { user: 'bob', access: 'edit', stale: false, grantedAt: 't' },
+        { user: 'carol', access: 'view', stale: true, grantedAt: '' },
+      ],
+      sharesEtag: '"shares-3"',
+      maxShares: 25,
+    });
+    expect(readShares({ data: {}, headers: { etag: '"shares-0"' } })).toEqual({
+      shares: [],
+      sharesEtag: '"shares-0"',
+      maxShares: 25,
+    });
+
+    const saved = await api.updateShares(
+      'al ice',
+      'd1',
+      [{ user: 'bob', access: 'view', stale: false, removed: false }],
+      '"shares-3"',
+    );
+
+    expect(http.calls[1].method).toBe('put');
+    expect(http.calls[1].body).toEqual({
+      shares: [{ user: 'bob', access: 'view' }],
+    });
+    expect(http.calls[1].config.headers['If-Match']).toBe('"shares-3"');
+    expect(saved.sharesEtag).toBe('"shares-4"');
+    expect(saved.draft.id).toBe('d1');
+    expect(saved.etag).toBe('"57"');
+  });
+
+  test('a refused share list names each person and why', () => {
+    const refused = Object.assign(new Error('status 422'), {
+      response: {
+        status: 422,
+        data: {
+          message: 'Some people could not be added.',
+          cause: '',
+          errors: [
+            { user: 'bobb', reason: 'unknown-user' },
+            { user: '', reason: 'too-many' },
+            { user: 'x' },
+          ],
+        },
+      },
+    });
+
+    expect(shareErrors(refused)).toEqual([
+      { user: 'bobb', reason: 'unknown-user' },
+      { user: '', reason: 'too-many' },
+    ]);
+    expect(serverReason(refused)).toBe('Some people could not be added.');
+    expect(shareErrors(httpError(412))).toEqual([]);
+    expect(classifyError(httpError(412))).toBe('conflict');
+  });
+
+  test('users are listed by username and name', async () => {
+    const http = fakeHttp({
+      'get users': {
+        data: {
+          users: [
+            { username: 'bob', first_name: 'Bob', last_name: 'Lee' },
+            { username: 'carol', first_name: '', last_name: '' },
+            { first_name: 'No name' },
+          ],
+        },
+      },
+    });
+
+    await expect(createBuilderApi(http).listUsers()).resolves.toEqual([
+      { username: 'bob', name: 'Bob Lee' },
+      { username: 'carol', name: '' },
+    ]);
+    await expect(
+      createBuilderApi(
+        fakeHttp({ 'get users': { data: { users: null } } }),
+      ).listUsers(),
+    ).resolves.toEqual([]);
+    await expect(
+      createBuilderApi(fakeHttp({ 'get users': { data: {} } })).listUsers(),
+    ).rejects.toThrow(TypeError);
   });
 
   test('publishing sends only the intent, never the document', async () => {
@@ -490,17 +608,22 @@ describe('client', () => {
     expect(result.topology).toEqual({ name: 'core' });
   });
 
-  test('drafts are grouped into mine, shared and published, and the damaged are marked', async () => {
+  // Drafts other users shared with the caller are "shared"; those the
+  // caller sees through their role alone are "others".
+  test('drafts are grouped into mine, shared, others and published, and the damaged are marked', async () => {
+    const shared = { id: 'b', owner: 'bob', via: 'share', access: 'edit' };
+    const role = { id: 'c', owner: 'carol', via: 'role', access: 'view' };
     const http = fakeHttp({
       'get builder/drafts': {
-        data: { drafts: [{ id: 'a' }], shared: [{ id: 'b' }] },
+        data: { drafts: [{ id: 'a' }], shared: [shared, role] },
         headers: {},
       },
     });
 
     await expect(createBuilderApi(http).listDrafts()).resolves.toEqual({
       mine: [{ id: 'a' }],
-      shared: [{ id: 'b' }],
+      shared: [shared],
+      others: [role],
       published: [],
       damaged: [],
     });

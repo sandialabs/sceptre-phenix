@@ -1,10 +1,12 @@
 package settings
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 
 	"github.com/activeshadow/structs"
+	"github.com/mitchellh/mapstructure"
 
 	"phenix/store"
 	"phenix/types"
@@ -115,6 +117,19 @@ func setMissingDefaults(existing []types.Setting) ([]types.Setting, error) {
 		}
 
 		err := store.Create(&c)
+		if errors.Is(err, store.ErrExist) {
+			// Another request stored it since the list was read, as requests
+			// to a new server do; the stored value is the one that counts.
+			stored, getErr := getStoredSetting(settingName)
+			if getErr != nil {
+				return nil, getErr
+			}
+
+			fullSettings = append(fullSettings, stored)
+
+			continue
+		}
+
 		if err != nil {
 			return nil, fmt.Errorf("storing setting %s: %w", settingName, err)
 		}
@@ -125,6 +140,27 @@ func setMissingDefaults(existing []types.Setting) ([]types.Setting, error) {
 	}
 
 	return fullSettings, nil
+}
+
+// getStoredSetting reads the setting stored under name.
+func getStoredSetting(name string) (types.Setting, error) {
+	c := store.Config{ //nolint:exhaustruct // partial initialization
+		Version:  settingAPIVersion,
+		Kind:     settingKind,
+		Metadata: store.ConfigMetadata{Name: name}, //nolint:exhaustruct // partial initialization
+	}
+
+	if err := store.Get(&c); err != nil {
+		return types.Setting{}, fmt.Errorf("getting setting %s: %w", name, err)
+	}
+
+	spec := new(v2.Setting)
+
+	if err := mapstructure.Decode(c.Spec, spec); err != nil {
+		return types.Setting{}, fmt.Errorf("decoding setting %s: %w", name, err)
+	}
+
+	return types.Setting{Metadata: c.Metadata, Spec: spec}, nil
 }
 
 func existsAlready(name, category string, existing []types.Setting) bool {

@@ -480,6 +480,7 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dra
 		Cursor:         0,
 		Publication:    nil,
 		Forked:         nil,
+		Sharing:        nil,
 		Revision:       store.AnyRevision,
 	}
 

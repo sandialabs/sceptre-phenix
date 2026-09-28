@@ -36,9 +36,17 @@ tags:
       feature (`phenix ui --features builder-beta`); without it, every one of
       them answers 404. Each operation needs the `configs` permission its
       description names, so Builder Flow access never exceeds config access.
-      An operation on another user's draft additionally needs the
-      `builder-drafts` permission of the same verb for the resource name
-      `{owner}/{draft}`, and is answered with 404, never 403, without it.
+      An operation on a draft also needs access to that draft, from one of
+      three sources: owning it; a share from its owner naming the caller,
+      which gives view (list and get) or edit (also update: save, undo, redo
+      and publish), and never delete or changing who it is shared with; or
+      the `builder-drafts` permission of the same verb for the resource name
+      `{owner}/{draft}`. The strongest source wins. A share is bound to the
+      recipient's account: it grants nothing once that account is deleted,
+      or replaced by a new one under the same name. A caller who cannot see a
+      draft gets 404, exactly as for a draft that does not exist, so draft
+      existence is never disclosed; a caller who can see it but may not
+      perform the operation gets 403.
 paths:
   "/configs":
     get:
@@ -1490,11 +1498,14 @@ paths:
       summary: List Builder Flow drafts
       description: >
         Requires `configs` `list`. Returns the caller's own drafts, and
-        separately the drafts of other users the caller holds `builder-drafts`
-        `list` for. Drafts of either kind whose metadata this server can no
-        longer read (for example, written by a newer phenix) are listed apart,
-        as damaged: they cannot be opened, only deleted. Drafts the caller may
-        not see are never counted or described.
+        separately the drafts of other users shared with the caller (`via`
+        `share`) or the caller holds `builder-drafts` `list` for (`via`
+        `role`). Drafts whose metadata this server can no longer read (for
+        example, written by a newer phenix) are listed apart, as damaged:
+        the caller's own, and those of other users the caller holds
+        `builder-drafts` `list` for, never because of a share. They cannot be
+        opened, only deleted. Drafts the caller may not see are never counted
+        or described.
       operationId: getBuilderDrafts
       responses:
         "200":
@@ -1513,7 +1524,9 @@ paths:
       summary: Create a Builder Flow draft
       description: >
         Requires `configs` `create`. The draft is owned by the caller and holds
-        the document as its first snapshot. Nothing is published.
+        the document as its first snapshot. Nothing is published. With
+        `forkOf`, the caller must be able to read that draft: own it, have it
+        shared with them, or hold `builder-drafts` `get` for it.
       operationId: postBuilderDrafts
       requestBody:
         required: true
@@ -1557,8 +1570,10 @@ paths:
         - Builder Flow
       summary: Get a Builder Flow draft with its current document
       description: >
-        Requires `configs` `get`, and `builder-drafts` `get` for another
-        user's draft.
+        Requires `configs` `get`, and for another user's draft a share, or
+        `builder-drafts` `get`. `access`, `via`, `canShare` and `shares` say
+        what the caller may do with it; `readOnly` is also set when the
+        caller's role cannot update configs.
       operationId: getBuilderDraft
       responses:
         "200":
@@ -1579,8 +1594,9 @@ paths:
         - Builder Flow
       summary: Delete a Builder Flow draft
       description: >
-        Requires `configs` `delete`, and `builder-drafts` `delete` for another
-        user's draft. Published configs are not affected.
+        Requires `configs` `delete`, and for another user's draft
+        `builder-drafts` `delete`: a share never allows deleting a draft.
+        Published configs are not affected.
       operationId: deleteBuilderDraft
       parameters:
         - $ref: "#/components/parameters/BuilderIfMatch"
@@ -1620,9 +1636,9 @@ paths:
         - Builder Flow
       summary: List the snapshots of a Builder Flow draft
       description: >
-        Requires `configs` `get`, and `builder-drafts` `get` for another
-        user's draft. Snapshots are listed oldest first; `cursor` is the index
-        of the current one.
+        Requires `configs` `get`, and for another user's draft a share, or
+        `builder-drafts` `get`. Snapshots are listed oldest first; `cursor` is
+        the index of the current one.
       operationId: getBuilderDraftSnapshots
       responses:
         "200":
@@ -1643,8 +1659,9 @@ paths:
         - Builder Flow
       summary: Save a Builder Flow draft
       description: >
-        Requires `configs` `update`, and `builder-drafts` `update` for another
-        user's draft. Appends the document as a new snapshot, discards any
+        Requires `configs` `update`, and for another user's draft an edit
+        share, or `builder-drafts` `update`. Appends the document as a new
+        snapshot, discards any
         snapshots after the cursor (the redo branch), and moves the cursor to
         the new snapshot. A draft keeps at most 50 snapshots of at most 50 MiB
         in total; the oldest are dropped to make room for the new one.
@@ -1698,8 +1715,8 @@ paths:
         - Builder Flow
       summary: Get one snapshot of a Builder Flow draft with its document
       description: >
-        Requires `configs` `get`, and `builder-drafts` `get` for another
-        user's draft.
+        Requires `configs` `get`, and for another user's draft a share, or
+        `builder-drafts` `get`.
       operationId: getBuilderDraftSnapshot
       responses:
         "200":
@@ -1724,8 +1741,9 @@ paths:
         - Builder Flow
       summary: Move the cursor of a Builder Flow draft (undo and redo)
       description: >
-        Requires `configs` `update`, and `builder-drafts` `update` for another
-        user's draft. No snapshot is discarded. PUT is accepted as well.
+        Requires `configs` `update`, and for another user's draft an edit
+        share, or `builder-drafts` `update`. No snapshot is discarded. PUT is
+        accepted as well.
       operationId: patchBuilderDraftCursor
       parameters:
         - $ref: "#/components/parameters/BuilderIfMatch"
@@ -1808,11 +1826,12 @@ paths:
       description: >
         The only Builder Flow operation that writes configs. It publishes the
         draft's current snapshot; the request carries intent only. Requires
-        `configs` `update` (and `builder-drafts` `update` for another user's
-        draft), `configs` `create` or `update` on each target config according
-        to its action, and `experiments` `create` or `update` for an
-        experiment target. Repeating a publication that already completed,
-        with the If-Match it was sent with, answers 200 with every stage
+        `configs` `update` (and for another user's draft an edit share, or
+        `builder-drafts` `update`), and the caller's own `configs` `create`
+        or `update` on each target config according to its action, and
+        `experiments` `create` or `update` for an experiment target.
+        Repeating a publication that already completed, with the If-Match it
+        was sent with, answers 200 with every stage
         skipped. A draft updates an existing topology or experiment only when
         it was imported from it, or when it published it (or was opened from
         the published diagram that did) and nothing else changed it since;
@@ -1877,6 +1896,120 @@ paths:
                 oneOf:
                   - $ref: "#/components/schemas/WebError"
                   - $ref: "#/components/schemas/BuilderPublishResult"
+  "/builder/drafts/{owner}/{draft}/shares":
+    parameters:
+      - $ref: "#/components/parameters/BuilderDraftOwner"
+      - $ref: "#/components/parameters/BuilderDraftID"
+    get:
+      tags:
+        - Builder Flow
+      summary: List who a Builder Flow draft is shared with
+      description: >
+        Requires `configs` `get`, and owning the draft: only the owner learns
+        who else has access (403 for anyone else who can see it). Each entry
+        is checked against the account it was shared with; `stale` marks one
+        whose account was deleted or replaced by a new one under the same
+        name, which grants nothing. The list has its own entity tag,
+        `"shares-N"`, for the next PUT.
+      operationId: getBuilderDraftShares
+      responses:
+        "200":
+          description: successful operation
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderSharesETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderShares"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+    put:
+      tags:
+        - Builder Flow
+      summary: Replace who a Builder Flow draft is shared with
+      description: >
+        Requires `configs` `update`, owning the draft, and a user account of
+        the caller's own (so not when authentication is off). The request
+        replaces the whole list, of at most 25 users, each of whom must have
+        an account; a share is bound to that account. A user whose account
+        was replaced must be removed, saved, and added again. Changing the
+        list also changes the draft's ETag, which the response carries in
+        `draft.etag`; there is no top-level `etag`. A request that changes
+        nothing answers 200 with both entity tags unchanged. Content saves
+        never conflict with it: they use the draft's ETag, not the list's.
+      operationId: putBuilderDraftShares
+      parameters:
+        - name: If-Match
+          in: header
+          description: >
+            The list's entity tag, `"shares-N"` from GET or the last PUT
+            (`"shares-0"` for a draft never shared). A missing header, a
+            wildcard or a weak tag is rejected with 400; any other tag,
+            including a draft ETag, with 412.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderShareUpdate"
+      responses:
+        "200":
+          description: the list now stored
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderSharesETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderShares"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+        "412":
+          description: >
+            The If-Match header does not name the list's current entity tag,
+            or the list changed while the request was handled. The response
+            carries the current one.
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderSharesETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "413":
+          description: The request body is larger than 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "422":
+          description: Some entries were refused; `errors` says which and why.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderShareErrors"
+        "503":
+          description: >
+            The draft kept changing while the list was written. Try again.
+          headers:
+            Retry-After:
+              description: seconds to wait before trying again
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
   "/builder/sources":
     get:
       tags:
@@ -2416,7 +2549,10 @@ components:
         canRedo:
           type: boolean
         readOnly:
-          description: whether the caller may not update the draft
+          description: >
+            whether the caller may not update the draft: its access does not
+            allow it, or its role cannot update configs (so `access` `edit`
+            with `readOnly` means an edit share the caller's role cannot use)
           type: boolean
         etag:
           description: the value of the ETag header for this revision
@@ -2442,6 +2578,47 @@ components:
               type: string
             experimentTarget:
               type: string
+        access:
+          description: >
+            what the caller may do with the draft (listing, GET of one draft,
+            and the `draft` of a PUT of its shares only)
+          type: string
+          enum:
+            - owner
+            - edit
+            - view
+        via:
+          description: >
+            where the caller's access to another user's draft comes from: a
+            share naming the caller, or its role (listing and GET of one draft
+            only). A caller with both is reported as `share`.
+          type: string
+          enum:
+            - share
+            - role
+        canShare:
+          description: >
+            present and true when the caller owns the draft, may update
+            configs, and has a user account, and so may change who it is
+            shared with (listing, GET of one draft, and the `draft` of a PUT of
+            its shares only)
+          type: boolean
+        shares:
+          description: >
+            who the draft is shared with, sorted by user, for its owner only,
+            and only when it is shared with anyone. Entries whose account is
+            gone are included; GET of the draft's shares marks them.
+          type: array
+          items:
+            type: object
+            properties:
+              user:
+                type: string
+              access:
+                type: string
+                enum:
+                  - view
+                  - edit
     BuilderDrafts:
       type: object
       properties:
@@ -2451,7 +2628,9 @@ components:
           items:
             $ref: "#/components/schemas/BuilderDraft"
         shared:
-          description: drafts of other users the caller may list
+          description: >
+            drafts of other users shared with the caller (`via` `share`) or
+            the caller's role lets it list (`via` `role`)
           type: array
           items:
             $ref: "#/components/schemas/BuilderDraft"
@@ -2748,6 +2927,101 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BuilderPublishedDocument"
+    BuilderShares:
+      type: object
+      properties:
+        shares:
+          description: who the draft is shared with, sorted by user
+          type: array
+          items:
+            type: object
+            properties:
+              user:
+                type: string
+              access:
+                type: string
+                enum:
+                  - view
+                  - edit
+              grantedAt:
+                type: string
+                format: date-time
+              stale:
+                description: >
+                  the account the draft was shared with was deleted, or
+                  replaced by a new one under the same name, so this share
+                  grants nothing
+                type: boolean
+        sharesEtag:
+          description: the list's entity tag, the value of the ETag header
+          type: string
+        maxShares:
+          description: the most users a draft may be shared with
+          type: integer
+        draft:
+          description: >
+            PUT only: the draft without its document and history, with its
+            new `etag`
+          allOf:
+            - $ref: "#/components/schemas/BuilderDraft"
+    BuilderShareUpdate:
+      description: the complete new list
+      type: object
+      additionalProperties: false
+      properties:
+        shares:
+          type: array
+          maxItems: 25
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              user:
+                type: string
+              access:
+                type: string
+                enum:
+                  - view
+                  - edit
+            required:
+              - user
+              - access
+      required:
+        - shares
+    BuilderShareErrors:
+      description: a WebError with every refused entry
+      type: object
+      properties:
+        message:
+          type: string
+        cause:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              user:
+                description: the entry's user, empty for `too-many`
+                type: string
+              reason:
+                description: >
+                  `owner` (the owner is listed), `duplicate` (a user is listed
+                  twice), `invalid-access` (not `view` or `edit`),
+                  `invalid-user` (empty, over 256 bytes, control characters or
+                  `/`), `too-many` (over 25 users), `unknown-user` (no such
+                  account), or `account-removed` (the account the user was
+                  shared with is gone: remove the user, save, and add them
+                  again)
+                type: string
+                enum:
+                  - owner
+                  - duplicate
+                  - invalid-access
+                  - invalid-user
+                  - too-many
+                  - unknown-user
+                  - account-removed
   parameters:
     BuilderDraftOwner:
       name: owner
@@ -2780,6 +3054,12 @@ components:
       description: the draft's revision as a quoted entity tag, for the next If-Match
       schema:
         type: string
+    BuilderSharesETag:
+      description: >
+        the entity tag of the list of who a draft is shared with,
+        `"shares-N"`, for the next If-Match of PUT
+      schema:
+        type: string
     BuilderWarning:
       description: >
         Set when the change succeeded but removing the content it superseded
@@ -2797,7 +3077,11 @@ components:
           schema:
             $ref: "#/components/schemas/WebError"
     BuilderForbidden:
-      description: The caller's role lacks a permission the operation requires.
+      description: >
+        The caller's role lacks a permission the operation requires, or the
+        caller can see the draft but may not do this to it: for example,
+        saving it with a view share, deleting it with any share, or sharing
+        it without owning it.
       content:
         application/json:
           schema:
@@ -2805,8 +3089,9 @@ components:
     BuilderNotFound:
       description: >
         The resource does not exist; or it is another user's draft the caller
-        may not see, answered as if it did not exist; or the server runs
-        without the builder-beta feature, so the route does not exist.
+        may not see (not shared with the caller, and no `builder-drafts`
+        permission), answered exactly as if it did not exist; or the server
+        runs without the builder-beta feature, so the route does not exist.
       content:
         application/json:
           schema:

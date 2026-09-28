@@ -1,8 +1,9 @@
 <!--
   Drafts landing.
 
-  Three tabbed lists (my drafts, drafts shared with me, published diagrams)
-  plus the three ways to start: a blank diagram, Import (the server converts
+  Tabbed lists (my drafts, drafts shared with me, published diagrams, and
+  other users' drafts the role may see, a tab shown only when it lists
+  something) plus the three ways to start: a blank diagram, Import (the server converts
   a topology or experiment config) and Upload (a Builder document), the
   command palette, the settings, and a link to the documentation. The view
   reads the lists again whenever they come back into view, so there is no
@@ -13,8 +14,13 @@
   that would make or open another are aria-disabled: they keep focus, and a
   second click does nothing. The Open of the one being opened says so.
 
-  A draft the server can no longer read (damaged) is listed on its tab too,
-  with why it cannot be opened, and Delete when the user may delete it.
+  A draft the server can no longer read (damaged) is listed too, with why it
+  cannot be opened, and Delete when the user may delete it: the user's own
+  under My Drafts, other users' under Other users' drafts.
+
+  The user's own drafts say who they are shared with, and have Share when
+  the server says the user may share them (canShare). Other users' drafts
+  say what the user may do with them, and only open.
 -->
 <template>
   <section ref="rootEl" aria-labelledby="drafts-title">
@@ -136,11 +142,22 @@
           <h2>{{ itemLabel(item) }}</h2>
           <p class="builder-card__meta">
             <span v-if="item.owner">Owner: {{ item.owner }}</span>
+            <span
+              v-if="tab.id !== 'mine' && item.access"
+              :data-testid="`draft-access-${item.id}`">
+              · {{ listedAccess(item) }}
+            </span>
             <span v-if="stamp(item)">
-              · {{ stamp(item).verb }} {{ stamp(item).time }}
+              · {{ stamp(item).verb }} {{ stamp(item).time
+              }}{{ changedBy(item) ? ` by ${changedBy(item)}` : '' }}
             </span>
             <span v-if="item.nodeCount != null">
               · {{ item.nodeCount }} nodes
+            </span>
+            <span
+              v-if="tab.id === 'mine' && item.shares?.length"
+              :data-testid="`draft-shared-with-${item.id}`">
+              · Shared with {{ describeShares(item.shares) }}
             </span>
           </p>
           <p v-if="item.description" class="builder-card__meta">
@@ -178,6 +195,19 @@
                 <span :class="{ 'is-off': !isOpening(item) }">Opening…</span>
               </span>
             </button>
+            <!-- Only on the user's own drafts, when they may share them. -->
+            <button
+              v-if="tab.id === 'mine' && item.canShare && !item.damaged"
+              type="button"
+              class="builder-button"
+              :data-testid="`draft-share-${item.id}`"
+              :aria-label="`Share ${cardName(item)}`"
+              aria-haspopup="dialog"
+              :aria-disabled="busy || undefined"
+              @click="busy || $emit('share', item, itemLabel(item))">
+              <builder-icon name="share" :size="14" />
+              Share
+            </button>
             <button
               v-if="mayDelete(tab, item)"
               type="button"
@@ -197,7 +227,7 @@
       v-if="confirming"
       id="draft-delete"
       :title="`Delete draft ${cardName(confirming)}?`"
-      message="The draft and its whole history are removed from the server. This cannot be undone."
+      :message="deleteMessage(confirming.shares)"
       confirm-label="Delete draft"
       @cancel="confirming = null"
       @confirm="confirmDelete" />
@@ -228,11 +258,19 @@
   import { formatTimestamp } from '@/builder/format.js';
   import { HELP_URL } from '@/builder/help.js';
   import { rowTarget } from '@/builder/roving.js';
+  import {
+    deleteMessage,
+    describeShares,
+    listedAccess,
+    newestFirst,
+  } from '@/builder/share.js';
 
   const props = defineProps({
     mine: { type: Array, default: () => [] },
     shared: { type: Array, default: () => [] },
     published: { type: Array, default: () => [] },
+    // Other users' drafts the role lets the user see.
+    others: { type: Array, default: () => [] },
     loading: { type: Boolean, default: false },
     // What the role may do: make drafts (Blank, Import, Upload) and delete
     // its own.
@@ -243,16 +281,17 @@
     // The draft or published diagram being opened, as cardKey names it.
     opening: { type: String, default: '' },
     // The drafts the server can no longer read: the user's own (mine) and
-    // other users' (shared), each with whether the user may delete it.
+    // other users' (others), each with whether the user may delete it.
     damaged: {
       type: Object,
-      default: () => ({ mine: [], shared: [] }),
+      default: () => ({ mine: [], others: [] }),
     },
   });
 
   const emit = defineEmits([
     'open',
     'delete',
+    'share',
     'blank',
     'import',
     'generate',
@@ -301,39 +340,69 @@
     return published ? { verb: 'Published', time: published } : null;
   }
 
-  // Card buttons name the time too, so drafts that share a title can be told
-  // apart (WCAG 2.4.6).
-  function cardName(item) {
-    const when = stamp(item);
-
-    return when
-      ? `${itemLabel(item)}, ${when.verb.toLowerCase()} ${when.time}`
-      : itemLabel(item);
+  // Who changed a draft last, when it was not its owner (someone it is
+  // shared with, say).
+  function changedBy(item) {
+    return item.owner && item.lastModifiedBy !== item.owner
+      ? item.lastModifiedBy || ''
+      : '';
   }
 
-  // Damaged drafts follow the readable ones on their tab.
-  const tabs = computed(() => [
-    {
-      id: 'mine',
-      label: 'My Drafts',
-      items: [...props.mine, ...(props.damaged.mine || [])],
-      empty: props.canCreate
-        ? 'You have no drafts yet. Start from a blank diagram.'
-        : 'You have no drafts.',
-    },
-    {
-      id: 'shared',
-      label: 'Shared Drafts',
-      items: [...props.shared, ...(props.damaged.shared || [])],
-      empty: 'No drafts have been shared with you.',
-    },
-    {
-      id: 'published',
-      label: 'Published Diagrams',
-      items: props.published,
-      empty: 'Nothing has been published yet.',
-    },
-  ]);
+  // The user's own drafts, readable or not.
+  const own = computed(
+    () => new Set([...props.mine, ...(props.damaged.mine || [])]),
+  );
+
+  // Card buttons name the time too, so drafts that share a title can be told
+  // apart, and the owner of anyone else's draft (WCAG 2.4.6).
+  function cardName(item) {
+    const when = stamp(item);
+    const whose = item.owner && !own.value.has(item) ? ` by ${item.owner}` : '';
+    const name = `${itemLabel(item)}${whose}`;
+
+    return when ? `${name}, ${when.verb.toLowerCase()} ${when.time}` : name;
+  }
+
+  // Damaged drafts follow the readable ones on their tab. Drafts shared
+  // with the user come the latest changed first. Other users' drafts have
+  // a tab only while there are some.
+  const tabs = computed(() => {
+    const others = [...props.others, ...(props.damaged.others || [])];
+
+    return [
+      {
+        id: 'mine',
+        label: 'My Drafts',
+        items: [...props.mine, ...(props.damaged.mine || [])],
+        empty: props.canCreate
+          ? 'You have no drafts yet. Start from a blank diagram.'
+          : 'You have no drafts.',
+      },
+      {
+        id: 'shared',
+        label: 'Shared with me',
+        items: newestFirst(props.shared),
+        empty: 'No one has shared a draft with you yet.',
+      },
+      {
+        id: 'published',
+        label: 'Published Diagrams',
+        items: props.published,
+        empty: 'Nothing has been published yet.',
+      },
+      ...(others.length
+        ? [{ id: 'others', label: "Other users' drafts", items: others }]
+        : []),
+    ];
+  });
+
+  // The tab shown goes when it has nothing left to list (the last of
+  // other users' drafts deleted, say): My Drafts takes its place.
+  watch(tabs, (list) => {
+    if (!list.some((tab) => tab.id === active.value)) {
+      active.value = 'mine';
+    }
+  });
 
   // APG tabs pattern with automatic activation.
   function onTabKeydown(event, tab) {
@@ -440,7 +509,13 @@
   }
 
   watch(
-    () => [props.mine, props.shared, props.damaged, props.published],
+    () => [
+      props.mine,
+      props.shared,
+      props.damaged,
+      props.published,
+      props.others,
+    ],
     async () => {
       const pending = deleting || focusedCard();
       deleting = null;

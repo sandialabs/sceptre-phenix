@@ -20,6 +20,11 @@ type builderBetaFakeStore struct {
 	// failPrefixDelete makes every prefix deletion fail, which is how the
 	// service is driven into reporting a cleanup failure after a durable write.
 	failPrefixDelete bool
+	// beforeUpdate, when set, runs before every record update, outside the
+	// store lock so it may itself make requests, and fails the update when it
+	// returns an error. It is how another request is landed between one
+	// request's read of a draft and its write.
+	beforeUpdate func(namespace, key string) error
 }
 
 func newBuilderBetaFakeStore() *builderBetaFakeStore {
@@ -28,6 +33,7 @@ func newBuilderBetaFakeStore() *builderBetaFakeStore {
 		revision:         0,
 		records:          make(map[string]map[string]store.Record),
 		failPrefixDelete: false,
+		beforeUpdate:     nil,
 	}
 }
 
@@ -137,6 +143,12 @@ func (f *builderBetaFakeStore) UpdateRecord(
 ) (store.Record, error) {
 	if err := builderBetaValidateRecord(namespace, key); err != nil {
 		return store.Record{}, err
+	}
+
+	if f.beforeUpdate != nil {
+		if err := f.beforeUpdate(namespace, key); err != nil {
+			return store.Record{}, err
+		}
 	}
 
 	f.mu.Lock()

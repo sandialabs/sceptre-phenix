@@ -6,22 +6,24 @@ a CI-built binary, a container, or a full range node.
 
 ## What runs where
 
-| Spec                           | Needs                                                                        | CI                               |
-| ------------------------------ | ---------------------------------------------------------------------------- | -------------------------------- |
-| `routes.spec.js`               | just a running server (empty store is fine)                                  | yes                              |
-| `forms.spec.js`                | just a running server                                                        | yes                              |
-| `builder.spec.js`              | just a running server (the Topology Builder at `/builder`)                   | yes                              |
-| `builder-*.spec.js`            | server started with `--features builder-beta` (Builder Flow)                 | yes                              |
-| `builder-feature-off.spec.js`  | server started without `--features builder-beta`, and `E2E_BUILDER_BETA=off` | yes (second server)              |
-| `experiment-lifecycle.spec.js` | minimega, VM images, a topology                                              | opt-in (`E2E_LIFECYCLE=1`)       |
-| `auth-enabled.spec.js`         | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`                | opt-in (`E2E_AUTH_MODE=enabled`) |
-| `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt`        | opt-in (`E2E_AUTH_MODE=proxy`)   |
+| Spec                           | Needs                                                                                                     | CI                               |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `routes.spec.js`               | just a running server (empty store is fine)                                                               | yes                              |
+| `forms.spec.js`                | just a running server                                                                                     | yes                              |
+| `builder.spec.js`              | just a running server (the Topology Builder at `/builder`)                                                | yes                              |
+| `builder-*.spec.js`            | server started with `--features builder-beta` (Builder Flow)                                              | yes                              |
+| `builder-feature-off.spec.js`  | server started without `--features builder-beta`, and `E2E_BUILDER_BETA=off`                              | yes (second server)              |
+| `builder-sharing.spec.js`      | server started with `--features builder-beta`, `--jwt-signing-key` and an admin user, and `E2E_SHARING=1` | yes (third server)               |
+| `experiment-lifecycle.spec.js` | minimega, VM images, a topology                                                                           | opt-in (`E2E_LIFECYCLE=1`)       |
+| `auth-enabled.spec.js`         | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`                                             | opt-in (`E2E_AUTH_MODE=enabled`) |
+| `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt`                                     | opt-in (`E2E_AUTH_MODE=proxy`)   |
 
 CI (`.github/workflows/frontend.yml`) builds the UI with `VITE_AUTH=disabled`,
 starts `bin/phenix ui --features builder-beta` against a throw-away store, and
 runs the default set. It then starts a second server without the flag and
-runs `builder-feature-off.spec.js` against it. Builder checks include axe
-accessibility scans.
+runs `builder-feature-off.spec.js` against it, then a third with
+authentication on and runs `builder-sharing.spec.js`, which makes and signs
+in users of its own. Builder checks include axe accessibility scans.
 
 Every route in `routes.spec.js` is also scanned with axe-core (WCAG 2.x A/AA
 rule tags) as rendered against the empty store and fails on any violation.

@@ -46,17 +46,19 @@
         :mine="store.drafts.mine"
         :shared="store.drafts.shared"
         :published="store.documents"
+        :others="store.drafts.others"
         :loading="store.loading && !listed"
         :can-create="store.canCreateDrafts"
         :can-delete="store.canDeleteDrafts"
         :busy="busy"
         :opening="opening"
-        :damaged="damagedDrafts"
+        :damaged="store.damagedDrafts"
         @blank="startBlank"
         @import="openLanding('import')"
         @generate="openLanding('generate')"
         @open="openDraft"
         @delete="deleteDraft"
+        @share="shareListed"
         @commands="commandView.openPalette()"
         @settings="runCommand('settings.open', commandContext)" />
     </template>
@@ -66,7 +68,9 @@
         <!-- The name field shows the diagram name; the heading gives the view
              a title and takes focus when the editor opens. -->
         <h1 ref="editorHeading" class="builder-visually-hidden" tabindex="-1">
-          {{ diagramName }} – Builder Flow
+          {{ diagramName
+          }}{{ ownerOfOthers ? ` – ${ownerOfOthers}'s draft` : '' }}
+          – Builder Flow
         </h1>
         <!-- While it waits for the saves, then for the lists: a turning
              ring in place of the arrow (reduced motion stops it turning)
@@ -111,6 +115,15 @@
         </div>
 
         <builder-counts />
+
+        <!-- Someone shared the draft: who, and what the user may do, until
+             it is no longer shared with them. -->
+        <p
+          v-if="store.sharedBy"
+          class="builder-header__shared"
+          data-testid="editor-shared-by">
+          Shared by {{ store.sharedBy }} · {{ accessLabel(store.access) }}
+        </p>
 
         <!-- The save state, then the buttons. Reset view's tooltip says what
              it resets, Shortcuts' and Settings' name what they open, Help's
@@ -246,22 +259,38 @@
         </h2>
         <!-- The alert stays unchanged while the panel is open; the count
              below changes with every edit and must not be re-announced. -->
-        <p role="alert">
-          Someone else saved a newer version of this draft, so your changes
-          cannot be written over it.
-        </p>
+        <p role="alert">{{ conflictMessage }}</p>
         <p>
-          Your {{ unsavedSummary }}. Choose how to keep your work: edits you
-          make now are not saved until you choose.
+          Your {{ unsavedSummary }}.
+          <template v-if="store.canCreateDrafts">
+            Choose how to keep your work: edits you make now are not saved until
+            you choose.
+          </template>
+          <template v-else>
+            Your role cannot create drafts, so use Export to keep a copy of your
+            work before you load the server version.
+          </template>
         </p>
         <div class="builder-conflict__actions">
+          <!-- Saving a new draft needs a role that may create one; without
+               it, Export keeps a copy. -->
           <button
+            v-if="store.canCreateDrafts"
             type="button"
             class="builder-button builder-button--primary"
             data-testid="conflict-fork"
             :aria-disabled="resolving || undefined"
             @click="resolveConflict('fork')">
             Save my history as a new draft
+          </button>
+          <button
+            v-else
+            type="button"
+            class="builder-button builder-button--primary"
+            data-testid="conflict-export"
+            aria-haspopup="dialog"
+            @click="dialog = 'export'">
+            Export
           </button>
           <button
             type="button"
@@ -274,11 +303,55 @@
         </div>
       </section>
 
+      <!-- A draft someone shared that the user may no longer change (see
+           accessLost in autosave.js): nothing more can be saved to it, so,
+           as for a conflict, focus moves to the heading and the choices
+           follow. -->
+      <section
+        v-else-if="store.accessLost"
+        class="builder-panel builder-conflict"
+        aria-labelledby="access-lost-title"
+        data-testid="builder-access-lost">
+        <h2 id="access-lost-title" ref="accessLostHeading" tabindex="-1">
+          Your access to this draft changed
+        </h2>
+        <p role="alert">{{ accessLostMessage }}</p>
+        <p>
+          <template v-if="store.saveState.pending">
+            Your {{ unsavedSummary }}.
+          </template>
+          {{
+            store.canCreateDrafts
+              ? 'To keep your work, save your history as a new draft of your own, or use Export to keep a copy.'
+              : 'To keep your work, use Export to keep a copy.'
+          }}
+        </p>
+        <div class="builder-conflict__actions">
+          <button
+            v-if="store.canCreateDrafts"
+            type="button"
+            class="builder-button builder-button--primary"
+            data-testid="access-lost-fork"
+            :aria-disabled="resolving || undefined"
+            @click="resolveConflict('fork')">
+            Save my history as a new draft
+          </button>
+          <button
+            type="button"
+            class="builder-button"
+            data-testid="access-lost-export"
+            aria-haspopup="dialog"
+            @click="dialog = 'export'">
+            Export
+          </button>
+        </div>
+      </section>
+
       <builder-confirm
         v-if="confirmingDiscard"
         id="conflict-discard"
         title="Discard your unsaved changes?"
-        :message="`Your ${unsavedSummary}. Discarding deletes that work and loads the server version. This cannot be undone. To keep your work, cancel and choose Save my history as a new draft.`"
+        :message="`Your ${unsavedSummary}. Discarding deletes that work and loads the server version. This cannot be undone. To keep your work, cancel and ${store.canCreateDrafts ? 'choose Save my history as a new draft' : 'use Export'}.`"
         confirm-label="Discard and load the server version"
         @cancel="confirmingDiscard = false"
         @confirm="discardLocal" />
@@ -324,16 +397,17 @@
       </div>
 
       <div
-        v-else-if="store.readOnly"
+        v-else-if="store.readOnly && !store.accessLost"
         class="builder-panel builder-error"
         role="status"
         data-testid="builder-readonly">
-        You can view this draft but not change it. Use Export to keep a copy.
+        {{ readOnlyMessage }}
       </div>
 
       <builder-toolbar
         :minimap="showMinimap"
         @publish="dialog = 'publish'"
+        @share="dialog = 'share'"
         @export="dialog = 'export'"
         @import="openUpload"
         @scenario="dialog = 'scenario'"
@@ -364,6 +438,13 @@
     </template>
 
     <publish-dialog v-if="dialog === 'publish'" @close="dialog = ''" />
+    <!-- Share, for the open draft (the toolbar and the palette) or a draft
+         of mine on the landing. -->
+    <share-dialog
+      v-if="dialog === 'share' && shareTarget"
+      :key="`${shareTarget.owner}/${shareTarget.id}`"
+      :target="shareTarget"
+      @close="dialog = ''" />
     <!-- Upload, on the landing and in the toolbar. Import on the landing
          opens the generate dialog. -->
     <import-dialog
@@ -448,6 +529,7 @@
   import ImportDialog from '@/components/builder/dialogs/ImportDialog.vue';
   import PublishDialog from '@/components/builder/dialogs/PublishDialog.vue';
   import ScenarioDialog from '@/components/builder/dialogs/ScenarioDialog.vue';
+  import ShareDialog from '@/components/builder/dialogs/ShareDialog.vue';
   import { useFixedTooltip } from '@/components/builder/fixedTooltip.js';
   import { closeSections } from '@/components/builder/inspector/InspectorSectionRenderer.vue';
 
@@ -479,6 +561,11 @@
   // Not builderSettings: <builder-settings> would name it as well as the
   // dialog.
   import { builderSettings as editorSettings } from '@/builder/settings.js';
+  import {
+    accessLabel,
+    conflictMessage as describeConflict,
+    shareLink,
+  } from '@/builder/share.js';
   import { useBuilderStore } from '@/builder/store.js';
   import { usePhenixStore } from '@/store.js';
 
@@ -493,11 +580,12 @@
   const drafts = ref(null);
   const editorHeading = ref(null);
   const conflictHeading = ref(null);
+  const accessLostHeading = ref(null);
   const errorPanel = ref(null);
   const editing = ref(false);
-  // The open dialog: publish, import, generate, export, scenario, history,
-  // commands (the command palette), shortcuts (the shortcut sheet) or
-  // settings.
+  // The open dialog: publish, share, import, generate, export, scenario,
+  // history, commands (the command palette), shortcuts (the shortcut sheet)
+  // or settings.
   const dialog = ref('');
   // What the command palette shows first: a query ('@' for Go to node) or
   // the choices of one command (its id), as commandView.openPalette asked.
@@ -616,7 +704,95 @@
     { flush: 'post' },
   );
 
+  // Access lost takes focus as a conflict does, and for the same reason.
+  watch(
+    () => store.accessLost,
+    (now) => {
+      if (now && !document.activeElement?.matches?.(TYPING)) {
+        accessLostHeading.value?.focus();
+      }
+    },
+    { flush: 'post' },
+  );
+
+  // Who saved the version the conflict is with, as the server said.
+  // Without sign-in everyone is the same user, so no one is named.
+  const signedIn =
+    Boolean(import.meta.env.VITE_AUTH) &&
+    import.meta.env.VITE_AUTH !== 'disabled';
+  const conflictMessage = computed(() =>
+    describeConflict(
+      signedIn ? store.saveState.lastModifiedBy : '',
+      usePhenixStore().username,
+    ),
+  );
+
+  // Why a draft someone shared can no longer be saved (see accessLost in
+  // autosave.js).
+  const accessLostMessage = computed(() => {
+    switch (store.accessLost) {
+      case 'view-only':
+        return `You can no longer edit this draft. ${store.owner} changed your access to view only.`;
+      case 'role':
+        return 'You can no longer edit this draft. Your role cannot change configs.';
+      default:
+        return 'This draft is no longer shared with you, or it was deleted.';
+    }
+  });
+
+  // Why the open draft is read only: shared to view, shared to edit with a
+  // role that may not change configs, or the role alone.
+  const readOnlyMessage = computed(() => {
+    if (store.sharedBy && store.access === 'view') {
+      return `${store.sharedBy} shared this draft with you to view. Use Export to keep a copy.`;
+    }
+
+    if (store.sharedBy && store.access === 'edit') {
+      return 'You were given edit access, but your role cannot change configs, so this draft opens view only.';
+    }
+
+    return 'You can view this draft but not change it. Use Export to keep a copy.';
+  });
+
   const diagramName = computed(() => store.doc.name || 'Untitled diagram');
+
+  // The owner of the open draft when it is not the user's, for the heading.
+  const ownerOfOthers = computed(() =>
+    store.isOwner ? '' : store.owner || '',
+  );
+
+  // The draft of mine the landing's Share was pressed for, with its name
+  // as its card gives it.
+  const sharedCard = ref(null);
+
+  // The draft Share is for: in the editor the open one, which only its
+  // owner may share; on the landing the card's.
+  const shareTarget = computed(() => {
+    const draft = editing.value
+      ? store.canShare && store.draftId
+        ? {
+            owner: store.owner,
+            id: store.draftId,
+            name: diagramName.value,
+            shares: store.shares,
+          }
+        : null
+      : sharedCard.value;
+
+    return draft
+      ? { ...draft, link: shareLink(router, draft.owner, draft.id) }
+      : null;
+  });
+
+  function shareListed(item, label) {
+    sharedCard.value = {
+      owner: item.owner,
+      id: item.id,
+      name: label || item.title || item.name || item.id,
+      shares: item.shares || [],
+    };
+    dialog.value = 'share';
+  }
 
   // The page title names the view and, in the editor, the open diagram
   // (WCAG 2.4.2). Leaving the Builder restores the app's own title.
@@ -751,18 +927,6 @@
       busy.value = false;
     }
   }
-
-  // The drafts the server can no longer read, on the tab a readable one
-  // would be on: the user's own, or shared.
-  const damagedDrafts = computed(() => {
-    const user = usePhenixStore().username;
-    const all = store.drafts.damaged || [];
-
-    return {
-      mine: all.filter((item) => item.owner === user),
-      shared: all.filter((item) => item.owner !== user),
-    };
-  });
 
   // Blank drafts are numbered, so the landing can tell them apart.
   function untitledName() {
@@ -909,11 +1073,16 @@
       resolving.value = false;
     }
 
-    // The banner and its buttons are gone once resolved; focus goes to the
+    // The panel and its buttons are gone once resolved; focus goes to the
     // editor heading instead of falling to <body>. A failed attempt keeps
-    // the banner, and focus returns to its heading.
+    // the panel, and focus returns to its heading.
     await nextTick();
-    (store.hasConflict ? conflictHeading.value : editorHeading.value)?.focus();
+    (store.hasConflict
+      ? conflictHeading.value
+      : store.accessLost
+        ? accessLostHeading.value
+        : editorHeading.value
+    )?.focus();
   }
 
   function discardLocal() {
@@ -1681,6 +1850,13 @@
      put as it changes. Wide enough for the usual states ("Saving 2
      changes", "All changes saved"), so the header does not rewrap on every
      save. A longer message wraps. */
+  .builder-header__shared {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--bx-text-muted);
+    overflow-wrap: anywhere;
+  }
+
   .builder-header__save {
     align-self: stretch;
     justify-content: flex-end;

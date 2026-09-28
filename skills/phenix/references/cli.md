@@ -71,7 +71,16 @@ in its document's `layout`; the Settings layout is the default for drafts
 without one. A document may also hold each connection's `route` as a layout
 drew it; publishing and export ignore both.
 
-Draft owners can manage their own drafts. Cross-user access uses the
+Draft owners can manage their own drafts. An owner can share a draft with
+named users as `view` or `edit`. `GET /builder/drafts/{owner}/{draft}/shares`
+lists them (owner only). `PUT` of the same path with `If-Match: "shares-N"` and
+`{"shares":[{"user":"bob","access":"edit"}]}` replaces the list: at most 25
+users, and unknown users, the owner and duplicates get `422` with per-user
+`errors`. A share gives view (`get`/`list`) or edit (also save, undo and
+publish under the recipient's own permissions). It never gives delete or
+sharing. Recipients still need their `configs` permissions. A share is bound
+to the recipient's account, so a user deleted and recreated under the same
+name loses it. Cross-user access for administrators uses the
 `builder-drafts` RBAC resource with `{owner}/{draft-id}` resource names. A role
 that may inspect and modify every draft needs an explicit policy like:
 
@@ -89,13 +98,21 @@ explicit `alice/*`.
 
 Every Builder Flow request also needs the base `configs` permission of the verb
 it performs (`list`, `get`, `create`, `update`, `delete`), so builder access can
-never exceed a user's config access. A cross-user request that fails the
-`builder-drafts` check is answered with `404`, not `403`, so draft existence is
-never disclosed. Every mutation after creation requires an `If-Match` header
-carrying the quoted ETag the previous response returned: a missing or malformed
-tag is `400`, a stale one `412`. Draft responses also carry the tag in their
-body as `etag`; prefer it, since a compressing proxy can rewrite the header
-(`W/"3"`, `"3-gzip"`). `GET /builder/drafts` also returns `damaged`: drafts
+never exceed a user's config access. A caller who cannot see another user's
+draft (no share, no `builder-drafts` permission) gets `404`, so draft existence
+is never disclosed. A caller who can see it but may not perform the operation
+(a viewer saving, an editor deleting or sharing) gets `403`. Every mutation
+after creation requires an `If-Match` header carrying the quoted ETag the
+previous response returned: a missing or malformed tag is `400`, a stale one
+`412`. Draft responses also carry the tag in their body as `etag`; prefer it,
+since a compressing proxy can rewrite the header (`W/"3"`, `"3-gzip"`). Draft
+responses carry `access` (`owner`/`edit`/`view`), `via` (`share`/`role`) for
+other users' drafts, and, for the owner, `canShare` and `shares`.
+`GET /builder/drafts` lists other users' drafts the caller may see in `shared`,
+those shared with the caller with `via: "share"`. Changing shares changes the
+draft's ETag; the share list has its own `"shares-N"` tag. A draft that has
+ever been shared shows as damaged (its owner can delete it) on a phenix
+version without sharing. `GET /builder/drafts` also returns `damaged`: drafts
 whose metadata this server can no longer read (written by a newer phenix, say),
 with `id`, `owner`, `etag`, `canDelete`, and `title` and `updated` when they
 can be read. They cannot be opened, only deleted with that `etag`; a `412` on
@@ -181,7 +198,7 @@ draft published it`. `POST /builder/drafts` accepts
 draft sends: the new draft takes that draft's source token and records its last
 publication as `forked`, so it can update what that draft published or was
 opened from (not what that draft publishes later). The caller must be able to
-read that draft (owner or `builder-drafts` `get`), otherwise 404. A published
+read that draft (owner, a share, or `builder-drafts` `get`), otherwise 404. A published
 topology names its document in its `builder-doc` annotation; a published
 experiment records the draft and document that published it, and its digest
 after the configure stage, in its `builder-experiment` annotation, so any later

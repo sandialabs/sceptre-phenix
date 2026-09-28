@@ -6,7 +6,8 @@
   keys are this platform's and follow the user's changes. The groups, left
   to right: undo and redo, the clipboard, grouping (Group, Ungroup and the
   Auto-group menu), the layout menu and scenario, the ways out (Export,
-  Upload, Publish), the view, then History and Commands at the right end.
+  Upload, Publish, Share), the view, then History and Commands at the right
+  end.
   The layout menu is named after the draft's layout; it lays the diagram out
   with the one chosen, which the draft keeps, and after a layout it offers
   to put the previous one back. Edits are saved as they are made, so there
@@ -248,6 +249,22 @@
         <builder-icon name="publish" :size="14" />
         Publish
       </button>
+      <!-- The owner shares; someone the draft was shared with sees who
+           may. Anyone else has no Share. -->
+      <button
+        v-if="store.canShare || store.sharedBy"
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-share"
+        :aria-keyshortcuts="tips.share.aria"
+        aria-describedby="toolbar-tip-share"
+        v-on="tipFor('share')"
+        aria-haspopup="dialog"
+        :aria-disabled="off.share || undefined"
+        @click="run('share', () => $emit('share'))">
+        <builder-icon name="share" :size="14" />
+        Share
+      </button>
     </div>
 
     <div class="builder-toolbar__group">
@@ -379,6 +396,7 @@
     layoutAlgorithm,
   } from '@/builder/layouts/index.js';
   import { rowTarget } from '@/builder/roving.js';
+  import { describeShares } from '@/builder/share.js';
   import { useBuilderStore } from '@/builder/store.js';
   import {
     nextTheme,
@@ -392,6 +410,7 @@
 
   defineEmits([
     'publish',
+    'share',
     'export',
     'import',
     'scenario',
@@ -433,6 +452,7 @@
     // canCreateDrafts and canPublish).
     import: !store.canCreateDrafts,
     publish: store.readOnly || !store.canPublish,
+    share: !store.canShare,
   }));
 
   function run(action, handler) {
@@ -638,11 +658,22 @@
     // The theme button's keys are those of the palette's command for the
     // theme it moves to; its name says the rest.
     const themeCommand = `view.theme.${themeButton.value.next}`;
+    // Share says who has the draft, or who may change that.
+    const shareText = store.canShare
+      ? store.shares.length
+        ? `Shared with ${describeShares(store.shares)}`
+        : 'Only you can open this draft'
+      : `Only ${store.sharedBy || 'the owner'} can change who has access`;
 
     return {
       ...Object.fromEntries(entries),
       layout: { text: layoutText, description: layoutText },
       autoGroup: { text: autoGroupText, description: autoGroupText },
+      share: {
+        text: withShortcut(shareText, 'draft.share'),
+        description: withShortcut(shareText, 'draft.share'),
+        aria: ariaShortcuts('draft.share'),
+      },
       theme: {
         text: withShortcut(themeButton.value.tip, themeCommand),
         description: shortcutLabel(themeCommand),

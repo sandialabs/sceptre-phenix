@@ -101,11 +101,27 @@ jobs:
           E2E_BASE_URL: http://127.0.0.1:3001
           E2E_BUILDER_BETA: 'off'
         run: npx playwright test builder-feature-off
+      - name: Start phenix UI with authentication
+        run: |
+          ./bin/phenix ui --store.endpoint bolt:///tmp/phenix-e2e-sharing.bdb \
+            --unix-socket /tmp/phenix-sharing.sock \
+            --listen-endpoint 127.0.0.1:3002 \
+            --features builder-beta --jwt-signing-key e2e-sharing \
+            --users 'e2e-admin:Testpass1!:Global Admin' &> /tmp/phenix-ui-sharing.log &
+          timeout 30 bash -c \
+            'until curl -s -o /dev/null http://127.0.0.1:3002/api/v1/experiments; do sleep 1; done'
+      - name: Run Builder Beta sharing tests
+        working-directory: src/js/e2e
+        env:
+          E2E_BASE_URL: http://127.0.0.1:3002
+          E2E_SHARING: '1'
+        run: npx playwright test builder-sharing
       - name: Server log
         if: failure()
         run: |
           tail -100 /tmp/phenix-ui.log
           tail -50 /tmp/phenix-ui-off.log 2>/dev/null || true
+          tail -50 /tmp/phenix-ui-sharing.log 2>/dev/null || true
       - name: Upload failure artifacts
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

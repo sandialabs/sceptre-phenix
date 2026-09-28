@@ -29,12 +29,17 @@ import (
 //
 //   - every request needs the base config permission of the operation it
 //     performs, so builder access can never exceed a user's config access, and
-//   - a request touching a draft owned by somebody else additionally needs the
-//     "builder-drafts" permission for the "{owner}/{draftID}" resource name.
+//   - a request touching a draft needs access to that draft, from one of three
+//     sources: owning it; a share from its owner naming the caller, which
+//     grants view (list and get) or edit (also update), never delete or
+//     changing who it is shared with; or the "builder-drafts" permission of
+//     the same verb for the "{owner}/{draftID}" resource name. The strongest
+//     source wins.
 //
-// A cross-user request that fails the second check is answered with 404 rather
-// than 403, so draft existence is never disclosed to a user that may not see
-// it.
+// A caller who cannot see a draft, because no source grants it any access, is
+// answered with 404, exactly as for a draft that does not exist, so draft
+// existence is never disclosed. A caller who can see a draft but may not
+// perform the operation is answered with 403.
 const (
 	// builderBetaFeature is the feature flag that gates every route in this
 	// file.
@@ -78,7 +83,45 @@ const (
 	builderBetaVerbCreate builderBetaVerb = "create"
 	builderBetaVerbUpdate builderBetaVerb = "update"
 	builderBetaVerbDelete builderBetaVerb = "delete"
+	// builderBetaVerbShare changes who a draft is shared with. Its base
+	// permission is config update; only the draft owner may do it.
+	builderBetaVerbShare builderBetaVerb = "share"
 )
+
+// builderBetaLevel orders what a caller may do with a draft.
+type builderBetaLevel int
+
+const (
+	builderBetaLevelNone builderBetaLevel = iota
+	builderBetaLevelView
+	builderBetaLevelEdit
+	builderBetaLevelOwner
+)
+
+// Where access to another user's draft comes from: a share naming the caller,
+// or the caller's role. A caller holding both is reported as "share".
+const (
+	builderBetaViaShare = "share"
+	builderBetaViaRole  = "role"
+)
+
+// builderBetaRoleGrants is what the "builder-drafts" permission of a role
+// grants on one draft of another user.
+type builderBetaRoleGrants struct {
+	canList, canGet, canUpdate, canDelete bool
+}
+
+// builderBetaAccess is a caller's access to one draft (see [builderBetaAPI]).
+// Level is the strongest of what its ownership, a share and its role grant;
+// via is where access to another user's draft comes from; stale is set when a
+// share names the caller but no longer matches its account, and so grants
+// nothing.
+type builderBetaAccess struct {
+	level builderBetaLevel
+	via   string
+	rbac  builderBetaRoleGrants
+	stale bool
+}
 
 // builderBetaIDPattern mirrors the identifier pattern [phenix/api/builder]
 // accepts. Path identifiers that cannot match it can never name a stored
@@ -250,7 +293,7 @@ func builderBetaBaseAllowed(role rbac.Role, verb builderBetaVerb, names ...strin
 		return role.Allowed("configs", "get", names...)
 	case builderBetaVerbCreate:
 		return role.Allowed("configs", "create", names...)
-	case builderBetaVerbUpdate:
+	case builderBetaVerbUpdate, builderBetaVerbShare:
 		return role.Allowed("configs", "update", names...)
 	case builderBetaVerbDelete:
 		return role.Allowed("configs", "delete", names...)
@@ -261,7 +304,8 @@ func builderBetaBaseAllowed(role rbac.Role, verb builderBetaVerb, names ...strin
 
 // builderBetaCrossUserAllowed reports whether the role may operate on a draft
 // owned by another user. Creation is missing on purpose: a draft is always
-// created for the authenticated user, never on somebody else's behalf.
+// created for the authenticated user, never on somebody else's behalf. So is
+// sharing: only the owner changes who a draft is shared with.
 func builderBetaCrossUserAllowed(role rbac.Role, verb builderBetaVerb, names ...string) bool {
 	switch verb {
 	case builderBetaVerbList:
@@ -272,11 +316,245 @@ func builderBetaCrossUserAllowed(role rbac.Role, verb builderBetaVerb, names ...
 		return role.Allowed("builder-drafts", "update", names...)
 	case builderBetaVerbDelete:
 		return role.Allowed("builder-drafts", "delete", names...)
-	case builderBetaVerbCreate:
+	case builderBetaVerbCreate, builderBetaVerbShare:
 		return false
 	}
 
 	return false
+}
+
+// builderBetaRoleGrantsFor returns what the role grants on the draft of
+// another user with the given resource name.
+func builderBetaRoleGrantsFor(role rbac.Role, name string) builderBetaRoleGrants {
+	return builderBetaRoleGrants{
+		canList:   builderBetaCrossUserAllowed(role, builderBetaVerbList, name),
+		canGet:    builderBetaCrossUserAllowed(role, builderBetaVerbGet, name),
+		canUpdate: builderBetaCrossUserAllowed(role, builderBetaVerbUpdate, name),
+		canDelete: builderBetaCrossUserAllowed(role, builderBetaVerbDelete, name),
+	}
+}
+
+// builderBetaHoldsRoleGrants reports whether the role grants anything on any
+// draft of another user, so callers can skip the checks by name otherwise.
+func builderBetaHoldsRoleGrants(role rbac.Role) bool {
+	return builderBetaCrossUserAllowed(role, builderBetaVerbList) ||
+		builderBetaCrossUserAllowed(role, builderBetaVerbGet) ||
+		builderBetaCrossUserAllowed(role, builderBetaVerbUpdate) ||
+		builderBetaCrossUserAllowed(role, builderBetaVerbDelete)
+}
+
+// allowed reports whether the grants include the verb.
+func (g builderBetaRoleGrants) allowed(verb builderBetaVerb) bool {
+	switch verb {
+	case builderBetaVerbList:
+		return g.canList
+	case builderBetaVerbGet:
+		return g.canGet
+	case builderBetaVerbUpdate:
+		return g.canUpdate
+	case builderBetaVerbDelete:
+		return g.canDelete
+	case builderBetaVerbCreate, builderBetaVerbShare:
+		return false
+	}
+
+	return false
+}
+
+// visible reports whether the grants let the caller see the draft when asking
+// to perform the verb.
+func (g builderBetaRoleGrants) visible(verb builderBetaVerb) bool {
+	return g.canList || g.canGet || g.allowed(verb)
+}
+
+// level returns the level the grants amount to: update is edit, get or list
+// is view.
+func (g builderBetaRoleGrants) level() builderBetaLevel {
+	switch {
+	case g.canUpdate:
+		return builderBetaLevelEdit
+	case g.canGet || g.canList:
+		return builderBetaLevelView
+	}
+
+	return builderBetaLevelNone
+}
+
+// owner reports whether the caller owns the draft.
+func (a builderBetaAccess) owner() bool {
+	return a.level == builderBetaLevelOwner
+}
+
+// visible reports whether the caller may know the draft exists when asking to
+// perform the verb: it owns the draft, a share names it, or its role grants
+// list, get or the verb itself.
+func (a builderBetaAccess) visible(verb builderBetaVerb) bool {
+	return a.owner() || a.via == builderBetaViaShare || a.rbac.visible(verb)
+}
+
+// allows reports whether the caller may perform the verb. A share grants list
+// and get, and update when it is an edit share; it never grants delete or
+// sharing.
+func (a builderBetaAccess) allows(verb builderBetaVerb) bool {
+	if a.owner() {
+		return true
+	}
+
+	switch verb {
+	case builderBetaVerbList, builderBetaVerbGet:
+		return a.via == builderBetaViaShare || a.rbac.allowed(verb)
+	case builderBetaVerbUpdate:
+		return a.level >= builderBetaLevelEdit
+	case builderBetaVerbDelete:
+		return a.rbac.canDelete
+	case builderBetaVerbCreate, builderBetaVerbShare:
+		return false
+	}
+
+	return false
+}
+
+// denial names why the caller, who may see the draft, may not perform the
+// verb, for the security log.
+func (a builderBetaAccess) denial(verb builderBetaVerb) string {
+	switch {
+	case verb == builderBetaVerbShare,
+		verb == builderBetaVerbDelete && a.via == builderBetaViaShare:
+		return "not-owner"
+	case verb == builderBetaVerbUpdate && a.via == builderBetaViaShare:
+		return "view-only"
+	}
+
+	return "rbac"
+}
+
+// name returns the access as responses report it: "owner", "edit", "view",
+// or "" for none.
+func (a builderBetaAccess) name() string {
+	switch a.level {
+	case builderBetaLevelOwner:
+		return "owner"
+	case builderBetaLevelEdit:
+		return string(bapi.ShareEdit)
+	case builderBetaLevelView:
+		return string(bapi.ShareView)
+	case builderBetaLevelNone:
+		return ""
+	}
+
+	return ""
+}
+
+// builderBetaDraftAccess returns the caller's access to a draft, given what
+// its role grants on it. The caller's account is read, through account, only
+// when a share names the caller: a share applies only while the account it
+// was granted to still exists, so it never passes to a new account created
+// under the same name.
+func builderBetaDraftAccess(
+	actor builderBetaActor,
+	meta *bapi.DraftMetadata,
+	grants builderBetaRoleGrants,
+	account func() (string, bool, error),
+) (builderBetaAccess, error) {
+	if meta.Owner == actor.user {
+		return builderBetaAccess{
+			level: builderBetaLevelOwner,
+			via:   "",
+			rbac:  builderBetaRoleGrants{canList: false, canGet: false, canUpdate: false, canDelete: false},
+			stale: false,
+		}, nil
+	}
+
+	access := builderBetaAccess{level: grants.level(), via: "", rbac: grants, stale: false}
+
+	if grants.canList || grants.canGet || grants.canUpdate || grants.canDelete {
+		access.via = builderBetaViaRole
+	}
+
+	entry := meta.ShareFor(actor.user)
+	if entry == nil {
+		return access, nil
+	}
+
+	created, exists, err := account()
+	if err != nil {
+		return access, err
+	}
+
+	if !exists || created != entry.UserCreated {
+		access.stale = true
+
+		return access, nil
+	}
+
+	access.via = builderBetaViaShare
+
+	share := builderBetaLevelView
+	if entry.Access == bapi.ShareEdit {
+		share = builderBetaLevelEdit
+	}
+
+	access.level = max(access.level, share)
+
+	return access, nil
+}
+
+// accountCreated returns metadata.created of the User config of the named
+// user, and whether the user has an account a share can be bound to. A name
+// that cannot name a config, a missing config and one without a creation
+// time are all no account.
+func (b *builderBetaAPI) accountCreated(name string) (string, bool, error) {
+	if name == "" || strings.Contains(name, "/") {
+		return "", false, nil
+	}
+
+	account, err := b.getConfig("User/" + name)
+	if err != nil {
+		if errors.Is(err, store.ErrNotExist) {
+			return "", false, nil
+		}
+
+		return "", false, fmt.Errorf("reading the account of %s: %w", name, err)
+	}
+
+	if account.Metadata.Created == "" {
+		return "", false, nil
+	}
+
+	return account.Metadata.Created, true, nil
+}
+
+// accountOnce returns [builderBetaAPI.accountCreated] for the named user,
+// read at most once however often it is called.
+func (b *builderBetaAPI) accountOnce(name string) func() (string, bool, error) {
+	var (
+		read    bool
+		created string
+		exists  bool
+		err     error
+	)
+
+	return func() (string, bool, error) {
+		if !read {
+			created, exists, err = b.accountCreated(name)
+			read = true
+		}
+
+		return created, exists, err
+	}
+}
+
+// canShare reports whether the caller, the owner of a draft, may change who
+// it is shared with: that takes config update, and a user account, which the
+// caller has no other reason to hold when authentication is off.
+func (b *builderBetaAPI) canShare(actor builderBetaActor, account func() (string, bool, error)) (bool, error) {
+	if !builderBetaBaseAllowed(actor.role, builderBetaVerbShare) {
+		return false, nil
+	}
+
+	_, exists, err := account()
+
+	return exists, err
 }
 
 // builderBetaDraftName is the RBAC resource name of a draft.
@@ -297,8 +575,33 @@ func builderBetaForbidden(actor builderBetaActor, action string) *weberror.WebEr
 		action,
 	)
 
+	return builderBetaNotAllowed(actor, action)
+}
+
+// builderBetaNotAllowed returns the 403 of [builderBetaForbidden] without
+// logging it, for callers that log the refusal themselves.
+func builderBetaNotAllowed(actor builderBetaActor, action string) *weberror.WebError {
 	return weberror.NewWebError(nil, "%s not allowed for %s", action, actor.user).
 		SetStatus(http.StatusForbidden)
+}
+
+// builderBetaWarnDenied logs a refused request for another user's draft. The
+// reason tells refusals apart: "no-access" or "stale-share" for a draft the
+// caller may not see, answered with 404, and "view-only", "not-owner" or
+// "rbac" for one it may see but not change this way, answered with 403.
+func builderBetaWarnDenied(actor builderBetaActor, owner, action, reason string) {
+	plog.Warn(
+		plog.TypeSecurity,
+		"builder flow cross-user draft request not allowed",
+		"user",
+		actor.user,
+		"owner",
+		owner,
+		"action",
+		action,
+		"reason",
+		reason,
+	)
 }
 
 // builderBetaNotFound returns the 404 answering both a missing resource and a
@@ -324,6 +627,8 @@ func builderBetaWebError(err error, format string, args ...any) *weberror.WebErr
 		return webErr.SetStatus(http.StatusRequestEntityTooLarge)
 	case errors.Is(err, bapi.ErrInvalid):
 		return webErr.SetStatus(http.StatusUnprocessableEntity)
+	case errors.Is(err, bapi.ErrBusy):
+		return webErr.SetStatus(http.StatusServiceUnavailable)
 	}
 
 	return webErr.SetStatus(http.StatusInternalServerError)
@@ -423,14 +728,20 @@ func builderBetaCheckIfMatch(ifMatch string, meta *bapi.DraftMetadata) error {
 // fields, trailing content, and bodies beyond [builderBetaMaxRequestBytes] are
 // rejected. The body itself is never logged.
 func builderBetaDecode(w http.ResponseWriter, r *http.Request, target any) error {
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, builderBetaMaxRequestBytes))
+	return builderBetaDecodeLimit(w, r, target, builderBetaMaxRequestBytes)
+}
+
+// builderBetaDecodeLimit is [builderBetaDecode] for bodies of at most limit
+// bytes.
+func builderBetaDecodeLimit(w http.ResponseWriter, r *http.Request, target any, limit int64) error {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(target); err != nil {
 		var tooLarge *http.MaxBytesError
 
 		if errors.As(err, &tooLarge) {
-			return weberror.NewWebError(nil, "request body is larger than %d bytes", builderBetaMaxRequestBytes).
+			return weberror.NewWebError(nil, "request body is larger than %d bytes", limit).
 				SetStatus(http.StatusRequestEntityTooLarge)
 		}
 
@@ -511,6 +822,10 @@ func (b *builderBetaAPI) routes(router *mux.Router) {
 		Methods("PATCH", "PUT", "OPTIONS")
 	router.Handle(draftPath+"/publish", weberror.ErrorHandler(b.publishDraft)).
 		Methods("POST", "OPTIONS")
+	router.Handle(draftPath+"/shares", weberror.ErrorHandler(b.getShares)).
+		Methods("GET", "OPTIONS")
+	router.Handle(draftPath+"/shares", weberror.ErrorHandler(b.putShares)).
+		Methods("PUT", "OPTIONS")
 	router.Handle("/builder/sources", weberror.ErrorHandler(b.listSources)).
 		Methods("GET", "OPTIONS")
 	router.Handle("/builder/generate", weberror.ErrorHandler(b.generateDocument)).
@@ -548,18 +863,32 @@ func (b *builderBetaAPI) getSchema(w http.ResponseWriter, r *http.Request) error
 }
 
 // draftFor loads the draft named by the request path, enforcing both
-// authorization layers. A caller that may not see another user's draft, a draft
-// that does not exist, and a draft whose owner does not match the path all
-// produce the same 404.
+// authorization layers. A caller that may not see the draft, a draft that
+// does not exist, and a draft whose owner does not match the path all produce
+// the same 404; a caller that may see the draft but not perform the verb gets
+// 403.
 func (b *builderBetaAPI) draftFor(
 	r *http.Request,
 	actor builderBetaActor,
 	verb builderBetaVerb,
 	action string,
 ) (*bapi.DraftMetadata, error) {
+	meta, _, err := b.draftAccessFor(r, actor, verb, action)
+
+	return meta, err
+}
+
+// draftAccessFor is [builderBetaAPI.draftFor] that also returns the caller's
+// access to the draft.
+func (b *builderBetaAPI) draftAccessFor(
+	r *http.Request,
+	actor builderBetaActor,
+	verb builderBetaVerb,
+	action string,
+) (*bapi.DraftMetadata, builderBetaAccess, error) {
 	vars := mux.Vars(r)
 
-	return b.namedDraft(r, actor, verb, action, vars["owner"], vars["draft"])
+	return b.namedDraftAccess(r, actor, verb, action, vars["owner"], vars["draft"])
 }
 
 // namedDraft is [builderBetaAPI.draftFor] for a draft named by its owner and
@@ -570,53 +899,99 @@ func (b *builderBetaAPI) namedDraft(
 	verb builderBetaVerb,
 	action, owner, draftID string,
 ) (*bapi.DraftMetadata, error) {
+	meta, _, err := b.namedDraftAccess(r, actor, verb, action, owner, draftID)
+
+	return meta, err
+}
+
+// namedDraftAccess is [builderBetaAPI.draftAccessFor] for a draft named by its
+// owner and ID rather than by the request path.
+//
+// Who a draft is shared with is part of its record, so the record is read
+// before a caller other than the owner is authorized. The reply never tells a
+// caller who may not see the draft that it exists: a missing draft, a draft
+// of someone else, and a draft whose record this server cannot read all
+// produce the same 404 for such a caller.
+func (b *builderBetaAPI) namedDraftAccess(
+	r *http.Request,
+	actor builderBetaActor,
+	verb builderBetaVerb,
+	action, owner, draftID string,
+) (*bapi.DraftMetadata, builderBetaAccess, error) {
+	var none builderBetaAccess
+
 	name := builderBetaDraftName(owner, draftID)
 
 	if !builderBetaBaseAllowed(actor.role, verb) {
-		return nil, builderBetaForbidden(actor, action)
+		return nil, none, builderBetaForbidden(actor, action)
 	}
 
 	if owner == "" || len(owner) > builderBetaMaxOwnerLength || !builderBetaIDPattern.MatchString(draftID) {
-		return nil, builderBetaNotFound("draft", name)
+		return nil, none, builderBetaNotFound("draft", name)
 	}
 
-	if owner != actor.user && !builderBetaCrossUserAllowed(actor.role, verb, name) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"builder flow cross-user draft request not allowed",
-			"user",
-			actor.user,
-			"owner",
-			owner,
-			"action",
-			action,
-		)
-
-		return nil, builderBetaNotFound("draft", name)
+	var grants builderBetaRoleGrants
+	if owner != actor.user {
+		grants = builderBetaRoleGrantsFor(actor.role, name)
 	}
 
 	meta, err := b.drafts.GetDraft(r.Context(), draftID)
 
 	// A draft whose metadata no longer validates can only be deleted; reading
-	// just its owner is enough to authorize that.
-	if verb == builderBetaVerbDelete && errors.Is(err, bapi.ErrCorrupt) {
-		meta, err = b.drafts.GetDraftOwner(r.Context(), draftID)
+	// just its owner is enough to authorize that. Who it is shared with is
+	// never read from such a record, so shares grant nothing on it. The stored
+	// owner is checked against the path first, so a caller naming itself or an
+	// owner its role covers learns nothing about another user's damaged draft.
+	if errors.Is(err, bapi.ErrCorrupt) {
+		stored, ownerErr := b.drafts.GetDraftOwner(r.Context(), draftID)
+
+		switch {
+		case ownerErr != nil || stored.Owner != owner:
+			return nil, none, builderBetaNotFound("draft", name)
+		case verb == builderBetaVerbDelete:
+			meta, err = stored, nil
+		case owner != actor.user && !grants.visible(verb):
+			return nil, none, builderBetaNotFound("draft", name)
+		}
 	}
 
 	if err != nil {
 		if errors.Is(err, bapi.ErrNotFound) || errors.Is(err, bapi.ErrInvalid) {
-			return nil, builderBetaNotFound("draft", name)
+			return nil, none, builderBetaNotFound("draft", name)
 		}
 
-		return nil, builderBetaWebError(err, "unable to get draft %s", name)
+		return nil, none, builderBetaWebError(err, "unable to get draft %s", name)
 	}
 
 	// Drafts are keyed by ID alone, so the owner in the path is authoritative:
 	// a mismatch means the caller was authorized against an owner that does not
 	// hold the draft.
 	if meta.Owner != owner {
-		return nil, builderBetaNotFound("draft", name)
+		return nil, none, builderBetaNotFound("draft", name)
 	}
 
-	return meta, nil
+	access, err := builderBetaDraftAccess(actor, meta, grants, b.accountOnce(actor.user))
+	if err != nil {
+		return nil, none, weberror.NewWebError(err, "unable to check access to draft %s", name).
+			SetStatus(http.StatusInternalServerError)
+	}
+
+	if !access.visible(verb) {
+		reason := "no-access"
+		if access.stale {
+			reason = "stale-share"
+		}
+
+		builderBetaWarnDenied(actor, owner, action, reason)
+
+		return nil, none, builderBetaNotFound("draft", name)
+	}
+
+	if !access.allows(verb) {
+		builderBetaWarnDenied(actor, owner, action, access.denial(verb))
+
+		return nil, none, builderBetaNotAllowed(actor, action)
+	}
+
+	return meta, access, nil
 }

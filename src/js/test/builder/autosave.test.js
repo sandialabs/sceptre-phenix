@@ -860,6 +860,298 @@ describe('failure states', () => {
   });
 });
 
+// A draft on a server that checks If-Match, as the real one does: a share
+// change or a publish bumps its revision and leaves its content (its head)
+// as it was; an edit moves its head too.
+function sharedDraft({ owner = 'alice' } = {}) {
+  const server = {
+    revision: 1,
+    snapshots: 1,
+    lastModifiedBy: owner,
+    access: 'edit',
+    readOnly: false,
+    gone: false,
+  };
+  const draft = () => ({
+    id: 'd1',
+    owner,
+    snapshotId: `s${server.snapshots}`,
+    cursor: server.snapshots - 1,
+    snapshots: server.snapshots,
+    lastModifiedBy: server.lastModifiedBy,
+    access: server.access,
+    readOnly: server.readOnly,
+  });
+  const envelope = () => ({
+    draft: draft(),
+    history: null,
+    cursor: server.snapshots - 1,
+    etag: `"${server.revision}"`,
+  });
+  const refused = (status) =>
+    Object.assign(new Error(`status ${status}`), {
+      response: { status, data: {} },
+    });
+  const api = fakeApi({
+    // The ETag is the fourth argument, after owner, id and payload.
+    appendSnapshot: vi.fn(async (...args) => {
+      const etag = args[3];
+      if (server.gone) {
+        throw refused(404);
+      }
+
+      if (server.readOnly) {
+        throw refused(403);
+      }
+
+      if (etag !== `"${server.revision}"`) {
+        throw conflict();
+      }
+
+      server.revision += 1;
+      server.snapshots += 1;
+
+      return envelope();
+    }),
+    getDraft: vi.fn(async () => {
+      if (server.gone) {
+        throw refused(404);
+      }
+
+      return envelope();
+    }),
+  });
+
+  return {
+    server,
+    api,
+    head: () => ({
+      snapshotId: `s${server.snapshots}`,
+      cursor: server.snapshots - 1,
+      snapshots: server.snapshots,
+    }),
+    // Bumps the revision alone, as a share change does.
+    touch() {
+      server.revision += 1;
+    },
+    edit(by) {
+      server.revision += 1;
+      server.snapshots += 1;
+      server.lastModifiedBy = by;
+    },
+  };
+}
+
+async function attachedTo(shared, { actor = 'alice', store } = {}) {
+  const onDraft = vi.fn();
+  const queue = createAutosave({
+    api: shared.api,
+    store: store || memoryStore(),
+    actor,
+    onDraft,
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+    isOnline: () => true,
+  });
+
+  await queue.attach({
+    owner: 'alice',
+    draftId: 'd1',
+    etag: '"1"',
+    serverHead: shared.head(),
+  });
+
+  return { queue, onDraft };
+}
+
+describe('changes that leave the content as it was', () => {
+  test('a conflict over the same content takes the new ETag and sends again', async () => {
+    const shared = sharedDraft();
+    const { queue, onDraft } = await attachedTo(shared);
+
+    shared.touch();
+    const state = await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+
+    expect(state.status).toBe('saved');
+    expect(shared.api.appendSnapshot).toHaveBeenCalledTimes(2);
+    expect(shared.api.appendSnapshot.mock.calls[1][3]).toBe('"2"');
+    expect(queue.record.etag).toBe('"3"');
+    // The head moves with every save the server confirms.
+    expect(queue.record.serverHead).toEqual(shared.head());
+    // The draft read again reaches the store, which keeps what it says.
+    expect(onDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ etag: '"2"' }),
+      null,
+    );
+
+    // Another change that leaves the content: sent again once more.
+    shared.touch();
+    await queue.commit({ id: 'c2', label: 'two', snapshot: doc });
+    expect(queue.state.status).toBe('saved');
+  });
+
+  test('a conflict over another save stands, and names who saved', async () => {
+    const shared = sharedDraft();
+    const { queue } = await attachedTo(shared);
+
+    shared.edit('carol');
+    const state = await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+
+    expect(state).toMatchObject({
+      status: 'conflict',
+      lastModifiedBy: 'carol',
+    });
+    expect(shared.api.appendSnapshot).toHaveBeenCalledTimes(1);
+    expect(queue.record.queue).toHaveLength(1);
+    // Nothing else is sent until the user chooses.
+    await queue.commit({ id: 'c2', label: 'two', snapshot: doc });
+    expect(shared.api.appendSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  test('sending again stops after two tries in a row', async () => {
+    const shared = sharedDraft();
+    const { queue } = await attachedTo(shared);
+
+    shared.api.appendSnapshot.mockImplementation(async () => {
+      throw conflict();
+    });
+    const state = await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+
+    expect(state.status).toBe('conflict');
+    expect(shared.api.appendSnapshot).toHaveBeenCalledTimes(3);
+    expect(shared.api.getDraft).toHaveBeenCalledTimes(2);
+  });
+
+  test('a queue with no confirmed head never sends again', async () => {
+    const shared = sharedDraft();
+    const queue = createAutosave({
+      api: shared.api,
+      store: memoryStore(),
+      actor: 'alice',
+      isOnline: () => true,
+    });
+
+    await queue.attach({ owner: 'alice', draftId: 'd1', etag: '"1"' });
+    shared.touch();
+
+    expect(
+      (await queue.commit({ id: 'c1', label: 'one', snapshot: doc })).status,
+    ).toBe('conflict');
+    expect(shared.api.appendSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  test('the head a pending queue was based on is stored with it', async () => {
+    const shared = sharedDraft();
+    const store = memoryStore();
+    const { queue } = await attachedTo(shared, { store });
+    const first = shared.head();
+    const release = queue.hold();
+
+    await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+
+    const stored = await store.get(draftKey('alice', 'alice', 'd1'));
+    expect(stored.serverHead).toEqual(first);
+
+    // Reopened on this device, the pending queue keeps the head it was
+    // based on, not the one the draft opened with.
+    const reopened = createAutosave({ api: shared.api, store, actor: 'alice' });
+    await reopened.attach({
+      owner: 'alice',
+      draftId: 'd1',
+      etag: '"9"',
+      serverHead: { snapshotId: 's9', cursor: 8, snapshots: 9 },
+    });
+    expect(reopened.record.serverHead).toEqual(first);
+
+    await release();
+    expect(queue.record.serverHead).toEqual(shared.head());
+    expect(queue.record.serverHead).not.toEqual(first);
+  });
+
+  test('the owner’s own share change is adopted only over the same content', async () => {
+    const shared = sharedDraft();
+    const { queue } = await attachedTo(shared);
+
+    shared.touch();
+    expect(
+      await queue.adoptIfSameHead({ ...shared.head(), id: 'd1' }, '"2"'),
+    ).toBe(true);
+    expect(queue.record.etag).toBe('"2"');
+    expect(queue.state.etag).toBe('"2"');
+
+    // Someone else saved meanwhile: their ETag is not taken, so the next
+    // save meets the conflict rather than writing over them.
+    shared.edit('carol');
+    const { snapshotId, cursor, snapshots } = shared.head();
+    expect(
+      await queue.adoptIfSameHead({ snapshotId, cursor, snapshots }, '"3"'),
+    ).toBe(false);
+    expect(queue.record.etag).toBe('"2"');
+
+    // Nor while the queue is blocked.
+    queue.conflict();
+    expect(
+      await queue.adoptIfSameHead(
+        { snapshotId: 's1', cursor: 0, snapshots: 1 },
+        '"4"',
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('a draft someone shared', () => {
+  test('a view-only share blocks the queue and says why', async () => {
+    const shared = sharedDraft();
+    const { queue } = await attachedTo(shared, { actor: 'bob' });
+
+    shared.server.readOnly = true;
+    shared.server.access = 'view';
+    const state = await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+
+    expect(state).toMatchObject({
+      status: 'forbidden',
+      accessLost: 'view-only',
+    });
+    expect(queue.record.queue).toHaveLength(1);
+
+    // Still shared for editing, but the role may not change configs.
+    shared.server.access = 'edit';
+    await queue.retry();
+    expect(queue.state.accessLost).toBe('role');
+  });
+
+  test('a share taken away, or a draft deleted, is gone', async () => {
+    const shared = sharedDraft();
+    const { queue } = await attachedTo(shared, { actor: 'bob' });
+
+    shared.server.gone = true;
+    const state = await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+
+    expect(state).toMatchObject({ status: 'forbidden', accessLost: 'gone' });
+    expect(describeState(state)).toMatch(/cannot save/i);
+
+    // A conflict that finds the draft gone says so too.
+    shared.server.gone = false;
+    shared.touch();
+    shared.api.getDraft.mockRejectedValueOnce(
+      Object.assign(new Error('gone'), { response: { status: 404 } }),
+    );
+    expect((await queue.retry()).accessLost).toBe('gone');
+  });
+
+  test('the owner’s deleted draft is reported as before', async () => {
+    const shared = sharedDraft();
+    const { queue } = await attachedTo(shared);
+
+    shared.server.gone = true;
+    const state = await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+
+    expect(state).toMatchObject({ status: 'error', accessLost: '' });
+    expect(state.retryable).toBe(false);
+    expect(shared.api.getDraft).not.toHaveBeenCalled();
+  });
+});
+
 describe('refused snapshots', () => {
   function refusing(isBad) {
     return fakeApi({

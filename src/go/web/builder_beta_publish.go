@@ -885,9 +885,9 @@ func openedDocumentID(meta *bapi.DraftMetadata) string {
 // [experimentHoldsDraftPublication]), but not what that draft publishes
 // later. Its source token is not the published document's, so opening that
 // published diagram does not open the fork as the user's draft of it. Only a
-// caller who may read that draft, its owner or one holding "builder-drafts"
-// "get" for it, gets its identity; for anyone else it is a draft that does
-// not exist (see [builderBetaAPI.draftFor]).
+// caller who may read that draft, its owner, a user it is shared with, or one
+// holding "builder-drafts" "get" for it, gets its identity; for anyone else
+// it is a draft that does not exist (see [builderBetaAPI.draftFor]).
 func (b *builderBetaAPI) forkOrigin(
 	r *http.Request,
 	actor builderBetaActor,

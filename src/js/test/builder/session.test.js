@@ -161,7 +161,13 @@ describe('logout', () => {
     // The queue stops before the database is emptied, so it cannot write
     // the draft back.
     expect(order).toEqual(['autosave disposed', 'database cleared']);
-    expect(store.drafts).toEqual({ mine: [], shared: [], published: [] });
+    expect(store.drafts).toEqual({
+      mine: [],
+      shared: [],
+      others: [],
+      published: [],
+      damaged: [],
+    });
     expect(store.documents).toEqual([]);
     expect(store.sources.topologies).toEqual([]);
     expect(store.published).toBeNull();

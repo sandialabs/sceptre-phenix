@@ -21,6 +21,7 @@ import {
   appliedOperations,
   createAutosave,
   describeState,
+  headOf,
   initialState,
   replayHistory,
   saveAnnouncement,
@@ -224,6 +225,16 @@ function configsAllowed(verb) {
   return Boolean(usePhenixStore().role) && roleAllowed('configs', verb);
 }
 
+// What opening another user's draft says when the server cannot find it:
+// the same whether it is missing or not shared with the user, as the server
+// answers the same.
+const NOT_SHARED = 'This draft does not exist, or it is not shared with you.';
+
+// The lists as they are before they are read.
+function emptyLists() {
+  return { mine: [], shared: [], others: [], published: [], damaged: [] };
+}
+
 // The drafts of mine made from a published diagram, the one changed last
 // first. Times are compared as times: the server's RFC 3339 text drops
 // trailing zeros of a fraction, so "…:43Z" is earlier than "…:43.1Z".
@@ -304,6 +315,21 @@ export const useBuilderStore = defineStore('builder', {
       forked: null,
     },
     readOnly: false,
+    // How the user reaches the open draft (see rememberAccess): 'owner',
+    // 'edit' or 'view', and for another user's draft, 'share' or 'role'.
+    access: '',
+    via: '',
+    // Whether the user may change who the open draft is shared with, and who
+    // it is shared with ({user, access, stale}).
+    canShare: false,
+    shares: [],
+    // Whether the user may share their drafts at all, as the server last
+    // said of one of them (it depends on the user alone), or null while no
+    // response has said.
+    shareCapable: null,
+    // Why a draft someone shared can no longer be saved (see accessLost in
+    // autosave.js): 'view-only', 'role' or 'gone'; '' otherwise.
+    accessLost: '',
     // The published diagram shown read only, with no draft of its own yet
     // ({id, name, target}; see viewPublishedDocument), or null.
     published: null,
@@ -320,7 +346,7 @@ export const useBuilderStore = defineStore('builder', {
     notice: null,
     theme: DEFAULT_THEME,
     resolvedTheme: 'light',
-    drafts: { mine: [], shared: [], published: [] },
+    drafts: emptyLists(),
     publishing: false,
     publishResult: null,
     // Whether resolveConflict is under way (see refuseWhileResolving).
@@ -377,6 +403,26 @@ export const useBuilderStore = defineStore('builder', {
     canCreateDrafts: () => configsAllowed('create'),
     canPublish: () => configsAllowed('update'),
     canDeleteDrafts: () => configsAllowed('delete'),
+    // Whether the open draft is the user's own. A diagram not saved yet is.
+    isOwner: (state) =>
+      state.access
+        ? state.access === 'owner'
+        : !state.owner || state.owner === usePhenixStore().username,
+    // The owner of the open draft, when someone shared it with the user and
+    // still does: once the share, or the draft, is gone, no one is named.
+    sharedBy: (state) =>
+      state.via === 'share' && state.accessLost !== 'gone' ? state.owner : '',
+    // The drafts the server can no longer read: the user's own, and other
+    // users' (on the Other users' drafts tab, never Shared with me).
+    damagedDrafts: (state) => {
+      const user = usePhenixStore().username;
+      const all = state.drafts.damaged || [];
+
+      return {
+        mine: all.filter((item) => item.owner === user),
+        others: all.filter((item) => item.owner !== user),
+      };
+    },
     // The draft, as draftCanUpdate() in publish.js takes it.
     publishDraft: (state) => ({
       ...state.draftRecord,
@@ -452,6 +498,49 @@ export const useBuilderStore = defineStore('builder', {
         publication: draft.publication || null,
         forked: draft.forked || null,
       };
+    },
+
+    /**
+     * Keeps how the user reaches a draft the server sent (access, via,
+     * canShare, shares). A response that does not say (a save, a create)
+     * changes nothing.
+     *
+     * @param {object} draft
+     */
+    rememberAccess(draft) {
+      if (!draft?.access || typeof draft.access !== 'string') {
+        return;
+      }
+
+      this.access = draft.access;
+      this.via = draft.via || '';
+      this.canShare = draft.canShare === true;
+      this.shares = Array.isArray(draft.shares) ? draft.shares : [];
+
+      if (draft.access === 'owner') {
+        this.shareCapable = this.canShare;
+      }
+    },
+
+    // The access of a draft the user just made: their own, which they may
+    // share when the server has said they may share any.
+    ownDraft() {
+      this.access = 'owner';
+      this.via = '';
+      this.canShare = this.shareCapable === true;
+      this.shares = [];
+      this.accessLost = '';
+    },
+
+    // A draft someone shared can no longer be saved (see accessLost in
+    // autosave.js): it is read only from now on, and the view says why.
+    loseAccess(why) {
+      this.accessLost = why;
+      this.readOnly = true;
+
+      if (why === 'view-only') {
+        this.access = 'view';
+      }
     },
 
     // Shows why a canvas gesture did nothing, and announces it.
@@ -547,7 +636,7 @@ export const useBuilderStore = defineStore('builder', {
       return this.queueWork;
     },
 
-    initAutosave({ owner, draftId, etag, entries, cursor, queue }) {
+    initAutosave({ owner, draftId, etag, entries, cursor, queue, serverHead }) {
       const phenix = usePhenixStore();
 
       this.owner = owner;
@@ -570,10 +659,17 @@ export const useBuilderStore = defineStore('builder', {
               this.etag = state.etag;
             }
 
+            if (state.accessLost && state.accessLost !== this.accessLost) {
+              this.loseAccess(state.accessLost);
+            }
+
             this.announceSaveState(state);
           },
           onDraft: (envelope, operation) => {
             this.rememberDraft(envelope.draft);
+            // A read of the draft (after a conflict) says who it is shared
+            // with now.
+            this.rememberAccess(envelope.draft);
 
             if (envelope.etag) {
               this.etag = envelope.etag;
@@ -627,6 +723,7 @@ export const useBuilderStore = defineStore('builder', {
         entries,
         cursor,
         queue,
+        serverHead,
       });
     },
 
@@ -713,6 +810,11 @@ export const useBuilderStore = defineStore('builder', {
       this.draftId = doc.id;
       this.etag = null;
       this.readOnly = false;
+      this.access = '';
+      this.via = '';
+      this.canShare = false;
+      this.shares = [];
+      this.accessLost = '';
       this.published = null;
       this.rememberDraft({});
       this.saveState = initialState();
@@ -808,6 +910,7 @@ export const useBuilderStore = defineStore('builder', {
         this.readOnly = false;
         this.published = null;
         this.rememberDraft(envelope.draft);
+        this.ownDraft();
         this.doc = envelope.document ? parseDocument(envelope.document) : doc;
         this.history = markRaw(new History(this.doc, DEFAULT_HISTORY_LIMIT));
         this.historyChanged();
@@ -817,6 +920,7 @@ export const useBuilderStore = defineStore('builder', {
           owner: this.owner,
           draftId: this.draftId,
           etag: this.etag,
+          serverHead: headOf(envelope),
         });
 
         if (this.sessionEndedSince(epoch)) {
@@ -825,6 +929,10 @@ export const useBuilderStore = defineStore('builder', {
 
         if (announcement) {
           this.announce(announcement);
+        }
+
+        if (this.shareCapable === null) {
+          this.learnShareCapable();
         }
 
         return envelope;
@@ -858,6 +966,12 @@ export const useBuilderStore = defineStore('builder', {
         this.readOnly = Boolean(envelope.draft?.readOnly);
         this.published = null;
         this.rememberDraft(envelope.draft);
+        this.access = '';
+        this.via = '';
+        this.canShare = false;
+        this.shares = [];
+        this.accessLost = '';
+        this.rememberAccess(envelope.draft);
 
         const loaded = this.setDocument(envelope.document, {
           label: 'Draft loaded',
@@ -869,31 +983,54 @@ export const useBuilderStore = defineStore('builder', {
 
         this.linkCurrentHistorySnapshot(envelope);
         const serverETag = envelope.etag;
+        const serverHead = headOf(envelope);
 
         await this.initAutosave({
           owner: this.owner,
           draftId: this.draftId,
           etag: this.etag,
+          serverHead,
         });
 
         if (this.sessionEndedSince(epoch)) {
           return null;
         }
 
-        await this.recoverLocalHistory(serverETag);
+        await this.recoverLocalHistory(serverETag, serverHead);
 
         if (this.sessionEndedSince(epoch)) {
           return null;
         }
 
+        // Another user's draft says whose it is, and whether it can be
+        // edited: others may be editing it at the same time.
         if (phenix.username && this.owner !== phenix.username) {
-          this.announce('Opened a shared draft.');
+          const name = this.doc.name || envelope.draft?.title || 'Untitled';
+
+          this.announce(
+            this.readOnly
+              ? `Opened ${this.owner}'s draft ${name}, view only.`
+              : `Opened ${this.owner}'s draft ${name}. You can edit it; others may be editing too.`,
+          );
         }
 
         return this.doc;
       } catch (error) {
         if (!this.sessionEndedSince(epoch)) {
-          this.setError(this.describeError(error, 'load the draft'));
+          const theirs = owner !== usePhenixStore().username;
+          const kind = classifyError(error);
+
+          this.setError(
+            theirs && kind === 'missing'
+              ? NOT_SHARED
+              : this.describeError(error, 'load the draft'),
+          );
+
+          // Someone else's draft that is gone, or no longer shared, leaves
+          // the lists, so its card does not offer the same failure again.
+          if (theirs && (kind === 'missing' || kind === 'forbidden')) {
+            await this.fetchDrafts({ keepError: true });
+          }
         }
 
         return null;
@@ -909,9 +1046,10 @@ export const useBuilderStore = defineStore('builder', {
      *
      * @param {string} [serverETag] the ETag the draft was read with, whose
      *   history is serverHistory
+     * @param {object} [serverHead] headOf() the draft as read
      * @returns {Promise<boolean>} whether unsaved work was recovered
      */
-    async recoverLocalHistory(serverETag = this.etag) {
+    async recoverLocalHistory(serverETag = this.etag, serverHead = null) {
       if (!this.autosave) {
         return false;
       }
@@ -931,6 +1069,7 @@ export const useBuilderStore = defineStore('builder', {
           owner: this.owner,
           draftId: this.draftId,
           etag: serverETag,
+          serverHead,
           entries: [],
           cursor: 0,
           queue: [],
@@ -972,6 +1111,8 @@ export const useBuilderStore = defineStore('builder', {
         owner: this.owner,
         draftId: this.draftId,
         etag,
+        // The head of the ETag the queue goes on from.
+        serverHead: etag === serverETag ? serverHead : local.serverHead,
         entries,
         cursor: local.cursor,
         queue: pending,
@@ -1113,6 +1254,10 @@ export const useBuilderStore = defineStore('builder', {
           this.owner = envelope.draft?.owner || this.owner;
           this.draftId = envelope.draft?.id || this.draftId;
           this.rememberDraft(envelope.draft);
+          // The new draft is the user's own, even when the one it leaves
+          // was shared with them and they lost access to it.
+          this.ownDraft();
+          this.readOnly = false;
           this.etag = envelope.etag;
           this.history.entries = entries;
           this.doc = setDocumentInfo(this.doc, { name: title });
@@ -1201,25 +1346,32 @@ export const useBuilderStore = defineStore('builder', {
 
     // A listing that answers after the session ended is dropped: it is the
     // previous user's (see endSession). One the role may not read empties
-    // the lists; any other failure keeps what they showed.
-    async fetchDrafts() {
+    // the lists; any other failure keeps what they showed. With keepError,
+    // the page alert keeps saying what failed before the lists were read.
+    async fetchDrafts({ keepError = false } = {}) {
       const epoch = sessionEpoch;
 
       this.loading = true;
-      this.clearError();
+
+      if (!keepError) {
+        this.clearError();
+      }
 
       try {
         const drafts = await builderApi.listDrafts();
 
         if (epoch === sessionEpoch) {
           this.drafts = drafts;
+          this.learnFromList(drafts);
         }
       } catch (error) {
         if (epoch === sessionEpoch) {
           if (classifyError(error) === 'forbidden') {
-            this.drafts = { mine: [], shared: [], published: [] };
+            this.drafts = emptyLists();
           }
-          this.setError(this.describeError(error, 'list drafts'));
+          if (!keepError) {
+            this.setError(this.describeError(error, 'list drafts'));
+          }
         }
       } finally {
         if (epoch === sessionEpoch) {
@@ -1228,6 +1380,127 @@ export const useBuilderStore = defineStore('builder', {
       }
 
       return this.drafts;
+    },
+
+    // Whether the user may share: any draft of theirs listed says.
+    learnFromList(drafts) {
+      const [own] = drafts?.mine || [];
+
+      if (own) {
+        this.shareCapable = own.canShare === true;
+      }
+    },
+
+    // A draft just made is shareable when the user may share any draft,
+    // which the lists say once they hold one of the user's own. While the
+    // user has none, the lists are read again, now that they have one, and
+    // the open draft takes what they say.
+    async learnShareCapable() {
+      const { owner, draftId } = this;
+      const mine = await this.listMine();
+
+      if (this.owner === owner && this.draftId === draftId && this.isOwner) {
+        this.canShare =
+          mine.find((draft) => draft.id === draftId)?.canShare === true;
+      }
+    },
+
+    /**
+     * Reads who a draft is shared with, for the Share dialog. Only its
+     * owner may.
+     *
+     * @param {{owner: string, id: string}} target
+     * @returns {Promise<object>} see getShares in api.js
+     */
+    loadShares(target) {
+      return builderApi.getShares(target.owner, target.id);
+    },
+
+    /**
+     * Saves who a draft is shared with, for the Share dialog, which reports
+     * a failure itself. The change gives the draft a new ETag. For the open
+     * draft, nothing is sent meanwhile, and the queue takes the new ETag
+     * only while the draft's content is as it last confirmed (see
+     * adoptIfSameHead in autosave.js). A listed draft takes the draft the
+     * server answered with, so its Delete carries the new ETag.
+     *
+     * @param {{owner: string, id: string}} target
+     * @param {{user: string, access: string}[]} shares the whole new list
+     * @param {string} sharesEtag the list's tag, as read
+     * @returns {Promise<object>} see updateShares in api.js
+     */
+    async saveShares(target, shares, sharesEtag) {
+      const autosave =
+        target.owner === this.owner && target.id === this.draftId
+          ? this.autosave
+          : null;
+      const release = autosave?.hold();
+
+      try {
+        await autosave?.idle();
+
+        const saved = await builderApi.updateShares(
+          target.owner,
+          target.id,
+          shares,
+          sharesEtag,
+        );
+
+        if (saved.draft) {
+          if (autosave && autosave === this.autosave) {
+            this.rememberAccess(saved.draft);
+
+            if (await autosave.adoptIfSameHead(saved.draft, saved.etag)) {
+              this.etag = saved.etag;
+            }
+          }
+
+          this.patchListedDraft(saved.draft);
+        }
+
+        return saved;
+      } finally {
+        if (release) {
+          this.trackQueue(release());
+        }
+      }
+    },
+
+    // Replaces a draft of mine on the lists with the one the server sent.
+    patchListedDraft(draft) {
+      const index = this.drafts.mine.findIndex(
+        (item) => item.id === draft?.id && item.owner === draft?.owner,
+      );
+
+      if (index < 0) {
+        return;
+      }
+
+      const mine = [...this.drafts.mine];
+
+      mine[index] = {
+        ...draft,
+        shares: Array.isArray(draft.shares) ? draft.shares : [],
+      };
+      this.drafts = { ...this.drafts, mine };
+    },
+
+    /**
+     * The users the role may list, for the Share dialog's suggestions.
+     *
+     * @returns {Promise<{username: string, name: string}[]|null>} null when
+     *   the role may not list them, or they could not be read
+     */
+    async fetchUsers() {
+      if (!usePhenixStore().role || !roleAllowed('users', 'list')) {
+        return null;
+      }
+
+      try {
+        return await builderApi.listUsers();
+      } catch {
+        return null;
+      }
     },
 
     async fetchDocuments() {
@@ -1395,6 +1668,7 @@ export const useBuilderStore = defineStore('builder', {
 
         if (epoch === sessionEpoch) {
           this.drafts = drafts;
+          this.learnFromList(drafts);
         }
 
         return drafts.mine;

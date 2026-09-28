@@ -3,7 +3,9 @@
 // Specs import `test` and `expect` from here instead of @playwright/test. The
 // `builder` fixture opens /builder-beta, records every draft and config the
 // test creates, and deletes them afterwards so runs do not pile up drafts on
-// the target server.
+// the target server. The `sharingUsers` fixture signs in several users of a
+// server with authentication on, each in a browser of their own (see
+// builder-sharing.spec.js).
 
 const crypto = require('crypto');
 
@@ -492,6 +494,140 @@ async function deleteDraft(request, path) {
   }
 }
 
+// --- Several users (a server with authentication on) -----------------------
+
+const ADMIN_USER = process.env.E2E_ADMIN_USER || 'e2e-admin';
+const ADMIN_PASS = process.env.E2E_ADMIN_PASS || 'Testpass1!';
+const USER_PASS = 'Testpass1!';
+// The users each sharing test signs in, by part.
+const SHARING_PARTS = ['owner', 'editor', 'viewer', 'stranger'];
+
+async function signIn(request, user, pass) {
+  const response = await request.post(`${API}/login`, {
+    data: { user, pass },
+  });
+  expect(response.ok(), await response.text()).toBeTruthy();
+
+  return response.json();
+}
+
+// An API client that sends `token`, as the UI does.
+function signedClient(playwright, baseURL, token) {
+  return playwright.request.newContext({
+    baseURL,
+    extraHTTPHeaders: { 'X-Phenix-Auth-Token': `bearer ${token}` },
+  });
+}
+
+// Deletes every draft `username` owns, through their API client.
+async function deleteOwnDrafts(api, username) {
+  const listed = await api.get(`${API}/builder/drafts`).catch(() => null);
+  if (!listed || !listed.ok()) {
+    return;
+  }
+
+  const body = await listed.json();
+  for (const draft of [...(body.drafts || []), ...(body.damaged || [])]) {
+    if (draft.owner === username) {
+      await deleteDraft(api, draftPath(draft));
+    }
+  }
+}
+
+// A role that may read and change configs, and so make, change and delete
+// drafts of its own, and read the schemas and disks the editor offers; it
+// may not see other users' drafts (no builder-drafts) or list users. Then
+// one user with it for each of SHARING_PARTS, named for the test, each
+// signed in with a browser context of its own (the session as a sign-in
+// leaves it) and an API client. Everything is deleted afterwards.
+async function sharingUsers({ browser, playwright }, use, testInfo) {
+  const { baseURL, viewport } = testInfo.project.use;
+  const nonce = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
+  const guest = await playwright.request.newContext({ baseURL });
+  const admin = await signedClient(
+    playwright,
+    baseURL,
+    (await signIn(guest, ADMIN_USER, ADMIN_PASS)).token,
+  );
+  const roleName = `E2E Builder Author ${nonce}`;
+  const roleConfig = `e2e-builder-author-${nonce}`;
+  const created = await admin.post(`${API}/configs`, {
+    data: {
+      apiVersion: 'phenix.sandia.gov/v1',
+      kind: 'Role',
+      metadata: { name: roleConfig },
+      spec: {
+        roleName,
+        policies: [
+          {
+            resources: ['configs', 'configs/*'],
+            resourceNames: ['*'],
+            verbs: ['list', 'get', 'create', 'update', 'delete'],
+          },
+          { resources: ['schemas'], resourceNames: ['*'], verbs: ['get'] },
+          { resources: ['disks'], resourceNames: ['*'], verbs: ['list'] },
+        ],
+      },
+    },
+  });
+  expect(created.ok(), await created.text()).toBeTruthy();
+
+  const users = {};
+  try {
+    for (const part of SHARING_PARTS) {
+      const username = `${part}-${nonce}`;
+      const made = await admin.post(`${API}/users`, {
+        data: {
+          username,
+          password: USER_PASS,
+          first_name: part,
+          last_name: 'E2E',
+          role_name: roleName,
+          resource_names: ['*'],
+        },
+      });
+      expect(made.ok(), await made.text()).toBeTruthy();
+
+      const session = await signIn(guest, username, USER_PASS);
+      const context = await browser.newContext({ baseURL, viewport });
+      await context.addInitScript((signedIn) => {
+        sessionStorage.setItem('phenix.user', signedIn.user.username);
+        sessionStorage.setItem('phenix.token', signedIn.token);
+        sessionStorage.setItem(
+          'phenix.role',
+          JSON.stringify(signedIn.user.role),
+        );
+        sessionStorage.setItem('phenix.auth', 'true');
+      }, session);
+      const page = await context.newPage();
+      const issues = [];
+      attachCapture(page, issues);
+
+      users[part] = {
+        username,
+        context,
+        page,
+        issues,
+        api: await signedClient(playwright, baseURL, session.token),
+      };
+    }
+
+    await use(users);
+  } finally {
+    for (const user of Object.values(users)) {
+      await deleteOwnDrafts(user.api, user.username);
+      await user.context.close().catch(() => {});
+      await user.api.dispose();
+    }
+    for (const part of SHARING_PARTS) {
+      await admin.delete(`${API}/users/${part}-${nonce}`).catch(() => {});
+    }
+    await admin.delete(`${API}/configs/Role/${roleConfig}`).catch(() => {});
+    await admin.dispose();
+    await guest.dispose();
+  }
+}
+
 const test = base.test.extend({
   // Console, page-error and HTTP issues seen by the page.
   issues: async ({ page }, use) => {
@@ -510,6 +646,8 @@ const test = base.test.extend({
   builder: async ({ page, request, tracker }, use) => {
     await use(new BuilderPage(page, request, tracker));
   },
+
+  sharingUsers,
 });
 
 // Fails the test when the page logged a JavaScript error.

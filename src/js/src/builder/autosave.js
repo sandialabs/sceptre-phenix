@@ -11,6 +11,15 @@
 // local history as a new draft. There is no code path that overwrites a draft
 // whose ETag we no longer hold.
 //
+// Some changes to a draft leave its content as it was: a change to who it is
+// shared with, or someone else's publish. The queue keeps the head the server
+// last confirmed (serverHead: the current snapshot, the cursor and how many
+// snapshots it keeps), and on a conflict reads the draft again. When the head
+// is the same, the content is what this device last saw, so the queue takes
+// the new ETag and sends again; otherwise the conflict stands, naming who
+// saved last. The read also finds a draft that is no longer shared with the
+// user, or that they may now only view (accessLost).
+//
 // This queue is single-editor by design. There is no presence, no live
 // collaboration, no heartbeat and no polling: the only requests it makes are
 // the draft snapshot append and the draft history cursor move, both of which
@@ -22,6 +31,26 @@ import { DEFAULT_HISTORY_LIMIT } from './history.js';
 import { draftKey } from './idb.js';
 
 export const RETRY_DELAYS = [1000, 2000, 5000, 15000, 30000];
+
+// How many times in a row one operation is sent again after a conflict
+// that left the content as it was.
+export const MAX_REBASES = 2;
+
+// Why a draft someone shared can no longer be saved (see accessLost in
+// initialState): 'role' is a draft still shared for editing whose user's
+// role may no longer change configs.
+const ACCESS_LOST = {
+  'view-only': 'You can no longer edit this draft.',
+  role: 'You can no longer edit this draft: your role cannot change configs.',
+  gone: 'This draft is no longer shared with you, or it was deleted.',
+};
+
+function accessLost(why, error) {
+  return Object.assign(new Error(ACCESS_LOST[why]), {
+    accessLost: why,
+    response: error?.response,
+  });
+}
 
 /**
  * Save-state text for a failure that retrying cannot fix: the reason from
@@ -64,6 +93,13 @@ export function initialState() {
     // or oversized snapshot, a deleted draft), so Retry saving is not
     // offered for it.
     retryable: true,
+    // During a conflict: who saved the draft last, when the server said.
+    lastModifiedBy: '',
+    // Why a draft someone shared can no longer be saved: 'view-only' (the
+    // user may now only view it), 'role' (their role may no longer change
+    // configs) or 'gone' (no longer shared with them, or deleted); ''
+    // otherwise. The queue is then blocked, as when forbidden.
+    accessLost: '',
   };
 }
 
@@ -81,6 +117,49 @@ function changes(count) {
 export function snapshotIdOf(envelope) {
   return (
     envelope?.history?.[envelope.cursor]?.id || envelope?.draft?.snapshotId
+  );
+}
+
+/**
+ * The head of the draft an envelope describes: its current snapshot, its
+ * cursor and how many snapshots it keeps. Two envelopes with the same head
+ * hold the same content, whatever else changed (who it is shared with, a
+ * publication).
+ *
+ * @param {object} envelope readEnvelope() result, or {draft}
+ * @returns {{snapshotId: string, cursor: number, snapshots: number}|null}
+ *   null when the envelope does not say
+ */
+export function headOf(envelope) {
+  const draft = envelope?.draft;
+  const snapshotId = snapshotIdOf(envelope);
+  const cursor = Number.isInteger(draft?.cursor)
+    ? draft.cursor
+    : envelope?.cursor;
+  const snapshots = draft?.snapshots;
+
+  if (
+    !snapshotId ||
+    !Number.isInteger(cursor) ||
+    !Number.isInteger(snapshots)
+  ) {
+    return null;
+  }
+
+  return { snapshotId, cursor, snapshots };
+}
+
+/**
+ * @param {object|null} a headOf() result
+ * @param {object|null} b
+ * @returns {boolean} whether both are known and the same
+ */
+export function sameHead(a, b) {
+  return (
+    Boolean(a && b) &&
+    a.snapshotId === b.snapshotId &&
+    a.cursor === b.cursor &&
+    a.snapshots === b.snapshots
   );
 }
 
@@ -534,11 +613,12 @@ export function createAutosave(options = {}) {
         }
 
         const op = record.queue[0];
-        const envelope = await send(op);
+        const envelope = await sendChecked(op);
 
         sent += 1;
         record.queue.shift();
         record.etag = envelope.etag || record.etag;
+        record.serverHead = headOf(envelope);
 
         if (op.kind === 'snapshot') {
           const entry = record.entries.find((item) => item.id === op.commitId);
@@ -558,10 +638,27 @@ export function createAutosave(options = {}) {
       retries = 0;
       cancelRetry();
 
-      return emit({ status: 'saved', lastSavedAt: now(), etag: record.etag });
+      return emit({
+        status: 'saved',
+        lastSavedAt: now(),
+        etag: record.etag,
+        accessLost: '',
+      });
     } catch (error) {
       if (disposed) {
         return state;
+      }
+
+      // A draft someone shared that the user may no longer change: nothing
+      // queued can be saved to it.
+      if (error?.accessLost) {
+        cancelRetry();
+
+        return emit({
+          status: 'forbidden',
+          accessLost: error.accessLost,
+          message: ACCESS_LOST[error.accessLost],
+        });
       }
 
       const kind = classifyError(error);
@@ -576,7 +673,11 @@ export function createAutosave(options = {}) {
       if (kind === 'conflict' || kind === 'forbidden') {
         cancelRetry();
 
-        return emit({ status: kind, message });
+        return emit({
+          status: kind,
+          message,
+          lastModifiedBy: error?.lastModifiedBy || '',
+        });
       }
 
       // The session ended (401). Sending again succeeds once the user is
@@ -627,6 +728,81 @@ export function createAutosave(options = {}) {
       flushing = false;
       inflight = null;
       settled();
+    }
+  }
+
+  // Reads the draft again after a conflict or a refusal (see the header).
+  // A draft someone shared that is gone or may now only be viewed is thrown
+  // as access lost; a read that fails otherwise leaves `error` as it was.
+  async function readAgain(error) {
+    const shared = record.owner !== actor;
+    let fresh;
+
+    try {
+      fresh = await api.getDraft(record.owner, record.draftId);
+    } catch (readError) {
+      if (shared && classifyError(readError) === 'missing') {
+        throw accessLost('gone', error);
+      }
+
+      throw error;
+    }
+
+    // Still shared for editing, but the role may not change configs.
+    if (shared && fresh?.draft?.readOnly) {
+      throw accessLost(
+        fresh.draft.access === 'edit' ? 'role' : 'view-only',
+        error,
+      );
+    }
+
+    return fresh;
+  }
+
+  /**
+   * Sends `op`. A conflict reads the draft again, and when its head is the
+   * one the server last confirmed, the content is as this device last saw
+   * it: the queue takes the new ETag and sends again, at most MAX_REBASES
+   * times in a row. Otherwise the conflict is thrown, naming who saved last.
+   * A refusal (403 or 404) of a draft someone shared reads it again too, to
+   * tell whether the user lost access.
+   *
+   * @param {object} op queued operation
+   * @returns {Promise<object>} the server's envelope
+   */
+  async function sendChecked(op) {
+    for (let rebases = 0; ; rebases += 1) {
+      try {
+        return await send(op);
+      } catch (error) {
+        const kind = classifyError(error);
+        const refused =
+          record.owner !== actor && ['forbidden', 'missing'].includes(kind);
+
+        if (!(kind === 'conflict' && rebases < MAX_REBASES) && !refused) {
+          throw error;
+        }
+
+        const fresh = await readAgain(error);
+
+        if (kind !== 'conflict') {
+          throw error;
+        }
+
+        if (!fresh?.etag || !sameHead(headOf(fresh), record.serverHead)) {
+          throw Object.assign(new Error(error?.message || 'conflict'), {
+            response: error?.response,
+            lastModifiedBy: fresh?.draft?.lastModifiedBy || '',
+          });
+        }
+
+        record.etag = fresh.etag;
+        await persist();
+
+        if (!disposed) {
+          onDraft(fresh, null);
+        }
+      }
     }
   }
 
@@ -702,7 +878,8 @@ export function createAutosave(options = {}) {
     /**
      * Binds the queue to a draft, replacing any local record.
      *
-     * @param {object} draft owner, draftId, etag, entries, cursor
+     * @param {object} draft owner, draftId, etag, entries, cursor, and
+     *   serverHead: headOf() the envelope etag came with, when known
      */
     async attach(draft) {
       const key = draftKey(actor, draft.owner, draft.draftId);
@@ -720,6 +897,10 @@ export function createAutosave(options = {}) {
         owner: draft.owner,
         draftId: draft.draftId,
         etag: hasPending ? existing.etag : draft.etag || null,
+        // The head that ETag stands for, so a pending queue keeps its own.
+        serverHead: hasPending
+          ? existing.serverHead || null
+          : draft.serverHead || null,
         cursor: draft.cursor ?? existing?.cursor ?? 0,
         entries: draft.entries ?? existing?.entries ?? [],
         queue: draft.queue ?? existing?.queue ?? [],
@@ -734,6 +915,8 @@ export function createAutosave(options = {}) {
         status: record.queue.length > 0 ? 'idle' : 'saved',
         etag: record.etag,
         message: '',
+        lastModifiedBy: '',
+        accessLost: '',
       });
     },
 
@@ -866,7 +1049,7 @@ export function createAutosave(options = {}) {
     ) {
       cancelRetry();
 
-      return emit({ status: 'conflict', message });
+      return emit({ status: 'conflict', message, lastModifiedBy: '' });
     },
 
     /**
@@ -884,6 +1067,37 @@ export function createAutosave(options = {}) {
     },
 
     /**
+     * Adopts the ETag of a change that left the content as it was, such as
+     * the owner's own change of who the draft is shared with: only when the
+     * draft's head is the one the server last confirmed to this queue, and
+     * the queue is not blocked. The ETag of a draft someone else saved
+     * meanwhile would let this queue write over their save, so it is not
+     * taken: the next save then meets the conflict, and reads the draft
+     * again (see sendChecked). Call it with nothing being sent (see hold
+     * and idle).
+     *
+     * @param {object} draft the draft the change answered with
+     * @param {string} etag its ETag
+     * @returns {Promise<boolean>} whether the ETag was taken
+     */
+    async adoptIfSameHead(draft, etag) {
+      if (
+        !record ||
+        !etag ||
+        ['conflict', 'forbidden'].includes(state.status) ||
+        !sameHead(headOf({ draft }), record.serverHead)
+      ) {
+        return false;
+      }
+
+      record.etag = etag;
+      await persist();
+      emit({ etag });
+
+      return true;
+    },
+
+    /**
      * Discards local state after the user chose to reload the server copy.
      * Local commits are dropped only on this explicit choice.
      */
@@ -896,7 +1110,7 @@ export function createAutosave(options = {}) {
       record.entries = [];
       await persist();
 
-      return emit({ status: 'saved', message: '' });
+      return emit({ status: 'saved', message: '', accessLost: '' });
     },
 
     /**
@@ -991,6 +1205,7 @@ export function createAutosave(options = {}) {
         owner,
         draftId,
         etag,
+        serverHead: headOf(latest),
         cursor: index,
         entries: entries.map((entry) => ({
           id: entry.id,
@@ -1010,7 +1225,7 @@ export function createAutosave(options = {}) {
         await store?.remove(previous);
       } catch {}
 
-      emit({ status: 'saved', etag, message: '' });
+      emit({ status: 'saved', etag, message: '', accessLost: '' });
 
       return {
         ...created,
@@ -1041,7 +1256,7 @@ export function createAutosave(options = {}) {
       }
 
       if (['conflict', 'forbidden', 'error'].includes(state.status)) {
-        emit({ status: 'idle', message: '' });
+        emit({ status: 'idle', message: '', accessLost: '' });
       }
 
       return flush();

@@ -7,7 +7,8 @@
 // The draft record is versioned: every mutation carries the ETag the client
 // last observed as `If-Match`, and the server rejects a stale write instead of
 // letting one editor silently overwrite another. There is deliberately no
-// "force" variant of any call here.
+// "force" variant of any call here. A draft's share list has a tag of its own
+// ("shares-N"), which its updates carry instead.
 
 import axiosInstance from '@/utils/axios.js';
 
@@ -18,6 +19,9 @@ export const DOCUMENTS_PATH = 'builder/documents';
 export const SCHEMA_PATH = 'schemas/builder/v1';
 // Disk images, the same listing the Disks page reads (web/disk.go GetDisks).
 export const DISKS_PATH = 'disks';
+// The users a role may list, the listing the Users page reads (web/users.go
+// GetUsers), for the Share dialog's suggestions.
+export const USERS_PATH = 'users';
 
 /**
  * @param {string} owner draft owner (username)
@@ -55,6 +59,15 @@ export function cursorPath(owner, id) {
  */
 export function publishPath(owner, id) {
   return `${draftPath(owner, id)}/publish`;
+}
+
+/**
+ * @param {string} owner
+ * @param {string} id
+ * @returns {string} the draft's share list, which only its owner reads
+ */
+export function sharesPath(owner, id) {
+  return `${draftPath(owner, id)}/shares`;
 }
 
 /**
@@ -357,6 +370,65 @@ function ifMatch(etag) {
   return etag ? { headers: { 'If-Match': etag } } : {};
 }
 
+// The most people a draft is shared with (MaxShares in api/builder), used
+// until the server says otherwise.
+export const MAX_SHARES = 25;
+
+/**
+ * Normalizes a share list response. Its tag ("shares-3") is the share
+ * list's own, apart from the draft's ETag, and is read from the body first
+ * for the reason readETag gives.
+ *
+ * @param {object} response axios-like response
+ * @returns {{shares: object[], sharesEtag: string|null, maxShares: number}}
+ */
+export function readShares(response) {
+  const data = response?.data || {};
+  const headers = response?.headers;
+  const header =
+    typeof headers?.get === 'function'
+      ? headers.get('etag')
+      : headers?.etag || headers?.ETag;
+  const sharesEtag =
+    typeof data.sharesEtag === 'string' && data.sharesEtag !== ''
+      ? data.sharesEtag
+      : header || null;
+
+  return {
+    shares: (Array.isArray(data.shares) ? data.shares : [])
+      .filter((entry) => typeof entry?.user === 'string' && entry.user)
+      .map((entry) => ({
+        user: entry.user,
+        access: entry.access === 'edit' ? 'edit' : 'view',
+        stale: entry.stale === true,
+        grantedAt: entry.grantedAt || '',
+      })),
+    sharesEtag,
+    maxShares: Number.isInteger(data.maxShares) ? data.maxShares : MAX_SHARES,
+  };
+}
+
+/**
+ * The people a share list update refused, and why, from its 422 answer.
+ *
+ * @param {object} error axios-like error
+ * @returns {{user: string, reason: string}[]} none for any other failure
+ */
+export function shareErrors(error) {
+  const errors = error?.response?.data?.errors;
+
+  if (error?.response?.status !== 422 || !Array.isArray(errors)) {
+    return [];
+  }
+
+  return errors
+    .filter((entry) => typeof entry?.reason === 'string' && entry.reason)
+    .map((entry) => ({
+      user: typeof entry.user === 'string' ? entry.user : '',
+      reason: entry.reason,
+    }));
+}
+
 /**
  * Normalizes a draft envelope: metadata, the current document and the history
  * index the server holds. Only a read of the draft carries its history; a
@@ -496,16 +568,20 @@ export function readPublishResult(response) {
 export function createBuilderApi(http = axiosInstance) {
   return {
     /**
-     * Lists the drafts the user may see. Those the server can no longer read
-     * are listed apart, marked damaged: they can only be deleted.
+     * Lists the drafts the user may see: their own (mine), those shared
+     * with them (shared), and other users' drafts their role lets them see
+     * (others). Those the server can no longer read are listed apart,
+     * marked damaged: they can only be deleted.
      */
     async listDrafts() {
       const response = await http.get(DRAFTS_PATH);
       const data = response.data || {};
+      const visible = Array.isArray(data.shared) ? data.shared : [];
 
       return {
         mine: data.drafts || data.mine || [],
-        shared: data.shared || [],
+        shared: visible.filter((draft) => draft?.via === 'share'),
+        others: visible.filter((draft) => draft?.via !== 'share'),
         published: data.published || [],
         damaged: (Array.isArray(data.damaged) ? data.damaged : []).map(
           (draft) => ({ ...draft, damaged: true }),
@@ -539,6 +615,68 @@ export function createBuilderApi(http = axiosInstance) {
       await http.delete(draftPath(owner, id), ifMatch(etag));
 
       return true;
+    },
+
+    /**
+     * Reads who a draft is shared with. Only its owner may.
+     *
+     * @param {string} owner
+     * @param {string} id
+     * @returns {Promise<{shares: object[], sharesEtag: string|null,
+     *   maxShares: number}>}
+     */
+    async getShares(owner, id) {
+      return readShares(await http.get(sharesPath(owner, id)));
+    },
+
+    /**
+     * Replaces who a draft is shared with, if the list has not changed since
+     * sharesEtag was read. The answer carries the draft too, whose ETag it
+     * changed.
+     *
+     * @param {string} owner
+     * @param {string} id
+     * @param {{user: string, access: string}[]} shares the whole new list
+     * @param {string} sharesEtag the share list's tag, as last read
+     * @returns {Promise<object>} readShares() with the draft and its ETag
+     */
+    async updateShares(owner, id, shares, sharesEtag) {
+      const response = await http.put(
+        sharesPath(owner, id),
+        { shares: shares.map(({ user, access }) => ({ user, access })) },
+        ifMatch(sharesEtag),
+      );
+
+      return {
+        ...readShares(response),
+        draft: response.data?.draft || null,
+        // The draft's, from its body: the ETag header is the share list's.
+        etag: readETag({ data: response.data }),
+      };
+    },
+
+    /**
+     * Lists the users the role may list, for suggestions.
+     *
+     * @returns {Promise<{username: string, name: string}[]>}
+     */
+    async listUsers() {
+      const response = await http.get(USERS_PATH);
+      // The server sends null, not [], when the role may list none.
+      const users = response.data?.users === null ? [] : response.data?.users;
+
+      if (!Array.isArray(users)) {
+        throw new TypeError('The server sent an unexpected user listing.');
+      }
+
+      return users
+        .filter((user) => typeof user?.username === 'string' && user.username)
+        .map((user) => ({
+          username: user.username,
+          name: [user.first_name, user.last_name]
+            .filter((part) => typeof part === 'string' && part.trim())
+            .join(' '),
+        }));
     },
 
     async listSnapshots(owner, id) {

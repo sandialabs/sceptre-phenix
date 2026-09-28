@@ -27,6 +27,14 @@ const (
 	// [MaxSnapshots] by its next append.
 	maxStoredSnapshots = 100
 
+	// MaxShares is the largest number of users one draft may be shared with.
+	MaxShares = 25
+
+	// maxStoredShares is the largest share list a stored draft may hold. It
+	// follows [maxStoredSnapshots]: were [MaxShares] ever lowered, it would
+	// stay at the old limit, so drafts shared before stay readable.
+	maxStoredShares = 25
+
 	// ChunkBytes is the size of the immutable content chunks a compressed
 	// document payload is split into (512 KiB).
 	ChunkBytes = 512 << 10
@@ -74,6 +82,10 @@ const (
 
 	// MaxKindLength bounds a config kind (for example "Topology").
 	MaxKindLength = 64
+
+	// maxUserCreatedLength bounds the account creation time a share records
+	// for its recipient (see [ShareEntry.UserCreated]).
+	maxUserCreatedLength = 64
 
 	// MaxMetadataBytes bounds the encoded size of one draft or published
 	// document metadata record (512 KiB). It keeps records well below the
