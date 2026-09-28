@@ -8,12 +8,48 @@ import { findNode } from './model.js';
 
 /**
  * @param {object[]} issues
- * @returns {{errors: number, warnings: number}}
+ * @returns {{errors: number, warnings: number, blocking: number}} blocking:
+ *   the warnings about what publishing refuses, an interface with no VLAN,
+ *   which the Publish dialog lists as errors (see publishChecks)
  */
 export function issueCounts(issues = []) {
   const errors = issues.filter((entry) => entry.level === 'error').length;
+  const blocking = issues.filter(
+    (entry) => entry.blocksPublish && entry.level !== 'error',
+  ).length;
 
-  return { errors, warnings: issues.length - errors };
+  return { errors, warnings: issues.length - errors, blocking };
+}
+
+/**
+ * What stops the diagram from being published, as the Publish dialog
+ * decides it: its errors, and the warnings it lists as errors.
+ *
+ * @param {{errors: number, warnings: number, blocking?: number}} counts
+ * @returns {string} a sentence, or '' when there are no issues
+ */
+export function publishingText({ errors, warnings, blocking = 0 }) {
+  if (!blocking) {
+    if (errors) {
+      return 'Errors must be fixed before the diagram can be published.';
+    }
+
+    return warnings
+      ? 'Warnings do not stop the diagram from being published.'
+      : '';
+  }
+
+  let which = `${blocking} of the warnings`;
+
+  if (blocking === warnings) {
+    which = warnings === 1 ? 'the warning' : 'the warnings';
+  }
+
+  const subject = errors ? `Errors and ${which}` : which;
+  const listed =
+    blocking === 1 ? 'that warning as an error' : 'those warnings as errors';
+
+  return `${subject[0].toUpperCase()}${subject.slice(1)} must be fixed before the diagram can be published, and Publish lists ${listed}.`;
 }
 
 /**

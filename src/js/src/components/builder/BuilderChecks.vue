@@ -107,7 +107,12 @@
   import BuilderIcon from './BuilderIcon.vue';
 
   import { count } from '@/builder/announce.js';
-  import { countsText, issueCounts, issueGroups } from '@/builder/issues.js';
+  import {
+    countsText,
+    issueCounts,
+    issueGroups,
+    publishingText,
+  } from '@/builder/issues.js';
   import { selectionItemName } from '@/builder/selection.js';
   import { useBuilderStore } from '@/builder/store.js';
 
@@ -159,14 +164,11 @@
       return 'This diagram has no errors or warnings.';
     }
 
-    const blocking = counts.value.errors
-      ? ' Errors must be fixed before the diagram can be published.'
-      : ' Warnings do not stop the diagram from being published.';
     const choose = sections.value.length
       ? ' Choose one to show its node or connection on the canvas.'
       : '';
 
-    return `This diagram has ${text}.${blocking}${choose}`;
+    return `This diagram has ${text}. ${publishingText(counts.value)}${choose}`;
   });
 
   /**

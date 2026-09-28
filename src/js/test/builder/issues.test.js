@@ -7,6 +7,7 @@ import {
   issueNodeId,
   issuesAbout,
   nodeIssueSummaries,
+  publishingText,
 } from '@/builder/issues.js';
 import { validateDocument } from '@/builder/validate.js';
 
@@ -63,6 +64,32 @@ describe('diagram checks', () => {
     expect(countsText({ errors: 1, warnings: 0 })).toBe('1 error');
     expect(countsText({ errors: 2, warnings: 1 })).toBe('2 errors, 1 warning');
     expect(countsText({ errors: 0, warnings: 0 })).toBe('');
+  });
+
+  // Publish lists a warning about an interface with no VLAN as an error.
+  test('say what stops publishing, as Publish decides it', () => {
+    const { issues } = brokenSample();
+
+    expect(issueCounts(issues).blocking).toBe(
+      issues.filter((issue) => issue.blocksPublish).length,
+    );
+    expect(issueCounts(issues).blocking).toBeGreaterThan(0);
+    expect(publishingText({ errors: 0, warnings: 0 })).toBe('');
+    expect(publishingText({ errors: 0, warnings: 2 })).toBe(
+      'Warnings do not stop the diagram from being published.',
+    );
+    expect(publishingText({ errors: 1, warnings: 2 })).toBe(
+      'Errors must be fixed before the diagram can be published.',
+    );
+    expect(publishingText({ errors: 0, warnings: 1, blocking: 1 })).toBe(
+      'The warning must be fixed before the diagram can be published, and Publish lists that warning as an error.',
+    );
+    expect(publishingText({ errors: 0, warnings: 3, blocking: 1 })).toBe(
+      '1 of the warnings must be fixed before the diagram can be published, and Publish lists that warning as an error.',
+    );
+    expect(publishingText({ errors: 2, warnings: 2, blocking: 2 })).toBe(
+      'Errors and the warnings must be fixed before the diagram can be published, and Publish lists those warnings as errors.',
+    );
   });
 
   test('an issue about a network belongs to its first switch', () => {

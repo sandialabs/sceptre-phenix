@@ -1208,6 +1208,15 @@ test('an interface with no VLAN is refused at publish, and its VLAN connects it'
     )?.device.hostname;
     expect(disconnected, 'the device whose eth0 was disconnected').toBeTruthy();
 
+    // The diagram checks say the warning stops publishing too.
+    await page.getByTestId('builder-checks').click();
+    const checks = page.getByTestId('checks-dialog');
+    await expect(checks.getByTestId('checks-summary')).toContainText(
+      'The warning must be fixed before the diagram can be published, and Publish lists that warning as an error.',
+    );
+    await page.keyboard.press('Escape');
+    await expect(checks).toHaveCount(0);
+
     await openPublish(builder);
     await expect(errors).toHaveText([
       `Error: interface "eth0" of "${disconnected}" is not connected to a network and has no VLAN, so it cannot be published: connect it, or type a VLAN for it`,
