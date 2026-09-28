@@ -1164,7 +1164,7 @@ async function scanDialog(page, builder, opener, surface, title) {
 for (const scheme of ['light', 'dark']) {
   test(
     `axe finds no serious violations in the ${scheme} theme`,
-    { tag: '@cross-browser' },
+    { tag: ['@cross-browser', '@axe'] },
     async ({ page, builder, issues }) => {
       // Scans every view and dialog in turn, which takes close to a minute.
       test.slow();

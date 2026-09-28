@@ -12,18 +12,27 @@ a CI-built binary, a container, or a full range node.
 | `forms.spec.js`                | just a running server                                                                                     | yes                              |
 | `builder.spec.js`              | just a running server (the Topology Builder at `/builder`)                                                | yes                              |
 | `builder-*.spec.js`            | server started with `--features builder-beta` (Builder Flow)                                              | yes                              |
-| `builder-feature-off.spec.js`  | server started without `--features builder-beta`, and `E2E_BUILDER_BETA=off`                              | yes (second server)              |
-| `builder-sharing.spec.js`      | server started with `--features builder-beta`, `--jwt-signing-key` and an admin user, and `E2E_SHARING=1` | yes (third server)               |
+| `builder-feature-off.spec.js`  | server started without `--features builder-beta`, and `E2E_BUILDER_BETA=off`                              | yes (own server)                 |
+| `builder-sharing.spec.js`      | server started with `--features builder-beta`, `--jwt-signing-key` and an admin user, and `E2E_SHARING=1` | yes (own server)                 |
 | `experiment-lifecycle.spec.js` | minimega, VM images, a topology                                                                           | opt-in (`E2E_LIFECYCLE=1`)       |
 | `auth-enabled.spec.js`         | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`                                             | opt-in (`E2E_AUTH_MODE=enabled`) |
 | `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt`                                     | opt-in (`E2E_AUTH_MODE=proxy`)   |
 
-CI (`.github/workflows/frontend.yml`) builds the UI with `VITE_AUTH=disabled`,
-starts `bin/phenix ui --features builder-beta` against a throw-away store, and
-runs the default set. It then starts a second server without the flag and
-runs `builder-feature-off.spec.js` against it, then a third with
-authentication on and runs `builder-sharing.spec.js`, which makes and signs
-in users of its own. Builder checks include axe accessibility scans.
+CI (`.github/workflows/frontend.yml`) builds the UI with `VITE_AUTH=disabled`
+and `bin/phenix` once, then runs six jobs in parallel. Each starts its own
+`bin/phenix ui` against a throw-away store and runs one part of the suite:
+
+| Job                      | Server                                       | Runs                                        |
+| ------------------------ | -------------------------------------------- | ------------------------------------------- |
+| Smoke 1/3 to 3/3         | `--features builder-beta`                    | the default set without `@axe`, in 3 shards |
+| Axe scans                | `--features builder-beta`                    | the `@axe` tests                            |
+| Builder Beta feature off | no features                                  | `builder-feature-off.spec.js`               |
+| Builder Beta sharing     | `--features builder-beta`, authentication on | `builder-sharing.spec.js`                   |
+
+Every job runs all three projects (below) on its part. The sharing spec makes
+and signs in users of its own. Builder checks include axe accessibility scans.
+The shards use Playwright's `--shard`, which splits the tests by count, not by
+time.
 
 Every route in `routes.spec.js` is also scanned with axe-core (WCAG 2.x A/AA
 rule tags) as rendered against the empty store and fails on any violation.
@@ -41,10 +50,12 @@ about the rest of the server's state. Three projects split the work:
 | `firefox`       | only tests tagged `@cross-browser`, a browser-sensitive subset |
 | `known-defects` | only `@known-defect` tests, in Chromium, with a 3s expect wait |
 
-Tag a test in its declaration: `test('…', { tag: '@cross-browser' }, …)`.
-Give the Firefox subset the tests whose behavior depends on the browser
-engine: pointer drag, drag-and-drop, focus order, file transfer, clipboard,
-IndexedDB, and CSS layout.
+Tag a test in its declaration: `test('…', { tag: '@cross-browser' }, …)`, or
+`{ tag: ['@cross-browser', '@axe'] }` for more than one tag. Give the Firefox
+subset the tests whose behavior depends on the browser engine: pointer drag,
+drag-and-drop, focus order, file transfer, clipboard, IndexedDB, and CSS
+layout. The `@axe` tag marks the full axe scans of every view and dialog, the
+longest tests, which CI runs in a job of their own; keep it off other tests.
 
 ### Builder Flow specs
 
@@ -86,6 +97,11 @@ npx playwright test
 npx playwright test builder --project=chromium
 npx playwright test builder --project=firefox
 npx playwright test builder --project=known-defects
+
+# the parts CI runs in separate jobs: the full axe scans, and one shard of
+# the rest
+npx playwright test --grep @axe
+npx playwright test --grep-invert @axe --shard=1/3
 
 # Builder with the feature flag off (a second server, started without
 # --features, for example on 127.0.0.1:3081)

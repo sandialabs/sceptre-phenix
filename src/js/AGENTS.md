@@ -73,7 +73,7 @@ server setup), read
 
 ## CI
 
-`.github/workflows/frontend.yml` runs Vitest and builds the UI, then builds and
-starts a real backend for Playwright smoke tests. Keep Node versions, npm cache
-lockfiles, auth build mode, backend startup, and path filters aligned with local
-commands.
+`.github/workflows/frontend.yml` runs Vitest, builds the UI and a real backend
+once, then runs the Playwright tests in parallel jobs, each against its own
+server (see `e2e/README.md`). Keep Node versions, npm cache lockfiles, auth
+build mode, backend startup, and path filters aligned with local commands.
