@@ -6,14 +6,14 @@
   keys are this platform's and follow the user's changes. The groups, left
   to right: undo and redo, the clipboard, grouping (Group, Ungroup and the
   Auto-group menu), the layout menu and scenario, the ways out (Export,
-  Upload, Publish, Share), the view, then History and Commands at the right
-  end.
+  Upload, Publish, Share), then Minimap and Draft History. Commands and the
+  theme are in the editor header (BuilderBeta.vue).
   The layout menu is named after the draft's layout; it lays the diagram out
   with the one chosen, which the draft keeps, and after a layout it offers
   to put the previous one back. Edits are saved as they are made, so there
   is no Save button (Save now is a key and a command); the save state shows
-  in the editor header (BuilderBeta.vue), and Retry saving shows at the end,
-  while a save needs it.
+  in the editor header, and Retry saving shows at the right end, while a
+  save needs it.
 
   It follows the APG toolbar pattern: the toolbar is one Tab stop, and the
   arrow keys, Home and End move between its buttons. Unavailable buttons are
@@ -268,22 +268,6 @@
     </div>
 
     <div class="builder-toolbar__group">
-      <!-- It shows the theme in use; its name and tooltip say what a press
-           changes it to. -->
-      <button
-        type="button"
-        class="builder-button"
-        data-testid="toolbar-theme"
-        :aria-label="themeButton.name"
-        :aria-keyshortcuts="tips.theme.aria"
-        :aria-describedby="
-          tips.theme.description ? 'toolbar-tip-theme' : undefined
-        "
-        v-on="tipFor('theme')"
-        @click="$emit('cycle-theme')">
-        <builder-icon :name="themeButton.icon" :size="14" />
-        {{ themeButton.label }}
-      </button>
       <button
         type="button"
         class="builder-button"
@@ -298,9 +282,6 @@
         <builder-icon name="image" :size="14" />
         Minimap
       </button>
-    </div>
-
-    <div class="builder-toolbar__group builder-toolbar__group--end">
       <button
         type="button"
         class="builder-button"
@@ -312,29 +293,17 @@
         v-on="tipFor('history')"
         aria-haspopup="dialog"
         @click="$emit('history')">
-        <builder-icon name="refresh" :size="14" />
-        History
+        <builder-icon name="history" :size="14" />
+        Draft History
       </button>
-      <!-- The key caps show the palette's key; the description and
-           aria-keyshortcuts say it to screen readers. -->
+    </div>
+
+    <!-- Last, at the right end, so the others stay put while it comes and
+         goes. -->
+    <div
+      v-if="canRetry"
+      class="builder-toolbar__group builder-toolbar__group--end">
       <button
-        type="button"
-        class="builder-button"
-        data-testid="toolbar-commands"
-        aria-haspopup="dialog"
-        :aria-keyshortcuts="tips.commands.aria"
-        :aria-describedby="
-          tips.commands.description ? 'toolbar-tip-commands' : undefined
-        "
-        v-on="tipFor('commands')"
-        @click="$emit('commands')">
-        <builder-icon name="command" :size="14" />
-        Commands
-        <builder-keycaps v-if="paletteKey" :spec="paletteKey" />
-      </button>
-      <!-- Last, so the others stay put while it comes and goes. -->
-      <button
-        v-if="canRetry"
         ref="retryEl"
         type="button"
         class="builder-button"
@@ -367,24 +336,14 @@
 </template>
 
 <script setup>
-  import {
-    computed,
-    nextTick,
-    onBeforeUnmount,
-    onMounted,
-    onUpdated,
-    ref,
-    watch,
-  } from 'vue';
+  import { computed, nextTick, onMounted, onUpdated, ref, watch } from 'vue';
 
   import BuilderIcon from './BuilderIcon.vue';
-  import BuilderKeycaps from './BuilderKeycaps.vue';
   import BuilderMenuButton from './BuilderMenuButton.vue';
   import { useFixedTooltip } from './fixedTooltip.js';
 
   import {
     ariaShortcuts,
-    commandKeys,
     deleteSelection,
     shortcutLabel,
     ungroupSelection,
@@ -398,11 +357,6 @@
   import { rowTarget } from '@/builder/roving.js';
   import { describeShares } from '@/builder/share.js';
   import { useBuilderStore } from '@/builder/store.js';
-  import {
-    nextTheme,
-    resolveTheme,
-    watchSystemTheme,
-  } from '@/builder/theme.js';
 
   defineProps({
     minimap: { type: Boolean, default: true },
@@ -415,9 +369,7 @@
     'import',
     'scenario',
     'history',
-    'cycle-theme',
     'toggle-minimap',
-    'commands',
   ]);
 
   const store = useBuilderStore();
@@ -571,41 +523,6 @@
     return ungroupSelection(store);
   }
 
-  // --- theme -------------------------------------------------------------------
-
-  const THEMES = {
-    system: { icon: 'system', label: 'System' },
-    light: { icon: 'sun', label: 'Light' },
-    dark: { icon: 'moon', label: 'Dark' },
-  };
-
-  const matchMedia =
-    typeof window !== 'undefined' && window.matchMedia
-      ? window.matchMedia.bind(window)
-      : undefined;
-
-  // What System shows, which decides the theme a press moves to (see
-  // nextTheme). It follows the system's changes while any theme is chosen.
-  const systemTheme = ref(resolveTheme('system', matchMedia));
-  const stopWatchingSystemTheme = watchSystemTheme(matchMedia, () => {
-    systemTheme.value = resolveTheme('system', matchMedia);
-  });
-
-  onBeforeUnmount(stopWatchingSystemTheme);
-
-  const themeButton = computed(() => {
-    const theme = THEMES[store.theme] ? store.theme : 'system';
-    const next = nextTheme(theme, systemTheme.value);
-    const tip = `Switch to ${THEMES[next].label} theme`;
-
-    return {
-      ...THEMES[theme],
-      next,
-      tip,
-      name: `Theme: ${THEMES[theme].label}. ${tip}.`,
-    };
-  });
-
   // --- tooltips ----------------------------------------------------------------
 
   // The command each button runs, for its keys, and its name in the
@@ -619,17 +536,13 @@
     delete: { command: 'edit.delete', name: 'Delete selection', local: true },
     group: { command: 'structure.group', name: 'Group selection' },
     ungroup: { command: 'structure.ungroup', name: 'Ungroup' },
-    history: { command: 'draft.history', name: 'Draft history' },
+    history: { command: 'draft.history', name: 'Draft History' },
     export: { command: 'draft.export', name: 'Export' },
     import: { command: 'draft.upload', name: 'Upload' },
     scenario: { command: 'draft.scenario', name: 'Scenario' },
     publish: { command: 'draft.publish', name: 'Publish' },
     minimap: { command: 'view.minimap', name: 'Minimap' },
-    commands: { command: 'palette.open', name: 'Command palette' },
   };
-
-  // The first key of the command palette, shown on its button.
-  const paletteKey = computed(() => commandKeys('palette.open')[0] || '');
 
   // Per button: the tooltip's text ('' for none), the description screen
   // readers get in its place (the keys: the name is the button's own), and
@@ -655,9 +568,6 @@
     const autoGroupText = store.selection.nodes.length
       ? 'Group the selected nodes automatically'
       : 'Group the ungrouped nodes automatically';
-    // The theme button's keys are those of the palette's command for the
-    // theme it moves to; its name says the rest.
-    const themeCommand = `view.theme.${themeButton.value.next}`;
     // Share says who has the draft, or who may change that.
     const shareText = store.canShare
       ? store.shares.length
@@ -674,11 +584,6 @@
         description: withShortcut(shareText, 'draft.share'),
         aria: ariaShortcuts('draft.share'),
       },
-      theme: {
-        text: withShortcut(themeButton.value.tip, themeCommand),
-        description: shortcutLabel(themeCommand),
-        aria: ariaShortcuts(themeCommand),
-      },
     };
   });
 
@@ -686,15 +591,11 @@
     side: 'below',
   });
 
-  // The button whose tooltip is shown.
-  let shown = null;
-
   // Read when shown, so a tooltip follows the button's state. None over an
   // open menu.
   function tipFor(key) {
     const show = (event) => {
       if (tips.value[key].text && openMenu.value !== key) {
-        shown = { key, target: event.currentTarget };
         showTip(event, tips.value[key].text);
       }
     };
@@ -707,25 +608,6 @@
     };
   }
 
-  // A press from the keyboard leaves the tooltip up, so when the press
-  // changes what the button does next (the theme), the tooltip changes
-  // with it rather than describing the press just made.
-  watch(
-    () => Boolean(tip.value) && shown && tips.value[shown.key].text,
-    (text) => {
-      if (!text || text === tip.value?.text || !shown.target.isConnected) {
-        return;
-      }
-
-      // Only while the button still has focus or the pointer: a hide that
-      // is already pending must not be cancelled.
-      const target = shown.target;
-      if (target === document.activeElement || target.matches(':hover')) {
-        showTip({ currentTarget: target }, text);
-      }
-    },
-  );
-
   // Not for an error that sending again cannot fix (a refused snapshot):
   // the save state says what to change instead.
   const canRetry = computed(
@@ -737,10 +619,10 @@
 
   // Retry saving goes away as soon as a save starts or succeeds, whether the
   // user pressed it or the automatic retry ran. If it had focus, the button
-  // before it (Commands) takes the toolbar's Tab stop, and focus moves there
-  // instead of falling to <body> (WCAG 2.4.3). The check runs before the
-  // button is removed. The same update may have given focus a better place:
-  // a conflict moves it to the conflict panel, which then keeps it.
+  // before it (Draft History) takes the toolbar's Tab stop, and focus moves
+  // there instead of falling to <body> (WCAG 2.4.3). The check runs before
+  // the button is removed. The same update may have given focus a better
+  // place: a conflict moves it to the conflict panel, which then keeps it.
   watch(
     canRetry,
     (now) => {

@@ -87,7 +87,7 @@ const ICONS = {
   'view.theme.light': 'sun',
   'view.theme.dark': 'moon',
   'draft.save': 'save',
-  'draft.history': 'refresh',
+  'draft.history': 'history',
   'draft.export': 'download',
   'draft.upload': 'upload',
   'draft.publish': 'publish',

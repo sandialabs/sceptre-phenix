@@ -1841,7 +1841,7 @@ export const useBuilderStore = defineStore('builder', {
 
         if (!this.serverHistory.some((entry) => entry.id === snapshotId)) {
           this.setError(
-            'That snapshot is no longer in the draft history. Open History again to see the current list.',
+            'That snapshot is no longer in the draft history. Open Draft History again to see the current list.',
           );
 
           return null;

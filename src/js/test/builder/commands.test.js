@@ -321,6 +321,7 @@ describe('the registry', () => {
         'shortcuts.open',
         'settings.open',
         'view.theme.dark',
+        'view.focusMode',
       ]),
     );
     expect(editor).toContain('settings.open');
@@ -1352,6 +1353,15 @@ describe('the dispatcher', () => {
     expect(dispatch(keydown(t.button, '?', 'Slash'), ctx, t)).toBe(
       'shortcuts.open',
     );
+    // Focus mode is the drafts' too, so it can be left there.
+    expect(
+      dispatch(
+        keydown(t.button, 'F', 'KeyF', { metaKey: true, shiftKey: true }),
+        ctx,
+        t,
+      ),
+    ).toBe('view.focusMode');
+    expect(ctx.view.toggleFocusMode).toHaveBeenCalledOnce();
     expect(
       dispatch(keydown(t.button, 'z', 'KeyZ', { metaKey: true }), ctx, t),
     ).toBe(null);

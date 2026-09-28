@@ -499,13 +499,13 @@ test.describe('Builder Beta persistence', () => {
         await builder.waitSaved();
         await expect.soft(builder.toolbar('retry')).toHaveCount(0);
         // The pressed button is gone; focus moves on to the button before
-        // it, Commands, which takes the toolbar's Tab stop, instead of
+        // it, Draft History, which takes the toolbar's Tab stop, instead of
         // falling to <body>.
         await expect
-          .soft(builder.toolbar('commands'), 'focus after Retry saving')
+          .soft(builder.toolbar('history'), 'focus after Retry saving')
           .toBeFocused();
         await expect
-          .soft(builder.toolbar('commands'))
+          .soft(builder.toolbar('history'))
           .toHaveAttribute('tabindex', '0');
         await expectServerCounts(builder, draft, { devices: 4 });
       });
@@ -590,8 +590,8 @@ test.describe('Builder Beta persistence', () => {
 
         const banner = page.getByTestId('builder-conflict');
         await expect(banner).toBeVisible();
-        // The conflict panel keeps focus; Commands only takes the toolbar's
-        // Tab stop from the removed button.
+        // The conflict panel keeps focus; Draft History only takes the
+        // toolbar's Tab stop from the removed button.
         await expect(
           banner.getByRole('heading', {
             name: 'This draft changed on the server',
@@ -599,7 +599,7 @@ test.describe('Builder Beta persistence', () => {
           'focus after the automatic retry',
         ).toBeFocused();
         await expect
-          .soft(builder.toolbar('commands'))
+          .soft(builder.toolbar('history'))
           .toHaveAttribute('tabindex', '0');
       });
 
@@ -1757,7 +1757,7 @@ test.describe('Builder Beta persistence', () => {
         .soft(page.locator('.builder-root'))
         .toHaveAttribute('data-builder-theme', 'dark');
       await expect
-        .soft(page.getByTestId('toolbar-commands'))
+        .soft(page.getByTestId('editor-commands'))
         .toHaveAttribute('aria-keyshortcuts', /\+J$/);
       await expect
         .soft(page.getByTestId('toolbar-minimap'))

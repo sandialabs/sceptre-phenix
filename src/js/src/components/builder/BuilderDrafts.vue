@@ -4,10 +4,11 @@
   Tabbed lists (my drafts, drafts shared with me, published diagrams, and
   other users' drafts the role may see, a tab shown only when it lists
   something) plus the three ways to start: a blank diagram, Import (the server converts
-  a topology or experiment config) and Upload (a Builder document), the
-  command palette, the settings, and a link to the documentation. The view
-  reads the lists again whenever they come back into view, so there is no
-  Refresh button.
+  a topology or experiment config) and Upload (a Builder document). The
+  view (BuilderBeta.vue) puts the buttons the editor header has too after
+  them, in the buttons slot: Commands, the theme, Settings, Help and Focus
+  mode. The view reads the lists again whenever they come back into view,
+  so there is no Refresh button.
 
   The ways to start make a draft, so a role that cannot create drafts does
   not get them. While a draft is being made or opened (busy), the buttons
@@ -66,39 +67,8 @@
             Upload
           </button>
         </template>
-        <!-- The key caps show the palette's key; aria-keyshortcuts says it
-             to screen readers. -->
-        <button
-          type="button"
-          class="builder-button"
-          data-testid="drafts-commands"
-          aria-haspopup="dialog"
-          :aria-keyshortcuts="ariaShortcuts('palette.open')"
-          @click="$emit('commands')">
-          <builder-icon name="command" :size="14" />
-          Commands
-          <builder-keycaps v-if="paletteKey" :spec="paletteKey" />
-        </button>
-        <button
-          type="button"
-          class="builder-button"
-          data-testid="drafts-settings"
-          aria-haspopup="dialog"
-          :aria-keyshortcuts="ariaShortcuts('settings.open')"
-          @click="$emit('settings')">
-          <builder-icon name="settings" :size="14" />
-          Settings
-        </button>
-        <a
-          class="builder-button builder-help-link"
-          :href="HELP_URL"
-          target="_blank"
-          rel="noopener"
-          data-testid="drafts-help">
-          <builder-icon name="help" :size="14" />
-          Help
-          <span class="builder-visually-hidden">(opens in a new tab)</span>
-        </a>
+        <!-- The view's buttons: those the editor header has too. -->
+        <slot name="buttons" />
       </div>
     </div>
     <p
@@ -278,11 +248,8 @@
 
   import BuilderConfirm from './BuilderConfirm.vue';
   import BuilderIcon from './BuilderIcon.vue';
-  import BuilderKeycaps from './BuilderKeycaps.vue';
 
-  import { ariaShortcuts, commandKeys } from '@/builder/commands.js';
   import { formatTimestamp } from '@/builder/format.js';
-  import { HELP_URL } from '@/builder/help.js';
   import { rowTarget } from '@/builder/roving.js';
   import {
     deleteMessage,
@@ -325,15 +292,10 @@
     'blank',
     'import',
     'generate',
-    'commands',
-    'settings',
   ]);
 
   const rootEl = ref(null);
   const active = ref('mine');
-
-  // The first key of the command palette, shown on its button.
-  const paletteKey = computed(() => commandKeys('palette.open')[0] || '');
 
   // A damaged draft whose title cannot be read is not named by its id.
   function itemLabel(item) {
@@ -578,7 +540,10 @@
 </script>
 
 <style scoped>
+  /* The container its buttons' labels follow, as the editor header's do
+     (see .builder-header__label in builder.css). */
   .builder-drafts__header {
+    container: builder-header / inline-size;
     display: flex;
     flex-wrap: wrap;
     align-items: center;

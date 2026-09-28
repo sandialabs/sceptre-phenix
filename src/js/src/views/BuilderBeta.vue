@@ -63,9 +63,19 @@
         @generate="openLanding('generate')"
         @open="openDraft"
         @delete="deleteDraft"
-        @share="shareListed"
-        @commands="commandView.openPalette()"
-        @settings="runCommand('settings.open', commandContext)" />
+        @share="shareListed">
+        <template #buttons>
+          <builder-header-buttons
+            view="drafts"
+            :tips="headerTips"
+            :tip-for="headerTip"
+            :theme-button="themeButton"
+            @commands="commandView.openPalette()"
+            @cycle-theme="cycleTheme"
+            @settings="runCommand('settings.open', commandContext)"
+            @focus-mode="toggleFocusMode" />
+        </template>
+      </builder-drafts>
     </template>
 
     <template v-else>
@@ -130,13 +140,13 @@
           Shared by {{ store.sharedBy }} · {{ accessLabel(store.access) }}
         </p>
 
-        <!-- The save state, then the buttons. Reset view's tooltip says what
-             it resets, Shortcuts' and Settings' name what they open, Help's
-             repeats its name, and Focus mode's says what it does; each
-             gives the command's keys, if it has any, as the toolbar's do.
-             In a narrow header, Reset view, Shortcuts, Settings and Help
-             show only their icons, as Focus mode always does (see the
-             styles below); their labels stay as their names. -->
+        <!-- The save state, then the Warnings button (the checks), Reset
+             view, and the buttons the drafts' header has too
+             (BuilderHeaderButtons.vue). Reset view's tooltip says what it
+             resets, with the command's keys, if it has any, as the
+             toolbar's do. In a narrow header, Reset view shows only its
+             icon, as those buttons do (see .builder-header__label in
+             builder.css); its label stays as its name. -->
         <div class="builder-header__actions">
           <!-- Shown but not spoken: it changes on every edit, so the store
                announces only the transitions that matter (a new problem, or
@@ -151,103 +161,29 @@
             <builder-icon v-if="saveNeedsAttention" name="warning" :size="14" />
             {{ store.saveStateText }}
           </p>
+          <builder-checks />
           <button
             type="button"
             class="builder-button builder-header__button"
             data-testid="editor-reset-view"
             :aria-keyshortcuts="headerTips.reset.aria"
-            aria-describedby="editor-tip-reset"
+            aria-describedby="header-tip-reset"
             v-on="headerTip('reset')"
             @click="resetView">
             <builder-icon name="reset-view" :size="14" />
             <span class="builder-header__label">Reset view</span>
           </button>
-          <button
-            type="button"
-            class="builder-button builder-header__button"
-            data-testid="editor-shortcuts"
-            aria-haspopup="dialog"
-            :aria-keyshortcuts="headerTips.shortcuts.aria"
-            :aria-describedby="
-              headerTips.shortcuts.description
-                ? 'editor-tip-shortcuts'
-                : undefined
-            "
-            v-on="headerTip('shortcuts')"
-            @click="runCommand('shortcuts.open', commandContext)">
-            <builder-icon name="keyboard" :size="14" />
-            <span class="builder-header__label">Shortcuts</span>
-          </button>
-          <button
-            type="button"
-            class="builder-button builder-header__button"
-            data-testid="editor-settings"
-            aria-haspopup="dialog"
-            :aria-keyshortcuts="headerTips.settings.aria"
-            :aria-describedby="
-              headerTips.settings.description
-                ? 'editor-tip-settings'
-                : undefined
-            "
-            v-on="headerTip('settings')"
-            @click="runCommand('settings.open', commandContext)">
-            <builder-icon name="settings" :size="14" />
-            <span class="builder-header__label">Settings</span>
-          </button>
-          <a
-            class="builder-button builder-header__button builder-help-link"
-            :href="HELP_URL"
-            target="_blank"
-            rel="noopener"
-            data-testid="editor-help"
-            v-on="headerTip('help')">
-            <builder-icon name="help" :size="14" />
-            <span class="builder-header__label">
-              Help
-              <span class="builder-visually-hidden">(opens in a new tab)</span>
-            </span>
-          </a>
-          <builder-checks />
-          <!-- An icon, named for screen readers: Exit focus mode while focus
-               mode is on, since the phenix navigation bar has gone. It stays
-               one element, so focus stays on it. -->
-          <button
-            ref="focusButton"
-            type="button"
-            class="builder-button builder-header__button"
-            data-testid="editor-focus-mode"
-            :aria-keyshortcuts="headerTips.focus.aria"
-            :aria-describedby="
-              headerTips.focus.description ? 'editor-tip-focus' : undefined
-            "
-            v-on="headerTip('focus')"
-            @click="toggleFocusMode">
-            <builder-icon
-              :name="focusMode.on ? 'focus-exit' : 'focus'"
-              :size="14" />
-            <span class="builder-visually-hidden">
-              {{ focusMode.on ? 'Exit focus mode' : 'Focus mode' }}
-            </span>
-          </button>
-        </div>
-
-        <!-- The tooltips' text reaches screen readers as the buttons' names
-             and descriptions; the tooltips themselves are aria-hidden. -->
-        <span
-          v-for="(entry, key) in headerTips"
-          :id="`editor-tip-${key}`"
-          :key="key"
-          hidden>
-          {{ entry.description }}
-        </span>
-        <div
-          v-if="tip"
-          ref="tipEl"
-          class="builder-tooltip builder-tooltip--fixed"
-          data-testid="header-tooltip"
-          aria-hidden="true"
-          :style="{ top: `${tip.top}px`, left: `${tip.left}px` }">
-          {{ tip.text }}
+          <builder-header-buttons
+            view="editor"
+            shortcuts
+            :tips="headerTips"
+            :tip-for="headerTip"
+            :theme-button="themeButton"
+            @commands="commandView.openPalette()"
+            @cycle-theme="cycleTheme"
+            @shortcuts="runCommand('shortcuts.open', commandContext)"
+            @settings="runCommand('settings.open', commandContext)"
+            @focus-mode="toggleFocusMode" />
         </div>
       </div>
 
@@ -435,9 +371,7 @@
         @import="openUpload"
         @scenario="dialog = 'scenario'"
         @history="openHistory"
-        @cycle-theme="cycleTheme"
-        @toggle-minimap="showMinimap = !showMinimap"
-        @commands="commandView.openPalette()" />
+        @toggle-minimap="showMinimap = !showMinimap" />
 
       <builder-panes ref="panes">
         <template #start>
@@ -459,6 +393,26 @@
         </template>
       </builder-panes>
     </template>
+
+    <!-- The headers' tooltips, in the editor and on the drafts. Their text
+         reaches screen readers as the buttons' names and descriptions; the
+         tooltips themselves are aria-hidden. -->
+    <span
+      v-for="(entry, key) in headerTips"
+      :id="`header-tip-${key}`"
+      :key="key"
+      hidden>
+      {{ entry.description }}
+    </span>
+    <div
+      v-if="tip"
+      ref="tipEl"
+      class="builder-tooltip builder-tooltip--fixed"
+      data-testid="header-tooltip"
+      aria-hidden="true"
+      :style="{ top: `${tip.top}px`, left: `${tip.left}px` }">
+      {{ tip.text }}
+    </div>
 
     <publish-dialog
       v-if="dialog === 'publish'"
@@ -534,7 +488,7 @@
 
     <!-- Builder settings, opened by the header's and the landing's
          Settings and the settings.open command (the palette). Its Theme is
-         the toolbar toggle's, set without an announcement. -->
+         the headers' theme button's, set without an announcement. -->
     <builder-settings
       v-if="dialog === 'settings'"
       @theme="(theme) => store.setTheme(theme, rootEl, { announce: false })"
@@ -565,6 +519,7 @@
   import BuilderDrafts, {
     cardKey,
   } from '@/components/builder/BuilderDrafts.vue';
+  import BuilderHeaderButtons from '@/components/builder/BuilderHeaderButtons.vue';
   import BuilderIcon from '@/components/builder/BuilderIcon.vue';
   import BuilderInspector from '@/components/builder/BuilderInspector.vue';
   import BuilderLiveRegion from '@/components/builder/BuilderLiveRegion.vue';
@@ -588,7 +543,9 @@
 
   import {
     applyTheme,
+    nextTheme,
     prefersReducedMotion,
+    resolveTheme,
     watchSystemTheme,
   } from '@/builder/theme.js';
   import { count } from '@/builder/announce.js';
@@ -609,7 +566,6 @@
     followFullScreen,
   } from '@/builder/focusMode.js';
   import { formatTimestamp } from '@/builder/format.js';
-  import { HELP_URL } from '@/builder/help.js';
   import { createDraftStore } from '@/builder/idb.js';
   import { uniqueName } from '@/builder/ids.js';
   import { followShortcutSettings } from '@/builder/keymap.js';
@@ -1478,6 +1434,36 @@
     }
   }
 
+  // The theme button of both headers shows the theme in use; its name and
+  // tooltip say what a press changes it to (see nextTheme).
+  const THEMES = {
+    system: { icon: 'system', label: 'System' },
+    light: { icon: 'sun', label: 'Light' },
+    dark: { icon: 'moon', label: 'Dark' },
+  };
+
+  const matchMedia =
+    typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia.bind(window)
+      : undefined;
+
+  // What System shows, which decides the theme a press moves to. It follows
+  // the system's changes while any theme is chosen (see onMounted).
+  const systemTheme = ref(resolveTheme('system', matchMedia));
+
+  const themeButton = computed(() => {
+    const theme = THEMES[store.theme] ? store.theme : 'system';
+    const next = nextTheme(theme, systemTheme.value);
+    const tip = `Switch to ${THEMES[next].label} theme`;
+
+    return {
+      ...THEMES[theme],
+      next,
+      tip,
+      name: `Theme: ${THEMES[theme].label}. ${tip}.`,
+    };
+  });
+
   // --- other tabs --------------------------------------------------------------
 
   // Other tabs of this browser with the draft open, and the changes closed
@@ -1701,6 +1687,10 @@
       FOCUS_TIPS[focusMode.on ? 'exit' : 'enter'],
       'view.focusMode',
     );
+    // The theme button's keys are those of the palette's command for the
+    // theme it moves to.
+    const { label, tip: themeTip, next } = themeButton.value;
+    const themeCommand = `view.theme.${next}`;
 
     return {
       reset: {
@@ -1730,6 +1720,19 @@
         description: focus,
         aria: ariaShortcuts('view.focusMode'),
       },
+      // Commands' names the palette; the theme's says what a press does,
+      // and names the button too while it shows only its icon.
+      commands: {
+        text: withShortcut('Command palette', 'palette.open'),
+        description: shortcutLabel('palette.open'),
+        aria: ariaShortcuts('palette.open'),
+      },
+      theme: {
+        text: withShortcut(themeTip, themeCommand),
+        iconText: withShortcut(`Theme: ${label}. ${themeTip}`, themeCommand),
+        description: shortcutLabel(themeCommand),
+        aria: ariaShortcuts(themeCommand),
+      },
     };
   });
 
@@ -1738,22 +1741,29 @@
   });
 
   // Whether a header button shows only its icon: a narrow header hides its
-  // label (see the styles below).
+  // label (see .builder-header__label in builder.css).
   function iconOnly(button) {
     const label = button.querySelector('.builder-header__label');
 
     return Boolean(label) && getComputedStyle(label).position === 'absolute';
   }
 
+  function headerText(key, button) {
+    const { text, iconText } = headerTips.value[key];
+
+    return iconText && iconOnly(button) ? iconText : text;
+  }
+
+  // The header button whose tooltip is shown, and the text it showed.
+  let shown = null;
+
   // Read when shown, so a tooltip follows the keys and the header's width.
   function headerTip(key) {
     const show = (event) => {
-      const { text, iconText } = headerTips.value[key];
+      const text = headerText(key, event.currentTarget);
 
-      showTip(
-        event,
-        iconText && iconOnly(event.currentTarget) ? iconText : text,
-      );
+      shown = { key, target: event.currentTarget, text };
+      showTip(event, text);
     };
 
     return {
@@ -1764,28 +1774,29 @@
     };
   }
 
+  // A press from the keyboard leaves a tooltip up, and a press of the theme
+  // or Focus mode changes what the button does next, so the tooltip changes
+  // with it; only while it is still that button's, and the button still has
+  // focus or the pointer, so a pending hide is not cancelled.
+  watch(headerTips, () => {
+    const target = shown?.target;
+
+    if (
+      !target?.isConnected ||
+      tip.value?.text !== shown.text ||
+      (target !== document.activeElement && !target.matches(':hover'))
+    ) {
+      return;
+    }
+
+    const text = headerText(shown.key, target);
+    if (text !== shown.text) {
+      shown.text = text;
+      showTip({ currentTarget: target }, text);
+    }
+  });
+
   // --- focus mode ---------------------------------------------------------------
-
-  const focusButton = ref(null);
-
-  // A press from the keyboard leaves Focus mode's tooltip up, and the press
-  // changes what the button does, so the tooltip changes with it; only
-  // while the button still has focus or the pointer, so a pending hide is
-  // not cancelled.
-  watch(
-    () => headerTips.value.focus.text,
-    (text, before) => {
-      const button = focusButton.value;
-
-      if (
-        tip.value?.text === before &&
-        button &&
-        (button === document.activeElement || button.matches(':hover'))
-      ) {
-        showTip({ currentTarget: button }, text);
-      }
-    },
-  );
 
   // How to leave focus mode, for its announcements.
   function focusModeExit() {
@@ -1795,9 +1806,11 @@
   }
 
   /**
-   * Turns focus mode (see focusMode.js) on or off, from the header's button
+   * Turns focus mode (see focusMode.js) on or off, from the headers' button
    * or the view.focusMode command, and says which. Focus stays where it is:
    * nothing that can hold it is hidden, and the button stays one element.
+   * It stays on as the editor and the drafts replace each other, until the
+   * user turns it off or leaves the Builder (see onBeforeUnmount).
    */
   function toggleFocusMode() {
     if (focusMode.on) {
@@ -1820,14 +1833,6 @@
       `Full screen off. Focus mode is still on: ${focusModeExit()} leaves it.`,
     );
   }
-
-  // Focus mode belongs to the editor: the drafts have no button to leave
-  // it.
-  watch(editing, (now) => {
-    if (!now) {
-      exitFocusMode();
-    }
-  });
 
   // What scrolls in the editor besides the Builder root: the side columns,
   // and in the stacked layout the Outline and the Inspector.
@@ -2151,14 +2156,10 @@
   }
 
   onMounted(async () => {
-    const matchMedia =
-      typeof window !== 'undefined' && window.matchMedia
-        ? window.matchMedia.bind(window)
-        : undefined;
-
     store.initTheme(rootEl.value);
     systemReducesMotion.value = prefersReducedMotion(matchMedia);
     stopWatchingSystemTheme = watchSystemTheme(matchMedia, () => {
+      systemTheme.value = resolveTheme('system', matchMedia);
       if (store.theme === 'system') {
         store.resolvedTheme = applyTheme(rootEl.value, store.theme, matchMedia);
       }
@@ -2262,33 +2263,6 @@
     min-width: 7.5rem;
     max-width: 18rem;
     margin: 0 0.35rem 0 0;
-  }
-
-  /* An icon alone is as tall as a labelled button: a line of text inside
-     the same padding and border. None stretches to fill a row that a
-     wrapped save state makes taller. */
-  .builder-header__button {
-    box-sizing: content-box;
-    min-height: 1lh;
-    justify-content: center;
-  }
-
-  /* Too narrow for the labels on one row, with room for longer counts and
-     checks (below a 1392px window at the default text size): Reset view,
-     Shortcuts, Settings and Help show their icons alone. The labels stay,
-     visually hidden, as their names, and the tooltips name them. */
-  @container builder-header (max-width: 85rem) {
-    .builder-header__label {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      margin: -1px;
-      padding: 0;
-      overflow: hidden;
-      clip: rect(0 0 0 0);
-      white-space: nowrap;
-      border: 0;
-    }
   }
 
   .builder-error,

@@ -792,10 +792,13 @@ test(
         .toBe(true);
       const opened = last;
 
+      // An icon at this width, so its tooltip names it too.
       await reset.hover();
       await expect
         .soft(page.getByTestId('header-tooltip'))
-        .toHaveText('Reset column widths, zoom, minimap and scrolling');
+        .toHaveText(
+          'Reset view: reset column widths, zoom, minimap and scrolling',
+        );
 
       await page.getByTestId('pane-toggle-start').click();
       await splitters.end.focus();
@@ -972,7 +975,7 @@ test(
       await builder.waitSaved();
     });
 
-    await test.step('Focus mode hides the navigation bar and fills the window, until its button, its keys or leaving the editor end it', async () => {
+    await test.step('Focus mode hides the navigation bar and fills the window, in the editor and on the drafts, until its button, its keys or leaving the Builder end it', async () => {
       const nav = page.locator('.navbar');
       const enter = page.getByRole('button', {
         name: 'Focus mode',
@@ -1036,9 +1039,32 @@ test(
       await expect.soft(nav).toBeHidden();
       await expect.soft(canvas).toBeFocused();
 
-      // The drafts have no button to leave it, so it ends with the editor.
+      // It stays on as the drafts replace the editor. Their header has
+      // the same button, and the keys work there too.
+      const onDrafts = page.getByTestId('drafts-focus-mode');
       await page.getByTestId('editor-back').click();
+      await expect(builder.landingHeading).toBeVisible();
+      await expect.soft(nav).toBeHidden();
+      await expect.soft(onDrafts).toHaveAccessibleName('Exit focus mode');
+      await fills('focus mode on the drafts');
+      await page.keyboard.press('ControlOrMeta+Shift+F');
       await expect.soft(nav).toBeVisible();
+      await expect.soft(onDrafts).toHaveAccessibleName('Focus mode');
+
+      // Turned on from the drafts, it stays on as a draft opens, and the
+      // editor's button ends it.
+      await onDrafts.click();
+      await expect.soft(nav).toBeHidden();
+      await expect.soft(onDrafts).toBeFocused();
+      await expect.soft(builder.liveRegion).toContainText('Focus mode on');
+      await page.getByTestId(`draft-open-${draft.id}`).click();
+      await expect(builder.canvas).toBeVisible();
+      await expect.soft(nav).toBeHidden();
+      const inEditor = page.getByTestId('editor-focus-mode');
+      await expect.soft(inEditor).toHaveAccessibleName('Exit focus mode');
+      await inEditor.click();
+      await expect.soft(nav).toBeVisible();
+      await expect.soft(inEditor).toHaveAccessibleName('Focus mode');
     });
 
     await test.step('leaving the Builder restores the normal page and header height', async () => {

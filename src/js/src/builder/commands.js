@@ -1535,9 +1535,10 @@ export const COMMANDS = [
     run: ({ view }) => view.resetView(),
   },
   {
-    // The header's Focus mode button, which becomes Exit focus mode. The
-    // same keys leave it; the browser's Escape leaves only full screen (see
-    // focusMode.js). They work in text fields too, as they type nothing.
+    // The headers' Focus mode button, which becomes Exit focus mode, in the
+    // editor and on the drafts. The same keys leave it; the browser's
+    // Escape leaves only full screen (see focusMode.js). They work in text
+    // fields too, as they type nothing.
     id: 'view.focusMode',
     title: 'Focus mode',
     group: 'View',
@@ -1550,6 +1551,7 @@ export const COMMANDS = [
     ],
     keys: ['Mod+Shift+F'],
     scope: 'fields',
+    views: BOTH,
     phrase: 'turns focus mode on or off',
     label: ({ view }) => (view.focusMode ? 'Exit focus mode' : 'Focus mode'),
     detail: ({ view }) =>
@@ -1577,7 +1579,7 @@ export const COMMANDS = [
   },
   {
     id: 'draft.history',
-    title: 'Draft history…',
+    title: 'Draft History…',
     group: 'Draft',
     keywords: ['snapshot', 'restore', 'version'],
     run: ({ view }) => view.openHistory(),

@@ -220,8 +220,8 @@ test.describe('command palette', () => {
         await page.keyboard.press('Escape');
       });
 
-      await test.step('the toolbar’s Commands button opens it, and focus returns there', async () => {
-        const button = builder.toolbar('commands');
+      await test.step('the header’s Commands button opens it, and focus returns there', async () => {
+        const button = page.getByTestId('editor-commands');
         await expect.soft(button).toHaveAttribute('aria-haspopup', 'dialog');
         await expect
           .soft(button)

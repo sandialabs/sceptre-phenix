@@ -1262,9 +1262,9 @@
 }
 
 /* The last group has no rule after it: the tooltips follow it in the DOM,
-   so it is not the last child. History and Commands keep to the right end
-   of the last row, with the rule before them rather than after the group
-   before, which may end the row above. */
+   so it is not the last child. Retry saving keeps to the right end of the
+   last row, with the rule before it rather than after the group before,
+   which may end the row above. */
 .builder-toolbar__group:not(:has(~ .builder-toolbar__group)),
 .builder-toolbar__group:has(+ .builder-toolbar__group--end) {
   border-right: 0;
@@ -1803,6 +1803,41 @@ div.builder-outline__item {
 .builder-help-link:hover {
   color: var(--bx-text);
   text-decoration: none;
+}
+
+/* The buttons of the editor header and the drafts landing's header (see
+   BuilderHeaderButtons.vue). An icon alone is as tall as a labelled
+   button: a line of text inside the same padding and border. None
+   stretches to fill a row that a wrapped save state makes taller. */
+.builder-header__button {
+  box-sizing: content-box;
+  min-height: 1lh;
+  justify-content: center;
+}
+
+.builder-header__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* Too narrow for the editor header's labels on one row, with room for
+   longer counts and checks (below a 1712px window at the default text
+   size): the buttons show their icons alone. The labels stay, visually
+   hidden, as their names, and the tooltips name them. Each header is a
+   builder-header container, so the two views match at any one width. */
+@container builder-header (max-width: 105rem) {
+  .builder-header__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
 }
 
 /* A help button beside a heading: its tooltip shows on hover and focus. */

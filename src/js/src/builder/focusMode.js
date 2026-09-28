@@ -1,8 +1,10 @@
-// Focus mode: the Builder's editor on its own, without the phenix navigation
-// bar, filling the window, and the screen where the browser allows it.
-// App.vue hides its header while focus mode is on; the editor
-// (BuilderBeta.vue) turns it on and off, with its header button and the
-// view.focusMode command, and off when it closes.
+// Focus mode: the Builder on its own, without the phenix navigation bar,
+// filling the window, and the screen where the browser allows it. App.vue
+// hides its header while focus mode is on; the Builder's view
+// (BuilderBeta.vue) turns it on and off, with the Focus mode button of the
+// editor's and the drafts' headers and the view.focusMode command, and off
+// when the user leaves the Builder. It stays on as the editor and the
+// drafts replace each other.
 //
 // Full screen is asked for with the Fullscreen API, from the press that
 // turns focus mode on, and may be refused (a frame without permission, a
@@ -11,7 +13,7 @@
 // mode on, in the window: browsers keep the first Escape for themselves, so
 // an Escape meant to close a dialog or clear the selection would otherwise
 // end focus mode as well. Focus mode ends only by its button, its keys or
-// the editor closing, and those leave full screen too.
+// leaving the Builder, and those leave full screen too.
 //
 // This module is loaded with the app (App.vue reads the state), so it stays
 // small and imports nothing else of the Builder's.

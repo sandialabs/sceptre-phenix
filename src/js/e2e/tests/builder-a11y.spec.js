@@ -145,10 +145,15 @@ async function openWithScheme(page, builder, scheme) {
   await expect(root(page)).toHaveAttribute('data-builder-theme', scheme);
 }
 
-// Sets the Builder theme preference with the toolbar toggle (keyboard). With
-// `soft`, a toggle that never reaches `theme` is recorded and the test goes on.
-async function chooseTheme(page, theme, { soft = false } = {}) {
-  const toggle = page.getByTestId('toolbar-theme');
+// Sets the Builder theme preference with the theme button of the editor's
+// header, or with `view` 'drafts' the drafts' (keyboard). With `soft`, a
+// toggle that never reaches `theme` is recorded and the test goes on.
+async function chooseTheme(
+  page,
+  theme,
+  { soft = false, view = 'editor' } = {},
+) {
+  const toggle = page.getByTestId(`${view}-theme`);
   for (let i = 0; i < 3; i += 1) {
     if (
       (await root(page).getAttribute('data-builder-theme-preference')) === theme
@@ -1195,7 +1200,7 @@ for (const scheme of ['light', 'dark']) {
         await expect.soft(page.locator('html')).toHaveAttribute('lang', 'en');
       });
 
-      await test.step('the header has Back to drafts, the name, the counts, the save state, Reset view, Shortcuts, Settings, the Help link of the landing, the checks and Focus mode', async () => {
+      await test.step('the header has Back to drafts, the name, the counts, the save state, the checks, Reset view, Commands, the theme, Shortcuts, Settings, the Help link of the landing and Focus mode', async () => {
         const back = page.getByRole('button', { name: 'Back to drafts' });
         const help = page.getByRole('link', {
           name: 'Help (opens in a new tab)',
@@ -1204,6 +1209,8 @@ for (const scheme of ['light', 'dark']) {
         const counts = page.getByRole('list', { name: 'Diagram contents' });
         const countsTip = page.getByTestId('counts-tooltip');
         const reset = page.getByRole('button', { name: 'Reset view' });
+        const commands = page.getByTestId('editor-commands');
+        const theme = page.getByTestId('editor-theme');
         const shortcuts = page.getByRole('button', {
           name: 'Shortcuts',
           exact: true,
@@ -1217,17 +1224,20 @@ for (const scheme of ['light', 'dark']) {
         const count = (index) => counts.getByRole('listitem').nth(index);
 
         // Left to right, as Tab goes: Back to drafts, the name, the counts
-        // (one stop, at the first count), then past the save state to Reset
-        // view, Shortcuts, Settings, Help, the checks and Focus mode.
+        // (one stop, at the first count), then past the save state to the
+        // checks, Reset view, Commands, the theme, Shortcuts, Settings, Help
+        // and Focus mode.
         await back.focus();
         for (const next of [
           name,
           count(0),
+          checks,
           reset,
+          commands,
+          theme,
           shortcuts,
           settings,
           help,
-          checks,
           focusMode,
         ]) {
           await page.keyboard.press('Tab');
@@ -1235,15 +1245,12 @@ for (const scheme of ['light', 'dark']) {
         }
         // The save state sits just before the buttons, on their row.
         const saved = await builder.saveState.boundingBox();
-        const first = await reset.boundingBox();
+        const first = await checks.boundingBox();
         expect
-          .soft(
-            first.x - (saved.x + saved.width),
-            'save state before Reset view',
-          )
+          .soft(first.x - (saved.x + saved.width), 'save state before checks')
           .toBeGreaterThanOrEqual(0);
         expect
-          .soft(first.x - (saved.x + saved.width), 'save state by Reset view')
+          .soft(first.x - (saved.x + saved.width), 'save state by the checks')
           .toBeLessThan(16);
         expect.soft(saved.y, 'save state on the buttons’ row').toBe(first.y);
 
@@ -1295,6 +1302,35 @@ for (const scheme of ['light', 'dark']) {
         await expect.soft(page.getByTestId('shortcuts-dialog')).toBeVisible();
         await page.keyboard.press('Escape');
         await expect.soft(shortcuts).toBeFocused();
+        // Commands shows the palette's key, and opens the palette; the theme
+        // button shows the theme in use, and its name and tooltip say what
+        // a press changes it to.
+        await expect.soft(commands).toHaveAccessibleName('Commands');
+        await expect
+          .soft(commands)
+          .toHaveAttribute(
+            'aria-keyshortcuts',
+            process.platform === 'darwin' ? 'Meta+K' : 'Control+K',
+          );
+        await expect.soft(commands.locator('kbd')).toHaveCount(2);
+        await commands.focus();
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText(/^Command palette \(/);
+        await page.keyboard.press('Enter');
+        await expect.soft(page.getByTestId('commands-dialog')).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect.soft(commands).toBeFocused();
+        const next = scheme === 'dark' ? 'Light' : 'Dark';
+        await expect
+          .soft(theme)
+          .toHaveAccessibleName(`Theme: System. Switch to ${next} theme.`);
+        await expect.soft(theme).toHaveText('System');
+        // An icon at this width, so its tooltip names it too.
+        await theme.hover();
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText(`Theme: System. Switch to ${next} theme`);
         // Settings' and Help's tooltips name them too.
         await settings.hover();
         await expect
@@ -1345,6 +1381,8 @@ for (const scheme of ['light', 'dark']) {
         await expectReadable(back, 'Back to drafts');
         await expectReadable(help, 'editor Help link');
         await expectReadable(reset, 'Reset view');
+        await expectReadable(commands, 'Commands');
+        await expectReadable(theme, 'theme button');
         await expectReadable(shortcuts, 'Shortcuts');
         await expectReadable(counts, 'counts');
         await expectReadable(builder.saveState, 'save state');
@@ -1402,7 +1440,7 @@ for (const scheme of ['light', 'dark']) {
       // focus. The scans cover an unavailable command, a node search and no
       // results.
       await test.step('Command palette', async () => {
-        const opener = builder.toolbar('commands');
+        const opener = page.getByTestId('editor-commands');
         const field = builder.dialog.getByRole('combobox', {
           name: 'Search commands',
         });
@@ -1527,6 +1565,22 @@ for (const scheme of ['light', 'dark']) {
         await expect.soft(buttons.last()).toBeFocused();
         await expect.soft(tabStops).toHaveCount(1);
         await expect.soft(tabStops).toBeFocused();
+        // Draft History ends it, just after Minimap, in the same group;
+        // Commands and the theme are in the header.
+        const history = builder.toolbar('history');
+        await expect.soft(history).toBeFocused();
+        await expect.soft(history).toHaveAccessibleName('Draft History');
+        expect
+          .soft(
+            await history.evaluate(
+              (button) => button.previousElementSibling?.dataset.testid,
+            ),
+            'the button before Draft History',
+          )
+          .toBe('toolbar-minimap');
+        await expect
+          .soft(buttons.filter({ hasText: /^\s*(Commands|System|Light|Dark)/ }))
+          .toHaveCount(0);
 
         // The menu buttons are in the sequence; Down opens a menu, whose
         // items are not in it, and Escape closes the menu onto its button.
@@ -1604,8 +1658,11 @@ for (const scheme of ['light', 'dark']) {
           .toHaveText('Builder Flow');
         await expect.soft(page).toHaveTitle('Builder Flow – phēnix');
         // Import (the Generate dialog) comes before Upload (the Import
-        // dialog), then Commands, with its key caps, and Settings; Help, a
-        // link to the documentation, is last.
+        // dialog), then the editor header's buttons: Commands, with its key
+        // caps, the theme, Settings, Help, a link to the documentation, and
+        // Focus mode, an icon. They look as the editor's do. The theme is
+        // the one chosen in the editor above.
+        const theme = scheme === 'dark' ? 'Dark' : 'Light';
         const actions = page.locator('.builder-drafts__header > div > *');
         await expect
           .soft(actions)
@@ -1614,9 +1671,20 @@ for (const scheme of ['light', 'dark']) {
             'Import',
             'Upload',
             process.platform === 'darwin' ? 'Commands ⌘K' : 'Commands Ctrl+K',
+            theme,
             'Settings',
             'Help (opens in a new tab)',
+            'Focus mode',
           ]);
+        for (const id of ['commands', 'theme', 'settings', 'focus-mode']) {
+          await expect
+            .soft(page.getByTestId(`drafts-${id}`))
+            .toHaveClass(/\bbuilder-header__button\b/);
+        }
+        await expect
+          .soft(page.getByTestId('drafts-theme'))
+          .toHaveAccessibleName(`Theme: ${theme}. Switch to System theme.`);
+        await expectReadable(page.getByTestId('drafts-theme'), 'drafts theme');
         for (const opener of [
           'drafts-import',
           'drafts-generate',
@@ -1743,15 +1811,15 @@ test.describe('themes and canvas controls', () => {
   // From System the toggle goes to the opposite of the OS scheme first, so
   // the first press always changes the colors. Its name and tooltip say
   // what the next press does.
-  test('theme toggle goes System, Dark, Light on a light OS, says what is next and persists the choice', async ({
+  test('theme toggle goes System, Dark, Light on a light OS, says what is next and persists the choice, in the editor and on the drafts', async ({
     page,
     builder,
     issues,
   }) => {
     await openWithScheme(page, builder, 'light');
     const draft = await builder.createBlank();
-    const toggle = page.getByTestId('toolbar-theme');
-    const tooltip = page.getByTestId('toolbar-tooltip');
+    const toggle = page.getByTestId('editor-theme');
+    const tooltip = page.getByTestId('header-tooltip');
     const stored = () =>
       page.evaluate((key) => localStorage.getItem(key), THEME_KEY);
 
@@ -1765,7 +1833,10 @@ test.describe('themes and canvas controls', () => {
       'system',
     );
     await toggle.focus();
-    await expect.soft(tooltip).toHaveText('Switch to Dark theme');
+    // An icon at this width, so its tooltip names it too.
+    await expect
+      .soft(tooltip)
+      .toHaveText('Theme: System. Switch to Dark theme');
 
     const steps = [
       { theme: 'dark', label: 'Dark', resolved: 'dark', next: 'Light' },
@@ -1781,7 +1852,9 @@ test.describe('themes and canvas controls', () => {
       );
       await expect(toggle).toContainText(label);
       // The tooltip stays up after a key press, and follows the button.
-      await expect.soft(tooltip).toHaveText(`Switch to ${next} theme`);
+      await expect
+        .soft(tooltip)
+        .toHaveText(`Theme: ${label}. Switch to ${next} theme`);
       await expect(root(page)).toHaveAttribute(
         'data-builder-theme-preference',
         theme,
@@ -1800,6 +1873,24 @@ test.describe('themes and canvas controls', () => {
       'data-builder-theme-preference',
       'dark',
     );
+
+    // The drafts have the same button, which goes the same way.
+    const drafts = page.getByTestId('drafts-theme');
+    await expect
+      .soft(drafts)
+      .toHaveAttribute('aria-label', 'Theme: Dark. Switch to Light theme.');
+    await drafts.press('Enter');
+    await expect(root(page)).toHaveAttribute('data-builder-theme', 'light');
+    await expect
+      .soft(drafts)
+      .toHaveAttribute('aria-label', 'Theme: Light. Switch to System theme.');
+    await expect.soft(drafts).toBeFocused();
+    await expect
+      .soft(tooltip)
+      .toHaveText('Theme: Light. Switch to System theme');
+    await expect.soft(builder.liveRegion).toContainText('Theme set to light.');
+    expect(await stored()).toBe('light');
+    await chooseTheme(page, 'dark', { view: 'drafts' });
 
     await page.getByTestId(`draft-open-${draft.id}`).press('Enter');
     await expect(builder.canvas).toBeVisible();
@@ -1848,7 +1939,7 @@ test.describe('themes and canvas controls', () => {
     await builder.createBlank();
 
     // On a dark OS the toggle goes System, Light, Dark, System.
-    const toggle = page.getByTestId('toolbar-theme');
+    const toggle = page.getByTestId('editor-theme');
     const theme = () => expect.soft(root(page));
     for (const [preference, resolved, next] of [
       ['light', 'light', 'Dark'],

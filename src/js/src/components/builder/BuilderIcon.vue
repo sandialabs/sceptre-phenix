@@ -125,6 +125,9 @@
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
     search: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
     help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/>',
+    // A clock with an arrow turning back: Draft History.
+    history:
+      '<path d="M4 12a8 8 0 1 0 2.34-5.66L4 8.5"/><path d="M4 4v4.5h4.5"/><path d="M12 8v4l3 2"/>',
     refresh:
       '<path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/>',
     // A turn back: restore a snapshot.
