@@ -249,7 +249,7 @@ editor keeps the changes queued in the browser and retries.
 
 Read this section before changing any file listed below.
 
-**Where the code is**
+### Where the code is
 
 | Area | Files |
 |---|---|
@@ -262,7 +262,7 @@ Read this section before changing any file listed below.
 | Editor state and logic | `src/js/src/builder/` (`store.js`, `model.js`, `autosave.js`, `idb.js`, `tabs.js`, `session.js`, `commands.js`, `keymap.js`, `layouts/`, `adapters/`) |
 | Generated schema bundle | `src/js/src/builder/schema/builder-v1.schema.json` |
 
-**Rules**
+### Rules
 
 - Run `make generate` (or `make generate-builder-schema`) in `src/go` after
   changing `types/builder/` or the config schemas in `types/version/schemas/`:
@@ -275,7 +275,7 @@ Read this section before changing any file listed below.
   are announced through the shared live region.
 - Keep this file current when Builder Flow behavior changes.
 
-**Tests**
+### Tests
 
 - Go: `go test ./api/builder ./types/builder ./store ./web` from `src/go`.
 - Unit: `npx vitest run test/builder` from `src/js`.
