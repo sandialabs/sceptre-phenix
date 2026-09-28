@@ -926,14 +926,23 @@ export function fitPadding(bounds, pane, overlays = [], padding = FIT_PADDING) {
 
 /**
  * The least zoom the canvas allows: `least`, or half the zoom that fits
- * the diagram when that is less, so that Fit, and zooming out by hand,
- * can always show a large diagram whole.
+ * the diagram clear of the boxes that float over the pane when that is
+ * less, so that Fit, and zooming out by hand, can always show a large
+ * diagram whole.
  *
  * @param {{width: number, height: number}} bounds the diagram's
  * @param {{width: number, height: number}} pane
  * @param {number} least
+ * @param {object[]} [overlays] boxes over the pane (the minimap), in the
+ *   pane's own pixels: its top left corner is 0, 0
  * @returns {number}
  */
-export function zoomFloor(bounds, pane, least) {
-  return Math.min(least, fitZoom(bounds, pane) / 2);
+export function zoomFloor(bounds, pane, least, overlays = []) {
+  const box = { left: 0, top: 0, right: pane.width, bottom: pane.height };
+  const clear =
+    overlays.length > 0 &&
+    fitZoom(bounds, pane, fitPadding(bounds, { ...pane, ...box }, overlays));
+
+  // Room that leaves nothing to show the diagram in is no floor at all.
+  return Math.min(least, (clear || fitZoom(bounds, pane)) / 2);
 }

@@ -70,6 +70,7 @@ import {
   specInterfaces,
 } from './model.js';
 import { connectionList } from './outline.js';
+import { MINIMAP_DEFAULT_WIDTH, minimapSize } from './panes.js';
 import { pressSelection } from './selection.js';
 import { addInView, paletteNode } from '@/components/builder/paletteDnd.js';
 
@@ -104,6 +105,12 @@ export const VIEW_API = [
   // string: the landing's shown tab: mine, shared, published or others
   'draftsTab',
   'showMinimap', // boolean
+  // {width, min, max}: the minimap's width and the widths it may take, in
+  // pixels, or null without a canvas
+  'minimapSize',
+  // {hidden: {start, end}, stacked}: which side columns are hidden, and
+  // whether a narrow window stacks the columns, which shows them all
+  'panes',
   'canZoomIn', // boolean
   'canZoomOut', // boolean
   'focusMode', // boolean: focus mode is on (see focusMode.js)
@@ -118,6 +125,8 @@ export const VIEW_API = [
   'closeEditor', // () back to the drafts
   'showDraftsTab', // (id) mine, shared, published or others
   'toggleMinimap', // ()
+  'resizeMinimap', // (width) in pixels, and says the new size
+  'togglePane', // (side) hides or shows a side column: start or end
   'toggleFocusMode', // () turns focus mode on or off, and says which
   // () the view as a new session shows it: default column widths, the
   // minimap, the starting zoom, panels scrolled to the top, sections closed
@@ -242,11 +251,11 @@ function rowNodeId(row) {
 
 // The canvas <section> is named and handles the canvas keys. It is also
 // where a deleted connection was selected, since the outline has no rows
-// for connections.
+// for connections, and where focus goes while the outline is hidden.
 function focusRowOrCanvas(row) {
-  if (row) {
-    row.focus();
-  } else {
+  row?.focus();
+
+  if (!row || document.activeElement !== row) {
     document.getElementById('builder-canvas')?.focus();
   }
 }
@@ -784,6 +793,45 @@ function draftChoices(store) {
 
 const BOTH = ['editor', 'landing'];
 const LANDING = ['landing'];
+
+// `width` gives the size's width from the view's minimapSize.
+function minimapSizeCommand(id, title, width) {
+  return {
+    id: `view.minimapSize.${id}`,
+    title: `Minimap size: ${title}`,
+    group: 'View',
+    keywords: ['overview', 'map', 'resize', 'larger', 'smaller'],
+    when: ({ view }) => {
+      if (!view.showMinimap || !view.minimapSize) {
+        return 'The minimap is hidden.';
+      }
+
+      return view.minimapSize.width === width(view.minimapSize)
+        ? 'This is the current size.'
+        : true;
+    },
+    detail: ({ view }) => {
+      const size = view.minimapSize && minimapSize(width(view.minimapSize));
+
+      return size ? `${size.width} by ${size.height} pixels` : '';
+    },
+    run: ({ view }) => view.resizeMinimap(width(view.minimapSize)),
+  };
+}
+
+function pane(side, name, keywords) {
+  return {
+    id: `view.pane.${side}`,
+    title: `Show or hide ${name}`,
+    group: 'View',
+    keywords: ['column', 'panel', 'sidebar', 'collapse', 'expand', ...keywords],
+    label: ({ view }) =>
+      `${view.panes?.hidden?.[side] ? 'Show' : 'Hide'} ${name}`,
+    when: ({ view }) =>
+      !view.panes?.stacked || 'The window is too narrow to hide columns.',
+    run: ({ view }) => view.togglePane(side),
+  };
+}
 
 function theme(value, title) {
   return {
@@ -1465,6 +1513,17 @@ export const COMMANDS = [
     label: ({ view }) => (view.showMinimap ? 'Hide minimap' : 'Show minimap'),
     run: ({ view }) => view.toggleMinimap(),
   },
+  // What the minimap's handle does by dragging or keys, for a pointer that
+  // does not drag (WCAG 2.5.7).
+  minimapSizeCommand('smallest', 'Smallest', ({ min }) => min),
+  minimapSizeCommand('default', 'Default', () => MINIMAP_DEFAULT_WIDTH),
+  minimapSizeCommand('large', 'Large', ({ max }) =>
+    Math.round((MINIMAP_DEFAULT_WIDTH + max) / 2),
+  ),
+  minimapSizeCommand('largest', 'Largest', ({ max }) => max),
+  // The Hide and Show toggles of the side columns.
+  pane('start', 'Add nodes and Outline', ['palette', 'outline']),
+  pane('end', 'Inspector', ['properties']),
   {
     // The header's Reset view. It leaves the diagram, the theme and the
     // shortcuts alone.

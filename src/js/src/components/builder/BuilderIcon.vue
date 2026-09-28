@@ -86,6 +86,16 @@
     undo: '<path d="M9 7H5V3"/><path d="M5 7a8 8 0 1 1-1 8"/>',
     redo: '<path d="M15 7h4V3"/><path d="M19 7a8 8 0 1 0 1 8"/>',
     copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
+    // A window with a side column, and the way it goes: hiding and showing
+    // the editor's side columns.
+    'panel-left-close':
+      '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M16 9l-3 3 3 3"/>',
+    'panel-left-open':
+      '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M13 9l3 3-3 3"/>',
+    'panel-right-close':
+      '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16M8 9l3 3-3 3"/>',
+    'panel-right-open':
+      '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16M11 9l-3 3 3 3"/>',
     paste:
       '<path d="M9 4h6v3H9z"/><path d="M8 5H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2"/>',
     save: '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/>',
@@ -100,6 +110,8 @@
     // Fit to view's corners around a turn back: Reset view.
     'reset-view':
       '<path d="M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5"/><path d="M8 12a4 4 0 1 0 1.2-2.85"/><path d="M8.6 6.6v2.8h2.8"/>',
+    // A two-way diagonal arrow: the minimap's resize handle.
+    'resize-diagonal': '<path d="M5 11V5h6M19 13v6h-6M5 5l14 14"/>',
     // Arrows out to the corners, and back in: Focus mode and its exit.
     focus: '<path d="M15 3h6v6M9 21H3v-6"/><path d="M21 3l-7 7M3 21l7-7"/>',
     'focus-exit':

@@ -307,6 +307,48 @@
   box-shadow: var(--bx-shadow);
 }
 
+/* A block, so the frame is exactly the size BuilderCanvas.vue gives it. */
+.builder-canvas .vue-flow__minimap svg {
+  display: block;
+}
+
+/* The minimap's resize handle, over its top left corner: BuilderCanvas.vue
+   gives it the minimap's size, and Vue Flow keeps the minimap 15px in from
+   the corner, inside a 1px frame. At least 24px square (WCAG 2.5.8), with a
+   border that keeps 3:1 in both themes. */
+.builder-minimap-handle {
+  position: absolute;
+  right: calc(15px + var(--builder-minimap-width) + 2px);
+  bottom: calc(15px + var(--builder-minimap-height) + 2px);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: max(1.5rem, 24px);
+  height: max(1.5rem, 24px);
+  border: 1px solid var(--bx-border-strong);
+  border-radius: var(--bx-radius) 0 var(--bx-radius) 0;
+  background: var(--bx-surface);
+  color: var(--bx-text);
+  cursor: nwse-resize;
+  touch-action: none;
+  transform: translate(100%, 100%);
+}
+
+.builder-minimap-handle:hover,
+.builder-canvas.is-resizing-minimap .builder-minimap-handle {
+  border-color: var(--bx-accent);
+  color: var(--bx-accent);
+}
+
+/* While the minimap is resized, the pointer keeps its shape over the
+   canvas, and no text is selected. */
+.builder-canvas.is-resizing-minimap,
+.builder-canvas.is-resizing-minimap * {
+  cursor: nwse-resize;
+  user-select: none;
+}
+
 /* The mask shades everything outside the visible area; its stroke outlines
    the visible area itself. */
 .builder-canvas .vue-flow__minimap-mask {
@@ -899,28 +941,35 @@
    the canvas (BuilderPanes.vue sets --builder-pane-start and
    --builder-pane-end), or the default width for the window. Either stays
    within what the window allows: each side column keeps its minimum and the
-   canvas keeps 20rem, the Inspector giving way first. The rem values match
-   builder/panes.js. */
+   canvas keeps 20rem, the Inspector giving way first. A hidden column takes
+   no width, and its gutter becomes a strip for its Show toggle. The rem
+   values match builder/panes.js. */
 .builder-layout {
   --builder-pane-start-default: 15rem;
   --builder-pane-end-default: 22rem;
+  --builder-gutter-start: 0.75rem;
+  --builder-gutter-end: 0.75rem;
+  /* The least the Inspector takes, which the start column leaves it. */
+  --builder-pane-end-least: 15rem;
   --builder-pane-start-used: clamp(
     11rem,
     var(--builder-pane-start, var(--builder-pane-start-default)),
-    100% - 36.5rem
+    100% - var(--builder-pane-end-least) - var(--builder-gutter-start) -
+      var(--builder-gutter-end) - 20rem
   );
   --builder-pane-end-used: clamp(
     15rem,
     var(--builder-pane-end, var(--builder-pane-end-default)),
-    100% - var(--builder-pane-start-used) - 21.5rem
+    100% - var(--builder-pane-start-used) - var(--builder-gutter-start) -
+      var(--builder-gutter-end) - 20rem
   );
 
   display: grid;
   flex: 1 1 auto;
   /* The splitters are the gaps between the columns. */
   grid-template-columns:
-    var(--builder-pane-start-used) 0.75rem minmax(0, 1fr) 0.75rem
-    var(--builder-pane-end-used);
+    var(--builder-pane-start-used) var(--builder-gutter-start)
+    minmax(0, 1fr) var(--builder-gutter-end) var(--builder-pane-end-used);
   row-gap: 0.75rem;
   align-items: stretch;
   /* In a short window the canvas keeps a usable height, and the editor
@@ -948,8 +997,47 @@
   min-height: 0;
 }
 
+/* A hidden column folds into a strip at its side; the strip matches
+   STRIP_REM in builder/panes.js. */
+.builder-layout.is-start-hidden {
+  --builder-pane-start-used: 0px;
+  --builder-gutter-start: 2.25rem;
+}
+
+.builder-layout.is-end-hidden {
+  --builder-pane-end-used: 0px;
+  --builder-pane-end-least: 0px;
+  --builder-gutter-end: 2.25rem;
+}
+
+/* Not Bulma's is-hidden, which no layout can override. */
+.builder-layout__side--hidden {
+  display: none;
+}
+
+/* Each in its own column, so a hidden column's track stays its own. */
+.builder-layout__side--start {
+  grid-column: 1;
+}
+
+.builder-layout__gutter--start {
+  grid-column: 2;
+}
+
+.builder-layout__main {
+  grid-column: 3;
+}
+
+.builder-layout__gutter--end {
+  grid-column: 4;
+}
+
+.builder-layout__side--end {
+  grid-column: 5;
+}
+
 /* The gap between a side column and the canvas holds the column's Widen
-   toggle, and below it the splitter. */
+   and Hide toggles, and below them the splitter. */
 .builder-layout__gutter {
   display: flex;
   flex-direction: column;
@@ -969,6 +1057,23 @@
   width: max(1.5rem, 24px);
   height: max(1.5rem, 24px);
   padding: 0;
+}
+
+/* The Show toggle of a hidden column: the column's icon, and its name
+   written down the strip. */
+.builder-layout__toggle.builder-layout__strip {
+  flex-direction: column;
+  gap: 0.5rem;
+  height: auto;
+  min-height: max(1.5rem, 24px);
+  padding: 0.3rem 0;
+}
+
+.builder-layout__strip-label {
+  writing-mode: vertical-rl;
+  font-size: 0.8rem;
+  line-height: 1.5rem;
+  white-space: nowrap;
 }
 
 /* A splitter's grip, and a line along it while it is hovered, dragged or
@@ -1058,7 +1163,8 @@
 }
 
 /* Too narrow for three columns: stack them, without splitters or their
-   toggles, and let the page scroll. */
+   toggles, and let the page scroll. Every column shows, hidden or not:
+   there is no room beside the canvas to give it. */
 @container builder-editor (max-width: 54.25rem) {
   .builder-layout {
     flex: none;
@@ -1069,11 +1175,18 @@
     display: none;
   }
 
+  .builder-layout__side,
+  .builder-layout__main {
+    grid-column: auto;
+  }
+
   .builder-layout__main {
     height: 70vh;
   }
 
-  .builder-layout__side {
+  .builder-layout__side,
+  .builder-layout__side--hidden {
+    display: flex;
     overflow: visible;
   }
 

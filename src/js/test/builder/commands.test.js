@@ -101,6 +101,8 @@ function fakeView(overrides = {}) {
     editing: true,
     dialog: '',
     showMinimap: true,
+    minimapSize: { width: 200, min: 120, max: 400 },
+    panes: { hidden: { start: false, end: false }, stacked: false },
     canZoomIn: true,
     canZoomOut: true,
     focusMode: false,
@@ -498,6 +500,15 @@ describe('availability', () => {
     expect(
       commandTitle('view.focusMode', context({ view: { focusMode: true } })),
     ).toBe('Exit focus mode');
+    expect(commandTitle('view.pane.start', context())).toBe(
+      'Hide Add nodes and Outline',
+    );
+    expect(
+      commandTitle(
+        'view.pane.end',
+        context({ view: { panes: { hidden: { end: true } } } }),
+      ),
+    ).toBe('Show Inspector');
 
     const { doc, alpha } = sampleDocument();
     expect(
@@ -536,6 +547,59 @@ describe('running', () => {
     // So is Focus mode, whose keys turn it off again.
     expect(runCommand('view.focusMode', viewer)).toBe(true);
     expect(viewer.view.toggleFocusMode).toHaveBeenCalledOnce();
+    // And the side columns' Hide toggles, with no keys until the user gives
+    // them some; the stacked layout shows every column, so they wait.
+    expect(runCommand('view.pane.end', viewer)).toBe(true);
+    expect(viewer.view.togglePane).toHaveBeenCalledWith('end');
+    expect(commandKeys('view.pane.start')).toEqual([]);
+    const stacked = context({
+      view: { panes: { hidden: { start: true }, stacked: true } },
+    });
+    expect(runCommand('view.pane.start', stacked)).toBe(false);
+    expect(stacked.view.togglePane).not.toHaveBeenCalled();
+    expect(stacked.store.announce).toHaveBeenCalledWith(
+      'The window is too narrow to hide columns.',
+    );
+  });
+
+  test("the minimap's sizes, for a pointer that does not drag its handle", () => {
+    const ctx = context({
+      view: { minimapSize: { width: 200, min: 120, max: 400 } },
+    });
+    const offered = paletteCommands(ctx).filter((command) =>
+      command.id.startsWith('view.minimapSize.'),
+    );
+
+    expect(offered.map((command) => commandTitle(command, ctx))).toEqual([
+      'Minimap size: Smallest',
+      'Minimap size: Default',
+      'Minimap size: Large',
+      'Minimap size: Largest',
+    ]);
+    expect(offered.map((command) => command.detail(ctx))).toEqual([
+      '120 by 90 pixels',
+      '200 by 150 pixels',
+      '300 by 225 pixels',
+      '400 by 300 pixels',
+    ]);
+
+    expect(runCommand('view.minimapSize.large', ctx)).toBe(true);
+    expect(ctx.view.resizeMinimap).toHaveBeenCalledWith(300);
+    expect(runCommand('view.minimapSize.default', ctx)).toBe(false);
+    expect(ctx.store.announce).toHaveBeenCalledWith(
+      'This is the current size.',
+    );
+
+    const hidden = context({
+      view: {
+        showMinimap: false,
+        minimapSize: { width: 200, min: 120, max: 400 },
+      },
+    });
+    expect(runCommand('view.minimapSize.largest', hidden)).toBe(false);
+    expect(hidden.store.announce).toHaveBeenCalledWith(
+      'The minimap is hidden.',
+    );
   });
 
   test('a command per layout lays out with it, and one per Auto-group way', () => {

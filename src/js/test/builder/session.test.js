@@ -39,7 +39,7 @@ import {
   draftKey,
   unloadCopyKey,
 } from '@/builder/idb.js';
-import { PANES_STORAGE_KEY } from '@/builder/panes.js';
+import { MINIMAP_STORAGE_KEY, PANES_STORAGE_KEY } from '@/builder/panes.js';
 import { SETTINGS_STORAGE_KEY } from '@/builder/settings.js';
 import {
   readRecent,
@@ -95,6 +95,7 @@ describe('logout', () => {
     // which name drafts and nodes, are not among them.
     expect([...BUILDER_PREFERENCE_KEYS].sort()).toEqual(
       [
+        MINIMAP_STORAGE_KEY,
         PANES_STORAGE_KEY,
         SETTINGS_STORAGE_KEY,
         SHORTCUTS_STORAGE_KEY,
@@ -106,6 +107,7 @@ describe('logout', () => {
     const local = memoryStorage({
       'phenix.builder.theme': 'dark',
       'phenix.builder.panes': '{"start":300}',
+      'phenix.builder.minimap': '{"width":280}',
       'phenix.builder.settings': '{"layoutAlgorithm":"dagre"}',
       'phenix.builder.unlisted': 'x',
       [unloadCopyKey(draftKey('alice', 'alice', 'd1'))]: '{"queue":[]}',
@@ -157,6 +159,7 @@ describe('logout', () => {
     // not listed as one goes too.
     expect([...local.map.keys()].sort()).toEqual([
       'alice.vimMode',
+      'phenix.builder.minimap',
       'phenix.builder.panes',
       'phenix.builder.settings',
       'phenix.builder.shortcuts',

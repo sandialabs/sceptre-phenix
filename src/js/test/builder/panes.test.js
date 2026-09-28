@@ -1,11 +1,19 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  MINIMAP_DEFAULT_WIDTH,
+  MINIMAP_STORAGE_KEY,
   PANES_STORAGE_KEY,
   clampPane,
+  loadMinimap,
   loadPanes,
+  minimapDragWidth,
+  minimapKeyWidth,
+  minimapLimits,
+  minimapSize,
   paneKeyWidth,
   paneLimits,
+  saveMinimap,
   savePanes,
 } from '@/builder/panes.js';
 
@@ -61,6 +69,21 @@ describe('side column widths', () => {
     });
   });
 
+  test('beside a hidden column, leave room for its strip instead', () => {
+    // 1400 - (20 + 0.75 + 2.25) * 16 = 1032, whatever the hidden column's
+    // width.
+    for (const other of [0, 352]) {
+      expect(
+        paneLimits('start', {
+          layout: 1400,
+          other,
+          rem: 16,
+          otherHidden: true,
+        }),
+      ).toEqual({ min: 176, max: 1032 });
+    }
+  });
+
   test('clamp to whole pixels within the limits', () => {
     const limits = { min: 176, max: 704 };
 
@@ -97,7 +120,7 @@ describe('splitter keys', () => {
 });
 
 describe('remembered widths', () => {
-  const none = { widths: {}, widened: {} };
+  const none = { widths: {}, widened: {}, hidden: [] };
 
   test('round-trip through storage under their own key', () => {
     const storage = fakeStorage();
@@ -110,7 +133,29 @@ describe('remembered widths', () => {
     expect(loadPanes(storage)).toEqual({
       widths: { start: 300, end: 500 },
       widened: {},
+      hidden: [],
     });
+  });
+
+  test('hidden sides are kept with the widths, from a set or a list', () => {
+    const storage = fakeStorage();
+
+    savePanes({ widths: {}, hidden: new Set(['end']) }, storage);
+    expect(JSON.parse(storage.data[PANES_STORAGE_KEY])).toEqual({
+      hidden: ['end'],
+    });
+    expect(loadPanes(storage)).toEqual({ ...none, hidden: ['end'] });
+
+    savePanes({ widths: { end: 500 }, hidden: ['end', 'start'] }, storage);
+    expect(loadPanes(storage)).toEqual({
+      widths: { end: 500 },
+      widened: {},
+      hidden: ['start', 'end'],
+    });
+
+    // Shown again, with no width of its own: nothing is left to keep.
+    savePanes({ widths: {}, hidden: [] }, storage);
+    expect(storage.data).not.toHaveProperty(PANES_STORAGE_KEY);
   });
 
   test('a side restored to its default is left out, and none removes the key', () => {
@@ -139,6 +184,7 @@ describe('remembered widths', () => {
     expect(loadPanes(storage)).toEqual({
       widths: { start: 700, end: 824 },
       widened: { start: 240, end: null },
+      hidden: [],
     });
 
     // No longer widened, so nothing is kept for it.
@@ -152,6 +198,7 @@ describe('remembered widths', () => {
         start: 'wide',
         end: -4,
         other: 300,
+        hidden: 'end',
       }),
     });
 
@@ -170,7 +217,15 @@ describe('remembered widths', () => {
           }),
         }),
       ),
-    ).toEqual({ widths: { end: 824 }, widened: {} });
+    ).toEqual({ widths: { end: 824 }, widened: {}, hidden: [] });
+    // Only the two sides can be hidden.
+    expect(
+      loadPanes(
+        fakeStorage({
+          [PANES_STORAGE_KEY]: JSON.stringify({ hidden: ['middle', 'end'] }),
+        }),
+      ).hidden,
+    ).toEqual(['end']);
   });
 
   test('missing or blocked storage falls back to the defaults', () => {
@@ -178,5 +233,86 @@ describe('remembered widths', () => {
     expect(loadPanes(throwing)).toEqual(none);
     expect(() => savePanes({ widths: { start: 300 } }, throwing)).not.toThrow();
     expect(() => savePanes({ widths: { start: 300 } }, null)).not.toThrow();
+  });
+});
+
+describe('minimap size', () => {
+  test('keeps its shape, 4 wide to 3 high', () => {
+    expect(minimapSize(MINIMAP_DEFAULT_WIDTH)).toEqual({
+      width: 200,
+      height: 150,
+    });
+    expect(minimapSize(281)).toEqual({ width: 281, height: 211 });
+  });
+
+  test('covers at most half the canvas each way, and never less than the default', () => {
+    // Half of 800 wide, and of 700 high: 350 high is 466 wide.
+    expect(minimapLimits({ width: 800, height: 700 })).toEqual({
+      min: 120,
+      max: 400,
+    });
+    expect(minimapLimits({ width: 1600, height: 600 })).toEqual({
+      min: 120,
+      max: 400,
+    });
+    // A large canvas stops at 600; a small one, or none yet, at the default.
+    expect(minimapLimits({ width: 3000, height: 2000 }).max).toBe(600);
+    expect(minimapLimits({ width: 300, height: 200 }).max).toBe(200);
+    expect(minimapLimits({ width: 0, height: 0 }).max).toBe(200);
+  });
+
+  test('arrow keys move the handle at its top left corner', () => {
+    const limits = { min: 120, max: 400 };
+
+    // Up and Left take the corner away from the minimap: larger.
+    expect(minimapKeyWidth('ArrowUp', 200, limits)).toBe(216);
+    expect(minimapKeyWidth('ArrowLeft', 200, limits)).toBe(216);
+    expect(minimapKeyWidth('ArrowDown', 200, limits)).toBe(184);
+    expect(minimapKeyWidth('ArrowRight', 200, limits, 10)).toBe(190);
+    // Within the limits, which Home and End reach at once.
+    expect(minimapKeyWidth('ArrowUp', 395, limits)).toBe(400);
+    expect(minimapKeyWidth('ArrowDown', 125, limits)).toBe(120);
+    expect(minimapKeyWidth('Home', 300, limits)).toBe(120);
+    expect(minimapKeyWidth('End', 300, limits)).toBe(400);
+    for (const key of ['Enter', 'Tab', 'a', 'PageUp']) {
+      expect(minimapKeyWidth(key, 200, limits)).toBeUndefined();
+    }
+  });
+
+  test('a drag takes the corner to the pointer, as near as the shape allows', () => {
+    const limits = { min: 120, max: 400 };
+
+    // Up and left along the minimap's diagonal: exactly under the pointer.
+    expect(minimapDragWidth(200, -40, -30, limits)).toBe(240);
+    expect(minimapDragWidth(200, 40, 30, limits)).toBe(160);
+    // Straight up grows it too, by less than straight along the diagonal.
+    expect(minimapDragWidth(200, 0, -50, limits)).toBe(224);
+    // Moving along the other diagonal leaves it as it was.
+    expect(minimapDragWidth(200, 30, -40, limits)).toBe(200);
+    // Within the limits.
+    expect(minimapDragWidth(200, -900, -900, limits)).toBe(400);
+    expect(minimapDragWidth(200, 900, 900, limits)).toBe(120);
+  });
+
+  test('is remembered under its own key, and forgotten for the default', () => {
+    const storage = fakeStorage();
+
+    expect(loadMinimap(storage)).toBeNull();
+    saveMinimap(280.4, storage);
+    expect(JSON.parse(storage.data[MINIMAP_STORAGE_KEY])).toEqual({
+      width: 280,
+    });
+    expect(loadMinimap(storage)).toBe(280);
+    saveMinimap(null, storage);
+    expect(storage.data).not.toHaveProperty(MINIMAP_STORAGE_KEY);
+
+    for (const stored of ['{not json', '{"width":"wide"}', '{"width":-5}']) {
+      expect(
+        loadMinimap(fakeStorage({ [MINIMAP_STORAGE_KEY]: stored })),
+      ).toBeNull();
+    }
+    expect(loadMinimap(null)).toBeNull();
+    expect(loadMinimap(throwing)).toBeNull();
+    expect(() => saveMinimap(300, throwing)).not.toThrow();
   });
 });

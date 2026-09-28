@@ -496,6 +496,264 @@ test(
         .toHaveAttribute('aria-valuenow', String(widths.end));
     });
 
+    await test.step('a Hide toggle folds each side column into a strip that shows it again, and a node pressed on the canvas shows the Inspector', async () => {
+      const hide = {
+        start: page.getByTestId('pane-hide-start'),
+        end: page.getByTestId('pane-hide-end'),
+      };
+      const columns = {
+        start: page.locator('#builder-pane-start'),
+        end: page.locator('#builder-pane-end'),
+      };
+      const canvasWidth = () =>
+        builder.canvas.evaluate((element) =>
+          Math.round(element.getBoundingClientRect().width),
+        );
+      const wide = await canvasWidth();
+
+      // Directly under each Widen toggle, at least 24px square, and named
+      // for what a press does to the column it controls.
+      for (const side of ['start', 'end']) {
+        const widen = await page
+          .getByTestId(`pane-toggle-${side}`)
+          .boundingBox();
+        const box = await hide[side].boundingBox();
+        expect
+          .soft(Math.min(box.width, box.height), `${side} Hide size`)
+          .toBeGreaterThanOrEqual(24);
+        expect
+          .soft(box.y, `${side} Hide under Widen`)
+          .toBeGreaterThanOrEqual(widen.y + widen.height);
+        expect
+          .soft(Math.round(box.x), `${side} Hide x`)
+          .toBe(Math.round(widen.x));
+        await expect
+          .soft(hide[side])
+          .toHaveAttribute('aria-controls', `builder-pane-${side}`);
+        await expect.soft(hide[side]).toHaveAttribute('aria-expanded', 'true');
+      }
+      await expect.soft(hide.end).toHaveAccessibleName('Hide Inspector');
+      await hide.end.hover();
+      await expect
+        .soft(page.getByTestId('pane-toggle-tooltip-end'))
+        .toHaveText('Hide Inspector');
+
+      // By keyboard: focus stays on the toggle, which shows the column again
+      // from its strip, and the canvas takes the room. The column's Widen
+      // toggle and splitter go with it.
+      await hide.end.focus();
+      await page.keyboard.press('Enter');
+      await expect.soft(hide.end).toHaveAttribute('aria-expanded', 'false');
+      await expect.soft(hide.end).toHaveAccessibleName('Show Inspector');
+      await expect.soft(hide.end).toBeFocused();
+      await expect.soft(columns.end).toBeHidden();
+      await expect.soft(builder.liveRegion).toContainText('Inspector hidden');
+      await expect.soft(page.getByTestId('pane-toggle-end')).toHaveCount(0);
+      await expect.soft(page.getByTestId('splitter-end')).toHaveCount(0);
+      await expect.poll(canvasWidth).toBeGreaterThan(wide + 200);
+
+      // By pointer, the other column. Both stay hidden on the next visit.
+      await hide.start.click();
+      await expect
+        .soft(hide.start)
+        .toHaveAccessibleName('Show Add nodes and Outline');
+      await expect.soft(columns.start).toBeHidden();
+      await builder.openDraft(draft);
+      await expect.soft(columns.start).toBeHidden();
+      await expect.soft(columns.end).toBeHidden();
+
+      // Moving focus over the nodes leaves the Inspector hidden; Enter on
+      // a node shows it with that node, and focus stays on the node.
+      const subject = builder.inspector.locator('.builder-inspector__subject');
+      await builder.canvas.focus();
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('ArrowRight');
+      const focused = page.locator('.vue-flow__node:focus');
+      await expect(focused).toHaveCount(1);
+      await expect.soft(columns.end).toBeHidden();
+      const node = page.locator(
+        `.vue-flow__node[data-id="${await focused.getAttribute('data-id')}"]`,
+      );
+      // 'Device external, 0 connections, …', as the Inspector names it.
+      const [label] = (await node.getAttribute('aria-label')).split(',');
+      await page.keyboard.press('Enter');
+      await expect.soft(columns.end).toBeVisible();
+      await expect.soft(hide.end).toHaveAttribute('aria-expanded', 'true');
+      await expect.soft(builder.liveRegion).toContainText('Inspector shown');
+      await expect.soft(node).toBeFocused();
+      await expect.soft(subject).toContainText(label);
+
+      // A click on the one selected node, with the Inspector hidden, shows
+      // it again rather than deselecting the node.
+      await hide.end.click();
+      await expect.soft(columns.end).toBeHidden();
+      await node.click();
+      await expect.soft(columns.end).toBeVisible();
+      await expect.soft(node).toHaveClass(/\bselected\b/);
+      await expect.soft(subject).toContainText(label);
+
+      // The command palette shows the other column; its Widen toggle and
+      // splitter work again.
+      await builder.canvas.focus();
+      await page.keyboard.press('ControlOrMeta+k');
+      await page.keyboard.type('Show Add nodes');
+      await page.keyboard.press('Enter');
+      await expect.soft(columns.start).toBeVisible();
+      await expect.soft(hide.start).toHaveAttribute('aria-expanded', 'true');
+      const splitter = page.getByTestId('splitter-start');
+      const width = Number(await splitter.getAttribute('aria-valuenow'));
+      await splitter.focus();
+      await page.keyboard.press('ArrowRight');
+      await expect
+        .soft(splitter)
+        .toHaveAttribute('aria-valuenow', String(width + 16));
+      await page.keyboard.press('Enter');
+      await page.getByTestId('pane-toggle-start').click();
+      await expect
+        .soft(splitter)
+        .toHaveAttribute(
+          'aria-valuenow',
+          (await splitter.getAttribute('aria-valuemax')) || '',
+        );
+      await page.getByTestId('pane-toggle-start').click();
+      await expect
+        .soft(splitter)
+        .toHaveAttribute('aria-valuenow', String(width));
+      expect.soft(await canvasWidth(), 'canvas width again').toBe(wide);
+    });
+
+    await test.step('the minimap resizes from its top left corner, by keyboard or drag, and is remembered', async () => {
+      const handle = page.getByRole('separator', { name: 'Resize minimap' });
+      const minimap = page.locator('.vue-flow__minimap');
+      const value = async () =>
+        Number(await handle.getAttribute('aria-valuenow'));
+      const stored = () =>
+        page.evaluate(() => localStorage.getItem('phenix.builder.minimap'));
+
+      // A splitter between the minimap and the canvas, over the minimap's
+      // top left corner, that says its keys and the size.
+      await expect
+        .soft(handle)
+        .toHaveAttribute('aria-controls', 'builder-minimap');
+      await expect
+        .soft(handle)
+        .toHaveAttribute('aria-valuetext', '200 by 150 pixels');
+      await expect
+        .soft(handle)
+        .toHaveAccessibleDescription(
+          /^Up and Left arrows make the minimap larger/,
+        );
+      const box = await handle.boundingBox();
+      const frame = await minimap.boundingBox();
+      expect
+        .soft(Math.min(box.width, box.height), 'handle size')
+        .toBeGreaterThanOrEqual(24);
+      expect.soft(Math.round(box.x), 'handle left').toBe(Math.round(frame.x));
+      expect.soft(Math.round(box.y), 'handle top').toBe(Math.round(frame.y));
+      expect.soft(Math.round(frame.width), 'minimap frame').toBe(202);
+
+      // Up and Left make it larger, Down and Right smaller, Home and End
+      // smallest and largest, and Enter the default again. Each size is
+      // said.
+      await handle.focus();
+      await page.keyboard.press('ArrowUp');
+      await expect.soft(handle).toHaveAttribute('aria-valuenow', '216');
+      await expect
+        .soft(builder.liveRegion)
+        .toContainText('Minimap 216 by 162 pixels');
+      await expect
+        .poll(async () => Math.round((await minimap.boundingBox()).height))
+        .toBe(164);
+      await page.keyboard.press('ArrowLeft');
+      await page.keyboard.press('ArrowRight');
+      await page.keyboard.press('ArrowDown');
+      await expect.soft(handle).toHaveAttribute('aria-valuenow', '200');
+      await page.keyboard.press('Home');
+      await expect.soft(handle).toHaveAttribute('aria-valuenow', '120');
+      await page.keyboard.press('End');
+      const largest = Number(await handle.getAttribute('aria-valuemax'));
+      await expect
+        .soft(handle)
+        .toHaveAttribute('aria-valuenow', String(largest));
+      await expect.soft(builder.liveRegion).toContainText('(largest)');
+      // It never covers more than half the canvas either way.
+      const canvas = await page.locator('.vue-flow').boundingBox();
+      expect
+        .soft(largest, 'largest width')
+        .toBeLessThanOrEqual(canvas.width / 2);
+      expect
+        .soft(largest * 0.75, 'largest height')
+        .toBeLessThanOrEqual(canvas.height / 2);
+
+      // Fit keeps the nodes clear of the minimap at its size.
+      await builder.canvas.focus();
+      await page.keyboard.press('Shift+Digit1');
+      await expect
+        .poll(() =>
+          page.locator('.vue-flow').evaluate((flow) => {
+            const map = flow
+              .querySelector('.vue-flow__minimap')
+              .getBoundingClientRect();
+
+            return [...flow.querySelectorAll('.vue-flow__node')].filter(
+              (node) => {
+                const box = node.getBoundingClientRect();
+
+                return (
+                  Math.min(box.right, map.right) -
+                    Math.max(box.left, map.left) >
+                    1 &&
+                  Math.min(box.bottom, map.bottom) -
+                    Math.max(box.top, map.top) >
+                    1
+                );
+              },
+            ).length;
+          }),
+        )
+        .toBe(0);
+
+      await handle.focus();
+      await page.keyboard.press('Enter');
+      await expect.soft(handle).toHaveAttribute('aria-valuenow', '200');
+      expect.soft(await stored(), 'default size').toBeNull();
+
+      // A drag up and left, along the minimap's diagonal, takes its corner
+      // with the pointer. The size is kept for the next visit.
+      const start = await handle.boundingBox();
+      const x = start.x + start.width / 2;
+      const y = start.y + start.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x - 40, y - 30, { steps: 5 });
+      await page.mouse.up();
+      await expect.soft(handle).toHaveAttribute('aria-valuenow', '240');
+      await expect.soft(handle).toBeFocused();
+      expect.soft(JSON.parse(await stored())).toEqual({ width: 240 });
+      await builder.openDraft(draft);
+      await expect.soft(handle).toHaveAttribute('aria-valuenow', '240');
+      expect.soft(await value()).toBe(240);
+      await handle.dblclick();
+      await expect.soft(handle).toHaveAttribute('aria-valuenow', '200');
+
+      // A pointer that does not drag picks a size in the command palette
+      // (WCAG 2.5.7).
+      await builder.canvas.focus();
+      await page.keyboard.press('ControlOrMeta+k');
+      await page.keyboard.type('Minimap size');
+      await page
+        .getByRole('option', { name: /^Minimap size: Largest/ })
+        .click();
+      await expect
+        .soft(handle)
+        .toHaveAttribute(
+          'aria-valuenow',
+          (await handle.getAttribute('aria-valuemax')) || '',
+        );
+      await expect.soft(page.locator('#builder-minimap')).toBeVisible();
+      await handle.dblclick();
+    });
+
     await test.step('Reset view puts the view back as the draft opened, in one press', async () => {
       const reset = page.getByTestId('editor-reset-view');
       const splitters = {
@@ -504,6 +762,9 @@ test(
       };
       const help = page.getByTestId('canvas-help');
       const side = page.locator('#builder-pane-start');
+      const minimapHandle = page.getByRole('separator', {
+        name: 'Resize minimap',
+      });
       const transform = () =>
         page
           .locator('.vue-flow__transformationpane')
@@ -539,8 +800,12 @@ test(
       await page.getByTestId('pane-toggle-start').click();
       await splitters.end.focus();
       await page.keyboard.press('ArrowLeft');
+      await page.getByTestId('pane-hide-end').click();
       await builder.canvas.focus();
       await page.keyboard.press('=');
+      await minimapHandle.focus();
+      await page.keyboard.press('ArrowUp');
+      await expect.soft(minimapHandle).toHaveAttribute('aria-valuenow', '216');
       await builder.toolbar('minimap').click();
       await help.locator('summary').click();
       const scrolled = await side.evaluate((element) => {
@@ -563,11 +828,24 @@ test(
       await expect
         .soft(page.getByTestId('pane-toggle-start'))
         .toHaveAttribute('aria-pressed', 'false');
+      await expect.soft(page.locator('#builder-pane-end')).toBeVisible();
+      await expect
+        .soft(page.getByTestId('pane-hide-end'))
+        .toHaveAttribute('aria-expanded', 'true');
       expect.soft(await stored(), 'stored widths').toBeNull();
       await expect
         .soft(builder.toolbar('minimap'))
         .toHaveAttribute('aria-pressed', 'true');
       await expect.soft(page.locator('.vue-flow__minimap')).toBeVisible();
+      await expect.soft(minimapHandle).toHaveAttribute('aria-valuenow', '200');
+      expect
+        .soft(
+          await page.evaluate(() =>
+            localStorage.getItem('phenix.builder.minimap'),
+          ),
+          'stored minimap size',
+        )
+        .toBeNull();
       await expect.soft(help).not.toHaveAttribute('open');
       expect.soft(await side.evaluate((element) => element.scrollTop)).toBe(0);
       await expect.poll(transform, { message: 'zoom and pan' }).toBe(opened);
@@ -594,18 +872,25 @@ test(
       // Text enlarged on its own stacks the columns instead of squeezing
       // the canvas column to nothing.
       await resize(page, { width: 1280, height: 800 });
+      await page.getByTestId('pane-hide-end').click();
       const style = await page.addStyleTag({
         content: 'html { font-size: 200% !important; }',
       });
       await resize(page, { width: 1280, height: 800 });
       layout = await editorLayout(page);
-      // The stacked columns have no splitters, nor their toggles.
+      // The stacked columns have no splitters, nor their toggles, and every
+      // column shows, the hidden Inspector too.
       await expect
-        .soft(page.getByRole('separator', { name: /^Resize / }))
+        .soft(page.getByRole('separator', { name: /^Resize (Add|Insp)/ }))
         .toHaveCount(0);
       await expect
-        .soft(page.getByRole('button', { name: /^Widen / }))
+        .soft(
+          page.getByRole('button', {
+            name: /^(Widen|Hide|Show) (Add nodes|Inspector)/,
+          }),
+        )
         .toHaveCount(0);
+      await expect.soft(page.locator('#builder-pane-end')).toBeVisible();
       expect
         .soft(
           layout.canvas.right - layout.canvas.left,
@@ -625,6 +910,10 @@ test(
         .soft(layout.navRight, '200% text: header links')
         .toBeLessThanOrEqual(layout.width + 1);
       await style.evaluate((element) => element.remove());
+      await resize(page, { width: 1280, height: 800 });
+      await expect.soft(page.locator('#builder-pane-end')).toBeHidden();
+      await page.getByTestId('pane-hide-end').click();
+      await expect.soft(page.locator('#builder-pane-end')).toBeVisible();
     });
 
     await resize(page, initial);

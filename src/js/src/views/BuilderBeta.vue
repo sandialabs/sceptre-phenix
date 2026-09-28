@@ -1808,18 +1808,20 @@
 
   /**
    * Reset view: the editor's view as a new session shows it. The side
-   * columns take their default widths, and the widths stored for them are
-   * forgotten; the minimap shows or hides as the settings have it; the
-   * panels scroll to the top; the sections that open (the canvas's Keyboard
-   * help, the Inspector's More settings) close; and the canvas has the zoom
-   * and pan it opens with. The diagram, its undo history and the settings
-   * are left as they are. Focus stays where it is, unless a section that closes held
-   * it: it moves to that section's summary rather than to <body>.
+   * columns show, at their default widths, and the widths stored for them
+   * are forgotten; the minimap shows or hides as the settings have it, at
+   * its default size; the panels scroll to the top; the sections that open
+   * (the canvas's Keyboard help, the Inspector's More settings) close; and
+   * the canvas has the zoom and pan it opens with. The diagram, its undo
+   * history and the settings are left as they are. Focus stays where it
+   * is, unless a section that closes held it: it moves to that section's
+   * summary rather than to <body>.
    */
   function resetView() {
     const root = rootEl.value;
 
     showMinimap.value = editorSettings.showMinimap;
+    canvas.value?.resetMinimap();
     canvas.value?.resetViewport();
     panes.value?.resetWidths();
     closeSections();
@@ -1941,7 +1943,12 @@
 
   // --- commands -------------------------------------------------------------
 
-  function focusOutline() {
+  // A column that is hidden shows first.
+  async function focusOutline() {
+    if (panes.value?.show('start')) {
+      await nextTick();
+    }
+
     (
       document.querySelector(
         '[data-testid="builder-outline"] button[tabindex="0"]',
@@ -1953,6 +1960,7 @@
   // name of the node (or the label of the connection) it shows. The form
   // is rebuilt after a selection changes, so this waits for it.
   async function focusInspector({ field = false } = {}) {
+    panes.value?.show('end');
     await nextTick();
     await nextTick();
 
@@ -2023,6 +2031,12 @@
     get showMinimap() {
       return showMinimap.value;
     },
+    get minimapSize() {
+      return canvas.value?.minimapState || null;
+    },
+    get panes() {
+      return panes.value?.state || { hidden: {}, stacked: false };
+    },
     get canZoomIn() {
       return !canvas.value?.atMaxZoom;
     },
@@ -2053,6 +2067,12 @@
     },
     toggleMinimap() {
       showMinimap.value = !showMinimap.value;
+    },
+    resizeMinimap(width) {
+      canvas.value?.resizeMinimap(width);
+    },
+    togglePane(side) {
+      panes.value?.toggleHidden(side);
     },
     toggleFocusMode,
     resetView,

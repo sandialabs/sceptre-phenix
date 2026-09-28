@@ -22,12 +22,25 @@
   to turn on the screen reader's focus mode for these keys, or to use the
   Outline, which lists every node and connection. Activating a node in browse mode (Enter) selects and
   focuses it.
+
+  A node or connection pressed into the selection (a click, Enter or Space)
+  shows the Inspector again when it is hidden (see BuilderPanes.vue); a
+  press on the one selected item then shows it rather than deselecting it.
+  Moving focus alone does not.
+
+  The minimap has a handle at its top left corner that resizes it, as a
+  splitter between it and the canvas (WAI-ARIA APG window splitter): it is
+  dragged, or focused and moved with the arrow keys, and Home and End make
+  the minimap smallest and largest; Enter or a double-click restores the
+  default size. The size is remembered in this browser (see
+  builder/panes.js), and Reset view forgets it.
 -->
 <template>
   <section
     id="builder-canvas"
     ref="root"
     class="builder-canvas builder-panel"
+    :class="{ 'is-resizing-minimap': Boolean(minimapDrag) }"
     data-testid="builder-canvas"
     aria-labelledby="builder-canvas-title"
     aria-describedby="builder-canvas-help-summary"
@@ -67,6 +80,10 @@
     <!-- Always rendered, so the canvas has a description while the Keyboard
          help below is closed. -->
     <p id="builder-canvas-help-summary" hidden>{{ hints.canvas }}</p>
+    <p :id="MINIMAP_HINT_ID" hidden>
+      Up and Left arrows make the minimap larger, Down and Right smaller, Home
+      and End make it smallest and largest, and Enter restores its default size.
+    </p>
 
     <!-- The nodes and connections are handed to Vue Flow as they change
          (see syncNodes), not bound here. -->
@@ -157,11 +174,22 @@
       </Controls>
       <MiniMap
         v-if="showMinimap"
+        :id="MINIMAP_ID"
         pannable
         zoomable
         aria-label="Diagram minimap"
+        :width="minimap.width"
+        :height="minimap.height"
         :node-color="minimapColor"
         :node-class-name="minimapClass" />
+      <!-- Over the minimap's top left corner. Its name, like the zoom
+           buttons', is its tooltip too. -->
+      <div
+        v-if="showMinimap"
+        v-bind="minimapHandle"
+        v-on="MINIMAP_HANDLE_EVENTS">
+        <builder-icon name="resize-diagonal" :size="14" />
+      </div>
     </VueFlow>
 
     <div
@@ -233,6 +261,7 @@
   import NoteNode from './nodes/NoteNode.vue';
   import GroupNode from './nodes/GroupNode.vue';
   import NetworkEdge from './edges/NetworkEdge.vue';
+  import BuilderIcon from './BuilderIcon.vue';
   import { useFixedTooltip } from './fixedTooltip.js';
 
   import {
@@ -251,6 +280,16 @@
     nodeLabel,
     sizeOf,
   } from '@/builder/model.js';
+  import {
+    MINIMAP_DEFAULT_WIDTH,
+    clampPane,
+    loadMinimap,
+    minimapDragWidth,
+    minimapKeyWidth,
+    minimapLimits,
+    minimapSize,
+    saveMinimap,
+  } from '@/builder/panes.js';
   import { pressSelection, selectionItemName } from '@/builder/selection.js';
   import { builderSettings } from '@/builder/settings.js';
   import { keepUnchanged } from '@/builder/stable.js';
@@ -324,6 +363,8 @@
   // The view's command context (BuilderBeta.vue), for the Keyboard help's
   // button to the shortcut sheet.
   const commands = inject('builderCommands', null);
+  // The side columns (BuilderPanes.vue), for showing the Inspector.
+  const panes = inject('builderPanes', null);
 
   function openShortcuts() {
     if (commands) {
@@ -331,10 +372,209 @@
     }
   }
 
+  // --- the minimap's size ----------------------------------------------------
+
+  const MINIMAP_ID = 'builder-minimap';
+  const MINIMAP_HINT_ID = 'builder-minimap-hint';
+  // Vue Flow keeps its panels 15px in from the pane's edges; the minimap has
+  // a 1px frame (builder.css).
+  const PANEL_MARGIN = 15;
+  const MINIMAP_FRAME = 1;
+
+  // The width this viewer chose, or null for the default.
+  const minimapChosen = ref(loadMinimap());
+  const minimapRange = computed(() => minimapLimits(dimensions.value));
+  // As drawn: the chosen width within what the pane allows now.
+  const minimap = computed(() =>
+    minimapSize(
+      clampPane(
+        minimapChosen.value ?? MINIMAP_DEFAULT_WIDTH,
+        minimapRange.value,
+      ),
+    ),
+  );
+  // Where the minimap is on the pane, in the pane's own pixels.
+  const minimapBox = computed(() => {
+    const { width, height } = dimensions.value;
+    const right = width - PANEL_MARGIN;
+    const bottom = height - PANEL_MARGIN;
+
+    return {
+      left: right - minimap.value.width - 2 * MINIMAP_FRAME,
+      top: bottom - minimap.value.height - 2 * MINIMAP_FRAME,
+      right,
+      bottom,
+    };
+  });
+  const minimapDrag = ref(null);
+
+  const minimapHandle = computed(() => {
+    const { width, height } = minimap.value;
+
+    return {
+      class: 'builder-minimap-handle nopan nowheel',
+      role: 'separator',
+      tabindex: 0,
+      'aria-label': 'Resize minimap',
+      'aria-controls': MINIMAP_ID,
+      'aria-valuenow': width,
+      'aria-valuemin': minimapRange.value.min,
+      'aria-valuemax': minimapRange.value.max,
+      'aria-valuetext': `${width} by ${height} pixels`,
+      'aria-describedby': MINIMAP_HINT_ID,
+      'data-testid': 'minimap-resize',
+      style: {
+        '--builder-minimap-width': `${width}px`,
+        '--builder-minimap-height': `${height}px`,
+      },
+    };
+  });
+
+  // The handle moves with the minimap's corner, so its tooltip goes rather
+  // than stay behind.
+  function setMinimapWidth(width) {
+    hideTip();
+    minimapChosen.value = width;
+    saveMinimap(width);
+  }
+
+  // Said after a key press; the minimap's size is its handle's value too.
+  function announceMinimap() {
+    const { width, height } = minimap.value;
+    const { min, max } = minimapRange.value;
+    const limit =
+      (width >= max && ' (largest)') || (width <= min && ' (smallest)') || '';
+
+    store.announce(`Minimap ${width} by ${height} pixels${limit}.`, {
+      slot: 'minimap',
+    });
+  }
+
+  function onMinimapKeydown(event) {
+    if (event.key === 'Escape' && minimapDrag.value) {
+      event.preventDefault();
+      cancelMinimapDrag();
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      setMinimapWidth(null);
+      announceMinimap();
+      return;
+    }
+
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+      return;
+    }
+
+    const width = minimapKeyWidth(
+      event.key,
+      minimap.value.width,
+      minimapRange.value,
+    );
+
+    if (width === undefined) {
+      return;
+    }
+
+    event.preventDefault();
+    setMinimapWidth(width);
+    announceMinimap();
+  }
+
+  // A drag keeps the pointer, so it goes on over the canvas; it is stored
+  // when it ends, and Escape puts the size back.
+  function onMinimapPointerDown(event) {
+    if (event.button !== 0 || minimapDrag.value) {
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.focus({ preventScroll: true });
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    minimapDrag.value = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      width: minimap.value.width,
+      before: minimapChosen.value,
+      moved: false,
+    };
+  }
+
+  function onMinimapPointerMove(event) {
+    const drag = minimapDrag.value;
+
+    if (!drag || event.pointerId !== drag.pointerId) {
+      return;
+    }
+
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+
+    if (!drag.moved && Math.hypot(dx, dy) < 1) {
+      return;
+    }
+
+    drag.moved = true;
+    minimapChosen.value = minimapDragWidth(
+      drag.width,
+      dx,
+      dy,
+      minimapRange.value,
+    );
+  }
+
+  function endMinimapDrag(event) {
+    const drag = minimapDrag.value;
+
+    if (!drag || (event && event.pointerId !== drag.pointerId)) {
+      return;
+    }
+
+    minimapDrag.value = null;
+
+    if (drag.moved) {
+      saveMinimap(minimapChosen.value);
+    }
+  }
+
+  function cancelMinimapDrag() {
+    const drag = minimapDrag.value;
+
+    if (drag) {
+      minimapDrag.value = null;
+      minimapChosen.value = drag.before;
+    }
+  }
+
+  // Reset view: the default size, which is no longer stored.
+  function resetMinimap() {
+    minimapDrag.value = null;
+    setMinimapWidth(null);
+  }
+
+  // For the view's commands, which offer the handle's sizes.
+  const minimapState = computed(() => ({
+    width: minimap.value.width,
+    ...minimapRange.value,
+  }));
+
+  function resizeMinimap(width) {
+    setMinimapWidth(clampPane(width, minimapRange.value));
+    announceMinimap();
+  }
+
   // Below MIN_ZOOM when that is what it takes to show the whole diagram in
-  // the pane, as Fit does.
+  // the pane, clear of the minimap, as Fit does.
   const diagramFloor = computed(() =>
-    zoomFloor(boundsOf(store.doc.nodes || []), dimensions.value, MIN_ZOOM),
+    zoomFloor(
+      boundsOf(store.doc.nodes || []),
+      dimensions.value,
+      MIN_ZOOM,
+      props.showMinimap ? [minimapBox.value] : [],
+    ),
   );
   // A floor that rises past the zoom (a larger window, a smaller diagram)
   // waits there: zooming out never zooms in.
@@ -350,12 +590,7 @@
   // canvas, its nodes and connections, not on the buttons, and say so.
   const { tip, tipEl, showTip, scheduleHide, hideTip } = useFixedTooltip();
 
-  function zoomTip(text, command) {
-    const tipText = () => {
-      const keys = shortcutLabel(command);
-
-      return keys ? `${text} (${keys} on the canvas)` : text;
-    };
+  function tipEvents(tipText) {
     const show = (event) => showTip(event, tipText());
 
     return {
@@ -365,6 +600,25 @@
       blur: hideTip,
     };
   }
+
+  function zoomTip(text, command) {
+    return tipEvents(() => {
+      const keys = shortcutLabel(command);
+
+      return keys ? `${text} (${keys} on the canvas)` : text;
+    });
+  }
+
+  const MINIMAP_HANDLE_EVENTS = {
+    ...tipEvents(() => 'Resize minimap'),
+    keydown: onMinimapKeydown,
+    pointerdown: onMinimapPointerDown,
+    pointermove: onMinimapPointerMove,
+    pointerup: endMinimapDrag,
+    lostpointercapture: endMinimapDrag,
+    pointercancel: cancelMinimapDrag,
+    dblclick: () => setMinimapWidth(null),
+  };
 
   // Components, never made reactive: Vue Flow would otherwise wrap them.
   const nodeTypes = markRaw({
@@ -894,7 +1148,22 @@
   // (`before`); pressSelection says what a plain or a Shift press does, the
   // same as on an outline row. The selection is set in full each time,
   // whatever Vue Flow did with the click, so aria-pressed always matches it.
+  //
+  // An item the press selects is shown in the Inspector, which shows again
+  // if it was hidden; a plain press on the one selected item does only that
+  // while the Inspector is hidden, rather than deselect it.
   function pressItem(item, additive, before = store.selection) {
+    const alone =
+      !additive &&
+      before[item.kind].includes(item.id) &&
+      before.nodes.length + before.edges.length === 1;
+
+    if (alone && panes?.isHidden('end')) {
+      store.select({ nodes: [], edges: [], [item.kind]: [item.id] });
+      showInspector(item);
+      return;
+    }
+
     const { selection, message } = pressSelection(
       store.doc,
       before,
@@ -904,6 +1173,26 @@
 
     store.select(selection);
     store.announce(message);
+
+    if (selection[item.kind].includes(item.id)) {
+      showInspector(item);
+    }
+  }
+
+  // Shows the Inspector if it was hidden. The canvas is narrower then, so
+  // the item is kept in view once it is drawn there.
+  function showInspector(item) {
+    if (!panes?.show('end')) {
+      return;
+    }
+
+    nextTick(() =>
+      requestAnimationFrame(() =>
+        reveal(
+          item.kind === 'edges' ? edgeElement(item.id) : nodeElement(item.id),
+        ),
+      ),
+    );
   }
 
   function clearSelection() {
@@ -1438,11 +1727,17 @@
   }
 
   // Reset view: the zoom and pan the canvas opens with, which the
-  // minimap's view follows.
-  function resetViewport() {
+  // minimap's view follows. A fit waits for the columns and the minimap
+  // that Reset view puts back to be drawn, and for Vue Flow to measure the
+  // pane again, which it does before the next frame is painted.
+  async function resetViewport() {
     const duration = props.reducedMotion ? 0 : 200;
 
     if (builderSettings.openZoom === 'fit' && store.doc.nodes.length) {
+      await nextTick();
+      await new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      );
       fitDiagram({ duration });
     } else {
       setViewport(START_VIEWPORT, { duration });
@@ -1511,5 +1806,8 @@
     visibleArea,
     revealNode,
     resetViewport,
+    resetMinimap,
+    minimapState,
+    resizeMinimap,
   });
 </script>

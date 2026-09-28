@@ -12,32 +12,64 @@
   width it had when pressed again. Each splitter takes hold of the pointer
   24px wide, over the edge of the canvas beside it (WCAG 2.5.8).
 
+  A Hide toggle under the Widen toggle folds its column into a narrow strip,
+  which gives the canvas the room; the toggle stays in the strip, named Show,
+  to bring the column back. The column stays mounted while it is hidden, so
+  the Inspector keeps what it holds. Hidden columns are remembered with the
+  widths. A node or connection pressed on the canvas shows the Inspector
+  again (see BuilderCanvas.vue), and so do the commands that go to a column.
+
   In the stacked narrow layout the columns span the window, so the splitters
-  and toggles are not shown.
+  and toggles are not shown, and every column shows, hidden or not.
 -->
 <template>
   <div
     ref="layoutEl"
     class="builder-layout"
-    :class="{ 'is-resizing': Boolean(drag) }"
+    :class="{
+      'is-resizing': Boolean(drag),
+      'is-start-hidden': isHidden('start'),
+      'is-end-hidden': isHidden('end'),
+    }"
     :style="columnWidths">
     <p :id="HINT_ID" hidden>
       Left and Right arrows resize the column, Home and End make it narrowest
       and widest, and Enter restores its default width.
     </p>
 
-    <div :id="PANE_IDS.start" ref="startEl" class="builder-layout__side">
+    <div
+      :id="PANE_IDS.start"
+      ref="startEl"
+      class="builder-layout__side builder-layout__side--start"
+      :class="{ 'builder-layout__side--hidden': isHidden('start') }">
       <slot name="start" />
     </div>
 
-    <div class="builder-layout__gutter">
-      <button v-bind="toggleAttributes('start')" v-on="TOGGLE_EVENTS.start">
+    <div
+      ref="startGutterEl"
+      class="builder-layout__gutter builder-layout__gutter--start">
+      <button
+        v-if="!isHidden('start')"
+        v-bind="toggleAttributes('start')"
+        v-on="TOGGLE_EVENTS.start">
         <builder-icon :name="toggleIcon('start')" :size="14" />
       </button>
-      <div v-bind="splitterAttributes('start')" v-on="SPLITTER_EVENTS.start">
+      <button
+        :ref="(element) => (hideEls.start = element)"
+        v-bind="hideAttributes('start')"
+        v-on="HIDE_EVENTS.start">
+        <builder-icon :name="hideIcon('start')" :size="14" />
+        <span v-if="isHidden('start')" class="builder-layout__strip-label">
+          {{ PANE_NAMES.start }}
+        </span>
+      </button>
+      <div
+        v-if="!isHidden('start')"
+        v-bind="splitterAttributes('start')"
+        v-on="SPLITTER_EVENTS.start">
         <span class="builder-splitter__grip" />
       </div>
-      <!-- The toggle's name, which reaches screen readers already. -->
+      <!-- The toggles' names, which reach screen readers already. -->
       <div
         v-if="TIPS.start.tip.value"
         :ref="(element) => (TIPS.start.tipEl.value = element)"
@@ -53,11 +85,26 @@
       <slot />
     </div>
 
-    <div class="builder-layout__gutter">
-      <button v-bind="toggleAttributes('end')" v-on="TOGGLE_EVENTS.end">
+    <div class="builder-layout__gutter builder-layout__gutter--end">
+      <button
+        v-if="!isHidden('end')"
+        v-bind="toggleAttributes('end')"
+        v-on="TOGGLE_EVENTS.end">
         <builder-icon :name="toggleIcon('end')" :size="14" />
       </button>
-      <div v-bind="splitterAttributes('end')" v-on="SPLITTER_EVENTS.end">
+      <button
+        :ref="(element) => (hideEls.end = element)"
+        v-bind="hideAttributes('end')"
+        v-on="HIDE_EVENTS.end">
+        <builder-icon :name="hideIcon('end')" :size="14" />
+        <span v-if="isHidden('end')" class="builder-layout__strip-label">
+          {{ PANE_NAMES.end }}
+        </span>
+      </button>
+      <div
+        v-if="!isHidden('end')"
+        v-bind="splitterAttributes('end')"
+        v-on="SPLITTER_EVENTS.end">
         <span class="builder-splitter__grip" />
       </div>
       <div
@@ -71,7 +118,11 @@
       </div>
     </div>
 
-    <div :id="PANE_IDS.end" ref="endEl" class="builder-layout__side">
+    <div
+      :id="PANE_IDS.end"
+      ref="endEl"
+      class="builder-layout__side builder-layout__side--end"
+      :class="{ 'builder-layout__side--hidden': isHidden('end') }">
       <slot name="end" />
     </div>
   </div>
@@ -83,6 +134,7 @@
     nextTick,
     onBeforeUnmount,
     onMounted,
+    provide,
     reactive,
     ref,
   } from 'vue';
@@ -98,6 +150,7 @@
     paneLimits,
     savePanes,
   } from '@/builder/panes.js';
+  import { useBuilderStore } from '@/builder/store.js';
 
   const HINT_ID = 'builder-splitter-hint';
   const PANE_IDS = { start: 'builder-pane-start', end: 'builder-pane-end' };
@@ -105,10 +158,15 @@
   // after.
   const PANE_NAMES = { start: 'Add nodes and Outline', end: 'Inspector' };
 
+  const store = useBuilderStore();
+
   const layoutEl = ref(null);
   const startEl = ref(null);
   const endEl = ref(null);
   const mainEl = ref(null);
+  const startGutterEl = ref(null);
+  // The Hide toggles, which keep focus while their column is hidden.
+  const hideEls = { start: null, end: null };
 
   const saved = loadPanes();
   // The widths this viewer chose; a side without one has the default width.
@@ -116,12 +174,24 @@
   // The sides widened with their toggle, each with the width it goes back
   // to: null for the default width.
   const widened = reactive(saved.widened);
+  // The sides hidden with their toggle.
+  const hidden = reactive(new Set(saved.hidden));
+  // The width each side had when it was hidden, which it takes again when
+  // shown.
+  const widthBeforeHiding = {};
   // The layout as drawn: CSS keeps a chosen width within what the window
-  // allows, so the splitters report what is shown.
-  const measured = reactive({ layout: 0, start: 0, end: 0, rem: 16 });
+  // allows, so the splitters report what is shown. Stacked: the narrow
+  // layout, which has no splitters or toggles.
+  const measured = reactive({
+    layout: 0,
+    start: 0,
+    end: 0,
+    rem: 16,
+    stacked: false,
+  });
   const drag = ref(null);
 
-  // Each toggle's tooltip lies over the canvas.
+  // Each gutter's tooltip, for its toggles, lies over the canvas.
   const TIPS = {
     start: useFixedTooltip({ side: 'end' }),
     end: useFixedTooltip({ side: 'start' }),
@@ -144,11 +214,16 @@
     return Object.hasOwn(widened, side);
   }
 
+  function isHidden(side) {
+    return hidden.has(side);
+  }
+
   function limitsOf(side) {
     return paneLimits(side, {
       layout: measured.layout,
       other: measured[other(side)],
       rem: measured.rem,
+      otherHidden: isHidden(other(side)),
     });
   }
 
@@ -183,6 +258,25 @@
     };
   }
 
+  // 'Hide Inspector', or 'Show Inspector' while it is hidden.
+  function hideName(side) {
+    return `${isHidden(side) ? 'Show' : 'Hide'} ${PANE_NAMES[side]}`;
+  }
+
+  function hideAttributes(side) {
+    return {
+      type: 'button',
+      class: [
+        'builder-button builder-layout__toggle',
+        { 'builder-layout__strip': isHidden(side) },
+      ],
+      'aria-label': hideName(side),
+      'aria-expanded': String(!isHidden(side)),
+      'aria-controls': PANE_IDS[side],
+      'data-testid': `pane-hide-${side}`,
+    };
+  }
+
   // Which way the splitter moves when the toggle is pressed.
   function toggleIcon(side) {
     return (side === 'start') !== isWidened(side)
@@ -190,12 +284,19 @@
       : 'chevrons-left';
   }
 
+  // A panel at the column's side, and which way it goes when pressed.
+  function hideIcon(side) {
+    const panel = side === 'start' ? 'panel-left' : 'panel-right';
+
+    return `${panel}-${isHidden(side) ? 'open' : 'close'}`;
+  }
+
   function tipPosition(tip) {
     return { top: `${tip.top}px`, left: `${tip.left}px` };
   }
 
   function save() {
-    savePanes({ widths: chosen, widened });
+    savePanes({ widths: chosen, widened, hidden });
   }
 
   // A width set any other way than the toggle ends the column's widening.
@@ -215,10 +316,11 @@
     save();
   }
 
-  // Reset view: both columns take their default widths again, which also
-  // forgets the widths stored for them. A drag under way ends there.
+  // Reset view: both columns show, at their default widths again, which
+  // also forgets the widths stored for them. A drag under way ends there.
   function resetWidths() {
     drag.value = null;
+    hidden.clear();
     reset('start');
     reset('end');
   }
@@ -256,6 +358,85 @@
     setWidth(side, limitsOf(side).max);
     widened[side] = before;
     save();
+  }
+
+  /**
+   * Hides a side column. Focus in it, or on its splitter or Widen toggle,
+   * moves to the toggle that shows it again, rather than to the page.
+   *
+   * @param {'start'|'end'} side
+   */
+  function hide(side) {
+    if (isHidden(side)) {
+      return;
+    }
+
+    const active = document.activeElement;
+    const refocus =
+      active &&
+      active !== hideEls[side] &&
+      Boolean(
+        (side === 'start' ? startEl : endEl).value?.contains(active) ||
+          hideEls[side]?.parentElement?.contains(active),
+      );
+
+    widthBeforeHiding[side] = measured[side];
+    hidden.add(side);
+    save();
+    store.announce(`${PANE_NAMES[side]} hidden.`);
+
+    if (refocus) {
+      nextTick(() => hideEls[side]?.focus());
+    }
+  }
+
+  /**
+   * Shows a hidden side column. A column widened while it was hidden makes
+   * room for it again: it becomes as wide as it can be beside the column
+   * at the width it had. The stacked layout shows every column already, so
+   * there the column is only no longer hidden once the window is wider.
+   *
+   * @param {'start'|'end'} side
+   * @returns {boolean} whether the column came into view
+   */
+  function show(side) {
+    if (!isHidden(side)) {
+      return false;
+    }
+
+    const beside = other(side);
+
+    hidden.delete(side);
+
+    if (isWidened(beside)) {
+      const before = widened[beside];
+      const { max } = paneLimits(beside, {
+        layout: measured.layout,
+        other: widthBeforeHiding[side] || chosen[side] || 0,
+        rem: measured.rem,
+      });
+
+      chosen[beside] = Math.min(chosen[beside] ?? max, max);
+      widened[beside] = before;
+    }
+
+    save();
+
+    if (measured.stacked) {
+      return false;
+    }
+
+    store.announce(`${PANE_NAMES[side]} shown.`);
+
+    return true;
+  }
+
+  function toggleHidden(side) {
+    if (isHidden(side)) {
+      show(side);
+    } else {
+      hide(side);
+    }
   }
 
   function onKeydown(side, event) {
@@ -382,17 +563,18 @@
     };
   }
 
-  // The toggle is named by an icon only, so its name is its tooltip too
-  // (WCAG 1.4.13). Pressing it moves it with its splitter, so the tooltip
-  // goes rather than stay behind where the toggle was.
-  function toggleEvents(side) {
+  // A toggle is named by an icon only, so its name is its tooltip too
+  // (WCAG 1.4.13). Pressing it moves it (with its splitter, or into the
+  // strip and out), so the tooltip goes rather than stay behind where the
+  // toggle was.
+  function tipEvents(side, name, press) {
     const tips = TIPS[side];
-    const showTip = (event) => tips.showTip(event, `Widen ${PANE_NAMES[side]}`);
+    const showTip = (event) => tips.showTip(event, name());
 
     return {
       click: () => {
         tips.hideTip();
-        toggleWidened(side);
+        press();
       },
       mouseenter: showTip,
       mouseleave: tips.scheduleHide,
@@ -432,10 +614,27 @@
     end: splitterEvents('end'),
   };
 
-  const TOGGLE_EVENTS = {
-    start: toggleEvents('start'),
-    end: toggleEvents('end'),
-  };
+  const TOGGLE_EVENTS = Object.fromEntries(
+    ['start', 'end'].map((side) => [
+      side,
+      tipEvents(
+        side,
+        () => `Widen ${PANE_NAMES[side]}`,
+        () => toggleWidened(side),
+      ),
+    ]),
+  );
+
+  const HIDE_EVENTS = Object.fromEntries(
+    ['start', 'end'].map((side) => [
+      side,
+      tipEvents(
+        side,
+        () => hideName(side),
+        () => toggleHidden(side),
+      ),
+    ]),
+  );
 
   function measure() {
     const width = (element) =>
@@ -446,6 +645,10 @@
     measured.end = width(endEl.value);
     measured.rem =
       parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    measured.stacked = Boolean(
+      startGutterEl.value &&
+        getComputedStyle(startGutterEl.value).display === 'none',
+    );
 
     if (layoutEl.value?.contains(document.activeElement)) {
       focusCanvas();
@@ -467,5 +670,19 @@
 
   onBeforeUnmount(() => observer?.disconnect());
 
-  defineExpose({ resetWidths });
+  // For the canvas, which shows the Inspector when a node is pressed. The
+  // stacked layout shows every column, hidden or not.
+  provide('builderPanes', {
+    isHidden: (side) => isHidden(side) && !measured.stacked,
+    show,
+  });
+
+  // For the view's commands: which columns are hidden, and whether the
+  // narrow layout stacks them (and so shows them all).
+  const state = computed(() => ({
+    hidden: { start: isHidden('start'), end: isHidden('end') },
+    stacked: measured.stacked,
+  }));
+
+  defineExpose({ resetWidths, state, show, toggleHidden });
 </script>

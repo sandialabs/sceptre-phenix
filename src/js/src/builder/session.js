@@ -2,11 +2,11 @@
 //
 // The Builder keeps drafts that are not saved yet in IndexedDB, and in
 // localStorage under phenix.builder.* the viewer's preferences (theme, pane
-// widths, shortcuts, settings), the recent commands, which name drafts,
-// their owners and nodes by id, and the unload copies of the drafts whose
-// edits IndexedDB had not stored when a page was left (see idb.js); once
-// loaded, its modules also hold the drafts listed for the user and the
-// open diagram in memory. What belongs to the user may not outlive the
+// widths, minimap size, shortcuts, settings), the recent commands, which
+// name drafts, their owners and nodes by id, and the unload copies of the
+// drafts whose edits IndexedDB had not stored when a page was left (see
+// idb.js); once loaded, its modules also hold the drafts listed for the
+// user and the open diagram in memory. What belongs to the user may not outlive the
 // session on a shared workstation, so logout clears it, whether or not the
 // Builder is open, and so does the next sign-in of another user when the
 // browser was closed without logging out. The preferences say nothing about
@@ -41,6 +41,7 @@ export const BUILDER_USER_KEY = 'phenix.builder.user';
  * new one stays private until it is added here as a preference.
  */
 export const BUILDER_PREFERENCE_KEYS = Object.freeze([
+  'phenix.builder.minimap', // panes.js, the minimap's size
   'phenix.builder.panes', // panes.js, the side columns' widths
   'phenix.builder.settings', // settings.js, the Settings dialog's choices
   'phenix.builder.shortcuts', // keymap.js, custom keys, single-key switch

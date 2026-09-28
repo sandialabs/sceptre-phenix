@@ -884,4 +884,36 @@ describe('fitting large diagrams', () => {
     // Before the pane has a size, the usual limit.
     expect(zoomFloor(large, { width: 0, height: 0 }, 0.2)).toBe(0.2);
   });
+
+  test('the least zoom leaves room to fit clear of the minimap at its size', () => {
+    const square = { x: 0, y: 0, width: 4000, height: 3270 };
+    const corner = (width, height) => ({
+      left: pane.width - 15 - width,
+      top: pane.height - 15 - height,
+      right: pane.width - 15,
+      bottom: pane.height - 15,
+    });
+    const plain = zoomFloor(square, pane, 0.2);
+    const small = zoomFloor(square, pane, 0.2, [corner(202, 152)]);
+    const large = zoomFloor(square, pane, 0.2, [corner(397, 297)]);
+    const box = { left: 0, top: 0, right: pane.width, bottom: pane.height };
+    const clearOf = (overlay) =>
+      fitZoom(square, pane, fitPadding(square, { ...pane, ...box }, [overlay]));
+
+    // A larger minimap takes more room, so the floor is lower, and always
+    // half the zoom that fits the diagram clear of it.
+    expect(small).toBeLessThan(plain);
+    expect(large).toBeLessThan(small);
+    expect(large).toBeCloseTo(clearOf(corner(397, 297)) / 2, 10);
+    // A small diagram keeps the usual limit.
+    expect(
+      zoomFloor({ width: 800, height: 600 }, pane, 0.2, [corner(397, 297)]),
+    ).toBe(0.2);
+    // An overlay that leaves no room is no floor: the plain one applies.
+    expect(
+      zoomFloor(square, pane, 0.2, [
+        { left: -10, top: -10, right: 800, bottom: 700 },
+      ]),
+    ).toBe(plain);
+  });
 });
