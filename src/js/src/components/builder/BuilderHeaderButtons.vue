@@ -7,8 +7,10 @@
 
   Commands shows the palette's key as key caps. The theme button shows the
   theme in use; its name and tooltip say what a press changes it to. In a
-  narrow header each shows only its icon, as Focus mode always does (see
-  .builder-header__label in builder.css); the labels stay as their names.
+  narrower header the theme, Shortcuts, Settings and Help show only their
+  icons, as Focus mode always does, and Commands its name without its keys;
+  in a narrow one Commands shows only its icon too (see
+  .builder-header__label in builder.css). The labels stay as their names.
   Focus mode is named Exit focus mode while it is on, and stays one element,
   so focus stays on it.
 -->
@@ -40,7 +42,9 @@
     v-on="tipFor('theme')"
     @click="$emit('cycle-theme')">
     <builder-icon :name="themeButton.icon" :size="14" />
-    <span class="builder-header__label">{{ themeButton.label }}</span>
+    <span class="builder-header__label builder-header__label--wide">
+      {{ themeButton.label }}
+    </span>
   </button>
   <button
     v-if="shortcuts"
@@ -53,7 +57,9 @@
     v-on="tipFor('shortcuts')"
     @click="$emit('shortcuts')">
     <builder-icon name="keyboard" :size="14" />
-    <span class="builder-header__label">Shortcuts</span>
+    <span class="builder-header__label builder-header__label--wide">
+      Shortcuts
+    </span>
   </button>
   <button
     type="button"
@@ -65,7 +71,9 @@
     v-on="tipFor('settings')"
     @click="$emit('settings')">
     <builder-icon name="settings" :size="14" />
-    <span class="builder-header__label">Settings</span>
+    <span class="builder-header__label builder-header__label--wide">
+      Settings
+    </span>
   </button>
   <a
     class="builder-button builder-header__button builder-help-link"
@@ -75,7 +83,7 @@
     :data-testid="`${view}-help`"
     v-on="tipFor('help')">
     <builder-icon name="help" :size="14" />
-    <span class="builder-header__label">
+    <span class="builder-header__label builder-header__label--wide">
       Help
       <span class="builder-visually-hidden">(opens in a new tab)</span>
     </span>

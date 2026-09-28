@@ -131,6 +131,16 @@ async function editorLayout(page) {
       actionTops: [
         ...document.querySelector('.builder-header__actions').children,
       ].map((element) => Math.round(element.getBoundingClientRect().top)),
+      // The header buttons that show their labels, by test id, and whether
+      // Commands shows its keys.
+      labelled: [
+        ...document.querySelectorAll('.builder-header .builder-header__label'),
+      ]
+        .filter((label) => getComputedStyle(label).position !== 'absolute')
+        .map((label) => label.closest('[data-testid]').dataset.testid),
+      keycaps: [...document.querySelectorAll('.builder-header kbd')].some(
+        (kbd) => kbd.checkVisibility(),
+      ),
       // The right edge of the last header link.
       navRight: Math.max(
         ...[...document.querySelectorAll('.navbar .navbar-item')]
@@ -206,6 +216,18 @@ test(
       expect.soft(landing.root.left).toBe(0);
       expect.soft(Math.round(landing.root.right)).toBe(landing.width);
       expect.soft(landing.heading.left).toBeGreaterThanOrEqual(12);
+
+      // In a 1600px window, Commands keeps its label, and the theme,
+      // Settings and Help show their icons alone, as in the editor's header.
+      await resize(page, { width: 1600, height: 900 });
+      const labelled = await page.$$eval(
+        '.builder-drafts__header .builder-header__label',
+        (labels) =>
+          labels
+            .filter((label) => getComputedStyle(label).position !== 'absolute')
+            .map((label) => label.closest('[data-testid]').dataset.testid),
+      );
+      expect.soft(labelled).toEqual(['drafts-commands']);
     });
 
     await test.step('build a sample diagram', async () => {
@@ -294,6 +316,27 @@ test(
             )
             .toBeLessThan(48);
         }
+
+        // The labels go in two steps: in a wide header every button has
+        // its label, in a narrower one Reset view and Commands (without its
+        // keys) keep theirs, and in a narrow one none does.
+        const labelled = {
+          1920: [
+            'editor-reset-view',
+            'editor-commands',
+            'editor-theme',
+            'editor-shortcuts',
+            'editor-settings',
+            'editor-help',
+          ],
+          1440: ['editor-reset-view', 'editor-commands'],
+        };
+        expect
+          .soft(layout.labelled, at('buttons with their labels'))
+          .toEqual(labelled[viewport.width] || []);
+        expect
+          .soft(layout.keycaps, at('Commands keys'))
+          .toBe(viewport.width === 1920);
 
         // The save state and the buttons after it wrap as one group, which
         // stays at the right edge.
@@ -792,13 +835,21 @@ test(
         .toBe(true);
       const opened = last;
 
-      // An icon at this width, so its tooltip names it too.
+      // Its label shows at this width, so its tooltip only says what it
+      // does; as an icon, in a narrower window, it names it too.
+      await reset.hover();
+      await expect
+        .soft(page.getByTestId('header-tooltip'))
+        .toHaveText('Reset column widths, zoom, minimap and scrolling');
+      await resize(page, { width: 1280, height: 640 });
+      await page.mouse.move(0, 0);
       await reset.hover();
       await expect
         .soft(page.getByTestId('header-tooltip'))
         .toHaveText(
           'Reset view: reset column widths, zoom, minimap and scrolling',
         );
+      await resize(page, { width: 1440, height: 640 });
 
       await page.getByTestId('pane-toggle-start').click();
       await splitters.end.focus();

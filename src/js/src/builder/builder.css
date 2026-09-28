@@ -1821,12 +1821,33 @@ div.builder-outline__item {
   gap: 0.35rem;
 }
 
-/* Too narrow for the editor header's labels on one row, with room for
-   longer counts and checks (below a 1712px window at the default text
-   size): the buttons show their icons alone. The labels stay, visually
-   hidden, as their names, and the tooltips name them. Each header is a
-   builder-header container, so the two views match at any one width. */
+/* The labels go in two steps, so the editor header stays one row with room
+   for longer counts and checks. Too narrow for them all (below a 1712px
+   window at the default text size), the buttons whose labels are marked
+   --wide (the theme, Shortcuts, Settings and Help) show their icons alone,
+   and Commands its name without its keys. Narrower still (below a 1392px
+   window), every button does. The labels stay, visually hidden, as their
+   names, and the tooltips name them. Each header is a builder-header
+   container, so the two views match at any one width. */
 @container builder-header (max-width: 105rem) {
+  .builder-header__label--wide {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .builder-header__button .builder-header__label .builder-keycaps {
+    display: none;
+  }
+}
+
+@container builder-header (max-width: 85rem) {
   .builder-header__label {
     position: absolute;
     width: 1px;

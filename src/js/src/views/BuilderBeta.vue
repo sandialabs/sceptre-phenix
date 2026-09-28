@@ -144,9 +144,10 @@
              view, and the buttons the drafts' header has too
              (BuilderHeaderButtons.vue). Reset view's tooltip says what it
              resets, with the command's keys, if it has any, as the
-             toolbar's do. In a narrow header, Reset view shows only its
-             icon, as those buttons do (see .builder-header__label in
-             builder.css); its label stays as its name. -->
+             toolbar's do. Reset view keeps its label as long as Commands
+             does, and in a narrow header shows only its icon (see
+             .builder-header__label in builder.css); its label stays as its
+             name. -->
         <div class="builder-header__actions">
           <!-- Shown but not spoken: it changes on every edit, so the store
                announces only the transitions that matter (a new problem, or
