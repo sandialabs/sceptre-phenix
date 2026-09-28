@@ -5,10 +5,10 @@
 
   A locked field (see useInspectorLocked: the node hostname, which Apply
   copies from the device Hostname, and every field of a device from an
-  included topology) is a read-only input rather than a disabled one, so Tab
-  still reaches it and its value and description are read. A locked checkbox,
-  which has no read-only state, is aria-readonly and ignores clicks. In a
-  read-only draft every field is disabled.
+  included topology or of a read-only draft) is a read-only input rather
+  than a disabled one, so Tab still reaches it and its value and description
+  are read. A locked checkbox, which has no read-only state, is aria-readonly
+  and ignores clicks.
 
   A checkbox has no Bulma "input" class: that class draws a box without the
   checkbox's own look, so a checked box looked unchecked. An unset field

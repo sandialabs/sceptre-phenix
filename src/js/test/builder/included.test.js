@@ -467,12 +467,16 @@ describe('Inspector of an included device', () => {
     expect(html).not.toMatch(/>\s*Add (interface|drive|connection point)/);
   });
 
-  test('in a read-only draft its fields are disabled like the rest', async () => {
+  test('in a read-only draft its fields are locked like the rest', async () => {
     const html = await renderIncludedInspector({ readOnly: true });
     const fields = ['input', 'select', 'textarea'].flatMap((name) =>
       tags(html, name),
     );
 
-    expect(fields.filter((tag) => !/\sdisabled\b/.test(tag))).toEqual([]);
+    expect(fields.length).toBeGreaterThan(0);
+    expect(fields.filter((tag) => /\sdisabled\b/.test(tag))).toEqual([]);
+    expect(
+      fields.filter((tag) => !/\sreadonly\b|aria-readonly="true"/.test(tag)),
+    ).toEqual([]);
   });
 });

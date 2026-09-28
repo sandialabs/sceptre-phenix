@@ -848,10 +848,51 @@ test.describe('Builder Beta inspector', () => {
         await builder.selectInOutline('web01');
         await setNumber(builder, 'VCPUs', 0);
         await expect(bar).toHaveAttribute('data-state', 'error');
+
+        // The error summary's links are stacked, so each is at least 24
+        // pixels tall (WCAG 2.5.8).
+        const heights = await builder.inspector
+          .locator('.builder-inspector__error-link')
+          .evaluateAll((links) =>
+            links.map((link) => link.getBoundingClientRect().height),
+          );
+        expect(heights.length).toBeGreaterThan(0);
+        for (const height of heights) {
+          expect.soft(height).toBeGreaterThanOrEqual(24);
+        }
+
+        // In forced colors, Apply, which cannot apply, looks disabled
+        // rather than like Cancel. Chromium emulates them.
+        if (page.context().browser().browserType().name() === 'chromium') {
+          await page.emulateMedia({ forcedColors: 'active' });
+          const [applyColor, cancelColor] = await page.evaluate(() =>
+            ['inspector-apply', 'inspector-cancel'].map(
+              (id) =>
+                getComputedStyle(
+                  document.querySelector(`[data-testid="${id}"]`),
+                ).color,
+            ),
+          );
+          expect.soft(applyColor).not.toBe(cancelColor);
+          await page.emulateMedia({ forcedColors: 'none' });
+        }
+
         await hostname.focus();
         for (let step = 0; step < 30; step += 1) {
           await page.keyboard.press('Tab');
           await expect.soft.poll(covered, { timeout: 2000 }).toBe('');
+        }
+
+        // In a short window, as at 400% zoom of 1280 by 720, they end the
+        // form rather than stick over the little of it in view.
+        await page.setViewportSize({ width: 320, height: 180 });
+        await hostname.focus();
+        for (let step = 0; step < 8; step += 1) {
+          await page.keyboard.press('Tab');
+          await expect.soft.poll(covered, { timeout: 2000 }).toBe('');
+          await expect
+            .soft(builder.inspector.locator('form :focus'))
+            .toBeInViewport();
         }
         await cancel.press('Enter');
         await expect.soft(bar).toHaveCount(0);

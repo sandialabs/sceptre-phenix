@@ -17,8 +17,8 @@
   or changed is marked, as other fields are, until the change is applied or
   cancelled (see useEntryChanged).
 
-  A locked map (see useInspectorLocked) has no buttons and read-only fields;
-  in a read-only draft its fields and buttons are disabled.
+  A locked map (see useInspectorLocked), as in a read-only draft, has no
+  buttons and read-only fields.
 -->
 <template>
   <fieldset

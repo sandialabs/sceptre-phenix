@@ -899,6 +899,15 @@
     border-top-color: ButtonText;
   }
 
+  /* A button that cannot act but keeps focus (aria-disabled) looks like a
+     disabled one, whose colors forced colors set themselves. The
+     Inspector's own rules, later in this file, rank as high as the first. */
+  .builder-root .builder-button[aria-disabled='true'],
+  .builder-root .builder-inspector .builder-button[aria-disabled='true'] {
+    border-color: GrayText;
+    color: GrayText;
+  }
+
   /* Forced colors draw transparent borders, so only the selected tab keeps
      its frame and bar. */
   .builder-root .builder-tab {
@@ -1196,6 +1205,17 @@
     max-height: 50vh;
     overflow-y: auto;
   }
+
+  /* In a short window, as at 400% zoom, half of it leaves the Inspector no
+     room for a field above Apply and Cancel (WCAG 2.4.11). The Inspector
+     then grows with its form, which the page scrolls, and they end the form
+     rather than sticking over it (see BuilderInspector.vue). */
+  @media (max-height: 24rem) {
+    .builder-inspector {
+      max-height: none;
+      overflow-y: visible;
+    }
+  }
 }
 
 .builder-toolbar {
@@ -1421,7 +1441,8 @@ div.builder-outline__item {
 }
 
 /* A read-only field (the node spec's hostname, every field of an included
-   device) keeps its text readable but does not look like a box to type in. */
+   device or a read-only draft) keeps its text readable but does not look
+   like a box to type in. */
 .builder-inspector input[readonly],
 .builder-inspector textarea[readonly] {
   border-style: dashed;
@@ -1445,6 +1466,14 @@ div.builder-outline__item {
   border-radius: var(--bx-radius);
   padding: 0.5rem;
   margin-bottom: 0.75rem;
+}
+
+/* In a narrow editor, as at 400% zoom, groups nested four deep (a drive, an
+   interface) take less of the width their fields need (WCAG 1.4.10). */
+@container builder-editor (max-width: 30rem) {
+  .builder-inspector fieldset fieldset {
+    padding-inline: 0.25rem;
+  }
 }
 
 .builder-inspector legend,
@@ -1563,7 +1592,9 @@ div.builder-outline__item {
   cursor: not-allowed;
 }
 
+/* At least 24px tall (WCAG 2.5.8): the links are stacked, one per line. */
 .builder-inspector__error-link {
+  min-height: max(1.5rem, 24px);
   padding: 0;
   border: 0;
   background: none;
@@ -1648,6 +1679,18 @@ div.builder-outline__item {
 
 .builder-inspector .wrapper--default > input[type='checkbox'] {
   flex: none;
+}
+
+/* A select keeps room for the value it shows: "Default" goes under it when
+   both do not fit, as at 320 pixels wide (WCAG 1.4.10). */
+.builder-inspector .wrapper--default:has(> select) {
+  flex-wrap: wrap;
+}
+
+.builder-inspector .wrapper--default > select {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
 }
 
 .builder-inspector .control__default {

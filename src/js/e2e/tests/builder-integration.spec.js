@@ -596,6 +596,20 @@ test.describe('Configs page', () => {
         .soft(builder.toolbar('publish'))
         .toHaveAttribute('aria-disabled', 'true');
       await expect.soft(page.getByTestId('builder-name')).not.toBeEditable();
+      // The Inspector's fields are read only, not disabled: Tab reaches
+      // them, with their descriptions, and their values keep full contrast.
+      await builder.selectInOutline('host-b');
+      const hostname = builder.inspector.getByRole('textbox', {
+        name: 'Hostname',
+        exact: true,
+      });
+      await expect.soft(hostname).not.toBeEditable();
+      await expect.soft(hostname).toBeEnabled();
+      await expect
+        .soft(
+          builder.inspector.locator(':is(input, select, textarea):disabled'),
+        )
+        .toHaveCount(0);
       await expectAccessible(page, {
         soft: true,
         label: 'axe on a published diagram',

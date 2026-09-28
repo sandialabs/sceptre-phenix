@@ -441,17 +441,24 @@ async function renderInspector({ readOnly = false, schema = {} } = {}) {
   return renderToString(app);
 }
 
-// The whole Inspector for a device of a draft opened read-only: its own
-// buttons and fields are disabled as well as the JSON Forms ones.
-test('a read-only draft disables every Inspector control', async () => {
+// The whole Inspector for a device of a draft opened read-only: its fields
+// are read only rather than disabled, so Tab reaches them and their values
+// keep full contrast, and its buttons are disabled.
+test('a read-only draft locks every Inspector field and disables its buttons', async () => {
   const html = await renderInspector({ readOnly: true });
-  const controls = ['input', 'select', 'textarea', 'button'].flatMap((name) =>
+  const fields = ['input', 'select', 'textarea'].flatMap((name) =>
     tags(html, name),
   );
-  const enabled = controls.filter((tag) => !/\sdisabled\b/.test(tag));
+  const buttons = tags(html, 'button');
+  const enabled = buttons.filter((tag) => !/\sdisabled\b/.test(tag));
 
+  expect(fields.length).toBeGreaterThan(20);
+  expect(fields.filter((tag) => /\sdisabled\b/.test(tag))).toEqual([]);
+  // A checkbox has no read-only state, so it says so.
+  expect(
+    fields.filter((tag) => !/\sreadonly\b|aria-readonly="true"/.test(tag)),
+  ).toEqual([]);
   expect(html).toContain('Remove connection point eth0');
-  expect(controls.length).toBeGreaterThan(20);
   // Move keeps focus, so it says so with aria-disabled. Nothing can change,
   // so there is no Apply or Cancel.
   expect(enabled).toHaveLength(1);

@@ -374,17 +374,17 @@ export function suggestionsFor(values, text, limit = 50) {
 }
 
 // Provided by BuilderInspector: true while the form shows a device from an
-// included topology in a draft that can be edited. JSON Forms is then read
-// only, but its fields are locked rather than disabled (see
-// useInspectorLocked). Renderers rendered anywhere else get false.
+// included topology, or a read-only draft. JSON Forms is then read only, but
+// its fields are locked rather than disabled (see useInspectorLocked).
+// Renderers rendered anywhere else get false.
 export const INSPECTOR_LOCKED = Symbol('inspector-locked');
 
 /**
  * Whether a control that cannot change is locked: shown read only rather
  * than disabled, so Tab still reaches it and its value is read at full
- * contrast. That is every field of an included device, a field the Inspector
- * locks (the uischema `readonly` option, see inspectorLock), and a field its
- * schema marks readOnly. In a read-only draft every field is disabled.
+ * contrast. That is every field of an included device or a read-only draft,
+ * a field the Inspector locks (the uischema `readonly` option, see
+ * inspectorLock), and a field its schema marks readOnly.
  *
  * @param {import('vue').ComputedRef<object>} control
  * @returns {import('vue').ComputedRef<boolean>}

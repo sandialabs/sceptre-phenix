@@ -272,7 +272,8 @@
         <!-- Text fields read as numbers, like the whole-number fields (see
              InspectorInputControl): Firefox's number input took " 3 " for
              no number at all. No numeric keyboard: a phone's has no minus
-             sign, and a position can be negative. -->
+             sign, and a position can be negative. Read only, not disabled,
+             in a read-only draft, as the fields above are. -->
         <div class="builder-inspector__position-fields">
           <div v-for="axis in ['x', 'y']" :key="axis" class="builder-field">
             <label :for="`inspector-position-${axis}`">{{
@@ -286,7 +287,8 @@
               autocomplete="off"
               :aria-valuenow="shownPosition(axis)"
               aria-describedby="inspector-position-hint"
-              :disabled="store.readOnly"
+              :readonly="store.readOnly"
+              :aria-readonly="store.readOnly || undefined"
               @keydown="stepPosition($event, axis)" />
           </div>
           <button
@@ -478,12 +480,12 @@
     ...localErrors.value,
   ]);
 
-  // An included device's fields are locked rather than disabled, so they
-  // stay readable and reachable with Tab; in a read-only draft they are
-  // disabled like the rest (see useInspectorLocked).
+  // An included device's fields, and every field of a read-only draft, are
+  // locked rather than disabled, so they stay readable and reachable with
+  // Tab, which shows their descriptions (see useInspectorLocked).
   provide(
     INSPECTOR_LOCKED,
-    computed(() => lock.value.all && !store.readOnly),
+    computed(() => lock.value.all || store.readOnly),
   );
 
   // A new interface added in the form is named and set up the way one drawn
@@ -1454,6 +1456,7 @@
     const up = event.key === 'ArrowUp';
 
     if (
+      store.readOnly ||
       (!up && event.key !== 'ArrowDown') ||
       event.altKey ||
       event.ctrlKey ||
@@ -1625,6 +1628,16 @@
 
   .builder-inspector__actions[data-state='error'] {
     border-top-color: var(--bx-danger);
+  }
+
+  /* Stacked in a short window, they would cover the field with focus: they
+     end the form instead (see builder.css). */
+  @container builder-editor (max-width: 54.25rem) {
+    @media (max-height: 24rem) {
+      .builder-inspector__actions {
+        position: static;
+      }
+    }
   }
 
   .builder-inspector__state {
