@@ -120,10 +120,10 @@ to the recipient's account, so a user deleted and recreated under the same
 name loses it. `GET /builder/drafts/{owner}/{draft}/shares/candidates` lists
 who the draft can be shared with, as
 `{"users":[{"username":"alice","name":"Alice Tester"}]}` sorted by username
-(`name` is the first and last name, or `""`). It holds the users the caller may
-view the way `GET /users` lists them, so it is empty without `users` `list`,
-and leaves out the owner and anyone a `PUT` would refuse; users already shared
-with are listed. It has the same access rules as `PUT .../shares`. The Share
+(`name` is the first and last name, or `""`). It holds every account that can
+receive a share, whatever the caller's `users` permissions: it leaves out the
+owner and anyone a `PUT` would refuse, and lists users already shared with. It
+has the same access rules as `PUT .../shares`. The Share
 dialog offers these users in a drop-down that filters as the user types, shown
 as "Name (username)" and without those already listed. If the list cannot be
 read, the dialog shows the error with Retry, and a typed username can still be
@@ -320,7 +320,7 @@ All routes are relative to `/api/v1`.
 | `PATCH/PUT /builder/drafts/{owner}/{draft}/cursor` | Undo and redo: move the draft's current snapshot |
 | `POST /builder/drafts/{owner}/{draft}/publish` | Create or update the topology, scenario and experiment configs |
 | `GET/PUT /builder/drafts/{owner}/{draft}/shares` | Read or replace who a draft is shared with (owner only) |
-| `GET /builder/drafts/{owner}/{draft}/shares/candidates` | Users the owner may share the draft with |
+| `GET /builder/drafts/{owner}/{draft}/shares/candidates` | Every account that can receive a share of the draft |
 | `GET /builder/sources` | Configs a document can be generated from or publish to |
 | `POST /builder/generate` | Build a document from a stored or uploaded Topology or Experiment |
 | `GET /builder/documents[/{document}]` | Published Builder documents |

@@ -863,8 +863,8 @@ func TestBuilderBetaGetShares(t *testing.T) { //nolint:paralleltest // mutates p
 }
 
 // TestBuilderBetaShareCandidates lists who alice may share her draft with:
-// the users her role lets her view, as GET /users lists them, whom a share
-// would be accepted for.
+// every user a share would be accepted for, whatever her role lets her do
+// with users.
 func TestBuilderBetaShareCandidates(t *testing.T) { //nolint:paralleltest // mutates package options
 	fixture := newBuilderShareFixture(t)
 	harness := fixture.harness
@@ -914,22 +914,31 @@ func TestBuilderBetaShareCandidates(t *testing.T) { //nolint:paralleltest // mut
 		{Username: builderShareErin, Name: ""},
 	}
 
-	if got, _ := candidates(viewing("*")); !slices.Equal(got, want) {
-		t.Fatalf("candidates = %+v, want %+v", got, want)
+	// Every one of them is listed without users list, and a users list
+	// naming only some of them lists the rest too.
+	for _, role := range []*rbac.Role{builderShareRole(builderShareConfigVerbs), viewing("carol"), viewing("*")} {
+		if got, _ := candidates(role); !slices.Equal(got, want) {
+			t.Fatalf("candidates = %+v, want %+v", got, want)
+		}
 	}
 
-	// A share with every one of them is accepted.
+	// A share with every one of them is accepted. It drops Dave's, so his new
+	// account can be shared with now.
 	fixture.share(builderBetaTestPeer+":view", builderShareCarol+":edit", builderShareErin+":view")
 
-	// Only the users the role lets the caller view are listed, and none
-	// without users list.
-	if got, _ := candidates(viewing("carol", "erin")); !slices.Equal(got, want[1:]) {
-		t.Fatalf("candidates = %+v, want %+v", got, want[1:])
+	withDave := slices.Insert(slices.Clone(want), 2, builderShareCandidate{Username: builderShareDave, Name: ""})
+	if got, _ := candidates(builderShareRole(builderShareConfigVerbs)); !slices.Equal(got, withDave) {
+		t.Fatalf("candidates = %+v, want %+v", got, withDave)
+	}
+
+	// Once only the owner's and Frank's accounts are left, none is listed.
+	for _, user := range []string{builderBetaTestPeer, builderShareCarol, builderShareDave, builderShareErin} {
+		harness.removeUser(user)
 	}
 
 	if got, body := candidates(builderShareRole(builderShareConfigVerbs)); len(got) != 0 ||
 		!strings.Contains(body, `"users":[]`) {
-		t.Fatalf("candidates without users list = %s, want none", body)
+		t.Fatalf("candidates without other accounts = %s, want none", body)
 	}
 }
 

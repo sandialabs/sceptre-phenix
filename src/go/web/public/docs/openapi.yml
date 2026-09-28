@@ -2093,10 +2093,10 @@ paths:
       summary: List who a Builder Flow draft can be shared with
       description: >
         The same callers as PUT of the share list may ask (403 for anyone
-        else who can see the draft). Lists, sorted by username, the users the
-        caller may view as `GET /users` lists them (none without `users`
-        `list`) whom a PUT of the share list would accept: every user with an
-        account other than the owner, except a user the draft is shared with
+        else who can see the draft). Lists, sorted by username, every account
+        that can receive a share, whatever the caller's `users` permissions:
+        every user with an account other than the owner whom a PUT of the
+        share list would accept, so not a user the draft is shared with
         through an account since removed. Users the draft is already shared
         with are listed too.
       operationId: getBuilderDraftShareCandidates

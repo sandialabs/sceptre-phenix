@@ -138,12 +138,19 @@ test(
       await expect(field).toBeFocused();
       await expect(dialog.getByTestId('share-users-note')).toHaveText('');
 
-      // Down Arrow opens the users the draft may be shared with, named
-      // "Name (username)", never the owner; typing filters them, and Enter
-      // takes the one in view.
+      // Down Arrow opens every user the draft may be shared with (the
+      // owner's role may not list users), named "Name (username)", never
+      // the owner; typing filters them, and Enter takes the one in view.
+      // Other tests' users are offered too, so only this test's are looked
+      // for.
       await field.press('ArrowDown');
       await expect(options).toBeVisible();
       await expect(field).toHaveAttribute('aria-expanded', 'true');
+      for (const user of [editor, viewer, stranger]) {
+        await expect(
+          options.getByRole('option', { name: user.username }),
+        ).toHaveCount(1);
+      }
       await expect(
         options.getByRole('option', { name: owner.username }),
       ).toHaveCount(0);
@@ -318,13 +325,21 @@ test(
         data: { shares: [] },
       });
       expect(changed.status()).toBe(403);
-      // Only the owner learns whom the draft can be shared with.
+      // Only the owner learns whom the draft can be shared with: everyone
+      // else with an account, those it is shared with too.
       const candidates = `${path}/shares/candidates`;
       expect((await editor.api.get(candidates)).status()).toBe(403);
-      const offered = (await (await owner.api.get(candidates)).json()).users;
-      expect(offered.map((user) => user.username)).toEqual(
-        expect.arrayContaining([editor.username, viewer.username]),
+      const offered = (
+        await (await owner.api.get(candidates)).json()
+      ).users.map((user) => user.username);
+      expect(offered).toEqual(
+        expect.arrayContaining([
+          editor.username,
+          viewer.username,
+          stranger.username,
+        ]),
       );
+      expect(offered).not.toContain(owner.username);
 
       // A viewer deletes no snapshot; the editor's rename left an older one.
       const older = (
@@ -602,7 +617,9 @@ test('mistakes and changes from elsewhere in the Share dialog', async ({
   });
 
   await test.step('someone the server does not know is named in a summary that takes focus', async () => {
-    // Refused where it was typed, when the list does not offer them.
+    // Refused where it was typed, when the list does not offer them, once
+    // the users are read (until then the server checks the name on save).
+    await expect(dialog.getByTestId('share-users-note')).toHaveText('');
     await field.fill(`${nobody}-typed`);
     await field.press('Enter');
     await expect(error).toHaveText(`No user named ${nobody}-typed.`);

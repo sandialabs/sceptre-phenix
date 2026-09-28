@@ -235,10 +235,9 @@ func (b *builderBetaAPI) putShares(w http.ResponseWriter, r *http.Request) error
 
 // getShareCandidates - GET /builder/drafts/{owner}/{draft}/shares/candidates.
 //
-// Who the owner may share the draft with: every user the caller may view, as
-// GET /users lists them, whom a PUT of the share list would accept. Users the
-// draft is already shared with are listed too. The same callers as for PUT
-// may ask.
+// Who the owner may share the draft with: every account a PUT of the share
+// list would accept, whatever the caller's users permissions. Users the draft
+// is already shared with are listed too. The same callers as for PUT may ask.
 func (b *builderBetaAPI) getShareCandidates(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderBetaGetShareCandidates")
 
@@ -264,7 +263,7 @@ func (b *builderBetaAPI) getShareCandidates(w http.ResponseWriter, r *http.Reque
 		return builderBetaForbidden(actor, action+" without a user account")
 	}
 
-	users, err := b.shareCandidates(actor, meta)
+	users, err := b.shareCandidates(meta)
 	if err != nil {
 		return weberror.NewWebError(err, "unable to list who builder draft %s can be shared with", meta.ID).
 			SetStatus(http.StatusInternalServerError)
@@ -273,20 +272,10 @@ func (b *builderBetaAPI) getShareCandidates(w http.ResponseWriter, r *http.Reque
 	return builderBetaWriteJSON(w, http.StatusOK, "", builderShareCandidatesResponse{Users: users})
 }
 
-// shareCandidates returns, sorted by username, the users the caller may view
-// whom a share of the draft would be accepted for (see
-// [builderShareAccepts]). As GET /users does, it lists the users the
-// caller's users list permission names; without it the caller sees only its
-// own account, which is the owner's.
-func (b *builderBetaAPI) shareCandidates(
-	actor builderBetaActor,
-	meta *bapi.DraftMetadata,
-) ([]builderShareCandidate, error) {
+// shareCandidates returns, sorted by username, every user whom a share of the
+// draft would be accepted for (see [builderShareAccepts]).
+func (b *builderBetaAPI) shareCandidates(meta *bapi.DraftMetadata) ([]builderShareCandidate, error) {
 	candidates := []builderShareCandidate{}
-
-	if !actor.role.Allowed(resourceUsers, "list") {
-		return candidates, nil
-	}
 
 	accounts, err := b.listConfigs("User")
 	if err != nil {
@@ -296,7 +285,7 @@ func (b *builderBetaAPI) shareCandidates(
 	for _, account := range accounts {
 		name := account.Metadata.Name
 
-		if !actor.role.Allowed(resourceUsers, "list", name) || !builderShareAccepts(meta, name, account.Metadata.Created) {
+		if !builderShareAccepts(meta, name, account.Metadata.Created) {
 			continue
 		}
 
