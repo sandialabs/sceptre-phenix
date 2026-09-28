@@ -13,17 +13,17 @@ All notable changes to this project will be documented in this file.
 - **etcd**: Automatic history compaction for every etcd store, even with Builder Flow off. It compacts the whole etcd cluster. Set it with `compaction-retention` on the store endpoint (default 1 hour; `0` turns it off).
 - **Builder Flow** (beta, `--features builder-beta`): New topology editor at `/builder-beta`, next to the existing Builder.
   - **Editing**: Devices, switches, notes, and groups; connections between devices and switches; Router and Firewall templates; copy, paste, and duplicate; undo and redo; layouts (ELK layered, Network cards, Dagre, or Standard), chosen for each draft from the toolbar; Auto-group, by network or by name; moving nodes between groups; colors for networks, notes, groups, and connections.
-  - **Canvas**: Connections follow the routes the ELK layout draws, and connections into the same switch bend apart. Choosing an outline row shows its nodes. Fit, Reset view, and outline rows show large diagrams whole, clear of the minimap and zoom controls. The canvas is one Tab stop: arrow keys move between nodes, Page Down and Page Up through a node's connections, and Shift with an arrow key moves the selected nodes.
-  - **Inspector**: Form for every node field, with descriptions, warnings, and editable labels, annotations, and advanced settings; drive image suggestions from the server's disks; drop-downs show their default, such as "Default (kvm)". Changes not applied are saved when you leave the diagram, publish, or export it, and History marks them Automatic.
+  - **Canvas**: Connections follow the routes the ELK layout draws, and connections into the same switch bend apart. Choosing an outline row shows its nodes. Fit, Reset view, and outline rows show large diagrams whole, clear of the minimap and zoom controls. Both side columns can be hidden, and selecting a node shows the Inspector again. The minimap can be resized from its top left corner. The canvas is one Tab stop: arrow keys move between nodes, Page Down and Page Up through a node's connections, and Shift with an arrow key moves the selected nodes.
+  - **Inspector**: Form for every node field, with descriptions, warnings, and editable labels, annotations, and advanced settings; drive image suggestions from the server's disks; drop-downs show their default, such as "Default (kvm)". Changes not applied are saved when you leave the diagram, publish, or export it, and Draft History marks them Automatic.
   - **Checks**: A list of the diagram's errors and warnings that links to the nodes involved. Nodes with errors or warnings are marked on the canvas.
   - **Command palette and shortcuts**: Command palette (⌘K or Ctrl+K) and customizable keyboard shortcuts.
   - **Settings**: Theme, default layout for drafts, minimap, zoom, motion, and shortcut settings, kept in the browser.
-  - **Focus mode**: Hides the navigation bar and fills the screen (⇧⌘F or Ctrl+Shift+F).
-  - **Drafts**: Drafts save automatically, work offline, and keep the last 50 changes. Drafts the server cannot read are listed, with Delete. Saving says when etcd is out of space. Open shows a spinner while it waits. Back to drafts opens the drafts at once, and the draft's card shows its changes saving. A draft open in more than one tab shows a warning; when several tabs have unsaved changes to it, you choose which to save, and the others become new drafts. Logging out, or signing in as another user, clears drafts saved in the browser and keeps preferences such as the theme and shortcuts. Logging out first warns when changes have not reached the server, and offers Export. The idle timeout and an expired session show the warning for a minute, then log out.
-  - **Import and export**: Import topologies and experiments; upload and download diagrams as JSON or YAML; export images as PNG or SVG.
+  - **Focus mode**: Hides the navigation bar and fills the screen, in the editor and on the drafts page (⇧⌘F or Ctrl+Shift+F).
+  - **Drafts**: Drafts save automatically, work offline, and keep the last 50 changes. Draft History lists each change with its date and user, and restores or deletes it. Drafts the server cannot read are listed, with Delete. Saving says when etcd is out of space. Open shows a spinner while it waits. Back to drafts opens the drafts at once, and the draft's card shows its changes saving. A draft open in more than one tab shows a warning; when several tabs have unsaved changes to it, you choose which to save, and the others become new drafts. Logging out, or signing in as another user, clears drafts saved in the browser and keeps preferences such as the theme and shortcuts. Logging out first warns when changes have not reached the server, and offers Export. The idle timeout and an expired session show the warning for a minute, then log out. When the session ends, Sign in again keeps unsaved changes and then saves them.
+  - **Import and export**: Import topologies and experiments, without the injections a started experiment's apps added; upload and download diagrams as JSON or YAML; export images as PNG or SVG.
   - **Publishing**: Publish topologies, scenarios, and experiments, and publish again after more edits. Publish asks before it replaces an existing config.
   - **Included topologies**: Shown as read-only nodes and kept as references when published.
-  - **Sharing**: Share a draft with other users as view-only or editable. Drafts shared with you are listed under Shared with me.
+  - **Sharing**: Share a draft with other users, chosen from a list, as view-only or editable. Drafts shared with you are listed under Shared with me.
   - **Permissions**: Actions a role cannot perform are hidden. Importing an uploaded config needs `configs` `create`, and opening a published diagram as a new draft needs `configs` `get` for its config; other users' drafts must be shared with you or need `builder-drafts` permissions.
   - **Accessibility**: Keyboard and screen reader support (WCAG 2.2 AA).
   - **API docs**: Builder Flow routes in the OpenAPI document at `/docs/`.
@@ -33,6 +33,7 @@ All notable changes to this project will be documented in this file.
 - **Web UI Accessibility**: Declared the page language, added accessible names to icon-only buttons, links, and form controls, labelled the config selection checkboxes, made the log viewer keyboard-scrollable, added a visible keyboard focus indicator, a skip link, per-route page titles, and pagination control names, fixed low-contrast placeholder, danger, and code colours, made the Settings form submit on Enter, and added an axe-core WCAG 2.2 AA scan of every route to the browser smoke tests.
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
 - **Config Schemas**: Descriptions for node and interface fields in the v1 schema; defaults shown as phenix applies them (`general.snapshot` `true`, `hardware.memory` 512).
+- **CI**: The Frontend workflow runs the browser tests in parallel jobs.
 - **Topology Builder**:
   - **mxGraph**: Updated the vendored mxGraph from 4.1.0 to 4.2.2, the final release before the project was archived. Upstream changed the modifier that deletes a cell together with its connected edges from Shift to Ctrl.
   - **Editor**: The sidebar node palettes now open expanded, the export dialog offers only the XML and SVG formats the server can produce, and the Help button opens the phēnix documentation instead of the defunct `minimega.org`.
@@ -57,12 +58,12 @@ All notable changes to this project will be documented in this file.
   - Globstars, braces, and extglobs in patterns no longer match names that the server denies.
   - Config permissions are checked against `<Kind>/<name>`, as the server does.
   - VM snapshot controls check `vms/snapshots` with the server's verbs: `create` to take a snapshot and `update` to restore one. Roles such as Experiment User now see the snapshot button.
-- **etcd store**: Crash at startup with an empty etcd; wrong errors for missing or existing configs.
 - **Config Schemas**: Invalid v1 schema (empty `pattern` on a serial interface's `device`).
 - **Schemas API**: Unknown schemas return 404 instead of 500.
 - **API docs**: The OpenAPI document is valid again.
 - **Settings**: Password checks on a new server no longer fail when several requests arrive at once.
 - **Web UI**: The header's Logout can be reached with the keyboard, and says when logging out fails. The sign-in page focuses Username after a logout, labels its fields and the Create Account dialog, and fits narrow screens.
+- **etcd store**: Crash at startup with an empty etcd; wrong errors for missing or existing configs, and for writes to a full etcd.
 - **vrouter**: Set VyOS and Vyatta router hostnames exactly as written in the topology instead of lowercasing them and replacing `.` and `_` with `-`, so the guest hostname matches the minimega VM name. Firewall nodes already behaved this way.
 
 ### Security

@@ -46,15 +46,57 @@ Logging out removes Builder Flow's local drafts (IndexedDB `phenix-builder`)
 and recent commands from the browser, as does signing in as a different user
 (`phenix.builder.user` names whose data the browser holds), and keeps its
 preferences (`phenix.builder.theme`, `phenix.builder.panes`,
-`phenix.builder.shortcuts` and `phenix.builder.settings` in localStorage).
+`phenix.builder.minimap`, `phenix.builder.shortcuts` and
+`phenix.builder.settings` in localStorage).
 Logging out first sends changes still queued in the browser; if some remain,
 a warning offers Export (one file per draft), Stay signed in (not once the
 token has expired) and Log out anyway. The idle timeout and an expired token
 show it for one minute (an expired token's only while the tab is visible),
-then log out. A draft keeps its own layout choice in its document's `layout`;
-the Settings layout is the default for drafts without one. A document may also
-hold each connection's `route` as a layout drew it; publishing and export
-ignore both.
+then log out; for an automatic logout of an expired token on the Builder page
+it also offers Sign in again. A draft keeps its own layout choice in its
+document's `layout`; the Settings layout is the default for drafts without one.
+A document may also hold each connection's `route` as a layout drew it;
+publishing and export ignore both.
+
+When the server refuses the session (a `401` on a save, a listing or a
+publish), or the token expires while Builder Flow is open, a Sign in again
+dialog asks for the same user's password; to sign in as someone else, cancel
+and log out. The login is sent without the ended session's token, since the
+JWT middleware refuses an expired token before the login handler reads the
+password. Signing in stores the new token where the last sign-in did
+(sessionStorage, and localStorage with Remember me), then sends at once the
+changes the server refused, from the open draft and from drafts saving in the
+background; it clears nothing. Cancel keeps the changes queued in the browser
+and shows a Sign in again notice; Retry saving and Save then open the dialog.
+While the dialog is open, navigation within the Builder goes ahead and leaving
+it is cancelled. With `VITE_AUTH=proxy`, or a session without a JWT, the save
+state still says to Export and sign in again.
+
+Both views share the header buttons at the top right: Commands (⌘K or
+Ctrl+K), the theme button (it cycles System, Light and Dark, the same
+preference as Settings > Theme), Settings, Help and Focus mode. The drafts page
+puts Blank diagram, Import and Upload before them; the editor puts the save
+state, Warnings and Reset view before them and Shortcuts after the theme
+button. Below a 105rem header (about a 1712px window) the buttons show only
+their icons. The editor's toolbar has Draft History right after Minimap. Focus
+mode (⇧⌘F or Ctrl+Shift+F) works on both views and stays on between them,
+until the user turns it off or leaves Builder Flow.
+
+Each side column (Add nodes and Outline, the Inspector) has a Hide toggle under
+its Widen toggle, which folds the column into a narrow strip holding a Show
+toggle; the palette's `view.pane.start` and `view.pane.end` do the same. The
+hidden columns are kept with the widths in `phenix.builder.panes`
+(`{"hidden": ["end"]}`). A click, Enter or Space that selects a node or
+connection shows a hidden Inspector, and Focus outline, Focus Inspector and
+Rename show their column first. The stacked narrow layout shows every column
+and has no toggles. A handle at the minimap's top left corner resizes it (a
+separator named Resize minimap: drag it, or Up and Left for larger, Down and
+Right for smaller, Home and End for the smallest and largest, Enter or a
+double-click for the default); the palette's Minimap size commands do the
+same. The minimap keeps its 4:3 shape, from 120px wide up to half the canvas
+(at most 600px, never below the default 200px). Its width is kept in
+`phenix.builder.minimap` (`{"width": 280}`). Reset view shows both columns
+again and restores the minimap's default size.
 
 ## Access, sharing and RBAC
 
@@ -67,7 +109,17 @@ users, and unknown users, the owner and duplicates get `422` with per-user
 publish under the recipient's own permissions). It never gives delete or
 sharing. Recipients still need their `configs` permissions. A share is bound
 to the recipient's account, so a user deleted and recreated under the same
-name loses it. Cross-user access for administrators uses the
+name loses it. `GET /builder/drafts/{owner}/{draft}/shares/candidates` lists
+who the draft can be shared with, as
+`{"users":[{"username":"alice","name":"Alice Tester"}]}` sorted by username
+(`name` is the first and last name, or `""`). It holds the users the caller may
+view the way `GET /users` lists them, so it is empty without `users` `list`,
+and leaves out the owner and anyone a `PUT` would refuse; users already shared
+with are listed. It has the same access rules as `PUT .../shares`. The Share
+dialog offers these users in a drop-down that filters as the user types, shown
+as "Name (username)" and without those already listed. If the list cannot be
+read, the dialog shows the error with Retry, and a typed username can still be
+added (the server checks it on save). Cross-user access for administrators uses the
 `builder-drafts` RBAC resource with `{owner}/{draft-id}` resource names. A role
 that may inspect and modify every draft needs an explicit policy like:
 
@@ -119,7 +171,27 @@ the oldest are dropped. The UI keeps unsaved Builder Flow edits in the browser's
 `phenix-builder` IndexedDB database only until the server confirms them. Each
 browser tab keeps its own queue of a draft (the tab's id is `phenix.builder.tab`
 in sessionStorage). When more than one tab holds unsaved changes to one draft,
-the user chooses which to save, and the others are saved as new drafts.
+the user chooses which to save, and the others are saved as new drafts. Logout
+leaves the changes of other open tabs to those tabs. It finds them by their
+Web Locks or, without Web Locks, by the tabs that answer within 500 ms over the
+BroadcastChannel `phenix-builder:tabs` (localStorage events without one).
+
+`GET .../snapshots` returns `{"cursor": <index>, "snapshots": [...]}`, oldest
+first; each snapshot has `id`, `digest`, `size`, `createdAt`, `createdBy`,
+`current`, and `summary` and `opId` when set.
+`DELETE /builder/drafts/{owner}/{draft}/snapshots/{snapshot}` with `If-Match`
+removes a version and its content. Those who may save may delete (the owner,
+an edit share, `builder-drafts` `update`). It answers 200 with the draft (as
+`POST .../snapshots` does) and its new `ETag`, and 409 `The current version
+cannot be deleted.` for the cursor's snapshot (also as `current`), 404 for an
+unknown snapshot, and the usual 400, 403, 404 and 412. The cursor stays on the
+same snapshot. A last publication naming the deleted snapshot is kept, and the
+draft is then dirty. Snapshots never share chunks, so no other version or
+published document loses content. The editor's Draft History is a table of
+number, name, date and user, with Restore and Delete in each row (clicking a
+name also restores). The current row cannot be deleted, a view-only user gets
+no actions, and undo and redo skip a deleted snapshot. After a 412 the editor
+reads the draft again and the next try uses that ETag.
 
 A mutation whose durable write succeeded but whose superseded content could not
 be removed returns its normal success status, body, and new `ETag`, plus a
@@ -136,6 +208,10 @@ Each config is filtered through the `configs` permission *and* the kind specific
 `experiments`, `scenarios`); `Image` configs have no kind specific vocabulary,
 so `configs` is their only gate. Generating from a non-generatable kind is
 `422`. VLANs are derived from the document and are not a config kind.
+Generating from an Experiment drops, without a warning, the injections its apps
+added when it started: those whose `src` is an absolute path under the
+experiment's base directory (its `baseDir`, or `<phenix base>/experiments/<name>`).
+The topology's own injections are kept.
 
 `POST /builder/generate` accepts either `{"source":"Topology/name"}` (or an
 Experiment source) or `{"content":"..."}` containing an uploaded JSON/YAML
@@ -217,6 +293,10 @@ that names no network of the document still publishes as it is, since phenix
 allocates VLANs by name and matches them exactly (`exp` is not network `EXP`).
 Drafts keep such interfaces; the editor flags them as warnings.
 
+After a publication, older published documents of the same topology are
+removed once they are more than an hour old; newer ones go at a later publish
+or at the startup cleanup.
+
 ## Routes
 
 All routes are relative to `/api/v1`.
@@ -228,9 +308,11 @@ All routes are relative to `/api/v1`.
 | `GET/DELETE /builder/drafts/{owner}/{draft}` | Read a draft with its current document; delete it |
 | `GET/POST /builder/drafts/{owner}/{draft}/snapshots` | List or append snapshots (append needs `If-Match`) |
 | `GET /builder/drafts/{owner}/{draft}/snapshots/{snapshot\|current}` | Read one snapshot's document |
+| `DELETE /builder/drafts/{owner}/{draft}/snapshots/{snapshot}` | Delete a version other than the current one (needs `If-Match`) |
 | `PATCH/PUT /builder/drafts/{owner}/{draft}/cursor` | Undo and redo: move the draft's current snapshot |
 | `POST /builder/drafts/{owner}/{draft}/publish` | Create or update the topology, scenario and experiment configs |
 | `GET/PUT /builder/drafts/{owner}/{draft}/shares` | Read or replace who a draft is shared with (owner only) |
+| `GET /builder/drafts/{owner}/{draft}/shares/candidates` | Users the owner may share the draft with |
 | `GET /builder/sources` | Configs a document can be generated from or publish to |
 | `POST /builder/generate` | Build a document from a stored or uploaded Topology or Experiment |
 | `GET /builder/documents[/{document}]` | Published Builder documents |
@@ -242,8 +324,12 @@ Every route is behind the `builder-beta` feature: with it off, each answers a JS
 Drafts live in the phenix store as records, apart from configs. With an etcd
 store, phenix compacts etcd's history for the whole cluster (see
 `compaction-retention` in [cli.md](./cli.md)). When etcd reaches its space quota,
-Builder Flow saves answer `507` with `etcd is out of space: ...`, and the
-editor keeps the changes queued in the browser and retries.
+any write it refuses, including config writes (`POST`/`PUT /configs`) and
+Builder Flow saves, answers `507` with `etcd is out of space: ...` as `message`
+and an empty `cause`; the editor keeps the changes queued in the browser and
+retries. Publish reports it in its `partial` result as `<stage> publication
+failed: etcd is out of space: ...`. The error is logged once per request
+(`store.ErrNoSpace`; the OpenAPI response is `InsufficientStorage`).
 
 ## Working on Builder Flow code
 
@@ -257,9 +343,9 @@ Read this section before changing any file listed below.
 | Drafts, snapshots, sharing, published documents, limits | `src/go/api/builder/` (`service.go`, `shares.go`, `published.go`, `chunks.go`, `limits.go`, `validate.go`) |
 | Record store for drafts (BoltDB and etcd, etcd compaction) | `src/go/store/*record*.go`, `src/go/store/etcd_record_compact.go` |
 | HTTP routes, authorization and RBAC | `src/go/web/builder_beta*.go` (`builder_beta.go` holds the authorization model) |
-| Editor page and drafts landing | `src/js/src/views/BuilderBeta.vue`, `src/js/src/components/builder/BuilderDrafts.vue` |
-| Editor components | `src/js/src/components/builder/` (canvas, Inspector, outline, toolbar, dialogs, nodes, edges) |
-| Editor state and logic | `src/js/src/builder/` (`store.js`, `model.js`, `autosave.js`, `idb.js`, `tabs.js`, `session.js`, `commands.js`, `keymap.js`, `layouts/`, `adapters/`) |
+| Editor page and drafts landing | `src/js/src/views/BuilderBeta.vue`, `src/js/src/components/builder/BuilderDrafts.vue`, `BuilderHeaderButtons.vue` (the buttons both headers share) |
+| Editor components | `src/js/src/components/builder/` (canvas, Inspector, outline, toolbar, side columns, `BuilderSignIn.vue`, dialogs, nodes, edges) |
+| Editor state and logic | `src/js/src/builder/` (`store.js`, `model.js`, `autosave.js`, `idb.js`, `tabs.js`, `session.js`, `signin.js`, `panes.js`, `commands.js`, `keymap.js`, `layouts/`, `adapters/`) |
 | Generated schema bundle | `src/js/src/builder/schema/builder-v1.schema.json` |
 
 ### Rules
@@ -282,8 +368,11 @@ Read this section before changing any file listed below.
 - Browser: the `builder*.spec.js` Playwright specs in `src/js/e2e/tests/` need a
   server started with `--features builder-beta`. `builder-feature-off.spec.js`
   needs a second server without the feature and `E2E_BUILDER_BETA=off`.
-  `builder-sharing.spec.js` needs a server with sign-in on (a JWT signing key
-  and an admin user) and `E2E_SHARING=1`. `src/js/e2e/README.md` has the setup,
-  the `@known-defect` and `@cross-browser` tags, and the Playwright projects.
+  `builder-sharing.spec.js` (sharing, and signing in again) needs a server
+  with sign-in on (a JWT signing key and an admin user) and `E2E_SHARING=1`.
+  `src/js/e2e/README.md` has the setup, the `@known-defect`, `@cross-browser`
+  and `@axe` tags, the Playwright projects, and how CI splits the suite into
+  parallel jobs. Tag `@axe` only on full axe scans: CI runs them in a job of
+  their own, apart from the smoke shards.
 - CI runs the e2e suite on Linux, where key names differ from macOS (Enter,
   not Return), and on slower machines.
