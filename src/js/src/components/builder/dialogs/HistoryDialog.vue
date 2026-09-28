@@ -14,10 +14,12 @@
   Escape hides a tooltip before it closes the dialog. Clicking a snapshot's
   name restores it too; that button, described as doing so, is out of the
   tab order, as its row's Restore does the same. The current snapshot (the
-  draft's cursor) is marked, and cannot be deleted. Delete asks first, then
-  says how it went in the dialog's own status and alert (the page's live
-  region waits until the dialog closes), and focus moves to the next row's
-  Delete. A user who may only view the draft gets neither action.
+  draft's cursor) is marked, and can be neither restored, as it is the
+  diagram already, nor deleted: its buttons stay focusable, aria-disabled,
+  look unavailable and say why. Delete asks first, then says how it went in
+  the dialog's own status and alert (the page's live region waits until the
+  dialog closes), and focus moves to the next row's Delete. A user who may
+  only view the draft gets neither action.
 
   A snapshot of edits the Builder applied for the user (the Inspector's
   unapplied edits, saved before the diagram was left, published or
@@ -86,8 +88,12 @@
                     type="button"
                     tabindex="-1"
                     class="builder-history__name-button"
-                    aria-describedby="history-name-note"
-                    :aria-disabled="busy || undefined"
+                    :aria-describedby="
+                      entry.current
+                        ? 'history-current-restore'
+                        : 'history-name-note'
+                    "
+                    :aria-disabled="entry.current || busy || undefined"
                     data-testid="history-name"
                     @click="restore(entry)">
                     {{ changeName(entry, index) }}
@@ -120,9 +126,18 @@
                     type="button"
                     class="builder-button builder-history__action"
                     :aria-label="`Restore ${snapshotName(entry, index)}`"
-                    :aria-disabled="busy || undefined"
+                    :aria-describedby="
+                      entry.current ? 'history-current-restore' : undefined
+                    "
+                    :aria-disabled="entry.current || busy || undefined"
                     data-testid="history-restore"
-                    v-on="tipFor('Restore')"
+                    v-on="
+                      tipFor(
+                        entry.current
+                          ? `Restore. ${CURRENT_RESTORE_NOTE}`
+                          : 'Restore',
+                      )
+                    "
                     @click="restore(entry)">
                     <builder-icon name="restore" :size="14" />
                   </button>
@@ -149,6 +164,9 @@
           </table>
         </div>
         <span id="history-current-note" hidden>{{ CURRENT_NOTE }}.</span>
+        <span id="history-current-restore" hidden>
+          {{ CURRENT_RESTORE_NOTE }}.
+        </span>
         <span id="history-name-note" hidden>Restores this snapshot.</span>
         <p
           v-if="listed && store.serverHistory.some(automatic)"
@@ -255,6 +273,8 @@
   const tableEl = ref(null);
 
   const CURRENT_NOTE = 'The current snapshot cannot be deleted';
+  // Restoring it would change nothing.
+  const CURRENT_RESTORE_NOTE = 'This is the current version';
 
   // Read before the first render, so the dialog opens loading rather than
   // showing the list it had last time. A published diagram shown read only
@@ -390,7 +410,7 @@
   });
 
   async function restore(entry) {
-    if (busy.value) {
+    if (busy.value || entry.current) {
       return;
     }
 
@@ -602,6 +622,15 @@
     margin-inline-start: 0.25rem;
   }
 
+  /* An action that does not apply (the current snapshot's, or any while
+     one is under way) has the Builder's aria-disabled fill, and a dashed
+     frame and a fainter icon besides, which keeps 3:1 against the fill
+     (WCAG 1.4.11), so it cannot pass for the one beside it. */
+  .builder-history__action[aria-disabled='true'] {
+    border-style: dashed;
+    color: var(--bx-border-strong);
+  }
+
   /* The marks of a snapshot the Builder saved for the user, and of the
      current one. Their borders show in forced colors too, and they wrap
      under the name when the column is narrow. */
@@ -641,6 +670,12 @@
 
     .builder-history__name-button {
       color: LinkText;
+    }
+
+    .builder-history__name-button[aria-disabled='true'],
+    .builder-history__action[aria-disabled='true'] {
+      border-color: GrayText;
+      color: GrayText;
     }
 
     .builder-history tr.is-current td {

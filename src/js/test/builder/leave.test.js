@@ -757,8 +757,13 @@ describe('the History dialog', () => {
     expect(names).toHaveLength(3);
     for (const name of names) {
       expect(name).toContain('tabindex="-1"');
-      expect(name).toContain('aria-describedby="history-name-note"');
     }
+    expect(names[0]).toContain('aria-describedby="history-name-note"');
+    expect(names[0]).not.toContain('aria-disabled');
+    // The current snapshot is the diagram already: restoring it would do
+    // nothing, and its name and Restore say so.
+    expect(names[1]).toContain('aria-disabled="true"');
+    expect(names[1]).toContain('aria-describedby="history-current-restore"');
 
     const restore = tags(html, 'button').filter((tag) =>
       tag.includes('data-testid="history-restore"'),
@@ -770,6 +775,12 @@ describe('the History dialog', () => {
     expect(restore).toHaveLength(3);
     expect(restore[2]).toMatch(
       /aria-label="Restore Applied changes to Device alpha, [^"]+"/,
+    );
+    expect(restore[0]).not.toContain('aria-disabled');
+    expect(restore[1]).toContain('aria-disabled="true"');
+    expect(restore[1]).toContain('aria-describedby="history-current-restore"');
+    expect(html).toMatch(
+      /id="history-current-restore" hidden[^>]*>\s*This is the current version\.\s*</,
     );
     expect(remove[0]).toMatch(/aria-label="Delete Draft created, [^"]+"/);
     expect(remove[0]).not.toContain('aria-disabled');

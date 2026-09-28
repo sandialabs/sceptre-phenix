@@ -988,6 +988,22 @@ test.describe('Builder Beta persistence', () => {
     await expect
       .soft(deletes.last())
       .toHaveAccessibleDescription('The current snapshot cannot be deleted.');
+    // Nor restored, as it is the diagram already. Both look unavailable,
+    // unlike the other rows' buttons, and a press does nothing.
+    const current = rows.last().getByTestId('history-restore');
+    await expect(current).toHaveAttribute('aria-disabled', 'true');
+    await expect
+      .soft(current)
+      .toHaveAccessibleDescription('This is the current version.');
+    for (const button of [current, deletes.last()]) {
+      await expect.soft(button).toHaveCSS('border-top-style', 'dashed');
+    }
+    await expect
+      .soft(rows.first().getByTestId('history-restore'))
+      .toHaveCSS('border-top-style', 'solid');
+    await current.press('Enter');
+    await expect.soft(current).toBeFocused();
+    await expect(rows).toHaveCount(3);
     await expectAccessible(page, {
       include: '[data-testid="history-dialog"]',
       label: 'Draft History',
