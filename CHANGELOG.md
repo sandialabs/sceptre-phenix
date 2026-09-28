@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
 
+### Fixed
+
+- **etcd Store**: Fix panics on failed requests or missing keys, fix renaming configs, and give a clear error when etcd is out of space, while phenix can still start and read.
+
 ## [1.0.0]
 
 ### Changed
