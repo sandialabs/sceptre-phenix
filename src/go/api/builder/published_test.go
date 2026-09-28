@@ -350,6 +350,8 @@ func TestDeletingPublishedDocumentKeepsConcurrentCopies(t *testing.T) {
 	// listed document, so removing superseded documents skips it.
 	current := publishTestDocument(t, h, "topo", testRandomDocument(t, "topo-v2", 2000))
 
+	h.passOrphanGracePeriod()
+
 	var third *PublishedDocument
 
 	h.store.failDelete = func(namespace, key string) error {
@@ -378,8 +380,16 @@ func TestDeleteSupersededDocuments(t *testing.T) {
 	ctx := context.Background()
 
 	first := publishTestDocument(t, h, "topo", testRandomDocument(t, "topo-v1", 1200))
+
+	h.passOrphanGracePeriod()
+
 	second := publishTestDocument(t, h, "topo", testRandomDocument(t, "topo-v2", 1200))
 	otherTarget := publishTestDocument(t, h, "other", testRandomDocument(t, "other-v1", 1200))
+
+	// A document stored as recently as this one may belong to a publication
+	// still in flight, perhaps in another phenix sharing the store, whose
+	// config does not reference it yet.
+	inFlight := publishTestDocument(t, h, "topo", testRandomDocument(t, "topo-v3", 1200))
 
 	removed, err := h.service.DeleteSupersededDocuments(ctx, "topo", second.ID)
 	if err != nil {
@@ -396,6 +406,10 @@ func TestDeleteSupersededDocuments(t *testing.T) {
 
 	if _, err := h.service.GetPublishedDocument(ctx, second.ID); err != nil {
 		t.Fatalf("the kept document must survive: %v", err)
+	}
+
+	if _, _, err := h.service.GetPublishedDocumentData(ctx, inFlight.ID); err != nil {
+		t.Fatalf("a document stored within the grace period must survive: %s", fmtErr(err))
 	}
 
 	if _, err := h.service.GetPublishedDocument(ctx, otherTarget.ID); err != nil {

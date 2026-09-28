@@ -21,11 +21,11 @@ import (
 const publishedIDSeparator = "\x1f"
 
 // OrphanGracePeriod is how old unreferenced content must be before
-// [Service.CleanupOrphanedChunks] and [Service.CleanupOrphanedDocuments]
-// remove it. Every write stores its chunks before the metadata that references
-// them, and a published document is stored before the config that references
-// it, so younger content may belong to a write still in flight, in this process
-// or in another one sharing the store.
+// [Service.CleanupOrphanedChunks], [Service.CleanupOrphanedDocuments] and
+// [Service.DeleteSupersededDocuments] remove it. Every write stores its chunks
+// before the metadata that references them, and a published document is stored
+// before the config that references it, so younger content may belong to a
+// write still in flight, in this process or in another one sharing the store.
 const OrphanGracePeriod = time.Hour
 
 // EncodeDocument returns the canonical JSON encoding of a validated builder
@@ -571,9 +571,12 @@ func (s *Service) deleteListed(doc *PublishedDocument) (bool, error) {
 
 // DeleteSupersededDocuments removes every published document of a target except
 // the one named by keepID, which is normally the document the config currently
-// references. It returns the number of documents removed; a cleanup failure is
-// reported as an error matching [ErrCleanup] alongside the count of documents
-// whose metadata was removed.
+// references. A document stored within the [OrphanGracePeriod] is kept too: it
+// may belong to a publication still in flight, in this process or in another
+// one sharing the store, whose config is not written yet. It returns the
+// number of documents removed; a cleanup failure is reported as an error
+// matching [ErrCleanup] alongside the count of documents whose metadata was
+// removed.
 func (s *Service) DeleteSupersededDocuments(ctx context.Context, target, keepID string) (int, error) {
 	if err := validateText("target", target, MaxTargetLength, true); err != nil {
 		return 0, err
@@ -591,10 +594,12 @@ func (s *Service) DeleteSupersededDocuments(ctx context.Context, target, keepID 
 	var (
 		removed int
 		errs    []error
+		now     = s.clock()
 	)
 
 	for i := range docs {
-		if docs[i].Target != target || docs[i].ID == keepID {
+		if docs[i].Target != target || docs[i].ID == keepID ||
+			now.Sub(docs[i].lastPublished()) < OrphanGracePeriod {
 			continue
 		}
 
