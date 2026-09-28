@@ -521,11 +521,13 @@ function useOwnErrors(control) {
  * @param {import('vue').ComputedRef<object|undefined>} [options.fallback]
  *   what the field shows while it has no value (see useFieldDefault), which
  *   the input is described by
+ * @param {import('vue').ComputedRef<string[]>} [options.moreWarnings]
+ *   warnings the control finds itself, after the Inspector's
  */
 export function useInspectorControl(
   input,
   adapt = (target) => target.value,
-  { ownErrors = false, fallback } = {},
+  { ownErrors = false, fallback, moreWarnings } = {},
 ) {
   const { control } = input;
 
@@ -570,7 +572,10 @@ export function useInspectorControl(
   );
 
   // Warnings describe the field but do not make it invalid.
-  const warnings = useFieldWarnings(control);
+  const fieldWarnings = useFieldWarnings(control);
+  const warnings = moreWarnings
+    ? computed(() => [...fieldWarnings.value, ...moreWarnings.value])
+    : fieldWarnings;
 
   const locked = useInspectorLocked(control);
 

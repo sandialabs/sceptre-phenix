@@ -383,6 +383,34 @@ describe('inspector field accessibility', () => {
     expect(html.match(/class="warning"/g)).toHaveLength(1);
   });
 
+  // A value no choice matches, as an uploaded topology can hold, is a choice
+  // of its own, with a warning, rather than a select that shows nothing.
+  test("a value outside a drop-down's choices is shown, with a warning", async () => {
+    const { html } = await renderDeviceForm([], {
+      spec: {
+        hardware: {
+          os_type: 'ubuntu',
+          memory: 512,
+          drives: [{ image: 'miniccc.qc2' }],
+        },
+      },
+    });
+    const os = tags(html, 'select').find((tag) =>
+      tag.includes('hardware.os_type-input'),
+    );
+    const id = 'field-spec.hardware.os_type-warning';
+    const warning = html.slice(html.indexOf(`<p id="${id}" class="warning"`));
+
+    expect(html).toMatch(
+      /<option value="ubuntu"[^>]*>\s*ubuntu \(not one of the choices\)/,
+    );
+    expect(os).toMatch(new RegExp(`aria-describedby="[^"]*\\b${id}\\b`));
+    // Quotes are escaped in the markup.
+    expect(warning.slice(0, warning.indexOf('</p>'))).toContain(
+      '&quot;ubuntu&quot; is not one of the choices.',
+    );
+  });
+
   // An editable combobox with list autocomplete (WAI-ARIA APG), once the
   // server's images are known; a plain text field until then.
   test('a drive image suggests the disk images the server has', async () => {

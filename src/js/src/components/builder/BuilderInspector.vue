@@ -536,16 +536,15 @@
   // it commits its value, before Apply (see deviceFieldWarnings). A device
   // from an included topology is not this diagram's to fix, so its fields
   // get none, as in the diagram checks.
-  provide(
-    INSPECTOR_FIELD_WARNINGS,
-    computed(() =>
-      target.value?.kind === 'device' && !lock.value.all
-        ? deviceFieldWarnings(store.doc, draft.value?.spec, {
-            disks: store.disks,
-          })
-        : {},
-    ),
+  const fieldWarnings = computed(() =>
+    target.value?.kind === 'device' && !lock.value.all
+      ? deviceFieldWarnings(store.doc, draft.value?.spec, {
+          disks: store.disks,
+        })
+      : {},
   );
+
+  provide(INSPECTOR_FIELD_WARNINGS, fieldWarnings);
   const uiSchema = computed(() =>
     uiSchemaForKind(store.schema, target.value?.kind || 'document', {
       spec: target.value?.data?.spec,
@@ -917,7 +916,10 @@
       return;
     }
 
+    const warned = fieldWarnings.value;
+
     draft.value = event.data;
+    announceWarnings(warned, fieldWarnings.value);
     holdIcon(event.data);
     dirty.value = formDataChanged(event.data, loadedData());
 
@@ -925,6 +927,26 @@
     // as it is now, which an edit elsewhere may have changed meanwhile.
     if (!dirty.value && formDataChanged(target.value?.data, loaded.value)) {
       reset();
+    }
+  }
+
+  // A field's warning shows under it as the field commits its value, which
+  // leaves focus where it was, so its new description would not be read:
+  // each new warning is announced with the field's label.
+  function announceWarnings(before, after) {
+    for (const [path, messages] of Object.entries(after)) {
+      const label = form.value
+        ?.querySelector(`[data-path="${CSS.escape(path)}"] > label`)
+        ?.textContent.replace(/\s*\*$/, '')
+        .trim();
+
+      for (const message of messages) {
+        if (!before[path]?.includes(message)) {
+          store.announce(
+            label ? `Warning for ${label}: ${message}` : `Warning: ${message}`,
+          );
+        }
+      }
     }
   }
 
@@ -1318,6 +1340,7 @@
     }
 
     const next = applied(target.value);
+    const warned = ownWarnings();
 
     // Named after the edit, so a rename says the new name.
     store.commit(
@@ -1328,7 +1351,24 @@
     );
     dirty.value = false;
     held.value = false;
+
+    // The checks above the form list the warnings the edit brought, far
+    // from Apply: they are announced after the edit.
+    const added = ownWarnings().filter((text) => !warned.includes(text));
+
+    if (added.length) {
+      store.announce(
+        `${plural(added.length, 'new warning')}: ${added.join('; ')}`,
+      );
+    }
+
     await refocus();
+  }
+
+  function ownWarnings() {
+    return ownIssues.value
+      .filter((issue) => issue.level !== 'error')
+      .map((issue) => issue.text);
   }
 
   // Cancel reached from a field has taken that field's change, so `dirty`

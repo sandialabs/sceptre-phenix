@@ -9,6 +9,10 @@
   (see useFieldDefault), and while it is chosen the field says "Default",
   as a text or number field showing its default does.
 
+  A value no choice matches, as an uploaded topology can hold, is a choice
+  of its own, named as not one of the choices, and a warning says so: the
+  select would otherwise show nothing, and read as having no value.
+
   A locked field (see useInspectorLocked), which a select cannot show, is a
   read-only text input holding the chosen option's name.
 -->
@@ -85,11 +89,29 @@
       key: String(choice.value),
       label: choice.value === '' ? (empty ?? 'Default') : choice.label,
     }));
-
-    return named.some((choice) => choice.value === '')
+    const all = named.some((choice) => choice.value === '')
       ? named
       : [{ value: undefined, key: '', label: empty ?? 'Not set' }, ...named];
+    const data = input.control.value.data;
+
+    return data === undefined ||
+      data === null ||
+      all.some((choice) => choice.key === String(data))
+      ? all
+      : [
+          ...all,
+          {
+            value: data,
+            key: String(data),
+            label: `${String(data)} (not one of the choices)`,
+            outside: true,
+          },
+        ];
   });
+
+  const outside = computed(() =>
+    choices.value.find((choice) => choice.outside),
+  );
 
   const {
     control,
@@ -103,7 +125,14 @@
   } = useInspectorControl(
     input,
     (target) => choices.value[target.selectedIndex]?.value,
-    { fallback },
+    {
+      fallback,
+      moreWarnings: computed(() =>
+        outside.value
+          ? [`"${outside.value.key}" is not one of the choices.`]
+          : [],
+      ),
+    },
   );
 
   const selected = computed(() =>
@@ -118,8 +147,8 @@
       selected.value,
   );
 
-  // A value no option matches leaves the select with no selection; a change
-  // event then (a synthetic one) must not clear that value.
+  // A select with no selection, which no value should leave now, must not
+  // clear the value on a change event then (a synthetic one).
   function onSelect(event) {
     if (event.target.selectedIndex >= 0) {
       onChange(event);

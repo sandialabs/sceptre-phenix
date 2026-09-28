@@ -9,8 +9,12 @@
   asks first, in the Builder's confirmation dialog (BuilderConfirm): its
   first focus is the choice that keeps the value, Escape or a click outside
   it keeps the value too, its buttons cannot submit the Inspector form, and
-  focus returns to the picker. A locked field (see useInspectorLocked) names
-  its kind in a read-only text input instead.
+  focus returns to the picker. A kind stepped to with keys, which change a
+  closed select at every step on Windows and Linux, is held until the
+  choice is made (see heldCommit): focus leaves the picker, or a key that
+  is no step, such as Enter. One chosen with the pointer asks at once. A
+  locked field (see useInspectorLocked) names its kind in a read-only text
+  input instead.
 -->
 <template>
   <div v-if="control.visible" class="one-of">
@@ -32,7 +36,10 @@
         v-bind="inputAttrs"
         class="select"
         :value="selectedIndex ?? ''"
-        @change="onSelect">
+        @change="onSelect"
+        @keydown="onKey"
+        @pointerdown="choice.point()"
+        @blur="flushSoon">
         <option v-if="selectedIndex === undefined" value="" disabled>
           Not set
         </option>
@@ -88,6 +95,7 @@
     useInspectorControl,
     useInspectorResets,
   } from './control.js';
+  import { heldCommit, keyEffect } from './heldCommit.js';
 
   const props = defineProps(rendererProps());
   const {
@@ -183,6 +191,9 @@
       : undefined;
   });
 
+  // Switching a field with a value asks first, once the kind is chosen.
+  const choice = heldCommit(ask);
+
   function onSelect(event) {
     // "Not set" is not a kind: Number('') would read it as the first one.
     if (event.target.value === '') {
@@ -191,19 +202,46 @@
 
     const index = Number(event.target.value);
 
-    if (index === selectedIndex.value) {
-      return;
-    }
-
+    // With no value there is nothing to lose, so the kind switches at once.
     if (!control.value.enabled || control.value.data === undefined) {
       selectedIndex.value = index;
 
       return;
     }
 
-    // Keep showing the current kind until the switch is confirmed.
-    event.target.value = String(selectedIndex.value ?? '');
+    choice.change(index);
+  }
+
+  function onKey(event) {
+    const effect = keyEffect(event);
+
+    if (effect === 'hold') {
+      choice.key();
+    } else if (effect === 'flush') {
+      flushSoon();
+    }
+  }
+
+  // Once the key is done: the dialog opened while Enter is still down took
+  // its keypress on its first button, and Tab moved focus on from it.
+  function flushSoon() {
+    setTimeout(() => choice.flush());
+  }
+
+  // Asks to switch to the kind chosen, keeping the current one shown until
+  // the switch is confirmed. Returns whether it asked.
+  function ask(index) {
+    if (picker.value) {
+      picker.value.value = String(selectedIndex.value ?? '');
+    }
+
+    if (index === selectedIndex.value || pending.value !== undefined) {
+      return false;
+    }
+
     pending.value = index;
+
+    return true;
   }
 
   // The dialog returns focus to the control that had it as it opened, which

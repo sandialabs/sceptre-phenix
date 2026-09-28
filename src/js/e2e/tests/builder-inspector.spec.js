@@ -1615,6 +1615,23 @@ test.describe('Builder Beta inspector', () => {
       await expect
         .soft(iface.getByRole('button', { name: 'Remove interface 1' }))
         .toBeVisible();
+
+      // Switching clears the values, so it asks first, but only once the
+      // kind is chosen: a key that steps the closed picker, as type-ahead
+      // and, on Windows and Linux, the arrow keys do, only holds it.
+      const confirm = page.getByRole('alertdialog', {
+        name: 'Switch Interface kind to Serial, static?',
+      });
+      await kind.focus();
+      await page.keyboard.type('s');
+      await expect.soft(kind).toHaveValue('2');
+      await expect.soft(confirm).toHaveCount(0);
+      await page.keyboard.press('Enter');
+      await expect.soft(confirm).toBeVisible();
+      await confirm.getByRole('button', { name: 'Keep current value' }).click();
+      await expect.soft(confirm).toHaveCount(0);
+      await expect.soft(kind).toBeFocused();
+      await expect.soft(kind).toHaveValue('1');
     });
 
     // Edits in the node's Interfaces list wait for Apply, and are cancelled
@@ -1694,6 +1711,11 @@ test.describe('Builder Beta inspector', () => {
           new RegExp(`^Warning: ${ghost.replace(/[.]/g, '\\.')}`),
         );
       await expect.soft(vlan).not.toHaveAttribute('aria-invalid');
+      // Focus stays in the field, whose new description is not read: the
+      // warning is announced.
+      await expect
+        .soft(builder.liveRegion)
+        .toContainText(`Warning for VLAN: ${ghost}`);
       await expect
         .soft(builder.inspector.getByTestId('inspector-apply'))
         .toBeEnabled();
@@ -1725,6 +1747,13 @@ test.describe('Builder Beta inspector', () => {
         .soft(builder.liveRegion)
         .toContainText(
           'Updated device node and disconnected eth0 from network EXP',
+        );
+      // The warnings the edit brought, which the checks list, are
+      // announced after it.
+      await expect
+        .soft(builder.liveRegion)
+        .toContainText(
+          '2 new warnings: interface "eth0" of "node" is not connected to a network; interface "eth0" of "node" uses VLAN "GHOST", which is not a network in this diagram',
         );
       await expect(rows).toHaveText(['eth0 — not connected']);
       await expect.soft(vlan).toHaveValue('GHOST');
