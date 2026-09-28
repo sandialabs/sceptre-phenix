@@ -198,10 +198,12 @@ func validateDraftMetadata(key string, meta *DraftMetadata) error {
 }
 
 // validatePublicationState validates recorded publication state against the
-// history it refers to. The publication must name a snapshot the draft still
-// holds and record that snapshot's digest, so tampered metadata can never make
-// a draft look clean at content it does not have, and the targets it records
-// must match the operation its mode describes.
+// history it refers to. A publication naming a snapshot the draft still holds
+// must record that snapshot's digest, so tampered metadata can never make a
+// draft look clean at content it does not have. One naming a snapshot deleted
+// from the history (see [Service.DeleteSnapshot]) leaves the draft dirty, since
+// the cursor always points at a snapshot the history holds. The targets it
+// records must match the operation its mode describes.
 func validatePublicationState(key string, meta *DraftMetadata) error {
 	state := meta.Publication
 	if state == nil {
@@ -233,22 +235,14 @@ func validatePublicationState(key string, meta *DraftMetadata) error {
 		return newCorruptError(kindDraft, key, "publication names an invalid published document")
 	}
 
-	for i := range meta.History {
-		if meta.History[i].ID != state.SnapshotID {
-			continue
-		}
-
-		if meta.History[i].Digest != state.Digest {
-			return newCorruptError(
-				kindDraft, key,
-				fmt.Sprintf("publication digest does not match snapshot %q", state.SnapshotID),
-			)
-		}
-
-		return nil
+	if published := meta.Snapshot(state.SnapshotID); published != nil && published.Digest != state.Digest {
+		return newCorruptError(
+			kindDraft, key,
+			fmt.Sprintf("publication digest does not match snapshot %q", state.SnapshotID),
+		)
 	}
 
-	return newCorruptError(kindDraft, key, fmt.Sprintf("publication names snapshot %q, which is not in the history", state.SnapshotID))
+	return nil
 }
 
 // validateSharingState validates who a stored draft is shared with. A record

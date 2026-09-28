@@ -2,7 +2,9 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -79,6 +81,18 @@ type builderShareErrorsResponse struct {
 	Message string              `json:"message"`
 	Cause   string              `json:"cause"`
 	Errors  []builderShareError `json:"errors"`
+}
+
+// builderShareCandidate is a user a draft can be shared with. Name is the
+// user's first and last name, or "" when the account has neither.
+type builderShareCandidate struct {
+	Username string `json:"username"`
+	Name     string `json:"name"`
+}
+
+// builderShareCandidatesResponse is who a draft can be shared with.
+type builderShareCandidatesResponse struct {
+	Users []builderShareCandidate `json:"users"`
 }
 
 // getShares - GET /builder/drafts/{owner}/{draft}/shares.
@@ -217,6 +231,102 @@ func (b *builderBetaAPI) putShares(w http.ResponseWriter, r *http.Request) error
 		MaxShares:  bapi.MaxShares,
 		Draft:      &draft,
 	})
+}
+
+// getShareCandidates - GET /builder/drafts/{owner}/{draft}/shares/candidates.
+//
+// Who the owner may share the draft with: every user the caller may view, as
+// GET /users lists them, whom a PUT of the share list would accept. Users the
+// draft is already shared with are listed too. The same callers as for PUT
+// may ask.
+func (b *builderBetaAPI) getShareCandidates(w http.ResponseWriter, r *http.Request) error {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderBetaGetShareCandidates")
+
+	const action = "listing who a builder draft can be shared with"
+
+	actor, ok := builderBetaRequestActor(r)
+	if !ok || !builderBetaBaseAllowed(actor.role, builderBetaVerbShare) {
+		return builderBetaForbidden(actor, action)
+	}
+
+	meta, _, err := b.draftAccessFor(r, actor, builderBetaVerbShare, action)
+	if err != nil {
+		return err
+	}
+
+	canShare, err := b.canShare(actor, b.accountOnce(actor.user))
+	if err != nil {
+		return weberror.NewWebError(err, "unable to list who builder draft %s can be shared with", meta.ID).
+			SetStatus(http.StatusInternalServerError)
+	}
+
+	if !canShare {
+		return builderBetaForbidden(actor, action+" without a user account")
+	}
+
+	users, err := b.shareCandidates(actor, meta)
+	if err != nil {
+		return weberror.NewWebError(err, "unable to list who builder draft %s can be shared with", meta.ID).
+			SetStatus(http.StatusInternalServerError)
+	}
+
+	return builderBetaWriteJSON(w, http.StatusOK, "", builderShareCandidatesResponse{Users: users})
+}
+
+// shareCandidates returns, sorted by username, the users the caller may view
+// whom a share of the draft would be accepted for (see
+// [builderShareAccepts]). As GET /users does, it lists the users the
+// caller's users list permission names; without it the caller sees only its
+// own account, which is the owner's.
+func (b *builderBetaAPI) shareCandidates(
+	actor builderBetaActor,
+	meta *bapi.DraftMetadata,
+) ([]builderShareCandidate, error) {
+	candidates := []builderShareCandidate{}
+
+	if !actor.role.Allowed(resourceUsers, "list") {
+		return candidates, nil
+	}
+
+	accounts, err := b.listConfigs("User")
+	if err != nil {
+		return nil, fmt.Errorf("listing user accounts: %w", err)
+	}
+
+	for _, account := range accounts {
+		name := account.Metadata.Name
+
+		if !actor.role.Allowed(resourceUsers, "list", name) || !builderShareAccepts(meta, name, account.Metadata.Created) {
+			continue
+		}
+
+		first, _ := account.Spec["first_name"].(string)
+		last, _ := account.Spec["last_name"].(string)
+
+		candidates = append(candidates, builderShareCandidate{
+			Username: name,
+			Name:     strings.TrimSpace(strings.TrimSpace(first) + " " + strings.TrimSpace(last)),
+		})
+	}
+
+	slices.SortFunc(candidates, func(a, b builderShareCandidate) int {
+		return strings.Compare(a.Username, b.Username)
+	})
+
+	return candidates, nil
+}
+
+// builderShareAccepts reports whether a share of the draft with the named
+// user, whose account was created at created ("" when there is none), would
+// be accepted: the user is not the owner, the name can name a user, the
+// account exists, and the draft is not shared with the user through an
+// account since removed (see [builderShareShapeErrors] and
+// [builderBetaAPI.resolveShareGrants]).
+func builderShareAccepts(meta *bapi.DraftMetadata, user, created string) bool {
+	stored := meta.ShareFor(user)
+
+	return user != meta.Owner && bapi.ValidateShareUser(user) == nil && created != "" &&
+		(stored == nil || stored.UserCreated == created)
 }
 
 // shareResponses returns who a draft is shared with. When check is set, each

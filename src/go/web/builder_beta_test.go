@@ -1138,6 +1138,119 @@ func TestBuilderBetaSnapshotRoundTrip(t *testing.T) { //nolint:paralleltest // m
 	}
 }
 
+// TestBuilderBetaDeleteSnapshot deletes versions from a draft's history,
+// among them one holding the same document as the current version, which
+// stays readable. The current version itself cannot be deleted.
+func TestBuilderBetaDeleteSnapshot(t *testing.T) { //nolint:paralleltest // mutates package options
+	harness := newBuilderBetaHarness(t)
+	draft := harness.createDraft(builderBetaTestOwner, "first")
+	path := "/builder/drafts/" + builderBetaTestOwner + "/" + draft.ID
+	etag := draft.ETag
+
+	// The first and third versions hold the same document.
+	for _, name := range []string{"second", "first"} {
+		recorder := harness.do(builderBetaRequest{
+			method:  http.MethodPost,
+			path:    path + "/snapshots",
+			body:    `{"document":` + string(builderBetaDocument(t, name)) + `}`,
+			user:    builderBetaTestOwner,
+			ifMatch: etag,
+		})
+		if recorder.Code != http.StatusCreated {
+			t.Fatalf("saving %s: status = %d: %s", name, recorder.Code, recorder.Body)
+		}
+
+		var saved builderDraftResponse
+
+		harness.decode(recorder, &saved)
+		etag = saved.ETag
+	}
+
+	var history struct {
+		Snapshots []builderSnapshotResponse `json:"snapshots"`
+		Cursor    int                       `json:"cursor"`
+	}
+
+	harness.decode(harness.do(builderBetaRequest{
+		method: http.MethodGet, path: path + "/snapshots", user: builderBetaTestOwner,
+	}), &history)
+
+	if len(history.Snapshots) != 3 || history.Cursor != 2 {
+		t.Fatalf("history = %+v, want 3 snapshots at cursor 2", history)
+	}
+
+	// The Draft History table shows who saved each version, and when.
+	for _, snapshot := range history.Snapshots {
+		if snapshot.CreatedBy != builderBetaTestOwner || snapshot.CreatedAt.IsZero() {
+			t.Fatalf("snapshot %s created by %q at %v, want %q and a time",
+				snapshot.ID, snapshot.CreatedBy, snapshot.CreatedAt, builderBetaTestOwner)
+		}
+	}
+
+	remove := func(snapshot, ifMatch string) *httptest.ResponseRecorder {
+		return harness.do(builderBetaRequest{
+			method: http.MethodDelete, path: path + "/snapshots/" + snapshot,
+			user: builderBetaTestOwner, ifMatch: ifMatch,
+		})
+	}
+
+	for _, snapshot := range []string{builderBetaCurrentSnapshot, history.Snapshots[2].ID} {
+		recorder := remove(snapshot, etag)
+		if recorder.Code != http.StatusConflict {
+			t.Fatalf("deleting %s: status = %d, want %d: %s", snapshot, recorder.Code, http.StatusConflict, recorder.Body)
+		}
+
+		var refused weberror.WebError
+
+		harness.decode(recorder, &refused)
+
+		if refused.Message != "The current version cannot be deleted." {
+			t.Fatalf("deleting %s: message = %q", snapshot, refused.Message)
+		}
+	}
+
+	if recorder := remove("id-missing", etag); recorder.Code != http.StatusNotFound {
+		t.Fatalf("deleting an unknown snapshot: status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+
+	first := history.Snapshots[0]
+
+	recorder := remove(first.ID, etag)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
+	}
+
+	var deleted builderDraftResponse
+
+	harness.decode(recorder, &deleted)
+
+	if deleted.Snapshots != 2 || deleted.Cursor != 1 || deleted.SnapshotID != history.Snapshots[2].ID ||
+		deleted.ETag == etag || recorder.Header().Get("ETag") != deleted.ETag {
+		t.Fatalf("deleted = %+v with ETag %q, want 2 snapshots at cursor 1 and a new ETag",
+			deleted, recorder.Header().Get("ETag"))
+	}
+
+	if recorder := remove(history.Snapshots[1].ID, etag); recorder.Code != http.StatusPreconditionFailed {
+		t.Fatalf("deleting with a stale ETag: status = %d, want %d", recorder.Code, http.StatusPreconditionFailed)
+	}
+
+	// Snapshots never share content: the current version holds the same
+	// document as the deleted one and is still readable.
+	recorder = harness.do(builderBetaRequest{
+		method: http.MethodGet, path: path + "/snapshots/current", user: builderBetaTestOwner,
+	})
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"first"`) {
+		t.Fatalf("current snapshot: status = %d: %s", recorder.Code, recorder.Body)
+	}
+
+	recorder = harness.do(builderBetaRequest{
+		method: http.MethodGet, path: path + "/snapshots/" + first.ID, user: builderBetaTestOwner,
+	})
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("deleted snapshot: status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+}
+
 func TestBuilderBetaCursorRequests(t *testing.T) { //nolint:paralleltest // mutates package options
 	harness := newBuilderBetaHarness(t)
 	draft := harness.createDraft(builderBetaTestOwner, "topo")
@@ -1185,6 +1298,7 @@ func TestBuilderBetaIfMatchRequired(t *testing.T) { //nolint:paralleltest // mut
 	mutations := []builderBetaRequest{
 		{method: http.MethodPost, path: path + "/snapshots", body: `{"document":` + document + `}`},
 		{method: http.MethodPatch, path: path + "/cursor", body: `{"index":0}`},
+		{method: http.MethodDelete, path: path + "/snapshots/current"},
 		{method: http.MethodDelete, path: path},
 	}
 
@@ -1725,6 +1839,7 @@ func TestBuilderBetaOutOfSpaceDocumented(t *testing.T) {
 		{"/builder/drafts", "post"},
 		{draft, "delete"},
 		{draft + "/snapshots", "post"},
+		{draft + "/snapshots/{snapshot}", "delete"},
 		{draft + "/cursor", "patch"},
 		{draft + "/cursor", "put"},
 		{draft + "/publish", "post"},

@@ -821,6 +821,8 @@ func (b *builderBetaAPI) routes(router *mux.Router) {
 		Methods("POST", "OPTIONS")
 	router.Handle(snapshotsPath+"/{snapshot}", weberror.ErrorHandler(b.getSnapshot)).
 		Methods("GET", "OPTIONS")
+	router.Handle(snapshotsPath+"/{snapshot}", weberror.ErrorHandler(b.deleteSnapshot)).
+		Methods("DELETE", "OPTIONS")
 	// PUT is accepted alongside PATCH so a client that models the cursor as a
 	// replaceable sub-resource reaches the same handler.
 	router.Handle(draftPath+"/cursor", weberror.ErrorHandler(b.updateCursor)).
@@ -831,6 +833,8 @@ func (b *builderBetaAPI) routes(router *mux.Router) {
 		Methods("GET", "OPTIONS")
 	router.Handle(draftPath+"/shares", weberror.ErrorHandler(b.putShares)).
 		Methods("PUT", "OPTIONS")
+	router.Handle(draftPath+"/shares/candidates", weberror.ErrorHandler(b.getShareCandidates)).
+		Methods("GET", "OPTIONS")
 	router.Handle("/builder/sources", weberror.ErrorHandler(b.listSources)).
 		Methods("GET", "OPTIONS")
 	router.Handle("/builder/generate", weberror.ErrorHandler(b.generateDocument)).

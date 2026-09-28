@@ -1744,6 +1744,50 @@ paths:
           $ref: "#/components/responses/BuilderForbidden"
         "404":
           $ref: "#/components/responses/BuilderNotFound"
+    delete:
+      tags:
+        - Builder Flow
+      summary: Delete one snapshot of a Builder Flow draft
+      description: >
+        Requires `configs` `update`, and for another user's draft an edit
+        share, or `builder-drafts` `update`. Removes the snapshot from the
+        history and deletes its content. The snapshot the cursor points at
+        (the current version) cannot be deleted; the cursor keeps pointing at
+        it. A last publication naming the deleted snapshot is kept; the draft
+        is then `dirty`.
+      operationId: deleteBuilderDraftSnapshot
+      parameters:
+        - $ref: "#/components/parameters/BuilderIfMatch"
+      responses:
+        "200":
+          description: snapshot deleted; the draft without its document
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderETag"
+            Warning:
+              $ref: "#/components/headers/BuilderWarning"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderDraft"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+        "409":
+          description: >
+            The snapshot is the current version, or the draft changed while
+            the request was handled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "412":
+          $ref: "#/components/responses/BuilderPreconditionFailed"
+        "507":
+          $ref: "#/components/responses/InsufficientStorage"
   "/builder/drafts/{owner}/{draft}/cursor":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
@@ -2039,6 +2083,34 @@ paths:
                 $ref: "#/components/schemas/WebError"
         "507":
           $ref: "#/components/responses/InsufficientStorage"
+  "/builder/drafts/{owner}/{draft}/shares/candidates":
+    parameters:
+      - $ref: "#/components/parameters/BuilderDraftOwner"
+      - $ref: "#/components/parameters/BuilderDraftID"
+    get:
+      tags:
+        - Builder Flow
+      summary: List who a Builder Flow draft can be shared with
+      description: >
+        The same callers as PUT of the share list may ask (403 for anyone
+        else who can see the draft). Lists, sorted by username, the users the
+        caller may view as `GET /users` lists them (none without `users`
+        `list`) whom a PUT of the share list would accept: every user with an
+        account other than the owner, except a user the draft is shared with
+        through an account since removed. Users the draft is already shared
+        with are listed too.
+      operationId: getBuilderDraftShareCandidates
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderShareCandidates"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
   "/builder/sources":
     get:
       tags:
@@ -3021,6 +3093,20 @@ components:
               - access
       required:
         - shares
+    BuilderShareCandidates:
+      type: object
+      properties:
+        users:
+          description: who the draft can be shared with, sorted by username
+          type: array
+          items:
+            type: object
+            properties:
+              username:
+                type: string
+              name:
+                description: the user's first and last name, or empty when unknown
+                type: string
     BuilderShareErrors:
       description: a WebError with every refused entry
       type: object

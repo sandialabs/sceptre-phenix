@@ -614,6 +614,74 @@ func (b *builderBetaAPI) getSnapshot(w http.ResponseWriter, r *http.Request) err
 	})
 }
 
+// deleteSnapshot - DELETE /builder/drafts/{owner}/{draft}/snapshots/{snapshot}.
+//
+// Removes a version from the draft's history, as the owner or anyone who may
+// save the draft. The current version cannot be removed; the cursor keeps
+// pointing at it. It requires the caller's If-Match to name the revision the
+// draft is currently at.
+func (b *builderBetaAPI) deleteSnapshot(w http.ResponseWriter, r *http.Request) error {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderBetaDeleteSnapshot")
+
+	const action = "deleting a builder draft snapshot"
+
+	actor, ok := builderBetaRequestActor(r)
+	if !ok {
+		return builderBetaForbidden(actor, action)
+	}
+
+	ifMatch, err := builderBetaIfMatch(r)
+	if err != nil {
+		return err
+	}
+
+	meta, err := b.draftFor(r, actor, builderBetaVerbUpdate, action)
+	if err != nil {
+		return err
+	}
+
+	if err := builderBetaCheckIfMatch(ifMatch, meta); err != nil {
+		return err
+	}
+
+	requested := mux.Vars(r)["snapshot"]
+	manifest := meta.Snapshot(requested)
+
+	if requested == builderBetaCurrentSnapshot {
+		manifest = meta.Current()
+	}
+
+	switch {
+	case manifest == nil:
+		return builderBetaNotFound("snapshot", requested)
+	case manifest.ID == meta.Current().ID:
+		return weberror.NewWebError(nil, "The current version cannot be deleted.").
+			SetStatus(http.StatusConflict)
+	}
+
+	updated, err := b.drafts.DeleteSnapshot(r.Context(), bapi.DeleteSnapshotRequest{
+		DraftID:          meta.ID,
+		Actor:            actor.user,
+		ExpectedRevision: meta.Revision,
+		SnapshotID:       manifest.ID,
+	})
+
+	updated, err = builderBetaMutation(
+		w, updated, err, "delete snapshot", actor.user,
+		"unable to delete snapshot %s of builder draft %s", manifest.ID, meta.ID,
+	)
+	if err != nil {
+		return err
+	}
+
+	plog.Info(
+		plog.TypeAction, "deleted builder draft snapshot",
+		"user", actor.user, "draft", meta.ID, "snapshot", manifest.ID,
+	)
+
+	return builderBetaWriteJSON(w, http.StatusOK, updated.ETag(), newBuilderDraftResponse(updated))
+}
+
 // createSnapshot - POST /builder/drafts/{owner}/{draft}/snapshots.
 //
 // Appending a snapshot is how a draft is saved: it discards the redo branch and

@@ -100,6 +100,14 @@ type MoveCursorRequest struct {
 	UseIndex bool
 }
 
+// DeleteSnapshotRequest removes one snapshot from a draft's history.
+type DeleteSnapshotRequest struct {
+	DraftID          string
+	Actor            string
+	ExpectedRevision int64
+	SnapshotID       string
+}
+
 // MarkPublishedRequest records the publication operation a caller performed for
 // a draft snapshot. This package never creates configs or experiments; it only
 // records what the caller reports.
@@ -557,7 +565,7 @@ func (s *Service) AppendSnapshot(ctx context.Context, req AppendSnapshotRequest)
 		return nil, err
 	}
 
-	if err := checkRevision(kindDraft, req.DraftID, req.ExpectedRevision, meta.Revision); err != nil {
+	if err := checkRevision(req.DraftID, req.ExpectedRevision, meta.Revision); err != nil {
 		return nil, err
 	}
 
@@ -647,7 +655,7 @@ func (s *Service) MoveCursor(ctx context.Context, req MoveCursorRequest) (*Draft
 		return nil, err
 	}
 
-	if err := checkRevision(kindDraft, req.DraftID, req.ExpectedRevision, meta.Revision); err != nil {
+	if err := checkRevision(req.DraftID, req.ExpectedRevision, meta.Revision); err != nil {
 		return nil, err
 	}
 
@@ -671,6 +679,73 @@ func (s *Service) MoveCursor(ctx context.Context, req MoveCursorRequest) (*Draft
 	}
 
 	return updated, nil
+}
+
+// DeleteSnapshot removes a snapshot from a draft's history, then its chunks.
+// The snapshot the cursor points at cannot be removed, and the cursor keeps
+// pointing at the same snapshot. A publication naming the removed snapshot is
+// kept: the draft stays dirty, since the cursor can never point at that
+// snapshot again. The removal is recorded as an edit by the actor.
+//
+// Every snapshot owns a private chunk scope, so removing its chunks never
+// affects another snapshot or a published document. When the metadata write
+// succeeded but removing the chunks failed, the updated metadata is returned
+// together with an error matching [ErrCleanup].
+func (s *Service) DeleteSnapshot(ctx context.Context, req DeleteSnapshotRequest) (*DraftMetadata, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("deleting snapshot: %w", err)
+	}
+
+	if err := validateText("actor", req.Actor, MaxOwnerLength, true); err != nil {
+		return nil, err
+	}
+
+	meta, err := s.GetDraft(ctx, req.DraftID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := checkRevision(req.DraftID, req.ExpectedRevision, meta.Revision); err != nil {
+		return nil, err
+	}
+
+	index := slices.IndexFunc(meta.History, func(manifest SnapshotManifest) bool {
+		return manifest.ID == req.SnapshotID
+	})
+
+	switch index {
+	case -1:
+		return nil, newNotFoundError(kindSnapshot, req.SnapshotID)
+	case meta.Cursor:
+		return nil, &ConflictError{
+			Kind:     kindDraft,
+			ID:       req.DraftID,
+			Expected: req.ExpectedRevision,
+			Actual:   meta.Revision,
+			Reason:   fmt.Sprintf("snapshot %q is the current snapshot", req.SnapshotID),
+		}
+	}
+
+	updated := meta.Clone()
+	removed := removeSnapshot(updated, index)
+	updated.Updated = s.clock().UTC()
+	updated.LastModifiedBy = req.Actor
+
+	value, err := encodeDraft(updated)
+	if err != nil {
+		return nil, err
+	}
+
+	// A write that failed may still be applied later, and until it is the
+	// draft references the chunks, so they are left to
+	// [Service.CleanupOrphanedChunks].
+	if err := s.saveDraft(updated, value, meta.Revision); err != nil {
+		return nil, err
+	}
+
+	cleanupErrs := s.deleteSnapshotScopes(req.DraftID, []SnapshotManifest{removed})
+
+	return updated, newCleanupError("deleting snapshot", cleanupErrs)
 }
 
 // MarkPublished records that the named snapshot of a draft was published with
@@ -699,7 +774,7 @@ func (s *Service) MarkPublished(ctx context.Context, req MarkPublishedRequest) (
 		return meta, nil
 	}
 
-	if err := checkRevision(kindDraft, req.DraftID, req.ExpectedRevision, meta.Revision); err != nil {
+	if err := checkRevision(req.DraftID, req.ExpectedRevision, meta.Revision); err != nil {
 		return nil, err
 	}
 
@@ -918,13 +993,11 @@ func pruneHistory(meta *DraftMetadata) []SnapshotManifest {
 	total := meta.HistoryBytes()
 
 	for (len(meta.History) > MaxSnapshots || total > MaxDraftHistoryBytes) && meta.Cursor > 0 {
-		dropped = append(dropped, meta.History[0])
-		total -= meta.History[0].Size
-		meta.History = meta.History[1:]
-		meta.Cursor--
+		oldest := removeSnapshot(meta, 0)
+		dropped = append(dropped, oldest)
+		total -= oldest.Size
 	}
 
-	// Publication state must always point at a snapshot the draft still holds.
 	// A publication whose snapshot aged out of the history is forgotten; the
 	// draft was already dirty, because the cursor is never pruned and therefore
 	// had moved past the published snapshot.
@@ -933,6 +1006,20 @@ func pruneHistory(meta *DraftMetadata) []SnapshotManifest {
 	}
 
 	return dropped
+}
+
+// removeSnapshot removes the snapshot at index, which is never the one the
+// cursor points at, from the history, keeping the cursor on the snapshot it
+// points at, and returns the removed manifest.
+func removeSnapshot(meta *DraftMetadata, index int) SnapshotManifest {
+	removed := meta.History[index]
+	meta.History = slices.Delete(meta.History, index, index+1)
+
+	if index < meta.Cursor {
+		meta.Cursor--
+	}
+
+	return removed
 }
 
 func resolveCursor(meta *DraftMetadata, req MoveCursorRequest) (int, error) {
@@ -953,12 +1040,14 @@ func resolveCursor(meta *DraftMetadata, req MoveCursorRequest) (int, error) {
 	return req.Index, nil
 }
 
-func checkRevision(kind, id string, expected, actual int64) error {
+// checkRevision returns a conflict unless the draft is at the expected
+// revision or any revision is expected.
+func checkRevision(draftID string, expected, actual int64) error {
 	if expected == store.AnyRevision || expected == actual {
 		return nil
 	}
 
-	return &ConflictError{Kind: kind, ID: id, Expected: expected, Actual: actual, Reason: ""}
+	return &ConflictError{Kind: kindDraft, ID: draftID, Expected: expected, Actual: actual, Reason: ""}
 }
 
 // isPublishRetry reports whether the recorded publication already is exactly

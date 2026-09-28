@@ -216,6 +216,9 @@ var builderShareRoutes = []struct{ method, route string }{ //nolint:gochecknoglo
 	{http.MethodDelete, ""},
 	{http.MethodGet, "/shares"},
 	{http.MethodPut, "/shares"},
+	// Deleting the current version is refused once access is granted.
+	{http.MethodDelete, "/snapshots/current"},
+	{http.MethodGet, "/shares/candidates"},
 }
 
 // builderShareCaller is someone asking for alice's draft: who, with what
@@ -227,7 +230,7 @@ type builderShareCaller struct {
 	share []string
 	then  func(*builderShareFixture)
 	// statuses answer [builderShareRoutes], in order.
-	statuses [9]int
+	statuses [11]int
 	// access, via and readOnly are what GET of the draft reports.
 	access, via string
 	readOnly    bool
@@ -237,10 +240,10 @@ func builderShareCallers() []builderShareCaller {
 	var (
 		all      = builderShareConfigVerbs
 		readOnly = []string{"list", "get"}
-		ok       = [9]int{200, 200, 200, 201, 200, 200, 204, 200, 200}
-		edit     = [9]int{200, 200, 200, 201, 200, 200, 403, 403, 403}
-		view     = [9]int{200, 200, 200, 403, 403, 403, 403, 403, 403}
-		hidden   = [9]int{404, 404, 404, 404, 404, 404, 404, 404, 404}
+		ok       = [11]int{200, 200, 200, 201, 200, 200, 204, 200, 200, 409, 200}
+		edit     = [11]int{200, 200, 200, 201, 200, 200, 403, 403, 403, 409, 403}
+		view     = [11]int{200, 200, 200, 403, 403, 403, 403, 403, 403, 403, 403}
+		hidden   = [11]int{404, 404, 404, 404, 404, 404, 404, 404, 404, 404, 404}
 		peer     = builderBetaTestPeer
 		bobEdit  = []string{peer + ":edit"}
 		bobView  = []string{peer + ":view"}
@@ -255,7 +258,7 @@ func builderShareCallers() []builderShareCaller {
 		},
 		{
 			name: "role list", user: peer, role: builderShareRole(all, "list"),
-			statuses: [9]int{403, 403, 403, 403, 403, 403, 403, 403, 403},
+			statuses: [11]int{403, 403, 403, 403, 403, 403, 403, 403, 403, 403, 403},
 		},
 		{
 			name: "role get", user: peer, role: builderShareRole(all, "list", "get"),
@@ -267,7 +270,7 @@ func builderShareCallers() []builderShareCaller {
 		},
 		{
 			name: "role delete", user: peer, role: builderShareRole(all, "list", "get", "delete"),
-			statuses: [9]int{200, 200, 200, 403, 403, 403, 204, 403, 403}, access: "view", via: "role", readOnly: true,
+			statuses: [11]int{200, 200, 200, 403, 403, 403, 204, 403, 403, 403, 403}, access: "view", via: "role", readOnly: true,
 		},
 		{name: "none", user: peer, role: builderShareRole(all), statuses: hidden},
 		{
@@ -288,7 +291,7 @@ func builderShareCallers() []builderShareCaller {
 		},
 		{
 			name: "edit share with role delete", user: peer, role: builderShareRole(all, "delete"), share: bobEdit,
-			statuses: [9]int{200, 200, 200, 201, 200, 200, 204, 403, 403}, access: "edit", via: "share",
+			statuses: [11]int{200, 200, 200, 201, 200, 200, 204, 403, 403, 409, 403}, access: "edit", via: "share",
 		},
 	}
 }
@@ -856,6 +859,77 @@ func TestBuilderBetaGetShares(t *testing.T) { //nolint:paralleltest // mutates p
 		if recorder := fixture.as(caller.user, caller.role, http.MethodGet, "/shares"); recorder.Code != caller.status {
 			t.Errorf("%s: status = %d, want %d: %s", caller.user, recorder.Code, caller.status, recorder.Body)
 		}
+	}
+}
+
+// TestBuilderBetaShareCandidates lists who alice may share her draft with:
+// the users her role lets her view, as GET /users lists them, whom a share
+// would be accepted for.
+func TestBuilderBetaShareCandidates(t *testing.T) { //nolint:paralleltest // mutates package options
+	fixture := newBuilderShareFixture(t)
+	harness := fixture.harness
+
+	// Carol is shared with already and stays listed; Dave was shared with
+	// through an account since replaced, which a share would be refused for.
+	fixture.share(builderShareCarol+":edit", builderShareDave+":view")
+	harness.setUser(builderShareDave, builderShareRecreated)
+
+	for i := range harness.configs {
+		switch harness.configs[i].Metadata.Name {
+		case builderBetaTestPeer:
+			harness.configs[i].Spec = map[string]any{"first_name": "Bob", "last_name": "Builder"}
+		case builderShareCarol:
+			harness.configs[i].Spec = map[string]any{"first_name": " Carol ", "last_name": ""}
+		}
+	}
+
+	// An account without a creation time cannot be shared with either.
+	harness.configs = append(harness.configs, builderShareUser("frank", ""))
+
+	candidates := func(role *rbac.Role) ([]builderShareCandidate, string) {
+		t.Helper()
+
+		recorder := fixture.as(builderBetaTestOwner, role, http.MethodGet, "/shares/candidates")
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
+		}
+
+		var response builderShareCandidatesResponse
+
+		harness.decode(recorder, &response)
+
+		return response.Users, recorder.Body.String()
+	}
+
+	viewing := func(names ...string) *rbac.Role {
+		role := builderShareRole(builderShareConfigVerbs)
+		role.Spec.Policies = append(role.Spec.Policies, builderBetaPolicy([]string{"users"}, names, []string{"list"}))
+
+		return role
+	}
+
+	want := []builderShareCandidate{
+		{Username: builderBetaTestPeer, Name: "Bob Builder"},
+		{Username: builderShareCarol, Name: "Carol"},
+		{Username: builderShareErin, Name: ""},
+	}
+
+	if got, _ := candidates(viewing("*")); !slices.Equal(got, want) {
+		t.Fatalf("candidates = %+v, want %+v", got, want)
+	}
+
+	// A share with every one of them is accepted.
+	fixture.share(builderBetaTestPeer+":view", builderShareCarol+":edit", builderShareErin+":view")
+
+	// Only the users the role lets the caller view are listed, and none
+	// without users list.
+	if got, _ := candidates(viewing("carol", "erin")); !slices.Equal(got, want[1:]) {
+		t.Fatalf("candidates = %+v, want %+v", got, want[1:])
+	}
+
+	if got, body := candidates(builderShareRole(builderShareConfigVerbs)); len(got) != 0 ||
+		!strings.Contains(body, `"users":[]`) {
+		t.Fatalf("candidates without users list = %s, want none", body)
 	}
 }
 

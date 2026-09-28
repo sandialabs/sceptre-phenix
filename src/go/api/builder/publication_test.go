@@ -191,9 +191,6 @@ func publicationOf(t *testing.T, meta *DraftMetadata) map[string]any {
 
 func TestTamperedPublicationStateIsRejected(t *testing.T) {
 	tests := map[string]func(map[string]any){
-		"names a snapshot that is not in the history": func(state map[string]any) {
-			state["snapshotId"] = "id-999"
-		},
 		"records a digest the snapshot does not have": func(state map[string]any) {
 			state["digest"] = digestOf([]byte("other content"))
 		},
@@ -266,10 +263,25 @@ func TestUntamperedPublicationStateIsAccepted(t *testing.T) {
 	if stored.Dirty() {
 		t.Fatal("a draft published at its current snapshot must be clean")
 	}
+
+	// A publication whose snapshot was deleted from the history is kept, and
+	// the draft is dirty: no snapshot it holds was published.
+	deleted := publicationOf(t, stored)
+	deleted["snapshotId"] = "id-999"
+
+	tamperDraft(t, h, stored, func(raw map[string]any) { raw["publication"] = deleted })
+
+	if stored, err = h.service.GetDraft(ctx, meta.ID); err != nil {
+		t.Fatalf("GetDraft of a publication of a deleted snapshot returned error: %s", fmtErr(err))
+	}
+
+	if stored.Publication == nil || !stored.Dirty() {
+		t.Fatalf("publication = %+v, dirty %t; want it kept and the draft dirty", stored.Publication, stored.Dirty())
+	}
 }
 
-// TestPruningForgetsAnAgedOutPublication keeps the metadata invariant that a
-// publication always names a snapshot the draft still holds.
+// TestPruningForgetsAnAgedOutPublication asserts pruning forgets a publication
+// whose snapshot aged out of the history.
 func TestPruningForgetsAnAgedOutPublication(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
