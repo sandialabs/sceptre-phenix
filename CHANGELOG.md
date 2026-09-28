@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
 
+### Fixed
+
+- **etcd Store**: Fix panics on failed requests or missing keys, and fix renaming configs.
+
 ## [1.0.0]
 
 ### Changed

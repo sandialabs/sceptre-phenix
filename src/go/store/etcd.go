@@ -56,7 +56,7 @@ func (e *Etcd) IsInitialized(component Component) bool {
 	key := fmt.Sprintf("%s/%s", "phenix", string(component))
 
 	resp, err := e.cli.Get(context.Background(), key)
-	if err != nil {
+	if err != nil || len(resp.Kvs) == 0 {
 		return false
 	}
 
@@ -111,7 +111,7 @@ func (e Etcd) Get(c *Config) error {
 	}
 
 	if resp.Count == 0 {
-		return fmt.Errorf("config %s not found", key)
+		return fmt.Errorf("%w: %s", ErrNotExist, key)
 	}
 
 	entry := resp.Kvs[0]
@@ -126,13 +126,24 @@ func (e Etcd) Get(c *Config) error {
 func (e Etcd) Create(c *Config) error {
 	key := fmt.Sprintf("%s/%s", strings.ToLower(c.Kind), c.Metadata.Name)
 
-	if resp, _ := e.cli.Get(context.Background(), key); resp.Count != 0 {
-		return fmt.Errorf("config %s/%s already exists", c.Kind, c.Metadata.Name)
+	resp, err := e.cli.Get(context.Background(), key)
+	if err != nil {
+		return fmt.Errorf("checking for existing config %s in Etcd: %w", key, err)
+	}
+
+	if resp.Count != 0 {
+		return fmt.Errorf("%w: %s", ErrExist, key)
 	}
 
 	now := time.Now().Format(time.RFC3339)
 
-	c.Metadata.Created = now
+	// The created timestamp may already be set if the call to Create is part of a
+	// config update that includes a rename. Freshly created configs have it reset
+	// (see helpers in types.go), so users cannot set it.
+	if c.Metadata.Created == "" {
+		c.Metadata.Created = now
+	}
+
 	c.Metadata.Updated = now
 
 	v, err := json.Marshal(c)
@@ -150,8 +161,13 @@ func (e Etcd) Create(c *Config) error {
 func (e Etcd) Update(c *Config) error {
 	key := fmt.Sprintf("%s/%s", strings.ToLower(c.Kind), c.Metadata.Name)
 
-	if resp, _ := e.cli.Get(context.Background(), key); resp.Count == 0 {
-		return fmt.Errorf("config %s/%s doesn't exist", c.Kind, c.Metadata.Name)
+	resp, err := e.cli.Get(context.Background(), key)
+	if err != nil {
+		return fmt.Errorf("checking for existing config %s in Etcd: %w", key, err)
+	}
+
+	if resp.Count == 0 {
+		return fmt.Errorf("%w: %s", ErrNotExist, key)
 	}
 
 	now := time.Now().Format(time.RFC3339)
@@ -177,8 +193,13 @@ func (e Etcd) Patch(c *Config, u map[string]any) error {
 func (e Etcd) Delete(c *Config) error {
 	key := fmt.Sprintf("%s/%s", strings.ToLower(c.Kind), c.Metadata.Name)
 
-	if _, err := e.cli.Delete(context.Background(), key); err != nil {
+	resp, err := e.cli.Delete(context.Background(), key)
+	if err != nil {
 		return fmt.Errorf("deleting key %s: %w", key, err)
+	}
+
+	if resp.Deleted == 0 {
+		return fmt.Errorf("deleting key %s: %w", key, ErrNotExist)
 	}
 
 	return nil
