@@ -44,12 +44,13 @@ npm run format
 npm run test
 ```
 
-Browser tests use the separate Playwright project:
+Browser tests use the separate Playwright project. They need a running
+`phenix ui --features builder-beta`; see `e2e/README.md`:
 
 ```bash
 cd e2e
 npm ci
-npx playwright install --with-deps chrome firefox
+npx playwright install --with-deps chromium firefox
 npx playwright test
 ```
 

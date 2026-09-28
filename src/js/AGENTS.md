@@ -53,17 +53,18 @@ server on another port (see the port rule in the root `AGENTS.md`):
 ```bash
 cd e2e
 npm ci
-npx playwright install --with-deps chromium
-# against `phenix ui --listen-endpoint 127.0.0.1:3080`
+npx playwright install --with-deps chromium firefox
+# against `phenix ui --listen-endpoint 127.0.0.1:3080 --features builder-beta`
 E2E_BASE_URL=http://127.0.0.1:3080 npx playwright test
 ```
 
-Default smoke tests need only a server. `routes.spec.js` also runs an
-axe-core WCAG 2.x A/AA scan on every route; fix violations in the UI
-(accessible names, contrast, ARIA) rather than excluding rules. Lifecycle tests additionally need
-minimega, VM images, and a topology (`E2E_LIFECYCLE=1`). Auth suites require a
-matching `VITE_AUTH` build and signing key. See `e2e/README.md`; report missing
-prerequisites instead of silently skipping checks.
+Default smoke tests need a server started with `--features builder-beta`.
+`routes.spec.js` also runs an axe-core WCAG 2.x A/AA scan on every route; fix
+violations in the UI (accessible names, contrast, ARIA) rather than excluding
+rules. Lifecycle tests additionally need minimega, VM images, and a topology
+(`E2E_LIFECYCLE=1`). Auth suites require a matching `VITE_AUTH` build and
+signing key. See `e2e/README.md`; report missing prerequisites instead of
+silently skipping checks.
 
 Before changing Builder Flow (`src/builder/`, `src/components/builder/`,
 `src/views/BuilderBeta.vue`, or the `builder*` e2e specs, which need their own
