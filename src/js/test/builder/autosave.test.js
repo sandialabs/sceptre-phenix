@@ -1506,7 +1506,7 @@ describe('leaving the page', () => {
   const key = draftKey('alice', 'alice', 'd1');
   const unloadKey = unloadCopyKey(key);
 
-  function copyIn(storage) {
+  function storedCopy(storage) {
     return JSON.parse(storage.getItem(unloadKey));
   }
 
@@ -1534,7 +1534,7 @@ describe('leaving the page', () => {
     first.commit({ id: 'c1', label: 'Saved unapplied changes', snapshot: doc });
 
     expect(first.keepForUnload()).toBe(true);
-    expect(copyIn(storage)).toMatchObject({
+    expect(storedCopy(storage)).toMatchObject({
       key,
       etag: '"1"',
       queue: [{ opId: 'c1', kind: 'snapshot', commitId: 'c1' }],
@@ -1570,8 +1570,11 @@ describe('leaving the page', () => {
 
     expect(first.keepForUnload()).toBe(true);
     // The queue, but only the snapshot the database may lack.
-    expect(copyIn(storage).queue.map((op) => op.opId)).toEqual(['c1', 'c2']);
-    expect(copyIn(storage).entries).toEqual([
+    expect(storedCopy(storage).queue.map((op) => op.opId)).toEqual([
+      'c1',
+      'c2',
+    ]);
+    expect(storedCopy(storage).entries).toEqual([
       { id: 'c1', label: 'one' },
       { id: 'c2', label: 'two', snapshot: second },
     ]);
@@ -1630,7 +1633,7 @@ describe('leaving the page', () => {
 
     // Leaving again copies what the database lacks now.
     expect(queue.keepForUnload()).toBe(true);
-    expect(copyIn(storage).entries).toEqual([
+    expect(storedCopy(storage).entries).toEqual([
       { id: 'c1', label: 'one' },
       { id: 'c2', label: 'two', snapshot: { ...doc, name: 'two' } },
     ]);
@@ -1673,7 +1676,7 @@ describe('leaving the page', () => {
     cut = true;
     a.commit({ id: 'a1', label: 'Saved unapplied changes', snapshot: doc });
     expect(a.keepForUnload()).toBe(true);
-    expect(copyIn(storage).queue.map((op) => op.opId)).toEqual(['a1']);
+    expect(storedCopy(storage).queue.map((op) => op.opId)).toEqual(['a1']);
 
     // Tab B, later: its edit reaches the database, which then holds it all.
     await b.commit({ id: 'b1', label: 'Added device', snapshot: added });
