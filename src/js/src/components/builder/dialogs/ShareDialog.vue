@@ -130,9 +130,12 @@
           </template>
           <span v-else-if="noneLeft">{{ NONE_LEFT }}</span>
         </p>
+        <!-- An alert: Enter in the field leaves focus where it is, so the
+             field's new description would not be read. -->
         <p
           id="share-user-error"
           class="builder-dialog__message builder-dialog__error"
+          role="alert"
           data-testid="share-user-error">
           <span v-if="fieldError.text" :key="fieldError.key">{{
             fieldError.text
@@ -376,6 +379,7 @@
     onMounted,
     reactive,
     ref,
+    watch,
   } from 'vue';
 
   import BuilderDialog from '../BuilderDialog.vue';
@@ -405,6 +409,7 @@
     sharesOf,
     validateAdd,
   } from '@/builder/share.js';
+  import { signIn } from '@/builder/signin.js';
   import { useBuilderStore } from '@/builder/store.js';
   import { usePhenixStore } from '@/store.js';
 
@@ -729,8 +734,8 @@
   // --- adding ----------------------------------------------------------
 
   async function add() {
-    // Adding checks against the list, so it waits for one; the field says
-    // why nothing was added, and the name stays for later.
+    // Adding checks against the list, so it waits for one; the field's
+    // alert says why nothing was added, and the name stays for later.
     if (phase.value === 'loading' || phase.value === 'failed') {
       const why =
         phase.value === 'loading'
@@ -739,7 +744,6 @@
 
       closeList();
       fieldError.set(why, 'wait');
-      status.set(why);
 
       return;
     }
@@ -981,8 +985,9 @@
       } else if (code === 403 || code === 404) {
         await lock();
       } else if (code === 401) {
+        // Tagged, so signing in again takes it away (see below).
         phase.value = 'ready';
-        alert.set(errorMessage('unauthenticated', error));
+        alert.set(errorMessage('unauthenticated', error), 'session');
       } else {
         // A refused request says why; a server or connection failure can
         // be tried again.
@@ -993,6 +998,21 @@
       }
     }
   }
+
+  // A 401 opens Sign in again over this dialog. Once the user has signed in,
+  // the alert that the session ended no longer holds, and the page's
+  // "Signed in again" waits behind this dialog, so its own status says it.
+  // Post flush: Sign in again has closed, and this dialog can be read.
+  watch(
+    () => signIn.needed,
+    (needed) => {
+      if (!needed && alert.field === 'session') {
+        alert.clear();
+        status.set('Signed in again. Save to apply your changes.');
+      }
+    },
+    { flush: 'post' },
+  );
 
   // --- the link --------------------------------------------------------
 

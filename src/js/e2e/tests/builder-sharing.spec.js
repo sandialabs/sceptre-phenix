@@ -693,6 +693,41 @@ test('mistakes and changes from elsewhere in the Share dialog', async ({
     await expect(slow).toBeHidden();
   });
 
+  await test.step('a save refused because the session ended signs in again, and says so in the dialog', async () => {
+    const shares = `**/builder/drafts/*/${draft.id}/shares`;
+    await page.route(shares, (route) =>
+      route.request().method() === 'PUT'
+        ? route.fulfill({ status: 401, json: { message: 'unauthorized' } })
+        : route.continue(),
+    );
+    await page.getByTestId(`draft-share-${draft.id}`).click();
+    const dialog = await shareDialog(page);
+    const alert = dialog.getByTestId('share-alert');
+    const save = dialog.getByTestId('share-save');
+    await dialog
+      .getByTestId(`share-row-access-${viewer.username}`)
+      .selectOption('edit');
+    await save.click();
+    const signIn = page.getByRole('dialog', { name: 'Sign in again' });
+    await expect(signIn).toBeVisible();
+    await expect(alert).toHaveText(
+      'Your session has ended. Sign in again to continue.',
+    );
+
+    await page.unroute(shares);
+    await signIn.getByLabel('Password').fill(USER_PASS);
+    await signIn.getByRole('button', { name: 'Sign in' }).click();
+    await expect(signIn).toBeHidden();
+    // The page's own announcement waits behind the Share dialog.
+    await expect(alert).toHaveText('');
+    await expect(dialog.getByTestId('share-status')).toHaveText(
+      'Signed in again. Save to apply your changes.',
+    );
+    await expect(save).toBeFocused();
+    await save.click();
+    await expect(dialog).toBeHidden();
+  });
+
   await test.step('the list says when no one is left to add, and a failed read offers Retry', async () => {
     await page.getByTestId(`draft-share-${draft.id}`).click();
     const full = await shareDialog(page);

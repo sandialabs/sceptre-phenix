@@ -99,6 +99,10 @@ describe('the Share dialog', () => {
     const html = await render(ShareDialog, { target });
 
     expect(tag(html, 'data-testid="share-alert"')).toContain('role="alert"');
+    // Enter in the User field keeps focus there, so its error is an alert.
+    expect(tag(html, 'data-testid="share-user-error"')).toContain(
+      'role="alert"',
+    );
     expect(tag(html, 'data-testid="share-status"')).toContain('role="status"');
     expect(tag(html, 'data-testid="share-copy-status"')).toContain(
       'role="status"',
