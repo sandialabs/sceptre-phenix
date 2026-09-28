@@ -1872,8 +1872,12 @@ func (b *builderBetaAPI) writePublishPartial(
 	cause error,
 ) error {
 	message := stage + " publication failed"
-	if errors.Is(cause, errBuilderExperimentRunning) {
+
+	switch {
+	case errors.Is(cause, errBuilderExperimentRunning):
 		message += ": " + errBuilderExperimentRunning.Error()
+	case errors.Is(cause, store.ErrNoSpace):
+		message += ": " + store.ErrNoSpace.Error()
 	}
 
 	response.Status = bapi.PublishPartial
@@ -1892,8 +1896,12 @@ func (b *builderBetaAPI) writePublishPartial(
 	)
 
 	status := http.StatusInternalServerError
-	if errors.Is(cause, store.ErrExist) || errors.Is(cause, store.ErrNotExist) ||
-		errors.Is(cause, bapi.ErrConflict) || errors.Is(cause, errBuilderExperimentRunning) {
+
+	switch {
+	case errors.Is(cause, store.ErrNoSpace):
+		status = http.StatusInsufficientStorage
+	case errors.Is(cause, store.ErrExist) || errors.Is(cause, store.ErrNotExist) ||
+		errors.Is(cause, bapi.ErrConflict) || errors.Is(cause, errBuilderExperimentRunning):
 		status = http.StatusConflict
 	}
 

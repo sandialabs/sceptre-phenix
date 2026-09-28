@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -220,6 +221,28 @@ func TestBuilderBetaPublishReportsPartialFailure(t *testing.T) { //nolint:parall
 	}
 	if meta.Publication != nil {
 		t.Fatal("partial publication marked draft clean")
+	}
+
+	// A config write etcd refused for lack of space says so plainly.
+	harness.failConfigErr = fmt.Errorf(
+		"writing config JSON to Etcd: %w: %w",
+		store.ErrNoSpace, errors.New("etcdserver: mvcc: database space exceeded"),
+	)
+
+	recorder = harness.do(builderBetaRequest{
+		method: http.MethodPost,
+		path:   "/builder/drafts/" + draft.Owner + "/" + draft.ID + "/publish",
+		body:   `{"mode":"topology","topology":{"name":"partial","action":"create"}}`,
+		user:   builderBetaTestOwner, ifMatch: meta.ETag(),
+	})
+	if recorder.Code != http.StatusInsufficientStorage {
+		t.Fatalf("out of space: status = %d, want %d: %s", recorder.Code, http.StatusInsufficientStorage, recorder.Body)
+	}
+
+	var refused builderPublishResponse
+	harness.decode(recorder, &refused)
+	if want := "topology publication failed: " + store.ErrNoSpace.Error(); len(refused.Errors) != 1 || refused.Errors[0] != want {
+		t.Fatalf("out of space: errors = %q, want %q", refused.Errors, want)
 	}
 }
 

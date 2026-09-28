@@ -618,17 +618,9 @@ func builderBetaNotFound(kind, name string) *weberror.WebError {
 
 // builderBetaWebError maps a [phenix/api/builder] error to the HTTP status it
 // corresponds to. Cleanup failures must be handled by the caller before this is
-// reached: they follow a durable, successful mutation.
-//
-// A write refused because etcd is out of space is answered with 507 and the
-// store's own message, which says what is wrong and who can fix it, instead of
-// one that only names the operation.
+// reached: they follow a durable, successful mutation. A write refused because
+// etcd is out of space is answered with 507 by [weberror.ErrorHandler].
 func builderBetaWebError(err error, format string, args ...any) *weberror.WebError {
-	if errors.Is(err, store.ErrRecordNoSpace) {
-		return weberror.NewWebError(err, "%s", store.ErrRecordNoSpace.Error()).
-			SetStatus(http.StatusInsufficientStorage)
-	}
-
 	webErr := weberror.NewWebError(err, format, args...)
 
 	switch {

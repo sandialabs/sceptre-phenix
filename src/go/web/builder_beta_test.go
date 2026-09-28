@@ -49,6 +49,7 @@ type builderBetaHarness struct {
 	store             *builderBetaFakeStore
 	configs           store.Configs
 	failConfigKind    string
+	failConfigErr     error
 	failBroadcastKind string
 	failExperiment    bool
 	configWrites      int
@@ -129,6 +130,7 @@ func newBuilderBetaHarness(t *testing.T, configs ...store.Config) *builderBetaHa
 		store:             fake,
 		configs:           configs,
 		failConfigKind:    "",
+		failConfigErr:     nil,
 		failBroadcastKind: "",
 		failExperiment:    false,
 		configWrites:      0,
@@ -152,11 +154,21 @@ func newBuilderBetaHarness(t *testing.T, configs ...store.Config) *builderBetaHa
 	return harness
 }
 
+// configWriteFailure is what a config write of failConfigKind fails with:
+// failConfigErr, when set.
+func (h *builderBetaHarness) configWriteFailure() error {
+	if h.failConfigErr != nil {
+		return h.failConfigErr
+	}
+
+	return errors.New("injected config write failure")
+}
+
 func (h *builderBetaHarness) publishOps() builderBetaPublishOps {
 	return builderBetaPublishOps{
 		createConfig: func(config *store.Config) (*store.Config, error) {
 			if config.Kind == h.failConfigKind {
-				return nil, errors.New("injected config write failure")
+				return nil, h.configWriteFailure()
 			}
 
 			if _, err := h.getConfig(config.FullName()); err == nil {
@@ -170,7 +182,7 @@ func (h *builderBetaHarness) publishOps() builderBetaPublishOps {
 		},
 		updateConfig: func(name string, config *store.Config) error {
 			if config.Kind == h.failConfigKind {
-				return errors.New("injected config write failure")
+				return h.configWriteFailure()
 			}
 
 			for i := range h.configs {
@@ -1485,11 +1497,6 @@ func TestBuilderBetaErrorStatuses(t *testing.T) {
 			err:    fmt.Errorf("appending snapshot: %w", bapi.ErrTooLarge),
 			status: http.StatusRequestEntityTooLarge,
 		},
-		{
-			name:   "out of space",
-			err:    fmt.Errorf("writing chunk: %w", store.ErrRecordNoSpace),
-			status: http.StatusInsufficientStorage,
-		},
 	}
 
 	for _, tt := range tests {
@@ -1526,7 +1533,7 @@ func TestBuilderBetaSaveWhenEtcdIsOutOfSpace(t *testing.T) { //nolint:parallelte
 	harness.store.beforeUpdate = func(namespace, key string) error {
 		return fmt.Errorf(
 			"updating record %s/%s in Etcd: %w: %w", namespace, key,
-			store.ErrRecordNoSpace, errors.New("etcdserver: mvcc: database space exceeded"),
+			store.ErrNoSpace, errors.New("etcdserver: mvcc: database space exceeded"),
 		)
 	}
 
@@ -1539,8 +1546,8 @@ func TestBuilderBetaSaveWhenEtcdIsOutOfSpace(t *testing.T) { //nolint:parallelte
 
 	harness.decode(recorder, &refused)
 
-	if refused.Message != store.ErrRecordNoSpace.Error() {
-		t.Fatalf("save: message = %q, want %q", refused.Message, store.ErrRecordNoSpace.Error())
+	if refused.Message != store.ErrNoSpace.Error() {
+		t.Fatalf("save: message = %q, want %q", refused.Message, store.ErrNoSpace.Error())
 	}
 
 	harness.store.beforeUpdate = nil
@@ -1686,7 +1693,7 @@ func TestBuilderBetaRoutesDocumented(t *testing.T) { //nolint:paralleltest // mu
 
 // TestBuilderBetaOutOfSpaceDocumented asserts every Builder Beta route that
 // writes draft records documents the 507 answer etcd running out of space
-// gets (see builderBetaWebError).
+// gets (see weberror.ErrorHandler).
 func TestBuilderBetaOutOfSpaceDocumented(t *testing.T) {
 	t.Parallel()
 

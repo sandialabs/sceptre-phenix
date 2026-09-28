@@ -28,7 +28,7 @@ const (
 	etcdRecordFillTimeout = 30 * time.Second
 
 	// etcdRecordNoSpaceLog is the message an out of space write is logged with.
-	etcdRecordNoSpaceLog = "writing records to Etcd"
+	etcdRecordNoSpaceLog = "writing to Etcd"
 )
 
 // etcdRecordFailingKV is a clientv3.KV whose reads find every record and whose
@@ -133,11 +133,11 @@ func captureEtcdRecordLogs(t *testing.T) *etcdRecordLogs {
 	plog.AddHandler(name, slog.NewJSONHandler(logs, &slog.HandlerOptions{
 		AddSource: false, Level: slog.LevelDebug, ReplaceAttr: nil,
 	}))
-	etcdRecordNoSpaceLogged.Store(false)
+	etcdNoSpaceLogged.Store(false)
 
 	t.Cleanup(func() {
 		plog.RemoveHandler(name)
-		etcdRecordNoSpaceLogged.Store(false)
+		etcdNoSpaceLogged.Store(false)
 	})
 
 	return logs
@@ -148,15 +148,15 @@ func captureEtcdRecordLogs(t *testing.T) *etcdRecordLogs {
 func requireEtcdRecordNoSpace(t *testing.T, err error, operation string) {
 	t.Helper()
 
-	if !errors.Is(err, ErrRecordNoSpace) || !errors.Is(err, rpctypes.ErrNoSpace) {
-		t.Fatalf("%s error = %v, want it to wrap ErrRecordNoSpace and etcd's ErrNoSpace", operation, err)
+	if !errors.Is(err, ErrNoSpace) || !errors.Is(err, rpctypes.ErrNoSpace) {
+		t.Fatalf("%s error = %v, want it to wrap ErrNoSpace and etcd's ErrNoSpace", operation, err)
 	}
 }
 
 func TestEtcdRecordWritesSayEtcdIsOutOfSpace(t *testing.T) {
 	logs := captureEtcdRecordLogs(t)
 	e := newEtcdRecordFailingStore(t, rpctypes.ErrNoSpace)
-	reason := ErrRecordNoSpace.Error() + ": " + rpctypes.ErrNoSpace.Error()
+	reason := ErrNoSpace.Error() + ": " + rpctypes.ErrNoSpace.Error()
 
 	writes := []struct {
 		name  string
@@ -217,7 +217,7 @@ func TestEtcdRecordWritesKeepOtherErrors(t *testing.T) {
 	e := newEtcdRecordFailingStore(t, unavailable)
 
 	_, err := e.CreateRecord("drafts", "d1", []byte("value"))
-	if !errors.Is(err, unavailable) || errors.Is(err, ErrRecordNoSpace) {
+	if !errors.Is(err, unavailable) || errors.Is(err, ErrNoSpace) {
 		t.Fatalf("CreateRecord error = %v, want it to wrap only %v", err, unavailable)
 	}
 
@@ -259,6 +259,11 @@ func TestEtcdRecordStoreOutOfSpace(t *testing.T) {
 		t.Fatalf("CreateRecord returned error: %v", err)
 	}
 
+	topology := &Config{Version: "phenix.sandia.gov/v2", Kind: "Topology", Metadata: ConfigMetadata{Name: "t1"}}
+	if err := s.Create(topology); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
 	requireEtcdRecordNoSpace(t, fillEtcdRecords(t, s, value), "UpdateRecord")
 
 	alarms, err := server.Client.AlarmList(ctx)
@@ -270,9 +275,14 @@ func TestEtcdRecordStoreOutOfSpace(t *testing.T) {
 		t.Fatalf("etcd alarms = %v, want one NOSPACE alarm", alarms.Alarms)
 	}
 
-	// Every write is refused now, even a small one.
+	// Every write is refused now, even a small one, and config writes too.
 	_, err = s.CreateRecord("drafts", "d2", []byte("small"))
 	requireEtcdRecordNoSpace(t, err, "CreateRecord")
+	requireEtcdRecordNoSpace(t, s.Update(topology), "Update")
+	requireEtcdRecordNoSpace(
+		t, s.Create(&Config{Version: "phenix.sandia.gov/v2", Kind: "Topology", Metadata: ConfigMetadata{Name: "t2"}}),
+		"Create",
+	)
 
 	if got := logs.warnings(t); got != 1 {
 		t.Fatalf("logged %d out of space warnings, want 1", got)

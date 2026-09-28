@@ -159,8 +159,10 @@ func (e Etcd) Create(c *Config) error {
 	}
 
 	if _, err := e.cli.Put(context.Background(), key, string(v)); err != nil {
-		return fmt.Errorf("writing config JSON to Etcd: %w", err)
+		return fmt.Errorf("writing config JSON to Etcd: %w", etcdWriteError(err))
 	}
+
+	etcdNoSpaceLogged.Store(false)
 
 	return nil
 }
@@ -182,8 +184,10 @@ func (e Etcd) Update(c *Config) error {
 	}
 
 	if _, err := e.cli.Put(context.Background(), key, string(v)); err != nil {
-		return fmt.Errorf("writing config JSON to Etcd: %w", err)
+		return fmt.Errorf("writing config JSON to Etcd: %w", etcdWriteError(err))
 	}
+
+	etcdNoSpaceLogged.Store(false)
 
 	return nil
 }

@@ -110,6 +110,8 @@ paths:
                 description: location of newly created config
                 type: string
                 format: uri
+        "507":
+          $ref: "#/components/responses/InsufficientStorage"
   "/configs/{kind}/{name}":
     get:
       tags:
@@ -197,6 +199,8 @@ paths:
                 description: location of updated config
                 type: string
                 format: uri
+        "507":
+          $ref: "#/components/responses/InsufficientStorage"
     delete:
       tags:
         - Configs
@@ -1564,7 +1568,7 @@ paths:
         "422":
           $ref: "#/components/responses/BuilderUnprocessable"
         "507":
-          $ref: "#/components/responses/BuilderInsufficientStorage"
+          $ref: "#/components/responses/InsufficientStorage"
   "/builder/drafts/{owner}/{draft}":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
@@ -1632,7 +1636,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/WebError"
         "507":
-          $ref: "#/components/responses/BuilderInsufficientStorage"
+          $ref: "#/components/responses/InsufficientStorage"
   "/builder/drafts/{owner}/{draft}/snapshots":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
@@ -1707,7 +1711,7 @@ paths:
         "422":
           $ref: "#/components/responses/BuilderUnprocessable"
         "507":
-          $ref: "#/components/responses/BuilderInsufficientStorage"
+          $ref: "#/components/responses/InsufficientStorage"
   "/builder/drafts/{owner}/{draft}/snapshots/{snapshot}":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
@@ -1786,7 +1790,7 @@ paths:
         "422":
           $ref: "#/components/responses/BuilderUnprocessable"
         "507":
-          $ref: "#/components/responses/BuilderInsufficientStorage"
+          $ref: "#/components/responses/InsufficientStorage"
     put:
       tags:
         - Builder Flow
@@ -1826,7 +1830,7 @@ paths:
         "422":
           $ref: "#/components/responses/BuilderUnprocessable"
         "507":
-          $ref: "#/components/responses/BuilderInsufficientStorage"
+          $ref: "#/components/responses/InsufficientStorage"
   "/builder/drafts/{owner}/{draft}/publish":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
@@ -1852,7 +1856,7 @@ paths:
         its apps' configure stage ran, in its `builder-experiment`
         annotation; an experiment update runs that stage, as an update
         through `/configs` does. When a stage fails after earlier stages were
-        written, the response is 409 or 500 with a result whose status is
+        written, the response is 409, 500 or 507 with a result whose status is
         `partial`. When the published document was stored but content it
         replaces could not be removed, the publication goes on and answers
         with a `Warning` header and a warning in the result.
@@ -1909,7 +1913,16 @@ paths:
                   - $ref: "#/components/schemas/WebError"
                   - $ref: "#/components/schemas/BuilderPublishResult"
         "507":
-          $ref: "#/components/responses/BuilderInsufficientStorage"
+          description: >
+            etcd is out of space. Nothing was written, or a stage failed after
+            earlier stages were written (a `partial` result whose failed stage
+            says so). The message says what an administrator must do.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/WebError"
+                  - $ref: "#/components/schemas/BuilderPublishResult"
   "/builder/drafts/{owner}/{draft}/shares":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
@@ -2025,7 +2038,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/WebError"
         "507":
-          $ref: "#/components/responses/BuilderInsufficientStorage"
+          $ref: "#/components/responses/InsufficientStorage"
   "/builder/sources":
     get:
       tags:
@@ -3145,7 +3158,7 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/WebError"
-    BuilderInsufficientStorage:
+    InsufficientStorage:
       description: >
         etcd is out of space, so nothing was saved. `message` says what an
         administrator must do. The same request succeeds once space is freed.
