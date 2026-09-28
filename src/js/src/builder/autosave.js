@@ -401,6 +401,12 @@ export function createAutosave(options = {}) {
   // is written once, and whether it holds the record at all.
   let stored = new Set();
   let hasRecord = false;
+  // What the store is known to hold of the record: the entries and the
+  // operations its last finished write stored. Leaving the page copies the
+  // rest at once (see keepForUnload); copiedOps lists the operations such a
+  // copy holds, while it may be kept still, until the store holds them.
+  let held = { entries: new Set(), ops: new Set() };
+  let copiedOps = null;
   // While above zero, nothing is sent (see hold).
   let holds = 0;
   // Operations the server has confirmed, so a caller can tell whether any
@@ -432,24 +438,37 @@ export function createAutosave(options = {}) {
       return;
     }
 
+    const { key } = record;
+
     record.updatedAt = now();
 
     try {
       if (record.queue.length === 0) {
+        // An unload copy of a drained queue keeps nothing.
+        release();
+
         if (hasRecord) {
           hasRecord = false;
           stored = new Set();
           await store.remove(record.key);
         }
+
+        confirm(key, [], []);
       } else {
         const needed = new Set(record.queue.map((op) => op.commitId));
         const entries = record.entries.filter((entry) => needed.has(entry.id));
         const write = entries.filter((entry) => !stored.has(entry.id));
         const drop = [...stored].filter((id) => !needed.has(id));
+        const ops = record.queue.map((op) => op.opId);
 
         hasRecord = true;
         stored = new Set(entries.map((entry) => entry.id));
         await store.put({ ...record, entries }, { write, drop });
+        confirm(
+          key,
+          entries.map((entry) => entry.id),
+          ops,
+        );
       }
 
       if (state.storageFailed) {
@@ -465,6 +484,71 @@ export function createAutosave(options = {}) {
       }
     }
   };
+
+  // Removes the record's unload copy.
+  function release() {
+    store?.release?.(record.key);
+    copiedOps = null;
+  }
+
+  // Records what a finished write stored (see held); an unload copy is
+  // removed once the store holds each operation it copied that is queued
+  // still. Those sent since need keeping no more, and those queued since
+  // the copy was taken are the store's to keep.
+  function confirm(key, entries, ops) {
+    if (record?.key !== key) {
+      return;
+    }
+
+    held = { entries: new Set(entries), ops: new Set(ops) };
+
+    if (
+      copiedOps &&
+      record.queue.every(
+        (op) => !copiedOps.has(op.opId) || held.ops.has(op.opId),
+      )
+    ) {
+      release();
+    }
+  }
+
+  /**
+   * Keeps what the store may not hold yet as the page is left: a write to
+   * IndexedDB finishes after the call that makes it, and a reload or a
+   * closed tab can cut it off. The operations queued since the store's last
+   * finished write, such as the edit leaving applies (see leave.js), are
+   * copied at once, with the snapshots it may lack (see writeUnloadCopy in
+   * idb.js); the next read of the draft merges the copy back, unless the
+   * store was written after it (see staleUnloadCopy). A copy that does not
+   * fit is not written: the caller keeps the browser's question, so the
+   * user can stay until the store holds the edits. Leaving anyway can lose
+   * those the store had not stored yet.
+   *
+   * @returns {boolean} false when some queued work may not be kept
+   */
+  function keepForUnload() {
+    if (
+      !record ||
+      !store?.keep ||
+      disposed ||
+      record.queue.every((op) => held.ops.has(op.opId))
+    ) {
+      return true;
+    }
+
+    const needed = new Set(record.queue.map((op) => op.commitId));
+    const entries = record.entries.filter((entry) => needed.has(entry.id));
+
+    const kept = store.keep(
+      { ...record, entries },
+      { write: entries.filter((entry) => !held.entries.has(entry.id)) },
+    );
+
+    // A copy that does not fit removes the older one (see writeUnloadCopy).
+    copiedOps = kept ? new Set(record.queue.map((op) => op.opId)) : null;
+
+    return kept;
+  }
 
   const cancelRetry = () => {
     if (retryHandle !== null) {
@@ -906,7 +990,23 @@ export function createAutosave(options = {}) {
         queue: draft.queue ?? existing?.queue ?? [],
         updatedAt: now(),
       };
-      stored = new Set((existing?.entries || []).map((entry) => entry.id));
+      // A record merged with an unload copy may reference snapshots the
+      // store lacks: every one is written again, and the copy is removed
+      // once they are.
+      const merged = Boolean(existing?.fromUnload);
+
+      copiedOps = merged
+        ? new Set((existing.queue || []).map((op) => op.opId))
+        : null;
+      stored = new Set(
+        merged ? [] : (existing?.entries || []).map((entry) => entry.id),
+      );
+      held = {
+        entries: new Set(stored),
+        ops: new Set(
+          merged ? [] : (existing?.queue || []).map((op) => op.opId),
+        ),
+      };
       hasRecord = Boolean(existing);
 
       await persist();
@@ -1218,6 +1318,8 @@ export function createAutosave(options = {}) {
       };
       stored = new Set();
       hasRecord = false;
+      held = { entries: new Set(), ops: new Set() };
+      copiedOps = null;
 
       // The conflicting draft's queue lives on in the new draft. Should its
       // record stay behind, reopening that draft offers the same choice again.
@@ -1300,9 +1402,13 @@ export function createAutosave(options = {}) {
       return sent;
     },
 
+    keepForUnload,
+
     /**
      * Starts listening for connectivity changes so a queue parked offline
-     * drains as soon as the browser reconnects.
+     * drains as soon as the browser reconnects, and for the page being
+     * left, which keeps what the store may not hold yet (see
+     * keepForUnload).
      *
      * @param {object} [target] window-like event target
      */
@@ -1328,10 +1434,12 @@ export function createAutosave(options = {}) {
 
       target.addEventListener('online', online);
       target.addEventListener('offline', offline);
+      target.addEventListener('pagehide', keepForUnload);
 
       detachOnline = () => {
         target.removeEventListener('online', online);
         target.removeEventListener('offline', offline);
+        target.removeEventListener('pagehide', keepForUnload);
         detachOnline = null;
       };
 

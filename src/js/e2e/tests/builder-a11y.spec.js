@@ -2175,16 +2175,24 @@ test.describe('themes and canvas controls', () => {
         position: { x: 3600, y: -300 },
         switch: { networkId: network.id },
       };
-      // 491 devices in 25 columns, each connected to the one switch: in a
-      // 1440 by 900 window, it takes a zoom of about 0.09 to see them all.
-      const devices = Array.from({ length: 491 }, (_, index) => {
+      // Four devices at the corners of a 7200 by 2660 area, each connected
+      // to the one switch: in a 1440 by 900 window, it takes a zoom of about
+      // 0.1 to see them all. Few nodes keep the draft quick to open on a
+      // slow machine; how far apart they are is what sets the zoom.
+      const corners = [
+        { x: 0, y: 0 },
+        { x: 7200, y: 0 },
+        { x: 0, y: 2660 },
+        { x: 7200, y: 2660 },
+      ];
+      const devices = corners.map((position, index) => {
         const hostname = `wide-${index + 1}`;
 
         return {
           id: id(),
           kind: 'device',
           label: hostname,
-          position: { x: (index % 25) * 300, y: Math.floor(index / 25) * 140 },
+          position,
           device: {
             hostname,
             spec: {

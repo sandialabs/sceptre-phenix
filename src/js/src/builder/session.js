@@ -2,14 +2,15 @@
 //
 // The Builder keeps drafts that are not saved yet in IndexedDB, and in
 // localStorage under phenix.builder.* the viewer's preferences (theme, pane
-// widths, shortcuts, settings) and the recent commands, which name drafts,
-// their owners and nodes by id; once loaded, its modules also hold the
-// drafts listed for the user and the open diagram in memory. What belongs
-// to the user may not outlive the session on a shared workstation, so
-// logout clears it, whether or not the Builder is open, and so does the
-// next sign-in of another user when the browser was closed without logging
-// out. The preferences say nothing about the user or their work, and stay
-// for this browser.
+// widths, shortcuts, settings), the recent commands, which name drafts,
+// their owners and nodes by id, and the unload copies of the drafts whose
+// edits IndexedDB had not stored when a page was left (see idb.js); once
+// loaded, its modules also hold the drafts listed for the user and the
+// open diagram in memory. What belongs to the user may not outlive the
+// session on a shared workstation, so logout clears it, whether or not the
+// Builder is open, and so does the next sign-in of another user when the
+// browser was closed without logging out. The preferences say nothing about
+// the user or their work, and stay for this browser.
 //
 // This module is loaded with the app, so it stays small: the Builder's
 // modules register what they hold in memory when they are first loaded, and
@@ -17,8 +18,9 @@
 //
 // Clearing also deletes edits the server never received, so logout first
 // asks this module for them (see utils/logout.js): the open draft's, which
-// the Builder view registers, and those queued in IndexedDB for any other
-// draft, which are there whether or not the Builder is open.
+// the Builder view registers, and those queued in IndexedDB, or in an
+// unload copy, for any other draft, which are there whether or not the
+// Builder is open.
 
 import { clearBuilderDatabase, createDraftStore } from './idb.js';
 

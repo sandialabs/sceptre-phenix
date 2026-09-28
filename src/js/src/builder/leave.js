@@ -7,6 +7,9 @@
 // SAVED_UNAPPLIED (see history.js), which the save queue then sends like
 // any other. Edits that fail their checks cannot be applied: leaving then
 // asks, naming their fields, and Publish and Export say what blocks them.
+// A reload or a closed tab cannot wait for the local store's write either:
+// what it may not hold yet is copied at once (see keepForUnload in
+// autosave.js).
 
 import { listOf } from './announce.js';
 
@@ -44,7 +47,7 @@ export function unappliedBlock(unapplied, done) {
  *
  * @param {object} options
  * @param {object} options.store the Builder store: saveState, readOnly,
- *   historyVersion, saveNow
+ *   historyVersion, saveNow, and autosave, the save queue, if any
  * @param {() => boolean} options.editing whether a draft is open
  * @param {() => ({title: string, fields: string[]}|null)} options.saveUnapplied
  *   applies the unapplied edits at once; returns what cannot be applied
@@ -147,16 +150,21 @@ export function createLeaveGuard({
 
     /**
      * Closing or reloading the tab cannot wait: the unapplied edits are
-     * applied at once, into the history and the local queue, and the
-     * browser asks in its own words while the server cannot have them yet.
+     * applied at once, into the history and the local queue; what of the
+     * queue the local store may not hold yet is copied at once (see
+     * keepForUnload in autosave.js); and the browser asks in its own words
+     * while the server cannot have the edits yet. It asks too when the copy
+     * does not fit, so the user can stay until the local store holds the
+     * edits: leaving then can lose them.
      *
      * @param {Event} event beforeunload
      * @returns {boolean} whether the browser asks
      */
     beforeUnload(event) {
       const { unapplied, applied } = save();
+      const kept = store.autosave?.keepForUnload?.() ?? true;
 
-      if (!unapplied && !applied && !unsavedWork()) {
+      if (!unapplied && !applied && !unsavedWork() && kept) {
         return false;
       }
 

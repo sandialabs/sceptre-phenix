@@ -33,7 +33,12 @@ import {
   setShortcut,
   SHORTCUTS_STORAGE_KEY,
 } from '@/builder/keymap.js';
-import { clearBuilderDatabase, createDraftStore } from '@/builder/idb.js';
+import {
+  clearBuilderDatabase,
+  createDraftStore,
+  draftKey,
+  unloadCopyKey,
+} from '@/builder/idb.js';
 import { PANES_STORAGE_KEY } from '@/builder/panes.js';
 import { SETTINGS_STORAGE_KEY } from '@/builder/settings.js';
 import {
@@ -103,6 +108,7 @@ describe('logout', () => {
       'phenix.builder.panes': '{"start":300}',
       'phenix.builder.settings': '{"layoutAlgorithm":"dagre"}',
       'phenix.builder.unlisted': 'x',
+      [unloadCopyKey(draftKey('alice', 'alice', 'd1'))]: '{"queue":[]}',
       'phenix.user': 'alice',
       'alice.vimMode': 'true',
     });
@@ -263,6 +269,7 @@ describe('sign-in', () => {
       ...(user ? { [BUILDER_USER_KEY]: user } : {}),
       'phenix.builder.theme': 'dark',
       [RECENT_STORAGE_KEY]: '[{"id":"drafts.open","choices":["x"]}]',
+      [unloadCopyKey(draftKey(user, user, 'd1'))]: '{"queue":[]}',
     });
   }
 
@@ -297,6 +304,9 @@ describe('sign-in', () => {
     ).toBeNull();
     expect(clearDatabase).not.toHaveBeenCalled();
     expect(local.map.get(RECENT_STORAGE_KEY)).toContain('drafts.open');
+    expect(local.map.has(unloadCopyKey(draftKey('alice', 'alice', 'd1')))).toBe(
+      true,
+    );
     expect(store.drafts.mine).toHaveLength(1);
   });
 
@@ -352,6 +362,9 @@ describe('sign-in', () => {
 
       expect(local.map.get(BUILDER_USER_KEY)).toBe('bob');
       expect(local.map.has(RECENT_STORAGE_KEY)).toBe(false);
+      expect(
+        local.map.has(unloadCopyKey(draftKey('alice', 'alice', 'd1'))),
+      ).toBe(false);
       expect(local.map.get('phenix.builder.theme')).toBe('dark');
       expect(store.drafts.mine).toEqual([]);
     } finally {

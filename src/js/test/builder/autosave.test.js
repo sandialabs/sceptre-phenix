@@ -13,7 +13,16 @@ import {
   saveAnnouncement,
   staleSaveMessage,
 } from '@/builder/autosave.js';
-import { createMemoryStore, draftKey, splitRecord } from '@/builder/idb.js';
+import {
+  createMemoryStore,
+  draftKey,
+  mergeUnloadCopy,
+  readUnloadCopy,
+  splitRecord,
+  staleUnloadCopy,
+  unloadCopyKey,
+  writeUnloadCopy,
+} from '@/builder/idb.js';
 
 import { sampleDocument } from './fixtures.js';
 
@@ -1419,6 +1428,469 @@ describe('local storage', () => {
 
     expect(seen).not.toContain('saving');
     expect(seen.at(-1)).toBe('offline');
+  });
+});
+
+describe('leaving the page', () => {
+  // A Storage, as localStorage is; one `full` refuses every write, as a
+  // browser does past its quota.
+  function memoryStorage({ full = false } = {}) {
+    const map = new Map();
+
+    return {
+      map,
+      get length() {
+        return map.size;
+      },
+      key: (index) => [...map.keys()][index] ?? null,
+      getItem: (key) => (map.has(key) ? map.get(key) : null),
+      setItem(key, value) {
+        if (full) {
+          throw new DOMException('full', 'QuotaExceededError');
+        }
+
+        map.set(key, String(value));
+      },
+      removeItem: (key) => map.delete(key),
+    };
+  }
+
+  // A store whose writes finish only when the test says: a reload cuts off
+  // the ones left unfinished.
+  function slowStore(storage) {
+    const store = memoryStore();
+    const put = store.put;
+    const waiting = [];
+
+    store.storage = storage;
+    Object.assign(store, {
+      keep: createMemoryStore({ storage }).keep,
+      release: createMemoryStore({ storage }).release,
+    });
+    store.put = (record, changes) => {
+      const cloned = structuredClone({ ...record, entries: record.entries });
+      const written = structuredClone(changes);
+
+      return new Promise((resolve) => {
+        waiting.push(() => resolve(put(cloned, written)));
+      });
+    };
+    // Finishes the writes asked for, the first `count` of them or every
+    // one, and lets their callers go on.
+    store.finish = async (count = Infinity) => {
+      for (let left = count; waiting.length > 0 && left > 0; left -= 1) {
+        waiting.shift()();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    };
+
+    return store;
+  }
+
+  // The store the next page opens: the database as the last page left it,
+  // and the same localStorage.
+  async function reopened(before, storage) {
+    const store = createMemoryStore({ storage });
+
+    for (const found of await before.all()) {
+      const record = await before.get(found.key);
+
+      if (!record.fromUnload) {
+        await store.put(record, { write: record.entries });
+      }
+    }
+
+    return store;
+  }
+
+  const key = draftKey('alice', 'alice', 'd1');
+  const unloadKey = unloadCopyKey(key);
+
+  function copyIn(storage) {
+    return JSON.parse(storage.getItem(unloadKey));
+  }
+
+  async function offline(store) {
+    const queue = createAutosave({
+      api: fakeApi(),
+      store,
+      actor: 'alice',
+      isOnline: () => false,
+    });
+
+    await queue.attach({ owner: 'alice', draftId: 'd1', etag: '"1"' });
+
+    return queue;
+  }
+
+  test('an edit the database had not stored when the page was left is kept, and the next page recovers it', async () => {
+    const storage = memoryStorage();
+    const store = createMemoryStore({ storage });
+    const first = await offline(store);
+    const put = store.put;
+
+    // The database never finishes this write: the reload cut it off.
+    store.put = () => new Promise(() => {});
+    first.commit({ id: 'c1', label: 'Saved unapplied changes', snapshot: doc });
+
+    expect(first.keepForUnload()).toBe(true);
+    expect(copyIn(storage)).toMatchObject({
+      key,
+      etag: '"1"',
+      queue: [{ opId: 'c1', kind: 'snapshot', commitId: 'c1' }],
+      entries: [{ id: 'c1', label: 'Saved unapplied changes', snapshot: doc }],
+    });
+    expect(await store.all()).toMatchObject([{ key, queue: [{ opId: 'c1' }] }]);
+
+    store.put = put;
+    const next = await offline(await reopened(store, storage));
+
+    expect(next.record).toMatchObject({
+      etag: '"1"',
+      queue: [{ opId: 'c1' }],
+      entries: [{ id: 'c1', snapshot: doc }],
+    });
+    // Once the database holds it, the copy goes.
+    expect(storage.map.has(unloadKey)).toBe(false);
+    expect(await next.recover('alice', 'd1')).toMatchObject({
+      queue: [{ opId: 'c1' }],
+      entries: [{ id: 'c1', snapshot: doc }],
+    });
+  });
+
+  test('only what the database may not hold is copied, and the copy merges into its record once', async () => {
+    const storage = memoryStorage();
+    const store = slowStore(storage);
+    const first = await offline(store);
+    const second = { ...doc, name: 'second' };
+
+    first.commit({ id: 'c1', label: 'one', snapshot: doc });
+    await store.finish();
+    first.commit({ id: 'c2', label: 'two', snapshot: second });
+
+    expect(first.keepForUnload()).toBe(true);
+    // The queue, but only the snapshot the database may lack.
+    expect(copyIn(storage).queue.map((op) => op.opId)).toEqual(['c1', 'c2']);
+    expect(copyIn(storage).entries).toEqual([
+      { id: 'c1', label: 'one' },
+      { id: 'c2', label: 'two', snapshot: second },
+    ]);
+
+    const next = await reopened(store, storage);
+    const merged = await next.get(key);
+
+    expect(merged.fromUnload).toBe(true);
+    expect(merged.queue.map((op) => op.opId)).toEqual(['c1', 'c2']);
+    expect(merged.entries).toEqual([
+      { id: 'c1', label: 'one', snapshot: doc },
+      { id: 'c2', label: 'two', snapshot: second },
+    ]);
+    expect(await next.all()).toMatchObject([
+      { key, queue: [{ opId: 'c1' }, { opId: 'c2' }] },
+    ]);
+  });
+
+  test('nothing is copied while the database holds every queued edit', async () => {
+    const storage = memoryStorage();
+    const queue = await offline(createMemoryStore({ storage }));
+
+    expect(queue.keepForUnload()).toBe(true);
+    await queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+
+    expect(queue.keepForUnload()).toBe(true);
+    expect(storage.map.size).toBe(0);
+  });
+
+  test('a copy made while the user stays goes once the database holds the edit', async () => {
+    const storage = memoryStorage();
+    const store = slowStore(storage);
+    const queue = await offline(store);
+
+    queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+    queue.keepForUnload();
+    expect(storage.map.has(unloadKey)).toBe(true);
+
+    await store.finish();
+
+    expect(storage.map.has(unloadKey)).toBe(false);
+    expect((await store.get(key)).queue).toHaveLength(1);
+  });
+
+  test('a copy made while the user stays goes once the database holds what it copied, while newer edits are still being written', async () => {
+    const storage = memoryStorage();
+    const store = slowStore(storage);
+    const queue = await offline(store);
+
+    queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+    queue.keepForUnload();
+    queue.commit({ id: 'c2', label: 'two', snapshot: { ...doc, name: 'two' } });
+
+    await store.finish(1);
+    expect(storage.map.has(unloadKey)).toBe(false);
+
+    // Leaving again copies what the database lacks now.
+    expect(queue.keepForUnload()).toBe(true);
+    expect(copyIn(storage).entries).toEqual([
+      { id: 'c1', label: 'one' },
+      { id: 'c2', label: 'two', snapshot: { ...doc, name: 'two' } },
+    ]);
+
+    await store.finish();
+    expect(storage.map.has(unloadKey)).toBe(false);
+    expect((await store.get(key)).queue.map((op) => op.opId)).toEqual([
+      'c1',
+      'c2',
+    ]);
+  });
+
+  test('a copy from one tab gives way to a later write to the database from another tab on the same draft', async () => {
+    const storage = memoryStorage();
+    // The database and localStorage both tabs share.
+    const shared = createMemoryStore({ storage });
+    let clock = Date.parse('2026-01-01T00:00:00.000Z');
+    const now = () => new Date((clock += 1000)).toISOString();
+    let cut = false;
+    // Tab A's writes finish until its reload cuts them off.
+    const tabA = {
+      ...shared,
+      put: (...args) => (cut ? new Promise(() => {}) : shared.put(...args)),
+    };
+    const tab = (store) =>
+      createAutosave({
+        api: fakeApi(),
+        store,
+        actor: 'alice',
+        isOnline: () => false,
+        now,
+      });
+    const a = tab(tabA);
+    const b = tab(shared);
+    const added = { ...doc, name: 'added' };
+
+    await a.attach({ owner: 'alice', draftId: 'd1', etag: '"1"' });
+    await b.attach({ owner: 'alice', draftId: 'd1', etag: '"1"' });
+
+    cut = true;
+    a.commit({ id: 'a1', label: 'Saved unapplied changes', snapshot: doc });
+    expect(a.keepForUnload()).toBe(true);
+    expect(copyIn(storage).queue.map((op) => op.opId)).toEqual(['a1']);
+
+    // Tab B, later: its edit reaches the database, which then holds it all.
+    await b.commit({ id: 'b1', label: 'Added device', snapshot: added });
+    expect(b.keepForUnload()).toBe(true);
+
+    expect(await shared.all()).toMatchObject([
+      { key, queue: [{ opId: 'b1' }] },
+    ]);
+    expect(storage.map.has(unloadKey)).toBe(false);
+
+    const next = await offline(shared);
+
+    expect(next.record).toMatchObject({
+      queue: [{ opId: 'b1' }],
+      entries: [{ id: 'b1', snapshot: added }],
+    });
+  });
+
+  test('a copy goes once the edit is sent', async () => {
+    const storage = memoryStorage();
+    const store = slowStore(storage);
+    const api = fakeApi();
+    let online = false;
+    const queue = createAutosave({
+      api,
+      store,
+      actor: 'alice',
+      isOnline: () => online,
+    });
+    const attaching = queue.attach({
+      owner: 'alice',
+      draftId: 'd1',
+      etag: '"1"',
+    });
+
+    await store.finish();
+    await attaching;
+    queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+    queue.keepForUnload();
+    online = true;
+    const sending = queue.flush();
+
+    await vi.waitFor(async () => {
+      await store.finish();
+      expect(api.appendSnapshot).toHaveBeenCalledOnce();
+    });
+    await store.finish();
+    await sending;
+
+    expect(storage.map.has(unloadKey)).toBe(false);
+    expect(await store.all()).toEqual([]);
+  });
+
+  test('a copy that does not fit is not kept, and says so', async () => {
+    const storage = memoryStorage({ full: true });
+    const store = slowStore(storage);
+    const queue = await offline(store);
+
+    queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+
+    expect(queue.keepForUnload()).toBe(false);
+    expect(storage.map.size).toBe(0);
+  });
+
+  test('a copy that no longer fits removes the older one, which would stand for less', () => {
+    const storage = memoryStorage();
+    const record = {
+      key,
+      queue: [{ opId: 'c1', kind: 'snapshot', commitId: 'c1' }],
+      entries: [{ id: 'c1', label: 'one', snapshot: doc }],
+    };
+
+    expect(writeUnloadCopy(storage, record, record.entries)).toBe(true);
+    storage.setItem = () => {
+      throw new DOMException('full', 'QuotaExceededError');
+    };
+
+    expect(writeUnloadCopy(storage, record, record.entries)).toBe(false);
+    expect(readUnloadCopy(storage, key)).toBeNull();
+    expect(writeUnloadCopy(null, record)).toBe(false);
+  });
+
+  test('the page being hidden keeps the copy; a disposed queue keeps none', async () => {
+    const storage = memoryStorage();
+    const store = slowStore(storage);
+    const queue = await offline(store);
+    const page = new EventTarget();
+
+    queue.listen(page);
+    queue.commit({ id: 'c1', label: 'one', snapshot: doc });
+    page.dispatchEvent(new Event('pagehide'));
+    expect(storage.map.has(unloadKey)).toBe(true);
+
+    storage.map.clear();
+    queue.dispose();
+    page.dispatchEvent(new Event('pagehide'));
+    expect(queue.keepForUnload()).toBe(true);
+    expect(storage.map.size).toBe(0);
+  });
+
+  test('a copy merges into the database record: its queue replaces it, and each entry is kept once', () => {
+    const stored = {
+      key,
+      etag: '"1"',
+      queue: [
+        { opId: 'c0', kind: 'snapshot', commitId: 'c0' },
+        { opId: 'c1', kind: 'snapshot', commitId: 'c1' },
+      ],
+      entries: [
+        { id: 'c0', label: 'zero', snapshot: { name: 'zero' } },
+        { id: 'c1', label: 'one', snapshot: { name: 'one' } },
+      ],
+    };
+    const copy = {
+      key,
+      etag: '"2"',
+      queue: [
+        { opId: 'c1', kind: 'snapshot', commitId: 'c1' },
+        { opId: 'c2', kind: 'snapshot', commitId: 'c2' },
+        { opId: 'c3', kind: 'snapshot', commitId: 'c3' },
+      ],
+      entries: [
+        { id: 'c1', label: 'one' },
+        { id: 'c2', label: 'two', snapshot: { name: 'two' } },
+        { id: 'c3', label: 'three' },
+      ],
+    };
+
+    // c0 was sent since the database stored it; the database never stored
+    // c3's snapshot, which is left out, as a read of the database leaves it.
+    expect(mergeUnloadCopy(stored, copy)).toEqual({
+      key,
+      etag: '"2"',
+      queue: copy.queue,
+      entries: [
+        { id: 'c1', label: 'one', snapshot: { name: 'one' } },
+        { id: 'c2', label: 'two', snapshot: { name: 'two' } },
+      ],
+      fromUnload: true,
+    });
+    expect(mergeUnloadCopy(stored, null)).toBe(stored);
+
+    // A record written after the copy was taken is the newer one.
+    const at = (second) => `2026-01-01T00:00:0${second}.000Z`;
+    const later = { ...stored, updatedAt: at(2) };
+
+    expect(staleUnloadCopy(later, { ...copy, updatedAt: at(1) })).toBe(true);
+    expect(mergeUnloadCopy(later, { ...copy, updatedAt: at(1) })).toBe(later);
+    // A copy taken as the record's write was asked for, or after, is not;
+    // nor is one with no time to compare.
+    for (const updatedAt of [at(2), at(3), undefined]) {
+      expect(staleUnloadCopy(later, { ...copy, updatedAt })).toBe(false);
+      expect(mergeUnloadCopy(later, { ...copy, updatedAt }).fromUnload).toBe(
+        true,
+      );
+    }
+    expect(staleUnloadCopy(undefined, { ...copy, updatedAt: at(1) })).toBe(
+      false,
+    );
+    expect(mergeUnloadCopy(undefined, copy).entries).toEqual([
+      { id: 'c2', label: 'two', snapshot: { name: 'two' } },
+    ]);
+  });
+
+  test('a copy older than the database record is set aside and removed, whether the draft is read or listed', async () => {
+    const storage = memoryStorage();
+    const store = createMemoryStore({ storage });
+    const at = (second) => `2026-01-01T00:00:0${second}.000Z`;
+    const copy = {
+      key,
+      updatedAt: at(1),
+      queue: [{ opId: 'c1', kind: 'snapshot', commitId: 'c1' }],
+      entries: [{ id: 'c1', label: 'one', snapshot: doc }],
+    };
+    // The user stayed and edited on, and the tab was killed after the
+    // database held the newer record but before the copy was removed.
+    const record = {
+      key,
+      updatedAt: at(2),
+      queue: [...copy.queue, { opId: 'c2', kind: 'snapshot', commitId: 'c2' }],
+      entries: [...copy.entries, { id: 'c2', label: 'two', snapshot: doc }],
+    };
+
+    await store.put(record, { write: record.entries });
+
+    for (const read of [
+      () => store.get(key),
+      async () => (await store.all())[0],
+    ]) {
+      expect(store.keep(copy, { write: copy.entries })).toBe(true);
+
+      const found = await read();
+
+      expect(found.fromUnload).toBeUndefined();
+      expect(found.queue.map((op) => op.opId)).toEqual(['c1', 'c2']);
+      expect(storage.map.has(unloadKey)).toBe(false);
+    }
+  });
+
+  test('a copy that is not one is ignored, and removing a draft removes its copy', async () => {
+    const storage = memoryStorage();
+    const store = createMemoryStore({ storage });
+
+    storage.setItem(unloadKey, '{not json');
+    expect(await store.get(key)).toBeUndefined();
+    storage.setItem(unloadKey, JSON.stringify({ key: 'other', queue: [] }));
+    expect(await store.all()).toEqual([]);
+
+    const record = {
+      key,
+      queue: [{ opId: 'c1', kind: 'snapshot', commitId: 'c1' }],
+      entries: [{ id: 'c1', label: 'one', snapshot: doc }],
+    };
+
+    expect(store.keep(record, { write: record.entries })).toBe(true);
+    await store.remove(key);
+    expect(storage.map.size).toBe(0);
   });
 });
 

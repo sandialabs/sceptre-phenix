@@ -11,6 +11,18 @@
 // refers to. Each entry's document snapshot is a record of its own, keyed by
 // the draft record and the commit id, and is written once: an edit stores
 // one snapshot and a small record, never the whole history again.
+//
+// A write to IndexedDB finishes after the call that makes it, and leaving
+// the page (a reload, a closed tab) can cut it off, losing such edits as the
+// one applied as the page is left (see leave.js). So the page keeps, as it
+// is left, an unload copy in localStorage, whose writes finish at once: the
+// draft record, with the snapshots of the entries the database may not
+// hold (see keepForUnload in autosave.js). Reads merge it into the database's
+// record (see mergeUnloadCopy), unless the database was written after it,
+// and the queue removes it once the database holds what it copied. It is
+// keyed by the draft record's key, so by user and
+// draft, under phenix.builder., which logout and another user's sign-in
+// clear (see session.js).
 
 const DB_NAME = 'phenix-builder';
 // Version 1 kept every entry's snapshot inside the draft record; version 2
@@ -91,6 +103,201 @@ function storedRecord(record) {
 // The entry record a put stores for one entry's snapshot.
 function storedEntry(key, entry) {
   return plain({ draft: key, id: entry.id, snapshot: entry.snapshot });
+}
+
+// What the localStorage key of an unload copy starts with.
+export const UNLOAD_COPY_PREFIX = 'phenix.builder.unload.';
+
+/**
+ * @param {string} key draft record key (see draftKey)
+ * @returns {string} the localStorage key of its unload copy
+ */
+export function unloadCopyKey(key) {
+  return `${UNLOAD_COPY_PREFIX}${key}`;
+}
+
+// The page's localStorage; reading it throws where site data is blocked.
+function pageStorage() {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Writes the unload copy of a draft record: the record, and the snapshots
+ * of the entries in `write`. It never throws. A copy that does not fit in
+ * localStorage (its quota is a few megabytes) is not written, and an older
+ * copy of the draft is removed, so it cannot stand in for newer work.
+ *
+ * @param {Storage|null} storage
+ * @param {object} record draft record, its entries with their snapshots
+ * @param {object[]} [write] the entries whose snapshots to copy
+ * @returns {boolean} whether the copy was written
+ */
+export function writeUnloadCopy(storage, record, write = []) {
+  const copied = new Set(write.map((entry) => entry.id));
+  const key = unloadCopyKey(record.key);
+
+  try {
+    storage.setItem(
+      key,
+      JSON.stringify({
+        ...record,
+        entries: (record.entries || []).map((entry) =>
+          copied.has(entry.id) ? entry : entryMeta(entry),
+        ),
+      }),
+    );
+
+    return true;
+  } catch {
+    removeUnloadCopy(storage, record.key);
+
+    return false;
+  }
+}
+
+/**
+ * @param {Storage|null} storage
+ * @param {string} key draft record key
+ * @returns {object|null} its unload copy, when there is a readable one
+ */
+export function readUnloadCopy(storage, key) {
+  try {
+    const copy = JSON.parse(storage?.getItem(unloadCopyKey(key)) ?? 'null');
+
+    return copy?.key === key &&
+      Array.isArray(copy.queue) &&
+      Array.isArray(copy.entries)
+      ? copy
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {Storage|null} storage
+ * @param {string} key draft record key
+ */
+export function removeUnloadCopy(storage, key) {
+  try {
+    storage?.removeItem(unloadCopyKey(key));
+  } catch {
+    // Blocked storage holds no copy.
+  }
+}
+
+// Every readable unload copy in a storage.
+function unloadCopies(storage) {
+  const keys = [];
+
+  try {
+    for (let index = 0; index < (storage?.length || 0); index += 1) {
+      const name = storage.key(index);
+
+      if (name?.startsWith(UNLOAD_COPY_PREFIX)) {
+        keys.push(name.slice(UNLOAD_COPY_PREFIX.length));
+      }
+    }
+  } catch {
+    // Blocked storage holds no copy.
+  }
+
+  return keys.map((key) => readUnloadCopy(storage, key)).filter(Boolean);
+}
+
+// When a draft record or unload copy was written, in milliseconds, or NaN.
+function writtenAt(value) {
+  const at = value?.updatedAt;
+
+  return typeof at === 'number' ? at : Date.parse(at);
+}
+
+/**
+ * Whether a draft's unload copy is older than the record the database holds
+ * for it. The copy carries the time of the last write its page asked for;
+ * a record written after that, by another tab or by the same page once the
+ * user stayed, stands for newer work. A draft record is the last writer's,
+ * as the database's own writes are, so such a copy is set aside.
+ *
+ * @param {object|undefined} record the database's record, if any
+ * @param {object|null} copy the unload copy, if any
+ * @returns {boolean} whether the record was written after the copy
+ */
+export function staleUnloadCopy(record, copy) {
+  return Boolean(record && copy) && writtenAt(record) > writtenAt(copy);
+}
+
+/**
+ * Merges a draft's unload copy into the record the database holds for it.
+ * A copy older than the record is left out (see staleUnloadCopy). Otherwise
+ * the copy stands for the page's last write, which leaving the page may have
+ * cut off, so its queue, ETag, head and cursor replace the record's: an
+ * operation both hold is kept once, and one only the database holds was
+ * sent since. Each entry the copy's queue needs is kept once, with the
+ * copy's snapshot or else the database's; one neither holds is left out, as
+ * a read of the database leaves it out.
+ *
+ * @param {object|undefined} record the database's record, if any
+ * @param {object|null} copy the unload copy, if any
+ * @param {object} [options] snapshots: false to merge the entries'
+ *   metadata alone, as all() lists records
+ * @returns {object|undefined} the record; with a copy merged into it,
+ *   fromUnload is true
+ */
+export function mergeUnloadCopy(record, copy, { snapshots = true } = {}) {
+  if (!copy || staleUnloadCopy(record, copy)) {
+    return record;
+  }
+
+  const held = new Map(
+    (record?.entries || []).map((entry) => [entry.id, entry.snapshot]),
+  );
+  const entries = copy.entries.flatMap((entry) => {
+    if (!snapshots) {
+      return [entryMeta(entry)];
+    }
+
+    const snapshot =
+      entry.snapshot !== undefined ? entry.snapshot : held.get(entry.id);
+
+    return snapshot === undefined ? [] : [{ ...entry, snapshot }];
+  });
+
+  return { ...record, ...copy, entries, fromUnload: true };
+}
+
+// A draft's record with its unload copy merged in (see mergeUnloadCopy). A
+// copy older than the record is removed: it would never be merged again.
+function withUnloadCopy(record, copy, storage, options) {
+  if (staleUnloadCopy(record, copy)) {
+    removeUnloadCopy(storage, copy.key);
+  }
+
+  return mergeUnloadCopy(record, copy, options);
+}
+
+// Every record, with the unload copies merged in: a copy of a draft the
+// database holds no record for is a record of its own.
+function withUnloadCopies(records, storage) {
+  const copies = new Map(unloadCopies(storage).map((copy) => [copy.key, copy]));
+  const merged = records.map((record) => {
+    const copy = copies.get(record.key);
+
+    copies.delete(record.key);
+
+    return withUnloadCopy(record, copy, storage, { snapshots: false });
+  });
+
+  return [
+    ...merged,
+    ...[...copies.values()].map((copy) =>
+      mergeUnloadCopy(undefined, copy, { snapshots: false }),
+    ),
+  ];
 }
 
 /**
@@ -231,12 +438,16 @@ function openBuilderDb(factory, onClose) {
 /**
  * Creates the store facade used by the autosave queue.
  *
- * @param {object} [options] factory
- * @returns {{put: Function, get: Function, remove: Function, all: Function}}
+ * @param {object} [options] factory; storage: the Storage that keeps the
+ *   unload copies, the page's localStorage by default
+ * @returns {{put: Function, get: Function, remove: Function, all: Function,
+ *   keep: Function, release: Function}}
  */
 export function createDraftStore(options = {}) {
   const born = generation;
   let dbPromise = null;
+  const storage = () =>
+    options.storage === undefined ? pageStorage() : options.storage;
 
   const db = () => {
     if (!dbPromise) {
@@ -308,10 +519,10 @@ export function createDraftStore(options = {}) {
     /**
      * @param {string} key
      * @returns {Promise<object|undefined>} the record, its entries with
-     *   their snapshots
+     *   their snapshots, and its unload copy merged in (see mergeUnloadCopy)
      */
     async get(key) {
-      return reading(async (tx) => {
+      const found = await reading(async (tx) => {
         const [record, entries] = await Promise.all([
           promisify(tx.objectStore(STORE_NAME).get(key)),
           promisify(tx.objectStore(ENTRY_STORE).index('draft').getAll(key)),
@@ -319,15 +530,21 @@ export function createDraftStore(options = {}) {
 
         return record ? joinEntries(record, entries) : undefined;
       });
+
+      const kept = storage();
+
+      return withUnloadCopy(found, readUnloadCopy(kept, key), kept);
     },
 
     /**
-     * Deletes a draft record and its entry snapshots.
+     * Deletes a draft record, its entry snapshots and its unload copy.
      *
      * @param {string} key
      * @throws {Error} when they could not be deleted
      */
     async remove(key) {
+      removeUnloadCopy(storage(), key);
+
       const tx = await writing();
       const done = completion(tx);
       const entries = tx.objectStore(ENTRY_STORE);
@@ -339,13 +556,38 @@ export function createDraftStore(options = {}) {
       await done;
     },
 
-    /** @returns {Promise<object[]>} every draft record, without snapshots */
+    /**
+     * @returns {Promise<object[]>} every draft record, without snapshots,
+     *   with the unload copies merged in
+     */
     async all() {
       const result = await reading((tx) =>
         promisify(tx.objectStore(STORE_NAME).getAll()),
       );
 
-      return result || [];
+      return withUnloadCopies(result || [], storage());
+    },
+
+    /**
+     * Writes a draft record's unload copy at once, as the page is left (see
+     * writeUnloadCopy). A store made before the drafts on this device were
+     * cleared writes none.
+     *
+     * @param {object} record
+     * @param {object} [changes] write: the entries whose snapshots to copy
+     * @returns {boolean} whether the copy was written
+     */
+    keep(record, { write = [] } = {}) {
+      return born === generation && writeUnloadCopy(storage(), record, write);
+    },
+
+    /**
+     * Removes a draft record's unload copy, once the database holds it.
+     *
+     * @param {string} key
+     */
+    release(key) {
+      removeUnloadCopy(storage(), key);
     },
   };
 }
@@ -420,10 +662,12 @@ async function clearRecords(options) {
  * clone, which each read clones again. Nothing it holds shares an object with
  * its caller, and a record IndexedDB could not clone fails here too.
  *
+ * @param {object} [options] storage: the Storage that keeps the unload
+ *   copies; without one, none is kept
  * @returns {{put: Function, get: Function, remove: Function, all: Function,
- *   snapshots: Map}}
+ *   keep: Function, release: Function, snapshots: Map}}
  */
-export function createMemoryStore() {
+export function createMemoryStore({ storage = null } = {}) {
   const records = new Map();
   // Draft key to a map of commit id to entry record.
   const snapshots = new Map();
@@ -445,21 +689,28 @@ export function createMemoryStore() {
       return record.key;
     },
     async get(key) {
-      if (!records.has(key)) {
-        return undefined;
-      }
+      const found = records.has(key)
+        ? joinEntries(
+            structuredClone(records.get(key)),
+            structuredClone([...(snapshots.get(key)?.values() || [])]),
+          )
+        : undefined;
 
-      return joinEntries(
-        structuredClone(records.get(key)),
-        structuredClone([...(snapshots.get(key)?.values() || [])]),
-      );
+      return withUnloadCopy(found, readUnloadCopy(storage, key), storage);
     },
     async remove(key) {
+      removeUnloadCopy(storage, key);
       records.delete(key);
       snapshots.delete(key);
     },
     async all() {
-      return structuredClone([...records.values()]);
+      return withUnloadCopies(structuredClone([...records.values()]), storage);
+    },
+    keep(record, { write = [] } = {}) {
+      return writeUnloadCopy(storage, record, write);
+    },
+    release(key) {
+      removeUnloadCopy(storage, key);
     },
   };
 }

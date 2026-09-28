@@ -711,6 +711,59 @@ describe("the Builder's changes this browser holds", () => {
     ).resolves.toEqual({ changes: 3, unapplied: '', drafts: [] });
   });
 
+  // A page left before IndexedDB stored its last change kept a copy of it
+  // in localStorage: logout clears it too, so it counts.
+  test('counts the changes a page kept as it was left, and Export can save them', async () => {
+    const items = new Map();
+    const storage = {
+      get length() {
+        return items.size;
+      },
+      key: (index) => [...items.keys()][index] ?? null,
+      getItem: (key) => items.get(key) ?? null,
+      setItem: (key, value) => items.set(key, value),
+      removeItem: (key) => items.delete(key),
+    };
+    const draftStore = createMemoryStore({ storage });
+    const saved = record(
+      'alice',
+      'alice',
+      'd2',
+      [snapshot('a')],
+      [entry('a', 'Kept lab')],
+    );
+
+    await draftStore.put(saved, { write: saved.entries });
+    draftStore.keep(
+      {
+        ...saved,
+        queue: [snapshot('a'), snapshot('b')],
+        entries: [{ id: 'a', label: 'Edit a' }, entry('b', 'Kept lab 2')],
+      },
+      { write: [entry('b', 'Kept lab 2')] },
+    );
+    const kept = record(
+      'alice',
+      'bob',
+      'd3',
+      [snapshot('c')],
+      [entry('c', 'Copied lab')],
+    );
+
+    draftStore.keep(kept, { write: kept.entries });
+
+    await expect(
+      unsentBuilderWork({ username: 'alice', draftStore }),
+    ).resolves.toEqual({
+      changes: 3,
+      unapplied: '',
+      drafts: [
+        { key: saved.key, name: 'kept-lab-2.json' },
+        { key: kept.key, name: 'copied-lab.json' },
+      ],
+    });
+  });
+
   test('the open draft saves what the Inspector holds, and its queue counts once', async () => {
     const draftStore = await stored(
       record('alice', 'alice', 'd1', [snapshot('a')]),

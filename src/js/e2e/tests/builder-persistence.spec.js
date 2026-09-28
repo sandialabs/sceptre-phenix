@@ -228,6 +228,16 @@ function localDrafts(page) {
   );
 }
 
+// The drafts whose unload copy this browser keeps in localStorage: what a
+// page left before IndexedDB stored it.
+function unloadCopies(page) {
+  return page.evaluate(() =>
+    Object.keys(localStorage).filter((key) =>
+      key.startsWith('phenix.builder.unload.'),
+    ),
+  );
+}
+
 // Resolves with the next snapshot upload the page makes.
 function nextSnapshotPost(page) {
   return page.waitForResponse(
@@ -1083,6 +1093,14 @@ test.describe('Builder Beta persistence', () => {
       expect
         .soft((await listSnapshots(builder.request, draft)).at(-1).summary)
         .toBe('Saved unapplied changes to Device node');
+      // The copy the reload kept at once, in case IndexedDB had not stored
+      // the change yet, goes once the change is saved.
+      await expect
+        .poll(async () => ({
+          ...(await localDrafts(page)),
+          copies: await unloadCopies(page),
+        }))
+        .toEqual({ drafts: [], entries: 0, copies: [] });
     });
   });
 

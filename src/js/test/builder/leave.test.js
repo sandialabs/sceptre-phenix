@@ -219,6 +219,35 @@ describe('reloading or closing the tab', () => {
 
     expect(guard.beforeUnload(unload())).toBe(true);
   });
+
+  // The local store's write of the edit just applied finishes after the
+  // page may be gone, so what it may not hold is copied at once.
+  test('the edit applied is copied at once, before the page goes', () => {
+    const { store, guard, saveUnapplied } = setup({ unapplied: true });
+    const keepForUnload = vi.fn(() => {
+      expect(saveUnapplied).toHaveBeenCalled();
+
+      return true;
+    });
+
+    store.autosave = { keepForUnload };
+
+    expect(guard.beforeUnload(unload())).toBe(true);
+    expect(keepForUnload).toHaveBeenCalledTimes(1);
+  });
+
+  test('a copy that does not fit makes the browser ask, so the user can stay', () => {
+    const { store, guard } = setup();
+
+    store.autosave = { keepForUnload: () => false };
+    const event = unload();
+
+    expect(guard.beforeUnload(event)).toBe(true);
+    expect(event.preventDefault).toHaveBeenCalled();
+
+    store.autosave = { keepForUnload: () => true };
+    expect(guard.beforeUnload(unload())).toBe(false);
+  });
 });
 
 describe('what leaving, Publish and Export say', () => {
