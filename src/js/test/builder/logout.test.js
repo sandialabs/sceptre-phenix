@@ -30,6 +30,7 @@ import {
   registerQueue,
   unsentBuilderWork,
 } from '@/builder/session.js';
+import { ANSWER_WAIT_MS, answerPresence, openChannel } from '@/builder/tabs.js';
 import {
   LOGOUT_COUNTDOWN_S,
   LOGOUT_NOTICE_S,
@@ -879,6 +880,84 @@ describe("the Builder's changes this browser holds", () => {
       'alice',
       draftStore,
     );
+  });
+
+  // Without Web Locks, the tabs open are those that answer over a
+  // BroadcastChannel (see presentTabs in tabs.js).
+  test("without Web Locks, another open tab's changes are still left to it", async () => {
+    // Every other channel of the same name hears a message, a task later.
+    const channels = new Set();
+
+    class Channel {
+      constructor(name) {
+        this.name = name;
+        this.listeners = new Set();
+        channels.add(this);
+      }
+
+      postMessage(data) {
+        for (const other of channels) {
+          if (other !== this && other.name === this.name) {
+            setTimeout(() => other.listeners.forEach((fn) => fn({ data })), 0);
+          }
+        }
+      }
+
+      addEventListener(_, fn) {
+        this.listeners.add(fn);
+      }
+
+      removeEventListener(_, fn) {
+        this.listeners.delete(fn);
+      }
+
+      close() {
+        channels.delete(this);
+      }
+    }
+
+    vi.useFakeTimers();
+    vi.stubGlobal('navigator', {});
+    vi.stubGlobal('window', {
+      navigator: {},
+      BroadcastChannel: Channel,
+      addEventListener() {},
+      removeEventListener() {},
+    });
+
+    try {
+      // Tab B is open, and answers.
+      answerPresence(openChannel('tabs', { Channel }), 'B');
+
+      const open = {
+        ...record('alice', 'alice', 'd2', [snapshot('b')]),
+        key: `${draftKey('alice', 'alice', 'd2')}#B`,
+        tab: 'B',
+      };
+      const closed = {
+        ...record('alice', 'alice', 'd2', [snapshot('z')]),
+        key: `${draftKey('alice', 'alice', 'd2')}#Z`,
+        tab: 'Z',
+      };
+      const draftStore = await stored(open, closed);
+      const sendQueued = vi.fn(async () => {});
+      const work = unsentBuilderWork({
+        username: 'alice',
+        send: true,
+        draftStore,
+        sendQueued,
+      });
+
+      await vi.advanceTimersByTimeAsync(ANSWER_WAIT_MS);
+      await expect(work).resolves.toMatchObject({ changes: 2 });
+      expect(sendQueued).toHaveBeenCalledWith(
+        [expect.objectContaining({ key: closed.key })],
+        'alice',
+        draftStore,
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   test('a draft that is not open is sent by a save queue of its own', async () => {

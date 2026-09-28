@@ -20,9 +20,11 @@ import {
   claimTab,
   createTabCoordinator,
   forkClosedQueue,
+  answerPresence,
   lockName,
   needsChoice,
   openChannel,
+  presentTabs,
   tabsNotice,
 } from '@/builder/tabs.js';
 
@@ -737,6 +739,22 @@ describe('two tabs with one draft open', () => {
     expect(closed.map((version) => version.key)).toEqual(['k-closed']);
     other.close();
     coordinator.close();
+  });
+
+  // Logout asks so which tabs are open (see session.js).
+  test('without Web Locks, the open tabs answer who is open; this tab is not among them', async () => {
+    const hub = channelHub();
+
+    answerPresence(hub.open(), 'open');
+    answerPresence(hub.open(), 'me');
+
+    await expect(
+      presentTabs({ channel: hub.open(), self: 'me', waitMs: 30 }),
+    ).resolves.toEqual(new Set(['open']));
+    // Where no channel works, none answers.
+    await expect(
+      presentTabs({ channel: openChannel('tabs') }),
+    ).resolves.toEqual(new Set());
   });
 
   test('without a BroadcastChannel, messages go through localStorage events to the other tabs', () => {

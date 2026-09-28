@@ -278,13 +278,11 @@ async function sendRecords(records, username, draftStore) {
 }
 
 // The ids of this browser's other open tabs, which send their own queues
-// once the user chooses which changes to save (see tabs.js): none where
-// there are no Web Locks. Loaded only now, as the modules that send are.
+// once the user chooses which changes to save: those holding a Web Lock,
+// or where there are no Web Locks, those that answer over a
+// BroadcastChannel (see others in tabs.js). Loaded only now, as the
+// modules that send are.
 async function otherOpenTabs() {
-  if (typeof navigator === 'undefined' || !navigator.locks?.query) {
-    return new Set();
-  }
-
   const { builderTabs } = await import('./tabs.js');
 
   return builderTabs.others();

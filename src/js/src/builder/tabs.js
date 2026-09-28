@@ -9,7 +9,8 @@
 // by a tab that has closed. The other tabs ask for that lock too, which
 // they get once the page has gone, however it went: closed, crashed or
 // discarded. Without Web Locks, each page takes a new id, and a queue no
-// open tab answers for is taken as a closed tab's.
+// open tab answers for is taken as a closed tab's: the tabs answer over a
+// channel of their own who is open (see presentTabs).
 //
 // The tabs with one draft open, for one user, tell each other over a
 // BroadcastChannel (where there is none, localStorage events) whether it is
@@ -46,6 +47,10 @@ export const CLAIM_WAIT_MS = 1500;
 // How long, without Web Locks, a tab waits for the others to answer before
 // it takes a queue no tab answered for as a closed tab's.
 export const ANSWER_WAIT_MS = 500;
+
+// The channel every tab with an id answers on, without Web Locks, when
+// another asks which tabs are open (see presentTabs).
+const PRESENCE_CHANNEL = 'tabs';
 
 /**
  * @param {string} tab a tab's id
@@ -675,6 +680,62 @@ export function createTabCoordinator({
   };
 }
 
+/**
+ * Answers, for the page's life, the tabs that ask over `channel` which
+ * tabs are open (see presentTabs).
+ *
+ * @param {object} channel openChannel()
+ * @param {string} tab this tab's id
+ */
+export function answerPresence(channel, tab) {
+  channel.listen((message) => {
+    if (message?.type === 'who' && message.from !== tab) {
+      channel.post({ type: 'here', from: tab });
+    }
+  });
+}
+
+/**
+ * The ids of the other open tabs that answer over `channel` within
+ * `waitMs` (see answerPresence): which tabs are open, where there are no
+ * Web Locks to say. The channel is closed afterwards. Where no channel
+ * works, none answers.
+ *
+ * @param {object} options channel (openChannel), self (this tab's id, if
+ *   it has one), waitMs; setTimeout, for tests
+ * @returns {Promise<Set<string>>}
+ */
+export function presentTabs({
+  channel,
+  self = '',
+  waitMs = ANSWER_WAIT_MS,
+  setTimeout: setTimer = (fn, ms) => setTimeout(fn, ms),
+}) {
+  const found = new Set();
+
+  if (!channel.connected) {
+    channel.close();
+
+    return Promise.resolve(found);
+  }
+
+  const stop = channel.listen((message) => {
+    if (message?.type === 'here' && message.from && message.from !== self) {
+      found.add(message.from);
+    }
+  });
+
+  channel.post({ type: 'who', from: self });
+
+  return new Promise((resolve) => {
+    setTimer(() => {
+      stop();
+      channel.close();
+      resolve(found);
+    }, waitMs);
+  });
+}
+
 // The page's own Web Locks, BroadcastChannel and storages. Unit tests run
 // outside a page and coordinate nothing unless they pass fakes.
 function page() {
@@ -701,33 +762,56 @@ function page() {
 
 let claimed = null;
 
+// The presence channel over which, without Web Locks, other tabs ask
+// which are open.
+function presenceChannel() {
+  const { Channel, localStorage, target } = page();
+
+  return openChannel(PRESENCE_CHANNEL, {
+    Channel,
+    storage: localStorage,
+    target,
+  });
+}
+
 /**
  * The other tabs of this browser, for the Builder's save queues (see
  * createAutosave's tabs option).
  */
 export const builderTabs = {
-  /** @returns {Promise<string>} this tab's id */
+  /**
+   * This tab's id. Without Web Locks, the tab answers from then on which
+   * tabs are open (see presentTabs).
+   *
+   * @returns {Promise<string>}
+   */
   tab() {
     const { sessionStorage, locks } = page();
 
-    claimed ||= claimTab({ storage: sessionStorage, locks });
+    if (!claimed) {
+      claimed = claimTab({ storage: sessionStorage, locks });
+
+      if (!locks) {
+        claimed.then((id) => answerPresence(presenceChannel(), id));
+      }
+    }
 
     return claimed;
   },
 
   /**
    * @returns {Promise<Set<string>>} the ids of this browser's other open
-   *   tabs: those that hold a lock (see claimTab), where there are Web
-   *   Locks
+   *   tabs: those that hold a lock (see claimTab), or where there are no
+   *   Web Locks, those that answer over the presence channel
    */
   async others() {
     const { locks } = page();
+    const self = claimed ? await claimed : '';
 
     if (!locks?.query) {
-      return new Set();
+      return presentTabs({ channel: presenceChannel(), self });
     }
 
-    const self = claimed ? await claimed : '';
     const { held = [] } = await locks.query();
 
     return new Set(
