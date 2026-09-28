@@ -1,26 +1,34 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"sync"
 	"testing"
 
 	"go.etcd.io/etcd/v3/clientv3"
+	"go.etcd.io/etcd/v3/etcdserver/api/v3rpc/rpctypes"
 	"go.etcd.io/etcd/v3/mvcc/mvccpb"
+
+	"phenix/util/plog"
 )
 
 var errEtcdUnavailable = errors.New("etcd unavailable")
 
 // fakeKV is an in-memory clientv3.KV for testing the Etcd store without an etcd
 // server. It ignores OpOptions, so it only models single-key operations. When
-// err is set, every call fails with it, as a failed etcd request would.
+// err is set, every call fails with it, as a failed etcd request would. When
+// putErr is set, puts fail with it, as they do once etcd is out of space.
 // Methods the store does not use are left to the nil embedded KV.
 type fakeKV struct {
 	clientv3.KV
 
-	data map[string]string
-	err  error
+	data   map[string]string
+	err    error
+	putErr error
 }
 
 func (f *fakeKV) Get(
@@ -50,6 +58,10 @@ func (f *fakeKV) Put(
 ) (*clientv3.PutResponse, error) {
 	if f.err != nil {
 		return nil, f.err
+	}
+
+	if f.putErr != nil {
+		return nil, f.putErr
 	}
 
 	f.data[key] = val
@@ -204,5 +216,181 @@ func TestEtcdCreateTimestamps(t *testing.T) {
 			fresh.Metadata.Created,
 			fresh.Metadata.Updated,
 		)
+	}
+}
+
+// etcdLogs collects what plog logs while a test runs.
+type etcdLogs struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *etcdLogs) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.buf.Write(p)
+}
+
+// noSpaceWarnings returns how many out of space warnings were logged.
+func (l *etcdLogs) noSpaceWarnings(t *testing.T) int {
+	t.Helper()
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	count := 0
+
+	for line := range bytes.Lines(l.buf.Bytes()) {
+		var record map[string]any
+		if err := json.Unmarshal(line, &record); err != nil {
+			t.Fatalf("decoding log record %q: %v", line, err)
+		}
+
+		if record["msg"] == "writing to Etcd" && record["level"] == slog.LevelWarn.String() {
+			count++
+		}
+	}
+
+	return count
+}
+
+// captureEtcdLogs collects plog's records, and forgets any out of space write
+// logged before, so each test sees its own outage.
+func captureEtcdLogs(t *testing.T) *etcdLogs {
+	t.Helper()
+
+	logs := new(etcdLogs)
+	name := "etcd-test-" + t.Name()
+
+	plog.AddHandler(name, slog.NewJSONHandler(logs, &slog.HandlerOptions{
+		AddSource: false, Level: slog.LevelDebug, ReplaceAttr: nil,
+	}))
+	etcdNoSpaceLogged.Store(false)
+
+	t.Cleanup(func() {
+		plog.RemoveHandler(name)
+		etcdNoSpaceLogged.Store(false)
+	})
+
+	return logs
+}
+
+func TestEtcdWritesSayEtcdIsOutOfSpace(t *testing.T) {
+	logs := captureEtcdLogs(t)
+	e, kv := newFakeEtcd()
+	reason := errEtcdNoSpace.Error() + ": " + rpctypes.ErrNoSpace.Error()
+
+	if err := e.Create(newTestConfig(t, "topology/foo")); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	kv.putErr = rpctypes.ErrNoSpace
+
+	writes := []struct {
+		name  string
+		want  string
+		write func() error
+	}{
+		{
+			name:  "Create",
+			want:  "writing config JSON to Etcd: " + reason,
+			write: func() error { return e.Create(newTestConfig(t, "topology/bar")) },
+		},
+		{
+			name:  "Update",
+			want:  "writing config JSON to Etcd: " + reason,
+			write: func() error { return e.Update(newTestConfig(t, "topology/foo")) },
+		},
+		{
+			name:  "InitializeComponent",
+			want:  "marking component configs as initialized: " + reason,
+			write: func() error { return e.InitializeComponent(ComponentConfigs) },
+		},
+	}
+
+	for _, tt := range writes {
+		err := tt.write()
+		if !errors.Is(err, errEtcdNoSpace) || !errors.Is(err, rpctypes.ErrNoSpace) {
+			t.Fatalf("%s() error = %v, want it to wrap errEtcdNoSpace and etcd's ErrNoSpace", tt.name, err)
+		}
+
+		if err.Error() != tt.want {
+			t.Fatalf("%s() error = %q, want %q", tt.name, err, tt.want)
+		}
+	}
+
+	// Refused writes in a row are one outage, logged once.
+	if got := logs.noSpaceWarnings(t); got != 1 {
+		t.Fatalf("logged %d out of space warnings, want 1", got)
+	}
+
+	// etcd never refuses a delete for lack of space.
+	if err := e.Delete(newTestConfig(t, "topology/foo")); err != nil {
+		t.Fatalf("Delete() returned error: %v", err)
+	}
+
+	kv.putErr = nil
+
+	if err := e.Create(newTestConfig(t, "topology/foo")); err != nil {
+		t.Fatalf("Create() after freeing space returned error: %v", err)
+	}
+
+	// The next outage is logged again.
+	kv.putErr = rpctypes.ErrNoSpace
+
+	if err := e.Create(newTestConfig(t, "topology/bar")); !errors.Is(err, errEtcdNoSpace) {
+		t.Fatalf("Create() error = %v, want it to wrap errEtcdNoSpace", err)
+	}
+
+	if got := logs.noSpaceWarnings(t); got != 2 {
+		t.Fatalf("logged %d out of space warnings after a second outage, want 2", got)
+	}
+}
+
+// Starting marks the store initialized only the first time, so an etcd that
+// is out of space still lets phenix start and read.
+func TestEtcdInitializesTheStoreOnce(t *testing.T) {
+	logs := captureEtcdLogs(t)
+	e, kv := newFakeEtcd()
+	kv.putErr = rpctypes.ErrNoSpace
+
+	if err := e.initializeStore(); !errors.Is(err, errEtcdNoSpace) {
+		t.Fatalf("initializeStore() error = %v, want it to wrap errEtcdNoSpace", err)
+	}
+
+	kv.putErr = nil
+
+	if err := e.initializeStore(); err != nil {
+		t.Fatalf("initializeStore() returned error: %v", err)
+	}
+
+	if !e.IsInitialized(ComponentStore) {
+		t.Fatal("IsInitialized() = false after initializeStore()")
+	}
+
+	kv.putErr = rpctypes.ErrNoSpace
+
+	if err := e.initializeStore(); err != nil {
+		t.Fatalf("initializeStore() on an initialized store out of space returned error: %v", err)
+	}
+
+	if got := logs.noSpaceWarnings(t); got != 1 {
+		t.Fatalf("logged %d out of space warnings, want 1", got)
+	}
+}
+
+func TestEtcdWritesKeepOtherErrors(t *testing.T) {
+	logs := captureEtcdLogs(t)
+	e, kv := newFakeEtcd()
+	kv.putErr = errEtcdUnavailable
+
+	err := e.Create(newTestConfig(t, "topology/foo"))
+	if !errors.Is(err, errEtcdUnavailable) || errors.Is(err, errEtcdNoSpace) {
+		t.Fatalf("Create() error = %v, want it to wrap only %v", err, errEtcdUnavailable)
+	}
+
+	if got := logs.noSpaceWarnings(t); got != 0 {
+		t.Fatalf("logged %d out of space warnings for another error, want 0", got)
 	}
 }

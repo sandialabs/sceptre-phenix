@@ -7,10 +7,28 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"go.etcd.io/etcd/v3/clientv3"
+	"go.etcd.io/etcd/v3/etcdserver/api/v3rpc/rpctypes"
+
+	"phenix/util/plog"
 )
+
+// errEtcdNoSpace is returned by a write etcd refused because its database
+// reached its space quota. etcd then raises a NOSPACE alarm and refuses writes
+// until an administrator frees space and clears the alarm. The error etcd
+// returned stays wrapped.
+var errEtcdNoSpace = errors.New(
+	"etcd is out of space: phenix cannot save changes until an administrator frees space " +
+		"(compact and defragment etcd, then clear its NOSPACE alarm)",
+)
+
+// etcdNoSpaceLogged is set once a write refused for lack of space is logged,
+// and cleared by the next write etcd accepts, so an outage is logged once and
+// not once per refused write.
+var etcdNoSpaceLogged atomic.Bool //nolint:gochecknoglobals // shared by every Etcd store in the process
 
 type Etcd struct {
 	endpoints []string
@@ -45,6 +63,17 @@ func (e *Etcd) Init(opts ...Option) error {
 		return fmt.Errorf("creating new Etcd client: %w", err)
 	}
 
+	return e.initializeStore()
+}
+
+// initializeStore marks the store component initialized, unless it already
+// is. etcd refuses that put once it is out of space, which would stop every
+// phenix command from starting, even to read.
+func (e *Etcd) initializeStore() error {
+	if e.IsInitialized(ComponentStore) {
+		return nil
+	}
+
 	if err := e.InitializeComponent(ComponentStore); err != nil {
 		return fmt.Errorf("initializing component %s: %w", ComponentStore, err)
 	}
@@ -66,8 +95,10 @@ func (e *Etcd) IsInitialized(component Component) bool {
 func (e *Etcd) InitializeComponent(component Component) error {
 	key := fmt.Sprintf("%s/%s", "phenix", string(component))
 	if _, err := e.cli.Put(context.Background(), key, "true"); err != nil {
-		return fmt.Errorf("marking component %s as initialized: %w", component, err)
+		return fmt.Errorf("marking component %s as initialized: %w", component, etcdWriteError(err))
 	}
+
+	etcdNoSpaceLogged.Store(false)
 
 	return nil
 }
@@ -152,8 +183,10 @@ func (e Etcd) Create(c *Config) error {
 	}
 
 	if _, err := e.cli.Put(context.Background(), key, string(v)); err != nil {
-		return fmt.Errorf("writing config JSON to Etcd: %w", err)
+		return fmt.Errorf("writing config JSON to Etcd: %w", etcdWriteError(err))
 	}
+
+	etcdNoSpaceLogged.Store(false)
 
 	return nil
 }
@@ -180,8 +213,10 @@ func (e Etcd) Update(c *Config) error {
 	}
 
 	if _, err := e.cli.Put(context.Background(), key, string(v)); err != nil {
-		return fmt.Errorf("writing config JSON to Etcd: %w", err)
+		return fmt.Errorf("writing config JSON to Etcd: %w", etcdWriteError(err))
 	}
+
+	etcdNoSpaceLogged.Store(false)
 
 	return nil
 }
@@ -203,4 +238,23 @@ func (e Etcd) Delete(c *Config) error {
 	}
 
 	return nil
+}
+
+// etcdWriteError wraps a failed write in [errEtcdNoSpace] when etcd refused it
+// for lack of space, since etcd's own message does not say what to do, and logs
+// the first such failure since etcd last accepted a write. Any other error is
+// returned as it is. etcd checks its quota only for puts and transactions, so a
+// delete is never refused for lack of space.
+func etcdWriteError(err error) error {
+	if !errors.Is(err, rpctypes.ErrNoSpace) {
+		return err
+	}
+
+	err = fmt.Errorf("%w: %w", errEtcdNoSpace, err)
+
+	if etcdNoSpaceLogged.CompareAndSwap(false, true) {
+		plog.Warn(plog.TypeSystem, "writing to Etcd", "err", err)
+	}
+
+	return err
 }

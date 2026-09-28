@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- **etcd Store**: Fix panics on failed requests or missing keys, and fix renaming configs.
+- **etcd Store**: Fix panics on failed requests or missing keys, fix renaming configs, and give a clear error when etcd is out of space, while phenix can still start and read.
 
 ## [1.0.0]
 
