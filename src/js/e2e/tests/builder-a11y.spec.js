@@ -177,6 +177,28 @@ async function zoomLevel(page) {
   });
 }
 
+// The Vue Flow viewport's pan and zoom, as its CSS transform, once it has
+// stopped moving.
+async function settledView(page) {
+  const transform = () =>
+    page
+      .locator('.vue-flow__transformationpane')
+      .evaluate((element) => element.style.transform);
+  let last = '';
+
+  await expect
+    .poll(async () => {
+      const now = await transform();
+      const same = now === last;
+
+      last = now;
+      return same;
+    })
+    .toBe(true);
+
+  return last;
+}
+
 // Node boxes that fall outside the visible canvas.
 async function nodesOutsideCanvas(page) {
   return page.locator('.vue-flow').evaluate((flow) => {
@@ -2157,9 +2179,48 @@ test.describe('themes and canvas controls', () => {
       await expect.soft(outsideRow).toBeFocused();
       expect.soft(await zoomLevel(page)).toBe(zoomed);
 
+      const before = await settledView(page);
       await fit.press('Enter');
       await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
       await expect.poll(() => nodesUnderOverlays(page)).toEqual([]);
+
+      // Fit then goes back to the view from before it, and says so; the
+      // button's name, icon and tooltip follow. Pressed again, it fits.
+      const restore = controls.getByRole('button', {
+        name: 'Restore previous view',
+      });
+      const tip = page.getByTestId('zoom-tooltip');
+      const icon = (name) =>
+        controls.locator(`.vue-flow__controls-fitview .builder-icon--${name}`);
+      await expect.soft(restore).toBeFocused();
+      await expect.soft(icon('fit-view-restore')).toHaveCount(1);
+      await expect
+        .soft(tip)
+        .toHaveText(/^Restore previous view \(.+1 on the canvas\)$/);
+      const fitted = await settledView(page);
+      await restore.press('Enter');
+      expect(await settledView(page), 'the view from before Fit').toBe(before);
+      await expect
+        .soft(builder.liveRegion)
+        .toContainText('Restored the previous view');
+      await expect.soft(fit).toBeFocused();
+      await expect.soft(icon('fit-view')).toHaveCount(1);
+      await expect.soft(tip).toHaveText(/^Fit diagram to view /);
+      await fit.press('Enter');
+      expect(await settledView(page), 'fitted again').toBe(fitted);
+      await expect.soft(restore).toBeFocused();
+
+      // Any other change of the view forgets the view from before Fit: a
+      // pan, here by dragging the empty canvas, and the button fits again.
+      const pane = await page.locator('.vue-flow__pane').boundingBox();
+      await page.mouse.move(pane.x + 12, pane.y + 12);
+      await page.mouse.down();
+      await page.mouse.move(pane.x + 72, pane.y + 52, { steps: 4 });
+      await page.mouse.up();
+      await expect(fit).toBeVisible();
+      await expect(restore).toHaveCount(0);
+      await fit.press('Enter');
+      expect(await settledView(page), 'fitted after the pan').toBe(fitted);
 
       // The last device is the canvas's Tab stop, once it has had focus.
       const last = page.locator('.vue-flow__node').last();
@@ -2190,10 +2251,18 @@ test.describe('themes and canvas controls', () => {
     await test.step('on the canvas, Shift+1 fits, − zooms out and = or + zooms in', async () => {
       const level = (value) => Math.round(value * 1000) / 1000;
 
-      // Focus is on a node, zoomed in as far as it goes.
+      // Focus is on a node, zoomed in as far as it goes. Shift+1 fits, then
+      // goes back to that zoom, as the Fit button does, and fits again.
       await page.keyboard.press('Shift+Digit1');
       await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
       const fitted = await zoomLevel(page);
+      await expect
+        .soft(page.getByRole('button', { name: 'Restore previous view' }))
+        .toHaveCount(1);
+      await page.keyboard.press('Shift+Digit1');
+      await expect.poll(async () => level(await zoomLevel(page))).toBe(2);
+      await page.keyboard.press('Shift+Digit1');
+      await expect.poll(() => zoomLevel(page)).toBe(fitted);
       await page.keyboard.press('-');
       await expect
         .poll(async () => level(await zoomLevel(page)))
@@ -2537,15 +2606,21 @@ test.describe('themes and canvas controls', () => {
       await expect.poll(() => nodesUnderOverlays(page)).toEqual([]);
 
       // With the minimap hidden, Fit keeps no room for it: the diagram is
-      // larger.
+      // larger. Showing or hiding the minimap leaves the view as it is, so
+      // the button first goes back to the view from before Fit.
       const minimapToggle = page.getByTestId('toolbar-minimap');
+      const restore = controls.getByRole('button', {
+        name: 'Restore previous view',
+      });
       await minimapToggle.click();
+      await restore.press('Enter');
       await fit.press('Enter');
       await expect
         .poll(async () => level(await zoomLevel(page)))
         .toBeGreaterThan(fitted);
       await expect.poll(() => nodesUnderOverlays(page)).toEqual([]);
       await minimapToggle.click();
+      await restore.press('Enter');
       await fit.press('Enter');
       await expect.poll(async () => level(await zoomLevel(page))).toBe(fitted);
 

@@ -129,7 +129,8 @@
            that do the same on the canvas. Those keys do nothing on the
            buttons themselves, so the buttons have no aria-keyshortcuts.
            The third fits the whole diagram into view, which pans as well
-           as zooms. -->
+           as zooms; it then restores the view from before, until the view
+           changes some other way (see toggleFit). -->
       <Controls
         position="bottom-left"
         :show-interactive="false"
@@ -158,17 +159,13 @@
         <template #control-fit-view>
           <ControlButton
             class="vue-flow__controls-fitview"
-            v-on="zoomTip('Fit diagram to view', 'view.fit')"
-            @click="fitDiagram()">
-            <svg
+            v-on="FIT_TIP_EVENTS"
+            @click="toggleFit()">
+            <builder-icon
               class="builder-canvas__fit-icon"
-              viewBox="0 0 24 24"
-              width="14"
-              height="14"
-              aria-hidden="true">
-              <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
-            </svg>
-            <span class="builder-visually-hidden">Fit diagram to view</span>
+              :name="fitRestores ? 'fit-view-restore' : 'fit-view'"
+              :size="14" />
+            <span class="builder-visually-hidden">{{ fitName }}</span>
           </ControlButton>
         </template>
       </Controls>
@@ -306,6 +303,8 @@
     fromFlowConnection,
     hiddenArea,
     itemPoint,
+    keepFit,
+    keptFit,
     nearestNode,
     nodeInDirection,
     toFlowEdges,
@@ -590,8 +589,17 @@
   // canvas, its nodes and connections, not on the buttons, and say so.
   const { tip, tipEl, showTip, scheduleHide, hideTip } = useFixedTooltip();
 
+  // The control whose tooltip was shown last, and the text it showed, so a
+  // tooltip can follow its button's name (see the Fit button's).
+  let shownTip = null;
+
   function tipEvents(tipText) {
-    const show = (event) => showTip(event, tipText());
+    const show = (event) => {
+      const text = tipText();
+
+      shownTip = { target: event.currentTarget, tipText, text };
+      showTip(event, text);
+    };
 
     return {
       mouseenter: show,
@@ -601,8 +609,10 @@
     };
   }
 
-  function zoomTip(text, command) {
+  // The name is a function for a button whose name changes.
+  function zoomTip(name, command) {
     return tipEvents(() => {
+      const text = typeof name === 'function' ? name() : name;
       const keys = shortcutLabel(command);
 
       return keys ? `${text} (${keys} on the canvas)` : text;
@@ -1726,12 +1736,67 @@
     });
   }
 
+  // --- Fit, and back to the view before it ----------------------------------
+
+  // What the Fit button keeps to go back to (see keepFit): null until Fit
+  // changes the view, and again once anything else does. The button, its
+  // tooltip and icon, and the view.fit command's title follow it.
+  const beforeFit = shallowRef(null);
+  const fitRestores = computed(() => beforeFit.value !== null);
+  const fitName = computed(() =>
+    fitRestores.value ? 'Restore previous view' : 'Fit diagram to view',
+  );
+  const FIT_TIP_EVENTS = zoomTip(() => fitName.value, 'view.fit');
+
+  watch(viewport, (view) => {
+    beforeFit.value = keptFit(beforeFit.value, view);
+  });
+
+  // A press from the keyboard leaves the tooltip up, so it takes the
+  // button's new name, while it is still that button's.
+  watch(fitName, () => {
+    const target = shownTip?.target;
+
+    if (!target?.isConnected || tip.value?.text !== shownTip.text) {
+      return;
+    }
+
+    const text = shownTip.tipText();
+
+    if (text !== shownTip.text) {
+      shownTip.text = text;
+      showTip({ currentTarget: target }, text);
+    }
+  });
+
+  // The Fit button and the view.fit command: Fit, or, after Fit, back to
+  // the view from before it. Neither is animated, so the view has changed
+  // when they return.
+  function toggleFit() {
+    const kept = beforeFit.value;
+
+    if (kept) {
+      beforeFit.value = null;
+      setViewport(kept.before);
+      store.announce('Restored the previous view');
+      return;
+    }
+
+    const before = { ...viewport.value };
+
+    fitDiagram();
+    beforeFit.value = keepFit(before, viewport.value);
+  }
+
   // Reset view: the zoom and pan the canvas opens with, which the
   // minimap's view follows. A fit waits for the columns and the minimap
   // that Reset view puts back to be drawn, and for Vue Flow to measure the
-  // pane again, which it does before the next frame is painted.
+  // pane again, which it does before the next frame is painted. The view
+  // Fit kept is forgotten, even when the view does not change.
   async function resetViewport() {
     const duration = props.reducedMotion ? 0 : 200;
+
+    beforeFit.value = null;
 
     if (builderSettings.openZoom === 'fit' && store.doc.nodes.length) {
       await nextTick();
@@ -1797,7 +1862,8 @@
 
   defineExpose({
     viewportElement,
-    fitView: fitDiagram,
+    fitView: toggleFit,
+    fitRestores,
     zoomIn: zoomInView,
     zoomOut: zoomOutView,
     atMaxZoom,

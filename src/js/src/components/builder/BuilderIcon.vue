@@ -112,6 +112,10 @@
       '<path d="M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5"/><path d="M8 12a4 4 0 1 0 1.2-2.85"/><path d="M8.6 6.6v2.8h2.8"/>',
     // A two-way diagonal arrow: the minimap's resize handle.
     'resize-diagonal': '<path d="M5 11V5h6M19 13v6h-6M5 5l14 14"/>',
+    // Corners out at the edges, and turned back in: Fit diagram to view,
+    // and Restore previous view after it.
+    'fit-view': '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>',
+    'fit-view-restore': '<path d="M9 3v6H3M15 3v6h6M21 15h-6v6M3 15h6v6"/>',
     // Arrows out to the corners, and back in: Focus mode and its exit.
     focus: '<path d="M15 3h6v6M9 21H3v-6"/><path d="M21 3l-7 7M3 21l7-7"/>',
     'focus-exit':

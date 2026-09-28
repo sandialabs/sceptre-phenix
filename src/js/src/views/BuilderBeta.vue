@@ -2084,6 +2084,9 @@
     get canZoomOut() {
       return !canvas.value?.atMinZoom;
     },
+    get fitRestores() {
+      return Boolean(canvas.value?.fitRestores);
+    },
     get focusMode() {
       return focusMode.on;
     },

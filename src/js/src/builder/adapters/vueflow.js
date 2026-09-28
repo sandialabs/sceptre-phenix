@@ -946,3 +946,50 @@ export function zoomFloor(bounds, pane, least, overlays = []) {
   // Room that leaves nothing to show the diagram in is no floor at all.
   return Math.min(least, (clear || fitZoom(bounds, pane)) / 2);
 }
+
+// --- Fit, and back to the view before it ------------------------------------
+//
+// After Fit, the zoom controls' Fit button (and the view.fit command)
+// restores the view from just before it, until the view changes some other
+// way: a pan or a zoom, the minimap, Reset view, or bringing a node into
+// view. What Fit keeps is null, or {before, fitted}: the view to restore
+// and the view Fit made. Views are {x, y, zoom}, as Vue Flow's viewport.
+
+// Less than half a pixel of pan, and a thousandth of zoom, is no change.
+function sameView(a, b) {
+  return (
+    Math.abs(a.x - b.x) < 0.5 &&
+    Math.abs(a.y - b.y) < 0.5 &&
+    Math.abs(a.zoom - b.zoom) < 0.001
+  );
+}
+
+/**
+ * What Fit keeps after it changed the view from `before` to `fitted`:
+ * nothing when it did not change it, as there is nothing to go back to.
+ *
+ * @param {{x: number, y: number, zoom: number}} before
+ * @param {{x: number, y: number, zoom: number}} fitted
+ * @returns {{before: object, fitted: object}|null}
+ */
+export function keepFit(before, fitted) {
+  if (sameView(before, fitted)) {
+    return null;
+  }
+
+  const view = ({ x, y, zoom }) => ({ x, y, zoom });
+
+  return { before: view(before), fitted: view(fitted) };
+}
+
+/**
+ * What Fit keeps once the view is `view`: the same while it is still the
+ * view Fit made, and nothing once anything else has moved it.
+ *
+ * @param {{before: object, fitted: object}|null} kept
+ * @param {{x: number, y: number, zoom: number}} view
+ * @returns {{before: object, fitted: object}|null}
+ */
+export function keptFit(kept, view) {
+  return kept && sameView(kept.fitted, view) ? kept : null;
+}

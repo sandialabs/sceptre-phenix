@@ -105,6 +105,7 @@ function fakeView(overrides = {}) {
     panes: { hidden: { start: false, end: false }, stacked: false },
     canZoomIn: true,
     canZoomOut: true,
+    fitRestores: false,
     focusMode: false,
     ...overrides,
   };
@@ -497,6 +498,10 @@ describe('availability', () => {
     expect(
       commandTitle('view.minimap', context({ view: { showMinimap: false } })),
     ).toBe('Show minimap');
+    expect(commandTitle('view.fit', context())).toBe('Fit diagram to view');
+    expect(
+      commandTitle('view.fit', context({ view: { fitRestores: true } })),
+    ).toBe('Restore previous view');
     expect(commandTitle('view.focusMode', context())).toBe('Focus mode');
     expect(
       commandTitle('view.focusMode', context({ view: { focusMode: true } })),

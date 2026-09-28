@@ -17,6 +17,8 @@ import {
   handlesFor,
   hiddenArea,
   itemPoint,
+  keepFit,
+  keptFit,
   nearestNode,
   NEW_INTERFACE_HANDLE_ID,
   NODE_HINT_ID,
@@ -915,5 +917,35 @@ describe('fitting large diagrams', () => {
         { left: -10, top: -10, right: 800, bottom: 700 },
       ]),
     ).toBe(plain);
+  });
+});
+
+describe('Fit, and back to the view before it', () => {
+  const before = { x: 40, y: -12, zoom: 1.44 };
+  const fitted = { x: 212.5, y: 96.25, zoom: 0.31 };
+
+  test('Fit keeps the view from before it, and the view it made', () => {
+    const kept = keepFit({ ...before, extra: true }, fitted);
+
+    expect(kept).toEqual({ before, fitted });
+    // Copies: Vue Flow replaces its viewport object on each change.
+    expect(kept.fitted).not.toBe(fitted);
+
+    // A Fit that changed nothing has nothing to go back to.
+    expect(keepFit(fitted, { ...fitted, x: fitted.x + 0.2 })).toBeNull();
+  });
+
+  test('the view Fit made keeps it; any other pan or zoom forgets it', () => {
+    const kept = keepFit(before, fitted);
+
+    expect(keptFit(kept, { ...fitted })).toBe(kept);
+    // Rounding in Vue Flow is no change.
+    expect(keptFit(kept, { ...fitted, y: fitted.y - 0.3 })).toBe(kept);
+    // A pan, a zoom, and going back to the view from before.
+    expect(keptFit(kept, { ...fitted, x: fitted.x + 24 })).toBeNull();
+    expect(keptFit(kept, { ...fitted, zoom: fitted.zoom * 1.2 })).toBeNull();
+    expect(keptFit(kept, before)).toBeNull();
+    // Nothing kept stays so.
+    expect(keptFit(null, fitted)).toBeNull();
   });
 });

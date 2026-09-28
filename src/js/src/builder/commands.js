@@ -113,6 +113,8 @@ export const VIEW_API = [
   'panes',
   'canZoomIn', // boolean
   'canZoomOut', // boolean
+  // boolean: after Fit, fitView goes back to the view from before it
+  'fitRestores',
   'focusMode', // boolean: focus mode is on (see focusMode.js)
   'openDialog', // (name) publish, export, import, scenario, share
   'openPalette', // ({query, command}) the command palette: dialog 'commands'
@@ -134,7 +136,7 @@ export const VIEW_API = [
   'setTheme', // (theme) system, light or dark
   'zoomIn', // ()
   'zoomOut', // ()
-  'fitView', // ()
+  'fitView', // () fits the diagram, or goes back (fitRestores)
   'focusCanvas', // ()
   'focusOutline', // ()
   'focusInspector', // ({field}) its first field when field is true
@@ -1496,13 +1498,20 @@ export const COMMANDS = [
     run: ({ view }) => view.zoomOut(),
   },
   {
+    // The zoom controls' Fit button, which becomes Restore previous view
+    // after Fit, until the view changes some other way.
     id: 'view.fit',
     title: 'Fit diagram to view',
     group: 'View',
-    keywords: ['zoom', 'whole', 'all'],
+    keywords: ['zoom', 'whole', 'all', 'fit', 'restore', 'previous', 'back'],
     keys: ['Shift+1'],
     scope: 'canvas',
-    phrase: 'fits the diagram to the view',
+    phrase:
+      'fits the diagram to the view, and a second press restores the view from before',
+    label: ({ view }) =>
+      view.fitRestores ? 'Restore previous view' : 'Fit diagram to view',
+    detail: ({ view }) =>
+      view.fitRestores ? 'The zoom and position from before Fit' : '',
     run: ({ view }) => view.fitView(),
   },
   {
