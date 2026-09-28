@@ -180,6 +180,29 @@ export class History {
     return dropped;
   }
 
+  /**
+   * Drops the entries `test` picks, such as those of a snapshot deleted
+   * from the server, so undo and redo skip them. The current entry is
+   * always kept.
+   *
+   * @param {(entry: object) => boolean} test
+   * @returns {number} the number of entries dropped
+   */
+  removeWhere(test) {
+    const current = this.entries[this.index];
+    const kept = this.entries.filter(
+      (entry) => entry === current || !test(entry),
+    );
+    const dropped = this.entries.length - kept.length;
+
+    if (dropped > 0) {
+      this.entries = kept;
+      this.index = kept.indexOf(current);
+    }
+
+    return dropped;
+  }
+
   /** @returns {number} retained snapshot count */
   get size() {
     return this.entries.length;

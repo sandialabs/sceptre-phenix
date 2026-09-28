@@ -1,17 +1,43 @@
-// The Share dialog's username field: an editable combobox with list
-// autocomplete (WAI-ARIA APG), when the role may list users. This module
-// holds its logic, so it is tested without a browser: which users it
-// suggests, and what each key does.
+// The Share dialog's user field: an editable combobox with list
+// autocomplete (WAI-ARIA APG) over the users the draft's owner may share it
+// with. This module holds its logic, so it is tested without a browser:
+// which users it lists, how they are named, and what each key does.
 
 import { matchItem } from './fuzzy.js';
 
-// The most suggestions shown at once.
-export const MAX_OPTIONS = 8;
+/**
+ * How the list names a user: "Name (username)", or the username alone when
+ * the user has no name.
+ *
+ * @param {{username: string, name?: string}} user
+ * @returns {string}
+ */
+export function userLabel(user) {
+  return user?.name ? `${user.name} (${user.username})` : user?.username || '';
+}
 
 /**
- * The users to suggest for what was typed, best match first: by username,
- * then by name. Users in `exclude` (the owner and anyone listed already)
- * are left out.
+ * The user the field's text names: by their username, or by the label the
+ * list gives them (see userLabel), as choosing them from it leaves.
+ *
+ * @param {{username: string, name?: string}[]} users
+ * @param {string} text
+ * @returns {{username: string, name: string}|null}
+ */
+export function findUser(users, text) {
+  const wanted = String(text ?? '').trim();
+
+  return (
+    (users || []).find(
+      (user) => user?.username === wanted || userLabel(user) === wanted,
+    ) || null
+  );
+}
+
+/**
+ * The users to list for what was typed, best match first: by username, then
+ * by name; with nothing typed, all of them, by username. Users in `exclude`
+ * (the owner and anyone listed already) are left out.
  *
  * @param {{username: string, name?: string}[]} users
  * @param {string} query
@@ -21,7 +47,7 @@ export const MAX_OPTIONS = 8;
 export function userOptions(
   users,
   query,
-  { exclude = [], limit = MAX_OPTIONS } = {},
+  { exclude = [], limit = Infinity } = {},
 ) {
   const skip = new Set(exclude);
   const text = String(query ?? '').trim();

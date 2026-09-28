@@ -1,6 +1,7 @@
 <!--
-  Draft history: the open draft's snapshots on the server, oldest first, each
-  of which can be restored.
+  Draft History: the open draft's snapshots on the server, oldest first, as
+  a table of their number, name, date and who saved them, with a Restore
+  and a Delete button in each row.
 
   The dialog opens at once and reads the list while it shows (see
   fetchHistory in store.js). Until the list arrives the dialog is described
@@ -9,14 +10,24 @@
   read is reported here, with a button to read again, rather than by the
   page alert behind the dialog.
 
+  Restore and Delete are icon buttons named for their row, with tooltips;
+  Escape hides a tooltip before it closes the dialog. Clicking a snapshot's
+  name restores it too; that button, described as doing so, is out of the
+  tab order, as its row's Restore does the same. The current snapshot (the
+  draft's cursor) is marked, and cannot be deleted. Delete asks first, then
+  says how it went in the dialog's own status and alert (the page's live
+  region waits until the dialog closes), and focus moves to the next row's
+  Delete. A user who may only view the draft gets neither action.
+
   A snapshot of edits the Builder applied for the user (the Inspector's
   unapplied edits, saved before the diagram was left, published or
-  exported; see leave.js) is marked Automatic, in its name too, and a line
-  under the list says what that means.
+  exported; see leave.js) is marked Automatic, and a line under the table
+  says what that means. On a narrow screen the table scrolls sideways in
+  its own box, which then takes focus, with the actions kept in view.
 -->
 <template>
   <builder-dialog
-    title="Draft history"
+    title="Draft History"
     title-id="history-dialog-title"
     data-testid="history-dialog"
     aria-describedby="history-status"
@@ -28,28 +39,117 @@
       <div
         :aria-busy="store.historyLoading ? 'true' : undefined"
         data-testid="history-content">
-        <!-- The visible text is the whole name: the list gives the order,
-             so the name adds no number of its own (WCAG 2.5.3). -->
-        <ol v-if="listed" class="builder-history" data-testid="history-list">
-          <li
-            v-for="(entry, index) in store.serverHistory"
-            :key="entry.id || index">
-            <button
-              type="button"
-              class="builder-button"
-              :aria-disabled="restoring || undefined"
-              @click="restore(entry)">
-              <span>Restore {{ snapshotName(entry, index) }}</span>
-              <span
-                v-if="automatic(entry)"
-                class="builder-history__auto"
-                data-testid="history-automatic">
-                <builder-icon name="save" :size="12" />
-                <span class="builder-visually-hidden">, </span>Automatic
-              </span>
-            </button>
-          </li>
-        </ol>
+        <!-- A table wider than its box scrolls in it, which then takes
+             focus, so the keys scroll it too. -->
+        <div
+          v-if="listed"
+          ref="scrollEl"
+          class="builder-history__scroll"
+          :class="{ 'is-scrolling': scrolls }"
+          :role="scrolls ? 'region' : undefined"
+          :aria-labelledby="scrolls ? 'history-dialog-title' : undefined"
+          :tabindex="scrolls ? '0' : undefined"
+          data-testid="history-scroll">
+          <table
+            ref="tableEl"
+            class="builder-history"
+            aria-labelledby="history-dialog-title"
+            tabindex="-1"
+            data-testid="history-table">
+            <thead>
+              <tr>
+                <th scope="col" class="builder-history__number">
+                  <span aria-hidden="true">#</span>
+                  <span class="builder-visually-hidden">Number</span>
+                </th>
+                <th scope="col">Name</th>
+                <th scope="col">Date</th>
+                <th scope="col">User</th>
+                <th
+                  v-if="canChange"
+                  scope="col"
+                  class="builder-history__actions">
+                  <span class="builder-visually-hidden">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(entry, index) in store.serverHistory"
+                :key="entry.id || index"
+                :class="{ 'is-current': entry.current }"
+                data-testid="history-row">
+                <td class="builder-history__number">{{ index + 1 }}</td>
+                <td class="builder-history__name">
+                  <button
+                    v-if="canChange"
+                    type="button"
+                    tabindex="-1"
+                    class="builder-history__name-button"
+                    aria-describedby="history-name-note"
+                    :aria-disabled="busy || undefined"
+                    data-testid="history-name"
+                    @click="restore(entry)">
+                    {{ changeName(entry, index) }}
+                  </button>
+                  <span v-else data-testid="history-name">{{
+                    changeName(entry, index)
+                  }}</span>
+                  <span
+                    v-if="automatic(entry)"
+                    class="builder-history__badge"
+                    data-testid="history-automatic">
+                    <builder-icon name="save" :size="12" />
+                    <span class="builder-visually-hidden">, </span>Automatic
+                  </span>
+                  <span
+                    v-if="entry.current"
+                    class="builder-history__badge builder-history__badge--current"
+                    data-testid="history-current">
+                    <span class="builder-visually-hidden">, </span>Current
+                  </span>
+                </td>
+                <td class="builder-history__date">
+                  <time :datetime="entry.createdAt">{{
+                    formatTimestamp(entry.createdAt, { seconds: true })
+                  }}</time>
+                </td>
+                <td class="builder-history__user">{{ entry.createdBy }}</td>
+                <td v-if="canChange" class="builder-history__actions">
+                  <button
+                    type="button"
+                    class="builder-button builder-history__action"
+                    :aria-label="`Restore ${snapshotName(entry, index)}`"
+                    :aria-disabled="busy || undefined"
+                    data-testid="history-restore"
+                    v-on="tipFor('Restore')"
+                    @click="restore(entry)">
+                    <builder-icon name="restore" :size="14" />
+                  </button>
+                  <button
+                    type="button"
+                    class="builder-button builder-history__action"
+                    :aria-label="`Delete ${snapshotName(entry, index)}`"
+                    :aria-describedby="
+                      entry.current ? 'history-current-note' : undefined
+                    "
+                    :aria-disabled="entry.current || busy || undefined"
+                    data-testid="history-delete"
+                    v-on="
+                      tipFor(
+                        entry.current ? `Delete. ${CURRENT_NOTE}` : 'Delete',
+                      )
+                    "
+                    @click="askDelete(entry, index)">
+                    <builder-icon name="trash" :size="14" />
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <span id="history-current-note" hidden>{{ CURRENT_NOTE }}.</span>
+        <span id="history-name-note" hidden>Restores this snapshot.</span>
         <p
           v-if="listed && store.serverHistory.some(automatic)"
           class="builder-hint"
@@ -65,13 +165,13 @@
         id="history-status"
         class="builder-dialog__message builder-history__status"
         :class="{
-          'builder-visually-hidden': listed && !restoring,
+          'builder-visually-hidden': listed && !busy,
           'builder-history__status--empty': !statusText,
         }"
         role="status"
         data-testid="history-status">
         <span
-          v-if="store.historyLoading || restoring"
+          v-if="store.historyLoading || busy"
           class="builder-history__spinner"
           aria-hidden="true"></span>
         {{ statusText }}
@@ -80,6 +180,12 @@
         <span v-if="store.historyError" data-testid="history-error">{{
           store.historyError
         }}</span>
+        <span
+          v-else-if="problem.text"
+          :key="problem.key"
+          data-testid="history-problem"
+          >{{ problem.text }}</span
+        >
       </p>
       <div v-if="store.historyError" class="builder-dialog__actions">
         <button
@@ -92,14 +198,43 @@
         </button>
       </div>
     </template>
+
+    <div
+      v-if="tip"
+      ref="tipEl"
+      class="builder-tooltip builder-tooltip--fixed"
+      data-testid="history-tooltip"
+      aria-hidden="true"
+      :style="{ top: `${tip.top}px`, left: `${tip.left}px` }">
+      {{ tip.text }}
+    </div>
+
+    <builder-confirm
+      v-if="confirming"
+      id="history-confirm"
+      title="Delete snapshot?"
+      :message="`${confirming.name} is removed from the draft history. This cannot be undone.`"
+      confirm-label="Delete snapshot"
+      @confirm="confirmDelete"
+      @cancel="confirming = null" />
   </builder-dialog>
 </template>
 
 <script setup>
-  import { computed, onBeforeUnmount, ref } from 'vue';
+  import {
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    watch,
+  } from 'vue';
 
+  import BuilderConfirm from '../BuilderConfirm.vue';
   import BuilderDialog from '../BuilderDialog.vue';
   import BuilderIcon from '../BuilderIcon.vue';
+  import { useFixedTooltip } from '../fixedTooltip.js';
+  import { useMessage } from './message.js';
 
   import { count } from '@/builder/announce.js';
   import { formatTimestamp } from '@/builder/format.js';
@@ -110,6 +245,16 @@
 
   const store = useBuilderStore();
   const restoring = ref(false);
+  const deleting = ref(false);
+  // What the last delete did, for the status line; '' for nothing yet.
+  const deleted = ref('');
+  // Why the last delete did not happen.
+  const problem = useMessage();
+  // The snapshot Delete asks about: {entry, index, name}.
+  const confirming = ref(null);
+  const tableEl = ref(null);
+
+  const CURRENT_NOTE = 'The current snapshot cannot be deleted';
 
   // Read before the first render, so the dialog opens loading rather than
   // showing the list it had last time. A published diagram shown read only
@@ -125,6 +270,10 @@
       store.serverHistory.length > 0,
   );
 
+  // Restore and Delete follow the draft's access: none for a viewer.
+  const canChange = computed(() => !store.readOnly);
+  const busy = computed(() => restoring.value || deleting.value);
+
   const statusText = computed(() => {
     if (store.historyLoading) {
       return 'Loading the draft history…';
@@ -132,22 +281,33 @@
     if (restoring.value) {
       return 'Restoring the snapshot…';
     }
+    if (deleting.value) {
+      return 'Deleting the snapshot…';
+    }
     if (store.historyError) {
       return '';
     }
 
-    return listed.value
+    const listing = listed.value
       ? `${count(store.serverHistory.length, 'snapshot')}, oldest first.`
       : 'The server holds no snapshots for this draft yet.';
+
+    return deleted.value ? `${deleted.value} ${listing}` : listing;
   });
 
-  // Snapshots are named by their change and time, never by their id. The
-  // first one has no summary: it is the draft as created.
-  function snapshotName(entry, index) {
-    const change =
-      entry.summary || (index === 0 ? 'Draft created' : 'Saved version');
+  // What a snapshot changed. The first one has no summary: it is the draft
+  // as created.
+  function changeName(entry, index) {
+    return entry.summary || (index === 0 ? 'Draft created' : 'Saved version');
+  }
 
-    return [change, formatTimestamp(entry.createdAt, { seconds: true })]
+  // Snapshots are named by their change and time, never by their id: two
+  // can share a change.
+  function snapshotName(entry, index) {
+    return [
+      changeName(entry, index),
+      formatTimestamp(entry.createdAt, { seconds: true }),
+    ]
       .filter(Boolean)
       .join(', ');
   }
@@ -165,19 +325,76 @@
     store.fetchHistory();
   }
 
+  // Whether the table is wider than its box, which then scrolls.
+  const scrollEl = ref(null);
+  const scrolls = ref(false);
+  let resizing = null;
+
+  watch(scrollEl, (element) => {
+    resizing?.disconnect();
+    resizing = null;
+
+    if (!element || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const measure = () => {
+      scrolls.value = element.scrollWidth > element.clientWidth;
+    };
+
+    resizing = new ResizeObserver(measure);
+    resizing.observe(element);
+    resizing.observe(element.firstElementChild);
+    measure();
+  });
+
+  // --- tooltips --------------------------------------------------------
+
+  const { tip, tipEl, showTip, scheduleHide, hideTip } = useFixedTooltip({
+    side: 'end',
+  });
+
+  function tipFor(text) {
+    const show = (event) => showTip(event, text);
+
+    return {
+      mouseenter: show,
+      mouseleave: scheduleHide,
+      focus: show,
+      blur: hideTip,
+    };
+  }
+
+  // Escape with a tooltip up hides the tooltip only (WCAG 1.4.13), rather
+  // than the dialog too. This listener is added before the tooltip's own,
+  // which then hides it.
+  function keepOpenForTip(event) {
+    if (event.key === 'Escape' && tip.value) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }
+
+  onMounted(() => {
+    window.addEventListener('keydown', keepOpenForTip, true);
+  });
+
   // The dialog closes once the snapshot is restored, or once the page alert
   // says why it could not be. A second press meanwhile does nothing, and a
   // dialog closed meanwhile leaves the view's next dialog alone.
   let open = true;
   onBeforeUnmount(() => {
     open = false;
+    window.removeEventListener('keydown', keepOpenForTip, true);
+    resizing?.disconnect();
   });
 
   async function restore(entry) {
-    if (restoring.value) {
+    if (busy.value) {
       return;
     }
 
+    hideTip();
     restoring.value = true;
     try {
       await store.restoreSnapshot(entry.id);
@@ -187,6 +404,64 @@
     if (open) {
       emit('close');
     }
+  }
+
+  // --- deleting --------------------------------------------------------
+
+  function askDelete(entry, index) {
+    if (busy.value || entry.current) {
+      return;
+    }
+
+    hideTip();
+    problem.clear();
+    confirming.value = { entry, index, name: snapshotName(entry, index) };
+  }
+
+  // The confirmation closes first, which returns focus to the Delete
+  // button. Once the row is gone, focus moves to the Delete button that
+  // takes its place, or the one before it when it was the last row.
+  async function confirmDelete() {
+    if (!confirming.value || busy.value) {
+      return;
+    }
+
+    const { entry, index, name } = confirming.value;
+
+    confirming.value = null;
+    deleting.value = true;
+    deleted.value = '';
+
+    let result;
+    try {
+      result = await store.deleteSnapshot(entry.id);
+    } finally {
+      deleting.value = false;
+    }
+
+    if (!open) {
+      return;
+    }
+
+    if (result.deleted) {
+      deleted.value = `Deleted ${name}.`;
+    } else if (result.message) {
+      problem.set(result.message);
+    }
+
+    await nextTick();
+
+    // A snapshot still listed keeps focus on its Delete.
+    const buttons = [
+      ...(tableEl.value?.querySelectorAll('[data-testid="history-delete"]') ||
+        []),
+    ];
+    const kept = store.serverHistory.findIndex((item) => item.id === entry.id);
+    const next = result.deleted
+      ? buttons[index] || buttons[index - 1]
+      : buttons[kept];
+
+    (next || tableEl.value)?.focus();
   }
 </script>
 
@@ -226,22 +501,134 @@
     gap: 0.5rem;
   }
 
-  /* The mark of a snapshot the Builder saved for the user. Its border
-     shows in forced colors too, and it wraps under the name when the
-     dialog is narrow. */
-  .builder-history .builder-button {
-    flex-wrap: wrap;
+  /* On a narrow screen the table scrolls sideways here, not the page. It
+     holds the headers' hidden text too, which is positioned. */
+  .builder-history__scroll {
+    position: relative;
+    max-width: 100%;
+    overflow-x: auto;
   }
 
-  .builder-history__auto {
+  /* Separate borders, so a cell kept in view keeps its own. */
+  .builder-history {
+    width: 100%;
+    min-width: 34rem;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.9rem;
+  }
+
+  .builder-history th {
+    font-weight: 600;
+    text-align: start;
+    color: var(--bx-text-muted);
+    border-bottom: 1px solid var(--bx-border-strong);
+  }
+
+  .builder-history th,
+  .builder-history td {
+    padding: 0.3rem 0.5rem;
+    vertical-align: middle;
+  }
+
+  .builder-history td {
+    border-bottom: 1px solid var(--bx-border);
+  }
+
+  .builder-history tr.is-current td {
+    background: var(--bx-selected-bg);
+  }
+
+  .builder-history__number {
+    width: 1%;
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .builder-history th.builder-history__number {
+    text-align: end;
+  }
+
+  .builder-history__name {
+    overflow-wrap: anywhere;
+  }
+
+  /* A name restores its snapshot on a click; it reads as the name, and its
+     row's Restore button is the keyboard's way to the same. */
+  .builder-history__name-button {
+    min-height: 24px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--bx-accent);
+    font: inherit;
+    text-align: start;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .builder-history__name-button[aria-disabled='true'] {
+    color: var(--bx-text-muted);
+    cursor: not-allowed;
+  }
+
+  .builder-history__date,
+  .builder-history__user {
+    white-space: nowrap;
+  }
+
+  /* The actions stay in view while the table scrolls under them. */
+  .builder-history__actions {
+    position: sticky;
+    right: 0;
+    width: 1%;
+    background: var(--bx-surface);
+    white-space: nowrap;
+  }
+
+  .is-scrolling .builder-history__actions {
+    box-shadow: inset 1px 0 0 var(--bx-border-strong);
+  }
+
+  .builder-history__action {
+    justify-content: center;
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0.25rem;
+  }
+
+  .builder-history__action + .builder-history__action {
+    margin-inline-start: 0.25rem;
+  }
+
+  /* The marks of a snapshot the Builder saved for the user, and of the
+     current one. Their borders show in forced colors too, and they wrap
+     under the name when the column is narrow. */
+  .builder-history__badge {
     display: inline-flex;
-    flex: none;
     align-items: center;
     gap: 0.2rem;
+    margin-inline-start: 0.4rem;
     padding: 0 0.3rem;
     border: 1px solid var(--bx-border-strong);
     border-radius: var(--bx-radius);
     font-size: 0.75rem;
+    white-space: nowrap;
+  }
+
+  .builder-history__badge--current {
+    border-color: var(--bx-accent);
+    color: var(--bx-accent);
+    font-weight: 600;
+  }
+
+  @media (pointer: coarse) {
+    .builder-history__action,
+    .builder-history__name-button {
+      min-width: 44px;
+      min-height: 44px;
+    }
   }
 
   /* Forced colors draw every border in one color, which would hide the
@@ -250,6 +637,14 @@
     .builder-history__spinner {
       border-color: Canvas;
       border-top-color: CanvasText;
+    }
+
+    .builder-history__name-button {
+      color: LinkText;
+    }
+
+    .builder-history tr.is-current td {
+      background: none;
     }
   }
 </style>

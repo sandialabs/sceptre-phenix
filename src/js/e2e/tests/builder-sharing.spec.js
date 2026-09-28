@@ -133,9 +133,34 @@ test(
       const dialog = await shareDialog(page);
       const field = dialog.getByTestId('share-user');
       const access = dialog.getByTestId('share-access');
+      const options = dialog.getByRole('listbox', { name: 'Users' });
       await expect(field).toBeFocused();
+      await expect(dialog.getByTestId('share-users-note')).toHaveText('');
 
+      // Down Arrow opens the users the draft may be shared with, named
+      // "Name (username)", never the owner; typing filters them, and Enter
+      // takes the one in view.
+      await field.press('ArrowDown');
+      await expect(options).toBeVisible();
+      await expect(field).toHaveAttribute('aria-expanded', 'true');
+      await expect(
+        options.getByRole('option', { name: owner.username }),
+      ).toHaveCount(0);
       await page.keyboard.type(editor.username);
+      const choice = options.getByRole('option');
+      await expect(choice).toHaveCount(1);
+      await expect(choice).toHaveText(
+        new RegExp(`^.+ \\(${editor.username}\\)$`),
+      );
+      const label = (await choice.textContent()).trim();
+      await field.press('ArrowDown');
+      await expect(field).toHaveAttribute(
+        'aria-activedescendant',
+        await choice.getAttribute('id'),
+      );
+      await field.press('Enter');
+      await expect(options).toBeHidden();
+      await expect(field).toHaveValue(label);
       await access.selectOption('edit');
       await field.press('Enter');
       await expect(dialog.getByTestId('share-status')).toHaveText(
@@ -144,6 +169,7 @@ test(
       await expect(field).toBeFocused();
       await expect(field).toHaveValue('');
 
+      // A username typed in full is taken as it is.
       await page.keyboard.type(viewer.username);
       await access.selectOption('view');
       await field.press('Enter');
@@ -255,6 +281,23 @@ test(
         'aria-disabled',
         'true',
       );
+
+      // Draft History lists the snapshots, but a viewer can neither restore
+      // nor delete one.
+      await theirs.getByTestId('toolbar-history').click();
+      const history = theirs.getByTestId('history-dialog');
+      await expect(history.getByTestId('history-row')).toHaveCount(2);
+      await expect(history.getByTestId('history-name').first()).toHaveText(
+        'Draft created',
+      );
+      for (const action of ['restore', 'delete']) {
+        await expect(history.getByTestId(`history-${action}`)).toHaveCount(0);
+      }
+      await expect(
+        history.getByRole('button', { name: 'Draft created' }),
+      ).toHaveCount(0);
+      await theirs.keyboard.press('Escape');
+      await expect(history).toHaveCount(0);
     });
 
     await test.step('only the owner deletes it or changes who has access, and no one else finds it', async () => {
@@ -274,9 +317,34 @@ test(
         data: { shares: [] },
       });
       expect(changed.status()).toBe(403);
+      // Only the owner learns whom the draft can be shared with.
+      const candidates = `${path}/shares/candidates`;
+      expect((await editor.api.get(candidates)).status()).toBe(403);
+      const offered = (await (await owner.api.get(candidates)).json()).users;
+      expect(offered.map((user) => user.username)).toEqual(
+        expect.arrayContaining([editor.username, viewer.username]),
+      );
+
+      // A viewer deletes no snapshot; the editor's rename left an older one.
+      const older = (
+        await (await owner.api.get(`${path}/snapshots`)).json()
+      ).snapshots.find((snapshot) => !snapshot.current);
+      const snapshot = `${path}/snapshots/${older.id}`;
+      const refused = await viewer.api.delete(snapshot, {
+        headers: { 'If-Match': etag },
+      });
+      expect(refused.status()).toBe(403);
+      expect(
+        (
+          await stranger.api.delete(snapshot, {
+            headers: { 'If-Match': etag },
+          })
+        ).status(),
+      ).toBe(404);
 
       expect((await stranger.api.get(path)).status()).toBe(404);
       expect((await stranger.api.get(`${path}/shares`)).status()).toBe(404);
+      expect((await stranger.api.get(candidates)).status()).toBe(404);
       const listed = await (
         await stranger.api.get(`${API}/builder/drafts`)
       ).json();
@@ -481,6 +549,30 @@ test('mistakes and changes from elsewhere in the Share dialog', async ({
     'Mistakes_lab_with_a_really_long_unbroken_name_2026',
   );
   const { page } = owner;
+  // The users the server offers, less those of other tests, and someone
+  // whose account is gone by the time the list is saved.
+  const nobody = `nobody-${Date.now()}`;
+  const candidates = '**/api/v1/builder/drafts/*/*/shares/candidates';
+  let failUsers = false;
+  await page.route(candidates, async (route) => {
+    if (failUsers) {
+      return route.fulfill({ status: 503, json: { message: 'try later' } });
+    }
+
+    const response = await route.fetch();
+    const { users } = await response.json();
+    const ours = [owner, editor, viewer].map((user) => user.username);
+
+    return route.fulfill({
+      response,
+      json: {
+        users: [
+          ...users.filter((user) => ours.includes(user.username)),
+          { username: nobody, name: '' },
+        ],
+      },
+    });
+  });
 
   await landing(owner);
   await page.getByTestId(`draft-share-${draft.id}`).click();
@@ -509,7 +601,12 @@ test('mistakes and changes from elsewhere in the Share dialog', async ({
   });
 
   await test.step('someone the server does not know is named in a summary that takes focus', async () => {
-    const nobody = `nobody-${Date.now()}`;
+    // Refused where it was typed, when the list does not offer them.
+    await field.fill(`${nobody}-typed`);
+    await field.press('Enter');
+    await expect(error).toHaveText(`No user named ${nobody}-typed.`);
+    await expect(field).toBeFocused();
+
     await dialog.getByTestId('share-access').selectOption('edit');
     await field.fill(nobody);
     await field.press('Enter');
@@ -593,6 +690,43 @@ test('mistakes and changes from elsewhere in the Share dialog', async ({
     await page.unroute(shares);
     await slow.getByTestId('share-cancel').click();
     await expect(slow).toBeHidden();
+  });
+
+  await test.step('the list says when no one is left to add, and a failed read offers Retry', async () => {
+    await page.getByTestId(`draft-share-${draft.id}`).click();
+    const full = await shareDialog(page);
+    const add = full.getByTestId('share-add');
+    await expect(full.getByTestId('share-users-note')).toHaveText('');
+    await full.getByTestId('share-user-toggle').click();
+    await full.getByRole('option', { name: nobody }).click();
+    await add.click();
+    await expect(full.getByTestId('share-users-note')).toHaveText(
+      'No other users to share with.',
+    );
+    await expect(add).toHaveAttribute('aria-disabled', 'true');
+    await expect(add).toHaveAccessibleDescription(
+      'No other users to share with.',
+    );
+    await full.getByTestId('share-cancel').click();
+    await full.getByTestId('share-discard-confirm').click();
+    await expect(full).toBeHidden();
+
+    failUsers = true;
+    await page.getByTestId(`draft-share-${draft.id}`).click();
+    const failed = await shareDialog(page);
+    const retry = failed.getByTestId('share-users-retry');
+    await expect(failed.getByTestId('share-users-note')).toContainText(
+      'Could not load users. Try later.',
+    );
+    await expect(failed.getByTestId('share-user')).toHaveAccessibleDescription(
+      /^Could not load users\./,
+    );
+    failUsers = false;
+    await retry.click();
+    await expect(failed.getByTestId('share-user')).toBeFocused();
+    await expect(failed.getByTestId('share-users-note')).toHaveText('');
+    await failed.getByTestId('share-cancel').click();
+    await expect(failed).toBeHidden();
   });
 
   await test.step('at 320 pixels wide the dialog fits, and every control can be reached', async () => {

@@ -682,30 +682,102 @@ describe('the History dialog', () => {
     },
   ];
 
+  // The text of each cell of each body row.
+  function cells(html) {
+    const body = /<tbody\b[^>]*>([\s\S]*?)<\/tbody>/.exec(html)[1];
+
+    return [...body.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map(([, row]) =>
+      [...row.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/g)].map(([, cell]) =>
+        cell
+          .replace(/<[^>]+>/g, '')
+          .replace(/\s+/g, ' ')
+          .trim(),
+      ),
+    );
+  }
+
   test('marks the snapshots of edits saved automatically, and says what that means', async () => {
     const html = await renderDialog(HistoryDialog, {}, (store) => {
       store.serverHistory = history;
     });
-    const list = /<ol[^>]*data-testid="history-list"[^>]*>[\s\S]*?<\/ol>/.exec(
-      html,
-    )[0];
-    const buttons = [
-      ...list.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g),
-    ].map(([, inner]) =>
-      inner
-        .replace(/<[^>]+>/g, '')
-        .replace(/\s+/g, ' ')
-        .trim(),
-    );
+    const names = cells(html).map((row) => row[1]);
 
-    expect(buttons).toHaveLength(3);
-    expect(buttons[1]).toMatch(
-      /^Restore Saved unapplied changes to Device alpha, .+, Automatic$/,
-    );
-    expect(buttons[0]).not.toContain('Automatic');
-    expect(buttons[2]).not.toContain('Automatic');
+    expect(names).toHaveLength(3);
+    expect(names[1]).toBe('Saved unapplied changes to Device alpha, Automatic');
+    expect(names[0]).not.toContain('Automatic');
+    expect(names[2]).not.toContain('Automatic');
     expect(html.match(/data-testid="history-automatic"/g)).toHaveLength(1);
     expect(html).toContain('data-testid="history-automatic-hint"');
+  });
+
+  test('is a table of number, name, date and user, with actions named for their row', async () => {
+    const html = await renderDialog(HistoryDialog, {}, (store) => {
+      store.serverHistory = history.map((entry, index) => ({
+        ...entry,
+        createdBy: index === 2 ? 'bob' : 'alice',
+        current: index === 1,
+      }));
+    });
+    const table = tags(html, 'table')[0];
+    const headers = [...html.matchAll(/<th scope="col"[^>]*>([\s\S]*?)<\/th>/g)]
+      .map(([, inner]) => inner.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '))
+      .map((text) => text.trim());
+    const rows = cells(html);
+
+    expect(tags(html, 'h2')[0]).toContain('id="history-dialog-title"');
+    expect(html).toMatch(/<h2 id="history-dialog-title"[^>]*>Draft History</);
+    expect(table).toContain('aria-labelledby="history-dialog-title"');
+    expect(headers).toEqual(['# Number', 'Name', 'Date', 'User', 'Actions']);
+    expect(rows.map((row) => row[0])).toEqual(['1', '2', '3']);
+    expect(rows[0][1]).toBe('Draft created');
+    expect(rows[2][1]).toBe('Applied changes to Device alpha');
+    expect(rows[1][1]).toMatch(/, Current$/);
+    expect(rows.map((row) => row[3])).toEqual(['alice', 'alice', 'bob']);
+    expect(html).toContain('<time datetime="2026-09-27T10:02:00Z"');
+
+    // The name restores too, from a click: the row's Restore is the
+    // keyboard's way.
+    const names = tags(html, 'button').filter((tag) =>
+      tag.includes('data-testid="history-name"'),
+    );
+
+    expect(names).toHaveLength(3);
+    for (const name of names) {
+      expect(name).toContain('tabindex="-1"');
+      expect(name).toContain('aria-describedby="history-name-note"');
+    }
+
+    const restore = tags(html, 'button').filter((tag) =>
+      tag.includes('data-testid="history-restore"'),
+    );
+    const remove = tags(html, 'button').filter((tag) =>
+      tag.includes('data-testid="history-delete"'),
+    );
+
+    expect(restore).toHaveLength(3);
+    expect(restore[2]).toMatch(
+      /aria-label="Restore Applied changes to Device alpha, [^"]+"/,
+    );
+    expect(remove[0]).toMatch(/aria-label="Delete Draft created, [^"]+"/);
+    expect(remove[0]).not.toContain('aria-disabled');
+    // The current snapshot cannot be deleted, and its Delete says why.
+    expect(remove[1]).toContain('aria-disabled="true"');
+    expect(remove[1]).toContain('aria-describedby="history-current-note"');
+    expect(html).toMatch(
+      /id="history-current-note" hidden[^>]*>The current snapshot cannot be deleted\.</,
+    );
+  });
+
+  test('a user who may only view the draft gets neither action', async () => {
+    const html = await renderDialog(HistoryDialog, {}, (store) => {
+      store.serverHistory = history;
+      store.readOnly = true;
+    });
+
+    expect(html).not.toContain('history-restore');
+    expect(html).not.toContain('history-delete');
+    expect(tags(html, 'button').join('')).not.toContain('history-name');
+    expect(cells(html)[0]).toHaveLength(4);
   });
 
   test('says nothing of them when none are listed', async () => {

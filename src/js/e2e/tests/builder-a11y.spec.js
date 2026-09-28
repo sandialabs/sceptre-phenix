@@ -1117,7 +1117,7 @@ const DIALOGS = [
   { action: 'import', title: 'Upload diagram' },
   { action: 'export', title: 'Export diagram' },
   { action: 'scenario', title: 'Scenario' },
-  { action: 'history', title: 'Draft history' },
+  { action: 'history', title: 'Draft History' },
 ];
 
 // Opens a dialog with Enter on `opener`, scans it and walks the modal dialog
@@ -1156,6 +1156,10 @@ async function scanDialog(page, builder, opener, surface, title) {
     .toEqual([]);
   await expectRadioGroups(builder.dialog, surface);
 
+  // Escape hides the tooltip of a focused control first (WCAG 1.4.13).
+  if (await builder.dialog.locator('.builder-tooltip').count()) {
+    await page.keyboard.press('Escape');
+  }
   await page.keyboard.press('Escape');
   await expect(builder.dialog).toHaveCount(0);
   await expect.soft(opener, `${surface} returns focus`).toBeFocused();

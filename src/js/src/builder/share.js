@@ -163,7 +163,7 @@ export function addedMessage(user, access) {
 }
 
 /**
- * How many users the username field's suggestions match.
+ * How many users the user field's list matches.
  *
  * @param {number} n
  * @returns {string} "No users match", "1 user matches", "3 users match"
@@ -383,8 +383,8 @@ export function mergeShares(server, base, rows) {
  * @param {string} name as typed
  * @param {object[]} rows the dialog's rows
  * @param {string} owner the draft's owner
- * @param {string[]|null} knownUsers the usernames the role may list, or
- *   null when they are unknown
+ * @param {string[]|null} knownUsers the usernames the draft may be shared
+ *   with, or null when they are unknown
  * @param {number} [maxShares]
  * @returns {{user: string, error: string, row?: object}} error is '' when
  *   the person can be added; row is the row already there for them

@@ -103,15 +103,37 @@ describe('the Share dialog', () => {
     expect(tag(html, 'data-testid="share-copy-status"')).toContain(
       'role="status"',
     );
-    // The username field is plain text until the users are read.
-    const field = tag(html, 'id="share-user"');
-
-    expect(field).not.toContain('role="combobox"');
-    expect(field).toContain('autocapitalize="none"');
-    expect(field).toContain('spellcheck="false"');
-    expect(html).toMatch(/<label for="share-user"[^>]*>Username</);
     expect(html).toMatch(/<label for="share-access"[^>]*>Access</);
     expect(html).toMatch(/<option value="view"[^>]*>Can view</);
+  });
+
+  test('people are added from a list of users, which says while it loads', async () => {
+    const html = await render(ShareDialog, { target });
+    const field = tag(html, 'id="share-user"');
+    const toggle = tag(html, 'data-testid="share-user-toggle"');
+    const list = tag(html, 'id="share-user-options"');
+
+    expect(html).toMatch(/<label for="share-user"[^>]*>User</);
+    expect(field).toContain('role="combobox"');
+    expect(field).toContain('aria-autocomplete="list"');
+    expect(field).toContain('aria-expanded="false"');
+    expect(field).toContain('aria-controls="share-user-options"');
+    expect(field).toContain('aria-describedby="share-users-note"');
+    expect(field).toContain('autocapitalize="none"');
+    expect(field).toContain('spellcheck="false"');
+    // The button opens the list; the keys do the same from the field.
+    expect(toggle).toMatch(/^<button/);
+    expect(toggle).toContain('tabindex="-1"');
+    expect(toggle).toContain('aria-label="Users"');
+    expect(toggle).toContain('aria-expanded="false"');
+    expect(list).toContain('role="listbox"');
+    expect(list).toContain('aria-label="Users"');
+    expect(tag(html, 'data-testid="share-users-note"')).toContain(
+      'role="status"',
+    );
+    expect(html).toMatch(
+      /data-testid="share-users-note"[^>]*>[\s\S]*?Loading users…/,
+    );
   });
 });
 

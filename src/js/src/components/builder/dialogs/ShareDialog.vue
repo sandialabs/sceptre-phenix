@@ -8,9 +8,12 @@
   turns into Keep in place, so focus never jumps. A share whose account was
   removed starts marked for removal.
 
-  People are added by username. When the role may list users, the field is
-  an editable combobox with list autocomplete (WAI-ARIA APG) that suggests
-  them; otherwise it is plain text, and the server checks the names on save.
+  People are added from the users the owner may share the draft with (see
+  loadShareCandidates in store.js), less those listed already. The field is
+  an editable combobox with list autocomplete (WAI-ARIA APG): typing
+  filters the list, and its button opens it whole. Until the users are read,
+  or when they cannot be, a username can still be typed; the server checks
+  it on save.
 
   The page behind the dialog is inert, so its status and alert regions are
   its own. A save that meets a list changed elsewhere (412) reads the list
@@ -40,34 +43,49 @@
       novalidate
       @submit.prevent="add">
       <div class="builder-field builder-share__user">
-        <label for="share-user">Username</label>
+        <label for="share-user">User</label>
         <div class="builder-share__combobox">
           <input
             id="share-user"
             ref="userField"
             v-model="addName"
             type="text"
+            role="combobox"
             autocomplete="off"
             autocapitalize="none"
             spellcheck="false"
-            :disabled="phase === 'saving'"
-            :role="suggesting ? 'combobox' : undefined"
-            :aria-autocomplete="suggesting ? 'list' : undefined"
-            :aria-expanded="suggesting ? String(listShown) : undefined"
-            :aria-controls="suggesting ? 'share-user-options' : undefined"
+            aria-autocomplete="list"
+            :aria-expanded="String(listShown)"
+            aria-controls="share-user-options"
             :aria-activedescendant="
               listShown && active >= 0
                 ? `share-user-option-${active}`
                 : undefined
             "
+            :disabled="phase === 'saving'"
             :aria-invalid="fieldError.field === 'user' ? 'true' : undefined"
-            :aria-describedby="fieldError.text ? 'share-user-error' : undefined"
+            :aria-describedby="userDescription"
             data-testid="share-user"
             @input="onInput"
             @keydown="onUserKeydown"
+            @click="openList"
             @blur="closeList" />
+          <!-- Out of the tab order, as in the APG example: the keys open
+               the list from the field. -->
+          <button
+            type="button"
+            tabindex="-1"
+            class="builder-share__toggle"
+            aria-label="Users"
+            :aria-expanded="String(listShown)"
+            aria-controls="share-user-options"
+            :disabled="phase === 'saving'"
+            data-testid="share-user-toggle"
+            @mousedown.prevent
+            @click="toggleList">
+            <builder-icon name="chevron-down" :size="14" />
+          </button>
           <ul
-            v-if="suggesting"
             v-show="listShown"
             id="share-user-options"
             ref="listEl"
@@ -82,18 +100,36 @@
               class="builder-share__option"
               role="option"
               :aria-selected="index === active ? 'true' : 'false'"
+              :data-testid="`share-user-option-${option.username}`"
               @mousedown.prevent
               @pointermove="active = index"
               @click="choose(index)">
-              <span class="builder-share__option-user">{{
-                option.username
-              }}</span>
-              <span v-if="option.name" class="builder-share__option-name">
-                {{ option.name }}
-              </span>
+              {{ userLabel(option) }}
             </li>
           </ul>
         </div>
+        <p
+          id="share-users-note"
+          class="builder-share__users-note"
+          :class="{ 'builder-dialog__error': usersPhase === 'failed' }"
+          role="status"
+          data-testid="share-users-note">
+          <template v-if="usersPhase === 'loading'">
+            <span class="builder-toolbar__spinner" aria-hidden="true"></span>
+            <span>Loading users…</span>
+          </template>
+          <template v-else-if="usersPhase === 'failed'">
+            <span :key="usersError.key">{{ usersError.text }}</span>
+            <button
+              type="button"
+              class="builder-button builder-share__retry"
+              data-testid="share-users-retry"
+              @click="retryUsers">
+              Retry
+            </button>
+          </template>
+          <span v-else-if="noneLeft">{{ NONE_LEFT }}</span>
+        </p>
         <p
           id="share-user-error"
           class="builder-dialog__message builder-dialog__error"
@@ -120,7 +156,8 @@
         type="submit"
         class="builder-button builder-share__add-button"
         data-testid="share-add"
-        :aria-disabled="phase !== 'ready' || undefined">
+        :aria-disabled="phase !== 'ready' || noneLeft || undefined"
+        :aria-describedby="noneLeft ? 'share-users-note' : undefined">
         <builder-icon name="plus" :size="14" />
         Add
       </button>
@@ -347,7 +384,12 @@
 
   import { count } from '@/builder/announce.js';
   import { errorMessage, serverReason, shareErrors } from '@/builder/api.js';
-  import { comboboxKey, userOptions } from '@/builder/combobox.js';
+  import {
+    comboboxKey,
+    findUser,
+    userLabel,
+    userOptions,
+  } from '@/builder/combobox.js';
   import { detectPlatform } from '@/builder/keymap.js';
   import {
     ACCESS_LABELS,
@@ -364,6 +406,7 @@
     validateAdd,
   } from '@/builder/share.js';
   import { useBuilderStore } from '@/builder/store.js';
+  import { usePhenixStore } from '@/store.js';
 
   const props = defineProps({
     // The draft: {owner, id, name, link}, and shares, the list it was
@@ -376,6 +419,7 @@
   const store = useBuilderStore();
 
   const LOCKED = 'You can no longer change sharing for this draft.';
+  const NONE_LEFT = 'No other users to share with.';
   const CHANGED_ELSEWHERE =
     'Sharing for this draft changed in another tab or window. The list shows the latest access with your changes applied. Check it and save again.';
   // How long typing rests before the field says how many users match.
@@ -500,35 +544,94 @@
     )?.focus();
   }
 
-  // --- suggestions -----------------------------------------------------
+  // --- the users -------------------------------------------------------
 
-  // The users the role may list, or null: the field is plain text then.
+  // The users the draft may be shared with, once read; loading, failed or
+  // ready.
   const users = ref(null);
+  const usersPhase = ref('loading');
+  const usersError = useMessage();
   const listOpen = ref(false);
   const active = ref(-1);
+  // The user last chosen from the list, until the field is typed in: the
+  // field then shows their label, which names them.
+  const chosen = ref(null);
   let matchTimer = null;
 
-  const suggesting = computed(() => Array.isArray(users.value));
-  // Anyone listed already, and the owner, are not suggested.
+  // Anyone listed already, the owner and the user are left out. Someone
+  // marked removed is listed again: adding them keeps them.
   const listed = computed(() => [
     props.target.owner,
-    ...rows.value.map((row) => row.user),
+    usePhenixStore().username,
+    ...rows.value
+      .filter((row) => !row.removed || row.stale)
+      .map((row) => row.user),
   ]);
+  // What the list filters on: nothing while the field shows the user
+  // chosen, so the whole list opens again.
+  const query = computed(() =>
+    chosen.value && addName.value === userLabel(chosen.value)
+      ? ''
+      : addName.value,
+  );
   const options = computed(() =>
-    suggesting.value
-      ? userOptions(users.value, addName.value, { exclude: listed.value })
-      : [],
+    userOptions(users.value, query.value, { exclude: listed.value }),
   );
-  const listShown = computed(
-    () => suggesting.value && listOpen.value && options.value.length > 0,
+  const listShown = computed(() => listOpen.value && options.value.length > 0);
+  // Everyone the draft may be shared with has access already.
+  const noneLeft = computed(
+    () =>
+      usersPhase.value === 'ready' &&
+      userOptions(users.value, '', { exclude: listed.value }).length === 0,
   );
-  // The usernames Add checks against, when the listing is known to hold
-  // other people than the owner.
-  const knownUsers = computed(() => {
-    const names = (users.value || []).map((user) => user.username);
+  // The usernames Add checks against, once they are known.
+  const knownUsers = computed(() =>
+    users.value ? users.value.map((user) => user.username) : null,
+  );
 
-    return names.some((name) => name !== props.target.owner) ? names : null;
-  });
+  const userDescription = computed(
+    () =>
+      [
+        usersPhase.value !== 'ready' || noneLeft.value
+          ? 'share-users-note'
+          : '',
+        fieldError.text ? 'share-user-error' : '',
+      ]
+        .filter(Boolean)
+        .join(' ') || undefined,
+  );
+
+  async function loadUsers() {
+    usersPhase.value = 'loading';
+
+    try {
+      users.value = await store.loadShareCandidates(props.target);
+      usersPhase.value = 'ready';
+    } catch (error) {
+      const kind = classify(error);
+
+      // The owner may no longer share it: the share list says so too.
+      if (kind === 'forbidden' || kind === 'missing') {
+        usersPhase.value = 'ready';
+        await lock();
+
+        return;
+      }
+
+      usersPhase.value = 'failed';
+      usersError.set(
+        `Could not load users. ${
+          error instanceof TypeError ? error.message : errorMessage(kind, error)
+        }`,
+      );
+    }
+  }
+
+  // Retry goes while the users are read, so focus moves to the field first.
+  function retryUsers() {
+    userField.value?.focus();
+    loadUsers();
+  }
 
   // A count still to come would describe a list no longer shown.
   function closeList() {
@@ -537,11 +640,27 @@
     clearTimeout(matchTimer);
   }
 
+  function openList() {
+    listOpen.value = true;
+  }
+
+  function toggleList() {
+    if (listShown.value) {
+      closeList();
+    } else {
+      openList();
+    }
+
+    userField.value?.focus();
+  }
+
   function choose(index) {
     const option = options.value[index];
 
     if (option) {
-      addName.value = option.username;
+      chosen.value = option;
+      addName.value = userLabel(option);
+      fieldError.clear();
     }
 
     closeList();
@@ -549,19 +668,15 @@
 
   function onInput() {
     fieldError.clear();
+    chosen.value = null;
     active.value = -1;
-    listOpen.value = addName.value.trim() !== '';
+    listOpen.value = true;
 
     clearTimeout(matchTimer);
 
-    if (suggesting.value && addName.value.trim()) {
+    if (users.value && addName.value.trim()) {
       matchTimer = setTimeout(() => {
-        const total = userOptions(users.value, addName.value, {
-          exclude: listed.value,
-          limit: Infinity,
-        }).length;
-
-        status.set(matchesMessage(total));
+        status.set(matchesMessage(options.value.length));
       }, MATCH_DELAY_MS);
     }
   }
@@ -570,7 +685,7 @@
     const key = comboboxKey(event, {
       expanded: listShown.value,
       active: active.value,
-      count: suggesting.value ? options.value.length : 0,
+      count: options.value.length,
     });
 
     if (!key) {
@@ -635,8 +750,15 @@
 
     closeList();
 
+    if (noneLeft.value) {
+      status.set(NONE_LEFT);
+
+      return;
+    }
+
+    // A user chosen from the list is named by their label.
     const check = validateAdd(
-      addName.value,
+      findUser(users.value, addName.value)?.username ?? addName.value,
       rows.value,
       props.target.owner,
       knownUsers.value,
@@ -677,6 +799,7 @@
     delete rowErrors[check.user];
     fieldError.clear();
     addName.value = '';
+    chosen.value = null;
     status.set(addedMessage(check.user, addAccess.value));
     // Each person starts at the least access; edit is chosen every time.
     addAccess.value = 'view';
@@ -934,10 +1057,7 @@
 
   onMounted(async () => {
     userField.value?.focus();
-    store.fetchUsers().then((list) => {
-      users.value = list;
-    });
-    await load();
+    await Promise.all([load(), loadUsers()]);
   });
 
   onBeforeUnmount(() => {
@@ -970,6 +1090,64 @@
     position: relative;
   }
 
+  /* Room for the button that opens the list, inside the field's end. */
+  .builder-share .builder-share__combobox input[role='combobox'] {
+    padding-inline-end: 2.25rem;
+  }
+
+  .builder-share__toggle {
+    position: absolute;
+    top: 50%;
+    right: 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--bx-radius);
+    background: none;
+    color: var(--bx-text-muted);
+    cursor: pointer;
+    transform: translateY(-50%);
+  }
+
+  .builder-share__toggle:hover:not(:disabled) {
+    background: var(--bx-bg-alt);
+    color: var(--bx-text);
+  }
+
+  .builder-share__toggle:disabled {
+    cursor: not-allowed;
+  }
+
+  .builder-share__toggle[aria-expanded='true'] .builder-icon {
+    transform: rotate(180deg);
+  }
+
+  .builder-share__users-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.25rem 0 0;
+    font-size: 0.85em;
+    color: var(--bx-text-muted);
+  }
+
+  .builder-share__users-note.builder-dialog__error {
+    color: var(--bx-danger);
+  }
+
+  .builder-share__users-note:empty {
+    margin: 0;
+  }
+
+  .builder-share__users-note .builder-share__retry {
+    margin-inline-start: 0;
+  }
+
   .builder-share__options {
     position: absolute;
     z-index: 1;
@@ -988,10 +1166,8 @@
   }
 
   .builder-share__option {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0 0.5rem;
     min-height: 24px;
+    overflow-wrap: anywhere;
     padding: 0.25rem 0.5rem;
     border-left: 3px solid transparent;
     cursor: pointer;
@@ -1000,15 +1176,6 @@
   .builder-share__option[aria-selected='true'] {
     border-left-color: var(--bx-accent);
     background: var(--bx-selected-bg);
-  }
-
-  .builder-share__option-user {
-    font-weight: 600;
-    overflow-wrap: anywhere;
-  }
-
-  .builder-share__option-name {
-    color: var(--bx-text-muted);
   }
 
   .builder-share__summary {
@@ -1191,6 +1358,15 @@
   }
 
   @media (pointer: coarse) {
+    .builder-share .builder-share__combobox input[role='combobox'] {
+      padding-inline-end: 3rem;
+    }
+
+    .builder-share__toggle {
+      width: 40px;
+      height: 40px;
+    }
+
     .builder-share .builder-button,
     .builder-share select,
     .builder-share input,
@@ -1211,10 +1387,6 @@
       forced-color-adjust: none;
       border-left-color: HighlightText;
       background: Highlight;
-      color: HighlightText;
-    }
-
-    .builder-share__option[aria-selected='true'] .builder-share__option-name {
       color: HighlightText;
     }
 

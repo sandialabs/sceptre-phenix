@@ -1423,6 +1423,37 @@ export function createAutosave(options = {}) {
     },
 
     /**
+     * Adopts the ETag and head of a change made from here that left the
+     * content as it was but not the head, such as deleting an older
+     * snapshot: only when the change was sent with the ETag this queue
+     * holds, so the draft it answered with follows from the one the server
+     * last confirmed here, and the queue is not blocked. Call it with
+     * nothing being sent (see hold and idle).
+     *
+     * @param {string} sentEtag the ETag the change was sent with
+     * @param {object} draft the draft the change answered with
+     * @param {string} etag its ETag
+     * @returns {Promise<boolean>} whether the ETag was taken
+     */
+    async adoptAfter(sentEtag, draft, etag) {
+      if (
+        !record ||
+        !etag ||
+        record.etag !== sentEtag ||
+        ['conflict', 'forbidden'].includes(state.status)
+      ) {
+        return false;
+      }
+
+      record.etag = etag;
+      record.serverHead = headOf({ draft });
+      await persist();
+      emit({ etag });
+
+      return true;
+    },
+
+    /**
      * Discards local state after the user chose to reload the server copy.
      * Local commits are dropped only on this explicit choice.
      */

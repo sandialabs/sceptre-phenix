@@ -1061,9 +1061,10 @@ test('a draft can publish an update after further edits', async ({
     const history = await builder.openDialog('history');
     await expect
       .soft(
-        history.getByRole('button', {
-          name: /^Restore Saved unapplied changes to Device server, .+, Automatic$/,
-        }),
+        history
+          .getByTestId('history-row')
+          .filter({ hasText: 'Saved unapplied changes to Device server' })
+          .getByTestId('history-automatic'),
       )
       .toBeVisible();
     await page.keyboard.press('Escape');

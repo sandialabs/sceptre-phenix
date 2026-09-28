@@ -1792,20 +1792,6 @@ div.builder-outline__item {
   color: var(--bx-text-muted);
 }
 
-/* History entries can share a name (the same change in the same second), so
-   the list number tells them apart. The numbers sit outside the entries, in
-   the list's own padding; without it the dialog clips their first digits.
-   2.75em holds three digits: a draft saved before the server lowered its
-   limit to 50 snapshots holds up to 100. */
-.builder-history {
-  margin: 0;
-  padding-inline-start: 2.75em;
-}
-
-.builder-history li + li {
-  margin-top: 0.25rem;
-}
-
 /* A dialog's status and error regions are rendered, empty, from the start,
    so screen readers already know them when the first message arrives. They
    take no room until then. A message can quote a long unbroken value, such

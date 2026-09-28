@@ -382,7 +382,7 @@ test.describe('Builder Beta persistence', () => {
     const status = page.getByTestId('history-status');
     const content = page.getByTestId('history-content');
     await expect(page.getByTestId('history-dialog')).toBeVisible();
-    await expect(dialog.getByRole('heading')).toHaveText('Draft history');
+    await expect(dialog.getByRole('heading')).toHaveText('Draft History');
     await expect.soft(dialog).toBeFocused();
     await expect(status).toHaveText('Loading the draft history…');
     await expect.soft(status).toHaveRole('status');
@@ -406,17 +406,21 @@ test.describe('Builder Beta persistence', () => {
     answer('pass');
     await page.unroute(SNAPSHOTS);
 
-    const list = page.getByTestId('history-list');
-    await expect(list.getByRole('listitem')).toHaveCount(3);
+    const table = page.getByTestId('history-table');
+    await expect(table.getByTestId('history-row')).toHaveCount(3);
     await expect.soft(content).not.toHaveAttribute('aria-busy');
     await expect
       .soft(dialog)
       .toHaveAccessibleDescription('3 snapshots, oldest first.');
     await expect(
-      list.getByRole('button', { name: /^Restore Added switch, / }),
+      table.getByRole('button', { name: /^Restore Added switch, / }),
     ).toBeVisible();
 
-    await list.getByRole('button', { name: /^Restore Added device, / }).click();
+    // Clicking a snapshot's name restores it, as its Restore does.
+    await table
+      .getByTestId('history-name')
+      .filter({ hasText: 'Added device' })
+      .click();
     await expect(builder.page.getByTestId('history-dialog')).toHaveCount(0);
     await expectCounts(builder, { devices: 1, switches: 0 });
     await expect(builder.liveRegion).toHaveText(/Snapshot restored/);
@@ -871,82 +875,175 @@ test.describe('Builder Beta persistence', () => {
     await expect.soft(name).toBeFocused();
   });
 
-  test('History entries are readable: no raw ids, no double numbering', async ({
+  test('History entries are readable: a table of number, name, date and user, with no raw ids', async ({
     builder,
+    page,
   }) => {
     await builder.open();
     await builder.createBlank();
     await addDevices(builder, 1);
     await builder.waitSaved();
 
-    await builder.openDialog('history');
-    const list = builder.page.getByTestId('history-list');
-    const buttons = list.getByRole('button');
-    await expect(buttons).toHaveCount(2);
+    const dialog = await builder.openDialog('history');
+    const table = dialog.getByRole('table', { name: 'Draft History' });
+    const rows = table.getByTestId('history-row');
+    await expect(rows).toHaveCount(2);
+    for (const name of ['Number', 'Name', 'Date', 'User', 'Actions']) {
+      await expect
+        .soft(table.getByRole('columnheader', { name, exact: true }))
+        .toHaveCount(1);
+    }
 
-    // Soft, so a fix for one of the two problems still reports the other.
-    const listNumbered = await list.evaluate(
-      (element) => getComputedStyle(element).listStyleType !== 'none',
-    );
-    const entries = await buttons.evaluateAll((elements) =>
-      elements.map((element) => ({
-        text: element.textContent.trim(),
-        label: element.getAttribute('aria-label') || '',
+    // Soft, so one problem does not hide the others.
+    const entries = await rows.evaluateAll((elements) =>
+      elements.map((row) => ({
+        text: row.textContent.replace(/\s+/g, ' ').trim(),
+        labels: [...row.querySelectorAll('[aria-label]')].map((element) =>
+          element.getAttribute('aria-label'),
+        ),
       })),
     );
 
-    for (const { text, label } of entries) {
+    for (const { text, labels } of entries) {
       expect.soft(text, `"${text}" shows a raw id`).not.toMatch(UUID);
-      expect.soft(label, `"${label}" reads a raw id`).not.toMatch(UUID);
-      expect
-        .soft(
-          listNumbered && /^\d+\./.test(text),
-          `"${text}" repeats the list's own numbering`,
-        )
-        .toBe(false);
+      for (const label of labels) {
+        expect.soft(label, `"${label}" reads a raw id`).not.toMatch(UUID);
+      }
     }
 
-    // The first snapshot is the draft as created.
+    // The first snapshot is the draft as created, by the user who made it.
+    const first = rows.first();
+    await expect.soft(first.getByRole('cell').first()).toHaveText('1');
     await expect
-      .soft(buttons.first())
-      .toHaveText(/^\s*Restore Draft created, /);
-    // The name is the visible text, so it adds no number of its own.
+      .soft(first.getByTestId('history-name'))
+      .toHaveText('Draft created');
+    // A click on the name restores it, as its description says.
     await expect
-      .soft(buttons.first())
-      .toHaveAccessibleName(/^Restore Draft created, /);
-    // "Restore" says what an entry does; a note that restoring replaces the
+      .soft(first.getByTestId('history-name'))
+      .toHaveAccessibleDescription('Restores this snapshot.');
+    await expect.soft(first.getByRole('cell').nth(3)).not.toHaveText('');
+    // The actions are named for their row: two entries can share a change,
+    // so the time is in the name too.
+    const restore = first.getByTestId('history-restore');
+    await expect
+      .soft(restore)
+      .toHaveAccessibleName(/^Restore Draft created, .+\d/);
+    await expect
+      .soft(first.getByTestId('history-delete'))
+      .toHaveAccessibleName(/^Delete Draft created, .+\d/);
+    // "Restore" says what it does; a note that restoring replaces the
     // diagram only repeated it.
-    await expect.soft(buttons.first()).toHaveAccessibleDescription('');
+    await expect.soft(restore).toHaveAccessibleDescription('');
     await expect
       .soft(builder.dialog)
       .not.toContainText('Restoring a snapshot replaces the diagram');
 
-    // Entries made in the same second share a name, so the list number is
-    // what tells them apart, and the dialog must not clip it. The room
-    // before an entry holds a three-digit number: the server keeps 50
-    // snapshots, but a draft saved before that limit was lowered holds 100.
-    const marker = await list.evaluate((element) => {
-      const dialog = element.closest('dialog');
-      const item = element.querySelector('li');
-      const probe = document.createElement('span');
-      probe.textContent = '100. ';
-      probe.style.cssText =
-        'position: absolute; white-space: pre; font-variant-numeric: tabular-nums';
-      item.append(probe);
-      const width = probe.getBoundingClientRect().width;
-      probe.remove();
+    // An icon button's tooltip names it, on focus as on hover.
+    await restore.focus();
+    await expect
+      .soft(page.getByTestId('history-tooltip'))
+      .toHaveText('Restore');
 
-      return {
-        width,
-        room:
-          item.getBoundingClientRect().left -
-          dialog.getBoundingClientRect().left -
-          dialog.clientLeft,
-      };
+    // At 390 pixels wide the page does not scroll sideways: the table
+    // scrolls in its own box, which the keys reach, and the actions stay in
+    // view.
+    await page.setViewportSize({ width: 390, height: 800 });
+    const box = dialog.getByTestId('history-scroll');
+    await expect(box).toHaveAttribute('tabindex', '0');
+    await expect.soft(box).toHaveAccessibleName('Draft History');
+    const overflow = await page.evaluate(() => {
+      const root = document.documentElement;
+      const shown = document.querySelector('[data-testid="history-dialog"]');
+
+      return [
+        root.scrollWidth - root.clientWidth,
+        shown.scrollWidth - shown.clientWidth,
+      ];
     });
-    expect
-      .soft(marker.room, 'room before an entry for its list number "100."')
-      .toBeGreaterThanOrEqual(marker.width);
+    expect.soft(overflow).toEqual([0, 0]);
+    await expect.soft(restore).toBeInViewport({ ratio: 1 });
+  });
+
+  test('History deletes a snapshot after asking, but never the current one', async ({
+    builder,
+    issues,
+    page,
+  }) => {
+    await builder.open();
+    const draft = await builder.createBlank();
+    await addDevices(builder, 2);
+    await expectServerCounts(builder, draft, { devices: 2 });
+    await builder.waitSaved();
+
+    const dialog = await builder.openDialog('history');
+    const rows = dialog.getByTestId('history-row');
+    const deletes = dialog.getByTestId('history-delete');
+    await expect(rows).toHaveCount(3);
+
+    // The current snapshot is marked, and its Delete says why it cannot.
+    await expect(rows.last().getByTestId('history-current')).toHaveText(
+      /Current/,
+    );
+    await expect(deletes.last()).toHaveAttribute('aria-disabled', 'true');
+    await expect
+      .soft(deletes.last())
+      .toHaveAccessibleDescription('The current snapshot cannot be deleted.');
+    await expectAccessible(page, {
+      include: '[data-testid="history-dialog"]',
+      label: 'Draft History',
+    });
+
+    // Delete asks first, starting on Cancel; Cancel keeps the snapshot and
+    // gives focus back.
+    const second = deletes.nth(1);
+    const confirm = page.getByRole('alertdialog', { name: 'Delete snapshot?' });
+    await second.press('Enter');
+    await expect(confirm).toBeVisible();
+    await expect(confirm.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(confirm).toHaveCount(0);
+    await expect(second).toBeFocused();
+    await expect(rows).toHaveCount(3);
+
+    // Someone saves meanwhile: the delete reads the list again and says
+    // so, and trying again deletes it.
+    await writeElsewhere(builder.request, draft, (doc) => ({
+      ...doc,
+      description: 'Changed elsewhere',
+    }));
+    const before = await listSnapshots(builder.request, draft);
+    await second.press('Enter');
+    await confirm.getByRole('button', { name: 'Delete snapshot' }).click();
+    await expect(dialog.getByTestId('history-problem')).toHaveText(
+      'This draft changed on the server since its history was read. The list now shows the latest history. Try again.',
+    );
+    await expect(rows).toHaveCount(4);
+    await expect.soft(second).toBeFocused();
+
+    await second.press('Enter');
+    await confirm.getByRole('button', { name: 'Delete snapshot' }).click();
+    await expect(rows).toHaveCount(3);
+    await expect
+      .soft(dialog.getByTestId('history-status'))
+      .toHaveText(
+        /^\s*Deleted Added device, .+\. 3 snapshots, oldest first\.$/,
+      );
+    // Focus moves to the Delete of the row that took its place.
+    await expect.soft(deletes.nth(1)).toBeFocused();
+    const after = await listSnapshots(builder.request, draft);
+    expect(after.map((snapshot) => snapshot.id)).toEqual(
+      before.filter((_, index) => index !== 1).map((snapshot) => snapshot.id),
+    );
+
+    // Escape hides the focused Delete's tooltip first, then the dialog.
+    const tooltip = page.getByTestId('history-tooltip');
+    await expect.soft(tooltip).toHaveText('Delete');
+    await page.keyboard.press('Escape');
+    await expect.soft(tooltip).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    expectNoFatal(issues);
   });
 
   test('edits made offline survive a reload', async ({ builder, page }) => {
@@ -1736,11 +1833,13 @@ test.describe('Builder Beta persistence', () => {
       await builder.selectInOutline('node');
       await expect.soft(memoryField(builder)).toHaveValue('4096');
       const dialog = await builder.openDialog('history');
-      const saved = dialog.getByRole('button', {
-        name: /^Restore Saved unapplied changes to Device node, .+, Automatic$/,
-      });
+      const saved = dialog
+        .getByTestId('history-row')
+        .filter({ hasText: 'Saved unapplied changes to Device node' });
       await expect(saved).toBeVisible();
-      await expect.soft(saved.getByTestId('history-automatic')).toBeVisible();
+      await expect
+        .soft(saved.getByTestId('history-automatic'))
+        .toContainText('Automatic');
       await expect
         .soft(dialog.getByTestId('history-automatic-hint'))
         .toHaveText(

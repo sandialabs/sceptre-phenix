@@ -23,6 +23,7 @@ import {
   readShares,
   SCHEMA_PATH,
   serverReason,
+  shareCandidatesPath,
   shareErrors,
   sharesPath,
   snapshotPath,
@@ -81,6 +82,9 @@ describe('routes', () => {
     expect(cursorPath('alice', 'd1')).toBe('builder/drafts/alice/d1/cursor');
     expect(publishPath('alice', 'd1')).toBe('builder/drafts/alice/d1/publish');
     expect(sharesPath('alice', 'd1')).toBe('builder/drafts/alice/d1/shares');
+    expect(shareCandidatesPath('alice', 'd1')).toBe(
+      'builder/drafts/alice/d1/shares/candidates',
+    );
     expect(documentPath('doc 1')).toBe('builder/documents/doc%201');
   });
 
@@ -362,6 +366,31 @@ describe('client', () => {
     expect(http.calls[0].body.headers['If-Match']).toBe('"3"');
   });
 
+  // The answer is the draft, as a save's is: its ETag is read from the body.
+  test('deleting a snapshot sends If-Match and reads the draft it answers with', async () => {
+    const http = fakeHttp({
+      'delete builder/drafts/alice/d1/snapshots/s%202': {
+        data: { id: 'd1', cursor: 1, snapshots: 2, etag: '"8"' },
+        headers: { etag: 'W/"8"' },
+      },
+    });
+    const envelope = await createBuilderApi(http).deleteSnapshot(
+      'alice',
+      'd1',
+      's 2',
+      '"7"',
+    );
+
+    expect(http.calls[0].method).toBe('delete');
+    expect(http.calls[0].body.headers['If-Match']).toBe('"7"');
+    expect(envelope).toMatchObject({
+      draft: { id: 'd1', snapshots: 2 },
+      history: null,
+      cursor: 1,
+      etag: '"8"',
+    });
+  });
+
   // The share list has a tag of its own, read from the body before the
   // header; an update answers with the draft, whose ETag is in its body and
   // never the share list's header.
@@ -447,30 +476,32 @@ describe('client', () => {
     expect(classifyError(httpError(412))).toBe('conflict');
   });
 
-  test('users are listed by username and name', async () => {
+  test('the users a draft may be shared with are listed by username and name', async () => {
+    const candidates = 'get builder/drafts/alice/d1/shares/candidates';
     const http = fakeHttp({
-      'get users': {
+      [candidates]: {
         data: {
           users: [
-            { username: 'bob', first_name: 'Bob', last_name: 'Lee' },
-            { username: 'carol', first_name: '', last_name: '' },
-            { first_name: 'No name' },
+            { username: 'bob', name: 'Bob Lee ' },
+            { username: 'carol', name: '' },
+            { username: 'dave' },
+            { name: 'No username' },
           ],
         },
       },
     });
 
-    await expect(createBuilderApi(http).listUsers()).resolves.toEqual([
+    await expect(
+      createBuilderApi(http).listShareCandidates('alice', 'd1'),
+    ).resolves.toEqual([
       { username: 'bob', name: 'Bob Lee' },
       { username: 'carol', name: '' },
+      { username: 'dave', name: '' },
     ]);
     await expect(
       createBuilderApi(
-        fakeHttp({ 'get users': { data: { users: null } } }),
-      ).listUsers(),
-    ).resolves.toEqual([]);
-    await expect(
-      createBuilderApi(fakeHttp({ 'get users': { data: {} } })).listUsers(),
+        fakeHttp({ [candidates]: { data: {} } }),
+      ).listShareCandidates('alice', 'd1'),
     ).rejects.toThrow(TypeError);
   });
 

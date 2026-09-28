@@ -19,9 +19,6 @@ export const DOCUMENTS_PATH = 'builder/documents';
 export const SCHEMA_PATH = 'schemas/builder/v1';
 // Disk images, the same listing the Disks page reads (web/disk.go GetDisks).
 export const DISKS_PATH = 'disks';
-// The users a role may list, the listing the Users page reads (web/users.go
-// GetUsers), for the Share dialog's suggestions.
-export const USERS_PATH = 'users';
 
 /**
  * @param {string} owner draft owner (username)
@@ -68,6 +65,15 @@ export function publishPath(owner, id) {
  */
 export function sharesPath(owner, id) {
   return `${draftPath(owner, id)}/shares`;
+}
+
+/**
+ * @param {string} owner
+ * @param {string} id
+ * @returns {string} the users the draft's owner may share it with
+ */
+export function shareCandidatesPath(owner, id) {
+  return `${sharesPath(owner, id)}/candidates`;
 }
 
 /**
@@ -656,14 +662,16 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
-     * Lists the users the role may list, for suggestions.
+     * Lists the users the draft's owner may share it with, by username,
+     * those already shared with too.
      *
-     * @returns {Promise<{username: string, name: string}[]>}
+     * @param {string} owner
+     * @param {string} id
+     * @returns {Promise<{username: string, name: string}[]>} name may be ''
      */
-    async listUsers() {
-      const response = await http.get(USERS_PATH);
-      // The server sends null, not [], when the role may list none.
-      const users = response.data?.users === null ? [] : response.data?.users;
+    async listShareCandidates(owner, id) {
+      const response = await http.get(shareCandidatesPath(owner, id));
+      const users = response.data?.users;
 
       if (!Array.isArray(users)) {
         throw new TypeError('The server sent an unexpected user listing.');
@@ -673,9 +681,7 @@ export function createBuilderApi(http = axiosInstance) {
         .filter((user) => typeof user?.username === 'string' && user.username)
         .map((user) => ({
           username: user.username,
-          name: [user.first_name, user.last_name]
-            .filter((part) => typeof part === 'string' && part.trim())
-            .join(' '),
+          name: typeof user.name === 'string' ? user.name.trim() : '',
         }));
     },
 
@@ -710,6 +716,25 @@ export function createBuilderApi(http = axiosInstance) {
 
     async getSnapshot(owner, id, snapshotId) {
       const response = await http.get(snapshotPath(owner, id, snapshotId));
+
+      return readEnvelope(response);
+    },
+
+    /**
+     * Deletes one snapshot from the draft's history. The current one (the
+     * cursor's) cannot be. The answer is the draft, as a save's is, with its
+     * new ETag.
+     *
+     * @param {string} owner
+     * @param {string} id
+     * @param {string} snapshotId
+     * @param {string} etag observed draft ETag
+     */
+    async deleteSnapshot(owner, id, snapshotId, etag) {
+      const response = await http.delete(
+        snapshotPath(owner, id, snapshotId),
+        ifMatch(etag),
+      );
 
       return readEnvelope(response);
     },

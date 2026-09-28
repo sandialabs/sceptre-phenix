@@ -78,7 +78,8 @@ const api = vi.hoisted(() => ({
     maxShares: 25,
   })),
   updateShares: vi.fn(),
-  listUsers: vi.fn(async () => []),
+  listShareCandidates: vi.fn(async () => []),
+  deleteSnapshot: vi.fn(),
 }));
 
 vi.mock('@/builder/api.js', async (importOriginal) => {
@@ -599,6 +600,171 @@ describe('editing commits', () => {
     expect(api.appendSnapshot).not.toHaveBeenCalled();
     expect(store.doc.id).toBe(doc.id);
     expect(store.etag).toBe('"3"');
+  });
+
+  // The server's answer to a snapshot delete: the draft, as after a save.
+  function deletedAnswer({ snapshotId = 's3', cursor = 1, etag = '"4"' }) {
+    return {
+      draft: { id: 'd1', owner: 'alice', snapshotId, cursor, snapshots: 2 },
+      document: null,
+      history: null,
+      cursor,
+      etag,
+    };
+  }
+
+  test('deleting a snapshot sends the queue’s ETag, takes the answer’s, and undo skips it', async () => {
+    await withDraft();
+    api.appendSnapshot
+      .mockResolvedValueOnce({
+        draft: { id: 'd1', owner: 'alice', snapshotId: 's2', cursor: 1 },
+        history: null,
+        cursor: 1,
+        etag: '"2"',
+      })
+      .mockResolvedValueOnce({
+        draft: { id: 'd1', owner: 'alice', snapshotId: 's3', cursor: 2 },
+        history: null,
+        cursor: 2,
+        etag: '"3"',
+      });
+    store.addNode({ kind: 'device', hostname: 'alpha' });
+    store.addNode({ kind: 'device', hostname: 'beta' });
+    await store.saveNow();
+    store.serverHistory = [
+      { id: 's1' },
+      { id: 's2' },
+      { id: 's3', current: true },
+    ];
+    api.deleteSnapshot.mockResolvedValueOnce(deletedAnswer({}));
+
+    await expect(store.deleteSnapshot('s2')).resolves.toEqual({
+      deleted: true,
+      message: '',
+    });
+
+    expect(api.deleteSnapshot).toHaveBeenCalledWith('alice', 'd1', 's2', '"3"');
+    expect(store.etag).toBe('"4"');
+    expect(store.autosave.record.etag).toBe('"4"');
+    expect(store.autosave.record.serverHead).toEqual({
+      snapshotId: 's3',
+      cursor: 1,
+      snapshots: 2,
+    });
+    expect(store.historyEtag).toBeNull();
+    expect(store.serverHistory.map((entry) => entry.id)).toEqual(['s1', 's3']);
+    expect(
+      store.history.entries.map((entry) => entry.serverSnapshotId),
+    ).toEqual(['s1', 's3']);
+
+    // Undo goes to the snapshot before the one deleted, with the new ETag.
+    store.undo();
+    await store.saveNow();
+    expect(api.moveCursor).toHaveBeenLastCalledWith(
+      'alice',
+      'd1',
+      { snapshotId: 's1' },
+      '"4"',
+    );
+  });
+
+  test('a delete refused for a change made elsewhere reads the draft again, and the next try uses that read', async () => {
+    const conflict = Object.assign(new Error('stale'), {
+      response: { status: 412, data: {} },
+    });
+
+    await withDraft();
+    store.serverHistory = [{ id: 's1', current: true }];
+    api.deleteSnapshot.mockRejectedValueOnce(conflict);
+    // Someone else saved meanwhile: the draft has another head.
+    api.getDraft.mockResolvedValueOnce(
+      readDraft({ access: 'owner' }, { etag: '"9"', snapshots: 3 }),
+    );
+
+    const refused = await store.deleteSnapshot('s1');
+
+    expect(refused.deleted).toBe(false);
+    expect(refused.message).toBe(
+      'This draft changed on the server since its history was read. The list now shows the latest history. Try again.',
+    );
+    expect(store.serverHistory.map((entry) => entry.id)).toEqual([
+      's1',
+      's2',
+      's3',
+    ]);
+    // The queue keeps its own ETag: its next save meets the change.
+    expect(store.autosave.record.etag).toBe('"1"');
+    expect(store.historyEtag).toBe('"9"');
+
+    api.deleteSnapshot.mockResolvedValueOnce(
+      deletedAnswer({ etag: '"10"', snapshotId: 's3', cursor: 1 }),
+    );
+    await expect(store.deleteSnapshot('s1')).resolves.toMatchObject({
+      deleted: true,
+    });
+    expect(api.deleteSnapshot).toHaveBeenLastCalledWith(
+      'alice',
+      'd1',
+      's1',
+      '"9"',
+    );
+    expect(store.autosave.record.etag).toBe('"1"');
+    expect(store.historyEtag).toBe('"10"');
+    expect(store.serverHistory.map((entry) => entry.id)).toEqual(['s2', 's3']);
+  });
+
+  test('a delete refused for a change that kept the content takes the new ETag for the queue too', async () => {
+    api.getDraft.mockResolvedValueOnce(
+      readDraft({ access: 'owner', canShare: true }, { snapshots: 2 }),
+    );
+    await store.loadDraft('alice', 'd1');
+    api.deleteSnapshot.mockRejectedValueOnce(
+      Object.assign(new Error('stale'), {
+        response: { status: 412, data: {} },
+      }),
+    );
+    // Only who it is shared with changed.
+    api.getDraft.mockResolvedValueOnce(
+      readDraft(
+        { access: 'owner', canShare: true, shares: [{ user: 'bob' }] },
+        { etag: '"5"', snapshots: 2 },
+      ),
+    );
+
+    expect((await store.deleteSnapshot('s1')).deleted).toBe(false);
+    expect(store.etag).toBe('"5"');
+    expect(store.autosave.record.etag).toBe('"5"');
+    expect(store.historyEtag).toBeNull();
+  });
+
+  test('the current snapshot, one gone, and a read-only draft are not deleted', async () => {
+    await withDraft();
+    const refusal = (status) =>
+      Object.assign(new Error('refused'), { response: { status, data: {} } });
+
+    api.deleteSnapshot.mockRejectedValueOnce(refusal(409));
+    expect((await store.deleteSnapshot('s1')).message).toBe(
+      'That is the current snapshot, which cannot be deleted. The list now shows the latest history.',
+    );
+    api.deleteSnapshot.mockRejectedValueOnce(refusal(404));
+    expect((await store.deleteSnapshot('s0')).message).toBe(
+      'That snapshot is no longer in the draft history. The list now shows the latest history.',
+    );
+    api.deleteSnapshot.mockRejectedValueOnce(refusal(403));
+    expect((await store.deleteSnapshot('s0')).message).toMatch(
+      /^Could not delete the snapshot\. /,
+    );
+    // Each refusal but the last read the list again.
+    expect(api.getDraft).toHaveBeenCalledTimes(2);
+    expect(store.error).toBe('');
+
+    api.deleteSnapshot.mockClear();
+    store.readOnly = true;
+    expect(await store.deleteSnapshot('s0')).toEqual({
+      deleted: false,
+      message: 'This draft is read only.',
+    });
+    expect(api.deleteSnapshot).not.toHaveBeenCalled();
   });
 
   // A save answers without the history, which is kept rather than emptied,
@@ -2131,6 +2297,17 @@ describe('sharing', () => {
 
     expect(store.shares).toEqual([]);
     expect(store.autosave.record.etag).toBe('"2"');
+  });
+
+  test('the users a draft may be shared with are read for its owner', async () => {
+    api.listShareCandidates.mockResolvedValueOnce([
+      { username: 'bob', name: 'Bob Lee' },
+    ]);
+
+    await expect(
+      store.loadShareCandidates({ owner: 'alice', id: 'd5' }),
+    ).resolves.toEqual([{ username: 'bob', name: 'Bob Lee' }]);
+    expect(api.listShareCandidates).toHaveBeenCalledWith('alice', 'd5');
   });
 
   test('a listed draft takes the draft a share change answered with', async () => {

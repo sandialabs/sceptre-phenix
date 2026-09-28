@@ -2,7 +2,12 @@ import { describe, expect, test, vi } from 'vitest';
 
 vi.mock('@/utils/axios.js', () => ({ default: {} }));
 
-import { comboboxKey, userOptions } from '@/builder/combobox.js';
+import {
+  comboboxKey,
+  findUser,
+  userLabel,
+  userOptions,
+} from '@/builder/combobox.js';
 import {
   accessLabel,
   addedMessage,
@@ -346,7 +351,7 @@ describe('words', () => {
   });
 });
 
-describe('the username combobox', () => {
+describe('the user combobox', () => {
   const users = [
     { username: 'alice', name: 'Alice Owner' },
     { username: 'bob', name: 'Robert Lee' },
@@ -358,7 +363,7 @@ describe('the username combobox', () => {
     })),
   ];
 
-  test('suggests matches by username, then name, leaving out the listed', () => {
+  test('lists matches by username, then name, leaving out the listed', () => {
     const names = (query, options) =>
       userOptions(users, query, options).map((user) => user.username);
 
@@ -369,9 +374,24 @@ describe('the username combobox', () => {
     ]);
     expect(names('lee')).toEqual(['bob']);
     expect(names('bob', { exclude: ['bob'] })).not.toContain('bob');
-    // No more than eight at once.
-    expect(names('')).toHaveLength(8);
+    // With nothing typed, everyone, by username.
+    expect(names('')).toHaveLength(users.length);
+    expect(names('', { exclude: ['alice'] }).slice(0, 3)).toEqual([
+      'bob',
+      'bobby',
+      'carol',
+    ]);
     expect(names('user', { limit: 3 })).toEqual(['user0', 'user1', 'user2']);
+  });
+
+  test('names each user "Name (username)", and finds them by either', () => {
+    expect(userLabel(users[1])).toBe('Robert Lee (bob)');
+    expect(userLabel(users[2])).toBe('bobby');
+    expect(findUser(users, 'Robert Lee (bob)')).toEqual(users[1]);
+    expect(findUser(users, ' bob ')).toEqual(users[1]);
+    expect(findUser(users, 'bobby')).toEqual(users[2]);
+    expect(findUser(users, 'Robert Lee')).toBeNull();
+    expect(findUser(null, 'bob')).toBeNull();
   });
 
   test('keys open, move through, take and close the list', () => {

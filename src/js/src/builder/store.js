@@ -368,6 +368,10 @@ export const useBuilderStore = defineStore('builder', {
     // and why that failed, if it did (see fetchHistory).
     historyLoading: false,
     historyError: '',
+    // The ETag of the history the History dialog shows, when it is newer
+    // than the queue's: read again after a delete met a change made
+    // elsewhere (see deleteSnapshot). null otherwise.
+    historyEtag: null,
     loading: false,
     error: '',
     // The form field the error is about, when the request that failed came
@@ -1511,21 +1515,14 @@ export const useBuilderStore = defineStore('builder', {
     },
 
     /**
-     * The users the role may list, for the Share dialog's suggestions.
+     * Reads the users a draft's owner may share it with, for the Share
+     * dialog, which reports a failure itself.
      *
-     * @returns {Promise<{username: string, name: string}[]|null>} null when
-     *   the role may not list them, or they could not be read
+     * @param {{owner: string, id: string}} target
+     * @returns {Promise<{username: string, name: string}[]>}
      */
-    async fetchUsers() {
-      if (!usePhenixStore().role || !roleAllowed('users', 'list')) {
-        return null;
-      }
-
-      try {
-        return await builderApi.listUsers();
-      } catch {
-        return null;
-      }
+    loadShareCandidates(target) {
+      return builderApi.listShareCandidates(target.owner, target.id);
     },
 
     async fetchDocuments() {
@@ -1778,6 +1775,7 @@ export const useBuilderStore = defineStore('builder', {
       this.clearError();
       this.historyLoading = true;
       this.historyError = '';
+      this.historyEtag = null;
 
       try {
         const history = await builderApi.listSnapshots(owner, draftId);
@@ -1854,6 +1852,134 @@ export const useBuilderStore = defineStore('builder', {
 
         return null;
       }
+    },
+
+    /**
+     * Deletes a snapshot from the open draft's history, for the History
+     * dialog, which says how it went; the current snapshot (the cursor's)
+     * cannot be deleted. As for a restore, the queue saves first, and sends
+     * nothing meanwhile. The queue takes the new ETag when the delete was
+     * sent with its own (see adoptAfter in autosave.js), and undo and redo
+     * skip the snapshot from then on.
+     *
+     * A delete refused because the draft changed elsewhere (412), or
+     * because the list was out of date (409, 404), reads the draft again,
+     * so the dialog lists its history as it is now; the next try is sent
+     * with that read's ETag.
+     *
+     * @param {string} snapshotId
+     * @returns {Promise<{deleted: boolean, message: string}>} message says
+     *   why it was not deleted
+     */
+    async deleteSnapshot(snapshotId) {
+      const { autosave, owner, draftId } = this;
+
+      if (!autosave || this.readOnly) {
+        return { deleted: false, message: 'This draft is read only.' };
+      }
+
+      const saved = await this.saveNow();
+
+      if (saved.status !== 'saved' || saved.pending > 0) {
+        return {
+          deleted: false,
+          message:
+            'Your latest changes are not saved yet, so history cannot be changed. Wait for the save to finish, or use Retry saving.',
+        };
+      }
+
+      const epoch = sessionEpoch;
+      const release = autosave.hold();
+      // The draft is the same one, in the same session.
+      const current = () =>
+        !this.sessionEndedSince(epoch) &&
+        this.autosave === autosave &&
+        this.owner === owner &&
+        this.draftId === draftId;
+
+      try {
+        await autosave.idle();
+
+        const sent = this.historyEtag || this.etag;
+        const envelope = await builderApi.deleteSnapshot(
+          owner,
+          draftId,
+          snapshotId,
+          sent,
+        );
+
+        if (!current()) {
+          return { deleted: false, message: '' };
+        }
+
+        const adopted = await autosave.adoptAfter(
+          sent,
+          envelope.draft,
+          envelope.etag,
+        );
+
+        this.historyEtag = adopted ? null : envelope.etag;
+        this.rememberDraft(envelope.draft);
+        this.serverHistory = this.serverHistory.filter(
+          (entry) => entry.id !== snapshotId,
+        );
+
+        if (
+          this.history.removeWhere(
+            (entry) => entry.serverSnapshotId === snapshotId,
+          ) > 0
+        ) {
+          this.historyChanged();
+        }
+
+        return { deleted: true, message: '' };
+      } catch (error) {
+        if (!current()) {
+          return { deleted: false, message: '' };
+        }
+
+        const why = {
+          409: 'That is the current snapshot, which cannot be deleted. The list now shows the latest history.',
+          412: 'This draft changed on the server since its history was read. The list now shows the latest history. Try again.',
+          404: 'That snapshot is no longer in the draft history. The list now shows the latest history.',
+        }[error?.response?.status];
+
+        if (!why) {
+          return {
+            deleted: false,
+            message: this.describeError(error, 'delete the snapshot'),
+          };
+        }
+
+        try {
+          await this.rereadHistory(autosave);
+        } catch (readError) {
+          return {
+            deleted: false,
+            message: this.describeError(readError, 'read the draft history'),
+          };
+        }
+
+        return { deleted: false, message: why };
+      } finally {
+        this.trackQueue(release());
+      }
+    },
+
+    // Reads the open draft again for the History dialog, while `autosave`
+    // is held: its history, and the ETag the next change to it is sent
+    // with. The queue takes that ETag only when the draft's content is as
+    // it last confirmed (see adoptIfSameHead in autosave.js).
+    async rereadHistory(autosave) {
+      const fresh = await builderApi.getDraft(this.owner, this.draftId);
+
+      if (Array.isArray(fresh.history)) {
+        this.serverHistory = fresh.history;
+      }
+
+      const adopted = await autosave.adoptIfSameHead(fresh.draft, fresh.etag);
+
+      this.historyEtag = adopted ? null : fresh.etag;
     },
 
     /**
