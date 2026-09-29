@@ -507,7 +507,7 @@ function errorBanner(page) {
 
 test.describe('export and import', () => {
   test(
-    'exports JSON, YAML, Topology YAML, PNG and SVG, and re-imports the Builder files as new drafts',
+    'exports JSON, YAML, Topology YAML, GEXF, PNG and SVG, and re-imports the Builder files as new drafts',
     {
       tag: '@cross-browser',
     },
@@ -644,6 +644,52 @@ test.describe('export and import', () => {
         expect
           .soft(document.networks.map((network) => network.name))
           .toEqual(['EXP']);
+      });
+
+      await test.step('GEXF export is the network as a graph for Gephi', async () => {
+        const fileName = exportFileName(title, 'gexf');
+        const button = dialog.getByTestId('export-gexf');
+        await expect.soft(button).toHaveAccessibleName('Gephi (GEXF)');
+        await expect
+          .soft(button)
+          .toHaveAccessibleDescription(/as a graph to analyze in Gephi/);
+        const file = await download(page, () => button.click());
+        expect.soft(file.name).toBe(fileName);
+        await expect
+          .soft(status)
+          .toHaveText(
+            `Saved ${fileName}: 1 device, 1 network and 1 connection.`,
+          );
+        await expect.soft(exportError).toHaveCount(0);
+
+        // The browser's XML parser reads it: one node for each of the
+        // diagram's nodes, each placed, and its connection.
+        const graph = await page.evaluate((text) => {
+          const xml = new DOMParser().parseFromString(text, 'application/xml');
+          const gexf = 'http://gexf.net/1.3';
+          const nodes = [...xml.getElementsByTagNameNS(gexf, 'node')];
+
+          return {
+            errors: xml.getElementsByTagName('parsererror').length,
+            root: [
+              xml.documentElement.namespaceURI,
+              xml.documentElement.localName,
+            ],
+            version: xml.documentElement.getAttribute('version'),
+            labels: nodes.map((node) => node.getAttribute('label')).sort(),
+            positions: xml.getElementsByTagNameNS(`${gexf}/viz`, 'position')
+              .length,
+            edges: xml.getElementsByTagNameNS(gexf, 'edge').length,
+          };
+        }, file.buffer.toString('utf8'));
+        expect.soft(graph).toEqual({
+          errors: 0,
+          root: ['http://gexf.net/1.3', 'gexf'],
+          version: '1.3',
+          labels: [...labels].sort(),
+          positions: saved.nodes.length,
+          edges: saved.edges.length,
+        });
       });
 
       const boundsText = dialog.getByText(/Diagram bounds: \d+ × \d+ px/);

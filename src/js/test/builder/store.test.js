@@ -1629,6 +1629,7 @@ describe('server data', () => {
         owner: 'alice',
         sourceToken: request.sourceToken,
         digest: 'sha256:1',
+        updated: '2026-03-04T05:06:07Z',
       },
       document: null,
       history: null,
@@ -1644,6 +1645,8 @@ describe('server data', () => {
       digest: 'sha256:1',
       documents: [{ id: 'p1' }],
     });
+    // Export dates a GEXF file by it.
+    expect(store.draftRecord.updated).toBe('2026-03-04T05:06:07Z');
 
     // A publish keeps the draft record the server returns.
     api.publish.mockResolvedValueOnce({
@@ -1678,6 +1681,7 @@ describe('server data', () => {
       sourceToken: '',
       digest: '',
       publication: null,
+      updated: '',
     });
   });
 

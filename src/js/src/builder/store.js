@@ -309,13 +309,15 @@ export const useBuilderStore = defineStore('builder', {
     etag: null,
     // What Publish needs to know about the draft record: its id, the config
     // it was loaded from, the saved snapshot's digest and its last
-    // publication (see draftCanUpdate in publish.js).
+    // publication (see draftCanUpdate in publish.js); and when the server
+    // last changed it, for Export.
     draftRecord: {
       id: '',
       sourceToken: '',
       digest: '',
       publication: null,
       forked: null,
+      updated: '',
     },
     readOnly: false,
     // How the user reaches the open draft (see rememberAccess): 'owner',
@@ -513,6 +515,7 @@ export const useBuilderStore = defineStore('builder', {
         digest: draft.digest || '',
         publication: draft.publication || null,
         forked: draft.forked || null,
+        updated: draft.updated || '',
       };
     },
 

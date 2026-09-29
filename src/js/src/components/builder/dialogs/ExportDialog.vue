@@ -10,6 +10,9 @@
   Image exports always cover the whole diagram (all node bounds), not just the
   part currently visible on screen.
 
+  Gephi (GEXF) is the network as a graph for analysis in Gephi, built here
+  from the diagram (see gexf.js). It is not a format the Builder imports.
+
   The Inspector's unapplied edits are saved before the dialog opens (see
   leave.js). Edits it cannot apply keep every export from being made,
   rather than being left out, and the dialog says so as it opens.
@@ -88,9 +91,23 @@
         <builder-icon name="image" :size="14" />
         SVG
       </button>
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="export-gexf"
+        aria-describedby="export-gexf-hint"
+        :disabled="Boolean(unapplied)"
+        @click="exportGEXF">
+        <builder-icon name="download" :size="14" />
+        Gephi (GEXF)
+      </button>
     </div>
     <p id="export-topology-hint" class="builder-hint">
       Topology YAML is the phenix Topology config Publish would write.
+    </p>
+    <p id="export-gexf-hint" class="builder-hint">
+      Gephi (GEXF): the devices, networks and connections, with their settings,
+      as a graph to analyze in Gephi. Builder Flow cannot open it.
     </p>
 
     <p class="builder-dialog__message" role="status">
@@ -129,6 +146,8 @@
     toJSONString,
     toYAMLString,
   } from '@/builder/exporters.js';
+  import { count, listOf } from '@/builder/announce.js';
+  import { GEXF_MIME, toGEXF } from '@/builder/gexf.js';
   import { unappliedBlock } from '@/builder/leave.js';
   import { useBuilderStore } from '@/builder/store.js';
 
@@ -227,6 +246,32 @@
       error.set(`Image export failed: ${err.message}`);
     } finally {
       busy.value = false;
+    }
+  }
+
+  // The network as a GEXF graph (see gexf.js), dated by the diagram's last
+  // change: this tab's, else the server's.
+  function exportGEXF() {
+    error.clear();
+
+    const fileName = exportFileName(store.doc, 'gexf');
+
+    try {
+      const graph = toGEXF(store.doc, {
+        modified: store.saveState.changedAt || store.draftRecord.updated,
+      });
+
+      saveText({ text: graph.text, mime: GEXF_MIME, fileName, saveAs });
+      status.set(
+        `Saved ${fileName}: ${listOf([
+          count(graph.devices, 'device'),
+          count(graph.networks, 'network'),
+          count(graph.connections, 'connection'),
+        ])}.`,
+      );
+    } catch (err) {
+      status.clear();
+      error.set(`GEXF export failed: ${err.message}`);
     }
   }
 </script>

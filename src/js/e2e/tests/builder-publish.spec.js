@@ -1130,6 +1130,7 @@ test('a draft can publish an update after further edits', async ({
       .toHaveText(/ cannot be exported until Memory is fixed\. /);
     await expect.soft(page.getByTestId('export-json')).toBeDisabled();
     await expect.soft(page.getByTestId('export-topology-yaml')).toBeDisabled();
+    await expect.soft(page.getByTestId('export-gexf')).toBeDisabled();
     await page.keyboard.press('Escape');
     await expect(builder.dialog).toHaveCount(0);
 

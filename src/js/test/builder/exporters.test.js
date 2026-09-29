@@ -18,6 +18,14 @@ import {
   toYAMLString,
 } from '@/builder/exporters.js';
 import { parseDocument } from '@/builder/decode.js';
+import { toGEXF } from '@/builder/gexf.js';
+import {
+  addNetwork,
+  addNode,
+  connect,
+  createDocument,
+  groupNodes,
+} from '@/builder/model.js';
 
 import { sampleDocument } from './fixtures.js';
 
@@ -522,5 +530,497 @@ describe('savers', () => {
         'This topology cannot be published yet: interface "eth1" of device "a" has no VLAN: ' +
         'connect it to a network, or type a VLAN for it.',
     );
+  });
+});
+
+// --- GEXF --------------------------------------------------------------------
+
+// A strict reader for what toGEXF writes (Vitest runs without a DOM): the
+// declaration, elements with quoted attributes, and text. Anything else, a
+// tag closed out of order, or an & that starts no reference, throws.
+const XML_TOKEN =
+  /<\?xml[^?]*\?>|<(\/?)([\w:.-]+)((?:\s+[\w:.-]+="[^"<]*")*)\s*(\/?)>|([^<]+)/y;
+const XML_REFERENCES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+// Characters XML 1.0 does not allow.
+const NOT_XML = /[^\t\n\r -퟿-�\u{10000}-\u{10FFFF}]/u;
+
+function unescapeXML(text) {
+  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);|&/gi, (whole, name) => {
+    if (!name || (name[0] !== '#' && !(name in XML_REFERENCES))) {
+      throw new Error(`not a reference: ${whole} in ${text.slice(0, 40)}`);
+    }
+
+    if (name[0] !== '#') {
+      return XML_REFERENCES[name];
+    }
+
+    return String.fromCodePoint(
+      name[1] === 'x' ? parseInt(name.slice(2), 16) : Number(name.slice(1)),
+    );
+  });
+}
+
+function parseXML(text) {
+  const root = { name: '', attributes: {}, children: [], text: '' };
+  const open = [root];
+
+  XML_TOKEN.lastIndex = 0;
+
+  while (XML_TOKEN.lastIndex < text.length) {
+    const at = XML_TOKEN.lastIndex;
+    const match = XML_TOKEN.exec(text);
+
+    if (!match) {
+      throw new Error(`not well formed at ${at}: ${text.slice(at, at + 40)}`);
+    }
+
+    const [, closing, name, attributes, empty, content] = match;
+    const parent = open[open.length - 1];
+
+    if (content !== undefined) {
+      parent.text += unescapeXML(content);
+    } else if (closing) {
+      if (open.pop().name !== name) {
+        throw new Error(`</${name}> closes another element`);
+      }
+    } else if (name) {
+      const element = { name, attributes: {}, children: [], text: '' };
+
+      for (const [, key, value] of attributes.matchAll(
+        /([\w:.-]+)="([^"]*)"/g,
+      )) {
+        element.attributes[key] = unescapeXML(value);
+      }
+
+      parent.children.push(element);
+
+      if (!empty) {
+        open.push(element);
+      }
+    }
+  }
+
+  if (open.length !== 1 || root.children.length !== 1) {
+    throw new Error('not one root element, or one left open');
+  }
+
+  return root.children[0];
+}
+
+function childOf(element, name) {
+  return element.children.find((child) => child.name === name);
+}
+
+// id -> {title, type, default} of one class of columns.
+function columnsOf(graph, cls) {
+  const attributes = graph.children.find(
+    (child) => child.name === 'attributes' && child.attributes.class === cls,
+  );
+
+  return Object.fromEntries(
+    attributes.children.map(({ attributes: column, children }) => [
+      column.id,
+      {
+        title: column.title,
+        type: column.type,
+        ...(children.length ? { default: children[0].text } : {}),
+      },
+    ]),
+  );
+}
+
+// for -> value of a node's or edge's attvalues.
+function valuesOf(element) {
+  return Object.fromEntries(
+    (childOf(element, 'attvalues')?.children || []).map(({ attributes }) => [
+      attributes.for,
+      attributes.value,
+    ]),
+  );
+}
+
+// The viz: elements of a node or edge, by name.
+function vizOf(element) {
+  return Object.fromEntries(
+    element.children
+      .filter((child) => child.name.startsWith('viz:'))
+      .map((child) => [child.name, child.attributes]),
+  );
+}
+
+function graphOf(text) {
+  const root = parseXML(text);
+  const graph = childOf(root, 'graph');
+
+  return {
+    root,
+    graph,
+    nodes: childOf(graph, 'nodes'),
+    edges: childOf(graph, 'edges'),
+  };
+}
+
+// A router, and a device on EXP twice (through its two switches) and on
+// MGMT, grouped, with awkward labels and annotations; and a note.
+function gexfDocument() {
+  let doc = createDocument({
+    name: 'Plant & <lab>',
+    description: 'Line one\n"two" & <three> 🚀',
+  });
+  const exp = addNetwork(doc, { name: 'EXP', alias: 100 });
+
+  doc = exp.doc;
+
+  const mgmt = addNetwork(doc, { name: 'MGMT', color: '#12345680' });
+
+  doc = mgmt.doc;
+
+  const switches = [exp, exp, mgmt].map(({ network }, index) => {
+    const added = addNode(doc, {
+      kind: 'switch',
+      networkId: network.id,
+      position: { x: 400, y: index * 200 },
+    });
+
+    doc = added.doc;
+
+    return added.node;
+  });
+  const iface = (name, extra = {}) => ({
+    name,
+    type: 'ethernet',
+    proto: 'static',
+    vlan: '',
+    ...extra,
+  });
+  const web = addNode(doc, {
+    kind: 'device',
+    hostname: 'web',
+    position: { x: 10, y: 20 },
+    interfaces: [{ name: 'eth0' }, { name: 'eth1' }, { name: 'eth2' }],
+    spec: {
+      type: 'VirtualMachine',
+      general: { hostname: 'web' },
+      hardware: {
+        os_type: 'linux',
+        vcpus: 2,
+        memory: 4096,
+        drives: [{ image: 'ubuntu.qc2' }],
+      },
+      labels: {
+        role: 'web',
+        Role: 'upper',
+        'site name': 'R&D <lab> "a" \'b\'',
+      },
+      annotations: {
+        criticality: 1,
+        big: 3000000000,
+        ratio: 0.5,
+        monitored: true,
+        tags: ['a,b', "it's", 'back\\slash', '🚀'],
+        nested: { k: [1] },
+        control: 'bell\u0007 lone\uD800 end￾',
+      },
+      network: {
+        interfaces: [
+          iface('eth0', {
+            address: '10.0.0.10',
+            mask: 24,
+            mac: '52:54:00:00:00:10',
+          }),
+          iface('eth1', { address: '10.0.0.11', mask: 24 }),
+          iface('eth2', { proto: 'dhcp' }),
+        ],
+      },
+    },
+  });
+
+  doc = web.doc;
+
+  const router = addNode(doc, {
+    kind: 'device',
+    hostname: 'rtr',
+    position: { x: 800, y: 0 },
+    interfaces: [{ name: 'eth0' }],
+    spec: {
+      type: 'Router',
+      general: { hostname: 'rtr' },
+      hardware: { os_type: 'minirouter' },
+      network: {
+        interfaces: [iface('eth0', { address: '10.0.0.1', mask: 24 })],
+      },
+    },
+  });
+
+  doc = router.doc;
+
+  for (const [device, handle, sw] of [
+    [web.node, 0, switches[0]],
+    [web.node, 1, switches[1]],
+    [web.node, 2, switches[2]],
+    [router.node, 0, switches[0]],
+  ]) {
+    doc = connect(doc, {
+      sourceNodeId: device.id,
+      sourceHandleId: device.device.interfaces[handle].id,
+      targetNodeId: sw.id,
+    }).doc;
+  }
+
+  doc = groupNodes(doc, [web.node.id], { title: 'Site & <A>' }).doc;
+  doc = addNode(doc, { kind: 'note', text: 'Not part of the network' }).doc;
+
+  // A VLAN the spec kept from before its connection: publishing writes the
+  // network's name instead.
+  doc.nodes.find(
+    (node) => node.id === web.node.id,
+  ).device.spec.network.interfaces[2].vlan = 'STALE';
+
+  return { doc, web: web.node };
+}
+
+describe('GEXF export', () => {
+  const modified = '2026-03-04T12:00:00Z';
+
+  test('writes a GEXF 1.3 graph of the devices and networks', () => {
+    const { doc } = gexfDocument();
+    const gexf = toGEXF(doc, { modified });
+    const lines = gexf.text.split('\n');
+    const { root, graph, nodes, edges } = graphOf(gexf.text);
+
+    expect(lines[0]).toBe('<?xml version="1.0" encoding="UTF-8"?>');
+    // Gephi Lite reads a file as GEXF when <gexf is on its first two lines.
+    expect(lines[1]).toMatch(/^<gexf /);
+    expect(root.name).toBe('gexf');
+    expect(root.attributes).toEqual({
+      xmlns: 'http://gexf.net/1.3',
+      'xmlns:viz': 'http://gexf.net/1.3/viz',
+      'xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+      'xsi:schemaLocation': 'http://gexf.net/1.3 http://gexf.net/1.3/gexf.xsd',
+      version: '1.3',
+    });
+
+    const meta = childOf(root, 'meta');
+
+    expect(meta.attributes.lastmodifieddate).toBe('2026-03-04');
+    expect(childOf(meta, 'creator').text).toBe('phēnix Builder Flow');
+    expect(childOf(meta, 'description').text).toBe(doc.description);
+    expect(graph.attributes).toEqual({
+      mode: 'static',
+      defaultedgetype: 'undirected',
+      idtype: 'string',
+    });
+
+    // EXP's second switch, the group and the note are no nodes.
+    const labels = new Map(
+      nodes.children.map(({ attributes }) => [attributes.id, attributes.label]),
+    );
+
+    expect([...labels.values()]).toEqual(['EXP', 'MGMT', 'web', 'rtr']);
+    expect(nodes.attributes.count).toBe('4');
+    expect(
+      edges.children.map(({ attributes }) => [
+        labels.get(attributes.source),
+        labels.get(attributes.target),
+      ]),
+    ).toEqual([
+      ['web', 'EXP'],
+      ['web', 'EXP'],
+      ['web', 'MGMT'],
+      ['rtr', 'EXP'],
+    ]);
+    expect(edges.attributes.count).toBe('4');
+    expect(
+      new Set(edges.children.map(({ attributes }) => attributes.id)).size,
+    ).toBe(4);
+    expect(gexf).toMatchObject({ devices: 2, networks: 2, connections: 4 });
+  });
+
+  test('types its columns, with one for each label and annotation key', () => {
+    const { doc } = gexfDocument();
+    const { graph, nodes, edges } = graphOf(toGEXF(doc, { modified }).text);
+    const nodeColumns = columnsOf(graph, 'node');
+
+    expect(nodeColumns).toMatchObject({
+      kind: { title: 'Node kind', type: 'string' },
+      memory_mb: { title: 'Memory (MB)', type: 'integer' },
+      ip_addresses: { title: 'IP addresses', type: 'liststring' },
+      vlans_text: { title: 'VLANs (text)', type: 'string' },
+      external: { title: 'External', type: 'boolean', default: 'false' },
+      'label.role': { title: 'Label: role', type: 'string' },
+      'label.Role': { title: 'Label: Role', type: 'string' },
+      'label.site_name': { title: 'Label: site name', type: 'string' },
+      'annotation.criticality': { type: 'integer' },
+      'annotation.big': { type: 'long' },
+      'annotation.ratio': { type: 'double' },
+      'annotation.monitored': { type: 'boolean' },
+      'annotation.tags': { type: 'liststring' },
+      'annotation.nested': { type: 'string' },
+    });
+    // Only types every reader takes, and ids of letters, digits, _ . and -.
+    for (const [id, { type }] of Object.entries(nodeColumns)) {
+      expect(['string', 'integer', 'long', 'double', 'boolean']).toContain(
+        type.replace(/^liststring$/, 'string'),
+      );
+      expect(id).toMatch(/^[\p{L}\p{N}_.-]+$/u);
+    }
+    expect(columnsOf(graph, 'edge')).toMatchObject({
+      network: { type: 'string' },
+      mask: { type: 'integer' },
+      qinq: { type: 'boolean', default: 'false' },
+    });
+
+    const web = nodes.children.find(
+      ({ attributes }) => attributes.label === 'web',
+    );
+
+    expect(valuesOf(web)).toMatchObject({
+      kind: 'device',
+      memory_mb: '4096',
+      interface_count: '3',
+      ip_addresses: '[10.0.0.10, 10.0.0.11]',
+      // The connected interface's network, not the VLAN its spec kept.
+      vlans: '[EXP, MGMT]',
+      vlans_text: 'EXP|MGMT',
+      group: 'Site & <A>',
+      'label.site_name': 'R&D <lab> "a" \'b\'',
+      'annotation.big': '3000000000',
+      'annotation.tags': `['a,b', "it's", 'back\\\\slash', 🚀]`,
+      'annotation.nested': '{"k":[1]}',
+      // What XML 1.0 does not allow is left out.
+      'annotation.control': 'bell lone end',
+    });
+    expect(valuesOf(edges.children[0])).toMatchObject({
+      device: 'web',
+      network: 'EXP',
+      interface: 'eth0',
+      ip_address: '10.0.0.10',
+      mask: '24',
+      mac: '52:54:00:00:00:10',
+    });
+  });
+
+  test('escapes what it writes, and writes nothing XML 1.0 does not allow', () => {
+    const { text } = toGEXF(gexfDocument().doc, { modified });
+
+    expect(text).not.toMatch(NOT_XML);
+    expect(text).toContain('<description>Line one\n"two" &amp; &lt;three&gt;');
+    expect(text).toContain('title="Label: site name"');
+    // A line break in an attribute is a reference: a parser reads a space.
+    expect(text).not.toMatch(/="[^"]*\n/);
+  });
+
+  test('puts each node at its center, y up, in r g b a colors', () => {
+    const { nodes, edges } = graphOf(
+      toGEXF(gexfDocument().doc, { modified }).text,
+    );
+    const node = (label) =>
+      vizOf(
+        nodes.children.find(({ attributes }) => attributes.label === label),
+      );
+
+    // A 160 × 96 device placed by its top-left corner at (10, 20).
+    expect(node('web')).toEqual({
+      'viz:color': { r: '107', g: '124', b: '147', a: '1' },
+      'viz:position': { x: '90', y: '-68', z: '0' },
+      'viz:size': { value: '10' },
+      'viz:shape': { value: 'disc' },
+    });
+    expect(node('rtr')['viz:shape']).toEqual({ value: 'diamond' });
+    expect(node('EXP')['viz:color']).toEqual({
+      r: '47',
+      g: '111',
+      b: '191',
+      a: '1',
+    });
+    expect(node('MGMT')['viz:color']).toEqual({
+      r: '18',
+      g: '52',
+      b: '86',
+      a: '0.502',
+    });
+    // One size for every node: Gephi scales sizes and positions together.
+    expect(
+      new Set(nodes.children.map((item) => vizOf(item)['viz:size'].value)),
+    ).toEqual(new Set(['10']));
+    // An edge has its network's color, and its dash pattern as a shape.
+    expect(vizOf(edges.children[2])).toEqual({
+      'viz:color': { r: '18', g: '52', b: '86', a: '0.502' },
+      'viz:shape': { value: 'dashed' },
+    });
+  });
+
+  test('tells apart the edges of a device with two interfaces on one network', () => {
+    const { doc, web } = gexfDocument();
+    const kinds = (text) =>
+      graphOf(text).edges.children.map(({ attributes }) => attributes.kind);
+
+    expect(kinds(toGEXF(doc, { modified }).text)).toEqual([
+      'eth0',
+      'eth1',
+      undefined,
+      undefined,
+    ]);
+
+    // Two interfaces of one name: the second is told by its place.
+    const renamed = structuredClone(doc);
+
+    renamed.nodes.find((node) => node.id === web.id).device.interfaces[1].name =
+      'eth0';
+    expect(kinds(toGEXF(renamed, { modified }).text).slice(0, 2)).toEqual([
+      'eth0',
+      '#2',
+    ]);
+  });
+
+  test('writes the same file for the same document', () => {
+    const { doc } = gexfDocument();
+    const first = toGEXF(doc, { modified, now: () => new Date(2020, 0, 1) });
+
+    expect(toGEXF(structuredClone(doc), { modified }).text).toBe(first.text);
+    // Without its last change, the file is dated today.
+    expect(toGEXF(doc, { now: () => new Date(2026, 0, 2) }).text).toContain(
+      'lastmodifieddate="2026-01-02"',
+    );
+  });
+
+  test('exports a 500-device diagram quickly', () => {
+    let doc = createDocument({ name: 'Large' });
+    let sw = null;
+
+    for (let index = 0; index < 500; index += 1) {
+      if (index % 50 === 0) {
+        const created = addNetwork(doc, { name: `NET-${index / 50 + 1}` });
+        const added = addNode(created.doc, {
+          kind: 'switch',
+          networkId: created.network.id,
+        });
+
+        doc = added.doc;
+        sw = added.node;
+      }
+
+      const device = addNode(doc, {
+        kind: 'device',
+        hostname: `host-${index + 1}`,
+        position: { x: index * 10, y: index * 10 },
+        interfaces: [{ name: 'eth0' }],
+      });
+
+      doc = connect(device.doc, {
+        sourceNodeId: device.node.id,
+        sourceHandleId: device.node.device.interfaces[0].id,
+        targetNodeId: sw.id,
+      }).doc;
+    }
+
+    const started = performance.now();
+    const { text } = toGEXF(doc, { modified });
+    const elapsed = performance.now() - started;
+    const { nodes, edges } = graphOf(text);
+
+    expect(nodes.children).toHaveLength(510);
+    expect(edges.children).toHaveLength(500);
+    expect(elapsed).toBeLessThan(1000);
   });
 });
