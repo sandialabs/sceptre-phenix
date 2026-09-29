@@ -1007,6 +1007,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../gre-mesh/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GRE Mesh
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../netflow/" class="md-nav__link">
         
   
@@ -1703,42 +1731,45 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
   when some processes are not healthy immediately at experiment start. This
   only delays SoH when it first runs at the experiment start. It will not delay
   SoH when run manually later by clicking the 'Run SoH' button in the UI or
-  using the command line <code>trigger-running</code> command. The default is no delay.</p>
+  running <code>phenix exp trigger running</code> (or the deprecated <code>trigger-running</code>
+  command) from the command line. The default is no delay.</p>
 </li>
 <li>
 <p><code>hostCustomTests</code>: If present, a map of custom tests to run on the given
   hosts.</p>
-</li>
+<ul>
 <li>
 <p><code>name</code>: name of test. Used as script name to be sent to the host.</p>
 </li>
 <li>
 <p><code>testScript</code>: the actual script (can be multiple lines) to be executed
-    using the specified <code>executor</code>.</p>
+  using the specified <code>executor</code>.</p>
 </li>
 <li>
 <p><code>executor</code>: the application to execute the <code>testScript</code> with (e.g. <code>bash</code>,
-    <code>powershell</code>).</p>
+  <code>powershell</code>).</p>
 </li>
 <li>
 <p><code>testStdout</code>: a string to look for in STDOUT from the executed script. If
-    found, the test passes. If not found, it fails.</p>
+  found, the test passes. If not found, it fails.</p>
 </li>
 <li>
 <p><code>testStderr</code>: a string to look for in STDERR from the executed script. If
-    found, the test passes. If not found, it fails.</p>
+  found, the test passes. If not found, it fails.</p>
 </li>
 <li>
 <p><code>validateStdout</code>: a script to run that will be provided, via STDIN, the
-    STDOUT from the executed script. If this validation script exits 0, the
-    test passes. If it exits non-zero, the test fails. This validation script
-    should always be a bash script, even if the host is a Windows host.</p>
+  STDOUT from the executed script. If this validation script exits 0, the
+  test passes. If it exits non-zero, the test fails. This validation script
+  should always be a bash script, even if the host is a Windows host.</p>
 </li>
 <li>
 <p><code>validateStderr</code>: a script to run that will be provided, via STDIN, the
-    STDERR from the executed script. If this validation script exits 0, the
-    test passes. If it exits non-zero, the test fails. This validation script
-    should always be a bash script, even if the host is a Windows host.</p>
+  STDERR from the executed script. If this validation script exits 0, the
+  test passes. If it exits non-zero, the test fails. This validation script
+  should always be a bash script, even if the host is a Windows host.</p>
+</li>
+</ul>
 </li>
 <li>
 <p><code>hostFiles</code>: a map of VMs, each specifying a list of file paths that should
@@ -1813,18 +1844,18 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
 <p><code>packetCapture</code>: if present, a partially hidden packet capture infrastructure
   based on Elasticsearch, Kibana, and Packetbeat will be deployed for the experiment.
   See <a href="#packet-capture">Packet Capture</a> for more details. The default is <code>nil</code>.</p>
-</li>
+<ul>
 <li>
 <p><code>elasticImage</code>: path to the disk image to use for the Elastic/Kibana VM
-    for packet capture. An <code>image/PHENIX-elasticsearch</code> config comes bundled with
-    phenix and can be used to build an image to use here. There is no default
-    for this setting; if packet capture is to be deployed it must be provided.</p>
+  for packet capture. An <code>image/PHENIX-elasticsearch</code> config comes bundled with
+  phenix and can be used to build an image to use here. There is no default
+  for this setting; if packet capture is to be deployed it must be provided.</p>
 </li>
 <li>
 <p><code>packetBeatImage</code>: path to the disk image to use for the Packetbeat VM for
-    packet capture. An <code>image/PHENIX-packetbeat</code> config comes bundled with phenix and
-    can be used to build an image to use here. There is no default for this
-    setting; if packet capture is to be deployed it must be provided.</p>
+  packet capture. An <code>image/PHENIX-packetbeat</code> config comes bundled with phenix and
+  can be used to build an image to use here. There is no default for this
+  setting; if packet capture is to be deployed it must be provided.</p>
 </li>
 <li>
 <p><code>elasticServer</code>:</p>
@@ -1862,8 +1893,10 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
 </li>
 <li>
 <p><code>captureHosts</code>: a map of VMs, each specifying a list of network interface
-    names to monitor. One Packetbeat VM will be deployed for each VM interface
-    specified. The default is <code>nil</code>.</p>
+  names to monitor. One Packetbeat VM will be deployed for each VM interface
+  specified. The default is <code>nil</code>.</p>
+</li>
+</ul>
 </li>
 <li>
 <p><code>skipInitialNetworkConfigTests</code>: by default, a set of tests will be run on
@@ -1881,45 +1914,49 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
   can reach other VMs within the experiment over the network. See <a href="#network-reachability">Network
   Reachability</a> for more details. There are three options
   for this setting: <code>off</code>, <code>sample</code>, <code>full</code>.</p>
-</li>
+<ul>
 <li>
 <p><code>off</code>: reachability testing is disabled. This is the default.</p>
 </li>
 <li>
 <p><code>sample</code>: each VM in the experiment will attempt to ping a random VM in
-    every other experiment VLAN.</p>
+  every other experiment VLAN.</p>
 </li>
 <li>
 <p><code>full</code>: each VM in the experiment will attempt to ping every other VM in
-    every other experiment VLAN.</p>
+  every other experiment VLAN.</p>
+</li>
+</ul>
 </li>
 <li>
 <p><code>testCustomReachability</code>: if present, a list of custom reachability test
   settings.</p>
-</li>
+<ul>
 <li>
 <p><code>src</code>: hostname to conduct test from.</p>
 </li>
 <li>
 <p><code>dst</code>: hostname and interface name (e.g. <code>host-01|IF0</code>) to conduct test
-    to.</p>
+  to.</p>
 </li>
 <li>
 <p><code>proto</code>: protocol to use for test. Currently the options are <code>tcp</code> and
-    <code>udp</code>. If <code>udp</code> is used, the <code>udpPacketBase64</code> setting must be provided.</p>
+  <code>udp</code>. If <code>udp</code> is used, the <code>udpPacketBase64</code> setting must be provided.</p>
 </li>
 <li>
 <p><code>port</code>: destination port to conduct test to.</p>
 </li>
 <li>
 <p><code>wait</code>: amount of time to wait for a response from the destination. If not
-    provided, the default of <code>5s</code> is used.</p>
+  provided, the default of <code>5s</code> is used.</p>
 </li>
 <li>
 <p><code>udpPacketBase64</code>: a base64-encoded packet to send when testing using
-    <code>udp</code>. This is required to generate a response over UDP to determine if
-    the remote server is up and reachable. The given packet must be valid
-    enough to generate a response from the server.</p>
+  <code>udp</code>. This is required to generate a response over UDP to determine if
+  the remote server is up and reachable. The given packet must be valid
+  enough to generate a response from the server.</p>
+</li>
+</ul>
 </li>
 </ul>
 <h3 id="network-reachability">Network Reachability<a class="headerlink" href="#network-reachability" title="Permanent link">&para;</a></h3>

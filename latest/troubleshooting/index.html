@@ -836,6 +836,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../gre-mesh/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GRE Mesh
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../netflow/" class="md-nav__link">
         
   
@@ -1509,9 +1537,11 @@
 <p>If you see "malformed log entry" warnings in the main phēnix system log, it's likely because your application is writing non-JSON text to <code>stderr</code>.</p>
 <ul>
 <li><strong>Debug Prints</strong>: Ensure you are not using <code>print()</code> (Python) or <code>fmt.Println()</code> (Go) for debugging. These pollute the <code>stderr</code> stream. Use the structured logger.</li>
-<li><strong>Tracebacks</strong>: Ensure exception tracebacks are not being printed as raw text.</li>
+<li><strong>Tracebacks</strong>: Ensure exception tracebacks are not being printed as raw text.<ul>
 <li><strong>Python</strong>: Use <code>logger.exception("message")</code> inside an <code>except</code> block. This correctly captures the traceback as a JSON field. Standard <code>print(e)</code> or <code>traceback.print_exc()</code> will break the parser.</li>
 <li><strong>Go</strong>: Use structured logging fields for errors (e.g., <code>slog.Error("message", "err", err)</code>).</li>
+</ul>
+</li>
 </ul>
 <h3 id="inconsistent-timestamps">Inconsistent Timestamps<a class="headerlink" href="#inconsistent-timestamps" title="Permanent link">&para;</a></h3>
 <p>Ensure timestamps in your JSON logs are in a consistent format that phēnix can parse, such as RFC3339. The core now enforces a <code>2006-01-02 15:04:05.000</code> format for its own file logs for easier reading, but is flexible on ingest.</p>

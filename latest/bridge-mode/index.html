@@ -16,7 +16,7 @@
         <link rel="prev" href="../state-of-health/">
       
       
-        <link rel="next" href="../netflow/">
+        <link rel="next" href="../gre-mesh/">
       
       
         
@@ -1040,6 +1040,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../gre-mesh/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GRE Mesh
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../netflow/" class="md-nav__link">
         
   
@@ -1649,11 +1677,11 @@ manual configuration, and the <code>Default Bridge Name</code> field is hidden i
 experiment creation form because it would have no effect.</p>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-</div>
 <p>Because OVS bridge names are limited to <strong>15 characters</strong>, experiment names
-    must be 15 characters or fewer when using <code>auto</code> bridge mode. phēnix will
-    return an error if you attempt to create or update an experiment with a
-    longer name while <code>auto</code> mode is active.</p>
+must be 15 characters or fewer when using <code>auto</code> bridge mode. phēnix will
+return an error if you attempt to create or update an experiment with a
+longer name while <code>auto</code> mode is active.</p>
+</div>
 <h2 id="bridge-names-and-topologies">Bridge Names and Topologies<a class="headerlink" href="#bridge-names-and-topologies" title="Permanent link">&para;</a></h2>
 <p>The experiment's default bridge is applied to every node interface in the
 topology that does not name a bridge of its own. An interface that explicitly

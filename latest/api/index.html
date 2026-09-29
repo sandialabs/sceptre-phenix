@@ -836,6 +836,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../gre-mesh/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GRE Mesh
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../netflow/" class="md-nav__link">
         
   
@@ -1400,21 +1428,20 @@ available in two places:</p>
   copy of the same interactive API docs at the <code>/docs/</code> path:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>http://&lt;phenix-host&gt;:&lt;port&gt;/docs/
 </span></code></pre></div>
+<p>For a default local installation, this would be:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>http://localhost:3000/docs/
+</span></code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code>&lt;port&gt;</code> defaults to <code>3000</code> and comes from the <code>ui.listen-endpoint</code>
+setting. See <a href="../settings/">Settings</a> for details on configuring this.</p>
+</div>
+<p>Because it's built into the phēnix binary/image itself, <code>/docs/</code> on a
+running server is always in sync with the version of phēnix you're
+running, whereas <a href="/swagger.html">swagger.html</a> reflects the spec as of
+the latest docs release.</p>
 </li>
 </ul>
-<p>For a default local installation, this would be:</p>
-<div class="codehilite"><pre><span></span><code>```text
-http://localhost:3000/docs/
-```
-</code></pre></div>
-
-<p>!!! note
-  <code>&lt;port&gt;</code> defaults to <code>3000</code> and comes from the <code>ui.listen-endpoint</code>
-  setting. See <a href="../settings/">Settings</a> for details on configuring this.</p>
-<p>Because it's built into the phēnix binary/image itself, <code>/docs/</code> on a
-  running server is always in sync with the version of phēnix you're
-  running, whereas <a href="/swagger.html">swagger.html</a> reflects the spec as of
-  the latest docs release.</p>
 <p>The API docs are organized by tag (<code>Configs</code>, <code>Experiments</code>, <code>Virtual
 Machines</code>, <code>Hosts</code>, <code>Applications</code>, <code>Topologies</code>, <code>Disks</code>, <code>Users</code>, etc.) and
 document every available endpoint, including request parameters and response

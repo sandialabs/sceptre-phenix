@@ -836,6 +836,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../gre-mesh/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GRE Mesh
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../netflow/" class="md-nav__link">
         
   
@@ -1437,20 +1465,22 @@ These tags are stored as a string <code>key1=value1,key2=value2</code>.</p>
 </span></code></pre></div>
 <ul>
 <li><code>auto</code> - this group of settings is used to determine what events happen
-  automatically when the workflow config is applied.</li>
+  automatically when the workflow config is applied.<ul>
 <li><code>create</code> - if set, this string will be used as the name of the new
-    experiment to automatically be created for the current branch if one does
-    not already exist. Omit this setting to prevent an experiment from
-    automatically being created for the current branch.</li>
+  experiment to automatically be created for the current branch if one does
+  not already exist. Omit this setting to prevent an experiment from
+  automatically being created for the current branch.</li>
 <li><code>update</code> - if true (the default), an experiment for the current branch
-    will be updated with its topology and scenario (if it has one). If the
-    experiment is currently running, it will only be updated if <code>auto.restart</code>
-    is also true.</li>
+  will be updated with its topology and scenario (if it has one). If the
+  experiment is currently running, it will only be updated if <code>auto.restart</code>
+  is also true.</li>
 <li><code>restart</code> - if true (the default), a running experiment for the current
-    branch will be stopped, updated, and restarted when the workflow config is
-    applied to phenix. If the existing experiment is already stopped, or a new
-    experiment is created, it will be started. This setting has no affect if
-    <code>auto.update</code> is disabled and an experiment exists for the current branch.</li>
+  branch will be stopped, updated, and restarted when the workflow config is
+  applied to phenix. If the existing experiment is already stopped, or a new
+  experiment is created, it will be started. This setting has no affect if
+  <code>auto.update</code> is disabled and an experiment exists for the current branch.</li>
+</ul>
+</li>
 <li><code>topology</code> - the name of the topology config to use for the experiment.
   Variable substation will be applied to the config name. This setting can be
   changed to force an existing experiment for the current branch to use a

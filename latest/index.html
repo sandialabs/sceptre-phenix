@@ -1037,6 +1037,34 @@
   
   
     <li class="md-nav__item">
+      <a href="gre-mesh/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GRE Mesh
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="netflow/" class="md-nav__link">
         
   
@@ -1666,27 +1694,27 @@
 <ol>
 <li>
 <p><strong>Install the wrapper:</strong>
-   From the root of the <code>sceptre-phenix</code> repository, run:</p>
+    From the root of the <code>sceptre-phenix</code> repository, run:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># This command installs the `scripts/phenix-wrapper.sh` script to /usr/local/bin/phenix.</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>sudo<span class="w"> </span>make<span class="w"> </span>install-wrapper
 </span></code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>If you previously used a shell alias for <code>phenix</code> (e.g., <code>alias phenix="docker exec ..."</code>), you <strong>must</strong> remove it from your shell profile (e.g., <code>~/.bashrc</code>, <code>~/.zshrc</code>) for the wrapper and completion to work.</p>
+</div>
 </li>
-</ol>
-<p>!!! warning
-   If you previously used a shell alias for <code>phenix</code> (e.g., <code>alias phenix="docker exec ..."</code>), you <strong>must</strong> remove it from your shell profile (e.g., <code>~/.bashrc</code>, <code>~/.zshrc</code>) for the wrapper and completion to work.</p>
-<ol>
 <li>
 <p><strong>Enable Shell Completion:</strong>
-   Add the completion script to your shell's startup file so it's available in new terminal sessions.</p>
+    Add the completion script to your shell's startup file so it's available in new terminal sessions.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># For Bash</span>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">'source &lt;(phenix completion bash)'</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.bashrc
 </span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
 </span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># For Zsh</span>
 </span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">'source &lt;(phenix completion zsh)'</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.zshrc
 </span></code></pre></div>
+<p>Now, you can use <kbd>Tab</kbd> to autocomplete commands, flags, and even dynamic values like experiment and VM names. For more details, run <code>phenix completion --help</code>.</p>
 </li>
 </ol>
-<p>Now, you can use <kbd>Tab</kbd> to autocomplete commands, flags, and even dynamic values like experiment and VM names. For more details, run <code>phenix completion --help</code>.</p>
 <h4 id="manual-execution">Manual Execution<a class="headerlink" href="#manual-execution" title="Permanent link">&para;</a></h4>
 <p>You can also execute commands directly, but shell completion will not work.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>phenix<span class="w"> </span>phenix<span class="w"> </span>&lt;command&gt;

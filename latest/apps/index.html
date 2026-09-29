@@ -1119,6 +1119,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../gre-mesh/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GRE Mesh
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../netflow/" class="md-nav__link">
         
   
@@ -2034,11 +2062,13 @@ Windows guests must provide PowerShell.</p>
 <p><strong>App Options</strong>:
 These are only needed if not using the VM label method as explained above.</p>
 <ul>
-<li><code>defaultSource</code>: NTP server to use if no label is specified in topology</li>
+<li><code>defaultSource</code>: NTP server to use if no label is specified in topology<ul>
 <li><code>hostname</code>: hostname of NTP server in the topology to use as the source</li>
 <li><code>interface</code>: interface name from which IP will be extracted to configure clients. Note that this name must be the name of the interface in the phenix Topology.</li>
 <li><code>address</code>: IP address to use as the NTP server. This takes precedence over other configs, and can be used to configure an external NTP server (e.g. hardware clock).</li>
-<li><code>hosts</code>: list of hosts to configure NTP options for, including clients and server.</li>
+</ul>
+</li>
+<li><code>hosts</code>: list of hosts to configure NTP options for, including clients and server.<ul>
 <li><code>client</code>: what NTP service is used by the client, and thus what configuration file will be changed. Available options are <code>ntp</code>, <code>chrony</code>, <code>systemd</code>, and <code>windows</code>.<ul>
 <li><code>ntp</code>: <code>/etc/ntp.conf</code>, for the ntp daemon (<code>sudo apt install ntp</code>)</li>
 <li><code>chrony</code>: <code>/etc/chrony/chrony.conf</code>, for <code>chronyd</code> (<code>sudo apt install chrony</code>). Recommended for VMs that may not be able to reach the NTP server immediately at startup — the config is tuned to retry aggressively and step the clock quickly once the server becomes reachable.</li>
@@ -2052,6 +2082,8 @@ These are only needed if not using the VM label method as explained above.</p>
 </ul>
 </li>
 <li><code>source</code>: Override source options for this client VM. Available options are the same as <code>defaultSource</code>.</li>
+</ul>
+</li>
 </ul>
 <h4 id="ntp-label-example">NTP Label Example<a class="headerlink" href="#ntp-label-example" title="Permanent link">&para;</a></h4>
 <p>Example of the <code>ntp</code> app using a VM label in a Topology.
@@ -2249,27 +2281,27 @@ a node marked as <code>minirouter</code>. See notes below or the
 <li>
 <p><code>ipsec</code>: if present, point-to-point IPSec tunnels are nailed up between the
   list of given IP addresses and traffic between the given networks is tunneled.</p>
-</li>
+<ul>
 <li>
 <p><code>local</code>: Local IP address for IPSec connection with this peer. If defined
-    any, then an IP address which configured on interface with default route
-    will be used. It must have a route to the <code>peer</code> IP address.</p>
+  any, then an IP address which configured on interface with default route
+  will be used. It must have a route to the <code>peer</code> IP address.</p>
 </li>
 <li>
 <p><code>remote</code>: Remote IP address or hostname for IPSec connection. IPv4 or
-    IPv6 address is used when a peer has a public static IP address.
-    Hostname is a DNS name which could be used when a peer has a public
-    IP address and DNS name, but an IP address could be changed from time
-    to time. It must have a route to the <code>peer</code> IP address.</p>
+  IPv6 address is used when a peer has a public static IP address.
+  Hostname is a DNS name which could be used when a peer has a public
+  IP address and DNS name, but an IP address could be changed from time
+  to time. It must have a route to the <code>peer</code> IP address.</p>
 </li>
 <li>
 <p><code>peer</code>: Name of peer connection. The peer name must be an alphanumeric
-    and can have hyphen or underscore as special characters. It is purely
-    informational.</p>
+  and can have hyphen or underscore as special characters. It is purely
+  informational.</p>
 </li>
 <li>
 <p><code>tunnels</code>: list of local and remote networks to tunnel through this
-    point-to-point connection.</p>
+  point-to-point connection.</p>
 <ul>
 <li>
 <p><code>local</code>: local network to tunnel to the given remote network.</p>
@@ -2279,19 +2311,21 @@ a node marked as <code>minirouter</code>. See notes below or the
 </li>
 </ul>
 </li>
+</ul>
+</li>
 <li>
 <p><code>acl</code>: if present, access control lists (ACLs / firewall rules) are created on
   the router per the defined rulesets.</p>
-</li>
+<ul>
 <li>
 <p><code>ingress</code>: for each interface-to-ruleset mapping, apply the given ruleset
-    to the given interface for inbound traffic. Note that the interface name
-    used (in this example, <code>eth0</code>) refers to the name given to a network
-    interface in the router's topology configuration.</p>
+  to the given interface for inbound traffic. Note that the interface name
+  used (in this example, <code>eth0</code>) refers to the name given to a network
+  interface in the router's topology configuration.</p>
 </li>
 <li>
 <p><code>egress</code>: for each interface-to-ruleset mapping, apply the given ruleset
-    to the given interface for outbound traffic.</p>
+  to the given interface for outbound traffic.</p>
 </li>
 <li>
 <p><code>rulesets</code>: list of rulesets to create on the router.</p>
@@ -2306,7 +2340,7 @@ a node marked as <code>minirouter</code>. See notes below or the
 </li>
 <li>
 <p><code>rules</code>: list of rules to apply to traffic.</p>
-</li>
+<ul>
 <li>
 <p><code>id</code>: integer to identify the order of the rules in the set.</p>
 </li>
@@ -2315,7 +2349,7 @@ a node marked as <code>minirouter</code>. See notes below or the
 </li>
 <li>
 <p><code>source</code>: map describing what source to limit matching traffic to.
-    If not provided, all sources are matched.</p>
+  If not provided, all sources are matched.</p>
 <ul>
 <li>
 <p><code>address</code>: source address to limit matching traffic to. If not
@@ -2329,7 +2363,7 @@ a node marked as <code>minirouter</code>. See notes below or the
 </li>
 <li>
 <p><code>destination</code>: map describing what destination to limit matching
-    traffic to. If not provided, all sources are matched.</p>
+  traffic to. If not provided, all sources are matched.</p>
 <ul>
 <li>
 <p><code>address</code>: destination address to limit matching traffic to.
@@ -2343,24 +2377,28 @@ a node marked as <code>minirouter</code>. See notes below or the
 </li>
 <li>
 <p><code>protocol</code>: IP protocol to limit matching traffic to. Must be
-    provided; to allow all protocols, use the <code>all</code> keyword.</p>
+  provided; to allow all protocols, use the <code>all</code> keyword.</p>
 </li>
 <li>
 <p><code>stateful</code>: if true, enable established and related traffic for
-    this ruleset.</p>
+  this ruleset.</p>
+</li>
+</ul>
+</li>
+</ul>
 </li>
 </ul>
 </li>
 <li>
 <p><code>dhcp</code>: if present, DHCP is configured on the router per the provided list.</p>
-</li>
+<ul>
 <li>
 <p><code>listenAddress</code>: IP address on a local interface (e.g. this router) to
-    bind this DHCP configuration to.</p>
+  bind this DHCP configuration to.</p>
 </li>
 <li>
 <p><code>ranges</code>: list of IP address low/high ranges to use for DHCP assignments.
-    The IP addresses must be within the IP network of the <code>listenAddress</code>.</p>
+  The IP addresses must be within the IP network of the <code>listenAddress</code>.</p>
 </li>
 <li>
 <p><code>defaultRoute</code>: default gateway to be included in DHCP leases.</p>
@@ -2370,14 +2408,16 @@ a node marked as <code>minirouter</code>. See notes below or the
 </li>
 <li>
 <p><code>staticAssignments</code>: map of MAC-to-IP assignments to use for static DHCP
-    addresses.</p>
+  addresses.</p>
+</li>
+</ul>
 </li>
 <li>
 <p><code>dns</code>: if present, map of IP-to-domain DNS entries to create on the router.</p>
 </li>
 <li>
 <p><code>snmp</code>: if present, SNMP is configured on the router.</p>
-</li>
+<ul>
 <li>
 <p><code>listenAddress</code>: IP address on a local interface to bind SNMP to. Defaults to listening on all interfaces.</p>
 </li>
@@ -2407,39 +2447,43 @@ a node marked as <code>minirouter</code>. See notes below or the
 </li>
 </ul>
 </li>
+</ul>
+</li>
 <li>
 <p><code>emulators</code>: if present, a list of network emulator traffic policies to apply
   to one or more interfaces on egress. For each emulator in the list, only the
   <code>name</code> key is required, though the traffic policy will not get applied if
   there's not at least one <code>egress</code> interface defined.</p>
-</li>
+<ul>
 <li>
 <p><code>name</code>: unique name of traffic policy for this router.</p>
 </li>
 <li>
 <p><code>egress</code>: list of interface names to apply traffic policy to on egress.
-    The names listed should be the same names used for network interfaces in
-    the topology.</p>
+  The names listed should be the same names used for network interfaces in
+  the topology.</p>
 </li>
 <li>
 <p><code>bandwidth</code>: maximum allowed bandwidth for interface and direction this
-    traffic policy is applied to.</p>
+  traffic policy is applied to.</p>
 </li>
 <li>
 <p><code>delay</code>: fixed amount of time to add to all packets for interface and
-    direction this traffic policy is applied to.</p>
+  direction this traffic policy is applied to.</p>
 </li>
 <li>
 <p><code>corruption</code>: percentage of corrupted packets for interface and direction
-    this traffic policy is applied to.</p>
+  this traffic policy is applied to.</p>
 </li>
 <li>
 <p><code>loss</code>: percentage of lost packets for interface and direction this
-    traffic policy is applied to.</p>
+  traffic policy is applied to.</p>
 </li>
 <li>
 <p><code>reordering</code>: percentage of reordered packets for interface and direction
-    this traffic policy is applied to.</p>
+  this traffic policy is applied to.</p>
+</li>
+</ul>
 </li>
 </ul>
 <div class="admonition important">

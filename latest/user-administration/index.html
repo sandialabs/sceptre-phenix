@@ -836,6 +836,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../gre-mesh/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GRE Mesh
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../netflow/" class="md-nav__link">
         
   
@@ -2408,27 +2436,29 @@ role.</p>
 <h2 id="create-a-new-user">Create a new user<a class="headerlink" href="#create-a-new-user" title="Permanent link">&para;</a></h2>
 <p>There are three primary ways to create new users.</p>
 <ol>
-<li>Choose the <code>Create Account</code> link off the login page and complete all fields
+<li>
+<p>Choose the <code>Create Account</code> link off the login page and complete all fields
    in the <code>Create a New Account</code> dialogue. This will initiate a message to an
    administrator's account who can then activate the account, setting the
-   role(s) and resource name(s).</li>
-</ol>
+   role(s) and resource name(s).</p>
 <p><img alt="screenshot" class="center" src="../images/login_create.png" width="400" /></p>
 <p><img alt="screenshot" class="center" src="../images/create_new_account.png" width="400" /></p>
-<ol>
-<li>From the <code>Users</code> tab, click the <code>+</code> button to create a new user. Here the
+</li>
+<li>
+<p>From the <code>Users</code> tab, click the <code>+</code> button to create a new user. Here the
    administrator will add the <a href="#user-administration">role(s) and resource
-   name(s)</a>.</li>
-</ol>
+   name(s)</a>.</p>
 <p><img alt="screenshot" class="center" src="../images/create_a_new_user.png" width="400" /></p>
-<ol>
-<li>Create a YAML or JSON file at <code>/etc/phenix/users.[yml|json]</code> with the
+</li>
+<li>
+<p>Create a YAML or JSON file at <code>/etc/phenix/users.[yml|json]</code> with the
    following structure. When the <code>phenix</code> UI starts, it looks for this file and
    adds any users present in the file that are not already present in <code>phenix</code>.
    For users in the file that already exist, <code>phenix</code> ensures the user role
    matches what's in the file and updates it as necessary. This file is also
    automatically watched, so any users added to the file while <code>phenix</code> is
-   running will automatically be added to <code>phenix</code>.</li>
+   running will automatically be added to <code>phenix</code>.</p>
+</li>
 </ol>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">ui</span><span class="p">:</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">users</span><span class="p">:</span>
@@ -2579,291 +2609,1151 @@ available roles and their access rights.</p>
 </tr>
 </tbody>
 </table>
-<p>|
-|------|------
-| Verb | get
-| Desc | get a specific experiment
-| Exp. Scoped | yes
-| Res. Scoped | no</p>
-<p>|
-|------|------
-| Verb | create
-| Desc | create a new experiment
-| Exp. Scoped | no
-| Res. Scoped | no</p>
-<p>|
-|------|------
-| Verb | delete
-| Desc | delete a specific experiment
-| Exp. Scoped | yes
-| Res. Scoped | no</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>get</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get a specific experiment</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>create</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>create a new experiment</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>delete</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>delete a specific experiment</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-experimentsstart">Resource: <code>experiments/start</code><a class="headerlink" href="#resource-experimentsstart" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | update
-| Desc | start an experiment
-| Exp. Scoped | yes
-| Res. Scoped | no</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>update</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>start an experiment</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-experimentsstop">Resource: <code>experiments/stop</code><a class="headerlink" href="#resource-experimentsstop" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | update
-| Desc | stop an experiment
-| Exp. Scoped | yes
-| Res. Scoped | no</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>update</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>stop an experiment</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-experimentsschedule">Resource: <code>experiments/schedule</code><a class="headerlink" href="#resource-experimentsschedule" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | get
-| Desc | get current schedule for an experiment
-| Exp. Scoped | yes
-| Res. Scoped | no</p>
-<p>|
-|------|------
-| Verb | create
-| Desc | schedule an experiment using schedule algorithm
-| Exp. Scoped | yes
-| Res. Scoped | no</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>get</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get current schedule for an experiment</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>create</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>schedule an experiment using schedule algorithm</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-experimentstrigger">Resource: <code>experiments/trigger</code><a class="headerlink" href="#resource-experimentstrigger" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | create
-| Desc | trigger the running stage of an experiment
-| Exp. Scoped | yes
-| Res. Scoped | no</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>create</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>trigger the running stage of an experiment</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-experimentscaptures">Resource: <code>experiments/captures</code><a class="headerlink" href="#resource-experimentscaptures" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | list
-| Desc | get list of packet captures for an experiment
-| Exp. Scoped | yes (list is filtered to only include experiments in scope)
-| Res. Scoped | yes (list is filtered to only include VMs in scope)</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>list</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get list of packet captures for an experiment</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes (list is filtered to only include experiments in scope)</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes (list is filtered to only include VMs in scope)</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-experimentsfiles">Resource: <code>experiments/files</code><a class="headerlink" href="#resource-experimentsfiles" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | list
-| Desc | get list of files for an experiment
-| Exp. Scoped | yes (list is filtered to only include experiments in scope)
-| Res. Scoped | no</p>
-<p>|
-|------|------
-| Verb | get
-| Desc | get specific experiment file
-| Exp. Scoped | yes
-| Res. Scoped | no</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>list</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get list of files for an experiment</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes (list is filtered to only include experiments in scope)</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>get</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get specific experiment file</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-vms">Resource: <code>vms</code><a class="headerlink" href="#resource-vms" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | list
-| Desc | get list of VMs for an experiment
-| Exp. Scoped | yes (list is filtered to only include experiments in scope)
-| Res. Scoped | yes (list is filtered to only include VMs in scope)</p>
-<p>|
-|------|------
-| Verb | get
-| Desc | get a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
-<p>|
-|------|------
-| Verb | patch
-| Desc | update a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
-<p>|
-|------|------
-| Verb | delete
-| Desc | delete a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>list</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get list of VMs for an experiment</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes (list is filtered to only include experiments in scope)</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes (list is filtered to only include VMs in scope)</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>get</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get a specific experiment VM</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>patch</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>update a specific experiment VM</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>delete</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>delete a specific experiment VM</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-vmsstart">Resource: <code>vms/start</code><a class="headerlink" href="#resource-vmsstart" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | update
-| Desc | start a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>update</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>start a specific experiment VM</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-vmsstop">Resource: <code>vms/stop</code><a class="headerlink" href="#resource-vmsstop" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | update
-| Desc | stop a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>update</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>stop a specific experiment VM</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-vmsredeploy">Resource: <code>vms/redeploy</code><a class="headerlink" href="#resource-vmsredeploy" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | update
-| Desc | redeploy a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>update</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>redeploy a specific experiment VM</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-vmsscreenshot">Resource: <code>vms/screenshot</code><a class="headerlink" href="#resource-vmsscreenshot" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | get
-| Desc | get screenshot for a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>get</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get screenshot for a specific experiment VM</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-vmsvnc">Resource: <code>vms/vnc</code><a class="headerlink" href="#resource-vmsvnc" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | get
-| Desc | get VNC address for a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>get</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get VNC address for a specific experiment VM</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-vmscaptures">Resource: <code>vms/captures</code><a class="headerlink" href="#resource-vmscaptures" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | list
-| Desc | get list of packet captures for a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
-<p>|
-|------|------
-| Verb | create
-| Desc | start a packet capture on a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
-<p>|
-|------|------
-| Verb | delete
-| Desc | stop all packet captures on a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>list</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get list of packet captures for a specific experiment VM</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>create</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>start a packet capture on a specific experiment VM</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>delete</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>stop all packet captures on a specific experiment VM</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-vmssnapshots">Resource: <code>vms/snapshots</code><a class="headerlink" href="#resource-vmssnapshots" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | list
-| Desc | get list of snapshots for a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
-<p>|
-|------|------
-| Verb | create
-| Desc | create a snapshot of a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
-<p>|
-|------|------
-| Verb | update
-| Desc | restore a specific experiment VM to a previous snapshot
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>list</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get list of snapshots for a specific experiment VM</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>create</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>create a snapshot of a specific experiment VM</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>update</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>restore a specific experiment VM to a previous snapshot</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-vmscommit">Resource: <code>vms/commit</code><a class="headerlink" href="#resource-vmscommit" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | create
-| Desc | create a new backing image from a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>create</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>create a new backing image from a specific experiment VM</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-applications">Resource: <code>applications</code><a class="headerlink" href="#resource-applications" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | list
-| Desc | get list of user applications
-| Exp. Scoped | no
-| Res. Scoped | yes (list is filtered to only include applications in scope)</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>list</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get list of user applications</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes (list is filtered to only include applications in scope)</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-topologies">Resource: <code>topologies</code><a class="headerlink" href="#resource-topologies" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | list
-| Desc | get list of available topologies
-| Exp. Scoped | no
-| Res. Scoped | yes (list is filtered to only include topologies in scope)</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>list</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get list of available topologies</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes (list is filtered to only include topologies in scope)</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-disks">Resource: <code>disks</code><a class="headerlink" href="#resource-disks" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | list
-| Desc | get list of available backing images
-| Exp. Scoped | no
-| Res. Scoped | yes (list is filtered to only include backing images in scope)</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>list</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get list of available backing images</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes (list is filtered to only include backing images in scope)</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-hosts">Resource: <code>hosts</code><a class="headerlink" href="#resource-hosts" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | list
-| Desc | get list of minimega cluster hosts
-| Exp. Scoped | no
-| Res. Scoped | yes (list is filtered to only include hosts in scope)</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>list</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get list of minimega cluster hosts</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes (list is filtered to only include hosts in scope)</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-users">Resource: <code>users</code><a class="headerlink" href="#resource-users" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | list
-| Desc | get list of users
-| Exp. Scoped | no
-| Res. Scoped | yes (list is filtered to only include users in scope)</p>
-<p>|
-|------|------
-| Verb | get
-| Desc | get a specific user
-| Exp. Scoped | no
-| Res. Scoped | yes</p>
-<p>|
-|------|------
-| Verb | create
-| Desc | create a new user
-| Exp. Scoped | no
-| Res. Scoped | no</p>
-<p>|
-|------|------
-| Verb | patch
-| Desc | update an existing user
-| Exp. Scoped | no
-| Res. Scoped | yes</p>
-<p>|
-|------|------
-| Verb | delete
-| Desc | delete an existing user
-| Exp. Scoped | no
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>list</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get list of users</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes (list is filtered to only include users in scope)</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>get</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>get a specific user</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>create</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>create a new user</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>patch</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>update an existing user</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>delete</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>delete an existing user</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-usersroles">Resource: <code>users/roles</code><a class="headerlink" href="#resource-usersroles" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | patch
-| Desc | update user role assignments
-| Exp. Scoped | no
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>patch</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>update user role assignments</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-configs">Resource: <code>configs</code><a class="headerlink" href="#resource-configs" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | list, get, create, update, delete
-| Desc | manage store configurations (topologies, scenarios, etc.)
-| Exp. Scoped | no
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>list, get, create, update, delete</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>manage store configurations (topologies, scenarios, etc.)</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-settings">Resource: <code>settings</code><a class="headerlink" href="#resource-settings" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | update
-| Desc | update phēnix system settings
-| Exp. Scoped | no
-| Res. Scoped | no</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>update</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>update phēnix system settings</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-vmsmount">Resource: <code>vms/mount</code><a class="headerlink" href="#resource-vmsmount" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | list, get, post, patch, delete
-| Desc | manage VM filesystem mounts on headnode
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>list, get, post, patch, delete</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>manage VM filesystem mounts on headnode</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-vmsforwards">Resource: <code>vms/forwards</code><a class="headerlink" href="#resource-vmsforwards" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | list, get, create, delete
-| Desc | manage port forwarding rules for experiment VMs
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>list, get, create, delete</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>manage port forwarding rules for experiment VMs</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-vmscdrom">Resource: <code>vms/cdrom</code><a class="headerlink" href="#resource-vmscdrom" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | update, delete
-| Desc | mount or eject CD-ROM ISO images on experiment VMs
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>update, delete</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>mount or eject CD-ROM ISO images on experiment VMs</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h4 id="resource-vmsmemorysnapshot">Resource: <code>vms/memorySnapshot</code><a class="headerlink" href="#resource-vmsmemorysnapshot" title="Permanent link">&para;</a></h4>
-<p>|
-|------|------
-| Verb | create
-| Desc | create ELF memory dumps of experiment VMs
-| Exp. Scoped | yes
-| Res. Scoped | yes</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Verb</td>
+<td>create</td>
+</tr>
+<tr>
+<td>Desc</td>
+<td>create ELF memory dumps of experiment VMs</td>
+</tr>
+<tr>
+<td>Exp. Scoped</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Res. Scoped</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
 <h3 id="built-in-roles">Built-In Roles<a class="headerlink" href="#built-in-roles" title="Permanent link">&para;</a></h3>
 <p>The following default roles are defined in phēnix as YAML resource specifications:</p>
 <h4 id="global-admin-global-admin">Global Admin (<code>global-admin</code>)<a class="headerlink" href="#global-admin-global-admin" title="Permanent link">&para;</a></h4>

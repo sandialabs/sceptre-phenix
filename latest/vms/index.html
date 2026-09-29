@@ -1559,6 +1559,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../gre-mesh/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GRE Mesh
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../netflow/" class="md-nav__link">
         
   
@@ -2740,15 +2768,14 @@ starting the phēnix UI with the <code>vm-mount</code> feature flag (see
 <a href="#enabling-vm-mount">Enabling VM Mount</a> below).</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
+<p>Mounting a VM requires the minimega command-and-control agent (<code>miniccc</code>)
+to be installed and actively running in the VM. If <code>cc</code> is not active for a
+VM, the mount button is disabled.</p>
 </div>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Mounting a VM requires the minimega command-and-control agent (`miniccc`)
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>to be installed and actively running in the VM. If `cc` is not active for a
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>VM, the mount button is disabled.
-</span></code></pre></div>
 <h3 id="enabling-vm-mount">Enabling VM Mount<a class="headerlink" href="#enabling-vm-mount" title="Permanent link">&para;</a></h3>
 <p>VM Mount is disabled by default. Enable it by passing the <code>vm-mount</code> feature to
 the <code>--features</code> flag when starting the UI:</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>phenix<span class="w"> </span>ui<span class="w"> </span>--features<span class="w"> </span>vm-mount
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>phenix<span class="w"> </span>ui<span class="w"> </span>--features<span class="w"> </span>vm-mount
 </span></code></pre></div>
 <p>The feature can also be enabled via the <code>ui.features</code> configuration key or the
 <code>PHENIX_UI_FEATURES</code> environment variable. See
@@ -2777,11 +2804,11 @@ experiment to be copied directly into a VM without going through the user's
 local machine.</p>
 <p>Enable the file server by passing the <code>--file-server-endpoint</code> flag when
 starting the UI:</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Bind to 127.0.0.1 on port 8080 (port-only value binds to localhost)</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>phenix<span class="w"> </span>ui<span class="w"> </span>--features<span class="w"> </span>vm-mount<span class="w"> </span>--file-server-endpoint<span class="w"> </span><span class="m">8080</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Bind to a specific interface and port</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>phenix<span class="w"> </span>ui<span class="w"> </span>--features<span class="w"> </span>vm-mount<span class="w"> </span>--file-server-endpoint<span class="w"> </span><span class="m">0</span>.0.0.0:8080
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Bind to 127.0.0.1 on port 8080 (port-only value binds to localhost)</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>phenix<span class="w"> </span>ui<span class="w"> </span>--features<span class="w"> </span>vm-mount<span class="w"> </span>--file-server-endpoint<span class="w"> </span><span class="m">8080</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Bind to a specific interface and port</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>phenix<span class="w"> </span>ui<span class="w"> </span>--features<span class="w"> </span>vm-mount<span class="w"> </span>--file-server-endpoint<span class="w"> </span><span class="m">0</span>.0.0.0:8080
 </span></code></pre></div>
 <p>The file server presents a simple interface for selecting an experiment and
 uploading a file to it. When authentication/authorization is enabled for the
@@ -2797,45 +2824,57 @@ phēnix headnode. Unlike the Web-UI mount browser above, this does not require
 the <code>vm-mount</code> UI feature flag to be enabled, and the mounted filesystem is
 accessed directly on the headnode's filesystem rather than through the
 browser.</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>mount<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span>&lt;vm<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>host<span class="w"> </span>path<span class="o">]</span>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>mount<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span>&lt;vm<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>host<span class="w"> </span>path<span class="o">]</span>
 </span></code></pre></div>
 <p>If <code>host path</code> is omitted, the VM is mounted to a default path of
 <code>&lt;mount-dir&gt;/&lt;experiment name&gt;/&lt;vm name&gt;</code>, where <code>&lt;mount-dir&gt;</code> defaults to
 <code>&lt;base-dir.phenix&gt;/mounts</code> (see <a href="../settings/#settings-reference"><code>mount-dir</code></a>).
 The command prints the resolved host path once the mount succeeds.</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>mount<span class="w"> </span>my-exp<span class="w"> </span>my-vm
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="c1"># VM my-vm in experiment my-exp mounted at: /phenix/mounts/my-exp/my-vm</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>phenix<span class="w"> </span>vm<span class="w"> </span>mount<span class="w"> </span>my-exp<span class="w"> </span>my-vm<span class="w"> </span>/tmp/my-vm-files
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="c1"># VM my-vm in experiment my-exp mounted at: /tmp/my-vm-files</span>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>mount<span class="w"> </span>my-exp<span class="w"> </span>my-vm
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="c1"># VM my-vm in experiment my-exp mounted at: /phenix/mounts/my-exp/my-vm</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>phenix<span class="w"> </span>vm<span class="w"> </span>mount<span class="w"> </span>my-exp<span class="w"> </span>my-vm<span class="w"> </span>/tmp/my-vm-files
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># VM my-vm in experiment my-exp mounted at: /tmp/my-vm-files</span>
 </span></code></pre></div>
 <p>To unmount the VM's filesystem, run:</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>unmount<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span>&lt;vm<span class="w"> </span>name&gt;
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>unmount<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span>&lt;vm<span class="w"> </span>name&gt;
 </span></code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
+<p>Mounting a VM requires the minimega command-and-control agent (<code>miniccc</code>)
+to be installed and actively running in the VM; the command will fail if
+the agent is not reachable.</p>
+<p>Mounts are automatically unmounted, and their mount directories removed,
+when the owning experiment is stopped or deleted, so mounts do not
+outlive their experiment.</p>
 </div>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>Mounting a VM requires the minimega command-and-control agent (`miniccc`)
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>to be installed and actively running in the VM; the command will fail if
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>the agent is not reachable.
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>Mounts are automatically unmounted, and their mount directories removed,
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>when the owning experiment is stopped or deleted, so mounts do not
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>outlive their experiment.
-</span></code></pre></div>
 <h2 id="packet-capture">Packet Capture<a class="headerlink" href="#packet-capture" title="Permanent link">&para;</a></h2>
 <h3 id="from-the-web-ui_6">From the Web-UI<a class="headerlink" href="#from-the-web-ui_6" title="Permanent link">&para;</a></h3>
 <p>Click on the name of the network tap on a running VM in a started experiment to
 start a packet capture. The name of the network tap will turn green once a packet
-capture has started. It is possible to start captures on multiple network taps.
-However, when you stop packet capture, it will stop captures on all network taps.</p>
+capture has started. It is possible to start captures on multiple network taps.</p>
+<p>To stop a capture, click the name of a green network tap. If the VM has more
+than one capture running, phēnix asks whether to stop only that interface's
+capture or all packet captures for the VM.</p>
 <h3 id="from-the-command-line-binary_6">From the Command Line Binary<a class="headerlink" href="#from-the-command-line-binary_6" title="Permanent link">&para;</a></h3>
-<p>To start a packet capture, run the following command.</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>capture<span class="w"> </span>start<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span>&lt;vm<span class="w"> </span>name&gt;<span class="w"> </span>&lt;iface<span class="w"> </span>index&gt;<span class="w"> </span>&lt;/path/to/out<span class="w"> </span>file&gt;
+<p>To start a packet capture, run the following command, specifying the target
+network interface by its name (as declared in the experiment topology, e.g.
+<code>IF0</code>) or its zero-based index.</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>capture<span class="w"> </span>start<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span>&lt;vm<span class="w"> </span>name&gt;<span class="w"> </span>&lt;iface<span class="w"> </span>name/index&gt;<span class="w"> </span>&lt;/path/to/out<span class="w"> </span>file&gt;
 </span></code></pre></div>
 <p>To stop all packet captures on a running VM, use the following command.</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>capture<span class="w"> </span>stop<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span>&lt;vm<span class="w"> </span>name&gt;
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>capture<span class="w"> </span>stop<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span>&lt;vm<span class="w"> </span>name&gt;
 </span></code></pre></div>
+<p>To stop the packet capture running on a single interface, without affecting
+any other captures running on the same VM, provide the interface name or
+index.</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>capture<span class="w"> </span>stop<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span>&lt;vm<span class="w"> </span>name&gt;<span class="w"> </span>&lt;iface<span class="w"> </span>name/index&gt;
+</span></code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Stopping the capture on a single interface, from the Web-UI or the command
+line, requires minimega 3.3.0 or later.</p>
+</div>
 <h2 id="kill-a-vm">Kill a VM<a class="headerlink" href="#kill-a-vm" title="Permanent link">&para;</a></h2>
 <h3 id="from-the-web-ui_7">From the Web-UI<a class="headerlink" href="#from-the-web-ui_7" title="Permanent link">&para;</a></h3>
 <p>Click on the name of a running VM in a started experiment to access the VM information
@@ -2846,7 +2885,7 @@ Click the <code>kill</code> button as shown in the screenshot below.</p>
 per the experiment configuration.</p>
 <h3 id="from-the-command-line-binary_7">From the Command Line Binary<a class="headerlink" href="#from-the-command-line-binary_7" title="Permanent link">&para;</a></h3>
 <p>To kill a VM, run the following command.</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span><span class="nb">kill</span><span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span><span class="nb">kill</span><span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
 </span></code></pre></div>
 <h2 id="modify-the-network-connectivity">Modify the Network Connectivity<a class="headerlink" href="#modify-the-network-connectivity" title="Permanent link">&para;</a></h2>
 <h3 id="from-the-web-ui_8">From the Web-UI<a class="headerlink" href="#from-the-web-ui_8" title="Permanent link">&para;</a></h3>
@@ -2856,10 +2895,10 @@ you clicked on to. To revert back to previous setting, simply repeat selecting t
 network interface you wish to change, and select the previous network setting.</p>
 <h3 id="from-the-command-line-binary_8">From the Command Line Binary<a class="headerlink" href="#from-the-command-line-binary_8" title="Permanent link">&para;</a></h3>
 <p>To connect a VM network interface to a different network, run the following command.</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>net<span class="w"> </span>connect<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span>&lt;vm<span class="w"> </span>name&gt;<span class="w"> </span>&lt;iface<span class="w"> </span>index&gt;<span class="w"> </span>&lt;vlan<span class="w"> </span>id&gt;
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>net<span class="w"> </span>connect<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span>&lt;vm<span class="w"> </span>name&gt;<span class="w"> </span>&lt;iface<span class="w"> </span>index&gt;<span class="w"> </span>&lt;vlan<span class="w"> </span>id&gt;
 </span></code></pre></div>
 <p>To disconnect a VM network interface, run the following command.</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>net<span class="w"> </span>disconnect<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span>&lt;vm<span class="w"> </span>name&gt;<span class="w"> </span>&lt;iface<span class="w"> </span>index&gt;
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>net<span class="w"> </span>disconnect<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span>&lt;vm<span class="w"> </span>name&gt;<span class="w"> </span>&lt;iface<span class="w"> </span>index&gt;
 </span></code></pre></div>
 <h2 id="pause-a-vm">Pause a VM<a class="headerlink" href="#pause-a-vm" title="Permanent link">&para;</a></h2>
 <h3 id="from-the-web-ui_9">From the Web-UI<a class="headerlink" href="#from-the-web-ui_9" title="Permanent link">&para;</a></h3>
@@ -2870,10 +2909,10 @@ click it to start.</p>
 <p><img alt="screenshot" src="../images/vms_pause.png" /></p>
 <h3 id="from-the-command-line-binary_9">From the Command Line Binary<a class="headerlink" href="#from-the-command-line-binary_9" title="Permanent link">&para;</a></h3>
 <p>To pause a VM, run the following command.</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>pause<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>pause<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
 </span></code></pre></div>
 <p>To resume a paused VM, run the following command.</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>resume<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>resume<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
 </span></code></pre></div>
 <h2 id="redeploy-a-vm">Redeploy a VM<a class="headerlink" href="#redeploy-a-vm" title="Permanent link">&para;</a></h2>
 <h3 id="from-the-web-ui_10">From the Web-UI<a class="headerlink" href="#from-the-web-ui_10" title="Permanent link">&para;</a></h3>
@@ -2883,7 +2922,7 @@ Click the <code>redeploy</code> button as shown in the screenshot below.</p>
 <p><img alt="screenshot" src="../images/vms_redeploy.png" /></p>
 <h3 id="from-the-command-line-binary_10">From the Command Line Binary<a class="headerlink" href="#from-the-command-line-binary_10" title="Permanent link">&para;</a></h3>
 <p>To redploy a VM, run the following command.</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>redeploy<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>redeploy<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
 </span></code></pre></div>
 <h2 id="reset-disk-state">Reset Disk State<a class="headerlink" href="#reset-disk-state" title="Permanent link">&para;</a></h2>
 <h3 id="from-the-web-ui_11">From the Web-UI<a class="headerlink" href="#from-the-web-ui_11" title="Permanent link">&para;</a></h3>
@@ -2893,7 +2932,7 @@ Click the <code>reset disk state</code> button as shown in the screenshot below.
 <p><img alt="screenshot" src="../images/vms_reset_disk_state.png" /></p>
 <h3 id="from-the-command-line-binary_11">From the Command Line Binary<a class="headerlink" href="#from-the-command-line-binary_11" title="Permanent link">&para;</a></h3>
 <p>To reset the first disk to the initial pre-boot state, run the following command.</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>reset-disk<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>reset-disk<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
 </span></code></pre></div>
 <h2 id="restart-a-vm">Restart a VM<a class="headerlink" href="#restart-a-vm" title="Permanent link">&para;</a></h2>
 <h3 id="from-the-web-ui_12">From the Web-UI<a class="headerlink" href="#from-the-web-ui_12" title="Permanent link">&para;</a></h3>
@@ -2903,7 +2942,7 @@ Click the <code>restart</code> button as shown in the screenshot below.</p>
 <p><img alt="screenshot" src="../images/vms_restart.png" /></p>
 <h3 id="from-the-command-line-binary_12">From the Command Line Binary<a class="headerlink" href="#from-the-command-line-binary_12" title="Permanent link">&para;</a></h3>
 <p>To restart a VM, run the following command.</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>restart<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>restart<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
 </span></code></pre></div>
 <h2 id="resume-a-vm">Resume a VM<a class="headerlink" href="#resume-a-vm" title="Permanent link">&para;</a></h2>
 <h3 id="from-the-web-ui_13">From the Web-UI<a class="headerlink" href="#from-the-web-ui_13" title="Permanent link">&para;</a></h3>
@@ -2912,7 +2951,7 @@ modal. Click the green play button (previously the pause button, furthest button
 left).</p>
 <h3 id="from-the-command-line-binary_13">From the Command Line Binary<a class="headerlink" href="#from-the-command-line-binary_13" title="Permanent link">&para;</a></h3>
 <p>To resume a paused VM, run the following command.</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>resume<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>resume<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
 </span></code></pre></div>
 <h2 id="shutdown-a-vm">Shutdown a VM<a class="headerlink" href="#shutdown-a-vm" title="Permanent link">&para;</a></h2>
 <h3 id="from-the-web-ui_14">From the Web-UI<a class="headerlink" href="#from-the-web-ui_14" title="Permanent link">&para;</a></h3>
@@ -2922,7 +2961,7 @@ Click the <code>shutdown</code> button as shown in the screenshot below.</p>
 <p><img alt="screenshot" src="../images/vms_shutdown.png" /></p>
 <h3 id="from-the-command-line-binary_14">From the Command Line Binary<a class="headerlink" href="#from-the-command-line-binary_14" title="Permanent link">&para;</a></h3>
 <p>To shutdown a VM, run the following command.</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>shutdown<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span>shutdown<span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>vm<span class="w"> </span>name<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>&lt;label&gt;<span class="o">]</span>
 </span></code></pre></div>
 <h2 id="modify-vm-settings">Modify VM Settings<a class="headerlink" href="#modify-vm-settings" title="Permanent link">&para;</a></h2>
 <h3 id="from-the-web-ui_15">From the Web-UI<a class="headerlink" href="#from-the-web-ui_15" title="Permanent link">&para;</a></h3>
@@ -2949,7 +2988,7 @@ power button, second from the right on the modal footer). You are able to edit t
 <h3 id="from-the-command-line-binary_15">From the Command Line Binary<a class="headerlink" href="#from-the-command-line-binary_15" title="Permanent link">&para;</a></h3>
 <p>To modify VM settings, run the following command, specifying one or more of the
 configuration flags described below.</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span><span class="nb">set</span><span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>&lt;vm<span class="w"> </span>name&gt;<span class="o">]</span><span class="w"> </span><span class="o">[</span>flags<span class="o">]</span>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span><span class="nb">set</span><span class="w"> </span>&lt;experiment<span class="w"> </span>name&gt;<span class="w"> </span><span class="o">[</span>&lt;vm<span class="w"> </span>name&gt;<span class="o">]</span><span class="w"> </span><span class="o">[</span>flags<span class="o">]</span>
 </span></code></pre></div>
 <p>Only the flags that are explicitly provided will be applied; any setting whose
 flag is omitted is left unchanged. The following flags are supported:</p>
@@ -3001,14 +3040,14 @@ flag is omitted is left unchanged. The following flags are supported:</p>
 </table>
 <p>For example, to set the CPU count to 4 and memory to 2048 MB for a VM named
 <code>my-vm</code> in an experiment named <code>my-exp</code>:</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span><span class="nb">set</span><span class="w"> </span>my-exp<span class="w"> </span>my-vm<span class="w"> </span>--cpu<span class="w"> </span><span class="m">4</span><span class="w"> </span>--mem<span class="w"> </span><span class="m">2048</span>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span><span class="nb">set</span><span class="w"> </span>my-exp<span class="w"> </span>my-vm<span class="w"> </span>--cpu<span class="w"> </span><span class="m">4</span><span class="w"> </span>--mem<span class="w"> </span><span class="m">2048</span>
 </span></code></pre></div>
 <p>To set the <code>role=server</code> labels on VMs whose existing labels matches
 <code>tier=web*</code> in the same experiment, without clearing the existing labels:</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span><span class="nb">set</span><span class="w"> </span>my-exp<span class="w"> </span>--label<span class="w"> </span><span class="s2">"tier=web*"</span><span class="w"> </span>-L<span class="w"> </span><span class="nv">role</span><span class="o">=</span>server<span class="w"> </span>--append-labels
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span><span class="nb">set</span><span class="w"> </span>my-exp<span class="w"> </span>--label<span class="w"> </span><span class="s2">"tier=web*"</span><span class="w"> </span>-L<span class="w"> </span><span class="nv">role</span><span class="o">=</span>server<span class="w"> </span>--append-labels
 </span></code></pre></div>
 <p>To set two labels on the VM <code>my-vm</code> and replace the existing labels on the VM:</p>
-<div class="language-shell highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span><span class="nb">set</span><span class="w"> </span>my-exp<span class="w"> </span>my-vm<span class="w"> </span>-L<span class="w"> </span><span class="nv">val1</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span>-L<span class="w"> </span><span class="nv">val2</span><span class="o">=</span>roger
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>phenix<span class="w"> </span>vm<span class="w"> </span><span class="nb">set</span><span class="w"> </span>my-exp<span class="w"> </span>my-vm<span class="w"> </span>-L<span class="w"> </span><span class="nv">val1</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span>-L<span class="w"> </span><span class="nv">val2</span><span class="o">=</span>roger
 </span></code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">Note</p>

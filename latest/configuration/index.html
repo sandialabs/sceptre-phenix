@@ -1252,6 +1252,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../gre-mesh/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GRE Mesh
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../netflow/" class="md-nav__link">
         
   
@@ -2138,9 +2166,12 @@ spaces. In addition, each node in the topology must:</p>
 </ul>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p>Hostnames must be between 1 and 63 characters long, can only contain
+<p>Hostnames must be between 2 and 63 characters long, can only contain
 alphanumeric characters and hyphens, and cannot begin or end with a hyphen.
-Hostnames should not be used as a FQDN.</p>
+Hostnames should not be used as a FQDN. The 2-character minimum comes from
+guest operating systems: <a href="https://docs.vyos.io/en/latest/configuration/system/host-name.html">VyOS</a>
+and <a href="https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/naming-conventions-for-computer-domain-site-ou#dns-host-names">Windows</a>
+both reject 1-character hostnames.</p>
 </div>
 <h3 id="optional-values">Optional Values<a class="headerlink" href="#optional-values" title="Permanent link">&para;</a></h3>
 <p>Optional values for a node in the topology configuration can include:</p>
@@ -2454,14 +2485,16 @@ with custom metadata for the app specific to the topology node.</p>
 <li>
 <p><code>hosts</code>: a list of per-host configurations to apply to the experiment
   topology. The default is <code>nil</code>.</p>
-</li>
+<ul>
 <li>
 <p><code>hostname</code>: the name of the experiment VM to apply this per-host metadata
-    to.</p>
+  to.</p>
 </li>
 <li>
 <p><code>metadata</code>: app metadata to apply to this experiment VM. The default is
-    <code>nil</code>.</p>
+  <code>nil</code>.</p>
+</li>
+</ul>
 </li>
 <li>
 <p><code>metadata</code>: app metadata to apply to this experiment. The default is <code>nil</code>.</p>
@@ -2709,24 +2742,28 @@ available configuration files. It is possible to filter in two ways:</p>
 <h3 id="create-a-config">Create a Config<a class="headerlink" href="#create-a-config" title="Permanent link">&para;</a></h3>
 <p>There are two ways to create a new config:</p>
 <ol>
-<li>Selecting the <code>Upload</code> button located to the far right of the search field
+<li>
+<p>Selecting the <code>Upload</code> button located to the far right of the search field
    will allow you to upload a file from disk. It is possible to drag and drop in
    the upload modal or click the upload icon to open a file browser.
-  <img alt="screenshot" class="center" src="../images/upload.png" width="350" /></li>
-</ol>
-<p>!!! note
-   Only files with the extensions <code>.yml</code>, <code>.yaml</code>, and <code>.json</code> will be allowed.
-   Any file uploaded will be validated against the schema for a given kind of
-   config, and if invalid, an error will be presented.</p>
-<ol>
-<li>Clicking the <code>+</code> button next to the search field will present an editor
+  <img alt="screenshot" class="center" src="../images/upload.png" width="350" /></p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Only files with the extensions <code>.yml</code>, <code>.yaml</code>, and <code>.json</code> will be allowed.
+Any file uploaded will be validated against the schema for a given kind of
+config, and if invalid, an error will be presented.</p>
+</div>
+</li>
+<li>
+<p>Clicking the <code>+</code> button next to the search field will present an editor
    window where it is possible to create a new file in place. A basic template
    is provided based on the kind of config selected (see next section for
    documentation on the editor window features). Once editing a config is
    completed, clicking the <code>Create</code> button will post it server-side where it
    will be validated, similar to file upload. If invalid, an error will be
    presented.
-  <img alt="screenshot" class="center" src="../images/new_edit.png" width="800" /></li>
+  <img alt="screenshot" class="center" src="../images/new_edit.png" width="800" /></p>
+</li>
 </ol>
 <h3 id="editor-window">Editor Window<a class="headerlink" href="#editor-window" title="Permanent link">&para;</a></h3>
 <p>The editor window allows direct editing of an existing or new config file.</p>
@@ -2789,13 +2826,15 @@ existing configuration created in Builder.</p>
 <p>Select Import from phēnix in Builder &mdash; make any changes and then add to
    phēnix with the same name; this will overwrite the configuration that was
    selected to import</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Any hosts added to a topology will not have a drive image name; this is a
+requirement and will need to be included in each node added to the Builder
+canvas.
+<img alt="screenshot" class="center" src="../images/drive.png" width="150" /></p>
+</div>
 </li>
 </ol>
-<p>!!! note
-   Any hosts added to a topology will not have a drive image name; this is a
-   requirement and will need to be included in each node added to the Builder
-   canvas.
-   <img alt="screenshot" class="center" src="../images/drive.png" width="150" /></p>
 <p>Other values will be auto-generated but can be customized by clicking on a
 target node and making changes in the dialogue presented in the Builder UI. It
 is worth noting that a user can set a single node value and then copy and paste
