@@ -23,6 +23,17 @@ export const SCHEMA_PATH = 'schemas/builder/v1';
 export const DISKS_PATH = 'disks';
 
 /**
+ * A stored config, as the Configs page reads it (web/config.go GetConfig).
+ *
+ * @param {string} kind config kind, such as Scenario
+ * @param {string} name config name
+ * @returns {string}
+ */
+export function configPath(kind, name) {
+  return `configs/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`;
+}
+
+/**
  * @param {string} owner draft owner (username)
  * @param {string} id draft id
  * @returns {string}
@@ -822,6 +833,27 @@ export function createBuilderApi(http = axiosInstance) {
         warnings: data.warnings || [],
         source: data.source || null,
       };
+    },
+
+    /**
+     * Reads a stored scenario's spec, which a stored scenario reference
+     * does not carry (see ScenarioDialog), to list its apps.
+     *
+     * @param {string} name
+     * @returns {Promise<object>} the spec, upgraded to the latest version
+     */
+    async getScenario(name) {
+      // The route refuses axios's default Accept, a list of types.
+      const response = await http.get(configPath('Scenario', name), {
+        headers: { Accept: 'application/json' },
+      });
+      const spec = response.data?.spec;
+
+      if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
+        throw new TypeError('The server sent an unexpected scenario.');
+      }
+
+      return spec;
     },
 
     async listDocuments() {

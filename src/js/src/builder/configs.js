@@ -5,6 +5,20 @@
 export const LEGACY_ANNOTATION = 'builder-xml';
 export const BETA_ANNOTATION = 'builder-doc';
 
+// Every annotation the Builders keep for themselves starts with this: the
+// two above, and builder-experiment on an experiment Builder Flow published
+// (IsBuilderAnnotation in types/builder/generate.go).
+const BUILDER_PREFIX = 'builder-';
+
+/**
+ * @param {string} key a config annotation key
+ * @returns {boolean} whether it is one of the Builders' own, which a
+ *   document never shows
+ */
+export function isBuilderAnnotation(key) {
+  return String(key).startsWith(BUILDER_PREFIX);
+}
+
 /**
  * @param {object} config phenix config
  * @returns {'builder-doc'|'builder-xml'|null}

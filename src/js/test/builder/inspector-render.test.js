@@ -453,20 +453,37 @@ describe('inspector field accessibility', () => {
 });
 
 // Renders the whole Inspector for the sample document's alpha device. `schema`
-// sets the store's schema state (schemaSource, schemaError).
-async function renderInspector({ readOnly = false, schema = {} } = {}) {
+// sets the store's schema state (schemaSource, schemaError), `patch` adds to
+// the document, and `document` selects nothing, so the Inspector shows the
+// diagram's own section.
+async function renderInspector({
+  readOnly = false,
+  schema = {},
+  patch = {},
+  document = false,
+} = {}) {
   const pinia = createPinia();
   const app = createSSRApp({ render: () => h(BuilderInspector) });
   app.use(pinia);
 
   const store = useBuilderStore(pinia);
   const { doc, alpha } = sampleDocument();
-  store.doc = doc;
+  store.doc = { ...doc, ...patch };
   store.readOnly = readOnly;
   Object.assign(store, schema);
-  store.select({ nodes: [alpha.id] });
+  store.select({ nodes: document ? [] : [alpha.id] });
 
   return renderToString(app);
+}
+
+// The visible text of rendered HTML, with its tags and runs of spaces gone.
+function text(html) {
+  return html
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/ ([,.])/g, '$1')
+    .trim();
 }
 
 // The whole Inspector for a device of a draft opened read-only: its fields
@@ -504,6 +521,100 @@ test('an Inspector with no changes shows no Apply, Cancel or state', async () =>
   expect(html).not.toContain('inspector-cancel');
   expect(html).not.toContain('builder-inspector__state');
   expect(html).not.toContain('No changes');
+});
+
+describe('the diagram section', () => {
+  const source = {
+    kind: 'topology',
+    name: 'core',
+    importedAt: '2026-09-28T19:07:00Z',
+    annotations: {
+      'builder-xml': '<mxGraphModel/>',
+      owner: 'alice',
+      notes: 'two\nlines',
+    },
+  };
+  const scenario = {
+    kind: 'uploaded',
+    name: 'ntp.yaml',
+    apiVersion: 'phenix.sandia.gov/v2',
+    digest: `sha256:${'a'.repeat(64)}`,
+    content: {
+      apps: [
+        { name: 'ntp', hosts: [{ hostname: 'alpha' }, { hostname: 'bravo' }] },
+        { name: 'soh', disabled: true },
+      ],
+    },
+  };
+
+  test("lists the annotations of its source, sorted, but for the Builders' own", async () => {
+    const html = await renderInspector({ document: true, patch: { source } });
+    const shown = text(html);
+
+    expect(shown).toContain('Annotations From Topology core, imported');
+    expect(html).toContain('datetime="2026-09-28T19:07:00Z"');
+    expect(shown).toContain('notes two lines owner alice Scenario');
+    expect(html).toContain('>two\nlines<');
+    expect(html).not.toContain('builder-xml');
+    // Only a value that scrolls takes focus, which a page rendered on the
+    // server cannot know.
+    expect(html).not.toMatch(/inspector-diagram__value[^>]*tabindex/);
+  });
+
+  test('says when there are no annotations, and shows no source for a diagram drawn here', async () => {
+    const imported = await renderInspector({
+      document: true,
+      patch: { source: { kind: 'experiment', name: 'exp' } },
+    });
+    const drawn = await renderInspector({ document: true });
+
+    expect(text(imported)).toContain(
+      'Annotations From Experiment exp No annotations.',
+    );
+    expect(drawn).not.toContain('inspector-annotations');
+    expect(text(drawn)).toContain('Scenario No scenario. Add scenario');
+  });
+
+  test('lists the apps of the scenario with their hosts, and offers to edit it', async () => {
+    const html = await renderInspector({ document: true, patch: { scenario } });
+    const button = tags(html, 'button').find((tag) =>
+      tag.includes('inspector-scenario-edit'),
+    );
+
+    expect(text(html)).toContain(
+      'Scenario Uploaded scenario ntp.yaml Apps and their hosts ntp alpha, bravo soh (disabled) No hosts Edit scenario',
+    );
+    expect(button).toContain('aria-haspopup="dialog"');
+  });
+
+  test('a stored scenario reads its apps from the server', async () => {
+    const html = await renderInspector({
+      document: true,
+      patch: {
+        scenario: {
+          ...scenario,
+          kind: 'stored',
+          name: 'ntp-scn',
+          content: undefined,
+        },
+      },
+    });
+
+    expect(text(html)).toContain(
+      'Scenario Stored scenario ntp-scn Reading its apps…',
+    );
+  });
+
+  test('a read-only draft offers no scenario edits', async () => {
+    const html = await renderInspector({
+      document: true,
+      readOnly: true,
+      patch: { scenario },
+    });
+
+    expect(text(html)).toContain('ntp alpha, bravo');
+    expect(html).not.toContain('inspector-scenario-edit');
+  });
 });
 
 describe('suggestions', () => {

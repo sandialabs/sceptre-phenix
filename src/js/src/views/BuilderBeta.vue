@@ -405,7 +405,7 @@
           :reduced-motion="reducedMotion" />
 
         <template #end>
-          <builder-inspector ref="inspector" />
+          <builder-inspector ref="inspector" @scenario="dialog = 'scenario'" />
         </template>
       </builder-panes>
     </template>

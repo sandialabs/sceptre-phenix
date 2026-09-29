@@ -13,6 +13,7 @@
 // `owner` is a property of the draft envelope and is never part of a document.
 
 import { iconKeyForSpec, isIconKey, kindMeta } from './catalog.js';
+import { isBuilderAnnotation } from './configs.js';
 import { newId, uniqueName } from './ids.js';
 
 export const SCHEMA_URI = 'https://phenix.sandia.gov/schemas/builder/v1';
@@ -2570,6 +2571,51 @@ export function setScenario(doc, scenario) {
   next.scenario = scenario;
 
   return next;
+}
+
+/**
+ * The annotations of the config the document was imported from, as the
+ * Inspector lists them: sorted by key, without the Builders' own, which
+ * import leaves out already, and without any value that is not text.
+ *
+ * @param {object} doc
+ * @returns {[string, string][]} key and value pairs
+ */
+export function sourceAnnotations(doc) {
+  const annotations = doc?.source?.annotations;
+
+  if (!annotations || typeof annotations !== 'object') {
+    return [];
+  }
+
+  return Object.entries(annotations)
+    .filter(
+      ([key, value]) => typeof value === 'string' && !isBuilderAnnotation(key),
+    )
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/**
+ * The apps of scenario content (a v2 Scenario spec), in its order, each
+ * with the hostnames of the hosts it runs on. An app without a name is
+ * left out, as a host without a hostname is.
+ *
+ * @param {object} [content]
+ * @returns {{name: string, hosts: string[], disabled: boolean}[]}
+ */
+export function scenarioApps(content) {
+  const apps = Array.isArray(content?.apps) ? content.apps : [];
+  const named = (value) => typeof value === 'string' && value !== '';
+
+  return apps
+    .filter((app) => named(app?.name))
+    .map((app) => ({
+      name: app.name,
+      hosts: (Array.isArray(app.hosts) ? app.hosts : [])
+        .map((host) => host?.hostname)
+        .filter(named),
+      disabled: app.disabled === true,
+    }));
 }
 
 /**

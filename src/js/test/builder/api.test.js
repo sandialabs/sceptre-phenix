@@ -4,6 +4,7 @@ vi.mock('@/utils/axios.js', () => ({ default: {} }));
 
 import {
   classifyError,
+  configPath,
   createBuilderApi,
   cursorPath,
   DISKS_PATH,
@@ -768,6 +769,25 @@ describe('client', () => {
       expect.objectContaining({ method: 'get', url: DISKS_PATH }),
     ]);
     expect(DISKS_PATH).toBe('disks');
+  });
+
+  test('a stored scenario is read from its config, as JSON', async () => {
+    const spec = { apps: [{ name: 'ntp' }] };
+    const http = fakeHttp({
+      'get configs/Scenario/ntp%20scn': { data: { spec }, headers: {} },
+      'get configs/Scenario/other': { data: 'nope', headers: {} },
+    });
+
+    await expect(createBuilderApi(http).getScenario('ntp scn')).resolves.toBe(
+      spec,
+    );
+    expect(http.calls[0].config).toEqual({
+      headers: { Accept: 'application/json' },
+    });
+    expect(configPath('Scenario', 'a/b')).toBe('configs/Scenario/a%2Fb');
+    await expect(createBuilderApi(http).getScenario('other')).rejects.toThrow(
+      /unexpected scenario/,
+    );
   });
 
   test('a disk listing of another shape is refused', async () => {

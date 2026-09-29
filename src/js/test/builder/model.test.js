@@ -26,11 +26,13 @@ import {
   removeElements,
   removeInterface,
   removeNetworks,
+  scenarioApps,
   SCHEMA_REVISION,
   SCHEMA_URI,
   setParent,
   setScenario,
   sizeOf,
+  sourceAnnotations,
   specInterfaceFor,
   specInterfaces,
   syncInterfaceVLANs,
@@ -1399,5 +1401,57 @@ describe('scenario', () => {
 
     expect(doc.scenario).toMatchObject({ kind: 'stored', name: 'foo' });
     expect(setScenario(doc, null).scenario).toBeUndefined();
+  });
+
+  test('the apps of a scenario are listed in its order, with their hosts', () => {
+    expect(
+      scenarioApps({
+        apps: [
+          {
+            name: 'ntp',
+            hosts: [
+              { hostname: 'router', metadata: { server: true } },
+              { metadata: {} },
+              { hostname: 'host-b' },
+            ],
+          },
+          { name: 'soh', disabled: true },
+          { assetDir: '/phenix/assets' },
+          'vrouter',
+        ],
+      }),
+    ).toEqual([
+      { name: 'ntp', hosts: ['router', 'host-b'], disabled: false },
+      { name: 'soh', hosts: [], disabled: true },
+    ]);
+    expect(scenarioApps(undefined)).toEqual([]);
+    expect(scenarioApps({ apps: null })).toEqual([]);
+  });
+});
+
+describe('source annotations', () => {
+  test("are sorted by key, without the Builders' own or values that are not text", () => {
+    const doc = createDocument();
+
+    doc.source = {
+      kind: 'experiment',
+      name: 'exp',
+      annotations: {
+        topology: 'core',
+        'builder-xml': '<mxGraphModel/>',
+        'builder-experiment': '{}',
+        scenario: 'ntp',
+        count: 3,
+        Owner: 'alice',
+      },
+    };
+
+    expect(sourceAnnotations(doc)).toEqual([
+      ['Owner', 'alice'],
+      ['scenario', 'ntp'],
+      ['topology', 'core'],
+    ]);
+    expect(sourceAnnotations(createDocument())).toEqual([]);
+    expect(sourceAnnotations({ source: { annotations: null } })).toEqual([]);
   });
 });

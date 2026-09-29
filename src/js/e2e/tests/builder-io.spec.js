@@ -150,11 +150,12 @@ async function publishDiagram(request, tracker, name) {
   return { name, ...published };
 }
 
-// Creates an experiment from a stored topology, or skips the test when this
-// phenix server cannot create experiments.
-async function createExperiment(request, tracker, name, topology) {
+// Creates an experiment from a stored topology, and a stored scenario when
+// one is named, or skips the test when this phenix server cannot create
+// experiments.
+async function createExperiment(request, tracker, name, topology, scenario) {
   const created = await request.post(`${API}/experiments`, {
-    data: { name, topology },
+    data: { name, topology, ...(scenario ? { scenario } : {}) },
   });
   tracker.config('Experiment', name);
   test.skip(
@@ -1340,7 +1341,25 @@ test.describe('generate', () => {
     const rootConfig = topologyConfig(topology, sharedVlanNodes());
     rootConfig.spec.includeTopologies = [child];
     await seedConfig(request, tracker, rootConfig);
-    await createExperiment(request, tracker, experiment, topology);
+    // User apps this server does not have, which phenix skips when it
+    // creates the experiment: one on two hosts, one on none. phenix uses a
+    // scenario only with the topology it names.
+    const scenario = uniqueName(testInfo, 'gen-exp-scn');
+    await seedConfig(request, tracker, {
+      apiVersion: 'phenix.sandia.gov/v2',
+      kind: 'Scenario',
+      metadata: { name: scenario, annotations: { topology } },
+      spec: {
+        apps: [
+          {
+            name: 'e2e-traffic',
+            hosts: [{ hostname: 'host-a' }, { hostname: 'host-b' }],
+          },
+          { name: 'e2e-monitor' },
+        ],
+      },
+    });
+    await createExperiment(request, tracker, experiment, topology, scenario);
     await setExperimentAliases(request, experiment, { EXP: 101, MGMT: 102 });
     await builder.open();
 
@@ -1393,6 +1412,9 @@ test.describe('generate', () => {
     expect(aliases).toEqual({ EXP: 101, MGMT: 102 });
     // Publishing writes the include, never the included devices again.
     expect.soft(doc.source.includeTopologies).toEqual([child]);
+    // The stored scenario is referenced, not copied.
+    expect.soft(doc.scenario).toMatchObject({ kind: 'stored', name: scenario });
+    expect.soft(doc.scenario.content).toBeUndefined();
     expect
       .soft(
         Object.fromEntries(
@@ -1410,6 +1432,52 @@ test.describe('generate', () => {
         'inc-host': child,
         'deep-host': nested,
       });
+
+    await test.step("the Inspector shows the experiment's annotations and its scenario's apps", async () => {
+      const inspector = builder.inspector;
+      const annotations = inspector.getByTestId('inspector-annotations');
+      await expect
+        .soft(annotations.getByTestId('inspector-source'))
+        .toContainText(`From Experiment ${experiment}, imported `);
+      await expect
+        .soft(annotations.locator('dt'))
+        .toHaveText(['scenario', 'topology']);
+      await expect
+        .soft(annotations.locator('dd'))
+        .toHaveText([scenario, topology]);
+
+      // A stored scenario's apps are read from its config.
+      const section = inspector.getByTestId('inspector-scenario');
+      await expect
+        .soft(section.getByTestId('inspector-scenario-name'))
+        .toHaveText(`Stored scenario ${scenario}`);
+      const apps = section.getByTestId('inspector-scenario-apps');
+      await expect
+        .soft(apps.locator('dt'))
+        .toHaveText(['e2e-traffic', 'e2e-monitor']);
+      await expect
+        .soft(apps.locator('dd'))
+        .toHaveText(['host-a, host-b', 'No hosts']);
+
+      // Edit scenario opens the toolbar's Scenario dialog. Removing the
+      // scenario there leaves focus on the same button, now Add scenario.
+      const edit = section.getByRole('button', { name: 'Edit scenario' });
+      await edit.click();
+      const dialog = page.getByRole('dialog', { name: 'Scenario' });
+      await expect(dialog).toBeVisible();
+      await expect.soft(dialog.getByLabel('Stored scenario')).toBeChecked();
+      await expect
+        .soft(dialog.getByTestId('scenario-name'))
+        .toHaveValue(scenario);
+      await dialog.getByLabel('No scenario').check();
+      await dialog.getByTestId('scenario-submit').click();
+      await expect(dialog).toBeHidden();
+      await expect.soft(section).toContainText('No scenario.');
+      await expect
+        .soft(section.getByRole('button', { name: 'Add scenario' }))
+        .toBeFocused();
+      await expect.soft(builder.liveRegion).toContainText('Removed scenario');
+    });
 
     await test.step('devices of included topologies are shown read only', async () => {
       const row = builder.outlineItem('inc-host');
@@ -1539,11 +1607,21 @@ test.describe('generate', () => {
       });
 
       const name = uniqueName(testInfo, 'upload');
+      // The legacy Builder's diagram is left out; a long value scrolls.
+      const notes = Array.from(
+        { length: 40 },
+        (_, i) => `line ${i + 1} of the notes`,
+      );
       const content = [
         `apiVersion: ${API_VERSION}`,
         'kind: Topology',
         'metadata:',
         `  name: ${name}`,
+        '  annotations:',
+        "    builder-xml: '<mxGraphModel><root/></mxGraphModel>'",
+        '    owner: e2e',
+        '    notes: |',
+        ...notes.map((line) => `      ${line}`),
         'spec:',
         '  nodes:',
         '  - type: VirtualMachine',
@@ -1578,10 +1656,47 @@ test.describe('generate', () => {
       await expect.soft(builder.outlineItem('db')).toBeVisible();
       await builder.waitSaved();
 
+      await test.step("the Inspector lists the topology's annotations, but not the Builder's own", async () => {
+        const annotations = builder.inspector.getByTestId(
+          'inspector-annotations',
+        );
+        await expect
+          .soft(
+            annotations.getByRole('heading', { level: 3, name: 'Annotations' }),
+          )
+          .toBeVisible();
+        await expect
+          .soft(annotations.getByTestId('inspector-source'))
+          .toContainText(`From Topology ${name}, imported `);
+        await expect
+          .soft(annotations.locator('dt'))
+          .toHaveText(['notes', 'owner']);
+        await expect.soft(annotations).not.toContainText('builder-xml');
+
+        // The long value scrolls in its box, which Tab reaches, named by
+        // its key; the short one takes no focus.
+        const box = annotations.getByRole('region', { name: 'notes' });
+        await expect.soft(box).toHaveAttribute('tabindex', '0');
+        await expect
+          .soft(annotations.locator('dd').nth(1).locator('[tabindex]'))
+          .toHaveCount(0);
+        await box.focus();
+        await box.press('End');
+        await expect
+          .poll(() => box.evaluate((element) => element.scrollTop))
+          .toBeGreaterThan(0);
+        await expect.soft(box).toContainText('line 40 of the notes');
+      });
+
       const stored = await builder.serverDraft(draft);
       expect.soft(stored.sourceToken).toBe(`uploaded/Topology/${name}`);
       const doc = await builder.serverDocument(draft);
-      expect.soft(doc.source).toMatchObject({ kind: 'topology', name });
+      expect.soft(doc.source).toMatchObject({
+        kind: 'topology',
+        name,
+        annotations: { owner: 'e2e', notes: `${notes.join('\n')}\n` },
+      });
+      expect.soft(Object.keys(doc.source.annotations)).toHaveLength(2);
       expect
         .soft(
           doc.nodes

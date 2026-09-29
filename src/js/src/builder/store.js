@@ -365,6 +365,9 @@ export const useBuilderStore = defineStore('builder', {
     // null while they are unknown: not read yet, or not readable. Drive
     // images are checked against them only while they are known.
     disks: null,
+    // The stored scenarios the Inspector lists the apps of, by name (see
+    // fetchScenario): the content last read, or why it could not be read.
+    storedScenarios: {},
     serverHistory: [],
     // Whether the History dialog is reading serverHistory from the server,
     // and why that failed, if it did (see fetchHistory).
@@ -1778,6 +1781,40 @@ export const useBuilderStore = defineStore('builder', {
       }
 
       return disksRequest;
+    },
+
+    /**
+     * Reads a stored scenario's content, whose apps the Inspector lists: a
+     * stored reference carries none. The content read before stays until
+     * this read answers. A read that answers after a later one, or after
+     * the session ended, is dropped.
+     *
+     * @param {string} name
+     * @returns {Promise<void>}
+     */
+    async fetchScenario(name) {
+      const epoch = sessionEpoch;
+      const previous = this.storedScenarios[name];
+      const read = (previous?.read ?? 0) + 1;
+
+      this.storedScenarios[name] = {
+        content: previous?.content ?? null,
+        problem: '',
+        loading: true,
+        read,
+      };
+
+      let found;
+
+      try {
+        found = { content: await builderApi.getScenario(name), problem: '' };
+      } catch (error) {
+        found = { content: null, problem: classifyError(error) };
+      }
+
+      if (epoch === sessionEpoch && this.storedScenarios[name]?.read === read) {
+        this.storedScenarios[name] = { ...found, loading: false, read };
+      }
     },
 
     // Reads the open draft's snapshots for the History dialog, which opens

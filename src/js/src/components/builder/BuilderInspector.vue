@@ -183,6 +183,12 @@
         </div>
       </form>
 
+      <!-- The diagram's annotations and scenario, read only, below its
+           Name and Description. -->
+      <inspector-diagram
+        v-if="target.kind === 'document'"
+        @scenario="$emit('scenario')" />
+
       <!-- Named apart from the node's own "Interfaces" list above: these
            act at once, while that list is part of the working copy. Its
            hint is a tooltip on its heading, shown on hover and on keyboard
@@ -320,6 +326,7 @@
   import { JsonForms } from '@jsonforms/vue';
 
   import BuilderIcon from './BuilderIcon.vue';
+  import InspectorDiagram from './inspector/InspectorDiagram.vue';
   import InspectorTooltip from './inspector/InspectorTooltip.vue';
   import {
     INSPECTOR_ANNOUNCE,
@@ -370,6 +377,9 @@
   import { schemaForKind } from '@/builder/schema.js';
   import { useBuilderStore } from '@/builder/store.js';
   import { deviceFieldWarnings } from '@/builder/validate.js';
+
+  // Edit scenario, in the Diagram section, asks for the Scenario dialog.
+  defineEmits(['scenario']);
 
   const store = useBuilderStore();
   const renderers = inspectorRenderers;

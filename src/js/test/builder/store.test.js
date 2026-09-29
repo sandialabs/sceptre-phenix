@@ -72,6 +72,7 @@ const api = vi.hoisted(() => ({
   })),
   getSchema: vi.fn(async () => ({ $defs: { device: { type: 'object' } } })),
   listDisks: vi.fn(async () => ['ubuntu.qc2']),
+  getScenario: vi.fn(async () => ({ apps: [{ name: 'ntp' }] })),
   getShares: vi.fn(async () => ({
     shares: [],
     sharesEtag: '"shares-0"',
@@ -1557,6 +1558,46 @@ describe('server data', () => {
 
     await store.fetchDisks();
     expect(api.listDisks).toHaveBeenCalledTimes(2);
+  });
+
+  test('a stored scenario is read for its apps, and the last read kept while one is under way', async () => {
+    const ntp = { apps: [{ name: 'ntp' }] };
+
+    await store.fetchScenario('ntp-scn');
+    expect(api.getScenario).toHaveBeenCalledWith('ntp-scn');
+    expect(store.storedScenarios['ntp-scn']).toMatchObject({
+      content: ntp,
+      problem: '',
+      loading: false,
+    });
+
+    // Two reads at once: the first to answer is the older, and dropped.
+    let answer;
+    api.getScenario.mockImplementationOnce(
+      () => new Promise((resolve) => (answer = resolve)),
+    );
+    api.getScenario.mockResolvedValueOnce({ apps: [] });
+    const older = store.fetchScenario('ntp-scn');
+
+    expect(store.storedScenarios['ntp-scn']).toMatchObject({
+      content: ntp,
+      loading: true,
+    });
+    await store.fetchScenario('ntp-scn');
+    answer(ntp);
+    await older;
+    expect(store.storedScenarios['ntp-scn'].content).toEqual({ apps: [] });
+
+    api.getScenario.mockRejectedValueOnce(
+      Object.assign(new Error('forbidden'), { response: { status: 403 } }),
+    );
+    await store.fetchScenario('ntp-scn');
+    expect(store.storedScenarios['ntp-scn']).toMatchObject({
+      content: null,
+      problem: 'forbidden',
+      loading: false,
+    });
+    expect(store.error).toBe('');
   });
 
   test('publishing sends only the intent and the ETag', async () => {
