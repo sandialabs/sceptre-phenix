@@ -248,11 +248,22 @@ describe('Auto-group in the store', () => {
 
     expect(boxes).toHaveLength(3);
     expect(overlapping(boxes)).toBe(false);
-    // The draft's layout choice is not changed.
-    expect(store.doc.layout).toBeUndefined();
+    // The draft had no layout of its own: it keeps the Settings default
+    // that laid it out, and one undo takes it back to Default.
+    expect(store.doc.layout).toBe('elk');
+    expect(store.currentLayout).toBe('elk');
 
     store.undo();
     expect(store.doc).toEqual(before);
+    expect(store.currentLayout).toBe('');
+  });
+
+  test('lays out with the draft’s own layout, and keeps it', async () => {
+    store.setDocument({ ...plant().doc, layout: 'cards' });
+
+    await store.autoGroup('network');
+
+    expect(store.doc.layout).toBe('cards');
   });
 
   test('nothing to group is no edit', async () => {

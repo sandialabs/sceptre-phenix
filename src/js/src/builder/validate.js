@@ -119,7 +119,7 @@ function validateHeader(doc, issues) {
   }
 
   // Any string, or none: an id the editor does not know is ignored (see
-  // documentLayout in layouts/index.js).
+  // ownLayout in layouts/index.js).
   if (
     doc.layout !== undefined &&
     doc.layout !== null &&

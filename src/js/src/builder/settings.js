@@ -28,8 +28,8 @@ const isBoolean = (value) => typeof value === 'boolean';
 
 // Each setting's default, and the values it takes.
 const SETTINGS = {
-  // The layout for drafts that have not chosen one of their own
-  // (layouts/index.js, documentLayout).
+  // The layout a layout run uses on a draft that has none of its own, which
+  // the draft then keeps (layouts/index.js, documentLayout).
   layoutAlgorithm: {
     default: DEFAULT_LAYOUT_ALGORITHM,
     valid: (value) => Boolean(layoutAlgorithm(value)),

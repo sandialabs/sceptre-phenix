@@ -219,7 +219,7 @@ async function buildConnectedDiagram(builder, title) {
   }
   await builder.connect();
   await builder.expectSummary('1 device, 1 switch, 1 network, 1 connection');
-  await expect(builder.page.getByTestId('builder-name')).toHaveValue(title);
+  await expect(builder.page.getByTestId('builder-name')).toHaveText(title);
   await waitPersisted(builder, draft, (doc) => {
     const [sw, node] = ['switch', 'device'].map((kind) =>
       doc.nodes.find((item) => item.kind === kind),
@@ -715,9 +715,7 @@ test.describe('export and import', () => {
           await expect(builder.dialog).toBeHidden();
           expect.soft(imported.id, 'a new draft').not.toBe(original.id);
           await expect.soft(builder.summary).toHaveText(summary);
-          await expect
-            .soft(page.getByTestId('builder-name'))
-            .toHaveValue(title);
+          await expect.soft(page.getByTestId('builder-name')).toHaveText(title);
           await builder.waitSaved();
 
           const copy = await builder.serverDocument(imported);
@@ -757,7 +755,7 @@ test.describe('export and import', () => {
         expect.soft(imported.id, 'a new draft').not.toBe(original.id);
         await expect(builder.canvas).toBeVisible();
         await expect.soft(builder.summary).toHaveText(summary);
-        await expect.soft(page.getByTestId('builder-name')).toHaveValue(title);
+        await expect.soft(page.getByTestId('builder-name')).toHaveText(title);
         await builder.waitSaved();
         expect
           .soft((await builder.serverDocument(imported)).nodes)
@@ -897,7 +895,7 @@ test.describe('export and import', () => {
 
       await expect(dialog).toBeHidden();
       await expect(builder.canvas).toBeVisible();
-      await expect.soft(page.getByTestId('builder-name')).toHaveValue(title);
+      await expect.soft(page.getByTestId('builder-name')).toHaveText(title);
       await expect
         .soft(builder.summary)
         .toContainText('0 devices, 0 switches, 0 networks');
@@ -954,7 +952,7 @@ test.describe('export and import', () => {
       await expect(builder.canvas).toBeVisible({ timeout: 20000 });
       await expect
         .soft(page.getByTestId('builder-name'))
-        .toHaveValue(published.name);
+        .toHaveText(published.name);
       await expect
         .soft(builder.summary)
         .toContainText('1 device, 1 switch, 1 network, 1 connection');
@@ -1223,7 +1221,7 @@ test.describe('generate', () => {
     const draft = await (await created).json();
 
     await expect(dialog).toBeHidden();
-    await expect.soft(page.getByTestId('builder-name')).toHaveValue(name);
+    await expect.soft(page.getByTestId('builder-name')).toHaveText(name);
     await expect
       .soft(builder.summary)
       .toContainText(
@@ -1363,10 +1361,15 @@ test.describe('generate', () => {
     await continuePastWarnings(dialog);
     const draft = await (await created).json();
 
-    await expect(page.getByTestId('builder-name')).toHaveValue(experiment);
+    await expect(page.getByTestId('builder-name')).toHaveText(experiment);
     await builder.expectSummary(
       '4 devices, 2 switches, 2 networks, 5 connections',
     );
+    // The import placed the nodes, not a layout: the layout menu says
+    // Default.
+    await expect
+      .soft(builder.toolbar('layout'))
+      .toHaveAccessibleName('Default layout');
     await expect(
       page.locator('[data-testid^="outline-item-"][aria-label^="Switch EXP,"]'),
     ).toHaveAttribute('aria-label', /VLAN alias 101/);
@@ -1567,7 +1570,7 @@ test.describe('generate', () => {
       expect(response.ok(), await response.text()).toBeTruthy();
       const draft = await (await created).json();
 
-      await expect.soft(page.getByTestId('builder-name')).toHaveValue(name);
+      await expect.soft(page.getByTestId('builder-name')).toHaveText(name);
       await expect
         .soft(builder.summary)
         .toContainText('2 devices, 1 switch, 1 network, 2 connections');
@@ -1716,7 +1719,7 @@ test.describe('generate', () => {
         'VLAN "exp" differs only by case from VLAN "EXP"; minimega treats them as different VLANs, so they are separate networks',
       );
     await continuePastWarnings(dialog);
-    await expect(page.getByTestId('builder-name')).toHaveValue(name);
+    await expect(page.getByTestId('builder-name')).toHaveText(name);
     await builder.expectSummary(
       '2 devices, 2 switches, 2 networks, 2 connections',
     );

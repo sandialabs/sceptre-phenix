@@ -1298,6 +1298,21 @@
   border-left: 1px solid var(--bx-border);
 }
 
+/* The save state after Draft History. Wide enough for the usual states
+   ("Saving 2 changes", "All changes saved"), so the toolbar does not rewrap
+   on every save; a longer message wraps rather than running off the row. */
+.builder-toolbar__save {
+  flex: 0 1 auto;
+  min-width: 7.5rem;
+  max-width: 18rem;
+  margin: 0 0 0 0.35rem;
+  overflow-wrap: anywhere;
+}
+
+.builder-toolbar__save > * {
+  flex: none;
+}
+
 /* Browsers' own placeholder colors can fall below 4.5:1. */
 .builder-root input::placeholder {
   color: var(--bx-text-muted);
@@ -1894,14 +1909,14 @@ div.builder-outline__item {
 }
 
 /* The labels go in two steps, so the editor header stays one row with room
-   for longer counts and checks. Too narrow for them all (below a 1712px
+   for longer counts and checks. Too narrow for them all (below a 1585px
    window at the default text size), the buttons whose labels are marked
    --wide (the theme, Shortcuts, Settings and Help) show their icons alone,
-   and Commands its name without its keys. Narrower still (below a 1392px
+   and Commands its name without its keys. Narrower still (below a 1265px
    window), every button does. The labels stay, visually hidden, as their
    names, and the tooltips name them. Each header is a builder-header
    container, so the two views match at any one width. */
-@container builder-header (max-width: 105rem) {
+@container builder-header (max-width: 97rem) {
   .builder-header__label--wide {
     position: absolute;
     width: 1px;
@@ -1919,7 +1934,7 @@ div.builder-outline__item {
   }
 }
 
-@container builder-header (max-width: 85rem) {
+@container builder-header (max-width: 77rem) {
   .builder-header__label {
     position: absolute;
     width: 1px;

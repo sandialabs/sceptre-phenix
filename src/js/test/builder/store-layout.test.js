@@ -28,7 +28,8 @@ import { sampleDocument } from './fixtures.js';
 const labelOf = (id) => LAYOUT_ALGORITHMS.find((a) => a.id === id).label;
 
 // Auto layout runs the draft's own layout, or else the one the settings
-// choose, and may finish later (ELK runs in a Web Worker in the browser).
+// choose, which the draft then keeps, and may finish later (ELK runs in a
+// Web Worker in the browser).
 describe('automatic layout in the store', () => {
   let store;
 
@@ -48,39 +49,90 @@ describe('automatic layout in the store', () => {
       const doc = store.doc;
 
       setSetting('layoutAlgorithm', id, null);
+      // No layout of its own: the layout menu says Default.
+      expect(store.currentLayout).toBe('');
+      expect(store.layoutToRun).toBe(id);
 
       const entry = await store.layout();
 
       expect(entry).not.toBeNull();
-      expect(store.doc).toEqual(withGeometry(doc, await runLayout(id, doc)));
+      expect(store.doc).toEqual({
+        ...withGeometry(doc, await runLayout(id, doc)),
+        layout: id,
+      });
       expect(store.announcement).toBe(`Applied ${labelOf(id)} layout`);
       expect(store.canRestoreLayout).toBe(true);
-      // The setting is the viewer's; the draft keeps no choice of its own.
-      expect(store.doc.layout).toBeUndefined();
+      // The draft keeps the layout that made its positions.
+      expect(store.currentLayout).toBe(id);
+
+      // Changing the setting does not rename it.
+      const other = id === 'cards' ? 'dagre' : 'cards';
+
+      setSetting('layoutAlgorithm', other, null);
+      expect(store.currentLayout).toBe(id);
+      expect(store.layoutToRun).toBe(id);
+
+      // Undo brings Default back, and redo the layout; Restore previous
+      // layout puts back the one before the next.
+      store.undo();
+      expect(store.currentLayout).toBe('');
+      store.redo();
+      expect(store.currentLayout).toBe(id);
+      await store.layout({ algorithm: other });
+      expect(store.currentLayout).toBe(other);
+      store.restoreLayout();
       expect(store.currentLayout).toBe(id);
     },
   );
 
+  test('restoring the layout that made a draft’s first positions brings back Default', async () => {
+    const before = store.doc;
+
+    await store.layout();
+    expect(store.currentLayout).toBe('elk');
+    store.restoreLayout();
+    expect(store.doc).toEqual(before);
+    expect(store.currentLayout).toBe('');
+  });
+
+  test('an empty diagram laid out stays at Default, unless a layout is chosen', async () => {
+    store.setDocument({ ...sampleDocument().doc, nodes: [], edges: [] });
+    const entries = store.history.size;
+
+    expect(await store.layout()).toBeNull();
+    expect(store.announcement).toBe('The diagram is already laid out.');
+    expect(store.currentLayout).toBe('');
+    expect(store.history.size).toBe(entries);
+
+    expect(await store.layout({ algorithm: 'dagre' })).not.toBeNull();
+    expect(store.announcement).toBe('Chose Dagre layout');
+    expect(store.currentLayout).toBe('dagre');
+  });
+
   test('the draft’s own layout comes before the setting', async () => {
     setSetting('layoutAlgorithm', 'standard', null);
-    expect(store.currentLayout).toBe('standard');
+    expect(store.currentLayout).toBe('');
+    expect(store.layoutToRun).toBe('standard');
 
     store.setDocument({ ...sampleDocument().doc, layout: 'cards' });
     expect(store.currentLayout).toBe('cards');
+    expect(store.layoutToRun).toBe('cards');
     await store.layout();
     expect(runLayout).toHaveBeenLastCalledWith('cards', expect.anything(), {});
     expect(store.announcement).toBe('Applied Network cards layout');
 
-    // One this Builder does not know is ignored, and kept.
+    // One this Builder does not know is ignored, and the layout that runs
+    // in its place takes its place.
     store.setDocument({ ...sampleDocument().doc, layout: 'radial' });
-    expect(store.currentLayout).toBe('standard');
+    expect(store.currentLayout).toBe('');
+    expect(store.layoutToRun).toBe('standard');
     await store.layout();
     expect(runLayout).toHaveBeenLastCalledWith(
       'standard',
       expect.anything(),
       {},
     );
-    expect(store.doc.layout).toBe('radial');
+    expect(store.doc.layout).toBe('standard');
   });
 
   test('a chosen layout is kept with the draft in the same commit', async () => {
@@ -105,7 +157,7 @@ describe('automatic layout in the store', () => {
     // One undo takes back the positions and the choice.
     store.undo();
     expect(store.doc).toEqual(before);
-    expect(store.currentLayout).toBe('elk');
+    expect(store.currentLayout).toBe('');
 
     // Restore puts the choice back too.
     await store.layout({ algorithm: 'cards' });
@@ -116,8 +168,13 @@ describe('automatic layout in the store', () => {
 
   test('choosing the layout already in place keeps the choice alone', async () => {
     await store.layout();
-    const laid = store.doc;
+    // Laid out, as by an uploaded file, with no layout of its own.
+    const { layout, ...laid } = store.doc;
 
+    expect(layout).toBe('elk');
+    store.setDocument(laid);
+    expect(await store.layout()).toBeNull();
+    expect(store.announcement).toBe('The diagram is already laid out.');
     expect(await store.layout({ algorithm: 'elk' })).not.toBeNull();
     expect(store.announcement).toBe('Chose ELK layered layout');
     expect(store.doc).toEqual({ ...laid, layout: 'elk' });

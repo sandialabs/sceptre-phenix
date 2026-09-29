@@ -864,7 +864,8 @@ function theme(value, title) {
 }
 
 // Lays the diagram out with one layout, which the draft then keeps (the
-// toolbar's layout menu has the same choices).
+// toolbar's layout menu has the same choices). The draft's own is marked;
+// at Default none is.
 function layoutChoice({ id, label, summary }) {
   return {
     id: `structure.layout.${id}`,
@@ -1261,14 +1262,15 @@ export const COMMANDS = [
   },
   ...GROUPING_STRATEGIES.map(autoGroupChoice),
   {
-    // Runs the draft's layout again; each layout has a command of its own.
+    // Runs the draft's layout again, or for a draft with none the Settings
+    // default; each layout has a command of its own.
     id: 'structure.layout',
     title: 'Auto layout',
     group: 'Structure',
     keywords: ['arrange', 'tidy', 'organize'],
     when: editable,
     detail: ({ store }) =>
-      `Arrange the nodes with ${layoutAlgorithm(store.currentLayout)?.label || 'the current layout'}`,
+      `Arrange the nodes with ${layoutAlgorithm(store.layoutToRun)?.label || 'the current layout'}`,
     run: ({ store }) => store.layout(),
   },
   ...LAYOUT_ALGORITHMS.map(layoutChoice),

@@ -119,7 +119,7 @@ async function openDraftByName(page, builder, name) {
   await expect(commands.active).toContainText(name);
   await page.keyboard.press('Enter');
   await expect(builder.canvas).toBeVisible();
-  await expect(page.getByTestId('builder-name')).toHaveValue(name);
+  await expect(page.getByTestId('builder-name')).toHaveText(name);
   await builder.waitSaved();
 
   return draft;

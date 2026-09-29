@@ -1956,19 +1956,22 @@ test.describe('Builder Beta canvas editing', () => {
         }
       });
 
-      // A menu button named after the draft's layout: the Settings default
-      // while the draft has none of its own.
+      // A menu button named after the layout that made the positions:
+      // Default while the draft has none, as when placed by hand.
       const layoutButton = builder.toolbar('layout');
-      const menu = page.getByRole('menu', { name: 'ELK layered layout' });
+      const menu = page.getByRole('menu', { name: 'Default layout' });
       const item = (name) =>
         page.getByRole('menuitemradio', { name, exact: true });
       const restore = page.getByRole('menuitem', {
         name: 'Restore previous layout',
       });
-      await expect(layoutButton).toHaveAccessibleName('ELK layered layout');
-      await expect(layoutButton).toHaveAccessibleDescription(
-        'Choose a layout, or run it again',
+      await expect(layoutButton).toHaveAccessibleName('Default layout');
+      // The one label shown; the others only hold the button's width.
+      const shown = layoutButton.locator(
+        '.builder-button__swap > :not(.is-off)',
       );
+      await expect(shown).toHaveText('Default');
+      await expect(layoutButton).toHaveAccessibleDescription('Choose a layout');
       await expect(layoutButton).toHaveAttribute('aria-haspopup', 'menu');
       await expect(layoutButton).toHaveAttribute('aria-expanded', 'false');
       // At this width the toolbar only just fits, so a wider label would wrap
@@ -1978,8 +1981,8 @@ test.describe('Builder Beta canvas editing', () => {
       await layoutButton.scrollIntoViewIfNeeded();
       const box = await layoutButton.boundingBox();
 
-      // The menu lists the layouts, the draft's checked, each with what it
-      // does, and opens on its first.
+      // The menu lists the layouts, the draft's checked (none at Default),
+      // each with what it does, and opens on its first.
       await layoutButton.click();
       await expect(layoutButton).toHaveAttribute('aria-expanded', 'true');
       await expect(menu.getByRole('menuitemradio')).toHaveText([
@@ -1989,7 +1992,9 @@ test.describe('Builder Beta canvas editing', () => {
         /^Standard/,
       ]);
       await expect(item('ELK layered')).toBeFocused();
-      await expect.soft(item('ELK layered')).toBeChecked();
+      await expect
+        .soft(menu.getByRole('menuitemradio', { checked: true }))
+        .toHaveCount(0);
       await expect
         .soft(item('Dagre'))
         .toHaveAccessibleDescription('Networks in layers, left to right');
@@ -2007,7 +2012,7 @@ test.describe('Builder Beta canvas editing', () => {
         await released;
         await route.continue();
       });
-      // Choosing the checked layout runs it again, and the draft keeps it.
+      // Choosing a layout runs it, and the draft keeps it.
       await item('ELK layered').click();
       await expect(menu).toHaveCount(0);
       await expect(layoutButton).toBeFocused();
@@ -2024,6 +2029,8 @@ test.describe('Builder Beta canvas editing', () => {
       );
       await expect.soft(layoutButton).not.toHaveAttribute('aria-busy');
       await page.unroute(elk);
+      await expect(layoutButton).toHaveAccessibleName('ELK layered layout');
+      await expect(shown).toHaveText('ELK layered');
       expect(await layoutButton.boundingBox(), 'the button stays put').toEqual(
         box,
       );
@@ -2054,12 +2061,31 @@ test.describe('Builder Beta canvas editing', () => {
       await expect.soft(routed).toHaveCount(2);
 
       // Right after a layout, the menu offers to put the previous one back,
-      // last; Escape closes the menu onto its button.
+      // last, which brings Default back with the positions placed by hand.
       await layoutButton.press('ArrowUp');
       await expect(restore).toBeFocused();
       await expect
         .soft(restore)
         .toHaveAccessibleDescription('Put every node back where it was');
+      await page.keyboard.press('Enter');
+      await expect(builder.liveRegion).toContainText(
+        'Restored previous layout',
+      );
+      await expect(layoutButton).toHaveAccessibleName('Default layout');
+      await expectPersisted(builder, draft, positions, initial);
+      await expect
+        .poll(async () => (await builder.serverDocument(draft)).layout)
+        .toBeUndefined();
+
+      // Laid out again, it offers Restore again; Escape closes the menu
+      // onto its button.
+      await layoutButton.press('ArrowDown');
+      await expect(item('ELK layered')).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(layoutButton).toHaveAccessibleName('ELK layered layout');
+      await expectPersisted(builder, draft, positions, laidOut);
+      await layoutButton.press('ArrowUp');
+      await expect(restore).toBeFocused();
       await page.keyboard.press('Escape');
       await expect(layoutButton).toBeFocused();
 
@@ -2141,7 +2167,7 @@ test.describe('Builder Beta canvas editing', () => {
       await builder.waitSaved();
       page.off('request', onRequest);
       expect(uploads, 'one snapshot for the restore').toHaveLength(1);
-      expect(elkWorkers, 'one ELK worker for three layouts').toEqual({
+      expect(elkWorkers, 'one ELK worker for every layout').toEqual({
         started: 1,
         closed: 0,
       });
@@ -2167,7 +2193,7 @@ test.describe('Builder Beta canvas editing', () => {
       await page.getByRole('button', { name: 'Settings', exact: true }).click();
       const settings = page.getByTestId('settings-dialog');
       await settings
-        .getByLabel('Default layout for drafts')
+        .getByLabel('Layout for drafts without one')
         .selectOption('dagre');
       await settings.getByRole('button', { name: 'Done' }).click();
       await expect(settings).toBeHidden();

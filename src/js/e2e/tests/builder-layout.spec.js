@@ -124,7 +124,7 @@ async function editorLayout(page) {
       layout: rect('.builder-layout'),
       canvas: rect('[data-testid="builder-canvas"]'),
       back: rect('[data-testid="editor-back"]'),
-      name: rect('#builder-doc-name'),
+      name: rect('.builder-header__name'),
       counts: rect('[data-testid="builder-summary"]'),
       editorHeader: rect('.builder-header'),
       actions: rect('.builder-header__actions'),
@@ -147,6 +147,38 @@ async function editorLayout(page) {
           .filter((item) => item.offsetParent)
           .map((item) => item.getBoundingClientRect().right),
       ),
+    };
+  });
+}
+
+// The toolbar's right edge, its buttons past the window's, and where the
+// save state is beside Draft History and whether its text is cut off.
+async function toolbarLayout(page) {
+  return page.evaluate(() => {
+    const toolbar = document.querySelector('.builder-toolbar');
+    const save = document.querySelector('[data-testid="builder-save-state"]');
+    const history = document
+      .querySelector('[data-testid="toolbar-history"]')
+      .getBoundingClientRect();
+    const box = save.getBoundingClientRect();
+
+    return {
+      right: toolbar.getBoundingClientRect().right,
+      offScreen: [...toolbar.querySelectorAll('button')]
+        .filter((button) => button.getBoundingClientRect().right > innerWidth)
+        .map((button) => button.dataset.testid),
+      save: {
+        left: box.left,
+        right: box.right,
+        // Beside Draft History, on its row.
+        afterHistory: box.left - history.right,
+        rowOffset: Math.abs(
+          (box.top + box.bottom) / 2 - (history.top + history.bottom) / 2,
+        ),
+        cut:
+          save.scrollWidth > save.clientWidth + 1 ||
+          save.scrollHeight > save.clientHeight + 1,
+      },
     };
   });
 }
@@ -235,17 +267,30 @@ test(
       expect.soft(Math.round(landing.root.right)).toBe(landing.width);
       expect.soft(landing.heading.left).toBeGreaterThanOrEqual(12);
 
-      // In a 1600px window, Commands keeps its label, and the theme,
-      // Settings and Help show their icons alone, as in the editor's header.
+      // In a 1440px window, Commands keeps its label, and the theme,
+      // Settings and Help show their icons alone; in a 1600px window all
+      // show their labels, as in the editor's header.
+      const labelled = () =>
+        page.$$eval(
+          '.builder-drafts__header .builder-header__label',
+          (labels) =>
+            labels
+              .filter(
+                (label) => getComputedStyle(label).position !== 'absolute',
+              )
+              .map((label) => label.closest('[data-testid]').dataset.testid),
+        );
+      await resize(page, { width: 1440, height: 900 });
+      expect.soft(await labelled()).toEqual(['drafts-commands']);
       await resize(page, { width: 1600, height: 900 });
-      const labelled = await page.$$eval(
-        '.builder-drafts__header .builder-header__label',
-        (labels) =>
-          labels
-            .filter((label) => getComputedStyle(label).position !== 'absolute')
-            .map((label) => label.closest('[data-testid]').dataset.testid),
-      );
-      expect.soft(labelled).toEqual(['drafts-commands']);
+      expect
+        .soft(await labelled())
+        .toEqual([
+          'drafts-commands',
+          'drafts-theme',
+          'drafts-settings',
+          'drafts-help',
+        ]);
     });
 
     await test.step('build a sample diagram', async () => {
@@ -314,9 +359,9 @@ test(
           .soft(layout.back.left, at('Back to drafts gutter'))
           .toBeGreaterThanOrEqual(12);
 
-        // Back to drafts, the name field (at most 13rem wide) and the
-        // counts, in that order; from 1280px wide the actions share their
-        // row, so the header is one control high.
+        // Back to drafts, the name and its pencil (at most 13rem wide) and
+        // the counts, in that order; from 1280px wide the actions share
+        // their row, so the header is one control high.
         expect
           .soft(layout.name.left, at('name after Back to drafts'))
           .toBeGreaterThan(layout.back.right);
@@ -336,8 +381,9 @@ test(
         }
 
         // The labels go in two steps: in a wide header every button has
-        // its label, in a narrower one Reset view and Commands (without its
-        // keys) keep theirs, and in a narrow one none does.
+        // its label, in a narrower one, from 1280px, Reset view and
+        // Commands (without its keys) keep theirs, and in a narrow one none
+        // does.
         const labelled = {
           1920: [
             'editor-reset-view',
@@ -348,6 +394,7 @@ test(
             'editor-help',
           ],
           1440: ['editor-reset-view', 'editor-commands'],
+          1280: ['editor-reset-view', 'editor-commands'],
         };
         expect
           .soft(layout.labelled, at('buttons with their labels'))
@@ -356,7 +403,24 @@ test(
           .soft(layout.keycaps, at('Commands keys'))
           .toBe(viewport.width === 1920);
 
-        // The save state and the buttons after it wrap as one group, which
+        // The save state is in the toolbar, just after Draft History on its
+        // row, whole, and pushes no button off screen.
+        const toolbar = await toolbarLayout(page);
+        expect
+          .soft(toolbar.offScreen, at('toolbar buttons off screen'))
+          .toEqual([]);
+        expect.soft(toolbar.save.cut, at('save state cut off')).toBe(false);
+        expect
+          .soft(toolbar.save.afterHistory, at('save state after history'))
+          .toBeGreaterThanOrEqual(0);
+        expect
+          .soft(toolbar.save.afterHistory, at('save state by history'))
+          .toBeLessThan(16);
+        expect
+          .soft(toolbar.save.rowOffset, at('save state on history’s row'))
+          .toBeLessThan(4);
+
+        // The checks and the buttons after them wrap as one group, which
         // stays at the right edge.
         expect
           .soft(new Set(layout.actionTops).size, at('header actions in a row'))
@@ -635,8 +699,11 @@ test(
       const node = page.locator(
         `.vue-flow__node[data-id="${await focused.getAttribute('data-id')}"]`,
       );
-      // 'Device external, 0 connections, …', as the Inspector names it.
-      const [label] = (await node.getAttribute('aria-label')).split(',');
+      // 'Device external, 0 connections, …', as the Inspector names it; a
+      // switch it names by its network.
+      const [label] = (await node.getAttribute('aria-label'))
+        .replace(/^Switch /, 'Network ')
+        .split(',');
       await page.keyboard.press('Enter');
       await expect.soft(columns.end).toBeVisible();
       await expect.soft(hide.end).toHaveAttribute('aria-expanded', 'true');
@@ -859,7 +926,7 @@ test(
       await expect
         .soft(page.getByTestId('header-tooltip'))
         .toHaveText('Reset column widths, zoom, minimap and scrolling');
-      await resize(page, { width: 1280, height: 640 });
+      await resize(page, { width: 1232, height: 640 });
       await page.mouse.move(0, 0);
       await reset.hover();
       await expect
@@ -1240,7 +1307,7 @@ test(
     });
 
     await test.step('Escape dismisses a hover tooltip while focus is elsewhere', async () => {
-      await page.getByTestId('builder-name').focus();
+      await page.getByTestId('editor-back').focus();
       await builder.palette('switch').hover();
       await expect.soft(tooltip).toBeVisible();
       await page.keyboard.press('Escape');
@@ -1300,7 +1367,7 @@ test(
       // over the tooltip.
       await parkPointer();
       const side = page.locator('.builder-layout__side').first();
-      await page.getByTestId('builder-name').focus();
+      await page.getByTestId('editor-back').focus();
       await router.focus();
       await expect.soft(tooltip).toBeVisible();
 
@@ -1330,7 +1397,7 @@ test(
     });
 
     await test.step('tooltips stay on screen in the stacked narrow layout', async () => {
-      await page.getByTestId('builder-name').focus();
+      await page.getByTestId('editor-back').focus();
       await page
         .locator('.builder-layout__side')
         .first()
@@ -1357,6 +1424,18 @@ test(
       }
     });
 
+    await test.step('in a 390px window the save state wraps in the toolbar, whole and on screen', async () => {
+      await resize(page, { width: 390, height: 844 });
+      const toolbar = await toolbarLayout(page);
+      expect
+        .soft(toolbar.offScreen, '390: toolbar buttons off screen')
+        .toEqual([]);
+      expect.soft(toolbar.save.cut, '390: save state cut off').toBe(false);
+      expect
+        .soft(toolbar.save.right, '390: save state right')
+        .toBeLessThanOrEqual(toolbar.right);
+    });
+
     await test.step('in a 320px window the name stays beside Back to drafts and toolbar menus open on screen', async () => {
       const smallest = { width: 320, height: 800 };
       await resize(page, smallest);
@@ -1364,7 +1443,7 @@ test(
       // Back to drafts is as wide as its longest busy label.
       const [back, name] = await Promise.all([
         page.getByTestId('editor-back').boundingBox(),
-        page.locator('#builder-doc-name').boundingBox(),
+        page.locator('.builder-header__name').boundingBox(),
       ]);
       expect
         .soft(name.y, 'name beside Back to drafts')
@@ -1563,8 +1642,18 @@ test(
             .not.toBe('rgb(255, 255, 255)');
         }
 
+        // The name's pencil is an icon alone, which stands out as its
+        // own boundary would (WCAG 1.4.11).
+        const edit = page.getByTestId('builder-name-edit');
+        const [pencil] = await contrast(edit);
+        expect
+          .soft(pencil, `${theme}: Edit diagram name icon`)
+          .toBeGreaterThanOrEqual(3);
+
         // Fields share their panel's fill, so their border is what shows
-        // where they are (WCAG 1.4.11).
+        // where they are (WCAG 1.4.11). The name's field shows while the
+        // name is edited.
+        await edit.click();
         for (const field of [
           '#builder-doc-name',
           '#connect-device',
@@ -1577,6 +1666,8 @@ test(
             .soft(ratio, `${theme}: ${field} border`)
             .toBeGreaterThanOrEqual(3);
         }
+        await page.locator('#builder-doc-name').press('Escape');
+        await expect.soft(edit).toBeFocused();
       });
     }
 

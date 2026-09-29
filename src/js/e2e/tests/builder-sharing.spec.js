@@ -99,15 +99,16 @@ async function shareDialog(page) {
 // Renames the diagram, and waits for the server to answer the save that
 // makes (the save state may say all is saved before it starts).
 async function rename(page, name) {
-  const field = page.getByTestId('builder-name');
+  const field = page.getByTestId('builder-name-field');
   const answered = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
       new URL(response.url()).pathname.endsWith('/snapshots'),
   );
 
+  await page.getByTestId('builder-name-edit').click();
   await field.fill(name);
-  await field.press('Tab');
+  await field.press('Enter');
 
   return answered;
 }
@@ -275,7 +276,7 @@ test(
       await expect(theirs.getByTestId('editor-shared-by')).toHaveText(
         `Shared by ${owner.username} · Can view`,
       );
-      await expect(theirs.getByTestId('builder-name')).not.toBeEditable();
+      await expect(theirs.getByTestId('builder-name-edit')).toHaveCount(0);
       for (const action of ['paste', 'scenario', 'publish', 'share']) {
         await expect(theirs.getByTestId(`toolbar-${action}`)).toHaveAttribute(
           'aria-disabled',
@@ -451,7 +452,7 @@ test('access that changes while the draft is open', async ({
     await expect(panel).toBeHidden();
     await expect(editorHeading(theirs)).toBeFocused();
     await expect(theirs.getByTestId('editor-shared-by')).toHaveCount(0);
-    await expect(theirs.getByTestId('builder-name')).toHaveValue(
+    await expect(theirs.getByTestId('builder-name')).toHaveText(
       'Kept by the editor (local copy)',
     );
     const listed = await (await editor.api.get(`${API}/builder/drafts`)).json();
@@ -519,7 +520,7 @@ test('access that changes while the draft is open', async ({
       .getByRole('button', { name: 'Discard and load the server version' })
       .click();
     await expect(panel).toBeHidden();
-    await expect(theirs.getByTestId('builder-name')).toHaveValue(
+    await expect(theirs.getByTestId('builder-name')).toHaveText(
       `${name} (owner again)`,
     );
   });

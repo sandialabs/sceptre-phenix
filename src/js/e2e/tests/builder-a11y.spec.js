@@ -1241,12 +1241,13 @@ for (const scheme of ['light', 'dark']) {
         await expect.soft(page.locator('html')).toHaveAttribute('lang', 'en');
       });
 
-      await test.step('the header has Back to drafts, the name, the counts, the save state, the checks, Reset view, Commands, the theme, Shortcuts, Settings, the Help link of the landing and Focus mode', async () => {
+      await test.step('the header has Back to drafts, the name and its pencil, the counts, the checks, Reset view, Commands, the theme, Shortcuts, Settings, the Help link of the landing and Focus mode', async () => {
         const back = page.getByRole('button', { name: 'Back to drafts' });
         const help = page.getByRole('link', {
           name: 'Help (opens in a new tab)',
         });
-        const name = page.getByLabel('Diagram name');
+        const name = page.getByTestId('builder-name');
+        const edit = page.getByRole('button', { name: 'Edit diagram name' });
         const counts = page.getByRole('list', { name: 'Diagram contents' });
         const countsTip = page.getByTestId('counts-tooltip');
         const reset = page.getByRole('button', { name: 'Reset view' });
@@ -1264,13 +1265,13 @@ for (const scheme of ['light', 'dark']) {
         });
         const count = (index) => counts.getByRole('listitem').nth(index);
 
-        // Left to right, as Tab goes: Back to drafts, the name, the counts
-        // (one stop, at the first count), then past the save state to the
-        // checks, Reset view, Commands, the theme, Shortcuts, Settings, Help
-        // and Focus mode.
+        // Left to right, as Tab goes: Back to drafts, the name's pencil, the
+        // counts (one stop, at the first count), then the checks, Reset
+        // view, Commands, the theme, Shortcuts, Settings, Help and Focus
+        // mode.
         await back.focus();
         for (const next of [
-          name,
+          edit,
           count(0),
           checks,
           reset,
@@ -1284,26 +1285,111 @@ for (const scheme of ['light', 'dark']) {
           await page.keyboard.press('Tab');
           await expect.soft(next).toBeFocused();
         }
-        // The save state sits just before the buttons, on their row.
+        // The save state is in the toolbar, just after Draft History on its
+        // row: text, which neither Tab nor the toolbar's arrow keys stop at.
+        const history = builder.toolbar('history');
         const saved = await builder.saveState.boundingBox();
-        const first = await checks.boundingBox();
+        const before = await history.boundingBox();
         expect
-          .soft(first.x - (saved.x + saved.width), 'save state before checks')
+          .soft(saved.x - (before.x + before.width), 'save state after history')
           .toBeGreaterThanOrEqual(0);
         expect
-          .soft(first.x - (saved.x + saved.width), 'save state by the checks')
+          .soft(saved.x - (before.x + before.width), 'save state by history')
           .toBeLessThan(16);
-        expect.soft(saved.y, 'save state on the buttons’ row').toBe(first.y);
+        expect
+          .soft(
+            Math.abs(
+              saved.y + saved.height / 2 - (before.y + before.height / 2),
+            ),
+            'save state on history’s row',
+          )
+          .toBeLessThan(4);
+        await expect
+          .soft(builder.saveState.locator('xpath=self::p'))
+          .toHaveCount(1);
+        await expect.soft(builder.saveState).not.toHaveAttribute('tabindex');
 
-        // The name's label is read but not shown; a tooltip gives it on
-        // hover.
+        // The name is text, the pencil after it is named for what it does
+        // and described by the name, and a tooltip says what it does.
+        await expect.soft(name).toHaveText(/^Untitled topology( \d+)?$/);
+        const title = (await name.textContent()).trim();
+        await expect.soft(edit).toHaveAccessibleDescription(title);
+        await edit.hover();
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText('Edit diagram name');
+        const target = await edit.boundingBox();
+        expect.soft(target.width, 'pencil width').toBeGreaterThanOrEqual(24);
+        expect.soft(target.height, 'pencil height').toBeGreaterThanOrEqual(24);
+
+        // The pencil shows a field in the name's place, the name selected,
+        // whose label is read but not shown. Escape keeps the name, Enter
+        // saves it; either way focus goes back to the pencil, and the
+        // outcome is announced.
+        const field = page.getByRole('textbox', { name: 'Diagram name' });
+        await edit.press('Enter');
+        await expect.soft(field).toBeFocused();
+        await expect.soft(field).toHaveValue(title);
+        expect
+          .soft(
+            await field.evaluate((input) => [
+              input.selectionStart,
+              input.selectionEnd,
+            ]),
+            'the name is selected',
+          )
+          .toEqual([0, title.length]);
         await expect
           .soft(page.locator('label[for="builder-doc-name"]'))
           .toHaveClass(/builder-visually-hidden/);
-        await name.hover();
+        await field.press('End');
+        await field.pressSequentially(' draft');
+        await field.press('Escape');
+        await expect.soft(edit).toBeFocused();
+        await expect.soft(field).toHaveCount(0);
+        await expect.soft(name).toHaveText(title);
+        await expect
+          .soft(builder.liveRegion)
+          .toContainText('Diagram name not changed.');
+        await edit.press('Enter');
+        await field.fill(`${title} with a name long enough to be cut off`);
+        await field.press('Enter');
+        await expect.soft(edit).toBeFocused();
+        await expect.soft(builder.liveRegion).toContainText('Renamed diagram');
+        // A long name is cut off with an ellipsis, and stays whole in the
+        // text, the pencil's description and the tooltips.
+        const long = `${title} with a name long enough to be cut off`;
+        await expect.soft(name).toHaveText(long);
+        await expect.soft(edit).toHaveAccessibleDescription(long);
+        expect
+          .soft(
+            await name.evaluate(
+              (text) =>
+                getComputedStyle(text).textOverflow === 'ellipsis' &&
+                text.scrollWidth > text.clientWidth,
+            ),
+            'the long name is cut off',
+          )
+          .toBe(true);
         await expect
           .soft(page.getByTestId('header-tooltip'))
-          .toHaveText('Diagram name');
+          .toHaveText(`Edit diagram name: ${long}`);
+        // The pointer, left where the pencil was, may be over the longer
+        // name now: it moves off, then onto the name.
+        await page.mouse.move(0, 0);
+        await name.hover();
+        await expect.soft(page.getByTestId('header-tooltip')).toHaveText(long);
+        // Emptied, it shows a muted Untitled diagram.
+        await edit.click();
+        await field.fill('');
+        await field.press('Enter');
+        await expect.soft(name).toHaveText('Untitled diagram');
+        await expect.soft(name).toHaveClass(/is-empty/);
+        await expectReadable(name, 'Untitled diagram');
+        await edit.click();
+        await field.fill(title);
+        await field.press('Enter');
+        await expect.soft(name).toHaveText(title);
 
         // Each count is an icon and a number, read in words, which show on
         // hover and on focus. The arrow keys, Home and End move between the
@@ -1367,11 +1453,12 @@ for (const scheme of ['light', 'dark']) {
           .soft(theme)
           .toHaveAccessibleName(`Theme: System. Switch to ${next} theme.`);
         await expect.soft(theme).toHaveText('System');
-        // An icon at this width, so its tooltip names it too.
+        // Its label shows at this width, so its tooltip only says what a
+        // press does.
         await theme.hover();
         await expect
           .soft(page.getByTestId('header-tooltip'))
-          .toHaveText(`Theme: System. Switch to ${next} theme`);
+          .toHaveText(`Switch to ${next} theme`);
         // Settings' and Help's tooltips name them too.
         await settings.hover();
         await expect
@@ -1607,10 +1694,15 @@ for (const scheme of ['light', 'dark']) {
         await expect.soft(tabStops).toHaveCount(1);
         await expect.soft(tabStops).toBeFocused();
         // Draft History ends it, just after Minimap, in the same group;
-        // Commands and the theme are in the header.
+        // Commands and the theme are in the header. The save state after
+        // it is text, which the arrow keys pass by.
         const history = builder.toolbar('history');
         await expect.soft(history).toBeFocused();
         await expect.soft(history).toHaveAccessibleName('Draft History');
+        await page.keyboard.press('ArrowRight');
+        await expect.soft(builder.toolbar('undo')).toBeFocused();
+        await page.keyboard.press('ArrowLeft');
+        await expect.soft(history).toBeFocused();
         expect
           .soft(
             await history.evaluate(
@@ -1873,8 +1965,9 @@ test.describe('themes and canvas controls', () => {
       'data-builder-theme-preference',
       'system',
     );
+    // An icon in a 1440px window, so its tooltip names it too.
+    await page.setViewportSize({ width: 1440, height: 900 });
     await toggle.focus();
-    // An icon at this width, so its tooltip names it too.
     await expect
       .soft(tooltip)
       .toHaveText('Theme: System. Switch to Dark theme');
@@ -2307,7 +2400,7 @@ test.describe('themes and canvas controls', () => {
       const opener = page.getByTestId('editor-settings');
       const settings = page.getByTestId('settings-dialog');
       const layout = settings.getByRole('combobox', {
-        name: 'Default layout for drafts',
+        name: 'Layout for drafts without one',
       });
       const showMinimap = settings.getByRole('switch', {
         name: 'Show the minimap',
@@ -2353,10 +2446,11 @@ test.describe('themes and canvas controls', () => {
       });
       await page.keyboard.press('Escape');
       await expect.soft(opener).toBeFocused();
-      // A draft with no layout of its own takes the default.
+      // A draft with no layout of its own says Default whatever the
+      // setting, which is only what a layout run uses.
       await expect
         .soft(page.getByTestId('toolbar-layout'))
-        .toHaveAccessibleName('Dagre layout');
+        .toHaveAccessibleName('Default layout');
 
       // Zoomed in, Reset view fits the diagram, as Shift+1 does.
       await page.getByTestId('editor-reset-view').click();

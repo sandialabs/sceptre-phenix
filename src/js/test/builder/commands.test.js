@@ -609,7 +609,9 @@ describe('running', () => {
   });
 
   test('a command per layout lays out with it, and one per Auto-group way', () => {
-    const ctx = context({ store: { currentLayout: 'cards' } });
+    const ctx = context({
+      store: { currentLayout: 'cards', layoutToRun: 'cards' },
+    });
     const layouts = COMMANDS.filter((command) =>
       command.id.startsWith('structure.layout.'),
     );
@@ -637,6 +639,16 @@ describe('running', () => {
     // Auto layout runs the draft's layout.
     expect(runCommand('structure.layout', ctx)).toBe(true);
     expect(ctx.store.layout).toHaveBeenLastCalledWith();
+
+    // A draft with none (Default) has none marked, and Auto layout names
+    // the Settings default it runs.
+    const blank = context({ store: { currentLayout: '', layoutToRun: 'elk' } });
+    expect(
+      layouts.map((command) => command.detail(blank)).join(' '),
+    ).not.toContain('Current layout');
+    expect(getCommand('structure.layout').detail(blank)).toBe(
+      'Arrange the nodes with ELK layered',
+    );
 
     expect(runCommand('structure.autoGroup.network', ctx)).toBe(true);
     expect(ctx.store.autoGroup).toHaveBeenLastCalledWith('network');

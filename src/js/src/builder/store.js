@@ -42,6 +42,7 @@ import {
   LayoutError,
   documentLayout,
   layoutAlgorithm,
+  ownLayout,
   runLayout,
 } from './layouts/index.js';
 import { publishRefusal } from './publish.js';
@@ -388,9 +389,12 @@ export const useBuilderStore = defineStore('builder', {
   getters: {
     canUndo: (state) => state.historyVersion >= 0 && state.history.canUndo(),
     canRedo: (state) => state.historyVersion >= 0 && state.history.canRedo(),
-    // The layout the diagram is laid out with: the draft's own choice, or
-    // the viewer's default (see documentLayout).
-    currentLayout: (state) =>
+    // The layout that made the diagram's positions, which the draft keeps
+    // (see ownLayout), or '' for none: the toolbar's Default.
+    currentLayout: (state) => ownLayout(state.doc),
+    // The layout a layout run uses: the draft's own, or the viewer's
+    // default (see documentLayout).
+    layoutToRun: (state) =>
       documentLayout(state.doc, builderSettings.layoutAlgorithm),
     // Whether the layout menu offers to put the previous layout back.
     canRestoreLayout: (state) =>
@@ -2580,29 +2584,33 @@ export const useBuilderStore = defineStore('builder', {
     /**
      * Lays the diagram out, as one commit, which the layout menu can then put
      * back (see restoreLayout). With an algorithm, the layout menu's choice,
-     * the draft keeps it as its own layout in the same commit; without one,
-     * the draft's layout runs again (currentLayout). A layout that changes
-     * nothing is not an edit, as in moveNodes: no undo step, no snapshot, and
-     * no restore. See layOut for a layout that finishes later.
+     * that one runs; without one, the draft's layout, or the Settings
+     * default for a draft with none (layoutToRun). The draft keeps the
+     * layout that ran as its own in the same commit, so the layout menu
+     * names what made the positions. A layout that changes nothing is not
+     * an edit, as in moveNodes: no undo step, no snapshot, and no restore;
+     * one not chosen then keeps no layout either, so an empty diagram stays
+     * at Default. See layOut for a layout that finishes later.
      *
-     * @param {object} [options] algorithm: a LAYOUT_ALGORITHMS id to run and
-     *   keep as the draft's layout; the rest go to the algorithm
+     * @param {object} [options] algorithm: a LAYOUT_ALGORITHMS id to run;
+     *   the rest go to the algorithm
      * @returns {Promise<object|null>} the history entry, or null when
      *   nothing changed or the layout was not applied
      */
     async layout({ algorithm, ...options } = {}) {
       const chosen = layoutAlgorithm(algorithm) ? algorithm : '';
-      const id = chosen || this.currentLayout;
+      const id = chosen || this.layoutToRun;
       const laid = await layOut(this, this.doc, id, options, 'layout');
 
       if (!laid) {
         return null;
       }
 
-      const next = withLayoutChoice(
-        withGeometry(this.doc, laid),
-        chosen || this.doc.layout,
-      );
+      const placed = withGeometry(this.doc, laid);
+      const next =
+        chosen || layoutChanges(this.doc, placed)
+          ? withLayoutChoice(placed, id)
+          : placed;
       const changes = layoutChanges(this.doc, next);
       const name = layoutAlgorithm(id).label;
 
@@ -2630,9 +2638,10 @@ export const useBuilderStore = defineStore('builder', {
     /**
      * Auto-group: puts the ungrouped devices and switches (the selected
      * ones, when nodes are selected) into new groups, by network or by name
-     * (see grouping.js), then lays the diagram out with its layout so the
-     * groups do not overlap, all as one commit. The selection stays as it
-     * was. Nothing to group is no edit, and says so.
+     * (see grouping.js), then lays the diagram out with its layout, or the
+     * Settings default (layoutToRun), so the groups do not overlap, all as
+     * one commit that keeps that layout as the draft's, as layout does. The
+     * selection stays as it was. Nothing to group is no edit, and says so.
      *
      * @param {string} [strategy] a GROUPING_STRATEGIES id
      * @param {object} [options] for the layout
@@ -2651,13 +2660,8 @@ export const useBuilderStore = defineStore('builder', {
       }
 
       const grouped = applyGroups(this.doc, planned);
-      const laid = await layOut(
-        this,
-        grouped.doc,
-        this.currentLayout,
-        options,
-        'group',
-      );
+      const id = this.layoutToRun;
+      const laid = await layOut(this, grouped.doc, id, options, 'group');
 
       if (!laid) {
         return null;
@@ -2666,7 +2670,7 @@ export const useBuilderStore = defineStore('builder', {
       const how = strategy === 'name' ? 'by name' : 'by network';
 
       this.commit(
-        withGeometry(grouped.doc, laid),
+        withLayoutChoice(withGeometry(grouped.doc, laid), id),
         `Created ${count(grouped.groups.length, 'group')} ${how}`,
       );
 

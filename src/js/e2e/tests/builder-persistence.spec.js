@@ -470,14 +470,21 @@ test.describe('Builder Beta persistence', () => {
           await route.fallback();
         });
 
+        // The toolbar keeps its rows as the save state changes, so the
+        // canvas below it stays put.
+        const toolbar = page.getByRole('toolbar', { name: 'Builder actions' });
+        const height = async () => (await toolbar.boundingBox()).height;
+        const before = await height();
         await builder.palette('device').click();
         await expect.soft(builder.saveState).toHaveText(/Saving changes/);
+        expect.soft(await height(), 'toolbar height, saving').toBe(before);
         await builder.palette('device').click();
         await expect.soft(builder.saveState).toHaveText(/Saving 2 changes/);
         await expect.soft(builder.toolbar('retry')).toHaveCount(0);
 
         release();
         await builder.waitSaved();
+        expect.soft(await height(), 'toolbar height, saved').toBe(before);
         await expectServerCounts(builder, draft, { devices: 2 });
         await page.unroute(SNAPSHOTS);
       });
@@ -550,21 +557,23 @@ test.describe('Builder Beta persistence', () => {
             'Could not save your changes. Etcd is out of space: phenix cannot save changes until an administrator frees space (compact and defragment etcd, then clear its NOSPACE alarm). Saving retries automatically.',
           );
         await expect(builder.toolbar('retry')).toBeVisible();
-        // The message wraps, and the header's buttons, labelled or not,
-        // keep one height rather than growing with its row.
+        // The message wraps in the toolbar, whose buttons keep one height
+        // rather than growing with its row, and stays on screen.
         const heights = await page
-          .locator('.builder-header__actions > .builder-button')
+          .locator('.builder-toolbar button')
           .evaluateAll((buttons) =>
             buttons.map((button) =>
               Math.round(button.getBoundingClientRect().height),
             ),
           );
         expect
-          .soft(new Set(heights).size, `header button heights ${heights}`)
+          .soft(new Set(heights).size, `toolbar button heights ${heights}`)
           .toBe(1);
+        const stateBox = await builder.saveState.boundingBox();
+        expect.soft(stateBox.height, 'save state').toBeGreaterThan(heights[0]);
         expect
-          .soft((await builder.saveState.boundingBox()).height, 'save state')
-          .toBeGreaterThan(heights[0]);
+          .soft(stateBox.x + stateBox.width, 'save state right')
+          .toBeLessThanOrEqual(page.viewportSize().width);
 
         await page.unroute(SNAPSHOTS);
         await builder.toolbar('retry').click();
@@ -657,7 +666,7 @@ test.describe('Builder Beta persistence', () => {
     await expect.soft(confirm.getByTestId('confirm-cancel')).toBeFocused();
     await confirm.getByTestId('confirm-accept').click();
     await expect(banner).toHaveCount(0);
-    await expect(builder.page.getByTestId('builder-name')).toHaveValue(
+    await expect(builder.page.getByTestId('builder-name')).toHaveText(
       elsewhere,
     );
     // Focus lands in the editor, not on <body>.
@@ -681,21 +690,33 @@ test.describe('Builder Beta persistence', () => {
     expect((await builder.serverDocument(draft)).name).toBe(elsewhere);
 
     await test.step('a conflict raised while typing leaves focus and text in the name field', async () => {
+      const { page } = builder;
       await writeElsewhere(builder.request, draft, (doc) => ({
         ...doc,
         description: 'Changed again',
       }));
-      const name = builder.page.getByTestId('builder-name');
-      await name.focus();
+      // An edit's save, held until the name is being typed, meets the
+      // conflict; typing goes on.
+      let release;
+      const released = new Promise((resolve) => {
+        release = resolve;
+      });
+      await page.route(SNAPSHOTS, async (route) => {
+        await released;
+        await route.fallback();
+      });
+      await addDevices(builder, 1);
+      await page.getByTestId('builder-name-edit').click();
+      const name = page.getByTestId('builder-name-field');
+      await expect(name).toBeFocused();
       await name.press('End');
-      // Enter commits "-a", whose save meets the conflict; typing goes on.
       await name.pressSequentially('-a');
-      await name.press('Enter');
-      await name.pressSequentially('bc');
+      release();
       await expect(banner).toBeVisible();
       await expect.soft(name).toBeFocused();
-      await name.pressSequentially('d');
-      await expect.soft(name).toHaveValue(`${elsewhere}-abcd`);
+      await name.pressSequentially('bc');
+      await expect.soft(name).toHaveValue(`${elsewhere}-abc`);
+      await page.unroute(SNAPSHOTS);
     });
 
     expectNoFatal(issues);
@@ -845,16 +866,18 @@ test.describe('Builder Beta persistence', () => {
     await expectCounts(builder, { devices: 2 });
 
     // Save now and the command palette answer in a text field too. Save
-    // now saves the name being typed, which the field commits only on
-    // change.
-    const name = page.getByTestId('builder-name');
+    // now saves the name being typed, as Enter does: the field closes onto
+    // its pencil.
+    const edit = page.getByTestId('builder-name-edit');
+    const name = page.getByTestId('builder-name-field');
+    await edit.click();
     await name.fill('Saved by its key');
     await page.keyboard.press('ControlOrMeta+s');
     await expect.soft(builder.liveRegion).toContainText('All changes saved');
     await expect.soft
       .poll(async () => (await builder.serverDocument(draft)).name)
       .toBe('Saved by its key');
-    await expect.soft(name).toBeFocused();
+    await expect.soft(edit).toBeFocused();
     // With nothing left to save, the key sends nothing, so it makes no
     // snapshot, and says so.
     await builder.waitSaved();
@@ -865,14 +888,20 @@ test.describe('Builder Beta persistence', () => {
       }
     };
     page.on('request', onRequest);
+    await edit.click();
+    await expect.soft(name).toBeFocused();
     await page.keyboard.press('ControlOrMeta+s');
     await expect.soft(builder.liveRegion).toContainText('No changes to save.');
     page.off('request', onRequest);
     expect.soft(sent, 'requests for nothing to save').toEqual([]);
+    // The palette takes focus from the field, which stays open for it.
+    await edit.click();
     await page.keyboard.press('ControlOrMeta+k');
     await expect.soft(page.getByTestId('commands-dialog')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect.soft(name).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect.soft(edit).toBeFocused();
   });
 
   test('Draft History entries are readable: a table of number, name, date and user, with no raw ids', async ({
@@ -1354,7 +1383,7 @@ test.describe('Builder Beta persistence', () => {
         await other.waitSaved();
 
         const copy = `${title} (local copy)`;
-        await expect(page.getByTestId('builder-name')).toHaveValue(copy);
+        await expect(page.getByTestId('builder-name')).toHaveText(copy);
         await builder.waitSaved();
         const fork = (await listMine(request)).find(
           (item) => item.title === copy,
@@ -1582,7 +1611,7 @@ test.describe('Builder Beta persistence', () => {
     await builder.waitSaved();
     page.off('request', onRequest);
     expect.soft(creates, 'drafts made by a double click').toHaveLength(1);
-    const title = await page.getByTestId('builder-name').inputValue();
+    const title = (await page.getByTestId('builder-name').textContent()).trim();
     expect.soft(title).toMatch(/^Untitled topology \d+$/);
     expect.soft(listed, 'titles listed before').not.toContain(title);
 

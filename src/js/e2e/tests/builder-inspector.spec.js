@@ -970,7 +970,7 @@ test.describe('Builder Beta inspector', () => {
         await expect
           .soft(builder.liveRegion)
           .toContainText(`Updated diagram ${name}`);
-        await expect.soft(page.getByTestId('builder-name')).toHaveValue(name);
+        await expect.soft(page.getByTestId('builder-name')).toHaveText(name);
         await expect.soft(nameField).toHaveValue(name);
         await expect.soft
           .poll(

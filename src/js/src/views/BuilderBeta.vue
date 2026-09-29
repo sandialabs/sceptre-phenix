@@ -80,8 +80,8 @@
 
     <template v-else>
       <div class="builder-header">
-        <!-- The name field shows the diagram name; the heading gives the view
-             a title and takes focus when the editor opens. -->
+        <!-- The name below shows the diagram name; the heading gives the
+             view a title and takes focus when the editor opens. -->
         <h1 ref="editorHeading" class="builder-visually-hidden" tabindex="-1">
           {{ diagramName
           }}{{ ownerOfOthers ? ` – ${ownerOfOthers}'s draft` : '' }}
@@ -109,24 +109,53 @@
             <span :class="{ 'is-off': closing !== 'loading' }">Loading…</span>
           </span>
         </button>
-        <!-- Its label is read rather than shown; a tooltip gives it on
-             hover. -->
+        <!-- The name as text, cut off with an ellipsis when long (the text
+             is still whole, and a tooltip shows it), then Edit diagram
+             name, which puts a field in their place (see startNameEdit).
+             A view-only user has no pencil. The field's label is read
+             rather than shown. -->
         <div class="builder-field builder-header__name">
-          <label for="builder-doc-name" class="builder-visually-hidden">
-            Diagram name
-          </label>
-          <input
-            id="builder-doc-name"
-            v-model="nameField"
-            :readonly="store.readOnly"
-            type="text"
-            placeholder="Diagram name"
-            data-testid="builder-name"
-            @mouseenter="showTip($event, 'Diagram name')"
-            @mouseleave="scheduleHide"
-            @focus="nameFocused = true"
-            @blur="onNameBlur"
-            @change="rename(nameField)" />
+          <template v-if="editingName">
+            <label for="builder-doc-name" class="builder-visually-hidden">
+              Diagram name
+            </label>
+            <input
+              id="builder-doc-name"
+              ref="nameInput"
+              v-model="nameField"
+              :readonly="store.readOnly"
+              type="text"
+              class="builder-header__name-field"
+              placeholder="Diagram name"
+              data-testid="builder-name-field"
+              @keydown.enter.prevent="finishNameEdit(true)"
+              @keydown.esc.prevent="cancelNameEdit"
+              @change="onNameChange"
+              @blur="onNameBlur" />
+          </template>
+          <template v-else>
+            <span
+              id="builder-name-text"
+              ref="nameText"
+              class="builder-header__name-text"
+              :class="{ 'is-empty': !store.doc.name }"
+              data-testid="builder-name"
+              v-on="nameTip">
+              {{ diagramName }}
+            </span>
+            <button
+              v-if="!store.readOnly"
+              ref="nameButton"
+              type="button"
+              class="builder-button builder-header__name-edit"
+              aria-label="Edit diagram name"
+              aria-describedby="builder-name-text"
+              data-testid="builder-name-edit"
+              v-on="editNameTip"
+              @click="startNameEdit">
+              <builder-icon name="pencil" :size="14" />
+            </button>
+          </template>
         </div>
 
         <builder-counts />
@@ -140,28 +169,14 @@
           Shared by {{ store.sharedBy }} · {{ accessLabel(store.access) }}
         </p>
 
-        <!-- The save state, then the Warnings button (the checks), Reset
-             view, and the buttons the drafts' header has too
-             (BuilderHeaderButtons.vue). Reset view's tooltip says what it
-             resets, with the command's keys, if it has any, as the
-             toolbar's do. Reset view keeps its label as long as Commands
-             does, and in a narrow header shows only its icon (see
+        <!-- The Warnings button (the checks), Reset view, and the buttons the
+             drafts' header has too (BuilderHeaderButtons.vue). Reset view's
+             tooltip says what it resets, with the command's keys, if it has
+             any, as the toolbar's do. Reset view keeps its label as long as
+             Commands does, and in a narrow header shows only its icon (see
              .builder-header__label in builder.css); its label stays as its
-             name. -->
+             name. The save state is in the toolbar. -->
         <div class="builder-header__actions">
-          <!-- Shown but not spoken: it changes on every edit, so the store
-               announces only the transitions that matter (a new problem, or
-               the recovery from one) through the live region. Retry saving
-               is in the toolbar, with the other actions. -->
-          <p
-            class="builder-status builder-header__save"
-            :class="`builder-status--${store.saveState.status}`"
-            data-testid="builder-save-state">
-            <span class="builder-status__dot" aria-hidden="true"></span>
-            <!-- Decorative: the text beside it says the same. -->
-            <builder-icon v-if="saveNeedsAttention" name="warning" :size="14" />
-            {{ store.saveStateText }}
-          </p>
           <builder-checks />
           <button
             type="button"
@@ -658,25 +673,88 @@
   let stopFollowingShortcuts = () => {};
   let stopFollowingFullScreen = () => {};
 
-  // The name field keeps what the user is typing: it follows the diagram
-  // name only while it is not focused, and commits on change. Any re-render
-  // of this view would otherwise put the stored name back mid-typing.
+  // The header shows the diagram name as text. Edit diagram name puts a
+  // field in its place, holding the name selected, which keeps what the
+  // user types however the diagram changes meanwhile. Enter, or leaving the
+  // field, renames the diagram (see rename); Escape keeps the name. Enter
+  // and Escape give focus back to the pencil and say what happened; leaving
+  // the field leaves focus where it went, as the outline's rename does.
+  const editingName = ref(false);
   const nameField = ref('');
-  const nameFocused = ref(false);
-  watch(
-    () => store.doc.name,
-    (name) => {
-      if (!nameFocused.value) {
-        nameField.value = name;
-      }
-    },
-    { immediate: true },
-  );
+  const nameText = ref(null);
+  const nameInput = ref(null);
+  const nameButton = ref(null);
 
-  function onNameBlur() {
-    nameFocused.value = false;
-    nameField.value = store.doc.name;
+  async function startNameEdit() {
+    if (store.readOnly) {
+      return;
+    }
+
+    hideTip();
+    nameField.value = store.doc.name || '';
+    editingName.value = true;
+    await nextTick();
+    nameInput.value?.focus();
+    nameInput.value?.select();
   }
+
+  async function endNameEdit(refocus) {
+    editingName.value = false;
+
+    if (refocus) {
+      await nextTick();
+      nameButton.value?.focus();
+    }
+  }
+
+  // `quiet` says nothing of a name left as it was.
+  function finishNameEdit(refocus, { quiet = false } = {}) {
+    if (!editingName.value) {
+      return;
+    }
+
+    const name = nameField.value;
+
+    endNameEdit(refocus);
+
+    // A rename says so itself (see commit in the store).
+    if (!rename(name) && refocus && !quiet) {
+      store.announce('Diagram name not changed.');
+    }
+  }
+
+  function cancelNameEdit() {
+    if (!editingName.value) {
+      return;
+    }
+
+    endNameEdit(true);
+    store.announce('Diagram name not changed.');
+  }
+
+  // Save now commits the focused field by sending it a change (see
+  // commitFocusedField), which renames as Enter does, without a word when
+  // the name is unchanged: the save says what happened. The change the
+  // browser sends as focus leaves, with focus already gone, renames as
+  // leaving does.
+  function onNameChange(event) {
+    finishNameEdit(document.activeElement === event.target, { quiet: true });
+  }
+
+  // Focus that goes to a dialog (the command palette), or to another
+  // window, comes back to the field, which stays open for it.
+  function onNameBlur(event) {
+    if (event.relatedTarget?.closest?.('dialog') || !document.hasFocus()) {
+      return;
+    }
+
+    finishNameEdit(false);
+  }
+
+  // Another diagram, or the drafts, take the field away unsaved.
+  watch([editing, () => store.openedSeq], () => {
+    editingName.value = false;
+  });
 
   // Dismissing the page alert, or clearing it any other way, removes the
   // focused Dismiss button with it; focus moves on to what follows it
@@ -1165,12 +1243,15 @@
     editing.value = ready;
   }
 
+  // Returns whether the name changed.
   function rename(name) {
-    if (name === store.doc.name) {
-      return;
+    if (name === (store.doc.name || '')) {
+      return false;
     }
 
     store.setInfo({ name });
+
+    return true;
   }
 
   // The saves of drafts closed for the drafts, which go on in the
@@ -1656,12 +1737,6 @@
 
   // --- header -----------------------------------------------------------------
 
-  const saveNeedsAttention = computed(() =>
-    ['conflict', 'forbidden', 'error', 'offline'].includes(
-      store.saveState.status,
-    ),
-  );
-
   // Per button: the tooltip's text, the description screen readers get in
   // its place, and aria-keyshortcuts. Reset view's says what it resets, with
   // its keys if the user gave it some, and names the button too while it
@@ -1740,6 +1815,41 @@
   const { tip, tipEl, showTip, scheduleHide, hideTip } = useFixedTooltip({
     side: 'below',
   });
+
+  // Whether the diagram name is cut off with an ellipsis.
+  function nameCutOff() {
+    const text = nameText.value;
+
+    return Boolean(text) && text.scrollWidth > text.clientWidth;
+  }
+
+  // The name's tooltip gives it whole, while it is cut off. The pencil's
+  // says what it does, with the name while it is cut off, so keyboard users
+  // see it too.
+  const nameTip = {
+    mouseenter: (event) => {
+      if (nameCutOff()) {
+        showTip(event, diagramName.value);
+      }
+    },
+    mouseleave: scheduleHide,
+  };
+
+  function showEditNameTip(event) {
+    showTip(
+      event,
+      nameCutOff()
+        ? `Edit diagram name: ${diagramName.value}`
+        : 'Edit diagram name',
+    );
+  }
+
+  const editNameTip = {
+    mouseenter: showEditNameTip,
+    mouseleave: scheduleHide,
+    focus: showEditNameTip,
+    blur: hideTip,
+  };
 
   // Whether a header button shows only its icon: a narrow header hides its
   // label (see .builder-header__label in builder.css).
@@ -2239,16 +2349,56 @@
     cursor: progress;
   }
 
-  /* 13rem wide, or down to 8rem to stay beside Back to drafts in a narrow
-     window. */
+  /* The name and its pencil, or the field in their place: 13rem wide, or
+     down to 8rem to stay beside Back to drafts in a narrow window. */
   .builder-header__name {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
     flex: 1 1 8rem;
+    min-width: 0;
     max-width: 13rem;
     margin-bottom: 0;
   }
 
-  /* The save state and the buttons after it wrap as one group, which stays
-     at the right edge, on a line of its own if need be. */
+  .builder-header__name-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+
+  .builder-header__name-text.is-empty {
+    color: var(--bx-text-muted);
+    font-weight: 400;
+  }
+
+  /* An icon alone, as small as a target may be (WCAG 2.5.8), its frame
+     shown on hover. */
+  .builder-header__name-edit {
+    flex: none;
+    justify-content: center;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0.2rem;
+    border-color: transparent;
+    background: none;
+    color: var(--bx-text-muted);
+  }
+
+  .builder-header__name-edit:hover {
+    border-color: var(--bx-border);
+    color: var(--bx-text);
+  }
+
+  .builder-header__name-field {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* The checks and the buttons after them wrap as one group, which stays at
+     the right edge, on a line of its own if need be. */
   .builder-header__actions {
     display: flex;
     flex-wrap: wrap;
@@ -2258,23 +2408,11 @@
     margin-inline-start: auto;
   }
 
-  /* As tall as the buttons beside it, and ending next to them, so they stay
-     put as it changes. Wide enough for the usual states ("Saving 2
-     changes", "All changes saved"), so the header does not rewrap on every
-     save. A longer message wraps. */
   .builder-header__shared {
     margin: 0;
     font-size: 0.85rem;
     color: var(--bx-text-muted);
     overflow-wrap: anywhere;
-  }
-
-  .builder-header__save {
-    align-self: stretch;
-    justify-content: flex-end;
-    min-width: 7.5rem;
-    max-width: 18rem;
-    margin: 0 0.35rem 0 0;
   }
 
   .builder-error,

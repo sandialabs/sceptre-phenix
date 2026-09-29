@@ -570,7 +570,7 @@ test.describe('Configs page', () => {
             url.pathname.endsWith('/builder-beta') &&
             url.searchParams.get('draft') === `${draft.owner}/${draft.id}`,
         );
-      await expect.soft(page.getByTestId('builder-name')).toHaveValue(beta);
+      await expect.soft(page.getByTestId('builder-name')).toHaveText(beta);
       await expect.soft(builder.summary).toContainText('1 device');
       await expect.soft(builder.node('host-a', 'device')).toBeVisible();
       await builder.waitSaved();
@@ -617,7 +617,7 @@ test.describe('Configs page', () => {
       page.on('request', onRequest);
       await card.getByRole('button', { name: `Open ${later}` }).click();
       await expect(builder.canvas).toBeVisible();
-      await expect.soft(page.getByTestId('builder-name')).toHaveValue(later);
+      await expect.soft(page.getByTestId('builder-name')).toHaveText(later);
       await expect.soft(builder.summary).toContainText('1 device');
       await expect.soft(builder.node('host-b', 'device')).toBeVisible();
       const panel = page.getByTestId('builder-published');
@@ -630,7 +630,7 @@ test.describe('Configs page', () => {
       await expect
         .soft(builder.toolbar('publish'))
         .toHaveAttribute('aria-disabled', 'true');
-      await expect.soft(page.getByTestId('builder-name')).not.toBeEditable();
+      await expect.soft(page.getByTestId('builder-name-edit')).toHaveCount(0);
       // The Inspector's fields are read only, not disabled: Tab reaches
       // them, with their descriptions, and their values keep full contrast.
       await builder.selectInOutline('host-b');
@@ -660,7 +660,7 @@ test.describe('Configs page', () => {
       await expect(panel).toHaveCount(0);
       await expect.soft(page.getByRole('heading', { level: 1 })).toBeFocused();
       await builder.waitSaved();
-      await expect.soft(page.getByTestId('builder-name')).toBeEditable();
+      await expect.soft(page.getByTestId('builder-name-edit')).toBeVisible();
       expect
         .soft((await builder.serverDraft(draft)).sourceToken)
         .toMatch(/^builder-doc\//);

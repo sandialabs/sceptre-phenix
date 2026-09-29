@@ -68,7 +68,7 @@
 
     <h3 class="builder-settings__heading">Canvas</h3>
     <div class="builder-field">
-      <label for="settings-layout">Default layout for drafts</label>
+      <label for="settings-layout">Layout for drafts without one</label>
       <select
         id="settings-layout"
         :value="builderSettings.layoutAlgorithm"
@@ -84,8 +84,9 @@
       </select>
       <p id="settings-layout-hint" class="builder-hint">
         {{ layoutAlgorithm(builderSettings.layoutAlgorithm)?.description }}
-        Drafts use it until you choose a layout for them in the toolbar’s layout
-        menu; that choice is saved with the draft.
+        Auto layout and Auto-group use it on a draft whose layout menu says
+        Default, and the draft then keeps it, as it keeps a layout you choose in
+        that menu. It does not move anything by itself.
       </p>
     </div>
     <div class="builder-field">

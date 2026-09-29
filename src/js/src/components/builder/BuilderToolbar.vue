@@ -6,14 +6,16 @@
   keys are this platform's and follow the user's changes. The groups, left
   to right: undo and redo, the clipboard, grouping (Group, Ungroup and the
   Auto-group menu), the layout menu and scenario, the ways out (Export,
-  Upload, Publish, Share), then Minimap and Draft History. Commands and the
-  theme are in the editor header (BuilderBeta.vue).
-  The layout menu is named after the draft's layout; it lays the diagram out
-  with the one chosen, which the draft keeps, and after a layout it offers
-  to put the previous one back. Edits are saved as they are made, so there
-  is no Save button (Save now is a key and a command); the save state shows
-  in the editor header, and Retry saving shows at the right end, while a
-  save needs it.
+  Upload, Publish, Share), then Minimap and Draft History, followed by the
+  save state. Commands and the theme are in the editor header
+  (BuilderBeta.vue).
+  The layout menu is named after the layout the draft keeps, the last one
+  that laid it out, or Default for a draft that has none; it lays the
+  diagram out with the one chosen, which the draft keeps, and after a layout
+  it offers to put the previous one back. Edits are saved as they are made,
+  so there is no Save button (Save now is a key and a command); the save
+  state shows after Draft History, as text rather than a button, and Retry
+  saving shows at the right end, while a save needs it.
 
   It follows the APG toolbar pattern: the toolbar is one Tab stop, and the
   arrow keys, Home and End move between its buttons. Unavailable buttons are
@@ -155,9 +157,10 @@
     </div>
 
     <div class="builder-toolbar__group">
-      <!-- Named after the draft's layout, with "layout" after it for screen
-           readers. While a layout runs, a turning ring in place of the icon;
-           reduced motion stops it turning (see builder.css). -->
+      <!-- Named after the layout that made the positions, or Default, with
+           "layout" after it for screen readers. While a layout runs, a
+           turning ring in place of the icon; reduced motion stops it turning
+           (see builder.css). -->
       <builder-menu-button
         testid="toolbar-layout"
         :items="layoutItems"
@@ -175,12 +178,12 @@
           class="builder-toolbar__spinner"
           aria-hidden="true"></span>
         <builder-icon v-else name="layout" :size="14" />
-        <!-- Every layout's name holds the button's width, so it stays under
-             the pointer when the layout changes; the hidden ones are not
-             shown or named. -->
+        <!-- Every layout's name, and Default, holds the button's width, so
+             it stays under the pointer when the layout changes; the hidden
+             ones are not shown or named. -->
         <span class="builder-button__swap">
           <span
-            v-for="algorithm in LAYOUT_ALGORITHMS"
+            v-for="algorithm in [DEFAULT_LAYOUT, ...LAYOUT_ALGORITHMS]"
             :key="algorithm.id"
             :class="{ 'is-off': algorithm.id !== currentLayout.id }">
             {{ algorithm.label }}
@@ -296,6 +299,19 @@
         <builder-icon name="history" :size="14" />
         Draft History
       </button>
+      <!-- Shown but not spoken: it changes on every edit, so the store
+           announces only the transitions that matter (a new problem, or
+           the recovery from one) through the live region. Text, not a
+           control, so the arrow keys pass it by (see buttons). -->
+      <p
+        class="builder-status builder-toolbar__save"
+        :class="`builder-status--${store.saveState.status}`"
+        data-testid="builder-save-state">
+        <span class="builder-status__dot" aria-hidden="true"></span>
+        <!-- Decorative: the text beside it says the same. -->
+        <builder-icon v-if="saveNeedsAttention" name="warning" :size="14" />
+        {{ store.saveStateText }}
+      </p>
     </div>
 
     <!-- Last, at the right end, so the others stay put while it comes and
@@ -415,11 +431,18 @@
 
   // --- menus -------------------------------------------------------------------
 
-  const currentLayout = computed(() => layoutAlgorithm(store.currentLayout));
+  // What the layout button says of a draft with no layout of its own:
+  // imported, uploaded, blank, or placed by hand.
+  const DEFAULT_LAYOUT = { id: '', label: 'Default' };
 
-  // The layouts, the draft's checked; choosing one runs it and the draft
-  // keeps it, the checked one included. Right after a layout, until the
-  // diagram changes some other way, the previous one can be put back.
+  const currentLayout = computed(
+    () => layoutAlgorithm(store.currentLayout) || DEFAULT_LAYOUT,
+  );
+
+  // The layouts, the draft's checked (none at Default); choosing one runs it
+  // and the draft keeps it, the checked one included. Right after a layout,
+  // until the diagram changes some other way, the previous one can be put
+  // back.
   const layoutItems = computed(() => [
     ...LAYOUT_ALGORITHMS.map((algorithm) => ({
       id: algorithm.id,
@@ -547,7 +570,8 @@
   // Per button: the tooltip's text ('' for none), the description screen
   // readers get in its place (the keys: the name is the button's own), and
   // aria-keyshortcuts. The menus' tooltips say what they do, keys or not;
-  // the layout's keys run the layout again rather than open its menu.
+  // the layout's keys run the layout again rather than open its menu, or at
+  // Default the one Settings chooses.
   const tips = computed(() => {
     const entries = Object.entries(TIPS).map(([key, entry]) => {
       const keys = shortcutLabel(entry.command);
@@ -562,9 +586,14 @@
       ];
     });
     const layoutKeys = shortcutLabel('structure.layout');
-    const layoutText = `Choose a layout, or run it again${
-      layoutKeys ? `. ${layoutKeys} runs it again` : ''
-    }`;
+    const next = layoutAlgorithm(store.layoutToRun).label;
+    const layoutText = store.currentLayout
+      ? `Choose a layout, or run it again${
+          layoutKeys ? `. ${layoutKeys} runs it again` : ''
+        }`
+      : `Choose a layout${
+          layoutKeys ? `. ${layoutKeys} runs ${next}, the Settings default` : ''
+        }`;
     const autoGroupText = store.selection.nodes.length
       ? 'Group the selected nodes automatically'
       : 'Group the ungrouped nodes automatically';
@@ -607,6 +636,12 @@
       blur: hideTip,
     };
   }
+
+  const saveNeedsAttention = computed(() =>
+    ['conflict', 'forbidden', 'error', 'offline'].includes(
+      store.saveState.status,
+    ),
+  );
 
   // Not for an error that sending again cannot fix (a refused snapshot):
   // the save state says what to change instead.

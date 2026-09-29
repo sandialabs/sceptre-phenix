@@ -312,10 +312,12 @@ class BuilderPage {
     await expect(this.saveState).toContainText(SAVED, { timeout });
   }
 
+  // Renames the diagram through the header's pencil and name field.
   async rename(title) {
-    const name = this.page.getByTestId('builder-name');
-    await name.fill(title);
-    await name.press('Tab');
+    await this.page.getByTestId('builder-name-edit').click();
+    const field = this.page.getByTestId('builder-name-field');
+    await field.fill(title);
+    await field.press('Enter');
   }
 
   async expectSummary(text) {

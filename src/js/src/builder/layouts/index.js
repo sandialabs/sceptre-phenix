@@ -1,9 +1,11 @@
-// The auto-layout algorithms. A draft keeps its own choice as the
-// document's layout; one without it uses the viewer's default, which the
-// Builder's settings choose (settings.js keeps it as layoutAlgorithm). Each
-// is {id, label, summary, description}: the id is what is stored, the label
-// names it, the summary says in a few words what it does (the toolbar's
-// layout menu), and the description says it in full (the Settings dialog).
+// The auto-layout algorithms. A draft keeps the one that laid it out last as
+// the document's layout. One without it (imported, uploaded, blank, or placed
+// by hand) has the Default layout, and a layout run on it uses the viewer's
+// default, which the Builder's settings choose (settings.js keeps it as
+// layoutAlgorithm). Each is {id, label, summary, description}: the id is
+// what is stored, the label names it, the summary says in a few words what
+// it does (the toolbar's layout menu), and the description says it in full
+// (the Settings dialog).
 //
 // Each algorithm is a module here with one interface: a document in, and
 // each node's position, each group's size and, for some, each connection's
@@ -60,8 +62,19 @@ export function layoutAlgorithm(id) {
 }
 
 /**
- * The layout a document is laid out with: its own choice, when that is one
- * of LAYOUT_ALGORITHMS, or else the viewer's default.
+ * The layout a document keeps as its own, the one that laid it out last,
+ * when that is one of LAYOUT_ALGORITHMS.
+ *
+ * @param {object} doc builder document
+ * @returns {string} a LAYOUT_ALGORITHMS id, or '' for none (Default)
+ */
+export function ownLayout(doc) {
+  return layoutAlgorithm(doc?.layout) ? doc.layout : '';
+}
+
+/**
+ * The layout a layout run uses on a document: its own (ownLayout), or else
+ * the viewer's default.
  *
  * @param {object} doc builder document
  * @param {string} [fallback] the viewer's default (the layoutAlgorithm
@@ -69,7 +82,7 @@ export function layoutAlgorithm(id) {
  * @returns {string} a LAYOUT_ALGORITHMS id
  */
 export function documentLayout(doc, fallback = DEFAULT_LAYOUT_ALGORITHM) {
-  if (layoutAlgorithm(doc?.layout)) {
+  if (ownLayout(doc)) {
     return doc.layout;
   }
 
