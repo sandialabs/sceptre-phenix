@@ -424,11 +424,11 @@ with custom metadata for the app specific to the topology node.
 - `hosts`: a list of per-host configurations to apply to the experiment
   topology. The default is `nil`.
 
-  - `hostname`: the name of the experiment VM to apply this per-host metadata
-    to.
+    - `hostname`: the name of the experiment VM to apply this per-host metadata
+      to.
 
-  - `metadata`: app metadata to apply to this experiment VM. The default is
-    `nil`.
+    - `metadata`: app metadata to apply to this experiment VM. The default is
+      `nil`.
 
 - `metadata`: app metadata to apply to this experiment. The default is `nil`.
 
@@ -702,10 +702,10 @@ There are two ways to create a new config:
    the upload modal or click the upload icon to open a file browser.
   ![screenshot](images/upload.png){: width=350 .center}
 
-   !!! note
-   Only files with the extensions `.yml`, `.yaml`, and `.json` will be allowed.
-   Any file uploaded will be validated against the schema for a given kind of
-   config, and if invalid, an error will be presented.
+    !!! note
+        Only files with the extensions `.yml`, `.yaml`, and `.json` will be allowed.
+        Any file uploaded will be validated against the schema for a given kind of
+        config, and if invalid, an error will be presented.
 
 2. Clicking the `+` button next to the search field will present an editor
    window where it is possible to create a new file in place. A basic template
@@ -792,11 +792,11 @@ existing configuration created in Builder.
    phēnix with the same name; this will overwrite the configuration that was
    selected to import
 
-   !!! note
-   Any hosts added to a topology will not have a drive image name; this is a
-   requirement and will need to be included in each node added to the Builder
-   canvas.
-   ![screenshot](images/drive.png){: width=150 .center}
+    !!! note
+        Any hosts added to a topology will not have a drive image name; this is a
+        requirement and will need to be included in each node added to the Builder
+        canvas.
+        ![screenshot](images/drive.png){: width=150 .center}
 
 Other values will be auto-generated but can be customized by clicking on a
 target node and making changes in the dialogue presented in the Builder UI. It

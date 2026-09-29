@@ -114,11 +114,9 @@ starting the phēnix UI with the `vm-mount` feature flag (see
 
 !!! note
 
-```text
-Mounting a VM requires the minimega command-and-control agent (`miniccc`)
-to be installed and actively running in the VM. If `cc` is not active for a
-VM, the mount button is disabled.
-```
+    Mounting a VM requires the minimega command-and-control agent (`miniccc`)
+    to be installed and actively running in the VM. If `cc` is not active for a
+    VM, the mount button is disabled.
 
 ### Enabling VM Mount
 
@@ -215,15 +213,13 @@ phenix vm unmount <experiment name> <vm name>
 
 !!! note
 
-```text
-Mounting a VM requires the minimega command-and-control agent (`miniccc`)
-to be installed and actively running in the VM; the command will fail if
-the agent is not reachable.
+    Mounting a VM requires the minimega command-and-control agent (`miniccc`)
+    to be installed and actively running in the VM; the command will fail if
+    the agent is not reachable.
 
-Mounts are automatically unmounted, and their mount directories removed,
-when the owning experiment is stopped or deleted, so mounts do not
-outlive their experiment.
-```
+    Mounts are automatically unmounted, and their mount directories removed,
+    when the owning experiment is stopped or deleted, so mounts do not
+    outlive their experiment.
 
 ## Packet Capture
 

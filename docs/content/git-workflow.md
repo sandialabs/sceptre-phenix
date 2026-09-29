@@ -55,19 +55,19 @@ spec:
 
 * `auto` - this group of settings is used to determine what events happen
   automatically when the workflow config is applied.
-  * `create` - if set, this string will be used as the name of the new
-    experiment to automatically be created for the current branch if one does
-    not already exist. Omit this setting to prevent an experiment from
-    automatically being created for the current branch.
-  * `update` - if true (the default), an experiment for the current branch
-    will be updated with its topology and scenario (if it has one). If the
-    experiment is currently running, it will only be updated if `auto.restart`
-    is also true.
-  * `restart` - if true (the default), a running experiment for the current
-    branch will be stopped, updated, and restarted when the workflow config is
-    applied to phenix. If the existing experiment is already stopped, or a new
-    experiment is created, it will be started. This setting has no affect if
-    `auto.update` is disabled and an experiment exists for the current branch.
+    * `create` - if set, this string will be used as the name of the new
+      experiment to automatically be created for the current branch if one does
+      not already exist. Omit this setting to prevent an experiment from
+      automatically being created for the current branch.
+    * `update` - if true (the default), an experiment for the current branch
+      will be updated with its topology and scenario (if it has one). If the
+      experiment is currently running, it will only be updated if `auto.restart`
+      is also true.
+    * `restart` - if true (the default), a running experiment for the current
+      branch will be stopped, updated, and restarted when the workflow config is
+      applied to phenix. If the existing experiment is already stopped, or a new
+      experiment is created, it will be started. This setting has no affect if
+      `auto.update` is disabled and an experiment exists for the current branch.
 * `topology` - the name of the topology config to use for the experiment.
   Variable substation will be applied to the config name. This setting can be
   changed to force an existing experiment for the current branch to use a

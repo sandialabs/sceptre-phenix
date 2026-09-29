@@ -11,6 +11,8 @@ phēnix provides a framework for defining, deploying, and managing complex cyber
 
 > [!NOTE]
 > For full documentation, visit [phenix.sceptre.dev](https://phenix.sceptre.dev).
+> The documentation source lives in [`docs/`](docs/); see
+> [Contributing](.github/CONTRIBUTING.md#documentation) to build and preview it locally.
 
 ## 🚀 Getting Started
 

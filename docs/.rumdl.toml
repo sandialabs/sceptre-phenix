@@ -1,0 +1,9 @@
+# rumdl configuration for the documentation site. prek.toml passes additional
+# rule options to the hooks.
+#
+# MkDocs renders these pages with Python-Markdown, which needs 4-space
+# indentation for nested lists and for admonition bodies. rumdl's default
+# "standard" flavor rewrites both to CommonMark style, which flattens nested
+# lists and turns admonition bodies into plain text or code blocks.
+[global]
+flavor = "mkdocs"

@@ -23,6 +23,7 @@ yarn-error.log*
 
 # Build artifacts
 build/
+docs/site/
 bin/
 src/js/dist/
 *.deb

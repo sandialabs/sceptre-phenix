@@ -1,7 +1,10 @@
-.PHONY: all build check clean deb docker examples example-go example-python generate help help-all install-dev update-actions install-wrapper uninstall-wrapper lint prek run-examples test tunneler ui version
+.PHONY: all build check clean deb docker docs-build docs-serve examples example-go example-python generate help help-all install-dev update-actions install-wrapper uninstall-wrapper lint prek run-examples test tunneler ui version
 .DEFAULT_GOAL := help
 
 DOCKER_TAG ?= latest
+SYSTEM_PYTHON ?= python3
+DOCS_VENV := docs/.venv
+DOCS_PORT ?= 8000
 
 # Define a helper for checking command existence
 check-command = @if ! command -v $(1) > /dev/null; then \
@@ -30,6 +33,10 @@ help:
 	@echo "  ui             - Build the frontend UI"
 	@echo "  tunneler       - Build phenix-tunneler binaries"
 	@echo ""
+	@echo "Documentation:"
+	@echo "  docs-build     - Build the documentation site with strict checks"
+	@echo "  docs-serve     - Serve the documentation site locally with live reload"
+	@echo ""
 	@echo "Installation:"
 	@echo "  install-dev        - Install development and build dependencies"
 	@echo "  install-wrapper    - Install the Docker wrapper script (required for shell completion)"
@@ -57,6 +64,7 @@ docker:
 
 clean:
 	$(RM) bin/phenix
+	$(RM) -r docs/site
 	$(MAKE) -C src/go clean
 	$(MAKE) -C src/js clean
 	$(MAKE) -C examples clean
@@ -122,6 +130,20 @@ uninstall-wrapper:
 
 tunneler:
 	$(MAKE) -C src/go phenix-tunneler
+
+# The documentation site uses its own virtual environment so the pinned MkDocs
+# dependencies stay separate from the examples' environment.
+$(DOCS_VENV)/bin/mkdocs: docs/requirements.txt
+	$(call check-command,$(SYSTEM_PYTHON),Please install Python 3.12+ or set SYSTEM_PYTHON variable)
+	$(SYSTEM_PYTHON) -m venv $(DOCS_VENV)
+	$(DOCS_VENV)/bin/pip install -r docs/requirements.txt
+	touch $@
+
+docs-build: $(DOCS_VENV)/bin/mkdocs
+	$(DOCS_VENV)/bin/mkdocs build --strict --config-file docs/mkdocs.yml
+
+docs-serve: $(DOCS_VENV)/bin/mkdocs
+	$(DOCS_VENV)/bin/mkdocs serve --config-file docs/mkdocs.yml --dev-addr 127.0.0.1:$(DOCS_PORT)
 
 ui:
 	$(MAKE) -C src/js dist/index.html

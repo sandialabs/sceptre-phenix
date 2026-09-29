@@ -18,8 +18,8 @@ If you see "malformed log entry" warnings in the main phēnix system log, it's l
 
 * **Debug Prints**: Ensure you are not using `print()` (Python) or `fmt.Println()` (Go) for debugging. These pollute the `stderr` stream. Use the structured logger.
 * **Tracebacks**: Ensure exception tracebacks are not being printed as raw text.
-  * **Python**: Use `logger.exception("message")` inside an `except` block. This correctly captures the traceback as a JSON field. Standard `print(e)` or `traceback.print_exc()` will break the parser.
-  * **Go**: Use structured logging fields for errors (e.g., `slog.Error("message", "err", err)`).
+    * **Python**: Use `logger.exception("message")` inside an `except` block. This correctly captures the traceback as a JSON field. Standard `print(e)` or `traceback.print_exc()` will break the parser.
+    * **Go**: Use structured logging fields for errors (e.g., `slog.Error("message", "err", err)`).
 
 ### Inconsistent Timestamps
 
