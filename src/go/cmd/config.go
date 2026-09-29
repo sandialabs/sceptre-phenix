@@ -256,7 +256,7 @@ func newConfigGetCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				fmt.Fprintln(os.Stdout, string(m))
+				fmt.Fprintln(cmd.OutOrStdout(), string(m))
 			case FormatJSON:
 				var (
 					m   []byte
@@ -275,7 +275,7 @@ func newConfigGetCmd() *cobra.Command {
 					return err.Humanized()
 				}
 
-				fmt.Fprintln(os.Stdout, string(m))
+				fmt.Fprintln(cmd.OutOrStdout(), string(m))
 			default:
 				return fmt.Errorf("unrecognized output format '%s'", output)
 			}

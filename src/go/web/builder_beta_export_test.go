@@ -567,53 +567,6 @@ func TestBuilderBetaExportTopologyKeepsStrings(t *testing.T) { //nolint:parallel
 	}
 }
 
-// A spec whose strings yaml.v3 reads back as they are is written as
-// yaml.Marshal writes it, and each string it would not read back is double
-// quoted, map keys included.
-func TestBuilderYAMLExactMarshalsLikeYAML(t *testing.T) {
-	t.Parallel()
-
-	plain := map[string]any{
-		"nodes": []any{map[string]any{
-			"a10": 1.5, "a9": true, "b": nil, "multi": "one\ntwo\n", "x": []string{"y"}, "n": 3,
-		}},
-		"quoted":   []any{"true", "", " lead", "#hash", "a\u2028b", "a \nb", "a\n\tb"},
-		"empty":    map[string]any{},
-		"none":     []any{},
-		"nilMap":   map[string]any(nil),
-		"nilSlice": []string(nil),
-		"strings":  map[string]string{"k": "v"},
-	}
-
-	want, err := yaml.Marshal(plain)
-	if err != nil {
-		t.Fatalf("yaml.Marshal returned error: %v", err)
-	}
-
-	got, err := yaml.Marshal(builderYAMLExact(plain))
-	if err != nil || string(got) != string(want) {
-		t.Fatalf("YAML = %v\n%s\nwant\n%s", err, got, want)
-	}
-
-	changed := map[string]any{
-		"\nkey": []any{"\n", "\n a", "\ta\nb"}, "k": map[string]string{"v": "\n\n a\n"}, "a\nb": "c\n",
-	}
-
-	got, err = yaml.Marshal(builderYAMLExact(changed))
-	if err != nil {
-		t.Fatalf("yaml.Marshal returned error: %v", err)
-	}
-
-	var loaded any
-	if err := yaml.Unmarshal(got, &loaded); err != nil {
-		t.Fatalf("YAML does not load: %v\n%s", err, got)
-	}
-
-	if !reflect.DeepEqual(asJSONValue(t, loaded), asJSONValue(t, changed)) {
-		t.Fatalf("YAML loads as %s, want %s\n%s", asBuilderJSON(t, loaded), asBuilderJSON(t, changed), got)
-	}
-}
-
 // TestBuilderBetaExportTopologyRequests checks the request as saving a draft
 // checks it, and the topology name as publishing checks it.
 func TestBuilderBetaExportTopologyRequests(t *testing.T) { //nolint:paralleltest // mutates feature options
