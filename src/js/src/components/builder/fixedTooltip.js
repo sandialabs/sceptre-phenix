@@ -39,9 +39,12 @@ function within(rect, x, y) {
 // scrolling panel, and the browser then sends mouseenter with no
 // pointermove near it in time. Moving the pointer onto the control sends
 // both at once: pointermove just after mouseenter (Chromium) or just before
-// it (Firefox).
+// it (Firefox). A dialog that closes soon after a click also uncovers a
+// control under the still pointer; focus has moved since the pointer did,
+// so the focused control keeps its tooltip.
 const MOVE_WINDOW_MS = 100;
 let lastPointer = null;
+let lastFocus = -Infinity;
 let tracking = false;
 
 function trackPointer() {
@@ -61,17 +64,25 @@ function trackPointer() {
     },
     { capture: true, passive: true },
   );
+  window.addEventListener(
+    'focusin',
+    (event) => {
+      lastFocus = event.timeStamp;
+    },
+    { capture: true, passive: true },
+  );
 }
 
-// Whether the pointer moved to where the mouseenter happened, when it did.
-// Within a pixel: a pointer event's position has fractions, a mouse
-// event's does not.
+// Whether the pointer moved to where the mouseenter happened, when it did,
+// and after focus last moved. Within a pixel: a pointer event's position
+// has fractions, a mouse event's does not.
 function pointerMovedTo({ x, y, time }) {
   return (
     lastPointer !== null &&
     Math.abs(lastPointer.x - x) < 1 &&
     Math.abs(lastPointer.y - y) < 1 &&
-    Math.abs(lastPointer.time - time) <= MOVE_WINDOW_MS
+    Math.abs(lastPointer.time - time) <= MOVE_WINDOW_MS &&
+    lastPointer.time > lastFocus
   );
 }
 
@@ -87,6 +98,7 @@ function pointerMovedTo({ x, y, time }) {
  * @param {() => void} show
  */
 export function whenPointed(event, show) {
+  trackPointer();
   if (event?.type !== 'mouseenter') {
     show();
 
