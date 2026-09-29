@@ -43,6 +43,16 @@
 // across devices (VLANs, interfaces, labels, apps) are also written as one
 // text value, "a|b", which it can split into keywords. The edges carry each
 // interface's own values (network, address, MAC) as single values.
+//
+// The schema's location (xsi:schemaLocation) is kept so that XML Schema tools
+// find gexf.xsd, although the official RelaxNG grammar, gexf.rng, rejects it:
+// <gexf> may carry only version and variant, and no element of the grammar
+// accepts an attribute it does not name. gexf.net says to remove it before
+// checking a file with xmllint. To check a file as saved, use a grammar that
+// includes gexf.rng unchanged and adds an optional xsi:schemaLocation
+// attribute to its gexf-content define (only <gexf> uses it) with
+// combine="interleave". The file has no xml-model instruction naming
+// gexf.rng: the tools that follow one would report the same error.
 
 import { networkStyle } from './adapters/vueflow.js';
 import {
