@@ -88,7 +88,7 @@ Available Commands:
   scorch          Start a Scorch run for experiment
   start           Start an experiment
   stop            Stop an experiment
-  trigger-running Trigger running stage for app(s) in experiment
+  trigger         Trigger lifecycle stage for app(s) in experiment
 
 Flags:
   -h, --help   help for experiment
@@ -251,6 +251,87 @@ Then apply the desired schedule with the following command.
 phenix experiment schedule <experiment name> <algorithm>
 ```
 
+## Triggering App Lifecycle Stages
+
+You can manually trigger an app lifecycle stage for an experiment without
+stopping and restarting it.
+
+### From the Command Line Binary
+
+The `phenix exp trigger` command runs one app lifecycle stage on demand:
+
+```bash
+phenix exp trigger <lifecycle> <experiment name> [<app name> ...]
+```
+
+Where `<lifecycle>` is one of the following stages, or its shorthand:
+
+* `configure` (or `config`)
+* `pre-start` (or `pre`)
+* `post-start` (or `post`)
+* `running` (or `run`)
+* `cleanup` (or `clean`)
+
+Providing no app names triggers the stage for every app in the experiment. Use
+`all` instead of an experiment name to trigger the stage in every experiment.
+The `running` stage is skipped for experiments that are not running.
+
+**Examples:**
+
+Trigger the running stage for all apps in an experiment:
+
+```bash
+phenix exp trigger running my-experiment
+```
+
+Trigger the running stage for a specific app:
+
+```bash
+phenix exp trigger running my-experiment soh
+```
+
+Trigger the configure stage for all experiments:
+
+```bash
+phenix exp trigger configure all
+```
+
+### `trigger configure` vs. `reconfigure`
+
+`phenix exp trigger configure` and `phenix experiment reconfigure` both re-run
+the `configure` lifecycle stage, but they serve different purposes and are not
+interchangeable:
+
+| | `phenix exp trigger configure` | `phenix experiment reconfigure` |
+|---|---|---|
+| Use case | Manually re-run a specific app's (or apps') configure hook on demand, e.g. for debugging | Re-apply configuration after editing an experiment's stored topology, scenario, or deployment settings |
+| Targets specific apps | Yes, via `[<app name> ...]` | No, always applies to every app |
+| Validates the experiment config | No | Yes |
+| Runs registered config hooks | No | Yes |
+| Resets the minimega bridge | No | Yes (deletes it so it's recreated with current settings, unless using the GRE mesh) |
+| Guards against running experiments | No | Yes (refuses to run if the experiment is running) |
+
+Use `phenix experiment reconfigure` after changing an experiment's stored
+settings. Use `phenix exp trigger configure` for targeted, on-demand
+re-invocation of one or more apps' configure hooks, such as when debugging an
+app.
+
+### Deprecated Command
+
+The `phenix exp trigger-running` command, and its `trig` alias, are deprecated
+and will be removed in a future release. Use `phenix exp trigger running`
+instead. The deprecated command:
+
+```bash
+phenix exp trigger-running my-experiment [<app name> ...]
+```
+
+Is equivalent to:
+
+```bash
+phenix exp trigger running my-experiment [<app name> ...]
+```
+
 ## Common Workflows
 
 ### 1. Basic Experiment Lifecycle
@@ -276,7 +357,7 @@ phenix exp delete my-experiment
 ### 2. Updating and Reconfiguring an Experiment
 
 ```bash
-# Reconfigure a running experiment after modifying underlying configuration files
+# Reconfigure a stopped experiment after modifying underlying configuration files
 phenix exp reconfigure my-experiment
 ```
 
