@@ -200,3 +200,10 @@ button:focus-visible,
   background-color: #8f1a34;
   border-color: #8f1a34;
 }
+
+// A field's error message in a dialog, such as the Create Account dialog's
+// "User already exists", is only 1.9:1 in $danger on the dialog's
+// $background-ter; this pale red is 4.7:1 there.
+.modal-card-body .help.is-danger {
+  color: #ffc8cf;
+}

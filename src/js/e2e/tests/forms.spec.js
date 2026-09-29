@@ -2,7 +2,13 @@
 // settings save, and the config viewer/editor (using a config the test
 // creates and removes itself).
 const { test, expect } = require('@playwright/test');
-const { attachCapture, settle, fatalOf, gotoSeeded } = require('./helpers');
+const {
+  attachCapture,
+  settle,
+  fatalOf,
+  gotoSeeded,
+  expectTextContrast,
+} = require('./helpers');
 
 test('users: create and delete a user via modal', async ({ page }) => {
   const issues = [];
@@ -27,8 +33,8 @@ test('users: create and delete a user via modal', async ({ page }) => {
   await modal.locator('select').selectOption('Global Viewer');
 
   // A name another user has that the list does not show yet is refused
-  // with 409: the dialog keeps what was typed, its User Name field says so
-  // and has focus, and a toast announces it.
+  // with 409: the dialog keeps what was typed, its User Name field says so,
+  // legibly, and has focus, and a toast announces it.
   const create = '**/api/v1/users';
   await page.route(create, (route) =>
     route.request().method() === 'POST'
@@ -44,6 +50,7 @@ test('users: create and delete a user via modal', async ({ page }) => {
   await expect(
     page.getByRole('alert').filter({ hasText: 'User already exists' }),
   ).toBeVisible();
+  await expectTextContrast(page, '.modal-card', 'the Create a New User dialog');
   await expect(modal.locator('input[type="text"]').nth(0)).toBeFocused();
   await expect(modal.locator('input[type="password"]').nth(1)).toHaveValue(
     'Testpass1!',

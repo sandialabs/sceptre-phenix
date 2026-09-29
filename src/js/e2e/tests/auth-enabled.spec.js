@@ -8,7 +8,12 @@
 // The create account test deletes its e2e-signup account as that admin
 // (E2E_ADMIN_USER and E2E_ADMIN_PASS), so it can run again on the same server.
 const { test, expect } = require('@playwright/test');
-const { attachCapture, settle, fatalOf } = require('./helpers');
+const {
+  attachCapture,
+  settle,
+  fatalOf,
+  expectTextContrast,
+} = require('./helpers');
 
 const ADMIN_USER = process.env.E2E_ADMIN_USER || 'e2e-admin';
 const ADMIN_PASS = process.env.E2E_ADMIN_PASS || 'Testpass1!';
@@ -174,7 +179,8 @@ test('create account via signup modal lands on disabled page', async ({
   await expect(dialog).toBeHidden();
 
   // The admin's name is refused: the dialog stays open, its User Name field
-  // says so and has focus, and a toast announces it. Another name clears it.
+  // says so, legibly, and has focus, and a toast announces it. Another name
+  // clears it.
   await createAccount.click();
   await expect(dialog).toBeVisible();
   await field('User Name').fill(ADMIN_USER);
@@ -188,6 +194,11 @@ test('create account via signup modal lands on disabled page', async ({
   await expect(
     page.getByRole('alert').filter({ hasText: 'User already exists' }),
   ).toBeVisible();
+  await expectTextContrast(
+    page,
+    '#signin .modal-card',
+    'the Create a New Account dialog',
+  );
   await expect(field('User Name')).toBeFocused();
   await field('User Name').fill(SIGNUP_USER);
   await expect(taken).toBeHidden();
