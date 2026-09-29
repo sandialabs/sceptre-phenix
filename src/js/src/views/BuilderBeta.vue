@@ -81,7 +81,7 @@
     </template>
 
     <template v-else>
-      <div class="builder-header">
+      <div ref="editorHeader" class="builder-header">
         <!-- The name below shows the diagram name; the heading gives the
              view a title and takes focus when the editor opens. -->
         <h1 ref="editorHeading" class="builder-visually-hidden" tabindex="-1">
@@ -588,6 +588,7 @@
     followFullScreen,
   } from '@/builder/focusMode.js';
   import { formatTimestamp } from '@/builder/format.js';
+  import { followHeaderLabels } from '@/builder/headerLabels.js';
   import { createDraftStore } from '@/builder/idb.js';
   import { uniqueName } from '@/builder/ids.js';
   import { followShortcutSettings } from '@/builder/keymap.js';
@@ -678,6 +679,22 @@
   let stopWatchingSystemTheme = () => {};
   let stopFollowingShortcuts = () => {};
   let stopFollowingFullScreen = () => {};
+
+  // The header's buttons show the labels that leave its counts centered
+  // (see builder/headerLabels.js), while the editor is open.
+  const editorHeader = ref(null);
+  let stopFittingLabels = () => {};
+
+  watch(
+    editorHeader,
+    (header) => {
+      stopFittingLabels();
+      stopFittingLabels = header
+        ? followHeaderLabels(header, rootEl.value)
+        : () => {};
+    },
+    { flush: 'post' },
+  );
 
   // The header shows the diagram name as text. Edit diagram name puts a
   // field in its place, holding the name selected, which keeps what the
@@ -2317,6 +2334,7 @@
     // Leaving the Builder, for another page, ends focus mode, so the app
     // shows its navigation bar again.
     stopFollowingFullScreen();
+    stopFittingLabels();
     exitFocusMode();
     window.removeEventListener('focus', relist);
     document.removeEventListener('visibilitychange', relist);
@@ -2357,9 +2375,10 @@
 
   /* Wide enough for one row (a header from 64rem, about a 1060px window):
      the start and the actions take the same share of the room the counts
-     leave, which centers the counts on the header. Whichever needs more
-     than its share takes it, and the counts move toward the other, never
-     over either. */
+     leave, which centers the counts on the header. The buttons show only
+     the labels that fit in their share (see builder/headerLabels.js).
+     Whichever needs more than its share even so takes it, and the counts
+     move toward the other, never over either. */
   @container builder-editor (min-width: 64rem) {
     .builder-header__start {
       display: flex;

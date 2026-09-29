@@ -9,6 +9,7 @@
 const { test, expect, expectNoFatal, visit } = require('./builder-support');
 
 const VIEWPORTS = [
+  { width: 2560, height: 1440 },
   { width: 1920, height: 1080 },
   { width: 1440, height: 900 },
   { width: 1280, height: 720 },
@@ -273,7 +274,8 @@ test(
 
       // In a 1440px window, Commands keeps its label, and the theme,
       // Settings and Help show their icons alone; in a 1600px window all
-      // show their labels, as in the editor's header.
+      // show their labels. (The editor's header, which also has its counts
+      // to keep centered, can show fewer.)
       const labelled = () =>
         page.$$eval(
           '.builder-drafts__header .builder-header__label',
@@ -386,7 +388,8 @@ test(
 
         // The counts are centered on the header, or as near as the start
         // (Back to drafts and the name) and the actions let them be, never
-        // over either.
+        // over either. The buttons' labels never move them: from 1280px
+        // they are centered.
         const width = layout.counts.right - layout.counts.left;
         const centered =
           (layout.editorHeader.left + layout.editorHeader.right - width) / 2;
@@ -400,13 +403,26 @@ test(
             at('counts centered, or as near as they fit'),
           )
           .toBeLessThanOrEqual(1);
+        if (viewport.width >= 1280) {
+          expect
+            .soft(
+              Math.abs(layout.counts.left - centered),
+              at('counts centered'),
+            )
+            .toBeLessThanOrEqual(1);
+        }
+        if (Math.abs(layout.counts.left - centered) > 1) {
+          expect
+            .soft(layout.labelled, at('labels while the counts are off center'))
+            .toEqual([]);
+        }
 
-        // The labels go in two steps: in a wide header every button has
-        // its label, in a narrower one, from 1280px, Reset view and
-        // Commands (without its keys) keep theirs, and in a narrow one none
-        // does.
+        // The labels go in two steps, and only as far as they leave the
+        // counts centered: in a wide header every button has its label, in
+        // a narrower one Reset view and Commands (without its keys) keep
+        // theirs, and in a narrow one none does.
         const labelled = {
-          1920: [
+          2560: [
             'editor-reset-view',
             'editor-commands',
             'editor-theme',
@@ -414,15 +430,14 @@ test(
             'editor-settings',
             'editor-help',
           ],
-          1440: ['editor-reset-view', 'editor-commands'],
-          1280: ['editor-reset-view', 'editor-commands'],
+          1920: ['editor-reset-view', 'editor-commands'],
         };
         expect
           .soft(layout.labelled, at('buttons with their labels'))
           .toEqual(labelled[viewport.width] || []);
         expect
           .soft(layout.keycaps, at('Commands keys'))
-          .toBe(viewport.width === 1920);
+          .toBe(viewport.width === 2560);
 
         // The save state is in the toolbar, just after Draft History on its
         // row, whole, and pushes no button off screen.
@@ -941,20 +956,21 @@ test(
         .toBe(true);
       const opened = last;
 
-      // Its label shows at this width, so its tooltip only says what it
-      // does; as an icon, in a narrower window, it names it too.
-      await reset.hover();
-      await expect
-        .soft(page.getByTestId('header-tooltip'))
-        .toHaveText('Reset column widths, zoom, minimap and scrolling');
-      await resize(page, { width: 1232, height: 640 });
-      await page.mouse.move(0, 0);
+      // As an icon, at this width, its tooltip names it too; its label
+      // shows in a wider window, and its tooltip then only says what it
+      // does.
       await reset.hover();
       await expect
         .soft(page.getByTestId('header-tooltip'))
         .toHaveText(
           'Reset view: reset column widths, zoom, minimap and scrolling',
         );
+      await resize(page, { width: 1920, height: 640 });
+      await page.mouse.move(0, 0);
+      await reset.hover();
+      await expect
+        .soft(page.getByTestId('header-tooltip'))
+        .toHaveText('Reset column widths, zoom, minimap and scrolling');
       await resize(page, { width: 1440, height: 640 });
 
       await page.getByTestId('pane-toggle-start').click();

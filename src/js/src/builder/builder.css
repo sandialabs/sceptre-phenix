@@ -1915,7 +1915,9 @@ div.builder-outline__item {
    and Commands its name without its keys. Narrower still (below a 1265px
    window), every button does. The labels stay, visually hidden, as their
    names, and the tooltips name them. Each header is a builder-header
-   container, so the two views match at any one width. */
+   container, so the two views take the steps at the same width. The
+   editor's header can take them sooner, to keep its counts centered (see
+   the data-labels rules below). */
 @container builder-header (max-width: 97rem) {
   .builder-header__label--wide {
     position: absolute;
@@ -1946,6 +1948,29 @@ div.builder-outline__item {
     white-space: nowrap;
     border: 0;
   }
+}
+
+/* The editor's header takes a step before its labels would move the
+   counts off center: data-labels says which it may show (see
+   builder/headerLabels.js). */
+.builder-header[data-labels='some'] .builder-header__label--wide,
+.builder-header[data-labels='none'] .builder-header__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.builder-header[data-labels='some']
+  .builder-header__button
+  .builder-header__label
+  .builder-keycaps {
+  display: none;
 }
 
 /* A help button beside a heading: its tooltip shows on hover and focus. */

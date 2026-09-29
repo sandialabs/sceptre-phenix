@@ -1471,12 +1471,21 @@ for (const scheme of ['light', 'dark']) {
           .soft(theme)
           .toHaveAccessibleName(`Theme: System. Switch to ${next} theme.`);
         await expect.soft(theme).toHaveText('System');
-        // Its label shows at this width, so its tooltip only says what a
-        // press does.
+        // At this width it shows only its icon, which leaves the counts
+        // centered, so its tooltip names it too. In a window wide enough
+        // for its label, the tooltip only says what a press does.
+        await theme.hover();
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText(`Theme: System. Switch to ${next} theme`);
+        const initial = page.viewportSize();
+        await page.setViewportSize({ width: 2560, height: initial.height });
+        await page.mouse.move(0, 0);
         await theme.hover();
         await expect
           .soft(page.getByTestId('header-tooltip'))
           .toHaveText(`Switch to ${next} theme`);
+        await page.setViewportSize(initial);
         // Settings' and Help's tooltips name them too.
         await settings.hover();
         await expect

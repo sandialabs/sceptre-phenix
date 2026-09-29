@@ -101,8 +101,11 @@ puts Blank diagram, Import and Upload before them; the editor puts Warnings
 and Reset view before them and Shortcuts after the theme button. Below a 97rem
 header (about a 1585px window) the theme button, Shortcuts, Settings and Help
 show only their icons and Commands drops its key caps; below 77rem (about
-1265px) Commands and Reset view show only their icons too. Warnings, Blank
-diagram, Import and Upload keep their labels. The editor header shows the
+1265px) Commands and Reset view show only their icons too. The editor
+header takes each step sooner when the labels would move its counts off
+center, so in a 1920px window only Reset view and Commands usually keep
+theirs. Warnings, Blank diagram, Import and Upload keep their labels. The
+editor header shows the
 diagram name as text, cut off with an ellipsis when long (whole in its
 tooltip), or a muted Untitled diagram. An Edit diagram name pencil after it
 (not shown to view-only users) opens a field in its place with the name
