@@ -1,8 +1,11 @@
 import { describe, expect, test, vi } from 'vitest';
 import YAML from 'js-yaml';
 
+vi.mock('@/utils/axios.js', () => ({ default: {} }));
+
 import {
   computeExportViewport,
+  describeTopologyExport,
   documentBounds,
   exportCopy,
   exportFileName,
@@ -10,6 +13,7 @@ import {
   IMAGE_PADDING,
   inlineSvgPaint,
   saveText,
+  saveTopologyYAML,
   toJSONString,
   toYAMLString,
 } from '@/builder/exporters.js';
@@ -445,5 +449,78 @@ describe('savers', () => {
 
     expect(blob.options.type).toBe('application/json;charset=utf-8');
     expect(saveAs).toHaveBeenCalledWith(blob, 'a.json');
+  });
+
+  test('Topology YAML is the text the server sends, named as Publish names it, in a file apart from Builder YAML', async () => {
+    const { doc } = sampleDocument();
+    const named = { ...doc, name: 'Lab #2 (copy)' };
+    const saveAs = vi.fn();
+    const yaml = 'apiVersion: phenix.sandia.gov/v1\nkind: Topology\n';
+    const exportTopology = vi.fn(async (_, name) => ({
+      name,
+      yaml,
+      warnings: ['device "a" carries a node spec with hostname "b"'],
+      publishBlockers: [],
+    }));
+
+    class FakeBlob {
+      constructor(parts, options) {
+        this.parts = parts;
+        this.options = options;
+      }
+    }
+
+    const saved = await saveTopologyYAML({
+      doc: named,
+      exportTopology,
+      saveAs,
+      BlobCtor: FakeBlob,
+    });
+
+    expect(exportTopology).toHaveBeenCalledWith(named, 'Lab-2-copy');
+    expect(saved).toEqual({
+      name: 'Lab-2-copy',
+      fileName: 'lab-2-copy.topology.yaml',
+      warnings: ['device "a" carries a node spec with hostname "b"'],
+      publishBlockers: [],
+    });
+    expect(exportFileName(named, 'yaml')).not.toBe(saved.fileName);
+
+    const [blob, fileName] = saveAs.mock.calls[0];
+
+    expect(fileName).toBe(saved.fileName);
+    expect(blob.parts).toEqual([yaml]);
+    expect(blob.options.type).toBe('text/yaml;charset=utf-8');
+
+    // A failed request saves nothing.
+    const failure = new Error('status 422');
+
+    await expect(
+      saveTopologyYAML({
+        doc,
+        exportTopology: vi.fn(async () => Promise.reject(failure)),
+        saveAs,
+      }),
+    ).rejects.toBe(failure);
+    expect(saveAs).toHaveBeenCalledTimes(1);
+  });
+
+  test('a saved topology says what keeps it from being published yet', () => {
+    expect(describeTopologyExport({ fileName: 'lab.topology.yaml' })).toBe(
+      'Saved lab.topology.yaml.',
+    );
+    expect(
+      describeTopologyExport({
+        fileName: 'lab.topology.yaml',
+        warnings: ['device "a" carries a node spec with hostname "b"'],
+        publishBlockers: [
+          'interface "eth1" of device "a" has no VLAN: connect it to a network, or type a VLAN for it',
+        ],
+      }),
+    ).toBe(
+      'Saved lab.topology.yaml. Device "a" carries a node spec with hostname "b". ' +
+        'This topology cannot be published yet: interface "eth1" of device "a" has no VLAN: ' +
+        'connect it to a network, or type a VLAN for it.',
+    );
   });
 });

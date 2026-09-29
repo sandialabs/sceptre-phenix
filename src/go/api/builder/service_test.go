@@ -928,6 +928,16 @@ func TestEncodeDocumentEnforcesLimit(t *testing.T) {
 	if _, err := EncodeDocument(nil); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("EncodeDocument(nil) error = %s, want ErrInvalid", fmtErr(err))
 	}
+
+	// ParseDocument, for a document used without being stored, has the
+	// limits saving has.
+	if _, err := ParseDocument([]byte(strings.Repeat(" ", MaxDocumentBytes+1))); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("ParseDocument error = %s, want ErrTooLarge", fmtErr(err))
+	}
+
+	if _, err := ParseDocument([]byte(`{"apiVersion":"builder/v1","kind":"nope"}`)); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("ParseDocument error = %s, want ErrInvalid", fmtErr(err))
+	}
 }
 
 func TestMarkPublishedClearsDirtyAndRequiresCurrentSnapshot(t *testing.T) {

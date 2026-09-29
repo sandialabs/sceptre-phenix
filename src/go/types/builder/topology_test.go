@@ -334,6 +334,15 @@ func TestPublishTopologyConfigReturnsValidatedConfig(t *testing.T) {
 	if specInterface(t, router, "eth0")["vlan"] != "EXP" {
 		t.Fatalf("router eth0 was not connected: %s", asJSON(t, router))
 	}
+
+	export, err := doc.ExportTopologyConfig("strict-topology")
+	if err != nil {
+		t.Fatalf("exporting topology: %v", err)
+	}
+
+	if export.Unpublishable != nil || !reflect.DeepEqual(export.Config, config) {
+		t.Fatalf("export = %s, %v, want the published config", asJSON(t, export.Config), export.Unpublishable)
+	}
 }
 
 func TestValidateTopologyProjectionRejectsDraftDocument(t *testing.T) {
@@ -382,17 +391,22 @@ func unconnectedHost(t *testing.T) (*builder.Document, map[string]any) {
 
 // phenix stores a topology whose interface has an empty VLAN, and minimega
 // refuses it only when the experiment starts; publishing refuses it first,
-// naming the device and interface to fix.
+// naming the device and interface to fix. An export returns such a topology
+// with that refusal, and refuses one phenix's schema refuses as publishing
+// does.
 func TestPublishTopologyConfigRefusesInterfaceWithoutVLAN(t *testing.T) {
-	for name, set := range map[string]func(map[string]any){
-		"empty":   func(iface map[string]any) { iface["vlan"] = "" },
-		"blank":   func(iface map[string]any) { iface["vlan"] = "  " },
-		"null":    func(iface map[string]any) { iface["vlan"] = nil },
-		"missing": func(iface map[string]any) { delete(iface, "vlan") },
+	for name, tt := range map[string]struct {
+		set     func(map[string]any)
+		exports bool
+	}{
+		"empty":   {set: func(iface map[string]any) { iface["vlan"] = "" }, exports: true},
+		"blank":   {set: func(iface map[string]any) { iface["vlan"] = "  " }, exports: true},
+		"null":    {set: func(iface map[string]any) { iface["vlan"] = nil }, exports: false},
+		"missing": {set: func(iface map[string]any) { delete(iface, "vlan") }, exports: false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc, eth0 := unconnectedHost(t)
-			set(eth0)
+			tt.set(eth0)
 
 			if err := doc.Validate(); err != nil {
 				t.Fatalf("the draft must stay valid: %v", err)
@@ -417,6 +431,27 @@ func TestPublishTopologyConfigRefusesInterfaceWithoutVLAN(t *testing.T) {
 
 			if _, err := doc.ValidateTopologyProjection("no-vlan"); !errors.As(err, &vlanErr) {
 				t.Fatalf("ValidateTopologyProjection error = %v, want an InterfaceVLANError", err)
+			}
+
+			export, exportErr := doc.ExportTopologyConfig("no-vlan")
+			if !tt.exports {
+				if export != nil || exportErr == nil || exportErr.Error() != err.Error() {
+					t.Fatalf("ExportTopologyConfig = %v, %v, want the publish error %v", export, exportErr, err)
+				}
+
+				return
+			}
+
+			if exportErr != nil {
+				t.Fatalf("ExportTopologyConfig returned error: %v", exportErr)
+			}
+
+			if export.Unpublishable == nil || export.Unpublishable.Error() != err.Error() {
+				t.Fatalf("Unpublishable = %v, want the publish error %v", export.Unpublishable, err)
+			}
+
+			if vlan := specInterface(t, storedNode(t, export.Config.Spec, "host-a"), "eth0")["vlan"]; vlan != eth0["vlan"] {
+				t.Fatalf("exported eth0 vlan = %q, want %q", vlan, eth0["vlan"])
 			}
 		})
 	}

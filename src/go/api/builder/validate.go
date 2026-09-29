@@ -28,9 +28,9 @@ var (
 // hashes, chunks, or stores is the canonical encoding, so two callers sending
 // the same document with different formatting or key order produce the same
 // digest, and no invalid document ever reaches the store.
-func canonicalDocument(field string, data []byte) ([]byte, *builder.Document, error) {
+func canonicalDocument(data []byte) ([]byte, *builder.Document, error) {
 	if len(data) == 0 {
-		return nil, nil, newValidationError(field, "must not be empty")
+		return nil, nil, newValidationError("document", "must not be empty")
 	}
 
 	if int64(len(data)) > MaxDocumentBytes {
@@ -39,12 +39,12 @@ func canonicalDocument(field string, data []byte) ([]byte, *builder.Document, er
 
 	doc, err := builder.Parse(data)
 	if err != nil {
-		return nil, nil, newValidationCause(field, "is not a valid builder document", err)
+		return nil, nil, newValidationCause("document", "is not a valid builder document", err)
 	}
 
 	canonical, err := builder.Encode(doc)
 	if err != nil {
-		return nil, nil, newValidationCause(field, "could not be canonicalized", err)
+		return nil, nil, newValidationCause("document", "could not be canonicalized", err)
 	}
 
 	if int64(len(canonical)) > MaxDocumentBytes {

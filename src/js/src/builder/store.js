@@ -1612,6 +1612,18 @@ export const useBuilderStore = defineStore('builder', {
       return builderApi.listShareCandidates(target.owner, target.id);
     },
 
+    /**
+     * The phenix Topology config a document publishes as, for the Export
+     * dialog, which reports a failure itself.
+     *
+     * @param {object} doc
+     * @param {string} [name]
+     * @returns {Promise<object>} see exportTopology in api.js
+     */
+    exportTopology(doc, name) {
+      return builderApi.exportTopology(doc, name);
+    },
+
     async fetchDocuments() {
       const epoch = sessionEpoch;
 

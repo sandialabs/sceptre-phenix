@@ -2172,6 +2172,46 @@ paths:
           $ref: "#/components/responses/BuilderTooLarge"
         "422":
           $ref: "#/components/responses/BuilderUnprocessable"
+  "/builder/export/topology":
+    post:
+      tags:
+        - Builder Flow
+      summary: Export a Builder Flow document as the Topology config Publish writes
+      description: >
+        Projects the document onto the phenix Topology config a publish of it
+        would write, and returns it as YAML; nothing is read or written.
+        Requires `configs` `get`, as opening a draft does. The document is
+        checked as saving a draft checks it, within the same size limits. The
+        config has no `builder-doc` annotation and names the document's
+        included topologies in `includeTopologies` rather than merging them.
+        A document a publish would refuse for failing phenix's config
+        validation is refused with the same 422 and message. What only
+        publishing refuses, such as an interface with no VLAN, is reported in
+        `publishBlockers` instead.
+      operationId: postBuilderExportTopology
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderTopologyExportRequest"
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderTopologyExport"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+        "413":
+          $ref: "#/components/responses/BuilderTooLarge"
+        "422":
+          $ref: "#/components/responses/BuilderUnprocessable"
   "/builder/documents":
     get:
       tags:
@@ -3033,6 +3073,41 @@ components:
             type: string
         source:
           $ref: "#/components/schemas/BuilderSource"
+    BuilderTopologyExportRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        document:
+          $ref: "#/components/schemas/BuilderDocument"
+        name:
+          description: >
+            the topology's name; when empty, the document's name with each run
+            of characters a config name may not hold replaced by `-` (as the
+            Publish dialog proposes it), or `topology` when that leaves none
+          type: string
+      required:
+        - document
+    BuilderTopologyExport:
+      type: object
+      properties:
+        name:
+          description: the topology's name
+          type: string
+        yaml:
+          description: the Topology config, as YAML
+          type: string
+        warnings:
+          description: what the projection left out or changed
+          type: array
+          items:
+            type: string
+        publishBlockers:
+          description: >
+            why a publish of the topology would be refused although phenix's
+            config validation accepts it, one entry per check
+          type: array
+          items:
+            type: string
     BuilderPublishedDocument:
       type: object
       properties:

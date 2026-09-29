@@ -839,6 +839,8 @@ func (b *builderBetaAPI) routes(router *mux.Router) {
 		Methods("GET", "OPTIONS")
 	router.Handle("/builder/generate", weberror.ErrorHandler(b.generateDocument)).
 		Methods("POST", "OPTIONS")
+	router.Handle("/builder/export/topology", weberror.ErrorHandler(b.exportTopology)).
+		Methods("POST", "OPTIONS")
 	router.Handle("/builder/documents", weberror.ErrorHandler(b.listDocuments)).
 		Methods("GET", "OPTIONS")
 	router.Handle("/builder/documents/{document}", weberror.ErrorHandler(b.getDocument)).

@@ -574,6 +574,21 @@ func (b *builderBetaAPI) preflightPublish(
 // interfaces share, are named in the message, which is what clients show, and
 // not only in its cause; past the first few, only their number is.
 func publishProjectionRefusal(topologyName string, err error) error {
+	problems, named := interfaceProblems(err)
+	if !named {
+		return weberror.NewWebError(err, "builder document cannot be published as topology %s", topologyName).
+			SetStatus(http.StatusUnprocessableEntity)
+	}
+
+	return weberror.NewWebError(err, "topology %s cannot be published: %s", topologyName, problems).
+		SetStatus(http.StatusUnprocessableEntity)
+}
+
+// interfaceProblems names the interfaces without a VLAN, or the addresses
+// interfaces share, that err reports (see [bdoc.InterfaceVLANError] and
+// [bdoc.InterfaceAddressError]) as clients show them: the first few, then how
+// many more. It reports false for an error that names none.
+func interfaceProblems(err error) (string, bool) {
 	const listed = 3
 
 	var (
@@ -592,8 +607,7 @@ func publishProjectionRefusal(topologyName string, err error) error {
 	}
 
 	if len(problems) == 0 {
-		return weberror.NewWebError(err, "builder document cannot be published as topology %s", topologyName).
-			SetStatus(http.StatusUnprocessableEntity)
+		return "", false
 	}
 
 	message := strings.Join(problems[:min(len(problems), listed)], "; ")
@@ -605,8 +619,7 @@ func publishProjectionRefusal(topologyName string, err error) error {
 		message += fmt.Sprintf("; %d more %s", more, many)
 	}
 
-	return weberror.NewWebError(err, "topology %s cannot be published: %s", topologyName, message).
-		SetStatus(http.StatusUnprocessableEntity)
+	return message, true
 }
 
 // mergedIncludesRefusal is why an experiment update may not merge the

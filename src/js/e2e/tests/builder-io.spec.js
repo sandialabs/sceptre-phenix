@@ -507,11 +507,11 @@ function errorBanner(page) {
 
 test.describe('export and import', () => {
   test(
-    'exports JSON, YAML, PNG and SVG, and re-imports the Builder files as new drafts',
+    'exports JSON, YAML, Topology YAML, PNG and SVG, and re-imports the Builder files as new drafts',
     {
       tag: '@cross-browser',
     },
-    async ({ page, builder, issues }, testInfo) => {
+    async ({ page, request, builder, issues }, testInfo) => {
       await builder.open();
       const title = uniqueName(testInfo, 'export');
       const original = await buildConnectedDiagram(builder, title);
@@ -614,6 +614,37 @@ test.describe('export and import', () => {
 
           return file;
         });
+
+      await test.step('Topology YAML export is the topology Publish would write', async () => {
+        const file = await download(page, () =>
+          dialog.getByTestId('export-topology-yaml').click(),
+        );
+        await expectSaved(file, 'topology.yaml');
+        await expect
+          .soft(dialog.getByTestId('export-topology-yaml'))
+          .not.toHaveAttribute('aria-busy', 'true');
+
+        const text = file.buffer.toString('utf8');
+        expect.soft(text).toMatch(/^apiVersion: phenix\.sandia\.gov\/v1$/m);
+        expect.soft(text).toMatch(/^kind: Topology$/m);
+        expect.soft(text).toContain(`\nmetadata:\n    name: ${title}\n`);
+
+        // The server's importer parses it as a phenix Topology, and finds
+        // the diagram's device, connected to its network.
+        const imported = await request.post(`${API}/builder/generate`, {
+          data: { content: text },
+        });
+        expect(imported.ok(), await imported.text()).toBeTruthy();
+        const { document } = await imported.json();
+        const devices = (doc) =>
+          doc.nodes
+            .filter((node) => node.kind === 'device')
+            .map((node) => node.device.hostname);
+        expect.soft(devices(document)).toEqual(devices(saved));
+        expect
+          .soft(document.networks.map((network) => network.name))
+          .toEqual(['EXP']);
+      });
 
       const boundsText = dialog.getByText(/Diagram bounds: \d+ × \d+ px/);
       await expect(boundsText).toBeVisible();

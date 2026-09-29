@@ -34,9 +34,22 @@ type Topology struct {
 	Warnings []string
 }
 
+// TopologyExport is the topology config a document publishes as (see
+// [Document.ExportTopologyConfig]).
+type TopologyExport struct {
+	// Config is the topology config publishing stores.
+	Config *store.Config
+	// Warnings collects non-fatal issues found while mapping the document.
+	Warnings []string
+	// Unpublishable is why publishing refuses Config although phenix's config
+	// validation accepts it, or nil.
+	Unpublishable error
+}
+
 // InterfaceVLANError is returned, wrapped, by [Document.PublishTopologyConfig]
 // and [Document.ValidateTopologyProjection] for a projection in which
-// interfaces have no VLAN (see [checkInterfaceVLANs]).
+// interfaces have no VLAN (see [checkInterfaceVLANs]), and is the
+// [TopologyExport.Unpublishable] of such a projection.
 type InterfaceVLANError struct {
 	// Problems names each device and interface, and what to do about it.
 	Problems []string
@@ -160,51 +173,62 @@ func (d *Document) ToTopologyConfig(name string) (*store.Config, []string, error
 // the versioned topology schema. It does not resolve included topologies from
 // the store, so there is no recursion back into this package.
 func (d *Document) ValidateTopologyProjection(name string) ([]string, error) {
-	config, warnings, err := d.ToTopologyConfig(name)
-	if err != nil {
-		return nil, err
-	}
+	_, warnings, err := d.PublishTopologyConfig(name)
 
-	if err := d.validateProjection(config); err != nil {
-		return warnings, err
-	}
-
-	return warnings, nil
+	return warnings, err
 }
 
 // PublishTopologyConfig projects the document onto a topology config and
 // validates it as [Document.ValidateTopologyProjection] does. It is the entry
 // point for callers that intend to store the result.
 func (d *Document) PublishTopologyConfig(name string) (*store.Config, []string, error) {
-	config, warnings, err := d.ToTopologyConfig(name)
+	export, err := d.ExportTopologyConfig(name)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if err := d.validateProjection(config); err != nil {
-		return nil, warnings, err
+	if export.Unpublishable != nil {
+		return nil, export.Warnings, export.Unpublishable
 	}
 
-	return config, warnings, nil
+	return export.Config, export.Warnings, nil
 }
 
-// validateProjection runs the checks of a topology config about to be
-// published: interface VLANs, then the addresses interfaces use, as their
-// errors name what to fix, then the phenix topology schema.
-func (d *Document) validateProjection(config *store.Config) error {
-	if err := checkInterfaceVLANs(config.Spec); err != nil {
-		return fmt.Errorf("validating topology projection: %w", err)
+// ExportTopologyConfig projects the document onto a topology config and runs
+// the checks of [Document.PublishTopologyConfig], for a caller that hands the
+// config out rather than stores it. A projection that fails phenix's config
+// validation is refused with the error PublishTopologyConfig returns. One
+// that only publishing refuses, as an interface has no VLAN or interfaces
+// share an address, is returned with that error as its Unpublishable.
+func (d *Document) ExportTopologyConfig(name string) (*TopologyExport, error) {
+	config, warnings, err := d.ToTopologyConfig(name)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := d.checkInterfaceAddresses(); err != nil {
-		return fmt.Errorf("validating topology projection: %w", err)
+	// Interface VLANs first, then the addresses interfaces use, as their
+	// errors name what to fix, then the phenix topology schema, which refuses
+	// a missing VLAN too.
+	unpublishable := checkInterfaceVLANs(config.Spec)
+	if unpublishable == nil {
+		unpublishable = d.checkInterfaceAddresses()
 	}
 
 	if err := types.ValidateConfigSpec(*config); err != nil {
-		return fmt.Errorf("validating topology projection: %w", err)
+		if unpublishable != nil {
+			err = unpublishable
+		}
+
+		return nil, fmt.Errorf("validating topology projection: %w", err)
 	}
 
-	return nil
+	export := &TopologyExport{Config: config, Warnings: warnings, Unpublishable: nil}
+
+	if unpublishable != nil {
+		export.Unpublishable = fmt.Errorf("validating topology projection: %w", unpublishable)
+	}
+
+	return export, nil
 }
 
 // checkInterfaceVLANs refuses a topology spec in which an interface of a node

@@ -17,6 +17,7 @@ import { sessionEnded } from './signin.js';
 export const DRAFTS_PATH = 'builder/drafts';
 export const SOURCES_PATH = 'builder/sources';
 export const GENERATE_PATH = 'builder/generate';
+export const EXPORT_TOPOLOGY_PATH = 'builder/export/topology';
 export const DOCUMENTS_PATH = 'builder/documents';
 export const SCHEMA_PATH = 'schemas/builder/v1';
 // Disk images, the same listing the Disks page reads (web/disk.go GetDisks).
@@ -832,6 +833,40 @@ export function createBuilderApi(http = axiosInstance) {
         document: data.document || data,
         warnings: data.warnings || [],
         source: data.source || null,
+      };
+    },
+
+    /**
+     * Asks the server for the phenix Topology config a document publishes
+     * as, which Publish would write. Nothing is written, and the document
+     * is sent, so it holds edits not saved yet.
+     *
+     * @param {object} document
+     * @param {string} [name] the topology's name; without one, the server
+     *   names it as the Publish dialog proposes
+     * @returns {Promise<{name: string, yaml: string, warnings: string[],
+     *   publishBlockers: string[]}>} the config as YAML, what the projection
+     *   left out or changed, and why publishing it would be refused
+     */
+    async exportTopology(document, name = '') {
+      const payload = name ? { document, name } : { document };
+
+      checkUploadSize(payload);
+
+      const response = await http.post(EXPORT_TOPOLOGY_PATH, payload);
+      const data = response.data || {};
+
+      if (typeof data.yaml !== 'string') {
+        throw new TypeError('The server sent an unexpected topology.');
+      }
+
+      return {
+        name: data.name || name,
+        yaml: data.yaml,
+        warnings: Array.isArray(data.warnings) ? data.warnings : [],
+        publishBlockers: Array.isArray(data.publishBlockers)
+          ? data.publishBlockers
+          : [],
       };
     },
 

@@ -13,6 +13,7 @@ import {
   DRAFTS_PATH,
   draftPath,
   errorMessage,
+  EXPORT_TOPOLOGY_PATH,
   GENERATE_PATH,
   MAX_DOCUMENT_BYTES,
   MAX_REQUEST_BYTES,
@@ -72,6 +73,7 @@ describe('routes', () => {
     expect(DRAFTS_PATH).toBe('builder/drafts');
     expect(SOURCES_PATH).toBe('builder/sources');
     expect(GENERATE_PATH).toBe('builder/generate');
+    expect(EXPORT_TOPOLOGY_PATH).toBe('builder/export/topology');
     expect(DOCUMENTS_PATH).toBe('builder/documents');
     expect(SCHEMA_PATH).toBe('schemas/builder/v1');
     expect(draftPath('alice', 'd1')).toBe('builder/drafts/alice/d1');
@@ -343,6 +345,7 @@ describe('client', () => {
       () => api.appendSnapshot('alice', 'd1', { document: big }, '"1"'),
       () => api.createDraft({ title: 'wide', document: wide }),
       () => api.generate({ content: 'y'.repeat(MAX_DOCUMENT_BYTES + 1) }),
+      () => api.exportTopology(big, 'big'),
     ]) {
       const error = await request().catch((failure) => failure);
 
@@ -743,6 +746,43 @@ describe('client', () => {
     await createBuilderApi(http).generate({ content });
 
     expect(http.calls[0].body).toEqual({ content });
+  });
+
+  test('a topology export sends the document and reads the YAML and what blocks publishing', async () => {
+    const { doc } = sampleDocument();
+    const yaml = 'apiVersion: phenix.sandia.gov/v1\nkind: Topology\n';
+    const http = fakeHttp({
+      'post builder/export/topology': {
+        data: {
+          name: 'Sample',
+          yaml,
+          warnings: ['dropped a connection'],
+          publishBlockers: ['interface "eth0" of device "alpha" has no VLAN'],
+        },
+        headers: {},
+      },
+    });
+    const api = createBuilderApi(http);
+
+    await expect(api.exportTopology(doc, 'Sample')).resolves.toEqual({
+      name: 'Sample',
+      yaml,
+      warnings: ['dropped a connection'],
+      publishBlockers: ['interface "eth0" of device "alpha" has no VLAN'],
+    });
+    expect(http.calls[0].body).toEqual({ document: doc, name: 'Sample' });
+
+    // Without a name, the server names it.
+    await api.exportTopology(doc, '');
+    expect(http.calls[1].body).toEqual({ document: doc });
+
+    const odd = createBuilderApi(
+      fakeHttp({ 'post builder/export/topology': { data: {}, headers: {} } }),
+    );
+
+    await expect(odd.exportTopology(doc)).rejects.toThrow(
+      'The server sent an unexpected topology.',
+    );
   });
 
   test('sources always report every catalog', async () => {

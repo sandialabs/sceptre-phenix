@@ -485,6 +485,7 @@ func TestBuilderBetaFeatureGate(t *testing.T) { //nolint:paralleltest // mutates
 		{method: http.MethodPut, path: "/builder/drafts/alice/id-1/cursor"},
 		{method: http.MethodGet, path: "/builder/sources"},
 		{method: http.MethodPost, path: "/builder/generate"},
+		{method: http.MethodPost, path: "/builder/export/topology"},
 		{method: http.MethodGet, path: "/builder/documents"},
 		{method: http.MethodGet, path: "/builder/documents/doc-1"},
 		{method: http.MethodDelete, path: "/builder/documents/doc-1"},
@@ -618,6 +619,7 @@ func TestBuilderBetaUnauthenticated(t *testing.T) { //nolint:paralleltest // mut
 		{method: http.MethodGet, path: "/builder/drafts/alice/id-1"},
 		{method: http.MethodGet, path: "/builder/sources"},
 		{method: http.MethodPost, path: "/builder/generate", body: `{}`},
+		{method: http.MethodPost, path: "/builder/export/topology", body: `{}`},
 		{method: http.MethodGet, path: "/builder/documents"},
 	}
 
@@ -643,6 +645,7 @@ func TestBuilderBetaUnauthorized(t *testing.T) { //nolint:paralleltest // mutate
 		{method: http.MethodGet, path: "/builder/drafts/alice/id-1"},
 		{method: http.MethodGet, path: "/builder/sources"},
 		{method: http.MethodPost, path: "/builder/generate", body: `{}`},
+		{method: http.MethodPost, path: "/builder/export/topology", body: `{}`},
 		{method: http.MethodGet, path: "/builder/documents"},
 	}
 

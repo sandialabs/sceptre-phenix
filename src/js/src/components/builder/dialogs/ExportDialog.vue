@@ -1,8 +1,11 @@
 <!--
-  Export shell: builder documents (JSON/YAML) and PNG/SVG images.
+  Export shell: builder documents (JSON/YAML), the phenix Topology config
+  (Topology YAML) and PNG/SVG images.
 
-  Topology YAML is deliberately absent: the server owns that conversion, so a
-  client rendering could disagree with what Publish actually produces.
+  Topology YAML comes from the server, which owns that conversion, so the file
+  is the config Publish would write; a client rendering could disagree with
+  it. What keeps the topology from being published yet is said after the
+  download.
 
   Image exports always cover the whole diagram (all node bounds), not just the
   part currently visible on screen.
@@ -47,6 +50,24 @@
         <builder-icon name="download" :size="14" />
         Builder YAML
       </button>
+      <!-- While the server makes the file, a turning ring in place of the
+           icon; reduced motion stops it turning (see builder.css). -->
+      <button
+        type="button"
+        class="builder-button"
+        data-testid="export-topology-yaml"
+        aria-describedby="export-topology-hint"
+        :disabled="Boolean(unapplied)"
+        :aria-disabled="topologyBusy ? 'true' : undefined"
+        :aria-busy="topologyBusy || undefined"
+        @click="exportTopologyYAML">
+        <span
+          v-if="topologyBusy"
+          class="builder-toolbar__spinner"
+          aria-hidden="true"></span>
+        <builder-icon v-else name="download" :size="14" />
+        Topology YAML
+      </button>
       <button
         type="button"
         class="builder-button"
@@ -68,6 +89,9 @@
         SVG
       </button>
     </div>
+    <p id="export-topology-hint" class="builder-hint">
+      Topology YAML is the phenix Topology config Publish would write.
+    </p>
 
     <p class="builder-dialog__message" role="status">
       <span v-if="status.text" :key="status.key">{{ status.text }}</span>
@@ -96,10 +120,12 @@
   import { useMessage } from './message.js';
 
   import {
+    describeTopologyExport,
     documentBounds,
     exportFileName,
     exportImage,
     saveText,
+    saveTopologyYAML,
     toJSONString,
     toYAMLString,
   } from '@/builder/exporters.js';
@@ -116,6 +142,7 @@
 
   const store = useBuilderStore();
   const busy = ref(false);
+  const topologyBusy = ref(false);
   const status = useMessage();
   const error = useMessage();
 
@@ -141,6 +168,36 @@
     });
 
     status.set(`Saved ${exportFileName(store.doc, map.ext)}.`);
+  }
+
+  async function exportTopologyYAML() {
+    // A busy button keeps focus, so it can still be pressed.
+    if (topologyBusy.value) {
+      return;
+    }
+
+    error.clear();
+    status.set('Exporting Topology YAML…');
+    topologyBusy.value = true;
+
+    try {
+      const saved = await saveTopologyYAML({
+        doc: store.doc,
+        exportTopology: store.exportTopology,
+        saveAs,
+      });
+
+      status.set(describeTopologyExport(saved));
+    } catch (err) {
+      status.clear();
+      error.set(
+        err instanceof TypeError
+          ? `Could not export Topology YAML. ${err.message}`
+          : store.describeError(err, 'export Topology YAML'),
+      );
+    } finally {
+      topologyBusy.value = false;
+    }
   }
 
   async function exportImageAs(format) {

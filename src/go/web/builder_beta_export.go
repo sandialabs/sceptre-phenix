@@ -1,0 +1,161 @@
+package web
+
+import (
+	"encoding/json"
+	"net/http"
+	"regexp"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+
+	bapi "phenix/api/builder"
+	"phenix/util/plog"
+	"phenix/web/weberror"
+)
+
+// builderDefaultTopologyName is the topology name of a document with no name
+// that leaves one, as its export files are named "topology".
+const builderDefaultTopologyName = "topology"
+
+// builderTopologyNameInvalid matches the runs of characters a config name may
+// not hold (see [phenix/api/config.NameRegex]).
+var builderTopologyNameInvalid = regexp.MustCompile(`[^A-Za-z0-9_@.-]+`)
+
+// builderTopologyExportRequest asks for the topology config a document
+// publishes as. Name is the topology's name; empty, it is the name the
+// Publish dialog proposes (see [builderTopologyName]).
+type builderTopologyExportRequest struct {
+	Document json.RawMessage `json:"document"`
+	Name     string          `json:"name"`
+}
+
+// builderTopologyExportResponse is the topology config a document publishes
+// as, as YAML text. It is JSON rather than a YAML body so that it carries
+// the warnings too, and so that a refusal is the JSON error of every other
+// Builder Flow route.
+type builderTopologyExportResponse struct {
+	Name     string   `json:"name"`
+	YAML     string   `json:"yaml"`
+	Warnings []string `json:"warnings"`
+	// PublishBlockers is why publishing the topology would be refused
+	// although phenix's config validation accepts it, one entry per check.
+	PublishBlockers []string `json:"publishBlockers"`
+}
+
+// builderExportedTopology is a topology config as an export writes it: the
+// config publishing stores, without what storing it adds (the created and
+// updated times, and the annotation naming the published document).
+type builderExportedTopology struct {
+	APIVersion string                  `yaml:"apiVersion"`
+	Kind       string                  `yaml:"kind"`
+	Metadata   builderExportedMetadata `yaml:"metadata"`
+	Spec       map[string]any          `yaml:"spec"`
+}
+
+type builderExportedMetadata struct {
+	Name string `yaml:"name"`
+}
+
+// builderTopologyName is the name the Publish dialog proposes for the
+// topology of a document named name (configName in
+// src/js/src/builder/publish.js): each run of characters a config name may
+// not hold becomes one hyphen, and hyphens at either end are dropped.
+func builderTopologyName(name string) string {
+	proposed := strings.Trim(builderTopologyNameInvalid.ReplaceAllString(name, "-"), "-")
+	if proposed == "" {
+		return builderDefaultTopologyName
+	}
+
+	return proposed
+}
+
+// exportTopology - POST /builder/export/topology.
+//
+// The phenix Topology config a document publishes as, as Publish would write
+// it (see [phenix/types/builder.Document.ExportTopologyConfig]), without
+// writing anything. The document comes with the request, so it holds edits
+// not saved yet, and is checked as saving a draft checks it. A document
+// Publish refuses for failing phenix's config validation is refused with the
+// same status and message; the checks only publishing makes are reported
+// with the config. Nothing is read from the store: included topologies are
+// named, as Publish writes them, not merged.
+func (b *builderBetaAPI) exportTopology(w http.ResponseWriter, r *http.Request) error {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderBetaExportTopology")
+
+	actor, ok := builderBetaRequestActor(r)
+	if !ok {
+		return builderBetaForbidden(actor, "exporting a builder topology")
+	}
+
+	// Whoever may open a draft may export it, as its Builder JSON export
+	// needs no request at all.
+	if !builderBetaBaseAllowed(actor.role, builderBetaVerbGet) {
+		return builderBetaForbidden(actor, "exporting a builder topology")
+	}
+
+	var request builderTopologyExportRequest
+
+	if err := builderBetaDecode(w, r, &request); err != nil {
+		return err
+	}
+
+	data, err := builderBetaDocumentBytes(request.Document)
+	if err != nil {
+		return err
+	}
+
+	document, err := bapi.ParseDocument(data)
+	if err != nil {
+		return builderBetaWebError(err, "unable to export the builder document")
+	}
+
+	name := request.Name
+	if name == "" {
+		name = builderTopologyName(document.Name)
+	}
+
+	// The name is checked as a publish checks its topology target.
+	target := builderPublishTarget{Name: name, Action: builderPublishActionCreate, ExpectedDigest: ""}
+	if err := validatePublishTarget(builderBetaSourceTopology, target, false); err != nil {
+		return err
+	}
+
+	export, err := document.ExportTopologyConfig(name)
+	if err != nil {
+		return publishProjectionRefusal(name, err)
+	}
+
+	blockers := []string{}
+
+	if export.Unpublishable != nil {
+		reason, named := interfaceProblems(export.Unpublishable)
+		if !named {
+			reason = export.Unpublishable.Error()
+		}
+
+		blockers = append(blockers, reason)
+	}
+
+	body, err := yaml.Marshal(builderExportedTopology{
+		APIVersion: export.Config.Version,
+		Kind:       export.Config.Kind,
+		Metadata:   builderExportedMetadata{Name: export.Config.Metadata.Name},
+		Spec:       export.Config.Spec,
+	})
+	if err != nil {
+		return weberror.NewWebError(err, "unable to encode topology %s", name).
+			SetStatus(http.StatusInternalServerError)
+	}
+
+	warnings := export.Warnings
+	if warnings == nil {
+		warnings = []string{}
+	}
+
+	return builderBetaWriteJSON(w, http.StatusOK, "", builderTopologyExportResponse{
+		Name:            name,
+		YAML:            string(body),
+		Warnings:        warnings,
+		PublishBlockers: blockers,
+	})
+}

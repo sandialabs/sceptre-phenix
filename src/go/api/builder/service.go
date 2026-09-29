@@ -454,7 +454,7 @@ func (s *Service) CreateDraft(ctx context.Context, req CreateDraftRequest) (*Dra
 		return nil, err
 	}
 
-	canonical, doc, err := canonicalDocument("document", req.Document)
+	canonical, doc, err := canonicalDocument(req.Document)
 	if err != nil {
 		return nil, err
 	}
@@ -555,7 +555,7 @@ func (s *Service) AppendSnapshot(ctx context.Context, req AppendSnapshotRequest)
 		return nil, err
 	}
 
-	canonical, doc, err := canonicalDocument("document", req.Document)
+	canonical, doc, err := canonicalDocument(req.Document)
 	if err != nil {
 		return nil, err
 	}

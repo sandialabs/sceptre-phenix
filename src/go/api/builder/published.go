@@ -54,6 +54,15 @@ func EncodeDocument(doc *builder.Document) ([]byte, error) {
 	return data, nil
 }
 
+// ParseDocument decodes and validates untrusted document bytes as saving a
+// draft snapshot does, within the same [MaxDocumentBytes], for a caller that
+// uses the document without storing it.
+func ParseDocument(data []byte) (*builder.Document, error) {
+	_, doc, err := canonicalDocument(data)
+
+	return doc, err
+}
+
 // PublishedDocumentID returns the deterministic, content addressed ID of a
 // document published to a target. The same content published to the same target
 // always yields the same ID, which makes publishing idempotent; the same
@@ -143,7 +152,7 @@ func (s *Service) PutPublishedDocument(ctx context.Context, req PutPublishedDocu
 		return nil, err
 	}
 
-	canonical, _, err := canonicalDocument("document", req.Document)
+	canonical, _, err := canonicalDocument(req.Document)
 	if err != nil {
 		return nil, err
 	}

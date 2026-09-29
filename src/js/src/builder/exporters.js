@@ -1,12 +1,14 @@
-// Export helpers: JSON, YAML and images.
+// Export helpers: JSON, YAML, the Topology config and images.
 //
 // The geometry math is pure and unit tested; the DOM/rasterization side takes
 // injected dependencies (html-to-image, file-saver, getComputedStyle) so tests
-// never touch a real canvas.
+// never touch a real canvas, and the Topology config the API call.
 
 import YAML from 'js-yaml';
 
+import { sentence } from './api.js';
 import { boundsOf } from './model.js';
+import { configName } from './publish.js';
 
 export const IMAGE_PADDING = 40;
 
@@ -304,4 +306,43 @@ export function saveText(params) {
   saveAs(blob, fileName);
 
   return blob;
+}
+
+/**
+ * Saves the phenix Topology config the document publishes as, named as the
+ * Publish dialog proposes, in <file name>.topology.yaml. The server makes
+ * it (exportTopology in api.js), from the same projection Publish writes.
+ *
+ * @param {object} params doc, exportTopology (the API call), saveAs,
+ *   BlobCtor
+ * @returns {Promise<{fileName: string, name: string, warnings: string[],
+ *   publishBlockers: string[]}>}
+ */
+export async function saveTopologyYAML(params) {
+  const { doc, exportTopology, saveAs, BlobCtor } = params;
+  const { yaml, ...result } = await exportTopology(doc, configName(doc?.name));
+  const fileName = exportFileName(doc, 'topology.yaml');
+
+  saveText({ text: yaml, mime: 'text/yaml', fileName, saveAs, BlobCtor });
+
+  return { ...result, fileName };
+}
+
+/**
+ * What the Export dialog says once Topology YAML is saved: the file, what
+ * the projection left out or changed, and why publishing the topology would
+ * be refused, which the file does not show.
+ *
+ * @param {{fileName: string, warnings?: string[], publishBlockers?: string[]}} saved
+ * @returns {string}
+ */
+export function describeTopologyExport(saved) {
+  const { fileName, warnings = [], publishBlockers = [] } = saved;
+  const blocked = publishBlockers.length
+    ? `This topology cannot be published yet: ${publishBlockers.join('; ')}.`
+    : '';
+
+  return [`Saved ${fileName}.`, ...warnings.map(sentence), blocked]
+    .filter(Boolean)
+    .join(' ');
 }
