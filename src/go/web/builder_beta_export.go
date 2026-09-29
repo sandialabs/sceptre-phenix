@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -49,7 +50,8 @@ type builderExportedTopology struct {
 	APIVersion string                  `yaml:"apiVersion"`
 	Kind       string                  `yaml:"kind"`
 	Metadata   builderExportedMetadata `yaml:"metadata"`
-	Spec       map[string]any          `yaml:"spec"`
+	// Spec is the spec as [builderYAMLExact] makes it.
+	Spec any `yaml:"spec"`
 }
 
 type builderExportedMetadata struct {
@@ -75,10 +77,12 @@ func builderTopologyName(name string) string {
 // it (see [phenix/types/builder.Document.ExportTopologyConfig]), without
 // writing anything. The document comes with the request, so it holds edits
 // not saved yet, and is checked as saving a draft checks it. A document
-// Publish refuses for failing phenix's config validation is refused with the
-// same status and message; the checks only publishing makes are reported
-// with the config. Nothing is read from the store: included topologies are
-// named, as Publish writes them, not merged.
+// phenix's config validation refuses is refused with the status Publish
+// answers, and with its message unless blank VLANs, which Publish names
+// first, are beside the validation's own reason (see
+// [phenix/types/builder.Document.ExportTopologyConfig]); the checks only
+// publishing makes are reported with the config. Nothing is read from the
+// store: included topologies are named, as Publish writes them, not merged.
 func (b *builderBetaAPI) exportTopology(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderBetaExportTopology")
 
@@ -140,7 +144,7 @@ func (b *builderBetaAPI) exportTopology(w http.ResponseWriter, r *http.Request) 
 		APIVersion: export.Config.Version,
 		Kind:       export.Config.Kind,
 		Metadata:   builderExportedMetadata{Name: export.Config.Metadata.Name},
-		Spec:       export.Config.Spec,
+		Spec:       builderYAMLExact(export.Config.Spec),
 	})
 	if err != nil {
 		return weberror.NewWebError(err, "unable to encode topology %s", name).
@@ -158,4 +162,81 @@ func (b *builderBetaAPI) exportTopology(w http.ResponseWriter, r *http.Request) 
 		Warnings:        warnings,
 		PublishBlockers: blockers,
 	})
+}
+
+// builderYAMLQuoted is a string yaml.v3 writes double quoted, which it reads
+// back as it is, whatever the string holds.
+type builderYAMLQuoted string
+
+// MarshalYAML implements [yaml.Marshaler].
+func (s builderYAMLQuoted) MarshalYAML() (any, error) {
+	return &yaml.Node{Kind: yaml.ScalarNode, Style: yaml.DoubleQuotedStyle, Tag: "!!str", Value: string(s)}, nil
+}
+
+// builderYAMLExact is value, a spec, with each string yaml.v3 would not read
+// back as it writes it (see [builderYAMLKeeps]) made a [builderYAMLQuoted],
+// in maps and slices at any depth and in map keys, so that the YAML of the
+// spec loads as the spec. The maps and slices are copies: a map with string
+// keys becomes a map[any]any, whose keys yaml.v3 sorts as it sorts the
+// map's, and a slice an []any, so that the YAML is otherwise what
+// yaml.Marshal writes for value.
+func builderYAMLExact(value any) any {
+	if text, ok := value.(string); ok {
+		if builderYAMLKeeps(text) {
+			return text
+		}
+
+		return builderYAMLQuoted(text)
+	}
+
+	reflected := reflect.ValueOf(value)
+
+	switch reflected.Kind() { //nolint:exhaustive // other kinds hold no strings
+	case reflect.Slice:
+		// yaml.v3 writes a []byte as a !!binary scalar.
+		if reflected.Type().Elem().Kind() == reflect.Uint8 {
+			return value
+		}
+
+		items := make([]any, reflected.Len())
+		for index := range items {
+			items[index] = builderYAMLExact(reflected.Index(index).Interface())
+		}
+
+		return items
+	case reflect.Map:
+		if reflected.Type().Key().Kind() != reflect.String {
+			return value
+		}
+
+		entries := make(map[any]any, reflected.Len())
+		for iter := reflected.MapRange(); iter.Next(); {
+			entries[builderYAMLExact(iter.Key().Interface())] = builderYAMLExact(iter.Value().Interface())
+		}
+
+		return entries
+	default:
+		return value
+	}
+}
+
+// builderYAMLKeeps reports whether yaml.v3 reads text back as it writes it.
+// It writes a string without a line break as a plain or quoted scalar, which
+// it reads back. It writes one with a line break as a literal block scalar,
+// which it may not: it drops a leading line break, so "\n" reads back as ""
+// and "\n a" as " a", and indents a first line that starts with a tab so that
+// the document does not load.
+func builderYAMLKeeps(text string) bool {
+	if !strings.Contains(text, "\n") {
+		return true
+	}
+
+	data, err := yaml.Marshal(map[string]string{"v": text})
+	if err != nil {
+		return false
+	}
+
+	var back map[string]string
+
+	return yaml.Unmarshal(data, &back) == nil && back["v"] == text
 }

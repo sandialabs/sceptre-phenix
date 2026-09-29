@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"phenix/types"
 	"phenix/types/builder"
 )
 
@@ -452,6 +453,60 @@ func TestPublishTopologyConfigRefusesInterfaceWithoutVLAN(t *testing.T) {
 
 			if vlan := specInterface(t, storedNode(t, export.Config.Spec, "host-a"), "eth0")["vlan"]; vlan != eth0["vlan"] {
 				t.Fatalf("exported eth0 vlan = %q, want %q", vlan, eth0["vlan"])
+			}
+		})
+	}
+}
+
+// A projection that phenix's schema refuses and whose interface also has no
+// VLAN is refused by publishing for the VLAN, which says what to fix first.
+// An export is refused for the VLAN only when the schema refuses it too (the
+// key is missing or null); beside a blank VLAN, which the schema accepts, it
+// is refused with the schema's reason.
+func TestExportTopologyConfigRefusesForTheSchemaReason(t *testing.T) {
+	for name, tt := range map[string]struct {
+		set func(map[string]any)
+		// vlan is whether the export is refused for the VLAN.
+		vlan bool
+	}{
+		"blank":   {set: func(iface map[string]any) { iface["vlan"] = " " }, vlan: false},
+		"empty":   {set: func(iface map[string]any) { iface["vlan"] = "" }, vlan: false},
+		"null":    {set: func(iface map[string]any) { iface["vlan"] = nil }, vlan: true},
+		"missing": {set: func(iface map[string]any) { delete(iface, "vlan") }, vlan: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc, eth0 := unconnectedHost(t)
+			tt.set(eth0)
+			eth0["mac"] = "not-a-mac"
+
+			var vlanErr *builder.InterfaceVLANError
+
+			config, warnings, publishRefusal := doc.PublishTopologyConfig("mixed")
+			if config != nil || !errors.As(publishRefusal, &vlanErr) {
+				t.Fatalf("PublishTopologyConfig = %v, %v, want an InterfaceVLANError", config, publishRefusal)
+			}
+
+			if validated, err := doc.ValidateTopologyProjection("mixed"); !errors.As(err, &vlanErr) ||
+				!slices.Equal(validated, warnings) {
+				t.Fatalf("ValidateTopologyProjection = %q, %v, want %q and an InterfaceVLANError", validated, err, warnings)
+			}
+
+			export, err := doc.ExportTopologyConfig("mixed")
+			if export != nil || err == nil {
+				t.Fatalf("ExportTopologyConfig = %v, %v, want a refusal", export, err)
+			}
+
+			if tt.vlan {
+				if err.Error() != publishRefusal.Error() {
+					t.Fatalf("export error = %v, want the publish error %v", err, publishRefusal)
+				}
+
+				return
+			}
+
+			if errors.As(err, &vlanErr) || !errors.Is(err, types.ErrValidationFailed) ||
+				!strings.Contains(err.Error(), "/mac") {
+				t.Fatalf("export error = %v, want the schema's refusal of the MAC address", err)
 			}
 		})
 	}

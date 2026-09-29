@@ -180,55 +180,113 @@ func (d *Document) ValidateTopologyProjection(name string) ([]string, error) {
 
 // PublishTopologyConfig projects the document onto a topology config and
 // validates it as [Document.ValidateTopologyProjection] does. It is the entry
-// point for callers that intend to store the result.
+// point for callers that intend to store the result. Interfaces without a
+// VLAN, then addresses interfaces share, are reported first, whatever else
+// phenix's config validation finds, as their errors name what to fix.
 func (d *Document) PublishTopologyConfig(name string) (*store.Config, []string, error) {
-	export, err := d.ExportTopologyConfig(name)
+	projection, err := d.projectTopology(name)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if export.Unpublishable != nil {
-		return nil, export.Warnings, export.Unpublishable
+	if projection.vlans != nil {
+		return nil, projection.warnings, projection.vlans
 	}
 
-	return export.Config, export.Warnings, nil
+	if projection.addresses != nil {
+		return nil, projection.warnings, projection.addresses
+	}
+
+	if projection.schema != nil {
+		return nil, projection.warnings, projection.schema
+	}
+
+	return projection.config, projection.warnings, nil
 }
 
 // ExportTopologyConfig projects the document onto a topology config and runs
 // the checks of [Document.PublishTopologyConfig], for a caller that hands the
-// config out rather than stores it. A projection that fails phenix's config
-// validation is refused with the error PublishTopologyConfig returns. One
-// that only publishing refuses, as an interface has no VLAN or interfaces
-// share an address, is returned with that error as its Unpublishable.
+// config out rather than stores it. One that only publishing refuses, as an
+// interface has a blank VLAN or interfaces share an address, is returned with
+// that error as its Unpublishable.
+//
+// A projection that fails phenix's config validation is refused. When an
+// interface's vlan key is missing or null, which the schema refuses too, the
+// error is the one PublishTopologyConfig returns, naming the interfaces.
+// Otherwise it is the schema's own error: blank VLANs and shared addresses,
+// which the schema accepts, are not why the config cannot be exported.
 func (d *Document) ExportTopologyConfig(name string) (*TopologyExport, error) {
+	projection, err := d.projectTopology(name)
+	if err != nil {
+		return nil, err
+	}
+
+	if projection.schema != nil {
+		if projection.vlans != nil && projection.vlanAbsent {
+			return nil, projection.vlans
+		}
+
+		return nil, projection.schema
+	}
+
+	unpublishable := projection.vlans
+	if unpublishable == nil {
+		unpublishable = projection.addresses
+	}
+
+	return &TopologyExport{
+		Config:        projection.config,
+		Warnings:      projection.warnings,
+		Unpublishable: unpublishable,
+	}, nil
+}
+
+// topologyProjection is a document projected onto a topology config, with
+// what the checks of publishing found.
+type topologyProjection struct {
+	config   *store.Config
+	warnings []string
+	// vlans names the interfaces without a VLAN (an [InterfaceVLANError]), or
+	// is nil.
+	vlans error
+	// vlanAbsent is whether one of those interfaces has no vlan key, or a null
+	// one, which phenix's schema refuses too.
+	vlanAbsent bool
+	// addresses names the addresses interfaces share (an
+	// [InterfaceAddressError]), or is nil.
+	addresses error
+	// schema is why phenix's config validation refuses config, or nil.
+	schema error
+}
+
+// projectTopology projects the document onto a topology config named name
+// and runs every check of publishing on it: its interface VLANs (see
+// [checkInterfaceVLANs]), the addresses its interfaces use (see
+// [Document.checkInterfaceAddresses]) and the phenix topology schema.
+func (d *Document) projectTopology(name string) (*topologyProjection, error) {
 	config, warnings, err := d.ToTopologyConfig(name)
 	if err != nil {
 		return nil, err
 	}
 
-	// Interface VLANs first, then the addresses interfaces use, as their
-	// errors name what to fix, then the phenix topology schema, which refuses
-	// a missing VLAN too.
-	unpublishable := checkInterfaceVLANs(config.Spec)
-	if unpublishable == nil {
-		unpublishable = d.checkInterfaceAddresses()
+	projection := &topologyProjection{
+		config: config, warnings: warnings, vlans: nil, vlanAbsent: false, addresses: nil, schema: nil,
+	}
+
+	if vlans, absent := checkInterfaceVLANs(config.Spec); vlans != nil {
+		projection.vlans = fmt.Errorf("validating topology projection: %w", vlans)
+		projection.vlanAbsent = absent
+	}
+
+	if addresses := d.checkInterfaceAddresses(); addresses != nil {
+		projection.addresses = fmt.Errorf("validating topology projection: %w", addresses)
 	}
 
 	if err := types.ValidateConfigSpec(*config); err != nil {
-		if unpublishable != nil {
-			err = unpublishable
-		}
-
-		return nil, fmt.Errorf("validating topology projection: %w", err)
+		projection.schema = fmt.Errorf("validating topology projection: %w", err)
 	}
 
-	export := &TopologyExport{Config: config, Warnings: warnings, Unpublishable: nil}
-
-	if unpublishable != nil {
-		export.Unpublishable = fmt.Errorf("validating topology projection: %w", unpublishable)
-	}
-
-	return export, nil
+	return projection, nil
 }
 
 // checkInterfaceVLANs refuses a topology spec in which an interface of a node
@@ -238,11 +296,17 @@ func (d *Document) ExportTopologyConfig(name string) (*TopologyExport, error) {
 // non-empty string"). A VLAN that names no network of the document is kept:
 // phenix allocates VLANs by name. External nodes are not started, and need
 // none. The error names each device and interface to fix: an interface by
-// its position when it has no name, or shares it with another.
-func checkInterfaceVLANs(spec map[string]any) error {
+// its position when it has no name, or shares it with another. It also
+// reports whether one of those interfaces has no vlan key or a null one,
+// which phenix's schema refuses as well, rather than a blank VLAN, which it
+// accepts.
+func checkInterfaceVLANs(spec map[string]any) (*InterfaceVLANError, bool) {
 	nodes, _ := spec[keyNodes].([]any)
 
-	var problems []string
+	var (
+		problems []string
+		absent   bool
+	)
 
 	for _, entry := range nodes {
 		node, ok := entry.(map[string]any)
@@ -255,9 +319,12 @@ func checkInterfaceVLANs(spec map[string]any) error {
 		labels := interfaceLabels(ifaces)
 
 		for index, iface := range ifaces {
-			if hasVLAN(iface) {
+			named, missing := specInterfaceVLAN(iface)
+			if named {
 				continue
 			}
+
+			absent = absent || missing
 
 			problems = append(problems, fmt.Sprintf(
 				"interface %s of device %q has no VLAN: connect it to a network, or type a VLAN for it",
@@ -267,10 +334,10 @@ func checkInterfaceVLANs(spec map[string]any) error {
 	}
 
 	if len(problems) == 0 {
-		return nil
+		return nil, false
 	}
 
-	return &InterfaceVLANError{Problems: problems}
+	return &InterfaceVLANError{Problems: problems}, absent
 }
 
 // interfaceLabels names each interface of a node spec in a message: by its
@@ -462,22 +529,23 @@ func trimASCIISpace(text string) string {
 	return strings.Trim(text, " \t\n\v\f\r")
 }
 
-// hasVLAN reports whether a spec interface entry names a VLAN. An entry of the
-// wrong shape, or a VLAN that is not a string, is left to the schema.
-func hasVLAN(iface any) bool {
+// specInterfaceVLAN reports whether a spec interface entry names a VLAN and, when
+// it does not, whether its vlan is missing or null rather than blank. An entry
+// of the wrong shape, or a VLAN that is not a string, is left to the schema.
+func specInterfaceVLAN(iface any) (bool, bool) {
 	asMap, ok := iface.(map[string]any)
 	if !ok {
-		return true
+		return true, false
 	}
 
 	value := asMap["vlan"]
 	if value == nil {
-		return false
+		return false, true
 	}
 
 	vlan, ok := value.(string)
 
-	return !ok || strings.TrimSpace(vlan) != ""
+	return !ok || strings.TrimSpace(vlan) != "", false
 }
 
 // SpecV1 decodes the mapped topology spec into the versioned phenix topology

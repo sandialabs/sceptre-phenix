@@ -1,6 +1,7 @@
 package web
 
 import (
+	"cmp"
 	"encoding/json"
 	"maps"
 	"net/http"
@@ -219,7 +220,9 @@ func exportVLANDocument(fields ...map[string]any) *bdoc.Document {
 
 // TestBuilderBetaExportTopologyRefusesAsPublishDoes refuses what Publish
 // refuses for failing phenix's config validation, with its status and
-// message, and exports what only publishing refuses, saying why.
+// message, and exports what only publishing refuses, saying why. Publish
+// names interfaces without a VLAN first; an export refused beside a blank
+// VLAN, which it would export, names the schema's reason instead.
 func TestBuilderBetaExportTopologyRefusesAsPublishDoes(t *testing.T) { //nolint:paralleltest // mutates feature options
 	tests := []struct {
 		name     string
@@ -227,6 +230,10 @@ func TestBuilderBetaExportTopologyRefusesAsPublishDoes(t *testing.T) { //nolint:
 		exports  bool
 		// refusal is how the publish message starts.
 		refusal string
+		// exportRefusal is the export's message when it is not the publish
+		// message, and exportCause what its cause then holds.
+		exportRefusal string
+		exportCause   string
 	}{
 		{
 			// phenix stores it; minimega refuses it when the experiment starts.
@@ -254,6 +261,27 @@ func TestBuilderBetaExportTopologyRefusesAsPublishDoes(t *testing.T) { //nolint:
 			exports:  false,
 			refusal:  "builder document cannot be published as topology no-vlan",
 		},
+		{
+			name: "empty VLAN and invalid MAC address",
+			document: exportVLANDocument(
+				map[string]any{"name": "eth0", "vlan": ""},
+				map[string]any{"name": "eth1", "vlan": "EXP", "mac": "not-a-mac"},
+			),
+			exports:       false,
+			refusal:       "topology no-vlan cannot be published: ",
+			exportRefusal: "builder document cannot be published as topology no-vlan",
+			exportCause:   `Error at "/mac"`,
+		},
+		{
+			// The schema refuses the missing VLAN too, so its error is why.
+			name: "missing VLAN and invalid MAC address",
+			document: exportVLANDocument(
+				map[string]any{"name": "eth0"},
+				map[string]any{"name": "eth1", "vlan": "EXP", "mac": "not-a-mac"},
+			),
+			exports: false,
+			refusal: "topology no-vlan cannot be published: ",
+		},
 	}
 
 	for _, tt := range tests {
@@ -271,13 +299,13 @@ func TestBuilderBetaExportTopologyRefusesAsPublishDoes(t *testing.T) { //nolint:
 				t.Fatalf("publish status = %d, want %d: %s", refused.Code, http.StatusUnprocessableEntity, refused.Body)
 			}
 
-			var publishErr struct {
+			var publishRefusal struct {
 				Message string `json:"message"`
 			}
-			harness.decode(refused, &publishErr)
+			harness.decode(refused, &publishRefusal)
 
-			if !strings.HasPrefix(publishErr.Message, tt.refusal) {
-				t.Fatalf("publish message = %q, want it to start %q", publishErr.Message, tt.refusal)
+			if !strings.HasPrefix(publishRefusal.Message, tt.refusal) {
+				t.Fatalf("publish message = %q, want it to start %q", publishRefusal.Message, tt.refusal)
 			}
 
 			recorder := exportBuilderTopology(t, harness, tt.document, "", nil)
@@ -285,6 +313,7 @@ func TestBuilderBetaExportTopologyRefusesAsPublishDoes(t *testing.T) { //nolint:
 			if !tt.exports {
 				var exportErr struct {
 					Message string `json:"message"`
+					Cause   string `json:"cause"`
 				}
 
 				if recorder.Code != refused.Code {
@@ -293,8 +322,13 @@ func TestBuilderBetaExportTopologyRefusesAsPublishDoes(t *testing.T) { //nolint:
 
 				harness.decode(recorder, &exportErr)
 
-				if exportErr.Message != publishErr.Message {
-					t.Fatalf("export message = %q, want the publish message %q", exportErr.Message, publishErr.Message)
+				if want := cmp.Or(tt.exportRefusal, publishRefusal.Message); exportErr.Message != want {
+					t.Fatalf("export message = %q, want %q", exportErr.Message, want)
+				}
+
+				if tt.exportCause != "" &&
+					(!strings.Contains(exportErr.Cause, tt.exportCause) || strings.Contains(exportErr.Cause, "no VLAN")) {
+					t.Fatalf("export cause = %q, want it to hold %q and name no VLAN", exportErr.Cause, tt.exportCause)
 				}
 
 				return
@@ -303,7 +337,7 @@ func TestBuilderBetaExportTopologyRefusesAsPublishDoes(t *testing.T) { //nolint:
 			response, exported := exportedBuilderTopology(t, harness, recorder)
 
 			if want := []string{
-				strings.TrimPrefix(publishErr.Message, tt.refusal),
+				strings.TrimPrefix(publishRefusal.Message, tt.refusal),
 			}; !slices.Equal(response.PublishBlockers, want) || !strings.HasSuffix(want[0], "; 1 more interface has no VLAN") {
 				t.Fatalf("publish blockers = %q, want %q", response.PublishBlockers, want)
 			}
@@ -312,6 +346,92 @@ func TestBuilderBetaExportTopologyRefusesAsPublishDoes(t *testing.T) { //nolint:
 				t.Fatalf("exported spec = %s, want the host", asBuilderJSON(t, exported.Spec))
 			}
 		})
+	}
+}
+
+// TestBuilderBetaExportTopologyKeepsStrings exports strings that yaml.v3
+// would write as block scalars it does not read back as they are, such as
+// one starting with a line break, so that the file loads, as phenix loads a
+// config, as the config Publish writes. Other multi-line strings stay block
+// scalars.
+func TestBuilderBetaExportTopologyKeepsStrings(t *testing.T) { //nolint:paralleltest // mutates feature options
+	document := exportVLANDocument(map[string]any{"name": "eth0", "vlan": "EXP"})
+	spec := document.Nodes[0].Device.Spec
+
+	general, _ := spec["general"].(map[string]any)
+	general["description"] = "\n  indented first line\nsecond"
+	spec["commands"] = []any{"\n", "\n\n", "\tfirst\nsecond", "\n#x", "one\ntwo\n"}
+	spec["advanced"] = map[string]any{"\nkey": "\n\tvalue", "plain": "a\n b"}
+
+	harness := newBuilderBetaHarness(t)
+	response, _ := exportedBuilderTopology(t, harness, exportBuilderTopology(t, harness, document, "", nil))
+
+	loaded, err := store.NewConfigFromYAML([]byte(response.YAML))
+	if err != nil {
+		t.Fatalf("exported YAML does not load: %v\n%s", err, response.YAML)
+	}
+
+	published, _, err := document.PublishTopologyConfig(response.Name)
+	if err != nil {
+		t.Fatalf("PublishTopologyConfig returned error: %v", err)
+	}
+
+	if got, want := asJSONValue(t, loaded.Spec), asJSONValue(t, published.Spec); !reflect.DeepEqual(got, want) {
+		t.Fatalf("exported spec = %s, want the published %s\n%s",
+			asBuilderJSON(t, got), asBuilderJSON(t, want), response.YAML)
+	}
+
+	for _, want := range []string{"- |\n", "plain: |-\n"} {
+		if !strings.Contains(response.YAML, want) {
+			t.Fatalf("exported YAML does not hold %q:\n%s", want, response.YAML)
+		}
+	}
+}
+
+// A spec whose strings yaml.v3 reads back as they are is written as
+// yaml.Marshal writes it, and each string it would not read back is double
+// quoted, map keys included.
+func TestBuilderYAMLExactMarshalsLikeYAML(t *testing.T) {
+	t.Parallel()
+
+	plain := map[string]any{
+		"nodes": []any{map[string]any{
+			"a10": 1.5, "a9": true, "b": nil, "multi": "one\ntwo\n", "x": []string{"y"}, "n": 3,
+		}},
+		"quoted":   []any{"true", "", " lead", "#hash", "a\u2028b", "a \nb", "a\n\tb"},
+		"empty":    map[string]any{},
+		"none":     []any{},
+		"nilMap":   map[string]any(nil),
+		"nilSlice": []string(nil),
+		"strings":  map[string]string{"k": "v"},
+	}
+
+	want, err := yaml.Marshal(plain)
+	if err != nil {
+		t.Fatalf("yaml.Marshal returned error: %v", err)
+	}
+
+	got, err := yaml.Marshal(builderYAMLExact(plain))
+	if err != nil || string(got) != string(want) {
+		t.Fatalf("YAML = %v\n%s\nwant\n%s", err, got, want)
+	}
+
+	changed := map[string]any{
+		"\nkey": []any{"\n", "\n a", "\ta\nb"}, "k": map[string]string{"v": "\n\n a\n"}, "a\nb": "c\n",
+	}
+
+	got, err = yaml.Marshal(builderYAMLExact(changed))
+	if err != nil {
+		t.Fatalf("yaml.Marshal returned error: %v", err)
+	}
+
+	var loaded any
+	if err := yaml.Unmarshal(got, &loaded); err != nil {
+		t.Fatalf("YAML does not load: %v\n%s", err, got)
+	}
+
+	if !reflect.DeepEqual(asJSONValue(t, loaded), asJSONValue(t, changed)) {
+		t.Fatalf("YAML loads as %s, want %s\n%s", asBuilderJSON(t, loaded), asBuilderJSON(t, changed), got)
 	}
 }
 
