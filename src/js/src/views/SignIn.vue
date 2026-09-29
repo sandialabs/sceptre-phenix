@@ -12,8 +12,12 @@ It requires a valid username and password.
       aria-modal
       aria-label="Create a New Account"
       close-button-aria-label="Close"
-      :auto-focus="false">
-      <div class="modal-card">
+      :auto-focus="false"
+      :destroy-on-hide="false">
+      <!-- Kept in the page once closed: a dialog reopened as it was being
+           removed stayed open but invisible, over the page. A new form each
+           time it opens leaves no value or message from before. -->
+      <div class="modal-card" :key="signUpForm">
         <header class="modal-card-head">
           <p class="modal-card-title">Create a New Account</p>
         </header>
@@ -29,7 +33,7 @@ It requires a valid username and password.
               ref="signupUsername"
               type="text"
               autocomplete="username"
-              v-model="username"
+              v-model="signUp.username"
               minlength="4"
               maxlength="32"></b-input>
           </b-field>
@@ -39,7 +43,7 @@ It requires a valid username and password.
               :compat-fallthrough="false"
               type="text"
               autocomplete="given-name"
-              v-model="first_name"></b-input>
+              v-model="signUp.first_name"></b-input>
           </b-field>
           <b-field label="Last Name" label-for="signup-last-name">
             <b-input
@@ -47,7 +51,7 @@ It requires a valid username and password.
               :compat-fallthrough="false"
               type="text"
               autocomplete="family-name"
-              v-model="last_name"></b-input>
+              v-model="signUp.last_name"></b-input>
           </b-field>
           <b-field label="Password" label-for="signup-password">
             <b-input
@@ -57,7 +61,7 @@ It requires a valid username and password.
               autocomplete="new-password"
               minlength="8"
               maxlength="32"
-              v-model="password"></b-input>
+              v-model="signUp.password"></b-input>
           </b-field>
           <b-field label="Confirm Password" label-for="signup-confirm-password">
             <b-input
@@ -67,7 +71,7 @@ It requires a valid username and password.
               autocomplete="new-password"
               minlength="8"
               maxlength="32"
-              v-model="confirmPassword"
+              v-model="signUp.confirmPassword"
               @keyup.enter="create"></b-input>
           </b-field>
         </section>
@@ -118,6 +122,17 @@ It requires a valid username and password.
   import axiosInstance from '@/utils/axios.js';
   import { usePhenixStore } from '@/store.js';
   import { useErrorNotification } from '@/utils/errorNotif';
+
+  // The Create Account dialog's fields, apart from the sign-in form's.
+  function blankSignUp() {
+    return {
+      username: null,
+      first_name: null,
+      last_name: null,
+      password: null,
+      confirmPassword: null,
+    };
+  }
 
   export default {
     //  this method is called when the Submit button is pressed (or
@@ -185,7 +200,7 @@ It requires a valid username and password.
       },
 
       create() {
-        if (!this.username) {
+        if (!this.signUp.username) {
           this.$buefy.toast.open({
             message: 'You must include an username',
             type: 'is-warning',
@@ -195,7 +210,7 @@ It requires a valid username and password.
           return {};
         }
 
-        if (!this.first_name) {
+        if (!this.signUp.first_name) {
           this.$buefy.toast.open({
             message: 'You must include a first name',
             type: 'is-warning',
@@ -205,7 +220,7 @@ It requires a valid username and password.
           return {};
         }
 
-        if (!this.last_name) {
+        if (!this.signUp.last_name) {
           this.$buefy.toast.open({
             message: 'You must include a last name',
             type: 'is-warning',
@@ -215,7 +230,7 @@ It requires a valid username and password.
           return {};
         }
 
-        if (!this.password) {
+        if (!this.signUp.password) {
           this.$buefy.toast.open({
             message: 'You must include a password',
             type: 'is-warning',
@@ -225,7 +240,7 @@ It requires a valid username and password.
           return {};
         }
 
-        if (!this.confirmPassword) {
+        if (!this.signUp.confirmPassword) {
           this.$buefy.toast.open({
             message: 'You must include a password confirmation',
             type: 'is-warning',
@@ -235,7 +250,7 @@ It requires a valid username and password.
           return {};
         }
 
-        if (this.password != this.confirmPassword) {
+        if (this.signUp.password != this.signUp.confirmPassword) {
           this.$buefy.toast.open({
             message: 'Your passwords do not match',
             type: 'is-warning',
@@ -247,13 +262,15 @@ It requires a valid username and password.
 
         axiosInstance
           .post('signup', {
-            username: this.username,
-            password: this.password,
-            first_name: this.first_name,
-            last_name: this.last_name,
+            username: this.signUp.username,
+            password: this.signUp.password,
+            first_name: this.signUp.first_name,
+            last_name: this.signUp.last_name,
           })
           .then((_) => {
             // on success, sign user in
+            this.username = this.signUp.username;
+            this.password = this.signUp.password;
             this.onSubmit();
             this.signUpModal = false;
           })
@@ -270,9 +287,15 @@ It requires a valid username and password.
     },
 
     watch: {
-      // Focus goes to the dialog's first field as it opens, and back to the
-      // button that opened it as it closes.
+      // The dialog opens empty, even when it opens again before it has
+      // finished closing. Focus goes to its first field as it opens, and
+      // back to the button that opened it as it closes.
       signUpModal(open) {
+        if (open) {
+          this.signUp = blankSignUp();
+          this.userExists = false;
+          this.signUpForm++;
+        }
         this.$nextTick(() =>
           open
             ? this.$refs.signupUsername?.focus()
@@ -284,11 +307,11 @@ It requires a valid username and password.
     data() {
       return {
         signUpModal: false,
+        // The key of the dialog's form, changed each time it opens.
+        signUpForm: 0,
+        signUp: blankSignUp(),
         username: null,
         password: null,
-        confirmPassword: null,
-        first_name: null,
-        last_name: null,
         rememberMe: false,
         userExists: false,
       };
