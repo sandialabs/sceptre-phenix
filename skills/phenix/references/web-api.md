@@ -63,4 +63,9 @@ Unmatched `/api/v1/*` requests return a JSON `404`; only non-API routes fall
 through to the SPA index. A route behind a disabled feature flag is therefore a
 real `404`, not `200 text/html`.
 
+`POST /users` and `POST /signup` answer `409` `user <name> already exists` for
+a name another user has, and `500` `error creating user` for other failures.
+`POST /users` answers `400` `role not found` for an unknown role before it
+creates anything.
+
 `src/go/web/server.go` is the authoritative route list.

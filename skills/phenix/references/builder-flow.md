@@ -238,8 +238,10 @@ published document loses content. The editor's Draft History is a table of
 number, name, date and user, newest first and numbered from the oldest (1, the
 draft as created), with Restore and Delete in each row (clicking a name also
 restores). The current row can be neither restored nor deleted, a view-only
-user gets no actions, and undo and redo skip a deleted snapshot. After a
-delete, focus moves to the Delete of the next older snapshot, or of the row
+user gets no actions, and undo and redo skip a deleted snapshot. In a narrow
+window a row's Restore and Delete tooltips show above the row, or below it
+when the row is at the top of the dialog, so they cover none of the row. After
+a delete, focus moves to the Delete of the next older snapshot, or of the row
 above when the last row goes. After a 412 the editor reads the draft again and
 the next try uses that ETag.
 
@@ -404,7 +406,26 @@ and networks are its nodes, each connection an edge from a device to its
 network, and their settings are columns; notes and groups are not nodes. It
 lists each device's scenario apps (`apps`, `disabled_apps`), reading a stored
 scenario as the Inspector does; when it cannot, it leaves the apps out and
-the dialog says why.
+the dialog says why. The file names gexf.xsd in `xsi:schemaLocation`, as
+Gephi writes it. The official RelaxNG grammar, gexf.rng, rejects that
+attribute (gexf.net says to remove it before using xmllint), so to check a
+file as saved, use a grammar that includes gexf.rng unchanged and allows the
+attribute on `<gexf>`, the only element that uses `gexf-content`:
+
+```xml
+<grammar xmlns="http://relaxng.org/ns/structure/1.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         datatypeLibrary="http://www.w3.org/2001/XMLSchema-datatypes">
+  <include href="gexf.rng"/>
+  <define name="gexf-content" combine="interleave">
+    <optional>
+      <attribute name="xsi:schemaLocation">
+        <list><oneOrMore><data type="anyURI"/><data type="anyURI"/></oneOrMore></list>
+      </attribute>
+    </optional>
+  </define>
+</grammar>
+```
 
 After a publication, older published documents of the same topology are
 removed once they are more than an hour old; newer ones go at a later publish

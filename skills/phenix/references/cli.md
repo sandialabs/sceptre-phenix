@@ -57,6 +57,12 @@ phenix config delete <kind>/<name> ...              # delete one or more specifi
 phenix config delete all [kind]                     # delete every stored config, or every config of one kind
 ```
 
+A config written as YAML (`phenix config get -o yaml`, `phenix config edit`,
+`GET /configs/{kind}/{name}` with `Accept: application/x-yaml`, and
+`POST /configs/download`) loads as the stored config: a string yaml.v3 could
+not read back (one starting with a line break, or whose first line starts with
+a tab) is written double quoted.
+
 ## `phenix experiment` — experiment lifecycle
 
 ```bash
