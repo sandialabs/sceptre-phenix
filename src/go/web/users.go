@@ -142,10 +142,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := rbac.NewUser(req.Username, req.Password)
-
-	user.Spec.FirstName = req.FirstName
-	user.Spec.LastName = req.LastName
+	user := rbac.NewUser(req.Username, req.Password, req.FirstName, req.LastName)
 
 	uRole, err := rbac.RoleFromConfig(req.RoleName)
 	if err != nil {

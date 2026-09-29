@@ -91,7 +91,7 @@ func ConfigureUsers(users []string) error {
 
 		plog.Info(plog.TypeSecurity, "creating default user", "user", uname, "role", rname)
 
-		user := rbac.NewUser(uname, pword)
+		user := rbac.NewUser(uname, pword, "", "")
 
 		setUserRole(user, rname, creds[3:]...)
 	}

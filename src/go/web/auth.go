@@ -99,16 +99,13 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u := rbac.NewUser(req.Username, req.Password)
+	u := rbac.NewUser(req.Username, req.Password, req.FirstName, req.LastName)
 	if u == nil {
 		// can happen if username is the same as an existing user
 		http.Error(w, "error creating user", http.StatusInternalServerError)
 
 		return
 	}
-
-	u.Spec.FirstName = req.FirstName
-	u.Spec.LastName = req.LastName
 
 	var raw string
 
