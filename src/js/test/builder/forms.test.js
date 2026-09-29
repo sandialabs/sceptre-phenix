@@ -160,11 +160,12 @@ describe('inspector working copy', () => {
     expect(target.title).toContain(network.name);
   });
 
-  test('an edge edits only its label and color', () => {
+  test('an edge edits only its label and color, and is named by its ends', () => {
     const { doc, edge } = sampleDocument();
     const target = inspectorTarget(doc, { type: 'edge', id: edge.id });
 
     expect(Object.keys(target.data)).toEqual(['label', 'color']);
+    expect(target.title).toBe('Connection from alpha (eth0) to EXP');
   });
 
   test('nothing selected edits the document', () => {
@@ -184,7 +185,7 @@ describe('inspector working copy', () => {
     expect(name({ type: 'node', id: alpha.id })).toBe('device alpha');
     expect(name({ type: 'node', id: sw.id })).toBe('network EXP');
     expect(name({ type: 'edge', id: edge.id })).toBe(
-      'connection from alpha to EXP',
+      'connection from alpha (eth0) to EXP',
     );
     expect(name({ type: 'node', id: note.node.id })).toBe('note');
     expect(name({ type: 'node', id: 'gone' })).toBe('element');

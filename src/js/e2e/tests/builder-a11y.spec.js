@@ -544,7 +544,11 @@ test.describe('keyboard-only authoring', () => {
         .toHaveCount(1);
       // The focusable Vue Flow edge wrapper carries the accessible name.
       await expect
-        .soft(page.getByRole('button', { name: /^Network MGMT from node to / }))
+        .soft(
+          page.getByRole('button', {
+            name: /^Network MGMT from node \(eth0\) to /,
+          }),
+        )
         .toHaveCount(1);
 
       await builder.waitSaved();
@@ -1066,7 +1070,7 @@ test.describe('keyboard-only authoring', () => {
         await expect(edge(toLeft)).toBeFocused();
         await expect
           .soft(edge(toLeft))
-          .toHaveAccessibleName('Network EXP from left to EXP');
+          .toHaveAccessibleName('Network EXP from left (eth0) to EXP');
         await page.keyboard.press('PageDown');
         await expect(edge(toRight)).toBeFocused();
         await page.keyboard.press('PageDown');

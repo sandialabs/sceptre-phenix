@@ -5,7 +5,7 @@
 // nodes and connections alike: Delete and Copy act on both.
 
 import { count } from './announce.js';
-import { findNode, nodeLabel } from './model.js';
+import { connectionEndLabel, findNode, nodeLabel } from './model.js';
 
 /**
  * Name of a node or connection in selection announcements.
@@ -20,8 +20,11 @@ export function selectionItemName(doc, { kind, id }) {
   }
 
   const edge = (doc?.edges || []).find((entry) => entry.id === id);
-  const ends = [edge?.sourceNodeId, edge?.targetNodeId]
-    .map((end) => nodeLabel(findNode(doc, end)))
+  const ends = [
+    [edge?.sourceNodeId, edge?.sourceHandleId],
+    [edge?.targetNodeId, edge?.targetHandleId],
+  ]
+    .map(([end, handle]) => connectionEndLabel(findNode(doc, end), handle))
     .filter(Boolean);
 
   return ends.length === 2

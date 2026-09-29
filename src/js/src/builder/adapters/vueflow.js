@@ -12,6 +12,7 @@ import { kindMeta, nodeIconKey } from '../catalog.js';
 import { networkColorToken } from '../colors.js';
 import { stableHash } from '../ids.js';
 import {
+  connectionEndLabel,
   deviceHandles,
   findNode,
   includedFrom,
@@ -529,10 +530,12 @@ export function toFlowEdges(doc, options = {}) {
       targetHandle: edge.targetHandleId || SWITCH_HANDLE_ID,
       selected: selected.has(edge.id),
       label: edge.label || network?.name || '',
+      // Each device end names its interface: two connections between the
+      // same nodes differ only there.
       ariaLabel:
         `Network ${network ? network.name : 'unassigned'} from ` +
-        `${source ? nodeLabel(source) : edge.sourceNodeId} to ` +
-        `${target ? nodeLabel(target) : edge.targetNodeId}${labelled}`,
+        `${source ? connectionEndLabel(source, edge.sourceHandleId) : edge.sourceNodeId} to ` +
+        `${target ? connectionEndLabel(target, edge.targetHandleId) : edge.targetNodeId}${labelled}`,
       // Vue Flow writes tabIndex in camel case, which an SVG element ignores,
       // so connections could never take focus. Like nodes, a connection is a
       // toggle button pressed while it is selected, out of the Tab order

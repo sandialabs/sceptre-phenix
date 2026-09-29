@@ -1387,7 +1387,7 @@ test.describe('Builder Beta inspector', () => {
         await applyEdits(builder);
         await expect
           .soft(builder.liveRegion)
-          .toContainText('Updated connection from node to MGMT');
+          .toContainText('Updated connection from node (eth0) to MGMT');
         await expect.soft(label).toHaveText('uplink');
         await expect
           .soft(page.locator('path.builder-edge'))
@@ -1833,7 +1833,7 @@ test.describe('Builder Beta inspector', () => {
 
       await expect
         .soft(builder.liveRegion)
-        .toContainText('Deleted the connection between node and EXP');
+        .toContainText('Deleted the connection between node (eth0) and EXP');
       await expect(rows).toHaveText(['eth0 — not connected']);
       await expect.soft(builder.summary).toContainText('0 connections');
       // Focus moves to the row's Remove button, not to <body>.

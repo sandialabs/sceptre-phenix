@@ -102,8 +102,8 @@ function ownText(doc, issue) {
   return issueText(doc, { ...issue, path: '' });
 }
 
-// "Device web-01", "Switch EXP", "Connection from web-01 to EXP": the name
-// issueText gives the element at doc[collection][index].
+// "Device web-01", "Switch EXP", "Connection from web-01 (eth0) to EXP": the
+// name issueText gives the element at doc[collection][index].
 function elementTitle(doc, collection, index) {
   return issueText(doc, { path: `${collection}[${index}]`, message: '' })
     .replace(/:\s*$/, '')

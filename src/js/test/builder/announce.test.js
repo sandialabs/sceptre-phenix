@@ -59,6 +59,12 @@ describe('wording', () => {
     expect(describeRemoval(before, { nodes: [web, db], edges: [] })).toBe(
       'Deleted the connection between web-01 and db-01',
     );
+    // A device end names its interface.
+    web.device.interfaces = [{ id: 'h1', name: 'eth1' }];
+    edge.sourceHandleId = 'h1';
+    expect(describeRemoval(before, { nodes: [web, db], edges: [] })).toBe(
+      'Deleted the connection between web-01 (eth1) and db-01',
+    );
     expect(describeRemoval(before, { nodes: [], edges: [] })).toBe(
       'Deleted web-01, db-01 and 1 connection',
     );

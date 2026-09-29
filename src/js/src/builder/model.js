@@ -2671,6 +2671,23 @@ export function nodeLabel(node) {
 }
 
 /**
+ * Label for one end of a connection: the node's label, and at a device the
+ * interface the connection uses, as "web-01 (eth1)", so two connections
+ * between the same nodes are told apart.
+ *
+ * @param {object} node
+ * @param {string|null} [handleId] the connection's handle at this node
+ * @returns {string}
+ */
+export function connectionEndLabel(node, handleId) {
+  const label = nodeLabel(node);
+  const handle =
+    handleId && deviceHandles(node).find((entry) => entry.id === handleId);
+
+  return handle?.name ? `${label} (${handle.name})` : label;
+}
+
+/**
  * Comment shown on hover/focus. Device comments are the phenix node
  * description; notes use their text.
  *

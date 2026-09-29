@@ -13,8 +13,8 @@ describe('pressing a node or connection', () => {
     expect(selectionItemName(doc, { kind: 'nodes', id: alpha.id })).toBe(
       'alpha',
     );
-    expect(selectionItemName(doc, { kind: 'edges', id: edge.id })).toMatch(
-      /^the connection between alpha and \S+/,
+    expect(selectionItemName(doc, { kind: 'edges', id: edge.id })).toBe(
+      'the connection between alpha (eth0) and EXP',
     );
     expect(selectionItemName(doc, { kind: 'edges', id: 'gone' })).toBe(
       'the connection',
@@ -81,7 +81,7 @@ describe('pressing a node or connection', () => {
     ).toEqual({
       selection: { nodes: [bravo.id], edges: [] },
       message: expect.stringMatching(
-        /^Removed the connection between alpha and .+ from the selection, 1 item selected$/,
+        /^Removed the connection between alpha \(eth0\) and .+ from the selection, 1 item selected$/,
       ),
     });
   });

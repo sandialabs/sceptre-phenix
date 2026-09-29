@@ -11,7 +11,7 @@
 import { count, listOf } from './announce.js';
 import { nodeIconKey } from './catalog.js';
 import {
-  deviceHandles,
+  connectionEndLabel,
   documentSummary,
   findNetwork,
   findNode,
@@ -171,12 +171,8 @@ export function connectionList(doc) {
 
   const end = (id, handleId) => {
     const node = nodes.get(id);
-    const label = node ? nodeLabel(node) : id;
-    const iface = deviceHandles(node).find(
-      (handle) => handle.id === handleId,
-    )?.name;
 
-    return { node, name: iface ? `${label} (${iface})` : label };
+    return { node, name: node ? connectionEndLabel(node, handleId) : id };
   };
 
   return (doc?.edges || [])

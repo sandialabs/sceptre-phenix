@@ -4,7 +4,7 @@
 // says specific (item names, counts with the right plural) and keep one
 // message from replacing another before a screen reader has read it.
 
-import { nodeLabel } from './model.js';
+import { connectionEndLabel, nodeLabel } from './model.js';
 
 /**
  * @param {number} n
@@ -58,8 +58,12 @@ export function describeRemoval(before, after) {
 
   if (nodes.length === 0 && edges.length === 1) {
     const byId = new Map((before.nodes || []).map((node) => [node.id, node]));
-    const ends = [edges[0].sourceNodeId, edges[0].targetNodeId]
-      .map((id) => nodeLabel(byId.get(id)))
+    const [edge] = edges;
+    const ends = [
+      [edge.sourceNodeId, edge.sourceHandleId],
+      [edge.targetNodeId, edge.targetHandleId],
+    ]
+      .map(([id, handle]) => connectionEndLabel(byId.get(id), handle))
       .filter(Boolean);
 
     return ends.length === 2

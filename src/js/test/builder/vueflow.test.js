@@ -242,7 +242,37 @@ describe('flow edges', () => {
     expect(edge.type).toBe('builderNetwork');
     expect(edge.label).toBe('EXP');
     expect(edge.targetHandle).toBe(SWITCH_HANDLE_ID);
-    expect(edge.ariaLabel).toContain('Network EXP from alpha to');
+    expect(edge.ariaLabel).toBe('Network EXP from alpha (eth0) to EXP');
+  });
+
+  // Two connections from one device to one switch differ only by the
+  // interface at the device.
+  test('a connection names the interface at its device end', () => {
+    const { doc, sw } = sampleDocument();
+    const dual = addNode(doc, {
+      kind: 'device',
+      hostname: 'dual',
+      position: { x: 0, y: 400 },
+      interfaces: [{ name: 'eth0' }, { name: 'eth1' }],
+    });
+    let next = dual.doc;
+
+    for (const handle of dual.node.device.interfaces) {
+      next = connect(next, {
+        sourceNodeId: dual.node.id,
+        sourceHandleId: handle.id,
+        targetNodeId: sw.id,
+      }).doc;
+    }
+
+    expect(
+      toFlowEdges(next)
+        .filter((edge) => edge.source === dual.node.id)
+        .map((edge) => edge.ariaLabel),
+    ).toEqual([
+      'Network EXP from dual (eth0) to EXP',
+      'Network EXP from dual (eth1) to EXP',
+    ]);
   });
 
   // Vue Flow writes tabIndex in camel case, which SVG ignores. A connection

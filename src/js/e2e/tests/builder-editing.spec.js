@@ -686,7 +686,7 @@ test.describe('Builder Beta canvas editing', () => {
         await expect
           .soft(
             page.getByRole('button', {
-              name: 'Network EXP-2 from router to EXP-2',
+              name: 'Network EXP-2 from router (eth0) to EXP-2',
             }),
             'the connection is drawn as a labelled edge',
           )
@@ -1073,7 +1073,7 @@ test.describe('Builder Beta canvas editing', () => {
       await expect.soft(selected).toHaveCount(0);
       await expect
         .soft(builder.liveRegion)
-        .toContainText('Deselected the connection between node and EXP');
+        .toContainText('Deselected the connection between node (eth0) and EXP');
       await selectEdge(page);
       // The toolbar deletes whatever is selected.
       await expect(selected).toHaveCount(1);
@@ -1083,7 +1083,7 @@ test.describe('Builder Beta canvas editing', () => {
       await expect.soft(page.locator('.vue-flow__edge')).toHaveCount(0);
       await expect
         .soft(builder.liveRegion)
-        .toContainText('Deleted the connection between node and EXP');
+        .toContainText('Deleted the connection between node (eth0) and EXP');
 
       // The interface stays on the device, now unconnected.
       await canvasNode(page, deviceId).click();
@@ -1157,7 +1157,10 @@ test.describe('Builder Beta canvas editing', () => {
             return { x: at.x * ctm.a + ctm.e + 6, y: at.y * ctm.d + ctm.f + 6 };
           });
         await page.mouse.click(beside.x, beside.y);
-        await expect(subject).toContainText('Connection');
+        // Named by its ends, with the interface at the device.
+        await expect(subject).toContainText(
+          'Connection from node (eth0) to EXP',
+        );
         await expect(edge).toBeFocused();
         await page.keyboard.press('Delete');
 
@@ -1183,7 +1186,9 @@ test.describe('Builder Beta canvas editing', () => {
         await expect(edge).toHaveAttribute('aria-pressed', 'false');
         await expect
           .soft(builder.liveRegion)
-          .toContainText('Deselected the connection between node and EXP');
+          .toContainText(
+            'Deselected the connection between node (eth0) and EXP',
+          );
         await page.keyboard.press(' ');
         await expect(edge).toHaveAttribute('aria-pressed', 'true');
 

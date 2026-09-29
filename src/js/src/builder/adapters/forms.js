@@ -46,8 +46,10 @@ import {
 } from '../../components/builder/inspector/control.js';
 import { errorMessage, fieldErrors, fieldLabel } from '../form-validator.js';
 import {
+  connectionEndLabel,
   deviceHandles,
   findNetwork,
+  findNode,
   includedFrom,
   networkOfSwitch,
   networkRefusal,
@@ -617,9 +619,13 @@ export function inspectorTarget(doc, selection) {
       return null;
     }
 
+    // Named by its ends and the interfaces there, as the canvas names it.
+    const end = (nodeId, handleId) =>
+      connectionEndLabel(findNode(doc, nodeId), handleId) || 'a node';
+
     return {
       kind: 'edge',
-      title: 'Connection',
+      title: `Connection from ${end(edge.sourceNodeId, edge.sourceHandleId)} to ${end(edge.targetNodeId, edge.targetHandleId)}`,
       target: edge,
       network: findNetwork(doc, edge.networkId),
       data: { label: edge.label || '', color: edge.color || '' },
@@ -685,7 +691,7 @@ export function inspectorTarget(doc, selection) {
 
 /**
  * Names what the Inspector edits, for announcements: "device web-01",
- * "network MGMT", "diagram Lab", "connection from web-01 to MGMT".
+ * "network MGMT", "diagram Lab", "connection from web-01 (eth0) to MGMT".
  *
  * @param {object} doc
  * @param {{type: string, id?: string}} selection
@@ -1009,9 +1015,14 @@ function elementName(doc, collection, index) {
       (node) => node.id === edge?.sourceNodeId,
     );
     const network = findNetwork(doc, edge?.networkId);
+    const handle = deviceHandles(device).find(
+      (entry) => entry.id === edge?.sourceHandleId,
+    );
+    const hostname = device?.device?.hostname || 'a device';
+    const from = handle?.name ? `${hostname} (${handle.name})` : hostname;
 
     return device && network
-      ? `connection from ${device.device?.hostname || 'a device'} to ${network.name}`
+      ? `connection from ${from} to ${network.name}`
       : `connection #${index + 1}`;
   }
 
