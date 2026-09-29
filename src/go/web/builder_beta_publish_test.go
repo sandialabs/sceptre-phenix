@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -1683,6 +1684,84 @@ func TestBuilderBetaPublishForkUpdatesWhatItsDraftPublished(t *testing.T) { //no
 
 		if len(listing.Drafts) != 0 {
 			t.Fatalf("drafts = %+v, want none created by a refused fork", listing.Drafts)
+		}
+	})
+}
+
+func TestBuilderBetaPublishAfterThePublishedSnapshotAgedOut(t *testing.T) { //nolint:paralleltest // mutates feature options
+	const update = `{"mode":"topology-experiment","topology":{"name":"lab","action":"update"},` +
+		`"experiment":{"name":"exp","action":"update"}}`
+
+	// Publishes lab and exp, then saves until the published snapshot ages out
+	// of the draft's history. The draft keeps its publication and is dirty.
+	aged := func(t *testing.T) (*builderBetaHarness, builderDraftResponse, *bdoc.Document) {
+		t.Helper()
+
+		harness := newBuilderBetaHarness(t)
+		document := bdoc.NewDocument("lab")
+		draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "a")
+		response, _ := publishBuilderDraft(t, harness, draft, `{"mode":"topology-experiment",`+
+			`"topology":{"name":"lab","action":"create"},"experiment":{"name":"exp","action":"create"}}`, http.StatusOK)
+		published := response.Draft.Publication
+		draft = response.Draft
+
+		for i := range bapi.MaxSnapshots {
+			draft = editBuilderDraft(t, harness, draft, document, "n"+strconv.Itoa(i))
+		}
+
+		switch {
+		case draft.Snapshots != bapi.MaxSnapshots:
+			t.Fatalf("snapshots = %d, want %d", draft.Snapshots, bapi.MaxSnapshots)
+		case draft.Publication == nil || draft.Publication.SnapshotID != published.SnapshotID ||
+			draft.Publication.DocumentID != published.DocumentID:
+			t.Fatalf("publication = %+v, want it kept as %+v", draft.Publication, published)
+		case !draft.Dirty:
+			t.Fatal("a draft whose published snapshot aged out must be dirty")
+		}
+
+		recorder := harness.do(builderBetaRequest{
+			method: http.MethodGet, user: builderBetaTestOwner,
+			path: "/builder/drafts/" + draft.Owner + "/" + draft.ID + "/snapshots/" + published.SnapshotID,
+		})
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("published snapshot: status = %d, want it aged out: %s", recorder.Code, recorder.Body.String())
+		}
+
+		return harness, draft, document
+	}
+
+	t.Run("by the draft", func(t *testing.T) {
+		harness, draft, _ := aged(t)
+
+		response, _ := publishBuilderDraft(t, harness, draft, update, http.StatusOK)
+
+		switch {
+		case !slices.Equal(harness.reconfigured, []string{"exp"}):
+			t.Fatalf("configured = %v, want exp updated", harness.reconfigured)
+		case response.Draft.Dirty || response.Draft.Publication.SnapshotID != response.Draft.SnapshotID:
+			t.Fatalf("publication = %+v, want the current snapshot published", response.Draft.Publication)
+		}
+	})
+
+	t.Run("by a draft that forks it", func(t *testing.T) {
+		harness, draft, document := aged(t)
+
+		recorder := forkBuilderDraft(t, harness, builderBetaTestOwner, nil, draft.Owner+"/"+draft.ID, document)
+		if recorder.Code != http.StatusCreated {
+			t.Fatalf("fork: status = %d: %s", recorder.Code, recorder.Body.String())
+		}
+
+		var forked builderDraftResponse
+		harness.decode(recorder, &forked)
+
+		if forked.Forked == nil || forked.Forked.DocumentID != draft.Publication.DocumentID {
+			t.Fatalf("fork's forked publication = %+v, want the draft's %+v", forked.Forked, draft.Publication)
+		}
+
+		publishBuilderDraft(t, harness, editBuilderDraft(t, harness, forked, document, "b"), update, http.StatusOK)
+
+		if !slices.Equal(harness.reconfigured, []string{"exp"}) {
+			t.Fatalf("configured = %v, want exp updated", harness.reconfigured)
 		}
 	})
 }

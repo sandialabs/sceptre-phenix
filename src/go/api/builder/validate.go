@@ -201,9 +201,10 @@ func validateDraftMetadata(key string, meta *DraftMetadata) error {
 // history it refers to. A publication naming a snapshot the draft still holds
 // must record that snapshot's digest, so tampered metadata can never make a
 // draft look clean at content it does not have. One naming a snapshot deleted
-// from the history (see [Service.DeleteSnapshot]) leaves the draft dirty, since
-// the cursor always points at a snapshot the history holds. The targets it
-// records must match the operation its mode describes.
+// or pruned from the history (see [Service.DeleteSnapshot] and [pruneHistory])
+// leaves the draft dirty, since the cursor always points at a snapshot the
+// history holds. The targets it records must match the operation its mode
+// describes.
 func validatePublicationState(key string, meta *DraftMetadata) error {
 	state := meta.Publication
 	if state == nil {

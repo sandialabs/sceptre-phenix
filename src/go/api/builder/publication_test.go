@@ -280,9 +280,10 @@ func TestUntamperedPublicationStateIsAccepted(t *testing.T) {
 	}
 }
 
-// TestPruningForgetsAnAgedOutPublication asserts pruning forgets a publication
-// whose snapshot aged out of the history.
-func TestPruningForgetsAnAgedOutPublication(t *testing.T) {
+// TestPruningKeepsAnAgedOutPublication asserts pruning keeps a publication
+// whose snapshot aged out of the history, as deleting that snapshot does, and
+// that the draft stays dirty and can be published again.
+func TestPruningKeepsAnAgedOutPublication(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 
@@ -293,6 +294,8 @@ func TestPruningForgetsAnAgedOutPublication(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarkPublished returned error: %v", err)
 	}
+
+	want := meta.Publication
 
 	for i := range MaxSnapshots {
 		meta = appendTestSnapshot(t, h, meta, "topo-v"+strconv.Itoa(i), testActor)
@@ -306,9 +309,26 @@ func TestPruningForgetsAnAgedOutPublication(t *testing.T) {
 	switch {
 	case stored.hasSnapshot(published):
 		t.Fatal("the published snapshot should have aged out of the history")
-	case stored.Publication != nil:
-		t.Fatal("a publication whose snapshot aged out must be forgotten, not left dangling")
+	case stored.Publication == nil || stored.Publication.SnapshotID != published ||
+		stored.Publication.DocumentID != want.DocumentID || !stored.Publication.PublishedAt.Equal(want.PublishedAt):
+		t.Fatalf("publication = %+v, want it kept as %+v", stored.Publication, want)
 	case !stored.Dirty():
-		t.Fatal("a draft with no publication must be dirty")
+		t.Fatal("a draft whose published snapshot aged out must be dirty")
+	}
+
+	// The drafts list reads the kept publication too, rather than listing the
+	// draft as damaged.
+	drafts, damaged, err := h.service.ListDraftsWithDamaged(ctx)
+	if err != nil || len(drafts) != 1 || len(damaged) != 0 || drafts[0].Publication == nil {
+		t.Fatalf("ListDraftsWithDamaged = %+v, %+v, %v; want the draft listed with its publication", drafts, damaged, err)
+	}
+
+	republished, err := h.service.MarkPublished(ctx, markPublishedRequest(stored, stored.Revision))
+	if err != nil {
+		t.Fatalf("MarkPublished after pruning returned error: %s", fmtErr(err))
+	}
+
+	if republished.Publication.SnapshotID != stored.Current().ID || republished.Dirty() {
+		t.Fatalf("publication = %+v, dirty %t; want the current snapshot published", republished.Publication, republished.Dirty())
 	}
 }

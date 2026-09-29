@@ -987,6 +987,10 @@ func (s *Service) deleteSnapshotScopes(draftID string, dropped []SnapshotManifes
 // [MaxSnapshots] snapshots of at most [MaxDraftHistoryBytes] in total, never
 // dropping the snapshot the cursor points at. It returns the dropped manifests
 // and adjusts the cursor.
+//
+// A publication naming a dropped snapshot is kept, as [Service.DeleteSnapshot]
+// keeps it, so the draft can still update what it published. The draft stays
+// dirty, since the cursor can never point at that snapshot again.
 func pruneHistory(meta *DraftMetadata) []SnapshotManifest {
 	var dropped []SnapshotManifest
 
@@ -996,13 +1000,6 @@ func pruneHistory(meta *DraftMetadata) []SnapshotManifest {
 		oldest := removeSnapshot(meta, 0)
 		dropped = append(dropped, oldest)
 		total -= oldest.Size
-	}
-
-	// A publication whose snapshot aged out of the history is forgotten; the
-	// draft was already dirty, because the cursor is never pruned and therefore
-	// had moved past the published snapshot.
-	if meta.Publication != nil && !meta.hasSnapshot(meta.Publication.SnapshotID) {
-		meta.Publication = nil
 	}
 
 	return dropped
