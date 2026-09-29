@@ -379,10 +379,13 @@
 
   // Beside the row's actions, Restore's before them and Delete's after, so
   // a tooltip covers neither button and the pointer moves onto it without
-  // crossing the other one.
+  // crossing the other one. Without room after the actions (a narrow
+  // window, where the table may scroll the row's name up to them), both go
+  // above the row instead, covering none of it.
   const { tip, tipEl, showTip, scheduleHide, hideTip } = useFixedTooltip({
     side: 'end',
     beside: (button) => button.closest('td'),
+    above: (button) => button.closest('tr'),
   });
 
   function tipFor(text) {

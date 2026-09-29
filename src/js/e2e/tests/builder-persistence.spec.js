@@ -1025,30 +1025,36 @@ test.describe('Builder Beta persistence', () => {
     expect.soft(overflow).toEqual([0, 0]);
     await expect.soft(restore).toBeInViewport({ ratio: 1 });
 
-    // With no room after the actions, a tooltip goes before its button,
-    // over its own row: the first row's Delete covers neither button of the
-    // row below, and stays while the pointer moves onto it.
+    // With no room after the actions, a row's tooltips go above the row, so
+    // they cover none of its controls, on hover as on focus. The pointer
+    // moves straight up onto one and it stays; Escape hides it and keeps
+    // the dialog.
     const tooltip = page.getByTestId('history-tooltip');
-    await rows.first().getByTestId('history-delete').hover();
+    const current = rows.first();
+    const remove = current.getByTestId('history-delete');
+    await remove.hover();
     await expect(tooltip).toHaveText(/^Delete\. /);
-    const shown = await tooltip.boundingBox();
-    for (const action of ['history-restore', 'history-delete']) {
-      const below = await first.getByTestId(action).boundingBox();
-      expect
-        .soft(
-          shown.y + shown.height <= below.y ||
-            shown.x + shown.width <= below.x ||
-            shown.x >= below.x + below.width,
-          `the tooltip covers the next row's ${action}`,
-        )
-        .toBe(true);
-    }
-    await page.mouse.move(
-      shown.x + shown.width / 2,
-      shown.y + shown.height / 2,
-      { steps: 10 },
-    );
+    let shown = await tooltip.boundingBox();
+    let row = await current.boundingBox();
+    expect
+      .soft(shown.y + shown.height, 'Delete is above its row')
+      .toBeLessThanOrEqual(row.y);
+    const at = await remove.boundingBox();
+    await page.mouse.move(at.x + at.width / 2, shown.y + shown.height / 2, {
+      steps: 10,
+    });
     await expect.soft(tooltip).toHaveText(/^Delete\. /);
+    await page.keyboard.press('Escape');
+    await expect(tooltip).toHaveCount(0);
+    await expect.soft(dialog).toBeVisible();
+
+    await restore.focus();
+    await expect(tooltip).toHaveText('Restore');
+    shown = await tooltip.boundingBox();
+    row = await first.boundingBox();
+    expect
+      .soft(shown.y + shown.height, 'Restore is above its row')
+      .toBeLessThanOrEqual(row.y);
   });
 
   test('Draft History deletes a snapshot after asking, but never the current one', async ({

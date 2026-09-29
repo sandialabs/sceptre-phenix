@@ -1,5 +1,52 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { aboveRow } from '@/components/builder/fixedTooltip.js';
+
+// A tooltip above a table row covers none of the row's controls: in a
+// narrow window, Draft History's Restore and Delete tooltips go there.
+describe('aboveRow', () => {
+  // A dialog from 20 to 300 pixels across and from 20 down, and a row whose
+  // Delete, 28 pixels wide, is at its end.
+  const bounds = { left: 20, right: 300, top: 20 };
+  const row = { top: 200, bottom: 240 };
+  const control = { left: 260, width: 28 };
+
+  it('places it just above the row, centered on its control', () => {
+    expect(aboveRow(control, row, bounds, { width: 20, height: 30 })).toEqual({
+      left: 264,
+      top: 166,
+    });
+  });
+
+  it('keeps it inside the dialog', () => {
+    expect(aboveRow(control, row, bounds, { width: 100, height: 30 })).toEqual({
+      left: 200,
+      top: 166,
+    });
+    expect(
+      aboveRow({ left: 30, width: 28 }, row, bounds, {
+        width: 100,
+        height: 30,
+      }),
+    ).toEqual({ left: 20, top: 166 });
+  });
+
+  it('places it just below the row without room above', () => {
+    const first = { top: 50, bottom: 90 };
+
+    expect(aboveRow(control, first, bounds, { width: 20, height: 30 })).toEqual(
+      { left: 264, top: 94 },
+    );
+    // Room to the pixel is room.
+    expect(
+      aboveRow(control, { top: 54, bottom: 94 }, bounds, {
+        width: 20,
+        height: 30,
+      }).top,
+    ).toBe(20);
+  });
+});
+
 // whenPointed decides whether a mouseenter is the pointer moving onto a
 // control. The module keeps its pointer and focus tracking in module state,
 // so each test loads it afresh, then stubs window and document (Vue reads

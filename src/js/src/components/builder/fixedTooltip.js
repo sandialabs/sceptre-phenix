@@ -24,12 +24,35 @@ import { nextTick, onBeforeUnmount, ref } from 'vue';
 
 const TIP_GAP = 4;
 const TIP_MARGIN = 8;
-// The narrowest a tooltip is made to fit beside its control.
-const MIN_ROOM = 120;
 const HIDE_DELAY_MS = 200;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(value, Math.max(min, max)));
+}
+
+/**
+ * Where a tooltip goes above its control's table row, so it covers none of
+ * the row: its bottom edge just above the row's top edge, centered on the
+ * control and kept inside `bounds`. Without room above (the row near the top
+ * of `bounds`), it goes just below the row instead.
+ *
+ * @param {DOMRect} control
+ * @param {DOMRect} row
+ * @param {{ left: number, right: number, top: number }} bounds
+ * @param {{ width: number, height: number }} size the tooltip's
+ * @returns {{ left: number, top: number }}
+ */
+export function aboveRow(control, row, bounds, { width, height }) {
+  const top = row.top - height - TIP_GAP;
+
+  return {
+    left: clamp(
+      control.left + (control.width - width) / 2,
+      bounds.left,
+      bounds.right - width,
+    ),
+    top: top >= bounds.top ? top : row.bottom + TIP_GAP,
+  };
 }
 
 function within(rect, x, y) {
@@ -133,8 +156,17 @@ export function whenPointed(event, show) {
  *   for a control with others next to it, such as a table row's buttons:
  *   the tooltip covers none of them, and the pointer reaches it without
  *   crossing another
+ * @param {(control: HTMLElement) => HTMLElement|null} [options.above] the
+ *   element the tooltip is placed above, such as the control's table row,
+ *   once there is no room on `side` of what `beside` names (a narrow
+ *   window): it covers none of the row, stays inside the control's dialog,
+ *   and the pointer reaches it by moving straight up
  */
-export function useFixedTooltip({ side = 'end', beside = null } = {}) {
+export function useFixedTooltip({
+  side = 'end',
+  beside = null,
+  above = null,
+} = {}) {
   const tip = ref(null);
   const tipEl = ref(null);
 
@@ -160,7 +192,9 @@ export function useFixedTooltip({ side = 'end', beside = null } = {}) {
   // control on its other side). Without room on the preferred side (the
   // stacked narrow layout), below it at the end side, or above it at the
   // start side, which keeps the Inspector's field under its label clear;
-  // always inside the viewport.
+  // always inside the viewport. Without room on the preferred side of what
+  // `beside` names (a narrow window), above what `above` names instead (see
+  // aboveRow).
   function placeTip() {
     if (!tip.value || !anchor?.isConnected) {
       hideTip();
@@ -179,6 +213,7 @@ export function useFixedTooltip({ side = 'end', beside = null } = {}) {
     let width = element?.offsetWidth || 0;
     let height = element?.offsetHeight || 0;
     const box = beside?.(anchor)?.getBoundingClientRect() || rect;
+    const row = box !== rect && !roomBeside(box, width) && above?.(anchor);
     let toward = side;
 
     if (box !== rect && side !== 'below') {
@@ -189,26 +224,20 @@ export function useFixedTooltip({ side = 'end', beside = null } = {}) {
       toward === 'start' ? box.left - width - TIP_GAP : box.right + TIP_GAP;
     let top = rect.top;
 
-    // No room beside what `beside` names (a narrow window): over the
-    // control's own row rather than the next. It takes the width there, so
-    // it wraps less, and is centred on the control.
-    const room =
-      toward === 'start'
-        ? window.innerWidth - TIP_MARGIN - rect.right - TIP_GAP
-        : rect.left - TIP_GAP - TIP_MARGIN;
-    const outside =
-      left < TIP_MARGIN || left + width > window.innerWidth - TIP_MARGIN;
-
-    if (box !== rect && side !== 'below' && outside && room >= MIN_ROOM) {
-      element?.style.setProperty('max-width', `${room}px`);
+    if (row) {
+      // It takes the dialog's width there, so it wraps less.
+      const bounds = dialogBounds();
+      element?.style.setProperty(
+        'max-width',
+        `${bounds.right - bounds.left}px`,
+      );
       width = element?.offsetWidth || 0;
       height = element?.offsetHeight || 0;
-      left =
-        toward === 'start' ? rect.right + TIP_GAP : rect.left - width - TIP_GAP;
-      top = rect.top + (rect.height - height) / 2;
-    }
-
-    if (side === 'below') {
+      ({ left, top } = aboveRow(rect, row.getBoundingClientRect(), bounds, {
+        width,
+        height,
+      }));
+    } else if (side === 'below') {
       left = rect.left;
       top = rect.bottom + TIP_GAP;
     } else if (toward === 'start' && left < TIP_MARGIN) {
@@ -219,7 +248,7 @@ export function useFixedTooltip({ side = 'end', beside = null } = {}) {
       top = rect.bottom + TIP_GAP;
     }
 
-    if (top + height > window.innerHeight - TIP_MARGIN) {
+    if (!row && top + height > window.innerHeight - TIP_MARGIN) {
       top = rect.top - height - TIP_GAP;
     }
 
@@ -227,6 +256,27 @@ export function useFixedTooltip({ side = 'end', beside = null } = {}) {
       ...tip.value,
       left: clamp(left, TIP_MARGIN, window.innerWidth - width - TIP_MARGIN),
       top: clamp(top, TIP_MARGIN, window.innerHeight - height - TIP_MARGIN),
+    };
+  }
+
+  // A tooltip this wide fits on the preferred side of the box, inside the
+  // viewport.
+  function roomBeside(box, width) {
+    return side === 'start'
+      ? box.left - TIP_GAP - width >= TIP_MARGIN
+      : box.right + TIP_GAP + width <= window.innerWidth - TIP_MARGIN;
+  }
+
+  // The part of the control's dialog, if any, in the viewport, less the
+  // margin.
+  function dialogBounds() {
+    const dialog = anchor.closest('dialog')?.getBoundingClientRect();
+
+    return {
+      left: Math.max(0, dialog?.left ?? 0) + TIP_MARGIN,
+      right:
+        Math.min(window.innerWidth, dialog?.right ?? Infinity) - TIP_MARGIN,
+      top: Math.max(0, dialog?.top ?? 0) + TIP_MARGIN,
     };
   }
 
