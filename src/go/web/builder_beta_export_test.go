@@ -227,8 +227,9 @@ func addExportHost(document *bdoc.Document, hostname string, fields ...map[strin
 // TestBuilderBetaExportTopologyRefusesAsPublishDoes refuses what Publish
 // refuses for failing phenix's config validation, with its status and
 // message, and exports what only publishing refuses, saying why. Publish
-// names interfaces without a VLAN first; an export refused beside a blank
-// VLAN, which it would export, names the schema's reason instead.
+// names interfaces without a VLAN, then shared addresses, first; an export
+// refused beside a blank VLAN or a shared address, which it would export,
+// names the schema's reason instead.
 func TestBuilderBetaExportTopologyRefusesAsPublishDoes(t *testing.T) { //nolint:paralleltest // mutates feature options
 	tests := []struct {
 		name     string
@@ -275,6 +276,19 @@ func TestBuilderBetaExportTopologyRefusesAsPublishDoes(t *testing.T) { //nolint:
 			),
 			exports:       false,
 			refusal:       "topology no-vlan cannot be published: ",
+			exportRefusal: "builder document cannot be published as topology no-vlan",
+			exportCause:   `Error at "/mac"`,
+		},
+		{
+			// Publish names the shared address; the schema accepts it.
+			name: "shared address and invalid MAC address",
+			document: exportVLANDocument(
+				map[string]any{"name": "eth0", "vlan": "EXP", "proto": "static", "address": "10.0.0.5", "mask": 24},
+				map[string]any{"name": "eth1", "vlan": "EXP", "proto": "static", "address": "10.0.0.5", "mask": 24},
+				map[string]any{"name": "eth2", "vlan": "EXP", "mac": "not-a-mac"},
+			),
+			exports:       false,
+			refusal:       "topology no-vlan cannot be published: IP address 10.0.0.5 is used by ",
 			exportRefusal: "builder document cannot be published as topology no-vlan",
 			exportCause:   `Error at "/mac"`,
 		},
@@ -332,9 +346,10 @@ func TestBuilderBetaExportTopologyRefusesAsPublishDoes(t *testing.T) { //nolint:
 					t.Fatalf("export message = %q, want %q", exportErr.Message, want)
 				}
 
-				if tt.exportCause != "" &&
-					(!strings.Contains(exportErr.Cause, tt.exportCause) || strings.Contains(exportErr.Cause, "no VLAN")) {
-					t.Fatalf("export cause = %q, want it to hold %q and name no VLAN", exportErr.Cause, tt.exportCause)
+				if tt.exportCause != "" && (!strings.Contains(exportErr.Cause, tt.exportCause) ||
+					strings.Contains(exportErr.Cause, "no VLAN") || strings.Contains(exportErr.Cause, " is used by ")) {
+					t.Fatalf("export cause = %q, want it to hold %q and name no VLAN or shared address",
+						exportErr.Cause, tt.exportCause)
 				}
 
 				return

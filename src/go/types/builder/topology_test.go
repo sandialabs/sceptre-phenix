@@ -459,36 +459,56 @@ func TestPublishTopologyConfigRefusesInterfaceWithoutVLAN(t *testing.T) {
 }
 
 // A projection that phenix's schema refuses and whose interface also has no
-// VLAN is refused by publishing for the VLAN, which says what to fix first.
-// An export is refused for the VLAN only when the schema refuses it too (the
-// key is missing or null); beside a blank VLAN, which the schema accepts, it
-// is refused with the schema's reason.
+// VLAN, or shares an address, is refused by publishing for the VLAN or the
+// address, which says what to fix first. An export is refused for the VLAN
+// only when the schema refuses it too (the key is missing or null); beside a
+// blank VLAN or a shared address, which the schema accepts, it is refused
+// with the schema's reason.
 func TestExportTopologyConfigRefusesForTheSchemaReason(t *testing.T) {
 	for name, tt := range map[string]struct {
 		set func(map[string]any)
+		// address is whether publishing refuses the shared address rather
+		// than the VLAN.
+		address bool
 		// vlan is whether the export is refused for the VLAN.
 		vlan bool
 	}{
-		"blank":   {set: func(iface map[string]any) { iface["vlan"] = " " }, vlan: false},
-		"empty":   {set: func(iface map[string]any) { iface["vlan"] = "" }, vlan: false},
-		"null":    {set: func(iface map[string]any) { iface["vlan"] = nil }, vlan: true},
-		"missing": {set: func(iface map[string]any) { delete(iface, "vlan") }, vlan: true},
+		"blank":   {set: func(iface map[string]any) { iface["vlan"] = " " }, address: false, vlan: false},
+		"empty":   {set: func(iface map[string]any) { iface["vlan"] = "" }, address: false, vlan: false},
+		"null":    {set: func(iface map[string]any) { iface["vlan"] = nil }, address: false, vlan: true},
+		"missing": {set: func(iface map[string]any) { delete(iface, "vlan") }, address: false, vlan: true},
+		// The router's eth0 has this address too.
+		"shared address": {set: func(iface map[string]any) { iface["address"] = "10.0.0.1" }, address: true, vlan: false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc, eth0 := unconnectedHost(t)
 			tt.set(eth0)
 			eth0["mac"] = "not-a-mac"
 
-			var vlanErr *builder.InterfaceVLANError
+			var (
+				vlanErr    *builder.InterfaceVLANError
+				addressErr *builder.InterfaceAddressError
+			)
 
-			config, warnings, publishRefusal := doc.PublishTopologyConfig("mixed")
-			if config != nil || !errors.As(publishRefusal, &vlanErr) {
-				t.Fatalf("PublishTopologyConfig = %v, %v, want an InterfaceVLANError", config, publishRefusal)
+			// named reports whether err is the refusal publishing names first.
+			named := func(err error) bool {
+				if tt.address {
+					return errors.As(err, &addressErr) && !errors.As(err, &vlanErr)
+				}
+
+				return errors.As(err, &vlanErr)
 			}
 
-			if validated, err := doc.ValidateTopologyProjection("mixed"); !errors.As(err, &vlanErr) ||
+			config, warnings, publishRefusal := doc.PublishTopologyConfig("mixed")
+			if config != nil || !named(publishRefusal) {
+				t.Fatalf("PublishTopologyConfig = %v, %v, want an InterfaceVLANError or InterfaceAddressError",
+					config, publishRefusal)
+			}
+
+			if validated, err := doc.ValidateTopologyProjection("mixed"); !named(err) ||
 				!slices.Equal(validated, warnings) {
-				t.Fatalf("ValidateTopologyProjection = %q, %v, want %q and an InterfaceVLANError", validated, err, warnings)
+				t.Fatalf("ValidateTopologyProjection = %q, %v, want %q and the publish refusal %v",
+					validated, err, warnings, publishRefusal)
 			}
 
 			export, err := doc.ExportTopologyConfig("mixed")
@@ -504,7 +524,7 @@ func TestExportTopologyConfigRefusesForTheSchemaReason(t *testing.T) {
 				return
 			}
 
-			if errors.As(err, &vlanErr) || !errors.Is(err, types.ErrValidationFailed) ||
+			if errors.As(err, &vlanErr) || errors.As(err, &addressErr) || !errors.Is(err, types.ErrValidationFailed) ||
 				!strings.Contains(err.Error(), "/mac") {
 				t.Fatalf("export error = %v, want the schema's refusal of the MAC address", err)
 			}
