@@ -391,6 +391,18 @@ describe('client', () => {
     expect(http.calls[0].body.headers['If-Match']).toBe('"3"');
   });
 
+  test('deleting a published diagram deletes its document path', async () => {
+    const http = fakeHttp();
+
+    expect(await createBuilderApi(http).deleteDocument('doc 1')).toBe(true);
+    expect(http.calls).toEqual([
+      expect.objectContaining({
+        method: 'delete',
+        url: 'builder/documents/doc%201',
+      }),
+    ]);
+  });
+
   // The answer is the draft, as a save's is: its ETag is read from the body.
   test('deleting a snapshot sends If-Match and reads the draft it answers with', async () => {
     const http = fakeHttp({

@@ -21,7 +21,9 @@
 
   The user's own drafts say who they are shared with, and have Share when
   the server says the user may share them (canShare). Other users' drafts
-  say what the user may do with them, and only open.
+  say what the user may do with them, and only open. A published topology
+  has Delete when the role may delete configs, which deletes the topology
+  from phenix.
 
   A draft closed while its changes were being saved says how the saves go
   on (saves, see createBackgroundSaves in builder/leave.js): being saved,
@@ -214,6 +216,27 @@
               @click="confirming = item">
               Delete
             </button>
+            <!-- A published topology's: while it is deleted, a turning ring
+                 and Deleting…, as Open shows while it opens. -->
+            <button
+              v-if="mayDeletePublished(tab, item)"
+              type="button"
+              class="builder-button builder-button--danger"
+              :data-testid="`published-delete-${item.id}`"
+              :aria-label="`${isDeleting(item) ? 'Deleting' : 'Delete'} ${cardName(item)}`"
+              aria-haspopup="dialog"
+              :aria-disabled="isDeleting(item) || undefined"
+              :aria-busy="isDeleting(item) || undefined"
+              @click="isDeleting(item) || (confirmingPublished = item)">
+              <span
+                v-if="isDeleting(item)"
+                class="builder-toolbar__spinner"
+                aria-hidden="true"></span>
+              <span class="builder-button__swap">
+                <span :class="{ 'is-off': isDeleting(item) }">Delete</span>
+                <span :class="{ 'is-off': !isDeleting(item) }">Deleting…</span>
+              </span>
+            </button>
           </div>
         </li>
       </ul>
@@ -227,6 +250,14 @@
       confirm-label="Delete draft"
       @cancel="confirming = null"
       @confirm="confirmDelete" />
+    <builder-confirm
+      v-if="confirmingPublished"
+      id="published-delete"
+      :title="`Delete topology ${itemLabel(confirmingPublished)}?`"
+      message="The topology is deleted from phēnix. Drafts and experiments made from it are not changed."
+      confirm-label="Delete topology"
+      @cancel="confirmingPublished = null"
+      @confirm="confirmDeletePublished" />
   </section>
 </template>
 
@@ -265,10 +296,12 @@
     // Other users' drafts the role lets the user see.
     others: { type: Array, default: () => [] },
     loading: { type: Boolean, default: false },
-    // What the role may do: make drafts (Blank, Import, Upload) and delete
-    // its own.
+    // What the role may do: make drafts (Blank, Import, Upload), and delete
+    // its own and published topologies.
     canCreate: { type: Boolean, default: true },
     canDelete: { type: Boolean, default: true },
+    // The ids of the published diagrams whose topologies are being deleted.
+    deletingPublished: { type: Array, default: () => [] },
     // A draft is being made or opened.
     busy: { type: Boolean, default: false },
     // The draft or published diagram being opened, as cardKey names it.
@@ -288,6 +321,7 @@
   const emit = defineEmits([
     'open',
     'delete',
+    'delete-published',
     'share',
     'blank',
     'import',
@@ -322,6 +356,18 @@
     return item.damaged
       ? Boolean(item.canDelete)
       : tab.id === 'mine' && props.canDelete;
+  }
+
+  // Delete is on a published topology's card when the role may delete
+  // configs; a published experiment is deleted from the Experiments page.
+  function mayDeletePublished(tab, item) {
+    return (
+      tab.id === 'published' && item.kind === 'Topology' && props.canDelete
+    );
+  }
+
+  function isDeleting(item) {
+    return props.deletingPublished.includes(item.id);
   }
 
   // Drafts are listed with when they last changed, published diagrams with
@@ -477,14 +523,32 @@
   let deleting = null;
 
   function requestDelete(item) {
+    deleting = cardPlace(item);
+    emit('delete', item, cardName(item));
+  }
+
+  // Where a card is, for focus to go to the one that takes its place.
+  function cardPlace(item) {
     const tab = tabs.value.find((entry) => entry.items.includes(item));
 
-    deleting = {
+    return {
       id: item.id,
       tab: tab?.id || active.value,
       index: tab ? tab.items.indexOf(item) : 0,
     };
-    emit('delete', item, cardName(item));
+  }
+
+  // A deleted topology can only come back by publishing a draft again, so
+  // Delete asks first here too (WCAG 3.3.4). The card goes once the server
+  // has deleted it, and focus moves on as for a draft.
+  const confirmingPublished = ref(null);
+
+  function confirmDeletePublished() {
+    const item = confirmingPublished.value;
+
+    confirmingPublished.value = null;
+    deleting = cardPlace(item);
+    emit('delete-published', item, itemLabel(item));
   }
 
   // The card focus is on, as requestDelete records one. Read before the

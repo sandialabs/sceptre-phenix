@@ -1,5 +1,5 @@
-// The Share dialog, the Share buttons and the lists of other users' drafts,
-// rendered on the server: their names, descriptions and states as markup. Focus and keys need a browser,
+// The Share dialog, the Share buttons, the lists of other users' drafts and
+// the Delete of published topologies, rendered on the server: their names, descriptions and states as markup. Focus and keys need a browser,
 // so they are left to the Playwright specs.
 
 import { describe, expect, test, vi } from 'vitest';
@@ -307,5 +307,47 @@ describe('drafts other users shared or let me see', () => {
     expect(tag(panel, 'data-testid="draft-delete-x1"')).toMatch(
       /aria-label="Delete [^"]* by erin"/,
     );
+  });
+});
+
+describe('published diagrams', () => {
+  const published = [
+    {
+      id: 'p1',
+      kind: 'Topology',
+      target: 'lab',
+      createdAt: '2026-09-27T09:00:00Z',
+    },
+    {
+      id: 'p2',
+      kind: 'Experiment',
+      target: 'run',
+      createdAt: '2026-09-27T10:00:00Z',
+    },
+  ];
+
+  test('a published topology has Delete when the role may delete configs, and says while it deletes', async () => {
+    const html = await render(BuilderDrafts, { published });
+    const panel = html.slice(html.indexOf('id="panel-published"'));
+    const remove = tag(panel, 'data-testid="published-delete-p1"');
+
+    expect(remove).toMatch(/aria-label="Delete lab, published [^"]+"/);
+    expect(remove).toContain('aria-haspopup="dialog"');
+    expect(remove).not.toContain('aria-disabled');
+    // A published experiment is deleted from the Experiments page.
+    expect(panel).not.toContain('published-delete-p2');
+
+    const deleting = tag(
+      await render(BuilderDrafts, { published, deletingPublished: ['p1'] }),
+      'data-testid="published-delete-p1"',
+    );
+
+    expect(deleting).toMatch(/aria-label="Deleting lab, published [^"]+"/);
+    expect(deleting).toContain('aria-disabled="true"');
+    expect(deleting).toContain('aria-busy="true"');
+
+    expect(
+      await render(BuilderDrafts, { published, canDelete: false }),
+    ).not.toContain('published-delete-');
   });
 });

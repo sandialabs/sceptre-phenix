@@ -869,6 +869,18 @@ export function createBuilderApi(http = axiosInstance) {
       return data.document || data;
     },
 
+    /**
+     * Deletes the topology a published diagram is current for, and the
+     * topology's published diagrams with it.
+     *
+     * @param {string} id published document id
+     */
+    async deleteDocument(id) {
+      await http.delete(documentPath(id));
+
+      return true;
+    },
+
     async getSchema() {
       const response = await http.get(SCHEMA_PATH);
 

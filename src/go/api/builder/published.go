@@ -586,34 +586,28 @@ func (s *Service) DeleteSupersededDocuments(ctx context.Context, target, keepID 
 		return 0, err
 	}
 
-	docs, err := s.ListPublishedDocuments(ctx)
-	if err != nil {
+	now := s.clock()
+
+	return s.deleteDocumentsWhere(ctx, "deleting superseded documents", func(doc *PublishedDocument) bool {
+		return doc.Target == target && doc.ID != keepID && now.Sub(doc.lastPublished()) >= OrphanGracePeriod
+	})
+}
+
+// DeleteTargetDocuments removes every published document of a target, however
+// recently it was stored, as deleting the config they were published to does.
+// Unlike [Service.DeleteSupersededDocuments] it keeps nothing for a
+// publication in flight, so the caller must make sure there is none. It
+// returns the number of documents removed; a cleanup failure is reported as
+// an error matching [ErrCleanup] alongside the count of documents whose
+// metadata was removed.
+func (s *Service) DeleteTargetDocuments(ctx context.Context, target string) (int, error) {
+	if err := validateText("target", target, MaxTargetLength, true); err != nil {
 		return 0, err
 	}
 
-	var (
-		removed int
-		errs    []error
-		now     = s.clock()
-	)
-
-	for i := range docs {
-		if docs[i].Target != target || docs[i].ID == keepID ||
-			now.Sub(docs[i].lastPublished()) < OrphanGracePeriod {
-			continue
-		}
-
-		deleted, err := s.deleteListed(&docs[i])
-		if deleted {
-			removed++
-		}
-
-		if err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	return removed, newCleanupError("deleting superseded documents", errs)
+	return s.deleteDocumentsWhere(ctx, "deleting target documents", func(doc *PublishedDocument) bool {
+		return doc.Target == target
+	})
 }
 
 // CleanupOrphanedDocuments removes every published document whose ID is not in
@@ -622,24 +616,39 @@ func (s *Service) DeleteSupersededDocuments(ctx context.Context, target, keepID 
 // treated as an orphan and removed, unless it was stored within the
 // [OrphanGracePeriod] and so may be about to be referenced.
 func (s *Service) CleanupOrphanedDocuments(ctx context.Context, referenced []DocumentReference) (int, error) {
-	docs, err := s.ListPublishedDocuments(ctx)
-	if err != nil {
-		return 0, err
-	}
-
 	live := make(map[string]bool, len(referenced))
 	for _, ref := range referenced {
 		live[ref.ID] = true
 	}
 
+	now := s.clock()
+
+	return s.deleteDocumentsWhere(ctx, "cleaning up orphaned documents", func(doc *PublishedDocument) bool {
+		return !live[doc.ID] && now.Sub(doc.lastPublished()) >= OrphanGracePeriod
+	})
+}
+
+// deleteDocumentsWhere removes every published document that remove selects.
+// It returns the number of documents removed; a failure is reported as an
+// error matching [ErrCleanup] for the operation, alongside the count of
+// documents whose metadata was removed.
+func (s *Service) deleteDocumentsWhere(
+	ctx context.Context,
+	operation string,
+	remove func(*PublishedDocument) bool,
+) (int, error) {
+	docs, err := s.ListPublishedDocuments(ctx)
+	if err != nil {
+		return 0, err
+	}
+
 	var (
 		removed int
 		errs    []error
-		now     = s.clock()
 	)
 
 	for i := range docs {
-		if live[docs[i].ID] || now.Sub(docs[i].lastPublished()) < OrphanGracePeriod {
+		if !remove(&docs[i]) {
 			continue
 		}
 
@@ -653,7 +662,7 @@ func (s *Service) CleanupOrphanedDocuments(ctx context.Context, referenced []Doc
 		}
 	}
 
-	return removed, newCleanupError("cleaning up orphaned documents", errs)
+	return removed, newCleanupError(operation, errs)
 }
 
 // CleanupOrphanedChunks removes content chunks that belong to no existing draft

@@ -12,6 +12,7 @@ import (
 	"phenix/store"
 	"phenix/util/plog"
 	"phenix/web/util"
+	"phenix/web/weberror"
 )
 
 // listDocuments - GET /builder/documents.
@@ -96,6 +97,85 @@ func (b *builderBetaAPI) getDocument(w http.ResponseWriter, r *http.Request) err
 	response.Document = data
 
 	return builderBetaWriteJSON(w, http.StatusOK, "", response)
+}
+
+// deleteDocument - DELETE /builder/documents/{document}.
+//
+// Deleting a published topology deletes the topology config the document is
+// current for, as DELETE /configs does, then every published document of that
+// topology. Drafts and experiments made from it are not changed. A published
+// experiment is not deleted here: the Experiments page stops it first.
+func (b *builderBetaAPI) deleteDocument(w http.ResponseWriter, r *http.Request) error {
+	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "BuilderBetaDeleteDocument")
+
+	actor, ok := builderBetaRequestActor(r)
+	if !ok {
+		return builderBetaForbidden(actor, "deleting a builder document")
+	}
+
+	if !builderBetaBaseAllowed(actor.role, builderBetaVerbDelete) {
+		return builderBetaForbidden(actor, "deleting a builder document")
+	}
+
+	documentID := mux.Vars(r)["document"]
+
+	document, err := b.readableDocument(r, actor, documentID)
+	if err != nil {
+		return err
+	}
+
+	if document.Kind != builderBetaKindTopology {
+		return weberror.NewWebError(
+			nil,
+			"Only published topologies can be deleted here. Delete experiments from the Experiments page.",
+		).SetStatus(http.StatusUnprocessableEntity)
+	}
+
+	name := builderBetaConfigName(document)
+	if !builderBetaBaseAllowed(actor.role, builderBetaVerbDelete, name) {
+		return builderBetaForbidden(actor, "deleting config "+name)
+	}
+
+	// Publishing holds the same lock, so no publication of the topology runs
+	// between the check below and removing its documents.
+	builderPublishLock.Lock()
+	defer builderPublishLock.Unlock()
+
+	_, current, err := b.currentBuilderDocument(document)
+	if err != nil {
+		return builderBetaWebError(err, "unable to verify builder document %s", documentID)
+	}
+
+	if !current {
+		return builderBetaNotFound("document", documentID)
+	}
+
+	if err := b.publish.deleteConfig(name); err != nil {
+		if errors.Is(err, store.ErrNotExist) {
+			return builderBetaNotFound("document", documentID)
+		}
+
+		return weberror.NewWebError(err, "unable to delete config %s", name).
+			SetStatus(http.StatusInternalServerError)
+	}
+
+	// The topology is gone, so its documents are never listed again (see
+	// currentBuilderDocument), and the startup cleanup removes any left here.
+	if _, err := b.drafts.DeleteTargetDocuments(r.Context(), document.Target); err != nil {
+		builderBetaWarnCleanup(w, err, "delete published topology", actor.user)
+	}
+
+	plog.Info(
+		plog.TypeAction,
+		"deleted published builder topology",
+		"user", actor.user,
+		"config", name,
+		"document", documentID,
+	)
+
+	w.WriteHeader(http.StatusNoContent)
+
+	return nil
 }
 
 // readableDocument returns the published document with this ID if the caller

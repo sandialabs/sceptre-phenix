@@ -64,6 +64,7 @@ const api = vi.hoisted(() => ({
   generate: vi.fn(async () => ({ document: null, warnings: ['a warning'] })),
   listDocuments: vi.fn(async () => [{ id: 'p1', name: 'Published' }]),
   getDocument: vi.fn(async () => sampleDocument().doc),
+  deleteDocument: vi.fn(async () => true),
   getSources: vi.fn(async () => ({
     images: [],
     topologies: ['core'],
@@ -2147,6 +2148,90 @@ describe('server data', () => {
     expect(store.error).toBe(
       'Could not delete the draft. This draft no longer exists on the server.',
     );
+  });
+
+  test('deleting a published topology removes its card, once', async () => {
+    store.documents = [
+      { id: 'p1', kind: 'Topology', target: 'lab' },
+      { id: 'p2', kind: 'Topology', target: 'core' },
+    ];
+    store.sources = {
+      ...store.sources,
+      topologies: [{ name: 'lab' }, { name: 'core' }],
+    };
+
+    let finish;
+    api.deleteDocument.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const deleting = store.deletePublished(store.documents[0]);
+
+    // A second click while the first runs sends nothing.
+    expect(store.deletingDocuments).toEqual(['p1']);
+    expect(await store.deletePublished(store.documents[0])).toBe(false);
+    expect(api.deleteDocument).toHaveBeenCalledOnce();
+
+    finish(true);
+    expect(await deleting).toBe(true);
+    expect(api.deleteDocument).toHaveBeenCalledWith('p1');
+    expect(store.documents.map((entry) => entry.id)).toEqual(['p2']);
+    // Publish no longer offers to update it.
+    expect(store.sources.topologies).toEqual([{ name: 'core' }]);
+    expect(store.announcement).toBe('Deleted topology lab.');
+    expect(store.deletingDocuments).toEqual([]);
+  });
+
+  test('a published topology the server does not delete keeps its card', async () => {
+    const refused = (status, message) =>
+      Object.assign(new Error('refused'), {
+        response: { status, data: { message } },
+      });
+    const lab = { id: 'p1', kind: 'Topology', target: 'lab' };
+
+    store.documents = [lab];
+
+    for (const [error, message] of [
+      [
+        refused(
+          422,
+          'Only published topologies can be deleted here. Delete experiments from the Experiments page.',
+        ),
+        'Could not delete topology lab. Only published topologies can be deleted here. Delete experiments from the Experiments page.',
+      ],
+      [
+        refused(403, 'deleting config Topology/lab not allowed for alice'),
+        'Could not delete topology lab. Deleting config Topology/lab not allowed for alice.',
+      ],
+      [
+        new Error('Network Error'),
+        'Could not delete topology lab. The server could not be reached. Check the connection and try again.',
+      ],
+    ]) {
+      api.deleteDocument.mockRejectedValueOnce(error);
+
+      expect(await store.deletePublished(lab)).toBe(false);
+      expect(store.error).toBe(message);
+      expect(store.documents).toEqual([lab]);
+      expect(store.deletingDocuments).toEqual([]);
+    }
+
+    expect(api.listDocuments).not.toHaveBeenCalled();
+
+    // Deleted or published again elsewhere: the list is read again.
+    api.deleteDocument.mockRejectedValueOnce(
+      refused(404, 'document p1 not found'),
+    );
+    api.listDocuments.mockResolvedValueOnce([]);
+
+    expect(await store.deletePublished(lab)).toBe(false);
+    expect(store.error).toBe(
+      'Could not delete topology lab. It was deleted or published again since the list was read.',
+    );
+    expect(api.listDocuments).toHaveBeenCalledOnce();
+    expect(store.documents).toEqual([]);
   });
 
   test('a page error is cleared when the operation next succeeds', async () => {

@@ -843,6 +843,8 @@ func (b *builderBetaAPI) routes(router *mux.Router) {
 		Methods("GET", "OPTIONS")
 	router.Handle("/builder/documents/{document}", weberror.ErrorHandler(b.getDocument)).
 		Methods("GET", "OPTIONS")
+	router.Handle("/builder/documents/{document}", weberror.ErrorHandler(b.deleteDocument)).
+		Methods("DELETE", "OPTIONS")
 }
 
 // getSchema - GET /schemas/builder/v1.

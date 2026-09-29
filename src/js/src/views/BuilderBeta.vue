@@ -54,6 +54,7 @@
         :loading="store.loading && !listed"
         :can-create="store.canCreateDrafts"
         :can-delete="store.canDeleteDrafts"
+        :deleting-published="store.deletingDocuments"
         :busy="busy"
         :opening="opening"
         :damaged="store.damagedDrafts"
@@ -63,6 +64,7 @@
         @generate="openLanding('generate')"
         @open="openDraft"
         @delete="deleteDraft"
+        @delete-published="store.deletePublished"
         @share="shareListed">
         <template #buttons>
           <builder-header-buttons

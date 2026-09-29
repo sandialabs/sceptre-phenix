@@ -114,6 +114,9 @@ type builderBetaPublishOps struct {
 	// annotateConfig stores a config whose annotations alone changed,
 	// without running its config hooks again.
 	annotateConfig func(*store.Config) error
+	// deleteConfig deletes a published topology as DELETE /configs deletes
+	// a config.
+	deleteConfig func(string) error
 }
 
 func newBuilderBetaPublishOps() builderBetaPublishOps {
@@ -149,7 +152,25 @@ func newBuilderBetaPublishOps() builderBetaPublishOps {
 		// As the configs API, the workflow API and the CLI do after an update.
 		reconfigureExperiment: experiment.Reconfigure,
 		annotateConfig:        store.Update,
+		deleteConfig:          builderBetaDeleteConfig,
 	}
+}
+
+// builderBetaDeleteConfig deletes a config as DeleteConfig does: through the
+// config API, which runs the kind's delete hooks, then telling everyone who
+// may list the config that it is gone.
+func builderBetaDeleteConfig(name string) error {
+	if err := config.Delete(name); err != nil {
+		return err
+	}
+
+	broker.Broadcast(
+		bt.NewRequestPolicy("configs", "list", name),
+		bt.NewResource("config", name, "delete"),
+		nil,
+	)
+
+	return nil
 }
 
 func builderBetaBroadcastConfig(cfg *store.Config, action string) error {

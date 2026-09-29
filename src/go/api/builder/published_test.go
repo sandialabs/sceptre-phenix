@@ -429,6 +429,43 @@ func TestDeleteSupersededDocuments(t *testing.T) {
 	}
 }
 
+// TestDeleteTargetDocuments removes every document of a deleted config's
+// target, the one just published too, and nothing of any other target.
+func TestDeleteTargetDocuments(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	old := publishTestDocument(t, h, "topo", testRandomDocument(t, "topo-v1", 1200))
+
+	h.passOrphanGracePeriod()
+
+	recent := publishTestDocument(t, h, "topo", testRandomDocument(t, "topo-v2", 1200))
+	other := publishTestDocument(t, h, "other", testRandomDocument(t, "other-v1", 1200))
+
+	removed, err := h.service.DeleteTargetDocuments(ctx, "topo")
+	if err != nil || removed != 2 {
+		t.Fatalf("DeleteTargetDocuments = %d, %s; want 2 removed", removed, fmtErr(err))
+	}
+
+	for _, doc := range []*PublishedDocument{old, recent} {
+		if _, err := h.service.GetPublishedDocument(ctx, doc.ID); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("document %s error = %s, want ErrNotFound", doc.ID, fmtErr(err))
+		}
+
+		if chunks := chunkKeysOf(h, publishedScope(doc.ID)); len(chunks) != 0 {
+			t.Fatalf("chunks of document %s = %v, want none", doc.ID, chunks)
+		}
+	}
+
+	if _, _, err := h.service.GetPublishedDocumentData(ctx, other.ID); err != nil {
+		t.Fatalf("documents of other targets must survive: %s", fmtErr(err))
+	}
+
+	if _, err := h.service.DeleteTargetDocuments(ctx, ""); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("DeleteTargetDocuments without a target error = %s, want ErrInvalid", fmtErr(err))
+	}
+}
+
 // passOrphanGracePeriod moves the service clock far enough that everything
 // stored so far is older than the [OrphanGracePeriod].
 func (h *testHarness) passOrphanGracePeriod() {

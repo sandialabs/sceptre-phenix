@@ -2221,6 +2221,42 @@ paths:
           $ref: "#/components/responses/BuilderForbidden"
         "404":
           $ref: "#/components/responses/BuilderNotFound"
+    delete:
+      tags:
+        - Builder Flow
+      summary: Delete a published Builder Flow topology
+      description: >
+        Deletes the Topology config the document is current for, as
+        `DELETE /configs/Topology/{name}` does, then every published document
+        of that topology. Drafts and experiments made from it are not
+        changed. Requires `configs` `delete` for the topology; a document the
+        caller may not get, or that is no longer current (the topology was
+        changed to reference another document, published again or deleted),
+        is answered with 404. A published experiment is refused with 422:
+        experiments are deleted from the Experiments page.
+      operationId: deleteBuilderDocument
+      parameters:
+        - name: document
+          in: path
+          description: published document ID
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: >
+            The topology is deleted. A Warning header says its published
+            documents could not all be removed; they are never listed again,
+            and a later server start removes them.
+          headers:
+            Warning:
+              $ref: "#/components/headers/BuilderWarning"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderNotFound"
+        "422":
+          $ref: "#/components/responses/BuilderUnprocessable"
 externalDocs:
   description: Find out more about Swagger
   url: http://swagger.io

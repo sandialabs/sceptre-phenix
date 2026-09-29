@@ -261,6 +261,17 @@ func (h *builderBetaHarness) publishOps() builderBetaPublishOps {
 
 			return store.ErrNotExist
 		},
+		deleteConfig: func(name string) error {
+			for i := range h.configs {
+				if h.configs[i].FullName() == name {
+					h.configs = append(h.configs[:i:i], h.configs[i+1:]...)
+
+					return nil
+				}
+			}
+
+			return store.ErrNotExist
+		},
 	}
 }
 
@@ -476,6 +487,7 @@ func TestBuilderBetaFeatureGate(t *testing.T) { //nolint:paralleltest // mutates
 		{method: http.MethodPost, path: "/builder/generate"},
 		{method: http.MethodGet, path: "/builder/documents"},
 		{method: http.MethodGet, path: "/builder/documents/doc-1"},
+		{method: http.MethodDelete, path: "/builder/documents/doc-1"},
 		// Publishing is not implemented yet and must not appear to be.
 		{method: http.MethodPost, path: "/builder/drafts/alice/id-1/publish"},
 	}

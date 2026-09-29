@@ -490,6 +490,95 @@ test('topology-only publish refuses a legacy topology, writes the diagram and of
       .toMatchObject({ topology: 'skipped' });
   });
 
+  await test.step('Published Diagrams deletes the topology, and the draft publishes it again', async () => {
+    const manifest = manifestOf(await builder.config('Topology', topology));
+    expect(manifest?.id, 'builder-doc manifest id').toBeTruthy();
+
+    await closeButton(page).click();
+    await builder.backToDrafts();
+    await page.getByTestId('drafts-tab-published').click();
+
+    // Deleting asks first, naming the topology, with focus on Cancel.
+    const remove = page.getByTestId(`published-delete-${manifest.id}`);
+    await remove.click();
+    const confirm = page.getByRole('alertdialog', {
+      name: `Delete topology ${topology}?`,
+    });
+    await expect
+      .soft(confirm)
+      .toHaveAccessibleDescription(
+        'The topology is deleted from phēnix. Drafts and experiments made from it are not changed.',
+      );
+    await expect.soft(confirm.getByTestId('confirm-cancel')).toBeFocused();
+
+    // Held until the button has been checked while the delete runs.
+    let release;
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
+    const path = `${API}/builder/documents/${manifest.id}`;
+    await page.route(`**${path}`, async (route) => {
+      if (route.request().method() === 'DELETE') {
+        await held;
+      }
+      await route.fallback();
+    });
+    const deleted = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'DELETE' &&
+        new URL(response.url()).pathname === path,
+    );
+    await confirm.getByTestId('confirm-accept').click();
+    await expect.soft(remove).toHaveAttribute('aria-disabled', 'true');
+    await expect.soft(remove).toHaveAccessibleName(/^Deleting /);
+    // A second click while it runs asks nothing and sends nothing.
+    await remove.click({ force: true });
+    await expect.soft(page.getByRole('alertdialog')).toHaveCount(0);
+    release();
+    expect((await deleted).status()).toBe(204);
+    await page.unroute(`**${path}`);
+
+    await expect.soft(remove).toHaveCount(0);
+    await expect
+      .soft(page.getByTestId(`draft-open-${manifest.id}`))
+      .toHaveCount(0);
+    await expect
+      .soft(builder.liveRegion)
+      .toContainText(`Deleted topology ${topology}.`);
+    // Focus moves to the card that took its place, or to the tab.
+    await expect
+      .soft(
+        page.locator(
+          '#panel-published [data-testid^="draft-open-"]:focus, #tab-published:focus',
+        ),
+      )
+      .toHaveCount(1);
+
+    const listed = await builder.request.get(`${API}/configs`);
+    expect(listed.ok(), await listed.text()).toBeTruthy();
+    const names = ((await listed.json()).configs || [])
+      .filter((config) => config.kind === 'Topology')
+      .map((config) => config.metadata.name);
+    expect.soft(names, 'topologies').not.toContain(topology);
+
+    // The draft that published it creates it again.
+    await builder.openDraft(draft);
+    await openPublish(builder);
+    await expect
+      .soft(topologyHint(page))
+      .toHaveText('A new topology will be created.');
+    await expect
+      .soft(page.getByTestId('publish-submit'))
+      .toHaveText('Create topology');
+    await expectPublish(page, 200);
+    expect
+      .soft(await stageStatuses(page))
+      .toMatchObject({ topology: 'created' });
+    expect
+      .soft(await builder.config('Topology', topology), 'recreated topology')
+      .toBeTruthy();
+  });
+
   expectNoFatal(issues);
 });
 

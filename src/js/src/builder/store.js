@@ -360,6 +360,9 @@ export const useBuilderStore = defineStore('builder', {
     publishChanged: { draftId: '', targets: [] },
     queueWork: null,
     documents: [],
+    // The ids of the published diagrams whose topologies are being deleted
+    // (see deletePublished).
+    deletingDocuments: [],
     sources: { images: [], topologies: [], scenarios: [], experiments: [] },
     // The file names of the disk images the server has (see fetchDisks), or
     // null while they are unknown: not read yet, or not readable. Drive
@@ -1373,6 +1376,62 @@ export const useBuilderStore = defineStore('builder', {
         );
 
         return false;
+      }
+    },
+
+    /**
+     * Deletes the topology a published diagram is current for, and its
+     * published diagrams with it. Drafts and experiments made from it stay:
+     * publishing a draft again creates the topology again. A diagram the
+     * server no longer lists as current (published again or deleted
+     * elsewhere) is refused, and the list is read again.
+     *
+     * @param {{id: string, target?: string}} item a listed published diagram
+     * @returns {Promise<boolean>} whether it was deleted
+     */
+    async deletePublished(item) {
+      const name = item.target || item.id;
+
+      if (this.deletingDocuments.includes(item.id)) {
+        return false;
+      }
+
+      this.clearError();
+      this.deletingDocuments = [...this.deletingDocuments, item.id];
+
+      try {
+        await builderApi.deleteDocument(item.id);
+
+        this.documents = this.documents.filter((entry) => entry.id !== item.id);
+        // Until the list is read again, Publish must not offer to update it.
+        this.sources = {
+          ...this.sources,
+          topologies: (this.sources.topologies || []).filter(
+            (entry) =>
+              (typeof entry === 'string' ? entry : entry?.name) !== name,
+          ),
+        };
+        this.announce(`Deleted topology ${name}.`);
+
+        return true;
+      } catch (error) {
+        const missing = classifyError(error) === 'missing';
+
+        this.setError(
+          missing
+            ? `Could not delete topology ${name}. It was deleted or published again since the list was read.`
+            : this.describeError(error, `delete topology ${name}`),
+        );
+
+        if (missing) {
+          await this.fetchDocuments();
+        }
+
+        return false;
+      } finally {
+        this.deletingDocuments = this.deletingDocuments.filter(
+          (id) => id !== item.id,
+        );
       }
     },
 

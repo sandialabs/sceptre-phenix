@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"reflect"
 	"strings"
@@ -706,5 +707,158 @@ func TestBuilderBetaGetDocumentNoLeak(t *testing.T) { //nolint:paralleltest // m
 		if recorder.Code != http.StatusNotFound {
 			t.Errorf("GET %s: status = %d, want %d", path, recorder.Code, http.StatusNotFound)
 		}
+	}
+}
+
+// builderBetaPutDocument stores a published document of a target that no
+// config references yet.
+func builderBetaPutDocument(t *testing.T, harness *builderBetaHarness, kind, target, content string) *bapi.PublishedDocument {
+	t.Helper()
+
+	document, err := harness.service.PutPublishedDocument(t.Context(), bapi.PutPublishedDocumentRequest{
+		Target:     target,
+		Kind:       kind,
+		Actor:      builderBetaTestOwner,
+		Document:   builderBetaDocument(t, content),
+		DraftID:    "",
+		SnapshotID: "",
+	})
+	if err != nil {
+		t.Fatalf("PutPublishedDocument returned error: %v", err)
+	}
+
+	return document
+}
+
+// TestBuilderBetaDeleteDocument deletes a published topology: the config
+// the document is current for and every document of that topology are gone,
+// and nothing of another topology is touched.
+func TestBuilderBetaDeleteDocument(t *testing.T) { //nolint:paralleltest // mutates package options
+	harness := newBuilderBetaHarness(t)
+	earlier := builderBetaPutDocument(t, harness, builderBetaKindTopology, "topo", "earlier")
+	document := builderBetaPublish(t, harness, "topo")
+	other := builderBetaPublish(t, harness, "other")
+
+	remove := func() int {
+		return harness.do(builderBetaRequest{
+			method: http.MethodDelete,
+			path:   "/builder/documents/" + document.ID,
+			user:   builderBetaTestOwner,
+		}).Code
+	}
+
+	if status := remove(); status != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", status, http.StatusNoContent)
+	}
+
+	if _, err := harness.getConfig("Topology/topo"); !errors.Is(err, store.ErrNotExist) {
+		t.Fatalf("deleted topology: error = %v, want it gone", err)
+	}
+
+	for _, id := range []string{document.ID, earlier.ID} {
+		if _, err := harness.service.GetPublishedDocument(t.Context(), id); !errors.Is(err, bapi.ErrNotFound) {
+			t.Fatalf("document %s: error = %v, want it gone", id, err)
+		}
+	}
+
+	if _, err := harness.getConfig("Topology/other"); err != nil {
+		t.Fatalf("another topology was deleted: %v", err)
+	}
+
+	if _, err := harness.service.GetPublishedDocument(t.Context(), other.ID); err != nil {
+		t.Fatalf("another topology's document was deleted: %v", err)
+	}
+
+	if status := remove(); status != http.StatusNotFound {
+		t.Fatalf("deleting again: status = %d, want %d", status, http.StatusNotFound)
+	}
+}
+
+// TestBuilderBetaDeleteDocumentRefusals asserts a published topology is
+// deleted only with configs delete for it, only while its document is
+// current, and a published experiment never.
+func TestBuilderBetaDeleteDocumentRefusals(t *testing.T) { //nolint:paralleltest // mutates package options
+	readers := builderBetaRole(builderBetaPolicy(
+		[]string{"configs"}, []string{"*/*"}, []string{"list", "get"},
+	))
+	otherDeleter := builderBetaRole(builderBetaPolicy(
+		[]string{"configs"}, []string{"*/*"}, []string{"list", "get"},
+	), builderBetaPolicy(
+		[]string{"configs"}, []string{"Topology/other"}, []string{"delete"},
+	))
+	hidden := builderBetaRole(builderBetaPolicy(
+		[]string{"configs"}, []string{"Topology/public"}, []string{"list", "get", "delete"},
+	))
+
+	for _, test := range []struct {
+		name   string
+		role   *rbac.Role
+		stale  bool
+		kind   string
+		status int
+		reason string
+	}{
+		{name: "no configs delete", role: &readers, status: http.StatusForbidden},
+		{name: "configs delete for another topology", role: &otherDeleter, status: http.StatusForbidden},
+		{name: "hidden", role: &hidden, status: http.StatusNotFound},
+		{name: "published again since", stale: true, status: http.StatusNotFound},
+		{
+			name: "experiment", kind: kindExperiment, status: http.StatusUnprocessableEntity,
+			reason: "Only published topologies can be deleted here. Delete experiments from the Experiments page.",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			harness := newBuilderBetaHarness(t)
+			kind := builderBetaKindTopology
+
+			if test.kind != "" {
+				kind = test.kind
+			}
+
+			document := builderBetaPutDocument(t, harness, kind, "topo", "topo")
+			current := document
+
+			if test.stale {
+				current = builderBetaPutDocument(t, harness, kind, "topo", "republished")
+			}
+
+			reference, err := current.Reference().EncodeReference()
+			if err != nil {
+				t.Fatalf("EncodeReference returned error: %v", err)
+			}
+
+			config := builderBetaConfig(t, kind, "topo")
+			config.Metadata.Annotations = store.Annotations{bapi.DocumentAnnotation: reference}
+			harness.configs = append(harness.configs, config)
+
+			recorder := harness.do(builderBetaRequest{
+				method: http.MethodDelete,
+				path:   "/builder/documents/" + document.ID,
+				user:   builderBetaTestOwner,
+				role:   test.role,
+			})
+
+			if recorder.Code != test.status {
+				t.Fatalf("status = %d, want %d: %s", recorder.Code, test.status, recorder.Body)
+			}
+
+			var refusal struct {
+				Message string `json:"message"`
+			}
+
+			harness.decode(recorder, &refusal)
+
+			if test.reason != "" && refusal.Message != test.reason {
+				t.Errorf("message = %q, want %q", refusal.Message, test.reason)
+			}
+
+			if _, err := harness.getConfig(config.FullName()); err != nil {
+				t.Errorf("a refused delete deleted %s: %v", config.FullName(), err)
+			}
+
+			if _, err := harness.service.GetPublishedDocument(t.Context(), document.ID); err != nil {
+				t.Errorf("a refused delete deleted document %s: %v", document.ID, err)
+			}
+		})
 	}
 }
