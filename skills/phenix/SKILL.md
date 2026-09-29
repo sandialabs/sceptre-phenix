@@ -1,6 +1,6 @@
 ---
 name: phenix
-description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, Builder Flow (the web topology editor), or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util).'
+description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams and Builder Flow drafts, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, Builder Flow (the builder-beta web topology editor), or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util).'
 license: GPL-3.0-only
 ---
 
@@ -148,6 +148,14 @@ XML model stored on the topology config in the `builder-xml` annotation.
 editing, or translating a diagram. It carries the task routing table, the
 endpoints and payloads, the diagram-to-config translation rules, and the
 gotchas.
+
+Builder Flow is a separate, newer editor at `/builder-beta`, on only with
+`phenix ui --features builder-beta`. It keeps its own document on a topology in
+the `builder-doc` annotation and does not update topologies that carry
+`builder-xml`. It has no `phenix` CLI command. For anything about Builder Flow
+(its drafts, sharing, publishing, import from topologies and experiments,
+`/builder/drafts…` routes, the `builder-drafts` RBAC resource, or its code),
+**read [`references/builder-flow.md`](references/builder-flow.md)** first.
 
 ## CLI Overview
 

@@ -3,6 +3,8 @@
 Detailed reference for phēnix's graphical topology Builder. Load this when
 creating, editing, translating, or debugging Builder diagrams. For everything
 else, `../SKILL.md` is sufficient.
+Builder Flow, the newer editor at `/builder-beta`, is a different editor,
+covered by [builder-flow.md](./builder-flow.md).
 
 Builder is the graphical topology editor served at `/builder`. It is a
 customized JGraph/draw.io GraphEditor backed by an **mxGraph XML model**,

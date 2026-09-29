@@ -9,8 +9,8 @@ publishing, import or generation, its `/api/v1/builder/*` or
 `/schemas/builder/v1` routes, the `builder-drafts` RBAC resource, the Builder
 document format (`builder/v1`), or any Builder Flow code (see
 [Working on Builder Flow code](#working-on-builder-flow-code)). The legacy
-Builder (`/builder`, `builder-xml` topologies) is a different editor and is
-covered by the main skill.
+Builder (`/builder`, `builder-xml` topologies) is a different editor, covered
+by [builder.md](./builder.md).
 
 ## Enabling it
 

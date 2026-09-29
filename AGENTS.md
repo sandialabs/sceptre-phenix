@@ -133,6 +133,7 @@ When changing a capability, inspect every applicable surface:
 | RBAC role or policy | Policy generation, migrations, authorization surfaces, and migration tests |
 | minimega command | minimega API/source behavior and focused tests |
 | Topology Builder behavior | `src/go/web/builder.go`, Builder routes in `src/go/web/server.go`, the editor under `src/go/web/public/grapheditor/js/`, the embedded schemas in `.../grapheditor/utils/schemas/`, and [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md) |
+| Builder Flow behavior | `src/go/api/builder/`, `src/go/types/builder/` (then `make generate` for the committed schema bundle), `src/go/web/builder_beta*.go`, `src/js/src/builder/`, `src/js/src/components/builder/`, `src/js/src/views/BuilderBeta.vue`, the `builder-*` e2e specs, and [`skills/phenix/references/builder-flow.md`](skills/phenix/references/builder-flow.md) |
 
 Preserve v1/v2 config upgrades, persisted BoltDB/etcd data, RBAC migrations, and
 public API compatibility unless a breaking change is deliberate and documented.
@@ -163,6 +164,7 @@ and pass it explicitly, for example
 | YAML config schemas | `src/go/types/version/schemas/{v0,v1,v2}.yaml` |
 | CLI and REST implementation | `src/go/cmd/`, `src/go/web/server.go` |
 | Topology Builder | [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md), `src/go/web/builder.go`, `src/go/web/public/grapheditor/` |
+| Builder Flow | [`skills/phenix/references/builder-flow.md`](skills/phenix/references/builder-flow.md), `src/go/api/builder/`, `src/go/web/builder_beta*.go`, `src/js/src/builder/` |
 | Internet-hosted narrative docs | [phenix.sceptre.dev](https://phenix.sceptre.dev/latest/) |
 | minimega commands and behavior | [API docs](https://sandia-minimega.github.io/minimega/reference/minimega/), [source](https://github.com/sandia-minimega/minimega) |
 | Official apps and SCORCH components | [`sceptre-phenix-apps`](https://github.com/sandialabs/sceptre-phenix-apps) |
