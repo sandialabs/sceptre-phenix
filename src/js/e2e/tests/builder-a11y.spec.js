@@ -1237,8 +1237,10 @@ for (const scheme of ['light', 'dark']) {
         await expect.soft(heading).toBeFocused();
         await expect
           .soft(page)
-          .toHaveTitle(/^Untitled topology( \d+)? – Builder Flow – phēnix$/);
-        await expect.soft(page.locator('html')).toHaveAttribute('lang', 'en');
+          .toHaveTitle(/^Untitled topology( \d+)? - Builder Flow - phēnix$/);
+        await expect
+          .soft(page.locator('html'))
+          .toHaveAttribute('lang', 'en-US');
       });
 
       await test.step('the header has Back to drafts, the name and its pencil, the counts, the checks, Reset view, Commands, the theme, Shortcuts, Settings, the Help link of the landing and Focus mode', async () => {
@@ -1816,7 +1818,7 @@ for (const scheme of ['light', 'dark']) {
         await expect
           .soft(page.getByRole('heading', { level: 1 }))
           .toHaveText('Builder Flow');
-        await expect.soft(page).toHaveTitle('Builder Flow – phēnix');
+        await expect.soft(page).toHaveTitle('Builder Flow - phēnix');
         // Import (the Generate dialog) comes before Upload (the Import
         // dialog), then the editor header's buttons: Commands, with its key
         // caps, the theme, Settings, Help, a link to the documentation, and

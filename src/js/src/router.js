@@ -10,6 +10,17 @@ import { tokenExpired, usePhenixStore } from '@/store.js';
 import axiosInstance from '@/utils/axios.js';
 import { BUILDER_BETA_FEATURE, createFeatureGuard } from '@/utils/features.js';
 
+/**
+ * A page's document title: what the page shows, most specific first, then
+ * the app's name (WCAG 2.4.2 Page Titled).
+ *
+ * @param {...string} parts
+ * @returns {string} for example "Configs - phēnix"
+ */
+export function pageTitle(...parts) {
+  return [...parts.filter(Boolean), 'phēnix'].join(' - ');
+}
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -122,8 +133,9 @@ const router = createRouter({
       name: 'builder-beta',
       component: () => import('@/views/BuilderBeta.vue'),
       // The editor fills the viewport below the header, so App.vue drops the
-      // page container, its padding and the footer for this route.
-      meta: { fullBleed: true },
+      // page container, its padding and the footer for this route. The
+      // editor adds the open diagram to the title (see BuilderBeta.vue).
+      meta: { fullBleed: true, title: 'Builder Flow' },
       // The redirect is explained by a notice that stays until it is
       // dismissed: a timed toast can vanish before it is read (WCAG 2.2.1).
       // Without an action button the snackbar keeps role=alert.
@@ -317,7 +329,7 @@ router.beforeEach(async (to, from, next) => {
 });
 // Give every route its own document title (WCAG 2.4.2 Page Titled).
 router.afterEach((to) => {
-  document.title = to.meta?.title ? `${to.meta.title} - phēnix` : 'phēnix';
+  document.title = pageTitle(to.meta?.title);
 });
 
 export default router;

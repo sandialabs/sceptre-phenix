@@ -527,7 +527,6 @@
     provide,
     ref,
     watch,
-    watchEffect,
   } from 'vue';
   import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
@@ -621,6 +620,7 @@
     needsChoice,
     tabsNotice,
   } from '@/builder/tabs.js';
+  import { pageTitle } from '@/router';
   import { tokenExpired, usePhenixStore } from '@/store.js';
 
   const store = useBuilderStore();
@@ -930,13 +930,24 @@
   }
 
   // The page title names the view and, in the editor, the open diagram
-  // (WCAG 2.4.2). Leaving the Builder restores the app's own title.
-  const appTitle = document.title;
-  watchEffect(() => {
-    document.title = editing.value
-      ? `${diagramName.value} – Builder Flow – ${appTitle}`
-      : `Builder Flow – ${appTitle}`;
-  });
+  // (WCAG 2.4.2). Every navigation sets the route's own title (router.js),
+  // this route's too when the draft in its query changes, so the title is
+  // set again after each, while the route is still the Builder's.
+  const viewRoute = route.name;
+  const viewTitle = computed(() =>
+    editing.value
+      ? pageTitle(diagramName.value, route.meta.title)
+      : pageTitle(route.meta.title),
+  );
+  watch(
+    [viewTitle, () => route.fullPath],
+    () => {
+      if (route.name === viewRoute) {
+        document.title = viewTitle.value;
+      }
+    },
+    { immediate: true },
+  );
 
   // Opening the editor replaces the landing, which held focus, so focus
   // moves to the editor's heading rather than to <body> (WCAG 2.4.3).
@@ -2327,7 +2338,6 @@
   });
 
   onBeforeUnmount(() => {
-    document.title = appTitle;
     window.removeEventListener('keydown', onGlobalKeydown);
     window.removeEventListener('beforeunload', onBeforeUnload);
     stopFollowingShortcuts();

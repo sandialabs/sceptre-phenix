@@ -607,7 +607,7 @@ describe('the warning', () => {
   });
 
   test('the countdown goes before the page title while it runs', () => {
-    const title = 'Lab – Builder Flow – phēnix';
+    const title = 'Lab - Builder Flow - phēnix';
     const counting = countdownTitle(title, 42);
 
     expect(counting).toBe(`Logging out in 42 seconds – ${title}`);
