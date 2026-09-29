@@ -70,10 +70,10 @@ phēnix supports shell completion (tab-completion) for Bash, Zsh, Fish, and Powe
 Once the wrapper is installed (and any existing aliases removed), enable completion by sourcing the script in your shell profile (e.g., `~/.bashrc` or `~/.zshrc`):
 
 ```bash
-# Bash
+# Bash (requires the bash-completion package)
 source <(phenix completion bash)
 
-# Zsh
+# Zsh (load compinit first, e.g. `autoload -U compinit && compinit`)
 source <(phenix completion zsh)
 ```
 
