@@ -1,6 +1,6 @@
 <!--
   Export shell: builder documents (JSON/YAML), the phenix Topology config
-  (Topology YAML) and PNG/SVG images.
+  (Topology YAML), PNG/SVG images and a Gephi (GEXF) graph.
 
   Topology YAML comes from the server, which owns that conversion, so the file
   is the config Publish would write; a client rendering could disagree with
