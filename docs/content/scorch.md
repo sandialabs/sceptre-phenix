@@ -190,7 +190,7 @@ docker exec -it minimega ovs-vsctl add-port phenix TDN
 ovs-vsctl add-port phenix temp-tap tag=<vlan ID> -- set interface temp-tap type=internal
 ```
 
-The above commands assume the name of the minimega container is `minimega`. The name of the local tap created (in this case, `temp-tap`) can be whatever, but the value for the VLAN tag must match the numerical ID of the VLAN that's mapped to the VLAN alias used in the [`tap`](#tap-component) (or [`break`](#break-component)) component configuration.
+The above commands assume the name of the minimega container is `minimega`. The name of the local tap created (in this case, `temp-tap`) can be whatever, but the value for the VLAN tag must match the numerical ID of the VLAN that's mapped to the VLAN alias used in the [`tap`](#tap-component) (or [`break`](#break-component)) component configuration. Run `phenix vlan alias <experiment name> <VLAN alias>` to print that ID.
 
 !!! note
     Using host networking mode for the `minimega` container allows for all the above nonsense to be skipped.

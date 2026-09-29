@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
   - **Default Disk Images**: Added the `$DEFAULT_VM_IMAGE` and `$DEFAULT_ROUTER_IMAGE` experiment variables, which set the disk image new VM and router nodes are created with.
   - **API Documentation**: Documented the Builder routes in `openapi.yml`, which previously carried none of them.
 - **Documentation Sources**: Consolidate the phēnix MkDocs site into this repository so documentation changes can ship with the code they describe.
+- **CLI**: `phenix vlan alias <experiment> <alias>` now prints the VLAN ID of that alias, or an error if the experiment has no such alias or the alias has no VLAN ID yet, instead of rejecting the arguments. Its shell completion also completes experiment and alias names.
 
 ### Changed
 

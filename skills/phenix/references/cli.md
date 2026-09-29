@@ -178,7 +178,9 @@ build troubleshooting, read the sibling
 ## `phenix vlan` — VLAN aliasing/ranges per experiment
 
 ```bash
-phenix vlan alias <exp> <alias name> <vlan id>   # view (no value) or set an alias
+phenix vlan alias [exp]                          # list VLAN aliases (all experiments, or one)
+phenix vlan alias <exp> <alias name>             # print the alias's VLAN ID (e.g. `105`)
+phenix vlan alias <exp> <alias name> <vlan id>   # set an alias (-f to overwrite)
 phenix vlan range <exp> <range min> <range max>  # view or set the VLAN pool range
 ```
 

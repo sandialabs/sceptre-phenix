@@ -3,8 +3,11 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -14,7 +17,10 @@ import (
 	"phenix/util/printer"
 )
 
-const aliasArgs = 3
+const (
+	aliasArgs       = 3
+	aliasLookupArgs = 2
+)
 
 func newVlanCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -29,9 +35,25 @@ func newVlanCmd() *cobra.Command {
 }
 
 func newVlanAliasCmd() *cobra.Command {
+	desc := `View or set VLAN aliases
+
+  With no arguments, lists the VLAN aliases of every experiment. With an
+  experiment name, lists that experiment's VLAN aliases. With an experiment
+  name and an alias name, prints the VLAN ID of that alias. With a VLAN ID as
+  well, sets the alias to that VLAN ID.`
+
+	example := `
+  phenix vlan alias
+  phenix vlan alias <experiment name>
+  phenix vlan alias <experiment name> <alias name>
+  phenix vlan alias <experiment name> <alias name> <vlan id>`
+
 	cmd := &cobra.Command{
-		Use:   "alias <experiment name> <alias name> <vlan id>",
-		Short: "View or set an alias for a given VLAN ID",
+		Use:               "alias [experiment name] [alias name] [vlan id]",
+		Short:             "View or set VLAN aliases",
+		Long:              desc,
+		Example:           example,
+		ValidArgsFunction: vlanAliasArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			switch len(args) {
 			case 0:
@@ -58,6 +80,8 @@ func newVlanAliasCmd() *cobra.Command {
 				}
 
 				printer.PrintTableOfVLANAliases(os.Stdout, info)
+			case aliasLookupArgs:
+				return printVLANAliasID(cmd.OutOrStdout(), args[0], args[1])
 			case aliasArgs:
 				var (
 					exp   = args[0]
@@ -98,6 +122,62 @@ func newVlanAliasCmd() *cobra.Command {
 	cmd.Flags().BoolP("force", "f", false, "Force update on set action if alias already exists")
 
 	return cmd
+}
+
+// printVLANAliasID writes the VLAN ID of the given alias in the given
+// experiment to w. A missing or unassigned alias is reported as is, since its
+// message is the answer the user asked for.
+func printVLANAliasID(w io.Writer, exp, alias string) error {
+	id, err := vlan.AliasID(vlan.Experiment(exp), vlan.Alias(alias))
+	if err != nil {
+		if errors.Is(err, vlan.ErrAliasNotFound) || errors.Is(err, vlan.ErrAliasUnassigned) {
+			return err
+		}
+
+		err := util.HumanizeError(
+			err,
+			"%s",
+			"Unable to get VLAN alias "+alias+" for the "+exp+" experiment",
+		)
+
+		return err.Humanized()
+	}
+
+	fmt.Fprintln(w, id)
+
+	return nil
+}
+
+// vlanAliasArgsCompletion completes the experiment name, then the names of
+// that experiment's VLAN aliases.
+func vlanAliasArgsCompletion(
+	cmd *cobra.Command,
+	args []string,
+	toComplete string,
+) ([]string, cobra.ShellCompDirective) {
+	switch len(args) {
+	case 0:
+		return expNameCompletion(false)(cmd, args, toComplete)
+	case 1:
+		info, err := vlan.Aliases(vlan.Experiment(args[0]))
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveError
+		}
+
+		var aliases []string
+
+		for alias := range info[args[0]] {
+			if strings.HasPrefix(alias, toComplete) {
+				aliases = append(aliases, alias)
+			}
+		}
+
+		sort.Strings(aliases)
+
+		return aliases, cobra.ShellCompDirectiveNoFileComp
+	default:
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 }
 
 func newVlanRangeCmd() *cobra.Command {
