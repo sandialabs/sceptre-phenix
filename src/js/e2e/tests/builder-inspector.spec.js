@@ -1607,11 +1607,7 @@ test.describe('Builder Beta inspector', () => {
       await expect.soft(kind).toHaveValue('1');
       await expect
         .soft(kind.locator('option'))
-        .toHaveText([
-          'Ethernet, static or OSPF',
-          'Ethernet, DHCP or manual',
-          'Serial, static',
-        ]);
+        .toHaveText(['Static or OSPF', 'DHCP or manual', 'Serial']);
       await expect
         .soft(iface.getByRole('button', { name: 'Remove interface 1' }))
         .toBeVisible();
@@ -1620,7 +1616,7 @@ test.describe('Builder Beta inspector', () => {
       // kind is chosen: a key that steps the closed picker, as type-ahead
       // and, on Windows and Linux, the arrow keys do, only holds it.
       const confirm = page.getByRole('alertdialog', {
-        name: 'Switch Interface kind to Serial, static?',
+        name: 'Switch Interface kind to Serial?',
       });
       await kind.focus();
       await page.keyboard.type('s');

@@ -621,19 +621,26 @@ function wordList(values) {
   return words.join(' or ');
 }
 
-function branchTitle(branch, key, index) {
+function branchTitle(branch, key, index, branches) {
   const type = [branch.type].flat().find((entry) => entry && entry !== 'null');
   const variant = branch.properties?.type?.enum;
   const proto = branch.properties?.proto?.enum;
 
   if (variant) {
-    const title = wordList(variant);
+    // Named by what tells it apart, which keeps the name short enough to
+    // show whole in a narrow picker with wider text spacing (WCAG 1.4.12):
+    // its protocols when another branch has its type too ("Static or
+    // OSPF"), otherwise its type ("Serial").
+    const shared =
+      proto &&
+      branches.some(
+        (other, at) =>
+          at !== index &&
+          wordList(other?.properties?.type?.enum || []) === wordList(variant),
+      );
+    const title = wordList(shared ? proto : variant);
 
-    return (
-      title[0].toUpperCase() +
-      title.slice(1) +
-      (proto ? `, ${wordList(proto)}` : '')
-    );
+    return title[0].toUpperCase() + title.slice(1);
   }
 
   return (
@@ -709,13 +716,15 @@ function readable(schema, key, trail = []) {
 
   for (const keyword of ['oneOf', 'anyOf']) {
     if (Array.isArray(next[keyword])) {
-      next[keyword] = next[keyword].map((branch, index) => {
-        const titled = readable(branch, undefined, trail);
+      const branches = next[keyword].map((branch) =>
+        readable(branch, undefined, trail),
+      );
 
-        return titled && typeof titled === 'object' && !titled.title
-          ? { ...titled, title: branchTitle(titled, key, index) }
-          : titled;
-      });
+      next[keyword] = branches.map((titled, index) =>
+        titled && typeof titled === 'object' && !titled.title
+          ? { ...titled, title: branchTitle(titled, key, index, branches) }
+          : titled,
+      );
     }
   }
 

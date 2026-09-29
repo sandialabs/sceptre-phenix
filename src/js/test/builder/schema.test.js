@@ -211,10 +211,11 @@ describe('inspector schemas', () => {
     // Connection points by their section.
     expect(network.properties.interfaces.title).toBeUndefined();
     expect(iface.title).toBe('Interface kind');
+    // Each by what tells it apart, short enough for a narrow picker.
     expect(iface.oneOf.map((b) => b.title)).toEqual([
-      'Ethernet, static or OSPF',
-      'Ethernet, DHCP or manual',
-      'Serial, static',
+      'Static or OSPF',
+      'DHCP or manual',
+      'Serial',
     ]);
     // Error messages name them too ("Injection 1: Source is required").
     const injection = spec.properties.injections.items.properties;
