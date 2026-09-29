@@ -192,6 +192,15 @@ func topologySpecHostnames(spec map[string]any) []string {
 // exportVLANDocument is a document whose host has the given interfaces, each
 // a DHCP Ethernet interface unless it says otherwise.
 func exportVLANDocument(fields ...map[string]any) *bdoc.Document {
+	document := bdoc.NewDocument("no-vlan")
+	addExportHost(document, "host", fields...)
+
+	return document
+}
+
+// addExportHost adds a host named hostname to document, with the given
+// interfaces, each a DHCP Ethernet interface unless it says otherwise.
+func addExportHost(document *bdoc.Document, hostname string, fields ...map[string]any) {
 	interfaces := make([]any, 0, len(fields))
 
 	for _, iface := range fields {
@@ -200,22 +209,19 @@ func exportVLANDocument(fields ...map[string]any) *bdoc.Document {
 		interfaces = append(interfaces, entry)
 	}
 
-	document := bdoc.NewDocument("no-vlan")
 	document.Nodes = append(document.Nodes, bdoc.Node{
-		ID: bdoc.DeviceNodeID("host"), Kind: bdoc.NodeKindDevice, Label: "host",
+		ID: bdoc.DeviceNodeID(hostname), Kind: bdoc.NodeKindDevice, Label: hostname,
 		Device: &bdoc.Device{
-			Hostname: "host",
+			Hostname: hostname,
 			Spec: map[string]any{
 				"type":     "VirtualMachine",
-				"general":  map[string]any{"hostname": "host"},
+				"general":  map[string]any{"hostname": hostname},
 				"hardware": map[string]any{"os_type": "linux", "drives": []any{map[string]any{"image": "miniccc.qc2"}}},
 				"network":  map[string]any{"interfaces": interfaces},
 			},
 			Interfaces: []bdoc.InterfaceHandle{},
 		},
 	})
-
-	return document
 }
 
 // TestBuilderBetaExportTopologyRefusesAsPublishDoes refuses what Publish
@@ -344,6 +350,90 @@ func TestBuilderBetaExportTopologyRefusesAsPublishDoes(t *testing.T) { //nolint:
 
 			if hostnames := topologySpecHostnames(exported.Spec); !slices.Equal(hostnames, []string{"host"}) {
 				t.Fatalf("exported spec = %s, want the host", asBuilderJSON(t, exported.Spec))
+			}
+		})
+	}
+}
+
+// TestBuilderBetaExportTopologyNamesSharedAddresses exports a document whose
+// interfaces share an address, which Publish refuses, and names the address
+// in publishBlockers as Publish's refusal names it. Beside interfaces without
+// a VLAN, publishBlockers names both, in the order Publish checks them, and
+// Publish's refusal names only the interfaces without a VLAN.
+func TestBuilderBetaExportTopologyNamesSharedAddresses(t *testing.T) { //nolint:paralleltest // mutates feature options
+	const (
+		refusal = "topology shared cannot be published: "
+		shared  = `IP address 10.0.0.5 is used by interface "eth0" of device "a" and interface "eth0" of device "b"`
+		fix     = " has no VLAN: connect it to a network, or type a VLAN for it"
+		noVLAN  = `interface "eth1" of device "a"` + fix + `; interface "eth1" of device "b"` + fix
+	)
+
+	tests := []struct {
+		name string
+		eth1 bool
+		// publish is Publish's message after refusal.
+		publish  string
+		blockers []string
+	}{
+		{name: "shared address", eth1: false, publish: shared, blockers: []string{shared}},
+		{name: "shared address and no VLAN", eth1: true, publish: noVLAN, blockers: []string{noVLAN, shared}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			document := bdoc.NewDocument("shared")
+
+			for _, hostname := range []string{"a", "b"} {
+				fields := []map[string]any{
+					{"name": "eth0", "vlan": "EXP", "proto": "static", "address": "10.0.0.5", "mask": 24},
+				}
+
+				if tt.eth1 {
+					fields = append(fields, map[string]any{"name": "eth1", "vlan": ""})
+				}
+
+				addExportHost(document, hostname, fields...)
+			}
+
+			harness := newBuilderBetaHarness(t)
+			draft := createBuilderPublishDraft(t, harness, document)
+
+			refused := harness.do(builderBetaRequest{
+				method: http.MethodPost,
+				path:   "/builder/drafts/" + draft.Owner + "/" + draft.ID + "/publish",
+				body:   `{"mode":"topology","topology":{"name":"shared","action":"create"}}`,
+				user:   builderBetaTestOwner, ifMatch: draft.ETag,
+			})
+			if refused.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("publish status = %d, want %d: %s", refused.Code, http.StatusUnprocessableEntity, refused.Body)
+			}
+
+			var publishRefusal struct {
+				Message string `json:"message"`
+			}
+			harness.decode(refused, &publishRefusal)
+
+			if want := refusal + tt.publish; publishRefusal.Message != want {
+				t.Fatalf("publish message = %q, want %q", publishRefusal.Message, want)
+			}
+
+			response, exported := exportedBuilderTopology(t, harness, exportBuilderTopology(t, harness, document, "shared", nil))
+
+			if !slices.Equal(response.PublishBlockers, tt.blockers) {
+				t.Fatalf("publish blockers = %q, want %q", response.PublishBlockers, tt.blockers)
+			}
+
+			// The first is what Publish's refusal says.
+			if response.PublishBlockers[0] != strings.TrimPrefix(publishRefusal.Message, refusal) {
+				t.Fatalf("first publish blocker = %q, want the publish message %q", response.PublishBlockers[0], publishRefusal.Message)
+			}
+
+			if hostnames := topologySpecHostnames(exported.Spec); !slices.Equal(hostnames, []string{"a", "b"}) {
+				t.Fatalf("exported spec = %s, want hosts a and b", asBuilderJSON(t, exported.Spec))
+			}
+
+			if harness.configWrites != 0 {
+				t.Fatal("the export or the refused publication wrote a config")
 			}
 		})
 	}

@@ -341,8 +341,8 @@ func TestPublishTopologyConfigReturnsValidatedConfig(t *testing.T) {
 		t.Fatalf("exporting topology: %v", err)
 	}
 
-	if export.Unpublishable != nil || !reflect.DeepEqual(export.Config, config) {
-		t.Fatalf("export = %s, %v, want the published config", asJSON(t, export.Config), export.Unpublishable)
+	if len(export.PublishBlockers) != 0 || !reflect.DeepEqual(export.Config, config) {
+		t.Fatalf("export = %s, %v, want the published config", asJSON(t, export.Config), export.PublishBlockers)
 	}
 }
 
@@ -447,8 +447,8 @@ func TestPublishTopologyConfigRefusesInterfaceWithoutVLAN(t *testing.T) {
 				t.Fatalf("ExportTopologyConfig returned error: %v", exportErr)
 			}
 
-			if export.Unpublishable == nil || export.Unpublishable.Error() != err.Error() {
-				t.Fatalf("Unpublishable = %v, want the publish error %v", export.Unpublishable, err)
+			if len(export.PublishBlockers) != 1 || export.PublishBlockers[0].Error() != err.Error() {
+				t.Fatalf("PublishBlockers = %v, want the publish error %v", export.PublishBlockers, err)
 			}
 
 			if vlan := specInterface(t, storedNode(t, export.Config.Spec, "host-a"), "eth0")["vlan"]; vlan != eth0["vlan"] {
@@ -692,6 +692,71 @@ func TestPublishTopologyConfigRefusesSharedAddresses(t *testing.T) {
 			want := strings.Split(test.want, "; ")
 			if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, want) {
 				t.Fatalf("problems = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// An export returns a document whose interfaces share an address, which
+// publishing refuses, with the error publishing refuses it with as its only
+// blocker. Beside an interface without a VLAN, which publishing refuses
+// first, the export returns both, in that order.
+func TestExportTopologyConfigReportsSharedAddresses(t *testing.T) {
+	shared := map[string]any{"address": "10.0.0.5", "mask": 24}
+	noVLAN := map[string]any{"name": "eth1", "type": "ethernet", "proto": "dhcp", "vlan": ""}
+
+	for name, test := range map[string]struct {
+		host []map[string]any
+		// blockers are the export's blockers, by type.
+		blockers []string
+	}{
+		"shared address":             {host: []map[string]any{shared}, blockers: []string{"address"}},
+		"shared address and no VLAN": {host: []map[string]any{shared, noVLAN}, blockers: []string{"vlan", "address"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := withInterfaces(t, map[string][]map[string]any{"router": {shared}, "host-a": test.host})
+
+			_, _, publishErr := doc.PublishTopologyConfig("shared")
+			if publishErr == nil {
+				t.Fatal("published interfaces that share an address")
+			}
+
+			export, err := doc.ExportTopologyConfig("shared")
+			if err != nil {
+				t.Fatalf("ExportTopologyConfig returned error: %v", err)
+			}
+
+			kinds := make([]string, 0, len(export.PublishBlockers))
+
+			for _, blocker := range export.PublishBlockers {
+				var (
+					vlanErr    *builder.InterfaceVLANError
+					addressErr *builder.InterfaceAddressError
+				)
+
+				switch {
+				case errors.As(blocker, &vlanErr):
+					kinds = append(kinds, "vlan")
+				case errors.As(blocker, &addressErr):
+					kinds = append(kinds, "address")
+				default:
+					kinds = append(kinds, blocker.Error())
+				}
+			}
+
+			if !reflect.DeepEqual(kinds, test.blockers) {
+				t.Fatalf("blockers = %q (%v), want %q", kinds, export.PublishBlockers, test.blockers)
+			}
+
+			// Publishing refuses the document with the first.
+			if export.PublishBlockers[0].Error() != publishErr.Error() {
+				t.Fatalf("first blocker = %v, want the publish error %v", export.PublishBlockers[0], publishErr)
+			}
+
+			if got := export.PublishBlockers[len(export.PublishBlockers)-1].Error(); !strings.HasSuffix(
+				got, `IP address 10.0.0.5 is used by interface "eth0" of device "router" and interface "eth0" of device "host-a"`,
+			) {
+				t.Fatalf("address blocker = %q", got)
 			}
 		})
 	}

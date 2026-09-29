@@ -531,6 +531,23 @@ describe('savers', () => {
         'connect it to a network, or type a VLAN for it.',
     );
   });
+
+  test('a saved topology names every check that keeps it from being published', () => {
+    expect(
+      describeTopologyExport({
+        fileName: 'lab.topology.yaml',
+        publishBlockers: [
+          'interface "eth1" of device "a" has no VLAN: connect it to a network, or type a VLAN for it',
+          'IP address 10.0.0.5 is used by interface "eth0" of device "a" and interface "eth0" of device "b"',
+        ],
+      }),
+    ).toBe(
+      'Saved lab.topology.yaml. ' +
+        'This topology cannot be published yet: interface "eth1" of device "a" has no VLAN: ' +
+        'connect it to a network, or type a VLAN for it; ' +
+        'IP address 10.0.0.5 is used by interface "eth0" of device "a" and interface "eth0" of device "b".',
+    );
+  });
 });
 
 // --- GEXF --------------------------------------------------------------------

@@ -39,7 +39,8 @@ type builderTopologyExportResponse struct {
 	YAML     string   `json:"yaml"`
 	Warnings []string `json:"warnings"`
 	// PublishBlockers is why publishing the topology would be refused
-	// although phenix's config validation accepts it, one entry per check.
+	// although phenix's config validation accepts it, one entry per check in
+	// the order Publish makes them; Publish's refusal names the first.
 	PublishBlockers []string `json:"publishBlockers"`
 }
 
@@ -129,12 +130,13 @@ func (b *builderBetaAPI) exportTopology(w http.ResponseWriter, r *http.Request) 
 		return publishProjectionRefusal(name, err)
 	}
 
-	blockers := []string{}
+	// Each is named as Publish's refusal names it (see publishProjectionRefusal).
+	blockers := make([]string, 0, len(export.PublishBlockers))
 
-	if export.Unpublishable != nil {
-		reason, named := interfaceProblems(export.Unpublishable)
+	for _, blocker := range export.PublishBlockers {
+		reason, named := interfaceProblems(blocker)
 		if !named {
-			reason = export.Unpublishable.Error()
+			reason = blocker.Error()
 		}
 
 		blockers = append(blockers, reason)

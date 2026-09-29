@@ -1474,10 +1474,22 @@ test('an interface with no VLAN or a used address is refused at publish, and its
       data: { mode: 'topology', topology: { name: shared, action: 'create' } },
     });
     expect(refused.status(), await refused.text()).toBe(422);
+    const usedBy =
+      'IP address 10.0.0.5 is used by interface "eth0" of device "server" and interface "eth0" of device "server-2"';
     expect((await refused.json()).message).toBe(
-      `topology ${shared} cannot be published: IP address 10.0.0.5 is used by interface "eth0" of device "server" and interface "eth0" of device "server-2"`,
+      `topology ${shared} cannot be published: ${usedBy}`,
     );
     await builder.dialog.getByRole('button', { name: 'Cancel' }).click();
+
+    // Topology YAML still exports, and says why Publish refuses it, as
+    // Publish's refusal says it.
+    await builder.openDialog('export');
+    await builder.dialog.getByTestId('export-topology-yaml').click();
+    await expect(builder.dialog.getByRole('status')).toContainText(
+      `This topology cannot be published yet: ${usedBy}.`,
+    );
+    await page.keyboard.press('Escape');
+    await expect(builder.dialog).toHaveCount(0);
 
     // The Inspector shows the warning at the address field.
     await builder.selectInOutline('server-2');

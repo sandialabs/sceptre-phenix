@@ -65,7 +65,7 @@
 //     run the existing phenix topology schema validation against the projected
 //     config, so publishing authoritatively validates complete node specs.
 //     [Document.ExportTopologyConfig] runs the same checks, but returns a
-//     config that only publishing refuses, with the reason.
+//     config that only publishing refuses, with the reasons.
 //
 // [Schema] and [SchemaJSON] return a standalone JSON Schema bundle describing
 // the persisted document, with the phenix v1 and v2 OpenAPI component schemas
