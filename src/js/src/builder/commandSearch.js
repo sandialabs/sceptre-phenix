@@ -172,9 +172,12 @@ export function createChoiceCache() {
   };
 }
 
-function commandItem(command, ctx, match = null) {
-  const state = availability(command, ctx);
-
+function commandItem(
+  command,
+  ctx,
+  match = null,
+  state = availability(command, ctx),
+) {
   return {
     key: `command:${command.id}`,
     kind: 'command',
@@ -612,6 +615,17 @@ function namedResults(ctx, text) {
     : null;
 }
 
+// Better matches first. Of two that differ only in where their words are,
+// one that can run comes first, so Enter runs it rather than saying why the
+// other cannot.
+function byMatch(a, b) {
+  return (
+    (b.match.grade ?? b.match.score) - (a.match.grade ?? a.match.score) ||
+    Number(b.state === true) - Number(a.state === true) ||
+    b.match.score - a.match.score
+  );
+}
+
 function searchResults(ctx, text, recent) {
   const listed = paletteCommands(ctx);
   const order = groupOrder(ctx);
@@ -636,16 +650,14 @@ function searchResults(ctx, text, recent) {
       ),
     }))
     .filter((entry) => entry.match)
+    .map((entry) => ({ ...entry, state: availability(entry.command, ctx) }))
     // Ties go to recent use, then to the registry's order.
-    .sort(
-      (a, b) =>
-        b.match.score - a.match.score || a.rank - b.rank || a.index - b.index,
-    )
+    .sort((a, b) => byMatch(a, b) || a.rank - b.rank || a.index - b.index)
     .forEach((entry) => {
       const group = entry.command.group;
 
       if (!byGroup.has(group)) {
-        byGroup.set(group, { best: entry.match.score, entries: [] });
+        byGroup.set(group, { best: entry, entries: [] });
       }
 
       byGroup.get(group).entries.push(entry);
@@ -655,13 +667,13 @@ function searchResults(ctx, text, recent) {
   const groups = [...byGroup]
     .sort(
       ([a, left], [b, right]) =>
-        right.best - left.best || order.indexOf(a) - order.indexOf(b),
+        byMatch(left.best, right.best) || order.indexOf(a) - order.indexOf(b),
     )
     .map(([group, { entries }]) => ({
       id: group,
       label: group,
-      items: entries.map(({ command, match }) =>
-        commandItem(command, ctx, match),
+      items: entries.map(({ command, match, state }) =>
+        commandItem(command, ctx, match, state),
       ),
     }));
 

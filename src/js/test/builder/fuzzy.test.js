@@ -63,8 +63,19 @@ describe('matchItem', () => {
   test('the title first, marked', () => {
     expect(matchItem(node, 'web')).toEqual({
       score: expect.any(Number),
+      grade: expect.any(Number),
       ranges: [[0, 3]],
     });
+  });
+
+  test('its grade leaves out where the words are, but not how they match', () => {
+    const near = matchItem({ title: 'Open draft' }, 'draft');
+    const far = matchItem({ title: 'Show My Drafts' }, 'draft');
+    const inside = matchItem({ title: 'Redrafts' }, 'draft');
+
+    expect(near.score).toBeGreaterThan(far.score);
+    expect(near.grade).toBe(far.grade);
+    expect(far.grade).toBeGreaterThan(inside.grade);
   });
 
   test('then a field, saying which one and where', () => {

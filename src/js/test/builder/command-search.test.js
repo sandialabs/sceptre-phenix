@@ -198,6 +198,31 @@ describe('a command search', () => {
     expect(titles(recent.groups[0])[0]).toBe('Add note');
   });
 
+  test('of matches alike but for where their words are, one that can run comes first', () => {
+    const ctx = (canRestoreLayout) =>
+      context({ store: { canRestoreLayout }, view: { fitRestores: true } });
+    const first = (results) => results.groups[0].items[0];
+
+    // Only the view can be restored: Enter runs it, not the layout's reason.
+    const view = first(paletteResults(ctx(false), { query: 'restore prev' }));
+    expect(view.title).toBe('Restore previous view');
+    expect(view.disabled).toBe('');
+
+    // Both can: the registry's order again.
+    const layout = first(paletteResults(ctx(true), { query: 'restore prev' }));
+    expect(layout.title).toBe('Restore previous layout');
+
+    // "draft" is further into Show My Drafts than into Open draft, which has
+    // no draft to open.
+    const landing = context({ view: { editing: false } });
+    const [drafts] = paletteResults(landing, { query: 'draft' }).groups;
+    expect(titles(drafts).slice(0, 2)).toEqual([
+      'Show My Drafts',
+      'Open draft',
+    ]);
+    expect(drafts.items[1].disabled).not.toBe('');
+  });
+
   test('adds up to three nodes whose names match', () => {
     const results = paletteResults(context(), { query: 'a' });
     const named = results.groups.find((group) => group.label === 'Go to node');

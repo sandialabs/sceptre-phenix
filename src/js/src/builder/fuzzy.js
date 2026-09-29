@@ -42,11 +42,13 @@ function wordsOf(query) {
     .filter(Boolean);
 }
 
-// Every word as a substring: {score, ranges}, or null.
+// Every word as a substring: {score, grade, ranges}, or null. The grade is
+// the score without its penalty for words further into the text.
 function byWords(text, words) {
   const lower = String(text || '').toLowerCase();
   const ranges = [];
   let score = 0;
+  let grade = 0;
 
   for (const word of words) {
     let at = lower.indexOf(word);
@@ -64,11 +66,15 @@ function byWords(text, words) {
     }
 
     at = boundary >= 0 ? boundary : at;
-    score += (at === 0 ? 300 : boundary >= 0 ? 200 : 100) - Math.min(at, 50);
+
+    const worth = at === 0 ? 300 : boundary >= 0 ? 200 : 100;
+
+    grade += worth;
+    score += worth - Math.min(at, 50);
     ranges.push([at, at + word.length]);
   }
 
-  return { score, ranges: merge(ranges) };
+  return { score, grade, ranges: merge(ranges) };
 }
 
 // The letters in order: {score, ranges}, or null.
@@ -139,9 +145,11 @@ export function matchText(text, query, { letters = true } = {}) {
  *   is found by, named so the palette can say which one matched
  * @param {string[]} [item.keywords] more words, matched without saying so
  * @param {string} query
- * @returns {{score: number, ranges: number[][], field?: object}|null} with
- *   `field` ({label, value, ranges}) when a field matched rather than the
- *   title
+ * @returns {{score: number, ranges: number[][], grade?: number,
+ *   field?: object}|null} with `field` ({label, value, ranges}) when a field
+ *   matched rather than the title, and `grade` when the title matched by
+ *   words: the score without its penalty for words further in, the same for
+ *   titles that differ only in where their words are
  */
 export function matchItem(item, query) {
   const words = wordsOf(query);
@@ -153,7 +161,11 @@ export function matchItem(item, query) {
   const title = byWords(item.title, words);
 
   if (title) {
-    return { score: WORDS + title.score, ranges: title.ranges };
+    return {
+      score: WORDS + title.score,
+      grade: WORDS + title.grade,
+      ranges: title.ranges,
+    };
   }
 
   let best = null;
