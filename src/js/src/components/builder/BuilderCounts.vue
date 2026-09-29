@@ -126,14 +126,17 @@
     min-width: 0;
   }
 
+  /* In a thin box, which sets the counts apart in the header and shows in
+     forced colors too. Its padding keeps a count's focus ring inside it. */
   .builder-counts__list {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.25rem 0.8rem;
     margin: 0;
-    padding: 0.25rem 0.4rem;
+    padding: 0.4rem 0.5rem;
     list-style: none;
+    border: 1px solid var(--bx-border);
     border-radius: var(--bx-radius);
     font-size: 0.9rem;
     font-variant-numeric: tabular-nums;

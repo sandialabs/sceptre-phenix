@@ -126,7 +126,11 @@ async function editorLayout(page) {
       back: rect('[data-testid="editor-back"]'),
       name: rect('.builder-header__name'),
       counts: rect('[data-testid="builder-summary"]'),
+      start: rect('.builder-header__start'),
       editorHeader: rect('.builder-header'),
+      headerGap: parseFloat(
+        getComputedStyle(document.querySelector('.builder-header')).columnGap,
+      ),
       actions: rect('.builder-header__actions'),
       actionTops: [
         ...document.querySelector('.builder-header__actions').children,
@@ -379,6 +383,23 @@ test(
             )
             .toBeLessThan(48);
         }
+
+        // The counts are centered on the header, or as near as the start
+        // (Back to drafts and the name) and the actions let them be, never
+        // over either.
+        const width = layout.counts.right - layout.counts.left;
+        const centered =
+          (layout.editorHeader.left + layout.editorHeader.right - width) / 2;
+        const nearest = Math.min(
+          Math.max(centered, layout.start.right + layout.headerGap),
+          layout.actions.left - layout.headerGap - width,
+        );
+        expect
+          .soft(
+            Math.abs(layout.counts.left - nearest),
+            at('counts centered, or as near as they fit'),
+          )
+          .toBeLessThanOrEqual(1);
 
         // The labels go in two steps: in a wide header every button has
         // its label, in a narrower one, from 1280px, Reset view and

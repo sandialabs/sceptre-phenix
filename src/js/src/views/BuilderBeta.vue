@@ -89,87 +89,91 @@
           }}{{ ownerOfOthers ? ` – ${ownerOfOthers}'s draft` : '' }}
           – Builder Flow
         </h1>
-        <!-- While it waits for the saves, then for the lists: a turning
-             ring in place of the arrow (reduced motion stops it turning)
-             and what it waits for. The labels hold the button's width; the
-             hidden ones are not named. -->
-        <button
-          type="button"
-          class="builder-button"
-          data-testid="editor-back"
-          :aria-disabled="Boolean(closing) || undefined"
-          :aria-busy="Boolean(closing) || undefined"
-          @click="closeEditor">
-          <span
-            v-if="closing"
-            class="builder-toolbar__spinner"
-            aria-hidden="true"></span>
-          <builder-icon v-else name="arrow-left" :size="14" />
-          <span class="builder-button__swap">
-            <span :class="{ 'is-off': closing }">Back to drafts</span>
-            <span :class="{ 'is-off': closing !== 'saving' }">Saving…</span>
-            <span :class="{ 'is-off': closing !== 'loading' }">Loading…</span>
-          </span>
-        </button>
-        <!-- The name as text, cut off with an ellipsis when long (the text
-             is still whole, and a tooltip shows it), then Edit diagram
-             name, which puts a field in their place (see startNameEdit).
-             A view-only user has no pencil. The field's label is read
-             rather than shown. -->
-        <div class="builder-field builder-header__name">
-          <template v-if="editingName">
-            <label for="builder-doc-name" class="builder-visually-hidden">
-              Diagram name
-            </label>
-            <input
-              id="builder-doc-name"
-              ref="nameInput"
-              v-model="nameField"
-              :readonly="store.readOnly"
-              type="text"
-              class="builder-header__name-field"
-              placeholder="Diagram name"
-              data-testid="builder-name-field"
-              @keydown.enter.prevent="finishNameEdit(true)"
-              @keydown.esc.prevent="cancelNameEdit"
-              @change="onNameChange"
-              @blur="onNameBlur" />
-          </template>
-          <template v-else>
+        <!-- Back to drafts, the name, and who shared the draft, at the
+             start; the counts in the middle; the actions at the end. -->
+        <div class="builder-header__start">
+          <!-- While it waits for the saves, then for the lists: a turning
+               ring in place of the arrow (reduced motion stops it turning)
+               and what it waits for. The labels hold the button's width;
+               the hidden ones are not named. -->
+          <button
+            type="button"
+            class="builder-button"
+            data-testid="editor-back"
+            :aria-disabled="Boolean(closing) || undefined"
+            :aria-busy="Boolean(closing) || undefined"
+            @click="closeEditor">
             <span
-              id="builder-name-text"
-              ref="nameText"
-              class="builder-header__name-text"
-              :class="{ 'is-empty': !store.doc.name }"
-              data-testid="builder-name"
-              v-on="nameTip">
-              {{ diagramName }}
+              v-if="closing"
+              class="builder-toolbar__spinner"
+              aria-hidden="true"></span>
+            <builder-icon v-else name="arrow-left" :size="14" />
+            <span class="builder-button__swap">
+              <span :class="{ 'is-off': closing }">Back to drafts</span>
+              <span :class="{ 'is-off': closing !== 'saving' }">Saving…</span>
+              <span :class="{ 'is-off': closing !== 'loading' }">Loading…</span>
             </span>
-            <button
-              v-if="!store.readOnly"
-              ref="nameButton"
-              type="button"
-              class="builder-button builder-header__name-edit"
-              aria-label="Edit diagram name"
-              aria-describedby="builder-name-text"
-              data-testid="builder-name-edit"
-              v-on="editNameTip"
-              @click="startNameEdit">
-              <builder-icon name="pencil" :size="14" />
-            </button>
-          </template>
+          </button>
+          <!-- The name as text, cut off with an ellipsis when long (the
+               text is still whole, and a tooltip shows it), then Edit
+               diagram name, which puts a field in their place (see
+               startNameEdit). A view-only user has no pencil. The field's
+               label is read rather than shown. -->
+          <div class="builder-field builder-header__name">
+            <template v-if="editingName">
+              <label for="builder-doc-name" class="builder-visually-hidden">
+                Diagram name
+              </label>
+              <input
+                id="builder-doc-name"
+                ref="nameInput"
+                v-model="nameField"
+                :readonly="store.readOnly"
+                type="text"
+                class="builder-header__name-field"
+                placeholder="Diagram name"
+                data-testid="builder-name-field"
+                @keydown.enter.prevent="finishNameEdit(true)"
+                @keydown.esc.prevent="cancelNameEdit"
+                @change="onNameChange"
+                @blur="onNameBlur" />
+            </template>
+            <template v-else>
+              <span
+                id="builder-name-text"
+                ref="nameText"
+                class="builder-header__name-text"
+                :class="{ 'is-empty': !store.doc.name }"
+                data-testid="builder-name"
+                v-on="nameTip">
+                {{ diagramName }}
+              </span>
+              <button
+                v-if="!store.readOnly"
+                ref="nameButton"
+                type="button"
+                class="builder-button builder-header__name-edit"
+                aria-label="Edit diagram name"
+                aria-describedby="builder-name-text"
+                data-testid="builder-name-edit"
+                v-on="editNameTip"
+                @click="startNameEdit">
+                <builder-icon name="pencil" :size="14" />
+              </button>
+            </template>
+          </div>
+
+          <!-- Someone shared the draft: who, and what the user may do,
+               until it is no longer shared with them. -->
+          <p
+            v-if="store.sharedBy"
+            class="builder-header__shared"
+            data-testid="editor-shared-by">
+            Shared by {{ store.sharedBy }} · {{ accessLabel(store.access) }}
+          </p>
         </div>
 
         <builder-counts />
-
-        <!-- Someone shared the draft: who, and what the user may do, until
-             it is no longer shared with them. -->
-        <p
-          v-if="store.sharedBy"
-          class="builder-header__shared"
-          data-testid="editor-shared-by">
-          Shared by {{ store.sharedBy }} · {{ accessLabel(store.access) }}
-        </p>
 
         <!-- The Warnings button (the checks), Reset view, and the buttons the
              drafts' header has too (BuilderHeaderButtons.vue). Reset view's
@@ -2337,6 +2341,48 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0.4rem 0.75rem;
+  }
+
+  /* Back to drafts, the name and who shared the draft wrap as the header's
+     own items do, until the header is wide enough for one row. Until then
+     the counts are centered in the room their row leaves them: on a row
+     of their own, centered on the header. */
+  .builder-header__start {
+    display: contents;
+  }
+
+  .builder-header > .builder-counts {
+    margin-inline: auto;
+  }
+
+  /* Wide enough for one row (a header from 64rem, about a 1060px window):
+     the start and the actions take the same share of the room the counts
+     leave, which centers the counts on the header. Whichever needs more
+     than its share takes it, and the counts move toward the other, never
+     over either. */
+  @container builder-editor (min-width: 64rem) {
+    .builder-header__start {
+      display: flex;
+      flex: 1 1 0;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    /* The start gives way down to Back to drafts whole and an 8rem name,
+       as the header's own items do in a narrower header; then the header
+       wraps. */
+    .builder-header__start > .builder-button {
+      white-space: nowrap;
+    }
+
+    .builder-header__name {
+      width: 8rem;
+    }
+
+    .builder-header__actions {
+      flex: 1 1 0;
+      min-width: max-content;
+    }
   }
 
   /* The heading is visually hidden, so while it has focus the header it

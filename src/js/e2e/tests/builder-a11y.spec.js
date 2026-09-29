@@ -1414,6 +1414,24 @@ for (const scheme of ['light', 'dark']) {
         await expect.soft(countsTip).toHaveText('0 switches');
         await page.keyboard.press('End');
         await expect.soft(countsTip).toHaveText('0 notes');
+        // The counts are in a box, which holds a count's focus ring.
+        await expect.soft(counts).toHaveCSS('border-top-style', 'solid');
+        const room = await count(5).evaluate((item) => {
+          const own = item.getBoundingClientRect();
+          const box = item.parentElement.getBoundingClientRect();
+          const style = getComputedStyle(item);
+          const reach =
+            parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+
+          return Math.min(
+            own.top - reach - box.top,
+            box.bottom - own.bottom - reach,
+            box.right - own.right - reach,
+          );
+        });
+        expect
+          .soft(room, 'focus ring inside the counts box')
+          .toBeGreaterThan(1);
         await page.keyboard.press('ArrowRight');
         await expect.soft(count(0)).toBeFocused();
         await expect.soft(counts.locator('[tabindex="0"]')).toHaveCount(1);
