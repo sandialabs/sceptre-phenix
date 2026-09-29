@@ -24,6 +24,8 @@ import { nextTick, onBeforeUnmount, ref } from 'vue';
 
 const TIP_GAP = 4;
 const TIP_MARGIN = 8;
+// The narrowest a tooltip is made to fit beside its control.
+const MIN_ROOM = 120;
 const HIDE_DELAY_MS = 200;
 
 function clamp(value, min, max) {
@@ -154,7 +156,8 @@ export function useFixedTooltip({ side = 'end', beside = null } = {}) {
   }
 
   // Beside the control, on its preferred side, or beside what `beside`
-  // names, on the side nearer the control; when there is no room there (the
+  // names, on the side nearer the control (without room there, beside the
+  // control on its other side). Without room on the preferred side (the
   // stacked narrow layout), below it at the end side, or above it at the
   // start side, which keeps the Inspector's field under its label clear;
   // always inside the viewport.
@@ -170,8 +173,11 @@ export function useFixedTooltip({ side = 'end', beside = null } = {}) {
       return;
     }
 
-    const width = tipEl.value?.offsetWidth || 0;
-    const height = tipEl.value?.offsetHeight || 0;
+    const element = tipEl.value;
+    // Its own width, from before any widening below.
+    element?.style.removeProperty('max-width');
+    let width = element?.offsetWidth || 0;
+    let height = element?.offsetHeight || 0;
     const box = beside?.(anchor)?.getBoundingClientRect() || rect;
     let toward = side;
 
@@ -182,6 +188,25 @@ export function useFixedTooltip({ side = 'end', beside = null } = {}) {
     let left =
       toward === 'start' ? box.left - width - TIP_GAP : box.right + TIP_GAP;
     let top = rect.top;
+
+    // No room beside what `beside` names (a narrow window): over the
+    // control's own row rather than the next. It takes the width there, so
+    // it wraps less, and is centred on the control.
+    const room =
+      toward === 'start'
+        ? window.innerWidth - TIP_MARGIN - rect.right - TIP_GAP
+        : rect.left - TIP_GAP - TIP_MARGIN;
+    const outside =
+      left < TIP_MARGIN || left + width > window.innerWidth - TIP_MARGIN;
+
+    if (box !== rect && side !== 'below' && outside && room >= MIN_ROOM) {
+      element?.style.setProperty('max-width', `${room}px`);
+      width = element?.offsetWidth || 0;
+      height = element?.offsetHeight || 0;
+      left =
+        toward === 'start' ? rect.right + TIP_GAP : rect.left - width - TIP_GAP;
+      top = rect.top + (rect.height - height) / 2;
+    }
 
     if (side === 'below') {
       left = rect.left;

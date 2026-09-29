@@ -1024,6 +1024,31 @@ test.describe('Builder Beta persistence', () => {
     });
     expect.soft(overflow).toEqual([0, 0]);
     await expect.soft(restore).toBeInViewport({ ratio: 1 });
+
+    // With no room after the actions, a tooltip goes before its button,
+    // over its own row: the first row's Delete covers neither button of the
+    // row below, and stays while the pointer moves onto it.
+    const tooltip = page.getByTestId('history-tooltip');
+    await rows.first().getByTestId('history-delete').hover();
+    await expect(tooltip).toHaveText(/^Delete\. /);
+    const shown = await tooltip.boundingBox();
+    for (const action of ['history-restore', 'history-delete']) {
+      const below = await first.getByTestId(action).boundingBox();
+      expect
+        .soft(
+          shown.y + shown.height <= below.y ||
+            shown.x + shown.width <= below.x ||
+            shown.x >= below.x + below.width,
+          `the tooltip covers the next row's ${action}`,
+        )
+        .toBe(true);
+    }
+    await page.mouse.move(
+      shown.x + shown.width / 2,
+      shown.y + shown.height / 2,
+      { steps: 10 },
+    );
+    await expect.soft(tooltip).toHaveText(/^Delete\. /);
   });
 
   test('Draft History deletes a snapshot after asking, but never the current one', async ({
