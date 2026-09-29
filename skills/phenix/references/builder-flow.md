@@ -77,8 +77,11 @@ Ctrl+K), the theme button (it cycles System, Light and Dark, the same
 preference as Settings > Theme), Settings, Help and Focus mode. The drafts page
 puts Blank diagram, Import and Upload before them; the editor puts the save
 state, Warnings and Reset view before them and Shortcuts after the theme
-button. Below a 105rem header (about a 1712px window) the buttons show only
-their icons. The editor's toolbar has Draft History right after Minimap. Focus
+button. Below a 105rem header (about a 1712px window) the theme button,
+Shortcuts, Settings and Help show only their icons and Commands drops its key
+caps; below 85rem (about 1392px) Commands and Reset view show only their icons
+too. Warnings, Blank diagram, Import and Upload keep their labels. The
+editor's toolbar has Draft History right after Minimap. Focus
 mode (⇧⌘F or Ctrl+Shift+F) works on both views and stays on between them,
 until the user turns it off or leaves Builder Flow.
 
@@ -94,9 +97,14 @@ separator named Resize minimap: drag it, or Up and Left for larger, Down and
 Right for smaller, Home and End for the smallest and largest, Enter or a
 double-click for the default); the palette's Minimap size commands do the
 same. The minimap keeps its 4:3 shape, from 120px wide up to half the canvas
-(at most 600px, never below the default 200px). Its width is kept in
-`phenix.builder.minimap` (`{"width": 280}`). Reset view shows both columns
-again and restores the minimap's default size.
+(at most 600px, never below the default 200px unless the canvas is too small
+to hold it). Its width is kept in `phenix.builder.minimap` (`{"width": 280}`).
+Reset view shows both columns again and restores the minimap's default size.
+After a Fit that changes the view (the zoom controls' Fit button, Shift+1 on
+the canvas or the palette's `view.fit`), the same button, key and command
+restore the zoom and position from before it, and the button is named Restore
+previous view. Any other change to the view, including Reset view, drops the
+saved view.
 
 ## Access, sharing and RBAC
 
@@ -189,9 +197,9 @@ same snapshot. A last publication naming the deleted snapshot is kept, and the
 draft is then dirty. Snapshots never share chunks, so no other version or
 published document loses content. The editor's Draft History is a table of
 number, name, date and user, with Restore and Delete in each row (clicking a
-name also restores). The current row cannot be deleted, a view-only user gets
-no actions, and undo and redo skip a deleted snapshot. After a 412 the editor
-reads the draft again and the next try uses that ETag.
+name also restores). The current row can be neither restored nor deleted, a
+view-only user gets no actions, and undo and redo skip a deleted snapshot.
+After a 412 the editor reads the draft again and the next try uses that ETag.
 
 A mutation whose durable write succeeded but whose superseded content could not
 be removed returns its normal success status, body, and new `ETag`, plus a
