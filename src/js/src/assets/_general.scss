@@ -71,10 +71,19 @@ textarea:focus {
   transform: rotate(0deg);
 }
 
+// Focus looks as hover does: Bulma's own focus colors, $link on
+// $scheme-main-bis, are about 1:1. Keyboard focus is outlined as well, as
+// Logout is, since the current page's link has the same colors.
 a.navbar-item.router-link-exact-active,
-a.navbar-item:hover {
+a.navbar-item:hover,
+a.navbar-item:focus {
   background: $scheme-main !important;
   color: whitesmoke !important;
+}
+
+a.navbar-item:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
 }
 
 div.is-success {

@@ -201,6 +201,24 @@ test(
     await expect.soft(page.getByText(FOOTER)).toBeVisible();
     const header = await headerHeight(page);
 
+    // On every page, header links that do not fit wrap rather than push the
+    // last ones off the page (1024 wide: 1280 at 125% zoom).
+    await resize(page, { width: 1024, height: 720 });
+    await expect.soft(page.getByTestId('nav-builder-beta')).toBeVisible();
+    expect
+      .soft(
+        await page.evaluate(() => document.documentElement.scrollWidth),
+        '/experiments at 1024: page scroll width',
+      )
+      .toBeLessThanOrEqual(1024);
+    await resize(page, initial);
+    // A focused header link is as legible as a hovered one.
+    await page.getByTestId('nav-builder-beta').focus();
+    const [focusedLink] = await contrast(page.getByTestId('nav-builder-beta'));
+    expect
+      .soft(focusedLink, 'focused header link text')
+      .toBeGreaterThanOrEqual(4.5);
+
     await test.step('drafts landing is full width, keeps a gutter and hides the footer', async () => {
       await builder.open();
       await expect.soft(page.getByText(FOOTER)).toHaveCount(0);

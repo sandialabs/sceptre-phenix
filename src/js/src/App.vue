@@ -109,15 +109,15 @@
     overflow-y: auto;
   }
 
-  /* Nor can it scroll sideways, so links that do not fit on one line, in a
-     narrow window or with enlarged text, wrap instead of being cut off
-     (WCAG 1.4.4, 1.4.10). */
-  .app--full-bleed :deep(.navbar-menu) {
+  /* Links that do not fit on one line, in a narrow window or with enlarged
+     text, wrap instead of pushing the last ones off the page (WCAG 1.4.4,
+     1.4.10); the Builder page cannot scroll sideways at all. */
+  #app :deep(.navbar-menu) {
     flex-shrink: 1;
     min-width: 0;
   }
 
-  .app--full-bleed :deep(.navbar-start) {
+  #app :deep(.navbar-start) {
     flex-wrap: wrap;
     min-width: 0;
   }
