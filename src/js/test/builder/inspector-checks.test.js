@@ -9,6 +9,7 @@ import { createPinia } from 'pinia';
 import BuilderInspector from '@/components/builder/BuilderInspector.vue';
 
 import { useBuilderStore } from '@/builder/store.js';
+import { deviceFieldWarnings } from '@/builder/validate.js';
 
 import { sampleDocument } from './fixtures.js';
 
@@ -17,8 +18,9 @@ vi.mock('@/store.js', () => ({
   usePhenixStore: () => ({ username: 'alice' }),
 }));
 
-// A probe in place of the VLAN and drive image fields: it renders the
-// warnings the Inspector provides for the field's JSON Forms path.
+// A probe in place of the fields that get warnings (VLAN, drive image, IP
+// and MAC address): it renders the warnings the Inspector provides for the
+// field's JSON Forms path.
 vi.mock('@/builder/adapters/forms.js', async (importOriginal) => {
   const actual = await importOriginal();
   const { defineComponent, h: render } = await import('vue');
@@ -49,7 +51,12 @@ vi.mock('@/builder/adapters/forms.js', async (importOriginal) => {
       {
         tester: rankWith(
           100,
-          or(scopeEndsWith('vlan'), scopeEndsWith('image')),
+          or(
+            scopeEndsWith('vlan'),
+            scopeEndsWith('image'),
+            scopeEndsWith('address'),
+            scopeEndsWith('mac'),
+          ),
         ),
         renderer: Probe,
       },
@@ -165,5 +172,84 @@ describe('Inspector checks', () => {
         'spec.hardware.drives.0.image',
       ),
     ).toBe('The server has no disk image named "ubuntu.qc2".');
+  });
+});
+
+// A warning at a field the Inspector does not show could be neither seen
+// nor fixed there: each field that gets one is rendered, whatever kind of
+// interface it is on.
+describe('address warnings', () => {
+  test('every warned field is one the Inspector shows', async () => {
+    const result = sampleDocument();
+    const mac = 'aa:bb:cc:dd:ee:ff';
+    const kinds = {
+      static: { proto: 'static', address: '10.0.0.5', mask: 24, mac },
+      dhcp: { proto: 'dhcp', address: '10.0.0.5', mac },
+      manual: { proto: 'manual', address: '10.0.0.5', mask: 24, mac },
+      qinq: { proto: 'static', address: '10.0.0.5', mask: 24, qinq: true },
+    };
+    const doc = {
+      ...result.doc,
+      nodes: result.doc.nodes.map((node) => {
+        if (node.id === result.alpha.id) {
+          const copy = JSON.parse(JSON.stringify(node));
+
+          copy.device.spec.network.interfaces = Object.values(kinds).map(
+            (fields, index) => ({
+              name: `eth${index}`,
+              type: 'ethernet',
+              vlan: 'EXP',
+              ...fields,
+            }),
+          );
+
+          return copy;
+        }
+
+        if (node.id === result.bravo.id) {
+          const copy = JSON.parse(JSON.stringify(node));
+
+          copy.device.spec = {
+            ...copy.device.spec,
+            external: true,
+            type: 'HIL',
+          };
+          copy.device.spec.network.interfaces = [
+            { name: 'eth0', vlan: 'EXP', ...kinds.static },
+          ];
+
+          return copy;
+        }
+
+        return node;
+      }),
+    };
+    const warned = {};
+
+    for (const node of [result.alpha, result.bravo]) {
+      const { spec } = doc.nodes.find((item) => item.id === node.id).device;
+      const warnings = deviceFieldWarnings(doc, spec, { nodeId: node.id });
+      const html = await renderInspector(doc, { nodes: [node.id] });
+
+      warned[node.device.hostname] = Object.keys(warnings).sort();
+
+      for (const [path, messages] of Object.entries(warnings)) {
+        expect(probe(html, path), path).toBe(messages.join(' | '));
+      }
+    }
+
+    // A manual interface's address, and an external device's MAC, are not
+    // compared; the static and QinQ interfaces' addresses and the static,
+    // DHCP and manual interfaces' MACs are.
+    expect(warned).toEqual({
+      alpha: [
+        'spec.network.interfaces.0.address',
+        'spec.network.interfaces.0.mac',
+        'spec.network.interfaces.1.mac',
+        'spec.network.interfaces.2.mac',
+        'spec.network.interfaces.3.address',
+      ],
+      bravo: ['spec.network.interfaces.0.address'],
+    });
   });
 });

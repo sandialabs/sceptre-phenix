@@ -972,6 +972,7 @@ export function deviceFieldWarnings(
       hostname: self?.device?.hostname ?? '',
       interfaces: arrayOf(spec?.network?.interfaces),
       included: false,
+      external: spec?.external != null,
     },
     ...others.map(addressDevice),
   ])
@@ -1188,23 +1189,44 @@ function ipv6Groups(text) {
   return groups.map((field) => parseInt(field, 16));
 }
 
+// Trims the ASCII whitespace around an address or a proto, as the server
+// does (trimASCIISpace in types/builder/topology.go). String.prototype.trim
+// and Go's strings.TrimSpace each trim a character the other keeps (U+FEFF
+// and U+0085), so they would disagree about an address.
+function trimASCIISpace(text) {
+  return text.replace(/^[\t\n\v\f\r ]+|[\t\n\v\f\r ]+$/g, '');
+}
+
+// Protos whose interface phenix gives no address of its own: dhcp asks a
+// DHCP server for one, and phenix brings a manual one up with none.
+const UNADDRESSED_PROTOS = new Set(['dhcp', 'manual']);
+
 /**
  * The IP address an interface uses, as typed without a prefix length, and
  * as a key that is the same however it is written: parsed as the server
  * parses it (interfaceIP in types/builder/topology.go), without a zone, and
- * an IPv4 address mapped into IPv6 as the IPv4 address.
+ * an IPv4 address mapped into IPv6 as the IPv4 address. A manual
+ * interface's address is not read, as the Inspector does not show it,
+ * though the vrouter app gives it to a Vyatta or VyOS router; a QinQ
+ * interface's is, as minirouter and Vyatta give it to the interface.
  *
  * @param {object} iface spec interface
  * @returns {{text: string, key: string}|null} null for none: a blank
- *   address, one the interface asks DHCP for, and one that does not parse,
- *   which the Inspector's form reports
+ *   address, one the interface asks DHCP for or is brought up without
+ *   (proto manual), and one that does not parse, which the Inspector's form
+ *   reports
  */
 function interfaceIP(iface) {
-  if (typeof iface.address !== 'string' || fold(iface.proto) === 'dhcp') {
+  const proto = typeof iface.proto === 'string' ? iface.proto : '';
+
+  if (
+    typeof iface.address !== 'string' ||
+    UNADDRESSED_PROTOS.has(trimASCIISpace(proto).toLowerCase())
+  ) {
     return null;
   }
 
-  const text = iface.address.split('/')[0].trim();
+  const text = trimASCIISpace(iface.address.split('/')[0]);
   const zone = text.indexOf('%');
 
   if (!text.includes(':')) {
@@ -1245,17 +1267,18 @@ function interfaceIP(iface) {
  *   which the Inspector's form reports
  */
 function interfaceMAC(iface) {
-  const text = typeof iface.mac === 'string' ? iface.mac.trim() : '';
+  const text = typeof iface.mac === 'string' ? trimASCIISpace(iface.mac) : '';
   const key = text.toLowerCase().replace(/[:.-]/g, '');
 
   return /^[0-9a-f]{12}$/.test(key) ? { text, key } : null;
 }
 
-// The addresses sharedAddresses compares: the field each is in, and its name
-// in a message.
+// The addresses sharedAddresses compares: the field each is in, its name in
+// a message, and whether an external device's count. phenix does not start
+// an external device, and its schema (so the Inspector) has no MAC.
 const ADDRESS_FIELDS = [
-  { field: 'address', name: 'IP address', read: interfaceIP },
-  { field: 'mac', name: 'MAC address', read: interfaceMAC },
+  { field: 'address', name: 'IP address', read: interfaceIP, external: true },
+  { field: 'mac', name: 'MAC address', read: interfaceMAC, external: false },
 ];
 
 // A device node as sharedAddresses takes it.
@@ -1264,6 +1287,7 @@ function addressDevice(node) {
     hostname: node.device?.hostname ?? '',
     interfaces: specInterfaces(node),
     included: Boolean(node.device?.includedFrom),
+    external: node.device?.spec?.external != null,
   };
 }
 
@@ -1272,11 +1296,12 @@ function addressDevice(node) {
  * uses too: of any two devices, or of one. The interfaces of an included
  * device count, as phenix merges them into the experiment, but are not
  * reported, and neither is an address only included devices share: they are
- * their topology's to fix. Interfaces are looked up by address, so the check
- * grows with the diagram, never with its square.
+ * their topology's to fix. An external device's IP addresses count, and its
+ * MAC addresses do not (see ADDRESS_FIELDS). Interfaces are looked up by
+ * address, so the check grows with the diagram, never with its square.
  *
- * @param {{hostname: string, interfaces: object[], included: boolean}[]}
- *   devices
+ * @param {{hostname: string, interfaces: object[], included: boolean,
+ *   external: boolean}[]} devices
  * @returns {{device: number, index: number, field: string, name: string,
  *   text: string, label: string, hostname: string, other: object,
  *   more: number}[]} for each interface, by the device's position in
@@ -1295,8 +1320,8 @@ function sharedAddresses(devices) {
         return;
       }
 
-      ADDRESS_FIELDS.forEach(({ read }, kind) => {
-        const address = read(iface);
+      ADDRESS_FIELDS.forEach(({ read, external }, kind) => {
+        const address = device.external && !external ? null : read(iface);
 
         if (!address) {
           return;

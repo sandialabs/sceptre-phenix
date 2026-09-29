@@ -630,6 +630,7 @@ describe('IP and MAC addresses that two interfaces use', () => {
       ['::ffff:10.0.0.5', '10.0.0.5', '10.0.0.5'],
       ['fe80::1%eth0', 'fe80::1', 'fe80::1'],
       ['::1.2.3.4', '::102:304', '::102:304'],
+      ['10.0.0.5', '\t\v\f10.0.0.5\r\n', '10.0.0.5'],
     ]) {
       expect(pair(fixed(first), fixed(second))).toEqual([
         `IP address ${first} of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo"`,
@@ -637,24 +638,54 @@ describe('IP and MAC addresses that two interfaces use', () => {
       ]);
     }
 
-    for (const second of ['AA-BB-CC-DD-EE-FF', 'aabb.ccdd.eeff']) {
+    for (const [second, shown] of [
+      ['AA-BB-CC-DD-EE-FF', 'AA-BB-CC-DD-EE-FF'],
+      ['aabb.ccdd.eeff', 'aabb.ccdd.eeff'],
+      ['\taa:bb:cc:dd:ee:ff\n', 'aa:bb:cc:dd:ee:ff'],
+    ]) {
       expect(pair({ mac: 'aa:bb:cc:dd:ee:ff' }, { mac: second })).toEqual([
         'MAC address aa:bb:cc:dd:ee:ff of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo"',
-        `MAC address ${second} of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"`,
+        `MAC address ${shown} of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"`,
       ]);
     }
   });
 
-  // An interface that asks DHCP for its address has none of its own, and
-  // minimega makes a MAC for one that has none. An address that does not
-  // parse is the Inspector form's to report.
-  test('blank, DHCP and unreadable addresses, masks and gateways are not compared', () => {
+  // minirouter, which the Router and Firewall templates make, and Vyatta
+  // give a QinQ interface its address (vrouter.go, vyatta.tmpl).
+  test('the address of a QinQ interface is compared', () => {
+    expect(pair(fixed('10.0.0.5', { qinq: true }), fixed('10.0.0.5'))).toEqual([
+      'IP address 10.0.0.5 of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo"',
+      'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"',
+    ]);
+  });
+
+  // An interface that asks DHCP for its address has none of its own, phenix
+  // brings a manual one up with none, and minimega makes a MAC for one that
+  // has none. An address that does not parse is the Inspector form's to
+  // report. Only ASCII whitespace is trimmed, as the server trims it
+  // (topology_test.go has the same cases).
+  test('blank, DHCP, manual and unreadable addresses, masks and gateways are not compared', () => {
     expect(pair(fixed('10.0.0.5'), fixed('10.0.0.6'))).toEqual([]);
     expect(pair(fixed(''), fixed(''))).toEqual([]);
     expect(pair(fixed('  '), fixed('  '))).toEqual([]);
-    expect(
-      pair({ proto: 'dhcp', address: '10.0.0.5' }, fixed('10.0.0.5')),
-    ).toEqual([]);
+
+    for (const proto of ['dhcp', 'manual', ' DHCP\t', '\tManual ']) {
+      expect(
+        pair({ proto, address: '10.0.0.5', mask: 24 }, fixed('10.0.0.5')),
+      ).toEqual([]);
+    }
+
+    for (const address of [
+      '\ufeff10.0.0.5',
+      '10.0.0.5\u0085',
+      '\u00a010.0.0.5',
+    ]) {
+      expect(pair(fixed(address), fixed('10.0.0.5'))).toEqual([]);
+    }
+
+    for (const mac of ['\ufeffaa:bb:cc:dd:ee:ff', 'aa:bb:cc:dd:ee:ff\u0085']) {
+      expect(pair({ mac }, { mac: 'aa:bb:cc:dd:ee:ff' })).toEqual([]);
+    }
 
     for (const address of [
       '10.0.0.05',
@@ -699,6 +730,34 @@ describe('IP and MAC addresses that two interfaces use', () => {
       'MAC address 00:00:00:00:00:01 of interface "eth0" of "bravo" is also used by interface "eth1" (#3) of "bravo"',
       'IP address 10.0.0.5 of interface "eth1" (#2) of "bravo" is also used by interface "eth0" of "alpha" and 1 more interface',
       'MAC address 00-00-00-00-00-01 of interface "eth1" (#3) of "bravo" is also used by interface "eth0" of "bravo"',
+    ]);
+  });
+
+  // phenix does not start an external device, and its schema has no MAC,
+  // so its MAC does not count. Its IP address, which the real device uses,
+  // does.
+  test('an external device’s IP address counts, and its MAC does not', () => {
+    const external = (address) => (interfaces, node) => {
+      Object.assign(interfaces[0], fixed(address), {
+        mac: 'aa:bb:cc:dd:ee:ff',
+      });
+      node.device.spec = { ...node.device.spec, external: true, type: 'HIL' };
+    };
+    const own = ([eth0]) =>
+      Object.assign(eth0, fixed('10.0.0.5'), { mac: 'AA:BB:CC:DD:EE:FF' });
+
+    expect(
+      addressIssues(
+        withInterfaces({ alpha: own, bravo: external('10.0.0.6') }).doc,
+      ),
+    ).toEqual([]);
+    expect(
+      addressIssues(
+        withInterfaces({ alpha: own, bravo: external('10.0.0.5') }).doc,
+      ).map((issue) => issue.message),
+    ).toEqual([
+      'IP address 10.0.0.5 of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo"',
+      'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"',
     ]);
   });
 

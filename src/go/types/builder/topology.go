@@ -290,10 +290,11 @@ type addressUsers struct {
 
 // checkInterfaceAddresses refuses a document in which two interfaces use the
 // same IP address or the same MAC address: phenix stores such a topology, but
-// the addresses clash once the experiment runs. Every interface of every
-// device counts, including an external device's and those of devices from
-// included topologies, which phenix merges into the experiment; an address
-// only included devices use is their topology's to fix. IP addresses are
+// the addresses clash once the experiment runs. Every device counts, including
+// an external device's IP addresses and the devices of included topologies,
+// which phenix merges into the experiment; an address only included devices
+// use is their topology's to fix. An external device's MAC addresses do not
+// count: phenix does not start it, and its schema has no MAC. IP addresses are
 // compared parsed (see [interfaceIP]), and MAC addresses in any case and with
 // any separators (see [interfaceMAC]). The error names each address and the
 // interfaces that use it, in document order.
@@ -332,6 +333,7 @@ func (d *Document) checkInterfaceAddresses() error {
 		ifaces := specNodeInterfaces(spec)
 		labels := interfaceLabels(ifaces)
 		included := node.Device.IncludedFrom != ""
+		external := spec["external"] != nil
 
 		for index, entry := range ifaces {
 			iface, ok := entry.(map[string]any)
@@ -345,7 +347,7 @@ func (d *Document) checkInterfaceAddresses() error {
 				use("ip "+addr.String(), "IP address "+addr.String(), user, included)
 			}
 
-			if mac, ok := interfaceMAC(iface); ok {
+			if mac, ok := interfaceMAC(iface); ok && !external {
 				use("mac "+mac.String(), "MAC address "+mac.String(), user, included)
 			}
 		}
@@ -381,17 +383,28 @@ func (d *Document) checkInterfaceAddresses() error {
 // interfaceIP reads the IP address a spec interface entry uses, as Go parses
 // it, without a zone, and with an IPv4 address mapped into IPv6 as the IPv4
 // address. A prefix length typed after it is ignored. It reports none for an
-// interface that asks DHCP for its address, and for an address that is blank
-// or does not parse, which is the schema's to report.
+// interface that asks DHCP for its address, for one phenix brings up with no
+// address (proto manual), and for an address that is blank or does not parse,
+// which is the schema's to report.
+//
+// A manual interface's address is left out although the vrouter app's Vyatta
+// and VyOS configuration assigns it: phenix's schema describes manual as no
+// address, its Linux and Windows startup scripts and minirouter assign none,
+// and the Builder's Inspector does not show it. An interface with qinq set
+// counts: minirouter, which the Builder's Router and Firewall templates use,
+// assigns its address, and so does Vyatta.
 func interfaceIP(iface map[string]any) (netip.Addr, bool) {
-	if proto, _ := iface["proto"].(string); foldKey(proto) == "dhcp" {
+	proto, _ := iface["proto"].(string)
+
+	switch strings.ToLower(trimASCIISpace(proto)) {
+	case "dhcp", "manual":
 		return netip.Addr{}, false
 	}
 
 	text, _ := iface["address"].(string)
 	text, _, _ = strings.Cut(text, "/")
 
-	addr, err := netip.ParseAddr(strings.TrimSpace(text))
+	addr, err := netip.ParseAddr(trimASCIISpace(text))
 	if err != nil {
 		return netip.Addr{}, false
 	}
@@ -409,12 +422,20 @@ func interfaceMAC(iface map[string]any) (net.HardwareAddr, bool) {
 
 	text, _ := iface["mac"].(string)
 
-	mac, err := hex.DecodeString(strings.NewReplacer(":", "", "-", "", ".", "").Replace(strings.TrimSpace(text)))
+	mac, err := hex.DecodeString(strings.NewReplacer(":", "", "-", "", ".", "").Replace(trimASCIISpace(text)))
 	if err != nil || len(mac) != length {
 		return nil, false
 	}
 
 	return net.HardwareAddr(mac), true
+}
+
+// trimASCIISpace trims the ASCII whitespace around an address or a proto. The
+// editor trims the same characters (trimASCIISpace in validate.js), so both
+// read an address alike: [strings.TrimSpace] and JavaScript's trim each trim a
+// character the other keeps (U+0085 and U+FEFF).
+func trimASCIISpace(text string) string {
+	return strings.Trim(text, " \t\n\v\f\r")
 }
 
 // hasVLAN reports whether a spec interface entry names a VLAN. An entry of the

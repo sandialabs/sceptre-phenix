@@ -579,6 +579,19 @@ func TestPublishTopologyConfigRefusesSharedAddresses(t *testing.T) {
 			host:   map[string]any{"mac": "AABB.CCDD.EEFF"},
 			want:   "MAC address aa:bb:cc:dd:ee:ff is used by " + both,
 		},
+		// The editor trims the same characters (validate.js).
+		"ASCII whitespace": {
+			router: map[string]any{"address": "10.0.0.5", "mac": "aa:bb:cc:dd:ee:ff"},
+			host:   map[string]any{"address": "\t\v\f10.0.0.5\r\n", "mac": "\taa:bb:cc:dd:ee:ff\n"},
+			want: "IP address 10.0.0.5 is used by " + both + "; " +
+				"MAC address aa:bb:cc:dd:ee:ff is used by " + both,
+		},
+		// minirouter and Vyatta assign the address of a QinQ interface.
+		"QinQ": {
+			router: map[string]any{"address": "10.0.0.5", "qinq": true},
+			host:   map[string]any{"address": "10.0.0.5"},
+			want:   "IP address 10.0.0.5 is used by " + both,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc := withInterfaces(t, map[string][]map[string]any{
@@ -586,8 +599,9 @@ func TestPublishTopologyConfigRefusesSharedAddresses(t *testing.T) {
 				"host-a": {test.host},
 			})
 
-			if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, []string{test.want}) {
-				t.Fatalf("problems = %q, want %q", got, []string{test.want})
+			want := strings.Split(test.want, "; ")
+			if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, want) {
+				t.Fatalf("problems = %q, want %q", got, want)
 			}
 		})
 	}
@@ -614,18 +628,24 @@ func TestPublishTopologyConfigRefusesAddressesOfOneDevice(t *testing.T) {
 	}
 }
 
-// An interface that asks DHCP for its address has none of its own, and
-// minimega makes a MAC for one that has none; a mask or a gateway may be
-// shared.
+// An interface that asks DHCP for its address has none of its own, phenix
+// brings a manual one up with none, and minimega makes a MAC for one that has
+// none; a mask or a gateway may be shared. Only ASCII whitespace is trimmed,
+// as the editor trims it (validate.js), so an address in other whitespace
+// does not parse.
 func TestPublishTopologyConfigSkipsAddressesNotAssigned(t *testing.T) {
 	for name, test := range map[string]struct {
 		router, host map[string]any
 	}{
 		"DHCP":             {router: map[string]any{"proto": "dhcp", "address": "10.0.0.2"}, host: nil},
+		"manual":           {router: map[string]any{"proto": "manual", "address": "10.0.0.2", "mask": 24}, host: nil},
 		"blank address":    {router: map[string]any{"address": " "}, host: map[string]any{"address": " "}},
 		"blank MAC":        {router: map[string]any{"mac": ""}, host: map[string]any{"mac": ""}},
 		"unreadable":       {router: map[string]any{"address": "10.0.0.256"}, host: map[string]any{"address": "10.0.0.256"}},
 		"mask and gateway": {router: map[string]any{"gateway": "10.0.0.254"}, host: map[string]any{"gateway": "10.0.0.254"}},
+		"U+FEFF":           {router: map[string]any{"address": "\ufeff10.0.0.2"}, host: nil},
+		"U+0085":           {router: map[string]any{"address": "10.0.0.2\u0085"}, host: nil},
+		"no-break space":   {router: map[string]any{"address": "\u00a010.0.0.2"}, host: nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc := withInterfaces(t, map[string][]map[string]any{
@@ -637,6 +657,68 @@ func TestPublishTopologyConfigSkipsAddressesNotAssigned(t *testing.T) {
 				t.Fatalf("PublishTopologyConfig: %v", err)
 			}
 		})
+	}
+}
+
+// The phenix schema refuses these interfaces, but not for the address they
+// share: a proto is read in any case and without ASCII whitespace, and a MAC
+// in whitespace other than ASCII does not parse.
+func TestPublishTopologyConfigSkipsAddressesNotAssignedAsTyped(t *testing.T) {
+	for name, test := range map[string]struct {
+		router, host map[string]any
+	}{
+		"DHCP in any case": {router: map[string]any{"proto": " DHCP\t", "address": "10.0.0.2"}, host: nil},
+		"manual in any case": {
+			router: map[string]any{"proto": "\tManual ", "address": "10.0.0.2"},
+			host:   nil,
+		},
+		"MAC after U+FEFF": {
+			router: map[string]any{"mac": "\ufeffaa:bb:cc:dd:ee:ff"},
+			host:   map[string]any{"mac": "aa:bb:cc:dd:ee:ff"},
+		},
+		"MAC before U+0085": {
+			router: map[string]any{"mac": "aa:bb:cc:dd:ee:ff\u0085"},
+			host:   map[string]any{"mac": "aa:bb:cc:dd:ee:ff"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := withInterfaces(t, map[string][]map[string]any{
+				"router": {test.router},
+				"host-a": {test.host},
+			})
+
+			if got := sharedAddresses(t, doc); got != nil {
+				t.Fatalf("problems = %q, want none", got)
+			}
+		})
+	}
+}
+
+// phenix does not start an external device, and its schema has no MAC, so its
+// MAC does not count. Its IP address, which the real device uses, does.
+func TestPublishTopologyConfigComparesExternalDevicesByIP(t *testing.T) {
+	doc := withInterfaces(t, map[string][]map[string]any{
+		"router": {{"mac": "aa:bb:cc:dd:ee:ff"}},
+		"host-a": {{"mac": "AA:BB:CC:DD:EE:FF"}},
+	})
+	host := nodeByHostname(t, doc, "host-a")
+	host.Device.Spec["external"] = true
+	host.Device.Spec["type"] = "HIL"
+
+	if _, _, err := doc.PublishTopologyConfig("external"); err != nil {
+		t.Fatalf("PublishTopologyConfig: %v", err)
+	}
+
+	network, _ := host.Device.Spec["network"].(map[string]any)
+	ifaces, _ := network["interfaces"].([]any)
+	eth0, _ := ifaces[0].(map[string]any)
+	eth0["address"] = "10.0.0.1"
+
+	want := []string{
+		`IP address 10.0.0.1 is used by interface "eth0" of device "router" and interface "eth0" of device "host-a"`,
+	}
+	if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, want) {
+		t.Fatalf("problems = %q, want %q", got, want)
 	}
 }
 

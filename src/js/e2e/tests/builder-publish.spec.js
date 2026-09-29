@@ -1270,7 +1270,7 @@ test('router and firewall templates publish with node types Router and Firewall'
 // interface, as a warning, but publishing refuses it, in the dialog and on
 // the server, and says which interface to fix. Typing its VLAN connects it,
 // on a switch added for a network that has none. An address two interfaces
-// use is refused the same way.
+// use is refused the same way, but not one a manual interface holds.
 test('an interface with no VLAN or a used address is refused at publish, and its VLAN connects it', async ({
   page,
   builder,
@@ -1496,6 +1496,40 @@ test('an interface with no VLAN or a used address is refused at publish, and its
         devicesOf(saved)[1].device.spec.network.interfaces[0].address ===
         '10.0.0.6',
     );
+
+    await openPublish(builder);
+    await expect(errors).toHaveCount(0);
+    await expectPublish(page, 200);
+  });
+
+  // phenix brings a manual interface up with no address, and the Inspector
+  // does not show one, so an address it still holds is not compared.
+  await test.step('an address two manual interfaces hold is not compared', async () => {
+    const manual = uniqueName(testInfo, 'manual-ip');
+    tracker.config('Topology', manual);
+    const document = labDocument(manual);
+
+    for (const device of devicesOf(document)) {
+      Object.assign(device.device.spec.network.interfaces[0], {
+        proto: 'manual',
+        address: '10.0.0.5',
+        mask: 24,
+      });
+    }
+
+    await builder.openDraft(await builder.seedDraft(document));
+    await builder.selectInOutline('server-2');
+    await expect(vlan).toHaveValue('EXP');
+    await expect(
+      builder.inspector.locator(
+        '[data-path="spec.network.interfaces.0.address"]',
+      ),
+    ).toHaveCount(0);
+    await expect(
+      builder.inspector
+        .getByTestId('inspector-field-warning')
+        .filter({ hasText: 'IP address' }),
+    ).toHaveCount(0);
 
     await openPublish(builder);
     await expect(errors).toHaveCount(0);
