@@ -75,10 +75,10 @@ type Document struct {
 	Grid        Grid         `json:"grid"`
 	Scenario    *ScenarioRef `json:"scenario,omitempty"`
 	Source      *Source      `json:"source,omitempty"`
-	// Layout is the id of the automatic layout chosen for this document, which
-	// the editor runs in place of the viewer's default. Empty means the
-	// viewer's default; an id the editor does not know is ignored. It is
-	// presentation only and never written to a config.
+	// Layout is the id of the automatic layout that last laid this document
+	// out, which the editor names in its layout menu. Empty, or an id the
+	// editor does not know, means the positions were not made by a layout. It
+	// is presentation only and never written to a config.
 	Layout string `json:"layout,omitempty"`
 }
 

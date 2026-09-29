@@ -3216,7 +3216,7 @@
       "$ref": "#/$defs/identifier"
     },
     "layout": {
-      "description": "Automatic layout chosen for this document, run in place of the viewer's default. An id the editor does not know is ignored. Never published.",
+      "description": "Automatic layout that last laid this document out, which the editor names in its layout menu. Empty, or an id the editor does not know, means the positions were not made by a layout. Never published.",
       "type": "string"
     },
     "name": {

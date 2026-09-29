@@ -93,8 +93,8 @@ func Schema() (map[string]any, error) {
 			"scenario":     ref("scenario"),
 			"source":       ref("source"),
 			"layout": stringDef(
-				"Automatic layout chosen for this document, run in place of the viewer's default. " +
-					"An id the editor does not know is ignored. Never published.",
+				"Automatic layout that last laid this document out, which the editor names in its layout menu. " +
+					"Empty, or an id the editor does not know, means the positions were not made by a layout. Never published.",
 			),
 		},
 	)
