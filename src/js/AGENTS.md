@@ -45,13 +45,15 @@ The development server needs a backend on `localhost:3000`.
 ## Browser Tests
 
 Playwright requires a running `phenix ui`; default URL is
-`http://127.0.0.1:3000`, override with `E2E_BASE_URL`:
+`http://127.0.0.1:3000`, override with `E2E_BASE_URL`. Locally, start the
+server on another port (see the port rule in the root `AGENTS.md`):
 
 ```bash
 cd e2e
 npm ci
 npx playwright install --with-deps chromium
-npx playwright test
+# against `phenix ui --listen-endpoint 127.0.0.1:3080`
+E2E_BASE_URL=http://127.0.0.1:3080 npx playwright test
 ```
 
 Default smoke tests need only a server. Lifecycle tests additionally need
