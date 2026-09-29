@@ -549,7 +549,8 @@ func TestValidationCorpus(t *testing.T) {
 
 // refusedAt reports whether err refuses a document at exactly path: an issue
 // of a validation error there, or a value of the wrong type there, which the
-// decoder refuses before validation.
+// decoder refuses before validation. For a map value of the wrong type, Go
+// before 1.27 names only the map, so the map's own path counts too.
 func refusedAt(err error, path string) bool {
 	var (
 		invalid  *builder.ValidationError
@@ -560,5 +561,14 @@ func refusedAt(err error, path string) bool {
 		return slices.ContainsFunc(invalid.Issues, func(issue builder.Issue) bool { return issue.Path == path })
 	}
 
-	return errors.As(err, &mistyped) && mistyped.Field == path
+	if !errors.As(err, &mistyped) {
+		return false
+	}
+
+	parent := path
+	if i := strings.LastIndex(path, "."); i >= 0 {
+		parent = path[:i]
+	}
+
+	return mistyped.Field == path || mistyped.Field == parent
 }
