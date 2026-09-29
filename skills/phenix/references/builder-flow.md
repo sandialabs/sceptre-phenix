@@ -39,7 +39,9 @@ upload, or publish. Configs' edit button for a Builder Flow topology links to
 the first time) and then names it as `?draft=<owner>/<id>`, so a reload reopens
 that draft; with the feature off, Configs explains that the topology can only
 be edited in Builder Flow. The Inspector also edits a node's labels,
-annotations, and advanced (minimega `vm config`) settings. With nothing
+annotations, and advanced (minimega `vm config`) settings. An interface's kind
+picker offers Static or OSPF, DHCP or manual, and Serial; the Protocol and Type
+fields under it hold the rest. With nothing
 selected, its Diagram section shows two more parts below Name and
 Description. Annotations lists the annotations of the config the diagram was
 imported from, sorted by key and without `builder-` ones, under "From <Kind>
@@ -72,7 +74,11 @@ blank or placed by hand). On such a draft, Auto layout and Auto-group run the
 Settings layout ("Layout for drafts without one") and the draft then keeps
 it. A run that moves nothing keeps no layout. Undo and Restore previous layout
 bring Default back. A document may also hold each connection's `route` as a
-layout drew it; publishing and export ignore both.
+layout drew it; publishing and export ignore both. ELK layered lays each
+network out as a cluster and places the clusters in layers along the
+connections between them, cutting a tall layer into slices that wrap into
+columns, so connections run left to right, except one ELK reverses to break a
+cycle between networks.
 
 When the server refuses the session (a `401` on a save, a listing or a
 publish), or the token expires while Builder Flow is open, a Sign in again
@@ -101,7 +107,11 @@ diagram name as text, cut off with an ellipsis when long (whole in its
 tooltip), or a muted Untitled diagram. An Edit diagram name pencil after it
 (not shown to view-only users) opens a field in its place with the name
 selected. Enter or leaving the field renames the diagram, and Escape keeps the
-name. After Enter or Escape, focus returns to the pencil. The editor's toolbar
+name. After Enter or Escape, focus returns to the pencil. The diagram's counts
+are in an outlined box, centered on the header when the name and the actions
+leave room; otherwise they move toward the narrower side without covering it.
+Below a 64rem header, where the header wraps, the counts are centered in the
+space left on their row. The editor's toolbar
 has Draft History right after Minimap, then the save state, which is text the
 toolbar's arrow keys pass by. Focus
 mode (⇧⌘F or Ctrl+Shift+F) works on both views and stays on between them,
@@ -197,14 +207,17 @@ A snapshot append (`POST /builder/drafts/{owner}/{draft}/snapshots`) may carry
 starting with a letter or digit). The snapshot manifest keeps it, and snapshot
 listings return it, so a client whose response was lost can tell the snapshot
 was stored. A draft keeps at most 50 snapshots and 50 MiB of them; past either,
-the oldest are dropped. The UI keeps unsaved Builder Flow edits in the browser's
-`phenix-builder` IndexedDB database only until the server confirms them. Each
-browser tab keeps its own queue of a draft (the tab's id is `phenix.builder.tab`
-in sessionStorage). When more than one tab holds unsaved changes to one draft,
-the user chooses which to save, and the others are saved as new drafts. Logout
-leaves the changes of other open tabs to those tabs. It finds them by their
-Web Locks or, without Web Locks, by the tabs that answer within 500 ms over the
-BroadcastChannel `phenix-builder:tabs` (localStorage events without one).
+the oldest are dropped. A last publication naming a dropped snapshot is kept,
+as when that snapshot is deleted: the draft is then dirty, and it (or a draft
+that forks it) can still update the topology or experiment it published. The
+UI keeps unsaved Builder Flow edits in the browser's `phenix-builder` IndexedDB
+database only until the server confirms them. Each browser tab keeps its own
+queue of a draft (the tab's id is `phenix.builder.tab` in sessionStorage). When
+more than one tab holds unsaved changes to one draft, the user chooses which to
+save, and the others are saved as new drafts. Logout leaves the changes of
+other open tabs to those tabs. It finds them by their Web Locks or, without Web
+Locks, by the tabs that answer within 500 ms over the BroadcastChannel
+`phenix-builder:tabs` (localStorage events without one).
 
 `GET .../snapshots` returns `{"cursor": <index>, "snapshots": [...]}`, oldest
 first; each snapshot has `id`, `digest`, `size`, `createdAt`, `createdBy`,
@@ -218,10 +231,13 @@ unknown snapshot, and the usual 400, 403, 404 and 412. The cursor stays on the
 same snapshot. A last publication naming the deleted snapshot is kept, and the
 draft is then dirty. Snapshots never share chunks, so no other version or
 published document loses content. The editor's Draft History is a table of
-number, name, date and user, with Restore and Delete in each row (clicking a
-name also restores). The current row can be neither restored nor deleted, a
-view-only user gets no actions, and undo and redo skip a deleted snapshot.
-After a 412 the editor reads the draft again and the next try uses that ETag.
+number, name, date and user, newest first and numbered from the oldest (1, the
+draft as created), with Restore and Delete in each row (clicking a name also
+restores). The current row can be neither restored nor deleted, a view-only
+user gets no actions, and undo and redo skip a deleted snapshot. After a
+delete, focus moves to the Delete of the next older snapshot, or of the row
+above when the last row goes. After a 412 the editor reads the draft again and
+the next try uses that ETag.
 
 A mutation whose durable write succeeded but whose superseded content could not
 be removed returns its normal success status, body, and new `ETag`, plus a
@@ -337,6 +353,27 @@ After a publication, older published documents of the same topology are
 removed once they are more than an hour old; newer ones go at a later publish
 or at the startup cleanup.
 
+`DELETE /builder/documents/{document}` deletes a published topology: the
+Topology config the document is current for, through the same config call and
+broadcast as `DELETE /configs`, then every published document of that
+topology, however recent. It needs `configs` `delete` for the topology and
+takes the publish lock. A document the caller may not get, or one that is no
+longer current (the topology was published again, points at another document,
+or was deleted), gets 404, as `GET` answers. A published experiment gets 422
+`Only published topologies can be deleted here. Delete experiments from the
+Experiments page.` If the documents cannot be removed once the config is gone,
+the answer is still 204, with a `Warning: 199` header; such documents are never
+listed again, and the startup cleanup removes them once they are more than an
+hour old. Drafts and experiments made from the topology are not changed. On
+the drafts page, each Published Diagrams card of a topology has Delete, for a
+role with `configs` `delete`. It asks first ("Delete topology <name>?"), is
+aria-disabled and says Deleting… while it runs, then removes the card,
+announces `Deleted topology <name>.` and moves focus as for a deleted draft
+card. A refused delete keeps the card and shows the error; a 404 reads the list
+again. A draft that published the topology, was imported from it, or was
+opened from its published diagram creates it again when it publishes: a source
+config deleted since then passes the source freshness check.
+
 ## Routes
 
 All routes are relative to `/api/v1`.
@@ -356,6 +393,7 @@ All routes are relative to `/api/v1`.
 | `GET /builder/sources` | Configs a document can be generated from or publish to |
 | `POST /builder/generate` | Build a document from a stored or uploaded Topology or Experiment |
 | `GET /builder/documents[/{document}]` | Published Builder documents |
+| `DELETE /builder/documents/{document}` | Delete the topology a published document is current for, and the topology's published documents |
 
 Every route is behind the `builder-beta` feature: with it off, each answers a JSON `404`. The OpenAPI document served at `/docs/` describes every request and response.
 

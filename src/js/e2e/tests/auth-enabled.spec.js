@@ -4,6 +4,9 @@
 //
 //   phenix ui --jwt-signing-key secret --users 'e2e-admin:Testpass1!:Global Admin'
 //   E2E_AUTH_MODE=enabled npx playwright test auth-enabled
+//
+// The create account test deletes its e2e-signup account as that admin
+// (E2E_ADMIN_USER and E2E_ADMIN_PASS), so it can run again on the same server.
 const { test, expect } = require('@playwright/test');
 const { attachCapture, settle, fatalOf } = require('./helpers');
 
