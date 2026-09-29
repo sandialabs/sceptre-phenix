@@ -204,3 +204,40 @@ func TestConfigureUsersWithoutCreatingAUser(t *testing.T) { //nolint:paralleltes
 		t.Fatalf("ConfigureUsers returned %v, want the store's error for bob and carol", err)
 	}
 }
+
+// TestConfigureUsersSkipsAUserWithoutARole skips a default user that names no
+// role, as the users config watcher reads it too, and logs and returns
+// neither password.
+func TestConfigureUsersSkipsAUserWithoutARole(t *testing.T) { //nolint:paralleltest // replaces the config store and logs
+	useUsersTestStore(t)
+	logs := captureBuilderShareLogs(t)
+
+	err := ConfigureUsers([]string{"dave:Davepass1!", "Nonamepass1!", "erin:Testpass1!:" + usersTestRole})
+	if err == nil || !strings.Contains(err.Error(), `default user 1 ("dave")`) ||
+		!strings.Contains(err.Error(), `default user 2 ("")`) {
+		t.Fatalf("ConfigureUsers returned %v, want errors for default users 1 and 2", err)
+	}
+
+	logs.mu.Lock()
+	logged := logs.buffer.String()
+	logs.mu.Unlock()
+
+	for _, password := range []string{"Davepass1!", "Nonamepass1!"} {
+		if strings.Contains(logged, password) || strings.Contains(err.Error(), password) {
+			t.Fatalf("ConfigureUsers logged or returned the password %s", password)
+		}
+	}
+
+	if skipped := logs.records(t, "skipping default user without a role"); len(skipped) != 2 ||
+		skipped[0]["user"] != "dave" || skipped[1]["user"] != "" {
+		t.Fatalf("skipped = %v, want dave and an unnamed user", skipped)
+	}
+
+	if _, err := rbac.GetUser("dave"); err == nil {
+		t.Fatal("ConfigureUsers created dave, who has no role")
+	}
+
+	if _, err := rbac.GetUser("erin"); err != nil {
+		t.Fatalf("ConfigureUsers did not create erin after the users without a role: %v", err)
+	}
+}

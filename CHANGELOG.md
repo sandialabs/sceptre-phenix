@@ -66,7 +66,7 @@ All notable changes to this project will be documented in this file.
 - **Web UI**: The header's Logout can be reached with the keyboard, and says when logging out fails. The sign-in page focuses Username after a logout, labels its fields and the Create Account dialog, and fits narrow screens. The Create Account dialog opens empty each time, and reopening it as it closes no longer leaves an invisible dialog over the page.
 - **Config YAML**: Configs written as YAML (`phenix config get -o yaml`, `phenix config edit`, the configs API and downloads) keep strings that start with a line break or a tab.
 - **Configs page**: The viewer opens for topologies saved by the Topology Builder instead of showing an error, is labeled with the config's name, and returns focus to it when closed.
-- **Users**: Signing in as the same user from parallel requests no longer loses a token. Creating a user or signing up with a name already in use returns 409, and the Users page and the Create Account dialog say the user exists. Creating a user with an unknown role no longer leaves a user without a role.
+- **Users**: Signing in as the same user from parallel requests no longer loses a token. Creating a user or signing up with a name already in use returns 409, and the Users page and the Create Account dialog say the user exists. Creating a user with an unknown role no longer leaves a user without a role. A `ui.users` entry without a role is skipped and logged instead of crashing phenix.
 - **etcd store**: Crash at startup with an empty etcd; wrong errors for missing or existing configs, and for writes to a full etcd.
 
 ### Security

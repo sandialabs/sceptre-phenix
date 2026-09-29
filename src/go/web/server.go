@@ -37,8 +37,9 @@ const (
 var o serverOptions //nolint:gochecknoglobals // global options
 
 // ConfigureUsers creates each default user (name:password:role[:resource...])
-// that does not exist, and gives each the role it names. The error joins
-// those of the users it could not create.
+// that does not exist, and gives each the role it names. It skips an entry
+// without a role. The error joins those of the users it could not create or
+// skipped.
 func ConfigureUsers(users []string) error {
 	setUserRole := func(user *rbac.User, rname string, resources ...string) {
 		if role, err := rbac.RoleFromConfig(rname); err == nil {
@@ -68,8 +69,27 @@ func ConfigureUsers(users []string) error {
 
 	var errs []error
 
-	for _, u := range users {
+	for position, u := range users {
 		creds := strings.Split(u, ":")
+
+		if len(creds) < 3 {
+			// Without a role. The entry is named by its position, and by
+			// the name before its colon if it has one: without a colon,
+			// it may be a password.
+			var name string
+			if len(creds) == 2 {
+				name = creds[0]
+			}
+
+			plog.Error(plog.TypeSecurity, "skipping default user without a role", "position", position+1, "user", name)
+
+			errs = append(errs, fmt.Errorf(
+				"default user %d (%q) is not name:password:role[:resource...]", position+1, name,
+			))
+
+			continue
+		}
+
 		uname := creds[0]
 		pword := creds[1]
 		rname := creds[2]
