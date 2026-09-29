@@ -188,9 +188,11 @@ function expectNoLegacyFatal(issues) {
 }
 
 function legacySuccess(page, name) {
-  return page
-    .locator('.ui-dialog')
-    .filter({ hasText: `The ${name} topology was added to phēnix store` });
+  return page.locator('.ui-dialog').filter({
+    hasText: new RegExp(
+      `The ${name} topology was (added|saved) to phēnix store`,
+    ),
+  });
 }
 
 test.describe('legacy Builder', () => {
@@ -269,7 +271,11 @@ test.describe('legacy Builder', () => {
         // The imported name becomes the save target, so saving updates it.
         await openLegacySave(page);
         await expect(page.locator('#topo-name')).toHaveValue(legacy);
-        const updated = apiResponse(page, 'PUT', `/configs/topology/${legacy}`);
+        const updated = apiResponse(
+          page,
+          'PUT',
+          `/builder/topologies/${legacy}`,
+        );
         await page.getByRole('button', { name: 'Add Topology' }).click();
         expect((await updated).ok()).toBeTruthy();
         await expect.soft(legacySuccess(page, legacy)).toBeVisible();
@@ -326,7 +332,7 @@ test.describe('legacy Builder', () => {
       new RegExp(`name: ${name}`),
     );
     tracker.config('Topology', name);
-    const created = apiResponse(page, 'POST', '/configs');
+    const created = apiResponse(page, 'POST', '/builder/topologies');
     await add.click();
     expect((await created).status()).toBe(201);
     await expect(legacySuccess(page, name)).toBeVisible();
@@ -675,7 +681,7 @@ test.describe('Configs page', () => {
             policies: [
               {
                 resources: ['*'],
-                resourceNames: ['*'],
+                resourceNames: ['*', '*/*'],
                 verbs: ['list', 'get', 'update'],
               },
             ],
