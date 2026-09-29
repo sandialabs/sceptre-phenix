@@ -79,6 +79,7 @@ type edge struct {
 }
 
 type pipeline struct {
+	ExecutionID string `json:"executionID,omitempty"`
 	// all nodes, ordered
 	Pipeline []*node   `json:"pipeline"`
 	Loop     *pipeline `json:"loop,omitempty"`
@@ -443,6 +444,7 @@ func newPipeline(exp, name string, run, loop int) *pipeline {
 	}
 }
 
+//nolint:funlen // constructs the full pipeline graph
 func getPipeline(name string, run, loop int) (*pipeline, error) {
 	if _, ok := pipelines[name]; ok {
 		if _, ok := pipelines[name][run]; ok {
@@ -462,6 +464,9 @@ func getPipeline(name string, run, loop int) (*pipeline, error) {
 		return nil, fmt.Errorf("unable to decode scorch metadata: %w", err)
 	}
 
+	if run < 0 || run >= len(md.Runs) || loop < 0 {
+		return nil, fmt.Errorf("invalid Scorch run/loop %d/%d", run, loop)
+	}
 	var (
 		exe     = md.Runs[run]
 		runName = exe.Name
@@ -556,6 +561,9 @@ func updatePipeline(update PipelineUpdate) error {
 		return fmt.Errorf("getting pipeline %d for experiment %s: %w", update.Run, update.Exp, err)
 	}
 
+	if update.ExecutionID != "" {
+		pl.ExecutionID = update.ExecutionID
+	}
 	if update.CmpName == "" {
 		if pl.setStageStatus(update.Stage, update.Status) {
 			broadcastPipeline(update.Exp, update.Run, update.Loop, pl)
@@ -594,7 +602,7 @@ func broadcastPipeline(exp string, run, loop int, pl *pipeline) {
 	body, _ := json.Marshal(pl)
 
 	resource := bt.NewResource("apps/scorch", name, "pipeline-update")
-	broker.Broadcast(nil, resource, body)
+	broker.Broadcast(bt.NewRequestPolicy("experiments", "get", exp), resource, body)
 }
 
 type PipelineUpdate struct {
@@ -673,11 +681,6 @@ func DeletePipeline(exp string, run, loop int, rebuild bool) {
 }
 
 func processPipelines() {
-	pipelines = make(map[string]map[int]map[int]*pipeline)
-	pipelineUpdates = make(chan PipelineUpdate)
-	pipelineRequests = make(chan pipelineRequest)
-	pipelineDeletes = make(chan pipelineDelete)
-
 	for {
 		select {
 		case update := <-pipelineUpdates:
@@ -685,6 +688,15 @@ func processPipelines() {
 			update.resp <- err
 		case req := <-pipelineRequests:
 			pl, err := getPipeline(req.exp, req.run, req.loop)
+			if err == nil {
+				body, marshalErr := json.Marshal(pl)
+				if marshalErr == nil {
+					var snapshot pipeline
+					marshalErr = json.Unmarshal(body, &snapshot)
+					pl = &snapshot
+				}
+				err = marshalErr
+			}
 			req.resp <- pipelineResponse{pl, err}
 		case del := <-pipelineDeletes:
 			deleteLoop := func(loop int, rebuild bool) {
@@ -703,7 +715,11 @@ func processPipelines() {
 
 			if del.loop < 0 {
 				if !del.rebuild {
-					delete(pipelines, del.exp)
+					if del.run < 0 {
+						delete(pipelines, del.exp)
+					} else if runs := pipelines[del.exp]; runs != nil {
+						delete(runs, del.run)
+					}
 					close(del.done)
 
 					continue

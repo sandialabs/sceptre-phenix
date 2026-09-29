@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -28,46 +27,55 @@ import (
 	"phenix/web/weberror"
 )
 
-func init() { //nolint:gochecknoinits // hook registration
-	experiment.RegisterHook("stop", func(stage, name string) {
-		for _, cancel := range scorchexe.GetExperimentCancelers(name) {
-			cancel()
-		}
-	})
-}
-
 const (
 	appNameScorch       = "scorch"
 	TerminalBufferSize  = 32 * 1024
 	TerminalInitTimeout = 5 * time.Second
 )
 
+func allowScorch(w http.ResponseWriter, r *http.Request, resource, action string) bool {
+	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
+	if role.Spec == nil || !role.Allowed(resource, action, mux.Vars(r)["name"]) {
+		http.Error(w, "Scorch access denied", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 type termClient struct {
-	id   string
-	ws   *websocket.Conn
-	done chan struct{}
+	closed *sync.Once
+	id     string
+	ws     *websocket.Conn
+	done   chan struct{}
 }
 
 func newTermClient(ws *websocket.Conn) termClient {
 	return termClient{
-		id:   uuid.Must(uuid.NewV4()).String(),
-		ws:   ws,
-		done: make(chan struct{}),
+		id:     uuid.Must(uuid.NewV4()).String(),
+		ws:     ws,
+		done:   make(chan struct{}),
+		closed: new(sync.Once),
 	}
 }
 
 var (
-	rwTerm  = make(map[int]string)                //nolint:gochecknoglobals // global state
-	roTerms = make(map[int]map[string]termClient) //nolint:gochecknoglobals // global state
-	history = make(map[int]bytes.Buffer)          //nolint:gochecknoglobals // global state
+	rwTermOwners = make(map[int]string)                //nolint:gochecknoglobals // terminal writer identities
+	rwTerm       = make(map[int]string)                //nolint:gochecknoglobals // global state
+	roTerms      = make(map[int]map[string]termClient) //nolint:gochecknoglobals // global state
+	history      = make(map[int]bytes.Buffer)          //nolint:gochecknoglobals // global state
 
-	termClientIDs = make(map[string]chan struct{}) //nolint:gochecknoglobals // global state
+	termClientOwners = make(map[string]string)        //nolint:gochecknoglobals // terminal initialization tokens
+	termClientPIDs   = make(map[string]int)           //nolint:gochecknoglobals // terminal initialization tokens
+	termClientIDs    = make(map[string]chan struct{}) //nolint:gochecknoglobals // global state
 
 	mu sync.Mutex //nolint:gochecknoglobals // global lock
 )
 
 // GetTerminals - GET /experiments/{name}/scorch/terminals.
 func GetTerminals(w http.ResponseWriter, r *http.Request) {
+	if !allowScorch(w, r, "experiments", "get") {
+		return
+	}
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetTerminal")
 
 	var (
@@ -83,6 +91,9 @@ func GetTerminals(w http.ResponseWriter, r *http.Request) {
 
 // ConnectTerminal - GET /experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}.
 func ConnectTerminal(w http.ResponseWriter, r *http.Request) {
+	if !allowScorch(w, r, "experiments", "get") {
+		return
+	}
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ConnectTerminal")
 
 	var (
@@ -106,7 +117,7 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := initTerminal(exp, run, loop, stage, cmp)
+	t, err := initTerminal(r.Context(), exp, run, loop, stage, cmp)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 
@@ -119,6 +130,9 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) {
 
 // StreamTerminal - GET /experiments/{name}/scorch/terminals/{pid}/ws/{id}.
 func StreamTerminal(w http.ResponseWriter, r *http.Request) {
+	if !allowScorch(w, r, "experiments", "get") {
+		return
+	}
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StreamTerminal")
 
 	exp := mux.Vars(r)["name"]
@@ -141,6 +155,14 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) {
 
 	mu.Lock()
 	done, ok := termClientIDs[id]
+	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
+	ok = ok && termClientOwners[id] == user && termClientPIDs[id] == pid
+	if ok {
+		delete(termClientIDs, id)
+		close(done)
+	}
+	t.clientID = id
+	t.RO = rwTerm[pid] != id
 	mu.Unlock()
 
 	if !ok {
@@ -149,9 +171,11 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	close(done)
-
-	t.RO = rwTerm[pid] != id
+	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
+	if !t.RO && !role.Allowed("experiments/trigger", "create", exp) {
+		http.Error(w, "terminal write not allowed", http.StatusForbidden)
+		return
+	}
 
 	plog.Debug(plog.TypeSystem, "starting web terminal streamer", "pid", pid)
 
@@ -160,13 +184,21 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) {
 
 // ExitTerminal - POST /experiments/{name}/scorch/terminals/{pid}/exit/{id}.
 func ExitTerminal(w http.ResponseWriter, r *http.Request) {
+	if !allowScorch(w, r, "experiments/trigger", "create") {
+		return
+	}
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ExitTerminal")
 
 	exp := mux.Vars(r)["name"]
 	pid, _ := strconv.Atoi(mux.Vars(r)["pid"])
 	id := mux.Vars(r)["id"]
 
-	if rwTerm[pid] != id {
+	mu.Lock()
+	owner := rwTerm[pid]
+	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
+	ownerUser := rwTermOwners[pid]
+	mu.Unlock()
+	if owner != id || ownerUser != user {
 		plog.Error(
 			plog.TypeSystem,
 			"terminal client doesn't own R/W rights to PTY",
@@ -208,132 +240,70 @@ func ExitTerminal(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-//nolint:funlen // handler
 func terminalWsHandler(t WebTerm) func(*websocket.Conn) {
 	return func(ws *websocket.Conn) {
-		_, err := os.FindProcess(t.Pid)
-		if err != nil {
-			plog.Error(plog.TypeSystem, "unable to find process", "pid", t.Pid)
-
-			return
+		tc := newTermClient(ws)
+		mu.Lock()
+		if roTerms[t.Pid] == nil {
+			roTerms[t.Pid] = make(map[string]termClient)
 		}
-
-		readTerm := func() {
+		roTerms[t.Pid][tc.id] = tc
+		if h, ok := history[t.Pid]; ok {
+			_ = ws.SetWriteDeadline(time.Now().Add(TerminalInitTimeout))
+			_, _ = ws.Write(h.Bytes())
+		}
+		mu.Unlock()
+		received := make(chan struct{})
+		go func() {
+			defer close(received)
 			for {
 				buf := make([]byte, TerminalBufferSize)
-
-				nr, err := t.Pty.Read(buf)
+				n, err := ws.Read(buf)
 				if err != nil {
-					break
+					return
 				}
-
-				nw, err := ws.Write(buf[0:nr])
-				if err != nil {
-					break
-				}
-
-				if nw != nr {
-					break
-				}
-
-				mu.Lock()
-				h := history[t.Pid]
-				h.Write(buf[0:nr])
-				history[t.Pid] = h
-
-				ro := roTerms[t.Pid]
-				mu.Unlock()
-
-				for _, client := range ro {
-					nw, err := client.ws.Write(buf[0:nr])
-					if err != nil {
-						close(client.done)
-
-						break
-					}
-
-					if nw != nr {
-						close(client.done)
-
-						break
+				if !t.RO {
+					if _, err := t.Pty.Write(buf[:n]); err != nil {
+						return
 					}
 				}
 			}
+		}()
+		select {
+		case <-t.Done:
+		case <-tc.done:
+		case <-received:
 		}
-
-		writeTerm := func() {
-			for {
-				buf := make([]byte, TerminalBufferSize)
-
-				nr, err := ws.Read(buf)
-				if err != nil {
-					break
-				}
-
-				nw, err := t.Pty.Write(buf[0:nr])
-				if err != nil {
-					break
-				}
-
-				if nw != nr {
-					break
-				}
-			}
-		}
-
-		waitTerm := func(tc termClient) {
-			select {
-			case <-tc.done:
-				mu.Lock()
-				terms := roTerms[t.Pid]
-				delete(terms, tc.id)
-				roTerms[t.Pid] = terms
-				mu.Unlock()
-			case <-t.Done:
-				mu.Lock()
-				for _, ro := range roTerms[t.Pid] {
-					// notify read-only clients that R/W terminal has exited
-					_, _ = ro.ws.Write([]byte("***** BREAK PROCESS EXITED *****"))
-				}
-
-				delete(roTerms, t.Pid)
-				mu.Unlock()
-			}
-		}
-
-		if t.RO {
-			tc := newTermClient(ws)
-
-			mu.Lock()
-
-			terms, ok := roTerms[t.Pid]
-			if !ok {
-				terms = make(map[string]termClient)
-			}
-
-			terms[tc.id] = tc
-			roTerms[t.Pid] = terms
-
-			if h, ok := history[t.Pid]; ok {
-				_, _ = tc.ws.Write(h.Bytes())
-			}
-
-			mu.Unlock()
-
-			waitTerm(tc)
-		} else {
-			go readTerm()
-
-			writeTerm()
-
-			mu.Lock()
+		_ = ws.Close()
+		<-received
+		mu.Lock()
+		delete(roTerms[t.Pid], tc.id)
+		if !t.RO && rwTerm[t.Pid] == t.clientID {
 			delete(rwTerm, t.Pid)
-			mu.Unlock()
+			delete(rwTermOwners, t.Pid)
+		}
+		mu.Unlock()
+	}
+}
+
+// A single reader belongs to the PTY, independent of visible browser windows.
+// Hiding and reopening a terminal therefore never creates competing readers.
+func publishTerminalOutput(t WebTerm, output []byte) {
+	mu.Lock()
+	defer mu.Unlock()
+	h := history[t.Pid]
+	_, _ = h.Write(output)
+	history[t.Pid] = h
+	for id, client := range roTerms[t.Pid] {
+		_ = client.ws.SetWriteDeadline(time.Now().Add(TerminalInitTimeout))
+		if _, err := client.ws.Write(output); err != nil {
+			client.closed.Do(func() { close(client.done) })
+			delete(roTerms[t.Pid], id)
 		}
 	}
 }
 
-func initTerminal(exp string, run, loop int, stage, cmp string) (WebTerm, error) {
+func initTerminal(ctx context.Context, exp string, run, loop int, stage, cmp string) (WebTerm, error) {
 	key := fmt.Sprintf("%s|%d|%d|%s|%s", exp, run, loop, stage, cmp)
 
 	t, err := GetTerminalByExperiment(key)
@@ -357,10 +327,13 @@ func initTerminal(exp string, run, loop int, stage, cmp string) (WebTerm, error)
 	mu.Lock()
 	defer mu.Unlock()
 
-	if _, ok := rwTerm[t.Pid]; ok {
+	role, _ := ctx.Value(middleware.ContextKeyRole).(rbac.Role)
+	if _, ok := rwTerm[t.Pid]; ok || !role.Allowed("experiments/trigger", "create", exp) {
 		t.RO = true
 	} else {
 		rwTerm[t.Pid] = id
+		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+		rwTermOwners[t.Pid] = user
 		t.Exit = fmt.Sprintf(
 			"%sapi/v1/experiments/%s/scorch/terminals/%d/exit/%s",
 			basePath,
@@ -372,17 +345,27 @@ func initTerminal(exp string, run, loop int, stage, cmp string) (WebTerm, error)
 
 	done := make(chan struct{})
 	termClientIDs[id] = done
+	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+	termClientOwners[id] = user
+	termClientPIDs[id] = t.Pid
 
 	go func() {
 		select {
 		case <-time.After(TerminalInitTimeout):
 			mu.Lock()
-			delete(rwTerm, t.Pid)
+			if _, pending := termClientIDs[id]; pending && rwTerm[t.Pid] == id {
+				delete(rwTerm, t.Pid)
+				delete(rwTermOwners, t.Pid)
+			}
 			delete(termClientIDs, id)
+			delete(termClientOwners, id)
+			delete(termClientPIDs, id)
 			mu.Unlock()
 		case <-done:
 			mu.Lock()
 			delete(termClientIDs, id)
+			delete(termClientOwners, id)
+			delete(termClientPIDs, id)
 			mu.Unlock()
 		}
 	}()
@@ -392,6 +375,9 @@ func initTerminal(exp string, run, loop int, stage, cmp string) (WebTerm, error)
 
 // GetComponentOutput - GET /experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}.
 func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
+	if !allowScorch(w, r, "experiments", "get") {
+		return nil
+	}
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetScorchComponentOutput")
 
 	var (
@@ -420,7 +406,7 @@ func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
 
 	if resp.running {
 		if resp.terminal {
-			t, err := initTerminal(exp, run, loop, stage, cmp)
+			t, err := initTerminal(r.Context(), exp, run, loop, stage, cmp)
 			if err != nil {
 				return weberror.NewWebError(err, "unable to initialize terminal")
 			}
@@ -469,6 +455,9 @@ func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
 
 // StreamComponentOutput - GET /experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}/ws.
 func StreamComponentOutput(w http.ResponseWriter, r *http.Request) {
+	if !allowScorch(w, r, "experiments", "get") {
+		return
+	}
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StreamScorchComponentOutput")
 
 	var (
@@ -548,6 +537,12 @@ func GetPipelines(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to get experiment %s from store", name)
 	}
 
+	if err := scorchexe.Reconcile(name); err != nil {
+		return weberror.NewWebError(err, "unable to reconcile execution owners")
+	}
+	if err := exp.Reload(); err != nil {
+		return weberror.NewWebError(err, "unable to reload execution state")
+	}
 	md, err := scorchmd.DecodeMetadata(exp)
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to decode scorch metadata for experiment %s", name)
@@ -571,32 +566,24 @@ func GetPipelines(w http.ResponseWriter, r *http.Request) error {
 		pipelines = append(pipelines, pipeline)
 	}
 
-	var running bool
-
-	// first make sure Scorch app is running
-	for app, status := range exp.Status.AppRunning() {
-		if app == appNameScorch && status {
-			running = true
-
-			break
-		}
+	status, err := scorchmd.Status(exp)
+	if err != nil {
+		return weberror.NewWebError(err, "unable to decode Scorch execution status")
 	}
-
+	runs := status.ActiveRuns()
 	runID := -1
-
-	// if Scorch app is running, find out which run is currently being executed
-	if running {
-		// TODO: this should never be nil if Scorch is running...
-		if exp.Status.AppStatus() != nil {
-			if status, ok := exp.Status.AppStatus()[appNameScorch].(map[string]any); ok {
-				if id, ok := status["runID"].(float64); ok {
-					runID = int(id)
-				}
-			}
-		}
+	if len(runs) == 1 {
+		runID = runs[0]
 	}
-
-	body, _ := json.Marshal(map[string]any{"pipelines": pipelines, "running": runID})
+	body, _ := json.Marshal(
+		map[string]any{
+			"pipelines":   pipelines,
+			"running":     runID,
+			"runningRuns": runs,
+			"executions":  status.Executions,
+			"stopping":    status.Stopping,
+		},
+	)
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
@@ -708,13 +695,17 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to get experiment %s from store", name)
 	}
 
-	if scorchexe.HasCanceler(name, run) {
-		return weberror.NewWebError(nil, "Scorch run already executing for experiment %s", name)
+	// Reserve before acknowledging; request cancellation cannot release this claim.
+	ctx = app.SetContextTriggerUI(context.Background())
+	task, err := scorchexe.Prepare(ctx, exp, run)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, scorchexe.ErrAlreadyRunning) || errors.Is(err, scorchexe.ErrStopping) ||
+			errors.Is(err, scorchexe.ErrResourceConflict) {
+			status = http.StatusConflict
+		}
+		return weberror.NewWebError(err, "unable to start Scorch run %d", run).SetStatus(status)
 	}
-
-	// We don't want to use the HTTP request's context here.
-	ctx = scorchexe.AddCanceler(context.Background(), name, run)
-	ctx = app.SetContextTriggerUI(ctx)
 
 	go func() {
 		plog.Debug(plog.TypeSystem, "executing Scorch run for experiment", "exp", name, "run", run)
@@ -725,7 +716,7 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 			Experiment: name, App: appNameScorch, Resource: key, State: "start",
 		})
 
-		err := scorchexe.Execute(ctx, exp, run)
+		err := task.Run()
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
 				plog.Error(
@@ -765,13 +756,6 @@ func StartPipeline(w http.ResponseWriter, r *http.Request) error {
 				Experiment: name, App: appNameScorch, Resource: key, State: "success",
 			})
 		}
-
-		// Ensure context is canceled to avoid leakage. It's okay to call the
-		// `cancel` function multiple times. It's a no-op after the first time it's
-		// called.
-		if cancel := scorchexe.GetCanceler(name, run); cancel != nil {
-			cancel()
-		}
 	}()
 
 	w.WriteHeader(http.StatusNoContent)
@@ -809,19 +793,36 @@ func CancelPipeline(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	if cancel := scorchexe.GetCanceler(name, run); cancel != nil {
-		plog.Debug(plog.TypeSystem, "canceling Scorch run for experiment", "exp", name, "run", run)
-
-		cancel()
-
-		key := fmt.Sprintf("%s/%d", name, run)
-
-		pubsub.Publish("trigger-app", app.TriggerPublication{ //nolint:exhaustruct // partial initialization
-			Experiment: name, Verb: "delete", App: appNameScorch, Resource: key, State: "success",
-		})
+	if err := scorchexe.RequestCancel(name, run, r.URL.Query().Get("executionID")); err != nil {
+		return weberror.NewWebError(err, "unable to cancel Scorch run").SetStatus(http.StatusConflict)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 
+	return nil
+}
+
+func RecoverPipeline(w http.ResponseWriter, r *http.Request) error {
+	if !allowScorch(w, r, "experiments/trigger", "create") {
+		return nil
+	}
+	if !allowScorch(w, r, "experiments", "get") {
+		return nil
+	}
+	run, err := strconv.Atoi(mux.Vars(r)["run"])
+	if err != nil {
+		return weberror.NewWebError(err, "invalid run ID")
+	}
+	var request struct {
+		ExecutionID     string `json:"executionID"`
+		CleanupComplete bool   `json:"cleanupComplete"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		return weberror.NewWebError(err, "invalid recovery request")
+	}
+	if err := scorchexe.Recover(mux.Vars(r)["name"], run, request.ExecutionID, request.CleanupComplete); err != nil {
+		return weberror.NewWebError(err, "unable to recover run").SetStatus(http.StatusConflict)
+	}
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }

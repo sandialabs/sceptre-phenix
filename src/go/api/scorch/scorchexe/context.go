@@ -3,6 +3,12 @@ package scorchexe
 import "context"
 
 type runIDKey struct{}
+type executionKey struct{}
+
+func ExecutionID(ctx context.Context) string {
+	id, _ := ctx.Value(executionKey{}).(string)
+	return id
+}
 
 func MustRunID(ctx context.Context) int {
 	id, _ := ctx.Value(runIDKey{}).(int)

@@ -47,6 +47,10 @@ func Update(config *Config) error {
 	return DefaultStore.Update(config)
 }
 
+func Mutate(config *Config, update func(*Config) error) error {
+	return DefaultStore.Mutate(config, update)
+}
+
 func Patch(config *Config, data map[string]any) error {
 	return DefaultStore.Patch(config, data)
 }

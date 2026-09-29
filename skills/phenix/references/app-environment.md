@@ -64,3 +64,12 @@ not the app's scenario config.
 
 See [phēnix Apps Environment Variables](https://phenix.sceptre.dev/latest/settings/#phenix-apps-environment-variables)
 for the authoritative reference.
+
+## Managed Scorch execution
+
+Scorch component subprocesses receive `PHENIX_SCORCH_EXECUTION_ID` and
+`PHENIX_SCORCH_CONTROL_DIR` in addition to the existing arguments. Updated
+components report `scorchConcurrencyProtocol: 1` through `--scorch-capabilities`.
+The shared control directory coordinates namespace CC submission and tap
+allocation. See [the simultaneous-runs guide](../../../docs/scorch-concurrency.md)
+for compatibility, shared-resource rules, and interrupted-owner recovery.

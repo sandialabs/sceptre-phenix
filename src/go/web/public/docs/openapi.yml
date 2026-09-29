@@ -30,6 +30,123 @@ tags:
   - name: Users
     description: User details and controls
 paths:
+  "/experiments/{name}/scorch/pipelines":
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      tags: [Applications]
+      summary: Get Scorch pipelines and persisted execution state
+      operationId: getScorchPipelines
+      description: Requires experiment get permission. Different configured runs may be active simultaneously.
+      responses:
+        "200":
+          description: Pipelines, executions keyed by run ID, active run IDs, and stopping state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pipelines: {type: array, items: {type: object}}
+                  running: {type: integer, description: Sole active run ID or -1}
+                  runningRuns: {type: array, items: {type: integer}}
+                  stopping: {type: boolean}
+                  executions:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        executionID: {type: string}
+                        runID: {type: integer}
+                        state:
+                          type: string
+                          enum:
+                            - starting
+                            - running
+                            - waiting
+                            - canceling
+                            - finalizing
+                            - succeeded
+                            - failed
+                            - canceled
+                            - interrupted
+                        revision: {type: integer}
+                        wait: {type: string, description: Empty, breakpoint, or timer}
+                        deadline: {type: string}
+                        controller: {type: string, enum: [web, cli]}
+                        error: {type: string}
+        "403": {description: Experiment access denied}
+  "/experiments/{name}/scorch/pipelines/{run}":
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema: {type: string}
+      - name: run
+        in: path
+        required: true
+        schema: {type: integer, minimum: 0}
+    post:
+      tags: [Applications]
+      summary: Atomically reserve and start a configured Scorch run
+      operationId: startScorchRun
+      description: >-
+        Requires experiment get and trigger create permissions.
+        Admission remains reserved through cleanup and archiving.
+      responses:
+        "204": {description: Run admitted}
+        "400": {description: Invalid run or non-running experiment}
+        "403": {description: Trigger access denied}
+        "409": {description: Duplicate start, shared resource conflict, or experiment stopping}
+    delete:
+      tags: [Applications]
+      summary: Request cancellation of one Scorch invocation
+      operationId: cancelScorchRun
+      description: Requires trigger delete permission. Acknowledgement does not indicate cleanup is complete.
+      parameters:
+        - name: executionID
+          in: query
+          required: false
+          schema: {type: string}
+          description: Reject cancellation if the configured run now has a different execution ID
+      responses:
+        "204": {description: Cancellation acknowledged}
+        "403": {description: Trigger access denied}
+        "409": {description: Stale execution ID}
+  "/experiments/{name}/scorch/pipelines/{run}/recover":
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema: {type: string}
+      - name: run
+        in: path
+        required: true
+        schema: {type: integer, minimum: 0}
+    post:
+      tags: [Applications]
+      summary: Acknowledge manual cleanup and release an interrupted run
+      operationId: recoverScorchRun
+      description: >-
+        Requires experiment get and trigger create permissions, the current execution ID,
+        and an exited owner on this controller host. Does not execute cleanup steps.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [executionID, cleanupComplete]
+              properties:
+                executionID: {type: string}
+                cleanupComplete: {type: boolean, enum: [true]}
+      responses:
+        "204": {description: Claims released and failed outcome retained}
+        "400": {description: Invalid request}
+        "403": {description: Trigger access denied}
+        "409": {description: Missing acknowledgement, stale execution, or owner still active}
   "/configs":
     get:
       tags:

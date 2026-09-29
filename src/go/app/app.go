@@ -445,6 +445,10 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				exp.Status.SetAppRunning(app.Name(), false)
 				_ = exp.WriteToStore(true)
 			case ActionRunning:
+				if managed, ok := a.(ManagedRunning); ok {
+					err = managed.RunManaged(ctx, exp)
+					break
+				}
 				// Check to make sure this app isn't already running via an automatic
 				// periodic execution.
 				if running := exp.Status.AppRunning()[app.Name()]; running {
@@ -633,6 +637,21 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 
 							return
 						case <-timer.C:
+							a := GetApp(app.Name())
+							if managed, ok := a.(ManagedRunning); ok {
+								if err := managed.RunManaged(ctx, exp); err != nil {
+									plog.Info(
+										plog.TypePhenixApp,
+										"managed periodic execution skipped or failed",
+										"app",
+										app.Name(),
+										"err",
+										err,
+									)
+								}
+								timer.Reset(duration)
+								continue
+							}
 							// Check to make sure this app wasn't triggered manually between
 							// periodic runs.
 							if running := exp.Status.AppRunning()[app.Name()]; running {
@@ -643,6 +662,7 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 									app.Name(),
 								)
 
+								timer.Reset(duration)
 								continue
 							}
 
@@ -653,7 +673,6 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 							// the running stage will be executing at the same time. This
 							// might be a good place for optimistic locking.
 
-							a := GetApp(app.Name())
 							_ = a.Init(Name(app.Name()))
 
 							exp.Status.SetAppRunning(app.Name(), true)
