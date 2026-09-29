@@ -118,18 +118,18 @@ by default. You will need to [create](configuration.md) your own topology(ies).
 You can create an experiment entirely through the Web-UI using custom topology and scenario files without needing to use the CLI:
 
 1. **Upload Configurations in the Configs Tab**:
-   * Navigate to the **Configs** tab.
-   * Click the **Upload** button to upload your topology file (`.yaml`).
-   * (Optional) Click **Upload** again to upload your scenario file (`.yaml`).
-   * Verify that your uploaded configurations appear in the table (e.g., `topology/my-topology` and `scenario/my-scenario`).
+    * Navigate to the **Configs** tab.
+    * Click the **Upload** button to upload your topology file (`.yaml`).
+    * (Optional) Click **Upload** again to upload your scenario file (`.yaml`).
+    * Verify that your uploaded configurations appear in the table (e.g., `topology/my-topology` and `scenario/my-scenario`).
 
 2. **Create Experiment in Experiments Tab**:
-   * Navigate to the **Experiments** tab.
-   * Click the `+` button to open the creation dialog.
-   * Enter an **Experiment Name**.
-   * Select your uploaded topology from the **Experiment Topology** dropdown.
-   * (Optional) Select your uploaded scenario from the **Experiment Scenario** dropdown.
-   * Click **Save** to create the experiment.
+    * Navigate to the **Experiments** tab.
+    * Click the `+` button to open the creation dialog.
+    * Enter an **Experiment Name**.
+    * Select your uploaded topology from the **Experiment Topology** dropdown.
+    * (Optional) Select your uploaded scenario from the **Experiment Scenario** dropdown.
+    * Click **Save** to create the experiment.
 
 ### From the Command Line Binary
 

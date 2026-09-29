@@ -27,7 +27,7 @@ manual configuration, and the `Default Bridge Name` field is hidden in the UI's
 experiment creation form because it would have no effect.
 
 !!! warning
-   Because OVS bridge names are limited to **15 characters**, experiment names
+    Because OVS bridge names are limited to **15 characters**, experiment names
     must be 15 characters or fewer when using `auto` bridge mode. phēnix will
     return an error if you attempt to create or update an experiment with a
     longer name while `auto` mode is active.

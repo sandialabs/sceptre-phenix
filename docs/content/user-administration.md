@@ -59,15 +59,15 @@ There are three primary ways to create new users.
    administrator's account who can then activate the account, setting the
    role(s) and resource name(s).
 
-   ![screenshot](images/login_create.png){: width=400 .center}
+    ![screenshot](images/login_create.png){: width=400 .center}
 
-   ![screenshot](images/create_new_account.png){: width=400 .center}
+    ![screenshot](images/create_new_account.png){: width=400 .center}
 
 2. From the `Users` tab, click the `+` button to create a new user. Here the
    administrator will add the [role(s) and resource
    name(s)](#user-administration).
 
-   ![screenshot](images/create_a_new_user.png){: width=400 .center}
+    ![screenshot](images/create_a_new_user.png){: width=400 .center}
 
 3. Create a YAML or JSON file at `/etc/phenix/users.[yml|json]` with the
    following structure. When the `phenix` UI starts, it looks for this file and
@@ -152,360 +152,360 @@ Key: E - experiment resource, V - VM resource, U - user resource
 | Exp. Scoped | yes (list is filtered to only include experiments in scope) |
 | Res. Scoped | no |
 
-|
-|------|------
-| Verb | get
-| Desc | get a specific experiment
-| Exp. Scoped | yes
-| Res. Scoped | no
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get a specific experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
 
-|
-|------|------
-| Verb | create
-| Desc | create a new experiment
-| Exp. Scoped | no
-| Res. Scoped | no
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | create a new experiment |
+| Exp. Scoped | no |
+| Res. Scoped | no |
 
-|
-|------|------
-| Verb | delete
-| Desc | delete a specific experiment
-| Exp. Scoped | yes
-| Res. Scoped | no
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | delete a specific experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
 
 #### Resource: `experiments/start`
 
-|
-|------|------
-| Verb | update
-| Desc | start an experiment
-| Exp. Scoped | yes
-| Res. Scoped | no
+|      |      |
+|------|------|
+| Verb | update |
+| Desc | start an experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
 
 #### Resource: `experiments/stop`
 
-|
-|------|------
-| Verb | update
-| Desc | stop an experiment
-| Exp. Scoped | yes
-| Res. Scoped | no
+|      |      |
+|------|------|
+| Verb | update |
+| Desc | stop an experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
 
 #### Resource: `experiments/schedule`
 
-|
-|------|------
-| Verb | get
-| Desc | get current schedule for an experiment
-| Exp. Scoped | yes
-| Res. Scoped | no
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get current schedule for an experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
 
-|
-|------|------
-| Verb | create
-| Desc | schedule an experiment using schedule algorithm
-| Exp. Scoped | yes
-| Res. Scoped | no
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | schedule an experiment using schedule algorithm |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
 
 #### Resource: `experiments/trigger`
 
-|
-|------|------
-| Verb | create
-| Desc | trigger the running stage of an experiment
-| Exp. Scoped | yes
-| Res. Scoped | no
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | trigger the running stage of an experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
 
 #### Resource: `experiments/captures`
 
-|
-|------|------
-| Verb | list
-| Desc | get list of packet captures for an experiment
-| Exp. Scoped | yes (list is filtered to only include experiments in scope)
-| Res. Scoped | yes (list is filtered to only include VMs in scope)
+|      |      |
+|------|------|
+| Verb | list |
+| Desc | get list of packet captures for an experiment |
+| Exp. Scoped | yes (list is filtered to only include experiments in scope) |
+| Res. Scoped | yes (list is filtered to only include VMs in scope) |
 
 #### Resource: `experiments/files`
 
-|
-|------|------
-| Verb | list
-| Desc | get list of files for an experiment
-| Exp. Scoped | yes (list is filtered to only include experiments in scope)
-| Res. Scoped | no
+|      |      |
+|------|------|
+| Verb | list |
+| Desc | get list of files for an experiment |
+| Exp. Scoped | yes (list is filtered to only include experiments in scope) |
+| Res. Scoped | no |
 
-|
-|------|------
-| Verb | get
-| Desc | get specific experiment file
-| Exp. Scoped | yes
-| Res. Scoped | no
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get specific experiment file |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
 
 #### Resource: `vms`
 
-|
-|------|------
-| Verb | list
-| Desc | get list of VMs for an experiment
-| Exp. Scoped | yes (list is filtered to only include experiments in scope)
-| Res. Scoped | yes (list is filtered to only include VMs in scope)
+|      |      |
+|------|------|
+| Verb | list |
+| Desc | get list of VMs for an experiment |
+| Exp. Scoped | yes (list is filtered to only include experiments in scope) |
+| Res. Scoped | yes (list is filtered to only include VMs in scope) |
 
-|
-|------|------
-| Verb | get
-| Desc | get a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get a specific experiment VM |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
-|
-|------|------
-| Verb | patch
-| Desc | update a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | patch |
+| Desc | update a specific experiment VM |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
-|
-|------|------
-| Verb | delete
-| Desc | delete a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | delete a specific experiment VM |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
 #### Resource: `vms/start`
 
-|
-|------|------
-| Verb | update
-| Desc | start a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | update |
+| Desc | start a specific experiment VM |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
 #### Resource: `vms/stop`
 
-|
-|------|------
-| Verb | update
-| Desc | stop a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | update |
+| Desc | stop a specific experiment VM |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
 #### Resource: `vms/redeploy`
 
-|
-|------|------
-| Verb | update
-| Desc | redeploy a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | update |
+| Desc | redeploy a specific experiment VM |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
 #### Resource: `vms/screenshot`
 
-|
-|------|------
-| Verb | get
-| Desc | get screenshot for a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get screenshot for a specific experiment VM |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
 #### Resource: `vms/vnc`
 
-|
-|------|------
-| Verb | get
-| Desc | get VNC address for a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get VNC address for a specific experiment VM |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
 #### Resource: `vms/captures`
 
-|
-|------|------
-| Verb | list
-| Desc | get list of packet captures for a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | list |
+| Desc | get list of packet captures for a specific experiment VM |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
-|
-|------|------
-| Verb | create
-| Desc | start a packet capture on a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | start a packet capture on a specific experiment VM |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
-|
-|------|------
-| Verb | delete
-| Desc | stop all packet captures on a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | stop all packet captures on a specific experiment VM |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
 #### Resource: `vms/snapshots`
 
-|
-|------|------
-| Verb | list
-| Desc | get list of snapshots for a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | list |
+| Desc | get list of snapshots for a specific experiment VM |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
-|
-|------|------
-| Verb | create
-| Desc | create a snapshot of a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | create a snapshot of a specific experiment VM |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
-|
-|------|------
-| Verb | update
-| Desc | restore a specific experiment VM to a previous snapshot
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | update |
+| Desc | restore a specific experiment VM to a previous snapshot |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
 #### Resource: `vms/commit`
 
-|
-|------|------
-| Verb | create
-| Desc | create a new backing image from a specific experiment VM
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | create a new backing image from a specific experiment VM |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
 #### Resource: `applications`
 
-|
-|------|------
-| Verb | list
-| Desc | get list of user applications
-| Exp. Scoped | no
-| Res. Scoped | yes (list is filtered to only include applications in scope)
+|      |      |
+|------|------|
+| Verb | list |
+| Desc | get list of user applications |
+| Exp. Scoped | no |
+| Res. Scoped | yes (list is filtered to only include applications in scope) |
 
 #### Resource: `topologies`
 
-|
-|------|------
-| Verb | list
-| Desc | get list of available topologies
-| Exp. Scoped | no
-| Res. Scoped | yes (list is filtered to only include topologies in scope)
+|      |      |
+|------|------|
+| Verb | list |
+| Desc | get list of available topologies |
+| Exp. Scoped | no |
+| Res. Scoped | yes (list is filtered to only include topologies in scope) |
 
 #### Resource: `disks`
 
-|
-|------|------
-| Verb | list
-| Desc | get list of available backing images
-| Exp. Scoped | no
-| Res. Scoped | yes (list is filtered to only include backing images in scope)
+|      |      |
+|------|------|
+| Verb | list |
+| Desc | get list of available backing images |
+| Exp. Scoped | no |
+| Res. Scoped | yes (list is filtered to only include backing images in scope) |
 
 #### Resource: `hosts`
 
-|
-|------|------
-| Verb | list
-| Desc | get list of minimega cluster hosts
-| Exp. Scoped | no
-| Res. Scoped | yes (list is filtered to only include hosts in scope)
+|      |      |
+|------|------|
+| Verb | list |
+| Desc | get list of minimega cluster hosts |
+| Exp. Scoped | no |
+| Res. Scoped | yes (list is filtered to only include hosts in scope) |
 
 #### Resource: `users`
 
-|
-|------|------
-| Verb | list
-| Desc | get list of users
-| Exp. Scoped | no
-| Res. Scoped | yes (list is filtered to only include users in scope)
+|      |      |
+|------|------|
+| Verb | list |
+| Desc | get list of users |
+| Exp. Scoped | no |
+| Res. Scoped | yes (list is filtered to only include users in scope) |
 
-|
-|------|------
-| Verb | get
-| Desc | get a specific user
-| Exp. Scoped | no
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get a specific user |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
 
-|
-|------|------
-| Verb | create
-| Desc | create a new user
-| Exp. Scoped | no
-| Res. Scoped | no
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | create a new user |
+| Exp. Scoped | no |
+| Res. Scoped | no |
 
-|
-|------|------
-| Verb | patch
-| Desc | update an existing user
-| Exp. Scoped | no
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | patch |
+| Desc | update an existing user |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
 
-|
-|------|------
-| Verb | delete
-| Desc | delete an existing user
-| Exp. Scoped | no
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | delete an existing user |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
 
 #### Resource: `users/roles`
 
-|
-|------|------
-| Verb | patch
-| Desc | update user role assignments
-| Exp. Scoped | no
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | patch |
+| Desc | update user role assignments |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
 
 #### Resource: `configs`
 
-|
-|------|------
-| Verb | list, get, create, update, delete
-| Desc | manage store configurations (topologies, scenarios, etc.)
-| Exp. Scoped | no
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | list, get, create, update, delete |
+| Desc | manage store configurations (topologies, scenarios, etc.) |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
 
 #### Resource: `settings`
 
-|
-|------|------
-| Verb | update
-| Desc | update phēnix system settings
-| Exp. Scoped | no
-| Res. Scoped | no
+|      |      |
+|------|------|
+| Verb | update |
+| Desc | update phēnix system settings |
+| Exp. Scoped | no |
+| Res. Scoped | no |
 
 #### Resource: `vms/mount`
 
-|
-|------|------
-| Verb | list, get, post, patch, delete
-| Desc | manage VM filesystem mounts on headnode
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | list, get, post, patch, delete |
+| Desc | manage VM filesystem mounts on headnode |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
 #### Resource: `vms/forwards`
 
-|
-|------|------
-| Verb | list, get, create, delete
-| Desc | manage port forwarding rules for experiment VMs
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | list, get, create, delete |
+| Desc | manage port forwarding rules for experiment VMs |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
 #### Resource: `vms/cdrom`
 
-|
-|------|------
-| Verb | update, delete
-| Desc | mount or eject CD-ROM ISO images on experiment VMs
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | update, delete |
+| Desc | mount or eject CD-ROM ISO images on experiment VMs |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
 #### Resource: `vms/memorySnapshot`
 
-|
-|------|------
-| Verb | create
-| Desc | create ELF memory dumps of experiment VMs
-| Exp. Scoped | yes
-| Res. Scoped | yes
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | create ELF memory dumps of experiment VMs |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
 
 ### Built-In Roles
 

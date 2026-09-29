@@ -170,29 +170,29 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
 * `hostCustomTests`: If present, a map of custom tests to run on the given
   hosts.
 
-  * `name`: name of test. Used as script name to be sent to the host.
+    * `name`: name of test. Used as script name to be sent to the host.
 
-  * `testScript`: the actual script (can be multiple lines) to be executed
-    using the specified `executor`.
+    * `testScript`: the actual script (can be multiple lines) to be executed
+      using the specified `executor`.
 
-  * `executor`: the application to execute the `testScript` with (e.g. `bash`,
-    `powershell`).
+    * `executor`: the application to execute the `testScript` with (e.g. `bash`,
+      `powershell`).
 
-  * `testStdout`: a string to look for in STDOUT from the executed script. If
-    found, the test passes. If not found, it fails.
+    * `testStdout`: a string to look for in STDOUT from the executed script. If
+      found, the test passes. If not found, it fails.
 
-  * `testStderr`: a string to look for in STDERR from the executed script. If
-    found, the test passes. If not found, it fails.
+    * `testStderr`: a string to look for in STDERR from the executed script. If
+      found, the test passes. If not found, it fails.
 
-  * `validateStdout`: a script to run that will be provided, via STDIN, the
-    STDOUT from the executed script. If this validation script exits 0, the
-    test passes. If it exits non-zero, the test fails. This validation script
-    should always be a bash script, even if the host is a Windows host.
+    * `validateStdout`: a script to run that will be provided, via STDIN, the
+      STDOUT from the executed script. If this validation script exits 0, the
+      test passes. If it exits non-zero, the test fails. This validation script
+      should always be a bash script, even if the host is a Windows host.
 
-  * `validateStderr`: a script to run that will be provided, via STDIN, the
-    STDERR from the executed script. If this validation script exits 0, the
-    test passes. If it exits non-zero, the test fails. This validation script
-    should always be a bash script, even if the host is a Windows host.
+    * `validateStderr`: a script to run that will be provided, via STDIN, the
+      STDERR from the executed script. If this validation script exits 0, the
+      test passes. If it exits non-zero, the test fails. This validation script
+      should always be a bash script, even if the host is a Windows host.
 
 * `hostFiles`: a map of VMs, each specifying a list of file paths that should
   exist within the VM. Paths may target Linux or Windows VMs. Missing files are
@@ -266,45 +266,45 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
   based on Elasticsearch, Kibana, and Packetbeat will be deployed for the experiment.
   See [Packet Capture](#packet-capture) for more details. The default is `nil`.
 
-  * `elasticImage`: path to the disk image to use for the Elastic/Kibana VM
-    for packet capture. An `image/PHENIX-elasticsearch` config comes bundled with
-    phenix and can be used to build an image to use here. There is no default
-    for this setting; if packet capture is to be deployed it must be provided.
+    * `elasticImage`: path to the disk image to use for the Elastic/Kibana VM
+      for packet capture. An `image/PHENIX-elasticsearch` config comes bundled with
+      phenix and can be used to build an image to use here. There is no default
+      for this setting; if packet capture is to be deployed it must be provided.
 
-  * `packetBeatImage`: path to the disk image to use for the Packetbeat VM for
-    packet capture. An `image/PHENIX-packetbeat` config comes bundled with phenix and
-    can be used to build an image to use here. There is no default for this
-    setting; if packet capture is to be deployed it must be provided.
+    * `packetBeatImage`: path to the disk image to use for the Packetbeat VM for
+      packet capture. An `image/PHENIX-packetbeat` config comes bundled with phenix and
+      can be used to build an image to use here. There is no default for this
+      setting; if packet capture is to be deployed it must be provided.
 
-  * `elasticServer`:
+    * `elasticServer`:
 
-    * `hostname`: the hostname to use for the Elastic/Kibana server added to
-      the experiment topology. There is no default for this setting; if
-      packet capture is to be deployed it must be provided.
+        * `hostname`: the hostname to use for the Elastic/Kibana server added to
+          the experiment topology. There is no default for this setting; if
+          packet capture is to be deployed it must be provided.
 
-    * `vcpus`: the number of CPUs to assign to the Elastic/Kibana server VM.
-      The default is 4.
+        * `vcpus`: the number of CPUs to assign to the Elastic/Kibana server VM.
+          The default is 4.
 
-    * `memory`: the amount of memory to assign to the Elastic/Kibana server
-      VM. The default is 4096.
+        * `memory`: the amount of memory to assign to the Elastic/Kibana server
+          VM. The default is 4096.
 
-    * `ipAddress`: the IP address to use for the Elastic/Kibana server added
-      to the experiment topology. The network interface this IP address is
-      used for will be added to the experiment VLAN specified by `vlan`. The
-      IP address should be specified in CIDR notation. There should also be
-      sufficient IP addresses after the one specified here to be assigned to
-      each of the Packetbeat monitor VMs that will be deployed, as the IP
-      addresses assigned to them on the VLAN specified by `vlan` will
-      increment up from this IP. There is no default for this setting; if
-      packet capture is to be deployed it must be provided.
+        * `ipAddress`: the IP address to use for the Elastic/Kibana server added
+          to the experiment topology. The network interface this IP address is
+          used for will be added to the experiment VLAN specified by `vlan`. The
+          IP address should be specified in CIDR notation. There should also be
+          sufficient IP addresses after the one specified here to be assigned to
+          each of the Packetbeat monitor VMs that will be deployed, as the IP
+          addresses assigned to them on the VLAN specified by `vlan` will
+          increment up from this IP. There is no default for this setting; if
+          packet capture is to be deployed it must be provided.
 
-    * `vlan`: the experiment VLAN to add the Elastic/Kibana and Packetbeat
-      VMs to. There is no default for this setting; if packet capture is to
-      be deployed it must be provided.
+        * `vlan`: the experiment VLAN to add the Elastic/Kibana and Packetbeat
+          VMs to. There is no default for this setting; if packet capture is to
+          be deployed it must be provided.
 
-  * `captureHosts`: a map of VMs, each specifying a list of network interface
-    names to monitor. One Packetbeat VM will be deployed for each VM interface
-    specified. The default is `nil`.
+    * `captureHosts`: a map of VMs, each specifying a list of network interface
+      names to monitor. One Packetbeat VM will be deployed for each VM interface
+      specified. The default is `nil`.
 
 * `skipInitialNetworkConfigTests`: by default, a set of tests will be run on
   each VM to ensure the VM was assigned the correct IP address and can reach its
@@ -320,34 +320,34 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
   Reachability](#network-reachability) for more details. There are three options
   for this setting: `off`, `sample`, `full`.
 
-  * `off`: reachability testing is disabled. This is the default.
+    * `off`: reachability testing is disabled. This is the default.
 
-  * `sample`: each VM in the experiment will attempt to ping a random VM in
-    every other experiment VLAN.
+    * `sample`: each VM in the experiment will attempt to ping a random VM in
+      every other experiment VLAN.
 
-  * `full`: each VM in the experiment will attempt to ping every other VM in
-    every other experiment VLAN.
+    * `full`: each VM in the experiment will attempt to ping every other VM in
+      every other experiment VLAN.
 
 * `testCustomReachability`: if present, a list of custom reachability test
   settings.
 
-  * `src`: hostname to conduct test from.
+    * `src`: hostname to conduct test from.
 
-  * `dst`: hostname and interface name (e.g. `host-01|IF0`) to conduct test
-    to.
+    * `dst`: hostname and interface name (e.g. `host-01|IF0`) to conduct test
+      to.
 
-  * `proto`: protocol to use for test. Currently the options are `tcp` and
-    `udp`. If `udp` is used, the `udpPacketBase64` setting must be provided.
+    * `proto`: protocol to use for test. Currently the options are `tcp` and
+      `udp`. If `udp` is used, the `udpPacketBase64` setting must be provided.
 
-  * `port`: destination port to conduct test to.
+    * `port`: destination port to conduct test to.
 
-  * `wait`: amount of time to wait for a response from the destination. If not
-    provided, the default of `5s` is used.
+    * `wait`: amount of time to wait for a response from the destination. If not
+      provided, the default of `5s` is used.
 
-  * `udpPacketBase64`: a base64-encoded packet to send when testing using
-    `udp`. This is required to generate a response over UDP to determine if
-    the remote server is up and reachable. The given packet must be valid
-    enough to generate a response from the server.
+    * `udpPacketBase64`: a base64-encoded packet to send when testing using
+      `udp`. This is required to generate a response over UDP to determine if
+      the remote server is up and reachable. The given packet must be valid
+      enough to generate a response from the server.
 
 ### Network Reachability
 

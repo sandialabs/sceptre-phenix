@@ -64,18 +64,18 @@ With `phenix` running in a container, you can execute commands. For the best exp
 The `phenix` repository includes a wrapper script that simplifies running `phenix` commands against the Docker container and is **required** for shell completion to work correctly.
 
 1. **Install the wrapper:**
-   From the root of the `sceptre-phenix` repository, run:
+    From the root of the `sceptre-phenix` repository, run:
 
     ```bash
     # This command installs the `scripts/phenix-wrapper.sh` script to /usr/local/bin/phenix.
     sudo make install-wrapper
     ```
 
-   !!! warning
-   If you previously used a shell alias for `phenix` (e.g., `alias phenix="docker exec ..."`), you **must** remove it from your shell profile (e.g., `~/.bashrc`, `~/.zshrc`) for the wrapper and completion to work.
+    !!! warning
+        If you previously used a shell alias for `phenix` (e.g., `alias phenix="docker exec ..."`), you **must** remove it from your shell profile (e.g., `~/.bashrc`, `~/.zshrc`) for the wrapper and completion to work.
 
 2. **Enable Shell Completion:**
-   Add the completion script to your shell's startup file so it's available in new terminal sessions.
+    Add the completion script to your shell's startup file so it's available in new terminal sessions.
 
     ```bash
     # For Bash
@@ -85,7 +85,7 @@ The `phenix` repository includes a wrapper script that simplifies running `pheni
     echo 'source <(phenix completion zsh)' >> ~/.zshrc
     ```
 
-   Now, you can use <kbd>Tab</kbd> to autocomplete commands, flags, and even dynamic values like experiment and VM names. For more details, run `phenix completion --help`.
+    Now, you can use <kbd>Tab</kbd> to autocomplete commands, flags, and even dynamic values like experiment and VM names. For more details, run `phenix completion --help`.
 
 #### Manual Execution
 

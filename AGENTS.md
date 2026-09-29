@@ -102,6 +102,7 @@ Docker for full deployments and image builds.
 | Build UI and `bin/phenix` | `make build` |
 | Build UI only | `make ui` |
 | Build container / Debian package | `make docker` / `make deb` |
+| Build / preview docs site | `make docs-build` / `make docs-serve` |
 
 Use `npm ci`, never dependency-updating installs, for locked frontend
 dependencies. The root `make check` runs generation and may modify generated
@@ -193,7 +194,9 @@ image, documentation, or topology details.
 GitHub Actions is path-scoped: `ci.yml` generates, lints, and tests Go;
 `frontend.yml` runs Vitest, builds UI/backend, and runs Playwright smoke tests;
 `examples.yml` checks Go/Python examples; `packages.yml` builds Docker, Debian,
-and Podman outputs. Update affected path filters, inputs, generated artifacts,
+and Podman outputs; `docs.yml` builds the documentation site for pull requests
+and publishes it to GitHub Pages from `main`. `lint.yml` runs every prek hook
+on all changes. Update affected path filters, inputs, generated artifacts,
 tool versions, and local-equivalent commands together. Preserve least-privilege
 permissions, supported action versions, lockfile caches, and shared version
 values.

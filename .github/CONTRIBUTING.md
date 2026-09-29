@@ -11,6 +11,7 @@ Thank you for your interest in contributing to SCEPTRE Phenix! We welcome contri
   - [Reporting Issues](#reporting-issues)
   - [Suggesting Enhancements](#suggesting-enhancements)
   - [Submitting Code](#submitting-code)
+- [Documentation](#documentation)
 - [License](#license)
 
 ## Getting Started
@@ -156,6 +157,28 @@ We welcome suggestions for improvements! Please open an issue to discuss your id
     ```
 
 7. **Open a Pull Request**: Go to the original repository and open a [pull request](https://github.com/sandialabs/sceptre-phenix/pulls). Provide a clear description of your changes and reference any related issues.
+
+## Documentation
+
+The phēnix documentation site, [phenix.sceptre.dev](https://phenix.sceptre.dev), is built from the [`docs/`](../docs/) directory of this repository with [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/) and versioned with [mike](https://github.com/jimporter/mike). Pages live in `docs/content/`, and the navigation and site settings live in `docs/mkdocs.yml`.
+
+Update the documentation in the same pull request as the change it describes. New user-facing features need documentation before they merge.
+
+To build the site with the same strict checks CI uses, run:
+
+```bash
+make docs-build
+```
+
+To preview the site locally with live reload at <http://127.0.0.1:8000>, run:
+
+```bash
+make docs-serve
+```
+
+Both targets create a virtual environment in `docs/.venv` from `docs/requirements.txt`. Set `SYSTEM_PYTHON` to use a specific Python 3.12+ interpreter, and `DOCS_PORT` to serve on another port. The API reference page (`/swagger.html`) is generated from `src/go/web/public/docs/openapi.yml` by the docs workflow, so it is not available in a local preview.
+
+The [docs workflow](workflows/docs.yml) builds the site for every pull request that changes the documentation, and publishes the `latest` version to phenix.sceptre.dev when those changes merge to `main`.
 
 ## License
 

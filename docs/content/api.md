@@ -20,20 +20,20 @@ available in two places:
     http://<phenix-host>:<port>/docs/
     ```
 
-  For a default local installation, this would be:
+    For a default local installation, this would be:
 
     ```text
     http://localhost:3000/docs/
     ```
 
-  !!! note
-  `<port>` defaults to `3000` and comes from the `ui.listen-endpoint`
-  setting. See [Settings](settings.md) for details on configuring this.
+    !!! note
+        `<port>` defaults to `3000` and comes from the `ui.listen-endpoint`
+        setting. See [Settings](settings.md) for details on configuring this.
 
-  Because it's built into the phēnix binary/image itself, `/docs/` on a
-  running server is always in sync with the version of phēnix you're
-  running, whereas [swagger.html](/swagger.html) reflects the spec as of
-  the latest docs release.
+    Because it's built into the phēnix binary/image itself, `/docs/` on a
+    running server is always in sync with the version of phēnix you're
+    running, whereas [swagger.html](/swagger.html) reflects the spec as of
+    the latest docs release.
 
 The API docs are organized by tag (`Configs`, `Experiments`, `Virtual
 Machines`, `Hosts`, `Applications`, `Topologies`, `Disks`, `Users`, etc.) and

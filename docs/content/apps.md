@@ -220,19 +220,19 @@ There are two ways to configure the NTP app:
 These are only needed if not using the VM label method as explained above.
 
 * `defaultSource`: NTP server to use if no label is specified in topology
-  * `hostname`: hostname of NTP server in the topology to use as the source
-  * `interface`: interface name from which IP will be extracted to configure clients. Note that this name must be the name of the interface in the phenix Topology.
-  * `address`: IP address to use as the NTP server. This takes precedence over other configs, and can be used to configure an external NTP server (e.g. hardware clock).
+    * `hostname`: hostname of NTP server in the topology to use as the source
+    * `interface`: interface name from which IP will be extracted to configure clients. Note that this name must be the name of the interface in the phenix Topology.
+    * `address`: IP address to use as the NTP server. This takes precedence over other configs, and can be used to configure an external NTP server (e.g. hardware clock).
 * `hosts`: list of hosts to configure NTP options for, including clients and server.
-  * `client`: what NTP service is used by the client, and thus what configuration file will be changed. Available options are `ntp`, `chrony`, `systemd`, and `windows`.
-    * `ntp`: `/etc/ntp.conf`, for the ntp daemon (`sudo apt install ntp`)
-    * `chrony`: `/etc/chrony/chrony.conf`, for `chronyd` (`sudo apt install chrony`). Recommended for VMs that may not be able to reach the NTP server immediately at startup — the config is tuned to retry aggressively and step the clock quickly once the server becomes reachable.
-    * `systemd`: `/etc/systemd/timesyncd.conf`, for `systemd-timesyncd`
-    * `windows`: `/phenix/startup/25-ntp.ps1`, which will configure Windows NTP using `w32tm`
-  * `server`: what NTP service is used by the server. Available options are `ntpd` and `chronyd`. If unset, the NTP server won't be configured.
-    * `ntpd`: `/etc/ntp.conf`, for the ntp daemon
-    * `chronyd`: `/etc/chrony/chrony.conf`, for `chronyd`. Default path is for Debian/Ubuntu — other distros may use `/etc/chrony.conf`.
-  * `source`: Override source options for this client VM. Available options are the same as `defaultSource`.
+    * `client`: what NTP service is used by the client, and thus what configuration file will be changed. Available options are `ntp`, `chrony`, `systemd`, and `windows`.
+        * `ntp`: `/etc/ntp.conf`, for the ntp daemon (`sudo apt install ntp`)
+        * `chrony`: `/etc/chrony/chrony.conf`, for `chronyd` (`sudo apt install chrony`). Recommended for VMs that may not be able to reach the NTP server immediately at startup — the config is tuned to retry aggressively and step the clock quickly once the server becomes reachable.
+        * `systemd`: `/etc/systemd/timesyncd.conf`, for `systemd-timesyncd`
+        * `windows`: `/phenix/startup/25-ntp.ps1`, which will configure Windows NTP using `w32tm`
+    * `server`: what NTP service is used by the server. Available options are `ntpd` and `chronyd`. If unset, the NTP server won't be configured.
+        * `ntpd`: `/etc/ntp.conf`, for the ntp daemon
+        * `chronyd`: `/etc/chrony/chrony.conf`, for `chronyd`. Default path is for Debian/Ubuntu — other distros may use `/etc/chrony.conf`.
+    * `source`: Override source options for this client VM. Available options are the same as `defaultSource`.
 
 #### NTP Label Example
 
@@ -445,137 +445,137 @@ spec:
 * `ipsec`: if present, point-to-point IPSec tunnels are nailed up between the
   list of given IP addresses and traffic between the given networks is tunneled.
 
-  * `local`: Local IP address for IPSec connection with this peer. If defined
-    any, then an IP address which configured on interface with default route
-    will be used. It must have a route to the `peer` IP address.
+    * `local`: Local IP address for IPSec connection with this peer. If defined
+      any, then an IP address which configured on interface with default route
+      will be used. It must have a route to the `peer` IP address.
 
-  * `remote`: Remote IP address or hostname for IPSec connection. IPv4 or
-    IPv6 address is used when a peer has a public static IP address.
-    Hostname is a DNS name which could be used when a peer has a public
-    IP address and DNS name, but an IP address could be changed from time
-    to time. It must have a route to the `peer` IP address.
+    * `remote`: Remote IP address or hostname for IPSec connection. IPv4 or
+      IPv6 address is used when a peer has a public static IP address.
+      Hostname is a DNS name which could be used when a peer has a public
+      IP address and DNS name, but an IP address could be changed from time
+      to time. It must have a route to the `peer` IP address.
 
-  * `peer`: Name of peer connection. The peer name must be an alphanumeric
-    and can have hyphen or underscore as special characters. It is purely
-    informational.
+    * `peer`: Name of peer connection. The peer name must be an alphanumeric
+      and can have hyphen or underscore as special characters. It is purely
+      informational.
 
-  * `tunnels`: list of local and remote networks to tunnel through this
-    point-to-point connection.
+    * `tunnels`: list of local and remote networks to tunnel through this
+      point-to-point connection.
 
-    * `local`: local network to tunnel to the given remote network.
+        * `local`: local network to tunnel to the given remote network.
 
-    * `remote`: remote network to tunnel to the given local network.
+        * `remote`: remote network to tunnel to the given local network.
 
 * `acl`: if present, access control lists (ACLs / firewall rules) are created on
   the router per the defined rulesets.
 
-  * `ingress`: for each interface-to-ruleset mapping, apply the given ruleset
-    to the given interface for inbound traffic. Note that the interface name
-    used (in this example, `eth0`) refers to the name given to a network
-    interface in the router's topology configuration.
+    * `ingress`: for each interface-to-ruleset mapping, apply the given ruleset
+      to the given interface for inbound traffic. Note that the interface name
+      used (in this example, `eth0`) refers to the name given to a network
+      interface in the router's topology configuration.
 
-  * `egress`: for each interface-to-ruleset mapping, apply the given ruleset
-    to the given interface for outbound traffic.
+    * `egress`: for each interface-to-ruleset mapping, apply the given ruleset
+      to the given interface for outbound traffic.
 
-  * `rulesets`: list of rulesets to create on the router.
+    * `rulesets`: list of rulesets to create on the router.
 
-    * `name`: name of the ruleset; used in the interface-to-ruleset mapping
-      in the `ingress/egress` sections.
+        * `name`: name of the ruleset; used in the interface-to-ruleset mapping
+          in the `ingress/egress` sections.
 
-    * `default`: default action to apply to traffic that doesn't match any
-      rules.
+        * `default`: default action to apply to traffic that doesn't match any
+          rules.
 
-    * `rules`: list of rules to apply to traffic.
-      * `id`: integer to identify the order of the rules in the set.
+        * `rules`: list of rules to apply to traffic.
+            * `id`: integer to identify the order of the rules in the set.
 
-      * `action`: action to apply to traffic matching rule.
+            * `action`: action to apply to traffic matching rule.
 
-      * `source`: map describing what source to limit matching traffic to.
-        If not provided, all sources are matched.
+            * `source`: map describing what source to limit matching traffic to.
+              If not provided, all sources are matched.
 
-        * `address`: source address to limit matching traffic to. If not
-          provided, all source addresses are matched.
+                * `address`: source address to limit matching traffic to. If not
+                  provided, all source addresses are matched.
 
-        * `port`: source port to limit matching traffic to. If not
-          provided, all source ports are matched.
+                * `port`: source port to limit matching traffic to. If not
+                  provided, all source ports are matched.
 
-      * `destination`: map describing what destination to limit matching
-        traffic to. If not provided, all sources are matched.
+            * `destination`: map describing what destination to limit matching
+              traffic to. If not provided, all sources are matched.
 
-        * `address`: destination address to limit matching traffic to.
-          If not provided, all destination addresses are matched.
+                * `address`: destination address to limit matching traffic to.
+                  If not provided, all destination addresses are matched.
 
-        * `port`: destination port to limit matching traffic to. If not
-          provided, all destination ports are matched.
+                * `port`: destination port to limit matching traffic to. If not
+                  provided, all destination ports are matched.
 
-      * `protocol`: IP protocol to limit matching traffic to. Must be
-        provided; to allow all protocols, use the `all` keyword.
+            * `protocol`: IP protocol to limit matching traffic to. Must be
+              provided; to allow all protocols, use the `all` keyword.
 
-      * `stateful`: if true, enable established and related traffic for
-        this ruleset.
+            * `stateful`: if true, enable established and related traffic for
+              this ruleset.
 
 * `dhcp`: if present, DHCP is configured on the router per the provided list.
 
-  * `listenAddress`: IP address on a local interface (e.g. this router) to
-    bind this DHCP configuration to.
+    * `listenAddress`: IP address on a local interface (e.g. this router) to
+      bind this DHCP configuration to.
 
-  * `ranges`: list of IP address low/high ranges to use for DHCP assignments.
-    The IP addresses must be within the IP network of the `listenAddress`.
+    * `ranges`: list of IP address low/high ranges to use for DHCP assignments.
+      The IP addresses must be within the IP network of the `listenAddress`.
 
-  * `defaultRoute`: default gateway to be included in DHCP leases.
+    * `defaultRoute`: default gateway to be included in DHCP leases.
 
-  * `dnsServers`: list of DNS servers to be included in DHCP leases.
+    * `dnsServers`: list of DNS servers to be included in DHCP leases.
 
-  * `staticAssignments`: map of MAC-to-IP assignments to use for static DHCP
-    addresses.
+    * `staticAssignments`: map of MAC-to-IP assignments to use for static DHCP
+      addresses.
 
 * `dns`: if present, map of IP-to-domain DNS entries to create on the router.
 
 * `snmp`: if present, SNMP is configured on the router.
 
-  * `listenAddress`: IP address on a local interface to bind SNMP to. Defaults to listening on all interfaces.
+    * `listenAddress`: IP address on a local interface to bind SNMP to. Defaults to listening on all interfaces.
 
-  * `systemName`: a string describing the system.
+    * `systemName`: a string describing the system.
 
-  * `location`: a string for the system's physical location.
+    * `location`: a string for the system's physical location.
 
-  * `contact`: a string for the system's contact information.
+    * `contact`: a string for the system's contact information.
 
-  * `communities`: a list of SNMP communities to configure.
+    * `communities`: a list of SNMP communities to configure.
 
-    * `name`: the community string/name. This is required.
+        * `name`: the community string/name. This is required.
 
-    * `authorization`: the authorization level for the community. Can be `ro` (read-only) or `rw` (read-write). Defaults to `ro` if not specified.
+        * `authorization`: the authorization level for the community. Can be `ro` (read-only) or `rw` (read-write). Defaults to `ro` if not specified.
 
-    * `clients`: a list of client IP addresses that are allowed to use this community.
+        * `clients`: a list of client IP addresses that are allowed to use this community.
 
-    * `trapTargets`: a list of IP addresses to send SNMP traps to.
+        * `trapTargets`: a list of IP addresses to send SNMP traps to.
 
 * `emulators`: if present, a list of network emulator traffic policies to apply
   to one or more interfaces on egress. For each emulator in the list, only the
   `name` key is required, though the traffic policy will not get applied if
   there's not at least one `egress` interface defined.
 
-  * `name`: unique name of traffic policy for this router.
+    * `name`: unique name of traffic policy for this router.
 
-  * `egress`: list of interface names to apply traffic policy to on egress.
-    The names listed should be the same names used for network interfaces in
-    the topology.
+    * `egress`: list of interface names to apply traffic policy to on egress.
+      The names listed should be the same names used for network interfaces in
+      the topology.
 
-  * `bandwidth`: maximum allowed bandwidth for interface and direction this
-    traffic policy is applied to.
+    * `bandwidth`: maximum allowed bandwidth for interface and direction this
+      traffic policy is applied to.
 
-  * `delay`: fixed amount of time to add to all packets for interface and
-    direction this traffic policy is applied to.
+    * `delay`: fixed amount of time to add to all packets for interface and
+      direction this traffic policy is applied to.
 
-  * `corruption`: percentage of corrupted packets for interface and direction
-    this traffic policy is applied to.
+    * `corruption`: percentage of corrupted packets for interface and direction
+      this traffic policy is applied to.
 
-  * `loss`: percentage of lost packets for interface and direction this
-    traffic policy is applied to.
+    * `loss`: percentage of lost packets for interface and direction this
+      traffic policy is applied to.
 
-  * `reordering`: percentage of reordered packets for interface and direction
-    this traffic policy is applied to.
+    * `reordering`: percentage of reordered packets for interface and direction
+      this traffic policy is applied to.
 
 !!! important
     The `ingress` and `egress` setting for ACLs are from the perspective of the
