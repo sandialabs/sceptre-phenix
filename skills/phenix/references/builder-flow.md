@@ -39,7 +39,18 @@ upload, or publish. Configs' edit button for a Builder Flow topology links to
 the first time) and then names it as `?draft=<owner>/<id>`, so a reload reopens
 that draft; with the feature off, Configs explains that the topology can only
 be edited in Builder Flow. The Inspector also edits a node's labels,
-annotations, and advanced (minimega `vm config`) settings. Leaving a draft,
+annotations, and advanced (minimega `vm config`) settings. With nothing
+selected, its Diagram section shows two more parts below Name and
+Description. Annotations lists the annotations of the config the diagram was
+imported from, sorted by key and without `builder-` ones, under "From <Kind>
+<name>, imported <time>"; a diagram drawn in the editor has no such part. A
+value too long for its box scrolls in it, and Tab reaches the box only while
+it scrolls. Scenario says whether the scenario is stored or uploaded and lists
+each of its apps with the hosts it runs on. A stored scenario's apps are read
+with `GET /configs/Scenario/<name>`, which needs `configs` `get`; otherwise the
+Inspector says it cannot read them. Edit scenario (Add scenario when there is
+none) opens the same Scenario dialog as the toolbar's Scenario button; a
+read-only draft shows neither. Leaving a draft,
 publishing, or exporting first saves Inspector changes that were not applied,
 as a draft snapshot with the summary `Saved unapplied changes to <node>`.
 Logging out removes Builder Flow's local drafts (IndexedDB `phenix-builder`)
@@ -53,10 +64,15 @@ a warning offers Export (one file per draft), Stay signed in (not once the
 token has expired) and Log out anyway. The idle timeout and an expired token
 show it for one minute (an expired token's only while the tab is visible),
 then log out; for an automatic logout of an expired token on the Builder page
-it also offers Sign in again. A draft keeps its own layout choice in its
-document's `layout`; the Settings layout is the default for drafts without one.
-A document may also hold each connection's `route` as a layout drew it;
-publishing and export ignore both.
+it also offers Sign in again. A draft keeps in its document's `layout` the
+layout that last laid it out: the one chosen in the toolbar's layout menu, or
+the one Auto layout or Auto-group ran. The layout menu names it, or says
+Default, with no layout checked, for a draft without one (imported, uploaded,
+blank or placed by hand). On such a draft, Auto layout and Auto-group run the
+Settings layout ("Layout for drafts without one") and the draft then keeps
+it. A run that moves nothing keeps no layout. Undo and Restore previous layout
+bring Default back. A document may also hold each connection's `route` as a
+layout drew it; publishing and export ignore both.
 
 When the server refuses the session (a `401` on a save, a listing or a
 publish), or the token expires while Builder Flow is open, a Sign in again
@@ -75,13 +91,19 @@ state still says to Export and sign in again.
 Both views share the header buttons at the top right: Commands (⌘K or
 Ctrl+K), the theme button (it cycles System, Light and Dark, the same
 preference as Settings > Theme), Settings, Help and Focus mode. The drafts page
-puts Blank diagram, Import and Upload before them; the editor puts the save
-state, Warnings and Reset view before them and Shortcuts after the theme
-button. Below a 105rem header (about a 1712px window) the theme button,
-Shortcuts, Settings and Help show only their icons and Commands drops its key
-caps; below 85rem (about 1392px) Commands and Reset view show only their icons
-too. Warnings, Blank diagram, Import and Upload keep their labels. The
-editor's toolbar has Draft History right after Minimap. Focus
+puts Blank diagram, Import and Upload before them; the editor puts Warnings
+and Reset view before them and Shortcuts after the theme button. Below a 97rem
+header (about a 1585px window) the theme button, Shortcuts, Settings and Help
+show only their icons and Commands drops its key caps; below 77rem (about
+1265px) Commands and Reset view show only their icons too. Warnings, Blank
+diagram, Import and Upload keep their labels. The editor header shows the
+diagram name as text, cut off with an ellipsis when long (whole in its
+tooltip), or a muted Untitled diagram. An Edit diagram name pencil after it
+(not shown to view-only users) opens a field in its place with the name
+selected. Enter or leaving the field renames the diagram, and Escape keeps the
+name. After Enter or Escape, focus returns to the pencil. The editor's toolbar
+has Draft History right after Minimap, then the save state, which is text the
+toolbar's arrow keys pass by. Focus
 mode (⇧⌘F or Ctrl+Shift+F) works on both views and stays on between them,
 until the user turns it off or leaves Builder Flow.
 
@@ -220,6 +242,16 @@ Generating from an Experiment drops, without a warning, the injections its apps
 added when it started: those whose `src` is an absolute path under the
 experiment's base directory (its `baseDir`, or `<phenix base>/experiments/<name>`).
 The topology's own injections are kept.
+
+Generation copies the source config's `metadata.annotations` into the
+document's `source.annotations`. It leaves out every `builder-` annotation
+(`builder-xml`, `builder-doc`, `builder-experiment`) and keeps the others, such
+as an experiment's `topology` and `scenario`. They are shown only: they do not
+change `source.digest`, and publishing never writes them. A document holds at
+most 100 annotations and 256 KiB of keys and values in all. Keys must not be
+blank, must be at most 512 bytes long and must not contain control characters.
+Generation keeps the annotations that fit, in key order, and warns about the
+rest. `POST /builder/generate` also sets `source.importedAt` (RFC 3339, UTC).
 
 `POST /builder/generate` accepts either `{"source":"Topology/name"}` (or an
 Experiment source) or `{"content":"..."}` containing an uploaded JSON/YAML
