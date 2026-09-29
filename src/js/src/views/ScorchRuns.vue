@@ -8,6 +8,12 @@
         :name="run.name"
         :loop="run.loop"
         :running="run.running"
+        :execution="run.execution"
+        :disabled="run.pending || stopping || !exp.running"
+        :can-start="roleAllowed('experiments/trigger', 'create', exp.name)"
+        :can-cancel="roleAllowed('experiments/trigger', 'delete', exp.name)"
+        :open-breakpoint="openBreakpoint"
+        :recoverer="recoverRun"
         :nodes="run.nodes"
         :viewer="componentDetail"
         :controller="scorchControl"
@@ -21,7 +27,7 @@
       :can-cancel="false"></b-loading>
     <b-modal
       v-model="terminal.modal"
-      :can-cancel="terminal.ro"
+      :can-cancel="true"
       @close="resetTerminal"
       has-modal-card>
       <div class="modal-card" style="width: 60em">
@@ -32,23 +38,23 @@
           <vue-terminal :wsPath="terminal.loc"></vue-terminal>
         </section>
         <footer class="modal-card-foot buttons is-right">
-          <div v-if="terminal.ro">
+          <div>
             <b-tooltip
               label="this will close but not exit the terminal"
               type="is-light is-left"
               :delay="1000">
               <button class="button is-light" @click="resetTerminal">
-                Close
+                Hide
               </button>
             </b-tooltip>
           </div>
-          <div v-else>
+          <div v-if="!terminal.ro">
             <b-tooltip
               label="this will EXIT the terminal"
               type="is-danger is-left"
               :delay="1000">
               <button class="button is-danger" @click="exitTerminal">
-                Exit
+                Continue run
               </button>
             </b-tooltip>
           </div>
@@ -84,6 +90,8 @@
   import axiosInstance from '@/utils/axios.js';
   import { useErrorNotification } from '@/utils/errorNotif';
   import { usePhenixStore } from '@/store.js';
+  import { mergeScorchRuns } from '@/utils/scorch.js';
+  import { roleAllowed } from '@/utils/rbac.js';
 
   import ScorchKey from '@/components/scorch/ScorchKey.vue';
   import ScorchRun from '@/components/scorch/ScorchRun.vue';
@@ -99,21 +107,77 @@
     created() {
       addWsHandler(this.handle);
       this.runsView(this.$route.params.id);
+      this.poll = setInterval(() => this.refreshStatus(), 2000);
     },
 
     beforeUnmount() {
       removeWsHandler(this.handle);
+      clearInterval(this.poll);
+      this.exitOutput();
     },
 
     methods: {
-      scorchControl(exp, runID) {
-        let run = this.runs[runID];
-        if (run.running) {
-          axiosInstance.delete(`experiments/${exp}/scorch/pipelines/${runID}`);
-          // TODO: handle errors
-        } else {
-          axiosInstance.post(`experiments/${exp}/scorch/pipelines/${runID}`);
-          // TODO: handle errors
+      roleAllowed,
+      recoverRun(exp, runID) {
+        const e = this.runs[runID].execution;
+        this.$buefy.dialog.confirm({
+          title: 'Recover interrupted run',
+          message: `Before recovering run ${runID}, verify its owner has exited and manually clean up its processes, commands, taps, and other resources. Recovery acknowledges cleanup; it does not execute cleanup steps.`,
+          confirmText: 'Cleanup complete; recover',
+          onConfirm: () =>
+            axiosInstance
+              .post(`experiments/${exp}/scorch/pipelines/${runID}/recover`, {
+                executionID: e.executionID,
+                cleanupComplete: true,
+              })
+              .then(() => this.refreshStatus())
+              .catch(useErrorNotification),
+        });
+      },
+      async scorchControl(exp, runID) {
+        const run = this.runs[runID];
+        if (run.pending) return;
+        run.pending = true;
+        try {
+          const path = `experiments/${exp}/scorch/pipelines/${runID}`;
+          if (run.running)
+            await axiosInstance.delete(path, {
+              params: { executionID: run.execution.executionID },
+            });
+          else await axiosInstance.post(path);
+          await this.refreshStatus();
+        } catch (err) {
+          useErrorNotification(err);
+        } finally {
+          run.pending = false;
+        }
+      },
+
+      openBreakpoint(exp, runID) {
+        const e = this.runs[runID].execution;
+        this.componentDetail({
+          exp,
+          run: runID,
+          loop: e.loop,
+          stage: e.stage,
+          name: e.component,
+          status: 'running',
+        });
+      },
+
+      async refreshStatus() {
+        if (!this.exp || this.refreshing) return;
+        this.refreshing = true;
+        try {
+          const { data } = await axiosInstance.get(
+            `experiments/${this.exp.name}/scorch/pipelines`,
+          );
+          this.runs = mergeScorchRuns(data, this.runs);
+          this.stopping = data.stopping;
+        } catch (err) {
+          useErrorNotification(err);
+        } finally {
+          this.refreshing = false;
         }
       },
 
@@ -127,39 +191,7 @@
             console.log('experiments/exp', resp);
             this.exp = resp.data;
 
-            axiosInstance
-              .get(`experiments/${exp}/scorch/pipelines`, {
-                headers: { Accept: 'application/json' },
-              })
-              .then((resp) => {
-                console.log('experiments/exp/scorch/pipelines', resp);
-                this.runs = [];
-
-                console.log(resp);
-
-                let pipelines = resp.data.pipelines;
-                let runningID = resp.data.running;
-
-                if (pipelines === null) {
-                  return;
-                }
-
-                for (let i = 0; i < pipelines.length; i++) {
-                  let running = i == runningID;
-                  let name = pipelines[i].name;
-                  let nodes = pipelines[i].pipeline;
-
-                  this.runs.push({
-                    name,
-                    running,
-                    nodes,
-                    loop: 0,
-                  });
-                }
-              })
-              .catch((err) => {
-                useErrorNotification(err);
-              });
+            this.refreshStatus();
           })
           .catch((err) => {
             useErrorNotification(err);
@@ -221,6 +253,8 @@
                 } else if (resp.data.terminal) {
                   let t = resp.data.terminal;
 
+                  this.terminal.executionID = t.executionID;
+                  this.terminal.run = t.run;
                   this.terminal.loc = t.loc;
                   this.terminal.exit = t.exit;
                   this.terminal.exp = t.exp;
@@ -287,7 +321,7 @@
       },
 
       terminalName() {
-        let name = `Terminal (${this.terminal.exp})`;
+        let name = `Terminal (${this.terminal.exp}, run ${this.terminal.run})`;
 
         if (this.terminal.ro) {
           name += ' (read-only)';
@@ -296,8 +330,8 @@
         return name;
       },
 
-      resetTerminal(force = false) {
-        if (force || this.terminal.ro) {
+      resetTerminal() {
+        {
           this.terminal = {
             modal: false,
             exp: '',
@@ -313,9 +347,11 @@
         // base path; clear baseURL so axios doesn't prepend it again
         axiosInstance
           .post(this.terminal.exit, null, { baseURL: '' })
-          .finally(() => {
-            this.resetTerminal(true);
-          });
+          .then(() => {
+            this.resetTerminal();
+            this.refreshStatus();
+          })
+          .catch(useErrorNotification);
       },
 
       exitOutput() {
@@ -330,92 +366,33 @@
       },
 
       handle(msg) {
-        switch (msg.resource.type) {
-          case 'apps/scorch': {
-            let tokens = msg.resource.name.split('/');
-
-            let expName = tokens[0];
-            let runID = tokens[1];
-
-            if (!this.exp || this.exp.name !== expName) {
-              return;
-            }
-
-            switch (msg.resource.action) {
-              case 'start': {
-                let run = this.runs[runID];
-                run.running = true;
-
-                this.runs[runID] = run;
-                break;
-              }
-
-              case 'success': {
-                let run = this.runs[runID];
-                run.running = false;
-
-                this.runs[runID] = run;
-                break;
-              }
-
-              case 'error': {
-                let run = this.runs[runID];
-                run.running = false;
-
-                this.runs[runID] = run;
-
-                // TODO: do something with error message in `msg.result`
-                console.log(msg.result.error);
-                break;
-              }
-
-              case 'pipeline-update': {
-                let loopID = parseInt(tokens[2]);
-                let run = this.runs[runID];
-
-                if (run.loop == loopID) {
-                  run.nodes = msg.result.pipeline ?? [];
-                  this.runs[runID] = run;
-                }
-
-                break;
-              }
-            }
-
-            break;
+        if (msg.resource.type === 'apps/scorch') {
+          if (msg.resource.name.split('/')[0] !== this.exp?.name) return;
+          if (
+            msg.resource.action === 'terminal-exit' &&
+            msg.result?.executionID === this.terminal.executionID &&
+            msg.result?.run === this.terminal.run
+          )
+            this.resetTerminal();
+          if (msg.resource.action === 'pipeline-update') {
+            const [, id, loop] = msg.resource.name.split('/');
+            const run = this.runs?.[id];
+            if (
+              run &&
+              run.loop === Number(loop) &&
+              (!msg.result.executionID ||
+                msg.result.executionID === run.execution?.executionID)
+            )
+              run.nodes = msg.result.pipeline ?? [];
           }
-
-          case 'experiment': {
-            if (!this.exp || this.exp.name !== msg.resource.name) {
-              return;
-            }
-
-            switch (msg.resource.action) {
-              case 'start': {
-                this.exitOutput();
-                this.resetTerminal(true);
-                this.runsView(this.exp.name);
-                break;
-              }
-
-              case 'stop': {
-                this.runsView(this.exp.name);
-                break;
-              }
-
-              case 'delete': {
-                this.$router.replace({ name: 'scorch' });
-
-                this.$buefy.toast.open({
-                  message: `The ${msg.resource.name} experiment has been deleted`,
-                  type: 'is-success',
-                  duration: 4000,
-                });
-
-                break;
-              }
-            }
-          }
+          this.refreshStatus();
+        } else if (
+          msg.resource.type === 'experiment' &&
+          msg.resource.name === this.exp?.name
+        ) {
+          if (msg.resource.action === 'delete')
+            this.$router.replace({ name: 'scorch' });
+          else this.runsView(this.exp.name);
         }
       },
     },
@@ -423,7 +400,10 @@
     data() {
       return {
         exp: null,
-        runs: null,
+        runs: [],
+        poll: null,
+        refreshing: false,
+        stopping: false,
         terminal: {
           // terminal currently being viewed
           modal: false,

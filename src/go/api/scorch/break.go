@@ -8,10 +8,10 @@ import (
 
 	"github.com/mitchellh/mapstructure"
 
+	"phenix/api/scorch/scorchexe"
 	"phenix/api/scorch/scorchmd"
 	"phenix/app"
 	"phenix/util"
-	"phenix/util/mm"
 	"phenix/util/tap"
 	"phenix/web/scorch"
 )
@@ -63,9 +63,6 @@ func (b Break) breakPoint(ctx context.Context, stage Action) error {
 	}
 
 	if md.Tap != nil {
-		pairs := discoverUsedPairs()
-		md.Tap.Init(b.options.Exp.Spec.DefaultBridge(), tap.Experiment(exp), tap.UsedPairs(pairs))
-
 		// backwards compatibility (doesn't support external access firewall rules)
 		if v, ok := md.Tap.Other["internetAccess"]; ok {
 			enabled, _ := v.(bool)
@@ -76,23 +73,10 @@ func (b Break) breakPoint(ctx context.Context, stage Action) error {
 		// (dictated by max length of Linux interface names)
 		md.Tap.Name = util.RandomString(tapBreakSuffixLen) + "-tapbrk"
 
-		if _, err := md.Tap.Create(mm.Headnode()); err != nil {
+		if err := createOwnedTap(ctx, b.options, md.Tap); err != nil {
 			return fmt.Errorf("setting up tap for break: %w", err)
 		}
-
-		var status scorchmd.ScorchStatus
-
-		err := b.options.Exp.Status.ParseAppStatus("scorch", &status)
-		if err != nil {
-			return fmt.Errorf("getting experiment status for scorch app: %w", err)
-		}
-
-		status.Taps[b.options.Name] = md.Tap
-
-		b.options.Exp.Status.SetAppStatus("scorch", status)
-		_ = b.options.Exp.WriteToStore(true)
-
-		defer func() { _ = md.Tap.Delete(mm.Headnode()) }()
+		defer func() { _ = deleteOwnedTap(ctx, b.options) }()
 	}
 
 	var (
@@ -127,6 +111,19 @@ func (b Break) breakPoint(ctx context.Context, stage Action) error {
 		args = []string{"README"}
 	}
 
+	if err := scorchexe.State(
+		ctx,
+		exp,
+		scorchmd.StateWaiting,
+		string(stage),
+		b.options.Name,
+		b.options.Loop,
+		b.options.Count,
+		"breakpoint",
+		"",
+	); err != nil {
+		return err
+	}
 	if app.IsContextTriggerCLI(ctx) {
 		// this blocks until terminal is exited
 		err = terminal(ctx, dir, cmd, args)
@@ -137,6 +134,7 @@ func (b Break) breakPoint(ctx context.Context, stage Action) error {
 		var done <-chan struct{}
 		done, err = scorch.CreateWebTerminal(
 			ctx,
+			scorchexe.ExecutionID(ctx),
 			exp,
 			b.options.Run,
 			b.options.Loop,
@@ -156,5 +154,8 @@ func (b Break) breakPoint(ctx context.Context, stage Action) error {
 		}
 	}
 
-	return ctx.Err()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return scorchexe.State(ctx, exp, scorchmd.StateRunning, string(stage), b.options.Name, b.options.Loop, b.options.Count, "", "")
 }

@@ -8,7 +8,10 @@ import (
 // Action represents the different SCORCH lifecycle hooks.
 type Action string
 
+const componentSOH = "soh"
+
 const (
+	componentPause         = "pause"
 	ActionConfigure Action = "configure"
 	ActionStart     Action = "start"
 	ActionStop      Action = "stop"
@@ -43,15 +46,15 @@ type Component interface {
 	Cleanup(context.Context) error
 }
 
-var components map[string]Component //nolint:gochecknoglobals // global registry
+var components map[string]func() Component //nolint:gochecknoglobals // immutable factory registry
 
 func init() { //nolint:gochecknoinits // component registration
-	components = map[string]Component{
-		"break":      new(Break),
-		"pause":      new(Pause),
-		"soh":        new(SOH),
-		"tap":        new(Tap),
-		"user-shell": new(UserComponent),
+	components = map[string]func() Component{
+		"break":        func() Component { return new(Break) },
+		componentPause: func() Component { return new(Pause) },
+		componentSOH:   func() Component { return new(SOH) },
+		"tap":          func() Component { return new(Tap) },
+		"user-shell":   func() Component { return new(UserComponent) },
 	}
 }
 
@@ -62,16 +65,40 @@ func GetComponent(name string) Component {
 		cmp = components["user-shell"]
 	}
 
-	return cmp
+	return cmp()
 }
 
 func ExecuteComponent(ctx context.Context, opts ...Option) error {
 	options := NewOptions(opts...)
-
-	cmp, ok := components[options.Type]
-	if !ok {
-		cmp = components["user-shell"]
+	if options.Tasks != nil {
+		if options.Background {
+			foreground := append([]Option(nil), opts...)
+			foreground = append(foreground, func(o *Options) { o.Background = false; o.Detached = true })
+			key := fmt.Sprintf("%s/%s/%s", options.Iteration, options.Stage, options.Name)
+			return options.Tasks.start(ctx, key, func(taskCtx context.Context) error {
+				return ExecuteComponent(taskCtx, foreground...)
+			})
+		}
+		var original Action
+		switch options.Stage {
+		case ActionStop:
+			original = ActionStart
+		case ActionCleanup:
+			original = ActionConfigure
+		case ActionConfigure, ActionStart, ActionDone, ActionLoop:
+		}
+		if original != "" {
+			found, err := options.Tasks.stop(fmt.Sprintf("%s/%s/%s", options.Iteration, original, options.Name))
+			if err != nil {
+				return err
+			}
+			if found && (options.Type == componentPause || options.Type == componentSOH) {
+				return nil
+			}
+		}
 	}
+
+	cmp := GetComponent(options.Type)
 
 	_ = cmp.Init(opts...)
 

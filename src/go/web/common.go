@@ -180,7 +180,7 @@ func startExperiment(name string) ([]byte, error) {
 			waiters[name] = &wg
 			commonMu.Unlock()
 
-			if err := app.PeriodicallyRunApps(ctx, &wg, s.exp); err != nil {
+			if err := app.PeriodicallyRunApps(app.SetContextTriggerUI(ctx), &wg, s.exp); err != nil {
 				cancel() // avoid leakage
 				commonMu.Lock()
 				delete(cancelers, name)
