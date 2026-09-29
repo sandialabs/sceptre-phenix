@@ -195,15 +195,18 @@
           v-for="network in networks"
           :key="network.id"
           class="builder-outline__row">
-          <div class="builder-outline__item builder-outline__item--static">
+          <!-- The name has the row's width, and wraps rather than being
+               cut short; the alias and device count go below it. -->
+          <div
+            class="builder-outline__item builder-outline__item--static builder-outline__network">
             <builder-icon name="vlan" :size="14" />
-            <span class="builder-outline__label" :title="network.name">{{
-              network.name
-            }}</span>
-            <span class="builder-outline__kind">
-              {{ network.alias ? `VLAN ${network.alias}` : 'no alias' }}
+            <span class="builder-outline__label">{{ network.name }}</span>
+            <span class="builder-outline__details">
+              <span class="builder-outline__kind">
+                {{ network.alias ? `VLAN ${network.alias}` : 'no alias' }}
+              </span>
+              <span class="builder-outline__count">{{ network.devices }}</span>
             </span>
-            <span class="builder-outline__count">{{ network.devices }}</span>
             <button
               :id="removeNetworkId(network.id)"
               type="button"

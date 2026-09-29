@@ -350,11 +350,13 @@
 }
 
 /* The mask shades everything outside the visible area; its stroke outlines
-   the visible area itself. */
+   the visible area itself. The minimap scales the whole diagram down, so
+   the stroke would too, to a fraction of a pixel: it keeps its width. */
 .builder-canvas .vue-flow__minimap-mask {
   fill: var(--bx-minimap-mask);
   stroke: var(--bx-accent);
   stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
 }
 
 .builder-canvas .vue-flow__minimap-node {
@@ -1388,6 +1390,33 @@ div.builder-outline__item {
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;
+}
+
+/* A network row: the name on a line of its own beside the icon and the
+   Remove button, wrapping when it is long or the text is spaced out
+   (WCAG 1.4.12), and the alias and device count under it. */
+.builder-outline__network {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: 0.35rem;
+}
+
+.builder-outline__network .builder-outline__label {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.builder-outline__details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.35rem;
+  grid-column: 2;
+}
+
+.builder-outline__network .builder-button {
+  grid-column: 3;
+  grid-row: 1 / span 2;
 }
 
 /* A group's members: one level in, with a rule that shows where the group

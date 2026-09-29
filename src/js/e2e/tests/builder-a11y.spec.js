@@ -579,6 +579,21 @@ test.describe('keyboard-only authoring', () => {
         .soft(page.getByRole('button', { name: 'Remove network EXP' }))
         .toBeVisible();
       await expect.soft(builder.summary).toContainText('2 networks');
+
+      // With WCAG 1.4.12 text spacing the name still shows whole: the alias
+      // and count go under it rather than squeezing it.
+      const spacing = await page.addStyleTag({
+        content:
+          '* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; }',
+      });
+      await expect.soft
+        .poll(() =>
+          entry
+            .locator('.builder-outline__label')
+            .evaluate((label) => label.scrollWidth - label.clientWidth),
+        )
+        .toBeLessThanOrEqual(0);
+      await spacing.evaluate((element) => element.remove());
     });
 
     await test.step('Disconnect in the command palette and Remove network act without a pointer, and focus stays in place', async () => {
@@ -2347,6 +2362,36 @@ test.describe('themes and canvas controls', () => {
       await page.getByTestId('editor-reset-view').click();
       await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
       const opened = level(await zoomLevel(page));
+
+      // A double-click on the empty canvas zooms in at once too: the view
+      // takes one new transform, not the frames of a transition.
+      const pane = await page.locator('.vue-flow__pane').boundingBox();
+      const transforms = page.evaluate(
+        () =>
+          new Promise((resolve) => {
+            const view = document.querySelector(
+              '.vue-flow__transformationpane',
+            );
+            const seen = new Set();
+            const start = performance.now();
+            const sample = () => {
+              seen.add(view.style.transform);
+              if (performance.now() - start < 500) {
+                requestAnimationFrame(sample);
+              } else {
+                resolve(seen.size);
+              }
+            };
+            requestAnimationFrame(sample);
+          }),
+      );
+      await page.mouse.dblclick(pane.x + 12, pane.y + 12);
+      expect
+        .soft(await transforms, 'views drawn after a double-click')
+        .toBeLessThanOrEqual(2);
+      await expect
+        .poll(async () => level(await zoomLevel(page)))
+        .toBeGreaterThan(opened);
       await builder.canvas.focus();
       await page.keyboard.press('Shift+Digit1');
       await expect.poll(async () => level(await zoomLevel(page))).toBe(opened);

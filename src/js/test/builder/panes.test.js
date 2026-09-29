@@ -261,6 +261,19 @@ describe('minimap size', () => {
     expect(minimapLimits({ width: 0, height: 0 }).max).toBe(200);
   });
 
+  test('stays below the default on a canvas too short to hold it', () => {
+    // 1280x1024 at 400%: the default's 152px would rise 18px above a 149px
+    // canvas. 149 less 32px of margins holds 117px, 156 wide.
+    expect(minimapLimits({ width: 286, height: 149 })).toEqual({
+      min: 120,
+      max: 156,
+    });
+    // Narrow too: 200 less 32px.
+    expect(minimapLimits({ width: 200, height: 400 }).max).toBe(168);
+    // Never below the smallest size.
+    expect(minimapLimits({ width: 286, height: 100 }).max).toBe(120);
+  });
+
   test('arrow keys move the handle at its top left corner', () => {
     const limits = { min: 120, max: 400 };
 

@@ -336,6 +336,7 @@
   const {
     addEdges,
     addNodes,
+    d3Zoom,
     dimensions,
     findEdge: findFlowEdge,
     findNode: findFlowNode,
@@ -352,6 +353,14 @@
     zoomIn,
     zoomOut,
   } = useVueFlow();
+
+  // A double-click on the empty canvas zooms in, as d3-zoom does it: over
+  // 250ms, or at once with reduced motion, as every other view change.
+  watch(
+    [d3Zoom, () => props.reducedMotion],
+    ([zoom, reduced]) => zoom?.duration(reduced ? 0 : 250),
+    { immediate: true },
+  );
 
   // What the keys do on a focused node or connection, and a summary for the
   // canvas itself; a read-only draft can only be selected. Both follow the

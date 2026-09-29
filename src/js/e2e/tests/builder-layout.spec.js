@@ -923,6 +923,20 @@ test(
         .soft(layout.scrollWidth, '1280x320: page scroll width')
         .toBeLessThanOrEqual(layout.width);
 
+      // 1280x1024 at 400%: the canvas is shorter than the default minimap,
+      // which takes what fits, so its resize handle stays on the canvas.
+      await resize(page, { width: 320, height: 256 });
+      const pane = await page.locator('.vue-flow').boundingBox();
+      const handle = await page
+        .getByRole('separator', { name: 'Resize minimap' })
+        .boundingBox();
+      expect
+        .soft(handle.y - pane.y, '320x256: minimap handle below the top')
+        .toBeGreaterThanOrEqual(0);
+      expect
+        .soft(handle.x - pane.x, '320x256: minimap handle inside the left')
+        .toBeGreaterThanOrEqual(0);
+
       // Text enlarged on its own stacks the columns instead of squeezing
       // the canvas column to nothing.
       await resize(page, { width: 1280, height: 800 });
@@ -1403,7 +1417,7 @@ async function contrast(locator, property = 'color') {
 }
 
 // Contrast ratio between the minimap's visible-area outline and its surface,
-// plus the outline's stroke width and the surface color.
+// plus the outline's width as drawn, in CSS pixels, and the surface color.
 async function minimapMask(page) {
   return page.locator('.vue-flow__minimap-mask').evaluate((path) => {
     const luminance = (value) => {
@@ -1424,8 +1438,16 @@ async function minimapMask(page) {
       (x, y) => y - x,
     );
 
+    // A stroke width is in the minimap's own units, which it scales down to
+    // fit the whole diagram, unless the stroke does not scale.
+    const style = getComputedStyle(path);
+    const scale =
+      style.vectorEffect === 'non-scaling-stroke'
+        ? 1
+        : path.ownerSVGElement.getScreenCTM().a;
+
     return {
-      width: parseFloat(getComputedStyle(path).strokeWidth),
+      width: parseFloat(style.strokeWidth) * scale,
       ratio: (hi + 0.05) / (lo + 0.05),
       surface,
     };

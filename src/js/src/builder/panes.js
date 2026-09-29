@@ -214,26 +214,43 @@ const MINIMAP_MIN_WIDTH = 120;
 const MINIMAP_MAX_WIDTH = 600;
 // The most of the canvas's width, and of its height, it may cover.
 const MINIMAP_MAX_SHARE = 0.5;
+// Vue Flow keeps the minimap 15px in from the canvas's edges, inside a 1px
+// frame; the same room above it keeps its handle, at its top left corner,
+// and the handle's focus ring on the canvas.
+const MINIMAP_ROOM = 2 * (15 + 1);
 // One arrow key press.
 export const MINIMAP_STEP = 16;
 
 /**
  * The widths the minimap may take on a canvas: at most half the canvas's
- * width and half its height, but never less than the default.
+ * width and half its height, but never less than the default, unless the
+ * canvas is too small to hold the default within its margins (a short
+ * window, or zoomed text). Then it takes what fits, down to its smallest.
  *
  * @param {{width: number, height: number}} pane the canvas, in pixels
  * @returns {{min: number, max: number}} whole pixels
  */
 export function minimapLimits(pane) {
-  const share =
-    Math.min(pane?.width || 0, (pane?.height || 0) / MINIMAP_RATIO) *
-    MINIMAP_MAX_SHARE;
+  const width = pane?.width || 0;
+  const height = pane?.height || 0;
+  const share = Math.min(width, height / MINIMAP_RATIO) * MINIMAP_MAX_SHARE;
+  // A canvas not yet measured sets no bound.
+  const fits =
+    width && height
+      ? Math.min(width - MINIMAP_ROOM, (height - MINIMAP_ROOM) / MINIMAP_RATIO)
+      : Infinity;
 
   return {
     min: MINIMAP_MIN_WIDTH,
-    max: Math.min(
-      MINIMAP_MAX_WIDTH,
-      Math.max(MINIMAP_DEFAULT_WIDTH, Math.floor(share)),
+    max: Math.max(
+      MINIMAP_MIN_WIDTH,
+      Math.floor(
+        Math.min(
+          MINIMAP_MAX_WIDTH,
+          fits,
+          Math.max(MINIMAP_DEFAULT_WIDTH, share),
+        ),
+      ),
     ),
   };
 }
