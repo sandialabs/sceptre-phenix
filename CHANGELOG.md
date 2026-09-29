@@ -20,8 +20,8 @@ All notable changes to this project will be documented in this file.
   - **Settings**: Theme, layout for drafts without one, minimap, zoom, motion, and shortcut settings, kept in the browser.
   - **Focus mode**: Hides the navigation bar and fills the screen, in the editor and on the drafts page (⇧⌘F or Ctrl+Shift+F).
   - **Drafts**: Drafts save automatically, work offline, and keep the last 50 changes. The toolbar shows the save state. Draft History lists each change with its date and user, newest first, and restores or deletes it. Drafts the server cannot read are listed, with Delete. Saving says when etcd is out of space. Open shows a spinner while it waits. Back to drafts opens the drafts at once, and the draft's card shows its changes saving. A draft open in more than one tab shows a warning; when several tabs have unsaved changes to it, you choose which to save, and the others become new drafts. Logging out, or signing in as another user, clears drafts saved in the browser and keeps preferences such as the theme and shortcuts. Logging out first warns when changes have not reached the server, and offers Export. The idle timeout and an expired session show the warning for a minute, then log out. When the session ends, Sign in again keeps unsaved changes and then saves them.
-  - **Import and export**: Import topologies and experiments with their annotations, and without the injections a started experiment's apps added; upload and download diagrams as JSON or YAML; download the Topology YAML Publish would write; export images as PNG or SVG, and the network as a Gephi (GEXF 1.3) graph.
-  - **Publishing**: Publish topologies, scenarios, and experiments, and publish again after more edits, even once Draft History has dropped the published change. Publish asks before it replaces an existing config. Published topologies can be deleted from the Published Diagrams tab, and drafts can then publish them again.
+  - **Import and export**: Import topologies and experiments with their annotations, and without the injections a started experiment's apps added; upload and download diagrams as JSON or YAML; download the Topology YAML Publish would write, and the network as a Gephi (GEXF 1.3) graph; export images as PNG or SVG.
+  - **Publishing**: Publish topologies, scenarios, and experiments, and publish again after more edits, even once Draft History has dropped the published change. Publish asks before it replaces an existing config, and refuses interfaces that share an IP or MAC address. Published topologies can be deleted from the Published Diagrams tab, and drafts can then publish them again.
   - **Included topologies**: Shown as read-only nodes and kept as references when published.
   - **Sharing**: Share a draft with other users, chosen from a list, as view-only or editable. Drafts shared with you are listed under Shared with me.
   - **Permissions**: Actions a role cannot perform are hidden. Importing an uploaded config needs `configs` `create`, and opening a published diagram as a new draft needs `configs` `get` for its config; other users' drafts must be shared with you or need `builder-drafts` permissions.
@@ -58,6 +58,7 @@ All notable changes to this project will be documented in this file.
   - Globstars, braces, and extglobs in patterns no longer match names that the server denies.
   - Config permissions are checked against `<Kind>/<name>`, as the server does.
   - VM snapshot controls check `vms/snapshots` with the server's verbs: `create` to take a snapshot and `update` to restore one. Roles such as Experiment User now see the snapshot button.
+- **vrouter**: Set VyOS and Vyatta router hostnames exactly as written in the topology instead of lowercasing them and replacing `.` and `_` with `-`, so the guest hostname matches the minimega VM name. Firewall nodes already behaved this way.
 - **Config Schemas**: Invalid v1 schema (empty `pattern` on a serial interface's `device`).
 - **Schemas API**: Unknown schemas return 404 instead of 500.
 - **API docs**: The OpenAPI document is valid again.
@@ -66,7 +67,6 @@ All notable changes to this project will be documented in this file.
 - **Configs page**: The viewer opens for topologies saved by the Topology Builder instead of showing an error, is labeled with the config's name, and returns focus to it when closed.
 - **Users**: Signing in as the same user from parallel requests no longer loses a token.
 - **etcd store**: Crash at startup with an empty etcd; wrong errors for missing or existing configs, and for writes to a full etcd.
-- **vrouter**: Set VyOS and Vyatta router hostnames exactly as written in the topology instead of lowercasing them and replacing `.` and `_` with `-`, so the guest hostname matches the minimega VM name. Firewall nodes already behaved this way.
 
 ### Security
 

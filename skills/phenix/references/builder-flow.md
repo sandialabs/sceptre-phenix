@@ -5,7 +5,7 @@ behind the `builder-beta` UI feature. This file holds everything about it
 that the main phenix skill leaves out.
 
 **Read this file when** a task involves Builder Flow: its drafts, sharing,
-publishing, import or generation, its `/api/v1/builder/*` or
+publishing, import, export or generation, its `/api/v1/builder/*` or
 `/schemas/builder/v1` routes, the `builder-drafts` RBAC resource, the Builder
 document format (`builder/v1`), or any Builder Flow code (see
 [Working on Builder Flow code](#working-on-builder-flow-code)). The legacy
@@ -50,11 +50,7 @@ value too long for its box scrolls in it, and Tab reaches the box only while
 it scrolls. Scenario says whether the scenario is stored or uploaded and lists
 each of its apps with the hosts it runs on. A stored scenario's apps are read
 with `GET /configs/Scenario/<name>`, which needs `configs` `get`; otherwise the
-Inspector says it cannot read them. Export's Gephi (GEXF) file, a graph of the
-devices and networks for Gephi that Builder Flow cannot open, lists each
-device's scenario apps (`apps`, `disabled_apps`); it reads a stored scenario
-again the same way, and when it cannot, leaves the apps out and says why.
-Edit scenario (Add scenario when there is
+Inspector says it cannot read them. Edit scenario (Add scenario when there is
 none) opens the same Scenario dialog as the toolbar's Scenario button; a
 read-only draft shows neither. Leaving a draft,
 publishing, or exporting first saves Inspector changes that were not applied,
@@ -357,17 +353,42 @@ that names no network of the document still publishes as it is, since phenix
 allocates VLANs by name and matches them exactly (`exp` is not network `EXP`).
 Drafts keep such interfaces; the editor flags them as warnings.
 
+Publish also answers 422 when interfaces use the same IP or MAC address, and
+the error `message` names each address and the interfaces that use it (the
+first three addresses, then how many more): phenix would store such a
+topology, but the addresses clash once the experiment runs. IP addresses are
+compared parsed, without a prefix length typed after them, and MAC addresses
+in any case and with any separators. The IP addresses of interfaces whose
+`proto` is `dhcp` or `manual`, blank values and external devices' MAC
+addresses are not compared. Included devices are, but an address only they
+use is left to their topology. When interfaces also have no VLAN, the 422
+names only those. Drafts keep shared addresses; the editor flags each
+interface that uses one as a warning, and the Publish dialog lists them as
+errors.
+
 The Export dialog's Topology YAML saves `<diagram name>.topology.yaml`, the
 Topology config Publish would write, from `POST /builder/export/topology`
 (`configs` `get`; nothing is written). The request carries the document,
 edits not yet saved included, and the topology `name` the Publish dialog
 proposes. The config has no annotations and names included topologies in
-`includeTopologies` rather than merging them. An interface with a blank VLAN
-is reported in `publishBlockers`, which the dialog shows after the download,
-not refused. A document phenix's schema refuses is refused with 422, as
-Publish refuses it. Publish names interfaces without a VLAN before any other
-reason; the export names them only when a `vlan` is missing or null, which
-the schema refuses too, and otherwise gives the schema's reason.
+`includeTopologies` rather than merging them. What only Publish refuses,
+interfaces with a blank VLAN and shared addresses, is not refused but named
+in `publishBlockers`, which the dialog shows after the download: one entry
+per check, interfaces without a VLAN first, each as Publish's 422 `message`
+words it. A document with both gets both, where Publish's 422 names only the
+first. A document phenix's schema refuses is refused with 422, as Publish
+refuses it. Publish names interfaces without a VLAN, then shared addresses,
+before any other reason; the export names interfaces without a VLAN only when
+a `vlan` is missing or null, which the schema refuses too, and otherwise
+gives the schema's reason.
+
+The Export dialog's Gephi (GEXF) saves `<diagram name>.gexf`, a GEXF 1.3
+graph for Gephi that Builder Flow cannot open, made in the browser. Devices
+and networks are its nodes, each connection an edge from a device to its
+network, and their settings are columns; notes and groups are not nodes. It
+lists each device's scenario apps (`apps`, `disabled_apps`), reading a stored
+scenario as the Inspector does; when it cannot, it leaves the apps out and
+the dialog says why.
 
 After a publication, older published documents of the same topology are
 removed once they are more than an hour old; newer ones go at a later publish
