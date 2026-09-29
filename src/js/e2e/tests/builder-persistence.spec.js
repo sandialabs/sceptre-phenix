@@ -411,7 +411,7 @@ test.describe('Builder Beta persistence', () => {
     await expect.soft(content).not.toHaveAttribute('aria-busy');
     await expect
       .soft(dialog)
-      .toHaveAccessibleDescription('3 snapshots, oldest first.');
+      .toHaveAccessibleDescription('3 snapshots, newest first.');
     await expect(
       table.getByRole('button', { name: /^Restore Added switch, / }),
     ).toBeVisible();
@@ -940,8 +940,10 @@ test.describe('Builder Beta persistence', () => {
       }
     }
 
-    // The first snapshot is the draft as created, by the user who made it.
-    const first = rows.first();
+    // Newest first, numbered from the oldest: the last row is the first
+    // snapshot, the draft as created, by the user who made it.
+    await expect.soft(rows.first().getByRole('cell').first()).toHaveText('2');
+    const first = rows.last();
     await expect.soft(first.getByRole('cell').first()).toHaveText('1');
     await expect
       .soft(first.getByTestId('history-name'))
@@ -1040,26 +1042,27 @@ test.describe('Builder Beta persistence', () => {
     const deletes = dialog.getByTestId('history-delete');
     await expect(rows).toHaveCount(3);
 
-    // The current snapshot is marked, and its Delete says why it cannot.
-    await expect(rows.last().getByTestId('history-current')).toHaveText(
+    // The current snapshot, the newest, is marked first, and its Delete
+    // says why it cannot.
+    await expect(rows.first().getByTestId('history-current')).toHaveText(
       /Current/,
     );
-    await expect(deletes.last()).toHaveAttribute('aria-disabled', 'true');
+    await expect(deletes.first()).toHaveAttribute('aria-disabled', 'true');
     await expect
-      .soft(deletes.last())
+      .soft(deletes.first())
       .toHaveAccessibleDescription('The current snapshot cannot be deleted.');
     // Nor restored, as it is the diagram already. Both look unavailable,
     // unlike the other rows' buttons, and a press does nothing.
-    const current = rows.last().getByTestId('history-restore');
+    const current = rows.first().getByTestId('history-restore');
     await expect(current).toHaveAttribute('aria-disabled', 'true');
     await expect
       .soft(current)
       .toHaveAccessibleDescription('This is the current version.');
-    for (const button of [current, deletes.last()]) {
+    for (const button of [current, deletes.first()]) {
       await expect.soft(button).toHaveCSS('border-top-style', 'dashed');
     }
     await expect
-      .soft(rows.first().getByTestId('history-restore'))
+      .soft(rows.last().getByTestId('history-restore'))
       .toHaveCSS('border-top-style', 'solid');
     await current.press('Enter');
     await expect.soft(current).toBeFocused();
@@ -1070,8 +1073,11 @@ test.describe('Builder Beta persistence', () => {
     });
 
     // Delete asks first, starting on Cancel; Cancel keeps the snapshot and
-    // gives focus back.
-    const second = deletes.nth(1);
+    // gives focus back. The second snapshot keeps its number, 2, as newer
+    // ones are listed above it.
+    const second = rows
+      .filter({ has: page.getByRole('cell', { name: '2', exact: true }) })
+      .getByTestId('history-delete');
     const confirm = page.getByRole('alertdialog', { name: 'Delete snapshot?' });
     await second.press('Enter');
     await expect(confirm).toBeVisible();
@@ -1102,14 +1108,28 @@ test.describe('Builder Beta persistence', () => {
     await expect
       .soft(dialog.getByTestId('history-status'))
       .toHaveText(
-        /^\s*Deleted Added device, .+\. 3 snapshots, oldest first\.$/,
+        /^\s*Deleted Added device, .+\. 3 snapshots, newest first\.$/,
       );
-    // Focus moves to the Delete of the row that took its place.
-    await expect.soft(deletes.nth(1)).toBeFocused();
+    // Focus moves to the Delete of the row that took its place, the next
+    // older snapshot.
+    const created = dialog.getByRole('button', {
+      name: /^Delete Draft created, /,
+    });
+    await expect.soft(created).toBeFocused();
+    await expect.soft(deletes.last()).toBeFocused();
     const after = await listSnapshots(builder.request, draft);
     expect(after.map((snapshot) => snapshot.id)).toEqual(
       before.filter((_, index) => index !== 1).map((snapshot) => snapshot.id),
     );
+
+    // Deleting the last row moves focus to the one above it.
+    await created.press('Enter');
+    await confirm.getByRole('button', { name: 'Delete snapshot' }).click();
+    await expect(rows).toHaveCount(2);
+    await expect.soft(deletes.last()).toBeFocused();
+    await expect
+      .soft(deletes.last())
+      .toHaveAccessibleName(/^Delete Added device, /);
 
     // Escape hides the focused Delete's tooltip first, then the dialog.
     const tooltip = page.getByTestId('history-tooltip');

@@ -717,13 +717,13 @@ describe('the History dialog', () => {
 
     expect(names).toHaveLength(3);
     expect(names[1]).toBe('Saved unapplied changes to Device alpha, Automatic');
-    expect(names[0]).not.toContain('Automatic');
-    expect(names[2]).not.toContain('Automatic');
+    expect(names[0]).toBe('Applied changes to Device alpha');
+    expect(names[2]).toBe('Draft created');
     expect(html.match(/data-testid="history-automatic"/g)).toHaveLength(1);
     expect(html).toContain('data-testid="history-automatic-hint"');
   });
 
-  test('is a table of number, name, date and user, with actions named for their row', async () => {
+  test('is a table of number, name, date and user, newest first, with actions named for their row', async () => {
     const html = await renderDialog(HistoryDialog, {}, (store) => {
       store.serverHistory = history.map((entry, index) => ({
         ...entry,
@@ -741,11 +741,12 @@ describe('the History dialog', () => {
     expect(html).toMatch(/<h2 id="history-dialog-title"[^>]*>Draft History</);
     expect(table).toContain('aria-labelledby="history-dialog-title"');
     expect(headers).toEqual(['# Number', 'Name', 'Date', 'User', 'Actions']);
-    expect(rows.map((row) => row[0])).toEqual(['1', '2', '3']);
-    expect(rows[0][1]).toBe('Draft created');
-    expect(rows[2][1]).toBe('Applied changes to Device alpha');
+    // Numbered from the oldest, which is the draft as created.
+    expect(rows.map((row) => row[0])).toEqual(['3', '2', '1']);
+    expect(rows[2][1]).toBe('Draft created');
+    expect(rows[0][1]).toBe('Applied changes to Device alpha');
     expect(rows[1][1]).toMatch(/, Current$/);
-    expect(rows.map((row) => row[3])).toEqual(['alice', 'alice', 'bob']);
+    expect(rows.map((row) => row[3])).toEqual(['bob', 'alice', 'alice']);
     expect(html).toContain('<time datetime="2026-09-27T10:02:00Z"');
 
     // The name restores too, from a click: the row's Restore is the
@@ -773,17 +774,17 @@ describe('the History dialog', () => {
     );
 
     expect(restore).toHaveLength(3);
-    expect(restore[2]).toMatch(
+    expect(restore[0]).toMatch(
       /aria-label="Restore Applied changes to Device alpha, [^"]+"/,
     );
-    expect(restore[0]).not.toContain('aria-disabled');
+    expect(restore[2]).not.toContain('aria-disabled');
     expect(restore[1]).toContain('aria-disabled="true"');
     expect(restore[1]).toContain('aria-describedby="history-current-restore"');
     expect(html).toMatch(
       /id="history-current-restore" hidden[^>]*>\s*This is the current version\.\s*</,
     );
-    expect(remove[0]).toMatch(/aria-label="Delete Draft created, [^"]+"/);
-    expect(remove[0]).not.toContain('aria-disabled');
+    expect(remove[2]).toMatch(/aria-label="Delete Draft created, [^"]+"/);
+    expect(remove[2]).not.toContain('aria-disabled');
     // The current snapshot cannot be deleted, and its Delete says why.
     expect(remove[1]).toContain('aria-disabled="true"');
     expect(remove[1]).toContain('aria-describedby="history-current-note"');

@@ -291,12 +291,12 @@ test(
         'true',
       );
 
-      // Draft History lists the snapshots, but a viewer can neither restore
-      // nor delete one.
+      // Draft History lists the snapshots, newest first, but a viewer can
+      // neither restore nor delete one.
       await theirs.getByTestId('toolbar-history').click();
       const history = theirs.getByTestId('history-dialog');
       await expect(history.getByTestId('history-row')).toHaveCount(2);
-      await expect(history.getByTestId('history-name').first()).toHaveText(
+      await expect(history.getByTestId('history-name').last()).toHaveText(
         'Draft created',
       );
       for (const action of ['restore', 'delete']) {

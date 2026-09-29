@@ -1,7 +1,7 @@
 <!--
-  Draft History: the open draft's snapshots on the server, oldest first, as
-  a table of their number, name, date and who saved them, with a Restore
-  and a Delete button in each row.
+  Draft History: the open draft's snapshots on the server, newest first, as
+  a table of their number (1 for the oldest), name, date and who saved
+  them, with a Restore and a Delete button in each row.
 
   The dialog opens at once and reads the list while it shows (see
   fetchHistory in store.js). Until the list arrives the dialog is described
@@ -18,8 +18,9 @@
   diagram already, nor deleted: its buttons stay focusable, aria-disabled,
   look unavailable and say why. Delete asks first, then says how it went in
   the dialog's own status and alert (the page's live region waits until the
-  dialog closes), and focus moves to the next row's Delete. A user who may
-  only view the draft gets neither action.
+  dialog closes), and focus moves to the Delete of the row that takes its
+  place, the next older snapshot. A user who may only view the draft gets
+  neither action.
 
   A snapshot of edits the Builder applied for the user (the Inspector's
   unapplied edits, saved before the diagram was left, published or
@@ -77,7 +78,7 @@
             </thead>
             <tbody>
               <tr
-                v-for="(entry, index) in store.serverHistory"
+                v-for="{ entry, index } in rows"
                 :key="entry.id || index"
                 :class="{ 'is-current': entry.current }"
                 data-testid="history-row">
@@ -283,6 +284,12 @@
     store.fetchHistory();
   }
 
+  // Newest first. Each row keeps its snapshot's place in the history,
+  // which numbers and names it.
+  const rows = computed(() =>
+    store.serverHistory.map((entry, index) => ({ entry, index })).reverse(),
+  );
+
   const listed = computed(
     () =>
       !store.historyLoading &&
@@ -309,7 +316,7 @@
     }
 
     const listing = listed.value
-      ? `${count(store.serverHistory.length, 'snapshot')}, oldest first.`
+      ? `${count(store.serverHistory.length, 'snapshot')}, newest first.`
       : 'The server holds no snapshots for this draft yet.';
 
     return deleted.value ? `${deleted.value} ${listing}` : listing;
@@ -444,13 +451,15 @@
 
   // The confirmation closes first, which returns focus to the Delete
   // button. Once the row is gone, focus moves to the Delete button that
-  // takes its place, or the one before it when it was the last row.
+  // takes its place (the next older snapshot), or the one before it when
+  // it was the last row.
   async function confirmDelete() {
     if (!confirming.value || busy.value) {
       return;
     }
 
     const { entry, index, name } = confirming.value;
+    const row = store.serverHistory.length - 1 - index;
 
     confirming.value = null;
     deleting.value = true;
@@ -480,9 +489,9 @@
       ...(tableEl.value?.querySelectorAll('[data-testid="history-delete"]') ||
         []),
     ];
-    const kept = store.serverHistory.findIndex((item) => item.id === entry.id);
+    const kept = rows.value.findIndex((item) => item.entry.id === entry.id);
     const next = result.deleted
-      ? buttons[index] || buttons[index - 1]
+      ? buttons[row] || buttons[row - 1]
       : buttons[kept];
 
     (next || tableEl.value)?.focus();
