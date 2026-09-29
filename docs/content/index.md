@@ -78,12 +78,14 @@ The `phenix` repository includes a wrapper script that simplifies running `pheni
     Add the completion script to your shell's startup file so it's available in new terminal sessions.
 
     ```bash
-    # For Bash
+    # For Bash (requires the bash-completion package)
     echo 'source <(phenix completion bash)' >> ~/.bashrc
 
     # For Zsh
     echo 'source <(phenix completion zsh)' >> ~/.zshrc
     ```
+
+    Zsh completion needs `compinit` to be loaded before the `source` line. Frameworks such as Oh My Zsh load it for you; otherwise, add `autoload -U compinit && compinit` to `~/.zshrc` above that line.
 
     Now, you can use <kbd>Tab</kbd> to autocomplete commands, flags, and even dynamic values like experiment and VM names. For more details, run `phenix completion --help`.
 
