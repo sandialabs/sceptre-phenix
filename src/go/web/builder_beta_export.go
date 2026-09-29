@@ -79,8 +79,9 @@ func builderTopologyName(name string) string {
 // writing anything. The document comes with the request, so it holds edits
 // not saved yet, and is checked as saving a draft checks it. A document
 // phenix's config validation refuses is refused with the status Publish
-// answers, and with its message unless blank VLANs or shared addresses,
-// which Publish names first, are beside the validation's own reason (see
+// answers, and with its message unless blank VLANs, shared addresses or
+// hostnames phenix refuses when it creates an experiment, which Publish names
+// first, are beside the validation's own reason (see
 // [phenix/types/builder.Document.ExportTopologyConfig]); the checks only
 // publishing makes are reported with the config. Nothing is read from the
 // store: included topologies are named, as Publish writes them, not merged.
@@ -134,7 +135,7 @@ func (b *builderBetaAPI) exportTopology(w http.ResponseWriter, r *http.Request) 
 	blockers := make([]string, 0, len(export.PublishBlockers))
 
 	for _, blocker := range export.PublishBlockers {
-		reason, named := interfaceProblems(blocker)
+		reason, named := projectionProblems(blocker)
 		if !named {
 			reason = blocker.Error()
 		}

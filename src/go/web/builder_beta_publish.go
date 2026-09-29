@@ -541,6 +541,10 @@ func (b *builderBetaAPI) preflightPublish(
 			}
 		}
 
+		if err := includedHostnameRefusal(request.Experiment.Name, includes); err != nil {
+			return nil, err
+		}
+
 		experimentPlan, experimentErr := b.preflightExperiment(
 			meta,
 			document,
@@ -570,11 +574,12 @@ func (b *builderBetaAPI) preflightPublish(
 }
 
 // publishProjectionRefusal refuses a document whose topology projection
-// cannot be published. Interfaces without a VLAN, and addresses that
-// interfaces share, are named in the message, which is what clients show, and
-// not only in its cause; past the first few, only their number is.
+// cannot be published. Interfaces without a VLAN, addresses that interfaces
+// share, and hostnames phenix refuses are named in the message, which is what
+// clients show, and not only in its cause; past the first few, only their
+// number is.
 func publishProjectionRefusal(topologyName string, err error) error {
-	problems, named := interfaceProblems(err)
+	problems, named := projectionProblems(err)
 	if !named {
 		return weberror.NewWebError(err, "builder document cannot be published as topology %s", topologyName).
 			SetStatus(http.StatusUnprocessableEntity)
@@ -584,17 +589,19 @@ func publishProjectionRefusal(topologyName string, err error) error {
 		SetStatus(http.StatusUnprocessableEntity)
 }
 
-// interfaceProblems names the interfaces without a VLAN, or the addresses
-// interfaces share, that err reports (see [bdoc.InterfaceVLANError] and
-// [bdoc.InterfaceAddressError]) as clients show them: the first few, then how
+// projectionProblems names the interfaces without a VLAN, the addresses
+// interfaces share, or the hostnames phenix refuses, that err reports (see
+// [bdoc.InterfaceVLANError], [bdoc.InterfaceAddressError] and
+// [bdoc.NodeHostnameError]) as clients show them: the first few, then how
 // many more. It reports false for an error that names none.
-func interfaceProblems(err error) (string, bool) {
+func projectionProblems(err error) (string, bool) {
 	const listed = 3
 
 	var (
-		vlanErr    *bdoc.InterfaceVLANError
-		addressErr *bdoc.InterfaceAddressError
-		problems   []string
+		vlanErr     *bdoc.InterfaceVLANError
+		addressErr  *bdoc.InterfaceAddressError
+		hostnameErr *bdoc.NodeHostnameError
+		problems    []string
 		// What the problems past the first few are, after their number.
 		one, many string
 	)
@@ -604,6 +611,8 @@ func interfaceProblems(err error) (string, bool) {
 		problems, one, many = vlanErr.Problems, "interface has no VLAN", "interfaces have no VLAN"
 	case errors.As(err, &addressErr):
 		problems, one, many = addressErr.Problems, "address is used more than once", "addresses are used more than once"
+	case errors.As(err, &hostnameErr):
+		problems, one, many = hostnameErr.Problems, "hostname phenix refuses", "hostnames phenix refuses"
 	}
 
 	if len(problems) == 0 {
@@ -648,6 +657,35 @@ func mergedIncludesRefusal(actor builderBetaActor, experimentName string, includ
 	}
 
 	return nil
+}
+
+// includedHostnameRefusal refuses an experiment whose included topologies
+// define a hostname phenix refuses in an experiment, which phenix would find
+// only once the topology is written. The editor leaves included devices to
+// their own topology, and so does a topology publish.
+func includedHostnameRefusal(experimentName string, includes bdoc.IncludeReport) error {
+	const listed = 3
+
+	if len(includes.Refused) == 0 {
+		return nil
+	}
+
+	reasons := make([]string, 0, listed+1)
+
+	for _, refused := range includes.Refused[:min(len(includes.Refused), listed)] {
+		reasons = append(reasons, fmt.Sprintf("in included topology %s, %s", refused.Include, refused.Reason))
+	}
+
+	switch more := len(includes.Refused) - listed; {
+	case more == 1:
+		reasons = append(reasons, "1 more hostname phenix refuses")
+	case more > 1:
+		reasons = append(reasons, fmt.Sprintf("%d more hostnames phenix refuses", more))
+	}
+
+	return weberror.NewWebError(
+		nil, "experiment %s cannot be published: %s", experimentName, strings.Join(reasons, "; "),
+	).SetStatus(http.StatusUnprocessableEntity)
 }
 
 // includeClashRefusal refuses a topology whose included topologies define a

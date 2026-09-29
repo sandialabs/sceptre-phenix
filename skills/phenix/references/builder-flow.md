@@ -366,21 +366,37 @@ names only those. Drafts keep shared addresses; the editor flags each
 interface that uses one as a warning, and the Publish dialog lists them as
 errors.
 
+Publish also answers 422 for a hostname of a device that is not external
+which phenix refuses, and the error `message` gives phenix's reason for each,
+which names the hostname (the first three, then how many more): one character
+long, which phenix's schema refuses, or `all`, all digits, or `phenix` on a
+Windows node, which phenix stores but refuses when it creates an experiment.
+When interfaces also have no VLAN or share addresses, the 422 names only
+those. Drafts keep such hostnames, as a topology an older phenix stored may
+have them; the editor flags each as a warning, and the Publish dialog lists
+them as errors. It shows phenix's warnings about other casings of `all`, and
+about `phenix` on a node that is not Windows, as plain warnings, and Publish
+returns them in `warnings`. Included devices are left to their topology, but
+an experiment publish whose included topology has a hostname phenix refuses
+in an experiment answers 422 before anything is written.
+
 The Export dialog's Topology YAML saves `<diagram name>.topology.yaml`, the
 Topology config Publish would write, from `POST /builder/export/topology`
 (`configs` `get`; nothing is written). The request carries the document,
 edits not yet saved included, and the topology `name` the Publish dialog
 proposes. The config has no annotations and names included topologies in
 `includeTopologies` rather than merging them. What only Publish refuses,
-interfaces with a blank VLAN and shared addresses, is not refused but named
-in `publishBlockers`, which the dialog shows after the download: one entry
-per check, interfaces without a VLAN first, each as Publish's 422 `message`
-words it. A document with both gets both, where Publish's 422 names only the
-first. A document phenix's schema refuses is refused with 422, as Publish
-refuses it. Publish names interfaces without a VLAN, then shared addresses,
-before any other reason; the export names interfaces without a VLAN only when
-a `vlan` is missing or null, which the schema refuses too, and otherwise
-gives the schema's reason.
+interfaces with a blank VLAN, shared addresses and the hostnames phenix
+refuses when it creates an experiment, is not refused but named in
+`publishBlockers`, which the dialog shows after the download: one entry per
+check, interfaces without a VLAN first, then shared addresses, then
+hostnames, each as Publish's 422 `message` words it. A document with several
+gets each, where Publish's 422 names only the first. A document phenix's
+schema refuses is refused with 422, as Publish refuses it. Publish names
+interfaces without a VLAN, then shared addresses, then hostnames, before any
+other reason; the export names interfaces without a VLAN only when a `vlan`
+is missing or null, and hostnames only when one is a single character, which
+the schema refuses too, and otherwise gives the schema's reason.
 
 The Export dialog's Gephi (GEXF) saves `<diagram name>.gexf`, a GEXF 1.3
 graph for Gephi that Builder Flow cannot open, made in the browser. Devices

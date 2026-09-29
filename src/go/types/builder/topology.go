@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/mitchellh/mapstructure"
 
@@ -70,6 +71,19 @@ type InterfaceAddressError struct {
 }
 
 func (e *InterfaceAddressError) Error() string {
+	return strings.Join(e.Problems, "; ")
+}
+
+// NodeHostnameError is returned, wrapped, by [Document.PublishTopologyConfig]
+// and [Document.ValidateTopologyProjection] for a projection with hostnames
+// phenix refuses (see [checkHostnames]), and is one of the
+// [TopologyExport.PublishBlockers] of such a projection.
+type NodeHostnameError struct {
+	// Problems names each hostname and why phenix refuses it.
+	Problems []string
+}
+
+func (e *NodeHostnameError) Error() string {
 	return strings.Join(e.Problems, "; ")
 }
 
@@ -163,13 +177,15 @@ func (d *Document) ToTopologyConfig(name string) (*store.Config, []string, error
 // document's projection, so a caller about to publish a topology can
 // authoritatively verify complete node specs: every interface of a device
 // phenix starts has a VLAN (see [checkInterfaceVLANs]), no two interfaces use
-// one IP or MAC address (see [Document.checkInterfaceAddresses]), and the spec
-// passes the existing phenix topology schema validation.
+// one IP or MAC address (see [Document.checkInterfaceAddresses]), phenix
+// accepts every hostname (see [checkHostnames]), and the spec passes the
+// existing phenix topology schema validation.
 //
 // This is deliberately separate from [Document.Validate], which validates the
 // draft working copy: a working copy may legitimately contain interfaces that
 // are not yet connected to a network and have no VLAN, or that share an
-// address, which a published topology may not.
+// address, or a hostname imported from a topology older phenix stored, which
+// a published topology may not.
 //
 // It calls types.ValidateConfigSpec, which validates the config envelope and
 // the versioned topology schema. It does not resolve included topologies from
@@ -186,7 +202,7 @@ func (d *Document) ValidateTopologyProjection(name string) ([]string, error) {
 // refuses (see [Document.projectTopology]) is reported first, whatever else
 // phenix's config validation finds, as its errors name what to fix: the
 // first check that fails, so interfaces without a VLAN before addresses
-// interfaces share.
+// interfaces share, and those before hostnames phenix refuses.
 func (d *Document) PublishTopologyConfig(name string) (*store.Config, []string, error) {
 	projection, err := d.projectTopology(name)
 	if err != nil {
@@ -207,15 +223,18 @@ func (d *Document) PublishTopologyConfig(name string) (*store.Config, []string, 
 // ExportTopologyConfig projects the document onto a topology config and runs
 // the checks of [Document.PublishTopologyConfig], for a caller that hands the
 // config out rather than stores it. One that only publishing refuses, as an
-// interface has a blank VLAN or interfaces share an address, is returned with
-// every such error, the one PublishTopologyConfig returns first, as its
+// interface has a blank VLAN, interfaces share an address, or phenix would
+// refuse a hostname when it creates an experiment, is returned with every
+// such error, the one PublishTopologyConfig returns first, as its
 // PublishBlockers.
 //
 // A projection that fails phenix's config validation is refused. When an
-// interface's vlan key is missing or null, which the schema refuses too, the
-// error is the one PublishTopologyConfig returns, naming the interfaces.
-// Otherwise it is the schema's own error: blank VLANs and shared addresses,
-// which the schema accepts, are not why the config cannot be exported.
+// interface's vlan key is missing or null, or a hostname is a single
+// character, which the schema refuses too, the error is the one publishing
+// makes of it, naming the interfaces or the hostnames. Otherwise it is the
+// schema's own error: blank VLANs, shared addresses and the hostnames phenix
+// refuses only when it creates an experiment, which the schema accepts, are
+// not why the config cannot be exported.
 func (d *Document) ExportTopologyConfig(name string) (*TopologyExport, error) {
 	projection, err := d.projectTopology(name)
 	if err != nil {
@@ -223,11 +242,14 @@ func (d *Document) ExportTopologyConfig(name string) (*TopologyExport, error) {
 	}
 
 	if projection.schema != nil {
-		if projection.absentVLANs != nil {
+		switch {
+		case projection.absentVLANs != nil:
 			return nil, projection.absentVLANs
+		case projection.shortHostnames != nil:
+			return nil, projection.shortHostnames
+		default:
+			return nil, projection.schema
 		}
-
-		return nil, projection.schema
 	}
 
 	return &TopologyExport{
@@ -249,6 +271,10 @@ type topologyProjection struct {
 	// one of them has no vlan key, or a null one, which phenix's schema
 	// refuses too, and nil otherwise.
 	absentVLANs error
+	// shortHostnames is the blocker naming the hostnames phenix refuses when
+	// one of them is a single character, which phenix's schema refuses too,
+	// and nil otherwise.
+	shortHostnames error
 	// schema is why phenix's config validation refuses config, or nil.
 	schema error
 }
@@ -259,8 +285,9 @@ type topologyProjection struct {
 // which [Document.PublishTopologyConfig] refuses and
 // [Document.ExportTopologyConfig] reports, in this order: interfaces without
 // a VLAN (see [checkInterfaceVLANs]), then addresses interfaces share (see
-// [Document.checkInterfaceAddresses]). Then it runs the phenix topology
-// schema.
+// [Document.checkInterfaceAddresses]), then hostnames phenix refuses (see
+// [checkHostnames]), whose warnings it adds to the projection's. Then it runs
+// the phenix topology schema.
 func (d *Document) projectTopology(name string) (*topologyProjection, error) {
 	config, warnings, err := d.ToTopologyConfig(name)
 	if err != nil {
@@ -268,7 +295,7 @@ func (d *Document) projectTopology(name string) (*topologyProjection, error) {
 	}
 
 	projection := &topologyProjection{
-		config: config, warnings: warnings, blockers: nil, absentVLANs: nil, schema: nil,
+		config: config, warnings: warnings, blockers: nil, absentVLANs: nil, shortHostnames: nil, schema: nil,
 	}
 
 	if vlans, absent := checkInterfaceVLANs(config.Spec); vlans != nil {
@@ -282,6 +309,18 @@ func (d *Document) projectTopology(name string) (*topologyProjection, error) {
 
 	if addresses := d.checkInterfaceAddresses(); addresses != nil {
 		projection.blockers = append(projection.blockers, fmt.Errorf("validating topology projection: %w", addresses))
+	}
+
+	hostnames, short, hostnameWarnings := checkHostnames(config.Spec)
+	projection.warnings = append(projection.warnings, hostnameWarnings...)
+
+	if hostnames != nil {
+		blocker := fmt.Errorf("validating topology projection: %w", hostnames)
+		projection.blockers = append(projection.blockers, blocker)
+
+		if short {
+			projection.shortHostnames = blocker
+		}
 	}
 
 	if err := types.ValidateConfigSpec(*config); err != nil {
@@ -340,6 +379,66 @@ func checkInterfaceVLANs(spec map[string]any) (*InterfaceVLANError, bool) {
 	}
 
 	return &InterfaceVLANError{Problems: problems}, absent
+}
+
+// checkHostnames refuses a topology spec with a hostname phenix refuses: a
+// single character, which phenix's schema refuses, or one phenix stores but
+// refuses when it creates an experiment from the topology (see
+// [v1.CheckHostname]): "all", all digits, or "phenix" on a Windows node. The
+// error names each hostname and why, in phenix's words. It also reports
+// whether one of them is a single character, and returns the warnings phenix
+// logs then about the hostnames it accepts. External nodes are not started,
+// and phenix checks none of their hostnames.
+func checkHostnames(spec map[string]any) (*NodeHostnameError, bool, []string) {
+	var (
+		problems, warnings []string
+		short              bool
+	)
+
+	startedNodes(spec, func(hostname, osType string) {
+		// The schema's minimum, as it counts characters.
+		if utf8.RuneCountInString(hostname) == 1 {
+			short = true
+
+			problems = append(problems, fmt.Sprintf(
+				"hostname '%s' is 1 character long: phenix requires hostnames of at least 2 characters, "+
+					"as VyOS, Vyatta and Windows do",
+				hostname,
+			))
+
+			return
+		}
+
+		warning, err := v1.CheckHostname(hostname, osType)
+		if err != nil {
+			problems = append(problems, err.Error())
+		}
+
+		if warning != "" {
+			warnings = append(warnings, warning)
+		}
+	})
+
+	if len(problems) == 0 {
+		return nil, false, warnings
+	}
+
+	return &NodeHostnameError{Problems: problems}, short, warnings
+}
+
+// startedNodes calls visit with the hostname and os_type of each node of a
+// topology spec that phenix starts: every node but the external ones.
+func startedNodes(spec map[string]any, visit func(hostname, osType string)) {
+	nodes, _ := spec[keyNodes].([]any)
+
+	for _, entry := range nodes {
+		node, ok := entry.(map[string]any)
+		if !ok || node["external"] != nil {
+			continue
+		}
+
+		visit(specString(node, "general", "hostname"), specString(node, "hardware", "os_type"))
+	}
 }
 
 // interfaceLabels names each interface of a node spec in a message: by its

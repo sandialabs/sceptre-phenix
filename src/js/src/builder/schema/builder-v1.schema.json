@@ -1140,8 +1140,8 @@
               "description": "Name of the VM in minimega and the host name set in the guest. Unique in the topology.",
               "example": "ADServer",
               "maxLength": 63,
-              "minLength": 1,
-              "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$",
+              "minLength": 2,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$",
               "type": "string"
             },
             "snapshot": {
@@ -2443,8 +2443,8 @@
             "hostname": {
               "example": "ADServer",
               "maxLength": 63,
-              "minLength": 1,
-              "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$",
+              "minLength": 2,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$",
               "type": "string"
             },
             "snapshot": {

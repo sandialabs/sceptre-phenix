@@ -9,9 +9,9 @@ import { findNode } from './model.js';
 /**
  * @param {object[]} issues
  * @returns {{errors: number, warnings: number, blocking: number}} blocking:
- *   the warnings about what publishing refuses, an interface with no VLAN
- *   and an address two interfaces use, which the Publish dialog lists as
- *   errors (see publishChecks)
+ *   the warnings about what publishing refuses, an interface with no VLAN,
+ *   an address two interfaces use and a hostname phenix refuses, which the
+ *   Publish dialog lists as errors (see publishChecks)
  */
 export function issueCounts(issues = []) {
   const errors = issues.filter((entry) => entry.level === 'error').length;

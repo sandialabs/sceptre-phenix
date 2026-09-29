@@ -514,6 +514,75 @@ describe('interface VLANs and drive images', () => {
     });
   });
 
+  // phenix refuses some hostnames and warns about others (see
+  // types/version/v1/hostname.go), and publishing refuses the first. A draft
+  // keeps either, as one imported from a topology an older phenix stored has
+  // them.
+  test('a hostname phenix refuses blocks publishing, and one it warns about does not', () => {
+    const renamed = (hostname, { osType = 'linux', external = false } = {}) =>
+      withBravo((spec, node) => {
+        node.device.hostname = hostname;
+        spec.general = { ...spec.general, hostname };
+        spec.hardware = { ...spec.hardware, os_type: osType };
+
+        if (external) {
+          spec.external = true;
+        }
+      }).doc;
+    const findings = (doc) =>
+      validateDocument(doc)
+        .filter((issue) => issue.path === 'nodes[2].device.hostname')
+        .map(({ level, message, blocksPublish }) => ({
+          level,
+          blocksPublish,
+          message,
+        }));
+    const refused = (hostname, why, options) => {
+      const doc = renamed(hostname, options);
+
+      expect(errorsFor(doc)).toEqual([]);
+      expect(findings(doc)).toEqual([
+        {
+          level: 'warning',
+          blocksPublish: true,
+          message: expect.stringMatching(
+            new RegExp(
+              `^hostname "${hostname}" ${why}, so the device cannot be published: `,
+            ),
+          ),
+        },
+      ]);
+    };
+
+    refused('all', 'is reserved');
+    refused('42', 'is all digits');
+    refused('b', 'is 1 character long');
+    refused('phenix', 'cannot be used for a Windows node', {
+      osType: 'windows',
+    });
+
+    expect(findings(renamed('All'))).toEqual([
+      {
+        level: 'warning',
+        blocksPublish: undefined,
+        message: expect.stringMatching(
+          /^hostname "All" differs from the reserved name "all" only by case: /,
+        ),
+      },
+    ]);
+    expect(findings(renamed('Phenix'))).toEqual([
+      {
+        level: 'warning',
+        blocksPublish: undefined,
+        message: expect.stringMatching(/^hostname "Phenix" matches "phenix", /),
+      },
+    ]);
+
+    // phenix checks no external node.
+    expect(findings(renamed('all', { external: true }))).toEqual([]);
+    expect(findings(sampleDocument().doc)).toEqual([]);
+  });
+
   test('field warnings are keyed by the form path of the field', () => {
     const { doc } = sampleDocument();
     const spec = {
@@ -540,6 +609,15 @@ describe('interface VLANs and drive images', () => {
       ],
     });
     expect(deviceFieldWarnings(doc, undefined, { disks: [] })).toEqual({});
+
+    // The device's hostname, at its field.
+    expect(deviceFieldWarnings(doc, {}, { hostname: '007' })).toEqual({
+      hostname: [
+        expect.stringMatching(
+          /^Hostname "007" is all digits, so the device cannot be published: .*\.$/,
+        ),
+      ],
+    });
   });
 });
 

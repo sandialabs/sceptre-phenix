@@ -47,6 +47,11 @@ export const SCENARIO_API_VERSION = 'phenix.sandia.gov/v2';
 // strings.ContainsAny(name, " \t\n").
 const WHITESPACE = /[ \t\n]/;
 
+// minimega's wildcard VM target, and the hostname phenix image bakes into the
+// images it builds (types/version/v1/hostname.go).
+const MINIMEGA_WILDCARD_VM = 'all';
+const PHENIX_HOSTNAME = 'phenix';
+
 // A canonical RFC 4122 UUID with a known version and the RFC 4122 variant, in
 // either case (IsUUID in types/builder/uuid.go).
 const UUID_PATTERN =
@@ -935,28 +940,111 @@ function specFindings(spec, hostname, { networks, disks }) {
 }
 
 /**
- * Warnings about the fields of a device spec, for the Inspector's working
- * copy: the checks validateDocument makes of a device's spec, made before
- * an edit is applied.
+ * What phenix makes of the hostname of a device it starts, in its words: one
+ * it refuses, which blocks publishing, or one it warns about. Its schema
+ * refuses a hostname of one character, and it refuses "all", all digits, and
+ * "phenix" on a Windows node when it creates an experiment, although it
+ * stores a topology with one (checkHostnameKeywords in
+ * types/version/v1/hostname.go). The server refuses to publish them too
+ * (checkHostnames in types/builder/topology.go). phenix checks no external
+ * node.
+ *
+ * @param {string} hostname
+ * @param {object} spec the device spec
+ * @returns {{message: string, refused: boolean}|null} null for a hostname
+ *   phenix takes as it is
+ */
+function hostnameFinding(hostname, spec) {
+  if (typeof hostname !== 'string' || !hostname || spec?.external != null) {
+    return null;
+  }
+
+  const refused = (problem, reason) => ({
+    message: `hostname "${hostname}" ${problem}, so the device cannot be published: ${reason}`,
+    refused: true,
+  });
+  const windows =
+    String(spec?.hardware?.os_type ?? '').toLowerCase() === 'windows';
+  const folded = hostname.toLowerCase();
+
+  if ([...hostname].length === 1) {
+    return refused(
+      'is 1 character long',
+      'phenix requires hostnames of at least 2 characters, as VyOS, Vyatta and Windows do',
+    );
+  }
+
+  if (hostname === MINIMEGA_WILDCARD_VM) {
+    return refused(
+      'is reserved',
+      `minimega uses "all" as its wildcard VM target, so it refuses to launch a VM named "all", and commands that target a VM by name (such as "vm kill all") act on every VM in the experiment`,
+    );
+  }
+
+  if (/^[0-9]+$/.test(hostname)) {
+    return refused(
+      'is all digits',
+      `minimega reads "vm launch kvm ${hostname}" as a number of VMs to launch rather than a VM name, and reads a numeric VM target as a VM ID`,
+    );
+  }
+
+  if (folded === MINIMEGA_WILDCARD_VM) {
+    return {
+      message: `hostname "${hostname}" differs from the reserved name "all" only by case: minimega accepts it because its reserved-name check is case-sensitive, but any tool or script that lowercases VM names would treat it as minimega's wildcard for every VM`,
+      refused: false,
+    };
+  }
+
+  if (folded === PHENIX_HOSTNAME && windows) {
+    return refused(
+      'cannot be used for a Windows node',
+      `the startup app writes each Windows node's startup script to "<hostname>-startup.ps1" in the experiment's startup directory, where it also stages "phenix-startup.ps1", the startup wrapper every Windows node runs; the file names collide, so one file overwrites the other`,
+    );
+  }
+
+  if (folded === PHENIX_HOSTNAME) {
+    return {
+      message: `hostname "${hostname}" matches "phenix", the hostname "phenix image" bakes into the images it builds: until the startup app renames them, other VMs built from those images also report "phenix" to miniccc, so hostname-based C2 checks for this node (such as delay.c2 without useUUID) can match the wrong VM; this hostname also cannot be published if the node's os_type is changed to windows`,
+      refused: false,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Warnings about the fields of a device, for the Inspector's working copy:
+ * the checks validateDocument makes of a device's hostname and spec, made
+ * before an edit is applied.
  *
  * @param {object} doc the diagram the device is in
  * @param {object} spec the device spec
  * @param {object} [options] disks: file names of the server's disk images,
  *   or null while they are unknown; nodeId: the id of the device the spec
  *   is of, whose own spec in the diagram it stands for when its addresses
- *   are compared with the other devices' (see sharedAddresses)
+ *   are compared with the other devices' (see sharedAddresses); hostname:
+ *   the device's, when it is to be checked
  * @returns {Object<string, string[]>} messages, keyed by the JSON Forms data
- *   path of the field (spec.network.interfaces.0.vlan)
+ *   path of the field (hostname, spec.network.interfaces.0.vlan)
  */
 export function deviceFieldWarnings(
   doc,
   spec,
-  { disks = null, nodeId = '' } = {},
+  { disks = null, nodeId = '', hostname } = {},
 ) {
   const warnings = {};
   const add = (field, warning) => {
     warnings[field] = [...(warnings[field] || []), warning];
   };
+
+  const named = hostnameFinding(hostname, spec);
+
+  if (named) {
+    add(
+      'hostname',
+      `${named.message[0].toUpperCase()}${named.message.slice(1)}.`,
+    );
+  }
 
   specFindings(spec, '', specContext(doc, disks)).forEach((finding) => {
     add(finding.field, finding.warning);
@@ -1377,14 +1465,17 @@ function otherUsers({ other, more }) {
 
 /**
  * Advisory checks that are not server errors but are worth surfacing while
- * editing. None blocks saving. Two block publishing, and say so with
+ * editing. None blocks saving. Three block publishing, and say so with
  * `blocksPublish`: an interface with no VLAN, which phenix stores but
- * minimega refuses when the experiment starts, and an IP or MAC address
- * that two interfaces use (see sharedAddresses), which phenix stores too,
- * but which clash once the experiment runs. The server refuses to publish
- * either (PublishTopologyConfig in types/builder/topology.go), checking
- * every interface in the device spec, as interfaceWarnings does. An
- * external device is not started, so its interfaces need no VLAN.
+ * minimega refuses when the experiment starts, an IP or MAC address that
+ * two interfaces use (see sharedAddresses), which phenix stores too, but
+ * which clash once the experiment runs, and a hostname phenix refuses (see
+ * hostnameFinding), which a draft imported from a topology an older phenix
+ * stored can have. The server refuses to publish any of them
+ * (PublishTopologyConfig in types/builder/topology.go), checking every
+ * interface in the device spec, as interfaceWarnings does. An external
+ * device is not started, so its interfaces need no VLAN, and phenix does
+ * not check its hostname.
  *
  * @param {object} doc
  * @param {object[]} issues
@@ -1402,6 +1493,18 @@ function collectWarnings(doc, issues, context) {
     // An included device is its own topology's to fix, not this diagram's.
     if (node.kind !== 'device' || node.device?.includedFrom) {
       return;
+    }
+
+    const named = hostnameFinding(node.device?.hostname, node.device?.spec);
+
+    if (named) {
+      issue(
+        issues,
+        `nodes[${index}].device.hostname`,
+        named.message,
+        'warning',
+        named.refused ? { blocksPublish: true } : {},
+      );
     }
 
     specFindings(node.device?.spec, node.device?.hostname, context).forEach(

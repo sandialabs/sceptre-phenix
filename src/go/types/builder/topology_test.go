@@ -940,3 +940,154 @@ func TestToTopologyOmitsIncludedDevices(t *testing.T) {
 		t.Fatalf("includeTopologies = %v, want the reference that brings host-a back", topology.Spec["includeTopologies"])
 	}
 }
+
+// renamedHost returns the strict fixture with host-a renamed to hostname and
+// its os_type set to osType.
+func renamedHost(t *testing.T, hostname, osType string) *builder.Document {
+	t.Helper()
+
+	doc := loadDocumentFixture(t, "strict-document.json")
+	node := nodeByHostname(t, doc, "host-a")
+	node.Device.Hostname = hostname
+
+	general, _ := node.Device.Spec["general"].(map[string]any)
+	general["hostname"] = hostname
+
+	hardware, _ := node.Device.Spec["hardware"].(map[string]any)
+	hardware["os_type"] = osType
+
+	return doc
+}
+
+// phenix stores a topology with a hostname it refuses once it creates an
+// experiment from it, and its schema refuses a hostname of one character.
+// Publishing refuses both, in phenix's words, which name the hostname, and a
+// draft keeps them, as one imported from a topology an older phenix stored
+// has them. An export returns the topology with the first as a publish
+// blocker, and is refused for the second, as the schema refuses it. A
+// hostname phenix only warns about publishes, with phenix's warning.
+func TestPublishTopologyConfigChecksHostnames(t *testing.T) {
+	for name, tt := range map[string]struct {
+		hostname, osType string
+		// refused starts publishing's reason, or is "" when it publishes.
+		refused string
+		// exports is whether an export returns the topology.
+		exports bool
+		// warning starts the warning phenix logs, or is "" for none.
+		warning string
+	}{
+		"all": {
+			hostname: "all", osType: "linux", refused: "hostname 'all' is reserved", exports: true, warning: "",
+		},
+		"digits": {
+			hostname: "42", osType: "linux", refused: "hostname '42' is all digits", exports: true, warning: "",
+		},
+		"phenix on Windows": {
+			hostname: "phenix", osType: "windows", refused: "hostname 'phenix' can't be used for a Windows node",
+			exports: true, warning: "",
+		},
+		"one character": {
+			hostname: "a", osType: "linux", refused: "hostname 'a' is 1 character long", exports: false, warning: "",
+		},
+		"all in another case": {
+			hostname: "All", osType: "linux", refused: "", exports: true,
+			warning: "hostname 'All' differs from the reserved name 'all' only by case",
+		},
+		"phenix": {
+			hostname: "Phenix", osType: "linux", refused: "", exports: true, warning: "hostname 'Phenix' matches 'phenix'",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := renamedHost(t, tt.hostname, tt.osType)
+
+			if err := doc.Validate(); err != nil {
+				t.Fatalf("the draft must stay valid: %v", err)
+			}
+
+			config, warnings, err := doc.PublishTopologyConfig("hostnames")
+
+			var hostnameErr *builder.NodeHostnameError
+
+			switch {
+			case tt.refused == "" && err != nil:
+				t.Fatalf("PublishTopologyConfig returned error: %v", err)
+			case tt.refused != "" && (config != nil || !errors.As(err, &hostnameErr) ||
+				len(hostnameErr.Problems) != 1 || !strings.HasPrefix(hostnameErr.Problems[0], tt.refused)):
+				t.Fatalf("PublishTopologyConfig = %v, %v, want a NodeHostnameError starting %q", config, err, tt.refused)
+			}
+
+			var hostnameWarnings []string
+
+			for _, warning := range warnings {
+				if strings.HasPrefix(warning, "hostname '") {
+					hostnameWarnings = append(hostnameWarnings, warning)
+				}
+			}
+
+			if tt.warning == "" && len(hostnameWarnings) != 0 ||
+				tt.warning != "" && (len(hostnameWarnings) != 1 || !strings.HasPrefix(hostnameWarnings[0], tt.warning)) {
+				t.Fatalf("hostname warnings = %q, want one starting %q", hostnameWarnings, tt.warning)
+			}
+
+			export, exportErr := doc.ExportTopologyConfig("hostnames")
+			if !tt.exports {
+				if export != nil || exportErr == nil || exportErr.Error() != err.Error() {
+					t.Fatalf("ExportTopologyConfig = %v, %v, want the publish error %v", export, exportErr, err)
+				}
+
+				return
+			}
+
+			if exportErr != nil {
+				t.Fatalf("ExportTopologyConfig returned error: %v", exportErr)
+			}
+
+			if !slices.Equal(export.Warnings, warnings) {
+				t.Fatalf("export warnings = %q, want %q", export.Warnings, warnings)
+			}
+
+			switch {
+			case tt.refused == "" && len(export.PublishBlockers) != 0:
+				t.Fatalf("PublishBlockers = %v, want none", export.PublishBlockers)
+			case tt.refused != "" && (len(export.PublishBlockers) != 1 || export.PublishBlockers[0].Error() != err.Error()):
+				t.Fatalf("PublishBlockers = %v, want the publish error %v", export.PublishBlockers, err)
+			}
+		})
+	}
+}
+
+// Publishing names interfaces without a VLAN before a hostname phenix
+// refuses, and an export reports both in that order. An external device's
+// hostname is not checked, as phenix does not start it.
+func TestPublishTopologyConfigChecksHostnamesAfterInterfaces(t *testing.T) {
+	doc := renamedHost(t, "all", "linux")
+
+	network, _ := nodeByHostname(t, doc, "all").Device.Spec["network"].(map[string]any)
+	ifaces, _ := network["interfaces"].([]any)
+	network["interfaces"] = append(ifaces, map[string]any{"name": "eth1", "type": "ethernet", "proto": "dhcp", "vlan": ""})
+
+	_, _, refusal := doc.PublishTopologyConfig("ordered")
+
+	var vlanErr *builder.InterfaceVLANError
+	if !errors.As(refusal, &vlanErr) {
+		t.Fatalf("PublishTopologyConfig error = %v, want an InterfaceVLANError", refusal)
+	}
+
+	export, err := doc.ExportTopologyConfig("ordered")
+	if err != nil {
+		t.Fatalf("ExportTopologyConfig returned error: %v", err)
+	}
+
+	var hostnameErr *builder.NodeHostnameError
+	if len(export.PublishBlockers) != 2 || export.PublishBlockers[0].Error() != refusal.Error() ||
+		!errors.As(export.PublishBlockers[1], &hostnameErr) {
+		t.Fatalf("PublishBlockers = %v, want the VLAN, then the hostname", export.PublishBlockers)
+	}
+
+	external := renamedHost(t, "42", "linux")
+	nodeByHostname(t, external, "42").Device.Spec["external"] = true
+
+	if _, _, err := external.PublishTopologyConfig("external"); errors.As(err, &hostnameErr) {
+		t.Fatalf("PublishTopologyConfig refused an external device's hostname: %v", err)
+	}
+}

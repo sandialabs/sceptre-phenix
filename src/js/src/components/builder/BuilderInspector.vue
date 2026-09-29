@@ -551,6 +551,7 @@
       ? deviceFieldWarnings(store.doc, draft.value?.spec, {
           disks: store.disks,
           nodeId: target.value.target.id,
+          hostname: draft.value?.hostname,
         })
       : {},
   );

@@ -15,6 +15,7 @@ import (
 	"phenix/store"
 	"phenix/types"
 	"phenix/types/version"
+	v1 "phenix/types/version/v1"
 	"phenix/util/common"
 )
 
@@ -234,6 +235,15 @@ type HostnameClash struct {
 	Hostname string
 }
 
+// RefusedHostname is a node of an included topology whose hostname phenix
+// refuses when it creates or updates an experiment (see [v1.CheckHostname]).
+type RefusedHostname struct {
+	// Include names the included topology defining the node.
+	Include string
+	// Reason is phenix's, which names the hostname.
+	Reason string
+}
+
 // IncludeReport is what [CheckIncludes] found.
 type IncludeReport struct {
 	// Unreadable lists the included topologies that could not be read.
@@ -241,6 +251,9 @@ type IncludeReport struct {
 	// Clashes lists the nodes of included topologies that duplicate a
 	// hostname of the topology itself.
 	Clashes []HostnameClash
+	// Refused lists the nodes of included topologies whose hostname phenix
+	// refuses in an experiment.
+	Refused []RefusedHostname
 }
 
 // CheckIncludes resolves the includeTopologies of the topology spec named
@@ -248,7 +261,8 @@ type IncludeReport struct {
 // generation does. It reports what would stop phenix from merging them now:
 // included topologies that cannot be read, and nodes of included topologies
 // whose hostname the spec itself defines (compared without case, as the
-// Builder compares hostnames).
+// Builder compares hostnames), or whose hostname phenix refuses in an
+// experiment.
 func CheckIncludes(name string, spec map[string]any, load TopologyLoader) (IncludeReport, error) {
 	normalized, err := normalizeSpecMap(spec)
 	if err != nil {
@@ -258,7 +272,7 @@ func CheckIncludes(name string, spec map[string]any, load TopologyLoader) (Inclu
 	gen := &generator{load: load} //nolint:exhaustruct // only include resolution is used
 
 	resolved := gen.resolveAll(includeNames(normalized), name)
-	report := IncludeReport{Unreadable: gen.unreadable, Clashes: nil}
+	report := IncludeReport{Unreadable: gen.unreadable, Clashes: nil, Refused: nil}
 
 	own := map[string]bool{}
 	for _, hostname := range specHostnames(normalized) {
@@ -271,6 +285,12 @@ func CheckIncludes(name string, spec map[string]any, load TopologyLoader) (Inclu
 				report.Clashes = append(report.Clashes, HostnameClash{Include: topology.name, Hostname: hostname})
 			}
 		}
+
+		startedNodes(topology.spec, func(hostname, osType string) {
+			if _, err := v1.CheckHostname(hostname, osType); err != nil {
+				report.Refused = append(report.Refused, RefusedHostname{Include: topology.name, Reason: err.Error()})
+			}
+		})
 	}
 
 	return report, nil

@@ -1104,7 +1104,7 @@ func TestCheckIncludes(t *testing.T) {
 	}
 
 	services := includeFixture("services", []string{"storage"}, map[string]string{"dns": "EXP", "DB": "EXP"})
-	storage := includeFixture("storage", []string{"root"}, map[string]string{"web": "EXP", "nas": "EXP"})
+	storage := includeFixture("storage", []string{"root"}, map[string]string{"web": "EXP", "nas": "EXP", "007": "EXP"})
 
 	report, err := builder.CheckIncludes("root", spec, storeLoader(services, storage))
 	if err != nil {
@@ -1124,8 +1124,14 @@ func TestCheckIncludes(t *testing.T) {
 		t.Fatalf("unreadable = %+v, want the missing include", report.Unreadable)
 	}
 
+	// phenix refuses an all-digit hostname in an experiment.
+	if len(report.Refused) != 1 || report.Refused[0].Include != "storage" ||
+		!strings.HasPrefix(report.Refused[0].Reason, "hostname '007' is all digits") {
+		t.Fatalf("refused = %+v, want storage's 007", report.Refused)
+	}
+
 	clean, err := builder.CheckIncludes("root", map[string]any{"nodes": []any{}}, storeLoader())
-	if err != nil || len(clean.Clashes) != 0 || len(clean.Unreadable) != 0 {
+	if err != nil || len(clean.Clashes) != 0 || len(clean.Unreadable) != 0 || len(clean.Refused) != 0 {
 		t.Fatalf("a topology without includes: %+v, %v", clean, err)
 	}
 }

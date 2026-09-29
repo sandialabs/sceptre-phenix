@@ -2186,12 +2186,15 @@ paths:
         included topologies in `includeTopologies` rather than merging them.
         A document phenix's config validation refuses is refused with 422, as
         a publish refuses it. A publish names interfaces without a VLAN, then
-        addresses interfaces share, before any other reason; an export names
-        interfaces without a VLAN only when a `vlan` is missing or null, which
-        the validation refuses too, and otherwise gives the validation's own
-        reason. What only publishing refuses, such as an
-        interface with a blank VLAN or interfaces that share an IP or MAC
-        address, is reported in `publishBlockers` instead.
+        addresses interfaces share, then hostnames phenix refuses, before any
+        other reason; an export names interfaces without a VLAN only when a
+        `vlan` is missing or null, and hostnames only when one is a single
+        character, which the validation refuses too, and otherwise gives the
+        validation's own reason. What only publishing refuses, such as an
+        interface with a blank VLAN, interfaces that share an IP or MAC
+        address, or a hostname phenix refuses only when it creates an
+        experiment (`all`, all digits, or `phenix` on a Windows node), is
+        reported in `publishBlockers` instead.
       operationId: postBuilderExportTopology
       requestBody:
         required: true
@@ -3113,7 +3116,8 @@ components:
             why a publish of the topology would be refused although phenix's
             config validation accepts it, one entry per check in the order a
             publish makes them: interfaces without a VLAN, then addresses
-            interfaces share. A publish's 422 message names the first.
+            interfaces share, then hostnames phenix refuses when it creates an
+            experiment. A publish's 422 message names the first.
           type: array
           items:
             type: string

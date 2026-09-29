@@ -392,7 +392,7 @@ func TestBuilderBetaPublishNamesInterfacesWithoutVLAN(t *testing.T) { //nolint:p
 func TestBuilderBetaPublishNamesSharedAddresses(t *testing.T) { //nolint:paralleltest // mutates feature options
 	document := bdoc.NewDocument("shared")
 
-	for _, host := range []struct{ name, separator, prefix string }{{"a", ":", ""}, {"b", "-", "/24"}} {
+	for _, host := range []struct{ name, separator, prefix string }{{"aa", ":", ""}, {"bb", "-", "/24"}} {
 		mac := func(last string) string {
 			return strings.Join([]string{"00", "00", "00", "00", "00", last}, host.separator)
 		}
@@ -440,7 +440,7 @@ func TestBuilderBetaPublishNamesSharedAddresses(t *testing.T) { //nolint:paralle
 	harness.decode(refused, &body)
 
 	users := func(name string) string {
-		return `interface "` + name + `" of device "a" and interface "` + name + `" of device "b"`
+		return `interface "` + name + `" of device "aa" and interface "` + name + `" of device "bb"`
 	}
 
 	want := `topology shared cannot be published: ` +
@@ -1251,6 +1251,65 @@ func TestBuilderBetaPublishRejectsIncludedHostnameClash(t *testing.T) { //nolint
 	}
 }
 
+// TestBuilderBetaPublishRefusesIncludedHostnamePhenixRefuses refuses, before
+// writing anything, an experiment whose included topology gained a node
+// named "all" after the draft was imported: phenix refuses the experiment
+// only once the topology is written. A topology publishes, as phenix stores
+// it.
+func TestBuilderBetaPublishRefusesIncludedHostnamePhenixRefuses(t *testing.T) { //nolint:paralleltest // mutates feature options
+	for _, test := range []struct {
+		source, body string
+		code         int
+	}{
+		{
+			source: "Topology/root", body: `{"mode":"topology","topology":{"name":"root","action":"update"}}`,
+			code: http.StatusOK,
+		},
+		{
+			source: "Experiment/exp",
+			body: `{"mode":"topology-experiment","topology":{"name":"root","action":"update"},` +
+				`"experiment":{"name":"exp","action":"update"}}`,
+			code: http.StatusUnprocessableEntity,
+		},
+	} {
+		t.Run(test.source, func(t *testing.T) {
+			harness := newBuilderBetaHarness(t, includedTopologyFixture(t, "shared")...)
+			document := generateBuilderDocument(t, harness, test.source)
+			draft := createBuilderPublishDraft(t, harness, document, test.source)
+
+			for i := range harness.configs {
+				if harness.configs[i].FullName() == "Topology/shared" {
+					harness.configs[i].Spec = map[string]any{"nodes": []any{includeNode("inc-host"), includeNode("all")}}
+				}
+			}
+
+			published := harness.do(builderBetaRequest{
+				method: http.MethodPost,
+				path:   "/builder/drafts/" + draft.Owner + "/" + draft.ID + "/publish",
+				body:   test.body,
+				user:   builderBetaTestOwner, ifMatch: draft.ETag,
+			})
+
+			if published.Code != test.code {
+				t.Fatalf("publish = %d %s, want %d", published.Code, published.Body.String(), test.code)
+			}
+
+			if test.code == http.StatusOK {
+				return
+			}
+
+			want := "experiment exp cannot be published: in included topology shared, hostname 'all' is reserved: "
+			if !strings.Contains(published.Body.String(), want) {
+				t.Fatalf("publish = %s, want %q", published.Body.String(), want)
+			}
+
+			if harness.configWrites != 0 || harness.experimentWrites != 0 {
+				t.Fatalf("writes = %d configs and %d experiments, want none", harness.configWrites, harness.experimentWrites)
+			}
+		})
+	}
+}
+
 // TestBuilderBetaPublishExperimentUpdateChecksIncludes merges the includes
 // into an updated experiment only the way import reads them: a topology the
 // caller may not read, or a file path, stops the update before any write.
@@ -1457,7 +1516,7 @@ func TestBuilderBetaPublishAgainAfterEdits(t *testing.T) { //nolint:paralleltest
 				t.Helper()
 
 				document := bdoc.NewDocument("lab")
-				draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "a")
+				draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "aa")
 				published, _ := publishBuilderDraft(t, harness, draft,
 					`{"mode":"topology","topology":{"name":"lab","action":"create"}}`, http.StatusOK)
 
@@ -1470,7 +1529,7 @@ func TestBuilderBetaPublishAgainAfterEdits(t *testing.T) { //nolint:paralleltest
 				t.Helper()
 
 				lab := builderBetaConfig(t, builderBetaKindTopology, "lab")
-				lab.Spec = map[string]any{"nodes": []any{includeNode("a")}}
+				lab.Spec = map[string]any{"nodes": []any{includeNode("aa")}}
 				harness.configs = append(harness.configs, lab)
 
 				document := generateBuilderDocument(t, harness, "Topology/lab")
@@ -1484,7 +1543,7 @@ func TestBuilderBetaPublishAgainAfterEdits(t *testing.T) { //nolint:paralleltest
 				t.Helper()
 
 				document := bdoc.NewDocument("lab")
-				first := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "a")
+				first := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "aa")
 				publishBuilderDraft(t, harness, first,
 					`{"mode":"topology","topology":{"name":"lab","action":"create"}}`, http.StatusOK)
 
@@ -1506,7 +1565,7 @@ func TestBuilderBetaPublishAgainAfterEdits(t *testing.T) { //nolint:paralleltest
 			harness := newBuilderBetaHarness(t)
 			draft, document := test.start(t, harness)
 
-			for _, hostname := range []string{"b", "c"} {
+			for _, hostname := range []string{"bb", "cc"} {
 				draft = editBuilderDraft(t, harness, draft, document, hostname)
 				published, _ := publishBuilderDraft(t, harness, draft, update, http.StatusOK)
 
@@ -1517,8 +1576,8 @@ func TestBuilderBetaPublishAgainAfterEdits(t *testing.T) { //nolint:paralleltest
 				draft = published.Draft
 			}
 
-			if got := topologyHostnames(t, harness, "lab"); !slices.Equal(got, []string{"a", "b", "c"}) {
-				t.Fatalf("topology nodes = %v, want a, b and c", got)
+			if got := topologyHostnames(t, harness, "lab"); !slices.Equal(got, []string{"aa", "bb", "cc"}) {
+				t.Fatalf("topology nodes = %v, want aa, bb and cc", got)
 			}
 
 			// Someone else changes the topology, keeping its annotation.
@@ -1530,7 +1589,7 @@ func TestBuilderBetaPublishAgainAfterEdits(t *testing.T) { //nolint:paralleltest
 				}
 			}
 
-			draft = editBuilderDraft(t, harness, draft, document, "d")
+			draft = editBuilderDraft(t, harness, draft, document, "dd")
 			writes := harness.configWrites
 
 			if _, reason := publishBuilderDraft(t, harness, draft, update, http.StatusConflict); reason !=
@@ -1549,7 +1608,7 @@ func TestBuilderBetaPublishAgainAfterEdits(t *testing.T) { //nolint:paralleltest
 			// after their change, may not overwrite it either.
 			opened := openPublishedBuilderDocument(t, harness, "lab")
 			reopened := editBuilderDraft(t, harness,
-				createBuilderPublishDraft(t, harness, opened.document, "builder-doc/"+opened.id), opened.document, "e")
+				createBuilderPublishDraft(t, harness, opened.document, "builder-doc/"+opened.id), opened.document, "ee")
 
 			if _, reason := publishBuilderDraft(t, harness, reopened, update, http.StatusConflict); reason !=
 				"topology lab changed after this draft published it" {
@@ -1573,12 +1632,12 @@ func TestBuilderBetaPublishAgainAfterTopologyDeleted(t *testing.T) { //nolint:pa
 	harness := newBuilderBetaHarness(t)
 
 	source := builderBetaConfig(t, builderBetaKindTopology, "range")
-	source.Spec = map[string]any{"nodes": []any{includeNode("a")}}
+	source.Spec = map[string]any{"nodes": []any{includeNode("aa")}}
 	harness.configs = append(harness.configs, source)
 
 	document := generateBuilderDocument(t, harness, "Topology/range")
 	imported := editBuilderDraft(t, harness,
-		createBuilderPublishDraft(t, harness, document, "Topology/range"), document, "b")
+		createBuilderPublishDraft(t, harness, document, "Topology/range"), document, "bb")
 	published, _ := publishBuilderDraft(t, harness, imported,
 		`{"mode":"topology","topology":{"name":"range","action":"update"}}`, http.StatusOK)
 
@@ -1600,8 +1659,8 @@ func TestBuilderBetaPublishAgainAfterTopologyDeleted(t *testing.T) { //nolint:pa
 			t.Fatalf("stages = %#v, want the topology created", again.Stages)
 		}
 
-		if got := topologyHostnames(t, harness, "range"); !slices.Equal(got, []string{"a", "b"}) {
-			t.Fatalf("topology nodes = %v, want a and b", got)
+		if got := topologyHostnames(t, harness, "range"); !slices.Equal(got, []string{"aa", "bb"}) {
+			t.Fatalf("topology nodes = %v, want aa and bb", got)
 		}
 	}
 }
@@ -1653,7 +1712,7 @@ func TestBuilderBetaPublishForkUpdatesWhatItsDraftPublished(t *testing.T) { //no
 		body = append(body, `{"mode":"topology","topology":{"name":"lab","action":"create"}}`)
 		harness := newBuilderBetaHarness(t)
 		document := bdoc.NewDocument("lab")
-		original := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "a")
+		original := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "aa")
 		published, _ := publishBuilderDraft(t, harness, original, body[0], http.StatusOK)
 
 		return harness, published.Draft, document
@@ -1698,8 +1757,8 @@ func TestBuilderBetaPublishForkUpdatesWhatItsDraftPublished(t *testing.T) { //no
 		t.Helper()
 
 		document.Nodes = append(document.Nodes, bdoc.Node{
-			ID: bdoc.DeviceNodeID("b"), Kind: bdoc.NodeKindDevice, Label: "b",
-			Device: &bdoc.Device{Hostname: "b", Spec: includeNode("b"), Interfaces: []bdoc.InterfaceHandle{}},
+			ID: bdoc.DeviceNodeID("bb"), Kind: bdoc.NodeKindDevice, Label: "bb",
+			Device: &bdoc.Device{Hostname: "bb", Spec: includeNode("bb"), Interfaces: []bdoc.InterfaceHandle{}},
 		})
 
 		data, err := bapi.EncodeDocument(document)
@@ -1739,8 +1798,8 @@ func TestBuilderBetaPublishForkUpdatesWhatItsDraftPublished(t *testing.T) { //no
 
 			publishFork(t, harness, fork(t, harness, user, original, document), document, update, http.StatusOK)
 
-			if got := topologyHostnames(t, harness, "lab"); !slices.Equal(got, []string{"a", "b"}) {
-				t.Fatalf("topology nodes = %v, want a and b", got)
+			if got := topologyHostnames(t, harness, "lab"); !slices.Equal(got, []string{"aa", "bb"}) {
+				t.Fatalf("topology nodes = %v, want aa and bb", got)
 			}
 		})
 	}
@@ -1766,7 +1825,7 @@ func TestBuilderBetaPublishForkUpdatesWhatItsDraftPublished(t *testing.T) { //no
 
 		// The original draft publishes again, so lab no longer holds what it
 		// published when it was forked.
-		edited := editBuilderDraft(t, harness, original, document, "c")
+		edited := editBuilderDraft(t, harness, original, document, "cc")
 		publishBuilderDraft(t, harness, edited, update, http.StatusOK)
 
 		writes := harness.configWrites
@@ -1822,7 +1881,7 @@ func TestBuilderBetaPublishAfterThePublishedSnapshotAgedOut(t *testing.T) { //no
 
 		harness := newBuilderBetaHarness(t)
 		document := bdoc.NewDocument("lab")
-		draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "a")
+		draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "aa")
 		response, _ := publishBuilderDraft(t, harness, draft, `{"mode":"topology-experiment",`+
 			`"topology":{"name":"lab","action":"create"},"experiment":{"name":"exp","action":"create"}}`, http.StatusOK)
 		published := response.Draft.Publication
@@ -1881,7 +1940,7 @@ func TestBuilderBetaPublishAfterThePublishedSnapshotAgedOut(t *testing.T) { //no
 			t.Fatalf("fork's forked publication = %+v, want the draft's %+v", forked.Forked, draft.Publication)
 		}
 
-		publishBuilderDraft(t, harness, editBuilderDraft(t, harness, forked, document, "b"), update, http.StatusOK)
+		publishBuilderDraft(t, harness, editBuilderDraft(t, harness, forked, document, "bb"), update, http.StatusOK)
 
 		if !slices.Equal(harness.reconfigured, []string{"exp"}) {
 			t.Fatalf("configured = %v, want exp updated", harness.reconfigured)
@@ -1895,11 +1954,11 @@ func labExperimentFixture(t *testing.T) []store.Config {
 	t.Helper()
 
 	lab := builderBetaConfig(t, builderBetaKindTopology, "lab")
-	lab.Spec = map[string]any{"nodes": []any{includeNode("a")}}
+	lab.Spec = map[string]any{"nodes": []any{includeNode("aa")}}
 
 	experiment := builderBetaConfig(t, kindExperiment, "exp")
 	experiment.Spec = map[string]any{
-		"topology": map[string]any{"nodes": []any{includeNode("a")}},
+		"topology": map[string]any{"nodes": []any{includeNode("aa")}},
 		"vlans":    map[string]any{"aliases": map[string]any{}},
 	}
 	experiment.Metadata.Annotations = store.Annotations{"topology": "lab"}
@@ -1938,7 +1997,7 @@ func TestBuilderBetaPublishExperimentAgainAfterEdits(t *testing.T) { //nolint:pa
 				t.Helper()
 
 				document := bdoc.NewDocument("lab")
-				draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "a")
+				draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "aa")
 				published, _ := publishBuilderDraft(t, harness, draft,
 					`{"mode":"topology-experiment","topology":{"name":"lab","action":"create"},`+
 						`"experiment":{"name":"exp","action":"create"}}`, http.StatusOK)
@@ -1959,10 +2018,10 @@ func TestBuilderBetaPublishExperimentAgainAfterEdits(t *testing.T) { //nolint:pa
 			// The configure stage changes the experiment's spec, as apps do, so
 			// publishing again compares the experiment with its digest after it.
 			harness.configuring = func(name string) {
-				setExperimentSpec(harness, name, "schedules", map[string]any{"a": fmt.Sprintf("host%d", len(harness.reconfigured))})
+				setExperimentSpec(harness, name, "schedules", map[string]any{"aa": fmt.Sprintf("host%d", len(harness.reconfigured))})
 			}
 
-			draft = editBuilderDraft(t, harness, draft, document, "b")
+			draft = editBuilderDraft(t, harness, draft, document, "bb")
 			before, err := harness.getConfig("Experiment/exp")
 			if err != nil {
 				t.Fatalf("experiment missing: %v", err)
@@ -1981,7 +2040,7 @@ func TestBuilderBetaPublishExperimentAgainAfterEdits(t *testing.T) { //nolint:pa
 				t.Fatalf("experiment after a failed configure stage = %v, want it as it was", after.Spec)
 			}
 
-			for _, hostname := range []string{"", "c"} {
+			for _, hostname := range []string{"", "cc"} {
 				if hostname != "" {
 					draft = editBuilderDraft(t, harness, draft, document, hostname)
 				}
@@ -1999,8 +2058,8 @@ func TestBuilderBetaPublishExperimentAgainAfterEdits(t *testing.T) { //nolint:pa
 				t.Fatalf("configured = %v, want exp after each update", harness.reconfigured)
 			}
 
-			if got := topologyHostnames(t, harness, "lab"); !slices.Equal(got, []string{"a", "b", "c"}) {
-				t.Fatalf("topology nodes = %v, want a, b and c", got)
+			if got := topologyHostnames(t, harness, "lab"); !slices.Equal(got, []string{"aa", "bb", "cc"}) {
+				t.Fatalf("topology nodes = %v, want aa, bb and cc", got)
 			}
 		})
 	}
@@ -2013,7 +2072,7 @@ func TestBuilderBetaPublishExperimentAgainAfterEdits(t *testing.T) { //nolint:pa
 func TestBuilderBetaPublishRepairsDocumentDespiteCleanupFailure(t *testing.T) { //nolint:paralleltest // mutates feature options
 	harness := newBuilderBetaHarness(t)
 	document := bdoc.NewDocument("rep")
-	draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "a")
+	draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "aa")
 	published, _ := publishBuilderDraft(t, harness, draft,
 		`{"mode":"topology","topology":{"name":"rep","action":"create"}}`, http.StatusOK)
 
@@ -2100,7 +2159,7 @@ func TestBuilderBetaPublishExperimentRefusesOthersChanges(t *testing.T) { //noli
 				harness.configs = append(harness.configs, labExperimentFixture(t)...)
 				document := generateBuilderDocument(t, harness, "Experiment/exp")
 				draft := editBuilderDraft(t, harness,
-					createBuilderPublishDraft(t, harness, document, "Experiment/exp"), document, "b")
+					createBuilderPublishDraft(t, harness, document, "Experiment/exp"), document, "bb")
 				published, _ := publishBuilderDraft(t, harness, draft, topologyUpdate, http.StatusOK)
 
 				return published.Draft, document
@@ -2114,13 +2173,13 @@ func TestBuilderBetaPublishExperimentRefusesOthersChanges(t *testing.T) { //noli
 				t.Helper()
 
 				document := bdoc.NewDocument("lab")
-				draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "a")
+				draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "aa")
 				published, _ := publishBuilderDraft(t, harness, draft,
 					`{"mode":"topology","topology":{"name":"lab","action":"create"}}`, http.StatusOK)
 
 				other := builderBetaConfig(t, kindExperiment, "other")
 				other.Spec = map[string]any{
-					"topology": map[string]any{"nodes": []any{includeNode("a")}},
+					"topology": map[string]any{"nodes": []any{includeNode("aa")}},
 					"vlans":    map[string]any{"aliases": map[string]any{}},
 				}
 				other.Metadata.Annotations = store.Annotations{"topology": "lab"}
@@ -2137,7 +2196,7 @@ func TestBuilderBetaPublishExperimentRefusesOthersChanges(t *testing.T) { //noli
 				t.Helper()
 
 				document := bdoc.NewDocument("lab")
-				draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "a")
+				draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document), document, "aa")
 				published, _ := publishBuilderDraft(t, harness, draft,
 					`{"mode":"topology-experiment","topology":{"name":"lab","action":"create"},`+
 						`"experiment":{"name":"exp","action":"create"}}`, http.StatusOK)
@@ -2150,8 +2209,8 @@ func TestBuilderBetaPublishExperimentRefusesOthersChanges(t *testing.T) { //noli
 			harness := newBuilderBetaHarness(t)
 			draft, document := test.start(t, harness)
 
-			setExperimentSpec(harness, test.experiment, "schedules", map[string]any{"a": "theirs"})
-			draft = editBuilderDraft(t, harness, draft, document, "c")
+			setExperimentSpec(harness, test.experiment, "schedules", map[string]any{"aa": "theirs"})
+			draft = editBuilderDraft(t, harness, draft, document, "cc")
 			writes := harness.configWrites
 
 			if _, reason := publishBuilderDraft(t, harness, draft,
@@ -2165,7 +2224,7 @@ func TestBuilderBetaPublishExperimentRefusesOthersChanges(t *testing.T) { //noli
 			}
 
 			if exp, _ := harness.getConfig("Experiment/" + test.experiment); !reflect.DeepEqual(
-				exp.Spec["schedules"], map[string]any{"a": "theirs"}) {
+				exp.Spec["schedules"], map[string]any{"aa": "theirs"}) {
 				t.Fatalf("experiment schedules = %v, want theirs kept", exp.Spec["schedules"])
 			}
 		})
@@ -2179,7 +2238,7 @@ func TestBuilderBetaPublishExperimentRefusesOthersChanges(t *testing.T) { //noli
 func TestBuilderBetaPublishKeepsExperimentStartedWhileConfiguring(t *testing.T) { //nolint:paralleltest // mutates feature options
 	harness := newBuilderBetaHarness(t, labExperimentFixture(t)...)
 	document := generateBuilderDocument(t, harness, "Experiment/exp")
-	draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document, "Experiment/exp"), document, "b")
+	draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document, "Experiment/exp"), document, "bb")
 
 	started := map[string]any{"startTime": "2026-01-01T00:00:00Z"}
 	harness.failReconfigure = true
@@ -2215,7 +2274,7 @@ func TestBuilderBetaPublishExperimentUpdateRereadsUnderLock(t *testing.T) { //no
 
 	harness := newBuilderBetaHarness(t, labExperimentFixture(t)...)
 	document := generateBuilderDocument(t, harness, "Experiment/exp")
-	draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document, "Experiment/exp"), document, "b")
+	draft := editBuilderDraft(t, harness, createBuilderPublishDraft(t, harness, document, "Experiment/exp"), document, "bb")
 
 	// change sets the experiment's status and, unless deployMode is "", its
 	// deploy mode.
@@ -2265,7 +2324,7 @@ func TestBuilderBetaPublishExperimentUpdateRereadsUnderLock(t *testing.T) { //no
 
 	topology, _ := updated.Spec["topology"].(map[string]any)
 	if nodes, _ := topology["nodes"].([]any); len(nodes) != 2 {
-		t.Fatalf("updated experiment topology = %v, want nodes a and b", topology)
+		t.Fatalf("updated experiment topology = %v, want nodes aa and bb", topology)
 	}
 }
 
