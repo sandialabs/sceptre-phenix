@@ -963,9 +963,14 @@ test(
       expect
         .soft(layout.navRight, '200% text: header links')
         .toBeLessThanOrEqual(layout.width + 1);
+      // Focus in the column the stacked layout showed goes to its Show
+      // toggle when the column is hidden again, not to the page.
+      await page.locator('#builder-pane-end input').first().focus();
       await style.evaluate((element) => element.remove());
       await resize(page, { width: 1280, height: 800 });
       await expect.soft(page.locator('#builder-pane-end')).toBeHidden();
+      await expect.soft(page.getByTestId('pane-hide-end')).toBeFocused();
+      await expect.soft(builder.liveRegion).toContainText('Inspector hidden.');
       await page.getByTestId('pane-hide-end').click();
       await expect.soft(page.locator('#builder-pane-end')).toBeVisible();
     });

@@ -1771,7 +1771,8 @@
 
   // The Fit button and the view.fit command: Fit, or, after Fit, back to
   // the view from before it. Neither is animated, so the view has changed
-  // when they return.
+  // when they return. Each says what it did, and a fit what the next press
+  // does, which the key on the canvas does not show.
   function toggleFit() {
     const kept = beforeFit.value;
 
@@ -1786,6 +1787,11 @@
 
     fitDiagram();
     beforeFit.value = keepFit(before, viewport.value);
+    store.announce(
+      beforeFit.value
+        ? 'Fitted the diagram to the view. A second press restores the previous view.'
+        : 'The diagram already fits the view.',
+    );
   }
 
   // Reset view: the zoom and pan the canvas opens with, which the

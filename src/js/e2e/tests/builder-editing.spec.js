@@ -1628,15 +1628,22 @@ test.describe('Builder Beta canvas editing', () => {
       await expect(builder.nodes('group')).toHaveCount(0);
       await expect.soft(focused).toHaveAttribute('data-testid', row);
 
-      // From the canvas, the group's node takes focus; an Undo that
-      // removes it leaves focus on the canvas, not the page.
-      await focusNode(page, row.replace('outline-item-', ''));
+      // From the canvas, the group's node takes focus, and Ungroup there
+      // focuses the member's node; an Undo that removes the group leaves
+      // focus on the canvas, not the page.
+      const member = row.replace('outline-item-', '');
+      await focusNode(page, member);
       await page.keyboard.press('Enter');
       await page.keyboard.press('ControlOrMeta+g');
       await expect(builder.nodes('group')).toHaveCount(1);
-      await expect
-        .soft(flowNode(page, await onlyNodeId(builder, 'group')))
-        .toBeFocused();
+      const group = await onlyNodeId(builder, 'group');
+      await expect.soft(flowNode(page, group)).toBeFocused();
+      await page.keyboard.press('ControlOrMeta+Shift+g');
+      await expect(builder.nodes('group')).toHaveCount(0);
+      await expect.soft(flowNode(page, member)).toBeFocused();
+      await page.keyboard.press('ControlOrMeta+z');
+      await expect(builder.nodes('group')).toHaveCount(1);
+      await focusNode(page, group);
       await page.keyboard.press('ControlOrMeta+z');
       await expect(builder.nodes('group')).toHaveCount(0);
       await expect.soft(builder.canvas).toBeFocused();

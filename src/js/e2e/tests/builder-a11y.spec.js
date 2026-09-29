@@ -2187,6 +2187,13 @@ test.describe('themes and canvas controls', () => {
       await fit.press('Enter');
       await expect.poll(() => nodesOutsideCanvas(page)).toEqual([]);
       await expect.poll(() => nodesUnderOverlays(page)).toEqual([]);
+      // It says so, and what a second press does, which ⇧1 on the canvas
+      // does not show.
+      await expect
+        .soft(builder.liveRegion)
+        .toContainText(
+          'Fitted the diagram to the view. A second press restores the previous view.',
+        );
 
       // Fit then goes back to the view from before it, and says so; the
       // button's name, icon and tooltip follow. Pressed again, it fits.

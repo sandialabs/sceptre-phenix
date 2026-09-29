@@ -439,11 +439,15 @@ export async function deleteSelection(store) {
 }
 
 /**
- * Ungroups the selected group, then focuses one of its members' rows.
+ * Ungroups the selected group, then focuses one of its members: its outline
+ * row, or with `canvas` (the key came from the canvas) its node there, so
+ * the arrow keys go on moving between nodes.
  *
  * @param {object} store
+ * @param {object} [options]
+ * @param {boolean} [options.canvas]
  */
-export async function ungroupSelection(store) {
+export async function ungroupSelection(store, { canvas = false } = {}) {
   const groupId = selectedGroup(store).id;
   const members = new Set(
     store.doc.nodes
@@ -456,9 +460,20 @@ export async function ungroupSelection(store) {
   await nextTick();
 
   const rows = outlineRows();
+  const member = rows.find((row) => members.has(rowNodeId(row)));
+
+  if (canvas && member) {
+    // Vue Flow renders the members a tick after the outline.
+    await nextTick();
+
+    if (await focusSoon(canvasItem('nodes', rowNodeId(member)))) {
+      return;
+    }
+  }
+
+  // From the canvas, a group without members leaves focus on the canvas.
   focusRowOrCanvas(
-    rows.find((row) => members.has(rowNodeId(row))) ||
-      rows[Math.min(index, rows.length - 1)],
+    member || (canvas ? null : rows[Math.min(index, rows.length - 1)]),
   );
 }
 
@@ -1239,7 +1254,10 @@ export const COMMANDS = [
       editable(ctx) === true
         ? Boolean(selectedGroup(ctx.store)) || 'Select a group first.'
         : READ_ONLY,
-    run: ({ store }) => ungroupSelection(store),
+    run: ({ store }) =>
+      ungroupSelection(store, {
+        canvas: regionOf(globalThis.document?.activeElement) === 'canvas',
+      }),
   },
   ...GROUPING_STRATEGIES.map(autoGroupChoice),
   {

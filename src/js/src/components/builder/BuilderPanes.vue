@@ -20,7 +20,9 @@
   again (see BuilderCanvas.vue), and so do the commands that go to a column.
 
   In the stacked narrow layout the columns span the window, so the splitters
-  and toggles are not shown, and every column shows, hidden or not.
+  and toggles are not shown, and every column shows, hidden or not. When a
+  wider window hides such a column again, focus in it moves to its Show
+  toggle, as when it is hidden.
 -->
 <template>
   <div
@@ -31,7 +33,8 @@
       'is-start-hidden': isHidden('start'),
       'is-end-hidden': isHidden('end'),
     }"
-    :style="columnWidths">
+    :style="columnWidths"
+    @focusin="onFocusin">
     <p :id="HINT_ID" hidden>
       Left and Right arrows resize the column, Home and End make it narrowest
       and widest, and Enter restores its default width.
@@ -376,7 +379,7 @@
       active &&
       active !== hideEls[side] &&
       Boolean(
-        (side === 'start' ? startEl : endEl).value?.contains(active) ||
+        columnOf(side)?.contains(active) ||
           hideEls[side]?.parentElement?.contains(active),
       );
 
@@ -609,6 +612,40 @@
     }
   }
 
+  function columnOf(side) {
+    return (side === 'start' ? startEl : endEl).value;
+  }
+
+  // The side column that last took focus, or null once focus moved
+  // elsewhere in the layout.
+  let focusedSide = null;
+
+  function onFocusin(event) {
+    focusedSide =
+      ['start', 'end'].find((side) => columnOf(side)?.contains(event.target)) ??
+      null;
+  }
+
+  // A wider window ends the stacked layout, which hides again a column the
+  // user hid. Focus that was in it has fallen to the page (or, in Firefox,
+  // stays on a control no longer shown), so it goes to the column's Show
+  // toggle, as when the column is hidden, and the change is announced.
+  function refocusHidden() {
+    const side = focusedSide;
+    const active = document.activeElement;
+
+    if (
+      !side ||
+      !isHidden(side) ||
+      (active && active !== document.body && !columnOf(side)?.contains(active))
+    ) {
+      return;
+    }
+
+    hideEls[side]?.focus();
+    store.announce(`${PANE_NAMES[side]} hidden.`);
+  }
+
   const SPLITTER_EVENTS = {
     start: splitterEvents('start'),
     end: splitterEvents('end'),
@@ -645,10 +682,17 @@
     measured.end = width(endEl.value);
     measured.rem =
       parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+
+    const wasStacked = measured.stacked;
+
     measured.stacked = Boolean(
       startGutterEl.value &&
         getComputedStyle(startGutterEl.value).display === 'none',
     );
+
+    if (wasStacked && !measured.stacked) {
+      refocusHidden();
+    }
 
     if (layoutEl.value?.contains(document.activeElement)) {
       focusCanvas();
