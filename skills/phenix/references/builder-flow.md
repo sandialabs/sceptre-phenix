@@ -110,9 +110,10 @@ selected. Enter or leaving the field renames the diagram, and Escape keeps the
 name. After Enter or Escape, focus returns to the pencil. The diagram's counts
 are in an outlined box, centered on the header when the name and the actions
 leave room; otherwise they move toward the narrower side without covering it.
-Below a 64rem header, where the header wraps, the counts are centered in the
-space left on their row. The editor's toolbar
-has Draft History right after Minimap, then the save state, which is text the
+The name's box stays at least 8rem wide and "Shared by" on one line: the
+header wraps before either gives way. Below a 64rem header, where the header
+wraps, the counts are centered in the space left on their row. The editor's
+toolbar has Draft History right after Minimap, then the save state, which is text the
 toolbar's arrow keys pass by. Focus
 mode (⇧⌘F or Ctrl+Shift+F) works on both views and stays on between them,
 until the user turns it off or leaves Builder Flow.

@@ -2368,15 +2368,17 @@
       gap: 0.75rem;
     }
 
-    /* The start gives way down to Back to drafts whole and an 8rem name,
-       as the header's own items do in a narrower header; then the header
-       wraps. */
-    .builder-header__start > .builder-button {
+    /* The start gives way down to Back to drafts whole, an 8rem name and
+       who shared the draft on one line, as the header's own items do in a
+       narrower header; then the header wraps. */
+    .builder-header__start > .builder-button,
+    .builder-header__shared {
       white-space: nowrap;
     }
 
-    .builder-header__name {
+    .builder-header__start > .builder-header__name {
       width: 8rem;
+      min-width: 8rem;
     }
 
     .builder-header__actions {

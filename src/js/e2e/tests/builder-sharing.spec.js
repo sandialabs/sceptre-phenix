@@ -117,6 +117,39 @@ function editorHeading(page) {
   return page.getByRole('heading', { level: 1, name: /Builder Flow$/ });
 }
 
+// The editor header in a window `width` wide: how wide the name's box is,
+// in rem, and how many lines who shared the draft takes.
+async function sharedHeader(page, width) {
+  await page.setViewportSize({ width, height: page.viewportSize().height });
+
+  return page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const rem = parseFloat(
+              getComputedStyle(document.documentElement).fontSize,
+            );
+            const name = document
+              .querySelector('.builder-header__name')
+              .getBoundingClientRect();
+            const note = document.createRange();
+            note.selectNodeContents(
+              document.querySelector('[data-testid="editor-shared-by"]'),
+            );
+
+            resolve({
+              name: name.width / rem,
+              lines: new Set(
+                [...note.getClientRects()].map((line) => Math.round(line.top)),
+              ).size,
+            });
+          }),
+        );
+      }),
+  );
+}
+
 test(
   'the owner shares a draft by keyboard; the editor changes it and the viewer only views it',
   { tag: '@cross-browser' },
@@ -276,6 +309,18 @@ test(
       await expect(theirs.getByTestId('editor-shared-by')).toHaveText(
         `Shared by ${owner.username} · Can view`,
       );
+      // The name keeps a box at least 8rem wide, and who shared the draft
+      // one line, whose username is not broken at its hyphen: the header
+      // wraps before either gives way.
+      const initial = theirs.viewportSize();
+      for (const width of [1100, 1280, 1600]) {
+        const header = await sharedHeader(theirs, width);
+        expect
+          .soft(header.name, `name box at ${width}px, in rem`)
+          .toBeGreaterThanOrEqual(8 - 0.05);
+        expect.soft(header.lines, `Shared by at ${width}px, lines`).toBe(1);
+      }
+      await theirs.setViewportSize(initial);
       await expect(theirs.getByTestId('builder-name-edit')).toHaveCount(0);
       for (const action of ['paste', 'scenario', 'publish', 'share']) {
         await expect(theirs.getByTestId(`toolbar-${action}`)).toHaveAttribute(
