@@ -716,8 +716,8 @@ func TestExportTopologyConfigReportsSharedAddresses(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			doc := withInterfaces(t, map[string][]map[string]any{"router": {shared}, "host-a": test.host})
 
-			_, _, publishErr := doc.PublishTopologyConfig("shared")
-			if publishErr == nil {
+			_, _, refusal := doc.PublishTopologyConfig("shared")
+			if refusal == nil {
 				t.Fatal("published interfaces that share an address")
 			}
 
@@ -749,8 +749,8 @@ func TestExportTopologyConfigReportsSharedAddresses(t *testing.T) {
 			}
 
 			// Publishing refuses the document with the first.
-			if export.PublishBlockers[0].Error() != publishErr.Error() {
-				t.Fatalf("first blocker = %v, want the publish error %v", export.PublishBlockers[0], publishErr)
+			if export.PublishBlockers[0].Error() != refusal.Error() {
+				t.Fatalf("first blocker = %v, want the publish error %v", export.PublishBlockers[0], refusal)
 			}
 
 			if got := export.PublishBlockers[len(export.PublishBlockers)-1].Error(); !strings.HasSuffix(
