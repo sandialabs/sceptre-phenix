@@ -330,14 +330,15 @@ function annotationValue(value, type) {
 }
 
 // A key as a column id takes it: its letters, digits, _ and -, at most 48.
-// The column's title keeps the key as it is.
+// The column's title keeps the key as it is. It is cut by characters, not
+// UTF-16 code units: a cut through a character would leave half of it, which
+// the file cannot hold, so two ids that differ only there would be one.
 function slug(key) {
-  return (
-    String(key)
-      .replace(/[^\p{L}\p{N}_-]+/gu, '_')
-      .replace(/^_+|_+$/g, '')
-      .slice(0, 48) || 'key'
-  );
+  const kept = String(key)
+    .replace(/[^\p{L}\p{N}_-]+/gu, '_')
+    .replace(/^_+|_+$/g, '');
+
+  return Array.from(kept).slice(0, 48).join('') || 'key';
 }
 
 // A unique column id for each key: a key that is its own slug keeps it, and

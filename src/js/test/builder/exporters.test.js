@@ -900,6 +900,40 @@ describe('GEXF export', () => {
     });
   });
 
+  test('gives keys cut inside a character their own columns', () => {
+    const { doc, web } = gexfDocument();
+    const stem = 'k'.repeat(47);
+    // Each key's 48th character is outside the BMP, two UTF-16 code units.
+    const keys = [stem, `${stem}\u{20000}`, `${stem}\u{21000}`];
+    const spec = doc.nodes.find((node) => node.id === web.id).device.spec;
+
+    spec.labels = Object.fromEntries(keys.map((key, i) => [key, `v${i}`]));
+    spec.annotations = Object.fromEntries(keys.map((key, i) => [key, i]));
+
+    const { text } = toGEXF(doc, { modified });
+    const { graph, nodes } = graphOf(text);
+    const columns = columnsOf(graph, 'node');
+
+    expect(text).not.toMatch(NOT_XML);
+
+    for (const prefix of ['label', 'annotation']) {
+      const ids = Object.keys(columns).filter((id) =>
+        id.startsWith(`${prefix}.`),
+      );
+
+      expect(ids.sort()).toEqual(keys.map((key) => `${prefix}.${key}`).sort());
+    }
+
+    const values = valuesOf(
+      nodes.children.find(({ attributes }) => attributes.label === 'web'),
+    );
+
+    keys.forEach((key, i) => {
+      expect(values[`label.${key}`]).toBe(`v${i}`);
+      expect(values[`annotation.${key}`]).toBe(String(i));
+    });
+  });
+
   test('escapes what it writes, and writes nothing XML 1.0 does not allow', () => {
     const { text } = toGEXF(gexfDocument().doc, { modified });
 
