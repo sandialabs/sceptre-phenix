@@ -353,6 +353,18 @@ that names no network of the document still publishes as it is, since phenix
 allocates VLANs by name and matches them exactly (`exp` is not network `EXP`).
 Drafts keep such interfaces; the editor flags them as warnings.
 
+The Export dialog's Topology YAML saves `<diagram name>.topology.yaml`, the
+Topology config Publish would write, from `POST /builder/export/topology`
+(`configs` `get`; nothing is written). The request carries the document,
+edits not yet saved included, and the topology `name` the Publish dialog
+proposes. The config has no annotations and names included topologies in
+`includeTopologies` rather than merging them. An interface with a blank VLAN
+is reported in `publishBlockers`, which the dialog shows after the download,
+not refused. A document phenix's schema refuses is refused with 422, as
+Publish refuses it. Publish names interfaces without a VLAN before any other
+reason; the export names them only when a `vlan` is missing or null, which
+the schema refuses too, and otherwise gives the schema's reason.
+
 After a publication, older published documents of the same topology are
 removed once they are more than an hour old; newer ones go at a later publish
 or at the startup cleanup.
@@ -396,6 +408,7 @@ All routes are relative to `/api/v1`.
 | `GET /builder/drafts/{owner}/{draft}/shares/candidates` | Every account that can receive a share of the draft |
 | `GET /builder/sources` | Configs a document can be generated from or publish to |
 | `POST /builder/generate` | Build a document from a stored or uploaded Topology or Experiment |
+| `POST /builder/export/topology` | The Topology config a document publishes as, as YAML, with `warnings` and `publishBlockers` (nothing is written; needs `configs` `get`) |
 | `GET /builder/documents[/{document}]` | Published Builder documents |
 | `DELETE /builder/documents/{document}` | Delete the topology a published document is current for, and the topology's published documents |
 
