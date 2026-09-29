@@ -487,6 +487,24 @@ test.describe('Configs page', () => {
         .toHaveText('builder flow');
     });
 
+    await test.step('a legacy Builder topology opens in the read-only viewer', async () => {
+      const view = page.getByRole('button', {
+        name: `View Topology ${legacy}`,
+      });
+      await view.click();
+      const viewer = page.getByRole('dialog', { name: `Topology/${legacy}` });
+      await expect(viewer).toBeVisible();
+      // The diagram is left out of the text, and no error is shown.
+      const text = await viewer.getByRole('textbox').inputValue();
+      expect.soft(text).toContain(`name: ${legacy}`);
+      expect.soft(text).toContain('builder-xml: <SNIPPED>');
+      await expect.soft(page.locator('.notification.is-danger')).toHaveCount(0);
+
+      await viewer.getByRole('button', { name: 'Exit' }).click();
+      await expect(viewer).toBeHidden();
+      await expect.soft(view).toBeFocused();
+    });
+
     await test.step('a legacy Builder topology is blocked from raw editing', async () => {
       await editConfig(page, legacy);
       // An alert dialog named by its title and described by its message.

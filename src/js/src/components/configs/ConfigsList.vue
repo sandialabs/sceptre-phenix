@@ -27,7 +27,14 @@
       </section>
     </div>
   </b-modal>
-  <b-modal v-model="viewer.isActive" @close="resetViewer" has-modal-card>
+  <b-modal
+    v-model="viewer.isActive"
+    @close="resetViewer"
+    has-modal-card
+    aria-role="dialog"
+    aria-modal
+    :aria-label="viewer.title"
+    close-button-aria-label="Close">
     <div class="modal-card" style="width: 50em">
       <header class="modal-card-head x-modal-dark">
         <p class="modal-card-title x-config-text">{{ viewer.title }}</p>
@@ -231,6 +238,7 @@
               type="button"
               class="config-name"
               :aria-label="`View ${props.row.kind} ${props.row.metadata.name}`"
+              :data-config-view="configFullName(props.row)"
               @click="viewConfig(props.row)">
               {{ props.row.metadata.name }}
             </button>
@@ -577,6 +585,16 @@
         this.uploaderFile = null;
       },
       resetViewer() {
+        // Focus goes back to the name the viewer was opened from.
+        const opener = this.viewer.title;
+        if (opener) {
+          this.$nextTick(() =>
+            document
+              .querySelector(`[data-config-view="${CSS.escape(opener)}"]`)
+              ?.focus(),
+          );
+        }
+
         this.viewer.isActive = false;
         ((this.viewer.config = {
           kind: null,
@@ -598,10 +616,11 @@
           .then((response) => {
             let obj = response.data;
 
+            // The viewer only shows the config, so it keeps no copy of the
+            // legacy Builder diagram it leaves out: Edit and Download read
+            // the config again.
             if ('annotations' in obj.metadata) {
               if ('builder-xml' in obj.metadata.annotations) {
-                this.config.builderXML =
-                  obj.metadata.annotations['builder-xml'];
                 obj.metadata.annotations['builder-xml'] = '<SNIPPED>';
               }
             }
