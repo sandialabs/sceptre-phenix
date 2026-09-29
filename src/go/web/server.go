@@ -67,17 +67,23 @@ func ConfigureUsers(users []string) error {
 		}
 	}
 
+	// Where an entry's password and role are, after its name.
+	const (
+		passwordField = 1
+		roleField     = 2
+	)
+
 	var errs []error
 
 	for position, u := range users {
 		creds := strings.Split(u, ":")
 
-		if len(creds) < 3 {
+		if len(creds) <= roleField {
 			// Without a role. The entry is named by its position, and by
 			// the name before its colon if it has one: without a colon,
 			// it may be a password.
 			var name string
-			if len(creds) == 2 {
+			if len(creds) > passwordField {
 				name = creds[0]
 			}
 
