@@ -1483,6 +1483,49 @@ func TestBuilderBetaPublishAgainAfterEdits(t *testing.T) { //nolint:paralleltest
 	}
 }
 
+// TestBuilderBetaPublishAgainAfterTopologyDeleted deletes a published topology
+// from the drafts page, then publishes it again from the draft imported from
+// it, and from a draft opened from its published diagram. Neither is refused
+// because its source is gone: each creates the topology again.
+func TestBuilderBetaPublishAgainAfterTopologyDeleted(t *testing.T) { //nolint:paralleltest // mutates feature options
+	const create = `{"mode":"topology","topology":{"name":"range","action":"create"}}`
+
+	harness := newBuilderBetaHarness(t)
+
+	source := builderBetaConfig(t, builderBetaKindTopology, "range")
+	source.Spec = map[string]any{"nodes": []any{includeNode("a")}}
+	harness.configs = append(harness.configs, source)
+
+	document := generateBuilderDocument(t, harness, "Topology/range")
+	imported := editBuilderDraft(t, harness,
+		createBuilderPublishDraft(t, harness, document, "Topology/range"), document, "b")
+	published, _ := publishBuilderDraft(t, harness, imported,
+		`{"mode":"topology","topology":{"name":"range","action":"update"}}`, http.StatusOK)
+
+	diagram := openPublishedBuilderDocument(t, harness, "range")
+	opened := createBuilderPublishDraft(t, harness, diagram.document, "builder-doc/"+diagram.id)
+
+	for _, draft := range []builderDraftResponse{published.Draft, opened} {
+		current := openPublishedBuilderDocument(t, harness, "range")
+
+		deleted := harness.do(builderBetaRequest{
+			method: http.MethodDelete, path: "/builder/documents/" + current.id, user: builderBetaTestOwner,
+		})
+		if deleted.Code != http.StatusNoContent {
+			t.Fatalf("deleting the topology: status = %d: %s", deleted.Code, deleted.Body.String())
+		}
+
+		again, _ := publishBuilderDraft(t, harness, draft, create, http.StatusOK)
+		if again.Stages[1].Status != "created" {
+			t.Fatalf("stages = %#v, want the topology created", again.Stages)
+		}
+
+		if got := topologyHostnames(t, harness, "range"); !slices.Equal(got, []string{"a", "b"}) {
+			t.Fatalf("topology nodes = %v, want a and b", got)
+		}
+	}
+}
+
 // forkBuilderDraft creates a draft for the user that forks the draft named
 // forkOf ("<owner>/<draft id>"), as saving the editor's history as a new
 // draft does, and returns the answer.

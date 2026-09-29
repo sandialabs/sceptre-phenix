@@ -716,7 +716,10 @@ func builderBetaExperimentAllowed(role rbac.Role, action, name string) bool {
 // draft was imported. Publishing to the source changes it too, so a source
 // that holds this draft's own publication, or the one of the published
 // document it was opened from, is fresh while nothing else has changed it
-// since (see [builderBetaAPI.sourceHoldsDraftPublication]).
+// since (see [builderBetaAPI.sourceHoldsDraftPublication]). A source deleted
+// since holds nothing a publication could overwrite, so the draft publishes
+// as a new diagram does: a published topology deleted from the drafts page is
+// created again.
 func (b *builderBetaAPI) checkSourceFreshness(
 	ctx context.Context,
 	actor builderBetaActor,
@@ -755,8 +758,7 @@ func (b *builderBetaAPI) checkSourceFreshness(
 	current, err := b.getConfig(fullName)
 	if err != nil {
 		if errors.Is(err, store.ErrNotExist) {
-			return weberror.NewWebError(nil, "builder source %s no longer exists", fullName).
-				SetStatus(http.StatusConflict)
+			return nil
 		}
 
 		return weberror.NewWebError(err, "unable to reload builder source %s", fullName).
