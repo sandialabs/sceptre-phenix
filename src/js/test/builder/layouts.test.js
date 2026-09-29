@@ -263,6 +263,74 @@ describe.each(NETWORK_LAYOUTS)('the %s layout', (id) => {
       expect(await laidOut(id, laid)).toEqual(laid);
     }
   });
+
+  test('wraps a rank of many networks into columns', async () => {
+    // Twelve sites, each gatewayed into one core: one rank of twelve.
+    let doc = createDocument();
+    const core = addNetwork(doc, { name: 'CORE' });
+    const coreSwitch = addNode(core.doc, {
+      kind: 'switch',
+      networkId: core.network.id,
+    });
+
+    doc = coreSwitch.doc;
+    for (let site = 1; site <= 12; site += 1) {
+      const network = addNetwork(doc, { name: `SITE-${site}` });
+      const sw = addNode(network.doc, {
+        kind: 'switch',
+        networkId: network.network.id,
+      });
+
+      doc = sw.doc;
+      for (const role of ['GW', 'WS-1', 'WS-2', 'WS-3']) {
+        const device = addNode(doc, {
+          kind: 'device',
+          hostname: `S${site}-${role}`,
+        });
+
+        doc = connect(device.doc, {
+          sourceNodeId: device.node.id,
+          targetNodeId: sw.node.id,
+        }).doc;
+        if (role === 'GW') {
+          doc = connect(doc, {
+            sourceNodeId: device.node.id,
+            targetNodeId: coreSwitch.node.id,
+          }).doc;
+        }
+      }
+    }
+
+    const laid = await laidOut(id, doc);
+    const boxes = laid.nodes.map(boxOf);
+    const width =
+      Math.max(...boxes.map((box) => box.x + box.width)) -
+      Math.min(...boxes.map((box) => box.x));
+    const height =
+      Math.max(...boxes.map((box) => box.y + box.height)) -
+      Math.min(...boxes.map((box) => box.y));
+    const switches = laid.nodes.filter(
+      (node) => node.kind === 'switch' && node.id !== coreSwitch.node.id,
+    );
+
+    // Near 16:10, not one tall column.
+    expect(width / height).toBeGreaterThan(1.2);
+    expect(width / height).toBeLessThan(2.2);
+    expect(
+      new Set(switches.map((node) => node.position.x)).size,
+    ).toBeGreaterThan(1);
+    expectTidy(laid, id);
+
+    // Still left to right, the core after every site.
+    const byId = new Map(laid.nodes.map((node) => [node.id, node]));
+
+    for (const edge of laid.edges) {
+      const source = boxOf(byId.get(edge.sourceNodeId));
+      const target = boxOf(byId.get(edge.targetNodeId));
+
+      expect(target.x).toBeGreaterThan(source.x + source.width);
+    }
+  });
 });
 
 describe('the ELK layout', () => {
@@ -438,74 +506,6 @@ describe('the dagre layout', () => {
 
     expectTidy(await laidOut('dagre', doc), 'dagre');
   });
-
-  test('wraps a rank of many networks into columns', async () => {
-    // Twelve sites, each gatewayed into one core: one rank of twelve.
-    let doc = createDocument();
-    const core = addNetwork(doc, { name: 'CORE' });
-    const coreSwitch = addNode(core.doc, {
-      kind: 'switch',
-      networkId: core.network.id,
-    });
-
-    doc = coreSwitch.doc;
-    for (let site = 1; site <= 12; site += 1) {
-      const network = addNetwork(doc, { name: `SITE-${site}` });
-      const sw = addNode(network.doc, {
-        kind: 'switch',
-        networkId: network.network.id,
-      });
-
-      doc = sw.doc;
-      for (const role of ['GW', 'WS-1', 'WS-2', 'WS-3']) {
-        const device = addNode(doc, {
-          kind: 'device',
-          hostname: `S${site}-${role}`,
-        });
-
-        doc = connect(device.doc, {
-          sourceNodeId: device.node.id,
-          targetNodeId: sw.node.id,
-        }).doc;
-        if (role === 'GW') {
-          doc = connect(doc, {
-            sourceNodeId: device.node.id,
-            targetNodeId: coreSwitch.node.id,
-          }).doc;
-        }
-      }
-    }
-
-    const laid = await laidOut('dagre', doc);
-    const boxes = laid.nodes.map(boxOf);
-    const width =
-      Math.max(...boxes.map((box) => box.x + box.width)) -
-      Math.min(...boxes.map((box) => box.x));
-    const height =
-      Math.max(...boxes.map((box) => box.y + box.height)) -
-      Math.min(...boxes.map((box) => box.y));
-    const switches = laid.nodes.filter(
-      (node) => node.kind === 'switch' && node.id !== coreSwitch.node.id,
-    );
-
-    // Near 16:10, not one tall column.
-    expect(width / height).toBeGreaterThan(1.2);
-    expect(width / height).toBeLessThan(2.2);
-    expect(
-      new Set(switches.map((node) => node.position.x)).size,
-    ).toBeGreaterThan(1);
-    expectTidy(laid, 'dagre');
-
-    // Still left to right, the core after every site.
-    const byId = new Map(laid.nodes.map((node) => [node.id, node]));
-
-    for (const edge of laid.edges) {
-      const source = boxOf(byId.get(edge.sourceNodeId));
-      const target = boxOf(byId.get(edge.targetNodeId));
-
-      expect(target.x).toBeGreaterThan(source.x + source.width);
-    }
-  });
 });
 
 describe('the ELK layout', () => {
@@ -516,21 +516,28 @@ describe('the ELK layout', () => {
       layout: async (graph) => {
         scopes.push(graph);
 
-        // Every node in a column: enough to place them.
-        let y = 0;
+        // Each cluster a column of its nodes, the clusters in a row: enough
+        // to place them.
+        let x = 0;
 
         return {
           ...graph,
-          children: graph.children.map((cluster) => ({
-            ...cluster,
-            x: 0,
-            y: 0,
-            children: cluster.children.map((child) => {
+          children: graph.children.map((cluster) => {
+            let y = 0;
+            const children = cluster.children.map((child) => {
+              const placed = { ...child, x: 0, y };
+
               y += child.height + GRID;
 
-              return { ...child, x: 0, y };
-            }),
-          })),
+              return placed;
+            });
+            const width = Math.max(...children.map((child) => child.width));
+            const placed = { ...cluster, x, y: 0, width, height: y, children };
+
+            x += width + GRID;
+
+            return placed;
+          }),
         };
       },
     };
@@ -551,13 +558,25 @@ describe('the ELK layout', () => {
         }
       }
     }
-    // Every connection, from a port on its source to one on its target.
-    expect(graph.edges).toHaveLength(doc.edges.length);
+    // Every connection, from a port on its source to one on its target; and
+    // one between networks also from cluster to cluster, which ELK places
+    // the clusters by.
+    const name = (id) =>
+      doc.networks.find((network) => id === `cluster:${network.id}`).name;
+    const links = graph.edges.filter((edge) => edge.id.startsWith('link:'));
+
+    expect(
+      links
+        .map((link) => `${name(link.sources[0])} to ${name(link.targets[0])}`)
+        .sort(),
+    ).toEqual(['DMZ to CORP', 'OT to CORP', 'SAFETY to OT']);
+    expect(graph.edges).toHaveLength(doc.edges.length + links.length);
   });
 
   describe('in a Web Worker', () => {
     // Workers as ELK's, each answering a layout with every node at the
-    // origin, or holding its answers while `held` is set.
+    // origin (a cluster with no size), or holding its answers while `held`
+    // is set.
     const workers = [];
     let held = false;
 
@@ -577,6 +596,8 @@ describe('the ELK layout', () => {
             ...node,
             x: 0,
             y: 0,
+            width: node.width ?? 0,
+            height: node.height ?? 0,
             children: node.children?.map(place),
           });
 
