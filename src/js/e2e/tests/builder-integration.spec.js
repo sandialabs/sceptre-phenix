@@ -483,11 +483,16 @@ test.describe('Configs page', () => {
 
     await test.step('a legacy Builder topology is blocked from raw editing', async () => {
       await editConfig(page, legacy);
-      const dialog = page.locator('.dialog.modal.is-active');
-      await expect.soft(dialog).toContainText('Built by Builder');
+      // An alert dialog named by its title and described by its message.
+      const dialog = page.getByRole('alertdialog', {
+        name: 'Built by Builder',
+      });
+      await expect(dialog).toBeVisible();
       await expect
         .soft(dialog)
-        .toContainText('This configuration can only be edited in Builder');
+        .toHaveAccessibleDescription(
+          'This configuration can only be edited in Builder',
+        );
       await expect.soft(page).toHaveURL(/\/configs\/$/);
       await expect
         .soft(page.getByRole('button', { name: 'Save' }))
@@ -495,6 +500,10 @@ test.describe('Configs page', () => {
       await dialog.getByRole('button', { name: 'OK' }).click();
       await expect(dialog).toBeHidden();
       await expect(configRow(page, legacy)).toBeVisible();
+      // Focus goes back to the edit button, which is named.
+      await expect
+        .soft(page.getByRole('button', { name: `Edit Topology ${legacy}` }))
+        .toBeFocused();
 
       const stored = await (
         await request.get(`${API}/configs/Topology/${legacy}`)
@@ -504,9 +513,29 @@ test.describe('Configs page', () => {
 
     await test.step('an ordinary topology opens in the YAML editor', async () => {
       await editConfig(page, plain);
+      // Focus starts on the editor's heading, not on the page.
+      await expect
+        .soft(
+          page.getByRole('heading', {
+            level: 1,
+            name: `Edit Topology/${plain}`,
+          }),
+        )
+        .toBeFocused();
       await expect
         .soft(page.locator('.ace_content'))
         .toContainText(`name: ${plain}`);
+
+      // Tab leaves the text editor once Escape has stopped typing in it.
+      const content = page.getByRole('group', { name: /^Editor content/ });
+      await content.focus();
+      await page.keyboard.press('Enter');
+      await expect.soft(page.locator('.ace_text-input')).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect.soft(content).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect.soft(page.locator('.ace_text-input')).not.toBeFocused();
+      await expect.soft(content).not.toBeFocused();
       await expect
         .soft(page.getByRole('button', { name: 'Save' }))
         .toBeEnabled();

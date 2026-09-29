@@ -23,6 +23,13 @@
     <div class="columns p-4">
       <div class="column is-1" />
       <div class="column is-2">
+        <!-- Focus starts here when the editor opens, not on the page. -->
+        <h1
+          ref="heading"
+          class="title is-5 config-editor__heading"
+          tabindex="-1">
+          {{ heading }}
+        </h1>
         <b-field
           class="editor"
           label="Config Name"
@@ -134,6 +141,10 @@
             :vim="editor.vim"
             @save="configSentSave"
             @reset="configSentReset" />
+          <p class="help">
+            Press Enter on the editor to type in it, and Escape to leave it
+            (twice in Vim mode), so that Tab moves on.
+          </p>
           <b-loading
             :is-full-page="false"
             v-model="editor.isLoading"></b-loading>
@@ -155,6 +166,9 @@
   import { BUILDER_BETA_FEATURE, isFeatureEnabled } from '@/utils/features.js';
   import { BETA_ANNOTATION, builderAnnotation } from '@/builder/configs.js';
 
+  const ALERT_TITLE_ID = 'configs-alert-title';
+  const ALERT_MESSAGE_ID = 'configs-alert-message';
+
   export default {
     expose: ['confirmResetEditor'],
     components: {
@@ -166,6 +180,8 @@
       editorConfig: Object,
     },
     mounted() {
+      this.$refs.heading?.focus();
+
       //set vim mode
       let user = localStorage.getItem('user');
       if (localStorage.getItem(user + '.vimMode')) {
@@ -198,14 +214,10 @@
 
                 this.editor.isLoading = false;
                 if (unavailable) {
-                  this.$buefy.dialog.alert({
-                    title: 'Built by Builder Flow',
-                    message: `This topology was built in Builder Flow, so it can only be edited there, and ${unavailable} Select its name in the list to view it read only.`,
-                    confirmText: 'OK',
-                    type: 'is-warning',
-                    hasIcon: true,
-                    onConfirm: () => this.$emit('is-done', ''),
-                  });
+                  this.cannotEdit(
+                    'Built by Builder Flow',
+                    `This topology was built in Builder Flow, so it can only be edited there, and ${unavailable} Select its name in the list to view it read only.`,
+                  );
                   return;
                 }
 
@@ -223,16 +235,12 @@
               }
 
               this.editor.isLoading = false;
-              this.$buefy.dialog.alert({
-                title: `Built by ${this.builderName(response.data)}`,
-                message: `This configuration can only be edited in ${this.builderName(
+              this.cannotEdit(
+                `Built by ${this.builderName(response.data)}`,
+                `This configuration can only be edited in ${this.builderName(
                   response.data,
                 )}`,
-                confirmText: 'OK',
-                type: 'is-warning',
-                hasIcon: true,
-                onConfirm: () => this.$emit('is-done', ''),
-              });
+              );
               return;
             } else {
               this.config.obj = response.data;
@@ -298,6 +306,33 @@
     methods: {
       handlePageReload(event) {
         event.preventDefault();
+      },
+      // Why this config cannot be edited here, and back to the list on OK.
+      // Buefy's alert has no role, name or description of its own: it is
+      // made an alert dialog (WAI-ARIA APG) named by its title and described
+      // by its message, so a screen reader reads why as focus moves to OK.
+      cannotEdit(title, message) {
+        this.$buefy.dialog.alert({
+          title,
+          message: `<span id="${ALERT_MESSAGE_ID}">${message}</span>`,
+          confirmText: 'OK',
+          type: 'is-warning',
+          hasIcon: true,
+          ariaRole: 'alertdialog',
+          ariaModal: true,
+          'aria-labelledby': ALERT_TITLE_ID,
+          'aria-describedby': ALERT_MESSAGE_ID,
+          onConfirm: () => this.$emit('is-done', ''),
+        });
+        // The title has no id to name the dialog by until it is drawn, as
+        // the dialog opens.
+        this.$nextTick(() => {
+          document
+            .getElementById(ALERT_MESSAGE_ID)
+            ?.closest('.modal-card')
+            ?.querySelector('.modal-card-title')
+            ?.setAttribute('id', ALERT_TITLE_ID);
+        });
       },
       configSentSave() {
         if (this.mode == 'edit') {
@@ -559,6 +594,12 @@
       },
     },
     computed: {
+      // What the editor is for: "Edit Topology/web", or "New config".
+      heading() {
+        return this.mode == 'edit' && this.editorConfig
+          ? `Edit ${this.editorConfig.kind}/${this.editorConfig.metadata.name}`
+          : 'New config';
+      },
       validName() {
         return /^[a-zA-Z0-9_@.-]*$/.test(this.configName);
       },
@@ -713,6 +754,11 @@
 
   .editor :deep(.label) {
     color: whitesmoke;
+  }
+
+  .config-editor__heading {
+    color: whitesmoke;
+    overflow-wrap: anywhere;
   }
 
   button#editor {

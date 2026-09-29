@@ -221,8 +221,11 @@ test('Configs still labels a Builder Beta topology and shows it read-only', asyn
   const row = page.locator('tr', { hasText: name });
   await expect(row.locator('.tag')).toHaveText('builder flow');
 
+  // The name is a button, so the keyboard reaches the read-only view too.
   const fetched = apiResponse(page, 'GET', `/configs/Topology/${name}`);
-  await row.getByText(name, { exact: true }).click();
+  await row
+    .getByRole('button', { name: `View Topology ${name}` })
+    .press('Enter');
   await fetched;
   const viewer = page.locator('.modal.is-active');
   await expect(viewer.locator('.modal-card-title')).toHaveText(
@@ -255,20 +258,23 @@ test('Configs edit of a Builder Beta topology explains why it cannot open', asyn
   await fetched;
 
   // The user stays on Configs and is told why the diagram cannot be edited,
-  // instead of landing on the home page.
-  const dialog = page
-    .locator('.modal.is-active')
-    .filter({ hasText: /Builder Flow/ });
+  // instead of landing on the home page, in an alert dialog named by its
+  // title and described by its message, so a screen reader reads it.
+  const dialog = page.getByRole('alertdialog', {
+    name: 'Built by Builder Flow',
+  });
   await expect(dialog).toBeVisible();
   await expect
     .soft(dialog)
-    .toContainText('Builder Flow is not enabled on this phenix server.');
+    .toHaveAccessibleDescription(
+      /Builder Flow is not enabled on this phenix server\./,
+    );
   await expect(page).toHaveURL(/\/configs\/$/);
   await dialog.getByRole('button', { name: 'OK' }).click();
   await expect(dialog).toBeHidden();
   await expect(page.locator('tr', { hasText: name })).toBeVisible();
   // Focus returns to the button that opened it, not to the page.
   await expect(
-    page.locator(`[data-config-edit="Topology/${name}"]`),
+    page.getByRole('button', { name: `Edit Topology ${name}` }),
   ).toBeFocused();
 });

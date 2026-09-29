@@ -124,7 +124,7 @@
                 multilined>
                 <button
                   class="button input-button"
-                  aria-label="Clear config filters"
+                  aria-label="Reset the search and the kind filter"
                   @click="
                     searchQuery = '';
                     filterKind = null;
@@ -225,12 +225,15 @@
         v-slot="props">
         <template
           v-if="roleAllowed('configs', 'get', configFullName(props.row))">
+          <!-- A button, so the keyboard reaches the read-only view too. -->
           <b-tooltip label="view config" type="is-dark">
-            <div class="field is-clickable">
-              <div @click="viewConfig(props.row)">
-                {{ props.row.metadata.name }}
-              </div>
-            </div>
+            <button
+              type="button"
+              class="config-name"
+              :aria-label="`View ${props.row.kind} ${props.row.metadata.name}`"
+              @click="viewConfig(props.row)">
+              {{ props.row.metadata.name }}
+            </button>
           </b-tooltip>
           &nbsp;
           <b-tag type="is-info is-light" v-if="builderTag(props.row)">{{
@@ -260,7 +263,7 @@
           <button
             v-if="roleAllowed('configs', 'update', configFullName(props.row))"
             class="button is-light is-small action"
-            :aria-label="`Edit config ${props.row.metadata.name}`"
+            :aria-label="`Edit ${props.row.kind} ${props.row.metadata.name}`"
             :data-config-edit="configFullName(props.row)"
             @click="$emit('edit', props.row)">
             <b-icon icon="edit"></b-icon>
@@ -275,7 +278,7 @@
           <button
             v-if="roleAllowed('configs', 'get', configFullName(props.row))"
             class="button is-light is-small action"
-            :aria-label="`Download config ${props.row.metadata.name}`"
+            :aria-label="`Download ${props.row.kind} ${props.row.metadata.name}`"
             @click="download([props.row])">
             <b-icon icon="download"></b-icon>
           </button>
@@ -289,7 +292,7 @@
           <button
             v-if="roleAllowed('configs', 'delete', configFullName(props.row))"
             class="button is-light is-small action"
-            :aria-label="`Delete config ${props.row.metadata.name}`"
+            :aria-label="`Delete ${props.row.kind} ${props.row.metadata.name}`"
             @click="deleteConfigs([props.row])">
             <b-icon icon="trash"></b-icon>
           </button>
@@ -617,6 +620,22 @@
   };
 </script>
 <style scoped>
+  /* The name looks as the text it was, and shows its focus. */
+  .config-name {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .config-name:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+
   .x-modal-dark :deep(textarea) {
     background-color: #686868;
     color: whitesmoke;
