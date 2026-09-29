@@ -380,7 +380,8 @@ them as errors. It shows phenix's warnings about other casings of `all`, and
 about `phenix` on a node that is not Windows, as plain warnings, and Publish
 returns them in `warnings`. Included devices are left to their topology, but
 an experiment publish whose included topology has a hostname phenix refuses
-in an experiment answers 422 before anything is written.
+in an experiment (any of the above, one character long included) answers 422
+before anything is written.
 
 The Export dialog's Topology YAML saves `<diagram name>.topology.yaml`, the
 Topology config Publish would write, from `POST /builder/export/topology`

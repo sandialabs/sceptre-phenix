@@ -49,8 +49,8 @@
 // loader, and those of an unreadable included topology when the topology the
 // experiment was created from cannot be read either. The import warns about
 // both. [CheckIncludes] resolves includes the same way for a publish, and
-// reports included topologies that cannot be read and hostnames the
-// including topology defines too.
+// reports included topologies that cannot be read, hostnames the including
+// topology defines too, and hostnames phenix refuses in an experiment.
 //
 // Two levels of validation are available:
 //

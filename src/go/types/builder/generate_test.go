@@ -1103,7 +1103,7 @@ func TestCheckIncludes(t *testing.T) {
 		"includeTopologies": []string{"services", "missing"},
 	}
 
-	services := includeFixture("services", []string{"storage"}, map[string]string{"dns": "EXP", "DB": "EXP"})
+	services := includeFixture("services", []string{"storage"}, map[string]string{"dns": "EXP", "DB": "EXP", "x": "EXP"})
 	storage := includeFixture("storage", []string{"root"}, map[string]string{"web": "EXP", "nas": "EXP", "007": "EXP"})
 
 	report, err := builder.CheckIncludes("root", spec, storeLoader(services, storage))
@@ -1124,10 +1124,20 @@ func TestCheckIncludes(t *testing.T) {
 		t.Fatalf("unreadable = %+v, want the missing include", report.Unreadable)
 	}
 
-	// phenix refuses an all-digit hostname in an experiment.
-	if len(report.Refused) != 1 || report.Refused[0].Include != "storage" ||
-		!strings.HasPrefix(report.Refused[0].Reason, "hostname '007' is all digits") {
-		t.Fatalf("refused = %+v, want storage's 007", report.Refused)
+	// phenix's schema refuses a single character, which an older phenix
+	// stored, and phenix refuses an all-digit hostname in an experiment.
+	wantRefused := []builder.RefusedHostname{
+		{Include: "services", Reason: "hostname 'x' is 1 character long: "},
+		{Include: "storage", Reason: "hostname '007' is all digits: "},
+	}
+	if len(report.Refused) != len(wantRefused) {
+		t.Fatalf("refused = %+v, want services' x and storage's 007", report.Refused)
+	}
+
+	for i, want := range wantRefused {
+		if got := report.Refused[i]; got.Include != want.Include || !strings.HasPrefix(got.Reason, want.Reason) {
+			t.Fatalf("refused %d = %+v, want %+v", i, got, want)
+		}
 	}
 
 	clean, err := builder.CheckIncludes("root", map[string]any{"nodes": []any{}}, storeLoader())

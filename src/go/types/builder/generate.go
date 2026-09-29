@@ -15,7 +15,6 @@ import (
 	"phenix/store"
 	"phenix/types"
 	"phenix/types/version"
-	v1 "phenix/types/version/v1"
 	"phenix/util/common"
 )
 
@@ -236,7 +235,7 @@ type HostnameClash struct {
 }
 
 // RefusedHostname is a node of an included topology whose hostname phenix
-// refuses when it creates or updates an experiment (see [v1.CheckHostname]).
+// refuses when it creates or updates an experiment (see [checkHostname]).
 type RefusedHostname struct {
 	// Include names the included topology defining the node.
 	Include string
@@ -287,7 +286,7 @@ func CheckIncludes(name string, spec map[string]any, load TopologyLoader) (Inclu
 		}
 
 		startedNodes(topology.spec, func(hostname, osType string) {
-			if _, err := v1.CheckHostname(hostname, osType); err != nil {
+			if _, err := checkHostname(hostname, osType); err != nil {
 				report.Refused = append(report.Refused, RefusedHostname{Include: topology.name, Reason: err.Error()})
 			}
 		})

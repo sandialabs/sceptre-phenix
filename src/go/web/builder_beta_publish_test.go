@@ -1253,60 +1253,75 @@ func TestBuilderBetaPublishRejectsIncludedHostnameClash(t *testing.T) { //nolint
 
 // TestBuilderBetaPublishRefusesIncludedHostnamePhenixRefuses refuses, before
 // writing anything, an experiment whose included topology gained a node
-// named "all" after the draft was imported: phenix refuses the experiment
-// only once the topology is written. A topology publishes, as phenix stores
-// it.
+// named "all" after the draft was imported, or holds a node named with a
+// single character, as an older phenix stored it: phenix refuses the
+// experiment only once the topology is written. A topology publishes, as
+// phenix stores it.
 func TestBuilderBetaPublishRefusesIncludedHostnamePhenixRefuses(t *testing.T) { //nolint:paralleltest // mutates feature options
-	for _, test := range []struct {
-		source, body string
-		code         int
-	}{
-		{
-			source: "Topology/root", body: `{"mode":"topology","topology":{"name":"root","action":"update"}}`,
-			code: http.StatusOK,
-		},
-		{
-			source: "Experiment/exp",
-			body: `{"mode":"topology-experiment","topology":{"name":"root","action":"update"},` +
-				`"experiment":{"name":"exp","action":"update"}}`,
-			code: http.StatusUnprocessableEntity,
-		},
+	for _, refused := range []struct{ hostname, reason string }{
+		{hostname: "all", reason: "hostname 'all' is reserved: "},
+		{hostname: "x", reason: "hostname 'x' is 1 character long: "},
 	} {
-		t.Run(test.source, func(t *testing.T) {
-			harness := newBuilderBetaHarness(t, includedTopologyFixture(t, "shared")...)
-			document := generateBuilderDocument(t, harness, test.source)
-			draft := createBuilderPublishDraft(t, harness, document, test.source)
+		for _, test := range []struct {
+			name, source, body, experiment string
+			code                           int
+		}{
+			{
+				name: "topology", source: "Topology/root",
+				body: `{"mode":"topology","topology":{"name":"root","action":"update"}}`,
+				code: http.StatusOK,
+			},
+			{
+				name: "experiment create", source: "Topology/root",
+				body: `{"mode":"topology-experiment","topology":{"name":"root","action":"update"},` +
+					`"experiment":{"name":"fresh","action":"create"}}`,
+				experiment: "fresh", code: http.StatusUnprocessableEntity,
+			},
+			{
+				name: "experiment update", source: "Experiment/exp",
+				body: `{"mode":"topology-experiment","topology":{"name":"root","action":"update"},` +
+					`"experiment":{"name":"exp","action":"update"}}`,
+				experiment: "exp", code: http.StatusUnprocessableEntity,
+			},
+		} {
+			t.Run(refused.hostname+"/"+test.name, func(t *testing.T) {
+				harness := newBuilderBetaHarness(t, includedTopologyFixture(t, "shared")...)
+				document := generateBuilderDocument(t, harness, test.source)
+				draft := createBuilderPublishDraft(t, harness, document, test.source)
 
-			for i := range harness.configs {
-				if harness.configs[i].FullName() == "Topology/shared" {
-					harness.configs[i].Spec = map[string]any{"nodes": []any{includeNode("inc-host"), includeNode("all")}}
+				for i := range harness.configs {
+					if harness.configs[i].FullName() == "Topology/shared" {
+						harness.configs[i].Spec = map[string]any{
+							"nodes": []any{includeNode("inc-host"), includeNode(refused.hostname)},
+						}
+					}
 				}
-			}
 
-			published := harness.do(builderBetaRequest{
-				method: http.MethodPost,
-				path:   "/builder/drafts/" + draft.Owner + "/" + draft.ID + "/publish",
-				body:   test.body,
-				user:   builderBetaTestOwner, ifMatch: draft.ETag,
+				published := harness.do(builderBetaRequest{
+					method: http.MethodPost,
+					path:   "/builder/drafts/" + draft.Owner + "/" + draft.ID + "/publish",
+					body:   test.body,
+					user:   builderBetaTestOwner, ifMatch: draft.ETag,
+				})
+
+				if published.Code != test.code {
+					t.Fatalf("publish = %d %s, want %d", published.Code, published.Body.String(), test.code)
+				}
+
+				if test.code == http.StatusOK {
+					return
+				}
+
+				want := "experiment " + test.experiment + " cannot be published: in included topology shared, " + refused.reason
+				if !strings.Contains(published.Body.String(), want) {
+					t.Fatalf("publish = %s, want %q", published.Body.String(), want)
+				}
+
+				if harness.configWrites != 0 || harness.experimentWrites != 0 {
+					t.Fatalf("writes = %d configs and %d experiments, want none", harness.configWrites, harness.experimentWrites)
+				}
 			})
-
-			if published.Code != test.code {
-				t.Fatalf("publish = %d %s, want %d", published.Code, published.Body.String(), test.code)
-			}
-
-			if test.code == http.StatusOK {
-				return
-			}
-
-			want := "experiment exp cannot be published: in included topology shared, hostname 'all' is reserved: "
-			if !strings.Contains(published.Body.String(), want) {
-				t.Fatalf("publish = %s, want %q", published.Body.String(), want)
-			}
-
-			if harness.configWrites != 0 || harness.experimentWrites != 0 {
-				t.Fatalf("writes = %d configs and %d experiments, want none", harness.configWrites, harness.experimentWrites)
-			}
-		})
+		}
 	}
 }
 

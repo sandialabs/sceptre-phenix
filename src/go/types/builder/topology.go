@@ -381,14 +381,11 @@ func checkInterfaceVLANs(spec map[string]any) (*InterfaceVLANError, bool) {
 	return &InterfaceVLANError{Problems: problems}, absent
 }
 
-// checkHostnames refuses a topology spec with a hostname phenix refuses: a
-// single character, which phenix's schema refuses, or one phenix stores but
-// refuses when it creates an experiment from the topology (see
-// [v1.CheckHostname]): "all", all digits, or "phenix" on a Windows node. The
-// error names each hostname and why, in phenix's words. It also reports
-// whether one of them is a single character, and returns the warnings phenix
-// logs then about the hostnames it accepts. External nodes are not started,
-// and phenix checks none of their hostnames.
+// checkHostnames refuses a topology spec with a hostname phenix refuses (see
+// [checkHostname]). The error names each hostname and why, in phenix's words.
+// It also reports whether one of them is a single character, and returns the
+// warnings phenix logs then about the hostnames it accepts. External nodes are
+// not started, and phenix checks none of their hostnames.
 func checkHostnames(spec map[string]any) (*NodeHostnameError, bool, []string) {
 	var (
 		problems, warnings []string
@@ -396,22 +393,10 @@ func checkHostnames(spec map[string]any) (*NodeHostnameError, bool, []string) {
 	)
 
 	startedNodes(spec, func(hostname, osType string) {
-		// The schema's minimum, as it counts characters.
-		if utf8.RuneCountInString(hostname) == 1 {
-			short = true
-
-			problems = append(problems, fmt.Sprintf(
-				"hostname '%s' is 1 character long: phenix requires hostnames of at least 2 characters, "+
-					"as VyOS, Vyatta and Windows do",
-				hostname,
-			))
-
-			return
-		}
-
-		warning, err := v1.CheckHostname(hostname, osType)
+		warning, err := checkHostname(hostname, osType)
 		if err != nil {
 			problems = append(problems, err.Error())
+			short = short || isShortHostname(hostname)
 		}
 
 		if warning != "" {
@@ -424,6 +409,30 @@ func checkHostnames(spec map[string]any) (*NodeHostnameError, bool, []string) {
 	}
 
 	return &NodeHostnameError{Problems: problems}, short, warnings
+}
+
+// checkHostname reports what phenix makes of the hostname of a node it
+// starts, whose os_type is osType: an error for a hostname phenix refuses, a
+// single character, which phenix's schema refuses, or one phenix stores but
+// refuses when it creates an experiment from the node (see
+// [v1.CheckHostname]): "all", all digits, or "phenix" on a Windows node. It
+// returns the warning phenix logs about a hostname it accepts.
+func checkHostname(hostname, osType string) (string, error) {
+	if isShortHostname(hostname) {
+		return "", fmt.Errorf(
+			"hostname '%s' is 1 character long: phenix requires hostnames of at least 2 characters, "+
+				"as VyOS, Vyatta and Windows do",
+			hostname,
+		)
+	}
+
+	return v1.CheckHostname(hostname, osType)
+}
+
+// isShortHostname reports whether hostname is a single character, as
+// phenix's schema counts characters.
+func isShortHostname(hostname string) bool {
+	return utf8.RuneCountInString(hostname) == 1
 }
 
 // startedNodes calls visit with the hostname and os_type of each node of a
