@@ -2,6 +2,7 @@ package builder_test
 
 import (
 	"errors"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -485,6 +486,181 @@ func TestPublishTopologyConfigKeepsVLANsOfUnconnectedInterfaces(t *testing.T) {
 
 	if _, _, err := doc.PublishTopologyConfig("external-no-vlan"); err != nil {
 		t.Fatalf("an external node's interfaces need no VLAN: %v", err)
+	}
+}
+
+// withInterfaces returns the strict fixture, whose router and host-a each have
+// one interface, eth0, with the spec interfaces of each device given in
+// interfaces replaced: its eth0 extended with the first entry's fields, and
+// the other entries added after it.
+func withInterfaces(t *testing.T, interfaces map[string][]map[string]any) *builder.Document {
+	t.Helper()
+
+	doc := loadDocumentFixture(t, "strict-document.json")
+
+	for hostname, entries := range interfaces {
+		network, _ := nodeByHostname(t, doc, hostname).Device.Spec["network"].(map[string]any)
+		ifaces, _ := network["interfaces"].([]any)
+
+		eth0, ok := ifaces[0].(map[string]any)
+		if !ok {
+			t.Fatalf("%s has no eth0: %s", hostname, asJSON(t, network))
+		}
+
+		maps.Copy(eth0, entries[0])
+
+		for _, entry := range entries[1:] {
+			ifaces = append(ifaces, entry)
+		}
+
+		network["interfaces"] = ifaces
+	}
+
+	return doc
+}
+
+// sharedAddresses returns what publishing doc says about the addresses its
+// interfaces share, or nil when it does not refuse them. The draft stays
+// valid either way.
+func sharedAddresses(t *testing.T, doc *builder.Document) []string {
+	t.Helper()
+
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("the draft must stay valid: %v", err)
+	}
+
+	_, _, err := doc.PublishTopologyConfig("shared")
+
+	var addressErr *builder.InterfaceAddressError
+	if !errors.As(err, &addressErr) {
+		return nil
+	}
+
+	if _, err := doc.ValidateTopologyProjection("shared"); !errors.As(err, &addressErr) {
+		t.Fatalf("ValidateTopologyProjection error = %v, want an InterfaceAddressError", err)
+	}
+
+	return addressErr.Problems
+}
+
+// Two interfaces with one IP or MAC address clash once the experiment runs,
+// so publishing refuses them, however each is written: IP addresses are
+// compared parsed, and MAC addresses in any case and with any separators.
+func TestPublishTopologyConfigRefusesSharedAddresses(t *testing.T) {
+	const both = `interface "eth0" of device "router" and interface "eth0" of device "host-a"`
+
+	for name, test := range map[string]struct {
+		router, host map[string]any
+		want         string
+	}{
+		"IPv4": {
+			router: map[string]any{"address": "10.0.0.5", "mask": 24},
+			host:   map[string]any{"address": " 10.0.0.5/16 ", "mask": 16},
+			want:   "IP address 10.0.0.5 is used by " + both,
+		},
+		"IPv6": {
+			router: map[string]any{"address": "2001:db8::1"},
+			host:   map[string]any{"address": "2001:DB8:0:0:0:0:0:1/64"},
+			want:   "IP address 2001:db8::1 is used by " + both,
+		},
+		"IPv4 mapped into IPv6": {
+			router: map[string]any{"address": "::ffff:10.0.0.5"},
+			host:   map[string]any{"address": "10.0.0.5"},
+			want:   "IP address 10.0.0.5 is used by " + both,
+		},
+		"MAC": {
+			router: map[string]any{"mac": "AA-BB-CC-DD-EE-FF"},
+			host:   map[string]any{"mac": "aa:bb:cc:dd:ee:ff"},
+			want:   "MAC address aa:bb:cc:dd:ee:ff is used by " + both,
+		},
+		// The phenix schema refuses this form, but it is the same address.
+		"MAC in dotted form": {
+			router: map[string]any{"mac": "aa:bb:cc:dd:ee:ff"},
+			host:   map[string]any{"mac": "AABB.CCDD.EEFF"},
+			want:   "MAC address aa:bb:cc:dd:ee:ff is used by " + both,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := withInterfaces(t, map[string][]map[string]any{
+				"router": {test.router},
+				"host-a": {test.host},
+			})
+
+			if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, []string{test.want}) {
+				t.Fatalf("problems = %q, want %q", got, []string{test.want})
+			}
+		})
+	}
+}
+
+// Interfaces of one device are compared too, and past the two a problem
+// names, the others are counted.
+func TestPublishTopologyConfigRefusesAddressesOfOneDevice(t *testing.T) {
+	doc := withInterfaces(t, map[string][]map[string]any{
+		"host-a": {
+			{"mac": "00:00:00:00:00:01"},
+			{"name": "eth1", "vlan": "EXP", "proto": "static", "address": "10.0.0.2", "mac": "00-00-00-00-00-01"},
+			{"name": "eth1", "vlan": "EXP", "mac": "00:00:00:00:00:01"},
+		},
+	})
+
+	want := []string{
+		`IP address 10.0.0.2 is used by interface "eth0" of device "host-a" and interface "eth1" (#2) of device "host-a"`,
+		`MAC address 00:00:00:00:00:01 is used by interface "eth0" of device "host-a", ` +
+			`interface "eth1" (#2) of device "host-a" and 1 more interface`,
+	}
+	if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, want) {
+		t.Fatalf("problems = %q, want %q", got, want)
+	}
+}
+
+// An interface that asks DHCP for its address has none of its own, and
+// minimega makes a MAC for one that has none; a mask or a gateway may be
+// shared.
+func TestPublishTopologyConfigSkipsAddressesNotAssigned(t *testing.T) {
+	for name, test := range map[string]struct {
+		router, host map[string]any
+	}{
+		"DHCP":             {router: map[string]any{"proto": "dhcp", "address": "10.0.0.2"}, host: nil},
+		"blank address":    {router: map[string]any{"address": " "}, host: map[string]any{"address": " "}},
+		"blank MAC":        {router: map[string]any{"mac": ""}, host: map[string]any{"mac": ""}},
+		"unreadable":       {router: map[string]any{"address": "10.0.0.256"}, host: map[string]any{"address": "10.0.0.256"}},
+		"mask and gateway": {router: map[string]any{"gateway": "10.0.0.254"}, host: map[string]any{"gateway": "10.0.0.254"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := withInterfaces(t, map[string][]map[string]any{
+				"router": {test.router},
+				"host-a": {test.host},
+			})
+
+			if _, _, err := doc.PublishTopologyConfig("unshared"); err != nil {
+				t.Fatalf("PublishTopologyConfig: %v", err)
+			}
+		})
+	}
+}
+
+// phenix merges the devices of included topologies into the experiment, so
+// their addresses count, but one that only included devices share is their
+// topology's to fix.
+func TestPublishTopologyConfigComparesIncludedDevices(t *testing.T) {
+	doc := withInterfaces(t, map[string][]map[string]any{
+		"host-a": {{"address": "10.0.0.1"}},
+	})
+	doc.Source.IncludeTopologies = []string{"shared"}
+	nodeByHostname(t, doc, "host-a").Device.IncludedFrom = "shared"
+
+	want := []string{
+		`IP address 10.0.0.1 is used by interface "eth0" of device "router" and interface "eth0" of device "host-a"`,
+	}
+	if got := sharedAddresses(t, doc); !reflect.DeepEqual(got, want) {
+		t.Fatalf("problems = %q, want %q", got, want)
+	}
+
+	nodeByHostname(t, doc, "router").Device.IncludedFrom = "shared"
+
+	if got := sharedAddresses(t, doc); got != nil {
+		t.Fatalf("problems = %q, want none among included devices", got)
 	}
 }
 

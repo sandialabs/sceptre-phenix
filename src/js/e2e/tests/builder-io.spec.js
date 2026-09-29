@@ -86,7 +86,14 @@ function recordedAnnouncements(page) {
 }
 
 // A phenix v1 topology node. `interfaces` is a list of [name, vlan] pairs.
+// Its addresses are the hostname's own, as publishing refuses two
+// interfaces with one address.
 function topologyNode(hostname, interfaces, extra = {}) {
+  const host = [...hostname].reduce(
+    (sum, character) => (sum * 31 + character.charCodeAt(0)) % 65521,
+    7,
+  );
+
   return {
     type: 'VirtualMachine',
     general: { hostname, vm_type: 'kvm', ...extra },
@@ -100,7 +107,7 @@ function topologyNode(hostname, interfaces, extra = {}) {
       interfaces: interfaces.map(([name, vlan], index) => ({
         name,
         vlan,
-        address: `10.${index}.0.${10 + hostname.length}`,
+        address: `10.${index}.${host >> 8}.${host & 255}`,
         mask: 24,
         proto: 'static',
         type: 'ethernet',

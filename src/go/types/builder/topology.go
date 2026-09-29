@@ -1,8 +1,11 @@
 package builder
 
 import (
+	"encoding/hex"
 	"fmt"
 	"maps"
+	"net"
+	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -40,6 +43,18 @@ type InterfaceVLANError struct {
 }
 
 func (e *InterfaceVLANError) Error() string {
+	return strings.Join(e.Problems, "; ")
+}
+
+// InterfaceAddressError is returned, wrapped, by [Document.PublishTopologyConfig]
+// and [Document.ValidateTopologyProjection] for a document in which interfaces
+// use the same IP or MAC address (see [Document.checkInterfaceAddresses]).
+type InterfaceAddressError struct {
+	// Problems names each address and the interfaces that use it.
+	Problems []string
+}
+
+func (e *InterfaceAddressError) Error() string {
 	return strings.Join(e.Problems, "; ")
 }
 
@@ -132,13 +147,14 @@ func (d *Document) ToTopologyConfig(name string) (*store.Config, []string, error
 // ValidateTopologyProjection runs the checks publishing makes against the
 // document's projection, so a caller about to publish a topology can
 // authoritatively verify complete node specs: every interface of a device
-// phenix starts has a VLAN (see [checkInterfaceVLANs]), and the spec passes
-// the existing phenix topology schema validation.
+// phenix starts has a VLAN (see [checkInterfaceVLANs]), no two interfaces use
+// one IP or MAC address (see [Document.checkInterfaceAddresses]), and the spec
+// passes the existing phenix topology schema validation.
 //
 // This is deliberately separate from [Document.Validate], which validates the
 // draft working copy: a working copy may legitimately contain interfaces that
-// are not yet connected to a network and have no VLAN, which a published
-// topology may not.
+// are not yet connected to a network and have no VLAN, or that share an
+// address, which a published topology may not.
 //
 // It calls types.ValidateConfigSpec, which validates the config envelope and
 // the versioned topology schema. It does not resolve included topologies from
@@ -149,7 +165,7 @@ func (d *Document) ValidateTopologyProjection(name string) ([]string, error) {
 		return nil, err
 	}
 
-	if err := validateProjection(config); err != nil {
+	if err := d.validateProjection(config); err != nil {
 		return warnings, err
 	}
 
@@ -165,7 +181,7 @@ func (d *Document) PublishTopologyConfig(name string) (*store.Config, []string, 
 		return nil, nil, err
 	}
 
-	if err := validateProjection(config); err != nil {
+	if err := d.validateProjection(config); err != nil {
 		return nil, warnings, err
 	}
 
@@ -173,10 +189,14 @@ func (d *Document) PublishTopologyConfig(name string) (*store.Config, []string, 
 }
 
 // validateProjection runs the checks of a topology config about to be
-// published: interface VLANs first, as their error names what to fix, then the
-// phenix topology schema.
-func validateProjection(config *store.Config) error {
+// published: interface VLANs, then the addresses interfaces use, as their
+// errors name what to fix, then the phenix topology schema.
+func (d *Document) validateProjection(config *store.Config) error {
 	if err := checkInterfaceVLANs(config.Spec); err != nil {
+		return fmt.Errorf("validating topology projection: %w", err)
+	}
+
+	if err := d.checkInterfaceAddresses(); err != nil {
 		return fmt.Errorf("validating topology projection: %w", err)
 	}
 
@@ -208,30 +228,16 @@ func checkInterfaceVLANs(spec map[string]any) error {
 
 		hostname := specString(node, "general", "hostname")
 		ifaces := specNodeInterfaces(node)
-		names := make(map[string]int, len(ifaces))
-
-		for _, iface := range ifaces {
-			names[interfaceName(iface)]++
-		}
+		labels := interfaceLabels(ifaces)
 
 		for index, iface := range ifaces {
 			if hasVLAN(iface) {
 				continue
 			}
 
-			name := interfaceName(iface)
-			label := strconv.Quote(name)
-
-			switch {
-			case strings.TrimSpace(name) == "":
-				label = fmt.Sprintf("#%d", index+1)
-			case names[name] > 1:
-				label = fmt.Sprintf("%q (#%d)", name, index+1)
-			}
-
 			problems = append(problems, fmt.Sprintf(
 				"interface %s of device %q has no VLAN: connect it to a network, or type a VLAN for it",
-				label, hostname,
+				labels[index], hostname,
 			))
 		}
 	}
@@ -241,6 +247,174 @@ func checkInterfaceVLANs(spec map[string]any) error {
 	}
 
 	return &InterfaceVLANError{Problems: problems}
+}
+
+// interfaceLabels names each interface of a node spec in a message: by its
+// quoted name, or by its position when it has none or shares it with another
+// (#2, "eth0" (#3)).
+func interfaceLabels(ifaces []any) []string {
+	names := make(map[string]int, len(ifaces))
+
+	for _, iface := range ifaces {
+		names[interfaceName(iface)]++
+	}
+
+	labels := make([]string, len(ifaces))
+
+	for index, iface := range ifaces {
+		name := interfaceName(iface)
+
+		switch {
+		case strings.TrimSpace(name) == "":
+			labels[index] = fmt.Sprintf("#%d", index+1)
+		case names[name] > 1:
+			labels[index] = fmt.Sprintf("%q (#%d)", name, index+1)
+		default:
+			labels[index] = strconv.Quote(name)
+		}
+	}
+
+	return labels
+}
+
+// addressUsers are the interfaces that use one IP or MAC address, in document
+// order.
+type addressUsers struct {
+	// address names the address in a message: "IP address 10.0.0.5".
+	address string
+	// users names each interface: `interface "eth0" of device "web"`.
+	users []string
+	// own counts the interfaces of devices that are not included.
+	own int
+}
+
+// checkInterfaceAddresses refuses a document in which two interfaces use the
+// same IP address or the same MAC address: phenix stores such a topology, but
+// the addresses clash once the experiment runs. Every interface of every
+// device counts, including an external device's and those of devices from
+// included topologies, which phenix merges into the experiment; an address
+// only included devices use is their topology's to fix. IP addresses are
+// compared parsed (see [interfaceIP]), and MAC addresses in any case and with
+// any separators (see [interfaceMAC]). The error names each address and the
+// interfaces that use it, in document order.
+func (d *Document) checkInterfaceAddresses() error {
+	var (
+		shared []*addressUsers
+		byKey  = map[string]*addressUsers{}
+	)
+
+	use := func(key, address, user string, included bool) {
+		entry := byKey[key]
+		if entry == nil {
+			entry = &addressUsers{address: address, users: nil, own: 0}
+			byKey[key] = entry
+			shared = append(shared, entry)
+		}
+
+		entry.users = append(entry.users, user)
+
+		if !included {
+			entry.own++
+		}
+	}
+
+	for i := range d.Nodes {
+		node := &d.Nodes[i]
+		if node.Kind != NodeKindDevice || node.Device == nil {
+			continue
+		}
+
+		spec, err := normalizeSpecMap(node.Device.Spec)
+		if err != nil {
+			continue // ToTopology refuses it first
+		}
+
+		ifaces := specNodeInterfaces(spec)
+		labels := interfaceLabels(ifaces)
+		included := node.Device.IncludedFrom != ""
+
+		for index, entry := range ifaces {
+			iface, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+
+			user := fmt.Sprintf("interface %s of device %q", labels[index], node.Device.Hostname)
+
+			if addr, ok := interfaceIP(iface); ok {
+				use("ip "+addr.String(), "IP address "+addr.String(), user, included)
+			}
+
+			if mac, ok := interfaceMAC(iface); ok {
+				use("mac "+mac.String(), "MAC address "+mac.String(), user, included)
+			}
+		}
+	}
+
+	var problems []string
+
+	for _, entry := range shared {
+		if len(entry.users) < 2 || entry.own == 0 {
+			continue
+		}
+
+		first, second, more := entry.users[0], entry.users[1], len(entry.users[2:])
+		users := first + " and " + second
+
+		switch {
+		case more == 1:
+			users = first + ", " + second + " and 1 more interface"
+		case more > 1:
+			users = fmt.Sprintf("%s, %s and %d more interfaces", first, second, more)
+		}
+
+		problems = append(problems, fmt.Sprintf("%s is used by %s", entry.address, users))
+	}
+
+	if len(problems) == 0 {
+		return nil
+	}
+
+	return &InterfaceAddressError{Problems: problems}
+}
+
+// interfaceIP reads the IP address a spec interface entry uses, as Go parses
+// it, without a zone, and with an IPv4 address mapped into IPv6 as the IPv4
+// address. A prefix length typed after it is ignored. It reports none for an
+// interface that asks DHCP for its address, and for an address that is blank
+// or does not parse, which is the schema's to report.
+func interfaceIP(iface map[string]any) (netip.Addr, bool) {
+	if proto, _ := iface["proto"].(string); foldKey(proto) == "dhcp" {
+		return netip.Addr{}, false
+	}
+
+	text, _ := iface["address"].(string)
+	text, _, _ = strings.Cut(text, "/")
+
+	addr, err := netip.ParseAddr(strings.TrimSpace(text))
+	if err != nil {
+		return netip.Addr{}, false
+	}
+
+	return addr.WithZone("").Unmap(), true
+}
+
+// interfaceMAC reads the MAC address a spec interface entry uses, in any case
+// and with any separators: aa:bb:cc:dd:ee:ff, AA-BB-CC-DD-EE-FF and
+// aabb.ccdd.eeff are one address. It reports none for a blank MAC, for which
+// minimega makes one, and for one that is not twelve hex digits, which is the
+// schema's to report.
+func interfaceMAC(iface map[string]any) (net.HardwareAddr, bool) {
+	const length = 6 // bytes of a MAC address
+
+	text, _ := iface["mac"].(string)
+
+	mac, err := hex.DecodeString(strings.NewReplacer(":", "", "-", "", ".", "").Replace(strings.TrimSpace(text)))
+	if err != nil || len(mac) != length {
+		return nil, false
+	}
+
+	return net.HardwareAddr(mac), true
 }
 
 // hasVLAN reports whether a spec interface entry names a VLAN. An entry of the

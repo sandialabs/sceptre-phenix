@@ -92,6 +92,62 @@ describe('diagram checks', () => {
     );
   });
 
+  // Each interface that uses the address gets the warning, so both nodes
+  // are marked and listed, and both stop publishing.
+  test('an address two devices use marks both, and stops publishing', () => {
+    const sample = sampleDocument();
+    const { alpha, bravo } = sample;
+    const doc = {
+      ...sample.doc,
+      nodes: sample.doc.nodes.map((node) => {
+        if (node.kind !== 'device') {
+          return node;
+        }
+
+        const copy = JSON.parse(JSON.stringify(node));
+
+        Object.assign(copy.device.spec.network.interfaces[0], {
+          vlan: 'EXP',
+          proto: 'static',
+          address: '10.0.0.5',
+        });
+
+        return copy;
+      }),
+    };
+    const issues = validateDocument(doc);
+    const of = (hostname, other) =>
+      `IP address 10.0.0.5 of interface "eth0" of "${hostname}" is also used by interface "eth0" of "${other}"`;
+
+    expect(nodeIssueSummaries(doc, issues).get(alpha.id)).toEqual({
+      level: 'warning',
+      text: `1 warning: ${of('alpha', 'bravo')}.`,
+    });
+    expect(nodeIssueSummaries(doc, issues).get(bravo.id).text).toContain(
+      of('bravo', 'alpha'),
+    );
+    expect(
+      issueGroups(doc, issues).nodes.map((group) => [
+        group.title,
+        group.issues
+          .filter((entry) => entry.blocksPublish)
+          .map((entry) => entry.text),
+      ]),
+    ).toEqual([
+      ['Device alpha', [of('alpha', 'bravo')]],
+      ['Device bravo', [of('bravo', 'alpha')]],
+    ]);
+    // Bravo's unconnected eth0 is the third warning.
+    expect(issueCounts(issues)).toEqual({
+      errors: 0,
+      warnings: 3,
+      blocking: 2,
+    });
+    expect(publishingText(issueCounts(issues))).toBe(
+      '2 of the warnings must be fixed before the diagram can be published, and Publish lists those warnings as errors.',
+    );
+  });
+
   test('an issue about a network belongs to its first switch', () => {
     const { doc, sw, alpha } = brokenSample();
 

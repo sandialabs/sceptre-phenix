@@ -15,7 +15,7 @@ import {
   validateDocument,
 } from '@/builder/validate.js';
 
-import { sampleDocument } from './fixtures.js';
+import { sampleDocument, testId } from './fixtures.js';
 
 function errorsFor(doc) {
   return validateDocument(doc).filter((issue) => issue.level === 'error');
@@ -540,6 +540,293 @@ describe('interface VLANs and drive images', () => {
       ],
     });
     expect(deviceFieldWarnings(doc, undefined, { disks: [] })).toEqual({});
+  });
+});
+
+describe('IP and MAC addresses that two interfaces use', () => {
+  // The sample with the spec interfaces of alpha and bravo changed by
+  // `edits`, keyed by hostname.
+  function withInterfaces(edits) {
+    const sample = sampleDocument();
+    const doc = {
+      ...sample.doc,
+      nodes: sample.doc.nodes.map((node) => {
+        const edit = edits[node.device?.hostname];
+
+        if (!edit) {
+          return node;
+        }
+
+        const copy = JSON.parse(JSON.stringify(node));
+
+        edit(copy.device.spec.network.interfaces, copy);
+
+        return copy;
+      }),
+    };
+
+    return { ...sample, doc };
+  }
+
+  function addressIssues(doc) {
+    return validateDocument(doc).filter((issue) =>
+      /\.(address|mac)$/.test(issue.path),
+    );
+  }
+
+  // What the diagram says about the addresses once alpha's eth0 has the
+  // fields of `first`, and bravo's those of `second`.
+  function pair(first, second) {
+    const { doc } = withInterfaces({
+      alpha: ([eth0]) => Object.assign(eth0, first),
+      bravo: ([eth0]) => Object.assign(eth0, second),
+    });
+
+    return addressIssues(doc).map((issue) => issue.message);
+  }
+
+  function fixed(address, more = {}) {
+    return { proto: 'static', address, ...more };
+  }
+
+  test('both interfaces get a warning that blocks publishing, and the draft stays valid', () => {
+    const { doc, alpha, bravo } = withInterfaces({
+      alpha: ([eth0]) => Object.assign(eth0, fixed('10.0.0.5', { mask: 24 })),
+      bravo: ([eth0]) =>
+        Object.assign(
+          eth0,
+          fixed('10.0.0.5', { mask: 16, gateway: '10.0.0.1' }),
+        ),
+    });
+
+    expect(addressIssues(doc)).toEqual([
+      {
+        path: 'nodes[1].device.spec.network.interfaces[0].address',
+        message:
+          'IP address 10.0.0.5 of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo"',
+        level: 'warning',
+        blocksPublish: true,
+        nodeId: alpha.id,
+      },
+      {
+        path: 'nodes[2].device.spec.network.interfaces[0].address',
+        message:
+          'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"',
+        level: 'warning',
+        blocksPublish: true,
+        nodeId: bravo.id,
+      },
+    ]);
+    expect(isValidDocument(doc)).toBe(true);
+  });
+
+  // As the server compares them (interfaceIP and interfaceMAC in
+  // types/builder/topology.go). Each message quotes its own field.
+  test('addresses are compared parsed, and MACs in any case and with any separators', () => {
+    for (const [first, second, shown] of [
+      ['10.0.0.5', '10.0.0.5/24', '10.0.0.5'],
+      ['10.0.0.5', ' 10.0.0.5 ', '10.0.0.5'],
+      ['2001:db8::1', '2001:DB8:0:0:0:0:0:1/64', '2001:DB8:0:0:0:0:0:1'],
+      ['::ffff:10.0.0.5', '10.0.0.5', '10.0.0.5'],
+      ['fe80::1%eth0', 'fe80::1', 'fe80::1'],
+      ['::1.2.3.4', '::102:304', '::102:304'],
+    ]) {
+      expect(pair(fixed(first), fixed(second))).toEqual([
+        `IP address ${first} of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo"`,
+        `IP address ${shown} of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"`,
+      ]);
+    }
+
+    for (const second of ['AA-BB-CC-DD-EE-FF', 'aabb.ccdd.eeff']) {
+      expect(pair({ mac: 'aa:bb:cc:dd:ee:ff' }, { mac: second })).toEqual([
+        'MAC address aa:bb:cc:dd:ee:ff of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo"',
+        `MAC address ${second} of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"`,
+      ]);
+    }
+  });
+
+  // An interface that asks DHCP for its address has none of its own, and
+  // minimega makes a MAC for one that has none. An address that does not
+  // parse is the Inspector form's to report.
+  test('blank, DHCP and unreadable addresses, masks and gateways are not compared', () => {
+    expect(pair(fixed('10.0.0.5'), fixed('10.0.0.6'))).toEqual([]);
+    expect(pair(fixed(''), fixed(''))).toEqual([]);
+    expect(pair(fixed('  '), fixed('  '))).toEqual([]);
+    expect(
+      pair({ proto: 'dhcp', address: '10.0.0.5' }, fixed('10.0.0.5')),
+    ).toEqual([]);
+
+    for (const address of [
+      '10.0.0.05',
+      '10.0.0.256',
+      '10.0.0',
+      '10.0.0.5%eth0',
+      '2001:db8::1::2',
+      '1:2:3:4:5:6:7:8::',
+      'fe80::1%',
+      'host',
+    ]) {
+      expect(pair(fixed(address), fixed(address))).toEqual([]);
+    }
+
+    expect(
+      pair(
+        fixed('10.0.0.5', { mask: 24, gateway: '10.0.0.1' }),
+        fixed('10.0.0.6', { mask: 24, gateway: '10.0.0.1' }),
+      ),
+    ).toEqual([]);
+    expect(pair({ mac: '' }, { mac: '' })).toEqual([]);
+    expect(pair({ mac: 'aa:bb:cc' }, { mac: 'aa:bb:cc' })).toEqual([]);
+  });
+
+  test('interfaces of one device are compared, and past two users counted', () => {
+    const { doc } = withInterfaces({
+      alpha: ([eth0]) => Object.assign(eth0, fixed('10.0.0.5')),
+      bravo: (interfaces) => {
+        Object.assign(interfaces[0], fixed('10.0.0.5'), {
+          mac: '00:00:00:00:00:01',
+        });
+        interfaces.push(
+          { name: 'eth1', ...fixed('10.0.0.5') },
+          { name: 'eth1', mac: '00-00-00-00-00-01' },
+        );
+      },
+    });
+
+    expect(addressIssues(doc).map((issue) => issue.message)).toEqual([
+      'IP address 10.0.0.5 of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo" and 1 more interface',
+      'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha" and 1 more interface',
+      'MAC address 00:00:00:00:00:01 of interface "eth0" of "bravo" is also used by interface "eth1" (#3) of "bravo"',
+      'IP address 10.0.0.5 of interface "eth1" (#2) of "bravo" is also used by interface "eth0" of "alpha" and 1 more interface',
+      'MAC address 00-00-00-00-00-01 of interface "eth1" (#3) of "bravo" is also used by interface "eth0" of "bravo"',
+    ]);
+  });
+
+  // phenix merges an included topology's devices into the experiment, so
+  // their addresses count, but they are that topology's to fix.
+  test('an included device counts, but only this diagram’s devices are reported', () => {
+    const included = (interfaces, node) => {
+      Object.assign(interfaces[0], fixed('10.0.0.5'));
+      node.device.includedFrom = 'shared';
+    };
+    const own = ([eth0]) => Object.assign(eth0, fixed('10.0.0.5'));
+    const source = { kind: 'manual', includeTopologies: ['shared'] };
+    const mixed = withInterfaces({ alpha: included, bravo: own });
+    const both = withInterfaces({ alpha: included, bravo: included });
+
+    expect(
+      addressIssues({ ...mixed.doc, source }).map(({ path, message }) => ({
+        path,
+        message,
+      })),
+    ).toEqual([
+      {
+        path: 'nodes[2].device.spec.network.interfaces[0].address',
+        message:
+          'IP address 10.0.0.5 of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"',
+      },
+    ]);
+    expect(addressIssues({ ...both.doc, source })).toEqual([]);
+  });
+
+  // The Inspector's working copy stands for the device's spec in the
+  // diagram, and is compared with the other devices'.
+  test('field warnings compare the working copy with the other devices', () => {
+    const { doc, alpha, bravo } = withInterfaces({
+      alpha: ([eth0]) => Object.assign(eth0, fixed('10.0.0.5')),
+      bravo: ([eth0]) => Object.assign(eth0, fixed('10.0.0.9')),
+    });
+    const specOf = (...interfaces) => ({
+      network: {
+        interfaces: interfaces.map((iface, index) => ({
+          name: `eth${index}`,
+          vlan: 'EXP',
+          ...iface,
+        })),
+      },
+    });
+
+    expect(
+      deviceFieldWarnings(
+        doc,
+        specOf(
+          fixed('10.0.0.5'),
+          { mac: 'aa:bb:cc:dd:ee:ff' },
+          { mac: 'AABB.CCDD.EEFF' },
+        ),
+        { nodeId: bravo.id },
+      ),
+    ).toEqual({
+      'spec.network.interfaces.0.address': [
+        'This IP address is also used by interface "eth0" of "alpha".',
+      ],
+      'spec.network.interfaces.1.mac': [
+        'This MAC address is also used by interface "eth2" of "bravo".',
+      ],
+      'spec.network.interfaces.2.mac': [
+        'This MAC address is also used by interface "eth1" of "bravo".',
+      ],
+    });
+    // Its own spec in the diagram is not compared with it.
+    expect(
+      deviceFieldWarnings(doc, specOf(fixed('10.0.0.9')), {
+        nodeId: bravo.id,
+      }),
+    ).toEqual({});
+    expect(
+      deviceFieldWarnings(doc, specOf(fixed('10.0.0.6')), {
+        nodeId: alpha.id,
+      }),
+    ).toEqual({});
+  });
+
+  // The checks run on every edit, so each interface is looked up by its
+  // address, never compared with every other one.
+  test('a diagram of 500 devices is checked quickly', () => {
+    const { doc } = sampleDocument();
+    const hex = (value) => value.toString(16).padStart(2, '0');
+    const devices = Array.from({ length: 500 }, (_, index) => ({
+      id: testId(),
+      kind: 'device',
+      label: `host-${index}`,
+      position: { x: index * 10, y: 0 },
+      device: {
+        hostname: `host-${index}`,
+        spec: {
+          type: 'VirtualMachine',
+          general: { hostname: `host-${index}` },
+          network: {
+            // Every address differs but the last interface's MAC, which
+            // all 500 share: 500 warnings.
+            interfaces: [0, 1, 2, 3].map((port) => ({
+              name: `eth${port}`,
+              vlan: 'EXP',
+              proto: 'static',
+              address: `10.${port}.${index >> 8}.${index & 255}`,
+              mac:
+                port === 3
+                  ? '02:00:00:ff:ff:ff'
+                  : `02:00:00:${hex(port)}:${hex(index >> 8)}:${hex(index & 255)}`,
+            })),
+          },
+        },
+        interfaces: [],
+      },
+    }));
+    const large = { ...doc, nodes: [...doc.nodes, ...devices] };
+    const started = performance.now();
+    const issues = addressIssues(large);
+    const elapsed = performance.now() - started;
+
+    expect(issues).toHaveLength(500);
+    expect(
+      issues.find((issue) => issue.path.startsWith('nodes[3].')),
+    ).toMatchObject({
+      path: 'nodes[3].device.spec.network.interfaces[3].mac',
+      message:
+        'MAC address 02:00:00:ff:ff:ff of interface "eth3" of "host-0" is also used by interface "eth3" of "host-1" and 498 more interfaces',
+    });
+    expect(elapsed).toBeLessThan(500);
   });
 });
 

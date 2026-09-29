@@ -694,6 +694,26 @@ describe('publish checks', () => {
       issues.filter((issue) => !issue.blocksPublish),
     );
   });
+
+  test('an address two interfaces use is an error in the Publish dialog only', () => {
+    const { doc } = sampleDocument();
+
+    for (const node of doc.nodes.filter((entry) => entry.kind === 'device')) {
+      node.device.spec.network.interfaces[0].mac = '00:00:00:00:00:01';
+    }
+
+    const issues = validateDocument(doc);
+    const errors = publishChecks(issues)
+      .filter((issue) => issue.level === 'error')
+      .map((issue) => issue.message);
+
+    expect(issues.filter((issue) => issue.level === 'error')).toEqual([]);
+    expect(errors).toEqual([
+      'MAC address 00:00:00:00:00:01 of interface "eth0" of "alpha" is also used by interface "eth0" of "bravo"',
+      expect.stringContaining('"bravo" is not connected to a network'),
+      'MAC address 00:00:00:00:00:01 of interface "eth0" of "bravo" is also used by interface "eth0" of "alpha"',
+    ]);
+  });
 });
 
 describe('publish result', () => {

@@ -623,10 +623,11 @@ export function publishRefusal(reason, intent = {}, context = {}) {
 
 /**
  * The diagram's checks as the Publish dialog lists them: a warning about
- * what publishing refuses, an interface with no VLAN (see collectWarnings
- * in validate.js), is an error there. The draft still saves with it, as the
- * checks elsewhere say, but it is not published: phenix would store the
- * topology, and minimega refuse it when the experiment starts.
+ * what publishing refuses, an interface with no VLAN or an address two
+ * interfaces use (see collectWarnings in validate.js), is an error there.
+ * The draft still saves with it, as the checks elsewhere say, but it is not
+ * published: phenix would store the topology, and minimega refuse it, or
+ * the addresses clash, when the experiment starts.
  *
  * @param {object[]} issues validateDocument() issues
  * @returns {object[]} the issues, each one that blocks publishing an error

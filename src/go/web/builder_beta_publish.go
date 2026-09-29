@@ -570,28 +570,42 @@ func (b *builderBetaAPI) preflightPublish(
 }
 
 // publishProjectionRefusal refuses a document whose topology projection
-// cannot be published. Interfaces without a VLAN are named in the message,
-// which is what clients show, and not only in its cause; past the first few,
-// only their number is.
+// cannot be published. Interfaces without a VLAN, and addresses that
+// interfaces share, are named in the message, which is what clients show, and
+// not only in its cause; past the first few, only their number is.
 func publishProjectionRefusal(topologyName string, err error) error {
 	const listed = 3
 
-	var vlanErr *bdoc.InterfaceVLANError
-	if !errors.As(err, &vlanErr) || len(vlanErr.Problems) == 0 {
+	var (
+		vlanErr    *bdoc.InterfaceVLANError
+		addressErr *bdoc.InterfaceAddressError
+		problems   []string
+		// What the problems past the first few are, after their number.
+		one, many string
+	)
+
+	switch {
+	case errors.As(err, &vlanErr):
+		problems, one, many = vlanErr.Problems, "interface has no VLAN", "interfaces have no VLAN"
+	case errors.As(err, &addressErr):
+		problems, one, many = addressErr.Problems, "address is used more than once", "addresses are used more than once"
+	}
+
+	if len(problems) == 0 {
 		return weberror.NewWebError(err, "builder document cannot be published as topology %s", topologyName).
 			SetStatus(http.StatusUnprocessableEntity)
 	}
 
-	problems := strings.Join(vlanErr.Problems[:min(len(vlanErr.Problems), listed)], "; ")
+	message := strings.Join(problems[:min(len(problems), listed)], "; ")
 
-	switch more := len(vlanErr.Problems) - listed; {
+	switch more := len(problems) - listed; {
 	case more == 1:
-		problems += "; 1 more interface has no VLAN"
+		message += "; 1 more " + one
 	case more > 1:
-		problems += fmt.Sprintf("; %d more interfaces have no VLAN", more)
+		message += fmt.Sprintf("; %d more %s", more, many)
 	}
 
-	return weberror.NewWebError(err, "topology %s cannot be published: %s", topologyName, problems).
+	return weberror.NewWebError(err, "topology %s cannot be published: %s", topologyName, message).
 		SetStatus(http.StatusUnprocessableEntity)
 }
 

@@ -14,6 +14,7 @@
 // publishes such a device with the device's hostname and without that
 // connection, which the editor would not show.
 
+import { count } from './announce.js';
 import { isIconKey } from './catalog.js';
 import { contentDigestSync, isDigest } from './digest.js';
 import {
@@ -941,19 +942,46 @@ function specFindings(spec, hostname, { networks, disks }) {
  * @param {object} doc the diagram the device is in
  * @param {object} spec the device spec
  * @param {object} [options] disks: file names of the server's disk images,
- *   or null while they are unknown
+ *   or null while they are unknown; nodeId: the id of the device the spec
+ *   is of, whose own spec in the diagram it stands for when its addresses
+ *   are compared with the other devices' (see sharedAddresses)
  * @returns {Object<string, string[]>} messages, keyed by the JSON Forms data
  *   path of the field (spec.network.interfaces.0.vlan)
  */
-export function deviceFieldWarnings(doc, spec, { disks = null } = {}) {
+export function deviceFieldWarnings(
+  doc,
+  spec,
+  { disks = null, nodeId = '' } = {},
+) {
   const warnings = {};
+  const add = (field, warning) => {
+    warnings[field] = [...(warnings[field] || []), warning];
+  };
 
   specFindings(spec, '', specContext(doc, disks)).forEach((finding) => {
-    warnings[finding.field] = [
-      ...(warnings[finding.field] || []),
-      finding.warning,
-    ];
+    add(finding.field, finding.warning);
   });
+
+  const others = (doc?.nodes || []).filter(
+    (node) => node.kind === 'device' && node.id !== nodeId,
+  );
+  const self = (doc?.nodes || []).find((node) => node.id === nodeId);
+
+  sharedAddresses([
+    {
+      hostname: self?.device?.hostname ?? '',
+      interfaces: arrayOf(spec?.network?.interfaces),
+      included: false,
+    },
+    ...others.map(addressDevice),
+  ])
+    .filter((shared) => shared.device === 0)
+    .forEach((shared) => {
+      add(
+        `spec.network.interfaces.${shared.index}.${shared.field}`,
+        `This ${shared.name} is also used by ${otherUsers(shared)}.`,
+      );
+    });
 
   return warnings;
 }
@@ -965,6 +993,26 @@ function hasVLAN(iface) {
   const vlan = iface?.vlan;
 
   return vlan != null && (typeof vlan !== 'string' || vlan.trim() !== '');
+}
+
+// How a message names each spec interface of a device: by its name, or by
+// its position when that does not tell it apart, as the server names it
+// (interfaceLabels in types/builder/topology.go).
+function interfaceLabels(interfaces) {
+  const names = interfaces.map((iface) =>
+    typeof iface?.name === 'string' ? iface.name : '',
+  );
+  const uses = new Map();
+
+  names.forEach((name) => uses.set(name, (uses.get(name) || 0) + 1));
+
+  return names.map((name, index) => {
+    if (!name.trim()) {
+      return `#${index + 1}`;
+    }
+
+    return uses.get(name) > 1 ? `"${name}" (#${index + 1})` : `"${name}"`;
+  });
 }
 
 /**
@@ -990,6 +1038,7 @@ function interfaceWarnings(node, connected, networks) {
   const names = interfaces.map((iface) =>
     typeof iface?.name === 'string' ? iface.name : '',
   );
+  const labels = interfaceLabels(interfaces);
   const handles = new Map(
     deviceHandles(node).map((handle) => [handle.name, handle]),
   );
@@ -1012,15 +1061,7 @@ function interfaceWarnings(node, connected, networks) {
 
     const unnamed = !name.trim();
     const shared = !unnamed && names.indexOf(name) !== names.lastIndexOf(name);
-    let label = `"${name}"`;
-
-    if (unnamed) {
-      label = `#${index + 1}`;
-    } else if (shared) {
-      label = `"${name}" (#${index + 1})`;
-    }
-
-    const subject = `interface ${label} of "${node.device.hostname}"`;
+    const subject = `interface ${labels[index]} of "${node.device.hostname}"`;
     const warn = (message, extra = {}) =>
       warnings.push({ index, message, ...extra });
     const blocks = { blocksPublish: true };
@@ -1091,14 +1132,234 @@ function networksByName(doc) {
   return { exact, folded };
 }
 
+// An IPv4 address as its four numbers, or null when it is not one. Like
+// Go's netip.ParseAddr, it takes no leading zeros.
+function ipv4Octets(text) {
+  const parts = text.split('.');
+
+  return parts.length === 4 &&
+    parts.every(
+      (part) => /^(0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255,
+    )
+    ? parts.map(Number)
+    : null;
+}
+
+// An IPv6 address as its eight groups, or null when it is not one, as Go's
+// netip.ParseAddr reads it: `::` stands for at least one group of zeros,
+// and an IPv4 address may end it, for the last two groups.
+function ipv6Groups(text) {
+  const halves = text.split('::');
+
+  if (halves.length > 2) {
+    return null;
+  }
+
+  const sides = halves.map((half) => (half ? half.split(':') : []));
+  const end = sides[sides.length - 1];
+
+  if (end.length && end[end.length - 1].includes('.')) {
+    const octets = ipv4Octets(end.pop());
+
+    if (!octets) {
+      return null;
+    }
+
+    end.push(
+      (octets[0] * 256 + octets[1]).toString(16),
+      (octets[2] * 256 + octets[3]).toString(16),
+    );
+  }
+
+  const fields = sides.flat();
+
+  if (
+    fields.some((field) => !/^[0-9a-f]{1,4}$/i.test(field)) ||
+    (sides.length === 1 ? fields.length !== 8 : fields.length > 7)
+  ) {
+    return null;
+  }
+
+  const groups =
+    sides.length === 1
+      ? fields
+      : [...sides[0], ...Array(8 - fields.length).fill('0'), ...sides[1]];
+
+  return groups.map((field) => parseInt(field, 16));
+}
+
+/**
+ * The IP address an interface uses, as typed without a prefix length, and
+ * as a key that is the same however it is written: parsed as the server
+ * parses it (interfaceIP in types/builder/topology.go), without a zone, and
+ * an IPv4 address mapped into IPv6 as the IPv4 address.
+ *
+ * @param {object} iface spec interface
+ * @returns {{text: string, key: string}|null} null for none: a blank
+ *   address, one the interface asks DHCP for, and one that does not parse,
+ *   which the Inspector's form reports
+ */
+function interfaceIP(iface) {
+  if (typeof iface.address !== 'string' || fold(iface.proto) === 'dhcp') {
+    return null;
+  }
+
+  const text = iface.address.split('/')[0].trim();
+  const zone = text.indexOf('%');
+
+  if (!text.includes(':')) {
+    const octets = zone < 0 ? ipv4Octets(text) : null;
+
+    return octets ? { text, key: octets.join('.') } : null;
+  }
+
+  const groups =
+    zone === text.length - 1
+      ? null
+      : ipv6Groups(zone < 0 ? text : text.slice(0, zone));
+
+  if (!groups) {
+    return null;
+  }
+
+  const [high, low] = groups.slice(6);
+  const mapped =
+    groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff;
+
+  return {
+    text,
+    key: mapped
+      ? [high >> 8, high & 255, low >> 8, low & 255].join('.')
+      : groups.map((group) => group.toString(16)).join(':'),
+  };
+}
+
+/**
+ * The MAC address an interface uses, as typed, and as a key that is the
+ * same in either case and with any separators: aa:bb:cc:dd:ee:ff,
+ * AA-BB-CC-DD-EE-FF and aabb.ccdd.eeff are one address.
+ *
+ * @param {object} iface spec interface
+ * @returns {{text: string, key: string}|null} null for none: a blank MAC,
+ *   for which minimega makes one, and one that is not twelve hex digits,
+ *   which the Inspector's form reports
+ */
+function interfaceMAC(iface) {
+  const text = typeof iface.mac === 'string' ? iface.mac.trim() : '';
+  const key = text.toLowerCase().replace(/[:.-]/g, '');
+
+  return /^[0-9a-f]{12}$/.test(key) ? { text, key } : null;
+}
+
+// The addresses sharedAddresses compares: the field each is in, and its name
+// in a message.
+const ADDRESS_FIELDS = [
+  { field: 'address', name: 'IP address', read: interfaceIP },
+  { field: 'mac', name: 'MAC address', read: interfaceMAC },
+];
+
+// A device node as sharedAddresses takes it.
+function addressDevice(node) {
+  return {
+    hostname: node.device?.hostname ?? '',
+    interfaces: specInterfaces(node),
+    included: Boolean(node.device?.includedFrom),
+  };
+}
+
+/**
+ * The interfaces that use an IP address or a MAC address another interface
+ * uses too: of any two devices, or of one. The interfaces of an included
+ * device count, as phenix merges them into the experiment, but are not
+ * reported, and neither is an address only included devices share: they are
+ * their topology's to fix. Interfaces are looked up by address, so the check
+ * grows with the diagram, never with its square.
+ *
+ * @param {{hostname: string, interfaces: object[], included: boolean}[]}
+ *   devices
+ * @returns {{device: number, index: number, field: string, name: string,
+ *   text: string, label: string, hostname: string, other: object,
+ *   more: number}[]} for each interface, by the device's position in
+ *   `devices` and its own in the spec, the address as typed, and another
+ *   interface that uses it (label and hostname), and how many more do
+ */
+function sharedAddresses(devices) {
+  const users = ADDRESS_FIELDS.map(() => new Map());
+
+  devices.forEach((device, position) => {
+    const labels = interfaceLabels(device.interfaces);
+
+    device.interfaces.forEach((iface, index) => {
+      // An entry of the wrong shape is left to the schema.
+      if (!iface || typeof iface !== 'object') {
+        return;
+      }
+
+      ADDRESS_FIELDS.forEach(({ read }, kind) => {
+        const address = read(iface);
+
+        if (!address) {
+          return;
+        }
+
+        const user = {
+          device: position,
+          index,
+          text: address.text,
+          label: labels[index],
+          hostname: device.hostname,
+          included: device.included,
+        };
+        const list = users[kind].get(address.key);
+
+        if (list) {
+          list.push(user);
+        } else {
+          users[kind].set(address.key, [user]);
+        }
+      });
+    });
+  });
+
+  return ADDRESS_FIELDS.flatMap(({ field, name }, kind) =>
+    [...users[kind].values()]
+      .filter((list) => list.length > 1)
+      .flatMap((list) =>
+        list.flatMap((user, position) =>
+          user.included
+            ? []
+            : [
+                {
+                  ...user,
+                  field,
+                  name,
+                  other: list[position === 0 ? 1 : 0],
+                  more: list.length - 2,
+                },
+              ],
+        ),
+      ),
+  );
+}
+
+// The other interfaces that use a shared address: one by name, and how many
+// more.
+function otherUsers({ other, more }) {
+  const named = `interface ${other.label} of "${other.hostname}"`;
+
+  return more ? `${named} and ${count(more, 'more interface')}` : named;
+}
+
 /**
  * Advisory checks that are not server errors but are worth surfacing while
- * editing. None blocks saving. One blocks publishing, and says so with
+ * editing. None blocks saving. Two block publishing, and say so with
  * `blocksPublish`: an interface with no VLAN, which phenix stores but
- * minimega refuses when the experiment starts. The server refuses to
- * publish it too (PublishTopologyConfig in types/builder/topology.go),
- * checking every interface in the device spec, as interfaceWarnings does.
- * An external device is not started, so its interfaces need none.
+ * minimega refuses when the experiment starts, and an IP or MAC address
+ * that two interfaces use (see sharedAddresses), which phenix stores too,
+ * but which clash once the experiment runs. The server refuses to publish
+ * either (PublishTopologyConfig in types/builder/topology.go), checking
+ * every interface in the device spec, as interfaceWarnings does. An
+ * external device is not started, so its interfaces need no VLAN.
  *
  * @param {object} doc
  * @param {object[]} issues
@@ -1150,6 +1411,22 @@ function collectWarnings(doc, issues, context) {
           extra,
         );
       },
+    );
+  });
+
+  // At the interface's address or MAC field, where the Inspector shows its
+  // warning too (see deviceFieldWarnings).
+  const devices = (doc.nodes || []).flatMap((node, index) =>
+    node.kind === 'device' ? [{ ...addressDevice(node), index }] : [],
+  );
+
+  sharedAddresses(devices).forEach((shared) => {
+    issue(
+      issues,
+      `nodes[${devices[shared.device].index}].device.spec.network.interfaces[${shared.index}].${shared.field}`,
+      `${shared.name} ${shared.text} of interface ${shared.label} of "${shared.hostname}" is also used by ${otherUsers(shared)}`,
+      'warning',
+      { blocksPublish: true },
     );
   });
 

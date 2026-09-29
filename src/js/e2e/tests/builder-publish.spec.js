@@ -1269,8 +1269,9 @@ test('router and firewall templates publish with node types Router and Firewall'
 // refuses it only when the experiment starts. The draft keeps such an
 // interface, as a warning, but publishing refuses it, in the dialog and on
 // the server, and says which interface to fix. Typing its VLAN connects it,
-// on a switch added for a network that has none.
-test('an interface with no VLAN is refused at publish, and its VLAN connects it', async ({
+// on a switch added for a network that has none. An address two interfaces
+// use is refused the same way.
+test('an interface with no VLAN or a used address is refused at publish, and its VLAN connects it', async ({
   page,
   builder,
   tracker,
@@ -1428,6 +1429,77 @@ test('an interface with no VLAN is refused at publish, and its VLAN connects it'
       `topology ${other} cannot be published: interface #2 of device "server" has no VLAN: connect it to a network, or type a VLAN for it`,
     );
     expect(await builder.config('Topology', other)).toBeNull();
+  });
+
+  // Two interfaces with one address clash once the experiment runs. The
+  // draft keeps them, as warnings on both devices, and publishing refuses
+  // them until one address changes.
+  await test.step('an IP address two devices use is refused until one changes', async () => {
+    const shared = uniqueName(testInfo, 'shared-ip');
+    tracker.config('Topology', shared);
+    const document = labDocument(shared);
+
+    for (const device of devicesOf(document)) {
+      Object.assign(device.device.spec.network.interfaces[0], {
+        proto: 'static',
+        address: '10.0.0.5',
+        mask: 24,
+      });
+    }
+
+    const seeded = await builder.seedDraft(document);
+    await builder.openDraft(seeded);
+    const uses = (hostname, other) =>
+      `IP address 10.0.0.5 of interface "eth0" of "${hostname}" is also used by interface "eth0" of "${other}"`;
+
+    await page.getByTestId('builder-checks').click();
+    const checks = page.getByTestId('checks-dialog');
+    await expect(checks).toContainText(uses('server', 'server-2'));
+    await expect(checks).toContainText(uses('server-2', 'server'));
+    await page.keyboard.press('Escape');
+    await expect(checks).toHaveCount(0);
+
+    await openPublish(builder);
+    await expect(errors).toHaveText([
+      `Error: ${uses('server', 'server-2')}`,
+      `Error: ${uses('server-2', 'server')}`,
+    ]);
+    await expect(page.getByTestId('publish-submit')).toBeDisabled();
+
+    const current = await builder.request.get(draftPath(seeded));
+    const refused = await builder.request.post(`${draftPath(seeded)}/publish`, {
+      headers: { 'If-Match': current.headers().etag },
+      data: { mode: 'topology', topology: { name: shared, action: 'create' } },
+    });
+    expect(refused.status(), await refused.text()).toBe(422);
+    expect((await refused.json()).message).toBe(
+      `topology ${shared} cannot be published: IP address 10.0.0.5 is used by interface "eth0" of device "server" and interface "eth0" of device "server-2"`,
+    );
+    await builder.dialog.getByRole('button', { name: 'Cancel' }).click();
+
+    // The Inspector shows the warning at the address field.
+    await builder.selectInOutline('server-2');
+    const field = builder.inspector.locator(
+      '[data-path="spec.network.interfaces.0.address"]',
+    );
+    await expect(field.getByTestId('inspector-field-warning')).toHaveText(
+      'Warning: This IP address is also used by interface "eth0" of "server".',
+    );
+    await field.getByRole('textbox').fill('10.0.0.6');
+    await field.getByRole('textbox').press('Enter');
+    await expect(builder.liveRegion).toContainText('Updated device server-2');
+    await expect(field.getByTestId('inspector-field-warning')).toHaveCount(0);
+    await synced(
+      builder,
+      seeded,
+      (saved) =>
+        devicesOf(saved)[1].device.spec.network.interfaces[0].address ===
+        '10.0.0.6',
+    );
+
+    await openPublish(builder);
+    await expect(errors).toHaveCount(0);
+    await expectPublish(page, 200);
   });
 });
 

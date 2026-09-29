@@ -413,7 +413,8 @@
     ),
   );
 
-  // An interface with no VLAN is an error here, though not in the draft.
+  // An interface with no VLAN, and an address two interfaces use, is an
+  // error here, though not in the draft.
   const issues = computed(() => publishChecks(store.issues));
   const failed = computed(() =>
     issues.value.some((issue) => issue.level === 'error'),

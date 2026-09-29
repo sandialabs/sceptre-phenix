@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -378,6 +379,82 @@ func TestBuilderBetaPublishNamesInterfacesWithoutVLAN(t *testing.T) { //nolint:p
 	// The cause still lists every one.
 	if !strings.Contains(body.Cause, `interface "eth2" of device "host"`+fix) {
 		t.Fatalf("cause %q does not name eth2", body.Cause)
+	}
+
+	if harness.configWrites != 0 || harness.store.count(bapi.NamespacePublished) != 0 {
+		t.Fatal("a refused publication had side effects")
+	}
+}
+
+// TestBuilderBetaPublishNamesSharedAddresses refuses interfaces that use one
+// IP or MAC address, however each is written, and names the first few
+// addresses and their interfaces in the message. The draft holding them saves.
+func TestBuilderBetaPublishNamesSharedAddresses(t *testing.T) { //nolint:paralleltest // mutates feature options
+	document := bdoc.NewDocument("shared")
+
+	for _, host := range []struct{ name, separator, prefix string }{{"a", ":", ""}, {"b", "-", "/24"}} {
+		mac := func(last string) string {
+			return strings.Join([]string{"00", "00", "00", "00", "00", last}, host.separator)
+		}
+
+		document.Nodes = append(document.Nodes, bdoc.Node{
+			ID: bdoc.DeviceNodeID(host.name), Kind: bdoc.NodeKindDevice, Label: host.name,
+			Device: &bdoc.Device{
+				Hostname: host.name,
+				Spec: map[string]any{
+					"type":    "VirtualMachine",
+					"general": map[string]any{"hostname": host.name},
+					"network": map[string]any{"interfaces": []any{
+						map[string]any{
+							"name": "eth0", "vlan": "EXP", "proto": "static",
+							"address": "10.0.0.1" + host.prefix, "mac": mac("01"),
+						},
+						map[string]any{
+							"name": "eth1", "vlan": "EXP", "proto": "static",
+							"address": "10.0.0.2" + host.prefix, "mac": mac("02"),
+						},
+					}},
+				},
+				Interfaces: []bdoc.InterfaceHandle{},
+			},
+		})
+	}
+
+	harness := newBuilderBetaHarness(t)
+	draft := createBuilderPublishDraft(t, harness, document)
+
+	refused := harness.do(builderBetaRequest{
+		method: http.MethodPost,
+		path:   "/builder/drafts/" + draft.Owner + "/" + draft.ID + "/publish",
+		body:   `{"mode":"topology","topology":{"name":"shared","action":"create"}}`,
+		user:   builderBetaTestOwner, ifMatch: draft.ETag,
+	})
+	if refused.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d: %s", refused.Code, http.StatusUnprocessableEntity, refused.Body.String())
+	}
+
+	var body struct {
+		Message string `json:"message"`
+		Cause   string `json:"cause"`
+	}
+	harness.decode(refused, &body)
+
+	users := func(name string) string {
+		return `interface "` + name + `" of device "a" and interface "` + name + `" of device "b"`
+	}
+
+	want := `topology shared cannot be published: ` +
+		`IP address 10.0.0.1 is used by ` + users("eth0") + `; ` +
+		`MAC address 00:00:00:00:00:01 is used by ` + users("eth0") + `; ` +
+		`IP address 10.0.0.2 is used by ` + users("eth1") + `; ` +
+		`1 more address is used more than once`
+	if body.Message != want {
+		t.Fatalf("message = %q, want %q", body.Message, want)
+	}
+
+	// The cause still lists every one.
+	if !strings.Contains(body.Cause, `MAC address 00:00:00:00:00:02 is used by `+users("eth1")) {
+		t.Fatalf("cause %q does not name the second MAC address", body.Cause)
 	}
 
 	if harness.configWrites != 0 || harness.store.count(bapi.NamespacePublished) != 0 {
@@ -1053,15 +1130,18 @@ func TestBuilderBetaPublishExperimentWithIncludedTopology(t *testing.T) { //noli
 	}
 }
 
-// includeNode is a complete node spec named hostname, for include tests.
+// includeNode is a complete node spec named hostname, for include tests. Its
+// address is the hostname's own, as publishing refuses two interfaces with one.
 func includeNode(hostname string) map[string]any {
+	sum := crc32.ChecksumIEEE([]byte(hostname))
+
 	return map[string]any{
 		"type":     "VirtualMachine",
 		"general":  map[string]any{"hostname": hostname, "vm_type": "kvm"},
 		"hardware": map[string]any{"os_type": "linux", "drives": []any{map[string]any{"image": "miniccc.qc2"}}},
 		"network": map[string]any{"interfaces": []any{map[string]any{
 			"name": "eth0", "vlan": "EXP", "type": "ethernet", "proto": "static",
-			"address": "10.0.0.1", "mask": 24,
+			"address": fmt.Sprintf("10.%d.%d.%d", byte(sum>>16), byte(sum>>8), byte(sum)), "mask": 8,
 		}}},
 	}
 }

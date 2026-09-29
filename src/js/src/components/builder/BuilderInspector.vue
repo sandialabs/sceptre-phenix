@@ -550,6 +550,7 @@
     target.value?.kind === 'device' && !lock.value.all
       ? deviceFieldWarnings(store.doc, draft.value?.spec, {
           disks: store.disks,
+          nodeId: target.value.target.id,
         })
       : {},
   );
