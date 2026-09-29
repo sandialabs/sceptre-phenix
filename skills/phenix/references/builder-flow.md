@@ -50,7 +50,11 @@ value too long for its box scrolls in it, and Tab reaches the box only while
 it scrolls. Scenario says whether the scenario is stored or uploaded and lists
 each of its apps with the hosts it runs on. A stored scenario's apps are read
 with `GET /configs/Scenario/<name>`, which needs `configs` `get`; otherwise the
-Inspector says it cannot read them. Edit scenario (Add scenario when there is
+Inspector says it cannot read them. Export's Gephi (GEXF) file, a graph of the
+devices and networks for Gephi that Builder Flow cannot open, lists each
+device's scenario apps (`apps`, `disabled_apps`); it reads a stored scenario
+again the same way, and when it cannot, leaves the apps out and says why.
+Edit scenario (Add scenario when there is
 none) opens the same Scenario dialog as the toolbar's Scenario button; a
 read-only draft shows neither. Leaving a draft,
 publishing, or exporting first saves Inspector changes that were not applied,

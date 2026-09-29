@@ -2619,6 +2619,20 @@ export function scenarioApps(content) {
 }
 
 /**
+ * The name of the stored scenario whose content must be read from its
+ * config, since a stored reference carries none (see ScenarioDialog); ''
+ * for any other scenario, and for none.
+ *
+ * @param {object} [scenario] a document's scenario
+ * @returns {string}
+ */
+export function storedScenarioName(scenario) {
+  return scenario?.kind === 'stored' && !scenario.content
+    ? scenario.name || ''
+    : '';
+}
+
+/**
  * Summary counts for status text and the drafts list. `included` counts the
  * devices (among `devices`) that come from included topologies, and
  * `includedLinks` the connections (among `links`) of those devices.

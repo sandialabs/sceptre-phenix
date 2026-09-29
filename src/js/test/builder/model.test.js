@@ -35,6 +35,7 @@ import {
   sourceAnnotations,
   specInterfaceFor,
   specInterfaces,
+  storedScenarioName,
   syncInterfaceVLANs,
   ungroup,
   updateEdge,
@@ -1426,6 +1427,17 @@ describe('scenario', () => {
     ]);
     expect(scenarioApps(undefined)).toEqual([]);
     expect(scenarioApps({ apps: null })).toEqual([]);
+  });
+
+  test('only a stored scenario without content is read from its config', () => {
+    const stored = { kind: 'stored', name: 'plant', digest: 'sha256:1' };
+
+    expect(storedScenarioName(stored)).toBe('plant');
+    expect(storedScenarioName({ ...stored, content: { apps: [] } })).toBe('');
+    expect(
+      storedScenarioName({ kind: 'uploaded', name: 'plant', content: {} }),
+    ).toBe('');
+    expect(storedScenarioName(undefined)).toBe('');
   });
 });
 

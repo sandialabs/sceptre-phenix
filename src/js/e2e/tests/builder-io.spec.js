@@ -1517,6 +1517,96 @@ test.describe('generate', () => {
         'deep-host': nested,
       });
 
+    await test.step("the GEXF export lists the stored scenario's apps on their hosts", async () => {
+      const dialog = await builder.openDialog('export');
+      const status = dialog.getByRole('status');
+      const fileName = exportFileName(experiment, 'gexf');
+      const saved = `Saved ${fileName}: 4 devices, 2 networks and 5 connections.`;
+      const isRead = (url) =>
+        url.pathname.endsWith(`${API}/configs/Scenario/${scenario}`);
+      // The reference carries no content: each export reads the scenario.
+      const reads = [];
+      const onResponse = (response) => {
+        if (isRead(new URL(response.url()))) {
+          reads.push(response.status());
+        }
+      };
+      // Each device's app values, by hostname, in the file an export saves.
+      async function exportApps() {
+        const file = await download(page, () =>
+          dialog.getByTestId('export-gexf').click(),
+        );
+        expect.soft(file.name).toBe(fileName);
+
+        return page.evaluate((text) => {
+          const xml = new DOMParser().parseFromString(text, 'application/xml');
+          const gexf = 'http://gexf.net/1.3';
+          const values = (node) =>
+            [...node.getElementsByTagNameNS(gexf, 'attvalue')].map((value) => [
+              value.getAttribute('for'),
+              value.getAttribute('value'),
+            ]);
+
+          return Object.fromEntries(
+            [...xml.getElementsByTagNameNS(gexf, 'node')]
+              .filter((node) =>
+                values(node).some(
+                  ([id, value]) => id === 'kind' && value === 'device',
+                ),
+              )
+              .map((node) => [
+                node.getAttribute('label'),
+                Object.fromEntries(
+                  values(node).filter(([id]) => /app/.test(id)),
+                ),
+              ]),
+          );
+        }, file.buffer.toString('utf8'));
+      }
+      page.on('response', onResponse);
+
+      // A role that cannot read the scenario: the file leaves the apps out,
+      // rather than saying the devices run none, and the status says why.
+      await page.route(isRead, (route) =>
+        route.fulfill({
+          status: 403,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'forbidden' }),
+        }),
+      );
+      expect.soft(await exportApps()).toEqual({
+        'host-a': {},
+        'host-b': {},
+        'inc-host': {},
+        'deep-host': {},
+      });
+      await expect
+        .soft(status)
+        .toHaveText(
+          `${saved} It lists no scenario apps: your role cannot read scenario ${scenario}.`,
+        );
+      await page.unroute(isRead);
+
+      const traffic = {
+        apps: '[e2e-traffic]',
+        apps_text: 'e2e-traffic',
+        app_count: '1',
+      };
+      expect.soft(await exportApps()).toEqual({
+        'host-a': traffic,
+        'host-b': traffic,
+        'inc-host': { app_count: '0' },
+        'deep-host': { app_count: '0' },
+      });
+      // The status follows the read.
+      await expect.soft(status).toHaveText(saved);
+      page.off('response', onResponse);
+      expect.soft(reads).toEqual([403, 200]);
+
+      await page.keyboard.press('Escape');
+      await expect(builder.dialog).toHaveCount(0);
+    });
+
     await test.step("the Inspector shows the experiment's annotations and its scenario's apps", async () => {
       const inspector = builder.inspector;
       const annotations = inspector.getByTestId('inspector-annotations');

@@ -1601,6 +1601,32 @@ describe('server data', () => {
     expect(store.error).toBe('');
   });
 
+  test('Export reads a stored scenario again, and says why it cannot', async () => {
+    const before = { apps: [{ name: 'ntp' }] };
+    const now = { apps: [{ name: 'scada', hosts: [{ hostname: 'plc' }] }] };
+
+    api.getScenario.mockResolvedValueOnce(before);
+    await store.fetchScenario('plant-scn');
+    api.getScenario.mockResolvedValueOnce(now);
+
+    // Not the content the Inspector read before: the server's now.
+    await expect(store.readScenario('plant-scn')).resolves.toEqual({
+      content: now,
+      problem: '',
+    });
+    expect(api.getScenario).toHaveBeenLastCalledWith('plant-scn');
+    expect(store.storedScenarios['plant-scn'].content).toEqual(now);
+
+    api.getScenario.mockRejectedValueOnce(
+      Object.assign(new Error('forbidden'), { response: { status: 403 } }),
+    );
+    await expect(store.readScenario('plant-scn')).resolves.toEqual({
+      content: null,
+      problem: 'forbidden',
+    });
+    expect(store.error).toBe('');
+  });
+
   test('publishing sends only the intent and the ETag', async () => {
     await withDraft();
 

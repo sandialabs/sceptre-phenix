@@ -11,7 +11,10 @@
   part currently visible on screen.
 
   Gephi (GEXF) is the network as a graph for analysis in Gephi, built here
-  from the diagram (see gexf.js). It is not a format the Builder imports.
+  from the diagram (see gexf.js). It is not a format the Builder imports. A
+  stored scenario is read from the server first, for the apps each device
+  runs; when it cannot be read, the file leaves the apps out and the status
+  says why.
 
   The Inspector's unapplied edits are saved before the dialog opens (see
   leave.js). Edits it cannot apply keep every export from being made,
@@ -97,6 +100,7 @@
         data-testid="export-gexf"
         aria-describedby="export-gexf-hint"
         :disabled="Boolean(unapplied)"
+        :aria-disabled="busy ? 'true' : undefined"
         @click="exportGEXF">
         <builder-icon name="download" :size="14" />
         Gephi (GEXF)
@@ -106,8 +110,9 @@
       Topology YAML is the phenix Topology config Publish would write.
     </p>
     <p id="export-gexf-hint" class="builder-hint">
-      Gephi (GEXF): the devices, networks and connections, with their settings,
-      as a graph to analyze in Gephi. Builder Flow cannot open it.
+      Gephi (GEXF): the devices, networks and connections, with their settings
+      and scenario apps, as a graph to analyze in Gephi. Builder Flow cannot
+      open it.
     </p>
 
     <p class="builder-dialog__message" role="status">
@@ -149,6 +154,7 @@
   import { count, listOf } from '@/builder/announce.js';
   import { GEXF_MIME, toGEXF } from '@/builder/gexf.js';
   import { unappliedBlock } from '@/builder/leave.js';
+  import { storedScenarioName } from '@/builder/model.js';
   import { useBuilderStore } from '@/builder/store.js';
 
   const props = defineProps({
@@ -249,25 +255,62 @@
     }
   }
 
+  // Why a stored scenario's apps are not in the file (see classifyError).
+  function scenarioProblem(name, problem) {
+    if (problem === 'forbidden') {
+      return `your role cannot read scenario ${name}`;
+    }
+
+    if (problem === 'missing' || problem === 'invalid') {
+      return `the server has no scenario ${name}`;
+    }
+
+    return `scenario ${name} could not be read`;
+  }
+
   // The network as a GEXF graph (see gexf.js), dated by the diagram's last
-  // change: this tab's, else the server's.
-  function exportGEXF() {
+  // change: this tab's, else the server's. A stored scenario is read again
+  // first, for the apps each device runs.
+  async function exportGEXF() {
+    // A busy button keeps focus, so it can still be pressed.
+    if (busy.value) {
+      return;
+    }
+
     error.clear();
 
-    const fileName = exportFileName(store.doc, 'gexf');
+    const doc = store.doc;
+    const modified = store.saveState.changedAt || store.draftRecord.updated;
+    const fileName = exportFileName(doc, 'gexf');
+    const stored = storedScenarioName(doc.scenario);
+    let scenario = { content: doc.scenario?.content ?? null, problem: '' };
+
+    if (stored) {
+      status.set('Exporting GEXF…');
+      busy.value = true;
+
+      try {
+        scenario = await store.readScenario(stored);
+      } finally {
+        busy.value = false;
+      }
+    }
 
     try {
-      const graph = toGEXF(store.doc, {
-        modified: store.saveState.changedAt || store.draftRecord.updated,
-      });
+      const graph = toGEXF(doc, { modified, scenario: scenario.content });
 
       saveText({ text: graph.text, mime: GEXF_MIME, fileName, saveAs });
+
+      const saved = `Saved ${fileName}: ${listOf([
+        count(graph.devices, 'device'),
+        count(graph.networks, 'network'),
+        count(graph.connections, 'connection'),
+      ])}.`;
+
       status.set(
-        `Saved ${fileName}: ${listOf([
-          count(graph.devices, 'device'),
-          count(graph.networks, 'network'),
-          count(graph.connections, 'connection'),
-        ])}.`,
+        scenario.problem
+          ? `${saved} It lists no scenario apps: ${scenarioProblem(stored, scenario.problem)}.`
+          : saved,
       );
     } catch (err) {
       status.clear();

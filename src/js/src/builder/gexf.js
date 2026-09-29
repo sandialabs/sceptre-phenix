@@ -7,6 +7,11 @@
 // part of the network, and as nodes with no connection they would change its
 // statistics. A node's groups are columns instead (group, groups).
 //
+// A device's scenario apps are columns too (apps, disabled_apps): the apps
+// of the scenario that list its hostname among their hosts. They are written
+// only when the scenario's content is known: an uploaded scenario carries it,
+// and Export reads a stored one's from the server first.
+//
 // What the export uses of GEXF 1.3:
 // - the 1.3 namespaces, and the schema's location, as the 1.3 primer and
 //   Gephi write them.
@@ -29,12 +34,14 @@
 //   which networkx cannot read: numbers in a list are written as text.
 //   float, as double holds every number a document can.
 // - dynamic mode, spells and timestamps: a diagram has no time.
+// - the metadata a scenario gives an app for each host: it configures the
+//   app, not the network, and can be large.
 // - directed edges (the model has none), and edge weight and thickness:
 //   every connection is alike.
 //
 // Gephi Lite reads list columns as text, so the lists of values that repeat
-// across devices (VLANs, interfaces, labels) are also written as one text
-// value, "a|b", which it can split into keywords. The edges carry each
+// across devices (VLANs, interfaces, labels, apps) are also written as one
+// text value, "a|b", which it can split into keywords. The edges carry each
 // interface's own values (network, address, MAC) as single values.
 
 import { networkStyle } from './adapters/vueflow.js';
@@ -42,6 +49,7 @@ import {
   DEFAULT_NETWORK_COLORS,
   deviceHandles,
   nodeLabel,
+  scenarioApps,
   sizeOf,
   specInterfaceFor,
   specInterfaces,
@@ -105,6 +113,10 @@ const NODE_COLUMNS = [
   ['rulesets', 'Rulesets', 'liststring'],
   ['injections', 'Injections', 'liststring'],
   ['injection_count', 'Injection count', 'integer'],
+  ['apps', 'Scenario apps', 'liststring'],
+  ['apps_text', 'Scenario apps (text)', 'string'],
+  ['app_count', 'Scenario app count', 'integer'],
+  ['disabled_apps', 'Disabled scenario apps', 'liststring'],
   ['labels', 'Labels', 'liststring'],
   ['labels_text', 'Labels (text)', 'string'],
   ['network', 'Network', 'string'],
@@ -526,9 +538,31 @@ function deviceLook(spec) {
   return { color: vizColor(look.color), shape: look.shape };
 }
 
+// The scenario apps of each host, by hostname, as {apps, disabled}, from
+// scenario content (a v2 Scenario spec); null when there is no content.
+function appsByHost(content) {
+  if (!content || typeof content !== 'object') {
+    return null;
+  }
+
+  const hosts = new Map();
+
+  for (const app of scenarioApps(content)) {
+    for (const hostname of app.hosts) {
+      const host = hosts.get(hostname) || { apps: [], disabled: [] };
+
+      (app.disabled ? host.disabled : host.apps).push(app.name);
+      hosts.set(hostname, host);
+    }
+  }
+
+  return hosts;
+}
+
 // A device's values. A connected interface's VLAN is its network's name, as
-// publishing writes it (`networkOf`).
-function deviceValues(node, columns, networkOf) {
+// publishing writes it (`networkOf`). Its scenario apps are known only with
+// `hostApps` (see appsByHost).
+function deviceValues(node, columns, networkOf, hostApps) {
   const spec = node.device?.spec || {};
   const general = spec.general || {};
   const hardware = spec.hardware || {};
@@ -544,6 +578,10 @@ function deviceValues(node, columns, networkOf) {
     (iface) => networkOf(node, iface.name) ?? iface.vlan,
   );
   const names = interfaces.map((iface) => iface.name);
+  const apps = hostApps?.get(node.device?.hostname) || {
+    apps: [],
+    disabled: [],
+  };
   const values = {
     hostname: node.device?.hostname,
     description: general.description,
@@ -586,6 +624,10 @@ function deviceValues(node, columns, networkOf) {
     rulesets: listOrNothing(list(network.rulesets).map((set) => set.name)),
     injections: listOrNothing(injections.map((injection) => injection.dst)),
     injection_count: injections.length,
+    apps: listOrNothing(apps.apps),
+    apps_text: textOrNothing(apps.apps),
+    app_count: hostApps ? distinct(apps.apps).length : undefined,
+    disabled_apps: listOrNothing(apps.disabled),
     labels: listOrNothing(labels),
     labels_text: textOrNothing(labels),
   };
@@ -780,14 +822,17 @@ function assignKinds(connections) {
 // A device's or network's <node>; null for any other node, and for a
 // network's other switches.
 function nodeElement(node, context) {
-  const { byId, hubs, columns, networkOf, used } = context;
+  const { byId, hubs, columns, networkOf, hostApps, used } = context;
   let label;
   let values;
   let look;
 
   if (node.kind === 'device') {
     label = node.device?.hostname || nodeLabel(node);
-    values = { kind: 'device', ...deviceValues(node, columns, networkOf) };
+    values = {
+      kind: 'device',
+      ...deviceValues(node, columns, networkOf, hostApps),
+    };
     look = deviceLook(node.device?.spec);
   } else if (node.kind === 'switch') {
     const hub = hubs.get(node.switch?.networkId);
@@ -892,13 +937,17 @@ function metaElement(doc, lastChange) {
  *
  * @param {object} doc
  * @param {object} [options] modified: when the diagram last changed (a date
- *   or its text; today when not given); now: the clock, for tests
+ *   or its text; today when not given); scenario: the content (a v2 Scenario
+ *   spec) of the diagram's scenario, whose apps each device lists (the
+ *   document's own when not given, which a stored scenario does not carry);
+ *   now: the clock, for tests
  * @returns {{text: string, devices: number, networks: number,
  *   connections: number}} the file, and how many devices, networks and
  *   connections it holds
  */
 export function toGEXF(doc, options = {}) {
   const { modified, now = () => new Date() } = options;
+  const hostApps = appsByHost(options.scenario ?? doc?.scenario?.content);
   const nodes = doc?.nodes || [];
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const hubs = networkHubs(doc);
@@ -914,7 +963,14 @@ export function toGEXF(doc, options = {}) {
   const networkOf = (node, name) => connected.get(`${node.id}\n${name}`);
   const usedByNodes = new Set();
   const usedByEdges = new Set();
-  const context = { byId, hubs, columns, networkOf, used: usedByNodes };
+  const context = {
+    byId,
+    hubs,
+    columns,
+    networkOf,
+    hostApps,
+    used: usedByNodes,
+  };
   const nodeElements = nodes
     .map((node) => nodeElement(node, context))
     .filter(Boolean);

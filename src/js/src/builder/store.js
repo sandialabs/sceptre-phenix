@@ -1891,6 +1891,24 @@ export const useBuilderStore = defineStore('builder', {
       }
     },
 
+    /**
+     * Reads a stored scenario's content again, for Export (see
+     * fetchScenario; the Inspector shows this reading too).
+     *
+     * @param {string} name
+     * @returns {Promise<{content: object|null, problem: string}>} the
+     *   content, or null and why it could not be read (see classifyError)
+     */
+    async readScenario(name) {
+      await this.fetchScenario(name);
+
+      const read = this.storedScenarios[name];
+
+      return read?.content
+        ? { content: read.content, problem: '' }
+        : { content: null, problem: read?.problem || 'error' };
+    },
+
     // Reads the open draft's snapshots for the History dialog, which opens
     // at once and shows historyLoading until they arrive, or historyError if
     // they do not: the page alert behind the dialog is left alone. A list

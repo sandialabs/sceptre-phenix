@@ -97,7 +97,11 @@
   import BuilderIcon from '../BuilderIcon.vue';
 
   import { formatTimestamp } from '@/builder/format.js';
-  import { scenarioApps, sourceAnnotations } from '@/builder/model.js';
+  import {
+    scenarioApps,
+    sourceAnnotations,
+    storedScenarioName,
+  } from '@/builder/model.js';
   import { useBuilderStore } from '@/builder/store.js';
 
   defineEmits(['scenario']);
@@ -126,11 +130,7 @@
   const scenario = computed(() => store.doc.scenario || null);
 
   // A stored reference without content names the scenario to read.
-  const storedName = computed(() =>
-    scenario.value?.kind === 'stored' && !scenario.value.content
-      ? scenario.value.name || ''
-      : '',
-  );
+  const storedName = computed(() => storedScenarioName(scenario.value));
 
   watch(
     storedName,
