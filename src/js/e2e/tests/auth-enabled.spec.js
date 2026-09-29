@@ -173,13 +173,24 @@ test('create account via signup modal lands on disabled page', async ({
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 
+  // The admin's name is refused: the dialog stays open, its User Name field
+  // says so and has focus, and a toast announces it. Another name clears it.
   await createAccount.click();
   await expect(dialog).toBeVisible();
-  await field('User Name').fill(SIGNUP_USER);
+  await field('User Name').fill(ADMIN_USER);
   await field('First Name').fill('E2E');
   await field('Last Name').fill('Signup');
   await field('Password').fill('Testpass1!');
   await field('Confirm Password').fill('Testpass1!');
+  await dialog.getByRole('button', { name: 'Create User' }).click();
+  const taken = dialog.getByText('User already exists');
+  await expect(taken).toBeVisible();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'User already exists' }),
+  ).toBeVisible();
+  await expect(field('User Name')).toBeFocused();
+  await field('User Name').fill(SIGNUP_USER);
+  await expect(taken).toBeHidden();
   await dialog.getByRole('button', { name: 'Create User' }).click();
 
   // fresh self-signup users get the Disabled role until an admin assigns one

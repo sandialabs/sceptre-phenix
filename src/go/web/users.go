@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -142,12 +143,26 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := rbac.NewUser(req.Username, req.Password, req.FirstName, req.LastName)
-
+	// The role is found before the user is created, so a request naming no
+	// role creates no user.
 	uRole, err := rbac.RoleFromConfig(req.RoleName)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "role not found", "role", req.RoleName)
 		http.Error(w, "role not found", http.StatusBadRequest)
+
+		return
+	}
+
+	user, err := rbac.NewUser(req.Username, req.Password, req.FirstName, req.LastName)
+	if err != nil {
+		if errors.Is(err, rbac.ErrUserExists) {
+			http.Error(w, "user "+req.Username+" already exists", http.StatusConflict)
+
+			return
+		}
+
+		plog.Error(plog.TypeSecurity, "creating user", "user", req.Username, "err", err)
+		http.Error(w, "error creating user", http.StatusInternalServerError)
 
 		return
 	}

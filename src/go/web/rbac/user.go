@@ -45,7 +45,12 @@ spec:
 			- get
 */
 
-var ErrPasswordInvalid = errors.New("password invalid")
+var (
+	ErrPasswordInvalid = errors.New("password invalid")
+
+	// ErrUserExists is returned by [NewUser] for a name another user has.
+	ErrUserExists = errors.New("user already exists")
+)
 
 const tokenProxied = "proxied"
 
@@ -60,10 +65,12 @@ type User struct {
 	config *store.Config
 }
 
-func NewUser(u, p, firstName, lastName string) *User {
+// NewUser creates and stores the user u with the password p. For a name
+// another user has, the error wraps [ErrUserExists].
+func NewUser(u, p, firstName, lastName string) (*User, error) {
 	hashed, err := bcrypt.GenerateFromPassword([]byte(p), bcrypt.DefaultCost)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("hashing password: %w", err)
 	}
 
 	spec := &v1.UserSpec{ //nolint:exhaustruct // partial initialization
@@ -81,10 +88,14 @@ func NewUser(u, p, firstName, lastName string) *User {
 	}
 
 	if err := store.Create(c); err != nil {
-		return nil
+		if errors.Is(err, store.ErrExist) {
+			return nil, fmt.Errorf("creating user %s: %w", u, ErrUserExists)
+		}
+
+		return nil, fmt.Errorf("creating user %s: %w", u, err)
 	}
 
-	return &User{Spec: spec, config: c}
+	return &User{Spec: spec, config: c}, nil
 }
 
 func GetUsers() ([]*User, error) {

@@ -1,6 +1,7 @@
 package rbac
 
 import (
+	"errors"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -33,8 +34,8 @@ func useBoltStore(t *testing.T) {
 func TestParallelSignInsKeepEveryToken(t *testing.T) {
 	useBoltStore(t)
 
-	if NewUser("alice", "Testpass1!", "Alice", "Tester") == nil {
-		t.Fatal("NewUser returned nil")
+	if _, err := NewUser("alice", "Testpass1!", "Alice", "Tester"); err != nil {
+		t.Fatalf("NewUser returned error: %v", err)
 	}
 
 	earlier, err := GetUser("alice")
@@ -104,5 +105,32 @@ func TestParallelSignInsKeepEveryToken(t *testing.T) {
 
 	if stored.FirstName() != "Alice" || stored.LastName() != "Tester" {
 		t.Errorf("name = %q %q, want Alice Tester", stored.FirstName(), stored.LastName())
+	}
+}
+
+// TestNewUserRefusesAnExistingName creates a user whose name another user
+// has, and asserts the error is ErrUserExists and the user is as it was.
+func TestNewUserRefusesAnExistingName(t *testing.T) {
+	useBoltStore(t)
+
+	if _, err := NewUser("alice", "Testpass1!", "Alice", "Tester"); err != nil {
+		t.Fatalf("NewUser returned error: %v", err)
+	}
+
+	if u, err := NewUser("alice", "Otherpass1!", "Other", "Name"); u != nil || !errors.Is(err, ErrUserExists) {
+		t.Fatalf("NewUser of an existing name = %v, %v, want ErrUserExists", u, err)
+	}
+
+	stored, err := GetUser("alice")
+	if err != nil {
+		t.Fatalf("GetUser returned error: %v", err)
+	}
+
+	if stored.FirstName() != "Alice" {
+		t.Errorf("first name = %q, want Alice", stored.FirstName())
+	}
+
+	if err := stored.ValidatePassword("Testpass1!"); err != nil {
+		t.Errorf("the password the user was created with: %v", err)
 	}
 }

@@ -26,6 +26,30 @@ test('users: create and delete a user via modal', async ({ page }) => {
   await modal.locator('input[type="password"]').nth(1).fill('Testpass1!');
   await modal.locator('select').selectOption('Global Viewer');
 
+  // A name another user has that the list does not show yet is refused
+  // with 409: the dialog keeps what was typed, its User Name field says so
+  // and has focus, and a toast announces it.
+  const create = '**/api/v1/users';
+  await page.route(create, (route) =>
+    route.request().method() === 'POST'
+      ? route.fulfill({
+          status: 409,
+          contentType: 'text/plain',
+          body: 'user e2e-user already exists\n',
+        })
+      : route.fallback(),
+  );
+  await page.getByRole('button', { name: 'Create User' }).click();
+  await expect(modal.getByText('User already exists')).toBeVisible();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'User already exists' }),
+  ).toBeVisible();
+  await expect(modal.locator('input[type="text"]').nth(0)).toBeFocused();
+  await expect(modal.locator('input[type="password"]').nth(1)).toHaveValue(
+    'Testpass1!',
+  );
+  await page.unroute(create);
+
   await page.getByRole('button', { name: 'Create User' }).click();
   // success path must close the modal
   await expect(page.locator('.modal-card')).toBeHidden({ timeout: 15000 });

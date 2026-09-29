@@ -275,6 +275,20 @@ It requires a valid username and password.
             this.signUpModal = false;
           })
           .catch((err) => {
+            // Another account has the name: the User Name field says so,
+            // a toast announces it, and focus goes back to the field.
+            if (err.response?.status === 409) {
+              this.userExists = true;
+              this.$buefy.toast.open({
+                message: 'User already exists',
+                type: 'is-warning',
+                duration: 4000,
+              });
+              this.$refs.signupUsername?.focus();
+
+              return;
+            }
+
             useErrorNotification(err);
           });
       },
@@ -301,6 +315,10 @@ It requires a valid username and password.
             ? this.$refs.signupUsername?.focus()
             : this.$refs.createAccount?.focus(),
         );
+      },
+      // A name changed since is not known to be taken.
+      'signUp.username'() {
+        this.userExists = false;
       },
     },
 

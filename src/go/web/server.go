@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -35,6 +36,9 @@ const (
 
 var o serverOptions //nolint:gochecknoglobals // global options
 
+// ConfigureUsers creates each default user (name:password:role[:resource...])
+// that does not exist, and gives each the role it names. The error joins
+// those of the users it could not create.
 func ConfigureUsers(users []string) error {
 	setUserRole := func(user *rbac.User, rname string, resources ...string) {
 		if role, err := rbac.RoleFromConfig(rname); err == nil {
@@ -61,6 +65,8 @@ func ConfigureUsers(users []string) error {
 			)
 		}
 	}
+
+	var errs []error
 
 	for _, u := range users {
 		creds := strings.Split(u, ":")
@@ -91,12 +97,25 @@ func ConfigureUsers(users []string) error {
 
 		plog.Info(plog.TypeSecurity, "creating default user", "user", uname, "role", rname)
 
-		user := rbac.NewUser(uname, pword, "", "")
+		user, err := rbac.NewUser(uname, pword, "", "")
+		if errors.Is(err, rbac.ErrUserExists) {
+			// Created since it was looked up, by another phenix sharing the
+			// store, say. It is left as it is.
+			plog.Info(plog.TypeSecurity, "default user already exists", "user", uname)
+
+			continue
+		} else if err != nil {
+			plog.Error(plog.TypeSecurity, "creating default user", "user", uname, "err", err)
+
+			errs = append(errs, err)
+
+			continue
+		}
 
 		setUserRole(user, rname, creds[3:]...)
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 //nolint:funlen,maintidx // server startup

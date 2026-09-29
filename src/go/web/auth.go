@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -99,9 +100,15 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u := rbac.NewUser(req.Username, req.Password, req.FirstName, req.LastName)
-	if u == nil {
-		// can happen if username is the same as an existing user
+	u, err := rbac.NewUser(req.Username, req.Password, req.FirstName, req.LastName)
+	if err != nil {
+		if errors.Is(err, rbac.ErrUserExists) {
+			http.Error(w, "user "+req.Username+" already exists", http.StatusConflict)
+
+			return
+		}
+
+		plog.Error(plog.TypeSecurity, "creating user", "user", req.Username, "err", err)
 		http.Error(w, "error creating user", http.StatusInternalServerError)
 
 		return
