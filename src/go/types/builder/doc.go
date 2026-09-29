@@ -74,5 +74,7 @@
 //
 // Size limits (node counts, payload sizes, etc.) are deliberately *not*
 // enforced here; they belong to the API/transport layer. This package enforces
-// structural and semantic correctness only.
+// structural and semantic correctness only, and the bounds on the document
+// name, which the draft service records as a title, and on the source config
+// annotations a document carries only to show them.
 package builder

@@ -248,7 +248,12 @@ type Source struct {
 	// publishing writes the references back instead of flattening the included
 	// devices (see [Device.IncludedFrom]) into the topology.
 	IncludeTopologies []string `json:"includeTopologies,omitempty"`
-	Warnings          []string `json:"warnings,omitempty"`
+	// Annotations are the source config's metadata.annotations at import time,
+	// such as an experiment's topology and scenario, without the Builders' own
+	// (see [IsBuilderAnnotation]). They are informational: [Source.Digest]
+	// leaves them out, and publishing never writes them.
+	Annotations map[string]string `json:"annotations,omitempty"`
+	Warnings    []string          `json:"warnings,omitempty"`
 }
 
 // NewDocument returns an empty, valid document with a deterministic ID derived

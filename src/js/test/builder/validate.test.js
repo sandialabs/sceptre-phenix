@@ -7,6 +7,8 @@ import { createDocument } from '@/builder/model.js';
 import {
   deviceFieldWarnings,
   isValidDocument,
+  MAX_ANNOTATION_BYTES,
+  MAX_ANNOTATIONS,
   MAX_NAME_BYTES,
   MAX_VLAN_ALIAS,
   SCENARIO_API_VERSION,
@@ -44,6 +46,40 @@ describe('document validation', () => {
     // Bytes, not characters: 257 two-byte characters are 514 bytes.
     expect(paths(named('é'.repeat(MAX_NAME_BYTES / 2 + 1)))).toEqual(['name']);
     expect(paths(named('my\ttopology'))).toEqual(['name']);
+  });
+
+  test('source annotations are bounded the way the server bounds them', () => {
+    const annotated = (annotations) => ({
+      ...createDocument(),
+      source: { kind: 'topology', name: 'core', annotations },
+    });
+    const messages = (annotations) =>
+      errorsFor(annotated(annotations)).map((issue) => issue.message);
+    const many = Object.fromEntries(
+      Array.from({ length: MAX_ANNOTATIONS + 1 }, (_, i) => [`n${i}`, '']),
+    );
+    const key = 'k'.repeat(MAX_NAME_BYTES);
+
+    // Right at the bounds, counted in bytes: é is two.
+    expect(
+      messages({
+        [key]: 'é'.repeat((MAX_ANNOTATION_BYTES - MAX_NAME_BYTES) / 2),
+      }),
+    ).toEqual([]);
+    expect(messages({ [`${key}k`]: '' })).toEqual([
+      `annotation key "${'k'.repeat(64)}..." must be at most ${MAX_NAME_BYTES} bytes`,
+    ]);
+    expect(messages({ a: 'x'.repeat(MAX_ANNOTATION_BYTES) })).toEqual([
+      `annotations must take at most ${MAX_ANNOTATION_BYTES} bytes in all, not ${MAX_ANNOTATION_BYTES + 1}`,
+    ]);
+    expect(messages(many)).toEqual([
+      `at most ${MAX_ANNOTATIONS} annotations are allowed, not ${MAX_ANNOTATIONS + 1}`,
+    ]);
+    expect(messages({ '\t': 'tab', 'a\u0007b': 'bell' })).toEqual([
+      'annotation key "\\t" must not be blank',
+      'annotation key "a\\u0007b" must not contain control characters',
+    ]);
+    expect(paths(annotated(null))).toEqual([]);
   });
 
   test('issues are sorted by path', () => {

@@ -197,6 +197,81 @@
       "error": "source.includeTopologies"
     },
     {
+      "name": "source annotations, which a document only shows",
+      "set": [
+        {
+          "path": [
+            "source",
+            "annotations"
+          ],
+          "value": {
+            "scenario": "ntp",
+            "note": "two\nlines"
+          }
+        }
+      ]
+    },
+    {
+      "name": "blank annotation key",
+      "set": [
+        {
+          "path": [
+            "source",
+            "annotations"
+          ],
+          "value": {
+            " ": "blank"
+          }
+        }
+      ],
+      "error": "source.annotations"
+    },
+    {
+      "name": "annotation key with a newline",
+      "set": [
+        {
+          "path": [
+            "source",
+            "annotations"
+          ],
+          "value": {
+            "two\nlines": "x"
+          }
+        }
+      ],
+      "error": "source.annotations"
+    },
+    {
+      "name": "annotations that are not an object",
+      "set": [
+        {
+          "path": [
+            "source",
+            "annotations"
+          ],
+          "value": [
+            "topology"
+          ]
+        }
+      ],
+      "error": "source.annotations"
+    },
+    {
+      "name": "annotation that is not a string",
+      "set": [
+        {
+          "path": [
+            "source",
+            "annotations"
+          ],
+          "value": {
+            "count": 3
+          }
+        }
+      ],
+      "error": "source.annotations.count"
+    },
+    {
       "name": "network name with a tab",
       "set": [
         {

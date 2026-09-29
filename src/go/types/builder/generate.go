@@ -7,6 +7,7 @@ import (
 	"path"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/activeshadow/structs"
@@ -73,6 +74,9 @@ func WithTopologyLoader(load TopologyLoader) GenerateOption {
 //   - every interface declaring a VLAN is connected to that VLAN's switch,
 //   - interfaces without a VLAN are preserved unconnected,
 //   - experiment VLAN aliases and scenarios are imported when available,
+//   - the config's annotations are kept on [Source.Annotations], without the
+//     Builders' own (see [IsBuilderAnnotation]) and within the bounds
+//     [Document.Validate] puts on them,
 //   - the injections an experiment's apps added when it started, whose
 //     sources are under the experiment's base directory, are dropped,
 //   - included topologies are resolved when a loader is given (see
@@ -141,6 +145,8 @@ func FromConfig(config store.Config, options ...GenerateOption) (*Document, []st
 
 		gen.warnUnrepresentedExperimentFields(spec)
 	}
+
+	gen.importAnnotations(config.Metadata.Annotations)
 
 	digest, err := SourceDigest(config)
 	if err != nil {
@@ -1094,6 +1100,74 @@ func (g *generator) importScenario(value any, name string) error {
 	}
 
 	return nil
+}
+
+// builderAnnotationPrefix starts the config annotations the Builders keep for
+// themselves: the legacy Builder's diagram (builder-xml, often large), the
+// published document a topology names (builder-doc) and the record of a
+// published experiment (builder-experiment).
+const builderAnnotationPrefix = "builder-"
+
+// maxListedAnnotations is the most annotation keys a warning names.
+const maxListedAnnotations = 5
+
+// IsBuilderAnnotation reports whether a config annotation is one the Builders
+// keep for themselves, which a document never carries in
+// [Source.Annotations].
+func IsBuilderAnnotation(key string) bool {
+	return strings.HasPrefix(key, builderAnnotationPrefix)
+}
+
+// importAnnotations keeps the source config's annotations, other than the
+// Builders' own, on the document's source. In key order, it keeps those that
+// fit the bounds [Document.Validate] puts on them, and warns about the rest.
+func (g *generator) importAnnotations(annotations map[string]string) {
+	var (
+		kept    = map[string]string{}
+		size    int
+		dropped []string
+	)
+
+	for _, key := range slices.Sorted(maps.Keys(annotations)) {
+		if IsBuilderAnnotation(key) {
+			continue
+		}
+
+		value := annotations[key]
+
+		if annotationKeyProblem(key) != "" || len(kept) == MaxAnnotations ||
+			size+len(key)+len(value) > MaxAnnotationBytes {
+			dropped = append(dropped, strconv.Quote(truncate(key)))
+
+			continue
+		}
+
+		kept[key] = value
+		size += len(key) + len(value)
+	}
+
+	if len(kept) > 0 {
+		g.doc.Source.Annotations = kept
+	}
+
+	if len(dropped) == 0 {
+		return
+	}
+
+	listed := dropped
+	if len(dropped) > maxListedAnnotations {
+		listed = append(
+			slices.Clip(dropped[:maxListedAnnotations]),
+			fmt.Sprintf("%d more", len(dropped)-maxListedAnnotations),
+		)
+	}
+
+	g.warnf(
+		"%s %s of the source config %s left out: a builder document keeps at most %d annotations "+
+			"of %d KiB in all, whose keys are not blank, at most %d bytes long and free of control characters",
+		pluralOf(len(dropped), "annotation", "annotations"), listOf(listed),
+		pluralOf(len(dropped), "was", "were"), MaxAnnotations, maxAnnotationKiB, MaxNameBytes,
+	)
 }
 
 // experimentBaseDir returns the directory phenix keeps an experiment's files

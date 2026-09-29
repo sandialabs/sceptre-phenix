@@ -31,6 +31,13 @@ export const MAX_VLAN_ALIAS = 4094;
 // bytes (MaxNameBytes in validate.go).
 export const MAX_NAME_BYTES = 512;
 
+// Bounds on the source config annotations a document carries only to show
+// them (MaxAnnotations and MaxAnnotationBytes in validate.go): how many, and
+// their keys and values together in UTF-8 bytes. A key is bounded like the
+// document name.
+export const MAX_ANNOTATIONS = 100;
+export const MAX_ANNOTATION_BYTES = 256 * 1024;
+
 // The apiVersion of scenario content a reference carries: the latest stored
 // scenario version (ScenarioAPIVersion in document.go).
 export const SCENARIO_API_VERSION = 'phenix.sandia.gov/v2';
@@ -52,6 +59,16 @@ function fold(value) {
 
 function finite(value) {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function utf8Length(text) {
+  return new TextEncoder().encode(text).length;
+}
+
+function hasControlCharacters(text) {
+  return [...text].some(
+    (ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f,
+  );
 }
 
 function issue(issues, path, message, level = 'error', extra = {}) {
@@ -92,15 +109,13 @@ function validateHeader(doc, issues) {
 
   const name = String(doc.name ?? '');
 
-  if (new TextEncoder().encode(name).length > MAX_NAME_BYTES) {
+  if (utf8Length(name) > MAX_NAME_BYTES) {
     issue(
       issues,
       'name',
       `document name must be at most ${MAX_NAME_BYTES} bytes`,
     );
-  } else if (
-    [...name].some((ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f)
-  ) {
+  } else if (hasControlCharacters(name)) {
     issue(issues, 'name', 'document name must not contain control characters');
   }
 
@@ -755,6 +770,82 @@ function validateSource(doc, issues) {
       `malformed source digest "${digest}" (expected sha256:<64 hex>)`,
     );
   }
+
+  validateAnnotations(doc.source.annotations, issues);
+}
+
+// What makes an annotation key unusable (annotationKeyProblem in
+// validate.go), or ''.
+function annotationKeyProblem(key) {
+  if (!key.trim()) {
+    return 'must not be blank';
+  }
+
+  if (utf8Length(key) > MAX_NAME_BYTES) {
+    return `must be at most ${MAX_NAME_BYTES} bytes`;
+  }
+
+  return hasControlCharacters(key) ? 'must not contain control characters' : '';
+}
+
+function validateAnnotations(annotations, issues) {
+  const path = 'source.annotations';
+
+  // null is none, as the server decodes it.
+  if (annotations == null) {
+    return;
+  }
+
+  // The server refuses any other value when it decodes the document.
+  if (typeof annotations !== 'object' || Array.isArray(annotations)) {
+    issue(issues, path, 'annotations must be an object of text values');
+
+    return;
+  }
+
+  const entries = Object.entries(annotations);
+  let size = 0;
+
+  entries.forEach(([key, value]) => {
+    if (typeof value === 'string') {
+      size += utf8Length(key) + utf8Length(value);
+    } else {
+      issue(issues, `${path}.${key}`, `annotation "${key}" must be text`);
+    }
+  });
+
+  if (entries.length > MAX_ANNOTATIONS) {
+    issue(
+      issues,
+      path,
+      `at most ${MAX_ANNOTATIONS} annotations are allowed, not ${entries.length}`,
+    );
+  }
+
+  if (size > MAX_ANNOTATION_BYTES) {
+    issue(
+      issues,
+      path,
+      `annotations must take at most ${MAX_ANNOTATION_BYTES} bytes in all, not ${size}`,
+    );
+  }
+
+  entries
+    .map(([key]) => key)
+    .sort()
+    .forEach((key) => {
+      const problem = annotationKeyProblem(key);
+
+      if (problem) {
+        const shown = key.length > 64 ? `${key.slice(0, 64)}...` : key;
+
+        issue(
+          issues,
+          path,
+          `annotation key ${JSON.stringify(shown)} ${problem}`,
+        );
+      }
+    });
 }
 
 // What a device's spec is checked against: the folded names of the

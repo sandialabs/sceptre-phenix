@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	bapi "phenix/api/builder"
 	"phenix/store"
@@ -305,6 +306,10 @@ func (b *builderBetaAPI) generateDocument(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		return err
 	}
+
+	// FromConfig leaves the time out, so it generates the same document from
+	// the same config; the Inspector shows it with the source.
+	document.Source.ImportedAt = time.Now().UTC().Format(time.RFC3339)
 
 	data, err := bapi.EncodeDocument(document)
 	if err != nil {

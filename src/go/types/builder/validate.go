@@ -2,7 +2,9 @@ package builder
 
 import (
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 
@@ -16,6 +18,22 @@ const maxVLANAlias = 4094
 // MaxNameBytes bounds the document name, which the draft service records as
 // the draft title.
 const MaxNameBytes = 512
+
+// Bounds on the source config annotations a document carries (see
+// [Source.Annotations]). They keep what the document only shows to a small
+// part of the 5 MiB a stored document may take. An annotation key is bounded
+// like the document name.
+const (
+	// MaxAnnotations is the most annotations a document's source may carry.
+	MaxAnnotations = 100
+
+	// MaxAnnotationBytes bounds the keys and values of those annotations
+	// together (256 KiB).
+	MaxAnnotationBytes = 256 << 10
+
+	// maxAnnotationKiB is [MaxAnnotationBytes] in KiB, as messages give it.
+	maxAnnotationKiB = MaxAnnotationBytes >> 10
+)
 
 // minRoutePoints is the fewest points an edge route may hold: its two ends.
 const minRoutePoints = 2
@@ -90,6 +108,9 @@ type validator struct {
 //   - devices marked [Device.IncludedFrom] with a malformed topology name, or
 //     in a document whose source includes no topologies,
 //   - a malformed [Source.Digest],
+//   - source annotations beyond [MaxAnnotations] or [MaxAnnotationBytes], or
+//     with a blank key, a key longer than [MaxNameBytes] or one containing
+//     control characters,
 //   - non-finite geometry, and sizes, zoom, or grid spacing that are not
 //     strictly positive,
 //   - an edge route with fewer than two points.
@@ -717,6 +738,54 @@ func (v *validator) validateSource() {
 
 	if digest := v.doc.Source.Digest; digest != "" && !isContentDigest(digest) {
 		v.addf("source.digest", "malformed source digest %q (expected sha256:<64 hex>)", digest)
+	}
+
+	v.validateAnnotations(v.doc.Source.Annotations)
+}
+
+// validateAnnotations bounds the source annotations, the way generation
+// keeps them (see [generator.importAnnotations]).
+func (v *validator) validateAnnotations(annotations map[string]string) {
+	const path = "source.annotations"
+
+	if len(annotations) > MaxAnnotations {
+		v.addf(path, "at most %d annotations are allowed, not %d", MaxAnnotations, len(annotations))
+	}
+
+	if size := annotationBytes(annotations); size > MaxAnnotationBytes {
+		v.addf(path, "annotations must take at most %d bytes in all, not %d", MaxAnnotationBytes, size)
+	}
+
+	for _, key := range slices.Sorted(maps.Keys(annotations)) {
+		if problem := annotationKeyProblem(key); problem != "" {
+			v.addf(path, "annotation key %q %s", truncate(key), problem)
+		}
+	}
+}
+
+// annotationBytes is the size of annotations' keys and values together.
+func annotationBytes(annotations map[string]string) int {
+	size := 0
+
+	for key, value := range annotations {
+		size += len(key) + len(value)
+	}
+
+	return size
+}
+
+// annotationKeyProblem says what makes an annotation key unusable, or
+// returns "".
+func annotationKeyProblem(key string) string {
+	switch {
+	case strings.TrimSpace(key) == "":
+		return "must not be blank"
+	case len(key) > MaxNameBytes:
+		return fmt.Sprintf("must be at most %d bytes", MaxNameBytes)
+	case strings.ContainsFunc(key, func(r rune) bool { return r < 0x20 || r == 0x7f }):
+		return "must not contain control characters"
+	default:
+		return ""
 	}
 }
 

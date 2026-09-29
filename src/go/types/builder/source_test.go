@@ -1,6 +1,9 @@
 package builder_test
 
 import (
+	"encoding/json"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -97,6 +100,174 @@ func TestFromConfigRecordsSourceDigestAndUpdatedAt(t *testing.T) {
 				t.Fatalf("source importedAt = %q, want it left to the caller", doc.Source.ImportedAt)
 			}
 		})
+	}
+}
+
+func TestFromConfigKeepsAnnotationsButTheBuilders(t *testing.T) {
+	config := loadConfig(t, "topology.json")
+
+	plain, err := builder.SourceDigest(config)
+	if err != nil {
+		t.Fatalf("SourceDigest: %v", err)
+	}
+
+	config.Metadata.Annotations = store.Annotations{
+		"builder-xml":        "<mxGraphModel>" + strings.Repeat("<mxCell/>", 1000) + "</mxGraphModel>",
+		"builder-doc":        `{"id":"doc"}`,
+		"builder-experiment": `{"draft":"alice/d1"}`,
+		"builder-notes":      "any other key of the Builders",
+		"owner":              "alice",
+		"notes":              "two\nlines",
+	}
+
+	doc, warnings := documentFromConfig(t, config)
+
+	want := map[string]string{"owner": "alice", "notes": "two\nlines"}
+	if !reflect.DeepEqual(doc.Source.Annotations, want) {
+		t.Fatalf("annotations = %v, want %v", doc.Source.Annotations, want)
+	}
+
+	if containsSubstring(warnings, "annotation") {
+		t.Fatalf("warnings = %q, want none about annotations", warnings)
+	}
+
+	// Annotations are not part of the source's identity.
+	if doc.Source.Digest != plain {
+		t.Fatalf("source digest = %q, want %q, the digest without annotations", doc.Source.Digest, plain)
+	}
+
+	// An experiment keeps the topology and scenario it names.
+	experiment, _ := documentFromConfig(t, loadConfig(t, "experiment.json"))
+
+	want = map[string]string{"topology": "builder-fixture", "scenario": "builder-scenario"}
+	if !reflect.DeepEqual(experiment.Source.Annotations, want) {
+		t.Fatalf("experiment annotations = %v, want %v", experiment.Source.Annotations, want)
+	}
+
+	// Only the Builders' own: none are kept, and the field is left out.
+	config.Metadata.Annotations = store.Annotations{"builder-xml": "<mxGraphModel/>"}
+	doc, _ = documentFromConfig(t, config)
+
+	encoded, err := json.Marshal(doc.Source)
+	if err != nil {
+		t.Fatalf("encoding the source: %v", err)
+	}
+
+	if doc.Source.Annotations != nil || strings.Contains(string(encoded), `"annotations"`) {
+		t.Fatalf("source = %s, want no annotations", encoded)
+	}
+}
+
+func TestFromConfigLeavesOutAnnotationsPastTheBounds(t *testing.T) {
+	config := loadConfig(t, "topology.json")
+	annotations := store.Annotations{
+		" ":        "blank key",
+		"bad\nkey": "control character",
+		// Sorted first, so it would take the whole size bound.
+		"a-large":                        strings.Repeat("x", builder.MaxAnnotationBytes),
+		strings.Repeat("k", 513):         "long key",
+		"builder-xml":                    "not counted",
+		"topology":                       "kept",
+		"zz-" + strings.Repeat("9", 600): "long key, listed shortened",
+	}
+
+	for i := range builder.MaxAnnotations + 2 {
+		annotations[fmt.Sprintf("n%03d", i)] = "value"
+	}
+
+	config.Metadata.Annotations = annotations
+
+	doc, warnings := documentFromConfig(t, config)
+
+	if got := len(doc.Source.Annotations); got != builder.MaxAnnotations {
+		t.Fatalf("kept %d annotations, want %d", got, builder.MaxAnnotations)
+	}
+
+	// In key order: every n### but the last two, which are past the count.
+	for _, key := range []string{"n000", "n099"} {
+		if _, ok := doc.Source.Annotations[key]; !ok {
+			t.Errorf("annotation %q was left out", key)
+		}
+	}
+
+	for _, key := range []string{" ", "bad\nkey", "a-large", "n100", "n101", "topology", "builder-xml"} {
+		if _, ok := doc.Source.Annotations[key]; ok {
+			t.Errorf("annotation %q was kept", key)
+		}
+	}
+
+	var found string
+
+	for _, warning := range warnings {
+		if strings.Contains(warning, "left out") {
+			found = warning
+		}
+	}
+
+	for _, part := range []string{
+		`annotations " ", "a-large", "bad\nkey", "kkkk`, `"n100" and 3 more of the source config were left out`,
+		"at most 100 annotations of 256 KiB in all",
+	} {
+		if !strings.Contains(found, part) {
+			t.Errorf("warning %q does not contain %q", found, part)
+		}
+	}
+
+	if strings.Contains(found, strings.Repeat("k", 100)) || strings.Contains(found, "builder-xml") {
+		t.Errorf("warning %q names a key in full or the Builder's own", found)
+	}
+}
+
+func TestValidateBoundsAnnotations(t *testing.T) {
+	many := map[string]string{}
+	for i := range builder.MaxAnnotations + 1 {
+		many[fmt.Sprintf("n%03d", i)] = ""
+	}
+
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		wantMsg     string
+	}{
+		{"too many", many, "at most 100 annotations are allowed, not 101"},
+		{
+			"too large",
+			map[string]string{"a": strings.Repeat("x", builder.MaxAnnotationBytes)},
+			"annotations must take at most 262144 bytes in all, not 262145",
+		},
+		{"blank key", map[string]string{"\t": "x"}, `annotation key "\t" must not be blank`},
+		{
+			"long key",
+			map[string]string{strings.Repeat("k", builder.MaxNameBytes+1): "x"},
+			"must be at most 512 bytes",
+		},
+		{"control character", map[string]string{"a\x7fb": "x"}, "must not contain control characters"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "document.json")
+			doc.Source.Annotations = test.annotations
+
+			err := doc.Validate()
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+
+			if !strings.Contains(err.Error(), "source.annotations: ") || !strings.Contains(err.Error(), test.wantMsg) {
+				t.Fatalf("error %q does not contain %q", err.Error(), test.wantMsg)
+			}
+		})
+	}
+
+	// Right at the bounds, with a value of several lines.
+	doc := loadDocumentFixture(t, "document.json")
+	doc.Source.Annotations = map[string]string{
+		strings.Repeat("k", builder.MaxNameBytes): strings.Repeat("x\n", (builder.MaxAnnotationBytes-builder.MaxNameBytes)/2),
+	}
+
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("annotations at the bounds were refused: %v", err)
 	}
 }
 

@@ -3,11 +3,14 @@ package web
 import (
 	"context"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	bapi "phenix/api/builder"
 	"phenix/store"
+	bdoc "phenix/types/builder"
 	"phenix/web/rbac"
 )
 
@@ -218,8 +221,13 @@ func TestBuilderBetaListSourcesIgnoresOtherKinds(t *testing.T) { //nolint:parall
 
 func TestBuilderBetaGenerateFromStoredSource(t *testing.T) { //nolint:paralleltest // mutates package options
 	stored := builderBetaConfig(t, "Topology", "topo")
+	stored.Metadata.Annotations = store.Annotations{
+		"builder-xml": "<mxGraphModel/>",
+		"owner":       "alice",
+	}
 	harness := newBuilderBetaHarness(t, stored)
 
+	before := time.Now().UTC().Truncate(time.Second)
 	recorder := harness.do(builderBetaRequest{
 		method: http.MethodPost,
 		path:   "/builder/generate",
@@ -234,6 +242,22 @@ func TestBuilderBetaGenerateFromStoredSource(t *testing.T) { //nolint:parallelte
 	var response builderGenerateResponse
 
 	harness.decode(recorder, &response)
+
+	document, err := bdoc.Decode(response.Document)
+	if err != nil {
+		t.Fatalf("decoding the generated document: %v", err)
+	}
+
+	// The source keeps the config's own annotations, and says when it was
+	// imported.
+	if want := map[string]string{"owner": "alice"}; !reflect.DeepEqual(document.Source.Annotations, want) {
+		t.Errorf("annotations = %v, want %v", document.Source.Annotations, want)
+	}
+
+	imported, err := time.Parse(time.RFC3339, document.Source.ImportedAt)
+	if err != nil || imported.Before(before) || imported.After(time.Now().UTC()) {
+		t.Errorf("importedAt = %q, want the time of the request", document.Source.ImportedAt)
+	}
 
 	if response.Source.FullName != "Topology/topo" {
 		t.Errorf("source = %q, want %q", response.Source.FullName, "Topology/topo")
@@ -280,7 +304,8 @@ func TestBuilderBetaGenerateFromUpload(t *testing.T) { //nolint:paralleltest // 
 		{
 			name: "yaml",
 			content: `apiVersion: phenix.sandia.gov/v1\nkind: Topology\n` +
-				`metadata:\n  name: uploaded\nspec:\n  nodes: []\n`,
+				`metadata:\n  name: uploaded\n  annotations:\n    builder-doc: x\n    owner: alice\n` +
+				`spec:\n  nodes: []\n`,
 		},
 	}
 
@@ -303,6 +328,15 @@ func TestBuilderBetaGenerateFromUpload(t *testing.T) { //nolint:paralleltest // 
 
 			if response.Source.Name != "uploaded" {
 				t.Errorf("source = %q, want %q", response.Source.Name, "uploaded")
+			}
+
+			document, err := bdoc.Decode(response.Document)
+			if err != nil {
+				t.Fatalf("decoding the generated document: %v", err)
+			}
+
+			if upload.name == "yaml" && !reflect.DeepEqual(document.Source.Annotations, map[string]string{"owner": "alice"}) {
+				t.Errorf("annotations = %v, want only owner", document.Source.Annotations)
 			}
 			if response.Source.Stored {
 				t.Error("uploaded source was marked stored")

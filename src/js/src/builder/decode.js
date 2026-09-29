@@ -96,6 +96,7 @@ const SOURCE_KEYS = new Set([
   'digest',
   'updatedAt',
   'includeTopologies',
+  'annotations',
   'warnings',
 ]);
 

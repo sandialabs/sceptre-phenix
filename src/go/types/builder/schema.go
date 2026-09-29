@@ -689,9 +689,32 @@ func sourceDef() map[string]any {
 			"includeTopologies": arrayDef(
 				nameDef("Topology included by the generated source topology."),
 			),
-			"warnings": arrayDef(stringDef("")),
+			"annotations": annotationsDef(),
+			"warnings":    arrayDef(stringDef("")),
 		},
 	)
+}
+
+// annotationsDef builds the schema of the source annotations, bounded the way
+// [Document.Validate] bounds them, but for their total size, which JSON
+// Schema cannot express.
+func annotationsDef() map[string]any {
+	key := stringDef("")
+	key["minLength"] = 1
+	key["maxLength"] = MaxNameBytes
+	key["pattern"] = `^[^\x00-\x1f\x7f]*\S[^\x00-\x1f\x7f]*$`
+
+	return map[string]any{
+		keyType: "object",
+		keyDescription: fmt.Sprintf(
+			"metadata.annotations of the source config at import time, without the Builders' own "+
+				"(builder-*). Shown only, never published. At most %d KiB of keys and values in all.",
+			maxAnnotationKiB,
+		),
+		"maxProperties":        MaxAnnotations,
+		"propertyNames":        key,
+		"additionalProperties": stringDef(""),
+	}
 }
 
 // iconKeyEnum returns the icon key enum, including the empty default.

@@ -3092,6 +3092,20 @@
       "additionalProperties": false,
       "description": "Document provenance and generation warnings.",
       "properties": {
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "metadata.annotations of the source config at import time, without the Builders' own (builder-*). Shown only, never published. At most 256 KiB of keys and values in all.",
+          "maxProperties": 100,
+          "propertyNames": {
+            "maxLength": 512,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]*\\S[^\\x00-\\x1f\\x7f]*$",
+            "type": "string"
+          },
+          "type": "object"
+        },
         "apiVersion": {
           "type": "string"
         },
