@@ -196,3 +196,13 @@ phenix util role-table            # print the permissions/roles table
 phenix completion bash|zsh|fish|powershell
 phenix version
 ```
+
+`phenix mm` is also available as `phenix minimega`. Its flags (`-n/--namespace`
+to scope commands to a minimega namespace, `-a/--attach` to open the
+interactive console) and any global flags must come before the first minimega
+argument; everything after it is passed to minimega unchanged, so
+`phenix mm -n my-exp cc exec ls -a` sends `-a` to `ls`. Arguments are quoted
+for minimega as needed; a single argument is sent as-is, so
+`phenix mm -n my-exp "vm info"` passes a whole minimega command line. The
+command exits non-zero, and logs the error, when minimega reports an error or
+the connection to minimega is lost, so scripts can check its exit status.

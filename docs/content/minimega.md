@@ -7,13 +7,33 @@ phēnix uses [minimega](https://sandia-minimega.github.io/minimega/) as its unde
 ```text
 Send commands, or attach, to minimega
 
+  Sends a command to minimega and prints the response, or attaches to the
+  interactive minimega console. Exits non-zero if minimega reports an error.
+
+  Flags must come before the minimega command. Everything after the first
+  minimega argument, including arguments that start with "-", is passed to
+  minimega unchanged, and arguments are quoted for minimega as needed. A
+  single argument is sent as-is, so a whole command written in minimega's own
+  syntax can be passed as one quoted string.
+
 Usage:
   phenix mm <minimega args>... [flags]
 
+Aliases:
+  mm, minimega
+
+Examples:
+
+  phenix mm vm info
+  phenix mm -n <experiment name> vm info
+  phenix mm -n <experiment name> cc exec ls -a
+  phenix mm -n <experiment name> "vm info"
+  phenix minimega -a -n <experiment name>
+
 Flags:
-      --attach             Attach to minimega console instead of sending commands
+  -a, --attach             Attach to minimega console instead of sending commands
   -h, --help               help for mm
-      --namespace string   Default minimega namespace to use
+  -n, --namespace string   Default minimega namespace to use
 ```
 
 !!! note
@@ -21,7 +41,7 @@ Flags:
 
 ## Sending Commands to minimega
 
-You can execute non-interactive minimega commands directly through `phenix mm`.
+You can execute non-interactive minimega commands directly through `phenix mm`, or its alias `phenix minimega`.
 
 ```bash
 # View minimega cluster host status
@@ -31,34 +51,45 @@ phenix mm host
 phenix mm vm info
 
 # List active VLANs in minimega
-phenix mm vlan
+phenix mm vlans
 ```
+
+`phenix mm` flags, and any [global flags](settings.md#global-flags), must come before the minimega command. Everything after the first minimega argument is passed to minimega unchanged, including arguments that start with `-`, so `phenix mm cc exec ls -a` runs `ls -a` rather than treating `-a` as the `--attach` flag.
+
+phēnix quotes each argument for minimega as needed, so empty arguments and arguments containing spaces, quotes, or `#` arrive intact. A single argument is sent as-is instead, which lets you pass a whole command written in minimega's own syntax as one quoted string, such as `phenix mm "vm info"`.
+
+`phenix mm` exits with a non-zero status, and records the error in the phēnix log, when minimega reports an error or the connection to minimega is lost, so scripts can check whether a command succeeded.
 
 ### Namespace Scoping
 
-When working with experiment-specific VMs or VLANs, use the `--namespace` flag to target a specific minimega namespace:
+When working with experiment-specific VMs or VLANs, use the `--namespace` (`-n`) flag to target a specific minimega namespace. Each running experiment has a minimega namespace with the same name as the experiment.
 
 ```bash
 # Execute minimega commands within the 'my-experiment' namespace
 phenix mm --namespace my-experiment vm info
 
-# Check network connections in a specific experiment namespace
-phenix mm --namespace my-experiment vm net
+# Check the network connections of VMs in the 'my-experiment' namespace
+phenix mm -n my-experiment .columns name,vlan,bridge,tap,ip vm info
 ```
+
+With [shell completion](index.md#accessing-the-cli-shell-completion) enabled, `--namespace` completes the names of running experiments, and `phenix mm` completes minimega commands using suggestions from the running minimega. Naming a namespace that does not exist makes minimega create it.
 
 ## Attaching to the minimega Console
 
-The `--attach` flag opens an interactive minimega console session, allowing real-time interaction with the minimega shell.
+The `--attach` (`-a`) flag opens an interactive minimega console session, allowing real-time interaction with the minimega shell.
 
 ```bash
 # Attach to the global minimega console
 phenix mm --attach
 
 # Attach to the minimega console scoped to a specific experiment namespace
-phenix mm --attach --namespace my-experiment
+phenix mm -a -n my-experiment
 ```
 
-To exit the attached console session, type `exit` or press `Ctrl+D`.
+To exit the attached console session, type `disconnect` or press `Ctrl+D`.
+
+!!! warning
+    Typing `quit` in the console stops the minimega daemon itself, not just the console session. minimega asks you to enter `quit` a second time to confirm.
 
 ## minimega Command and Control (`miniccc`)
 
@@ -89,8 +120,9 @@ When troubleshooting virtual machine or network deployment issues, use `phenix m
 # Check detailed VM status and tap interface mappings
 phenix mm --namespace my-experiment vm info
 
-# Inspect minimega log entries
-phenix mm log
+# Inspect recent minimega log entries (the log ring must first be enabled,
+# for example with `phenix mm log ring 1000`)
+phenix mm log ring
 ```
 
 ### 2. Monitoring Cluster Hosts
