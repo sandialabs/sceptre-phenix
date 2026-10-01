@@ -69,3 +69,6 @@ integrations include:
 * [Git Workflow](git-workflow.md) - drive experiment topology/scenario
   updates from a git-based CI/CD pipeline (e.g. a GitLab runner) reacting to
   push events.
+* [Builder v2](builder-v2/administration.md#rest-api) - create, edit,
+  share, and publish Builder v2 drafts through the `/api/v1/builder-v2/`
+  routes.

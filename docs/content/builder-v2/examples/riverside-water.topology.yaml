@@ -1,0 +1,281 @@
+# Riverside Water: the example lab of the Builder v2 documentation.
+# A small water utility with an internet edge, a DMZ, a corporate network and
+# an OT (control) network behind a firewall.
+#
+#   INTERNET 203.0.113.0/24  kali-01, edge-rtr
+#   DMZ      172.16.10.0/24  edge-rtr, web-01
+#   CORP     10.10.20.0/24   edge-rtr, files-01, ws-01, ws-02, ot-fw,
+#                            dns-01 and ntp-01 (from corp-services)
+#   OT       10.10.30.0/24   ot-fw, hmi-01, historian-01, plc-01 (hardware)
+apiVersion: phenix.sandia.gov/v1
+kind: Topology
+metadata:
+  name: riverside-water
+  annotations:
+    maintainer: range-team
+    purpose: Water utility training range
+spec:
+  includeTopologies:
+    - corp-services
+  nodes:
+    - type: Router
+      general:
+        hostname: edge-rtr
+        description: VyOS edge router
+      hardware:
+        os_type: vyos
+        vcpus: 2
+        memory: 2048
+        drives:
+          - image: vyos.qc2
+      labels:
+        zone: edge
+      annotations:
+        vrouter/enable-ssh: eth2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: INTERNET
+            proto: static
+            address: 203.0.113.2
+            mask: 24
+            gateway: 203.0.113.1
+          - name: eth1
+            type: ethernet
+            vlan: DMZ
+            proto: static
+            address: 172.16.10.1
+            mask: 24
+          - name: eth2
+            type: ethernet
+            vlan: CORP
+            proto: static
+            address: 10.10.20.1
+            mask: 24
+        routes:
+          - destination: 10.10.30.0/24
+            next: 10.10.20.254
+            cost: 1
+    - type: Firewall
+      general:
+        hostname: ot-fw
+        description: Firewall between the corporate and OT networks
+      hardware:
+        os_type: minirouter
+        vcpus: 1
+        memory: 1024
+        drives:
+          - image: minirouter.qc2
+      labels:
+        zone: ot
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: CORP
+            proto: static
+            address: 10.10.20.254
+            mask: 24
+            gateway: 10.10.20.1
+            ruleset_in: corp-to-ot
+          - name: eth1
+            type: ethernet
+            vlan: OT
+            proto: static
+            address: 10.10.30.1
+            mask: 24
+        rulesets:
+          - name: corp-to-ot
+            description: Only the historian's web interface is reachable from CORP
+            default: drop
+            rules:
+              - id: 10
+                action: accept
+                description: HTTPS to the historian
+                protocol: tcp
+                source:
+                  address: 10.10.20.0/24
+                destination:
+                  address: 10.10.30.20
+                  port: 443
+    - type: VirtualMachine
+      general:
+        hostname: kali-01
+        description: Red team host on the internet
+      hardware:
+        os_type: linux
+        vcpus: 2
+        memory: 4096
+        drives:
+          - image: kali.qc2
+      labels:
+        zone: internet
+        team: red
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: INTERNET
+            proto: static
+            address: 203.0.113.50
+            mask: 24
+            gateway: 203.0.113.1
+    - type: VirtualMachine
+      general:
+        hostname: web-01
+        description: Public web server
+      hardware:
+        os_type: linux
+        vcpus: 2
+        memory: 2048
+        drives:
+          - image: ubuntu.qc2
+      labels:
+        zone: dmz
+        role: web
+      annotations:
+        phenix/startup-autotunnel:
+          - "8080:80"
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: DMZ
+            proto: static
+            address: 172.16.10.10
+            mask: 24
+            gateway: 172.16.10.1
+            dns: 10.10.20.53
+    - type: VirtualMachine
+      general:
+        hostname: files-01
+        description: Corporate file server
+      hardware:
+        os_type: linux
+        vcpus: 2
+        memory: 4096
+        drives:
+          - image: ubuntu.qc2
+      labels:
+        zone: corp
+        role: files
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: CORP
+            proto: static
+            address: 10.10.20.10
+            mask: 24
+            gateway: 10.10.20.1
+            dns: 10.10.20.53
+    - type: VirtualMachine
+      general:
+        hostname: ws-01
+        description: Engineering workstation
+      hardware:
+        os_type: windows
+        vcpus: 2
+        memory: 4096
+        drives:
+          - image: windows10.qc2
+      labels:
+        zone: corp
+        role: workstation
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: CORP
+            proto: static
+            address: 10.10.20.101
+            mask: 24
+            gateway: 10.10.20.1
+            dns: 10.10.20.53
+    - type: VirtualMachine
+      general:
+        hostname: ws-02
+        description: Office workstation
+      hardware:
+        os_type: windows
+        vcpus: 2
+        memory: 4096
+        drives:
+          - image: windows10.qc2
+      labels:
+        zone: corp
+        role: workstation
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: CORP
+            proto: static
+            address: 10.10.20.102
+            mask: 24
+            gateway: 10.10.20.1
+            dns: 10.10.20.53
+    - type: VirtualMachine
+      general:
+        hostname: hmi-01
+        description: Operator HMI for the pump controls
+      hardware:
+        os_type: windows
+        vcpus: 2
+        memory: 4096
+        drives:
+          - image: windows10.qc2
+      labels:
+        zone: ot
+        role: hmi
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: OT
+            proto: static
+            address: 10.10.30.10
+            mask: 24
+            gateway: 10.10.30.1
+    - type: VirtualMachine
+      general:
+        hostname: historian-01
+        description: Process historian
+      hardware:
+        os_type: linux
+        vcpus: 2
+        memory: 4096
+        drives:
+          - image: ubuntu.qc2
+      labels:
+        zone: ot
+        role: historian
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: OT
+            proto: static
+            address: 10.10.30.20
+            mask: 24
+            gateway: 10.10.30.1
+    - type: HIL
+      external: true
+      general:
+        hostname: plc-01
+        description: Pump station PLC (hardware in the loop)
+      hardware:
+        os_type: other
+      labels:
+        zone: ot
+        role: plc
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: OT
+            proto: static
+            address: 10.10.30.50
+            mask: 24
+            gateway: 10.10.30.1

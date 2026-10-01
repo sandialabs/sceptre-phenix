@@ -1,0 +1,35 @@
+# Topology Reviewer: reads configs, so it can open drafts shared with it and
+# published diagrams, but cannot create drafts, import, upload or publish.
+apiVersion: phenix.sandia.gov/v1
+kind: Role
+metadata:
+  name: topology-reviewer
+spec:
+  roleName: Topology Reviewer
+  policies:
+  - resources:
+    - configs
+    resourceNames:
+    - "*"
+    - "*/*"
+    verbs:
+    - list
+    - get
+  - resources:
+    - topologies
+    - scenarios
+    - experiments
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+    - get
+  # The Inspector's form fields come from GET /schemas/builder-v2/v1, which needs
+  # schemas get on the resource name builder-v2. Without it the Inspector falls
+  # back to the fields built into the UI and says so.
+  - resources:
+    - schemas
+    resourceNames:
+    - "*"
+    verbs:
+    - get
