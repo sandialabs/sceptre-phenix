@@ -1,0 +1,133 @@
+import { describe, expect, test } from 'vitest';
+
+import {
+  parseErrorText,
+  readChosenFile,
+  useFieldError,
+  useMessage,
+} from '@/components/builder/dialogs/message.js';
+import { MAX_DOCUMENT_BYTES } from '@/builder/decode.js';
+
+describe('dialog messages', () => {
+  // A live region announces a change to its content; the same text set again
+  // must still render a new node, or a repeated mistake is met with silence.
+  test('setting the same text again gives it a new key', () => {
+    const message = useMessage();
+    message.set('Choose a scenario.', 'name');
+    const first = message.key;
+
+    message.clear();
+    message.set('Choose a scenario.', 'name');
+
+    expect(message.text).toBe('Choose a scenario.');
+    expect(message.field).toBe('name');
+    expect(message.key).not.toBe(first);
+  });
+
+  test('clearing removes the text and the field it was about', () => {
+    const message = useMessage();
+    message.set('The uploaded file is larger than the 5 MiB limit.', 'file');
+    message.clear();
+
+    expect(message.text).toBe('');
+    expect(message.field).toBe('');
+  });
+
+  test('an empty message is about no field', () => {
+    const message = useMessage();
+    message.set('', 'file');
+
+    expect(message.field).toBe('');
+  });
+
+  test('a field error marks and describes only the control it is about', async () => {
+    const { error, invalid, describedBy, fail } = useFieldError('form-error');
+
+    expect(describedBy('file', 'file-hint')).toBe('file-hint');
+    expect(describedBy('text')).toBeUndefined();
+
+    await fail('Choose a file to upload.', 'file');
+
+    expect(error.text).toBe('Choose a file to upload.');
+    expect(invalid('file')).toBe('true');
+    expect(invalid('text')).toBeUndefined();
+    expect(describedBy('file', 'file-hint')).toBe('file-hint form-error');
+    expect(describedBy('text')).toBeUndefined();
+
+    error.clear();
+    expect(invalid('file')).toBeUndefined();
+    expect(describedBy('file', 'file-hint')).toBe('file-hint');
+  });
+
+  test('parser errors keep their first line, with the position in words', () => {
+    const raw =
+      'Could not parse the document: unexpected end of the stream within a flow collection (2:1)\n\n 1 | { not json\n 2 | \n-----^';
+
+    expect(parseErrorText(raw)).toBe(
+      'Could not parse the document: unexpected end of the stream within a flow collection (line 2, column 1)',
+    );
+    expect(parseErrorText('Nothing to upload: the document is empty.')).toBe(
+      'Nothing to upload: the document is empty.',
+    );
+    expect(parseErrorText(undefined)).toBe('');
+  });
+});
+
+describe('a chosen file', () => {
+  // A file field's change event, choosing a file that holds `text` (and is
+  // `size` bytes): its text is read once `finish` is called.
+  function choose(field, text, size = text?.length) {
+    let finish;
+    const read = new Promise((resolve) => {
+      finish = resolve;
+    });
+
+    field.files = text === undefined ? [] : [{ size, text: () => read }];
+
+    return { event: { target: field }, finish: () => finish(text) };
+  }
+
+  test('is read, or refused when too large, naming what it holds', async () => {
+    const field = {};
+    const small = choose(field, 'name: lab');
+    const read = readChosenFile(small.event, 'file');
+
+    small.finish();
+    expect(await read).toEqual({ text: 'name: lab' });
+
+    const large = choose(field, 'x', MAX_DOCUMENT_BYTES + 1);
+
+    expect(await readChosenFile(large.event, 'scenario')).toEqual({
+      error: 'The uploaded scenario is larger than the 5 MiB limit.',
+    });
+    expect(await readChosenFile(choose(field).event, 'file')).toBeNull();
+  });
+
+  // Reading a large file takes a while; choosing another meanwhile must not
+  // leave the first one's text in the form.
+  test('chosen while another was read replaces it', async () => {
+    const field = {};
+    const first = choose(field, 'first');
+    const firstRead = readChosenFile(first.event, 'file');
+    const second = choose(field, 'second');
+    const secondRead = readChosenFile(second.event, 'file');
+
+    second.finish();
+    first.finish();
+
+    expect(await secondRead).toEqual({ text: 'second' });
+    expect(await firstRead).toBeNull();
+
+    // A file chosen in another field replaces none.
+    const mine = choose(field, 'mine');
+    const mineRead = readChosenFile(mine.event, 'file');
+    const other = choose({}, 'other');
+    const otherRead = readChosenFile(other.event, 'file');
+
+    other.finish();
+    mine.finish();
+
+    expect(await otherRead).toEqual({ text: 'other' });
+    expect(await mineRead).toEqual({ text: 'mine' });
+  });
+});

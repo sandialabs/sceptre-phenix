@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -115,6 +116,19 @@ func setMissingDefaults(existing []types.Setting) ([]types.Setting, error) {
 		}
 
 		err := store.Create(&c)
+		if errors.Is(err, store.ErrExist) {
+			// Another request stored it since the list was read, as requests
+			// to a new server do; the stored value is the one that counts.
+			stored, getErr := GetSetting(spec.Category, spec.Name)
+			if getErr != nil {
+				return nil, getErr
+			}
+
+			fullSettings = append(fullSettings, *stored)
+
+			continue
+		}
+
 		if err != nil {
 			return nil, fmt.Errorf("storing setting %s: %w", settingName, err)
 		}

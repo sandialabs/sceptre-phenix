@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/activeshadow/structs"
 	"github.com/mitchellh/mapstructure"
@@ -44,9 +45,30 @@ spec:
 			- get
 */
 
-var ErrPasswordInvalid = errors.New("password invalid")
+var (
+	ErrPasswordInvalid = errors.New("password invalid")
+
+	// ErrUserExists is returned by [NewUser] for a name another user has.
+	ErrUserExists = errors.New("user already exists")
+)
 
 const tokenProxied = "proxied"
+
+// userLocks holds a mutex per user name that serializes changes to that
+// user's record (see [User.update]), so parallel sign-ins never lose a token.
+// The config store has no conditional write, so it covers one phenix process.
+var userLocks sync.Map //nolint:gochecknoglobals // one lock per user for the process
+
+// passwordCost is the bcrypt cost of the password hashes this package makes.
+// Only tests change it (see [SetPasswordCostForTesting]).
+var passwordCost = bcrypt.DefaultCost //nolint:gochecknoglobals // lowered only by tests
+
+// SetPasswordCostForTesting sets the bcrypt cost of the password hashes made
+// from now on. Tests call it once, before any test runs (in TestMain), to
+// hash with [bcrypt.MinCost]; production code never calls it.
+func SetPasswordCostForTesting(cost int) {
+	passwordCost = cost
+}
 
 type User struct {
 	Spec *v1.UserSpec
@@ -54,15 +76,19 @@ type User struct {
 	config *store.Config
 }
 
-func NewUser(u, p string) *User {
-	hashed, err := bcrypt.GenerateFromPassword([]byte(p), bcrypt.DefaultCost)
+// NewUser creates and stores the user u with the password p. For a name
+// another user has, the error wraps [ErrUserExists].
+func NewUser(u, p, firstName, lastName string) (*User, error) {
+	hashed, err := bcrypt.GenerateFromPassword([]byte(p), passwordCost)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("hashing password: %w", err)
 	}
 
 	spec := &v1.UserSpec{ //nolint:exhaustruct // partial initialization
-		Username: u,
-		Password: string(hashed),
+		Username:  u,
+		Password:  string(hashed),
+		FirstName: firstName,
+		LastName:  lastName,
 	}
 
 	c := &store.Config{ //nolint:exhaustruct // partial initialization
@@ -73,10 +99,14 @@ func NewUser(u, p string) *User {
 	}
 
 	if err := store.Create(c); err != nil {
-		return nil
+		if errors.Is(err, store.ErrExist) {
+			return nil, fmt.Errorf("creating user %s: %w", u, ErrUserExists)
+		}
+
+		return nil, fmt.Errorf("creating user %s: %w", u, err)
 	}
 
-	return &User{Spec: spec, config: c}
+	return &User{Spec: spec, config: c}, nil
 }
 
 func GetUsers() ([]*User, error) {
@@ -141,11 +171,9 @@ func (u User) RoleName() string {
 }
 
 func (u User) UpdateFirstName(name string) error {
-	u.Spec.FirstName = name
-
-	u.config.Spec = structs.MapDefaultCase(u.Spec, structs.CASESNAKE)
-
-	err := u.Save()
+	err := u.update(func(spec *v1.UserSpec) {
+		spec.FirstName = name
+	})
 	if err != nil {
 		return fmt.Errorf("updating user first name: %w", err)
 	}
@@ -154,11 +182,9 @@ func (u User) UpdateFirstName(name string) error {
 }
 
 func (u User) UpdateLastName(name string) error {
-	u.Spec.LastName = name
-
-	u.config.Spec = structs.MapDefaultCase(u.Spec, structs.CASESNAKE)
-
-	err := u.Save()
+	err := u.update(func(spec *v1.UserSpec) {
+		spec.LastName = name
+	})
 	if err != nil {
 		return fmt.Errorf("updating user last name: %w", err)
 	}
@@ -171,15 +197,15 @@ func (u User) UpdatePassword(old, newPass string) error {
 		return err
 	}
 
-	hashed, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	hashed, err := bcrypt.GenerateFromPassword([]byte(newPass), passwordCost)
 	if err != nil {
 		return fmt.Errorf("generating password hash: %w", err)
 	}
 
-	u.Spec.Password = string(hashed)
-	u.config.Spec = structs.MapDefaultCase(u.Spec, structs.CASESNAKE)
-
-	if err := u.Save(); err != nil {
+	err = u.update(func(spec *v1.UserSpec) {
+		spec.Password = string(hashed)
+	})
+	if err != nil {
 		return fmt.Errorf("updating user password: %w", err)
 	}
 
@@ -197,25 +223,24 @@ func (u User) GetProxyToken() string {
 }
 
 func (u User) AddToken(token, note string) error {
-	if u.Spec.Tokens == nil {
-		u.Spec.Tokens = make(map[string]string)
-	}
-
-	if note == tokenProxied {
-		// we only want to keep one proxy JWT
-		for k, v := range u.Spec.Tokens {
-			if v == tokenProxied {
-				delete(u.Spec.Tokens, k)
-			}
-		}
-	}
-
 	enc := base64.StdEncoding.EncodeToString([]byte(token))
 
-	u.Spec.Tokens[enc] = note
-	u.config.Spec = structs.MapDefaultCase(u.Spec, structs.CASESNAKE)
+	err := u.update(func(spec *v1.UserSpec) {
+		if spec.Tokens == nil {
+			spec.Tokens = make(map[string]string)
+		}
 
-	err := u.Save()
+		if note == tokenProxied {
+			// we only want to keep one proxy JWT
+			for k, v := range spec.Tokens {
+				if v == tokenProxied {
+					delete(spec.Tokens, k)
+				}
+			}
+		}
+
+		spec.Tokens[enc] = note
+	})
 	if err != nil {
 		return fmt.Errorf("persisting new user token: %w", err)
 	}
@@ -226,11 +251,9 @@ func (u User) AddToken(token, note string) error {
 func (u User) DeleteToken(token string) error {
 	enc := base64.StdEncoding.EncodeToString([]byte(token))
 
-	delete(u.Spec.Tokens, enc)
-
-	u.config.Spec = structs.MapDefaultCase(u.Spec, structs.CASESNAKE)
-
-	err := u.Save()
+	err := u.update(func(spec *v1.UserSpec) {
+		delete(spec.Tokens, enc)
+	})
 	if err != nil {
 		return fmt.Errorf("deleting user token: %w", err)
 	}
@@ -284,13 +307,43 @@ func (u User) Role() (Role, error) {
 }
 
 func (u *User) SetRole(role *Role) error {
-	u.Spec.Role = role.Spec
-	u.config.Spec = structs.MapDefaultCase(u.Spec, structs.CASESNAKE)
-
-	err := u.Save()
+	err := u.update(func(spec *v1.UserSpec) {
+		spec.Role = role.Spec
+	})
 	if err != nil {
 		return fmt.Errorf("setting user role: %w", err)
 	}
+
+	return nil
+}
+
+// update applies change to the user's record as it is stored now, rather than
+// to the copy this User was read with, and saves it, holding the user's lock
+// (see [userLocks]) throughout, so parallel sign-ins, sign-outs and profile
+// changes keep each other's changes. The User then holds the saved record.
+func (u User) update(change func(spec *v1.UserSpec)) error {
+	name := u.config.Metadata.Name
+
+	lock, _ := userLocks.LoadOrStore(name, new(sync.Mutex))
+	mu, _ := lock.(*sync.Mutex)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	current, err := GetUser(name)
+	if err != nil {
+		return err
+	}
+
+	change(current.Spec)
+	current.config.Spec = structs.MapDefaultCase(current.Spec, structs.CASESNAKE)
+
+	if err := current.Save(); err != nil {
+		return err
+	}
+
+	*u.Spec = *current.Spec
+	*u.config = *current.config
 
 	return nil
 }

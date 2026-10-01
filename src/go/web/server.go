@@ -2,6 +2,8 @@ package web
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -34,6 +36,10 @@ const (
 
 var o serverOptions //nolint:gochecknoglobals // global options
 
+// ConfigureUsers creates each default user (name:password:role[:resource...])
+// that does not exist, and gives each the role it names. It skips an entry
+// without a role. The error joins those of the users it could not create or
+// skipped.
 func ConfigureUsers(users []string) error {
 	setUserRole := func(user *rbac.User, rname string, resources ...string) {
 		if role, err := rbac.RoleFromConfig(rname); err == nil {
@@ -61,8 +67,35 @@ func ConfigureUsers(users []string) error {
 		}
 	}
 
-	for _, u := range users {
+	// Where an entry's password and role are, after its name.
+	const (
+		passwordField = 1
+		roleField     = 2
+	)
+
+	var errs []error
+
+	for position, u := range users {
 		creds := strings.Split(u, ":")
+
+		if len(creds) <= roleField {
+			// Without a role. The entry is named by its position, and by
+			// the name before its colon if it has one: without a colon,
+			// it may be a password.
+			var name string
+			if len(creds) > passwordField {
+				name = creds[0]
+			}
+
+			plog.Error(plog.TypeSecurity, "skipping default user without a role", "position", position+1, "user", name)
+
+			errs = append(errs, fmt.Errorf(
+				"default user %d (%q) is not name:password:role[:resource...]", position+1, name,
+			))
+
+			continue
+		}
+
 		uname := creds[0]
 		pword := creds[1]
 		rname := creds[2]
@@ -90,12 +123,25 @@ func ConfigureUsers(users []string) error {
 
 		plog.Info(plog.TypeSecurity, "creating default user", "user", uname, "role", rname)
 
-		user := rbac.NewUser(uname, pword)
+		user, err := rbac.NewUser(uname, pword, "", "")
+		if errors.Is(err, rbac.ErrUserExists) {
+			// Created since it was looked up, by another phenix sharing the
+			// store, say. It is left as it is.
+			plog.Info(plog.TypeSecurity, "default user already exists", "user", uname)
+
+			continue
+		} else if err != nil {
+			plog.Error(plog.TypeSecurity, "creating default user", "user", uname, "err", err)
+
+			errs = append(errs, err)
+
+			continue
+		}
 
 		setUserRole(user, rname, creds[3:]...)
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 //nolint:funlen,maintidx // server startup
@@ -154,7 +200,7 @@ func Start(opts ...ServerOption) error {
 	)
 
 	router.PathPrefix("/assets/").Handler(
-		http.FileServer(assets),
+		builderV2AssetHandler(assets),
 	)
 
 	router.PathPrefix("/grapheditor/").Handler(
@@ -196,6 +242,20 @@ func Start(opts ...ServerOption) error {
 	})
 
 	api := router.PathPrefix("/api/v1").Subrouter()
+
+	// Unmatched API requests must not fall through to the router's
+	// NotFoundHandler, which serves the SPA index: an API client would receive
+	// 200 HTML instead of a 404, and a route behind a disabled feature flag
+	// would look enabled while it is not.
+	api.NotFoundHandler = apiNotFoundHandler()
+
+	// The Builder v2 routes are registered before the generic schema routes
+	// so /schemas/builder-v2/v1 is matched by the builder schema handler rather
+	// than by /schemas/{kind}/{version}. Registration is a no-op unless the
+	// "builder-v2" feature is enabled.
+	if err := registerBuilderV2Routes(api); err != nil {
+		return fmt.Errorf("configuring Builder v2 API: %w", err)
+	}
 
 	// OPTIONS method needed for CORS
 	api.Handle("/builder/topologies", weberror.ErrorHandler(GetBuilderTopologies)).
@@ -518,4 +578,39 @@ func addRoutesToRouter(router *mux.Router, routes ...route) {
 	for _, r := range routes {
 		router.Handle(r.path, r.handler).Methods(r.methods...)
 	}
+}
+
+// apiNotFoundHandler answers a request that reached the API router but matched
+// no route. It never serves the SPA index, so an unregistered route (including
+// one gated behind a disabled feature flag) is reported as the 404 it is.
+//
+// Router middleware, including authentication, does not run for a router's
+// NotFoundHandler, so this must not disclose anything a caller could not learn
+// by requesting the path.
+func apiNotFoundHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plog.Warn(
+			plog.TypeSystem,
+			"Unknown API route requested",
+			"route",
+			r.URL.Path,
+			"method",
+			r.Method,
+		)
+
+		webErr := weberror.NewWebError(nil, "no API route matches this request").
+			SetStatus(http.StatusNotFound)
+
+		body, err := json.Marshal(webErr)
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+
+			return
+		}
+
+		w.Header().Set("Content-Type", mimeJSON)
+		w.WriteHeader(http.StatusNotFound)
+
+		_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	})
 }

@@ -1,9 +1,25 @@
 import { createRouter, createWebHistory } from 'vue-router';
 
-import { ToastProgrammatic as Toast } from 'buefy';
+import {
+  SnackbarProgrammatic as Snackbar,
+  ToastProgrammatic as Toast,
+} from 'buefy';
 
-import { usePhenixStore } from '@/store.js';
+import { expiredNavigation, signIn } from '@/builder/signin.js';
+import { tokenExpired, usePhenixStore } from '@/store.js';
 import axiosInstance from '@/utils/axios.js';
+import { BUILDER_V2_FEATURE, createFeatureGuard } from '@/utils/features.js';
+
+/**
+ * A page's document title: what the page shows, most specific first, then
+ * the app's name (WCAG 2.4.2 Page Titled).
+ *
+ * @param {...string} parts
+ * @returns {string} for example "Configs - phēnix"
+ */
+export function pageTitle(...parts) {
+  return [...parts.filter(Boolean), 'phēnix'].join(' - ');
+}
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -109,6 +125,48 @@ const router = createRouter({
       meta: { title: 'Tunneler' },
       component: () => import('@/views/Tunneler.vue'),
     },
+    {
+      // Builder v2. `beforeEnter` runs before Vue Router resolves the async
+      // component, so a disabled feature flag denies the route without ever
+      // downloading the editor chunk. The server finds the files only this
+      // view loads by its path in the build manifest, and serves them
+      // compressed (src/go/web/builder_v2_assets.go).
+      path: '/builder-v2',
+      name: 'builder-v2',
+      component: () => import('@/views/BuilderV2.vue'),
+      // The editor fills the viewport below the header, so App.vue drops the
+      // page container, its padding and the footer for this route. The
+      // editor adds the open diagram to the title (see BuilderV2.vue).
+      meta: { fullBleed: true, title: 'Builder v2' },
+      // The redirect is explained by a notice that stays until it is
+      // dismissed: a timed toast can vanish before it is read (WCAG 2.2.1).
+      // Without an action button the snackbar keeps role=alert.
+      beforeEnter: createFeatureGuard({
+        flag: BUILDER_V2_FEATURE,
+        ensureFeatures: () => usePhenixStore().ensureFeatures(),
+        fallback: { name: 'home' },
+        onDenied: () => {
+          new Snackbar().open({
+            message: 'Builder v2 is not enabled on this phenix server.',
+            type: 'is-warning',
+            indefinite: true,
+            actionText: null,
+            cancelText: 'Dismiss',
+          });
+        },
+        onError: (error) => {
+          console.error('Unable to load server features.', error);
+          new Snackbar().open({
+            message:
+              'Unable to verify whether Builder v2 is enabled. Reload the page to try again.',
+            type: 'is-danger',
+            indefinite: true,
+            actionText: null,
+            cancelText: 'Dismiss',
+          });
+        },
+      }),
+    },
 
     {
       // username must be a path param: Vue Router 4 drops params that are
@@ -162,7 +220,7 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach(async (to, _, next) => {
+router.beforeEach(async (to, from, next) => {
   const store = usePhenixStore();
 
   if (import.meta.env.VITE_AUTH === 'disabled' || !import.meta.env.VITE_AUTH) {
@@ -212,17 +270,36 @@ router.beforeEach(async (to, _, next) => {
     } else if (to.name === 'signin') {
       // No need to go to the signin route if already authorized.
       router.replace('/');
-    } else if (
-      Date.now() >=
-      JSON.parse(atob(store.token.split('.')[1])).exp * 1000
-    ) {
+    } else if (signIn.open || tokenExpired(store.token)) {
+      // Builder v2 asks for the password again in place, and nothing
+      // logs out or leaves the page meanwhile (see builder/signin.js).
+      const builder = expiredNavigation(to, from);
+
+      if (builder === 'go') {
+        next();
+        return;
+      }
+
+      if (builder === 'stay') {
+        next(false);
+        return;
+      }
+
       // handle expired JWT by logging user out: https://stackoverflow.com/a/69058154
-      new Toast().open({
-        message: `Token is expired. Log in again`,
-        type: 'is-warning',
-        duration: 5000,
-      });
-      store.logout();
+      // The page stays while a warning about Builder v2 changes the
+      // server does not have is shown (see utils/logout.js); the logout
+      // then goes to the sign-in page.
+      if (!store.loggingOut) {
+        new Toast().open({
+          message: `Token is expired. Log in again`,
+          type: 'is-warning',
+          duration: 5000,
+        });
+      }
+
+      store.requestLogout('expired');
+      next(false);
+      return;
     }
 
     next();
@@ -254,7 +331,7 @@ router.beforeEach(async (to, _, next) => {
 });
 // Give every route its own document title (WCAG 2.4.2 Page Titled).
 router.afterEach((to) => {
-  document.title = to.meta?.title ? `${to.meta.title} - phēnix` : 'phēnix';
+  document.title = pageTitle(to.meta?.title);
 });
 
 export default router;

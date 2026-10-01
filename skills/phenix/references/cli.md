@@ -10,7 +10,7 @@ has a matching config-file key and `PHENIX_*` env var):
 
 | Flag | Config key / Env var | Default | Description |
 |---|---|---|---|
-| `--store.endpoint` | `store.endpoint` / `PHENIX_STORE_ENDPOINT` | `bolt:///etc/phenix/store.bdb` (root) or `bolt://~/.phenix.bdb` (non-root) | Data store endpoint (`bolt://...` or `etcd://host:port`) |
+| `--store.endpoint` | `store.endpoint` / `PHENIX_STORE_ENDPOINT` | `bolt:///etc/phenix/store.bdb` (root) or `bolt://~/.phenix.bdb` (non-root) | Data store endpoint (`bolt://...` or `etcd://host:port`; etcd accepts `?compaction-retention=<duration>`, default `1h`, `0` disables phenix's cluster-wide history compaction) |
 | `--base-dir.phenix` | `base-dir.phenix` / `PHENIX_BASE_DIR_PHENIX` | `/phenix` | Base phēnix data directory |
 | `--base-dir.minimega` | `base-dir.minimega` / `PHENIX_BASE_DIR_MINIMEGA` | `/tmp/minimega` | Base minimega directory |
 | `--mount-dir` | `mount-dir` / `PHENIX_MOUNT_DIR` | `<base-dir.phenix>/mounts` | Base directory for VM filesystem mounts (`phenix vm mount`, UI `vm-mount` feature) |
@@ -41,6 +41,10 @@ VM's filesystem directly from the web UI (backed by the `/experiments/{exp}/vms/
 disabled by default and requires restarting `phenix ui` to take effect. The CLI
 equivalents (`phenix vm mount`/`unmount`) are always available.
 
+`phenix ui --features builder-v2` enables Builder v2, the web topology
+editor at `/builder-v2`, the same way; it has no CLI equivalent. See
+[`builder-v2.md`](builder-v2.md).
+
 ## `phenix config` — manage stored configs (topology/scenario/experiment/image/user/role)
 
 ```bash
@@ -52,6 +56,12 @@ phenix config edit <kind>/<name> [--force]          # open in $EDITOR
 phenix config delete <kind>/<name> ...              # delete one or more specific configs by kind/name
 phenix config delete all [kind]                     # delete every stored config, or every config of one kind
 ```
+
+A config written as YAML (`phenix config get -o yaml`, `phenix config edit`,
+`GET /configs/{kind}/{name}` with `Accept: application/x-yaml`, and
+`POST /configs/download`) loads as the stored config: a string yaml.v3 could
+not read back (one starting with a line break, or whose first line starts with
+a tab) is written double quoted.
 
 ## `phenix experiment` — experiment lifecycle
 

@@ -18,6 +18,14 @@ const (
 	phenixHostname = "phenix"
 )
 
+// CheckHostname reports what phenix makes of a node's hostname when it creates
+// an experiment from the node: an error for a hostname it refuses, and a
+// warning for one it logs a warning about. osType is the node's os_type.
+// phenix checks no external node, so a caller leaves those out.
+func CheckHostname(hostname, osType string) (string, error) {
+	return checkHostnameKeywords(hostname, osType)
+}
+
 // checkHostnameKeywords reports hostnames that minimega or phenix read as
 // something other than a node name. It returns an error for a hostname that
 // cannot work for the node, and a warning for a hostname that works but is one
