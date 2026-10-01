@@ -55,7 +55,12 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
 | SCORCH | `GET /experiments/{name}/scorch/pipelines`, `GET /experiments/{name}/scorch/pipelines/{run}/{loop}`, `POST/DELETE /experiments/{name}/scorch/pipelines/{run}`, `GET /experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}[/ws]`, `/experiments/{name}/scorch/terminals*` |
 | Settings | `GET/POST /settings`, `GET /settings/password`, `GET /settings/timeout` |
 | Builder | `GET/POST /builder/topologies`, `GET/PUT /builder/topologies/{name}`; the builder UI itself is served from the server root as `GET /builder` and `POST /builder/save` (outside `/api/v1`). Payloads and workflow are in [`builder.md`](builder.md) |
-| Workflow | `POST /workflow/apply/{branch}`, `POST /workflow/configs/{branch}` |
-| Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode) |
+| Workflow | `POST /workflow/apply/{branch}` (`?dryRun=true`, `pending`, `expect`, `tag`), `POST /workflow/configs/{branch}` (`?dryRun=true`). Parameters and answers are in [`workflow.md`](workflow.md#rest-endpoints) |
+| Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode, plus `base-dir.injects` and `workflow-dry-run`) |
+
+When a config fails its schema, the config routes (`POST /configs`,
+`PUT /configs/{kind}/{name}`) and the workflow routes answer 400 with the
+explained lines in `metadata.validation`, one per line, and the validator's
+text in `metadata.validation-raw`; see [`workflow.md`](workflow.md).
 
 `src/go/web/server.go` is the authoritative route list.

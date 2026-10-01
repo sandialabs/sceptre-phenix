@@ -44,7 +44,18 @@ func ValidateConfigSpec(c store.Config) error {
 		return fmt.Errorf("validating config: %w", err)
 	}
 
-	v, err := version.GetVersionedValidatorForKind(c.Kind, version.LATEST_VERSION)
+	return ValidateSchema(c.Kind, version.LATEST_VERSION, c.Spec)
+}
+
+// ValidateSchema validates value against the component schema called name in
+// the embedded OpenAPI schema file for version ver. The value is converted to
+// JSON types first, so Go ints, typed maps and structs with JSON tags validate
+// the same way a decoded JSON document does. A validation failure wraps
+// [ErrValidationFailed] together with the kin-openapi error, whose JSON
+// pointers are relative to value. Any other error means the schema could not
+// be loaded.
+func ValidateSchema(name, ver string, value any) error {
+	v, err := version.GetVersionedValidatorForKind(name, ver)
 	if err != nil {
 		return fmt.Errorf("getting validator for config: %w", err)
 	}
@@ -53,13 +64,13 @@ func ValidateConfigSpec(c store.Config) error {
 	// types. This is mainly needed for Go int types, since JSON only has float64.
 	// There's a better way to do this, but it requires an update to the openapi3
 	// package we're using.
-	data, _ := json.Marshal(c.Spec)
+	data, _ := json.Marshal(value)
 
-	var spec any
+	var doc any
 
-	_ = json.Unmarshal(data, &spec)
+	_ = json.Unmarshal(data, &doc)
 
-	if err := v.VisitJSON(spec); err != nil {
+	if err := v.VisitJSON(doc); err != nil {
 		return fmt.Errorf("%w: %w", ErrValidationFailed, err)
 	}
 

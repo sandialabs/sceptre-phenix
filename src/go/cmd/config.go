@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"phenix/api/config"
+	"phenix/types"
 	"phenix/util"
 	"phenix/util/plog"
 	"phenix/util/printer"
@@ -355,13 +356,7 @@ func newConfigCreateCmd() *cobra.Command {
 
 					c, err := config.Create(opts...)
 					if err != nil {
-						err := util.HumanizeError(
-							err,
-							"%s",
-							"Unable to create configuration from "+f,
-						)
-
-						return err.Humanized()
+						return configCreateError(f, err)
 					}
 
 					plog.Info(
@@ -382,6 +377,24 @@ func newConfigCreateCmd() *cobra.Command {
 	cmd.Flags().Bool("skip-validation", false, "Skip configuration spec validation against schema")
 
 	return cmd
+}
+
+// configCreateError is the error "config create" returns when the config in
+// path cannot be created. A schema validation failure adds the lines from
+// [types.ExplainValidationError], each on its own indented line.
+func configCreateError(path string, err error) error {
+	h := util.HumanizeError(err, "%s", "Unable to create configuration from "+path)
+
+	if !errors.Is(err, types.ErrValidationFailed) {
+		return h.Humanized()
+	}
+
+	// Re-read the file: the explained lines point into it. If it is gone, the
+	// explainer falls back to the validator's text.
+	src, _ := os.ReadFile(path)
+	lines := types.ExplainValidationError(src, err)
+
+	return fmt.Errorf("%w\n  %s", h.Humanized(), strings.Join(lines, "\n  "))
 }
 
 func newConfigEditCmd() *cobra.Command {

@@ -218,10 +218,14 @@ func GetOptions(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
+	// workflow-dry-run tells clients the workflow endpoints honor dryRun,
+	// pending and expect; older servers ignore them and apply for real.
 	options := map[string]any{
-		"bridge-mode":  common.BridgeMode,
-		"deploy-mode":  common.DeployMode,
-		"use-gre-mesh": common.UseGREMesh,
+		"bridge-mode":      common.BridgeMode,
+		"deploy-mode":      common.DeployMode,
+		"use-gre-mesh":     common.UseGREMesh,
+		"base-dir.injects": common.InjectsBase,
+		"workflow-dry-run": true,
 	}
 
 	body, err := json.Marshal(options)

@@ -290,6 +290,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 	var (
 		typ  = r.Header.Get("Content-Type")
 		opts = []config.CreateOption{config.CreateWithValidation()}
+		src  []byte
 	)
 
 	switch {
@@ -301,6 +302,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
+		src = body
 		opts = append(opts, config.CreateFromJSON(body))
 	case typ == mimeYAML:
 		body, err := io.ReadAll(r.Body)
@@ -310,6 +312,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
+		src = body
 		opts = append(opts, config.CreateFromYAML(body))
 	case strings.HasPrefix(typ, "multipart/form-data"): // file upload
 		_ = r.ParseMultipartForm(MaxUploadSize)
@@ -332,6 +335,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
+			src = body
 			opts = append(opts, config.CreateFromJSON(body))
 		case ".yaml", ".yml":
 			body, err := io.ReadAll(file)
@@ -341,6 +345,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
+			src = body
 			opts = append(opts, config.CreateFromYAML(body))
 		default:
 			return weberror.NewWebError(
@@ -364,11 +369,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		if errors.Is(err, types.ErrValidationFailed) {
-			cause := errors.Unwrap(err)
-			lines := strings.Split(cause.Error(), "\n")
-
-			return weberror.NewWebError(cause, "%s", lines[0]).
-				WithMetadata("validation", cause.Error(), true)
+			return validationWebError(src, err)
 		}
 
 		if errors.Is(err, store.ErrInvalidFormat) {
@@ -535,6 +536,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	var (
 		typ = r.Header.Get("Content-Type")
 		c   *store.Config
+		src []byte
 	)
 
 	switch {
@@ -546,6 +548,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
+		src = body
 		c, err = store.NewConfigFromJSON(body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
@@ -560,6 +563,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
+		src = body
 		c, err = store.NewConfigFromYAML(body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
@@ -587,6 +591,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
+			src = body
 			c, err = store.NewConfigFromJSON(body)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
@@ -601,6 +606,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 				return err.SetStatus(http.StatusInternalServerError)
 			}
 
+			src = body
 			c, err = store.NewConfigFromYAML(body)
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to parse uploaded file")
@@ -633,11 +639,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		if errors.Is(err, types.ErrValidationFailed) {
-			cause := errors.Unwrap(err)
-			lines := strings.Split(cause.Error(), "\n")
-
-			return weberror.NewWebError(cause, "%s", lines[0]).
-				WithMetadata("validation", cause.Error(), true)
+			return validationWebError(src, err)
 		}
 
 		if errors.Is(err, store.ErrInvalidFormat) {
@@ -751,4 +753,21 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	return nil
+}
+
+// validationWebError turns a config validation error into a 400 whose message
+// is the first line from [types.ExplainValidationError]; metadata.validation
+// holds all of them and metadata.validation-raw the validator's own text. src
+// is the document the client sent.
+func validationWebError(src []byte, err error) error {
+	cause := errors.Unwrap(err)
+	if cause == nil {
+		cause = err
+	}
+
+	lines := types.ExplainValidationError(src, cause)
+
+	return weberror.NewWebError(cause, "%s", lines[0]).
+		WithMetadata("validation", strings.Join(lines, "\n"), true).
+		WithMetadata("validation-raw", cause.Error(), true)
 }

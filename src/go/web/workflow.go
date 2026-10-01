@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,10 +11,10 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
-	"github.com/mitchellh/mapstructure"
+	"gopkg.in/yaml.v3"
 
-	"phenix/api/config"
 	"phenix/api/experiment"
+	"phenix/api/workflow"
 	"phenix/store"
 	"phenix/types"
 	"phenix/types/version"
@@ -27,21 +28,22 @@ import (
 	"phenix/web/weberror"
 )
 
-const maxBridgeNameLength = 15
-
 // ApplyWorkflow - POST /workflow/apply/{branch}.
 //
-//nolint:cyclop,funlen,gocyclo,maintidx // complex logic
+// It validates the workflow config, plans what applying it to the branch does
+// and prepares the plan, all before anything changes; refuses with 409 when
+// the expect query parameter names another action; and carries out the plan
+// unless dryRun is true. Either way it responds with the plan as JSON. A dry
+// run may name, in repeated pending query parameters, the refs its config dry
+// runs returned for configs the client upserts before the real apply.
 func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ApplyWorkflow")
 
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		scope   = vars["branch"]
+		branch  = mux.Vars(r)["branch"]
 		q       = r.URL.Query()
-		tags    string
 	)
 
 	if !role.Allowed("workflow", "create") {
@@ -61,354 +63,361 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	// currently queries only are used to pass tags. However, this
-	// is extensible for future fields as well.
-	tags = strings.Join(q["tag"], ",")
+	// Repeated tag query parameters become the experiment's workflow tags.
+	tags := strings.Join(q["tag"], ",")
 
+	doc, src, err := readWorkflowConfig(r, branch)
+	if err != nil {
+		return err
+	}
+
+	spec, err := decodeWorkflowConfig(doc, src)
+	if err != nil {
+		return err
+	}
+
+	dryRun, err := parseDryRun(q)
+	if err != nil {
+		return err
+	}
+
+	expect := q.Get("expect")
+	if _, err := workflow.ParseAction(expect); expect != "" && err != nil {
+		return weberror.NewWebError(err, "invalid expect value %q", expect)
+	}
+
+	// A real apply runs after the client's upsert, so it looks every config up.
+	pending := q["pending"]
+	if len(pending) > 0 && !dryRun {
+		return weberror.NewWebError(nil, "pending is only allowed with dryRun=true")
+	}
+
+	plan, target, err := planWorkflow(spec, branch)
+	if err != nil {
+		return err
+	}
+
+	prep, err := workflow.Prepare(spec, plan, target, pending...)
+	if err != nil {
+		return workflowWebError(err, "unable to prepare phenix workflow config")
+	}
+
+	if err := workflow.CheckExpected(plan, expect); err != nil {
+		return workflowWebError(err, "unable to apply phenix workflow config")
+	}
+
+	if !dryRun {
+		if err := executeWorkflowPlan(ctx, plan, spec, branch, tags, prep, target); err != nil {
+			return err
+		}
+	}
+
+	// A Result holds only strings and a bool, so marshaling it cannot fail.
+	body, _ := json.Marshal(workflow.Result{Plan: plan, DryRun: dryRun})
+
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
+
+	return nil
+}
+
+// readWorkflowConfig returns the request body parsed with its ${VAR}
+// references expanded, and the body itself, which explains schema errors. It
+// parses into a map rather than a store config so the schema sees every
+// top-level key the body has.
+func readWorkflowConfig(r *http.Request, branch string) (map[string]any, []byte, error) {
 	var (
 		typ = r.Header.Get("Content-Type")
-		cfg *store.Config
+		doc map[string]any
+		src []byte
+		err error
 	)
 
-	// set branch name in environment variable so it can be used in
-	// NewConfigFromJSON and NewConfigFromYAML
-	_ = os.Setenv("BRANCH_NAME", scope)
+	// ${BRANCH_NAME} expands to the branch, as in NewConfigFromYAML.
+	_ = os.Setenv("BRANCH_NAME", branch)
 
 	switch typ {
 	case mimeJSON: // default to JSON if not set
-		body, err := io.ReadAll(r.Body)
+		src, err = io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to read request data")
 
-			return err.SetStatus(http.StatusInternalServerError)
+			return nil, nil, err.SetStatus(http.StatusInternalServerError)
 		}
 
-		cfg, err = store.NewConfigFromJSON(body)
-		if err != nil {
-			return weberror.NewWebError(err, "unable to parse phenix workflow config")
-		}
+		err = json.Unmarshal([]byte(common.ParseEnv(string(src))), &doc)
 	case mimeYAML:
-		body, err := io.ReadAll(r.Body)
+		src, err = io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
 
-			return err.SetStatus(http.StatusInternalServerError)
+			return nil, nil, err.SetStatus(http.StatusInternalServerError)
 		}
 
-		cfg, err = store.NewConfigFromYAML(body)
-		if err != nil {
-			return weberror.NewWebError(err, "unable to parse phenix workflow config")
-		}
+		err = yaml.Unmarshal([]byte(common.ParseEnv(string(src))), &doc)
 	default:
-		return weberror.NewWebError(
+		return nil, nil, weberror.NewWebError(
 			nil,
 			"must use application/json or application/x-yaml when providing phenix workflow config",
 		)
 	}
 
-	var wf workflow
+	if err != nil {
+		cause := fmt.Errorf("%w: %w", store.ErrInvalidFormat, err)
 
-	if err := mapstructure.Decode(cfg.Spec, &wf); err != nil {
-		return weberror.NewWebError(err, "unable to parse phenix workflow config")
+		return nil, nil, weberror.NewWebError(cause, "unable to parse phenix workflow config")
 	}
 
+	return doc, src, nil
+}
+
+// decodeWorkflowConfig checks doc against the Workflow schema, then decodes
+// and validates its spec. src, the body doc was parsed from, explains schema
+// errors.
+func decodeWorkflowConfig(doc map[string]any, src []byte) (workflow.Spec, error) {
+	if err := workflow.ValidateDocument(doc); err != nil {
+		if errors.Is(err, types.ErrValidationFailed) {
+			return workflow.Spec{}, validationWebError(src, err)
+		}
+
+		err := weberror.NewWebError(err, "unable to validate phenix workflow config")
+
+		return workflow.Spec{}, err.SetStatus(http.StatusInternalServerError)
+	}
+
+	// The schema requires spec, as a mapping.
+	raw, _ := doc["spec"].(map[string]any)
+
+	spec, err := workflow.Decode(raw)
+	if err != nil {
+		return workflow.Spec{}, weberror.NewWebError(err, "unable to parse phenix workflow config")
+	}
+
+	if err := spec.Validate(); err != nil {
+		return workflow.Spec{}, weberror.NewWebError(err, "invalid phenix workflow config")
+	}
+
+	return spec, nil
+}
+
+// planWorkflow plans applying spec to branch from the stored experiments and
+// checks the plan's default bridge against them. It also returns the
+// experiment mapped to branch, or nil when none is.
+func planWorkflow(spec workflow.Spec, branch string) (workflow.Plan, *types.Experiment, error) {
 	experiments, err := experiment.List()
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to get list of experiments")
 
+		return workflow.Plan{}, nil, err.SetStatus(http.StatusInternalServerError)
+	}
+
+	existing := make([]string, 0, len(experiments))
+	for _, exp := range experiments {
+		existing = append(existing, exp.Metadata.Name)
+	}
+
+	mapped := workflow.Mapped(experiments, branch)
+
+	plan, err := workflow.NewPlan(spec, branch, mapped, existing)
+	if err != nil {
+		return workflow.Plan{}, nil, workflowWebError(err, "unable to apply phenix workflow config")
+	}
+
+	if err := workflow.CheckBridge(spec, plan, experiments, common.BridgeMode); err != nil {
+		return workflow.Plan{}, nil, workflowWebError(err, "unable to prepare phenix workflow config")
+	}
+
+	var target *types.Experiment
+	if len(mapped) == 1 {
+		target = &mapped[0]
+	}
+
+	return plan, target, nil
+}
+
+// workflowWebError wraps a workflow API error in a web error: 409 for a
+// conflict or a changed plan, 400 for an invalid config or an unresolved
+// reference, and 500 for anything else.
+func workflowWebError(err error, message string) *weberror.WebError {
+	status := http.StatusInternalServerError
+
+	switch {
+	case errors.Is(err, workflow.ErrConflict), errors.Is(err, workflow.ErrPlanChanged):
+		status = http.StatusConflict
+	case errors.Is(err, workflow.ErrInvalidSpec), errors.Is(err, workflow.ErrUnresolved):
+		status = http.StatusBadRequest
+	}
+
+	return weberror.NewWebError(err, "%s", message).SetStatus(status)
+}
+
+// executeWorkflowPlan carries out plan with what prep resolved. exp is the
+// experiment mapped to branch, which the update actions act on.
+func executeWorkflowPlan(
+	ctx context.Context,
+	plan workflow.Plan,
+	spec workflow.Spec,
+	branch, tags string,
+	prep workflow.Prepared,
+	exp *types.Experiment,
+) error {
+	switch plan.Action {
+	case workflow.ActionNone:
+		// Nothing to carry out; the response gives the reason.
+	case workflow.ActionCreate, workflow.ActionCreateAndStart:
+		return createFromWorkflow(ctx, spec, branch, tags, prep, plan.Action == workflow.ActionCreateAndStart)
+	case workflow.ActionUpdate, workflow.ActionUpdateAndStart, workflow.ActionRestart:
+		return updateFromWorkflow(exp, spec, tags, prep, plan.Action)
+	}
+
+	return nil
+}
+
+// createFromWorkflow creates the experiment auto.create names from what prep
+// resolved, maps it to branch, tags it and starts it when start is true.
+func createFromWorkflow(
+	ctx context.Context,
+	spec workflow.Spec,
+	branch, tags string,
+	prep workflow.Prepared,
+	start bool,
+) error {
+	expName := spec.ExperimentName()
+
+	err := cache.LockExperimentForCreation(expName)
+	if err != nil {
+		err := weberror.NewWebError(err, "unable to create new experiment")
+
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
-	var exps []types.Experiment
+	defer cache.UnlockExperiment(expName)
 
-	for _, exp := range experiments {
-		annotations := exp.Metadata.Annotations
+	annotations := map[string]string{workflow.BranchAnnotation: branch}
 
-		if annotations == nil {
-			continue
-		}
+	if tags != "" {
+		annotations[workflow.TagsAnnotation] = tags
+	}
 
-		if branch, ok := annotations["phenix.workflow/branch"]; ok {
-			if branch == scope {
-				exps = append(exps, exp)
-			}
+	opts := []experiment.CreateOption{
+		experiment.CreateWithName(expName),
+		experiment.CreateWithAnnotations(annotations),
+		experiment.CreateWithTopology(prep.TopologyName),
+		experiment.CreateWithScenario(prep.ScenarioName),
+		experiment.CreateWithVLANAliases(spec.VLANMappings()),
+		experiment.CreateWithSchedules(spec.Schedules),
+		experiment.CreateWithVLANMin(spec.VLANMin()),
+		experiment.CreateWithVLANMax(spec.VLANMax()),
+		experiment.CreateWithDeployMode(spec.ExperimentDeployMode()),
+		experiment.CreateWithDefaultBridge(spec.DefaultBridgeName()),
+		experiment.CreateWithGREMesh(spec.UseGREMesh),
+	}
+
+	err = experiment.Create(ctx, opts...)
+	if err != nil {
+		err := weberror.NewWebError(err, "unable to create new experiment")
+
+		return err.SetStatus(http.StatusInternalServerError)
+	}
+
+	if start {
+		cache.UnlockExperiment(expName)
+
+		if _, err := startExperiment(expName); err != nil {
+			return err
 		}
 	}
 
-	switch len(exps) {
-	case 0:
-		expName := wf.ExperimentName()
+	return nil
+}
 
-		if expName == "" {
-			return nil
+// updateFromWorkflow applies the workflow to exp using only what prep
+// resolved, so nothing is looked up after a running experiment is stopped. A
+// restart stops the experiment first; a restart or an updateAndStart starts
+// it afterward.
+func updateFromWorkflow(
+	exp *types.Experiment,
+	spec workflow.Spec,
+	tags string,
+	prep workflow.Prepared,
+	action workflow.Action,
+) error {
+	expName := exp.Metadata.Name
+
+	if action == workflow.ActionRestart {
+		var err error
+
+		if _, err = stopExperiment(expName); err != nil {
+			return err
 		}
 
-		err := cache.LockExperimentForCreation(expName)
+		// Need to get the experiment again after it's stopped so the spec and
+		// status we're working with are accurate (e.g., so when we update the store
+		// later we don't write the old status).
+		exp, err = experiment.Get(expName)
 		if err != nil {
-			err := weberror.NewWebError(err, "unable to create new experiment")
-
-			return err.SetStatus(http.StatusInternalServerError)
-		}
-
-		defer cache.UnlockExperiment(expName)
-
-		annotations := map[string]string{"phenix.workflow/branch": scope}
-
-		if tags != "" {
-			annotations["phenix.workflow/tags"] = tags
-		}
-
-		opts := []experiment.CreateOption{
-			experiment.CreateWithName(expName),
-			experiment.CreateWithAnnotations(annotations),
-			experiment.CreateWithTopology(wf.ExperimentTopology()),
-			experiment.CreateWithScenario(wf.ExperimentScenario()),
-			experiment.CreateWithVLANAliases(wf.VLANMappings()),
-			experiment.CreateWithSchedules(wf.Schedules),
-			experiment.CreateWithVLANMin(wf.VLANMin()),
-			experiment.CreateWithVLANMax(wf.VLANMax()),
-			experiment.CreateWithDeployMode(wf.ExperimentDeployMode()),
-			experiment.CreateWithDefaultBridge(wf.DefaultBridgeName()),
-			experiment.CreateWithGREMesh(wf.UseGREMesh),
-		}
-
-		err = experiment.Create(ctx, opts...)
-		if err != nil {
-			err := weberror.NewWebError(err, "unable to create new experiment")
-
-			return err.SetStatus(http.StatusInternalServerError)
-		}
-
-		if wf.AutoRestart() {
-			cache.UnlockExperiment(expName)
-
-			if _, err := startExperiment(expName); err != nil {
-				return err
-			}
-		}
-	case 1:
-		exp := &exps[0]
-		expName := exp.Metadata.Name
-
-		if !wf.AutoUpdate() {
-			return nil
-		}
-
-		if exp.Running() {
-			if !wf.AutoRestart() {
-				return nil
-			}
-
-			var err error
-
-			if _, err = stopExperiment(expName); err != nil {
-				return err
-			}
-
-			// Need to get the experiment again after it's stopped so the spec and
-			// status we're working with are accurate (e.g., so when we update the store
-			// later we don't write the old status).
-			exp, err = experiment.Get(expName)
-			if err != nil {
-				err := weberror.NewWebError(err, "unable to update experiment %s", expName)
-
-				return err.SetStatus(http.StatusInternalServerError)
-			}
-		}
-
-		if err := cache.LockExperimentForUpdate(expName); err != nil {
 			err := weberror.NewWebError(err, "unable to update experiment %s", expName)
 
 			return err.SetStatus(http.StatusInternalServerError)
 		}
+	}
 
-		defer cache.UnlockExperiment(expName)
-
-		var (
-			annotations  = exp.Metadata.Annotations
-			topoName     = wf.ExperimentTopology()
-			scenarioName = wf.ExperimentScenario()
-		)
-
-		if topoName == "" {
-			topoName = annotations["topology"]
-		}
-
-		if topoName == "" {
-			err := weberror.NewWebError(
-				errors.New("missing topology annotation"),
-				"unable to update experiment with topology %s",
-				topoName,
-			)
-
-			return err.SetStatus(http.StatusInternalServerError)
-		}
-
-		topo, _ := store.NewConfig("topology/" + topoName)
-
-		if err := store.Get(topo); err != nil {
-			err := weberror.NewWebError(
-				err,
-				"unable to update experiment with topology %s",
-				topoName,
-			)
-
-			return err.SetStatus(http.StatusInternalServerError)
-		}
-
-		topoSpec, err := types.DecodeTopologyFromConfig(*topo)
-		if err != nil {
-			err := weberror.NewWebError(
-				err,
-				"unable to update experiment with topology %s",
-				topoName,
-			)
-
-			return err.SetStatus(http.StatusInternalServerError)
-		}
-
-		exp.Spec.SetTopology(topoSpec)
-		exp.Metadata.Annotations["topology"] = topoName
-
-		if scenarioName == "" {
-			scenarioName = annotations["scenario"]
-		}
-
-		if scenarioName != "" {
-			scenario, _ := store.NewConfig("scenario/" + scenarioName)
-
-			if err := store.Get(scenario); err != nil {
-				err := weberror.NewWebError(
-					err,
-					"unable to update experiment with scenario %s",
-					scenarioName,
-				)
-
-				return err.SetStatus(http.StatusInternalServerError)
-			}
-
-			scenSpec, err := types.DecodeScenarioFromConfig(*scenario)
-			if err != nil {
-				err := weberror.NewWebError(
-					err,
-					"unable to update experiment with scenario %s",
-					scenarioName,
-				)
-
-				return err.SetStatus(http.StatusInternalServerError)
-			}
-
-			if err := types.MergeScenariosForTopology(scenSpec, topoName); err != nil {
-				return weberror.NewWebError(err, "merging scenarios")
-			}
-
-			exp.Spec.SetScenario(scenSpec)
-			exp.Metadata.Annotations["scenario"] = scenarioName
-		}
-
-		// default is to not override existing tags if no new tags are passed
-		// TODO: perhaps sorting tags and only updating those that are passed
-		// while leaving old tags that have not been overridden
-		if tags != "" {
-			exp.Metadata.Annotations["phenix.workflow/tags"] = tags
-		}
-
-		var (
-			aliases   = make(map[string]int)
-			wfAliases = wf.VLANMappings()
-		)
-
-		// Reset VLAN aliases using information from topology node network
-		// interfaces just in case the topology includes updates changing VLAN alias
-		// names.
-		for _, node := range exp.Spec.Topology().Nodes() {
-			// TODO: only consider nodes schedulable by minimega? Or should HIL nodes
-			// be taken into account here still as well?
-			if node.Network() == nil {
-				continue
-			}
-
-			for _, iface := range node.Network().Interfaces() {
-				alias := iface.VLAN()
-
-				// Use VLAN ID from workflow config if specified. Otherwise, set VLAN ID
-				// to 0 so minimega can choose accordingly.
-				if id, ok := wfAliases[alias]; ok {
-					aliases[alias] = id
-				} else {
-					aliases[alias] = 0
-				}
-			}
-		}
-
-		exp.Spec.VLANs().SetAliases(aliases)
-
-		var (
-			schedules   = make(map[string]string)
-			wfSchedules = wf.ScheduleMappings()
-		)
-
-		// Reset VM schedules using information from topology nodes just in case the
-		// topology includes updates changing node hostnames.
-		for _, node := range exp.Spec.Topology().Nodes() {
-			if node.External() {
-				continue
-			}
-
-			hostname := node.General().Hostname()
-
-			// Use cluster host from workflow config if specified.
-			if host, ok := wfSchedules[hostname]; ok {
-				schedules[hostname] = host
-			}
-		}
-
-		if len(wf.DefaultBridgeName()) > maxBridgeNameLength {
-			err := weberror.NewWebError(
-				fmt.Errorf("default bridge name must be %d characters or less", maxBridgeNameLength),
-				"unable to set default bridge for experiment %s", expName,
-			)
-
-			return err.SetStatus(http.StatusBadRequest)
-		}
-
-		exp.Spec.SetDefaultBridge(wf.DefaultBridgeName())
-		exp.Spec.SetSchedule(schedules)
-		exp.Spec.SetDeployMode(string(wf.ExperimentDeployMode()))
-		_ = exp.Spec.SetVLANRange(wf.VLANMin(), wf.VLANMax(), true)
-		exp.Spec.SetUseGREMesh(wf.UseGREMesh)
-
-		if err := exp.WriteToStore(false); err != nil {
-			err := weberror.NewWebError(err, "unable to write updated experiment %s", expName)
-
-			return err.SetStatus(http.StatusInternalServerError)
-		}
-
-		if err := experiment.Reconfigure(expName); err != nil {
-			return weberror.NewWebError(err, "unable to reconfigure updated experiment %s", expName)
-		}
-
-		if wf.AutoRestart() {
-			cache.UnlockExperiment(expName)
-
-			if _, err := startExperiment(expName); err != nil {
-				return err
-			}
-		}
-	default:
-		err := weberror.NewWebError(
-			nil,
-			"more than one experiment is mapped to workflow branch %s",
-			scope,
-		)
+	if err := cache.LockExperimentForUpdate(expName); err != nil {
+		err := weberror.NewWebError(err, "unable to update experiment %s", expName)
 
 		return err.SetStatus(http.StatusInternalServerError)
+	}
+
+	defer cache.UnlockExperiment(expName)
+
+	exp.Spec.SetTopology(prep.Topology)
+	exp.Metadata.Annotations["topology"] = prep.TopologyName
+
+	if prep.ScenarioName != "" {
+		exp.Spec.SetScenario(prep.Scenario)
+		exp.Metadata.Annotations["scenario"] = prep.ScenarioName
+	}
+
+	// default is to not override existing tags if no new tags are passed
+	// TODO: perhaps sorting tags and only updating those that are passed
+	// while leaving old tags that have not been overridden
+	if tags != "" {
+		exp.Metadata.Annotations[workflow.TagsAnnotation] = tags
+	}
+
+	exp.Spec.VLANs().SetAliases(prep.Aliases)
+	exp.Spec.SetDefaultBridge(spec.DefaultBridgeName())
+	exp.Spec.SetSchedule(prep.Schedules)
+	exp.Spec.SetDeployMode(string(spec.ExperimentDeployMode()))
+	_ = exp.Spec.SetVLANRange(spec.VLANMin(), spec.VLANMax(), true)
+	exp.Spec.SetUseGREMesh(spec.UseGREMesh)
+
+	if err := exp.WriteToStore(false); err != nil {
+		err := weberror.NewWebError(err, "unable to write updated experiment %s", expName)
+
+		return err.SetStatus(http.StatusInternalServerError)
+	}
+
+	if err := experiment.Reconfigure(expName); err != nil {
+		return weberror.NewWebError(err, "unable to reconfigure updated experiment %s", expName)
+	}
+
+	if action == workflow.ActionRestart || action == workflow.ActionUpdateAndStart {
+		cache.UnlockExperiment(expName)
+
+		if _, err := startExperiment(expName); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
 // WorkflowUpsertConfig - POST /workflow/configs/{branch}.
+//
+// It creates or updates a config, with ${BRANCH_NAME} in the body expanded to
+// the branch. With dryRun=true it runs every check but stores nothing, runs
+// no config hook and responds 200 with what the upsert would do.
 //
 //nolint:funlen // handler
 func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
@@ -421,9 +430,15 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		scope   = vars["branch"]
 	)
 
+	dryRun, err := parseDryRun(r.URL.Query())
+	if err != nil {
+		return err
+	}
+
 	var (
 		typ = r.Header.Get("Content-Type")
 		cfg *store.Config
+		src []byte
 	)
 
 	// set branch name in environment variable so it can be used in
@@ -439,6 +454,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
+		src = body
 		cfg, err = store.NewConfigFromJSON(body)
 		if err != nil {
 			return weberror.NewWebError(err, "unable to parse JSON config")
@@ -451,6 +467,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
+		src = body
 		cfg, err = store.NewConfigFromYAML(body)
 		if err != nil {
 			return weberror.NewWebError(err, "unable to parse YAML config")
@@ -463,10 +480,16 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	var (
-		name      = fmt.Sprintf("%s/%s", cfg.Kind, cfg.Metadata.Name)
-		tester, _ = store.NewConfig(name)
-		exists    = true
+		name   = fmt.Sprintf("%s/%s", cfg.Kind, cfg.Metadata.Name)
+		exists = true
 	)
+
+	// NewConfig rejects a kind the store does not hold, such as Workflow, and
+	// a name containing a slash; its nil result would make store.Get panic.
+	tester, nameErr := store.NewConfig(name)
+	if nameErr != nil {
+		return weberror.NewWebError(nameErr, "invalid config %s", name)
+	}
 
 	if err := store.Get(tester); err != nil {
 		if !errors.Is(err, store.ErrNotExist) {
@@ -498,18 +521,14 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusForbidden)
 		}
 
-		err := config.Update(name, cfg)
+		err = updateOrValidate(name, cfg, dryRun)
 		if err != nil {
 			if errors.Is(err, store.ErrNotExist) {
 				return weberror.NewWebError(err, "config to update (%s) does not exist", name)
 			}
 
 			if errors.Is(err, types.ErrValidationFailed) {
-				cause := errors.Unwrap(err)
-				lines := strings.Split(cause.Error(), "\n")
-
-				return weberror.NewWebError(cause, "%s", lines[0]).
-					WithMetadata("validation", cause.Error(), true)
+				return validationWebError(src, err)
 			}
 
 			if errors.Is(err, store.ErrInvalidFormat) {
@@ -533,26 +552,14 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusForbidden)
 		}
 
-		var (
-			opts = []config.CreateOption{
-				config.CreateFromConfig(cfg),
-				config.CreateWithValidation(),
-			}
-			err error
-		)
-
-		cfg, err = config.Create(opts...)
+		cfg, err = createOrValidate(cfg, dryRun)
 		if err != nil {
 			if errors.Is(err, store.ErrExist) {
 				return weberror.NewWebError(err, "config to create (%s) already exists", name)
 			}
 
 			if errors.Is(err, types.ErrValidationFailed) {
-				cause := errors.Unwrap(err)
-				lines := strings.Split(cause.Error(), "\n")
-
-				return weberror.NewWebError(cause, "%s", lines[0]).
-					WithMetadata("validation", cause.Error(), true)
+				return validationWebError(src, err)
 			}
 
 			if errors.Is(err, store.ErrInvalidFormat) {
@@ -568,6 +575,12 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 
 			return weberror.NewWebError(err, "unable to create new config %s", name)
 		}
+	}
+
+	if dryRun {
+		writeConfigDryRun(w, exists, cfg)
+
+		return nil
 	}
 
 	w.Header().Set("Location", strings.ToLower("/api/v1/configs/"+name))
@@ -590,115 +603,4 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	return nil
-}
-
-type workflow struct {
-	Auto *struct {
-		Create  string `mapstructure:"create"`
-		Update  *bool  `mapstructure:"update"`
-		Restart *bool  `mapstructure:"restart"`
-	} `mapstructure:"auto"`
-
-	Topology   string            `mapstructure:"topology"`
-	Scenario   string            `mapstructure:"scenario"`
-	VLANs      map[string]int    `mapstructure:"vlans"`
-	Schedules  map[string]string `mapstructure:"schedules"`
-	DeployMode string            `mapstructure:"deployMode"`
-	UseGREMesh bool              `mapstructure:"useGREMesh"`
-
-	VLANRange *struct {
-		Min int `mapstructure:"min"`
-		Max int `mapstructure:"max"`
-	} `mapstructure:"vlanRange"`
-
-	DefaultBridge string `mapstructure:"defaultBridge"`
-}
-
-func (w workflow) AutoUpdate() bool {
-	if w.Auto == nil {
-		return true
-	}
-
-	if w.Auto.Update == nil {
-		return true
-	}
-
-	return *w.Auto.Update
-}
-
-func (w workflow) AutoRestart() bool {
-	if w.Auto == nil {
-		return true
-	}
-
-	if w.Auto.Restart == nil {
-		return true
-	}
-
-	return *w.Auto.Restart
-}
-
-func (w workflow) ExperimentName() string {
-	if w.Auto == nil {
-		return ""
-	}
-
-	return w.Auto.Create
-}
-
-func (w workflow) ExperimentTopology() string {
-	return w.Topology
-}
-
-func (w workflow) ExperimentScenario() string {
-	return w.Scenario
-}
-
-func (w workflow) VLANMappings() map[string]int {
-	if w.VLANs == nil {
-		return make(map[string]int)
-	}
-
-	return w.VLANs
-}
-
-func (w workflow) ScheduleMappings() map[string]string {
-	if w.Schedules == nil {
-		return make(map[string]string)
-	}
-
-	return w.Schedules
-}
-
-func (w workflow) ExperimentDeployMode() common.DeploymentMode {
-	mode, err := common.ParseDeployMode(w.DeployMode)
-	if err != nil { // this will happen if deploy mode isn't provided in workflow config
-		return common.DeployMode
-	}
-
-	return mode
-}
-
-func (w workflow) VLANMin() int {
-	if w.VLANRange == nil {
-		return 0
-	}
-
-	return w.VLANRange.Min
-}
-
-func (w workflow) VLANMax() int {
-	if w.VLANRange == nil {
-		return 0
-	}
-
-	return w.VLANRange.Max
-}
-
-func (w workflow) DefaultBridgeName() string {
-	if w.DefaultBridge == "" {
-		return "phenix"
-	}
-
-	return w.DefaultBridge
 }

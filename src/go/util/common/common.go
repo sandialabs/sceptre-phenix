@@ -34,6 +34,17 @@ var (
 	// empty, callers should default to PhenixBase + "/mounts".
 	MountBase string //nolint:gochecknoglobals // global config
 
+	// InjectsBase is the effective base directory for staged workflow
+	// injects. The root command sets it from base-dir.injects, or to
+	// PhenixBase + "/injects" when that setting is empty.
+	InjectsBase string //nolint:gochecknoglobals // global config
+
+	// TopologiesBase is the effective base directory in which phenix workflow
+	// apply looks up topology directories by name. The root command sets it
+	// from base-dir.topologies, or to PhenixBase + "/topologies" when that
+	// setting is empty.
+	TopologiesBase string //nolint:gochecknoglobals // global config
+
 	BridgeMode = BridgeModeManual     //nolint:gochecknoglobals // global config
 	DeployMode = DeployModeNoHeadnode //nolint:gochecknoglobals // global config
 
@@ -114,6 +125,10 @@ func SetDeployMode(mode string) error {
 	return nil
 }
 
+// EnvPlaceholder matches the ${VAR} and ${VAR:default} placeholders that
+// [ParseEnv] replaces: the name in its first group, the default in its second.
+var EnvPlaceholder = regexp.MustCompile(`\$\{(\w+)(?::([^}]*))?\}`)
+
 // ParseEnv replaces environment variable placeholders in the input string with their corresponding values.
 // Placeholders are in the format ${VAR} or ${VAR:default}, where VAR is the environment variable name,
 // and default is an optional default value to use if the variable is not set.
@@ -124,10 +139,8 @@ func SetDeployMode(mode string) error {
 //	os.Setenv("FOO", "bar")
 //	ParseEnv("Value: ${FOO}, Default: ${BAZ:qux}") // returns "Value: bar, Default: qux"
 func ParseEnv(input string) string {
-	re := regexp.MustCompile(`\$\{(\w+)(?::([^}]*))?\}`)
-
-	return re.ReplaceAllStringFunc(input, func(match string) string {
-		parts := re.FindStringSubmatch(match)
+	return EnvPlaceholder.ReplaceAllStringFunc(input, func(match string) string {
+		parts := EnvPlaceholder.FindStringSubmatch(match)
 		if len(parts) == 0 {
 			return match
 		}

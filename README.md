@@ -77,6 +77,26 @@ source <(phenix completion bash)
 source <(phenix completion zsh)
 ```
 
+### Deploy a Topology Directory
+
+`phenix workflow apply` deploys a topology directory through the running `phenix ui` server's unix socket. The directory can hold `phenix-configs/` (topology, scenario and other configs), `phenix-injects/` (files to inject into VMs, copied to `/phenix/injects/<name>`) and `phenix.yml` (the workflow config, which creates, updates or restarts the experiment). `<name>` is the directory's name unless `-b` sets it, and `${BRANCH_NAME}` in the configs expands to it. The server dry-runs every config and the workflow config before anything changes:
+
+```bash
+# Validate everything and log the plan; change nothing
+phenix workflow apply /phenix/topologies/helloworld -n
+
+# Deploy it; a bare name is looked up under base-dir.topologies
+phenix workflow apply helloworld
+
+# Allow restarting the experiment if it's already running
+phenix workflow apply helloworld -f
+
+# Docker Compose: the socket is inside the phenix container
+docker exec phenix phenix workflow apply /phenix/topologies/helloworld -f
+```
+
+See [Workflow](https://phenix.sceptre.dev/latest/workflow/) for the directory layout, the `phenix.yml` reference, more examples and the REST API.
+
 ## 🛠️ Local Development
 
 If you wish to build and run the services locally without Docker, follow these steps.
@@ -222,6 +242,8 @@ Logging settings are managed via the `phenix settings` command, which modifies t
 | `log.system.max-age` | `PHENIX_LOG_SYSTEM_MAX_AGE` | `90` | Max age in days to retain old logs. |
 | `ui.logs.level` | `PHENIX_UI_LOGS_LEVEL` | `""` | Log level for the web UI stream (defaults to `log.level`). |
 | `ui.logs.minimega-path` | `PHENIX_UI_LOGS_MINIMEGA_PATH` | `""` | Path to the minimega log file to display in the UI. **(Restart Required)** |
+| `base-dir.injects` | `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Directory that `phenix workflow apply` stages a topology directory's `phenix-injects/` into, as `<base-dir.injects>/<name>`. The `phenix ui` server's value is used unless `--base-dir.injects` is given. Use an absolute path. **(Restart Required)** |
+| `base-dir.topologies` | `PHENIX_BASE_DIR_TOPOLOGIES` | `<base-dir.phenix>/topologies` | Directory where `phenix workflow apply NAME` looks for `NAME` when it isn't an existing path. Use an absolute path. |
 
 #### Configuration Precedence
 
