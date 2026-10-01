@@ -34,3 +34,146 @@ components:
           - VirtualMachine
           default: VirtualMachine
           example: VirtualMachine
+    Workflow:
+      type: object
+      title: Workflow
+      description: >-
+        A phenix workflow config: what applying a workflow branch creates,
+        updates or restarts one experiment from.
+      additionalProperties: false
+      required:
+      - apiVersion
+      - kind
+      - spec
+      properties:
+        apiVersion:
+          type: string
+          title: API Version
+          description: The config API version; a workflow config is phenix.sandia.gov/v0.
+          enum:
+          - phenix.sandia.gov/v0
+        kind:
+          type: string
+          title: Kind
+          description: The config kind, which is always Workflow.
+          enum:
+          - Workflow
+        metadata:
+          type: object
+          title: Metadata
+          description: >-
+            Not read by the server; it is accepted so a workflow config has the
+            same four top-level keys as every other phenix config, and so a later
+            version can carry a name or annotations without a breaking change.
+          nullable: true
+        spec:
+          type: object
+          title: Workflow Spec
+          description: >-
+            What an apply may do and the experiment settings it sets; an empty
+            spec applies every default.
+          additionalProperties: false
+          properties:
+            auto:
+              type: object
+              title: Auto
+              description: What an apply may do to the experiment mapped to the workflow branch without being asked.
+              nullable: true
+              additionalProperties: false
+              properties:
+                create:
+                  type: string
+                  title: Create
+                  description: >-
+                    The name of the experiment to create when none is mapped to
+                    the branch; unset never creates one.
+                  nullable: true
+                update:
+                  type: boolean
+                  title: Update
+                  description: >-
+                    Whether an apply may update the experiment already mapped to
+                    the branch; defaults to true when unset.
+                  nullable: true
+                restart:
+                  type: boolean
+                  title: Restart
+                  description: >-
+                    Whether an apply may start a new or updated experiment and
+                    stop and restart a running one; defaults to true when unset.
+                  nullable: true
+            topology:
+              type: string
+              title: Topology
+              description: >-
+                The name of the topology config; required to create an
+                experiment, and on an update defaults to the experiment's
+                current topology.
+              nullable: true
+            scenario:
+              type: string
+              title: Scenario
+              description: The name of the scenario config; on an update defaults to the experiment's current scenario.
+              nullable: true
+            vlans:
+              type: object
+              title: VLANs
+              description: >-
+                VLAN alias to VLAN ID; every alias used by an interface in the
+                topology is set to its ID here, or left for minimega to pick
+                when not listed.
+              nullable: true
+              additionalProperties:
+                type: integer
+            schedules:
+              type: object
+              title: Schedules
+              description: >-
+                VM hostname to cluster host; each listed non-external node of
+                the topology is scheduled on that host.
+              nullable: true
+              additionalProperties:
+                type: string
+            deployMode:
+              type: string
+              title: Deploy Mode
+              description: >-
+                Where VMs are deployed, all, no-headnode or only-headnode in any
+                letter case; unset or empty uses the server's deploy-mode
+                setting.
+              nullable: true
+              pattern: '^(?i:all|no-headnode|only-headnode)?$'
+            useGREMesh:
+              type: boolean
+              title: Use GRE Mesh
+              description: >-
+                Whether the experiment uses a GRE mesh between cluster hosts; it
+                is OR-ed with the server's use-gre-mesh setting, so either turns
+                it on.
+              nullable: true
+            vlanRange:
+              type: object
+              title: VLAN Range
+              description: The range of VLAN IDs the experiment may allocate from; unset leaves both ends unset.
+              nullable: true
+              additionalProperties: false
+              properties:
+                min:
+                  type: integer
+                  title: Minimum
+                  description: The lowest VLAN ID the experiment may use; 0 leaves the minimum unset.
+                  nullable: true
+                max:
+                  type: integer
+                  title: Maximum
+                  description: The highest VLAN ID the experiment may use; 0 leaves the maximum unset.
+                  nullable: true
+            defaultBridge:
+              type: string
+              title: Default Bridge
+              description: >-
+                The bridge the experiment's VMs attach to by default; defaults to
+                phenix, is at most 15 characters (the Linux interface name
+                limit), and unless it is phenix no other experiment may use it.
+              nullable: true
+              maxLength: 15

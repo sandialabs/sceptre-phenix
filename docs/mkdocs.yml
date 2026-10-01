@@ -66,6 +66,9 @@ markdown_extensions:
 
 plugins:
   - search
+  - redirects:
+      redirect_maps:
+        git-workflow.md: workflow.md
 
 nav:
   - Home: index.md
@@ -90,7 +93,7 @@ nav:
     - Tunneler: tunneler.md
   - Integrations:
     - API: api.md
-    - Git Workflow: git-workflow.md
+    - Workflow: workflow.md
   - Administration:
     - Users: user-administration.md
   - Reference:

@@ -72,7 +72,7 @@ func decodeTopologyRecursive( //nolint:ireturn // interface
 
 	if v1Spec, ok := spec.(*v1.TopologySpec); ok {
 		for _, include := range v1Spec.IncludeTopologiesF {
-			childConfig, err := loadTopology(include)
+			childConfig, err := LoadTopology(include)
 			if err != nil {
 				return nil, fmt.Errorf("loading included topology %s: %w", include, err)
 			}
@@ -110,7 +110,9 @@ func decodeTopologyRecursive( //nolint:ireturn // interface
 	return spec, nil
 }
 
-func loadTopology(source string) (*store.Config, error) {
+// LoadTopology returns the topology config named source: the stored one, else
+// the YAML file at that path. Including a topology loads it this way.
+func LoadTopology(source string) (*store.Config, error) {
 	// Try to load from the store first
 	if c, err := store.NewConfig("Topology/" + source); err == nil {
 		err := store.Get(c)

@@ -55,3 +55,21 @@ func TestNewConfigRejectsUnknownKind(t *testing.T) {
 		t.Fatal("NewConfig should reject unknown kinds")
 	}
 }
+
+// TestWorkflowIsNotAStoredKind proves the Workflow schema did not make
+// workflow configs addressable in the store.
+func TestWorkflowIsNotAStoredKind(t *testing.T) {
+	for _, name := range []string{"workflow/wf", "Workflow/wf", "WORKFLOW/wf"} {
+		if _, err := NewConfig(name); err == nil {
+			t.Errorf("NewConfig(%q) returned no error", name)
+		}
+
+		if got := ConfigFullName(name); got != "" {
+			t.Errorf("ConfigFullName(%q) = %q, want empty", name, got)
+		}
+	}
+
+	if got := ConfigFullName("Workflow", "wf"); got != "" {
+		t.Errorf(`ConfigFullName("Workflow", "wf") = %q, want empty`, got)
+	}
+}

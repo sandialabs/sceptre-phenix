@@ -1,4 +1,25 @@
 <template>
+  <b-modal v-model="error.modal" @close="resetErrorModal" has-modal-card>
+    <div class="modal-card" style="width: 50em">
+      <header class="modal-card-head x-modal-dark">
+        <p class="modal-card-title">{{ error.title }}</p>
+      </header>
+      <section class="modal-card-body x-modal-dark">
+        <div class="control">
+          <textarea
+            class="textarea x-config-text has-fixed-size"
+            style="font-family: monospace"
+            rows="30"
+            aria-label="Validation errors"
+            v-model="error.msg"
+            readonly />
+        </div>
+      </section>
+      <footer class="modal-card-foot x-modal-dark buttons is-right">
+        <button class="button is-dark" @click="resetErrorModal">Exit</button>
+      </footer>
+    </div>
+  </b-modal>
   <b-modal
     v-model="isUploaderModalActive"
     @close="resetUploader"
@@ -345,6 +366,13 @@
         isUploaderModalActive: false,
         uploaderFile: null,
 
+        //validation error modal
+        error: {
+          modal: false,
+          title: null,
+          msg: null,
+        },
+
         viewer: {
           isActive: false,
           config: { kind: null, metadata: { name: null } },
@@ -557,6 +585,11 @@
       resetUploader() {
         this.isUploaderModalActive = false;
         this.uploaderFile = null;
+      },
+      resetErrorModal() {
+        this.error.modal = false;
+        this.error.title = null;
+        this.error.msg = null;
       },
       resetViewer() {
         this.viewer.isActive = false;

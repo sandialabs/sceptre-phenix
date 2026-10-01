@@ -270,6 +270,12 @@ Role:
       example: Example Role
 ```
 
+## Workflow Schema
+
+The workflow config (`phenix.yml`) is validated against the `Workflow` schema
+in schema version `v0`. It is documented, with every field, in
+[Workflow](workflow.md#schema).
+
 ## Node Schemas
 
 ### `minimega_node` Schema
