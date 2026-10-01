@@ -31,8 +31,17 @@ import (
 	"phenix/util/pubsub"
 )
 
-const maxNameLength = 15
-const c2CheckInterval = 5 * time.Second
+const (
+	// MaxBridgeNameLength is the longest default bridge name, in bytes: the
+	// Linux interface name limit. With the auto bridge mode it bounds the
+	// experiment name too.
+	MaxBridgeNameLength = 15
+
+	// ReservedName is the experiment name [Create] refuses in any letter case.
+	ReservedName = "all"
+
+	c2CheckInterval = 5 * time.Second
+)
 
 var (
 	ErrExperimentNotFound   = errors.New("experiment not found")
@@ -88,17 +97,18 @@ func hookCreate(exp *types.Experiment, c *store.Config) error {
 	}
 
 	if common.BridgeMode == common.BridgeModeAuto {
-		if len(c.Metadata.Name) > maxNameLength {
-			return errors.New(
-				"experiment name must be 15 characters or less when using auto bridge mode",
+		if len(c.Metadata.Name) > MaxBridgeNameLength {
+			return fmt.Errorf(
+				"experiment name must be %d characters or less when using auto bridge mode",
+				MaxBridgeNameLength,
 			)
 		}
 
 		exp.Spec.SetDefaultBridge(c.Metadata.Name)
 	}
 
-	if len(exp.Spec.DefaultBridge()) > maxNameLength {
-		return errors.New("default bridge name must be 15 characters or less")
+	if len(exp.Spec.DefaultBridge()) > MaxBridgeNameLength {
+		return fmt.Errorf("default bridge name must be %d characters or less", MaxBridgeNameLength)
 	}
 
 	exp.Spec.SetUseGREMesh(exp.Spec.UseGREMesh() || common.UseGREMesh)
@@ -149,17 +159,18 @@ func hookUpdate(exp *types.Experiment, c *store.Config) error {
 
 	// Just in case the updated experiment reset the default bridge.
 	if common.BridgeMode == common.BridgeModeAuto {
-		if len(c.Metadata.Name) > maxNameLength {
-			return errors.New(
-				"experiment name must be 15 characters or less when using auto bridge mode",
+		if len(c.Metadata.Name) > MaxBridgeNameLength {
+			return fmt.Errorf(
+				"experiment name must be %d characters or less when using auto bridge mode",
+				MaxBridgeNameLength,
 			)
 		}
 
 		exp.Spec.SetDefaultBridge(c.Metadata.Name)
 	}
 
-	if len(exp.Spec.DefaultBridge()) > maxNameLength {
-		return errors.New("default bridge name must be 15 characters or less")
+	if len(exp.Spec.DefaultBridge()) > MaxBridgeNameLength {
+		return fmt.Errorf("default bridge name must be %d characters or less", MaxBridgeNameLength)
 	}
 
 	exp.Spec.SetUseGREMesh(exp.Spec.UseGREMesh() || common.UseGREMesh)
@@ -309,16 +320,16 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 		return errors.New("no experiment name provided")
 	}
 
-	if strings.ToLower(o.name) == "all" {
-		return errors.New("cannot use 'all' for experiment name")
+	if strings.ToLower(o.name) == ReservedName {
+		return fmt.Errorf("cannot use '%s' for experiment name", ReservedName)
 	}
 
 	if o.topology == "" {
 		return errors.New("no topology name provided")
 	}
 
-	if len(o.defaultBridge) > maxNameLength {
-		return errors.New("default bridge name must be 15 characters or less")
+	if len(o.defaultBridge) > MaxBridgeNameLength {
+		return fmt.Errorf("default bridge name must be %d characters or less", MaxBridgeNameLength)
 	}
 
 	var (

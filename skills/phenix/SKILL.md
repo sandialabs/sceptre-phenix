@@ -1,6 +1,6 @@
 ---
 name: phenix
-description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util).'
+description: 'Guide for the phenix CLI and REST/web API used to build and run cyber ranges and experiments on minimega: Topology, Scenario, and Experiment configs, Builder diagrams, topology directories deployed with `phenix workflow apply`, disk images, SCORCH, writing phenix-app-<name> user apps, and API auth (X-Phenix-Auth-Token, 401s). This skill should be used when working with phenix, phēnix, SCEPTRE, cyber ranges or cyber experimentation, minimega VMs managed by phenix, or any `phenix` subcommand (config, experiment, vm, image, vlan, mm, settings, ui, util, workflow).'
 license: GPL-3.0-only
 ---
 
@@ -22,6 +22,7 @@ Detailed references and examples, loaded only when needed:
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
 | Graphical topology Builder: diagram model, translation to configs, endpoints, gotchas | [`references/builder.md`](references/builder.md) |
+| Deploying a topology directory with `phenix workflow apply`: layout, steps, workflow config, endpoints, gotchas, troubleshooting | [`references/workflow.md`](references/workflow.md) |
 | Copyable Topology and Scenario configs | [`examples/topology.yaml`](examples/topology.yaml), [`examples/scenario.yaml`](examples/scenario.yaml) |
 | Image build scripts, overlays, vmdb2 troubleshooting | sibling [`phenix-image`](../phenix-image/SKILL.md) skill |
 
@@ -149,8 +150,9 @@ gotchas.
 
 Command groups: `config` (stored configs), `experiment` (lifecycle), `vm`
 (running VMs), `image` (vmdb2 disk images), `vlan` (per-experiment VLAN
-aliases/ranges), plus `mm`, `settings`, `ui`, `util`, `completion`, and
-`version`. Every subcommand accepts the persistent flags documented in
+aliases/ranges), `workflow` (topology directory deployment), plus `mm`,
+`settings`, `ui`, `util`, `completion`, and `version`. Every subcommand
+accepts the persistent flags documented in
 [`references/cli.md`](references/cli.md), which also lists each subcommand's
 own flags.
 
@@ -165,6 +167,11 @@ phenix vm info my-exp                              # verify VMs booted
 phenix experiment trigger running my-exp           # re-fire a lifecycle stage on demand
 phenix experiment stop my-exp
 ```
+
+`phenix workflow apply <DIR|NAME>` deploys a topology directory through the
+running `phenix ui`: it stages `phenix-injects/`, upserts the configs in
+`phenix-configs/`, and applies the `phenix.yml` workflow config; `-n` is a dry
+run that changes nothing. See [`references/workflow.md`](references/workflow.md).
 
 ## Running phenix
 
@@ -228,17 +235,30 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
 - **`phenix experiment trigger-running` is deprecated** — use
   `phenix experiment trigger running <exp> [app ...]`, which also reaches the
   `configure`, `pre-start`, `post-start`, and `cleanup` stages.
+- **phenix reads its settings files from the current directory first.** A
+  `config.*` (`config.json`, `config.toml`, `config.yaml`, `config.yml` or
+  another extension the settings library reads) or a `users.*` in a topology
+  directory you did not write can change the settings of the run, such as
+  `unix-socket` or `base-dir.topologies`. Run `phenix workflow apply <DIR>`
+  from outside such a directory (`phenix workflow apply ./site`, not
+  `phenix workflow apply .` inside it).
+
+The other gotchas of `phenix workflow apply` are in
+[`references/workflow.md`](references/workflow.md#gotchas).
 
 ## Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|
 | `expects the configuration kind to be one of [...]` | Kind in `<kind>/<name>` is misspelled or unsupported. Kinds are case-insensitive but must be one of `topology, scenario, experiment, image, user, role` (plus `all` where supported). |
-| `Unable to create configuration from <path>` | File isn't valid YAML/JSON, fails schema validation, or path doesn't exist. Try `--skip-validation` to isolate schema vs. parse errors. |
+| `Unable to create configuration from <path>` | File isn't valid YAML/JSON, fails schema validation, or path doesn't exist. Schema failures are followed by explained lines naming the item, its hostname or name, and the line. Try `--skip-validation` to isolate schema vs. parse errors. |
 | Experiment `create` succeeds but `start` fails to boot VMs | Re-run with `phenix experiment start --dry-run <exp>` to see what would be sent to minimega, check `phenix vm info <exp>` and minimega directly via `phenix mm <cmd>`, and verify the disk images referenced in the topology exist (`phenix image list` for image configs, `GET /api/v1/disks` for disk files present on the headnode). |
 | Web API calls return 401 | That server has a JWT signing key configured, so auth is on: send a current token in `X-Phenix-Auth-Token` (or `?token=`), not in `Authorization` — standard bearer-token tooling silently 401s. Re-login if the token expired. A server started without a signing key never returns 401. |
 | `configuration not updated` after `phenix config edit` | No changes were saved in the editor — this is expected, not an error. |
 | Settings changes via `phenix settings set` don't seem to apply | Command-line flags always win over the config file; unset the flag or use `phenix settings unset <key>` to fall back to the file/env value. |
+
+Errors of `phenix workflow apply` and their fixes are in the troubleshooting
+table of [`references/workflow.md`](references/workflow.md#troubleshooting).
 
 ## Writing phenix apps
 

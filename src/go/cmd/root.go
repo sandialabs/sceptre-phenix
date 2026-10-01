@@ -72,13 +72,7 @@ var rootCmd = &cobra.Command{
 
 		// check for global options set by UI server
 		if common.UnixSocket != "" {
-			cli := http.Client{
-				Transport: &http.Transport{
-					DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-						return net.Dial("unix", common.UnixSocket)
-					},
-				},
-			}
+			cli := serverOptionsClient(common.UnixSocket)
 
 			if resp, err := cli.Get("http://unix/api/v1/options"); err == nil {
 				defer func() { _ = resp.Body.Close() }()
@@ -148,6 +142,16 @@ var rootCmd = &cobra.Command{
 			"base-dir.phenix",
 			cmd.Flags().Changed("base-dir.phenix"),
 		)
+		common.InjectsBase = derivedBaseDir( //nolint:reassign // configuration injection
+			getEffectiveString("base-dir.injects", cmd.Flags().Changed("base-dir.injects")),
+			common.PhenixBase,
+			"injects",
+		)
+		common.TopologiesBase = derivedBaseDir( //nolint:reassign // configuration injection
+			getEffectiveString("base-dir.topologies", cmd.Flags().Changed("base-dir.topologies")),
+			common.PhenixBase,
+			"topologies",
+		)
 		common.MinimegaBase = getEffectiveString( //nolint:reassign // configuration injection
 			"base-dir.minimega",
 			cmd.Flags().Changed("base-dir.minimega"),
@@ -209,6 +213,23 @@ var rootCmd = &cobra.Command{
 		return cmd.Help()
 	},
 	SilenceUsage: true, // don't print help when subcommands return an error
+}
+
+// serverOptionsClient returns the client with which the root command reads
+// the options of the phenix server at socket. Each request is bounded by
+// preflightRequestTimeout, so a server that accepts the connection and never
+// answers is treated like one that is not there.
+func serverOptionsClient(socket string) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				var dialer net.Dialer
+
+				return dialer.DialContext(ctx, "unix", socket)
+			},
+		},
+		Timeout: preflightRequestTimeout,
+	}
 }
 
 func argsWithUsage(validate cobra.PositionalArgs) cobra.PositionalArgs {
@@ -385,6 +406,14 @@ func init() {
 	rootCmd.PersistentFlags().
 		StringVar(&minimegaBase, "base-dir.minimega", "/tmp/minimega", "base minimega directory")
 	rootCmd.PersistentFlags().
+		String(
+			"base-dir.injects", "",
+			"base directory for staged workflow injects "+
+				"(default: <base-dir.phenix>/injects; workflow apply uses the server's value unless this flag is given)",
+		)
+	rootCmd.PersistentFlags().
+		String("base-dir.topologies", "", "base directory for topology directories (default: <base-dir.phenix>/topologies)")
+	rootCmd.PersistentFlags().
 		StringVar(&mountDir, "mount-dir", "", "base directory for VM filesystem mounts (default: <base-dir.phenix>/mounts)")
 	rootCmd.PersistentFlags().
 		StringVar(&hostnameSuffixes, "hostname-suffixes", "-minimega,-phenix", "hostname suffixes to strip")
@@ -534,6 +563,17 @@ func getEffectiveBool(key string, flagChanged bool) bool {
 		return v.GetBool(key)
 	}
 	return viper.GetBool(key)
+}
+
+// derivedBaseDir returns value when it is set. Otherwise it returns the
+// directory sub under phenixBase, which is the default for base-dir settings
+// that derive from base-dir.phenix.
+func derivedBaseDir(value, phenixBase, sub string) string {
+	if value != "" {
+		return value
+	}
+
+	return filepath.Join(phenixBase, sub)
 }
 
 // getFileViper creates a temporary Viper instance loaded ONLY with the

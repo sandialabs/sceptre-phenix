@@ -298,6 +298,17 @@ func Get(name string, upgrade bool) (*store.Config, error) {
 	return c, nil
 }
 
+// Validate checks c against the config schemas as [Create] and [Update] do,
+// without touching the store or running a hook. The error wraps
+// [types.ErrValidationFailed] with the text Create and Update return.
+func Validate(c *store.Config) error {
+	if err := types.ValidateConfigSpec(*c); err != nil {
+		return fmt.Errorf("validating config: %w", err)
+	}
+
+	return nil
+}
+
 // Create reads a config file from the given path, validates it, and persists it
 // to the store. Validation of configs is done against OpenAPIv3 schema
 // definitions. In the event the config file being read defines an experiment,
@@ -345,9 +356,8 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 	}
 
 	if o.validate {
-		validateErr := types.ValidateConfigSpec(*c)
-		if validateErr != nil {
-			return nil, fmt.Errorf("validating config: %w", validateErr)
+		if err := Validate(c); err != nil {
+			return nil, err
 		}
 	}
 
@@ -457,8 +467,8 @@ func Update(name string, c *store.Config) error {
 
 	c.Metadata.Created = old.Metadata.Created
 
-	if err = types.ValidateConfigSpec(*c); err != nil {
-		return fmt.Errorf("validating config: %w", err)
+	if err = Validate(c); err != nil {
+		return err
 	}
 
 	for _, hook := range hooks[c.Kind] {

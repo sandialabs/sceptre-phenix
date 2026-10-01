@@ -1,9 +1,14 @@
 package cmd
 
 import (
+	"errors"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestSudoRanPhenix(t *testing.T) {
@@ -59,5 +64,71 @@ func TestSudoRanPhenix(t *testing.T) {
 				t.Errorf("sudoRanPhenix() with SUDO_COMMAND=%q (exe=%s) = %v, want %v", tc.sudoCommand, exeName, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestServerOptionsClient checks that the root command's request for the
+// server's options has the preflight bound: against a socket whose listener
+// accepts every connection and never answers, the request ends within the
+// bound, lowered here, with a timeout. The root command ignores that error,
+// as it does for a server that is not there.
+func TestServerOptionsClient(t *testing.T) {
+	lowerPreflightTimeout(t, 200*time.Millisecond)
+
+	socket := shortSocketPath(t)
+
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatalf("listening on %s: %v", socket, err)
+	}
+
+	var (
+		mu    sync.Mutex
+		conns []net.Conn
+	)
+
+	t.Cleanup(func() {
+		_ = listener.Close()
+
+		mu.Lock()
+		defer mu.Unlock()
+
+		for _, conn := range conns {
+			_ = conn.Close()
+		}
+	})
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+
+			mu.Lock()
+			conns = append(conns, conn)
+			mu.Unlock()
+		}
+	}()
+
+	done := make(chan error, 1)
+
+	go func() {
+		resp, err := serverOptionsClient(socket).Get("http://unix/api/v1/options")
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		var urlErr *url.Error
+		if !errors.As(err, &urlErr) || !urlErr.Timeout() {
+			t.Fatalf("Get() error = %v, want a timeout", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the request for the server's options had no answer after 5s; want it to end within the preflight bound")
 	}
 }

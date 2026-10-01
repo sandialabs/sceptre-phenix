@@ -89,30 +89,48 @@ func MakeCustomScenarioFromConfig( //nolint:ireturn // interface
 	return spec, nil
 }
 
+// CheckScenarioTopology checks that annotations, those of the scenario named
+// name, mark it for topology, as taking app settings from it requires.
+func CheckScenarioTopology(name string, annotations store.Annotations, topology string) error {
+	topo, ok := annotations["topology"]
+	if !ok {
+		return fmt.Errorf("topology annotation missing from scenario %s", name)
+	}
+
+	if !strings.Contains(topo, topology) {
+		return fmt.Errorf("experiment/scenario topology mismatch for scenario %s", name)
+	}
+
+	return nil
+}
+
+// FromScenarioConfig reads the stored scenario named name, which an app takes
+// its settings from, and checks that it is marked for topology.
+func FromScenarioConfig(name, topology string) (*store.Config, error) {
+	c, err := store.NewConfig("scenario/" + name)
+	if err == nil {
+		err = store.Get(c)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("scenario %s doesn't exist", name)
+	}
+
+	if err := CheckScenarioTopology(name, c.Metadata.Annotations, topology); err != nil {
+		return nil, err
+	}
+
+	return c, nil
+}
+
 func MergeScenariosForTopology(scenario ifaces.ScenarioSpec, topology string) error {
 	// This will look for `fromScenario` keys in the provided scenario and, if
 	// present, replace the config from the specified scenario.
 	for _, app := range scenario.Apps() {
 		if app.FromScenario() != "" {
-			fromScenarioC, _ := store.NewConfig("scenario/" + app.FromScenario())
-
-			if err := store.Get(fromScenarioC); err != nil {
-				return fmt.Errorf("scenario %s doesn't exist", app.FromScenario())
-			}
-
-			topo, ok := fromScenarioC.Metadata.Annotations["topology"]
-			if !ok {
-				return fmt.Errorf(
-					"topology annotation missing from scenario %s",
-					app.FromScenario(),
-				)
-			}
-
-			if !strings.Contains(topo, topology) {
-				return fmt.Errorf(
-					"experiment/scenario topology mismatch for scenario %s",
-					app.FromScenario(),
-				)
+			fromScenarioC, err := FromScenarioConfig(app.FromScenario(), topology)
+			if err != nil {
+				return err
 			}
 
 			// This will upgrade the scenario to the latest known version if needed.

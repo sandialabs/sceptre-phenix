@@ -868,3 +868,14 @@ or
 ```bash
 docker exec -it -e BRANCH_NAME=foobar phenix phenix exp create foobar -t topo -s scenario
 ```
+
+!!! tip
+    Configs sent by `phenix workflow apply`, or to the
+    `/workflow/configs/{branch}` and `/workflow/apply/{branch}` API endpoints,
+    don't need `-e BRANCH_NAME`: phēnix sets `BRANCH_NAME` to the workflow
+    branch name itself, and fills in their other placeholders from the
+    server's own environment, so variables passed with `docker exec -e` don't
+    reach them. The command also copies the topology directory's
+    `phenix-injects/` to `<base-dir.injects>/<name>` (by default
+    `/phenix/injects/<name>`), so configs can reference injected files as
+    `/phenix/injects/${BRANCH_NAME}/<file>`. See [Workflow](workflow.md).

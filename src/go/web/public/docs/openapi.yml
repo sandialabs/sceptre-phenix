@@ -29,6 +29,8 @@ tags:
     description: Available phenix disk images
   - name: Users
     description: User details and controls
+  - name: Workflow
+    description: Workflow config upserts and applies, and the server options clients read
 paths:
   "/configs":
     get:
@@ -92,6 +94,30 @@ paths:
                 description: location of newly created config
                 type: string
                 format: uri
+        "400":
+          description: >
+            unknown content type or file extension, unparsable body (the parser
+            error in metadata.validation), unknown kind, a config with the same
+            name that already exists, a schema validation failure (explained
+            lines in metadata.validation, original validator text in
+            metadata.validation-raw), or a config hook or the store rejects the
+            config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: creating configs is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: the request or the uploaded file cannot be read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/configs/{kind}/{name}":
     get:
       tags:
@@ -179,6 +205,30 @@ paths:
                 description: location of updated config
                 type: string
                 format: uri
+        "400":
+          description: >
+            unknown content type or file extension, a config that does not exist,
+            an unknown kind, a schema validation failure (explained lines in
+            metadata.validation, original validator text in
+            metadata.validation-raw), or a config hook or the store rejects the
+            config; for an Experiment config, also a failure to reconfigure the
+            experiment after the updated config was stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: updating the config is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: the request or the uploaded file cannot be read or parsed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       tags:
         - Configs
@@ -216,6 +266,7 @@ paths:
           schema:
             type: string
             enum:
+              - "v0"
               - "v1"
               - "v2"
         - name: Accept
@@ -245,7 +296,7 @@ paths:
       tags:
         - Schemas
       summary: Get schema for specific config spec kind/version
-      description: ""
+      description: the Workflow schema exists only in version v0
       operationId: getSchemasKindVersion
       parameters:
         - name: kind
@@ -261,6 +312,7 @@ paths:
               - image
               - user
               - role
+              - workflow
         - name: version
           in: path
           description: version of phenix config schema to get
@@ -268,6 +320,7 @@ paths:
           schema:
             type: string
             enum:
+              - "v0"
               - "v1"
               - "v2"
         - name: Accept
@@ -1444,6 +1497,278 @@ paths:
       responses:
         "204":
           description: successful operation
+  "/workflow/configs/{branch}":
+    post:
+      tags:
+        - Workflow
+      summary: Create or update a phenix config for a workflow branch
+      description: >
+        Creates the config if it does not exist and updates it otherwise. The
+        server sets BRANCH_NAME to the branch before parsing the body, so
+        ${BRANCH_NAME} placeholders expand to the branch name. The Content-Type
+        header must be exactly application/json or application/x-yaml. A
+        Topology is also checked for a node an experiment could not use, such
+        as a hostname used twice or a reserved hostname, before it is stored.
+        With dryRun=true it runs the same checks, returns what it would do, and
+        stores nothing.
+      operationId: postWorkflowConfigsBranch
+      parameters:
+        - name: branch
+          in: path
+          description: workflow branch name
+          required: true
+          schema:
+            type: string
+        - name: dryRun
+          in: query
+          description: >
+            Checks the config as a real request would (placeholder expansion,
+            the create or update decision, permissions, schema validation and,
+            for a Topology, the node checks an experiment would fail on) and
+            returns the result without storing the config or running config
+            hooks. For an Experiment config only the schema is checked; the
+            experiment checks run when the config is stored. The parameter's
+            name is matched exactly, so a request that spells it differently is
+            carried out for real.
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        description: phenix config of a storable kind (e.g. Topology or Scenario)
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Config"
+          application/x-yaml:
+            schema:
+              $ref: "#/components/schemas/Config"
+      responses:
+        "200":
+          description: dry run; nothing was stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowConfigResult"
+        "201":
+          description: config created or updated (no response body)
+          headers:
+            Location:
+              schema:
+                description: location of the created or updated config
+                type: string
+                format: uri
+        "400":
+          description: >
+            unsupported Content-Type, unparsable body, a missing or unknown kind
+            or a name containing "/", an invalid dryRun value, a schema
+            validation failure (explained lines in metadata.validation, original
+            validator text in metadata.validation-raw), or, for a Topology, a
+            node an experiment could not use, such as a hostname used twice or
+            a reserved hostname, or a spec that does not decode; or, on a real
+            upsert, a config hook or the store rejects the config, or another
+            request created or deleted it in the meantime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: creating or updating the config is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/workflow/apply/{branch}":
+    post:
+      tags:
+        - Workflow
+      summary: Apply a phenix workflow config to a workflow branch
+      description: >
+        Validates the workflow config against the Workflow schema, finds the
+        experiment mapped to the branch (phenix.workflow/branch annotation),
+        plans an action, and checks the default bridge and the topology and
+        scenario the action would use, including a stored topology's nodes, as
+        creating an experiment would. Only then does it create, update, start,
+        or restart the experiment. A failed check leaves a running experiment
+        running. With dryRun=true the plan is returned after the same checks,
+        and nothing is changed; a dry run before a first deploy names the
+        configs the caller will store with pending. The server sets BRANCH_NAME
+        to the branch before parsing the body. The Content-Type header must be
+        exactly application/json or application/x-yaml.
+      operationId: postWorkflowApplyBranch
+      parameters:
+        - name: branch
+          in: path
+          description: workflow branch name
+          required: true
+          schema:
+            type: string
+        - name: tag
+          in: query
+          description: >
+            key=value tag stored on the experiment, joined with commas into the
+            phenix.workflow/tags annotation; repeat the parameter for more tags
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: dryRun
+          in: query
+          description: >
+            Runs every check, a stored topology's node checks included, and
+            returns the plan without creating, updating, starting, or stopping
+            anything. The parameter's name is matched exactly, so a request
+            that spells it differently is treated as a real apply, and refused
+            with 400 when it also carries pending.
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: pending
+          in: query
+          description: >
+            A config the caller will create or update before the real apply,
+            usually the pending value a dry run of POST /workflow/configs/{branch}
+            returned: <Kind>/<name>, such as Topology/helloworld, optionally
+            followed by "?" and the config's references, such as
+            Scenario/helloworld?from=helloworld-base&topology=helloworld
+            (url-encode the value). The kind may be in any case. Repeat the
+            parameter for more configs. A pending topology or scenario is not
+            looked up, decoded or merged, so a first deploy can be checked
+            before its configs are stored; the references listed after "?" are
+            checked instead, with the errors the real apply gives (on a create,
+            a scenario's topology annotation; each fromScenario, which must be
+            pending or stored and annotated for the topology; each included
+            topology, which must be pending, stored or a file on the server).
+            An include that is neither pending nor stored is looked up as a
+            file on the server, as the real apply does, so the answer shows
+            whether that path exists on the server; grant workflow:create only
+            to roles trusted with that (the default policies give it to Global
+            Admin only). Only allowed with dryRun=true; otherwise, or for a
+            value that is not a config name, the request is a 400.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: expect
+          in: query
+          description: >
+            The action the caller expects, usually the action a previous dry
+            run returned. If the server plans a different action, it returns
+            409 and changes nothing. It is checked on dry runs as well as real
+            applies. A value that is not an action is a 400 with the message
+            invalid expect value "<value>" and the cause
+            unknown workflow action "<value>".
+          required: false
+          schema:
+            type: string
+            enum:
+              - none
+              - create
+              - createAndStart
+              - update
+              - updateAndStart
+              - restart
+      requestBody:
+        description: phenix workflow config
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Workflow"
+          application/x-yaml:
+            schema:
+              $ref: "#/components/schemas/Workflow"
+      responses:
+        "200":
+          description: plan carried out, or only returned when dryRun is true
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowResult"
+        "400":
+          description: >
+            unsupported Content-Type, unparsable body, invalid dryRun, expect or
+            pending value, pending without dryRun=true, Workflow schema failure
+            (explained lines in metadata.validation, original validator text in
+            metadata.validation-raw), invalid config (e.g. defaultBridge longer
+            than 15 characters, a default bridge another experiment uses, or an
+            auto.create that is not a valid experiment name), a topology or
+            scenario that is missing, cannot be read for any reason, fails to
+            decode, or fails to merge, a stored topology whose nodes an
+            experiment could not use, or a pending reference that fails its
+            check, all of which leave everything unchanged; or a failure to
+            stop, reconfigure or start the experiment while the plan is carried
+            out, which comes after changes were made
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: applying workflows is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: >
+            more than one experiment is mapped to the branch, auto.create names
+            an existing experiment that is not mapped to the branch, or the
+            planned action differs from expect, with nothing changed; or another
+            request is starting or stopping the experiment while the plan is
+            carried out, which comes after changes were made when it happens as
+            the experiment is started after a create, update or stop
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: internal error, or a failure while carrying out the plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/options":
+    get:
+      tags:
+        - Workflow
+      summary: Get server-side options
+      description: >
+        Server-side settings that clients read: every phenix CLI command
+        fetches them over the unix socket when it starts, to inherit the
+        server's bridge-mode, deploy-mode and use-gre-mesh, and the web UI's
+        Experiments page reads them too. workflow-dry-run is true when
+        POST /workflow/configs/{branch} and POST /workflow/apply/{branch} both
+        support dryRun, and apply supports pending and expect. An older server
+        ignores dryRun on /workflow/configs/{branch} and stores the config, so
+        phenix workflow apply refuses servers without it.
+      operationId: getOptions
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Options"
+        "403":
+          description: listing options is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 externalDocs:
   description: Find out more about Swagger
   url: http://swagger.io
@@ -1746,3 +2071,239 @@ components:
           type: string
         token:
           type: string
+    Workflow:
+      type: object
+      title: Workflow
+      description: >-
+        A phenix workflow config: what applying a workflow branch creates,
+        updates or restarts one experiment from.
+      additionalProperties: false
+      required:
+        - apiVersion
+        - kind
+        - spec
+      properties:
+        apiVersion:
+          type: string
+          title: API Version
+          description: The config API version; a workflow config is phenix.sandia.gov/v0.
+          enum:
+            - phenix.sandia.gov/v0
+        kind:
+          type: string
+          title: Kind
+          description: The config kind, which is always Workflow.
+          enum:
+            - Workflow
+        metadata:
+          type: object
+          title: Metadata
+          description: >-
+            Not read by the server; it is accepted so a workflow config has the
+            same four top-level keys as every other phenix config, and so a later
+            version can carry a name or annotations without a breaking change.
+          nullable: true
+        spec:
+          type: object
+          title: Workflow Spec
+          description: >-
+            What an apply may do and the experiment settings it sets; an empty
+            spec applies every default.
+          additionalProperties: false
+          properties:
+            auto:
+              type: object
+              title: Auto
+              description: What an apply may do to the experiment mapped to the workflow branch without being asked.
+              nullable: true
+              additionalProperties: false
+              properties:
+                create:
+                  type: string
+                  title: Create
+                  description: >-
+                    The name of the experiment to create when none is mapped to
+                    the branch; unset never creates one.
+                  nullable: true
+                update:
+                  type: boolean
+                  title: Update
+                  description: >-
+                    Whether an apply may update the experiment already mapped to
+                    the branch; defaults to true when unset.
+                  nullable: true
+                restart:
+                  type: boolean
+                  title: Restart
+                  description: >-
+                    Whether an apply may start a new or updated experiment and
+                    stop and restart a running one; defaults to true when unset.
+                  nullable: true
+            topology:
+              type: string
+              title: Topology
+              description: >-
+                The name of the topology config; required to create an
+                experiment, and on an update defaults to the experiment's
+                current topology.
+              nullable: true
+            scenario:
+              type: string
+              title: Scenario
+              description: The name of the scenario config; on an update defaults to the experiment's current scenario.
+              nullable: true
+            vlans:
+              type: object
+              title: VLANs
+              description: >-
+                VLAN alias to VLAN ID; every alias used by an interface in the
+                topology is set to its ID here, or left for minimega to pick
+                when not listed.
+              nullable: true
+              additionalProperties:
+                type: integer
+            schedules:
+              type: object
+              title: Schedules
+              description: >-
+                VM hostname to cluster host; each listed non-external node of
+                the topology is scheduled on that host.
+              nullable: true
+              additionalProperties:
+                type: string
+            deployMode:
+              type: string
+              title: Deploy Mode
+              description: >-
+                Where VMs are deployed, all, no-headnode or only-headnode in any
+                letter case; unset or empty uses the server's deploy-mode
+                setting.
+              nullable: true
+              pattern: '^(?i:all|no-headnode|only-headnode)?$'
+            useGREMesh:
+              type: boolean
+              title: Use GRE Mesh
+              description: >-
+                Whether the experiment uses a GRE mesh between cluster hosts; it
+                is OR-ed with the server's use-gre-mesh setting, so either turns
+                it on.
+              nullable: true
+            vlanRange:
+              type: object
+              title: VLAN Range
+              description: The range of VLAN IDs the experiment may allocate from; unset leaves both ends unset.
+              nullable: true
+              additionalProperties: false
+              properties:
+                min:
+                  type: integer
+                  title: Minimum
+                  description: The lowest VLAN ID the experiment may use; 0 leaves the minimum unset.
+                  nullable: true
+                max:
+                  type: integer
+                  title: Maximum
+                  description: The highest VLAN ID the experiment may use; 0 leaves the maximum unset.
+                  nullable: true
+            defaultBridge:
+              type: string
+              title: Default Bridge
+              description: >-
+                The bridge the experiment's VMs attach to by default; defaults to
+                phenix, is at most 15 characters (the Linux interface name
+                limit), and unless it is phenix no other experiment may use it.
+              nullable: true
+              maxLength: 15
+    WorkflowResult:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+            - none
+            - create
+            - createAndStart
+            - update
+            - updateAndStart
+            - restart
+        experiment:
+          type: string
+          description: experiment the action applies to (empty when no experiment is involved)
+        reason:
+          type: string
+          description: why nothing was done, when action is none
+        dryRun:
+          type: boolean
+          description: true when nothing was changed because dryRun was requested
+    WorkflowConfigResult:
+      type: object
+      description: what POST /workflow/configs/{branch}?dryRun=true would do
+      properties:
+        action:
+          type: string
+          enum:
+            - create
+            - update
+          description: whether the request would create the config or update the stored one
+        kind:
+          type: string
+          description: the config's kind, e.g. Topology
+        name:
+          type: string
+          description: the config's name after the server filled in its placeholders, such as ${BRANCH_NAME}
+        dryRun:
+          type: boolean
+          description: always true
+        pending:
+          type: string
+          description: >
+            the value to pass as pending to a dry run of
+            POST /workflow/apply/{branch}: Kind/name, followed for a scenario by
+            ?from=...&topology=... (its fromScenario names and topology
+            annotation) and for a topology that includes others by ?include=...
+    Options:
+      type: object
+      properties:
+        bridge-mode:
+          type: string
+        deploy-mode:
+          type: string
+        use-gre-mesh:
+          type: boolean
+        base-dir.injects:
+          type: string
+          description: directory phenix workflow apply stages injects into
+        workflow-dry-run:
+          type: boolean
+          description: >
+            true when POST /workflow/configs/{branch} and POST /workflow/apply/{branch}
+            support dryRun, and apply supports pending and expect
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+          description: what went wrong; for a config validation failure, the first explained line
+        cause:
+          type: string
+          description: the underlying error text
+        metadata:
+          type: object
+          description: extra details, returned for some errors
+          properties:
+            validation:
+              type: string
+              description: >
+                for a schema validation failure, the explained lines separated by
+                newlines, each in the form <item> "<hostname|name>" (line N): <what>
+                (at <sub-path>), with (line N) left out for single-line sources and
+                an extra hint line for a misplaced key; an error that cannot be
+                placed in the source (in a templated key, in data a config hook
+                added, in a YAML merge key, or a missing or misindented
+                metadata.name) keeps the validator's text; for an unparsable body
+                sent to POST /configs, the parser error
+            validation-raw:
+              type: string
+              description: for a schema validation failure, the original validator text
+          additionalProperties:
+            type: string

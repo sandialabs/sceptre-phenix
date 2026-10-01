@@ -2,7 +2,7 @@
 
 The phēnix web UI is built entirely on top of a REST API served by the phēnix
 daemon. That same API is available for external tooling and automation, such
-as CI/CD pipelines (see [Git Workflow](git-workflow.md)) or custom scripts.
+as CI/CD pipelines (see [Workflow](workflow.md)) or custom scripts.
 
 ## Interactive API Docs (Swagger/OpenAPI)
 
@@ -36,9 +36,9 @@ available in two places:
     the latest docs release.
 
 The API docs are organized by tag (`Configs`, `Experiments`, `Virtual
-Machines`, `Hosts`, `Applications`, `Topologies`, `Disks`, `Users`, etc.) and
-document every available endpoint, including request parameters and response
-schemas.
+Machines`, `Hosts`, `Applications`, `Topologies`, `Disks`, `Users`,
+`Workflow`, etc.) and document every available endpoint, including request
+parameters and response schemas.
 
 !!! info
     The underlying OpenAPI spec is maintained at
@@ -66,6 +66,6 @@ for details.
 The phēnix API can be used to integrate phēnix with external systems. Known
 integrations include:
 
-* [Git Workflow](git-workflow.md) - drive experiment topology/scenario
-  updates from a git-based CI/CD pipeline (e.g. a GitLab runner) reacting to
-  push events.
+* [Workflow](workflow.md) - deploy a topology directory with
+  `phenix workflow apply`, or drive experiment topology/scenario updates from
+  a git-based CI/CD pipeline reacting to push events.
