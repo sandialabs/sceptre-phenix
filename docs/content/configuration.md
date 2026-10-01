@@ -762,6 +762,10 @@ experiment will not longer be presented in the `Experiments` tab.
 
 ## Builder
 
+!!! tip
+    phēnix also has Builder v2, a newer graphical editor in beta. See
+    [Builder v2](builder-v2/index.md).
+
 The Builder app is an external app that allows users to generate either topology
 or experiment configuration using a graphical interface. It is based on the
 `minibuilder` app in `minimega`. Users can access the Builder app via the

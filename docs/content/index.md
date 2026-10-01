@@ -100,6 +100,7 @@ docker exec -it phenix phenix <command>
 * [**Configuration**](configuration.md): Learn about Topologies, Scenarios, and Experiments.
 * [**Settings**](settings.md): Configure the phēnix daemon (logging, storage, UI).
 * [**Experiments**](experiments.md): Manage the lifecycle of your experiments.
+* [**Builder v2**](builder-v2/index.md): Draw topologies and publish them as topologies, scenarios, and experiments (beta).
 * [**Apps**](apps.md): Extend functionality with Apps.
 * [**Logging**](logging.md): Learn about the logging facilities in phēnix and how to increase verbosity
 * [**API**](api.md): Explore the interactive Swagger/OpenAPI docs served by phēnix and integrate with the API.
