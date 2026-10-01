@@ -25,8 +25,14 @@ configuration resources, experiments, VMs, images, VLANs, settings, apps,
 SCORCH, minimega integration, or cyber-range workflows, read
 [`skills/phenix/SKILL.md`](skills/phenix/SKILL.md). For `phenix image`, `Image`
 configs, build scripts, overlays, or vmdb2 work, also read
-[`skills/phenix-image/SKILL.md`](skills/phenix-image/SKILL.md). Use code as final
-authority when guidance differs, and update the skills when behavior changes.
+[`skills/phenix-image/SKILL.md`](skills/phenix-image/SKILL.md). For Builder v2,
+the `builder-v2` web topology editor (its routes, drafts, sharing, publishing,
+or its code in `src/go/api/builder/`, `src/go/types/builder/`,
+`src/go/web/builder_v2*.go`, `src/js/src/builder/`,
+`src/js/src/components/builder/`, or `src/js/src/views/BuilderV2.vue`), also
+read [`skills/phenix/references/builder-v2.md`](skills/phenix/references/builder-v2.md).
+Use code as final authority when guidance differs, and update the skills when
+behavior changes.
 
 `SKILL.md` stays broad and always loaded; deep, area-specific material lives in
 `skills/phenix/references/` and is read only when that area is in scope — for
@@ -45,7 +51,9 @@ file rather than growing `SKILL.md`, and leave a one-line pointer to it from
 - `src/js/src/views/` contains pages, `components/` reusable UI, and `utils/`
   shared helpers. `router.js`, `store.js`, and `main.js` wire the app.
 - The Vite server proxies `/api/v1`, `/version`, and `/features` to
-  `localhost:3000`. Root builds copy `src/js/dist/` into `src/go/web/public/`.
+  `localhost:3000`. Root builds copy `src/js/dist/`, including the build's
+  `builder-v2-assets.json` and the `.br` and `.gz` copies beside Builder v2's
+  files, into `src/go/web/public/`.
 - `src/go/web/public/grapheditor/` is the Topology Builder, and is unrelated to
   the Vue app above. `js/`, `utils/`, `stencils/`, `open.html` and `index.html`
   are the phēnix-modified draw.io GraphEditor and are the files a Builder change
@@ -129,6 +137,7 @@ When changing a capability, inspect every applicable surface:
 | minimega command | minimega API/source behavior and focused tests |
 | Log or error message text | Docs and skill text that quotes it, such as the Troubleshooting sections in `docs/content/` and `skills/phenix/references/` |
 | Topology Builder behavior | `src/go/web/builder.go`, Builder routes in `src/go/web/server.go`, the editor under `src/go/web/public/grapheditor/js/`, the embedded schemas in `.../grapheditor/utils/schemas/`, and [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md) |
+| Builder v2 behavior | `src/go/api/builder/`, `src/go/types/builder/` (then `make generate` for the committed schema bundle), `src/go/web/builder_v2*.go`, `src/js/src/builder/`, `src/js/src/components/builder/`, `src/js/src/views/BuilderV2.vue`, the `builder-*` e2e specs, and [`skills/phenix/references/builder-v2.md`](skills/phenix/references/builder-v2.md) |
 
 Preserve v1/v2 config upgrades, persisted BoltDB/etcd data, RBAC migrations, and
 public API compatibility unless a breaking change is deliberate and documented.
@@ -159,6 +168,7 @@ and pass it explicitly, for example
 | YAML config schemas | `src/go/types/version/schemas/{v0,v1,v2}.yaml` |
 | CLI and REST implementation | `src/go/cmd/`, `src/go/web/server.go` |
 | Topology Builder | [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md), `src/go/web/builder.go`, `src/go/web/public/grapheditor/` |
+| Builder v2 | [`skills/phenix/references/builder-v2.md`](skills/phenix/references/builder-v2.md), `src/go/api/builder/`, `src/go/web/builder_v2*.go`, `src/js/src/builder/` |
 | Narrative docs source | [`docs/`](docs/) |
 | Internet-hosted narrative docs | [phenix.sceptre.dev](https://phenix.sceptre.dev/latest/) |
 | minimega commands and behavior | [API docs](https://sandia-minimega.github.io/minimega/reference/minimega/), [source](https://github.com/sandia-minimega/minimega) |

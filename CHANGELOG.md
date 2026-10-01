@@ -15,11 +15,15 @@ All notable changes to this project will be documented in this file.
 - **Settings**: Added `base-dir.injects` and `base-dir.topologies`, the directories `phenix workflow apply` stages injects in and looks up topology directories in. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Workflow API**: The workflow endpoints accept `?dryRun=true`, which validates the request and changes nothing, and return a JSON result. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Validation Errors**: Config validation errors from the CLI, the API and the web UI name the list item, its hostname or name, and the line. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
+- **etcd**: Automatic history compaction for every etcd store, even with Builder v2 off. It compacts the whole etcd cluster. Set it with `compaction-retention` on the store endpoint (default 1 hour; `0` turns it off).
+- **Builder v2** (beta, `--features builder-v2`): New topology editor at `/builder-v2`, next to the existing Builder. See the [Builder v2 documentation](https://phenix.sceptre.dev/latest/builder-v2/).
 
 ### Changed
 
 - **Web UI Accessibility**: Declared the page language, added accessible names to icon-only buttons, links, and form controls, labelled the config selection checkboxes, made the log viewer keyboard-scrollable, added a visible keyboard focus indicator, a skip link, per-route page titles, and pagination control names, fixed low-contrast placeholder, danger, and code colours, made the Settings form submit on Enter, and added an axe-core WCAG 2.2 AA scan of every route to the browser smoke tests.
 - **CLI / Web UI**: Display the release version or source branch alongside the commit hash and build timestamp in the version output and footer.
+- **Config Schemas**: Descriptions for node and interface fields in the v1 schema; defaults shown as phenix applies them (`general.snapshot` `true`, `hardware.memory` 512).
+- **CI**: The Frontend workflow runs the browser tests in parallel jobs.
 - **Topology Builder**:
   - **mxGraph**: Updated the vendored mxGraph from 4.1.0 to 4.2.2, the final release before the project was archived. Upstream changed the modifier that deletes a cell together with its connected edges from Shift to Ctrl.
   - **Editor**: The sidebar node palettes now open expanded, the export dialog offers only the XML and SVG formats the server can produce, and the Help button opens the phēnix documentation instead of the defunct `minimega.org`.
@@ -38,24 +42,33 @@ All notable changes to this project will be documented in this file.
   - **Node Types**: Importing JSON overwrote each node's phēnix `type` with `kvm` or `container`; icon selection now reads `general.vm_type` and `type` keeps a schema-valid role.
   - **Downloads**: `POST /builder/save` served percent-encoded text as `text/plain` with a malformed attachment filename, and accepted empty or unsupported requests.
   - **Authorization**: Using a scenario now requires update permission on it, creating a topology authorizes the named topology rather than the `configs` resource as a whole, and requests missing a name, topology, or diagram are rejected before the data store is touched.
-  - **Scenario Membership**: Adding a topology to a scenario now matches names exactly rather than by substring, and no longer creates duplicate or empty entries.
+  - **Scenario Membership**: Adding a topology to a scenario now matches names exactly rather than by substring, and removes duplicate or empty entries instead of creating them.
   - **Clipped Dialogs and Panels**: Dialog buttons rendered outside their dialogs, dialog content rendered underneath pinned button rows, and the format panel cut off its buttons, option rows and tab title. The About dialog also drew a redundant corner close image next to its own Close button.
-
-### Fixed
-
 - **Web UI**: The log viewer no longer leaves blank gaps between entries when several log messages share the same millisecond timestamp.
 - **Web UI RBAC**: Match resource names with the same namespace-aware semantics as the server, so the UI no longer shows controls the server would reject.
   - A bare pattern such as `vm1` or `*` no longer matches namespaced VM names such as `exp1/vm1`; use `exp1/*` or `*/vm1`.
   - Globstars, braces, and extglobs in patterns no longer match names that the server denies.
   - Config permissions are checked against `<Kind>/<name>`, as the server does.
   - VM snapshot controls check `vms/snapshots` with the server's verbs: `create` to take a snapshot and `update` to restore one. Roles such as Experiment User now see the snapshot button.
-
-### Fixed
-
 - **vrouter**: Set VyOS and Vyatta router hostnames exactly as written in the topology instead of lowercasing them and replacing `.` and `_` with `-`, so the guest hostname matches the minimega VM name. Firewall nodes already behaved this way.
 - **Web UI**: The Configs page shows validation errors for uploaded configs again instead of failing silently. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **Workflow API**: `POST /api/v1/workflow/configs/{branch}` returns 400 for a config with a missing or unknown kind, or with `/` in its name, instead of dropping the connection. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **CLI**: Every `phenix` command waits at most one minute for the server's options over `--unix-socket` instead of hanging on a server that never answers. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
+- **Config Schemas**: Invalid v1 schema (empty `pattern` on a serial interface's `device`).
+- **Schemas API**: Unknown schemas return 404 instead of 500.
+- **API docs**: The OpenAPI document is valid again.
+- **Settings**: Password checks on a new server no longer fail when several requests arrive at once. An error reading a setting names the setting instead of saying `decoding image spec`.
+- **Web UI**: The header's Logout can be reached with the keyboard, and says when logging out fails. The keyboard focus ring on the header's links, Logout and menu button is no longer cut off at the top of the window. The sign-in page focuses Username after a logout, labels its fields and the Create Account dialog, and fits narrow screens. The Create Account dialog opens empty each time, and reopening it as it closes no longer leaves an invisible dialog over the page. Red field errors in dialogs are legible.
+- **Web UI**: For users with a character such as `é` in their username, moving between pages no longer fails, and an expired sign-in logs them out.
+- **Config YAML**: Configs written as YAML (`phenix config get -o yaml`, `phenix config edit`, the configs API and downloads) keep strings that start with a line break or a tab.
+- **Configs page**: The viewer opens for topologies saved by the Topology Builder instead of showing an error, is labeled with the config's name, and returns focus to it when closed.
+- **Users**: Signing in as the same user from parallel requests no longer loses a token. Creating a user or signing up with a name already in use returns 409, and the Users page and the Create Account dialog say the user exists. Creating a user with an unknown role no longer leaves a user without a role. A `ui.users` entry without a role is skipped and logged instead of crashing phenix.
+- **etcd store**: Crash at startup with an empty etcd; wrong errors for missing or existing configs, and for writes to a full etcd.
+
+### Security
+
+- **Workflow configs**: `POST /api/v1/workflow/configs/{branch}` no longer exposes server environment variables in its errors.
+- **Web UI**: Updated axios and js-yaml.
 
 ## [1.0.0]
 

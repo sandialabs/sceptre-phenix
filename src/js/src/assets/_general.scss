@@ -71,8 +71,12 @@ textarea:focus {
   transform: rotate(0deg);
 }
 
+// Focus looks as hover does: Bulma's own focus colors, $link on
+// $scheme-main-bis, are about 1:1. Keyboard focus also shows the focus ring
+// (see below), since the current page's link has the same colors.
 a.navbar-item.router-link-exact-active,
-a.navbar-item:hover {
+a.navbar-item:hover,
+a.navbar-item:focus {
   background: $scheme-main !important;
   color: whitesmoke !important;
 }
@@ -154,6 +158,15 @@ button:focus-visible,
   box-shadow: 0 0 0 2px #1a1a1a;
 }
 
+// The same ring and halo inside the header's items: the header is at the
+// top of the page, which would cut off a ring drawn outside them.
+.navbar-item:focus-visible,
+.navbar-burger:focus-visible {
+  outline: 3px solid #ffd166;
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 5px #1a1a1a;
+}
+
 // Buefy checkboxes, radios and switches keep focus on a visually hidden
 // input; draw the ring on the visible control instead.
 .b-checkbox input:focus-visible + .check,
@@ -190,4 +203,11 @@ button:focus-visible,
 .button.is-danger:not(.is-outlined):not(.is-inverted):focus {
   background-color: #8f1a34;
   border-color: #8f1a34;
+}
+
+// A field's error message in a dialog, such as the Create Account dialog's
+// "User already exists", is only 1.9:1 in $danger on the dialog's
+// $background-ter; this pale red is 4.7:1 there.
+.modal-card-body .help.is-danger {
+  color: #ffc8cf;
 }

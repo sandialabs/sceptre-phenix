@@ -390,21 +390,11 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
 	w.WriteHeader(http.StatusCreated)
 
-	c.Spec = nil
-	c.Status = nil
-
-	body, err := json.Marshal(c)
-	if err != nil {
+	if err := broadcastConfig(c, c.FullName(), "create"); err != nil {
 		plog.Error(plog.TypeSystem, "marshaling config", "config", c.FullName(), "err", err)
 
 		return nil
 	}
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("configs", "list", c.FullName()),
-		bt.NewResource("config", c.FullName(), "create"),
-		body,
-	)
 
 	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 	plog.Info(
@@ -633,6 +623,12 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		c.Spec["experimentName"] = vars["name"]
 	}
 
+	// Renaming a topology removes the published Builder v2 documents of its
+	// old name, as deleting it does, so it waits for a publication under way.
+	if c.Metadata.Name != vars["name"] {
+		defer lockBuilderPublishing(name)()
+	}
+
 	if err := config.Update(name, c); err != nil {
 		if errors.Is(err, store.ErrNotExist) {
 			return weberror.NewWebError(err, "config to update (%s) does not exist", name)
@@ -667,25 +663,12 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
 	w.WriteHeader(http.StatusNoContent)
 
-	c.Spec = nil
-	c.Status = nil
-
-	body, err := json.Marshal(c)
-	if err != nil {
+	// The old name, so clients know which config to update.
+	if err := broadcastConfig(c, name, "update"); err != nil {
 		plog.Error(plog.TypeSystem, "marshaling config", "config", c.FullName(), "err", err)
 
 		return nil
 	}
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("configs", "list", c.FullName()),
-		bt.NewResource(
-			"config",
-			name,
-			"update",
-		), // use old name in broadcast so client knows what to update
-		body,
-	)
 	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 	plog.Info(
 		plog.TypeAction,
@@ -730,18 +713,15 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	err := config.Delete(name)
-	if err != nil {
+	// Deleting a topology removes its published Builder v2 documents, so it
+	// waits for a publication under way.
+	defer lockBuilderPublishing(name)()
+
+	if err := deleteConfig(name); err != nil {
 		return weberror.NewWebError(err, "unable to update config %s", name)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-
-	broker.Broadcast(
-		bt.NewRequestPolicy("configs", "list", name),
-		bt.NewResource("config", name, "delete"),
-		nil,
-	)
 	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 	plog.Info(
 		plog.TypeAction,
@@ -750,6 +730,46 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 		user,
 		"config",
 		name,
+	)
+
+	return nil
+}
+
+// broadcastConfig tells everyone who may list the config c that it was
+// created or updated (action). name is the config's full name as clients
+// know it: after a rename, its old name. The broadcast carries c without its
+// spec and status.
+func broadcastConfig(c *store.Config, name, action string) error {
+	summary := *c
+	summary.Spec = nil
+	summary.Status = nil
+
+	body, err := json.Marshal(summary)
+	if err != nil {
+		return fmt.Errorf("encoding config broadcast: %w", err)
+	}
+
+	broker.Broadcast(
+		bt.NewRequestPolicy("configs", "list", c.FullName()),
+		bt.NewResource("config", name, action),
+		body,
+	)
+
+	return nil
+}
+
+// deleteConfig deletes the config name through the config API, which runs
+// the kind's delete hooks, then tells everyone who may list the config that
+// it is gone.
+func deleteConfig(name string) error {
+	if err := config.Delete(name); err != nil {
+		return err //nolint:wrapcheck // callers word the error themselves
+	}
+
+	broker.Broadcast(
+		bt.NewRequestPolicy("configs", "list", name),
+		bt.NewResource("config", name, "delete"),
+		nil,
 	)
 
 	return nil

@@ -41,7 +41,7 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
 | Resource | Routes |
 |---|---|
 | Configs | `GET/POST /configs`, `GET/PUT/DELETE /configs/{kind}/{name}`, `POST /configs/download` |
-| Schemas | `GET /schemas/{version}`, `GET /schemas/{kind}/{version}` |
+| Schemas | `GET /schemas/{version}`, `GET /schemas/{kind}/{version}` (404 for an unknown kind or version) |
 | Experiments | `GET/POST /experiments`, `GET /experiments/{name}`, `PATCH /experiments/{name}`, `DELETE /experiments/{name}`, `POST /experiments/{name}/start`, `POST /experiments/{name}/stop`, `GET /experiments/{name}/apps`, `POST/PUT /experiments/builder` |
 | Experiment detail | `GET /experiments/{name}/topology`, `GET /experiments/{name}/topology/search`, `POST/DELETE /experiments/{name}/trigger`, `GET/POST /experiments/{name}/schedule`, `GET /experiments/{name}/soh` (state of health), `GET /experiments/{name}/captures`, `GET /experiments/{name}/files`, `GET /experiments/{name}/files/{filename}` |
 | Netflow | `GET/POST/DELETE /experiments/{exp}/netflow`, `GET /experiments/{exp}/netflow/ws` |
@@ -55,6 +55,7 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
 | SCORCH | `GET /experiments/{name}/scorch/pipelines`, `GET /experiments/{name}/scorch/pipelines/{run}/{loop}`, `POST/DELETE /experiments/{name}/scorch/pipelines/{run}`, `GET /experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}[/ws]`, `/experiments/{name}/scorch/terminals*` |
 | Settings | `GET/POST /settings`, `GET /settings/password`, `GET /settings/timeout` |
 | Builder | `GET/POST /builder/topologies`, `GET/PUT /builder/topologies/{name}`; the builder UI itself is served from the server root as `GET /builder` and `POST /builder/save` (outside `/api/v1`). Payloads and workflow are in [`builder.md`](builder.md) |
+| Builder v2 (only with the `builder-v2` feature enabled) | `/builder-v2/drafts…`, `/builder-v2/sources`, `/builder-v2/generate`, `/builder-v2/export/topology`, `/builder-v2/documents`, `/schemas/builder-v2/v1`; full list in [`builder-v2.md`](builder-v2.md#routes) |
 | Workflow | `POST /workflow/apply/{branch}` (`?dryRun=true`, `pending`, `expect`, `tag`), `POST /workflow/configs/{branch}` (`?dryRun=true`). Parameters and answers are in [`workflow.md`](workflow.md#rest-endpoints) |
 | Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode, plus `base-dir.injects` and `workflow-dry-run`) |
 
@@ -62,5 +63,14 @@ When a config fails its schema, the config routes (`POST /configs`,
 `PUT /configs/{kind}/{name}`) and the workflow routes answer 400 with the
 explained lines in `metadata.validation`, one per line, and the validator's
 text in `metadata.validation-raw`; see [`workflow.md`](workflow.md).
+
+Unmatched `/api/v1/*` requests return a JSON `404`; only non-API routes fall
+through to the SPA index. A route behind a disabled feature flag is therefore a
+real `404`, not `200 text/html`.
+
+`POST /users` and `POST /signup` answer `409` `user <name> already exists` for
+a name another user has, and `500` `error creating user` for other failures.
+`POST /users` answers `400` `role not found` for an unknown role before it
+creates anything.
 
 `src/go/web/server.go` is the authoritative route list.

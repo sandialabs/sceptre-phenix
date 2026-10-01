@@ -349,7 +349,18 @@ func TestWorkflowUpsertConfigRefusesBadTopology(t *testing.T) {
 					)
 				}
 
-				if !reflect.DeepEqual(dryErr, realErr) {
+				// What the client gets is compared, not the errors: a WebError
+				// wraps its cause, here a multierror whose ErrorFormat func
+				// reflect.DeepEqual never finds equal.
+				var realWerr *weberror.WebError
+				if !errors.As(realErr, &realWerr) {
+					t.Fatalf("expected a *weberror.WebError from the real upsert, got %v", realErr)
+				}
+
+				got := []any{werr.Status, werr.Message, werr.Cause, werr.SystemMetadata, werr.UserMetadata}
+				want := []any{realWerr.Status, realWerr.Message, realWerr.Cause, realWerr.SystemMetadata, realWerr.UserMetadata}
+
+				if !reflect.DeepEqual(got, want) {
 					t.Errorf("dry-run error:\n got %#v\nwant the real upsert's %#v", dryErr, realErr)
 				}
 			})
@@ -462,32 +473,48 @@ func TestWorkflowUpsertConfigRejectsBadRequests(t *testing.T) {
 	}
 }
 
+// TestWorkflowUpsertConfigForbidden asserts a dry run is refused as the real
+// upsert is: for a role that may neither create nor update configs, before
+// the body is parsed or the store is read, and for a role that may only
+// create configs, when the body names a stored config.
 func TestWorkflowUpsertConfigForbidden(t *testing.T) {
 	for _, query := range []string{"?dryRun=true", ""} {
-		for _, exists := range []bool{false, true} {
-			t.Run(fmt.Sprintf("query %q, exists=%t", query, exists), func(t *testing.T) {
-				t.Setenv("BRANCH_NAME", "")
+		t.Run(fmt.Sprintf("query %q, no configs permission", query), func(t *testing.T) {
+			t.Setenv("BRANCH_NAME", "")
+			installValidationTestStore(t) // refused before any store call
 
-				m := installValidationTestStore(t)
-				expectUpsertExists(m, workflowTestKey("topology/main-topo"), exists)
+			// A role with no policies. Role.Allowed needs a non-nil Spec.
+			req := upsertTestRequest(t, query, upsertTestTopology)
+			req = req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyRole, rbac.Role{Spec: &v1.RoleSpec{}}))
 
-				// A role with no policies. Role.Allowed needs a non-nil Spec.
-				req := upsertTestRequest(t, query, upsertTestTopology)
-				req = req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyRole, rbac.Role{Spec: &v1.RoleSpec{}}))
+			want := "creating or updating configs not allowed for test-user"
 
-				want := "creating configs not allowed for test-user"
-				if exists {
-					want = "updating config Topology/main-topo not allowed for test-user"
-				}
+			err := WorkflowUpsertConfig(httptest.NewRecorder(), req)
 
-				err := WorkflowUpsertConfig(httptest.NewRecorder(), req)
+			var werr *weberror.WebError
+			if !errors.As(err, &werr) || werr.Status != http.StatusForbidden || werr.Message != want {
+				t.Fatalf("error = %v, want a 403 with message %q", err, want)
+			}
+		})
 
-				var werr *weberror.WebError
-				if !errors.As(err, &werr) || werr.Status != http.StatusForbidden || werr.Message != want {
-					t.Fatalf("error = %v, want a 403 with message %q", err, want)
-				}
-			})
-		}
+		t.Run(fmt.Sprintf("query %q, exists=true, create only", query), func(t *testing.T) {
+			t.Setenv("BRANCH_NAME", "")
+
+			m := installValidationTestStore(t)
+			expectUpsertExists(m, workflowTestKey("topology/main-topo"), true)
+
+			req := upsertTestRequest(t, query, upsertTestTopology)
+			req = req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyRole, configsRole("create")))
+
+			want := "updating config Topology/main-topo not allowed for test-user"
+
+			err := WorkflowUpsertConfig(httptest.NewRecorder(), req)
+
+			var werr *weberror.WebError
+			if !errors.As(err, &werr) || werr.Status != http.StatusForbidden || werr.Message != want {
+				t.Fatalf("error = %v, want a 403 with message %q", err, want)
+			}
+		})
 	}
 }
 

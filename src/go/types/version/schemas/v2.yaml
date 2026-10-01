@@ -280,7 +280,7 @@ components:
               example: kvm
             snapshot:
               type: boolean
-              default: false
+              default: true
               example: false
               nullable: true
             do_not_boot:
@@ -308,7 +308,7 @@ components:
               oneOf:
               - type: integer
               - type: string
-              default: 1024
+              default: 512
               example: 8192
             os_type:
               type: string
@@ -629,7 +629,7 @@ components:
               oneOf:
               - type: integer
               - type: string
-              default: 1024
+              default: 512
               example: 8192
             os_type:
               type: string

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -147,6 +148,50 @@ func NewConfigFromYAML(body []byte) (*Config, error) {
 	return &c, nil
 }
 
+// exactYAMLConfig is a Config as [Config.MarshalYAML] writes it.
+type exactYAMLConfig struct {
+	Version  string            `yaml:"apiVersion"`
+	Kind     string            `yaml:"kind"`
+	Metadata exactYAMLMetadata `yaml:"metadata"`
+	Spec     any               `yaml:"spec,omitempty"`
+	Status   any               `yaml:"status,omitempty"`
+}
+
+type exactYAMLMetadata struct {
+	Name        string `yaml:"name"`
+	Created     string `yaml:"created"`
+	Updated     string `yaml:"updated"`
+	Annotations any    `yaml:"annotations,omitempty"`
+}
+
+// MarshalYAML implements [yaml.Marshaler]. The config is written as its
+// fields are, except that its annotations, spec and status are as
+// [ExactYAML] makes them, so that the YAML loads as the config.
+func (c Config) MarshalYAML() (any, error) {
+	return exactYAMLConfig{
+		Version: c.Version,
+		Kind:    c.Kind,
+		Metadata: exactYAMLMetadata{
+			Name:        c.Metadata.Name,
+			Created:     c.Metadata.Created,
+			Updated:     c.Metadata.Updated,
+			Annotations: exactYAMLUnlessEmpty(c.Metadata.Annotations),
+		},
+		Spec:   exactYAMLUnlessEmpty(c.Spec),
+		Status: exactYAMLUnlessEmpty(c.Status),
+	}, nil
+}
+
+// exactYAMLUnlessEmpty is m as [ExactYAML] makes it, or nil for an empty m,
+// which omitempty leaves out as it leaves out an empty map.
+func exactYAMLUnlessEmpty[M ~map[string]V, V any](m M) any {
+	if len(m) == 0 {
+		return nil
+	}
+
+	return ExactYAML(m)
+}
+
 func (c Config) APIGroup() string {
 	s := strings.Split(c.Version, "/")
 
@@ -208,4 +253,80 @@ func ConfigFullName(name ...string) string {
 	}
 
 	return ""
+}
+
+// yamlQuoted is a string yaml.v3 writes double quoted, which it reads back
+// as it is, whatever the string holds.
+type yamlQuoted string
+
+// MarshalYAML implements [yaml.Marshaler].
+func (s yamlQuoted) MarshalYAML() (any, error) {
+	return &yaml.Node{Kind: yaml.ScalarNode, Style: yaml.DoubleQuotedStyle, Tag: "!!str", Value: string(s)}, nil
+}
+
+// ExactYAML is value with each string yaml.v3 would not read back as it
+// writes it (see [yamlKeeps]) double quoted, in maps and slices at any depth
+// and in map keys, so that the YAML of the value loads as the value. The
+// maps and slices are copies: a map with string keys becomes a map[any]any,
+// whose keys yaml.v3 sorts as it sorts the map's, and a slice an []any, so
+// that the YAML is otherwise what yaml.Marshal writes for value.
+func ExactYAML(value any) any {
+	if text, ok := value.(string); ok {
+		if yamlKeeps(text) {
+			return text
+		}
+
+		return yamlQuoted(text)
+	}
+
+	reflected := reflect.ValueOf(value)
+
+	switch reflected.Kind() { //nolint:exhaustive // other kinds hold no strings
+	case reflect.Slice:
+		// yaml.v3 writes a []byte as a !!binary scalar.
+		if reflected.Type().Elem().Kind() == reflect.Uint8 {
+			return value
+		}
+
+		items := make([]any, reflected.Len())
+		for index := range items {
+			items[index] = ExactYAML(reflected.Index(index).Interface())
+		}
+
+		return items
+	case reflect.Map:
+		if reflected.Type().Key().Kind() != reflect.String {
+			return value
+		}
+
+		entries := make(map[any]any, reflected.Len())
+		for iter := reflected.MapRange(); iter.Next(); {
+			entries[ExactYAML(iter.Key().Interface())] = ExactYAML(iter.Value().Interface())
+		}
+
+		return entries
+	default:
+		return value
+	}
+}
+
+// yamlKeeps reports whether yaml.v3 reads text back as it writes it. It
+// writes a string without a line break as a plain or quoted scalar, which it
+// reads back. It writes one with a line break as a literal block scalar,
+// which it may not: it drops a leading line break, so "\n" reads back as ""
+// and "\n a" as " a", and indents a first line that starts with a tab so
+// that the document does not load.
+func yamlKeeps(text string) bool {
+	if !strings.Contains(text, "\n") {
+		return true
+	}
+
+	data, err := yaml.Marshal(map[string]string{"v": text})
+	if err != nil {
+		return false
+	}
+
+	var back map[string]string
+
+	return yaml.Unmarshal(data, &back) == nil && back["v"] == text
 }

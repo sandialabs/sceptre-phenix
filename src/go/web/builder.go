@@ -82,22 +82,9 @@ func addScenarioTopology(scenario *store.Config, topology string) {
 		scenario.Metadata.Annotations = make(store.Annotations)
 	}
 
-	topologies := strings.Split(scenario.Metadata.Annotations["topology"], ",")
-	for _, existing := range topologies {
-		if strings.TrimSpace(existing) == topology {
-			return
-		}
-	}
-
-	topologies = append(topologies, topology)
-	nonempty := topologies[:0]
-	for _, name := range topologies {
-		if name = strings.TrimSpace(name); name != "" {
-			nonempty = append(nonempty, name)
-		}
-	}
-
-	scenario.Metadata.Annotations["topology"] = strings.Join(nonempty, ",")
+	scenario.Metadata.Annotations["topology"] = addTopologyAnnotation(
+		scenario.Metadata.Annotations["topology"], topology,
+	)
 }
 
 func getBuilderScenario(role rbac.Role, user, name string) (*store.Config, error) {

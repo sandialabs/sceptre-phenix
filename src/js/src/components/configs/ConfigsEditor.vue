@@ -23,6 +23,13 @@
     <div class="columns p-4">
       <div class="column is-1" />
       <div class="column is-2">
+        <!-- Focus starts here when the editor opens, not on the page. -->
+        <h1
+          ref="heading"
+          class="title is-5 config-editor__heading"
+          tabindex="-1">
+          {{ heading }}
+        </h1>
         <b-field
           class="editor"
           label="Config Name"
@@ -134,6 +141,10 @@
             :vim="editor.vim"
             @save="configSentSave"
             @reset="configSentReset" />
+          <p class="help">
+            Press Enter on the editor to type in it, and Escape to leave it
+            (twice in Vim mode), so that Tab moves on.
+          </p>
           <b-loading
             :is-full-page="false"
             v-model="editor.isLoading"></b-loading>
@@ -151,6 +162,12 @@
   import { debounce } from 'lodash-es';
 
   import axiosInstance from '@/utils/axios.js';
+  import { usePhenixStore } from '@/store.js';
+  import { BUILDER_V2_FEATURE, isFeatureEnabled } from '@/utils/features.js';
+  import { V2_ANNOTATION, builderAnnotation } from '@/builder/configs.js';
+
+  const ALERT_TITLE_ID = 'configs-alert-title';
+  const ALERT_MESSAGE_ID = 'configs-alert-message';
 
   export default {
     expose: ['confirmResetEditor'],
@@ -163,6 +180,8 @@
       editorConfig: Object,
     },
     mounted() {
+      this.$refs.heading?.focus();
+
       //set vim mode
       let user = localStorage.getItem('user');
       if (localStorage.getItem(user + '.vimMode')) {
@@ -185,15 +204,44 @@
 
         axiosInstance
           .get('configs/' + name, { headers: { Accept: 'application/json' } })
-          .then((response) => {
+          .then(async (response) => {
             if (this.isBuilderTopology(response.data)) {
-              this.$buefy.dialog.alert({
-                title: 'Built by Builder',
-                message: 'This configuration can only be edited in Builder',
-                confirmText: 'OK',
-                type: 'is-warning',
-                hasIcon: true,
-              });
+              if (builderAnnotation(response.data) === V2_ANNOTATION) {
+                // Only Builder v2 edits it. Where this server does not
+                // offer it, the user stays here and is told why, instead of
+                // being sent on to a route that turns them away.
+                const unavailable = await this.builderV2Unavailable();
+
+                this.editor.isLoading = false;
+                if (unavailable) {
+                  this.cannotEdit(
+                    'Built by Builder v2',
+                    `This topology was built in Builder v2, so it can only be edited there, and ${unavailable} Select its name in the list to view it read only.`,
+                  );
+                  return;
+                }
+
+                const router = this.$router;
+                const destination = {
+                  name: 'builder-v2',
+                  query: { topology: response.data.metadata.name },
+                };
+
+                // No message: an empty one would open an empty toast. The
+                // Builder announces the draft it opens.
+                this.$emit('is-done', '');
+                await router.push(destination);
+                return;
+              }
+
+              this.editor.isLoading = false;
+              this.cannotEdit(
+                `Built by ${this.builderName(response.data)}`,
+                `This configuration can only be edited in ${this.builderName(
+                  response.data,
+                )}`,
+              );
+              return;
             } else {
               this.config.obj = response.data;
               this.config.str = this.getConfigStr('yaml');
@@ -258,6 +306,33 @@
     methods: {
       handlePageReload(event) {
         event.preventDefault();
+      },
+      // Why this config cannot be edited here, and back to the list on OK.
+      // Buefy's alert has no role, name or description of its own: it is
+      // made an alert dialog (WAI-ARIA APG) named by its title and described
+      // by its message, so a screen reader reads why as focus moves to OK.
+      cannotEdit(title, message) {
+        this.$buefy.dialog.alert({
+          title,
+          message: `<span id="${ALERT_MESSAGE_ID}">${message}</span>`,
+          confirmText: 'OK',
+          type: 'is-warning',
+          hasIcon: true,
+          ariaRole: 'alertdialog',
+          ariaModal: true,
+          'aria-labelledby': ALERT_TITLE_ID,
+          'aria-describedby': ALERT_MESSAGE_ID,
+          onConfirm: () => this.$emit('is-done', ''),
+        });
+        // The title has no id to name the dialog by until it is drawn, as
+        // the dialog opens.
+        this.$nextTick(() => {
+          document
+            .getElementById(ALERT_MESSAGE_ID)
+            ?.closest('.modal-card')
+            ?.querySelector('.modal-card-title')
+            ?.setAttribute('id', ALERT_TITLE_ID);
+        });
       },
       configSentSave() {
         if (this.mode == 'edit') {
@@ -498,15 +573,33 @@
         this.isWaiting = false;
       },
       isBuilderTopology(cfg) {
-        if (cfg.kind == 'Topology') {
-          if ('annotations' in cfg.metadata) {
-            return 'builder-xml' in cfg.metadata.annotations;
-          }
+        return builderAnnotation(cfg) !== null;
+      },
+      // Why Builder v2 cannot open a topology here, or '' when it can.
+      async builderV2Unavailable() {
+        try {
+          const features = await usePhenixStore().ensureFeatures();
+
+          return isFeatureEnabled(features, BUILDER_V2_FEATURE)
+            ? ''
+            : 'Builder v2 is not enabled on this phenix server.';
+        } catch {
+          return 'whether Builder v2 is enabled on this phenix server could not be checked. Reload the page to try again.';
         }
-        return false;
+      },
+      builderName(cfg) {
+        return builderAnnotation(cfg) === V2_ANNOTATION
+          ? 'Builder v2'
+          : 'Builder';
       },
     },
     computed: {
+      // What the editor is for: "Edit Topology/web", or "New config".
+      heading() {
+        return this.mode == 'edit' && this.editorConfig
+          ? `Edit ${this.editorConfig.kind}/${this.editorConfig.metadata.name}`
+          : 'New config';
+      },
       validName() {
         return /^[a-zA-Z0-9_@.-]*$/.test(this.configName);
       },
@@ -661,6 +754,11 @@
 
   .editor :deep(.label) {
     color: whitesmoke;
+  }
+
+  .config-editor__heading {
+    color: whitesmoke;
+    overflow-wrap: anywhere;
   }
 
   button#editor {

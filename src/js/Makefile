@@ -3,7 +3,12 @@
 
 SHELL := /bin/bash
 
-SOURCES := $(shell find ./src \( -name '*.js' -o -name '*.vue' \))
+# Everything the build reads: the app's source and static files, the page,
+# Vite's config and plugins, its environment and the locked dependencies. A
+# change to any of them rebuilds dist/, including the Builder v2 file list and
+# compressed copies plugins/builder-v2-assets.js writes for the server.
+SOURCES := $(shell find ./src ./public ./plugins -type f) \
+	index.html vite.config.js package.json package-lock.json $(wildcard .env .env.*)
 
 # Define a helper for checking command existence
 check-command = @if ! command -v $(1) > /dev/null; then \

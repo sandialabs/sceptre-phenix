@@ -1,0 +1,226 @@
+import { describe, expect, test } from 'vitest';
+
+import {
+  decodeDocument,
+  parseDocument,
+  parseImport,
+} from '@/builder/decode.js';
+import { SCHEMA_URI } from '@/builder/model.js';
+
+import { sampleDocument } from './fixtures.js';
+
+describe('strict decoding', () => {
+  test('round trips a valid document', () => {
+    const { doc } = sampleDocument();
+    const decoded = parseDocument(JSON.parse(JSON.stringify(doc)));
+
+    expect(decoded).toEqual(doc);
+  });
+
+  test('unknown document fields are rejected, never dropped', () => {
+    const { doc } = sampleDocument();
+
+    expect(() => decodeDocument({ ...doc, extra: true })).toThrowError(
+      /unknown field/i,
+    );
+  });
+
+  test('unknown node fields are rejected', () => {
+    const { doc } = sampleDocument();
+    const payload = JSON.parse(JSON.stringify(doc));
+
+    payload.nodes[0].vlan = 'EXP';
+
+    expect(() => decodeDocument(payload)).toThrowError(/unknown field/i);
+  });
+
+  test('accepts complete server source provenance', () => {
+    const { doc } = sampleDocument();
+    const payload = {
+      ...doc,
+      source: {
+        kind: 'topology',
+        name: 'generated',
+        apiVersion: 'phenix.sandia.gov/v1',
+        topology: 'base',
+        importedAt: '2026-08-28T20:00:00Z',
+        digest: `sha256:${'a'.repeat(64)}`,
+        updatedAt: '2026-08-28T19:00:00Z',
+        warnings: ['Generated layout'],
+      },
+    };
+
+    expect(() => decodeDocument(payload)).not.toThrow();
+  });
+
+  test('the schema URI and revision are enforced', () => {
+    const { doc } = sampleDocument();
+
+    expect(() => decodeDocument({ ...doc, $schema: 'x' })).toThrowError(
+      /schema/i,
+    );
+    expect(() => decodeDocument({ ...doc, revision: 2 })).toThrowError(
+      /revision/i,
+    );
+    expect(SCHEMA_URI).toContain('/schemas/builder/v1');
+  });
+
+  test('a node must carry exactly one payload', () => {
+    const { doc } = sampleDocument();
+    const payload = JSON.parse(JSON.stringify(doc));
+
+    payload.nodes[0].note = { text: 'x' };
+
+    expect(() => decodeDocument(payload)).toThrowError(/exactly one/i);
+  });
+
+  test('keeps the draft layout and edge routes, and reads null as none', () => {
+    const { doc } = sampleDocument();
+    const route = [
+      { x: 0, y: 0 },
+      { x: 40, y: 0 },
+      { x: 40, y: 30 },
+    ];
+    const payload = JSON.parse(JSON.stringify(doc));
+
+    payload.layout = 'cards';
+    payload.edges[0].route = route;
+
+    const decoded = parseDocument(payload);
+
+    expect(decoded.layout).toBe('cards');
+    expect(decoded.edges[0].route).toEqual(route);
+
+    payload.layout = null;
+    payload.edges[0].route = null;
+
+    const cleared = parseDocument(payload);
+
+    expect('layout' in cleared).toBe(false);
+    expect('route' in cleared.edges[0]).toBe(false);
+
+    payload.edges[0].route = [{ x: 0, y: 0, z: 1 }, route[1]];
+
+    expect(() => decodeDocument(payload)).toThrowError(
+      /edges\[0\]\.route\[0\]: unknown field "z"/,
+    );
+  });
+});
+
+describe('import', () => {
+  test('accepts JSON and YAML builder documents', () => {
+    const { doc } = sampleDocument();
+    const json = parseImport(JSON.stringify(doc));
+
+    expect(json.ok).toBe(true);
+    expect(json.document.id).toBe(doc.id);
+
+    const yaml = parseImport(
+      `$schema: ${doc.$schema}\nrevision: 1\nid: ${doc.id}\nnodes: []\nnetworks: []\nedges: []\nviewport: {x: 0, y: 0, zoom: 1}\ngrid: {enabled: true, size: 16, snap: true}\n`,
+    );
+
+    expect(yaml.ok).toBe(true);
+  });
+
+  test('refuses phenix Topology and Experiment configs with guidance', () => {
+    const result = parseImport(
+      JSON.stringify({ kind: 'Topology', metadata: { name: 'x' } }),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe('unsupported-kind');
+    // Import on the drafts page is what converts them.
+    expect(result.error).toMatch(/\bUse Import on the drafts page\b/);
+    expect(result.error).toMatch(/^A Topology config is not/);
+
+    // The article follows the kind.
+    expect(
+      parseImport(JSON.stringify({ kind: 'Experiment', metadata: {} })).error,
+    ).toMatch(/^An Experiment config is not a Builder document\./);
+    expect(
+      parseImport('kind: Topology\n', { as: 'raw', expectedKind: 'Experiment' })
+        .error,
+    ).toBe('Expected an Experiment config, not Topology.');
+  });
+
+  test('reports invalid documents instead of repairing them', () => {
+    const { doc } = sampleDocument();
+    const payload = JSON.parse(JSON.stringify(doc));
+
+    payload.edges[0].networkId = 'missing';
+
+    const result = parseImport(JSON.stringify(payload));
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.length).toBeGreaterThan(0);
+  });
+
+  test('empty and unparsable input is named', () => {
+    expect(parseImport('  ').code).toBe('empty');
+    expect(parseImport('{"a": ').code).toBe('parse');
+  });
+
+  test('raw mode returns the parsed value for scenario uploads', () => {
+    const result = parseImport(
+      'apiVersion: phenix.sandia.gov/v1\nkind: Scenario\n',
+      {
+        as: 'raw',
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.value.kind).toBe('Scenario');
+  });
+
+  test('YAML imports stay JSON-compatible', () => {
+    const result = parseImport('created: 2026-08-28T12:00:00Z\n', {
+      as: 'raw',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.value.created).toBe('2026-08-28T12:00:00Z');
+  });
+
+  // An alias is its anchor's value itself, which each copy of the document
+  // expands once per alias: nine levels of ten aliases, in under 1 KB, are a
+  // billion values. An asterisk that is not an alias is kept.
+  test('YAML aliases are refused before they expand', () => {
+    const bomb = [
+      'l0: &l0 x',
+      ...Array.from(
+        { length: 9 },
+        (_, i) => `l${i + 1}: &l${i + 1} [${Array(10).fill(`*l${i}`).join()}]`,
+      ),
+    ].join('\n');
+
+    expect(bomb.length).toBeLessThan(1024);
+    expect(parseImport(bomb, { as: 'raw' })).toMatchObject({
+      ok: false,
+      code: 'aliases',
+      error: expect.stringMatching(
+        /^YAML aliases \(\*name\) are not supported\./,
+      ),
+    });
+    expect(parseImport('a: &a 1\nb: *a\n', { as: 'raw' }).code).toBe('aliases');
+    expect(
+      parseImport("a: &a [1]\nb: 'a *b'\nc: run *nix\nd: |\n  *e\n# *f\n", {
+        as: 'raw',
+      }),
+    ).toEqual({
+      ok: true,
+      value: { a: [1], b: 'a *b', c: 'run *nix', d: '*e\n' },
+    });
+  });
+
+  test('imports enforce size and expected config kind', () => {
+    expect(parseImport('12345', { as: 'raw', maxBytes: 4 }).code).toBe(
+      'too-large',
+    );
+    expect(
+      parseImport('kind: Topology\n', {
+        as: 'raw',
+        expectedKind: 'Scenario',
+      }).code,
+    ).toBe('unsupported-kind');
+  });
+});
