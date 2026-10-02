@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -169,6 +171,104 @@ func TestJSONFromYAMLScalars(t *testing.T) {
 
 			if string(got) != test.want {
 				t.Fatalf("JSONFromYAML = %s, want %s", got, test.want)
+			}
+		})
+	}
+}
+
+// TestJSONFromYAMLLongIntegers reads a plain integer as a number while a
+// float64 holds it, and as text from the first one that is too large,
+// however many digits it has.
+func TestJSONFromYAMLLongIntegers(t *testing.T) {
+	t.Parallel()
+
+	power := func(exponent uint) string {
+		return new(big.Int).Lsh(big.NewInt(1), exponent).String()
+	}
+
+	for name, test := range map[string]struct {
+		text   string
+		number bool
+	}{
+		"1e308 written out":                  {"1" + strings.Repeat("0", 308), true},
+		"1e309 written out":                  {"1" + strings.Repeat("0", 309), false},
+		"2 to the power 1023":                {power(1023), true},
+		"2 to the power 1024":                {power(1024), false},
+		"negative 2 to the power 1023":       {"-" + power(1023), true},
+		"negative 2 to the power 1024":       {"-" + power(1024), false},
+		"zeros before a digit":               {strings.Repeat("0", 5000) + "7", true},
+		"zeros only":                         {strings.Repeat("0", 5000), true},
+		"255 hexadecimal digits":             {"0x" + strings.Repeat("f", 255), true},
+		"257 hexadecimal digits":             {"0x" + strings.Repeat("f", 257), false},
+		"1024 binary digits":                 {"0b1" + strings.Repeat("0", 1023), true},
+		"1025 binary digits":                 {"0b1" + strings.Repeat("0", 1024), false},
+		"zeros before 1024 binary digits":    {"0b" + strings.Repeat("0", 2000) + "1" + strings.Repeat("0", 1023), true},
+		"more octal digits than a float has": {"0o" + strings.Repeat("7", 400), false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := builder.JSONFromYAML([]byte("a: " + test.text))
+			if err != nil {
+				t.Fatalf("JSONFromYAML returned error: %v", err)
+			}
+
+			var read map[string]any
+			if err := json.Unmarshal(got, &read); err != nil {
+				t.Fatalf("decoding %s: %v", got, err)
+			}
+
+			switch value := read["a"].(type) {
+			case float64:
+				if !test.number {
+					t.Fatalf("read as the number %v, want text", value)
+				}
+			case string:
+				if test.number || value != test.text {
+					t.Fatalf("read as text of %d bytes, want number %t and the scalar itself", len(value), test.number)
+				}
+			default:
+				t.Fatalf("read as %T, want a number or text", value)
+			}
+		})
+	}
+}
+
+// TestYAMLIntLongScalars types a plain scalar of digits as long as the
+// largest Builder file without parsing it as an integer: that takes time
+// that grows with the square of its length, many seconds for these. The
+// integer rule alone is timed. Reading a whole file of that size is slow
+// under the race detector whatever it holds.
+func TestYAMLIntLongScalars(t *testing.T) {
+	t.Parallel()
+
+	const (
+		size  = 5 << 20
+		limit = 2 * time.Second
+	)
+
+	for name, test := range map[string]struct {
+		scalar string
+		want   float64
+		number bool
+	}{
+		"decimal digits":          {strings.Repeat("9", size), 0, false},
+		"negative decimal digits": {"-" + strings.Repeat("9", size), 0, false},
+		"zeros before a digit":    {strings.Repeat("0", size) + "7", 7, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			start := time.Now()
+			got, number := builder.YAMLInt(test.scalar)
+			elapsed := time.Since(start)
+
+			if got != test.want || number != test.number {
+				t.Fatalf("yamlInt = %v, %t, want %v, %t", got, number, test.want, test.number)
+			}
+
+			if elapsed > limit {
+				t.Fatalf("yamlInt took %s, want at most %s", elapsed, limit)
 			}
 		})
 	}

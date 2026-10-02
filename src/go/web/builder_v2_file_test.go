@@ -978,6 +978,73 @@ func TestBuilderV2PublishFromEditedFileDraft(t *testing.T) { //nolint:parallelte
 
 		refused(harness, draft, "the topology was edited", differs)
 	}
+
+	// A file document that was imported from the topology is tied to the
+	// file as any other is. Once the file holds something else its draft
+	// does not update the topology, although the topology is still what the
+	// document was imported from, whether or not it is what the file
+	// published.
+	for _, edited := range []bool{false, true} {
+		harness := newBuilderV2Harness(t)
+		path := newFileBackedTopology(t, harness, "site", false)
+
+		var source string
+
+		for i := range harness.configs {
+			if harness.configs[i].FullName() != "Topology/site" {
+				continue
+			}
+
+			if edited {
+				stored := cloneBuilderConfig(&harness.configs[i])
+				nodes, _ := stored.Spec["nodes"].([]any)
+				stored.Spec["nodes"] = append(nodes, includeNode("by-hand"))
+				harness.configs[i] = *stored
+			}
+
+			digest, err := bdoc.SourceDigest(harness.configs[i])
+			if err != nil {
+				t.Fatalf("SourceDigest returned error: %v", err)
+			}
+
+			source = digest
+		}
+
+		imported := openBuilderFile(t, harness, "site").document
+		imported.Source = &bdoc.Source{Kind: bdoc.SourceKindTopology, Name: "site", Digest: source}
+
+		data, err := bapi.EncodeDocument(imported)
+		if err != nil {
+			t.Fatalf("EncodeDocument returned error: %v", err)
+		}
+
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatalf("writing the file: %v", err)
+		}
+
+		opened := openBuilderFile(t, harness, "site")
+		if opened.differs != edited {
+			t.Fatalf("edited %t: the document route says the topology differs: %t", edited, opened.differs)
+		}
+
+		recorder, draft := createBuilderFileDraft(t, harness, opened.document, opened.token)
+		if recorder.Code != http.StatusCreated {
+			t.Fatalf("edited %t: creating the draft: status = %d: %s", edited, recorder.Code, recorder.Body)
+		}
+
+		draft = editBuilderDraft(t, harness, draft, opened.document, "bb")
+
+		another, err := bapi.EncodeDocument(bdoc.NewDocument("site"))
+		if err != nil {
+			t.Fatalf("EncodeDocument returned error: %v", err)
+		}
+
+		if err := os.WriteFile(path, another, 0o600); err != nil {
+			t.Fatalf("writing the file: %v", err)
+		}
+
+		refused(harness, draft, "the file of an imported document changed", changed)
+	}
 }
 
 // TestBuilderV2PublishPinnedFileIsNotApplied publishes, to a topology that

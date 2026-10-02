@@ -17,6 +17,7 @@
 import { count } from './announce.js';
 import { isIconKey } from './catalog.js';
 import { contentDigestSync, isDigest } from './digest.js';
+import { MAX_USER_BYTES } from './limits.js';
 import {
   SCHEMA_REVISION,
   SCHEMA_URI,
@@ -25,17 +26,15 @@ import {
   sizeOf,
   specInterfaces,
 } from './model.js';
-import { utf8Length } from './text.js';
+import { hasControlCharacters, utf8Length } from './text.js';
+
+export { MAX_USER_BYTES };
 
 export const MAX_VLAN_ALIAS = 4094;
 
 // The longest document name the draft service records as a title, in UTF-8
 // bytes (MaxNameBytes in validate.go).
 export const MAX_NAME_BYTES = 512;
-
-// The longest user a document names as its author or last editor, in UTF-8
-// bytes (MaxUserBytes in document.go).
-export const MAX_USER_BYTES = 256;
 
 // Bounds on the source config annotations a document carries only to show
 // them (MaxAnnotations and MaxAnnotationBytes in validate.go): how many, and
@@ -70,12 +69,6 @@ function fold(value) {
 
 function finite(value) {
   return typeof value === 'number' && Number.isFinite(value);
-}
-
-function hasControlCharacters(text) {
-  return [...text].some(
-    (ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f,
-  );
 }
 
 function issue(issues, path, message, level = 'error', extra = {}) {

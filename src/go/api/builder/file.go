@@ -34,11 +34,13 @@ const (
 	// DocumentFileOutside is a path that is not below the directory Builder
 	// files are read from, or is below a directory excluded from it.
 	DocumentFileOutside DocumentFileReason = "outside"
-	// DocumentFileMissing is a path nothing exists at.
+	// DocumentFileMissing is a path nothing exists at, one that goes on
+	// through a regular file included.
 	DocumentFileMissing DocumentFileReason = "missing"
 	// DocumentFileUnreadable is a file that cannot be opened or read:
-	// permissions, a symbolic link that leaves the directory, an I/O error, or
-	// a path a document reference may not hold.
+	// permissions, a symbolic link that leaves the directory or has an
+	// absolute target, an I/O error, or a path a document reference may not
+	// hold.
 	DocumentFileUnreadable DocumentFileReason = "unreadable"
 	// DocumentFileNotRegular is a directory, a named pipe, a device or any
 	// other path that is not a regular file.
@@ -120,6 +122,10 @@ func (e *DocumentFileError) Unwrap() error {
 // Only parsing waits here, never the read of a file, which can hang.
 var documentFileParsing sync.Mutex //nolint:gochecknoglobals // bounds the memory of this process
 
+// parseDocumentText is how [ReadDocumentFile] parses the text of a file.
+// Tests replace it.
+var parseDocumentText = ParseDocumentText //nolint:gochecknoglobals // a seam for tests
+
 // ParseDocumentText decodes and validates the text of a Builder file, which
 // holds a document as JSON or as YAML (see [builder.JSONFromText]), within
 // [MaxDocumentBytes]. The text is used as it is: a "${NAME}" in it is not
@@ -192,12 +198,13 @@ func LoadDocumentFile(path string) (*DocumentFile, error) {
 //
 // The file must be below root, the directory Builder files are read from, and
 // below none of the excluded directories. It is opened through [os.Root], so
-// a symbolic link is followed only while it stays below root, with no window
-// between that check and the open; one that resolves below an excluded
-// directory is refused too, as far as the links in place before the open
-// tell. The file must be a regular file of at most [MaxDocumentBytes], and
-// its text a valid document (see [ParseDocumentText]). Nothing is cached:
-// every call reads the file.
+// a symbolic link is followed only when its target is a relative path that
+// stays below root, with no window between that check and the open. A link
+// with an absolute target is refused, also when it points below root; one
+// that resolves below an excluded directory is refused too, as far as the
+// links in place before the open tell. The file must be a regular file of
+// at most [MaxDocumentBytes], and its text a valid document (see
+// [ParseDocumentText]). Nothing is cached: every call reads the file.
 //
 // Every failure is a [DocumentFileError].
 func ReadDocumentFile(root string, excluded []string, path string) (*DocumentFile, error) {
@@ -223,9 +230,14 @@ func ReadDocumentFile(root string, excluded []string, path string) (*DocumentFil
 		return nil, fail(reason)
 	}
 
-	documentFileParsing.Lock()
-	file, err := ParseDocumentText(data)
-	documentFileParsing.Unlock()
+	// Unlocked by a defer, so that a parser that panics does not leave every
+	// later file waiting.
+	file, err := func() (*DocumentFile, error) {
+		documentFileParsing.Lock()
+		defer documentFileParsing.Unlock()
+
+		return parseDocumentText(data)
+	}()
 
 	switch {
 	case errors.Is(err, ErrTooLarge):
@@ -359,7 +371,9 @@ func readRegularFile(root, relative string) ([]byte, DocumentFileReason) {
 	file, err := directory.OpenFile(relative, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 
 	switch {
-	case errors.Is(err, fs.ErrNotExist):
+	// A path through a regular file is missing as one through a name nothing
+	// has is, so the answer does not say which names below root are files.
+	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
 		return nil, DocumentFileMissing
 	case err != nil:
 		return nil, DocumentFileUnreadable

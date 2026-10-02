@@ -405,8 +405,9 @@ func validationReason(err error) string {
 
 // publishableTopology projects the document onto the topology config named
 // name and refuses one that cannot be published, naming everything that
-// blocks it: what phenix's config validation refuses, or else every check
-// that only publishing makes (see [builder.Document.ExportTopologyConfig]).
+// blocks it: every check that only publishing makes (see
+// [builder.Document.ExportTopologyConfig]), or else what phenix's config
+// validation refuses for a reason of its own.
 func publishableTopology(document *builder.Document, name string) (*builder.TopologyExport, error) {
 	refused := func(problems []string) error {
 		return &PublishRefusedError{
@@ -416,21 +417,47 @@ func publishableTopology(document *builder.Document, name string) (*builder.Topo
 	}
 
 	export, err := document.ExportTopologyConfig(name)
-	if err != nil {
+
+	var blockers []error
+
+	switch {
+	case err == nil:
+		blockers = export.PublishBlockers
+	case isPublishBlocker(err):
+		// A blocker the schema refuses too is returned alone, whatever the
+		// other checks of publishing found.
+		blockers, err = document.PublishBlockers(name)
+		if err != nil {
+			return nil, refused(blockerProblems(err))
+		}
+	default:
 		return nil, refused(blockerProblems(err))
 	}
 
-	if len(export.PublishBlockers) == 0 {
+	if len(blockers) == 0 {
 		return export, nil
 	}
 
 	var problems []string
 
-	for _, blocker := range export.PublishBlockers {
+	for _, blocker := range blockers {
 		problems = append(problems, blockerProblems(blocker)...)
 	}
 
 	return nil, refused(problems)
+}
+
+// isPublishBlocker reports whether err is a check only publishing makes:
+// interfaces without a VLAN, addresses interfaces share, or hostnames phenix
+// refuses.
+func isPublishBlocker(err error) bool {
+	var (
+		vlans     *builder.InterfaceVLANError
+		addresses *builder.InterfaceAddressError
+		hostnames *builder.NodeHostnameError
+	)
+
+	return errors.As(err, &vlans) || errors.As(err, &addresses) || errors.As(err, &hostnames)
 }
 
 // blockerProblems names each interface without a VLAN, each address

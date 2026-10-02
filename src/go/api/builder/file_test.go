@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -212,6 +213,10 @@ func TestReadDocumentFileRefusals(t *testing.T) { //nolint:paralleltest // captu
 			),
 			reason: DocumentFileUnreadable, is: ErrInvalid,
 		},
+		"an absolute link to a file below the root": {
+			path:   files.link(files.write(files.path("linked.json"), valid), files.path("absolute.json")),
+			reason: DocumentFileUnreadable, is: ErrInvalid,
+		},
 		"a link to a file below the excluded directory": {
 			path:   files.link(filepath.Join("..", "..", "mounts", "vm", "guest.json"), files.path("guest.json")),
 			reason: DocumentFileOutside, is: ErrInvalid,
@@ -243,7 +248,7 @@ func TestReadDocumentFileRefusals(t *testing.T) { //nolint:paralleltest // captu
 			path: filepath.Join(files.root, "nowhere", "site.yaml"), reason: DocumentFileMissing, is: ErrNotFound,
 		},
 		"a file as a directory": {
-			path: filepath.Join(files.write(files.path("plain.yaml"), valid), "site.json"), reason: DocumentFileUnreadable, is: ErrInvalid,
+			path: filepath.Join(files.write(files.path("plain.yaml"), valid), "site.json"), reason: DocumentFileMissing, is: ErrNotFound,
 		},
 		"a directory": {
 			path: files.path("directory.json"), reason: DocumentFileNotRegular, is: ErrInvalid,
@@ -317,6 +322,76 @@ func TestReadDocumentFileRefusals(t *testing.T) { //nolint:paralleltest // captu
 
 	if logged := logs.String(); strings.Contains(logged, fileMarker) {
 		t.Fatalf("the log repeats what a file holds: %s", logged)
+	}
+}
+
+// TestReadDocumentFileHidesOtherFiles asks for a path through a regular file
+// and for the same path through a name nothing has. Both are missing, in the
+// same words, so the answer does not say which names below the root are
+// files: the last element of a path only has to end as a document's does.
+func TestReadDocumentFileHidesOtherFiles(t *testing.T) {
+	t.Parallel()
+
+	files := newDocumentFiles(t)
+	files.write(files.path("disk.qc2"), []byte(fileMarker))
+
+	said := map[string]string{}
+
+	for _, name := range []string{"disk.qc2", "nodisk.qc2"} {
+		path := filepath.Join(files.path(name), "x.yaml")
+
+		var fileErr *DocumentFileError
+
+		_, err := files.read(path)
+		if !errors.As(err, &fileErr) || fileErr.Reason != DocumentFileMissing || !errors.Is(err, ErrNotFound) {
+			t.Fatalf("below %s: ReadDocumentFile returned %v, want the file missing", name, err)
+		}
+
+		said[name] = strings.ReplaceAll(err.Error(), path, "%s")
+	}
+
+	if said["disk.qc2"] != said["nodisk.qc2"] {
+		t.Fatalf("below a file: %q, below nothing: %q, want the same sentence", said["disk.qc2"], said["nodisk.qc2"])
+	}
+}
+
+// TestReadDocumentFileAfterAPanic reads a Builder file after the parser
+// panicked on another: a panic does not keep later files from being parsed.
+func TestReadDocumentFileAfterAPanic(t *testing.T) { //nolint:paralleltest // replaces the parser
+	files := newDocumentFiles(t)
+	path := files.write(files.path("site.json"), testDocument(t, "site", 0))
+
+	parse := parseDocumentText
+	parseDocumentText = func([]byte) (*DocumentFile, error) { panic("the parser failed") }
+
+	t.Cleanup(func() { parseDocumentText = parse })
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("ReadDocumentFile did not panic with a parser that does")
+			}
+		}()
+
+		_, _ = files.read(path)
+	}()
+
+	parseDocumentText = parse
+
+	read := make(chan error, 1)
+
+	go func() {
+		_, err := files.read(path)
+		read <- err
+	}()
+
+	select {
+	case err := <-read:
+		if err != nil {
+			t.Fatalf("ReadDocumentFile returned error: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("ReadDocumentFile still waits for the parser that panicked")
 	}
 }
 

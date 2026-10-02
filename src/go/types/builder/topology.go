@@ -296,6 +296,22 @@ func (d *Document) ExportTopologyConfig(name string) (*TopologyExport, error) {
 	}, nil
 }
 
+// PublishBlockers returns every check only publishing makes that the
+// document's projection onto the topology config named name fails, in the
+// order publishing makes them (see [Document.projectTopology]), whether or
+// not phenix's config validation accepts the projection. It is for a caller
+// that names everything that blocks a publication:
+// [Document.ExportTopologyConfig] returns alone a blocker the schema refuses
+// too.
+func (d *Document) PublishBlockers(name string) ([]error, error) {
+	projection, err := d.projectTopology(name)
+	if err != nil {
+		return nil, err
+	}
+
+	return projection.blockers, nil
+}
+
 // topologyProjection is a document projected onto a topology config, with
 // what the checks of publishing found.
 type topologyProjection struct {

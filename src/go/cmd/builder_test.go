@@ -613,6 +613,18 @@ func TestBuilderHelp(t *testing.T) {
 		}
 	}
 
+	// Sentences the help wraps over lines.
+	sentences := strings.Join(strings.Fields(publish), " ")
+
+	for _, want := range []string{
+		"only when nothing has changed it since it was published, or the document was imported from it as it is now.",
+		"(default: the user who ran sudo, else the current OS user)",
+	} {
+		if !strings.Contains(sentences, want) {
+			t.Errorf("builder publish --help does not say %q:\n%s", want, publish)
+		}
+	}
+
 	for _, help := range []string{group, publish} {
 		if lower := strings.ToLower(help); strings.Contains(lower, "builder v2") || strings.Contains(lower, "builder-v2") {
 			t.Errorf("the help names a Builder version:\n%s", help)

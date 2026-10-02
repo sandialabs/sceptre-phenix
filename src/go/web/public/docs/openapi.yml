@@ -1940,7 +1940,9 @@ paths:
         any other update is refused with 409. A topology read from the Builder
         file its `builder-doc` annotation names is updated by a draft opened
         from that file, while the file still holds what the draft was opened
-        from and the topology is still what the file publishes. Publishing
+        from and the topology is still what the file publishes, and such a
+        draft updates it in no other way: not as a draft imported from the
+        topology either, when the file's document was. Publishing
         never writes the file: the topology keeps its `path`, and the result
         carries a warning that the file is now behind. A published experiment records
         which draft and published document published it, and its digest once
@@ -2378,10 +2380,13 @@ paths:
         server, on every request. The file must be below the phenix base
         directory (`--base-dir.phenix`) and outside the directory VM file
         systems are mounted in, be a regular file of at most 5 MiB reached
-        through no symbolic link that leaves the base directory, and hold a
-        valid Builder v2 document as JSON or YAML. A `digest` beside `path`
-        pins the file: a file whose document has another digest is refused.
-        Requires `configs` `get` for the topology. A topology the caller may
+        through no symbolic link that leaves the base directory or has an
+        absolute target, and hold a valid Builder v2 document as JSON or
+        YAML. A `digest` beside `path` pins the file: a file whose document
+        has another digest is refused. Requires `configs` `get` for the
+        topology, which says nothing of the file: a caller who may create
+        or update any one topology can name any Builder file below the base
+        directory in it, and read that file here. A topology the caller may
         not get, one that does not exist, and one that references no document
         are all answered with the same 404. A file that cannot be used is
         answered with a fixed sentence naming the path, never with anything

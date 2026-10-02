@@ -235,12 +235,15 @@ The **Diagram** section has:
       draft made by **Upload** of a file or by **Import** of an uploaded
       config.
 
-    In the picture, the draft was made by uploading
-    `riverside-water.builder.json`. That file names `e2e-admin` as the
-    author of the diagram, and **Upload** keeps the author. The upload itself
-    is the last edit. Its user is `global-admin`, the user everyone has on a
-    phenix server with authentication disabled. A row is left out when the
-    diagram does not have its value. See
+    In the picture, the draft was made by uploading a Builder file named
+    `riverside-water.builder.json` that names `e2e-admin` as the author of
+    the diagram, and **Upload** keeps the author. The upload itself is the
+    last edit. Its user is `global-admin`, the user everyone has on a phenix
+    server with authentication disabled. The times are those of the day the
+    picture was taken: uploading the example file of that name shows the
+    time the file gives for **Created**, and the time of your upload for
+    **Last edited**. A row is left out when the diagram does not have its
+    value. See
     [Who made and last saved a diagram](import-export.md#who-made-and-last-saved-a-diagram).
 - **Annotations**: for a draft imported from a config, the annotations of
   that config, under "From Topology riverside-water, imported" and the

@@ -88,7 +88,10 @@ copy by hand.
 
 ## Permissions
 
-Builder v2 never gives a user more than their role's config permissions.
+Builder v2 gives a user no more than their role's config permissions, with
+one exception: a role that is limited to some topology names does not limit
+which Builder files its users can read (see
+[Who can read a Builder file](#who-can-read-a-builder-file)).
 Every Builder v2 request needs the `configs` permission of the same verb:
 `list` to list drafts, `get` to open one, `create` to make one, `update` to
 save a change, and `delete` to delete one. See
@@ -125,7 +128,7 @@ not see Builder v2. Give Builder v2 users a role such as the
 | Task | Permissions |
 |---|---|
 | See the **Builder v2** tab, and list drafts and published diagrams | `configs` `list` |
-| Open a draft or a published diagram | `configs` `get`; for a published diagram, or the diagram of a topology that names a Builder file, on that topology, such as `Topology/riverside-water` |
+| Open a draft or a published diagram | `configs` `get`; for a published diagram, or the diagram of a topology that names a Builder file, on that topology, such as `Topology/riverside-water`. The topology's name does not protect the file itself (see [Who can read a Builder file](#who-can-read-a-builder-file)) |
 | Make a draft: **Blank diagram**, **Import**, **Upload**, **Edit as a draft**, **Save my history as a new draft** | `configs` `create` |
 | Import a stored config | Also `configs` `get` on the config, such as `Topology/riverside-water`, and `topologies` `list` (or `experiments` `list`) on its name |
 | Import an uploaded config | `configs` `create` |
@@ -594,6 +597,12 @@ differs from what the document publishes, Builder v2 says so, and a draft
 made from the file cannot update the topology (see
 [Editing and publishing](#editing-and-publishing)).
 
+Do not use the example file
+[pump-station.topology.yaml](examples/pump-station.topology.yaml) for this,
+although it has the same name. It is the config the diagram was imported
+from, and it lists its nodes in another order than the document publishes
+them in, so Builder v2 says the topology differs from the file.
+
 Store the config:
 
 ```console
@@ -621,8 +630,10 @@ phenix reads a Builder file only when all of this holds:
 - It is not below the directory where VM file systems are mounted:
   `/phenix/mounts`, or the directory the `mount-dir` setting names.
 - It is a regular file, not a directory, a device or a pipe. A symbolic
-  link is followed only while it stays below the base directory and outside
-  the mount directory.
+  link is followed only when its target is a relative path that stays below
+  the base directory and outside the mount directory. A link with an
+  absolute target, as `ln -s /phenix/topologies/a.json b.json` makes, is
+  refused, even when the target is below the base directory.
 - It is at most 5 MiB.
 - It holds one valid Builder document, as JSON or YAML. The content
   decides which, not the file name. A YAML file may not use anchors,
@@ -642,9 +653,30 @@ valid. Creating, editing, renaming and deleting the config read no file
 either, and neither does any `phenix` command: `phenix builder publish`
 reads only the file you give it.
 
+### Who can read a Builder file
+
 Anyone whose role has `configs` `get` on the topology can open its diagram.
 The `path` itself is part of the config, so everyone who can list the
 config can see it.
+
+!!! warning
+    A Builder file is not protected by the name of the topology that names
+    it. A user whose role has `configs` `create` or `update` on any one
+    topology name, and `get` on that name, can store a topology there whose
+    `path` names any Builder file below the base directory, and then open
+    that file's diagram.
+
+    For example, a role limited to `Topology/teama-*` keeps its users from
+    the topologies and published diagrams of team B. It does not keep them
+    from a Builder file of team B: they store `teama-x` with the `path` of
+    that file and open the diagram of `teama-x`. They need the file's path,
+    which a fixed layout such as `/phenix/topologies/<name>/` makes easy to
+    guess.
+
+    Keep a Builder file below the base directory only when every user who
+    can create or update a topology may read it. Published diagrams do not
+    have this gap: a published document belongs to the topology it was
+    published to.
 
 ### Pinning the file with a digest
 
@@ -693,8 +725,8 @@ of what the file holds. The REST API answers with the same sentence as
 | Message | Status | Why |
 |---|---|---|
 | "Builder file … is outside /phenix, the directory phenix reads Builder files from." | 422 | The path is not below the base directory, or it is below the mount directory |
-| "Builder file … does not exist on this phenix server." | 404 | No file is at the path |
-| "Builder file … cannot be read by phenix." | 422 | phenix has no permission to read it, a symbolic link leaves the base directory, or reading failed |
+| "Builder file … does not exist on this phenix server." | 404 | No file is at the path, also when a part of the path is a file and not a directory |
+| "Builder file … cannot be read by phenix." | 422 | phenix has no permission to read it, a symbolic link leaves the base directory or has an absolute target, or reading failed |
 | "Builder file … is not a regular file." | 422 | The path is a directory, a device or a pipe |
 | "Builder file … is larger than 5 MiB." | 413 | The file is too large |
 | "Builder file … is not a valid Builder document. Upload it in the Builder to see why." | 422 | The file is not JSON or YAML, or not a valid Builder document. **Upload** the file to see what is wrong with it (see [Uploading a Builder document](import-export.md#uploading-a-builder-document)) |
@@ -716,7 +748,9 @@ The draft can update the topology while both of these hold:
   config by hand.
 
 Otherwise Publish refuses the update, and the draft can still be published
-under a new topology name.
+under a new topology name. A diagram that was itself imported from a config
+is also held to the rule for an imported draft, under any name (see
+[When the source config changed](publishing.md#when-the-source-config-changed)).
 
 **Publish never writes the file.** It stores the diagram as a published
 document, as every publish does, and writes `digest` and `id` beside the

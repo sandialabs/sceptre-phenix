@@ -328,8 +328,13 @@ digest.
 
 !!! note
     `author` and `createdAt` are what the document says. Someone who uploads
-    a document can name any author in it. `updatedBy` and `updatedAt` are
-    always written by the server.
+    a document can name any author in it. The server writes `updatedBy` and
+    `updatedAt` on every save it makes. A document that phenix takes
+    unchanged from a file keeps all four fields as the file has them: a
+    diagram read from a Builder file, the draft **Edit as a draft** makes
+    from it, which can be published before its first edit, and a document
+    stored by `phenix builder publish`. Those values are only as trustworthy
+    as whoever can write the file.
 
 `source.updatedAt`, further down in a document made by **Import**, is a
 different time: when the imported config was last changed.

@@ -7,6 +7,11 @@ func IconKeyForSpec(spec map[string]any) string {
 	return iconKeyForSpec(spec)
 }
 
+// YAMLInt exposes yamlInt to the external tests.
+func YAMLInt(text string) (float64, bool) {
+	return yamlInt(text)
+}
+
 // The functions below are used only by tests.
 
 // NetworkByName returns the network with the given name, or nil. Names are

@@ -45,8 +45,9 @@ func newBuilderPublishCmd() *cobra.Command {
 
   The topology is named after the document unless --name is given. An
   existing topology is only replaced with --update, and only when nothing
-  else has changed it since it was published. Publishing the same document
-  again changes nothing. Scenarios and experiments are not created.
+  has changed it since it was published, or the document was imported from
+  it as it is now. Publishing the same document again changes nothing.
+  Scenarios and experiments are not created.
 
   The topology names its document in a builder-doc annotation. While the
   Builder is turned off in the web UI, the Configs page does not open such a
@@ -72,7 +73,7 @@ func newBuilderPublishCmd() *cobra.Command {
 	cmd.Flags().Bool("dry-run", false, "Check the document and report what would be written, without writing anything")
 	cmd.Flags().StringP("name", "n", "", "Topology name (default: the document's name, as the Publish dialog proposes it)")
 	cmd.Flags().Bool("update", false, "Replace an existing topology of that name")
-	cmd.Flags().String("user", "", "User to record as the publisher (default: the current OS user)")
+	cmd.Flags().String("user", "", "User to record as the publisher (default: the user who ran sudo, else the current OS user)")
 	cmd.Flags().Bool("record-path", false,
 		"Also record the absolute path of the document file in the topology's builder-doc annotation")
 

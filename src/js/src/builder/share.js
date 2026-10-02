@@ -11,13 +11,10 @@
 
 import { count, listOf } from './announce.js';
 import { MAX_SHARES } from './api.js';
+import { MAX_USER_BYTES } from './limits.js';
 import { utf8Length } from './text.js';
 
 export const ACCESS_LABELS = { view: 'Can view', edit: 'Can edit' };
-
-// The longest name the server takes (MaxOwnerLength in api/builder), in
-// bytes.
-const MAX_USER_BYTES = 256;
 
 /**
  * @param {string} access 'view' or 'edit'
