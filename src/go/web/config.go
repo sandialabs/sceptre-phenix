@@ -454,7 +454,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 	var body []byte
 
 	switch typ := r.Header.Get("Accept"); typ {
-	case "", "*/*", "application/json": // default to JSON if not set
+	case "", mimeAny, mimeJSON: // default to JSON if not set
 		var err error
 
 		body, err = json.Marshal(cfg)
@@ -528,7 +528,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	switch {
-	case typ == "application/json": // default to JSON if not set
+	case typ == mimeJSON: // default to JSON if not set
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
