@@ -280,7 +280,7 @@ func (u User) Role() (Role, error) {
 		return *disabled, nil
 	}
 
-	return Role{Spec: u.Spec.Role}, nil //nolint:exhaustruct // partial initialization
+	return *newRole(u.Spec.Role, nil), nil
 }
 
 func (u *User) SetRole(role *Role) error {

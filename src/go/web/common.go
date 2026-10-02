@@ -38,12 +38,12 @@ var (
 )
 
 //nolint:funlen // complex logic
-func startExperiment(name string) ([]byte, error) {
+func startExperiment(name string) error {
 	err := cache.LockExperimentForStarting(name)
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to lock experiment %s for starting", name)
 
-		return nil, err.SetStatus(http.StatusConflict)
+		return err.SetStatus(http.StatusConflict)
 	}
 
 	defer cache.UnlockExperiment(name)
@@ -150,6 +150,10 @@ func startExperiment(name string) ([]byte, error) {
 
 	var progress float64
 
+	// the experiment list reports the latest progress to pages opened
+	// mid-start
+	defer startProgress.Delete(name)
+
 	count, _ := vm.Count(name)
 
 	for {
@@ -164,7 +168,7 @@ func startExperiment(name string) ([]byte, error) {
 
 				err := weberror.NewWebError(s.err, "unable to start experiment %s", name)
 
-				return nil, err.SetStatus(http.StatusBadRequest)
+				return err.SetStatus(http.StatusBadRequest)
 			}
 
 			// Clear previous SCORCH pipeline runtime state after successful experiment start.
@@ -190,17 +194,15 @@ func startExperiment(name string) ([]byte, error) {
 				fmt.Printf("Error scheduling experiment apps to run periodically: %v\n", err) //nolint:forbidigo // error logging
 			}
 
-			vms, err := vm.List(name)
-			if err != nil {
-				// TODO
-				plog.Error(plog.TypeSystem, "listing VMs in experiment", "exp", name, "err", err)
-			}
-
-			body, err := marshaler.Marshal(util.ExperimentToProtobuf(*s.exp, "", vms))
+			// Like GET /experiments?vms=false: counts come from the topology and
+			// no VM list is asked of minimega. The UI's start handlers replace the
+			// experiment row (Experiments.vue) or reload (Scorch, SoH, runs) and
+			// never read `vms` from this body.
+			body, err := marshaler.Marshal(util.ExperimentSummaryToProtobuf(*s.exp, ""))
 			if err != nil {
 				err := weberror.NewWebError(err, "unable to start experiment %s", name)
 
-				return nil, err.SetStatus(http.StatusInternalServerError)
+				return err.SetStatus(http.StatusInternalServerError)
 			}
 
 			broker.Broadcast(
@@ -209,7 +211,7 @@ func startExperiment(name string) ([]byte, error) {
 				body,
 			)
 
-			return body, nil
+			return nil
 		default:
 			p, err := mm.GetLaunchProgress(name, count)
 			if err != nil {
@@ -229,6 +231,8 @@ func startExperiment(name string) ([]byte, error) {
 				progress = p
 			}
 
+			startProgress.Store(name, progress)
+
 			plog.Debug(plog.TypeSystem, "percent deployed", statusKeyPercent, progress*percentMultiplier, "exp", name)
 
 			status := map[string]any{
@@ -246,6 +250,23 @@ func startExperiment(name string) ([]byte, error) {
 			time.Sleep(experimentStartCheckInterval)
 		}
 	}
+}
+
+// startProgress holds each starting experiment's launch progress, from 0 to 1.
+var startProgress sync.Map //nolint:gochecknoglobals // shared with the list handler
+
+// experimentStatus is the experiment's status as the experiment lists report
+// it, and how far along its start is while it is starting.
+func experimentStatus(exp types.Experiment) (cache.Status, float64) {
+	status := cache.ExperimentStatus(exp.Metadata.Name, exp.Running())
+	if status != cache.StatusStarting {
+		return status, 0
+	}
+
+	progress, _ := startProgress.Load(exp.Metadata.Name)
+	percent, _ := progress.(float64)
+
+	return status, percent
 }
 
 func stopExperiment(name string) ([]byte, error) {
@@ -292,15 +313,12 @@ func stopExperiment(name string) ([]byte, error) {
 
 	exp, err := experiment.Get(name)
 	if err != nil {
-		plog.Error(plog.TypeSystem, "getting experiment", "exp", name, "err", err)
+		err := weberror.NewWebError(err, "unable to get stopped experiment %s", name)
+
+		return nil, err.SetStatus(http.StatusInternalServerError)
 	}
 
-	vms, err := vm.List(name)
-	if err != nil {
-		plog.Error(plog.TypeSystem, "listing VMs in experiment", "exp", name, "err", err)
-	}
-
-	body, err := marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vms))
+	body, err := marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vm.ListFor(exp)))
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to stop experiment %s", name)
 

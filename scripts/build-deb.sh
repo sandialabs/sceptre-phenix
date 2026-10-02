@@ -55,6 +55,10 @@ copy_artifact "/usr/local/bin/glow" "${ARTIFACTS_DIR}/glow"
 mkdir -p "${ARTIFACTS_DIR}"/tunneler
 copy_artifact "/opt/phenix/downloads/tunneler/." "${ARTIFACTS_DIR}/tunneler/"
 
+# WebShark UI
+mkdir -p "${ARTIFACTS_DIR}"/webshark
+copy_artifact "/opt/phenix/webshark/." "${ARTIFACTS_DIR}/webshark/"
+
 # phenix-app-* binaries
 APPS=$(docker run --rm "${BUILD_IMAGE}" find /usr/local/bin -name "phenix-app-*")
 for app in $APPS; do
@@ -90,6 +94,7 @@ mkdir -p "${DEBIAN_DIR}"/DEBIAN
 mkdir -p "${DEBIAN_DIR}"/usr/local/bin
 mkdir -p "${DEBIAN_DIR}"/usr/bin
 mkdir -p "${DEBIAN_DIR}"/opt/phenix/downloads/tunneler
+mkdir -p "${DEBIAN_DIR}"/opt/phenix/webshark
 mkdir -p "${DEBIAN_DIR}"/etc/filebeat
 mkdir -p "${DEBIAN_DIR}"/usr/share/filebeat
 mkdir -p "${DEBIAN_DIR}"/usr/lib/python3/dist-packages
@@ -100,6 +105,7 @@ cp "${ARTIFACTS_DIR}"/phenix "${DEBIAN_DIR}"/usr/local/bin/
 cp "${ARTIFACTS_DIR}"/glow "${DEBIAN_DIR}"/usr/local/bin/
 cp "${ARTIFACTS_DIR}"/phenix-app-* "${DEBIAN_DIR}"/usr/local/bin/ 2>/dev/null || true
 cp -a "${ARTIFACTS_DIR}"/tunneler/. "${DEBIAN_DIR}"/opt/phenix/downloads/tunneler/
+cp -a "${ARTIFACTS_DIR}"/webshark/. "${DEBIAN_DIR}"/opt/phenix/webshark/
 
 cp -a "${ARTIFACTS_DIR}"/filebeat_etc/. "${DEBIAN_DIR}"/etc/filebeat/
 cp -a "${ARTIFACTS_DIR}"/filebeat_usr_share/. "${DEBIAN_DIR}"/usr/share/filebeat/

@@ -41,6 +41,8 @@ type serverOptions struct {
 
 	features map[string]bool
 
+	websharkDir string
+
 	unixSocketGID int
 }
 
@@ -67,6 +69,11 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 
 	if _, err := os.Stat("downloads/tunneler"); err == nil {
 		so.features["tunneler-download"] = true
+	}
+
+	if dir, ok := findWebShark(); ok {
+		so.websharkDir = dir
+		so.features["webshark"] = true
 	}
 
 	return so

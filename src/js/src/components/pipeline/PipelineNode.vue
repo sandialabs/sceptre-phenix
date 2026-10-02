@@ -56,17 +56,14 @@
 
     <title>{{ hint }}</title>
 
-    <!-- high light -->
+    <!-- an invisible circle around the node, so the pointer need not land
+         on the node itself -->
     <circle
       r="19"
       class="pipeline-node-hittarget"
       fill-opacity="0"
       stroke="none">
     </circle>
-    <g class="pipeline-selection-highlight" v-if="selected">
-      <circle class="white-highlight" r="13" stroke-width="10"></circle>
-      <circle r="15" stroke-width="2"></circle>
-    </g>
   </g>
 </template>
 <script>
@@ -103,10 +100,6 @@
       node: {
         type: Object,
       },
-      selected: {
-        type: Boolean,
-        default: false,
-      },
     },
     data() {
       return {
@@ -128,7 +121,6 @@
         };
       },
       handleClick() {
-        // console.log("click", this.node);
         this.nodeClass = 'pipeline-node-selected';
         if (this.status != 'start' && this.status != 'end') {
           this.$emit('click', this.index, this.node);

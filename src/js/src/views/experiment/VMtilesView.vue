@@ -3,9 +3,7 @@ The VM Tiles component displays the VM tiles available to the
 VM Viewer user role. The user can drill into available VMs per 
 experiment as well as all assigned VMs. The VM information is 
 available to the user, however, their only available action is 
-to access the VM VNC by clicking on the screenshot. This does 
-not currently support the base64 encoded display, which the server 
-side will pass.
+to access the VM VNC by clicking on the screenshot.
  -->
 
 <template>
@@ -27,18 +25,14 @@ side will pass.
           v-model="searchName"
           placeholder="Find a VM"
           icon="search"
-          :data="filteredData"
-          @select="(option) => (filtered = option)">
+          :data="filteredData">
           <template #empty>No results found</template>
         </b-autocomplete>
-        <p class="control">
+        <p v-if="searchName" class="control">
           <button
             class="button input-button"
             aria-label="Clear VM search"
-            @click="
-              searchVMs('');
-              filesTable.category = null;
-            ">
+            @click="searchName = ''">
             <b-icon icon="window-close"></b-icon>
           </button>
         </p>
@@ -75,71 +69,53 @@ side will pass.
     <div v-for="(chunk, chunkIndex) in chunkedVMs" :key="chunkIndex">
       <div class="tile is-ancestor">
         <div class="tile is-parent">
-          <template v-if="exp == null">
-            <div
-              v-for="v in chunk"
-              :key="vmFullName(v)"
-              class="tile is-child box is-4">
-              <p class="title" style="font-size: medium">
-                {{ vmFullName(v) }}
-              </p>
-              <figure class="image">
-                <template v-if="v.running">
-                  <a :href="vncLoc(v)" target="_blank">
-                    <img :src="v.screenshot" />
-                  </a>
-                </template>
-                <template v-else>
-                  <img src="@/assets/imgs/not-running.png" />
-                </template>
-              </figure>
-            </div>
-          </template>
-          <template v-else>
-            <div
-              v-for="v in chunk"
-              :key="vmFullName(v)"
-              class="tile is-child box is-4">
-              <p
-                v-if="v.experiment === exp"
-                class="title"
-                style="font-size: medium">
-                {{ vmFullName(v) }}
-              </p>
-              <figure class="image">
-                <template v-if="v.running && v.experiment === exp">
-                  <a :href="vncLoc(v)" target="_blank">
-                    <img :src="v.screenshot" />
-                  </a>
-                </template>
-                <template v-else-if="v.experiment === exp">
-                  <img src="@/assets/imgs/not-running.png" />
-                </template>
-              </figure>
-            </div>
-          </template>
+          <div
+            v-for="v in chunk"
+            :key="vmFullName(v)"
+            class="tile is-child box is-4">
+            <p class="title" style="font-size: medium">
+              {{ vmFullName(v) }}
+            </p>
+            <figure class="image">
+              <template v-if="v.running">
+                <a :href="vncLoc(v)" target="_blank">
+                  <img
+                    :src="v.screenshot"
+                    :alt="`Open the console of VM ${vmFullName(v)}`" />
+                </a>
+              </template>
+              <template v-else>
+                <img
+                  src="@/assets/imgs/not-running.png"
+                  :alt="`VM ${vmFullName(v)} is not running`" />
+              </template>
+            </figure>
+          </div>
         </div>
       </div>
     </div>
-    <b-loading
-      :is-full-page="false"
-      v-model="isWaiting"
-      :can-cancel="false"></b-loading>
   </div>
 </template>
 
 <script>
   import { chunk, sortBy } from 'lodash-es';
-  import { useErrorNotification } from '@/utils/errorNotif';
-  import axiosInstance from '@/utils/axios.js';
+  import { createPageLoader } from '@/utils/pageLoader.js';
+  import { pageFetchers } from '@/utils/pageData.js';
+  import { inForeground } from '@/utils/foreground.js';
   import { usePhenixStore } from '@/store';
   export default {
     beforeUnmount() {
       clearInterval(this.update);
+      this.loader.stop();
     },
 
     created() {
-      this.updateVms();
+      this.loader = createPageLoader({
+        key: 'vmtiles',
+        fetch: pageFetchers.vmtiles,
+        apply: (vms) => (this.vms = vms),
+      });
+      this.loader.start();
       this.periodicUpdateVms();
     },
 
@@ -153,7 +129,7 @@ side will pass.
           });
         }
 
-        var name_re = new RegExp(this.searchName, 'i');
+        const term = (this.searchName ?? '').toLowerCase();
         var data = [];
 
         for (let i in vms) {
@@ -164,7 +140,7 @@ side will pass.
             name = vm.experiment + '_' + vm.name;
           }
 
-          if (name.match(name_re)) {
+          if (name.toLowerCase().includes(term)) {
             data.push(vm);
           }
         }
@@ -207,24 +183,14 @@ side will pass.
     },
 
     methods: {
-      updateVms() {
-        axiosInstance
-          .get('vms?screenshot=500')
-          .then((response) => {
-            this.vms = response.data.vms;
-            this.isWaiting = false;
-          })
-          .catch((err) => {
-            this.isWaiting = false;
-            // TODO: do we want to include an error like this to a VM Viewer?
-            useErrorNotification(err);
-          });
-      },
-
       periodicUpdateVms() {
         this.update = setInterval(() => {
-          this.updateVms();
-        }, 30000);
+          // skip polling (and its screenshots) unless the page is focused,
+          // or while the last poll is still waiting on the server
+          if (inForeground() && !this.loader.loading) {
+            this.loader.load();
+          }
+        }, 60000);
       },
 
       vmFullName(vm) {
@@ -249,11 +215,10 @@ side will pass.
 
     data() {
       return {
-        exp: null,
+        // opened from an experiment's page, start with only its VMs
+        exp: this.$route.params.id ?? null,
         vms: [],
         searchName: '',
-        filtered: null,
-        isWaiting: true,
       };
     },
   };

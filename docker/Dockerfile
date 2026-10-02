@@ -13,7 +13,7 @@ FROM node:24.16.0 AS jsbuilder
 ARG INSTALL_CERTS=
 COPY docker/install-certs.sh /tmp/install-certs.sh
 RUN /tmp/install-certs.sh && \
-  yarn config set cafile /etc/ssl/certs/ca-certificates.crt
+  npm config set cafile /etc/ssl/certs/ca-certificates.crt
 
 RUN npm install -g @redocly/cli@2.48.0
 
@@ -34,6 +34,28 @@ COPY ./src/go/web/public/docs/openapi.yml /phenix/src/go/web/public/docs/openapi
 WORKDIR /phenix/src/go/web/public/docs
 
 RUN npx @redocly/cli build-docs openapi.yml -o index.html --title 'phenix API'
+
+
+# ** websharkbuilder **
+# WebShark (https://github.com/QXIP/webshark) views packet captures in the
+# browser; phenix serves its UI at /webshark/. Its license (AGPL-3.0) and a
+# NOTICE naming the source it was built from ship with it, in
+# /opt/phenix/webshark.
+FROM node:24.16.0 AS websharkbuilder
+
+ARG INSTALL_CERTS=
+COPY docker/install-certs.sh /tmp/install-certs.sh
+RUN /tmp/install-certs.sh && \
+  npm config set cafile /etc/ssl/certs/ca-certificates.crt
+
+ARG WEBSHARK_REPO=https://github.com/QXIP/webshark.git
+ARG WEBSHARK_REF=25f2233e0c0d96dd73b568345cf598a8119b3cdd
+
+RUN git clone ${WEBSHARK_REPO} /webshark \
+  && git -C /webshark checkout --detach ${WEBSHARK_REF}
+
+COPY docker/build-webshark.sh /tmp/build-webshark.sh
+RUN /tmp/build-webshark.sh /webshark /opt/webshark
 
 
 # ** gobuilder **
@@ -163,6 +185,7 @@ COPY --from=gobuilder /phenix/bin/phenix   /usr/local/bin/phenix
 COPY --from=gobuilder /go/bin/phenix-app-* /usr/local/bin
 
 COPY --from=gobuilder /phenix/src/go/bin/phenix-tunneler-* /opt/phenix/downloads/tunneler/
+COPY --from=websharkbuilder /opt/webshark /opt/phenix/webshark
 
 # Update GitHub workflow config to change the minimum version of minimega
 # required for use with phenix.

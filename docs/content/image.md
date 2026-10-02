@@ -1,6 +1,11 @@
 # Virtual Disk Images Management
 
-This is only available from the command line binary at this time.
+Building disk images is only available from the command line binary at this
+time. The [Disks](disks.md) page of the web UI lists the images the phēnix
+server already has, in the minimega files directory and its folders and
+wherever a topology names them, and can snapshot, clone, rename, download,
+upload and delete the ones in the files directory; images outside it are listed
+but not changed.
 
 ## Listing disk images
 

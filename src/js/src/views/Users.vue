@@ -102,7 +102,9 @@
               maxlength="32"
               v-model="user.new_password"></b-input>
           </b-field>
-          <b-field v-if="roleAllowed('users', 'create')" label="Role">
+          <b-field
+            v-if="roleAllowed('users/roles', 'patch', user.username)"
+            label="Role">
             <b-select v-model="user.role_name" expanded>
               <option v-for="(r, i) in roleNames" :key="i">
                 {{ r }}
@@ -114,7 +116,7 @@
             label="Resource Name(s)"
             grouped
             style="padding-bottom: 20px"
-            v-if="roleAllowed('users', 'create')">
+            v-if="roleAllowed('users/roles', 'patch', user.username)">
             <b-input
               type="text"
               v-model="user.resource_names"
@@ -147,11 +149,7 @@
         <section class="modal-card-body">
           <template v-if="user.token">
             <b-field label="Token">
-              <b-input
-                type="text"
-                ref="clone"
-                v-model="user.token"
-                readonly></b-input>
+              <b-input type="text" v-model="user.token" readonly></b-input>
             </b-field>
 
             <b-button
@@ -202,6 +200,28 @@
     </b-modal>
     <!-- BODY -->
     <b-field grouped position="is-right">
+      <div
+        v-if="paginationNeeded"
+        class="control is-flex is-align-items-center">
+        <b-switch v-model="table.isPaginated" size="is-small" type="is-light"
+          >Paginate</b-switch
+        >
+      </div>
+      <b-field>
+        <b-input
+          v-model="searchText"
+          placeholder="Find a user"
+          icon="search"
+          aria-label="Find a user"></b-input>
+        <p v-if="searchText" class="control">
+          <button
+            class="button input-button"
+            aria-label="Clear user search"
+            @click="searchText = ''">
+            <b-icon icon="window-close"></b-icon>
+          </button>
+        </p>
+      </b-field>
       <p v-if="roleAllowed('users', 'create')" class="control">
         <b-tooltip label="create a new user" type="is-light is-left">
           <button
@@ -215,8 +235,8 @@
     </b-field>
     <div>
       <b-table
-        :data="users"
-        :paginated="table.isPaginated"
+        :data="filteredUsers"
+        :paginated="table.isPaginated && paginationNeeded"
         aria-next-label="Next page"
         aria-previous-label="Previous page"
         aria-page-label="Page"
@@ -227,26 +247,57 @@
         :pagination-size="table.paginationSize"
         :default-sort-direction="table.defaultSortDirection"
         default-sort="username">
-        <b-table-column field="username" label="User" sortable v-slot="props">
-          <b-tooltip label="change user settings" type="is-dark">
-            <div class="field">
-              <div @click="editUser(props.row.username)">
-                {{ props.row.username }}
-              </div>
+        <template #empty>
+          <section class="section">
+            <div class="content has-text-white has-text-centered">
+              {{
+                !loaded
+                  ? loadingText('users')
+                  : searchText
+                    ? 'No users match the search'
+                    : 'No users found'
+              }}
             </div>
+          </section>
+        </template>
+        <b-table-column
+          field="username"
+          label="User"
+          sortable
+          header-class="sort-inline"
+          v-slot="props">
+          <b-tooltip
+            v-if="roleAllowed('users', 'patch', props.row.username)"
+            label="change user settings"
+            type="is-dark">
+            <a @click="editUser(props.row.username)">
+              {{ props.row.username }}
+            </a>
           </b-tooltip>
+          <template v-else>{{ props.row.username }}</template>
         </b-table-column>
-        <b-table-column field="first_name" label="First Name" v-slot="props">
+        <b-table-column
+          field="first_name"
+          label="First Name"
+          sortable
+          header-class="sort-inline"
+          v-slot="props">
           {{ props.row.first_name }}
         </b-table-column>
         <b-table-column
           field="last_name"
           label="Last Name"
           sortable
+          header-class="sort-inline"
           v-slot="props">
           {{ props.row.last_name }}
         </b-table-column>
-        <b-table-column field="role" label="Role" sortable v-slot="props">
+        <b-table-column
+          field="role_name"
+          label="Role"
+          sortable
+          header-class="sort-inline"
+          v-slot="props">
           {{ props.row.role_name ? props.row.role_name : 'Not yet assigned' }}
         </b-table-column>
         <b-table-column label="Actions" width="150" centered v-slot="props">
@@ -264,13 +315,13 @@
             </button>
           </b-tooltip>
           <b-tooltip
+            v-if="roleAllowed('users', 'delete', props.row.username)"
             class="action"
             :delay="500"
             label="delete user"
             type="is-light"
             multilined>
             <button
-              v-if="roleAllowed('users', 'delete', props.row.username)"
               class="button is-light is-small"
               :aria-label="`Delete user ${props.row.username}`"
               @click="deleteUser(props.row.username)">
@@ -278,13 +329,13 @@
             </button>
           </b-tooltip>
           <b-tooltip
+            v-if="roleAllowed('users', 'patch', props.row.username)"
             class="action"
             :delay="500"
             label="edit user"
             type="is-light"
             multilined>
             <button
-              v-if="roleAllowed('users', 'patch', props.row.username)"
               class="button is-light is-small"
               :aria-label="`Edit user ${props.row.username}`"
               @click="editUser(props.row.username)">
@@ -293,18 +344,6 @@
           </b-tooltip>
         </b-table-column>
       </b-table>
-      <br />
-      <b-field v-if="paginationNeeded" grouped position="is-right">
-        <div class="control is-flex">
-          <b-switch
-            v-model="table.isPaginated"
-            size="is-small"
-            type="is-light"
-            @input="changePaginate()"
-            >Paginate</b-switch
-          >
-        </div>
-      </b-field>
     </div>
     <b-loading
       :is-full-page="false"
@@ -321,37 +360,65 @@
   import { useTable } from '@/utils/useTable.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { useErrorNotification } from '@/utils/errorNotif';
+  import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
+  import { pageFetchers } from '@/utils/pageData.js';
+
+  // Resource names are typed space-separated and sent as a list.
+  function splitResourceNames(names) {
+    return (names ?? '').split(/\s+/).filter(Boolean);
+  }
 
   export default {
     setup() {
-      return { ...useTable(), roleAllowed };
+      return { ...useTable({ name: 'users' }), roleAllowed };
     },
     beforeUnmount() {
       removeWsHandler(this.handleWs);
+      this.loader.stop();
     },
     async created() {
       addWsHandler(this.handleWs);
-      this.updateUsers();
+      this.loader = createPageLoader({
+        key: 'users',
+        fetch: pageFetchers.users,
+        apply: ({ users, roleNames }) => {
+          this.users = users;
+          this.roleNames = roleNames;
+          this.loaded = true;
+        },
+      });
+      this.loader.start();
       this.getPasswordRequirements();
     },
     computed: {
-      // Intentionally restores the persisted pagination toggle as a side
-      // effect on first access.
-      /* eslint-disable vue/no-side-effects-in-computed-properties */
-      paginationNeeded() {
-        this.restorePaginate();
-
-        if (this.users.length <= 10) {
-          this.table.isPaginated = false;
-          return false;
-        } else {
-          return true;
+      filteredUsers() {
+        const text = this.searchText.trim().toLowerCase();
+        if (!text) {
+          return this.users;
         }
+
+        return this.users.filter((u) =>
+          [u.username, u.first_name, u.last_name, u.role_name].some((v) =>
+            v?.toLowerCase().includes(text),
+          ),
+        );
       },
-      /* eslint-enable vue/no-side-effects-in-computed-properties */
+      paginationNeeded() {
+        return this.filteredUsers.length > this.table.perPage;
+      },
+    },
+    watch: {
+      searchText() {
+        this.table.currentPage = 1;
+      },
+      'user.username'() {
+        this.userExists = false;
+      },
     },
 
     methods: {
+      loadingText,
+
       handleWs(msg) {
         // We only care about publishes pertaining to a user resource.
         if (msg.resource.type != 'user') {
@@ -364,8 +431,11 @@
           case 'create': {
             let user = msg.result;
 
-            user.resource_names = user.resource_names.join(' ');
-            user.role_name = user.role.name;
+            if (users.some((u) => u.username == user.username)) {
+              break;
+            }
+
+            user.role_name = user.role?.name;
             users.push(user);
 
             this.users = [...users];
@@ -383,10 +453,7 @@
               if (users[i].username == msg.resource.name) {
                 let user = msg.result;
 
-                user.resource_names =
-                  user.resource_names === null
-                    ? null
-                    : user.resource_names.join(' ');
+                user.role_name = user.role?.name;
                 users[i] = user;
 
                 break;
@@ -422,36 +489,6 @@
           }
         }
       },
-      updateUsers() {
-        axiosInstance
-          .get('users')
-          .then((response) => {
-            var state = response.data;
-            state.users.forEach((u) => (u.role_name = u.role.name));
-            this.users = state.users;
-            this.isWaiting = false;
-          })
-          .catch((err) => {
-            useErrorNotification(err);
-            this.isWaiting = false;
-          });
-
-        // this is only used when creating/editing a user for the role dropdown
-        if (roleAllowed('roles', 'list')) {
-          axiosInstance
-            .get('roles')
-            .then((response) => {
-              const state = response.data;
-              this.roleNames = state.roles.map((r) => r.name);
-              this.isWaiting = false;
-            })
-            .catch((err) => {
-              useErrorNotification(err);
-              this.isWaiting = false;
-            });
-        }
-      },
-
       createUser() {
         for (let i = 0; i < this.users.length; i++) {
           if (this.users[i].username == this.user.username) {
@@ -530,8 +567,6 @@
           return;
         }
 
-        delete this.user.confirmPassword;
-
         if (!this.user.role_name) {
           this.$buefy.toast.open({
             message: 'You must select a role',
@@ -542,14 +577,14 @@
           return;
         }
 
-        if (this.user.resource_names) {
-          this.user.resource_names = this.user.resource_names.split(' ');
-        }
+        // send a copy, so a failed request leaves the form as it was
+        const { confirmPassword: _, ...user } = this.user;
+        user.resource_names = splitResourceNames(user.resource_names);
 
         this.isWaiting = true;
 
         axiosInstance
-          .post('users', this.user)
+          .post('users', user)
           .then((_) => {
             this.isWaiting = false;
             this.resetLocalUser();
@@ -561,14 +596,16 @@
           });
       },
       editUser(username) {
-        for (let i = 0; i < this.users.length; i++) {
-          if (this.users[i].username == username) {
-            this.user = this.users[i];
-            break;
-          }
+        const row = this.users.find((u) => u.username == username);
+        if (!row) {
+          return;
         }
 
-        this.user.resource_names = uniq(this.user.resource_names).join(' ');
+        // edit a copy, so closing the dialog without saving changes nothing
+        this.user = {
+          ...row,
+          resource_names: uniq(row.resource_names ?? []).join(' '),
+        };
 
         this.isEditActive = true;
       },
@@ -593,39 +630,27 @@
           return;
         }
 
-        delete this.user.id;
+        const { id: _, ...user } = this.user;
+        user.resource_names = splitResourceNames(user.resource_names);
 
-        let user = this.user;
-
-        user.resource_names = user.resource_names.split(' ');
-
-        this.isEditActive = false;
         this.isWaiting = true;
 
+        // the dialog stays open until the change is saved, so a rejected
+        // change can be corrected rather than typed again
         axiosInstance
           .patch('users/' + user.username, user)
-          .then((_) => {
+          .then(() => {
             delete user.password;
             delete user.new_password;
 
-            let users = this.users;
-
-            for (let i = 0; i < users.length; i++) {
-              if (users[i].username == user.username) {
-                users[i] = user;
-                break;
-              }
-            }
-
-            this.users = [...users];
-            this.isWaiting = false;
+            this.users = this.users.map((u) =>
+              u.username == user.username ? { ...u, ...user } : u,
+            );
+            this.isEditActive = false;
+            this.resetLocalUser();
           })
-          .catch((err) => {
-            useErrorNotification(err);
-            this.isWaiting = false;
-          });
-
-        this.resetLocalUser();
+          .catch((err) => useErrorNotification(err))
+          .finally(() => (this.isWaiting = false));
       },
 
       deleteUser(username) {
@@ -669,6 +694,7 @@
               })
               .catch((err) => {
                 useErrorNotification(err);
+                this.isWaiting = false;
               });
           },
         });
@@ -724,6 +750,7 @@
 
       resetLocalUser() {
         this.user = {};
+        this.userExists = false;
       },
       check_password_validity() {
         const password = this.user.password;
@@ -741,31 +768,31 @@
             'Password must be longer than ' +
             this.passwordReqs.min_length +
             ' characters.';
-          this.createModalErrors.passwordErrorLevel = 'is-dangeer';
+          this.createModalErrors.passwordErrorLevel = 'is-danger';
           return false;
         }
         if (!/[a-z]/.test(password) && this.passwordReqs.lowercase_req) {
           this.createModalErrors.passwordErrorMessage =
             'Password must contain a lowercase letter';
-          this.createModalErrors.passwordErrorLevel = 'is-dangeer';
+          this.createModalErrors.passwordErrorLevel = 'is-danger';
           return false;
         }
         if (!/[A-Z]/.test(password) && this.passwordReqs.uppercase_req) {
           this.createModalErrors.passwordErrorMessage =
             'Password must contain an uppercase letter';
-          this.createModalErrors.passwordErrorLevel = 'is-dangeer';
+          this.createModalErrors.passwordErrorLevel = 'is-danger';
           return false;
         }
         if (!/\d/.test(password) && this.passwordReqs.number_req) {
           this.createModalErrors.passwordErrorMessage =
             'Password must contain a number';
-          this.createModalErrors.passwordErrorLevel = 'is-dangeer';
+          this.createModalErrors.passwordErrorLevel = 'is-danger';
           return false;
         }
         if (!/\W/.test(password) && this.passwordReqs.symbol_req) {
           this.createModalErrors.passwordErrorMessage =
             'Password must contain a symbol';
-          this.createModalErrors.passwordErrorLevel = 'is-dangeer';
+          this.createModalErrors.passwordErrorLevel = 'is-danger';
           return false;
         }
 
@@ -784,13 +811,15 @@
       return {
         roleNames: [],
         users: [],
+        searchText: '',
+        loaded: false,
         user: {},
         userExists: false,
         isCreateActive: false,
         isEditActive: false,
         isNewTokenActive: false,
         isProxyTokenCopied: false,
-        isWaiting: true,
+        isWaiting: false, // set while a change is being saved
 
         passwordReqs: {
           number_req: false,

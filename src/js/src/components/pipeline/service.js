@@ -1,4 +1,3 @@
-// const data = require('./data.js')
 import { EdgeService } from '@/components/pipeline/line.js';
 
 class Pipeline {
@@ -155,7 +154,6 @@ class Pipeline {
         while (this.matrix[starty][startx]) {
           starty++;
         }
-        // starty-=1;
         list.forEach((it) => {
           this.matrix[starty][startx++] = it;
           this.solvedList[it] = true;
@@ -178,26 +176,6 @@ class Pipeline {
           );
         }
       }
-    }
-  }
-
-  /**
-   * 优化节点的位置,使其在x轴上左右居中,线的处理上还有bug
-   */
-  optimize() {
-    for (let i = 0; i < this.nodes.length; i++) {
-      let node = this.nodes[i];
-      if (node.y == this.starty) {
-        // 第一行不变
-        continue;
-      }
-      let parents = this.findParents(i);
-      let children = this.findChildren(i);
-      console.log(parents, children);
-      let startx = Math.max(...parents.map((item) => this.nodes[item].x));
-      let endx = Math.min(...children.map((item) => this.nodes[item].x));
-      node.x = (startx + endx) / 2;
-      this.nodes[i] = node;
     }
   }
 
@@ -295,35 +273,6 @@ class Pipeline {
       }
     }
     return [index].concat(arr);
-  }
-
-  /**
-   * 从第{index}个节点出发，深度优先搜索图
-   * @param {*} nodes
-   * @param {*} index
-   */
-  dfs(index) {
-    const queue = [];
-    const visited = [];
-    const result = [];
-    visited[index] = true;
-    queue.push(index);
-
-    while (queue.length > 0) {
-      let first = queue.pop();
-      visited[first] = true;
-      console.log(first);
-      result.push(first);
-      let children = this.findChildren(first);
-      for (let i = 0; i < children.length; i++) {
-        let j = children[i];
-        if (!visited[j]) {
-          queue.push(j);
-          visited[j] = true;
-        }
-      }
-    }
-    return result;
   }
 }
 

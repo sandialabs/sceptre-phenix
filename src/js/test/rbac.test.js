@@ -1,88 +1,90 @@
-// mirrors role_test.go
+// Which resources and resource names a role's policies allow; mirrors
+// role_test.go.
 import { roleAllowed } from '@/utils/rbac.js';
-import { test, expect, vi } from 'vitest';
+import { usePhenixStore } from '@/store.js';
+import { beforeEach, test, expect, vi } from 'vitest';
 
-vi.mock('@/store.js', () => {
-  return {
-    usePhenixStore: vi.fn().mockReturnValue({
-      role: {
-        name: 'Test Role',
-        policies: [
-          {
-            resources: ['experiments'],
-            resourceNames: ['*', '*/*'],
-            verbs: ['get'],
-          },
-          {
-            resources: ['experiments/start'],
-            resourceNames: ['*', '*/*'],
-            verbs: ['update'],
-          },
-          {
-            resources: ['experiments'],
-            resourceNames: ['exp1'],
-            verbs: ['delete'],
-          },
-          {
-            resources: ['*'],
-            resourceNames: ['vm1'],
-            verbs: ['patch'],
-          },
-          {
-            resources: ['vms'],
-            resourceNames: ['*'],
-            verbs: ['delete'],
-          },
-          {
-            resources: ['vms'],
-            resourceNames: ['expA/*'],
-            verbs: ['update'],
-          },
-          {
-            resources: ['vms'],
-            resourceNames: ['*/vm1'],
-            verbs: ['create'],
-          },
-          {
-            resources: ['vms'],
-            resourceNames: ['*/*'],
-            verbs: ['get'],
-          },
-          {
-            resources: ['vms'],
-            resourceNames: ['**'],
-            verbs: ['list'],
-          },
-          {
-            resources: ['vms'],
-            resourceNames: ['{expA,expB}/*'],
-            verbs: ['post'],
-          },
-          {
-            resources: ['vms/start'],
-            resourceNames: ['expA/*', '!expA/secret'],
-            verbs: ['update'],
-          },
-          {
-            resources: ['**'],
-            resourceNames: ['*'],
-            verbs: ['watch'],
-          },
-          {
-            resources: ['things'],
-            resourceNames: ['*', '!thing1'],
-            verbs: ['*'],
-          },
-          {
-            resources: ['items'],
-            resourceNames: ['item*'],
-            verbs: ['*'],
-          },
-        ],
+vi.mock('@/store.js', () => ({ usePhenixStore: vi.fn() }));
+
+const signIn = (role) => usePhenixStore.mockReturnValue({ role });
+
+beforeEach(() =>
+  signIn({
+    name: 'Test Role',
+    policies: [
+      {
+        resources: ['experiments'],
+        resourceNames: ['*', '*/*'],
+        verbs: ['get'],
       },
-    }),
-  };
-});
+      {
+        resources: ['experiments/start'],
+        resourceNames: ['*', '*/*'],
+        verbs: ['update'],
+      },
+      {
+        resources: ['experiments'],
+        resourceNames: ['exp1'],
+        verbs: ['delete'],
+      },
+      {
+        resources: ['*'],
+        resourceNames: ['vm1'],
+        verbs: ['patch'],
+      },
+      {
+        resources: ['vms'],
+        resourceNames: ['*'],
+        verbs: ['delete'],
+      },
+      {
+        resources: ['vms'],
+        resourceNames: ['expA/*'],
+        verbs: ['update'],
+      },
+      {
+        resources: ['vms'],
+        resourceNames: ['*/vm1'],
+        verbs: ['create'],
+      },
+      {
+        resources: ['vms'],
+        resourceNames: ['*/*'],
+        verbs: ['get'],
+      },
+      {
+        resources: ['vms'],
+        resourceNames: ['**'],
+        verbs: ['list'],
+      },
+      {
+        resources: ['vms'],
+        resourceNames: ['{expA,expB}/*'],
+        verbs: ['post'],
+      },
+      {
+        resources: ['vms/start'],
+        resourceNames: ['expA/*', '!expA/secret'],
+        verbs: ['update'],
+      },
+      {
+        resources: ['**'],
+        resourceNames: ['*'],
+        verbs: ['watch'],
+      },
+      {
+        resources: ['things'],
+        resourceNames: ['*', '!thing1'],
+        verbs: ['*'],
+      },
+      {
+        resources: ['items'],
+        resourceNames: ['item*'],
+        verbs: ['*'],
+      },
+    ],
+  }),
+);
 
 test('get any experiment', () => {
   expect(roleAllowed('experiments', 'get', 'expA')).toBe(true);
@@ -174,4 +176,31 @@ test('resourceName mid-wildcard', () => {
   expect(roleAllowed('items', 'delete', 'item')).toBe(true);
   expect(roleAllowed('items', 'delete', 'item1')).toBe(true);
   expect(roleAllowed('items', 'delete', 'thing')).toBe(false);
+});
+
+test('allows nothing when no one is signed in', () => {
+  signIn(null);
+  expect(roleAllowed('experiments', 'get', 'expA')).toBe(false);
+  expect(roleAllowed('vms', 'watch')).toBe(false);
+});
+
+test('an empty resourceName is never allowed', () => {
+  expect(roleAllowed('experiments', 'get', '')).toBe(false);
+  expect(roleAllowed('experiments', 'get', '', 'expA')).toBe(true);
+});
+
+test("answers from the signed-in role's own policies after a new sign in", () => {
+  const role = (resourceNames) => ({
+    name: 'Same Name',
+    policies: [{ resources: ['experiments'], resourceNames, verbs: ['get'] }],
+  });
+
+  signIn(role(['exp1']));
+  expect(roleAllowed('experiments', 'get', 'exp1')).toBe(true);
+  expect(roleAllowed('experiments', 'get', 'exp2')).toBe(false);
+
+  // a role of the same name with other policies
+  signIn(role(['exp2']));
+  expect(roleAllowed('experiments', 'get', 'exp1')).toBe(false);
+  expect(roleAllowed('experiments', 'get', 'exp2')).toBe(true);
 });

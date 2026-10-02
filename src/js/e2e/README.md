@@ -11,16 +11,29 @@ a CI-built binary, a container, or a full range node.
 | `routes.spec.js`               | just a running server (empty store is fine)                           | yes                              |
 | `forms.spec.js`                | just a running server                                                 | yes                              |
 | `builder.spec.js`              | just a running server                                                 | yes                              |
+| `performance.spec.js`          | just a running server                                                 | yes                              |
+| `experiments.spec.js`          | just a running server                                                 | yes                              |
+| `navbar.spec.js`               | just a running server                                                 | yes                              |
+| `tables.spec.js`               | just a running server                                                 | yes                              |
 | `experiment-lifecycle.spec.js` | minimega, VM images, a topology                                       | opt-in (`E2E_LIFECYCLE=1`)       |
 | `auth-enabled.spec.js`         | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`         | opt-in (`E2E_AUTH_MODE=enabled`) |
 | `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt` | opt-in (`E2E_AUTH_MODE=proxy`)   |
 
 CI (`.github/workflows/frontend.yml`) builds the UI with `VITE_AUTH=disabled`,
 starts `bin/phenix ui` against a throw-away store, and runs the default set.
+Specs that need data (a topology, experiments, configs) set it up through the
+REST API and remove what they made afterwards. Their experiments are never
+started, so they need no minimega.
 Every route in `routes.spec.js` is also scanned with axe-core (WCAG 2.x A/AA
-rule tags) as rendered against the empty store and fails on any violation.
-Content that only appears with data (table rows, modals, notifications) is
-not covered; the full axe report is attached to each test result.
+rule tags) as rendered against the empty store, and the Disks page and its
+details window once more with images in folders and outside the files directory.
+`experiments.spec.js` scans the pages it fills with data: the experiment list, a
+stopped experiment's page with a VM selected, its VM info modal and Files tab,
+and the create experiment modal with Advanced Options open. The server has no
+disk images, so these two specs stand in for its disk list (`GET /api/v1/disks`)
+with `page.route`. Any violation fails the test, and the full axe report is
+attached to each test result. Content these scans don't reach, such as
+notifications and the running experiment page, is not covered.
 
 ## Running locally
 

@@ -7,6 +7,8 @@ on:
       - 'examples/**'
       - '.github/workflows/examples.yml'
   pull_request:
+    # closed: only to cancel this PR's runs (see concurrency); jobs skip it
+    types: [opened, synchronize, reopened, closed]
     paths:
       - 'examples/**'
       - '.github/workflows/examples.yml'
@@ -26,6 +28,7 @@ env:
 
 jobs:
   check-go-example:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,6 +45,7 @@ jobs:
         run: make example-go
 
   check-python-example:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

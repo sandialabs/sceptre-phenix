@@ -52,21 +52,45 @@
         Once a local port is activated, either automatically or manually, users
         can connect to the local port with the appropriate application and
         traffic will be forwarded through the phēnix UI server to the VM.
+
+        <br />
+        <br />
+
+        See the
+        <a :href="docsPage('tunneler')" target="_blank" rel="noopener"
+          >Tunneler documentation</a
+        >
+        for more.
       </p>
     </div>
     <hr />
-    <b-table :data="data">
-      <b-table-column field="name" label="OS" v-slot="props">
-        {{ props.row.name }}
+    <p v-if="notInstalled">
+      Tunneler downloads are not installed on this phēnix server.
+    </p>
+    <b-table v-else :data="downloads">
+      <template #empty>
+        <div class="has-text-centered">
+          {{
+            failed
+              ? 'Could not list the tunneler downloads'
+              : loaded
+                ? 'No tunneler builds are installed on this server'
+                : 'Loading downloads…'
+          }}
+        </div>
+      </template>
+      <b-table-column label="OS" v-slot="props">
+        {{ props.row.os }}
       </b-table-column>
-      <b-table-column field="arch" label="Architecture" v-slot="props">
+      <b-table-column label="Architecture" v-slot="props">
         {{ props.row.arch }}
       </b-table-column>
-      <b-table-column field="link" label="Download" centered v-slot="props">
+      <b-table-column label="Download" centered v-slot="props">
         <a
           :href="props.row.link"
-          target="_blank"
-          :aria-label="`Download phenix-tunneler for ${props.row.name} ${props.row.arch} (opens in new tab)`">
+          download
+          :aria-label="`Download ${props.row.file}`"
+          :title="props.row.file">
           <b-icon icon="file-download" size="is-small"></b-icon>
         </a>
       </b-table-column>
@@ -75,31 +99,54 @@
 </template>
 
 <script>
+  import { docsPage } from '@/utils/docs.js';
+
+  // how the builds the server may offer are named on the page
+  const BUILDS = {
+    'phenix-tunneler-linux-amd64': { os: 'Linux', arch: 'amd64' },
+    'phenix-tunneler-darwin-arm64': { os: 'MacOS', arch: 'arm64' },
+    'phenix-tunneler-darwin-amd64': { os: 'MacOS', arch: 'amd64' },
+    'phenix-tunneler-windows-amd64.exe': { os: 'Windows', arch: 'amd64' },
+  };
+
+  const downloadsPath = `${import.meta.env.BASE_URL}downloads/tunneler`;
+
   export default {
+    setup() {
+      return { docsPage };
+    },
+
+    async created() {
+      // only the builds actually installed, so no link leads to a 404
+      try {
+        const resp = await fetch(downloadsPath);
+        // without downloads the server has no such route, and answers with
+        // the app's own page
+        if (!resp.headers.get('content-type')?.includes('application/json')) {
+          this.notInstalled = resp.ok || resp.status === 404;
+          if (!this.notInstalled) this.failed = true;
+          return;
+        }
+        const { files } = await resp.json();
+        this.downloads = (files ?? []).map((file) => ({
+          file,
+          os: BUILDS[file]?.os ?? file,
+          arch: BUILDS[file]?.arch ?? '',
+          link: `${downloadsPath}/${encodeURIComponent(file)}`,
+        }));
+      } catch {
+        this.failed = true;
+      } finally {
+        this.loaded = true;
+      }
+    },
+
     data() {
       return {
-        data: [
-          {
-            name: 'Linux',
-            arch: 'amd64',
-            link: this.$router.resolve({ name: 'linux-tunneler' }).href,
-          },
-          {
-            name: 'MacOS',
-            arch: 'arm64',
-            link: this.$router.resolve({ name: 'macos-arm-tunneler' }).href,
-          },
-          {
-            name: 'MacOS',
-            arch: 'amd64',
-            link: this.$router.resolve({ name: 'macos-intel-tunneler' }).href,
-          },
-          {
-            name: 'Windows',
-            arch: 'amd64',
-            link: this.$router.resolve({ name: 'windows-tunneler' }).href,
-          },
-        ],
+        downloads: [],
+        loaded: false,
+        failed: false,
+        notInstalled: false,
       };
     },
   };

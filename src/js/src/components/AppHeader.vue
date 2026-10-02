@@ -2,8 +2,7 @@
 The header component is available on all views based on the 
 App.vue component. The available routable links are available 
 based on whether the user is logged in and furthermore based on 
-their role. Based on the current limitations per user role, these 
-are only available to Global Administrator or Global Viewer.
+what their role allows.
  -->
 <template>
   <b-navbar class="mb-4">
@@ -44,7 +43,7 @@ are only available to Global Administrator or Global Viewer.
         >Users</b-navbar-item
       >
       <b-navbar-item
-        v-if="auth && roleAllowed('logs', 'list')"
+        v-if="auth && roleAllowed('logs', 'get')"
         tag="router-link"
         :to="{ name: 'log' }"
         >Logs</b-navbar-item
@@ -57,6 +56,12 @@ are only available to Global Administrator or Global Viewer.
       >
       <b-navbar-item
         v-if="auth && roleAllowed('experiments', 'list')"
+        tag="router-link"
+        :to="{ name: 'sohoverview' }"
+        >State of Health</b-navbar-item
+      >
+      <b-navbar-item
+        v-if="auth && roleAllowed('configs', 'list')"
         tag="a"
         :href="builderLoc()"
         target="_blank"
@@ -70,13 +75,19 @@ are only available to Global Administrator or Global Viewer.
         >Console</b-navbar-item
       >
       <b-navbar-item
+        v-if="auth && webshark"
+        tag="router-link"
+        :to="{ name: 'webshark' }"
+        >WebShark</b-navbar-item
+      >
+      <b-navbar-item
         v-if="auth && tunneler"
         tag="router-link"
         :to="{ name: 'tunneler' }">
         Tunneler
       </b-navbar-item>
       <b-navbar-item
-        v-if="auth && roleAllowed('settings', 'edit')"
+        v-if="auth && roleAllowed('settings', 'update')"
         tag="router-link"
         :to="{ name: 'settings' }"
         >Settings</b-navbar-item
@@ -84,6 +95,9 @@ are only available to Global Administrator or Global Viewer.
     </template>
 
     <template #end>
+      <b-navbar-item v-if="auth" tag="div">
+        <refresh-status></refresh-status>
+      </b-navbar-item>
       <b-navbar-item v-if="proxyAuth" class="navbar-item" @click="logout"
         >Reauthorize
       </b-navbar-item>
@@ -97,17 +111,21 @@ are only available to Global Administrator or Global Viewer.
 <script>
   import { usePhenixStore } from '@/store.js';
   import { roleAllowed } from '@/utils/rbac.js';
+  import { canUseWebShark, webSharkInstalled } from '@/utils/webshark.js';
   import axiosInstance from '@/utils/axios.js';
+  import { endConsole } from '@/utils/consoleSession.js';
+  import RefreshStatus from '@/components/RefreshStatus.vue';
 
   export default {
+    components: { RefreshStatus },
     setup() {
       return { roleAllowed };
     },
-    //  The computed elements determine if the user is already logged
-    //  in; if so, the routable links are available. If not, the sign
-    //  in routable link is the only one available. The role getter
-    //  determines what the role of the user is; this is used to present
-    //  routable links in the header row.
+    //  The computed elements decide what the header shows: every link
+    //  but Experiments waits for the user to log in, a Disabled role gets
+    //  no Users link, an authenticating proxy gets Reauthorize rather than
+    //  Logout, and Tunneler and WebShark show only when the server offers
+    //  them (WebShark also needs a role that can open captures).
     computed: {
       auth() {
         const phenixStore = usePhenixStore();
@@ -124,12 +142,17 @@ are only available to Global Administrator or Global Viewer.
       tunneler() {
         return usePhenixStore().features.includes('tunneler-download');
       },
+
+      webshark() {
+        return webSharkInstalled(usePhenixStore().features) && canUseWebShark();
+      },
     },
 
     methods: {
-      //  These methods are used to logout a user; or, present
-      //  routable link based on a Global user role.
-      logout() {
+      async logout() {
+        // end the console first, while the token still allows it
+        await endConsole();
+
         axiosInstance.get('logout').then((response) => {
           if (response.status == 204) {
             usePhenixStore().logout();

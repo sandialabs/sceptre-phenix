@@ -87,6 +87,41 @@ func ErrorResponse(responses chan *miniclient.Response) error {
 	return errs
 }
 
+// vmNotFoundPrefix starts minimega's error for a VM a node doesn't have.
+const vmNotFoundPrefix = "vm not found: "
+
+// VMTargetErrorResponse is ErrorResponse for a command naming one VM that
+// minimega runs on every node in the namespace (such as `vm flush <vm>` or `cc
+// tunnel <vm> ...`). The nodes not running the VM answer "vm not found", so, as
+// minimega itself does for its VM-target commands, those errors are dropped
+// once any node has answered without an error. They are returned only when no
+// node succeeded and nothing else went wrong.
+func VMTargetErrorResponse(responses chan *miniclient.Response) error {
+	var (
+		errs, notFound error
+		ok             bool
+	)
+
+	for response := range responses {
+		for _, resp := range response.Resp {
+			switch {
+			case resp.Error == "":
+				ok = true
+			case strings.HasPrefix(resp.Error, vmNotFoundPrefix):
+				notFound = multierror.Append(notFound, reconstructErr(resp.Error))
+			default:
+				errs = multierror.Append(errs, reconstructErr(resp.Error))
+			}
+		}
+	}
+
+	if errs == nil && !ok {
+		return notFound
+	}
+
+	return errs
+}
+
 // SingleResponse is used when only a single response (or error) is expected to
 // be returned from a call to minimega. It returns the first non-error response
 // and the last error encountered (if no non-error responses were encountered).
@@ -264,13 +299,25 @@ func guard(
 // shared connection if it was disconnected. Any errors encountered will be
 // returned as part of the response channel, which the caller must drain.
 func Run(c *Command) chan *miniclient.Response {
+	return RunStarted(c, nil)
+}
+
+// RunStarted is Run, calling started (if not nil) just before the command is
+// sent, once it is no longer waiting behind other commands for the shared
+// connection. started may run with the shared connection's lock held, so it
+// must be quick and must not run minimega commands itself.
+func RunStarted(c *Command, started func()) chan *miniclient.Response {
 	cmdStr := c.String()
 
 	if c.Timeout > 0 {
-		return runWithTimeout(cmdStr, c.Timeout)
+		notify(started)
+
+		return runPrivate(cmdStr, c.Timeout)
 	}
 
 	mu.Lock()
+
+	notify(started)
 
 	active, err := conn()
 	if err != nil {
@@ -284,11 +331,27 @@ func Run(c *Command) chan *miniclient.Response {
 	return guard(active, active.Run(cmdStr), mu.Unlock)
 }
 
-// runWithTimeout runs a command on a connection of its own, so that abandoning
-// it on timeout cannot disturb commands in flight on the shared connection.
+// RunDedicated runs the given command on a connection of its own, with no
+// timeout unless c.Timeout is set. It is for long-running commands (such as
+// reading an experiment's script or launching its VMs) that would otherwise
+// hold the shared connection, and so every other command, for their whole
+// duration. Callers MUST drain the returned channel, as with Run.
+func RunDedicated(c *Command) chan *miniclient.Response {
+	return runPrivate(c.String(), c.Timeout)
+}
+
+func notify(started func()) {
+	if started != nil {
+		started()
+	}
+}
+
+// runPrivate runs a command on a connection of its own, so that abandoning it
+// on timeout cannot disturb commands in flight on the shared connection. A
+// timeout of zero or less waits for the command however long it takes.
 //
 // Callers MUST drain the returned channel, as with guard.
-func runWithTimeout(cmdStr string, timeout time.Duration) chan *miniclient.Response {
+func runPrivate(cmdStr string, timeout time.Duration) chan *miniclient.Response {
 	private, err := miniclient.Dial(common.MinimegaBase)
 	if err != nil {
 		return wrapErr(fmt.Errorf("unable to dial: %w", err))
@@ -302,9 +365,13 @@ func runWithTimeout(cmdStr string, timeout time.Duration) chan *miniclient.Respo
 
 		var (
 			in    = private.Run(cmdStr)
-			after = time.After(timeout)
+			after <-chan time.Time // nil (never fires) without a timeout
 			count int
 		)
+
+		if timeout > 0 {
+			after = time.After(timeout)
+		}
 
 		for {
 			select {
