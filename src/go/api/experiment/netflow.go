@@ -262,8 +262,8 @@ func parseNetflowLine(line string) (map[string]any, bool) {
 		return nil, false
 	}
 
-	srcHost, srcPortText, err := net.SplitHostPort(fields[3])
-	if err != nil || net.ParseIP(srcHost) == nil {
+	srcHost, srcPortText, ok := splitAddr(fields[3])
+	if !ok || net.ParseIP(srcHost) == nil {
 		return nil, false
 	}
 	srcPort, err := strconv.Atoi(srcPortText)
@@ -271,8 +271,8 @@ func parseNetflowLine(line string) (map[string]any, bool) {
 		return nil, false
 	}
 
-	dstHost, dstPortText, err := net.SplitHostPort(fields[5])
-	if err != nil || net.ParseIP(dstHost) == nil {
+	dstHost, dstPortText, ok := splitAddr(fields[5])
+	if !ok || net.ParseIP(dstHost) == nil {
 		return nil, false
 	}
 	dstPort, err := strconv.Atoi(dstPortText)
@@ -298,6 +298,22 @@ func parseNetflowLine(line string) (map[string]any, bool) {
 		"packets": packets,
 		"bytes":   bytes,
 	}, true
+}
+
+// splitAddr splits a netflow address into host and port. It accepts the
+// bracketed form ("[2001:db8::1]:53") and, falling back to the last colon,
+// an unbracketed IPv6 host ("fe80::1:22") so the host keeps its colons.
+func splitAddr(addr string) (string, string, bool) {
+	if host, port, err := net.SplitHostPort(addr); err == nil {
+		return host, port, true
+	}
+
+	i := strings.LastIndex(addr, ":")
+	if i < 0 {
+		return "", "", false
+	}
+
+	return addr[:i], addr[i+1:], true
 }
 
 func StopNetflow(exp string) error {

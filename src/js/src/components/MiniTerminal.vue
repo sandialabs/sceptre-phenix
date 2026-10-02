@@ -3,6 +3,9 @@
 </template>
 
 <script>
+  import { markRaw } from 'vue';
+  import { debounce } from 'lodash-es';
+
   import axiosInstance from '@/utils/axios.js';
   import { usePhenixStore } from '@/store.js';
 
@@ -29,15 +32,26 @@
       },
     },
 
+    created() {
+      this.handleResize = debounce(this.handleResize, 100);
+    },
+
     beforeUnmount() {
       window.removeEventListener('resize', this.handleResize);
+      this.handleResize.cancel();
       this.teardownSocket();
+      if (this.term) {
+        this.term.dispose();
+        this.term = null;
+      }
     },
 
     mounted() {
-      const term = new Terminal();
+      // xterm objects are markRaw: deep reactive proxies around their
+      // internals only add overhead to every write
+      const term = markRaw(new Terminal());
 
-      this.fit = new FitAddon();
+      this.fit = markRaw(new FitAddon());
       term.loadAddon(this.fit);
 
       term.open(this.$refs.xterm);
@@ -49,7 +63,7 @@
           var url =
             this.resizePath + '?cols=' + size.cols + '&rows=' + size.rows;
           axiosInstance.post(url).catch((err) => {
-            console.log(err);
+            console.warn('failed to resize the terminal', err);
           });
         });
 
@@ -62,12 +76,12 @@
     },
     methods: {
       setupTerminal() {
-        this.socket = new WebSocket(this.getWsUrl());
+        this.socket = markRaw(new WebSocket(this.getWsUrl()));
 
         // the attach addon throws on input if it is loaded before the
         // socket is open, so wait for onopen to wire it up
         this.socket.onopen = () => {
-          this.attach = new AttachAddon(this.socket);
+          this.attach = markRaw(new AttachAddon(this.socket));
           this.term.loadAddon(this.attach);
 
           if (this.resizePath !== undefined) {

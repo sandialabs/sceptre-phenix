@@ -83,6 +83,9 @@ type pipeline struct {
 	Pipeline []*node   `json:"pipeline"`
 	Loop     *pipeline `json:"loop,omitempty"`
 	Name     string    `json:"name,omitempty"`
+	// whether the run (or, in a loop's pipeline, the loop) has cleanup
+	// components; a run's can be run on their own (see CleanupPipeline)
+	HasCleanup bool `json:"hasCleanup"`
 
 	exp    string
 	runID  int
@@ -443,6 +446,30 @@ func newPipeline(exp, name string, run, loop int) *pipeline {
 	}
 }
 
+// runLoop returns what configures one loop of a run: loop 0 is the run itself,
+// and each loop above it is the one nested in the loop below.
+func runLoop(runs []*scorchmd.Loop, run, loop int) (*scorchmd.Loop, error) {
+	if run < 0 || run >= len(runs) {
+		return nil, fmt.Errorf("run %d not configured", run)
+	}
+
+	if loop < 0 {
+		return nil, fmt.Errorf("loop %d not configured", loop)
+	}
+
+	exe := runs[run]
+
+	for i := 1; i <= loop; i++ {
+		if exe.Loop == nil {
+			return nil, fmt.Errorf("loop %d not configured", i)
+		}
+
+		exe = exe.Loop
+	}
+
+	return exe, nil
+}
+
 func getPipeline(name string, run, loop int) (*pipeline, error) {
 	if _, ok := pipelines[name]; ok {
 		if _, ok := pipelines[name][run]; ok {
@@ -462,20 +489,12 @@ func getPipeline(name string, run, loop int) (*pipeline, error) {
 		return nil, fmt.Errorf("unable to decode scorch metadata: %w", err)
 	}
 
-	var (
-		exe     = md.Runs[run]
-		runName = exe.Name
-	)
-
-	for i := 1; i <= loop; i++ {
-		if exe.Loop == nil {
-			return nil, fmt.Errorf("loop %d not configured", i)
-		}
-
-		exe = exe.Loop
+	exe, err := runLoop(md.Runs, run, loop)
+	if err != nil {
+		return nil, err
 	}
 
-	pl := newPipeline(name, runName, run, loop)
+	pl := newPipeline(name, md.Runs[run].Name, run, loop)
 
 	if len(exe.Configure) == 0 {
 		pl.addComponentToStage(stageConfigure, pl.start)
@@ -525,6 +544,7 @@ func getPipeline(name string, run, loop int) (*pipeline, error) {
 		}
 	}
 
+	pl.HasCleanup = len(exe.Cleanup) > 0
 	if len(exe.Cleanup) == 0 {
 		pl.addComponentToStage(stageCleanup, pl.done)
 	} else {
@@ -575,10 +595,16 @@ func updatePipeline(update PipelineUpdate) error {
 		}
 
 		for i := update.Loop - 1; i >= 0; i-- {
-			pl, _ := getPipeline(update.Exp, update.Run, i)
-			pl.setStageStatus(stageLoop, loopStat)
+			parent, err := getPipeline(update.Exp, update.Run, i)
+			if err != nil {
+				return fmt.Errorf(
+					"getting loop %d of pipeline %d for experiment %s: %w", i, update.Run, update.Exp, err,
+				)
+			}
 
-			broadcastPipeline(update.Exp, update.Run, i, pl)
+			parent.setStageStatus(stageLoop, loopStat)
+
+			broadcastPipeline(update.Exp, update.Run, i, parent)
 		}
 	}
 
@@ -672,12 +698,16 @@ func DeletePipeline(exp string, run, loop int, rebuild bool) {
 	}
 }
 
-func processPipelines() {
+// initPipelines creates the state processPipelines owns. Like initComponents,
+// it runs before the goroutine starts.
+func initPipelines() {
 	pipelines = make(map[string]map[int]map[int]*pipeline)
 	pipelineUpdates = make(chan PipelineUpdate)
 	pipelineRequests = make(chan pipelineRequest)
 	pipelineDeletes = make(chan pipelineDelete)
+}
 
+func processPipelines() {
 	for {
 		select {
 		case update := <-pipelineUpdates:

@@ -98,7 +98,7 @@
   export default {
     props: {
       vmName: String,
-      experiment: String,
+      experiment: { type: String, required: true },
       tags: Object,
     },
 
@@ -137,11 +137,7 @@
 
     methods: {
       canEdit() {
-        return roleAllowed(
-          'vms',
-          'patch',
-          this.$route.params.id + '/' + this.vmName,
-        );
+        return roleAllowed('vms', 'patch', this.experiment + '/' + this.vmName);
       },
       deleteTag(row) {
         this.workingTags = this.workingTags.filter((e) => e !== row);
@@ -194,18 +190,17 @@
         let update = { tag_update_mode: 'SET', tags: finalTags };
 
         if (isEqual(finalTags, this.tags)) {
-          console.log('No change made. Closing');
           this.$emit('close');
           return;
         }
 
         axiosInstance
           .patch(
-            'experiments/' + this.$route.params.id + '/vms/' + this.vmName,
+            'experiments/' + this.experiment + '/vms/' + this.vmName,
             update,
           )
           .then((response) => {
-            if (response.statusText === 'OK') {
+            if (response.status === 200) {
               this.$emit('saved');
               this.$emit('close');
             }

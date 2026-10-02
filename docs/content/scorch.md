@@ -293,32 +293,46 @@ The same resolved values are used across all stages (`configure`, `start`, `stop
 
 The Scorch table, accessible as one of the tab selections within the phēnix UI, lists all possible Scorch apps available based on the experiments established in phēnix. The following columns or functions are available:
 
-- Experiment name
-- Experiment status: this reports on the status of the experiment &mdash; an experiment must be running for a Scorch app to start
-- Scorch app status: this will report the running or stopped status of the Scorch app itself
-- Terminal: if the Scorch app has reached a break point, a terminal will be available &mdash; if clicked, a terminal dialog will be opened and is running on the phēnix host system
-- Find an Experiment: similar to the search fields in other tables within the phēnix UI, it is possible to filter experiment names based on terms entered here
+- `Experiment`: the experiment name, which is a link (tooltip `view SCORCH components`) to that experiment's Scorch runs
+- `Experiment Status`: this reports on the status of the experiment &mdash; an experiment must be running for a Scorch app to start. Beside the status are a button that starts or stops the experiment (its tooltip names the experiment, and starting or stopping is confirmed in a dialog first) and a `Go to experiment` button that opens the experiment itself. While an experiment starts, a progress bar takes the place of the status.
+- `Scorch Status`: this will report the running or stopped status of the Scorch app itself. Beside it are a button that starts or stops a run &mdash; its tooltip names the run it will start or stop, and it spins until the server reports that the run started or stopped &mdash; and a `Go to SCORCH pipelines` button that opens the experiment's runs.
+- `Terminal`: if the Scorch app has reached a break point, a terminal will be available &mdash; if clicked, a terminal dialog will be opened and is running on the phēnix host system. The button is only shown for experiments that actually have a Scorch terminal.
+- `Find an Experiment`: similar to the search fields in other tables within the phēnix UI, it is possible to filter experiment names based on terms entered here
 
-![Scorch Table](images/table.png)
+Each button is only shown if your role permits the action it takes. Column headings stay on one line with the sort arrow beside the heading, and the status and terminal buttons are centered in their columns.
+
+![Scorch Table](images/scorch_table.png)
 
 ## Scorch Pipeline
 
-Scorch pipelines are available on the [Scorch table](#scorch-table) in the phēnix UI. The table is sorted by Experiment name by default. Only those experiments with the Scorch app configured in the [scenario](configuration.md#scenario) configuration will be listed in the table. It is possible to _start_ or _stop_ an experiment, as well as _start_ or _stop_ a Scorch component. Finally, if a terminal is available when a break point is reached in a running Scorch app, it can be accessed from the table.
+Scorch pipelines are available on the [Scorch table](#scorch-table) in the phēnix UI. The table is sorted by Experiment name by default. Only those experiments with the Scorch app configured in the [scenario](configuration.md#scenario) configuration will be listed in the table. It is possible to _start_ or _stop_ an experiment, as well as _start_ or _stop_ a Scorch run. Finally, if a terminal is available when a break point is reached in a running Scorch app, it can be accessed from the table.
 
-The Scorch pipeline provides a graphical representation of the Scorch app, including the `configure`, `start`, `stop`, and `cleanup` stages. If the Scorch app provides output for a given step, or component, users can click into the component and receive the output.
+The Scorch pipeline provides a graphical representation of the Scorch app, including the `configure`, `start`, `stop`, and `cleanup` stages. If the Scorch app provides output for a given step, or component, users can click into the component and receive the output. The output window opens as soon as the component is clicked and shows a loading indicator until the output arrives.
 
 A user can access the terminal if a break point is reached by clicking on the component. As with the terminal access described above, a dialog will be presented with a terminal running on the phēnix host system.
 
 ![Scorch Pipeline](images/pipeline.png)
 
-The following functions are also available in the Scorch pipeline UI:
+### Runs Page
 
-- Return to the table: a button that will return to the Scorch table
-- Scorch app status: a button that will allow a running Scorch app to be stopped or started depending on the current status
+The page showing an experiment's pipelines is reached from the `Experiment` or `Go to SCORCH pipelines` links in the [Scorch table](#scorch-table), and from the fire button (tooltip `view scorch`) in a running experiment's button row. The following functions are available across the top of it:
 
-![Return to Scorch table](images/return.png){: width=200 .center}
+- `Back to SCORCH`: returns to the Scorch table
+- `Go to experiment`: opens the experiment the runs belong to
+- `Experiment:` followed by the experiment's name, in a box colored by the experiment's state: green while it is running, red while it is stopped, and yellow while it is starting or stopping. Its tooltip spells the state out, as in `The experiment is running`.
+- `Start all`: starts every run that is not already running or waiting to start. Its tooltip reads `Starts all defined runs in order one by one (not in parallel)`, because Scorch executes one run at a time per experiment; a run that is already executing finishes first.
+- `Stop all`: stops the run that is executing and drops the runs still waiting to start
+- `Clear all`: clears the status of every run that is not running
 
-![Stopped or Started button](images/status.png){: width=300 .center}
+Each run is shown below that with its own header: the title `Run:` followed by the run's name (or its number if the run has no name), and on the right a tag reading `running` or `stopped` with the run's own buttons:
+
+- `Clear` (tooltip `clear this run's status`): forgets the statuses of the run's components, for every loop, so its pipeline reads as never run. It is only enabled once the run is idle and has a status to clear, and it is only offered to users whose role may trigger Scorch runs.
+- `Cleanup` (tooltip `run only this run's cleanup stage`): executes just this run's `cleanup` stage, for example to tear down what a canceled run left behind. It is only shown for runs that define cleanup components, and is disabled while any run of the experiment is busy.
+- a start/stop button (tooltip `start this run` or `stop this run`) that spins until the server reports that the run started or stopped
+
+When you are viewing one of a run's loops, a button also appears to the left of the run's title that returns the display one level up in the loop chain, as described under [Stages](#stages).
+
+![SCORCH Runs Page](images/scorch_runs_page.png)
 
 ### Stages
 
@@ -338,6 +352,8 @@ It's completely up to the component developer if and how an execution stage is i
 
 ![Pipeline Stages](images/stages.png)
 
+The `cleanup` stage can also be executed on its own. `POST /experiments/{name}/scorch/pipelines/{run}/cleanup` runs only that run's top-level `cleanup` components, skipping `configure`, `start`, and `stop`, which is useful for tearing down what a canceled run left behind. It is the endpoint behind the `Cleanup` button on the [runs page](#runs-page), and it is rejected for a run that defines no cleanup components; `GET /experiments/{name}/scorch/pipelines` reports `hasCleanup` for each run so the UI only offers the button where it applies. `POST /experiments/{name}/scorch/pipelines/{run}/clear` is the endpoint behind the `Clear` and `Clear all` buttons: it forgets the component statuses of a run that is not executing, for every loop of that run, and is refused while the run is executing. Both require permission to create `experiments/trigger`, and `cleanup`, like starting a run, also requires permission to get the experiment.
+
 The following indicators are presented for each component of the Scorch app:
 
 - Uninitialized: a component has not yet been reached or initialized &mdash; if the component has not yet been run, all components will be identified as uninitialized
@@ -355,7 +371,9 @@ Loops are also available within a Scorch app and are included in the configurati
 
 In addition to loops, multi-run is supported within a Scorch app. Unlike loops, multi-run allows for individual Scorch runs containing four separate stages. They are not nested in each other but are independent runs. A use case for multi-run could be executing multiple independent portions of an experiment against a topology, in any order or executing a run multiple times. There are two runs depicted in the [configuration](#example-configuration) below.
 
-As described above, each component will provide a modal for output reporting. The output could either be a fairly straight forward report, nothing at all, or it include logging output for a given component in the stage. The result will be streamed as it is received if the component is currently in a running component. If the component has finished running, the output will be static.
+As described above, each component will provide a modal for output reporting. The output could either be a fairly straight forward report, nothing at all, or it include logging output for a given component in the stage. The result will be streamed as it is received if the component is currently in a running component. If the component has finished running, the output will be static. If a component has no output at all, the window closes again and says so.
+
+The output window is titled with the component's name, outlined on a line of its own, and beneath it are the `Experiment`, the `Run` (with the loop, when the output comes from one), the `Stage`, and the component's `Status`. The status is a tag that keeps up with the component while the window is open: `starting`, `running`, `running in background`, `completed`, `failed`, `unstable`, or `paused`.
 
 ![Output of Snort component](images/output.png)
 

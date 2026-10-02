@@ -54,6 +54,11 @@ func tabularToMapCols(columns []string) tabularToMapper {
 // be in tabular form. A slice of maps is returned, with each map representing a
 // row in the tabular response and each map key representing the column.
 func RunTabular(cmd *Command) []map[string]string {
+	return RunTabularStarted(cmd, nil)
+}
+
+// RunTabularStarted is RunTabular, calling started as RunStarted does.
+func RunTabularStarted(cmd *Command, started func()) []map[string]string {
 	// copy all fields in header order
 	mapper := tabularToMap
 
@@ -64,7 +69,7 @@ func RunTabular(cmd *Command) []map[string]string {
 
 	res := []map[string]string{}
 
-	for resps := range Run(cmd) {
+	for resps := range RunStarted(cmd, started) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
 				plog.Error(

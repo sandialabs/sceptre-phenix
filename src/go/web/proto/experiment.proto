@@ -29,6 +29,10 @@ message Experiment {
 	uint32 vm_count = 15 [json_name="vm_count"];
 
 	uint32 delayed_vms = 20 [json_name="delayed_vms"];
+
+	// launch progress from 0 to 1 while the experiment is starting; only
+	// experiment lists set it
+	double percent = 21;
 }
 
 message ExperimentList {
@@ -73,6 +77,11 @@ message CreateExperimentRequest {
 	string deploy_mode = 8 [json_name="deploy_mode"];
 	string default_bridge = 9 [json_name="default_bridge"];
 	bool use_gre_mesh = 10 [json_name="use_gre_mesh"];
+	// Added to every VM in the experiment's copy of the topology; a VM's own
+	// annotation for the same key wins.
+	map<string, google.protobuf.Value> node_annotations = 11 [json_name="node_annotations"];
+	// Added to the experiment's metadata annotations.
+	map<string, string> annotations = 12;
 }
 
 message SnapshotRequest {

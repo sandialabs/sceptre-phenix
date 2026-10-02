@@ -97,6 +97,7 @@ docker exec -it phenix phenix <command>
 
 ## 📚 Documentation
 
+* [**Using the Web UI**](web-ui.md): How the UI loads, refreshes, and presents data on every page.
 * [**Configuration**](configuration.md): Learn about Topologies, Scenarios, and Experiments.
 * [**Settings**](settings.md): Configure the phēnix daemon (logging, storage, UI).
 * [**Experiments**](experiments.md): Manage the lifecycle of your experiments.

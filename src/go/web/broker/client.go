@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -21,7 +23,6 @@ import (
 	"phenix/util/plog"
 	bt "phenix/web/broker/brokertypes"
 	"phenix/web/middleware"
-	"phenix/web/proto"
 	"phenix/web/rbac"
 	"phenix/web/util"
 )
@@ -31,18 +32,31 @@ var marshaler = protojson.MarshalOptions{EmitUnpopulated: true} //nolint:gocheck
 type vmScope struct {
 	exp  string
 	name string
+	// only running VMs are screenshotted; kept current by the VM messages sent
+	// to the client
+	running bool
+}
+
+// vmState is the state an experiment/vm message leaves a VM in.
+type vmState struct {
+	exp     string
+	name    string
+	running bool
 }
 
 const (
-	writeWait                   = 10 * time.Second
-	pongWait                    = 60 * time.Second
-	pingPeriodNumerator         = 9
-	pingPeriodDenominator       = 10
-	pingPeriod                  = (pongWait * pingPeriodNumerator) / pingPeriodDenominator
-	maxMsgSize                  = 2048
-	socketBufferSize            = 4096
-	publishChannelBuffer        = 256
-	screenshotTickerInterval    = 5 * time.Second
+	writeWait             = 10 * time.Second
+	pongWait              = 60 * time.Second
+	pingPeriodNumerator   = 9
+	pingPeriodDenominator = 10
+	pingPeriod            = (pongWait * pingPeriodNumerator) / pingPeriodDenominator
+	maxMsgSize            = 2048
+	socketBufferSize      = 4096
+	publishChannelBuffer  = 256
+	// just longer than the screenshot cache, so each round takes fresh
+	// screenshots while clients whose rounds fall within one cache life share
+	// them; every one is a minimega command, which blocks all others.
+	screenshotTickerInterval    = util.ScreenshotCacheDuration + time.Second
 	defaultBrokerScreenshotSize = "200"
 )
 
@@ -52,7 +66,6 @@ var (
 		ReadBufferSize:  socketBufferSize,
 		WriteBufferSize: socketBufferSize,
 	}
-	screenshotSize = defaultBrokerScreenshotSize //nolint:gochecknoglobals // global config
 )
 
 type Client struct {
@@ -69,15 +82,52 @@ type Client struct {
 	// the WebSocket connection.
 	vms  []vmScope
 	vmMu sync.RWMutex
+
+	// held while screenshots are being pushed; shotAgain asks for another round
+	shotMu    sync.Mutex
+	shotAgain atomic.Bool
+
+	// the size this client wants its screenshots in, set by its VNC zoom
+	shotSize   string
+	shotSizeMu sync.RWMutex
+
+	// whether the client shows the logs page and wants log lines
+	logsSubscribed atomic.Bool
 }
 
 func NewClient(role rbac.Role, conn *websocket.Conn) *Client {
 	return &Client{ //nolint:exhaustruct // partial initialization
-		role:    role,
-		conn:    conn,
-		publish: make(chan any, publishChannelBuffer),
-		done:    make(chan struct{}),
+		role:     role,
+		conn:     conn,
+		publish:  make(chan any, publishChannelBuffer),
+		done:     make(chan struct{}),
+		shotSize: defaultBrokerScreenshotSize,
 	}
+}
+
+// send queues msg for the client, giving up once the client is gone so the
+// sender does not block forever on a publish channel no one drains.
+func (c *Client) send(msg bt.Publish) bool {
+	select {
+	case c.publish <- msg:
+		return true
+	case <-c.done:
+		return false
+	}
+}
+
+func (c *Client) screenshotSize() string {
+	c.shotSizeMu.RLock()
+	defer c.shotSizeMu.RUnlock()
+
+	return c.shotSize
+}
+
+func (c *Client) setScreenshotSize(size string) {
+	c.shotSizeMu.Lock()
+	defer c.shotSizeMu.Unlock()
+
+	c.shotSize = size
 }
 
 func (c *Client) Go() {
@@ -164,8 +214,39 @@ func (c *Client) read() { //nolint:maintidx // complex logic
 				continue
 			}
 
+			if req.Resource == nil {
+				plog.Error(plog.TypeSystem, "WebSocket request missing resource")
+
+				continue
+			}
+
 			switch req.Resource.Type {
+			case logResourceType:
+				// the broker checks the role before it sends each log line
+				switch req.Resource.Action {
+				case "subscribe":
+					c.logsSubscribed.Store(true)
+				case "unsubscribe":
+					c.logsSubscribed.Store(false)
+				default:
+					plog.Error(
+						plog.TypeSystem,
+						"unexpected WebSocket request resource action for log resource type",
+						"action",
+						req.Resource.Action,
+					)
+				}
+
+				continue
 			case "experiment/vms":
+				// Sent when the client leaves the experiment's VM table. Without
+				// it the screenshot ticker keeps queuing minimega commands for
+				// VMs no longer on screen, delaying every other API request.
+				if req.Resource.Action == "unsubscribe" {
+					c.clearVMs()
+
+					continue
+				}
 			case "metadata/screenshot":
 				var payload map[string]string
 
@@ -183,15 +264,32 @@ func (c *Client) read() { //nolint:maintidx // complex logic
 
 				size, ok := payload["size"]
 				if ok {
+					if !util.ValidScreenshotSize(size) {
+						plog.Error(plog.TypeSystem, "invalid screenshot resolution", "size", size)
+
+						continue
+					}
+
 					plog.Debug(plog.TypeSystem, "updated screenshot resolution", "size", size)
-					screenshotSize = size
+					c.setScreenshotSize(size)
 
 					c.updateScreenshots()
 				}
 
 				continue
 			case "experiment/topology":
-				// TODO: check RBAC permissions?
+				// Same permission as GET /experiments/{name}/topology.
+				if !c.role.Allowed("experiments/topology", "get", req.Resource.Name) {
+					plog.Warn(
+						plog.TypeSecurity,
+						"topology search denied for WebSocket client",
+						"exp",
+						req.Resource.Name,
+					)
+
+					continue
+				}
+
 				switch req.Resource.Action {
 				case "search":
 					var query map[string]string
@@ -296,10 +394,10 @@ func (c *Client) read() { //nolint:maintidx // complex logic
 						continue
 					}
 
-					c.publish <- bt.Publish{ //nolint:exhaustruct // partial initialization
+					c.send(bt.Publish{ //nolint:exhaustruct // partial initialization
 						Resource: bt.NewResource("experiment/topology", req.Resource.Name, "search"),
 						Result:   body,
-					}
+					})
 
 					continue
 				default:
@@ -370,107 +468,23 @@ func (c *Client) read() { //nolint:maintidx // complex logic
 				continue
 			}
 
-			vms, err := vm.List(expName)
-			if err != nil {
-				plog.Error(
-					plog.TypeSystem,
-					"getting list of VMs for experiment",
-					"exp",
-					expName,
-					"err",
-					err,
-				)
+			query := parseVMListQuery(payload)
 
-				continue
-			}
-
-			// A Boolean expression tree is built and the fields that
-			// should be searched are determined based on the search string
-			clientFilter, _ := payload["filter"].(string)
-			filterTree := mm.BuildTree(clientFilter)
-
-			// If `show_dnb` was not provided client-side, `showDNB` will be false,
-			// which is the default we want.
-			showDNB, _ := payload["show_dnb"].(bool)
-
-			allowed := mm.VMs{}
-
-			for _, vm := range vms {
-				// If the VM is marked as do not boot, and we're not showing VMs marked as
-				// such, continue on to the next VM right away.
-				if vm.DoNotBoot && !showDNB {
-					continue
-				}
-
-				// If the filter supplied could not be
-				// parsed, do not add the VM
-				if len(clientFilter) > 0 {
-					if filterTree == nil {
-						continue
-					} else if !filterTree.Evaluate(&vm) {
-						// If the search string could be parsed,
-						// determine if the VM should be included
-						continue
-					}
-				}
-
-				if c.role.Allowed("vms", "list", fmt.Sprintf("%s/%s", expName, vm.Name)) {
-					if vm.Running {
-						screenshot, err := util.GetScreenshot(expName, vm.Name, screenshotSize)
-						if err != nil {
-							plog.Error(
-								plog.TypeSystem,
-								"getting screenshot for WebSocket client",
-								"err",
-								err,
-							)
-						} else {
-							vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
-								screenshot,
-							)
-						}
-					}
-
-					allowed = append(allowed, vm)
-				}
-			}
-
-			var (
-				sort, _ = payload["sort_column"].(string)
-				asc     = payload["sort_asc"].(bool)
-				page    = int(payload["page_number"].(float64))
-				size    = int(payload["page_size"].(float64))
-			)
-
-			payload = map[string]any{"total": len(allowed)}
-
-			if sort != "" {
-				allowed.SortBy(sort, asc)
-			}
-
-			totalBeforePaging := len(allowed)
-
-			if page != 0 && size != 0 {
-				allowed = allowed.Paginate(page, size)
-			}
+			// Screenshots follow the list (see updateScreenshots): minimega
+			// takes them one at a time, which would hold back the whole list.
+			allowed, total := util.SelectVMs(expName, vm.ListFor(exp), exp.Spec.Topology(), query, c.role)
 
 			c.vmMu.Lock()
 
 			c.vms = nil
 
 			for _, v := range allowed {
-				c.vms = append(c.vms, vmScope{exp: expName, name: v.Name})
+				c.vms = append(c.vms, vmScope{exp: expName, name: v.Name, running: v.Running})
 			}
 
 			c.vmMu.Unlock()
 
-			resp := &proto.VMList{
-				Total: uint32(totalBeforePaging), //nolint:gosec // integer overflow conversion int -> uint32
-				Vms:   make([]*proto.VM, len(allowed)),
-			}
-			for i, v := range allowed {
-				resp.Vms[i] = util.VMToProtobuf(expName, v, exp.Spec.Topology())
-			}
+			resp := util.VMListToProtobuf(expName, allowed, total, exp.Spec.Topology())
 
 			body, err := marshaler.Marshal(resp)
 			if err != nil {
@@ -486,12 +500,51 @@ func (c *Client) read() { //nolint:maintidx // complex logic
 				continue
 			}
 
-			c.publish <- bt.Publish{ //nolint:exhaustruct // partial initialization
+			if !c.send(bt.Publish{ //nolint:exhaustruct // partial initialization
 				Resource: bt.NewResource("experiment/vms", expName, "list"),
 				Result:   body,
+			}) {
+				return
 			}
+
+			go c.updateScreenshots()
 		}
 	}
+}
+
+// parseVMListQuery reads an experiment/vms list request payload. Clients may
+// leave any field out, or send it with the wrong type: the list is then
+// unfiltered, hides do-not-boot VMs, sorts ascending and is not paginated.
+func parseVMListQuery(payload map[string]any) util.VMQuery {
+	query := util.VMQuery{SortAsc: true} //nolint:exhaustruct // zero values are the defaults
+
+	query.Filter, _ = payload["filter"].(string)
+	query.ShowDNB, _ = payload["show_dnb"].(bool)
+	query.SortCol, _ = payload["sort_column"].(string)
+
+	if asc, ok := payload["sort_asc"].(bool); ok {
+		query.SortAsc = asc
+	}
+
+	page, pageOK := pageValue(payload["page_number"])
+	size, sizeOK := pageValue(payload["page_size"])
+
+	if pageOK && sizeOK {
+		query.Page, query.Size = page, size
+	}
+
+	return query
+}
+
+// pageValue reads a page number or size, which must be a positive whole
+// number; mm.VMs.Paginate panics on anything less than 1.
+func pageValue(v any) (int, bool) {
+	f, ok := v.(float64)
+	if !ok || f != math.Trunc(f) || f < 1 || f > util.MaxPageValue {
+		return 0, false
+	}
+
+	return int(f), true
 }
 
 func (c *Client) write() {
@@ -532,6 +585,111 @@ func (c *Client) write() {
 	}
 }
 
+// vmStateOf reads the state an experiment/vm message leaves its VM in: the
+// running flag of the VM it carries, or failing that what its action implies.
+func vmStateOf(pub bt.Publish) (vmState, bool) {
+	if pub.Resource == nil || pub.Resource.Type != "experiment/vm" {
+		return vmState{}, false
+	}
+
+	exp, name, ok := strings.Cut(pub.Resource.Name, "/")
+	if !ok {
+		return vmState{}, false
+	}
+
+	var result struct {
+		Running *bool `json:"running"`
+	}
+
+	if json.Unmarshal(pub.Result, &result) == nil && result.Running != nil {
+		return vmState{exp: exp, name: name, running: *result.Running}, true
+	}
+
+	switch pub.Resource.Action {
+	case "start", "redeployed", "reset":
+		return vmState{exp: exp, name: name, running: true}, true
+	case "stop", "shutdown", "delete":
+		return vmState{exp: exp, name: name, running: false}, true
+	default:
+		return vmState{}, false
+	}
+}
+
+// trackVMState notes, from a broadcast, a VM in view starting or stopping or
+// its experiment stopping, so screenshots are taken only of running VMs. The
+// replies a client asks for itself change nothing here: a VM list reply's
+// running states are put in view when read builds the list.
+func (c *Client) trackVMState(msg any) {
+	out, ok := msg.(encodedPublish)
+	if !ok {
+		return
+	}
+
+	if exp, stopped := stoppedExperiment(out.pub); stopped {
+		c.stopExperimentVMs(exp)
+
+		return
+	}
+
+	if out.vm == nil {
+		return
+	}
+
+	c.vmMu.Lock()
+	defer c.vmMu.Unlock()
+
+	for i := range c.vms {
+		if c.vms[i].exp == out.vm.exp && c.vms[i].name == out.vm.name {
+			c.vms[i].running = out.vm.running
+		}
+	}
+}
+
+// stoppedExperiment reports the experiment an experiment message says is
+// stopping, stopped or deleted. Its VMs stop with it without VM messages of
+// their own.
+func stoppedExperiment(pub bt.Publish) (string, bool) {
+	if pub.Resource == nil || pub.Resource.Type != "experiment" {
+		return "", false
+	}
+
+	switch pub.Resource.Action {
+	case "stopping", "stop", "delete":
+		return pub.Resource.Name, true
+	default:
+		return "", false
+	}
+}
+
+// stopExperimentVMs stops screenshots of the VMs in view that belong to exp,
+// so a client left on the page of an experiment stopped elsewhere does not
+// keep asking minimega for them. A new VM list brings them back.
+func (c *Client) stopExperimentVMs(exp string) {
+	c.vmMu.Lock()
+	defer c.vmMu.Unlock()
+
+	for i := range c.vms {
+		if c.vms[i].exp == exp {
+			c.vms[i].running = false
+		}
+	}
+}
+
+// encodeMessage returns msg as it goes over the wire; broadcasts come already
+// encoded.
+func encodeMessage(msg any) ([]byte, error) {
+	if out, ok := msg.(encodedPublish); ok {
+		return out.data, nil
+	}
+
+	b, err := json.Marshal(msg)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling message to be published: %w", err)
+	}
+
+	return b, nil
+}
+
 func (c *Client) publisher(msg any) error {
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
@@ -547,9 +705,11 @@ func (c *Client) publisher(msg any) error {
 
 	defer func() { _ = w.Close() }()
 
-	b, err := json.Marshal(msg)
+	c.trackVMState(msg)
+
+	b, err := encodeMessage(msg)
 	if err != nil {
-		plog.Error(plog.TypeSystem, "marshaling message to be published", "err", err)
+		plog.Error(plog.TypeSystem, "encoding message to be published", "err", err)
 
 		return nil
 	}
@@ -564,10 +724,11 @@ func (c *Client) publisher(msg any) error {
 		}
 
 		msg := <-c.publish
+		c.trackVMState(msg)
 
-		b, err := json.Marshal(msg)
+		b, err := encodeMessage(msg)
 		if err != nil {
-			plog.Error(plog.TypeSystem, "marshaling message to be published", "err", err)
+			plog.Error(plog.TypeSystem, "encoding message to be published", "err", err)
 
 			continue
 		}
@@ -596,20 +757,52 @@ func (c *Client) setScreenshotsTicker() {
 	}
 }
 
+func (c *Client) clearVMs() {
+	c.vmMu.Lock()
+	defer c.vmMu.Unlock()
+
+	c.vms = nil
+}
+
+// updateScreenshots pushes screenshots of the VMs in view. The ticker, a new
+// VM list and a new screenshot size call it. A call while one is running asks
+// that one to go again once it finishes, so a new list's VMs are not left
+// waiting.
 func (c *Client) updateScreenshots() {
+	c.shotAgain.Store(true)
+
+	// a request made just as the running round let go is picked up here
+	for c.shotAgain.Load() {
+		if !c.shotMu.TryLock() {
+			return
+		}
+
+		for c.shotAgain.Swap(false) {
+			c.pushScreenshots()
+		}
+
+		c.shotMu.Unlock()
+	}
+}
+
+func (c *Client) pushScreenshots() {
 	names := make(map[string][]string)
 
 	c.vmMu.RLock()
 
 	for _, v := range c.vms {
-		names[v.exp] = append(names[v.exp], v.name)
+		if v.running {
+			names[v.exp] = append(names[v.exp], v.name)
+		}
 	}
 
 	c.vmMu.RUnlock()
 
+	size := c.screenshotSize()
+
 	for exp, vms := range names {
 		for _, vm := range vms {
-			screenshot, err := util.GetScreenshot(exp, vm, screenshotSize)
+			screenshot, err := util.GetScreenshot(exp, vm, size)
 			if err != nil {
 				if errors.Is(err, mm.ErrVMNotFound) {
 					continue
@@ -640,9 +833,11 @@ func (c *Client) updateScreenshots() {
 				continue
 			}
 
-			c.publish <- bt.Publish{ //nolint:exhaustruct // partial initialization
+			if !c.send(bt.Publish{ //nolint:exhaustruct // partial initialization
 				Resource: bt.NewResource("experiment/vm/screenshot", fmt.Sprintf("%s/%s", exp, vm), "update"),
 				Result:   marshalled,
+			}) {
+				return
 			}
 		}
 	}

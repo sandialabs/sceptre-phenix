@@ -87,7 +87,7 @@ func StartNetflow(w http.ResponseWriter, r *http.Request) {
 		plog.Error(plog.TypeSystem, "starting netflow capture", "exp", exp, "err", err)
 
 		if errors.Is(err, experiment.ErrNetflowAlreadyStarted) {
-			http.Error(w, "neflow already started for experiment", http.StatusBadRequest)
+			http.Error(w, "netflow already started for experiment", http.StatusBadRequest)
 
 			return
 		}
@@ -160,7 +160,12 @@ func StopNetflow(w http.ResponseWriter, r *http.Request) {
 		plog.Error(plog.TypeSystem, "stopping netflow capture", "exp", exp, "err", err)
 
 		if errors.Is(err, experiment.ErrNetflowNotStarted) {
-			http.Error(w, "not found", http.StatusNotFound)
+			http.Error(
+				w,
+				"no netflow capture is running for experiment "+exp+
+					"; it may already have been stopped",
+				http.StatusNotFound,
+			)
 
 			return
 		}

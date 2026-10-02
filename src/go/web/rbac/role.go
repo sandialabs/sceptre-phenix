@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/activeshadow/structs"
 	"github.com/mitchellh/mapstructure"
@@ -43,7 +42,7 @@ func GetRoles() ([]*Role, error) {
 			return nil, fmt.Errorf("decoding roles config: %w", err)
 		}
 
-		roles[i] = &Role{Spec: &u, config: &c} //nolint:exhaustruct // partial initialization
+		roles[i] = newRole(&u, &c)
 	}
 
 	return roles, nil
@@ -66,11 +65,21 @@ func RoleFromConfig(name string) (*Role, error) {
 				return nil, fmt.Errorf("decoding role: %w", err)
 			}
 
-			return &Role{Spec: &role, config: &roleConfig}, nil //nolint:exhaustruct // partial initialization
+			return newRole(&role, &roleConfig), nil
 		}
 	}
 
 	return nil, fmt.Errorf("could not find role in store: %w", err)
+}
+
+// newRole builds a Role and indexes its policies once, so value copies of the
+// role (request contexts, broker clients) share the index instead of
+// rebuilding it on every Allowed call.
+func newRole(spec *v1.RoleSpec, cfg *store.Config) *Role {
+	r := &Role{Spec: spec, config: cfg, mappedPolicies: nil}
+	r.indexPolicies()
+
+	return r
 }
 
 func (r Role) Save() error {
@@ -143,9 +152,18 @@ func (r *Role) AddPolicy(res, rn, v []string) {
 	}
 
 	r.Spec.Policies = append(r.Spec.Policies, policy)
+
+	// the index maps resources to policies, so a new policy invalidates it
+	r.mappedPolicies = nil
+	r.indexPolicies()
 }
 
 func (r Role) Allowed(resource, verb string, names ...string) bool {
+	// the zero Role (no role in the request context) allows nothing
+	if r.Spec == nil {
+		return false
+	}
+
 	for _, policy := range r.policiesForResource(resource) {
 		if policy.verbAllowed(verb) {
 			if len(names) == 0 {
@@ -162,34 +180,42 @@ func (r Role) Allowed(resource, verb string, names ...string) bool {
 }
 
 func (r Role) policiesForResource(resource string) []Policy {
-	err := r.mapPolicies()
-	if err != nil {
-		return nil
+	mapped := r.mappedPolicies
+	if mapped == nil {
+		// Role built without an index (e.g., a literal): build a throwaway one
+		// rather than mutating a value that may be shared across goroutines.
+		mapped = mapPolicies(r.Spec)
 	}
 
 	var policies []Policy
 
-	for r, p := range r.mappedPolicies {
+	for r, p := range mapped {
 		if matched, _ := filepath.Match(r, resource); matched {
 			policies = append(policies, p...)
-
-			continue
 		}
 	}
 
 	return policies
 }
 
-func (r *Role) mapPolicies() error {
-	if r.mappedPolicies != nil {
-		return nil
+// indexPolicies builds the resource -> policies index if it is missing.
+func (r *Role) indexPolicies() {
+	if r.mappedPolicies != nil || r.Spec == nil {
+		return
 	}
 
-	r.mappedPolicies = make(map[string][]Policy)
+	r.mappedPolicies = mapPolicies(r.Spec)
+}
+
+// mapPolicies indexes the spec's policies by resource pattern. A role with any
+// invalid resource pattern allows nothing, so it maps to an empty (non-nil)
+// index.
+func mapPolicies(spec *v1.RoleSpec) map[string][]Policy {
+	mapped := make(map[string][]Policy)
 
 	var invalid []string
 
-	for _, policy := range r.Spec.Policies {
+	for _, policy := range spec.Policies {
 		for _, resource := range policy.Resources {
 			// Checking to make sure pattern given in 'resource' is valid. Thus, the
 			// string provided to match it against is useless.
@@ -199,15 +225,13 @@ func (r *Role) mapPolicies() error {
 				continue
 			}
 
-			mapped := r.mappedPolicies[resource]
-			mapped = append(mapped, Policy{Spec: policy})
-			r.mappedPolicies[resource] = mapped
+			mapped[resource] = append(mapped[resource], Policy{Spec: policy})
 		}
 	}
 
 	if len(invalid) != 0 {
-		return errors.New("invalid resource(s): " + strings.Join(invalid, ", "))
+		return map[string][]Policy{}
 	}
 
-	return nil
+	return mapped
 }

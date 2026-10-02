@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -98,7 +99,7 @@ func ConfigureUsers(users []string) error {
 	return nil
 }
 
-//nolint:funlen,maintidx // server startup
+//nolint:funlen // server startup
 func Start(opts ...ServerOption) error {
 	o = newServerOptions(opts...)
 	fileServerEndpoint, err := normalizeFileServerEndpoint(o.fileServerEndpoint)
@@ -113,12 +114,13 @@ func Start(opts ...ServerOption) error {
 	_ = ConfigureUsers(o.users)
 
 	var (
-		router = mux.NewRouter().StrictSlash(true)
-		assets http.FileSystem
+		assets    http.FileSystem
+		publicDir fs.FS // the same files as assets
 	)
 
 	if o.unbundled {
 		assets = http.Dir("web/public")
+		publicDir = os.DirFS("web/public")
 
 		plog.Info(plog.TypeSystem, "serving unbundled assets")
 	} else {
@@ -127,11 +129,137 @@ func Start(opts ...ServerOption) error {
 		if err != nil {
 			return err
 		}
+
+		if publicDir, err = fs.Sub(publicFS, "public"); err != nil {
+			return fmt.Errorf("opening embedded assets: %w", err)
+		}
 	}
+
+	router, err := newRouter(assets, publicDir)
+	if err != nil {
+		return err
+	}
+
+	plog.Info(plog.TypeSystem, "starting websockets broker")
+
+	go broker.Start()
+
+	plog.Info(plog.TypeSystem, "starting scorch processors")
+
+	scorch.Start(o.basePath)
+
+	plog.Info(plog.TypeSystem, "starting log publisher")
+
+	go SyncMinimegaLogs(context.Background(), o.minimegaLogs)
+
+	plog.Info(plog.TypeSystem, "starting disk image watcher")
+
+	WatchDisks(context.Background())
+
+	plog.Info(plog.TypeSystem, "using base path", "path", o.basePath)
+	plog.Info(plog.TypeSystem, "using JWT lifetime", "lifetime", o.jwtLifetime)
+
+	if fileServerEndpoint != "" {
+		go StartFileServer(fileServerEndpoint, o.jwtKey, o.proxyAuthHeader)
+	}
+
+	if common.UnixSocket != "" {
+		var (
+			router = mux.NewRouter().StrictSlash(true)
+			api    = router.PathPrefix("/api/v1").Subrouter()
+		)
+
+		addRoutesToRouter(api, socketRoutes()...)
+
+		api.Use(middleware.NoAuth)
+
+		_ = os.Remove(common.UnixSocket)
+
+		plog.Info(plog.TypeSystem, "starting Unix socket server", "path", common.UnixSocket)
+
+		server := http.Server{Handler: router} //nolint:gosec // Potential Slowloris Attack
+
+		//nolint:exhaustruct // partial initialization
+		listener, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", common.UnixSocket)
+		if err != nil {
+			return err
+		}
+
+		if o.unixSocketGID != -1 {
+			plog.Info(
+				plog.TypeSystem,
+				"setting Unix socket group permissions",
+				"gid",
+				o.unixSocketGID,
+			)
+
+			err = os.Chown(common.UnixSocket, -1, o.unixSocketGID)
+			if err != nil {
+				return err
+			}
+
+			err := os.Chmod(common.UnixSocket, 0o770) //nolint:gosec // unix socket permissions
+			if err != nil {
+				return err
+			}
+		}
+
+		go func() {
+			err := server.Serve(listener)
+			if err != nil {
+				plog.Error(plog.TypeSystem, "serving Unix socket", "err", err)
+			}
+		}()
+	}
+
+	plog.Info(plog.TypeSecurity, "starting server", "tls_enabled", o.tlsEnabled())
+
+	if o.tlsEnabled() {
+		plog.Info(plog.TypeSystem, "starting HTTPS server", "endpoint", o.endpoint)
+
+		//nolint:gosec // Use of net/http serve function that has no support for setting timeouts
+		return http.ListenAndServeTLS(
+			o.endpoint,
+			o.tlsCrtPath,
+			o.tlsKeyPath,
+			router,
+		)
+	} else {
+		plog.Info(plog.TypeSystem, "Starting HTTP server", "endpoint", o.endpoint)
+		//nolint:gosec // Use of net/http serve function that has no support for setting timeouts
+		return http.ListenAndServe(
+			o.endpoint,
+			router,
+		)
+	}
+}
+
+// newRouter routes the UI's pages and assets, and the REST API behind its
+// middleware, as the server options say.
+//
+//nolint:funlen,maintidx // the route table
+func newRouter(assets http.FileSystem, publicDir fs.FS) (*mux.Router, error) {
+	router := mux.NewRouter().StrictSlash(true)
 
 	if o.featured("tunneler-download") {
 		plog.Info(plog.TypeSystem, "Serving phēnix tunneler downloads")
+		router.HandleFunc("/downloads/tunneler", forward.ListTunnelers).Methods("GET")
 		router.HandleFunc("/downloads/tunneler/{name}", forward.GetTunneler).Methods("GET")
+	}
+
+	if o.featured("webshark") {
+		plog.Info(plog.TypeSystem, "Serving WebShark", "dir", o.websharkDir)
+		router.HandleFunc("/webshark/json", GetWebSharkJSON).Methods("GET")
+		router.HandleFunc("/webshark/captures/{name}", GetWebSharkCaptureFile).Methods("GET", "HEAD")
+		router.HandleFunc("/webshark/watch", GetWebSharkWatch).Methods("GET")
+		router.PathPrefix("/webshark/").Handler(WebSharkHandler(o.websharkDir, o.basePath))
+	} else {
+		// rather than the phēnix UI, which would load itself in its own frame
+		router.PathPrefix("/webshark/").Handler(
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "WebShark is not installed on this phēnix server", http.StatusNotFound)
+			}),
+		)
 	}
 
 	router.HandleFunc("/features", GetFeatures).Methods("GET")
@@ -142,26 +270,32 @@ func Start(opts ...ServerOption) error {
 	plog.Info(plog.TypeSystem, "setting up assets")
 
 	router.PathPrefix("/docs/").Handler(
-		http.FileServer(assets),
+		StaticHandler(assets, false),
 	)
 
 	router.PathPrefix("/novnc/").Handler(
-		http.FileServer(assets),
+		StaticHandler(assets, false),
 	)
 
 	router.PathPrefix("/xterm.js/").Handler(
-		http.FileServer(assets),
+		StaticHandler(assets, false),
 	)
 
 	router.PathPrefix("/assets/").Handler(
-		http.FileServer(assets),
+		StaticHandler(assets, true),
 	)
 
+	grapheditor, err := fs.Sub(publicDir, "grapheditor")
+	if err != nil {
+		return nil, fmt.Errorf("opening grapheditor assets: %w", err)
+	}
+
+	router.Handle("/grapheditor/builder.bundle.js", BuilderBundleHandler(grapheditor, o.unbundled))
 	router.PathPrefix("/grapheditor/").Handler(
-		http.FileServer(assets),
+		StaticHandler(assets, false),
 	)
 
-	router.Handle("/favicon.ico", http.FileServer(assets))
+	router.Handle("/favicon.ico", StaticHandler(assets, false))
 
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		plog.Warn(
@@ -172,6 +306,10 @@ func Start(opts ...ServerOption) error {
 			"method",
 			r.Method,
 		)
+
+		// index.html names the current build's hashed chunks, so browsers must
+		// revalidate it rather than reuse a stale copy
+		w.Header().Set("Cache-Control", "no-cache")
 
 		if o.unbundled {
 			http.ServeFile(w, r, "web/public/index.html")
@@ -253,32 +391,19 @@ func Start(opts ...ServerOption) error {
 		Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/stopCaptureSubnet", StopCaptureSubnet).
 		Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/webshark", CreateWebSharkCapture).Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/files", GetExperimentFiles).Methods("GET", "OPTIONS")
+	api.HandleFunc("/experiments/{name}/files/download", DownloadExperimentFiles).
+		Methods("POST", "OPTIONS")
+	api.HandleFunc("/experiments/{name}/files/delete", DeleteExperimentFiles).
+		Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{name}/files/{filename}", GetExperimentFile).
 		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(scorch.GetComponentOutput)).
-		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}/ws", scorch.StreamComponentOutput).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines", weberror.ErrorHandler(scorch.GetPipelines)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines/{run}/{loop}", weberror.ErrorHandler(scorch.GetPipeline)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines/{run}", weberror.ErrorHandler(scorch.StartPipeline)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/pipelines/{run}", weberror.ErrorHandler(scorch.CancelPipeline)).
+	api.HandleFunc("/experiments/{name}/files/{filename}", DeleteExperimentFile).
 		Methods("DELETE", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals", scorch.GetTerminals).
-		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}", scorch.ConnectTerminal).
-		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}/exit/{id}", scorch.ExitTerminal).
-		Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{pid}/ws/{id}", scorch.StreamTerminal).
-		Methods("GET", "OPTIONS")
-	api.HandleFunc("/experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}", scorch.ConnectTerminal).
-		Methods("GET", "OPTIONS")
+	scorch.RegisterRoutes(api)
 	api.HandleFunc("/experiments/{name}/soh", GetExperimentSoH).Methods("GET", "OPTIONS")
+	api.HandleFunc("/soh", GetSoHSummary).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms", GetVMs).Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms", UpdateVMs).Methods("PATCH", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}", GetVM).Methods("GET", "OPTIONS")
@@ -305,6 +430,8 @@ func Start(opts ...ServerOption) error {
 		Methods("POST", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/captures", StopVMCaptures).
 		Methods("DELETE", "OPTIONS")
+	api.HandleFunc("/experiments/{exp}/vms/{name}/captures/{iface}/stream", GetVMCaptureStream).
+		Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/snapshots", GetVMSnapshots).
 		Methods("GET", "OPTIONS")
 	api.HandleFunc("/experiments/{exp}/vms/{name}/snapshots", SnapshotVM).Methods("POST", "OPTIONS")
@@ -381,6 +508,8 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/logs", GetLogs).Methods("GET", "OPTIONS")
 	api.HandleFunc("/ws", broker.ServeWS).Methods("GET")
 	api.HandleFunc("/console", CreateConsole).Methods("POST", "OPTIONS")
+	api.HandleFunc("/console/{pid}", GetConsole).Methods("GET", "OPTIONS")
+	api.HandleFunc("/console/{pid}", DeleteConsole).Methods("DELETE", "OPTIONS")
 	api.HandleFunc("/console/{pid}/ws", WsConsole).Methods("GET", "OPTIONS")
 	api.HandleFunc("/console/{pid}/size", ResizeConsole).
 		Methods("POST", "OPTIONS").
@@ -391,21 +520,11 @@ func Start(opts ...ServerOption) error {
 	api.HandleFunc("/settings/password", GetPasswordRequirements).Methods("GET", "OPTIONS")
 	api.HandleFunc("/settings/timeout", GetTimeoutSettings).Methods("GET", "OPTIONS")
 
-	workflowRoutes := []route{
-		{"/workflow/apply/{branch}", weberror.ErrorHandler(ApplyWorkflow), []string{"POST"}},
-		{
-			"/workflow/configs/{branch}",
-			weberror.ErrorHandler(WorkflowUpsertConfig),
-			[]string{"POST"},
-		},
-	}
+	addRoutesToRouter(api, socketRoutes()...)
 
-	optionRoutes := []route{
-		{"/options", weberror.ErrorHandler(GetOptions), []string{"GET"}},
-	}
-
-	addRoutesToRouter(api, workflowRoutes...)
-	addRoutesToRouter(api, optionRoutes...)
+	// outermost, so the other middleware (full logging in particular) sees the
+	// uncompressed response
+	api.Use(CompressResponses)
 
 	if o.allowCORS {
 		plog.Info(plog.TypeSystem, "CORS is enabled on HTTP API endpoints")
@@ -423,94 +542,19 @@ func Start(opts ...ServerOption) error {
 		api.Use(middleware.LogRequests)
 	}
 
-	plog.Info(plog.TypeSystem, "starting websockets broker")
+	return router, nil
+}
 
-	go broker.Start()
-
-	plog.Info(plog.TypeSystem, "starting scorch processors")
-
-	go scorch.Start(o.basePath)
-
-	plog.Info(plog.TypeSystem, "starting log publisher")
-
-	go SyncMinimegaLogs(context.Background(), o.minimegaLogs)
-
-	plog.Info(plog.TypeSystem, "using base path", "path", o.basePath)
-	plog.Info(plog.TypeSystem, "using JWT lifetime", "lifetime", o.jwtLifetime)
-
-	if fileServerEndpoint != "" {
-		go StartFileServer(fileServerEndpoint, o.jwtKey, o.proxyAuthHeader)
-	}
-
-	if common.UnixSocket != "" {
-		var (
-			router = mux.NewRouter().StrictSlash(true)
-			api    = router.PathPrefix("/api/v1").Subrouter()
-		)
-
-		addRoutesToRouter(api, workflowRoutes...)
-		addRoutesToRouter(api, optionRoutes...)
-
-		api.Use(middleware.NoAuth)
-
-		_ = os.Remove(common.UnixSocket)
-
-		plog.Info(plog.TypeSystem, "starting Unix socket server", "path", common.UnixSocket)
-
-		server := http.Server{Handler: router} //nolint:gosec // Potential Slowloris Attack
-
-		//nolint:exhaustruct // partial initialization
-		listener, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", common.UnixSocket)
-		if err != nil {
-			return err
-		}
-
-		if o.unixSocketGID != -1 {
-			plog.Info(
-				plog.TypeSystem,
-				"setting Unix socket group permissions",
-				"gid",
-				o.unixSocketGID,
-			)
-
-			err = os.Chown(common.UnixSocket, -1, o.unixSocketGID)
-			if err != nil {
-				return err
-			}
-
-			err := os.Chmod(common.UnixSocket, 0o770) //nolint:gosec // unix socket permissions
-			if err != nil {
-				return err
-			}
-		}
-
-		go func() {
-			err := server.Serve(listener)
-			if err != nil {
-				plog.Error(plog.TypeSystem, "serving Unix socket", "err", err)
-			}
-		}()
-	}
-
-	plog.Info(plog.TypeSecurity, "starting server", "tls_enabled", o.tlsEnabled())
-
-	if o.tlsEnabled() {
-		plog.Info(plog.TypeSystem, "starting HTTPS server", "endpoint", o.endpoint)
-
-		//nolint:gosec // Use of net/http serve function that has no support for setting timeouts
-		return http.ListenAndServeTLS(
-			o.endpoint,
-			o.tlsCrtPath,
-			o.tlsKeyPath,
-			router,
-		)
-	} else {
-		plog.Info(plog.TypeSystem, "Starting HTTP server", "endpoint", o.endpoint)
-		//nolint:gosec // Use of net/http serve function that has no support for setting timeouts
-		return http.ListenAndServe(
-			o.endpoint,
-			router,
-		)
+// socketRoutes are the API routes the Unix socket serves as well.
+func socketRoutes() []route {
+	return []route{
+		{"/workflow/apply/{branch}", weberror.ErrorHandler(ApplyWorkflow), []string{"POST"}},
+		{
+			"/workflow/configs/{branch}",
+			weberror.ErrorHandler(WorkflowUpsertConfig),
+			[]string{"POST"},
+		},
+		{"/options", weberror.ErrorHandler(GetOptions), []string{"GET"}},
 	}
 }
 

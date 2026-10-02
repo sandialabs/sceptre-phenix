@@ -12,10 +12,7 @@ import (
 	"phenix/util/mm"
 )
 
-var (
-	ErrCaptureExists = errors.New("capture already exists")
-	ErrNoCaptures    = errors.New("no captures exist")
-)
+var ErrNoCaptures = errors.New("no captures exist")
 
 // ResolveInterface resolves the given interface identifier - either a
 // zero-based index (e.g. "0") or the interface name as declared in the

@@ -4,7 +4,7 @@
 //
 //   E2E_LIFECYCLE=1 [E2E_TOPOLOGY=helloworld] npx playwright test experiment-lifecycle
 const { test, expect } = require('@playwright/test');
-const { attachCapture, settle, fatalOf, gotoSeeded } = require('./helpers');
+const { attachCapture, settle, fatalOf } = require('./helpers');
 
 const EXP = 'e2e-smoketest';
 const TOPOLOGY = process.env.E2E_TOPOLOGY || 'helloworld';
@@ -28,7 +28,7 @@ test.beforeAll(async ({ request }) => {
 test('create experiment via modal', async ({ page }) => {
   const issues = [];
   attachCapture(page, issues);
-  await gotoSeeded(page, '/experiments');
+  await page.goto('/experiments');
   await settle(page);
 
   const createNow = page.getByRole('button', { name: 'Create One Now!' });
@@ -44,7 +44,7 @@ test('create experiment via modal', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Create Experiment' }).click();
   await expect(page.locator('.modal-card')).toBeHidden({ timeout: 60000 });
-  await expect(page.getByRole('link', { name: EXP })).toBeVisible({
+  await expect(page.getByRole('link', { name: EXP, exact: true })).toBeVisible({
     timeout: 60000,
   });
   expect(
@@ -56,7 +56,7 @@ test('create experiment via modal', async ({ page }) => {
 test('stopped experiment view renders', async ({ page }) => {
   const issues = [];
   attachCapture(page, issues);
-  await gotoSeeded(page, '/experiment/' + EXP);
+  await page.goto('/experiment/' + EXP);
   await settle(page, 4000);
   expect(await page.locator('table tbody tr').count()).toBeGreaterThan(0);
   expect(
@@ -69,7 +69,7 @@ test('start experiment', async ({ page }) => {
   test.setTimeout(420000);
   const issues = [];
   attachCapture(page, issues);
-  await gotoSeeded(page, '/experiments');
+  await page.goto('/experiments');
   await settle(page);
 
   const row = page.locator('tr', { hasText: EXP });
@@ -92,7 +92,7 @@ test('start experiment', async ({ page }) => {
 test('running experiment view renders', async ({ page }) => {
   const issues = [];
   attachCapture(page, issues);
-  await gotoSeeded(page, '/experiment/' + EXP);
+  await page.goto('/experiment/' + EXP);
   await settle(page, 6000);
   expect(await page.locator('table tbody tr').count()).toBeGreaterThan(0);
   expect(
@@ -105,7 +105,7 @@ test('stop experiment', async ({ page }) => {
   test.setTimeout(420000);
   const issues = [];
   attachCapture(page, issues);
-  await gotoSeeded(page, '/experiments');
+  await page.goto('/experiments');
   await settle(page);
 
   const row = page.locator('tr', { hasText: EXP });
@@ -128,7 +128,7 @@ test('stop experiment', async ({ page }) => {
 test('delete experiment', async ({ page }) => {
   const issues = [];
   attachCapture(page, issues);
-  await gotoSeeded(page, '/experiments');
+  await page.goto('/experiments');
   await settle(page);
 
   const row = page.locator('tr', { hasText: EXP });

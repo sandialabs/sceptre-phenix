@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   applyStopCaptureUpdate,
+  captureFilename,
   isInterfaceCapturing,
   hasMultipleCaptures,
 } from '@/utils/captures.js';
@@ -11,10 +12,11 @@ describe('applyStopCaptureUpdate', () => {
     { vm: 'test-vm', interface: 1, filename: 'iface1.pcap' },
   ];
 
-  test('removes only the specified interface, leaving others untouched', () => {
-    expect(applyStopCaptureUpdate(captures, { interface: 0 })).toEqual([
-      { vm: 'test-vm', interface: 1, filename: 'iface1.pcap' },
-    ]);
+  // interface 0 is falsy, but still names an interface
+  test.each([0, 1])('stopping interface %i leaves the other running', (n) => {
+    expect(applyStopCaptureUpdate(captures, { interface: n })).toEqual(
+      captures.filter((c) => c.interface != n),
+    );
   });
 
   test('clears all captures when no result is provided (stop-all)', () => {
@@ -30,17 +32,6 @@ describe('applyStopCaptureUpdate', () => {
     expect(applyStopCaptureUpdate(undefined, { interface: 0 })).toEqual([]);
     expect(applyStopCaptureUpdate([], { interface: 0 })).toEqual([]);
   });
-
-  test('treats interface 0 as a valid, present value (not falsy/missing)', () => {
-    // Regression guard: interface index 0 must not be confused with "no
-    // interface field present" just because 0 is falsy.
-    expect(
-      applyStopCaptureUpdate(
-        [{ vm: 'test-vm', interface: 0, filename: 'iface0.pcap' }],
-        { interface: 0 },
-      ),
-    ).toEqual([]);
-  });
 });
 
 describe('isInterfaceCapturing', () => {
@@ -49,9 +40,12 @@ describe('isInterfaceCapturing', () => {
     { vm: 'test-vm', interface: 1, filename: 'iface1.pcap' },
   ];
 
-  test('returns true when the interface has a running capture', () => {
-    expect(isInterfaceCapturing(captures, 1)).toBe(true);
-  });
+  test.each([0, 1])(
+    'returns true for interface %i, which is capturing',
+    (n) => {
+      expect(isInterfaceCapturing(captures, n)).toBe(true);
+    },
+  );
 
   test('returns false when the interface has no running capture', () => {
     expect(isInterfaceCapturing(captures, 2)).toBe(false);
@@ -61,10 +55,6 @@ describe('isInterfaceCapturing', () => {
     expect(isInterfaceCapturing([], 0)).toBe(false);
     expect(isInterfaceCapturing(null, 0)).toBe(false);
     expect(isInterfaceCapturing(undefined, 0)).toBe(false);
-  });
-
-  test('treats interface 0 as a valid, present value', () => {
-    expect(isInterfaceCapturing(captures, 0)).toBe(true);
   });
 });
 
@@ -79,6 +69,17 @@ describe('hasMultipleCaptures', () => {
   test('returns true when more than one capture is running', () => {
     expect(hasMultipleCaptures([{ interface: 0 }, { interface: 1 }])).toBe(
       true,
+    );
+  });
+});
+
+describe('captureFilename', () => {
+  test('names the file after the VM, interface, and time', () => {
+    expect(captureFilename('web', 0, '2026-09-28_0914')).toBe(
+      'web_0_2026-09-28_0914.pcap',
+    );
+    expect(captureFilename('web', 2, '2026-09-28_0914')).toBe(
+      'web_2_2026-09-28_0914.pcap',
     );
   });
 });

@@ -1,5 +1,6 @@
 import axiosInstance from '@/utils/axios.js';
 import { usePhenixStore } from '@/store.js';
+import { endConsole } from '@/utils/consoleSession.js';
 import { ToastProgrammatic as Toast } from 'buefy';
 
 export class TimeoutTool {
@@ -85,12 +86,15 @@ export class TimeoutTool {
       this.warnToast.close();
       this.warnToast = null;
     }
-    axiosInstance.get('logout').then((resp) => {
-      if (resp.status == 204) {
-        const store = usePhenixStore();
-        store.logout();
-      }
-    });
+    // end the console first, while the token still allows it
+    endConsole().then(() =>
+      axiosInstance.get('logout').then((resp) => {
+        if (resp.status == 204) {
+          const store = usePhenixStore();
+          store.logout();
+        }
+      }),
+    );
   }
   resetTimer() {
     if (!this.data.enabled) {

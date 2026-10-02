@@ -1,15 +1,22 @@
 <!-- 
 The Hosts component presents an information table containing 
 the mesh host info. It includes the hostname, number of CPUs, 
-general top load report, RAM used and total RAM, the bandwidth 
-available for experiments, the number of VMs, and host uptime.
+general top load report, RAM used and total RAM, disk usage, the
+bandwidth available for experiments, the number of VMs, and host uptime.
  -->
 
 <template>
   <div class="content">
+    <b-field v-if="paginationNeeded" grouped position="is-right">
+      <div class="control is-flex">
+        <b-switch v-model="table.isPaginated" size="is-small" type="is-light"
+          >Paginate</b-switch
+        >
+      </div>
+    </b-field>
     <b-table
       :data="hosts"
-      :paginated="table.isPaginated"
+      :paginated="table.isPaginated && paginationNeeded"
       aria-next-label="Next page"
       aria-previous-label="Previous page"
       aria-page-label="Page"
@@ -20,13 +27,26 @@ available for experiments, the number of VMs, and host uptime.
       :pagination-size="table.paginationSize"
       :default-sort-direction="table.defaultSortDirection"
       default-sort="name">
-      <b-table-column field="name" label="Name" sortable v-slot="props">
+      <template #empty>
+        <section class="section">
+          <div class="content has-text-white has-text-centered">
+            {{ loaded ? 'No hosts found' : loadingText('hosts') }}
+          </div>
+        </section>
+      </template>
+      <b-table-column
+        field="name"
+        label="Name"
+        sortable
+        header-class="sort-inline"
+        v-slot="props">
         {{ hostName(props.row) }}
       </b-table-column>
       <b-table-column
         field="cpus"
         label="CPUs"
         sortable
+        header-class="sort-inline"
         centered
         v-slot="props">
         {{ props.row.cpus }}
@@ -37,19 +57,24 @@ available for experiments, the number of VMs, and host uptime.
         width="200"
         centered
         v-slot="props">
-        <span class="tag" :class="decorator(props.row.load[0], props.row.cpus)">
-          {{ props.row.load[0] }}
-        </span>
-        --
-        <span class="tag" :class="decorator(props.row.load[1], props.row.cpus)">
-          {{ props.row.load[1] }}
-        </span>
-        --
-        <span class="tag" :class="decorator(props.row.load[2], props.row.cpus)">
-          {{ props.row.load[2] }}
+        <span
+          class="load"
+          title="Load average over the last 1, 5 and 15 minutes">
+          <span v-for="(value, i) in props.row.load" :key="i" class="load-avg">
+            <span class="tag" :class="decorator(value, props.row.cpus)">
+              {{ value }}
+            </span>
+            <small class="load-span">{{ loadSpans[i] }}</small>
+          </span>
         </span>
       </b-table-column>
-      <b-table-column field="mem_used" label="RAM Used" centered v-slot="props">
+      <b-table-column
+        field="memused"
+        label="RAM Used"
+        sortable
+        header-class="sort-inline"
+        centered
+        v-slot="props">
         <span
           class="tag"
           :class="decorator(props.row.memused, props.row.memtotal)">
@@ -57,27 +82,29 @@ available for experiments, the number of VMs, and host uptime.
         </span>
       </b-table-column>
       <b-table-column
-        field="mem_total"
+        field="memtotal"
         label="RAM Total"
+        sortable
+        header-class="sort-inline"
         centered
         v-slot="props">
         {{ formatRAM(props.row.memtotal) }}
       </b-table-column>
       <b-table-column
         field="disk_used"
-        label="Disk Used (% phenix/minimega base)"
+        label="Disk Used (phenix / minimega base)"
         centered
         v-slot="props">
         <span
           class="tag"
           :class="decorator(props.row.diskusage.diskphenix, 100.0)">
-          {{ props.row.diskusage.diskphenix }}
+          {{ props.row.diskusage.diskphenix }}%
         </span>
         /
         <span
           class="tag"
           :class="decorator(props.row.diskusage.diskminimega, 100.0)">
-          {{ props.row.diskusage.diskminimega }}
+          {{ props.row.diskusage.diskminimega }}%
         </span>
       </b-table-column>
       <b-table-column
@@ -88,78 +115,68 @@ available for experiments, the number of VMs, and host uptime.
         {{ props.row.bandwidth }}
       </b-table-column>
       <b-table-column
-        field="no_vms"
-        label="# of VMs"
+        field="vms"
+        label="VMs"
         sortable
+        header-class="sort-inline"
         centered
         v-slot="props">
         {{ props.row.vms }}
       </b-table-column>
-      <b-table-column field="uptime" label="Uptime" v-slot="props">
+      <b-table-column
+        field="uptime"
+        label="Uptime"
+        sortable
+        header-class="sort-inline"
+        v-slot="props">
         {{ formatUptime(props.row.uptime) }}
       </b-table-column>
     </b-table>
-    <br />
-    <b-field v-if="paginationNeeded" grouped position="is-right">
-      <div class="control is-flex">
-        <b-switch
-          v-model="table.isPaginated"
-          size="is-small"
-          type="is-light"
-          @input="changePaginate()"
-          >Paginate</b-switch
-        >
-      </div>
-    </b-field>
-    <b-loading
-      :is-full-page="false"
-      v-model="isWaiting"
-      :can-cancel="false"></b-loading>
   </div>
 </template>
 
 <script>
-  import axiosInstance from '@/utils/axios.js';
   import { formattingMixin } from '@/utils/formattingMixin.js';
-  import { useErrorNotification } from '@/utils/errorNotif';
   import { useTable } from '@/utils/useTable.js';
+  import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
+  import { pageFetchers } from '@/utils/pageData.js';
+  import { inForeground } from '@/utils/foreground.js';
 
   export default {
     mixins: [formattingMixin],
     setup() {
-      return useTable();
+      return useTable({ name: 'hosts' });
     },
     beforeUnmount() {
       clearInterval(this.update);
+      this.loader.stop();
     },
 
     created() {
-      this.updateHosts();
+      this.loader = createPageLoader({
+        key: 'hosts',
+        fetch: pageFetchers.hosts,
+        apply: (hosts) => {
+          this.hosts = hosts;
+          this.loaded = true;
+        },
+      });
+      this.loader.start();
       this.periodicUpdateHosts();
     },
 
     methods: {
-      updateHosts() {
-        axiosInstance
-          .get('hosts')
-          .then((response) => {
-            const state = response.data;
-            if (state.hosts.length === 0) {
-              this.isWaiting = true;
-            } else {
-              this.hosts = state.hosts;
-              this.isWaiting = false;
-            }
-          })
-          .catch((err) => {
-            this.isWaiting = false;
-            useErrorNotification(err);
-          });
-      },
+      loadingText,
+
       periodicUpdateHosts() {
         this.update = setInterval(() => {
-          this.updateHosts();
-        }, 10000);
+          // every poll has the server ask minimega for host stats and disk
+          // usage: skip it unless the page is focused, and while the last
+          // poll is still waiting on the server
+          if (inForeground() && !this.loader.loading) {
+            this.loader.load();
+          }
+        }, 30000);
       },
 
       decorator(sum, len) {
@@ -183,27 +200,41 @@ available for experiments, the number of VMs, and host uptime.
     },
 
     computed: {
-      // Intentionally restores the persisted pagination toggle as a side
-      // effect on first access.
-      /* eslint-disable vue/no-side-effects-in-computed-properties */
       paginationNeeded() {
-        this.restorePaginate();
-
-        if (this.hosts.length <= 10) {
-          this.table.isPaginated = false;
-          return false;
-        } else {
-          return true;
-        }
+        return this.hosts.length > this.table.perPage;
       },
-      /* eslint-enable vue/no-side-effects-in-computed-properties */
     },
 
     data() {
       return {
         hosts: [],
-        isWaiting: true,
+        loaded: false,
+        // what each of a host's three load averages covers
+        loadSpans: ['1m', '5m', '15m'],
       };
     },
   };
 </script>
+
+<style scoped>
+  /* headings stay on one line, however narrow the table gets */
+  :deep(th) {
+    white-space: nowrap;
+  }
+
+  .load {
+    display: inline-flex;
+    gap: 0.5rem;
+  }
+
+  .load-avg {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .load-span {
+    font-size: 0.7rem;
+    opacity: 0.75;
+  }
+</style>

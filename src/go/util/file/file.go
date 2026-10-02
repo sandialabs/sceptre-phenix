@@ -17,11 +17,14 @@ var DefaultClusterFiles ClusterFiles = new(MMClusterFiles) //nolint:gochecknoglo
 const snapshotBoth = "both"
 const scorchComponentIndex = 2
 
+// copyStatusInterval is how often CopyFile polls a transfer's progress.
+const copyStatusInterval = 500 * time.Millisecond
+
 type ClusterFiles interface {
 	GetExperimentFiles(exp, filter string) (Files, error)
 
 	// Looks in experiment directory on each cluster node for matching filenames
-	// that end in both `.SNAP` and `.qc2`.
+	// that end in both `.state` and `.hdd`.
 	GetExperimentSnapshots(exp string) ([]string, error)
 
 	// Should leverage meshage and iomeshage to make a `file` API call on the
@@ -52,18 +55,55 @@ func SyncFile(path string, status CopyStatus) error {
 }
 
 func DeleteFile(path string) error {
+	// The path may be in any experiment's files directory, or name several.
+	defer invalidateAllExperimentFiles()
+
 	return DefaultClusterFiles.DeleteFile(path) //nolint:wrapcheck // passthrough
 }
 
 type MMClusterFiles struct{}
 
+// GetExperimentFiles lists the experiment's files, reusing a listing made in
+// the last few seconds (see listingTTL), and keeps those matching filter.
 func (MMClusterFiles) GetExperimentFiles(exp, filter string) (Files, error) {
+	files, err := experimentListings.get(listingKey(exp), func() (Files, error) {
+		return listExperimentFiles(exp), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(filter) == 0 {
+		return files, nil
+	}
+
+	// Build a Boolean expression tree and determine
+	// the fields that should be searched
+	filterTree := BuildTree(filter)
+	if filterTree == nil {
+		return nil, nil
+	}
+
+	var matched Files
+
+	for _, file := range files {
+		if filterTree.Evaluate(&file) {
+			matched = append(matched, file)
+		}
+	}
+
+	return matched, nil
+}
+
+// listExperimentFiles asks minimega for every file in the experiment's files
+// directory, on the mesh nodes and the headnode, and categorizes them.
+func listExperimentFiles(exp string) Files {
 	var (
 		// Using a map here to weed out duplicates. The key is the relative path to
 		// the file to ensure files with the same name in different directories get
 		// included.
 		matches = make(map[string]File)
-		root    = exp + "/files/"
+		root    = listingKey(exp)
 	)
 
 	// First get file listings from mesh, then from headnode.
@@ -73,10 +113,6 @@ func (MMClusterFiles) GetExperimentFiles(exp, filter string) (Files, error) {
 	}
 
 	cmd := mmcli.NewCommand()
-
-	// Build a Boolean expression tree and determine
-	// the fields that should be searched
-	filterTree := BuildTree(filter)
 
 	for _, command := range commands {
 		cmd.Command = command
@@ -153,26 +189,15 @@ func (MMClusterFiles) GetExperimentFiles(exp, filter string) (Files, error) {
 			file.Categories = []string{"Unknown"}
 		}
 
-		// Apply any filters
-		if len(filter) > 0 {
-			if filterTree == nil {
-				continue
-			}
-
-			if !filterTree.Evaluate(&file) {
-				continue
-			}
-		}
-
 		files = append(files, file)
 	}
 
-	return files, nil
+	return files
 }
 
 func (MMClusterFiles) GetExperimentSnapshots(exp string) ([]string, error) {
 	// Using a map here to weed out duplicates and to ensure each snapshot has
-	// both a memory snapshot (.snap) and a disk snapshot (.qc2).
+	// both a memory snapshot (.state) and a disk snapshot (.hdd).
 	matches := make(map[string]string)
 
 	files, err := GetExperimentFiles(exp, "")
@@ -215,9 +240,12 @@ func (MMClusterFiles) GetExperimentSnapshots(exp string) ([]string, error) {
 }
 
 func (MMClusterFiles) CopyFile(path, dest string, status CopyStatus) error {
-	cmd := mmcli.NewCommand()
+	var (
+		cmd      = mmcli.NewCommand()
+		headnode = mm.IsHeadnode(dest)
+	)
 
-	if mm.IsHeadnode(dest) {
+	if headnode {
 		cmd.Command = "file get " + path
 	} else {
 		cmd.Command = fmt.Sprintf(`mesh send %s file get %s`, dest, path)
@@ -228,7 +256,7 @@ func (MMClusterFiles) CopyFile(path, dest string, status CopyStatus) error {
 		return fmt.Errorf("copying file to destination: %w", err)
 	}
 
-	if mm.IsHeadnode(dest) {
+	if headnode {
 		cmd.Command = "file status"
 	} else {
 		cmd.Command = fmt.Sprintf(`mesh send %s file status`, dest)
@@ -259,6 +287,10 @@ func (MMClusterFiles) CopyFile(path, dest string, status CopyStatus) error {
 		if !found {
 			break
 		}
+
+		// Don't poll back to back: every poll waits its turn for the minimega
+		// connection that every other request shares.
+		time.Sleep(copyStatusInterval)
 	}
 
 	return nil
@@ -281,7 +313,7 @@ func (MMClusterFiles) SyncFile(path string, status CopyStatus) error {
 }
 
 func (MMClusterFiles) DeleteFile(path string) error {
-	// NOTE: this is replicated in `internal/mm/minimega.go` to avoid cyclical
+	// NOTE: this is replicated in `util/mm/minimega.go` to avoid cyclical
 	// dependency between mm and file packages.
 
 	// First delete file from mesh, then from headnode.

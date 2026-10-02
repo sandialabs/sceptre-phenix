@@ -33,6 +33,14 @@ If you delete the `config.yaml` file while phēnix is running, the internal file
 
 To reset your configuration, use the command `phenix settings unset --all` instead of deleting the file.
 
+### Upgrading the BoltDB Store
+
+phēnix keeps BoltDB's free page list inside the store file. The first time it
+writes to a store left by an earlier release, it walks the file once to build
+that list and saves it; every open after that reads the saved list instead. This
+happens on its own, so there is no need to delete or recreate `store.bdb` after
+an upgrade, and an earlier release can still open a store this one has written.
+
 ### Scenario v1 to v2 Upgrade
 
 The phēnix Scenario configuration was upgraded from `v1` to `v2`. While phēnix attempts to handle this automatically, experiments created with an older `v1` scenario may fail with an error like this:
@@ -76,4 +84,17 @@ scenario:
     - hostname: host-00
       metadata:
         args: -logfile /var/log/protonuke.log
+```
+
+### Reserved Experiment Names
+
+An experiment cannot be named `minimega` or `__phenix__`, in any mix of upper and
+lower case. An experiment runs in the minimega namespace of the same name:
+`minimega` is minimega's own default namespace, so stopping such an experiment
+would clear it, and phēnix uses `__phenix__` to reach every cluster host. The
+name `all` is reserved as well. Creating an experiment with one of these names
+fails immediately:
+
+```text
+cannot use 'minimega' for experiment name: reserved minimega namespace
 ```

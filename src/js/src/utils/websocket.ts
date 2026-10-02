@@ -1,9 +1,14 @@
 /// <reference types="vite/types/importMeta.d.ts" />
 import { usePhenixStore } from '@/store.js';
+import { debug } from '@/utils/debug.js';
 import { ToastProgrammatic as Toast } from 'buefy';
 
 let globalWs: WebSocket = null;
 const wsListeners: Function[] = [];
+const reconnectListeners: (() => void)[] = [];
+
+// set once the socket has opened, so later opens are reconnects
+let everConnected: boolean = false;
 
 var shouldBeConnected: boolean = false;
 var errorToast = null;
@@ -45,7 +50,7 @@ export function connectWebsocket(): void {
   globalWs.onmessage = globalWsMessageHandler;
 
   globalWs.onopen = () => {
-    console.log('connected websocket');
+    debug('connected websocket');
     numFailedConnects = 0;
 
     if (errorToast !== null) {
@@ -56,6 +61,19 @@ export function connectWebsocket(): void {
     // flush anything queued while the socket was connecting
     const queued = pendingMessages.splice(0);
     queued.forEach((msg) => globalWs.send(msg));
+
+    // the server forgets a client's subscriptions when its socket closes
+    const reconnected = everConnected;
+    everConnected = true;
+    if (reconnected) {
+      reconnectListeners.slice().forEach((listener) => {
+        try {
+          listener();
+        } catch (err) {
+          console.error('websocket reconnect listener error', err);
+        }
+      });
+    }
   };
 
   globalWs.onclose = () => {
@@ -72,21 +90,15 @@ export function connectWebsocket(): void {
     }
 
     const delay = reconnectDelayMs();
-    console.log(
-      `next websocket reconnect attempt in ${Math.round(delay / 1000)}s`,
-    );
+    debug(`next websocket reconnect attempt in ${Math.round(delay / 1000)}s`);
     numFailedConnects += 1;
     reconnectTimer = setTimeout(connectWebsocket, delay);
-  };
-
-  globalWs.onerror = (event) => {
-    console.warn('websocket error: ', event);
   };
 }
 
 export function disconnectWebsocket(): void {
   shouldBeConnected = false;
-  console.log('disconnected websocket');
+  debug('disconnected websocket');
 
   if (reconnectTimer !== null) {
     clearTimeout(reconnectTimer);
@@ -110,19 +122,19 @@ export function sendWsMsg(payload: object): void {
   if (globalWs !== null) {
     // socket exists but is still CONNECTING (or closing) — queue and let onopen
     // flush it rather than calling send() in an invalid state.
-    console.warn('websocket not open, queueing message');
+    debug('websocket not open, queueing message');
     pendingMessages.push(data);
     return;
   }
 
   if (shouldBeConnected) {
-    console.warn('websocket is null, connecting before send');
+    debug('websocket is null, connecting before send');
     pendingMessages.push(data);
     connectWebsocket();
     return;
   }
 
-  console.log('not connected to send websocket message');
+  console.warn('not connected to send websocket message');
 }
 
 export function addWsHandler(f: (msg: object) => void): void {
@@ -130,17 +142,32 @@ export function addWsHandler(f: (msg: object) => void): void {
 }
 
 export function removeWsHandler(f: (msg: object) => void): void {
-  wsListeners.splice(wsListeners.indexOf(f), 1);
+  const i = wsListeners.indexOf(f);
+  // splice(-1, 1) would silently drop the most recently added listener
+  if (i >= 0) {
+    wsListeners.splice(i, 1);
+  }
+}
+
+// Calls f each time the socket reopens after a reconnect (not on the first
+// connect). Returns a function that removes it.
+export function onWsReconnect(f: () => void): () => void {
+  reconnectListeners.push(f);
+  return () => {
+    const i = reconnectListeners.indexOf(f);
+    if (i >= 0) {
+      reconnectListeners.splice(i, 1);
+    }
+  };
 }
 
 function globalWsMessageHandler(event: MessageEvent): void {
   event.data.split(/\r?\n/).forEach((data) => {
     if (data) {
       let msg = JSON.parse(data);
-      console.debug(
-        'websocket msg (' + wsListeners.length + ' listeners):\n',
-        msg,
-      );
+      // debug() is development-only: logging every message retains large
+      // payloads (screenshots) in the devtools console
+      debug('websocket msg (' + wsListeners.length + ' listeners):\n', msg);
 
       // dispatch to listeners; one failing listener must not block the rest
       wsListeners.forEach((listener) => {

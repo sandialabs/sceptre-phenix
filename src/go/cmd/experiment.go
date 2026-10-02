@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -152,7 +153,8 @@ func newExperimentCreateCmd() *cobra.Command {
   phenix experiment create <experiment name> -t <topology name or /path/to/filename>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> -d </path/to/dir/>
-  phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> --disabled-apps "app1,app2"`
+  phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> --disabled-apps "app1,app2"
+  phenix experiment create <experiment name> -t <topology name> --node-annotation phenix/default-apps=false --annotation phenix.workflow/tags=nightly`
 
 	cmd := &cobra.Command{
 		Use:     "create <experiment name>",
@@ -223,6 +225,18 @@ func newExperimentCreateCmd() *cobra.Command {
 				disabledApps[idx] = strings.TrimSpace(disabledApps[idx])
 			}
 
+			annotations, err := parseAnnotationFlags(MustGetStringArray(cmd.Flags(), "annotation"))
+			if err != nil {
+				return util.HumanizeError(err, "").Humanized()
+			}
+
+			nodeAnnotations, err := parseNodeAnnotationFlags(
+				MustGetStringArray(cmd.Flags(), "node-annotation"),
+			)
+			if err != nil {
+				return util.HumanizeError(err, "").Humanized()
+			}
+
 			opts := []experiment.CreateOption{
 				experiment.CreateWithName(args[0]),
 				experiment.CreateWithTopology(topology),
@@ -232,6 +246,8 @@ func newExperimentCreateCmd() *cobra.Command {
 				experiment.CreateWithVLANMax(MustGetInt(cmd.Flags(), "vlan-max")),
 				experiment.CreatedWithDisabledApplications(disabledApps),
 				experiment.CreateWithDefaultBridge(MustGetString(cmd.Flags(), "default-bridge")),
+				experiment.CreateWithAnnotations(annotations),
+				experiment.CreateWithNodeAnnotations(nodeAnnotations),
 			}
 
 			ctx := notes.Context(context.Background(), false)
@@ -258,9 +274,70 @@ func newExperimentCreateCmd() *cobra.Command {
 		StringP("default-bridge", "b", appName, "Default bridge name to use for experiment (optional)")
 	cmd.Flags().Int("vlan-min", 0, "VLAN pool minimum")
 	cmd.Flags().Int("vlan-max", 0, "VLAN pool maximum")
-	cmd.Flags().StringSlice("disabled-apps", []string{}, "Comma separated ist of apps to disable")
+	cmd.Flags().StringSlice("disabled-apps", []string{}, "Comma separated list of apps to disable")
+	cmd.Flags().StringArray(
+		"annotation",
+		nil,
+		"Experiment annotation as key=value; may be repeated",
+	)
+	cmd.Flags().StringArray(
+		"node-annotation",
+		nil,
+		"Annotation for every VM as key=value; true, false and JSON lists or objects keep their type; may be repeated",
+	)
 
 	return cmd
+}
+
+// parseAnnotationFlags turns key=value flag values into annotations.
+func parseAnnotationFlags(values []string) (map[string]string, error) {
+	annotations := make(map[string]string, len(values))
+
+	for _, value := range values {
+		key, val, ok := strings.Cut(value, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			return nil, fmt.Errorf("annotation %q is not of the form key=value", value)
+		}
+
+		annotations[key] = val
+	}
+
+	return annotations, nil
+}
+
+// parseNodeAnnotationFlags turns key=value flag values into node annotations,
+// keeping the type of values the default apps read as booleans or lists.
+func parseNodeAnnotationFlags(values []string) (map[string]any, error) {
+	flat, err := parseAnnotationFlags(values)
+	if err != nil {
+		return nil, err
+	}
+
+	annotations := make(map[string]any, len(flat))
+
+	for key, value := range flat {
+		annotations[key] = nodeAnnotationValue(value)
+	}
+
+	return annotations, nil
+}
+
+// nodeAnnotationValue reads true and false as booleans and a JSON list or
+// object as that value; anything else, numbers included, stays a string.
+func nodeAnnotationValue(value string) any {
+	switch trimmed := strings.TrimSpace(value); {
+	case trimmed == "true":
+		return true
+	case trimmed == "false":
+		return false
+	case strings.HasPrefix(trimmed, "["), strings.HasPrefix(trimmed, "{"):
+		var parsed any
+		if err := json.Unmarshal([]byte(trimmed), &parsed); err == nil {
+			return parsed
+		}
+	}
+
+	return value
 }
 
 func newExperimentEditCmd() *cobra.Command {

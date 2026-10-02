@@ -11,6 +11,12 @@ the physical network MTU requirements.
 Click on the `Experiments` tab. This will display all available experiments that
 the user has access to view or edit.
 
+Click a column heading to sort the table by it: `Name`, `Status`, `Topology`,
+`Scenario`, `Start Time`, and `VMs` can all be sorted on. Experiments created or
+started somewhere else, such as from the command line binary or a
+[Git workflow](git-workflow.md), appear in the list as they are created or
+start, without reloading the page.
+
 ### From the Command Line Binary
 
 This will display a list of all available experiments: it is run as a `root`
@@ -30,6 +36,10 @@ Clicking the `stopped` button will start the experiment; similarly the `started`
 button will stop the experiment. A progress bar is used to update the progress
 of starting an experiment. During the update to the experiment -- starting or
 stopping -- it will not be accessible or available to delete.
+
+The bar's percentage counts every one of the experiment's VMs: those minimega
+has queued to launch, or, once nothing is queued any more, those still
+building, out of the VMs in the topology.
 
 ### From the Command Line Binary
 
@@ -107,11 +117,29 @@ Use "phenix experiment [command] --help" for more information about a command.
 
 Click the `+` button to the right of the filter field.
 
-![screenshot](images/create_exp_dia.png){: width=400 .center}
+![screenshot](images/create_exp_dia.png){: width=600 .center}
 
 Enter `Experiment Name` and `Experiment Topology`, the remaining selection are
 optional. In this example, `bennu` is an example topology and is not included
 by default. You will need to [create](configuration.md) your own topology(ies).
+
+Each field's label is followed by a help icon: hover over or focus it to see
+what the field does. The book button in the card's header opens this section of
+the documentation.
+
+Expand `Advanced Options` for the remaining settings:
+
+* `Deployment Mode`: which cluster hosts run the experiment's VMs
+  (`no-headnode`, `only-headnode`, or `all`), which defaults to the server's
+  `--deploy-mode` setting.
+* `Default Bridge Name`: see [Bridge Mode](bridge-mode.md).
+* `VLAN Range`: the VLAN IDs minimega may give the experiment's VLANs.
+* `Git Workflow Branch Name`: links the experiment to a
+  [Git workflow](git-workflow.md) branch.
+* `Annotations for Every VM` and `Experiment Annotations`: see
+  [Adding Annotations](#adding-annotations).
+
+![screenshot](images/create_exp_options.png){: width=500 .center}
 
 #### Purely via the Web-UI (Uploading Topo/Scenario Files)
 
@@ -129,7 +157,7 @@ You can create an experiment entirely through the Web-UI using custom topology a
     * Enter an **Experiment Name**.
     * Select your uploaded topology from the **Experiment Topology** dropdown.
     * (Optional) Select your uploaded scenario from the **Experiment Scenario** dropdown.
-    * Click **Save** to create the experiment.
+    * Click **Create Experiment** to create the experiment.
 
 ### From the Command Line Binary
 
@@ -146,6 +174,9 @@ phenix experiment create <experiment name> -t /path/to/topology.yaml -s /path/to
 
 # Specifying a base directory and disabled apps
 phenix experiment create <experiment name> -t /path/to/topology.yaml -s /path/to/scenario.yaml -d </path/to/dir/> --disabled-apps "app1,app2"
+
+# Adding annotations to every VM and to the experiment (see Adding Annotations below)
+phenix experiment create <experiment name> -t <topology name> --node-annotation phenix/startup-via-cc=true --annotation phenix.workflow/tags=team=red
 ```
 
 The `phenix exp create --help` command will output:
@@ -167,16 +198,86 @@ Examples:
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> -d </path/to/dir/>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> --disabled-apps "app1,app2"
+  phenix experiment create <experiment name> -t <topology name> --node-annotation phenix/default-apps=false --annotation phenix.workflow/tags=nightly
 
 Flags:
-  -d, --base-dir string         Base directory to use for experiment (optional)
-  -b, --default-bridge string   Default bridge name to use for experiment (optional) (default "phenix")
-      --disabled-apps strings   Comma separated ist of apps to disable
-  -h, --help                    help for create
-  -s, --scenario string         Name of an existing scenario to use (optional)
-  -t, --topology string         Name of an existing topology to use
-      --vlan-max int            VLAN pool maximum
-      --vlan-min int            VLAN pool minimum
+      --annotation stringArray        Experiment annotation as key=value; may be repeated
+  -d, --base-dir string               Base directory to use for experiment (optional)
+  -b, --default-bridge string         Default bridge name to use for experiment (optional) (default "phenix")
+      --disabled-apps strings         Comma separated list of apps to disable
+  -h, --help                          help for create
+      --node-annotation stringArray   Annotation for every VM as key=value; true, false and JSON lists or objects keep their type; may be repeated
+  -s, --scenario string               Name of an existing scenario to use (optional)
+  -t, --topology string               Name of an existing topology to use
+      --vlan-max int                  VLAN pool maximum
+      --vlan-min int                  VLAN pool minimum
+```
+
+### Adding Annotations
+
+An experiment can be given annotations when it is created, without editing its
+topology or scenario:
+
+| Annotations | Web-UI (`Advanced Options`) | Command line (repeatable) | API (`POST /experiments`) |
+| :--- | :--- | :--- | :--- |
+| On every VM | `Annotations for Every VM` | `--node-annotation key=value` | `node_annotations` |
+| On the experiment | `Experiment Annotations` | `--annotation key=value` | `annotations` |
+
+**Annotations for every VM** are node annotations, which apps read from the
+topology's nodes, such as
+[`phenix/default-apps`](apps.md#disable-default-apps-for-a-vm) and
+[`phenix/startup-via-cc`](apps.md#c2-startup-script-delivery). phēnix adds them
+to every VM in the experiment's own copy of the topology, so the topology config
+itself is unchanged. A VM that already has an annotation keeps its own value,
+and [external nodes](configuration.md#external-nodes) are skipped.
+
+**Experiment annotations** are added to the experiment's metadata annotations,
+where apps can read them; for example, SCORCH records the `key=value` pairs of
+`phenix.workflow/tags` in the info file it writes for each run. phēnix sets the
+`topology` and `scenario` annotations itself and rejects them. In the Web-UI, the
+`phenix.workflow/branch` annotation comes from the `Git Workflow Branch Name`
+field, and an API request cannot give it both as an annotation and as
+`workflow_branch`.
+
+In the Web-UI, the `Add annotation` button under each list offers the
+annotations phēnix's own apps read, each with a value input suited to it and a
+description, or a `Custom annotation` with any key and value. On the command
+line, and for a custom annotation in the Web-UI, a VM annotation's value `true`
+or `false` becomes a boolean and a JSON list or object keeps that type; anything
+else, numbers included, stays a string. Experiment annotations are always
+strings. The API takes `node_annotations` as JSON values, keeping their types.
+To change one VM's annotations after the experiment is created, use the
+[Annotations](vms.md#annotations) section of its details card.
+
+![screenshot](images/create_exp_annotations.png){: width=600 .center}
+
+A value of the wrong type for an annotation the default apps read is rejected,
+naming the annotation: `phenix/default-apps` must be `true` or `false`,
+`phenix/startup-autotunnel` a list of port forwards, and `vrouter/vyos-password`
+and `vrouter/enable-ssh` strings.
+
+```bash
+# For every VM, deliver startup scripts over C2 and create a port forward from 8080 to its port 80
+phenix experiment create my-experiment -t my-topology \
+  --node-annotation phenix/startup-via-cc=true \
+  --node-annotation 'phenix/startup-autotunnel=["8080:80"]' \
+  --annotation phenix.workflow/tags=team=red
+```
+
+The same request through the API:
+
+```json
+{
+  "name": "my-experiment",
+  "topology": "my-topology",
+  "node_annotations": {
+    "phenix/startup-via-cc": true,
+    "phenix/startup-autotunnel": ["8080:80"]
+  },
+  "annotations": {
+    "phenix.workflow/tags": "team=red"
+  }
+}
 ```
 
 ## Deleting Experiments
@@ -184,7 +285,9 @@ Flags:
 ### From the Web-UI
 
 The experiment must be stopped before it can be deleted; click the trash can
-icon next to the experiment to delete it.
+icon next to the experiment to delete it. phēnix asks you to confirm first, and
+only that experiment's own button spins while it is deleted, so the rest of the
+table stays usable.
 
 ### From the Command Line Binary
 
@@ -331,6 +434,115 @@ Is equivalent to:
 ```bash
 phenix exp trigger running my-experiment [<app name> ...]
 ```
+
+## Experiment Files
+
+The `Files` tab of an experiment lists the files phēnix, its apps, and SCORCH
+wrote for that experiment, wherever on the cluster they were written. It is the
+second tab on both the running and the stopped experiment page, and a role needs
+`list` on `experiments/files` to see it at all. These files are kept in the
+experiment's `files` folder in the minimega files directory, which the
+[Disks](disks.md) tab leaves out, so the experiment's VM disk snapshots and
+other images there are managed here rather than there.
+
+![screenshot](images/exp_files_tab.png){: width=800 .center}
+
+### Finding a File
+
+The table has a `Name`, `Path`, `Category`, `Date`, `Size`, and `Actions`
+column. `Path` is an information icon; hover over it for the file's full path on
+the phēnix server, such as
+`/phenix/images/my-experiment/files/scorch/1/tcpdump/capture.pcap`. Click the
+`Name`, `Date`, or `Size` heading to sort by that column; the table starts with
+the newest file first. `Category` cannot be sorted on.
+
+phēnix categorizes each file by what it is and what wrote it: `Packet Capture`,
+`Scorch Artifact` (with the SCORCH run ID and the component's name as categories
+of their own), `Filebeat`, `ELF Memory Snapshot`, `VM Memory Snapshot`,
+`VM Disk Snapshot`, `Backing Image`, or `Unknown`. The `All Categories` dropdown
+left of the search box keeps only the files in one category, and the
+`Find a File` search box matches a file's name or its categories. The dropdown
+narrows the rows the table has already loaded; the search box goes to the
+server, which applies it to every file in the experiment.
+
+Once the experiment has more files than fit on one page, a `Paginate` toggle
+appears above the table. It is remembered in your browser for this table until
+you turn it off again. Sorting, searching, changing the category, and changing
+the page each list the files again, and phēnix reuses a listing for a few
+seconds, so a file an app has only just written may not be in the next listing.
+
+### Opening a File
+
+Clicking a text file's name opens it in a read-only viewer, so you do not have
+to download it to read it. phēnix treats `.json`, `.jsonl`, `.log`, `.txt`,
+`.yaml`, and `.yml` files as text, and indents JSON so it is readable. `Exit`
+closes the viewer.
+
+Clicking a capture file's name opens it in
+[WebShark](webshark.md#viewing-captures), when WebShark is installed. Capture
+files are `.pcap`, `.pcapng`, and `.cap` files, optionally gzipped. Any other
+kind of file has to be downloaded to be read.
+
+### Acting on One File
+
+The buttons in a row's `Actions` column are icons; hover over one for its label.
+In order, they are:
+
+* the button that opens the file: `Open in WebShark`, a shark fin, for a capture
+  file, or `view file` for a text file. A row for any other kind of file leaves
+  that space empty.
+* `download`, which downloads that one file.
+* `delete`, which asks you to confirm, naming the file, and spins while the file
+  is deleted. Deleting a file removes it from every cluster node and cannot be
+  undone.
+
+The `delete` button appears only for a role with `delete` on
+`experiments/files`, which among the default roles means `Global Admin` and
+`Experiment Admin` (see [Roles](user-administration.md#roles)).
+
+### Acting on Several Files
+
+A role that can download or delete an experiment's files also gets a checkbox on
+each row, and one in the heading that checks or clears every file the table is
+showing. Checking a file puts a toolbar above the table, holding whichever of
+these your role allows:
+
+* `Download (N)` downloads the checked files as one
+  `<experiment name>-files.zip` archive.
+* `Delete (N)` asks to confirm once for all of them, with `Delete N Files` as
+  the confirm button, then deletes them together.
+* The last button clears the selection.
+
+![screenshot](images/exp_files_selected.png){: width=800 .center}
+
+Only files you can still see stay checked: searching, changing the category, or
+moving to another page drops the rest of the selection.
+
+When some of the files cannot be deleted, phēnix deletes the ones it can and
+reports the rest, naming up to ten of them with the reason and counting any
+beyond that. Those files stay checked, so you can try again or download them
+instead.
+
+!!! note
+    One zip download holds at most 500 files and 2 GiB in total. A larger one is
+    refused before any of it is sent; through the [API](api.md) that is a `413`.
+
+!!! warning
+    A `.pcap` file a running capture is still writing cannot be viewed,
+    downloaded, or deleted, so a half-written capture never leaves the server
+    (a `400` through the API). Stop the capture first, or watch it live in
+    [WebShark](webshark.md#viewing-captures), which follows a running capture as
+    it grows. A file that is no longer on the cluster gives a `404`.
+
+### Adding Files
+
+phēnix and its apps write most of an experiment's files. To add your own, such
+as an installer or a configuration file, upload it through the phēnix file
+server; see
+[Uploading Experiment Files from the phēnix Server](vms.md#uploading-experiment-files-from-the-phenix-server),
+which also covers copying an uploaded file into a VM. Uploads land in the
+experiment's files directory, so they appear in the `Files` tab like any other
+file.
 
 ## Common Workflows
 
