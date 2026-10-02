@@ -2,14 +2,12 @@ package web
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +21,7 @@ import (
 	"phenix/util/plog"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/util"
 )
 
 const MountPathTimeout = 2 * time.Second
@@ -277,7 +276,7 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !strings.HasPrefix(combinedPath, basePath) {
+	if !file.WithinDir(basePath, combinedPath) {
 		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
 		plog.Error(
 			plog.TypeSecurity,
@@ -394,7 +393,7 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !strings.HasPrefix(combinedPath, basePath) {
+	if !file.WithinDir(basePath, combinedPath) {
 		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
 		plog.Error(
 			plog.TypeSecurity,
@@ -429,7 +428,7 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) {
 		user,
 	)
 
-	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(fileInfo.Name()))
+	w.Header().Set("Content-Disposition", util.Attachment(fileInfo.Name()))
 	w.Header().Set("Content-Type", "application/octet-stream")
 	http.ServeFile(w, r, combinedPath)
 }
@@ -483,7 +482,7 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !strings.HasPrefix(combinedPath, basePath) {
+	if !file.WithinDir(basePath, combinedPath) {
 		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
 		plog.Error(
 			plog.TypeSecurity,
@@ -574,8 +573,8 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query()
 	destDir := filepath.Join(basePath, query.Get("path"))
-	if err := validatePathWithin(destDir, basePath); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if !file.WithinDir(basePath, destDir) {
+		http.Error(w, "path is not within base", http.StatusBadRequest)
 
 		return
 	}
@@ -593,14 +592,7 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exp, err := experiment.Get(vars["exp"])
-	if err != nil {
-		http.Error(w, "Error getting experiment: "+err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	source, err := getExperimentFilePath(vars["exp"], query.Get("source"), exp.FilesDir())
+	source, err := experiment.LocalFile(vars["exp"], query.Get("source"))
 	if err != nil {
 		http.Error(w, "Error getting source file: "+err.Error(), http.StatusBadRequest)
 
@@ -617,8 +609,8 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) {
 
 	destName := filepath.Base(source)
 	destPath := filepath.Join(destDir, destName)
-	if err := validatePathWithin(destPath, destDir); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if !file.WithinDir(destDir, destPath) {
+		http.Error(w, "path is not within base", http.StatusBadRequest)
 
 		return
 	}
@@ -640,53 +632,4 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-}
-
-// getExperimentFilePath returns a source path only when it matches a known experiment file.
-func getExperimentFilePath(expName, source, filesDir string) (string, error) {
-	if source == "" {
-		return "", errors.New("no source file provided")
-	}
-
-	files, err := experiment.Files(expName, "")
-	if err != nil {
-		return "", fmt.Errorf("listing experiment files: %w", err)
-	}
-
-	for _, f := range files {
-		if source != f.Path {
-			continue
-		}
-
-		headnode, _ := os.Hostname()
-		_ = file.CopyFile(fmt.Sprintf("/%s/files/%s", expName, f.Path), headnode, nil)
-
-		path := filepath.Join(filesDir, f.Path)
-		info, err := os.Stat(path)
-		if err != nil {
-			return "", err
-		}
-
-		if info.IsDir() {
-			return "", errors.New("source is a directory")
-		}
-
-		return path, nil
-	}
-
-	return "", errors.New("file not found")
-}
-
-// validatePathWithin returns an error when path escapes base.
-func validatePathWithin(path, base string) error {
-	rel, err := filepath.Rel(base, path)
-	if err != nil {
-		return fmt.Errorf("invalid path: %w", err)
-	}
-
-	if rel == ".." || strings.HasPrefix(rel, "../") {
-		return errors.New("path is not within base")
-	}
-
-	return nil
 }

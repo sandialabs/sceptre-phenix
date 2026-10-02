@@ -34,7 +34,6 @@
       :y="item.y"
       :node="item"
       :index="idx"
-      :selected="selectedList[idx]"
       @click="handleClick"
       @mouseenter="handleMouseEnter"
       @mouseleave="handleMouseLeave" />
@@ -93,7 +92,6 @@
         width: 300,
         height: 300,
         lineList: [],
-        selectedList: [],
         service: {},
       };
     },
@@ -104,10 +102,6 @@
 
     methods: {
       handleClick(_, node) {
-        // Commented these out to keep clicked node from being highlighted.
-        // this.selectedList.fill(false, 0, this.nodeList.length);
-        // this.$set(this.selectedList, index, true);
-        // this.selectedList[index] = true;
         this.$emit('select', node);
       },
 
@@ -136,7 +130,6 @@
         }
 
         this.service.calculateAllPosition();
-        // this.service.optimize();
         this.nodeList = this.service.nodes;
         this.lineList = this.service.getLines();
         this.width = this.service.width;
@@ -146,7 +139,6 @@
 
     mounted() {
       this.render();
-      // this.selectedList.fill(false, 0, this.nodeList.length);
     },
   };
 </script>
@@ -188,14 +180,6 @@
   .pipeline-small-label.selected {
     font-weight: bold;
   }
-  .pipeline-selection-highlight circle {
-    fill: none;
-    stroke: #4a90e2;
-  }
-  .pipeline-selection-highlight circle.white-highlight {
-    stroke: white;
-  }
-
   .pipeline-node-terminal {
     fill: #949393;
   }

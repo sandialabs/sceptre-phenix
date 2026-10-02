@@ -13,7 +13,6 @@ import (
 
 	"phenix/util/plog"
 	"phenix/web/broker"
-	bt "phenix/web/broker/brokertypes"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 )
@@ -46,6 +45,8 @@ func GetLogs(w http.ResponseWriter, r *http.Request) {
 			user,
 		)
 		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return
 	}
 
 	startTime, err := time.Parse(time.RFC3339, start)
@@ -79,6 +80,8 @@ func GetLogs(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Error getting logs in handler", "error", err)
 		http.Error(w, "error with fetching logs", http.StatusInternalServerError)
+
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -92,6 +95,8 @@ func GetLogs(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		plog.Error(plog.TypeSystem, "error marshaling loglist", "error", err)
 		http.Error(w, "error with converting logs to protobuf", http.StatusInternalServerError)
+
+		return
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
@@ -193,9 +198,5 @@ func PublishPhenixLog(ts time.Time, level, logtype, log string) {
 
 	marshalled, _ := json.Marshal(body)
 
-	broker.Broadcast(
-		nil,
-		bt.NewResource("log", "phenix", "update"),
-		marshalled,
-	)
+	broker.BroadcastLog(marshalled)
 }

@@ -9,28 +9,27 @@ import (
 
 	"github.com/mitchellh/mapstructure"
 
-	"phenix/api/experiment"
 	"phenix/api/vm"
+	"phenix/types"
 )
 
 const defaultEdgeLength = 150
 
 var vlanAliasRegex = regexp.MustCompile(`(.*) \(\d*\)`)
 
-func Get(expName, statusFilter string) (*Network, error) { //nolint:funlen // complex logic
-	// Create an empty network
-	network := new(Network)
+// GetFor builds the experiment's state-of-health network from an experiment
+// the caller already read from the store.
+func GetFor(exp *types.Experiment, statusFilter string) (*Network, error) { //nolint:funlen // complex logic
+	var (
+		// Create an empty network
+		network = new(Network)
+		err     error
+	)
 
-	exp, err := experiment.Get(expName)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get experiment %s: %w", expName, err)
-	}
-
-	// fetch all the VMs in the experiment
-	vms, err := vm.List(expName)
-	if err != nil {
-		return nil, fmt.Errorf("getting experiment %s VMs: %w", expName, err)
-	}
+	// fetch all the VMs in the experiment (minimega's full VM info, not a
+	// narrow listing such as mm.GetVMStates: this uses each VM's state,
+	// networks, and tags)
+	vms := vm.ListFor(exp)
 
 	status := make(map[string]*HostState)
 
@@ -173,12 +172,9 @@ func Get(expName, statusFilter string) (*Network, error) { //nolint:funlen // co
 	return network, err
 }
 
-func GetFlows(name string) ([]string, [][]int, error) {
-	exp, err := experiment.Get(name)
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to get experiment %s: %w", name, err)
-	}
-
+// GetFlowsFor returns the experiment's SoH flow names and matrix from an
+// experiment the caller already read from the store.
+func GetFlowsFor(exp *types.Experiment) ([]string, [][]int, error) {
 	if exp.Status == nil {
 		return nil, nil, nil
 	}
@@ -203,7 +199,7 @@ func GetFlows(name string) ([]string, [][]int, error) {
 		Flows [][]int
 	}{}
 
-	if err = mapstructure.Decode(capture, &packets); err != nil { //nolint:musttag // struct is used for decoding
+	if err := mapstructure.Decode(capture, &packets); err != nil { //nolint:musttag // struct is used for decoding
 		return nil, nil, errors.New("invalid format for SoH packet capture status")
 	}
 

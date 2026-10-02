@@ -49,11 +49,15 @@ func GetExperimentTopology(w http.ResponseWriter, r *http.Request) {
 	topo, err := vm.Topology(name, ignore)
 	if err != nil {
 		http.Error(w, "unable to get experiment topology", http.StatusBadRequest)
+
+		return
 	}
 
 	body, err := json.Marshal(topo)
 	if err != nil {
 		http.Error(w, "unable to convert topology", http.StatusInternalServerError)
+
+		return
 	}
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis

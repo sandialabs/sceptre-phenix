@@ -1,38 +1,33 @@
 package mm
 
-import "testing"
+import (
+	"slices"
+	"testing"
 
-func TestConnectVMInterfaceCommand(t *testing.T) {
-	tests := []struct {
-		name string
+	"phenix/util/mm/mmtest"
+)
+
+func TestConnectVMInterface(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	for name, tc := range map[string]struct {
 		opts []Option
 		want string
 	}{
-		{
-			name: "with bridge",
-			opts: []Option{
-				VMName("test-vm"),
-				ConnectInterface(1),
-				ConnectVLAN("EXP_1"),
-				Bridge("phenix"),
-			},
-			want: "vm net connect test-vm 1 EXP_1 phenix",
-		},
-		{
-			name: "without bridge",
-			opts: []Option{
-				VMName("test-vm"),
-				ConnectInterface(1),
-				ConnectVLAN("EXP_1"),
-			},
-			want: "vm net connect test-vm 1 EXP_1",
-		},
-	}
+		"with bridge":    {opts: []Option{Bridge("phenix")}, want: "vm net connect test-vm 1 EXP_1 phenix"},
+		"without bridge": {want: "vm net connect test-vm 1 EXP_1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			received := useFakeMinimega(t, nil)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := connectVMInterfaceCommand(NewOptions(test.opts...)); got != test.want {
-				t.Fatalf("connectVMInterfaceCommand returned %q, want %q", got, test.want)
+			opts := append([]Option{NS("exp"), VMName("test-vm"), ConnectInterface(1), ConnectVLAN("EXP_1")}, tc.opts...)
+
+			if err := (Minimega{}).ConnectVMInterface(opts...); err != nil {
+				t.Fatalf("ConnectVMInterface: %v", err)
+			}
+
+			want := []mmtest.Command{{Raw: `.record false namespace "exp" ` + tc.want, Namespace: "exp", Base: tc.want}}
+
+			if got := received(); !slices.Equal(got, want) {
+				t.Fatalf("sent %+v, want %+v", got, want)
 			}
 		})
 	}

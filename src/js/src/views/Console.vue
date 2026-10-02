@@ -1,61 +1,130 @@
 <template>
   <div>
-    <template v-if="pid == 0">
-      <section class="hero is-light is-bold is-large">
-        <div class="hero-body">
-          <div class="container" style="text-align: center">
-            <h1 class="title">Console access is not configured.</h1>
-          </div>
+    <section v-if="!session && message" class="hero is-light is-bold is-large">
+      <div class="hero-body">
+        <div class="container" style="text-align: center">
+          <h1 class="title">{{ message }}</h1>
         </div>
-      </section>
-    </template>
-    <template v-else>
-      <Terminal :wsPath="terminalPath" :resizePath="resizePath" />
-    </template>
+      </div>
+    </section>
+    <div ref="host"></div>
+    <div v-if="state === 'ended' || state === 'lost'" class="mt-3">
+      <b-button type="is-primary" @click="restart">
+        {{ state === 'ended' ? 'Start a new console' : 'Reconnect' }}
+      </b-button>
+    </div>
   </div>
 </template>
 
 <script>
-  import Terminal from '@/components/MiniTerminal.vue';
-  import axiosInstance from '@/utils/axios.js';
+  import { debounce } from 'lodash-es';
 
+  import { currentConsole } from '@/utils/consoleSession.js';
+  import { consolePhase, openConsole } from '@/utils/consoleTerminal.js';
+
+  // The console session outlives this page (see consoleSession.js): leaving
+  // the page only takes its terminal out of the page, and coming back puts
+  // the same terminal, with its output, back in.
   export default {
-    components: {
-      Terminal,
-    },
-
     data() {
       return {
-        pid: 0,
+        session: null,
+        state: null,
+        error: null,
       };
     },
 
     computed: {
-      terminalPath() {
-        return this.$router.resolve({
-          name: 'console-ws',
-          params: { pid: this.pid },
-        }).href;
-      },
+      message() {
+        if (this.error) {
+          return this.error;
+        }
 
-      resizePath() {
-        // relative to the axios instance's api/v1 base; a router-resolved
-        // (base-prefixed) path would get the baseURL prepended again
-        return `console/${this.pid}/size`;
+        switch (consolePhase.value) {
+          case 'reconnecting':
+            return 'Reconnecting to the console…';
+          case 'starting':
+            return 'Starting console…';
+          default:
+            return null;
+        }
       },
     },
+
+    created() {
+      this.handleResize = debounce(() => this.session?.fit(), 100);
+    },
+
     mounted() {
-      axiosInstance
-        .post('console')
-        .then((resp) => {
-          this.pid = resp.data.pid;
-        })
-        .catch((err) => {
-          console.log(err.message);
-          if (err.response) {
-            console.log(err.response.data);
+      window.addEventListener('resize', this.handleResize);
+
+      // the console this tab already has open shows straight away
+      const session = currentConsole();
+      if (session) {
+        this.show(session);
+      } else {
+        this.open();
+      }
+    },
+
+    beforeUnmount() {
+      this.left = true;
+      window.removeEventListener('resize', this.handleResize);
+      this.handleResize.cancel();
+      this.release();
+    },
+
+    methods: {
+      async open() {
+        this.error = null;
+
+        try {
+          const session = await openConsole();
+          // left while it opened: the session waits for the next visit
+          if (!this.left) {
+            this.show(session);
           }
+        } catch (err) {
+          if (this.left) {
+            return;
+          }
+
+          switch (err.response?.status) {
+            // the server was started without --minimega-console
+            case 405:
+              this.error = 'Console access is not configured.';
+              break;
+            case 403:
+              this.error = 'You do not have access to the console.';
+              break;
+            default:
+              this.error = 'Could not start the console.';
+              console.warn('failed to start the console', err);
+          }
+        }
+      },
+
+      show(session) {
+        this.session = session;
+        this.state = session.state;
+        this.stopWatching = session.onChange((state) => {
+          this.state = state;
         });
+        session.mount(this.$refs.host);
+      },
+
+      release() {
+        this.stopWatching?.();
+        this.stopWatching = null;
+        this.session?.unmount();
+        this.session = null;
+        this.state = null;
+      },
+
+      restart() {
+        this.release();
+        this.open();
+      },
     },
   };
 </script>

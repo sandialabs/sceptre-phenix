@@ -182,7 +182,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 		fn := fmt.Sprintf("%s-%s.yml", cfg.Kind, cfg.Metadata.Name)
 
 		w.Header().Set("Content-Type", "text/plain")
-		w.Header().Set("Content-Disposition", "attachment; filename="+fn)
+		w.Header().Set("Content-Disposition", util.Attachment(fn))
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 		plog.Info(
 			plog.TypeAction,
@@ -239,7 +239,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", "attachment; filename=configs.zip")
+	w.Header().Set("Content-Disposition", util.Attachment("configs.zip"))
 
 	// This will flush the zipped configs to the HTTP writer.
 	if err := zipper.Close(); err != nil {

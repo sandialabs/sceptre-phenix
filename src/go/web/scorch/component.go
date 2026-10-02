@@ -59,14 +59,21 @@ func UpdateComponent(update ComponentUpdate) {
 	<-update.done
 }
 
-func processComponents() {
+// initComponents creates the state processComponents owns. It runs before
+// the goroutine starts, so a request made once Start returns never finds a nil
+// channel.
+func initComponents() {
 	componentUpdates = make(chan ComponentUpdate)
 	outputRequests = make(chan outputRequest)
+	wsRequests = make(chan wsRequest)
+	ws = make(map[string]map[string]wsRequest)
 
 	cmpType = make(map[string]string)
 	running = make(map[string]bool)
 	output = make(map[string][]byte)
+}
 
+func processComponents() {
 	for {
 		select {
 		case update := <-componentUpdates:
@@ -118,6 +125,8 @@ func processComponents() {
 			}
 
 			close(update.done)
+		case req := <-wsRequests:
+			addWebSocket(req)
 		case req := <-outputRequests:
 			resp := outputResponse{running: running[req.key]} //nolint:exhaustruct // partial initialization
 

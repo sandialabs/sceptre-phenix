@@ -59,17 +59,6 @@ func (s *StateGroup) AddError(err error, meta map[string]any) {
 	s.ErrCount++
 }
 
-func (s *StateGroup) AddGroupStateError(state GroupStateError) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.States = append(s.States, state)
-
-	if state.Err != nil {
-		s.ErrCount++
-	}
-}
-
 type C2RetryError struct {
 	Delay time.Duration
 }

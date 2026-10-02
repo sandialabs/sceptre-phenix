@@ -60,7 +60,8 @@ phenix experiment list
 phenix experiment apps                              # list available apps
 phenix experiment schedulers                        # list scheduling algorithms
 phenix experiment create <exp> -t <topology> [-s <scenario>] [-d <base-dir>] \
-  [--disabled-apps app1,app2] [--vlan-min N] [--vlan-max N] [-b <bridge>]
+  [--disabled-apps app1,app2] [--vlan-min N] [--vlan-max N] [-b <bridge>] \
+  [--annotation key=value ...] [--node-annotation key=value ...]
 phenix experiment edit <exp> [--force]              # --force overrides the running-experiment check
 phenix experiment delete <exp> [-f|--force]          # -f stops a running experiment before deleting it
 phenix experiment schedule <exp> <algorithm>         # e.g. round-robin, isolate-experiment, subnet-compute
@@ -75,6 +76,16 @@ phenix experiment scorch <exp> [-r|--run <id>]      # start SCORCH run <id> (def
 
 `-t`/`-s` accept either the name of an already-stored config or a path to a
 YAML/JSON file (in which case it's auto-created as a config first).
+
+`--annotation` (repeatable) adds an experiment metadata annotation; `topology`
+and `scenario` are set by phenix and rejected. `--node-annotation`
+(repeatable) adds an annotation to every VM in the experiment's own copy of the
+topology, leaving the Topology config unchanged; a VM that already has the key
+keeps its value. Its value `true` or `false` becomes a boolean and a JSON list
+or object keeps that type (`--node-annotation
+'phenix/startup-autotunnel=["8080:80"]'`); anything else, numbers included,
+stays a string. The annotations the default apps read are in
+[`annotations.md`](annotations.md).
 
 `start all` starts every stopped experiment. `--dry-run` (also on `restart`)
 does everything except call out to minimega, which isolates config and
@@ -113,9 +124,10 @@ phenix vm net connect <exp> <vm> <iface index> <vlan id>
 phenix vm net disconnect <exp> <vm> <iface index>
 phenix vm capture start <exp> <vm> <iface index> <output file>
 phenix vm capture start-subnet <exp> <subnet>
-phenix vm capture stop <exp> <vm>
+phenix vm capture stop <exp> <vm> [iface]           # iface name or index stops only that one
 phenix vm capture stop-subnet <exp> <subnet>
 phenix vm capture stop-all <exp>
+phenix vm capture stream <exp> <vm> <iface> [-o file] [--from-now]  # running capture as pcap, e.g. | wireshark -k -i -
 phenix vm memory-snapshot <exp> <vm> <path>
 phenix vm mount <exp> <vm> [host path]               # mount a running VM's filesystem on the headnode
 phenix vm unmount <exp> <vm>

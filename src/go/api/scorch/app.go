@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/activeshadow/structs"
@@ -122,6 +123,10 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 		return fmt.Errorf("invalid Scorch run ID for experiment %s", exp.Metadata.Name)
 	}
 
+	if scorchexe.CleanupOnly(ctx) {
+		return s.cleanupOnly(ctx, exp, runID, start)
+	}
+
 	if err := os.RemoveAll(runDir); err != nil {
 		return fmt.Errorf("removing existing contents of run directory at %s: %w", runDir, err)
 	}
@@ -203,6 +208,22 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 	_ = scorch.UpdatePipeline(update)
 
 	return errors
+}
+
+// cleanupOnly runs just the run's cleanup components, leaving the data an
+// earlier run collected in place.
+func (s *Scorch) cleanupOnly(
+	ctx context.Context,
+	exp *types.Experiment,
+	runID int,
+	start time.Time,
+) error {
+	opts := []Option{
+		Experiment(*exp), RunID(runID), StartTime(start.Format(time.RubyDate)),
+		LoopCount(0), CleanupOnly(),
+	}
+
+	return executor(ctx, s.md.ComponentSpecs(), s.md.Runs[runID], opts...)
 }
 
 func (Scorch) Cleanup(context.Context, *types.Experiment) error {
@@ -444,16 +465,44 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 	}
 }
 
+// minimega's version is recorded with every run. It only changes if minimega
+// is upgraded while phenix keeps running, so it is asked for once rather than
+// at the end of every run.
+var mmVersionCache struct { //nolint:gochecknoglobals // process-wide cache
+	mu      sync.Mutex
+	version string
+}
+
+// minimegaVersion returns minimega's version, asking minimega only until it
+// has answered once.
+func minimegaVersion() (string, error) {
+	mmVersionCache.mu.Lock()
+	defer mmVersionCache.mu.Unlock()
+
+	if mmVersionCache.version != "" {
+		return mmVersionCache.version, nil
+	}
+
+	c := mmcli.NewCommand()
+	c.Command = "version"
+
+	v, err := mmcli.SingleResponse(mmcli.Run(c))
+	if err != nil {
+		return "", err
+	}
+
+	mmVersionCache.version = v
+
+	return v, nil
+}
+
 func (s Scorch) recordInfo(
 	runID int,
 	runDir string,
 	md store.ConfigMetadata,
 	startTime time.Time,
 ) error {
-	c := mmcli.NewCommand()
-	c.Command = "version"
-
-	mmVersion, err := mmcli.SingleResponse(mmcli.Run(c))
+	mmVersion, err := minimegaVersion()
 	if err != nil {
 		return fmt.Errorf("getting minimega version: %w", err)
 	}
@@ -650,6 +699,10 @@ func executor(
 	start := func() error { return runStage(ActionStart, exe.Start, true) }
 	stop := func() error { return runStage(ActionStop, exe.Stop, false) }
 	cleanup := func() error { return runStage(ActionCleanup, exe.Cleanup, false) }
+
+	if options.CleanupOnly {
+		return cleanup()
+	}
 
 	if err := configure(); err != nil {
 		errors := multierror.Append(nil, err)

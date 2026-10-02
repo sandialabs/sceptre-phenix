@@ -12,7 +12,7 @@ authorization (authz).
 When in `disabled` mode, no user authentication or authorization occurs. Users
 do not have to authenticate, and all actions are allowed.
 
-To use `disabled` mode, the UI should be built with `VUE_APP_AUTH=disabled` (if
+To use `disabled` mode, the UI should be built with `VITE_AUTH=disabled` (if
 Docker is being used to build the UI, use Docker build arg
 `PHENIX_WEB_AUTH=disabled`) and the UI server should be started without the
 `-k/--jwt-signing-key` option set.
@@ -23,7 +23,7 @@ When in `enabled` mode, user authentication and authorization occurs within
 phenix directly. Users have to authenticate to the phenix UI, and certain
 actions are prohibited based on the role assigned to the user.
 
-To use `enabled` mode, the UI should be built with `VUE_APP_AUTH=enabled` (if
+To use `enabled` mode, the UI should be built with `VITE_AUTH=enabled` (if
 Docker is being used to build the UI, use Docker build arg
 `PHENIX_WEB_AUTH=enabled`) and the UI server should be started with the
 `-k/--jwt-signing-key` (and optionally the `--jwt-lifetime`) option set.
@@ -35,7 +35,7 @@ proxy that sits in front of phenix but user authorization still occurs within
 phenix directly. Users authenticate to the proxy, and certain actions are
 prohibited based on the role assigned to the user.
 
-To use `proxy` mode, the UI should be built with `VUE_APP_AUTH=proxy` (if Docker
+To use `proxy` mode, the UI should be built with `VITE_AUTH=proxy` (if Docker
 is being used to build the UI, use Docker build arg `PHENIX_WEB_AUTH=proxy`) and
 the UI server should be started with the `-k/--jwt-signing-key` and
 `--proxy-auth-header` (and optionally the `--jwt-lifetime`) options set.
@@ -111,7 +111,7 @@ date.
 This token can be used to authenticate when using the Phenix API. Specifically, you would include the following as a header in HTTP requests.
 
 ```http
-X-phenix-auth-token: ******
+X-Phenix-Auth-Token: Bearer ******
 ```
 
 ## User Administration
@@ -121,6 +121,12 @@ X-phenix-auth-token: ******
 An administrator is able to click on the username on the table in the Users tab
 to update a user. They can update `First Name` or `Last Name`, `Role`,
 `Experiment Names`, and `Resource Name(s)`.
+
+The table has a `Find a user` search box above it, which matches user names,
+first and last names, and role names, and it can be sorted by `User`,
+`First Name`, `Last Name`, or `Role`.
+
+![screenshot](images/users_search.png){: width=800 .center}
 
 ### Roles
 
@@ -133,13 +139,22 @@ available roles and their access rights.
 |-------------------|:-------------------------------------------------------------------------------------------------------------------------|:-----:|:-----:|:------:|:------:|:-----:|:------:|
 | Global Admin      | Can see and control absolutely anything/everything.                                                                      | E V U | E V U | E V U  | E V U  | E V U | E V U  |
 | Global Viewer     | Can see absolutely anything/everything, but cannot make any changes.                                                     | E V U | E V U |        |        |       |        |
-| Experiment Admin  | Can see and control anything/everything for assigned experiments, including VMs, but cannot create new experiments.      | E V   | E V   |   V    | E V    |   V   |   V    |
+| Experiment Admin  | Can see and control anything/everything for assigned experiments, including VMs, but cannot create new experiments.      | E V   | E V   |   V    | E V    |   V   | E\* V  |
 | Experiment User   | Can see assigned experiments, and can control VMs within assigned experiments, but cannot modify experiments themselves. | E V   | E V   |        |        |   V   |        |
 | Experiment Viewer | Can see assigned experiments and VMs within assigned experiments, but cannot modify or control experiments or VMs.       | E V   | E V   |        |        |       |        |
 | VM Admin          | Can see assigned experiments, and has full administrative control over VMs in assigned experiments.                       | E V   | E V   |   V    |   V    |   V   |   V    |
 | VM Viewer         | Can only see VM screenshots and access VM VNC, nothing else.                                                             |   V   |       |        |        |       |        |
 
 Key: E - experiment resource, V - VM resource, U - user resource
+
+E\* in the Experiment Admin row means the role can delete an experiment's
+files, but not the experiment itself.
+
+The web UI hides or disables what your role cannot do, using the same permission
+names the server checks. If you open a page your role cannot use, such as an old
+bookmark, phēnix sends you to the first page your role can use — `Experiments`,
+or the VM tiles page for a role that cannot list experiments — instead of
+leaving you on a page full of permission errors.
 
 ### Resources
 
@@ -238,6 +253,20 @@ Key: E - experiment resource, V - VM resource, U - user resource
 |------|------|
 | Verb | get |
 | Desc | get specific experiment file |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | upload one or more files to an experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | delete one or more experiment files |
 | Exp. Scoped | yes |
 | Res. Scoped | no |
 
@@ -391,12 +420,51 @@ Key: E - experiment resource, V - VM resource, U - user resource
 
 #### Resource: `disks`
 
+A `disks` resource name is a disk image's file name, such as `win10.qcow2`,
+and matches the files of that name in every folder of the minimega files
+directory. See [Disks](disks.md#permissions).
+
 |      |      |
 |------|------|
 | Verb | list |
-| Desc | get list of available backing images |
+| Desc | get list of disk images |
+| Exp. Scoped | no (listing one experiment's images also needs `get` on that experiment) |
+| Res. Scoped | yes (list is filtered to only include images in scope; an image outside the minimega files directory also needs `get` on an experiment using it, unless it backs a listed image) |
+
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | download a disk image |
 | Exp. Scoped | no |
-| Res. Scoped | yes (list is filtered to only include backing images in scope) |
+| Res. Scoped | yes |
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | snapshot or clone a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | yes (the new image's file name) |
+
+|      |      |
+|------|------|
+| Verb | update |
+| Desc | commit, rebase, resize, or rename a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | yes (commit also needs it for the backing image) |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | delete a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
+
+|      |      |
+|------|------|
+| Verb | upload |
+| Desc | upload a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | no |
 
 #### Resource: `hosts`
 
@@ -461,6 +529,12 @@ Key: E - experiment resource, V - VM resource, U - user resource
 | Desc | manage store configurations (topologies, scenarios, etc.) |
 | Exp. Scoped | no |
 | Res. Scoped | yes |
+
+Config permissions are matched against the config's `Kind/name`, not its name
+alone, so write `resourceNames` that way: `Topology/my-topo` rather than
+`my-topo`. A `*` in a resource name never crosses the `/`, so use `*/*` or
+`Topology/*` to cover every config or every topology. The web UI checks config
+permissions the same way the server does.
 
 #### Resource: `settings`
 
@@ -597,6 +671,7 @@ spec:
     - "experiments/files"
     verbs:
     - create
+    - delete
   - resources:
     - hosts
     resourceNames:
@@ -604,6 +679,15 @@ spec:
     verbs:
     - list
 ```
+
+!!! note
+    `experiments/files delete` was added to this role after phēnix shipped it.
+    When the UI server starts it adds the permission to any stored
+    `Experiment Admin` role, and to the role of every user assigned it, so
+    existing installs pick it up without editing anything. `Experiment User`,
+    `Experiment Viewer` and `VM Admin` do not get it. `Experiment User` can
+    still upload experiment files but cannot delete them, and `Experiment
+    Viewer` and `VM Admin` can do neither.
 
 #### Experiment User (`experiment-user`)
 

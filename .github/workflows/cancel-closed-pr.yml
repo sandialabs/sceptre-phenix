@@ -1,0 +1,36 @@
+name: Cancel CI for closed PR
+
+# Closing (or merging) a pull request cancels the CI still queued or running
+# for its branch. The PR-triggered runs are canceled by each workflow's
+# concurrency group; this cancels the branch's push-triggered runs, which only
+# exist for branches in this repository.
+on:
+  pull_request:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  cancel-branch-runs:
+    name: Cancel branch runs
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel queued and in-progress runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          SELF: ${{ github.run_id }}
+        run: |
+          for status in queued in_progress waiting pending requested; do
+            gh api --paginate -X GET "repos/$REPO/actions/runs" \
+              -f branch="$BRANCH" -f status="$status" \
+              --jq '.workflow_runs[] | select(.head_repository.full_name == env.REPO) | .id'
+          done | sort -u | while read -r id; do
+            [ "$id" = "$SELF" ] && continue
+            echo "canceling run $id"
+            gh run cancel "$id" --repo "$REPO" || true
+          done

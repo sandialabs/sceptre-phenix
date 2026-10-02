@@ -20,6 +20,8 @@ type updateOptions struct {
 	snapshot   *bool
 	appendTags bool
 	tags       *map[string]string
+	// replaces all of the node's annotations when not nil
+	annotations map[string]any
 }
 
 func newUpdateOptions(opts ...UpdateOption) updateOptions {
@@ -96,6 +98,19 @@ func UpdateWithTags(t map[string]string, appendTags bool) UpdateOption {
 	return func(o *updateOptions) {
 		o.appendTags = appendTags
 		o.tags = &t
+	}
+}
+
+// UpdateWithAnnotations replaces all of the VM's annotations with a, so a nil
+// or empty map removes them all. Without this option, Update leaves them as
+// they are.
+func UpdateWithAnnotations(a map[string]any) UpdateOption {
+	return func(o *updateOptions) {
+		if a == nil {
+			a = map[string]any{}
+		}
+
+		o.annotations = a
 	}
 }
 

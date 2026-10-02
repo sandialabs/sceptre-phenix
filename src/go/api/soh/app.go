@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/activeshadow/structs"
@@ -189,6 +190,8 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 
 	logger.Info("starting SOH checks")
 
+	started := time.Now()
+
 	// *** WAIT FOR NODES TO HAVE NETWORKING CONFIGURED *** //
 
 	md := app.GetContextMetadata(ctx)
@@ -232,10 +235,16 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 		}
 	}
 
+	// Guards the IP maps (addrHosts, vlans, hostIPs), which the DHCP waits
+	// below fill in while this loop is still gathering static addresses.
+	var ipsMu sync.Mutex
+
 	for _, node := range exp.Spec.Topology().Nodes() {
 		if node.External() {
 			// track IP addresses so custom reachability tests still work
+			ipsMu.Lock()
 			s.gatherNodeIPs(node)
+			ipsMu.Unlock()
 
 			continue
 		}
@@ -262,6 +271,8 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 			continue
 		}
 
+		var dhcp []dhcpInterface
+
 		for idx, iface := range node.Network().Interfaces() {
 			if strings.EqualFold(iface.VLAN(), "MGMT") {
 				continue
@@ -274,82 +285,32 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 			s.reachabilityHosts[host] = struct{}{}
 
 			if iface.Proto() == "dhcp" {
-				wg.Add(1)
+				// Waited on below, with the host's other DHCP interfaces. No need to
+				// do any of the following stuff if this interface is configured
+				// using DHCP.
+				dhcp = append(dhcp, dhcpInterface{idx: idx, iface: iface})
 
-				// using an anonymous function here so we can break out of the inner select statement
-				go func(idx int, iface ifaces.NodeNetworkInterface) {
-					defer wg.Done()
-
-					logger.Debug("waiting for DHCP address", hostKey, host)
-
-					timer := time.After(s.md.c2Timeout)
-
-					for {
-						select {
-						case <-ctx.Done():
-							return
-						case <-timer:
-							wg.AddError(
-								errors.New("time expired waiting for DHCP details from minimega"),
-								map[string]any{hostKey: host},
-							)
-
-							return
-						default:
-							vms := mm.GetVMInfo(mm.NS(ns), mm.VMName(host))
-
-							if vms == nil {
-								wg.AddError(
-									errors.New("unable to get DHCP details from minimega"),
-									map[string]any{hostKey: host},
-								)
-
-								return
-							} else {
-								addrs := vms[0].IPv4
-
-								if addrs == nil || addrs[idx] == "" {
-									time.Sleep(1 * time.Second)
-
-									continue
-								}
-
-								s.addrHosts[addrs[idx]] = host
-								s.vlans[iface.VLAN()] = append(s.vlans[iface.VLAN()], addrs[idx])
-
-								ips, ok := s.hostIPs[host]
-								if !ok {
-									ips = make(map[string]string)
-								}
-
-								ips[iface.Name()] = addrs[idx]
-								s.hostIPs[host] = ips
-
-								wg.AddSuccess(
-									fmt.Sprintf("IP %s configured via DHCP", addrs[idx]),
-									map[string]any{hostKey: host},
-								)
-
-								return
-							}
-						}
-					}
-				}(
-					idx,
-					iface,
-				)
-
-				// No need to do any of the following stuff if this interface is
-				// configured using DHCP.
 				continue
 			}
 
+			ipsMu.Lock()
 			s.gatherNodeIPs(node)
+			ipsMu.Unlock()
 
 			cidr := fmt.Sprintf("%s/%d", iface.Address(), iface.Mask())
 			logger.Debug("waiting for IP on host to be set", hostKey, host, "ip", cidr)
 
 			s.isNetworkingConfigured(ctx, wg, ns, node, iface)
+		}
+
+		if len(dhcp) > 0 {
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+
+				s.waitForDHCP(ctx, wg, &ipsMu, ns, host, dhcp)
+			}()
 		}
 	}
 
@@ -518,7 +479,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 		}
 	}
 
-	s.writeInitialized(exp)
+	s.writeRunFinished(ctx, exp, started)
 
 	if errs || wg.ErrCount > 0 {
 		return errors.New("errors encountered in state of health app")
@@ -654,6 +615,105 @@ func (s *SOH) getFlows(ctx context.Context, exp *types.Experiment) { //nolint:fu
 	s.packetCapture["flows"] = flows
 }
 
+// dhcpPollInterval is how often minimega is asked for a VM's DHCP addresses.
+var dhcpPollInterval = 1 * time.Second //nolint:gochecknoglobals // shortened by tests
+
+// dhcpInterface is an interface configured using DHCP, and its index among
+// the node's interfaces (and so in minimega's list of the VM's IPs).
+type dhcpInterface struct {
+	idx   int
+	iface ifaces.NodeNetworkInterface
+}
+
+// waitForDHCP waits for minimega to report an address for each of a host's
+// DHCP interfaces, recording each address (under ipsMu) and its outcome in wg.
+// One `vm info` a second serves all the host's DHCP interfaces.
+func (s *SOH) waitForDHCP(
+	ctx context.Context,
+	wg *mm.StateGroup,
+	ipsMu *sync.Mutex,
+	ns, host string,
+	pending []dhcpInterface,
+) {
+	logger := plog.LoggerFromContext(ctx, plog.TypeSoh)
+
+	for range pending {
+		logger.Debug("waiting for DHCP address", hostKey, host)
+	}
+
+	timer := time.After(s.md.c2Timeout)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer:
+			for range pending {
+				wg.AddError(
+					errors.New("time expired waiting for DHCP details from minimega"),
+					map[string]any{hostKey: host},
+				)
+			}
+
+			return
+		default:
+		}
+
+		addrs, err := mm.GetVMIPv4(mm.NS(ns), mm.VMName(host))
+		if err != nil {
+			for range pending {
+				wg.AddError(
+					errors.New("unable to get DHCP details from minimega"),
+					map[string]any{hostKey: host},
+				)
+			}
+
+			return
+		}
+
+		var waiting []dhcpInterface
+
+		for _, d := range pending {
+			// minimega may not list an address for every interface yet
+			if d.idx >= len(addrs) || addrs[d.idx] == "" {
+				waiting = append(waiting, d)
+
+				continue
+			}
+
+			addr := addrs[d.idx]
+
+			ipsMu.Lock()
+
+			s.addrHosts[addr] = host
+			s.vlans[d.iface.VLAN()] = append(s.vlans[d.iface.VLAN()], addr)
+
+			ips, ok := s.hostIPs[host]
+			if !ok {
+				ips = make(map[string]string)
+			}
+
+			ips[d.iface.Name()] = addr
+			s.hostIPs[host] = ips
+
+			ipsMu.Unlock()
+
+			wg.AddSuccess(
+				fmt.Sprintf("IP %s configured via DHCP", addr),
+				map[string]any{hostKey: host},
+			)
+		}
+
+		if len(waiting) == 0 {
+			return
+		}
+
+		pending = waiting
+
+		time.Sleep(dhcpPollInterval)
+	}
+}
+
 func (s *SOH) gatherNodeIPs(node ifaces.NodeSpec) {
 	host := node.General().Hostname()
 
@@ -701,12 +761,30 @@ func (s SOH) writeResults(exp *types.Experiment) {
 	_ = exp.WriteToStore(true)
 }
 
-func (s SOH) writeInitialized(exp *types.Experiment) {
+// writeRunFinished marks the app initialized and records the finished run:
+// its time and duration, and its summary in the run history.
+func (s SOH) writeRunFinished(ctx context.Context, exp *types.Experiment, started time.Time) {
 	// we do this to make sure we don't overwrite the existing app status
 	status := make(map[string]any)
 	_ = exp.Status.ParseAppStatus("soh", &status)
 
+	finished := time.Now()
+	run := summarizeRun(s.status, finished, finished.Sub(started))
+
 	status["initialized"] = true
+	status[statusLastRun] = run.Time
+	status[statusLastRunDuration] = run.Duration
+
+	history, err := appendRunHistory(status[statusHistory], run)
+	if err != nil {
+		// the run's own results matter more than its predecessors' summaries
+		plog.LoggerFromContext(ctx, plog.TypeSoh).
+			Warn("replacing unreadable SoH run history", "exp", exp.Metadata.Name, "err", err)
+
+		history, _ = appendRunHistory(nil, run)
+	}
+
+	status[statusHistory] = history
 
 	exp.Status.SetAppStatus("soh", status)
 	_ = exp.WriteToStore(true)

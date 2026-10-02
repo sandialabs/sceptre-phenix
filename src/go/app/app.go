@@ -278,6 +278,10 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 		err     error
 	)
 
+	// External apps in this run share one reading of the cluster's hosts and
+	// the experiment's VMs.
+	ctx = withStageRuntime(ctx)
+
 	if options.Stage == ActionPreStart && !options.Trigger {
 		// Reset status.apps for experiment. Note that this will get rid of any app
 		// status from previous experiment deployments. We do this in the pre-start

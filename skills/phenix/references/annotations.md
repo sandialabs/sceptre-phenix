@@ -6,7 +6,24 @@ adding first-class schema fields. Apps read them via `node.GetAnnotation("key")`
 and interpret the value however they define it. The [skill body](../SKILL.md)
 covers the Topology and Scenario shapes these annotations attach to.
 
-Annotations used by phenix's own default apps:
+An experiment can also be given node annotations when it is created, with
+`phenix experiment create --node-annotation key=value`, the `node_annotations`
+field of `POST /experiments`, or the Advanced Options of the web UI's create
+card. They are added to every VM (not external nodes) in the experiment's own
+copy of the topology; the Topology config is unchanged, and a VM that already
+has the key keeps its value. Creation rejects a value of the wrong type for the
+default apps' annotations below (a non-boolean `phenix/default-apps`, a
+`phenix/startup-autotunnel` that is not a list of strings, a non-string
+`vrouter/*` value), which the apps would otherwise ignore silently.
+
+One VM's annotations in an existing experiment can be read and replaced, even
+while it runs, with `GET` and `PATCH /experiments/{exp}/vms/{name}` (see
+[`web-api.md`](web-api.md#vm-annotations)) or the Annotations box of the web UI's
+VM details card. The same type checks apply. Apps read most annotations when the
+experiment starts, so a change to a running experiment mostly takes effect at
+its next start.
+
+Annotations read by phenix's own default apps and web server:
 
 ## `phenix/default-apps` (all default apps)
 
@@ -55,6 +72,17 @@ config for a VyOS router node.
 
 An interface name or IP address. When set, SSH access is enabled on the router,
 templated to listen on that interface's address (or the literal IP given).
+
+## `vncBanner` (web server, VNC page)
+
+Sets the banners above and below the VM's screen on the web UI's VNC page,
+which otherwise read `EXP: <exp> - VM: <vm>`. A string is the text of both
+banners, split into lines at its newlines. A map takes `topBanner` and
+`bottomBanner`, each with `banner` (a list of lines), `backgroundColor` and
+`textColor`, or `disabled: true` for no banners. A banner the map leaves out is
+not shown. Colors must be CSS color names or hex colors (`#a91f3d`); others
+fall back to white and black, and unknown keys are ignored, each with a logged
+warning. The page shows banner text as text, never as HTML.
 
 ## Example
 

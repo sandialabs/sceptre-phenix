@@ -9,6 +9,8 @@ on:
       - 'docs/**'
       - '.github/workflows/docs.yml'
   pull_request:
+    # closed: only to cancel this PR's runs (see concurrency); jobs skip it
+    types: [opened, synchronize, reopened, closed]
     branches: ['main']
     paths-ignore:
       - 'docs/**'
@@ -26,6 +28,7 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 jobs:
   build-and-publish:
+    if: github.event.action != 'closed'
     name: Build and Publish Docker & Debian Packages
     runs-on: ubuntu-latest
     permissions:
@@ -130,6 +133,7 @@ jobs:
   # runs the finished image to catch a container that builds but cannot start.
   # Nothing is published: the image only ever exists on the runner.
   build-podman:
+    if: github.event.action != 'closed'
     name: Build and Smoke Test Podman Image
     runs-on: ubuntu-latest
     timeout-minutes: 90

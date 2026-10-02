@@ -56,25 +56,8 @@
       // Default resources are included in grapheditor resources
       mxLoadResources = false;
   </script>
-  <script type="text/javascript" src="{{ . }}grapheditor/js/Init.js"></script>
-  <script type="text/javascript" src="{{ . }}grapheditor/deflate/pako.min.js"></script>
-  <script type="text/javascript" src="{{ . }}grapheditor/deflate/base64.js"></script>
-  <script type="text/javascript" src="{{ . }}grapheditor/jscolor/jscolor.js"></script>
-  <script type="text/javascript" src="{{ . }}grapheditor/sanitizer/sanitizer.min.js"></script>
-  <script type="text/javascript" src="{{ . }}grapheditor/src/js/mxClient.js"></script>
-  <script type="text/javascript" src="{{ . }}grapheditor/js/EditorUi.js"></script>
-  <script type="text/javascript" src="{{ . }}grapheditor/js/Editor.js"></script>
-  <script type="text/javascript" src="{{ . }}grapheditor/js/Sidebar.js"></script>
-  <script type="text/javascript" src="{{ . }}grapheditor/js/Graph.js"></script>
-  <script type="text/javascript" src="{{ . }}grapheditor/js/Format.js"></script>
-  <script type="text/javascript" src="{{ . }}grapheditor/js/Shapes.js"></script>
-  <script type="text/javascript" src="{{ . }}grapheditor/js/Actions.js"></script>
-  <script type="text/javascript" src="{{ . }}grapheditor/js/Menus.js"></script>
-  <script type="text/javascript" src="{{ . }}grapheditor/js/Toolbar.js"></script>
-  <script type="text/javascript" src="{{ . }}grapheditor/js/Dialogs.js"></script>
-
-  <!-- JSONEditor component and styles -->
-  <script src="{{ . }}grapheditor/utils/js/jsoneditor.js" type="text/javascript"></script>
+  <!-- the grapheditor and mxGraph scripts, in one file: see web/builderbundle -->
+  <script type="text/javascript" src="{{ . }}grapheditor/builder.bundle.js"></script>
 
   <div id="editor" style="position:relative"></div>
 

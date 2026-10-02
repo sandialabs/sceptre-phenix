@@ -8,25 +8,40 @@ import (
 
 func TestParseNetflowLine(t *testing.T) {
 	tests := []struct {
-		name string
-		line string
-		ok   bool
-		src  string
-		dst  string
+		name  string
+		line  string
+		ok    bool
+		src   string
+		sport int
+		dst   string
+		dport int
 	}{
 		{
-			name: "IPv4 flow",
-			line: "0 0 6 10.0.0.1:1234 <-> 10.0.0.2:443 2 2048",
-			ok:   true,
-			src:  "10.0.0.1",
-			dst:  "10.0.0.2",
+			name:  "IPv4 flow",
+			line:  "0 0 6 10.0.0.1:1234 <-> 10.0.0.2:443 2 2048",
+			ok:    true,
+			src:   "10.0.0.1",
+			dst:   "10.0.0.2",
+			sport: 1234,
+			dport: 443,
 		},
 		{
-			name: "IPv6 flow",
-			line: "0 0 17 [2001:db8::1]:53 <-> [2001:db8::2]:5353 3 4096",
-			ok:   true,
-			src:  "2001:db8::1",
-			dst:  "2001:db8::2",
+			name:  "IPv6 flow",
+			line:  "0 0 17 [2001:db8::1]:53 <-> [2001:db8::2]:5353 3 4096",
+			ok:    true,
+			src:   "2001:db8::1",
+			dst:   "2001:db8::2",
+			sport: 53,
+			dport: 5353,
+		},
+		{
+			name:  "unbracketed IPv6 flow",
+			line:  "0 0 6 fe80::1:22 <-> fe80::2:443 2 2048",
+			ok:    true,
+			src:   "fe80::1",
+			dst:   "fe80::2",
+			sport: 22,
+			dport: 443,
 		},
 		{name: "truncated flow", line: "0 0 6 10.0.0.1:1234", ok: false},
 		{name: "wrong delimiter", line: "0 0 6 10.0.0.1:1234 => 10.0.0.2:443 2 2048", ok: false},
@@ -48,8 +63,9 @@ func TestParseNetflowLine(t *testing.T) {
 			if !ok {
 				return
 			}
-			if flow["src"] != test.src || flow["dst"] != test.dst {
-				t.Fatalf("parseNetflowLine() endpoints = %v -> %v, want %s -> %s", flow["src"], flow["dst"], test.src, test.dst)
+			if flow["src"] != test.src || flow["dst"] != test.dst || flow["sport"] != test.sport || flow["dport"] != test.dport {
+				t.Fatalf("parseNetflowLine() endpoints = %v:%v -> %v:%v, want %s:%d -> %s:%d",
+					flow["src"], flow["sport"], flow["dst"], flow["dport"], test.src, test.sport, test.dst, test.dport)
 			}
 		})
 	}

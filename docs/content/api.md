@@ -37,8 +37,10 @@ available in two places:
 
 The API docs are organized by tag (`Configs`, `Experiments`, `Virtual
 Machines`, `Hosts`, `Applications`, `Topologies`, `Disks`, `Users`, etc.) and
-document every available endpoint, including request parameters and response
-schemas.
+document most endpoints, including request parameters and response schemas.
+Some routes are not documented there yet, among them `/ws`, `/logs`, `/roles`,
+`/settings`, the netflow routes, and the `/webshark/` routes that WebShark
+itself calls.
 
 !!! info
     The underlying OpenAPI spec is maintained at
@@ -52,14 +54,35 @@ schemas.
 If UI/API authentication is enabled (see
 [User Authn/Authz](user-administration.md)), API requests must include an
 auth token generated from the `Users` tab in the web UI, passed as the
-`X-phenix-auth-token` header:
+`X-Phenix-Auth-Token` header, which must carry the token as `Bearer <token>`:
 
 ```http
-X-phenix-auth-token: ******
+X-Phenix-Auth-Token: Bearer ******
 ```
+
+A token in an `Authorization` header is ignored.
 
 See [Generating User Authentication Tokens](user-administration.md#generating-user-authentication-tokens)
 for details.
+
+## Response Encoding
+
+JSON, YAML, and plain-text responses are gzip-compressed for clients that send
+`Accept-Encoding: gzip`, which makes a large list such as VMs, disks, or logs
+noticeably faster to fetch over a slow link. Clients that do not advertise gzip
+get the uncompressed response, so no change is needed to keep working.
+
+## Streaming Endpoints
+
+Two endpoints stream rather than return a document, and are easiest to use from
+the command line:
+
+* `GET /experiments/{exp}/vms/{name}/captures/{interface}/stream` streams a
+  running packet capture as a pcap file, over plain HTTP or as websocket binary
+  messages. See [WebShark](webshark.md#streaming-a-running-capture) for worked
+  examples, or use `phenix vm capture stream`.
+* `GET /console/{pid}/ws` attaches a websocket to a minimega console the server
+  is running. See [minimega](minimega.md#from-the-web-ui).
 
 ## Integrations
 

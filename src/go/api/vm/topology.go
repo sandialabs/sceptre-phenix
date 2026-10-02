@@ -3,6 +3,7 @@ package vm
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"phenix/api/experiment"
 	"phenix/util/cache"
@@ -24,11 +25,18 @@ type edge struct {
 	Length int `json:"length"`
 }
 
+// topologySearchTTL bounds how long an experiment's topology search index is
+// reused. VM details (VLANs, IPs, disks) change when the experiment starts,
+// stops, or its VMs are edited, and nothing invalidates the index then.
+const topologySearchTTL = 30 * time.Second
+
 func Topology(exp string, ignore []string) (topology, error) {
-	vms, err := List(exp)
+	stored, err := experiment.Get(exp)
 	if err != nil {
-		return topology{}, fmt.Errorf("getting VMs: %w", err)
+		return topology{}, fmt.Errorf("getting VMs: getting experiment %s: %w", exp, err)
 	}
+
+	vms := ListFor(stored)
 
 	var (
 		networks = make(map[string]mm.VM)
@@ -104,15 +112,8 @@ func Topology(exp string, ignore []string) (topology, error) {
 	}
 
 	if !cached {
-		// TODO: cache with expire?
-		_ = cache.Set(cacheKey, search)
+		_ = cache.SetWithExpire(cacheKey, search, topologySearchTTL)
 	}
 
-	topo := topology{Nodes: nodes, Edges: edges} //nolint:exhaustruct // partial initialization
-
-	if exp, err := experiment.Get(exp); err == nil {
-		topo.Running = exp.Running()
-	}
-
-	return topo, nil
+	return topology{Nodes: nodes, Edges: edges, Running: stored.Running()}, nil
 }

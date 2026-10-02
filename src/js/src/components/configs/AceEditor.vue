@@ -4,23 +4,7 @@
 </template>
 
 <script>
-  // import ace from 'ace-builds/src-noconflict/ace';
-  //
-  // import themeDraculaUrl from 'ace-builds/src-noconflict/theme-dracula?url';
-  // ace.config.setModuleUrl('ace/theme/dracula', themeDraculaUrl);
-  //
-  // import keybindingVim from 'ace-builds/src-noconflict/keybinding-vim?url';
-  // ace.config.setModuleUrl('ace/keybinding/vim', keybindingVim);
-  // import 'ace-builds/src-noconflict/keybinding-vim';
-  //
-  // import 'ace-builds/src-noconflict/ext-language_tools';
-  // ace.require('ace/ext/language_tools');
-  //
-  // import modeJsonUrl from 'ace-builds/src-noconflict/mode-json?url';
-  // ace.config.setModuleUrl('ace/mode/json', modeJsonUrl);
-  //
-  // import modeYamlUrl from 'ace-builds/src-noconflict/mode-yaml?url';
-  // ace.config.setModuleUrl('ace/mode/yaml', modeYamlUrl);
+  import { loadAce } from '@/utils/loadAce.js';
 
   export default {
     props: {
@@ -49,39 +33,10 @@
     async mounted() {
       this.isLoading = true;
 
-      const aceModule = await import('ace-builds/src-noconflict/ace');
-      this.ace = aceModule.default;
-      this.ace.config.set('basePath', 'ace-builds/src-noconflict/');
-
-      const themeDraculaUrl = await import(
-        'ace-builds/src-noconflict/theme-dracula?url'
-      );
-      this.ace.config.setModuleUrl(
-        'ace/theme/dracula',
-        themeDraculaUrl.default,
-      );
-
-      const keybindingVimUrl = await import(
-        'ace-builds/src-noconflict/keybinding-vim?url'
-      );
-      this.ace.config.setModuleUrl(
-        'ace/keybinding/vim',
-        keybindingVimUrl.default,
-      );
-      await import('ace-builds/src-noconflict/keybinding-vim');
-
-      await import('ace-builds/src-noconflict/ext-language_tools');
+      this.ace = await loadAce();
+      // the editor was closed while Ace loaded
+      if (!this.$refs.editor) return;
       this.ace.require('ace/ext/language_tools');
-
-      const modeJsonUrl = await import(
-        'ace-builds/src-noconflict/mode-json?url'
-      );
-      this.ace.config.setModuleUrl('ace/mode/json', modeJsonUrl.default);
-
-      const modeYamlUrl = await import(
-        'ace-builds/src-noconflict/mode-yaml?url'
-      );
-      this.ace.config.setModuleUrl('ace/mode/yaml', modeYamlUrl.default);
 
       this.editor = this.ace.edit(this.$refs.editor, {
         theme: 'ace/theme/dracula',
@@ -125,24 +80,20 @@
         }
       },
     },
-    // setup() {
-    //   this.ace.config.set('basePath', 'ace-builds/src-noconflict/');
-    // },
     beforeUnmount() {
-      this.editor.destroy();
+      this.editor?.destroy();
     },
     methods: {
       loadVimCommands() {
-        this.ace.config.loadModule('ace/keybinding/vim', (_) => {
-          const VimApi = this.ace.require('ace/keyboard/vim').CodeMirror.Vim;
+        // loadAce bundles the vim keybinding, so it is already registered
+        const VimApi = this.ace.require('ace/keyboard/vim').CodeMirror.Vim;
 
-          VimApi.defineEx('wq', null, () => {
-            this.$emit('save');
-          });
+        VimApi.defineEx('wq', null, () => {
+          this.$emit('save');
+        });
 
-          VimApi.defineEx('q', null, () => {
-            this.$emit('reset');
-          });
+        VimApi.defineEx('q', null, () => {
+          this.$emit('reset');
         });
       },
     },
