@@ -115,12 +115,6 @@ func ConnectVLAN(v string) Option {
 	}
 }
 
-func DisconnectInterface(i int) Option {
-	return func(o *options) {
-		o.connectIface = i
-	}
-}
-
 func CaptureInterface(i int) Option {
 	return func(o *options) {
 		o.captureIface = i

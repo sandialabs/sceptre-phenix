@@ -1,5 +1,5 @@
 import { usePhenixStore } from '@/store.js';
-import { minimatch } from 'minimatch';
+import { Minimatch } from 'minimatch';
 
 // Restrict minimatch to the Go filepath.Match semantics the server uses: `*`
 // never crosses a `/` namespace boundary, and minimatch-only features
@@ -14,7 +14,22 @@ const matchOptions = {
   nonegate: true,
 };
 
+// results are cached per role object, so a new login (even with a role of
+// the same name but different policies) starts with an empty cache
 let cache = new Map();
+let cacheRole = null;
+// Compiled patterns, shared by every role: minimatch() compiles its pattern
+// on every call, which slows the first render of a large VM table.
+const matchers = new Map();
+function matches(name, pattern) {
+  let m = matchers.get(pattern);
+  if (!m) {
+    m = new Minimatch(pattern, matchOptions);
+    matchers.set(pattern, m);
+  }
+  return m.match(name);
+}
+
 // should match role.go#Allowed (with added caching)
 export function roleAllowed(resource, verb, ...names) {
   let phenixStore = usePhenixStore();
@@ -23,14 +38,19 @@ export function roleAllowed(resource, verb, ...names) {
     return false;
   }
 
-  let k = [role.name, resource, verb, names].join('$');
+  if (role !== cacheRole) {
+    cache = new Map();
+    cacheRole = role;
+  }
+
+  let k = [resource, verb, names].join('$');
   if (cache.has(k)) {
     return cache.get(k);
   }
 
   for (const p of role.policies) {
     for (const r of p.resources) {
-      if (minimatch(resource, r, matchOptions)) {
+      if (matches(resource, r)) {
         for (const v of p.verbs) {
           if (v == '*' || v == verb) {
             if (names.length == 0) {
@@ -57,9 +77,9 @@ let resourceNameAllowed = (policy, name) => {
   var allowed = false;
   for (const n of policy.resourceNames) {
     let negate = n.startsWith('!');
-    var n2 = n.replace('!', '');
+    let n2 = n.replace('!', '');
 
-    if (minimatch(name, n2, matchOptions)) {
+    if (matches(name, n2)) {
       if (negate) {
         return false;
       }

@@ -182,7 +182,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		if wf.AutoRestart() {
 			cache.UnlockExperiment(expName)
 
-			if _, err := startExperiment(expName); err != nil {
+			if err := startExperiment(expName); err != nil {
 				return err
 			}
 		}
@@ -391,7 +391,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		if wf.AutoRestart() {
 			cache.UnlockExperiment(expName)
 
-			if _, err := startExperiment(expName); err != nil {
+			if err := startExperiment(expName); err != nil {
 				return err
 			}
 		}

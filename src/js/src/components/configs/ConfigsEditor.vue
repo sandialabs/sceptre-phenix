@@ -151,6 +151,7 @@
   import { debounce } from 'lodash-es';
 
   import axiosInstance from '@/utils/axios.js';
+  import { configKey, fullConfig } from '@/utils/configCache.js';
 
   export default {
     expose: ['confirmResetEditor'],
@@ -179,14 +180,14 @@
         };
         this.config.str = this.getConfigStr('yaml');
         this.editor.lang = 'yaml';
+        this.original = this.config.str;
       } else if (this.mode == 'edit') {
-        const name = `${this.editorConfig.kind}/${this.editorConfig.metadata.name}`;
         this.editor.isLoading = true;
 
-        axiosInstance
-          .get('configs/' + name, { headers: { Accept: 'application/json' } })
-          .then((response) => {
-            if (this.isBuilderTopology(response.data)) {
+        // usually already loaded by the viewer or a hover over the config
+        fullConfig(this.editorConfig)
+          .then((config) => {
+            if (this.isBuilderTopology(config)) {
               this.$buefy.dialog.alert({
                 title: 'Built by Builder',
                 message: 'This configuration can only be edited in Builder',
@@ -195,8 +196,9 @@
                 hasIcon: true,
               });
             } else {
-              this.config.obj = response.data;
+              this.config.obj = config;
               this.config.str = this.getConfigStr('yaml');
+              this.original = this.config.str;
 
               if (this.config.obj.kind == 'Experiment') {
                 if (
@@ -249,6 +251,8 @@
           msg: null,
         },
 
+        original: '', // the config as loaded, to tell whether it was edited
+
         expRunning: false,
         expStart: false, //TODO: remove
 
@@ -256,8 +260,9 @@
       };
     },
     methods: {
+      // asks before a reload throws away edits
       handlePageReload(event) {
-        event.preventDefault();
+        if (this.changed) event.preventDefault();
       },
       configSentSave() {
         if (this.mode == 'edit') {
@@ -267,9 +272,7 @@
         }
       },
       configSentReset() {
-        if (confirm('Any edits will be lost... are you sure?')) {
-          this.resetEditor('');
-        }
+        this.confirmResetEditor();
       },
       resetErrorModal() {
         this.error.modal = false;
@@ -277,7 +280,6 @@
         this.error.msg = null;
       },
       changeKeybinding() {
-        console.log(this.editor.vim);
         let user = localStorage.getItem('user');
         localStorage.setItem(user + '.vimMode', this.editor.vim);
       },
@@ -312,21 +314,32 @@
           })
           .catch((err) => {
             useErrorNotification(err);
-            this.isWaiting = false;
+            this.editor.isLoading = false;
           });
       },
-      async confirmResetEditor() {
-        return this.$buefy.dialog.confirm({
-          title: 'Edits in Progress',
-          message:
-            'You will lose your current edits... do you want to continue?',
-          confirmText: 'Continue',
-          cancelText: 'Cancel',
-          type: 'is-warning',
-          hasIcon: true,
-          onConfirm: () => {
-            this.resetEditor('');
-          },
+      // Closes the editor, first asking whether to drop any edits. Resolves
+      // to whether it closed.
+      confirmResetEditor() {
+        if (!this.changed) {
+          this.resetEditor('');
+          return Promise.resolve(true);
+        }
+
+        return new Promise((resolve) => {
+          this.$buefy.dialog.confirm({
+            title: 'Edits in Progress',
+            message:
+              'You will lose your current edits... do you want to continue?',
+            confirmText: 'Continue',
+            cancelText: 'Cancel',
+            type: 'is-warning',
+            hasIcon: true,
+            onConfirm: () => {
+              this.resetEditor('');
+              resolve(true);
+            },
+            onCancel: () => resolve(false),
+          });
         });
       },
       resetEditor(msg) {
@@ -419,7 +432,7 @@
 
         // Using component config to get name just in case name changed as part
         // of edit.
-        let name = this.config.obj.kind + '/' + this.config.obj.metadata.name;
+        let name = configKey(this.config.obj);
 
         this.$buefy.dialog.confirm({
           title: 'Modify the Config',
@@ -439,23 +452,9 @@
               .then(() => {
                 this.resetEditor(`config ${name} has been edited`);
               })
-              .catch((err) => {
-                console.log(err);
-                const resp = err.response.data;
-                // useErrorNotification(err);
-                if (resp.metadata && resp.metadata.validation) {
-                  this.error.title = 'Validation Error';
-                  this.error.msg = resp.metadata.validation;
-                  this.error.modal = true;
-                } else {
-                  this.error.title = 'Validation Error';
-                  this.error.msg = resp.message;
-                  this.error.modal = true;
-                }
-              });
+              .catch((err) => this.showSaveError(err));
           },
         });
-        this.isWaiting = false;
       },
 
       createConfig(lang) {
@@ -476,26 +475,22 @@
             headers: { 'Content-Type': 'application/json' },
           })
           .then(() => {
-            this.resetEditor(
-              `config ${config.kind}/${config.metadata.name} has been created`,
-            );
+            this.resetEditor(`config ${configKey(config)} has been created`);
           })
-          .catch((err) => {
-            console.log(err);
-
-            if (
-              err.response.data.metadata &&
-              err.response.data.metadata.validation
-            ) {
-              this.error.title = 'Validation Error';
-              this.error.msg = err.response.data.metadata.validation;
-              this.error.modal = true;
-            } else {
-              useErrorNotification(err); // this may need to be updated
-            }
-          });
-
-        this.isWaiting = false;
+          .catch((err) => this.showSaveError(err));
+      },
+      // Validation failures open the editor's error modal, which keeps the
+      // config open for fixing; other failures (permissions, network) use the
+      // usual error notification.
+      showSaveError(err) {
+        const validation = err.response?.data?.metadata?.validation;
+        if (validation) {
+          this.error.title = 'Validation Error';
+          this.error.msg = validation;
+          this.error.modal = true;
+        } else {
+          useErrorNotification(err);
+        }
       },
       isBuilderTopology(cfg) {
         if (cfg.kind == 'Topology') {
@@ -507,6 +502,10 @@
       },
     },
     computed: {
+      changed() {
+        return this.config.str !== this.original;
+      },
+
       validName() {
         return /^[a-zA-Z0-9_@.-]*$/.test(this.configName);
       },
@@ -598,7 +597,6 @@
             config.kind !== this.pastConfigKind
           ) {
             this.debouncedUpdateConfigTemplate(config);
-            // this.updateConfigTemplate(config)
           }
 
           return config.kind;

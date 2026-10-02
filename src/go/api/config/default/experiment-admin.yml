@@ -32,6 +32,7 @@ spec:
     - "experiments/files"
     verbs:
     - create
+    - delete
   - resources:
     - hosts
     resourceNames:

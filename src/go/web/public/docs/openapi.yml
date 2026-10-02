@@ -15,6 +15,13 @@ tags:
     description: Config spec schemas
   - name: Experiments
     description: Experiments details and controls
+  - name: Scorch
+    description: >-
+      SCORCH pipeline details and controls. A scenario's scorch app metadata
+      defines one or more runs, each a pipeline of configure, start, loop,
+      stop and cleanup stages built from the components it names. These
+      endpoints report those pipelines and their latest statuses, and start,
+      cancel, clear and clean up a run.
   - name: Virtual Machines
     description: Experiment VM details and controls
   - name: Hosts
@@ -29,6 +36,26 @@ tags:
     description: Available phenix disk images
   - name: Users
     description: User details and controls
+  - name: State of Health
+    description: State of health across experiments
+  - name: Console
+    description: >-
+      minimega consoles in the web UI (the server must run with
+      --minimega-console). A console belongs to the user who started it: only
+      that user can check on it, attach to it, resize it, or end it, and
+      another user's console is reported as not found. A console keeps running
+      while websockets attach and detach, and ends when its process exits, when
+      it is deleted, or once no websocket has been attached for 15 seconds.
+  - name: Features
+    description: >-
+      The optional features this server has enabled, which the web UI reads to
+      decide what to offer.
+  - name: Tunneler
+    description: >-
+      phenix-tunneler builds this server offers for download. Like
+      /features, and unlike the other endpoints here, these two are served
+      from the server root rather than under /api/v1, and need neither
+      credentials nor a permission, so each declares its own server.
 paths:
   "/configs":
     get:
@@ -306,6 +333,16 @@ paths:
           required: false
           schema:
             type: string
+        - name: vms
+          in: query
+          description: >-
+            set to false to leave each experiment's VMs out (`vms` is empty)
+            and not ask minimega about them; `vm_count` and `delayed_vms` come
+            from the topology. Ignored when screenshot is set.
+          required: false
+          schema:
+            type: boolean
+            default: true
       responses:
         "200":
           description: successful operation
@@ -326,12 +363,18 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - name
+                - topology
               properties:
                 name:
                   type: string
                 topology:
                   type: string
-                apps:
+                scenario:
+                  type: string
+                disabled_apps:
+                  description: scenario apps to leave out of the experiment
                   type: array
                   items:
                     type: string
@@ -339,13 +382,46 @@ paths:
                   type: integer
                 vlan_max:
                   type: integer
+                workflow_branch:
+                  description: >-
+                    stored as the phenix.workflow/branch experiment annotation,
+                    so `annotations` may not also set it
+                  type: string
+                deploy_mode:
+                  type: string
+                  enum: ["", no-headnode, only-headnode, all]
+                default_bridge:
+                  type: string
+                use_gre_mesh:
+                  type: boolean
+                node_annotations:
+                  description: >-
+                    added to every VM in the experiment's copy of the topology
+                    (the topology config is unchanged); a VM's own annotation
+                    for the same key wins. Values keep their JSON type, and
+                    phenix/default-apps must be a boolean,
+                    phenix/startup-autotunnel a list of strings, and
+                    vrouter/vyos-password and vrouter/enable-ssh strings.
+                  type: object
+                  additionalProperties: {}
+                annotations:
+                  description: >-
+                    added to the experiment's metadata annotations; topology
+                    and scenario are set by phenix and rejected
+                  type: object
+                  additionalProperties:
+                    type: string
       responses:
-        "200":
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Experiment"
+        "204":
+          description: >-
+            experiment created; it is announced to websocket clients as an
+            experiment create event
+        "400":
+          description: invalid request, such as an annotation phenix rejects
+        "403":
+          description: forbidden
+        "409":
+          description: phenix is already acting on an experiment with this name
   "/experiments/{name}":
     get:
       tags:
@@ -366,13 +442,67 @@ paths:
           required: false
           schema:
             type: string
+        - name: vms
+          in: query
+          description: >-
+            set to false to leave the VMs out (`vms` is empty) and not ask
+            minimega about them; `vm_count` and `delayed_vms` come from the VMs
+            configured in the topology. Ignored when screenshot is set.
+          required: false
+          schema:
+            type: boolean
+            default: true
+        - name: filter
+          in: query
+          description: search expression the VMs must match
+          required: false
+          schema:
+            type: string
+        - name: show_dnb
+          in: query
+          description: any value includes the VMs marked do not boot
+          required: false
+          schema:
+            type: string
+        - name: sortCol
+          in: query
+          description: column to sort the VMs by, used with sortDir
+          required: false
+          schema:
+            type: string
+            enum: [name, host, uptime, delayed]
+        - name: sortDir
+          in: query
+          description: sort direction, used with sortCol
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: pageNum
+          in: query
+          description: page to return, from 1, used with perPage
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: perPage
+          in: query
+          description: VMs per page, used with pageNum
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses:
         "200":
-          description: successful operation
+          description: >-
+            successful operation; `vms` holds the page asked for and
+            `vm_count` how many VMs match, before paging
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Experiment"
+        "400":
+          description: pageNum or perPage is not a whole number of at least 1
     delete:
       tags:
         - Experiments
@@ -464,7 +594,7 @@ paths:
           description: name of phenix experiment to update schedule for
           required: true
           schema:
-            type: name
+            type: string
       requestBody:
         description: scheduling algorithm to use
         required: true
@@ -503,12 +633,83 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Captures"
+  "/experiments/{exp_name}/webshark":
+    post:
+      tags:
+        - Experiments
+      summary: Name a packet capture for WebShark to open
+      description: >-
+        Returns a random name under which the WebShark viewer (served at
+        `/webshark/` when installed) opens a capture: a saved capture file, by
+        its path as the experiment's files are listed (needs the
+        `experiments/files` `get` permission), or a VM interface's running
+        capture (also needs `vms/captures` `list` on `<exp>/<vm>`). A file
+        still being captured opens live. WebShark's own requests carry no
+        credentials, so the name is what grants access to the capture, for
+        12 hours after its last use. Open it at
+        `/webshark/embed?capture=<name>&embed=1`.
+      operationId: postExperimentsNameWebshark
+      parameters:
+        - name: exp_name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+                  description: a .pcap, .pcapng or .cap experiment file, optionally gzipped
+                  example: captures/router_eth0.pcap
+                vm:
+                  type: string
+                  description: VM with a running capture (with interface)
+                interface:
+                  type: integer
+                  description: index of the VM interface being captured
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  capture:
+                    type: string
+                    description: the name WebShark opens the capture by
+                  live:
+                    type: boolean
+                    description: whether the capture is still running
+                  title:
+                    type: string
+        "400":
+          description: >-
+            neither or both of a path and a VM, a VM without an interface
+            index, a path that is not clean and relative to the files
+            directory, or not a capture file
+        "403":
+          description: forbidden
+        "404":
+          description: no such file, or the interface is not being captured
+        "501":
+          description: WebShark is not installed
   "/experiments/{name}/files":
     get:
       tags:
         - Experiments
       summary: Get list of files for experiment
-      description: ""
+      description: >-
+        Lists the experiment's files on the head node and every mesh node.
+        A listing is reused for a few seconds, so a file written just before
+        the request may not be in it yet. Needs the `experiments/files`
+        `list` permission.
       operationId: getExperimentsNameFiles
       parameters:
         - name: name
@@ -517,6 +718,40 @@ paths:
           required: true
           schema:
             type: string
+        - name: filter
+          in: query
+          description: search expression the files must match
+          required: false
+          schema:
+            type: string
+        - name: sortCol
+          in: query
+          description: column to sort by, used with sortDir
+          required: false
+          schema:
+            type: string
+            enum: [name, date, size]
+        - name: sortDir
+          in: query
+          description: sort direction, used with sortCol
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: pageNum
+          in: query
+          description: page to return, from 1, used with perPage
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: perPage
+          in: query
+          description: files per page, used with pageNum
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses:
         "200":
           description: successful operation
@@ -524,6 +759,90 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Files"
+        "400":
+          description: pageNum or perPage is not a whole number of at least 1
+        "403":
+          description: forbidden
+  "/experiments/{name}/files/download":
+    post:
+      tags:
+        - Experiments
+      summary: Download several experiment files as a zip archive
+      description: >-
+        Streams a zip archive (`<name>-files.zip`) of the listed files, each
+        stored under its path relative to the experiment's files directory.
+        Every path is checked before anything is sent. Needs the
+        `experiments/files` `get` permission. At most 500 files totaling
+        2 GiB are allowed.
+      operationId: postExperimentsNameFilesDownload
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to download files from
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FilePaths"
+      responses:
+        "200":
+          description: zip archive of the files
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: >-
+            no paths, a path that is not clean and relative to the files
+            directory, or a pcap a running capture is still writing
+        "403":
+          description: forbidden
+        "404":
+          description: a path is not one of the experiment's files
+        "413":
+          description: more than 500 files, or more than 2 GiB in total
+  "/experiments/{name}/files/delete":
+    post:
+      tags:
+        - Experiments
+      summary: Delete several experiment files
+      description: >-
+        Deletes the listed files from the head node and every mesh node that
+        has them. Files that cannot be deleted are listed with the reason and
+        the rest are still deleted. Needs the `experiments/files` `delete`
+        permission.
+      operationId: postExperimentsNameFilesDelete
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to delete files from
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FilePaths"
+      responses:
+        "200":
+          description: files deleted, and those that were not
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilesDeleted"
+        "400":
+          description: an invalid request body, or no paths given
+        "403":
+          description: forbidden
+        "500":
+          description: deleting the files failed; any of them may remain
   "/experiments/{name}/files/{filename}":
     get:
       tags:
@@ -544,6 +863,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: path
+          in: query
+          description: path of the file relative to the experiment's files directory, as listed
+          required: true
+          schema:
+            type: string
       responses:
         "200":
           description: successful operation
@@ -552,6 +877,276 @@ paths:
               schema:
                 type: string
                 format: binary
+        "400":
+          description: >-
+            the path is not clean and relative to the files directory, or a
+            running capture is still writing the pcap
+        "403":
+          description: forbidden
+        "404":
+          description: the path is not one of the experiment's files
+    delete:
+      tags:
+        - Experiments
+      summary: Delete experiment file
+      description: >-
+        Deletes the file from the head node and every mesh node that has it.
+        Needs the `experiments/files` `delete` permission.
+      operationId: deleteExperimentsNameFilesFilename
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to delete the file from
+          required: true
+          schema:
+            type: string
+        - name: filename
+          in: path
+          description: name of the file to delete
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          description: path of the file relative to the experiment's files directory, as listed
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: file deleted
+        "400":
+          description: >-
+            the path is not clean and relative to the files directory, has
+            characters minimega would read as a glob or several arguments, or
+            names a pcap a running capture is still writing
+        "403":
+          description: forbidden
+        "404":
+          description: the path is not one of the experiment's files
+  "/experiments/{name}/scorch/pipelines":
+    get:
+      tags:
+        - Scorch
+      summary: Get every Scorch run's pipeline for an experiment
+      description: >-
+        One pipeline per run in the experiment's scorch app metadata, in run
+        order, each the run's own top-level loop. Also reports which run the
+        scorch app is executing, whether that app is running at all, and the
+        experiment's own state, so the Scorch page needs no separate
+        experiment request. Needs the `experiments` `get` permission on the
+        experiment.
+      operationId: getExperimentsNameScorchPipelines
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to get Scorch pipelines for
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScorchPipelines"
+        "400":
+          description: >-
+            the experiment could not be read from the store, or one of its
+            pipelines could not be built
+        "403":
+          description: getting the experiment is not allowed for this user
+        "500":
+          description: the experiment's scorch metadata could not be decoded
+  "/experiments/{name}/scorch/pipelines/{run}":
+    post:
+      tags:
+        - Scorch
+      summary: Start a Scorch run
+      description: >-
+        Executes the run's configure, start, loop, stop and cleanup stages in
+        the background and answers as soon as it has started; the pipeline
+        endpoints and the `apps/scorch` websocket resource report how it gets
+        on. A run that is already executing is refused. Needs the
+        `experiments/trigger` `create` and the `experiments` `get` permissions
+        on the experiment.
+      operationId: postExperimentsNameScorchPipelinesRun
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to start a Scorch run for
+          required: true
+          schema:
+            type: string
+        - name: run
+          in: path
+          description: index of the run in the experiment's scorch app metadata
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: the run has started
+        "400":
+          description: >-
+            the run ID is not a number, the experiment could not be read from
+            the store, or the run is already executing
+        "403":
+          description: starting Scorch runs is not allowed for this user
+    delete:
+      tags:
+        - Scorch
+      summary: Cancel a Scorch run
+      description: >-
+        Cancels the run's context, which ends the stage it is executing and
+        the run with it. A run that is not executing is left alone and the
+        answer is the same. Needs the `experiments/trigger` `delete`
+        permission on the experiment.
+      operationId: deleteExperimentsNameScorchPipelinesRun
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to cancel a Scorch run for
+          required: true
+          schema:
+            type: string
+        - name: run
+          in: path
+          description: index of the run in the experiment's scorch app metadata
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: the run has been canceled, or was not executing
+        "400":
+          description: the run ID is not a number
+        "403":
+          description: canceling Scorch runs is not allowed for this user
+  "/experiments/{name}/scorch/pipelines/{run}/cleanup":
+    post:
+      tags:
+        - Scorch
+      summary: Run only a Scorch run's cleanup stage
+      description: >-
+        Executes the run's top-level cleanup components on their own, without
+        its other stages, to tear down what a canceled or failed run left
+        behind, and answers as soon as they have started. Only a run whose
+        `hasCleanup` is true has any, and a run that is already executing is
+        refused. Needs the `experiments/trigger` `create` and the
+        `experiments` `get` permissions on the experiment.
+      operationId: postExperimentsNameScorchPipelinesRunCleanup
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to clean a Scorch run up for
+          required: true
+          schema:
+            type: string
+        - name: run
+          in: path
+          description: index of the run in the experiment's scorch app metadata
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: the cleanup stage has started
+        "400":
+          description: >-
+            the run ID is not a number, the experiment could not be read from
+            the store, the run has no cleanup components, or the run is
+            already executing
+        "403":
+          description: starting Scorch runs is not allowed for this user
+        "500":
+          description: the experiment's scorch metadata could not be decoded
+  "/experiments/{name}/scorch/pipelines/{run}/clear":
+    post:
+      tags:
+        - Scorch
+      summary: Clear a Scorch run's status
+      description: >-
+        Forgets the statuses held for every loop of the run, so its pipeline
+        shows as never run, and broadcasts each cleared loop over the
+        `apps/scorch` websocket resource. A run that is executing is refused,
+        so cancel it first. Needs the `experiments/trigger` `create`
+        permission on the experiment.
+      operationId: postExperimentsNameScorchPipelinesRunClear
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to clear a Scorch run for
+          required: true
+          schema:
+            type: string
+        - name: run
+          in: path
+          description: index of the run in the experiment's scorch app metadata
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: the run's status has been cleared
+        "400":
+          description: >-
+            the run ID is not a number, or the experiment could not be read
+            from the store
+        "403":
+          description: clearing Scorch runs is not allowed for this user
+        "404":
+          description: the experiment's scorch app metadata has no such run
+        "409":
+          description: the run is executing
+        "500":
+          description: the experiment's scorch metadata could not be decoded
+  "/experiments/{name}/scorch/pipelines/{run}/{loop}":
+    get:
+      tags:
+        - Scorch
+      summary: Get one loop of a Scorch run's pipeline
+      description: >-
+        The pipeline for a single loop of a run: a node per stage and per
+        component, the edges that order them, and each node's latest status.
+        Loop 0 is the run itself, and every loop above it is the pipeline
+        nested in the loop below. Needs the `experiments` `get` permission on
+        the experiment.
+      operationId: getExperimentsNameScorchPipelinesRunLoop
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment to get a Scorch pipeline for
+          required: true
+          schema:
+            type: string
+        - name: run
+          in: path
+          description: index of the run in the experiment's scorch app metadata
+          required: true
+          schema:
+            type: integer
+        - name: loop
+          in: path
+          description: loop to get, 0 for the run itself
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScorchPipeline"
+        "400":
+          description: >-
+            the run ID or the loop number is not a number, the experiment
+            could not be read from the store, the experiment has no such run,
+            or the run does not configure that loop
+        "403":
+          description: getting the experiment is not allowed for this user
   "/experiments/{exp_name}/vms":
     get:
       tags:
@@ -572,6 +1167,34 @@ paths:
           required: false
           schema:
             type: string
+        - name: sortCol
+          in: query
+          description: column to sort the VMs by, used with sortDir
+          required: false
+          schema:
+            type: string
+            enum: [name, host, uptime, delayed]
+        - name: sortDir
+          in: query
+          description: sort direction, used with sortCol
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: pageNum
+          in: query
+          description: page to return, from 1, used with perPage
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: perPage
+          in: query
+          description: VMs per page, used with pageNum
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses:
         "200":
           description: successful operation
@@ -579,12 +1202,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VMs"
+        "400":
+          description: pageNum or perPage is not a whole number of at least 1
   "/experiments/{exp_name}/vms/{vm_name}":
     get:
       tags:
         - Virtual Machines
       summary: get given VM in existing experiment
-      description: ""
+      description: >-
+        Returns the VM with its node's annotations, which VM lists leave out.
+        Needs the `vms` `get` permission.
       operationId: getExperimentsNameVmName
       parameters:
         - name: exp_name
@@ -616,7 +1243,10 @@ paths:
       tags:
         - Virtual Machines
       summary: Update existing VM settings in existing experiment
-      description: ""
+      description: >-
+        While the experiment runs, only an interface's VLAN, the tags and the
+        annotations can change. Needs the `vms` `patch` permission; the
+        response carries the annotations when the role may also get the VM.
       operationId: patchExperimentsNameVmsName
       parameters:
         - name: exp_name
@@ -647,6 +1277,10 @@ paths:
                   type: integer
                 disk:
                   type: string
+                  description: >-
+                    the image to boot from, relative to the minimega files
+                    directory or absolute; minimega must be able to use its
+                    name (see the 400 response)
                 dnb:
                   type: boolean
                 interface:
@@ -655,7 +1289,33 @@ paths:
                     index:
                       type: integer
                     vlan:
-                      type: integer
+                      type: string
+                      description: >-
+                        VLAN alias to connect the interface to; empty
+                        disconnects it. Applies only while the experiment
+                        is running, and is ignored otherwise.
+                snapshot:
+                  type: boolean
+                inject_partition:
+                  type: integer
+                tag_update_mode:
+                  type: string
+                  enum: [NONE, SET, ADD]
+                  default: NONE
+                  description: >-
+                    how `tags` applies: SET replaces the VM's tags, ADD adds to
+                    them (replacing any with the same key), and NONE ignores
+                    `tags`
+                tags:
+                  type: object
+                  additionalProperties:
+                    type: string
+                annotations:
+                  type: object
+                  additionalProperties: true
+                  description: >-
+                    replaces all of the VM's annotations; `{}` removes them.
+                    Apps read most annotations when the experiment starts.
       responses:
         "200":
           description: successful operation
@@ -663,6 +1323,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VM"
+        "400":
+          description: >-
+            invalid request, such as an annotation with an empty key, no
+            value, or a value of a type the default apps would ignore, or a
+            disk whose name minimega cannot use (white space, quotes, a
+            backslash, `#`, `$`, `,`, glob characters or a control character)
+        "403":
+          description: forbidden
     delete:
       tags:
         - Virtual Machines
@@ -670,7 +1338,7 @@ paths:
       description: ""
       operationId: deleteExperimentsNameVmsName
       parameters:
-        - name: name
+        - name: exp_name
           in: path
           description: name of phenix experiment
           required: true
@@ -744,7 +1412,8 @@ paths:
       tags:
         - Virtual Machines
       summary: redeploy VM in experiment
-      description: ""
+      description: >-
+        Needs the `vms/redeploy` `update` permission.
       operationId: postExperimentsNameVMsNameRedeploy
       parameters:
         - name: exp_name
@@ -759,6 +1428,25 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cpus:
+                  type: integer
+                ram:
+                  type: integer
+                disk:
+                  type: string
+                  description: >-
+                    the image to boot from, relative to the minimega files
+                    directory or absolute; empty keeps the VM's disk
+                injects:
+                  type: boolean
+                  description: whether to apply the VM's injections again
       responses:
         "200":
           description: successful operation
@@ -766,6 +1454,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VM"
+        "400":
+          description: >-
+            an invalid request body, or a disk whose name minimega cannot use
+            (white space, quotes, a backslash, `#`, `$`, `,`, glob characters
+            or a control character)
+        "403":
+          description: forbidden
+        "409":
+          description: the VM is busy
+        "500":
+          description: the redeploy failed
   "/experiments/{exp_name}/vms/{vm_name}/screenshot.png":
     get:
       tags:
@@ -788,10 +1487,13 @@ paths:
             type: string
         - name: size
           in: query
-          description: size of screenshot to grab
+          description: size of screenshot to grab, a whole number from 1 to 4096
           required: false
           schema:
-            type: string
+            type: integer
+            minimum: 1
+            maximum: 4096
+            default: 215
         - name: base64
           in: query
           description: whether or not to base64 encode the screenshot image
@@ -806,6 +1508,8 @@ paths:
               schema:
                 type: string
                 format: base64
+        "400":
+          description: the size is out of range, or no screenshot could be taken
   "/experiments/{exp_name}/vms/{vm_name}/vnc/ws":
     get:
       tags:
@@ -912,6 +1616,65 @@ paths:
       responses:
         "204":
           description: successful operation
+  "/experiments/{exp_name}/vms/{vm_name}/captures/{interface}/stream":
+    get:
+      tags:
+        - Virtual Machines
+      summary: stream a running VM packet capture
+      description: >-
+        Streams a running capture as a pcap file: everything captured so far
+        (or, with `from=now`, nothing captured before the request), then each
+        packet as it is captured, until the capture stops. A plain request
+        gets a chunked `application/vnd.tcpdump.pcap` body that Wireshark can
+        read from a pipe, for example `curl -sN -H 'X-Phenix-Auth-Token:
+        Bearer <token>' <url> | wireshark -k -i -`. A websocket request gets
+        the same bytes as binary messages: the first holds the pcap file
+        header and each later one whole packets. Needs the `vms/captures`
+        `list` permission on `<exp>/<vm>` and `experiments/files` `get` on the
+        experiment.
+      operationId: getExperimentsNameVmsNameCapturesInterfaceStream
+      parameters:
+        - name: exp_name
+          in: path
+          description: name of phenix experiment
+          required: true
+          schema:
+            type: string
+        - name: vm_name
+          in: path
+          description: name of phenix VM being captured
+          required: true
+          schema:
+            type: string
+        - name: interface
+          in: path
+          description: index of the VM interface being captured
+          required: true
+          schema:
+            type: integer
+        - name: from
+          in: query
+          description: "`now` to skip packets captured before the request"
+          required: false
+          schema:
+            type: string
+            enum: [now]
+      responses:
+        "101":
+          description: switching protocols (websocket)
+        "200":
+          description: the capture, streamed as it grows
+          content:
+            application/vnd.tcpdump.pcap:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: the interface is not an index
+        "403":
+          description: forbidden
+        "404":
+          description: the interface is not being captured
   "/experiments/{exp_name}/vms/{vm_name}/snapshots":
     get:
       tags:
@@ -1021,6 +1784,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VMs"
+  "/soh":
+    get:
+      tags:
+        - State of Health
+      summary: Summarize the state of health of every experiment
+      description: >-
+        One summary per experiment the caller may `get` (the same check as
+        `GET /experiments/{name}/soh`); needs the `experiments` `list`
+        permission. Results come from each experiment's soh app status. VM
+        states come from one `vm info summary` per running experiment, or,
+        while an experiment is starting or stopping, from the states last
+        read. At most 50 failing checks and down VMs are listed per
+        experiment.
+      operationId: getSoH
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SoHSummaries"
+        "403":
+          description: the role may not list experiments
   "/applications":
     get:
       tags:
@@ -1207,8 +1993,46 @@ paths:
       tags:
         - Disks
       summary: Get all available disk images
-      description: ""
+      description: >-
+        Lists the disk images in the minimega files directory and its folders,
+        the images the experiments' topologies use wherever they are, and the
+        images backing any of them, each once by its full path. The folders
+        searched go at most 16 levels below the files directory and leave out
+        hidden names (starting with `.`), `lost+found`, the experiment folders
+        `<experiment>/files`, `<experiment>/tmp` and
+        `<experiment>/miniccc_responses`, and the top-level `saved` and
+        `transfer_*` folders; symlinked folders are not followed. Needs the
+        `disks` `list` permission. A `disks` name is an image's file name, so
+        it covers the files of that name in every folder. Lists only the images
+        whose names the role may list, and of those outside the files
+        directory only the ones an experiment the role may `get` uses, or that
+        back an image the role sees. Each image's experiments are cut to those
+        the role may `list`.
       operationId: getDisks
+      parameters:
+        - name: expName
+          in: query
+          description: >-
+            look only in this experiment's topology, rather than every
+            experiment's, for the images and uses it reports; needs the
+            `experiments` `get` permission for it
+          required: false
+          schema:
+            type: string
+        - name: diskType
+          in: query
+          description: comma-separated kinds to list (vm, container, iso, unknown); all by default
+          required: false
+          schema:
+            type: string
+        - name: refresh
+          in: query
+          description: >-
+            set to true to inspect every image again rather than reuse what is
+            known about images that have not changed
+          required: false
+          schema:
+            type: boolean
       responses:
         "200":
           description: successful operation
@@ -1216,6 +2040,378 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Disks"
+        "403":
+          description: >-
+            forbidden, including an `expName` the role may not get
+        "404":
+          description: no experiment named `expName`
+    post:
+      tags:
+        - Disks
+      summary: Upload a disk image
+      description: >-
+        Writes the uploaded file to the top level of the minimega files
+        directory, under the file's own name. Needs the `disks` `upload`
+        permission.
+      operationId: postDisks
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+                - file
+      responses:
+        "200":
+          description: successful operation
+        "403":
+          description: forbidden
+        "500":
+          description: the upload could not be read or written
+    delete:
+      tags:
+        - Disks
+      summary: Delete a disk image
+      description: >-
+        Deletes the image's file. Images backed by it stop working. Needs the
+        `disks` `delete` permission for the image's file name.
+      operationId: deleteDisks
+      parameters:
+        - name: disk
+          in: query
+          description: >-
+            the image, relative to the minimega files directory or absolute;
+            it must be inside that directory and not in a folder the disk list
+            leaves out
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+        "400":
+          description: >-
+            a path outside the minimega files directory or in a folder the
+            disk list leaves out, or a folder
+        "403":
+          description: forbidden
+        "404":
+          description: no such image
+        "500":
+          description: the file could not be deleted
+  "/disks/snapshot":
+    post:
+      tags:
+        - Disks
+      summary: Snapshot a disk image
+      description: >-
+        Makes a new qcow2 image backed by the image, with minimega's `disk
+        snapshot`. Needs the `disks` `create` permission for the new image's
+        file name.
+      operationId: postDisksSnapshot
+      parameters:
+        - name: disk
+          in: query
+          description: >-
+            the image, relative to the minimega files directory or absolute;
+            it must be inside that directory and not in a folder the disk list
+            leaves out
+          required: true
+          schema:
+            type: string
+        - name: new
+          in: query
+          description: >-
+            the new image, relative to the folder holding `disk` or absolute:
+            a file that does not exist yet, so not empty and not ending in `/`
+            or in a `.` or `..` element; `.qcow2` is added unless it ends in
+            `.qc2` or `.qcow2`
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+        "400":
+          description: >-
+            a path outside the minimega files directory or in a folder the
+            disk list leaves out, an image that is not a regular file, a `new`
+            that names a folder rather than a file, or a name minimega cannot
+            use (white space, quotes, a backslash, `#`, `$`, `,`, glob
+            characters or a control character)
+        "403":
+          description: forbidden
+        "404":
+          description: no such image, or no folder for the new one
+        "409":
+          description: the new image exists already
+        "500":
+          description: minimega could not make the snapshot
+  "/disks/commit":
+    post:
+      tags:
+        - Disks
+      summary: Commit a disk image into its backing image
+      description: >-
+        Writes the image's changes into the image backing it, with minimega's
+        `disk commit`. Needs the `disks` `update` permission for both images'
+        file names.
+      operationId: postDisksCommit
+      parameters:
+        - name: disk
+          in: query
+          description: >-
+            the image, relative to the minimega files directory or absolute;
+            it must be inside that directory and not in a folder the disk list
+            leaves out
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+        "400":
+          description: >-
+            the image or its backing image is outside the minimega files
+            directory, in a folder the disk list leaves out, or not a regular
+            file, or the image's name is one minimega cannot use
+        "403":
+          description: forbidden
+        "404":
+          description: no such image
+        "500":
+          description: the image has no backing image, or the commit failed
+  "/disks/rebase":
+    post:
+      tags:
+        - Disks
+      summary: Change a disk image's backing image
+      description: >-
+        Sets the image's backing image with minimega's `disk set-backing`, or,
+        with `unsafe` false, `disk rebase`. Needs the `disks` `update`
+        permission for the image's file name.
+      operationId: postDisksRebase
+      parameters:
+        - name: disk
+          in: query
+          description: >-
+            the image, relative to the minimega files directory or absolute;
+            it must be inside that directory and not in a folder the disk list
+            leaves out
+          required: true
+          schema:
+            type: string
+        - name: backing
+          in: query
+          description: >-
+            the new backing image, as for `disk`; empty makes the image
+            independent
+          required: true
+          schema:
+            type: string
+        - name: unsafe
+          in: query
+          description: >-
+            true to change only the name of the backing image, false to also
+            write into the image what differs between the old backing image and
+            the new one
+          required: true
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: successful operation
+        "400":
+          description: >-
+            a path outside the minimega files directory or in a folder the
+            disk list leaves out, an image that is not a regular file, a name
+            minimega cannot use (white space, quotes, a backslash, `#`, `$`,
+            `,`, glob characters or a control character), or an `unsafe` that
+            is not a boolean
+        "403":
+          description: forbidden
+        "404":
+          description: no such image
+        "500":
+          description: minimega could not change the backing image
+  "/disks/resize":
+    post:
+      tags:
+        - Disks
+      summary: Resize a disk image
+      description: >-
+        Resizes the image with minimega's `disk resize`. Needs the `disks`
+        `update` permission for the image's file name.
+      operationId: postDisksResize
+      parameters:
+        - name: disk
+          in: query
+          description: >-
+            the image, relative to the minimega files directory or absolute;
+            it must be inside that directory and not in a folder the disk list
+            leaves out
+          required: true
+          schema:
+            type: string
+        - name: size
+          in: query
+          description: >-
+            the new size, or a change to it with a leading `+` or `-`, suffixed
+            with K, M, G, T, P or E; for example `50G` or `-500M`
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+        "400":
+          description: >-
+            a path outside the minimega files directory or in a folder the
+            disk list leaves out, an image that is not a regular file, or a
+            name minimega cannot use (white space, quotes, a backslash, `#`,
+            `$`, `,`, glob characters or a control character)
+        "403":
+          description: forbidden
+        "404":
+          description: no such image
+        "500":
+          description: >-
+            a size not in the form above, or minimega could not resize the
+            image
+  "/disks/clone":
+    post:
+      tags:
+        - Disks
+      summary: Copy a disk image
+      description: >-
+        Copies the image's file to a new file, never replacing one. Needs the
+        `disks` `create` permission for the new image's file name.
+      operationId: postDisksClone
+      parameters:
+        - name: disk
+          in: query
+          description: >-
+            the image, relative to the minimega files directory or absolute;
+            it must be inside that directory and not in a folder the disk list
+            leaves out
+          required: true
+          schema:
+            type: string
+        - name: new
+          in: query
+          description: >-
+            the new image, relative to the folder holding `disk` or absolute:
+            a file that does not exist yet, so not empty and not ending in `/`
+            or in a `.` or `..` element; `.qcow2` is added unless it ends in
+            `.qc2` or `.qcow2`
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+        "400":
+          description: >-
+            a path outside the minimega files directory or in a folder the
+            disk list leaves out, an image that is not a regular file, a `new`
+            that names a folder rather than a file, or a new name minimega
+            cannot use
+        "403":
+          description: forbidden
+        "404":
+          description: no such image, or no folder for the new one
+        "409":
+          description: the new image exists already
+        "500":
+          description: the copy failed
+  "/disks/rename":
+    post:
+      tags:
+        - Disks
+      summary: Rename a disk image
+      description: >-
+        Renames the image's file, never replacing a file. Images backed by it
+        stop working until they are rebased onto the new name. Needs the
+        `disks` `update` permission for the image's file name.
+      operationId: postDisksRename
+      parameters:
+        - name: disk
+          in: query
+          description: >-
+            the image, relative to the minimega files directory or absolute;
+            it must be inside that directory and not in a folder the disk list
+            leaves out
+          required: true
+          schema:
+            type: string
+        - name: new
+          in: query
+          description: >-
+            the new image, relative to the folder holding `disk` or absolute:
+            a file that does not exist yet, so not empty and not ending in `/`
+            or in a `.` or `..` element; `.qcow2` is added unless it ends in
+            `.qc2` or `.qcow2`
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+        "400":
+          description: >-
+            a path outside the minimega files directory or in a folder the
+            disk list leaves out, a folder, a `new` that names a folder rather
+            than a file, or a new name minimega cannot use
+        "403":
+          description: forbidden
+        "404":
+          description: no such image, or no folder for the new one
+        "409":
+          description: the new image exists already
+        "500":
+          description: >-
+            the rename failed, such as when the new image's folder is on
+            another file system
+  "/disks/download":
+    get:
+      tags:
+        - Disks
+      summary: Download a disk image
+      description: >-
+        Sends the image's file as an attachment. Needs the `disks` `get`
+        permission for the image's file name.
+      operationId: getDisksDownload
+      parameters:
+        - name: disk
+          in: query
+          description: >-
+            the image, relative to the minimega files directory or absolute;
+            it must be inside that directory and not in a folder the disk list
+            leaves out
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the image's file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: >-
+            a path outside the minimega files directory or in a folder the
+            disk list leaves out, or a folder
+        "403":
+          description: forbidden
+        "404":
+          description: no such image
   "/hosts":
     get:
       tags:
@@ -1314,7 +2510,7 @@ paths:
           schema:
             type: string
       requestBody:
-        description: user paramaters
+        description: user parameters
         required: true
         content:
           application/json:
@@ -1444,6 +2640,223 @@ paths:
       responses:
         "204":
           description: successful operation
+  "/console":
+    post:
+      tags:
+        - Console
+      summary: Start a minimega console
+      description: >-
+        Starts a console owned by the requesting user. It ends if no websocket
+        attaches within 15 seconds.
+      operationId: postConsole
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Console"
+        "403":
+          description: the role may not start a console (miniconsole post)
+        "405":
+          description: the server was started without --minimega-console
+        "500":
+          description: the console could not be started
+  "/console/{pid}":
+    parameters:
+      - name: pid
+        in: path
+        description: process ID of the console
+        required: true
+        schema:
+          type: integer
+    get:
+      tags:
+        - Console
+      summary: Check that a console is still running
+      description: >-
+        Lets a client attach to the console it had open, after a reload or from
+        another tab, instead of starting another.
+      operationId: getConsole
+      responses:
+        "200":
+          description: the console is running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Console"
+        "403":
+          description: the role may not use a console (miniconsole get)
+        "404":
+          description: no running console with this pid belongs to the user
+    delete:
+      tags:
+        - Console
+      summary: End a console
+      description: >-
+        Kills the console's process and closes its websockets; the UI does this
+        when the user logs out. Needs the permission that starts a console.
+      operationId: deleteConsole
+      responses:
+        "204":
+          description: the console has ended
+        "403":
+          description: the role may not start a console (miniconsole post)
+        "404":
+          description: no running console with this pid belongs to the user
+        "500":
+          description: the console's process did not end
+  "/console/{pid}/ws":
+    get:
+      tags:
+        - Console
+      summary: Attach to a console using a WebSocket
+      description: >-
+        Binary frames carry the console's output: first up to 256 KiB of its
+        recent output, then its live output. Frames sent are its input.
+        Several websockets can attach at once, and closing one leaves the
+        console running. The server closes the websocket normally (1000) once
+        the console has ended.
+      operationId: getConsoleWs
+      parameters:
+        - name: pid
+          in: path
+          description: process ID of the console
+          required: true
+          schema:
+            type: integer
+      responses:
+        "101":
+          description: switching protocols
+        "403":
+          description: the role may not use a console (miniconsole get)
+        "404":
+          description: no running console with this pid belongs to the user
+  "/console/{pid}/size":
+    post:
+      tags:
+        - Console
+      summary: Set a console's terminal size
+      description: >-
+        Both query parameters are required and must be unsigned integers: a
+        request without them, or with a value that is not all digits, does not
+        match this route at all.
+      operationId: postConsoleSize
+      parameters:
+        - name: pid
+          in: path
+          description: process ID of the console
+          required: true
+          schema:
+            type: integer
+        - name: cols
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 65535
+        - name: rows
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 65535
+      responses:
+        "200":
+          description: successful operation
+        "400":
+          description: the pid is not a number, or rows or cols is above 65535
+        "403":
+          description: the role may not start a console (miniconsole post)
+        "404":
+          description: no running console with this pid belongs to the user
+        "500":
+          description: the terminal size could not be set
+  "/features":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Features
+      summary: List the server's enabled optional features
+      description: >-
+        Served from the server root rather than under `/api/v1`, and needs
+        neither credentials nor a permission.
+      operationId: getFeatures
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Features"
+  "/downloads/tunneler":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Tunneler
+      summary: List the tunneler builds installed on this server
+      description: >-
+        Names the phenix-tunneler builds in the server's `downloads/tunneler`
+        directory, sorted, so the Tunneler page offers only downloads that
+        exist. A build may be a link to a file elsewhere. Subdirectories,
+        hidden files (names starting with a dot), broken links and anything
+        else that is not a file are left out, and an empty list is returned
+        once the directory is gone. Both
+        download paths are served from the server root, not under `/api/v1`,
+        and need neither credentials nor a permission. They exist only while
+        the `tunneler-download` feature is on, which it is when that directory
+        exists, relative to the directory the server runs from, at startup;
+        without it, the request falls through to the web UI instead.
+      operationId: getDownloadsTunneler
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tunnelers"
+        "500":
+          description: the downloads directory exists but could not be read
+  "/downloads/tunneler/{name}":
+    servers:
+      - url: http://localhost:3000
+    get:
+      tags:
+        - Tunneler
+      summary: Download a tunneler build
+      description: >-
+        Serves one of the builds `GET /downloads/tunneler` lists, as an
+        attachment under its own name. Only a file, or a link to one,
+        directly in the downloads directory is served: a name that is a path,
+        or that starts with a dot, is refused. Needs neither credentials nor a
+        permission.
+      operationId: getDownloadsTunnelerName
+      parameters:
+        - name: name
+          in: path
+          description: file name of the build, as the list reports it
+          required: true
+          schema:
+            type: string
+            example: phenix-tunneler-linux-amd64
+      responses:
+        "200":
+          description: the build
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: the name is empty, is not a bare file name, or starts with a dot
+        "404":
+          description: no such build is installed on this server
+        "500":
+          description: the build could not be read or opened
 externalDocs:
   description: Find out more about Swagger
   url: http://swagger.io
@@ -1451,6 +2864,14 @@ servers:
   - url: http://localhost:3000/api/v1
 components:
   schemas:
+    Console:
+      type: object
+      properties:
+        pid:
+          type: integer
+          description: process ID of the console
+      required:
+        - pid
     Configs:
       type: object
       properties:
@@ -1495,11 +2916,21 @@ components:
       type: object
       properties:
         id:
-          type: integer
+          type: string
+          description: unused; always empty
         name:
           type: string
         topology:
           type: string
+        scenario:
+          type: string
+          description: the scenario's name; empty when the experiment has none
+        status:
+          type: string
+          description: >-
+            what the server is doing to the experiment (starting, stopping,
+            creating, deleting, ...). `GET /experiments` otherwise reports
+            started or stopped; other responses otherwise leave it empty.
         apps:
           type: array
           items:
@@ -1509,7 +2940,14 @@ components:
           format: date-time
         running:
           type: boolean
+        percent:
+          type: number
+          description: >-
+            start progress from 0 to 1 while the experiment is starting;
+            reported by `GET /experiments` only
         vm_count:
+          type: integer
+        delayed_vms:
           type: integer
         vlan_min:
           type: integer
@@ -1527,7 +2965,9 @@ components:
               alias:
                 type: string
         vms:
-          $ref: "#/components/schemas/VMs"
+          type: array
+          items:
+            $ref: "#/components/schemas/VM"
     VMs:
       type: object
       properties:
@@ -1535,11 +2975,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/VM"
+        total:
+          type: integer
+          description: how many VMs there are, before paging
     VM:
       type: object
       properties:
-        id:
-          type: integer
         name:
           type: string
         experiment:
@@ -1571,13 +3012,43 @@ components:
           items:
             $ref: "#/components/schemas/Capture"
         running:
-          type: bool
+          type: boolean
+        busy:
+          type: boolean
+        state:
+          type: string
+        cdRom:
+          type: string
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+        ccActive:
+          type: boolean
+        external:
+          type: boolean
+        delayed_start:
+          type: string
+        snapshot:
+          type: boolean
+        inject_partition:
+          type: integer
+        description:
+          type: string
         uptime:
           type: number
           format: float
         screenshot:
           type: string
           format: base64
+        annotations:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: >-
+            the node's annotations; only a single VM's GET response, and its
+            PATCH response when the role may also get the VM, carry them. VM
+            lists, other responses and websocket updates send null.
     Schedule:
       type: object
       properties:
@@ -1620,8 +3091,152 @@ components:
       properties:
         files:
           type: array
+          description: the files on the requested page, or all of them
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              path:
+                type: string
+                description: path relative to the experiment's files directory
+              date:
+                type: string
+              size:
+                type: integer
+              categories:
+                type: array
+                items:
+                  type: string
+              plainText:
+                type: boolean
+              isDir:
+                type: boolean
+        total:
+          type: integer
+          description: how many files match, before paging
+    FilePaths:
+      type: object
+      required:
+        - paths
+      properties:
+        paths:
+          type: array
+          description: file paths relative to the experiment's files directory, as listed
           items:
             type: string
+    FilesDeleted:
+      type: object
+      properties:
+        deleted:
+          type: array
+          items:
+            type: string
+        failed:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              error:
+                type: string
+    ScorchPipelines:
+      type: object
+      description: >-
+        Every Scorch run of an experiment, with the state of the scorch app
+        and of the experiment itself.
+      properties:
+        pipelines:
+          type: array
+          description: >-
+            one pipeline per run in the scorch app metadata, in run order,
+            each the run's top-level loop; null when it configures no runs
+          nullable: true
+          items:
+            $ref: "#/components/schemas/ScorchPipeline"
+        running:
+          type: integer
+          description: >-
+            the run the scorch app is executing, or -1 when the app is not
+            running or has reported no run
+          example: -1
+        app_running:
+          type: boolean
+          description: whether the scorch app itself is running
+        experiment:
+          type: object
+          description: the experiment's own state, so the Scorch page can show it
+          properties:
+            status:
+              type: string
+              description: >-
+                started, stopped, or what the server is doing to it (starting,
+                stopping, ...)
+    ScorchPipeline:
+      type: object
+      description: >-
+        One loop of a run's pipeline: a node per stage (`configure`, `start`, a
+        `loop` node when this loop nests another, `stop`, `cleanup` and
+        `done`), a node per component the loop names, and the edges that order
+        them. A node's index is its position in `pipeline`, which is what an
+        edge points at.
+      properties:
+        name:
+          type: string
+          description: the run's name, when the run's metadata names it
+        hasCleanup:
+          type: boolean
+          description: >-
+            whether this loop defines cleanup components. For a run's
+            top-level loop (loop 0) those are the run's, which can be run on
+            their own; for a nested loop they are that loop's.
+        pipeline:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScorchPipelineNode"
+    ScorchPipelineNode:
+      type: object
+      properties:
+        name:
+          type: string
+          description: the stage's name, or the component's
+        hint:
+          type: string
+          description: always sent, always empty at present
+        status:
+          type: string
+          description: the latest status reported for the node
+          enum:
+            - unknown
+            - running
+            - background
+            - unstable
+            - success
+            - failure
+        stage:
+          type: string
+          description: the stage a component node belongs to; empty on a stage node
+        exp:
+          type: string
+        run:
+          type: integer
+        loop:
+          type: integer
+        next:
+          type: array
+          description: edges to the nodes that follow this one
+          items:
+            $ref: "#/components/schemas/ScorchPipelineEdge"
+    ScorchPipelineEdge:
+      type: object
+      properties:
+        index:
+          type: integer
+          description: position of the node the edge points at in `pipeline`
+        weight:
+          type: integer
+          description: 0 until the edge has been taken, then 2
     Hosts:
       type: object
       properties:
@@ -1636,20 +3251,45 @@ components:
           type: string
         cpus:
           type: integer
+        cpucommit:
+          type: integer
         load:
-          type: string
+          type: array
+          description: the 1, 5 and 15 minute load averages
+          items:
+            type: string
         memused:
           type: integer
         memtotal:
           type: integer
+        memcommit:
+          type: integer
+        tx:
+          type: number
+        rx:
+          type: number
         bandwidth:
           type: string
+        diskusage:
+          type: object
+          description: >-
+            percent in use of the disks holding the phenix and minimega base
+            directories
+          properties:
+            diskphenix:
+              type: number
+            diskminimega:
+              type: number
+        netcommit:
+          type: integer
         vms:
           type: integer
         uptime:
           type: number
           format: float
         schedulable:
+          type: boolean
+        headnode:
           type: boolean
     Applications:
       type: object
@@ -1698,8 +3338,67 @@ components:
       properties:
         disks:
           type: array
+          description: sorted by name, then by full path
+          items:
+            $ref: "#/components/schemas/Disk"
+    Disk:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [VM, Container, ISO, Unknown]
+        name:
+          type: string
+          description: >-
+            the image's file name, which `disks` permissions name; images in
+            different folders can share it
+        fullPath:
+          type: string
+          description: >-
+            the image's absolute path, without `.` or `..` segments, which
+            identifies it
+        relativePath:
+          type: string
+          description: >-
+            the image's path relative to the minimega files directory, or empty
+            when the image is outside it
+        outsideFilesDir:
+          type: boolean
+          description: whether the image is outside the minimega files directory
+        readOnly:
+          type: boolean
+          description: >-
+            whether the disk actions refuse the image: it is outside the
+            minimega files directory, or in a folder the disk list leaves out,
+            such as an experiment's files
+        size:
+          type: string
+          description: size of the file, as a readable string
+        virtualSize:
+          type: string
+          description: size the guest sees, as a readable string
+        experiments:
+          type: array
+          description: >-
+            experiments whose topology uses the image, directly or as the
+            backing image of an image it uses
+          nullable: true
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              running:
+                type: boolean
+        backingImages:
+          type: array
+          description: >-
+            the full paths of the images this one is backed by, nearest first
           items:
             type: string
+        inUse:
+          type: boolean
+          description: whether the image's file is in use, such as by a running VM
     Users:
       type: object
       properties:
@@ -1746,3 +3445,176 @@ components:
           type: string
         token:
           type: string
+    SoHSummaries:
+      type: object
+      properties:
+        experiments:
+          type: array
+          items:
+            $ref: "#/components/schemas/SoHSummary"
+    SoHSummary:
+      type: object
+      description: >-
+        One experiment's state of health. Only `name`, `scenario`, `status`,
+        `running`, `configured` and `vms.total` are reported for a stopped
+        experiment.
+      properties:
+        name:
+          type: string
+        scenario:
+          type: string
+        status:
+          type: string
+          description: started, stopped, or what the server is doing to it (starting, stopping, ...)
+        percent:
+          type: number
+          description: start progress from 0 to 1 while starting
+        running:
+          type: boolean
+        configured:
+          type: boolean
+          description: whether the scenario includes the soh app
+        started:
+          type: boolean
+        soh_initialized:
+          type: boolean
+          description: whether the soh app has finished a run
+        soh_running:
+          type: boolean
+          description: whether the soh app is running now
+        vms:
+          $ref: "#/components/schemas/SoHVMCounts"
+        down_vms:
+          type: array
+          description: VMs not running or not deployed (at most 50)
+          items:
+            type: string
+        vms_error:
+          type: string
+          description: why minimega could not be asked for VM states
+        hosts:
+          type: integer
+          description: hosts with results
+        hosts_with_errors:
+          type: integer
+        checks:
+          $ref: "#/components/schemas/SoHTally"
+        reachability:
+          $ref: "#/components/schemas/SoHTally"
+        last_run:
+          type: string
+          format: date-time
+          description: when the last run finished (the newest check for results from older versions)
+        last_run_duration:
+          type: number
+          description: seconds the last run took
+        history:
+          type: array
+          description: the last 20 runs, oldest first
+          items:
+            $ref: "#/components/schemas/SoHRun"
+        failing_checks:
+          type: array
+          description: failing checks from the latest results, newest first (at most 50)
+          items:
+            $ref: "#/components/schemas/SoHFailingCheck"
+        error:
+          type: string
+          description: why the experiment's soh results could not be read
+    SoHVMCounts:
+      type: object
+      description: >-
+        VMs by state. `known` is false when minimega was not or could not be
+        asked; only `total` is set then. `failing` counts running VMs with a
+        failing check.
+      properties:
+        known:
+          type: boolean
+        total:
+          type: integer
+        running:
+          type: integer
+        failing:
+          type: integer
+        notrunning:
+          type: integer
+        notboot:
+          type: integer
+        notdeploy:
+          type: integer
+        external:
+          type: integer
+        delayed:
+          type: integer
+    SoHTally:
+      type: object
+      properties:
+        total:
+          type: integer
+        passing:
+          type: integer
+        failing:
+          type: integer
+    SoHRun:
+      type: object
+      properties:
+        time:
+          type: string
+          format: date-time
+        duration:
+          type: number
+        total:
+          type: integer
+        failing:
+          type: integer
+        hosts_failing:
+          type: integer
+        hosts_down:
+          type: integer
+    SoHFailingCheck:
+      type: object
+      properties:
+        host:
+          type: string
+        check:
+          type: string
+          enum:
+            - network
+            - reachability
+            - file
+            - file absent
+            - service
+            - process
+            - listener
+            - container
+            - custom test
+        target:
+          type: string
+        error:
+          type: string
+        time:
+          type: string
+          format: date-time
+    Features:
+      type: object
+      properties:
+        features:
+          type: array
+          description: >-
+            the enabled features, in no particular order: each one named with
+            the `phenix ui --features` flag (such as `vm-mount`), `file-server`
+            when a file server endpoint is configured, `tunneler-download` when
+            the server's `downloads/tunneler` directory exists at startup, and
+            `webshark` when a WebShark build is installed
+          items:
+            type: string
+            example: webshark
+    Tunnelers:
+      type: object
+      properties:
+        files:
+          type: array
+          description: file names of the builds installed on this server, sorted
+          items:
+            type: string
+            example: phenix-tunneler-linux-amd64

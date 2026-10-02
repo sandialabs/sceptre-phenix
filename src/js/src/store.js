@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia';
 import router from '@/router';
+import { clearPageCache } from '@/utils/pageCache.js';
+import { clearConfigCache } from '@/utils/configCache.js';
 
 export const usePhenixStore = defineStore('phenix', {
   state: () => ({
@@ -17,6 +19,9 @@ export const usePhenixStore = defineStore('phenix', {
       sessionStorage.getItem('phenix.auth') === 'true',
     next: null,
     features: [],
+    // whether the features request has answered (or failed), so a page gated
+    // on a feature can tell "not yet known" from "not installed"
+    featuresLoaded: false,
   }),
   actions: {
     login(loginResponse, remember, navigate = true) {
@@ -53,6 +58,8 @@ export const usePhenixStore = defineStore('phenix', {
       }
     },
     logout() {
+      clearPageCache();
+      clearConfigCache();
       this.username = null;
       this.token = null;
       this.role = null;

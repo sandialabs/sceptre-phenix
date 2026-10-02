@@ -95,6 +95,43 @@ func init() { //nolint:gochecknoinits // background worker
 	}()
 }
 
+// reapVMForwards drops the given VM's forwards whose tunnels have closed.
+// Request paths use it instead of reapForwards (left to the background ticker)
+// so they ask minimega about one VM at most: one tunnel listing, and none when
+// the VM has no tunnel-backed forwards. forwardsMu must be held.
+func reapVMForwards(exp, vm string) {
+	var (
+		tunnels []map[string]string
+		listed  bool
+	)
+
+	// See reapForwards.
+	if !experiment.Running(exp) {
+		return
+	}
+
+	for _, l := range forwards {
+		if l.Exp != exp || l.VM != vm {
+			continue
+		}
+
+		var vmTunnels []map[string]string
+
+		if !l.QEMU {
+			if !listed {
+				tunnels = mm.GetTunnels(mm.NS(exp), mm.VMName(vm))
+				listed = true
+			}
+
+			vmTunnels = tunnels
+		}
+
+		if !forwardExists(l, vmTunnels) {
+			deleteForward(l)
+		}
+	}
+}
+
 func createPortForward(exp, vm, src, host, dst, user string) error {
 	var err error
 
@@ -127,12 +164,12 @@ func createPortForward(exp, vm, src, host, dst, user string) error {
 
 		listener.QEMU = true
 	default:
-		info := mm.GetVMInfo(mm.NS(exp), mm.VMName(vm))
-		if len(info) == 0 {
+		clusterHost, err := mm.GetVMHost(mm.NS(exp), mm.VMName(vm))
+		if err != nil {
 			return fmt.Errorf("vm %s not found for experiment %s", vm, exp)
 		}
 
-		listener.ClusterHost = info[0].Host
+		listener.ClusterHost = clusterHost
 
 		listener.DstPort, err = strconv.Atoi(dst)
 		if err != nil {
@@ -143,7 +180,7 @@ func createPortForward(exp, vm, src, host, dst, user string) error {
 	forwardsMu.Lock()
 	defer forwardsMu.Unlock()
 
-	reapForwards()
+	reapVMForwards(exp, vm)
 
 	if _, ok := forwards[listener.ToKey()]; ok {
 		return fmt.Errorf("forward already exists for user %s", user)
@@ -226,7 +263,7 @@ func GetPortForwards(w http.ResponseWriter, r *http.Request) {
 	forwardsMu.Lock()
 	defer forwardsMu.Unlock()
 
-	reapForwards()
+	reapVMForwards(exp, vm)
 
 	for key := range forwards {
 		if strings.HasPrefix(key, prefix) {
@@ -341,8 +378,7 @@ func DeletePortForward(w http.ResponseWriter, r *http.Request) {
 		host = "127.0.0.1"
 	}
 
-	info := mm.GetVMInfo(mm.NS(exp), mm.VMName(vm))
-	if len(info) == 0 {
+	if _, err := mm.GetVMHost(mm.NS(exp), mm.VMName(vm)); err != nil {
 		http.Error(w, "vm not found", http.StatusNotFound)
 
 		return
@@ -362,7 +398,7 @@ func DeletePortForward(w http.ResponseWriter, r *http.Request) {
 	forwardsMu.Lock()
 	defer forwardsMu.Unlock()
 
-	reapForwards()
+	reapVMForwards(exp, vm)
 
 	if l, ok := forwards[key]; ok {
 		// TODO: how would we go about allowing admins to close all port forwards?
@@ -376,6 +412,7 @@ func DeletePortForward(w http.ResponseWriter, r *http.Request) {
 			err := mm.CloseTunnel(
 				mm.NS(exp),
 				mm.VMName(vm),
+				mm.TunnelSourcePort(l.ClusterPort),
 				mm.TunnelDestinationPort(remoteDst),
 				mm.TunnelDestinationHost(host),
 			)
@@ -433,7 +470,7 @@ func GetPortForwardWebSocket(w http.ResponseWriter, r *http.Request) {
 	key := fmt.Sprintf("%s:%s:%s:%s:%s", exp, vm, host, port, user)
 
 	forwardsMu.Lock()
-	reapForwards()
+	reapVMForwards(exp, vm)
 
 	// Check to see if a forward exists that this user created.
 	if listener, ok := forwards[key]; ok {

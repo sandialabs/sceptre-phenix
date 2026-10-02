@@ -69,6 +69,7 @@ plugins:
 
 nav:
   - Home: index.md
+  - Web UI: web-ui.md
   - Configuration:
     - Files: configuration.md
     - Settings: settings.md
@@ -78,6 +79,7 @@ nav:
     - VMs: vms.md
     - VM Actions: vm-multi-action.md
     - Images: image.md
+    - Disks: disks.md
   - Apps:
     - Overview: apps.md
     - Examples: examples.md
@@ -87,12 +89,14 @@ nav:
     - Bridge Mode: bridge-mode.md
     - GRE Mesh: gre-mesh.md
     - Netflow: netflow.md
+    - WebShark: webshark.md
     - Tunneler: tunneler.md
   - Integrations:
     - API: api.md
     - Git Workflow: git-workflow.md
   - Administration:
     - Users: user-administration.md
+    - Hosts: hosts.md
   - Reference:
     - minimega: minimega.md
     - Troubleshooting: troubleshooting.md

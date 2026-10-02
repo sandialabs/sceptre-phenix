@@ -1,26 +1,95 @@
 package util
 
 import (
-	"sort"
+	"encoding/json"
+	"fmt"
+
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/util/mm"
 	"phenix/web/cache"
 	"phenix/web/proto"
-	"phenix/web/rbac"
 )
 
+// ExperimentToProtobuf converts the experiment with the given VMs; its
+// vm_count and delayed_vms count those VMs.
 func ExperimentToProtobuf(
 	exp types.Experiment,
 	status cache.Status,
 	vms []mm.VM,
 ) *proto.Experiment {
-	vmCount := len(vms)
-	if exp.Running() {
-		vmCount = 0
+	var (
+		pb     = experimentToProtobuf(exp, status)
+		nodes  = IndexTopology(exp.Spec.Topology())
+		counts vmCounts
+	)
+
+	pb.Vms = make([]*proto.VM, len(vms))
+
+	for i, v := range vms {
+		vm := VMToProtobufIndexed(pb.GetName(), v, nodes)
+
+		pb.Vms[i] = vm
+		counts.add(pb.GetRunning(), vm.GetDoNotBoot(), vm.GetExternal(), vm.GetDelayedStart())
 	}
 
+	pb.VmCount, pb.DelayedVms = counts.total, counts.delayed
+
+	return pb
+}
+
+// ExperimentSummaryToProtobuf converts the experiment without its VMs. Its
+// counts are those ExperimentToProtobuf gives for vm.ListConfigured(exp), read
+// straight from the topology instead of from a VM built for every node.
+func ExperimentSummaryToProtobuf(exp types.Experiment, status cache.Status) *proto.Experiment {
+	pb := experimentToProtobuf(exp, status)
+
+	topology := exp.Spec.Topology()
+	if topology == nil {
+		return pb
+	}
+
+	var (
+		nodes  = IndexTopology(topology)
+		counts vmCounts
+	)
+
+	for _, node := range topology.Nodes() {
+		// A VM takes its delay and external flag from the first node with its
+		// name, as VMToProtobufIndexed reads them, and do-not-boot from its own.
+		first := nodes[node.General().Hostname()]
+		dnb := node.General().DoNotBoot() != nil && *node.General().DoNotBoot()
+
+		counts.add(pb.GetRunning(), dnb, first.External(), first.Delayed())
+	}
+
+	pb.VmCount, pb.DelayedVms = counts.total, counts.delayed
+
+	return pb
+}
+
+// vmCounts is an experiment's vm_count and delayed_vms.
+type vmCounts struct {
+	total, delayed uint32
+}
+
+// add counts one VM: a stopped experiment counts every VM, a running one only
+// those that boot and are not external. Delayed VMs count either way.
+func (c *vmCounts) add(running, doNotBoot, external bool, delay string) {
+	if !running || (!doNotBoot && !external) {
+		c.total++
+	}
+
+	if delay != "" {
+		c.delayed++
+	}
+}
+
+// experimentToProtobuf converts all of the experiment but its VMs.
+func experimentToProtobuf(exp types.Experiment, status cache.Status) *proto.Experiment {
 	pb := &proto.Experiment{ //nolint:exhaustruct // partial initialization
 		Name:      exp.Spec.ExperimentName(),
 		Topology:  exp.Metadata.Annotations["topology"],
@@ -28,21 +97,6 @@ func ExperimentToProtobuf(
 		StartTime: exp.Status.StartTime(),
 		Running:   exp.Running(),
 		Status:    string(status),
-		VmCount:   uint32(vmCount), //nolint:gosec // integer overflow conversion int -> uint32
-	}
-
-	pb.Vms = make([]*proto.VM, len(vms))
-	for i, v := range vms {
-		vm := VMToProtobuf(exp.Spec.ExperimentName(), v, exp.Spec.Topology())
-
-		pb.Vms[i] = vm
-		if exp.Running() && !vm.GetDoNotBoot() && !vm.GetExternal() {
-			pb.VmCount++
-		}
-
-		if vm.GetDelayedStart() != "" {
-			pb.DelayedVms++
-		}
 	}
 
 	apps := make([]string, 0, len(exp.Apps()))
@@ -101,8 +155,73 @@ func ExperimentToProtobuf(
 	return pb
 }
 
+// NodeIndex maps topology hostnames to their nodes so converting a list of VMs
+// does one map lookup per VM instead of a linear topology scan.
+type NodeIndex map[string]ifaces.NodeSpec
+
+// IndexTopology builds a NodeIndex for the topology. Like FindNodeByName, the
+// first node with a given hostname wins. A nil topology yields a nil index.
+func IndexTopology(topology ifaces.TopologySpec) NodeIndex {
+	if topology == nil {
+		return nil
+	}
+
+	nodes := topology.Nodes()
+	index := make(NodeIndex, len(nodes))
+
+	for _, node := range nodes {
+		name := node.General().Hostname()
+		if _, ok := index[name]; !ok {
+			index[name] = node
+		}
+	}
+
+	return index
+}
+
+// VMToProtobuf converts one VM, looking its node up in the topology. Use
+// VMToProtobufIndexed with IndexTopology when converting a list of VMs.
 func VMToProtobuf(exp string, vm mm.VM, topology ifaces.TopologySpec) *proto.VM {
-	v := &proto.VM{ //nolint:exhaustruct // partial initialization
+	return VMToProtobufIndexed(exp, vm, IndexTopology(topology))
+}
+
+// VMToProtobufIndexed converts one VM using a prebuilt topology node index.
+func VMToProtobufIndexed(exp string, vm mm.VM, nodes NodeIndex) *proto.VM {
+	v := vmToProtobuf(exp, vm)
+
+	if node, ok := nodes[vm.Name]; ok {
+		v.DelayedStart = node.Delayed()
+		v.External = node.External()
+	}
+
+	return v
+}
+
+// AnnotationsToProtobuf converts a node's annotations for a single VM's
+// response. No annotations convert to an empty object, so a response that
+// carries them never reads as one that does not (VM lists send null).
+func AnnotationsToProtobuf(annotations map[string]any) (*structpb.Struct, error) {
+	out := new(structpb.Struct)
+
+	if len(annotations) == 0 {
+		return out, nil
+	}
+
+	// through JSON, which takes the nested lists and maps a config decodes to
+	body, err := json.Marshal(annotations)
+	if err != nil {
+		return nil, fmt.Errorf("encoding annotations: %w", err)
+	}
+
+	if err := protojson.Unmarshal(body, out); err != nil {
+		return nil, fmt.Errorf("converting annotations: %w", err)
+	}
+
+	return out, nil
+}
+
+func vmToProtobuf(exp string, vm mm.VM) *proto.VM {
+	return &proto.VM{ //nolint:exhaustruct // partial initialization
 		Name:            vm.Name,
 		Description:     vm.Description,
 		Host:            vm.Host,
@@ -126,17 +245,6 @@ func VMToProtobuf(exp string, vm mm.VM, topology ifaces.TopologySpec) *proto.VM 
 		CcActive:        vm.CCActive,
 		Snapshot:        vm.Snapshot,
 	}
-
-	if topology == nil {
-		return v
-	}
-
-	if vm := topology.FindNodeByName(vm.Name); vm != nil {
-		v.DelayedStart = vm.Delayed()
-		v.External = vm.External()
-	}
-
-	return v
 }
 
 func CaptureToProtobuf(capture mm.Capture) *proto.Capture {
@@ -165,68 +273,4 @@ func ExperimentScheduleToProtobuf(exp types.Experiment) *proto.ExperimentSchedul
 	}
 
 	return &proto.ExperimentSchedule{Schedule: sched}
-}
-
-func UserToProtobuf(u rbac.User) *proto.User {
-	role, _ := u.Role()
-	user := &proto.User{
-		Username:      u.Username(),
-		FirstName:     u.FirstName(),
-		LastName:      u.LastName(),
-		ResourceNames: resourceNamesForRole(role),
-		Role:          RoleToProtobuf(role),
-	}
-
-	return user
-}
-
-func resourceNamesForRole(r rbac.Role) []string {
-	rnamemap := make(map[string]struct{})
-
-	for _, p := range r.Spec.Policies {
-		var skip bool
-
-		for _, pn := range p.Resources {
-			if pn == "disks" || pn == "hosts" || pn == "users" {
-				skip = true
-
-				break
-			}
-		}
-
-		if skip {
-			continue
-		}
-
-		for _, n := range p.ResourceNames {
-			rnamemap[n] = struct{}{}
-		}
-	}
-
-	rnames := make([]string, 0, len(rnamemap))
-	for n := range rnamemap {
-		rnames = append(rnames, n)
-	}
-
-	sort.Strings(rnames)
-
-	return rnames
-}
-
-func RoleToProtobuf(r rbac.Role) *proto.Role {
-	policies := make([]*proto.Policy, len(r.Spec.Policies))
-	for i, p := range r.Spec.Policies {
-		policies[i] = &proto.Policy{
-			Resources:     p.Resources,
-			ResourceNames: p.ResourceNames,
-			Verbs:         p.Verbs,
-		}
-	}
-
-	role := &proto.Role{
-		Name:     r.Spec.Name,
-		Policies: policies,
-	}
-
-	return role
 }

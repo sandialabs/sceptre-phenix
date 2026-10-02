@@ -110,17 +110,21 @@
       </b-field>
       <b-field>
         <b-input
-          style="width: 360px"
+          v-model="searchInput"
           placeholder="Search log messages"
-          v-model="searchFilter"
-          icon-right="times-circle"
-          icon-right-clickable
-          @icon-right-click="searchFilter = ''">
-        </b-input>
+          icon="search"
+          aria-label="Search log messages"></b-input>
+        <p v-if="searchInput" class="control">
+          <button
+            class="button input-button"
+            aria-label="Clear log search"
+            @click="searchInput = ''">
+            <b-icon icon="window-close"></b-icon>
+          </button>
+        </p>
       </b-field>
     </b-field>
     <div style="position: relative; background: #484848">
-      <b-loading :is-full-page="false" v-model="isLoading"></b-loading>
       <div class="columns row mb-0 has-text-weight-bold mx-0">
         <div class="log-column level-column">Level</div>
         <div class="log-column ts-column">Timestamp</div>
@@ -128,6 +132,16 @@
         <div class="log-column column is-rest">Message</div>
       </div>
 
+      <div v-if="!loaded" class="has-text-centered p-4">
+        {{ loadingText('logs') }}
+      </div>
+      <div v-else-if="filteredLogs.length === 0" class="has-text-centered p-4">
+        {{
+          logs.length
+            ? 'No logs match your filters'
+            : 'No logs in this time range'
+        }}
+      </div>
       <RecycleScroller
         ref="logScroller"
         role="region"
@@ -181,12 +195,25 @@
 </template>
 
 <script>
+  import { markRaw } from 'vue';
+  import { BDatetimepicker } from 'buefy';
+  import { debounce } from 'lodash-es';
   import { RecycleScroller } from 'vue-virtual-scroller';
   import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
 
   import axiosInstance from '@/utils/axios.js';
-  import { useErrorNotification } from '@/utils/errorNotif';
-  import { addWsHandler, removeWsHandler } from '@/utils/websocket';
+  import {
+    addWsHandler,
+    onWsReconnect,
+    removeWsHandler,
+    sendWsMsg,
+  } from '@/utils/websocket';
+  import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
+  import {
+    DEFAULT_LOG_WINDOW,
+    pageFetchers,
+    withLogIds,
+  } from '@/utils/pageData.js';
 
   const KNOWN_LEVELS = [
     // in-order
@@ -195,9 +222,10 @@
     'WARN',
     'ERROR',
   ];
+  const DEFAULT_DATE_FILTER = 'Last 10 Minutes';
   const DATE_MODES = {
     // date dropdown options. text => seconds to go back
-    'Last 10 Minutes': 10 * 60,
+    'Last 10 Minutes': DEFAULT_LOG_WINDOW,
     'Last 30 Minutes': 30 * 60,
     'Last 1 Hour': 60 * 60,
     'Last 6 Hours': 6 * 60 * 60,
@@ -219,10 +247,15 @@
 
   export default {
     components: {
+      BDatetimepicker,
       RecycleScroller,
     },
 
     async created() {
+      this.filterCache = {}; // non-reactive: see filteredLogs
+      this.applySearch = debounce((value) => {
+        this.searchFilter = value;
+      }, 200);
       this.knownLevels = KNOWN_LEVELS;
       this.dateModes = DATE_MODES;
       this.knownTypes = KNOWN_TYPES;
@@ -230,47 +263,100 @@
       this.startDate = new Date(
         Date.now() - this.dateModes[this.dateFilter] * 1000,
       );
-      this.getLogs();
+      this.loader = createPageLoader({
+        // only the default view is reopened, so only it is worth keeping;
+        // streamed entries are pushed onto the cached array too
+        key: () => (this.isDefaultView() ? 'logs' : null),
+        fetch: async (signal) => {
+          if (this.isDefaultView()) {
+            return pageFetchers.logs(signal);
+          }
+
+          // a refresh of a relative range ("Last 1 Hour") moves it to now
+          if (this.endNow && this.dateModes[this.dateFilter] !== null) {
+            this.startDate = new Date(
+              Date.now() - this.dateModes[this.dateFilter] * 1000,
+            );
+          }
+          const query =
+            `logs?start=${this.startDate.toISOString()}` +
+            (this.endNow ? '' : `&end=${this.endDate.toISOString()}`);
+          const resp = await axiosInstance.get(query, { signal });
+          return withLogIds(resp.data ?? []);
+        },
+        apply: (logs) => {
+          this.logs = markRaw(logs);
+          this.loaded = true;
+          this.$nextTick(() => {
+            // the scroller is gone if the user left the page mid-request
+            this.$refs.logScroller?.scrollToPosition(Number.MAX_SAFE_INTEGER);
+          });
+        },
+      });
+      this.loader.start();
 
       addWsHandler(this.handleWs);
+      // the server sends log lines only to clients that ask for them, and
+      // forgets who asked when the websocket reconnects
+      this.subscribeLogs('subscribe');
+      this.offWsReconnect = onWsReconnect(() =>
+        this.subscribeLogs('subscribe'),
+      );
     },
 
     beforeUnmount() {
+      this.offWsReconnect();
+      this.subscribeLogs('unsubscribe');
       removeWsHandler(this.handleWs);
+      this.applySearch.cancel();
+      this.loader.stop();
+    },
+
+    watch: {
+      searchInput(value) {
+        this.applySearch(value);
+      },
     },
 
     computed: {
+      // Logs can hold a week of entries and stream in continuously, so the
+      // array is kept out of Vue's deep reactivity (logsVersion signals a
+      // change) and streamed entries are filtered incrementally instead of
+      // re-filtering every log on every message.
       filteredLogs: function () {
-        let logs = this.logs;
-        if (logs === null) return [];
+        this.logsVersion; // dependency: bumped when logs change
+        const logs = this.logs;
+        const key = [
+          this.levelFilter,
+          this.searchFilter.toLowerCase(),
+          this.typeFilter.join(','),
+        ].join('\n');
+        const cache = this.filterCache;
+        if (cache.logs !== logs || cache.key !== key) {
+          cache.logs = logs;
+          cache.key = key;
+          cache.count = 0;
+          cache.result = [];
+        }
 
-        let currentLevel = this.knownLevels.indexOf(this.levelFilter);
-        console.log(
-          `${new Date().toISOString()} start filter len=${logs.length}`,
-        );
-        logs = logs.filter((log) => {
-          if (this.knownLevels.indexOf(log.level) < currentLevel) {
-            return false;
+        const currentLevel = this.knownLevels.indexOf(this.levelFilter);
+        const search = this.searchFilter.toLowerCase();
+        const types = this.typeFilter;
+        const matches = [];
+        for (let i = cache.count; i < logs.length; i++) {
+          const log = logs[i];
+          if (this.knownLevels.indexOf(log.level) < currentLevel) continue;
+          if (search !== '' && !log.msg.toLowerCase().includes(search)) {
+            continue;
           }
-          if (
-            this.searchFilter !== '' &&
-            !log.msg.toLowerCase().includes(this.searchFilter.toLowerCase())
-          ) {
-            return false;
-          }
-          if (
-            this.typeFilter.length > 0 &&
-            !this.typeFilter.includes(log.type)
-          ) {
-            return false;
-          }
-
-          return true;
-        });
-        console.log(
-          `${new Date().toISOString()} finish filter len=${logs.length}`,
-        );
-        return logs;
+          if (types.length > 0 && !types.includes(log.type)) continue;
+          matches.push(log);
+        }
+        cache.count = logs.length;
+        if (matches.length > 0) {
+          cache.result = cache.result.concat(matches);
+        }
+        return cache.result;
       },
       dateDropdownLabel: function () {
         if (this.dateModes[this.dateFilter] === null) {
@@ -294,24 +380,16 @@
     },
 
     methods: {
+      loadingText,
+
+      isDefaultView() {
+        return this.endNow && this.dateFilter === DEFAULT_DATE_FILTER;
+      },
+      // loads a newly chosen date range, dropping the old range's logs
       getLogs() {
-        this.isLoading = true;
-        let query =
-          `logs?start=${this.startDate.toISOString()}` +
-          (this.endNow ? '' : `&end=${this.endDate.toISOString()}`);
-        axiosInstance
-          .get(query)
-          .then((response) => {
-            this.logs = this.withIds(response.data ?? []);
-            this.$nextTick(() => {
-              this.$refs.logScroller.scrollToPosition(Number.MAX_SAFE_INTEGER);
-              this.isLoading = false;
-            });
-          })
-          .catch((err) => {
-            useErrorNotification(err);
-            this.isLoading = false;
-          });
+        this.logs = markRaw([]);
+        this.loaded = false;
+        this.loader.load();
       },
       // triggers getLogs call when date dropdown closes
       dateDropdownChange(n) {
@@ -333,16 +411,14 @@
         }
         this.$refs.dateDropdown.isActive = false;
       },
-      handleWs(msg) {
-        if (msg.resource.type == 'log' && this.endNow && !this.isLoading) {
-          this.logs.push(...this.withIds([msg.result]));
-        }
+      subscribeLogs(action) {
+        sendWsMsg({ resource: { type: 'log', name: 'phenix', action } });
       },
-      // Several log entries can share the same millisecond timestamp, so the
-      // virtual scroller needs its own unique key per entry; reusing `time`
-      // as the key made it drop rows and leave blank gaps.
-      withIds(logs) {
-        return logs.map((log) => ({ ...log, id: this.nextLogId++ }));
+      handleWs(msg) {
+        if (msg.resource.type == 'log' && this.endNow) {
+          this.logs.push(...withLogIds([msg.result]));
+          this.logsVersion++;
+        }
       },
       getIconForLevel(level) {
         switch (level) {
@@ -360,17 +436,18 @@
 
     data() {
       return {
-        nextLogId: 0,
-        logs: [], // the loaded logs; filtered in computed
+        logs: markRaw([]), // the loaded logs; filtered in computed
+        logsVersion: 0, // bumped on push since `logs` itself is not deeply reactive
         suppressWatch: false, // if true, watches won't trigger call
         startDate: new Date(),
         endDate: new Date(),
         endNow: true, // if true, ignore `endDate` and also append streaming logs
-        dateFilter: 'Last 10 Minutes', // dropdown selection. A key of `dateModes`
+        dateFilter: DEFAULT_DATE_FILTER, // dropdown selection. A key of `dateModes`
         levelFilter: 'INFO',
         typeFilter: [],
+        searchInput: '', // bound to the search box; applied to searchFilter debounced
         searchFilter: '',
-        isLoading: false,
+        loaded: false, // false until the first logs arrive
       };
     },
   };

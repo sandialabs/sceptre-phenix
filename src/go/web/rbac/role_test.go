@@ -34,9 +34,12 @@ func newTestRole(t *testing.T) Role {
 	}
 }
 
-// TestRoleAllowed verifies resource, verb, and resource name matching.
+// TestRoleAllowed verifies resource, verb, and resource name matching, for a
+// role built with its policy index (stored and user roles) and for a role
+// literal without one, which Allowed must not index: roles are shared.
 func TestRoleAllowed(t *testing.T) {
-	role := newTestRole(t)
+	literal := newTestRole(t)
+	roles := map[string]*Role{"indexed": newRole(literal.Spec, nil), "unindexed": &literal}
 
 	tests := []struct {
 		name     string
@@ -106,9 +109,15 @@ func TestRoleAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := role.Allowed(tt.resource, tt.verb, tt.names...); got != tt.want {
-				t.Errorf("Allowed(%q, %q, %q) = %v, want %v", tt.resource, tt.verb, tt.names, got, tt.want)
+			for kind, role := range roles {
+				if got := role.Allowed(tt.resource, tt.verb, tt.names...); got != tt.want {
+					t.Errorf("%s: Allowed(%q, %q, %q) = %v, want %v", kind, tt.resource, tt.verb, tt.names, got, tt.want)
+				}
 			}
 		})
+	}
+
+	if literal.mappedPolicies != nil {
+		t.Error("Allowed stored a policy index on an unindexed role")
 	}
 }

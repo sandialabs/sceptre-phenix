@@ -1,19 +1,33 @@
 // Form POSTs that work against an empty store: user create/delete,
 // settings save, and the config viewer/editor (using a config the test
 // creates and removes itself).
-const { test, expect } = require('@playwright/test');
-const { attachCapture, settle, fatalOf, gotoSeeded } = require('./helpers');
+const {
+  test: base,
+  expect,
+  pageDataLoaded,
+  roleConfig,
+  createConfig,
+  deleteConfig,
+} = require('./helpers');
+
+const test = base.extend({
+  // a Role config to view, removed afterwards
+  viewerRole: async ({ request }, use) => {
+    const config = roleConfig('e2e-viewer-role');
+    await createConfig(request, config);
+    await use(config.metadata.name);
+    await deleteConfig(request, config);
+  },
+});
 
 test('users: create and delete a user via modal', async ({ page }) => {
-  const issues = [];
-  attachCapture(page, issues);
-  await gotoSeeded(page, '/users');
-  await settle(page);
-
   // clean leftover from previous runs
-  await page.request.delete('/api/v1/users/e2e-user').catch(() => {});
+  await page.request.delete('/api/v1/users/e2e-user');
 
-  await page.locator('p.control button.button.is-light').click();
+  await page.goto('/users');
+  await pageDataLoaded(page);
+
+  await page.getByRole('button', { name: 'Create a new user' }).click();
   await expect(
     page.getByText('Create a New User', { exact: true }),
   ).toBeVisible();
@@ -29,86 +43,61 @@ test('users: create and delete a user via modal', async ({ page }) => {
   await page.getByRole('button', { name: 'Create User' }).click();
   // success path must close the modal
   await expect(page.locator('.modal-card')).toBeHidden({ timeout: 15000 });
-  const row = page.locator('tr', { hasText: 'e2e-user' });
-  await expect(row).toBeVisible({ timeout: 15000 });
-
-  // delete it again via the trash button in its row (icons are inline SVGs)
-  await row.locator('button:has(svg[data-icon="trash"])').click();
-  const confirmBtn = page.getByRole('button', { name: 'Delete', exact: true });
-  if (await confirmBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await confirmBtn.click();
-  }
-  await expect(page.locator('tr', { hasText: 'e2e-user' })).toBeHidden({
+  await expect(page.locator('tr', { hasText: 'e2e-user' })).toBeVisible({
     timeout: 15000,
   });
 
-  const fatal = fatalOf(issues);
-  expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
+  await page.getByRole('button', { name: 'Delete user e2e-user' }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page.locator('tr', { hasText: 'e2e-user' })).toBeHidden({
+    timeout: 15000,
+  });
 });
 
 test('settings: load and save round-trip', async ({ page }) => {
-  const issues = [];
-  attachCapture(page, issues);
-  await gotoSeeded(page, '/settings');
-  await settle(page);
+  await page.goto('/settings');
+  await pageDataLoaded(page);
 
-  await page.getByRole('button', { name: 'Save Changes' }).click();
+  const save = page.getByRole('button', { name: 'Save Changes' });
+  const toggle = page.locator('.switch', {
+    hasText: 'Require a lowercase letter',
+  });
+
+  // Save only enables once something has changed
+  await expect(save).toBeDisabled();
+  await toggle.click();
+  await save.click();
   await expect(page.getByText('Settings updated')).toBeVisible({
     timeout: 10000,
   });
+  await expect(save).toBeDisabled();
 
-  const fatal = fatalOf(issues);
-  expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
+  // put the setting back for the other tests
+  await toggle.click();
+  await save.click();
+  await expect(save).toBeDisabled({ timeout: 10000 });
 });
 
-test('configs: view a config and open the editor', async ({ page }) => {
-  const issues = [];
-  attachCapture(page, issues);
+test('configs: view a config and open the editor', async ({
+  page,
+  viewerRole,
+}) => {
+  await page.goto('/configs/');
+  await pageDataLoaded(page);
 
-  // self-contained fixture: a minimal Role config created via the API
-  const fixture = {
-    apiVersion: 'phenix.sandia.gov/v1',
-    kind: 'Role',
-    metadata: { name: 'e2e-viewer-role' },
-    spec: {
-      roleName: 'e2e-viewer-role',
-      policies: [
-        { resources: ['experiments'], resourceNames: ['*'], verbs: ['list'] },
-      ],
-    },
-  };
-  await page.request
-    .delete('/api/v1/configs/role/e2e-viewer-role')
-    .catch(() => {});
-  const created = await page.request.post('/api/v1/configs', { data: fixture });
-  expect(created.ok(), await created.text()).toBeTruthy();
-
-  await gotoSeeded(page, '/configs/');
-  await settle(page);
-
-  const row = page.locator('tr').filter({ hasText: 'e2e-viewer-role' });
-  await row.getByText('e2e-viewer-role', { exact: true }).click();
-  await settle(page, 1500);
+  const row = page.locator('tr').filter({ hasText: viewerRole });
+  await row.getByText(viewerRole, { exact: true }).click();
 
   // viewer opens; Edit switches to the Ace-based editor
-  await page.getByRole('button', { name: /edit/i }).first().click();
+  await page.getByRole('button', { name: 'Edit Config', exact: true }).click();
   await expect(page.locator('.ace_editor')).toBeVisible({ timeout: 20000 });
-
-  await page.request
-    .delete('/api/v1/configs/role/e2e-viewer-role')
-    .catch(() => {});
-
-  const fatal = fatalOf(issues);
-  expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 });
 
 test('configs: schema selection generates a config template', async ({
   page,
 }) => {
-  const issues = [];
-  attachCapture(page, issues);
-  await gotoSeeded(page, '/configs/');
-  await settle(page);
+  await page.goto('/configs/');
+  await pageDataLoaded(page);
 
   await page.getByRole('button', { name: 'Create a new config' }).click();
   await expect(page.locator('.ace_editor')).toBeVisible({ timeout: 20000 });
@@ -136,7 +125,4 @@ test('configs: schema selection generates a config template', async ({
   await expect(editor).toContainText('kind: Role', { timeout: 20000 });
   await expect(editor).toContainText('roleName:');
   await expect(editor).toContainText('policies:');
-
-  const fatal = fatalOf(issues);
-  expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 });

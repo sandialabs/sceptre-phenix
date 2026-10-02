@@ -1,7 +1,10 @@
 <template>
   <section>
     <div class="form-section">
-      <form class="content" @submit.prevent="sendSettingsToServer">
+      <p v-if="!loaded" class="has-text-grey">
+        {{ loadingText('settings') }}
+      </p>
+      <form v-else class="content" @submit.prevent="sendSettingsToServer">
         <h3>Password Settings</h3>
         <b-field>
           <b-switch v-model="settings_obj.password_settings.lowercase_req">
@@ -108,8 +111,10 @@
         </b-field>
 
         <hr />
-        <!-- <b-button @click="getSettings">Reset Form</b-button> -->
-        <b-button native-type="submit">Save Changes</b-button>
+        <b-button :disabled="!changed" @click="resetForm">Reset Form</b-button>
+        <b-button native-type="submit" :disabled="!changed" :loading="saving">
+          Save Changes
+        </b-button>
       </form>
     </div>
   </section>
@@ -117,28 +122,56 @@
 <script>
   import axiosInstance from '@/utils/axios.js';
   import { useErrorNotification } from '@/utils/errorNotif';
+  import { cachePage } from '@/utils/pageCache.js';
+  import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
+  import { pageFetchers } from '@/utils/pageData.js';
+
+  const copy = (obj) => JSON.parse(JSON.stringify(obj));
+
   export default {
-    async created() {
-      this.getSettings();
+    created() {
+      this.loader = createPageLoader({
+        key: 'settings',
+        fetch: pageFetchers.settings,
+        apply: (data) => {
+          // a reload must not wipe out edits that have not been saved yet
+          const keepEdits = this.loaded && this.changed;
+          this.saved = copy(data);
+          if (!keepEdits) this.settings_obj = copy(data);
+          this.loaded = true;
+        },
+      });
+      this.loader.start();
+    },
+
+    beforeUnmount() {
+      this.loader.stop();
+    },
+
+    computed: {
+      changed() {
+        return JSON.stringify(this.settings_obj) !== JSON.stringify(this.saved);
+      },
     },
 
     methods: {
-      getSettings() {
-        console.log('getting settings');
-        axiosInstance.get('settings').then((response) => {
-          const state = response.data;
-          console.log(state);
-          this.settings_obj = state;
-        });
+      loadingText,
+
+      // back to the settings last loaded from or saved to the server
+      resetForm() {
+        this.settings_obj = copy(this.saved);
       },
-      printSettings() {
-        console.log(this.settings_obj);
-      },
+
       sendSettingsToServer() {
+        // Enter submits the form too
+        if (this.saving || !this.changed) return;
+        const sent = copy(this.settings_obj);
+        this.saving = true;
         axiosInstance
-          .post('settings', this.settings_obj, { timeout: 0 })
-          .then((resp) => {
-            console.log(resp);
+          .post('settings', sent, { timeout: 0 })
+          .then((_) => {
+            this.saved = sent;
+            cachePage('settings', copy(sent));
             this.$buefy.toast.open({
               message: 'Settings updated',
               type: 'is-success',
@@ -147,30 +180,18 @@
           })
           .catch((err) => {
             useErrorNotification(err);
+          })
+          .finally(() => {
+            this.saving = false;
           });
       },
     },
     data() {
       return {
-        settings_obj: {
-          password_settings: {
-            number_req: false,
-            symbol_req: false,
-            lowercase_req: false,
-            uppercase_req: false,
-            min_length: 8,
-          },
-          timeout_settings: {
-            enabled: false,
-            timeout_min: 30,
-            warning_min: 3,
-          },
-          logging_settings: {
-            max_file_age: 365,
-            max_file_rotations: 3,
-            max_file_size: 100,
-          },
-        },
+        loaded: false,
+        saving: false,
+        saved: null,
+        settings_obj: null,
       };
     },
   };

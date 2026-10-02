@@ -640,9 +640,10 @@ that user should have is specified, and using that role name the appropriate
 RBAC permissions are copied from the role configuration into the user
 configuration.
 
-There are six (6) default role configurations that get created automatically,
-and are described under [default roles](user-administration.md#roles). An example role
-configuration is shown below for completeness.
+There are eight (8) default role configurations that get created automatically:
+the seven described under [default roles](user-administration.md#roles), and
+`Disabled`, which allows nothing. An example role configuration is shown below
+for completeness.
 
 ```yaml
 apiVersion: phenix.sandia.gov/v1
@@ -654,12 +655,18 @@ spec:
   policies:
   - resourceNames:
     - '*'
+    - '*/*'
     resources:
     - '*'
     - '*/*'
     verbs:
     - '*'
 ```
+
+Resource names are matched with the same `Kind/name` or `experiment/vm` shape
+as the resource they belong to, and a `*` never crosses the `/`, which is why
+this role lists both `*` and `*/*`. See
+[Resources](user-administration.md#resources).
 
 ## Web-UI
 
@@ -669,13 +676,17 @@ The `Configs` component will initially load with a table presenting all the
 available configuration files. It is possible to filter in two ways:
 
 1. There is a pull-down selector, which will allow filtering on a specific
-   `Kind` of config.
+   `Kind` of config. Choosing `All kinds` puts every kind back in the table.
   ![screenshot](images/filter_kind.png){: width=350 .center}
-2. A filter field will allow filtering on `Name` (if you have filtered on
-   `Kind`, it will be limited to that kind of config).
+2. A separate `Find a Config` field will allow filtering on `Name` (if you have
+   filtered on `Kind`, it will be limited to that kind of config).
   ![screenshot](images/filter.png){: width=600 .center}
 
 Clicking on the `X` next to the `Find a Config` field will reset both filters.
+
+The table can also be sorted by `Name`, `Kind`, or `Last Updated` by clicking
+the column heading. `Last Updated` shows when the config last changed, followed
+by how long ago that was, for example `(3 hours ago)`.
 
 ### View a Config
 
@@ -726,6 +737,16 @@ The editor window allows direct editing of an existing or new config file.
 - It is also possible to set keybindings to the Vim editor by enabling them with
   the sliding selector under `Vim Keybindings`.
   ![screenshot](images/edit_settings.png){: width=150 .center}
+
+Leaving the editor asks whether to discard your edits only when you have changed
+something. An unchanged config closes straight away, as does a new config you
+have not yet typed into.
+
+When a save fails, phēnix says why. A config the server rejects as invalid opens
+the editor's `Validation Error` dialog, which keeps the config open so you can
+correct it. Any other failure, such as a missing permission or a network
+problem, is reported in the usual error notification instead. An invalid upload
+reports its error the same way.
 
 #### New Config
 

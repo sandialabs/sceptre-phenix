@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -933,9 +932,7 @@ func SaveBuilderTopology(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{
-		builderFilenameForm: name,
-	}))
+	w.Header().Set("Content-Disposition", util.Attachment(name))
 	plog.Info(plog.TypeAction, "downloading builder file", "file", name, "format", format)
 	http.ServeContent(w, r, "", time.Now(), bytes.NewReader([]byte(data)))
 }

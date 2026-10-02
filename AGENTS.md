@@ -44,8 +44,10 @@ file rather than growing `SKILL.md`, and leave a one-line pointer to it from
   and etcd; `web/` serves REST, websockets, RBAC, and the built UI.
 - `src/js/src/views/` contains pages, `components/` reusable UI, and `utils/`
   shared helpers. `router.js`, `store.js`, and `main.js` wire the app.
-- The Vite server proxies `/api/v1`, `/version`, and `/features` to
+- The Vite server proxies `/api/v1`, `/version`, `/features`, and `/webshark` to
   `localhost:3000`. Root builds copy `src/js/dist/` into `src/go/web/public/`.
+- The web UI targets desktop browsers only; phēnix is not used on phones or
+  other mobile devices, so mobile support is out of scope.
 - `src/go/web/public/grapheditor/` is the Topology Builder, and is unrelated to
   the Vue app above. `js/`, `utils/`, `stencils/`, `open.html` and `index.html`
   are the phēnix-modified draw.io GraphEditor and are the files a Builder change
@@ -127,7 +129,7 @@ When changing a capability, inspect every applicable surface:
 | Protobuf | `.proto`, generated files, consumers, and tests |
 | RBAC role or policy | Policy generation, migrations, authorization surfaces, and migration tests |
 | minimega command | minimega API/source behavior and focused tests |
-| Topology Builder behavior | `src/go/web/builder.go`, Builder routes in `src/go/web/server.go`, the editor under `src/go/web/public/grapheditor/js/`, the embedded schemas in `.../grapheditor/utils/schemas/`, and [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md) |
+| Topology Builder behavior | `src/go/web/builder.go`, Builder routes in `src/go/web/server.go`, the editor under `src/go/web/public/grapheditor/js/`, the script list in `src/go/web/builderbundle/bundle.go`, the embedded schemas in `.../grapheditor/utils/schemas/`, and [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md) |
 
 Preserve v1/v2 config upgrades, persisted BoltDB/etcd data, RBAC migrations, and
 public API compatibility unless a breaking change is deliberate and documented.
@@ -191,15 +193,19 @@ image, documentation, or topology details.
 
 ## CI and Release Safety
 
-GitHub Actions is path-scoped: `ci.yml` generates, lints, and tests Go;
-`frontend.yml` runs Vitest, builds UI/backend, and runs Playwright smoke tests;
-`examples.yml` checks Go/Python examples; `packages.yml` builds Docker, Debian,
-and Podman outputs; `docs.yml` builds the documentation site for pull requests
-and publishes it to GitHub Pages from `main`. `lint.yml` runs every prek hook
-on all changes. Update affected path filters, inputs, generated artifacts,
-tool versions, and local-equivalent commands together. Preserve least-privilege
-permissions, supported action versions, lockfile caches, and shared version
-values.
+Most GitHub Actions workflows are path-scoped: `ci.yml` generates code and tests
+Go; `frontend.yml` runs Vitest, builds UI/backend, runs Playwright smoke tests,
+and checks UI bundle budgets and Lighthouse audits; `examples.yml` checks
+Go/Python examples; `docs.yml` builds the docs and API reference and publishes
+them from `main`. `lint.yml` runs the `prek` hooks, including golangci-lint for
+Go (`src/go/prek.toml`), on every push, and `packages.yml` builds Docker,
+Debian, and Podman outputs on every push that changes more than the docs;
+`cancel-closed-pr.yml` cancels a closed pull request branch's push-triggered
+runs (branches in this repository only), while each workflow's own concurrency
+group cancels the pull request's `pull_request` runs. Update affected path
+filters, inputs, generated artifacts, tool versions, and local-equivalent
+commands together. Preserve least-privilege permissions, supported action
+versions, lockfile caches, and shared version values.
 
 Do not publish artifacts, push images, or create releases under any
 circumstances. The only exception is packages that a fork's own workflows

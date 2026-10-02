@@ -279,6 +279,11 @@ IDs before producing XML.
     (menu actions), `Sidebar.js` (node palettes)
   - `src/go/web/public/grapheditor/utils/schemas/` — the JSON schemas that
     supply new nodes' default values, including the `$DEFAULT_*` variables
+  - [`src/go/web/builderbundle/bundle.go`](../../../src/go/web/builderbundle/bundle.go):
+    the Builder page loads the GraphEditor and mxGraph scripts as one
+    `grapheditor/builder.bundle.js`, which the server builds from the served
+    files in the order of its `scripts` list; a new script goes in that list,
+    not in `builder.html`
 - Vendored editor: mxGraph 4.2.2 under
   `src/go/web/public/grapheditor/src/`, upstream archived. See `AGENTS.md`
   before changing anything in that tree.

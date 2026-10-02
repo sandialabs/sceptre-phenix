@@ -132,6 +132,11 @@ no `config.yaml` or restart involved.
 | Idle timeout (minutes) | `30` | Minutes of inactivity before an idle user is logged out. |
 | Warning before logout (minutes) | `3` | How long before logout to warn the user. |
 
+The page opens on the settings it last loaded, so there is nothing to wait for;
+the refresh button in the header reloads them. `Reset Form` discards any unsaved
+changes and puts the loaded settings back, and both `Reset Form` and
+`Save Changes` stay disabled until you change something.
+
 ## phēnix Apps Environment Variables
 
 Apps (`phenix-apps`) run as subprocesses and read their configuration from the environment.

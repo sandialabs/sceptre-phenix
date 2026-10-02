@@ -16,6 +16,8 @@ export default [
       '**/coverage/**',
       'e2e/test-results/**',
       'e2e/playwright-report/**',
+      'perf/lighthouse-results/**',
+      'perf/.lighthouseci/**',
     ],
   },
   js.configs.recommended,
@@ -47,6 +49,10 @@ export default [
       // errors from optional/best-effort requests (e.g. probing whether an
       // endpoint/feature is available). Empty blocks elsewhere still error.
       'no-empty': ['error', { allowEmptyCatch: true }],
+      // The browser console is for problems; diagnostics that only help
+      // while developing go through debug() in src/utils/debug.js, which
+      // production builds drop.
+      'no-console': ['error', { allow: ['warn', 'error'] }],
     },
   },
   {
@@ -59,7 +65,7 @@ export default [
     },
   },
   {
-    files: ['vite.config.js', 'vitest.config.js'],
+    files: ['vite.config.js'],
     languageOptions: {
       globals: {
         ...globals.node,
@@ -69,6 +75,16 @@ export default [
   {
     // Playwright e2e specs/helpers run under Node with CommonJS require().
     files: ['e2e/**/*.js'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
+  {
+    // size-limit and Lighthouse CI configs are CommonJS run under Node.
+    files: ['perf/**/*.cjs'],
     languageOptions: {
       sourceType: 'commonjs',
       globals: {

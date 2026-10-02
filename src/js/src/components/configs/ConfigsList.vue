@@ -37,21 +37,21 @@
           <textarea
             class="textarea x-config-text has-fixed-size"
             rows="30"
-            v-model="viewer.obj"
+            :value="viewer.obj ?? 'Loading…'"
             readonly />
         </div>
       </section>
       <footer class="modal-card-foot x-modal-dark buttons is-right">
         <button
-          v-if="roleAllowed('configs', 'update', configFullName(viewer.config))"
+          v-if="configAllowed('update', viewer.config)"
           class="button is-success"
           @click="$emit('edit', viewer.config)">
           Edit Config
         </button>
-        <!-- <button class="button is-info" @click="action( 'dl', { 'kind': viewer.kind, 'metadata': { 'name': viewer.name } } )"> -->
         <button
           class="button is-info"
           aria-label="Download config"
+          :class="{ 'is-loading': isDownloading(viewer.config) }"
           @click="download([viewer.config])">
           <b-icon icon="download"></b-icon>
         </button>
@@ -65,12 +65,20 @@
     <div class="level-right">
       <div class="level-item">
         <b-field position="is-right" grouped>
+          <div
+            v-if="paginationNeeded"
+            class="control is-flex is-align-items-center">
+            <b-switch
+              v-model="table.isPaginated"
+              size="is-small"
+              type="is-light"
+              >Paginate</b-switch
+            >
+          </div>
           <b-field
             v-if="
               selectedConfigs.length > 0 &&
-              selectedConfigs.every((c) =>
-                roleAllowed('configs', 'get', configFullName(c)),
-              )
+              selectedConfigs.every((c) => configAllowed('get', c))
             ">
             <b-tooltip label="download selected configs" type="is-light is-top">
               <button
@@ -84,9 +92,7 @@
           <b-field
             v-if="
               selectedConfigs.length > 0 &&
-              selectedConfigs.every((c) =>
-                roleAllowed('configs', 'delete', configFullName(c)),
-              )
+              selectedConfigs.every((c) => configAllowed('delete', c))
             ">
             <b-tooltip label="delete selected configs" type="is-light is-top">
               <button
@@ -102,6 +108,7 @@
               placeholder="Filter on Kind"
               aria-label="Filter configs by kind"
               v-model="filterKind">
+              <option :value="null">All kinds</option>
               <option
                 v-for="(k, index) in filterOptions"
                 :key="index"
@@ -109,6 +116,8 @@
                 {{ k }}
               </option>
             </b-select>
+          </b-field>
+          <b-field>
             <b-autocomplete
               v-model="searchQuery"
               placeholder="Find a Config"
@@ -117,7 +126,7 @@
               @select="(option) => (filtered = option)">
               <template #empty> No results found </template>
             </b-autocomplete>
-            <p class="control">
+            <p v-if="searchQuery || filterKind" class="control">
               <b-tooltip
                 label="resets search filter and filter on kind"
                 type="is-light"
@@ -139,6 +148,7 @@
               <button
                 class="button is-light"
                 aria-label="Create a new config"
+                @mouseenter="loadEditor"
                 @click="$emit('create')">
                 <b-icon icon="plus"></b-icon>
               </button>
@@ -162,24 +172,21 @@
   <div style="margin-top: -1em">
     <b-table
       :data="filteredConfigs"
-      :paginated="isPaginated"
+      :paginated="table.isPaginated && paginationNeeded"
       aria-next-label="Next page"
       aria-previous-label="Previous page"
       aria-page-label="Page"
       aria-current-label="Current page"
-      per-page="10"
-      pagination-simple="true"
-      pagination-size="is-small"
+      :per-page="table.perPage"
+      :pagination-simple="table.isPaginationSimple"
+      :pagination-size="table.paginationSize"
       default-sort="kind"
       :loading="isWaiting"
       ref="cfgTable">
-      <!-- docs currently wrong with checked rows, see: https://github.com/buefy/buefy/issues/4102 -->
-      <!-- <b-loading :is-full-page="false" v-model="isWaiting"></b-loading> -->
-
       <template #empty>
         <section class="section">
           <div class="content has-text-white has-text-centered">
-            Your search turned up empty!
+            {{ emptyText }}
           </div>
         </section>
       </template>
@@ -212,22 +219,25 @@
         field="kind"
         label="Kind"
         width="200"
+        header-class="sort-inline"
         sortable
         v-slot="props">
         {{ props.row.kind }}
       </b-table-column>
 
       <b-table-column
-        field="name"
+        field="metadata.name"
         label="Name"
         width="400"
+        header-class="sort-inline"
         sortable
         v-slot="props">
-        <template
-          v-if="roleAllowed('configs', 'get', configFullName(props.row))">
+        <template v-if="configAllowed('get', props.row)">
           <b-tooltip label="view config" type="is-dark">
             <div class="field is-clickable">
-              <div @click="viewConfig(props.row)">
+              <div
+                @mouseenter="prepareOpen(props.row)"
+                @click="viewConfig(props.row)">
                 {{ props.row.metadata.name }}
               </div>
             </div>
@@ -246,8 +256,17 @@
         </template>
       </b-table-column>
 
-      <b-table-column field="updated" label="Last Updated" v-slot="props">
+      <b-table-column
+        field="metadata.updated"
+        label="Last Updated"
+        header-class="sort-inline"
+        sortable
+        :custom-sort="sortByUpdated"
+        v-slot="props">
         {{ props.row.metadata.updated }}
+        <span v-if="props.row.metadata.updated" class="has-text-grey-lighter">
+          ({{ relativeTime(props.row.metadata.updated, now) }})
+        </span>
       </b-table-column>
 
       <b-table-column label="Actions" centered v-slot="props">
@@ -258,9 +277,10 @@
           type="is-light"
           multilined>
           <button
-            v-if="roleAllowed('configs', 'update', configFullName(props.row))"
+            v-if="configAllowed('update', props.row)"
             class="button is-light is-small action"
             :aria-label="`Edit config ${props.row.metadata.name}`"
+            @mouseenter="prepareOpen(props.row)"
             @click="$emit('edit', props.row)">
             <b-icon icon="edit"></b-icon>
           </button>
@@ -272,9 +292,10 @@
           type="is-light"
           multilined>
           <button
-            v-if="roleAllowed('configs', 'get', configFullName(props.row))"
+            v-if="configAllowed('get', props.row)"
             class="button is-light is-small action"
             :aria-label="`Download config ${props.row.metadata.name}`"
+            :class="{ 'is-loading': isDownloading(props.row) }"
             @click="download([props.row])">
             <b-icon icon="download"></b-icon>
           </button>
@@ -286,7 +307,7 @@
           type="is-light"
           multilined>
           <button
-            v-if="roleAllowed('configs', 'delete', configFullName(props.row))"
+            v-if="configAllowed('delete', props.row)"
             class="button is-light is-small action"
             :aria-label="`Delete config ${props.row.metadata.name}`"
             @click="deleteConfigs([props.row])">
@@ -295,14 +316,6 @@
         </b-tooltip>
       </b-table-column>
     </b-table>
-    <br />
-    <b-field v-if="paginationNeeded" grouped position="is-right">
-      <div class="control is-flex">
-        <b-switch v-model="isPaginated" size="is-small" type="is-light"
-          >Paginate</b-switch
-        >
-      </div>
-    </b-field>
   </div>
 </template>
 
@@ -312,17 +325,33 @@
 
   import FileSaver from 'file-saver';
   import { roleAllowed } from '@/utils/rbac.js';
-  import { useErrorNotification } from '@/utils/errorNotif';
+  import { showError, useErrorNotification } from '@/utils/errorNotif';
+  import {
+    configKey,
+    forgetConfig,
+    fullConfig,
+    prefetchConfig,
+  } from '@/utils/configCache.js';
+  import { loadAce } from '@/utils/loadAce.js';
+  import { relativeTime } from '@/utils/relativeTime.js';
+  import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
+  import { pageFetchers } from '@/utils/pageData.js';
+  import { useTable } from '@/utils/useTable.js';
 
   export default {
     emits: ['edit', 'create'],
     setup() {
-      return { roleAllowed };
+      // the server authorizes configs by kind/name (store.Config.FullName)
+      const configAllowed = (verb, cfg) =>
+        roleAllowed('configs', verb, configKey(cfg));
+      return { ...useTable({ name: 'configs' }), roleAllowed, configAllowed };
     },
+
     data() {
       return {
         configs: [],
-        isWaiting: false,
+        loaded: false, // false until the first list arrives
+        isWaiting: false, // set while a change is being saved
 
         //filters
         filterKind: null,
@@ -335,10 +364,6 @@
           'User',
           'Role',
         ],
-        //table
-        isPaginated: false,
-        perPage: 10,
-        currentPage: 1,
         selectedConfigs: [],
 
         //uploader modal
@@ -351,40 +376,45 @@
           title: null,
           obj: null,
         },
+
+        downloading: new Set(), // configs being downloaded, by key
+        now: Date.now(), // for the Last Updated column's relative times
       };
     },
     created() {
-      this.updateConfigs();
+      // keeps the relative times current
+      this.clock = setInterval(() => (this.now = Date.now()), 30000);
+      this.loader = createPageLoader({
+        key: 'configs',
+        fetch: pageFetchers.configs,
+        apply: (configs) => {
+          this.configs = configs;
+          this.loaded = true;
+        },
+      });
+      this.loader.start();
+    },
+    beforeUnmount() {
+      this.loader.stop();
+      clearInterval(this.clock);
     },
     computed: {
-      paginationNeeded() {
-        return this.filteredConfigs.length > 10;
+      emptyText() {
+        if (!this.loaded) return loadingText('configs');
+        if (this.configs.length === 0) return 'No configs found';
+        return 'No configs match your search';
       },
-      filteredConfigs: function () {
-        let configs = this.configs;
-
-        if (this.filterKind) {
-          let filteredConfigs = [];
-
-          for (let i = 0; i < configs.length; i++) {
-            if (configs[i].kind == this.filterKind) {
-              filteredConfigs.push(configs[i]);
-            }
-          }
-
-          configs = filteredConfigs;
-        }
-
-        var name_re = new RegExp(this.searchQuery, 'i');
-        var data = [];
-
-        for (let i in configs) {
-          let cfg = configs[i];
-          if (cfg.metadata.name.match(name_re)) {
-            data.push(cfg);
-          }
-        }
-        return data;
+      paginationNeeded() {
+        return this.filteredConfigs.length > this.table.perPage;
+      },
+      filteredConfigs() {
+        // a plain substring match: the search box is not a regular expression
+        const search = this.searchQuery.toLowerCase();
+        return this.configs.filter(
+          (cfg) =>
+            (!this.filterKind || cfg.kind == this.filterKind) &&
+            cfg.metadata.name.toLowerCase().includes(search),
+        );
       },
     },
     methods: {
@@ -408,22 +438,33 @@
           );
         }
       },
-      updateConfigs() {
-        this.isWaiting = true;
-        axiosInstance
-          .get('configs')
-          .then((response) => {
-            const state = response.data;
-            this.configs = state.configs === null ? [] : state.configs;
-            this.isWaiting = false;
-          })
-          .catch(() => {
-            this.isWaiting = false;
-          });
+      relativeTime,
+
+      // Starts loading what opening a config needs once the pointer is on its
+      // way: the config itself and, for the editor, Ace. Ace is not prefetched
+      // with the pages since it would add ~150 kB to every first visit.
+      prepareOpen(cfg) {
+        prefetchConfig(cfg);
+        this.loadEditor();
       },
-      // Matches store.Config.FullName, the name the server authorizes.
-      configFullName(cfg) {
-        return `${cfg.kind}/${cfg.metadata.name}`;
+      loadEditor() {
+        // the editor reports a failure when opened
+        loadAce().catch(() => {});
+      },
+
+      sortByUpdated(a, b, isAsc) {
+        const diff =
+          Date.parse(a.metadata.updated ?? 0) -
+          Date.parse(b.metadata.updated ?? 0);
+        return isAsc ? diff : -diff;
+      },
+
+      isDownloading(cfg) {
+        return cfg.kind !== null && this.downloading.has(configKey(cfg));
+      },
+
+      updateConfigs() {
+        this.loader.load();
       },
       isBuilderTopology(cfg) {
         if (cfg.kind == 'Topology') {
@@ -435,7 +476,9 @@
         return false;
       },
       download(configList) {
-        const configs = configList.map(this.configFullName);
+        const configs = configList.map(configKey);
+        // the button spins until the file is ready
+        configs.forEach((key) => this.downloading.add(key));
         axiosInstance
           .post('configs/download', JSON.stringify(configs), {
             headers: {
@@ -457,10 +500,13 @@
           })
           .catch((err) => {
             useErrorNotification(err);
+          })
+          .finally(() => {
+            configs.forEach((key) => this.downloading.delete(key));
           });
       },
       deleteConfigs(configList) {
-        const configs = configList.map(this.configFullName);
+        const configs = configList.map(configKey);
         let msg;
         if (configs.length > 1) {
           msg =
@@ -474,7 +520,8 @@
             ' config. Are you sure you want to do this?';
         }
         this.$buefy.dialog.confirm({
-          title: 'Delete the Config',
+          title:
+            configs.length > 1 ? 'Delete the Configs' : 'Delete the Config',
           message: msg,
           cancelText: 'Cancel',
           confirmText: 'Delete',
@@ -488,8 +535,9 @@
                 .then(() => {
                   //delete from config list
                   let configsSet = new Set(configs);
+                  configList.forEach(forgetConfig);
                   this.configs = this.configs.filter(
-                    (item) => !configsSet.has(this.configFullName(item)),
+                    (item) => !configsSet.has(configKey(item)),
                   );
 
                   let confirmMsg;
@@ -543,10 +591,9 @@
             this.updateConfigs();
           })
           .catch((err) => {
-            if (err.response?.data?.metadata?.validation) {
-              this.error.title = 'Validation Error';
-              this.error.msg = err.response.data.metadata.validation;
-              this.error.modal = true;
+            const validation = err.response?.data?.metadata?.validation;
+            if (validation) {
+              showError('Validation Error', validation);
             } else {
               useErrorNotification(err);
             }
@@ -560,43 +607,34 @@
       },
       resetViewer() {
         this.viewer.isActive = false;
-        ((this.viewer.config = {
-          kind: null,
-          metadata: { name: null },
-        }),
-          (this.viewer.title = null));
+        this.viewer.config = { kind: null, metadata: { name: null } };
+        this.viewer.title = null;
         this.viewer.obj = null;
       },
-      viewConfig(cfg) {
+      // Opens the viewer at once and fills it when the config arrives; the
+      // editor reuses the loaded config.
+      async viewConfig(cfg) {
         this.viewer.config = cfg;
-        this.viewer.title = cfg.kind + '/' + cfg.metadata.name;
+        this.viewer.title = configKey(cfg);
+        this.viewer.obj = null;
+        this.viewer.isActive = true;
+        this.loadEditor();
 
-        this.isWaiting = true;
+        try {
+          const obj = await fullConfig(cfg);
+          // the viewer moved on to another config or closed meanwhile
+          if (this.viewer.config !== cfg) return;
 
-        axiosInstance
-          .get('configs/' + this.viewer.title, {
-            headers: { Accept: 'application/json' },
-          })
-          .then((response) => {
-            let obj = response.data;
+          // the builder's diagram is long and unreadable here
+          if (obj.metadata.annotations?.['builder-xml']) {
+            obj.metadata.annotations['builder-xml'] = '<SNIPPED>';
+          }
 
-            if ('annotations' in obj.metadata) {
-              if ('builder-xml' in obj.metadata.annotations) {
-                this.config.builderXML =
-                  obj.metadata.annotations['builder-xml'];
-                obj.metadata.annotations['builder-xml'] = '<SNIPPED>';
-              }
-            }
-
-            this.viewer.obj = YAML.dump(obj);
-            this.viewer.isActive = true;
-          })
-          .catch((err) => {
-            useErrorNotification(err);
-          })
-          .finally(() => {
-            this.isWaiting = false;
-          });
+          this.viewer.obj = YAML.dump(obj);
+        } catch (err) {
+          useErrorNotification(err);
+          if (this.viewer.config === cfg) this.resetViewer();
+        }
       },
     },
   };

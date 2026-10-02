@@ -4,6 +4,16 @@ func ReadScriptFromFile(ns, filename string) error {
 	return DefaultMM.ReadScriptFromFile(ns, filename)
 }
 
+// ReadC2ScriptFromFile is ReadScriptFromFile for an experiment's script of cc
+// commands, which sets `cc filter` for each VM in turn. The namespace's cc lock
+// (see ccLocks) is held while it runs, so phenix's own cc commands cannot pick
+// up one of its filters or clear one mid-script.
+func ReadC2ScriptFromFile(ns, filename string) error {
+	defer ccLocks.lock(ns)()
+
+	return DefaultMM.ReadScriptFromFile(ns, filename)
+}
+
 func ClearNamespace(ns string) error {
 	return DefaultMM.ClearNamespace(ns)
 }
@@ -48,8 +58,20 @@ func GetVMHost(opts ...Option) (string, error) {
 	return DefaultMM.GetVMHost(opts...)
 }
 
+func GetVMHosts(opts ...Option) map[string]string {
+	return DefaultMM.GetVMHosts(opts...)
+}
+
+func GetVMIPv4(opts ...Option) ([]string, error) {
+	return DefaultMM.GetVMIPv4(opts...)
+}
+
 func GetVMState(opts ...Option) (string, error) {
 	return DefaultMM.GetVMState(opts...)
+}
+
+func GetVMStates(opts ...Option) (map[string]string, error) {
+	return DefaultMM.GetVMStates(opts...)
 }
 
 func SetVMTags(opts ...Option) error {
@@ -122,6 +144,10 @@ func GetVLANs(opts ...Option) (map[string]int, error) {
 
 func IsC2ClientActive(opts ...C2Option) error {
 	return DefaultMM.IsC2ClientActive(opts...)
+}
+
+func ActiveC2Clients(ns string, refs []C2ClientRef) map[C2ClientRef]bool {
+	return DefaultMM.ActiveC2Clients(ns, refs)
 }
 
 func ExecC2Command(opts ...C2Option) (string, error) {

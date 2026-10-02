@@ -13,16 +13,24 @@ func IsExperimentLocked(name string) Status {
 	return Locked(key)
 }
 
+// ExperimentStatus is the experiment's status as phenix reports it: what a
+// handler is doing to it, or else started or stopped.
+func ExperimentStatus(name string, running bool) Status {
+	if status := IsExperimentLocked(name); status != "" {
+		return status
+	}
+
+	if running {
+		return StatusStarted
+	}
+
+	return StatusStopped
+}
+
 func UnlockExperiment(name string) {
 	key := "experiment|" + name
 
 	Unlock(key)
-}
-
-func IsVMLocked(exp, name string) Status {
-	key := fmt.Sprintf("vm|%s/%s", exp, name)
-
-	return Locked(key)
 }
 
 func UnlockVM(exp, name string) {

@@ -135,6 +135,10 @@ func (n *Node) SetLabels(m map[string]string) {
 	n.LabelsF = m
 }
 
+func (n *Node) SetAnnotations(m map[string]any) {
+	n.AnnotationsF = m
+}
+
 func (n *Node) AddAnnotation(k string, i any) {
 	if n.AnnotationsF == nil {
 		n.AnnotationsF = make(map[string]any)
