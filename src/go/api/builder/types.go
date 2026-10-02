@@ -145,8 +145,10 @@ type DraftMetadata struct {
 	Title string `json:"title"`
 	// SourceToken optionally records where a draft came from: the config it
 	// was imported from as "<kind>/<name>", an uploaded config as
-	// "uploaded/<kind>/<name>", or the published document it was opened from
-	// as "builder-doc/<document id>". It is an opaque token to this package.
+	// "uploaded/<kind>/<name>", an uploaded diagram of the legacy Builder
+	// that came without a topology as "uploaded/legacy-xml", or the published
+	// document it was opened from as "builder-doc/<document id>". It is an
+	// opaque token to this package.
 	SourceToken string `json:"sourceToken,omitempty"`
 	// SourceFile optionally records the name of the uploaded file the draft
 	// was made from: a base name, kept only to show it. Nothing is ever

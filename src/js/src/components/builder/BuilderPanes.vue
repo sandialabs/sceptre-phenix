@@ -128,6 +128,7 @@
     provide,
     reactive,
     ref,
+    watch,
   } from 'vue';
 
   import BuilderFixedTooltip from './BuilderFixedTooltip.vue';
@@ -679,6 +680,12 @@
       focusCanvas();
     }
   }
+
+  // A column hidden or shown changes the layout at once, but the observer
+  // only reports it with the next frame. Until then the splitter of a column
+  // shown again would report its narrowest width, and an arrow key would
+  // resize it from there. So the layout is measured as soon as it is drawn.
+  watch(() => hidden.size, measure, { flush: 'post' });
 
   let observer = null;
 

@@ -56,22 +56,12 @@ are only available to Global Administrator or Global Viewer.
         >Scorch</b-navbar-item
       >
       <b-navbar-item
-        v-if="auth && roleAllowed('experiments', 'list')"
-        tag="a"
-        :href="builderLoc()"
-        target="_blank"
-        class="navbar-item"
+        v-if="auth && roleAllowed('configs', 'list')"
+        tag="router-link"
+        :to="{ name: 'builder' }"
+        data-testid="nav-builder"
         >Builder</b-navbar-item
       >
-      <b-navbar-item
-        v-if="auth && builderV2 && roleAllowed('configs', 'list')"
-        tag="router-link"
-        :to="{ name: 'builder-v2' }"
-        data-testid="nav-builder-v2"
-        >Builder v2
-        <!-- The tag is part of the link's name: "Builder v2 beta". -->
-        <b-tag class="ml-1" type="is-info is-light">beta</b-tag>
-      </b-navbar-item>
       <b-navbar-item
         v-if="auth && roleAllowed('miniconsole', 'post')"
         tag="router-link"
@@ -94,7 +84,7 @@ are only available to Global Administrator or Global Viewer.
 
     <template #end>
       <!-- Buttons, so the keyboard reaches them too; while a logout checks
-           for Builder v2 changes the server does not have, they say so. -->
+           for Builder changes the server does not have, they say so. -->
       <b-navbar-item
         v-if="proxyAuth"
         tag="button"
@@ -121,7 +111,6 @@ are only available to Global Administrator or Global Viewer.
 <script>
   import { usePhenixStore } from '@/store.js';
   import { roleAllowed } from '@/utils/rbac.js';
-  import { BUILDER_V2_FEATURE, isFeatureEnabled } from '@/utils/features.js';
 
   export default {
     setup() {
@@ -154,16 +143,12 @@ are only available to Global Administrator or Global Viewer.
       tunneler() {
         return usePhenixStore().features.includes('tunneler-download');
       },
-
-      builderV2() {
-        return isFeatureEnabled(usePhenixStore().features, BUILDER_V2_FEATURE);
-      },
     },
 
     methods: {
       //  These methods are used to logout a user; or, present
       //  routable link based on a Global user role.
-      //  Builder v2 changes the server does not have are sent first,
+      //  Builder changes the server does not have are sent first,
       //  and a warning asks when some remain (see utils/logout.js).
       logout(event) {
         const button = event?.currentTarget;
@@ -201,14 +186,6 @@ are only available to Global Administrator or Global Viewer.
               });
             }
           });
-      },
-
-      builderLoc() {
-        const phenixStore = usePhenixStore();
-        return this.$router.resolve({
-          name: 'builder',
-          params: { token: phenixStore.token },
-        }).href;
       },
     },
   };

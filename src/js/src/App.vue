@@ -10,6 +10,7 @@
   import LogoutWarning from '@/components/LogoutWarning.vue';
   import { computed, onUnmounted, onMounted } from 'vue';
   import { useRoute } from 'vue-router';
+  import router from '@/router';
   import { usePhenixStore } from '@/store';
   import { storeToRefs } from 'pinia';
   import { watch } from 'vue';
@@ -21,14 +22,18 @@
   const timeout = new TimeoutTool();
   const route = useRoute();
 
-  // Routes such as the Builder v2 editor fill the viewport under the header
+  // Routes such as the Builder editor fill the viewport under the header
   // instead of sitting in the centered, scrolling page container.
   const fullBleed = computed(() => Boolean(route.meta.fullBleed));
 
-  // single-flight: the router's feature guards await the same promise
-  store.ensureFeatures().catch((err) => {
-    console.error('Unable to load server features.', err);
-  });
+  fetch(router.resolve({ name: 'features' }).href)
+    .then((resp) => resp.json())
+    .then((data) => {
+      store.features = data.features;
+    })
+    .catch((err) => {
+      console.log(err);
+    });
 
   onMounted(() => {
     // connect websockets once user has authenticated (or auth disabled)
@@ -73,7 +78,7 @@
       <router-view></router-view>
     </main>
     <app-footer v-if="!fullBleed"></app-footer>
-    <!-- Before a logout would delete Builder v2 changes the server does
+    <!-- Before a logout would delete Builder changes the server does
          not have, on any page (see utils/logout.js). -->
     <logout-warning></logout-warning>
   </div>

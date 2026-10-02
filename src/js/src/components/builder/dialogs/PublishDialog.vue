@@ -11,10 +11,10 @@
   is created or updated follows the server's list of existing configs, which
   is read again every time the dialog opens. The server lets a draft update
   only a config it was loaded from or published, so it publishes again after
-  further edits, and never one the legacy XML Builder owns (see
-  updateBlocker), so the hints and the submit button promise an update only
-  then, and any other existing name is refused on its field before anything
-  is sent.
+  further edits (see updateBlocker), so the hints and the submit button
+  promise an update only then, and any other existing name is refused on its
+  field before anything is sent. Updating a topology that still has a diagram
+  of the legacy Builder replaces that diagram, which the hint says.
 
   An update replaces a config on the server, which no one can undo, so
   Publish asks first, in an alert dialog that names each config replaced
@@ -24,10 +24,16 @@
   The Inspector's unapplied edits are saved before the dialog opens (see
   leave.js). Edits it cannot apply keep Publish from sending, rather than
   being left out, and the dialog says so as it opens.
+
+  A draft's card on the drafts page opens the dialog too (landing): the
+  draft is loaded, and the editor is not shown. The title then names the
+  draft, and Open draft leaves for the editor, which is where the diagram's
+  errors, a conflict or a save that failed are put right; the dialog says so
+  where one of them stops the publish.
 -->
 <template>
   <builder-dialog
-    title="Publish diagram"
+    :title="landing && name ? `Publish ${name}` : 'Publish diagram'"
     title-id="publish-dialog-title"
     :describedby="unapplied ? 'publish-unapplied' : ''"
     @close="$emit('close')">
@@ -79,7 +85,14 @@
           id="publish-topology-action-hint"
           class="builder-hint"
           aria-live="polite">
-          {{ targetHint('topology', topologyExists, topologyBlocker) }}
+          {{
+            targetHint(
+              'topology',
+              topologyExists,
+              topologyBlocker,
+              topologyLegacy,
+            )
+          }}
         </p>
         <p id="publish-name-rule" class="builder-hint">
           {{ CONFIG_NAME_RULE }}
@@ -190,6 +203,12 @@
             {{ issue.message }}
           </li>
         </ul>
+        <p
+          v-if="landing && failed"
+          class="builder-hint"
+          data-testid="publish-open-hint">
+          Open the draft to fix the errors, then publish.
+        </p>
         <p class="builder-hint">
           The server publishes the last saved snapshot and checks it again.
         </p>
@@ -205,6 +224,15 @@
       </p>
 
       <div class="builder-dialog__actions">
+        <button
+          v-if="landing"
+          type="button"
+          class="builder-button"
+          data-testid="publish-open-draft"
+          :aria-disabled="busy || undefined"
+          @click="busy || $emit('open-draft')">
+          Open draft
+        </button>
         <button type="button" class="builder-button" @click="$emit('close')">
           Cancel
         </button>
@@ -285,7 +313,14 @@
 </template>
 
 <script setup>
-  import { computed, nextTick, onMounted, reactive, ref } from 'vue';
+  import {
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    reactive,
+    ref,
+  } from 'vue';
 
   import BuilderConfirm from '../BuilderConfirm.vue';
   import BuilderDialog from '../BuilderDialog.vue';
@@ -298,6 +333,8 @@
     buildPublishIntent,
     configName,
     describePublishResult,
+    keptIncludesText,
+    legacyDiagramUpdate,
     overwriteConfirmation,
     publishChecks,
     publishLabel,
@@ -311,9 +348,13 @@
   const props = defineProps({
     // The Inspector's edits that could not be applied (see leave.js).
     unapplied: { type: Object, default: null },
+    // Opened from a draft's card on the drafts page, with the editor not
+    // shown, and the draft's name as its card gives it.
+    landing: { type: Boolean, default: false },
+    name: { type: String, default: '' },
   });
 
-  const emit = defineEmits(['close', 'published']);
+  const emit = defineEmits(['close', 'published', 'open-draft']);
 
   const store = useBuilderStore();
   const busy = ref(false);
@@ -359,6 +400,13 @@
   // update. Nothing is edited while the dialog is open, so once the queue is
   // saved the snapshot is the one Publish sends.
   let sourcesLoaded = Promise.resolve();
+  // Whether the dialog has closed, which a submit that was waiting for the
+  // lists finds out.
+  let closed = false;
+
+  onBeforeUnmount(() => {
+    closed = true;
+  });
 
   onMounted(() => {
     // A failed save is reported when Publish is pressed (store.publish).
@@ -392,6 +440,16 @@
       form.topologyName.trim(),
       store.sources.topologies,
       store.publishDraft,
+    ),
+  );
+
+  // What the update does with the legacy Builder diagram the topology of
+  // that name still has, if it has one.
+  const topologyLegacy = computed(() =>
+    legacyDiagramUpdate(
+      form.topologyName.trim(),
+      store.sources.topologies,
+      store.doc.source,
     ),
   );
 
@@ -435,8 +493,10 @@
       `${count(summary.links - summary.includedLinks, 'connection')} are ready to publish` +
       `${failed.value ? ' once the errors below are fixed' : ''}.`;
 
+    // A diagram that shows none of the nodes of the topologies it includes
+    // still publishes the references to them.
     if (!summary.included) {
-      return ready;
+      return `${ready}${keptIncludesText(store.doc.source?.includeTopologies)}`;
     }
 
     const onlyTheirs = listOf(
@@ -476,6 +536,14 @@
 
   const resultText = computed(() => describePublishResult(result.value));
 
+  const OPEN_TO_RESOLVE = 'Open the draft to resolve it.';
+
+  // Whether the draft has changes the server does not hold, which is what
+  // store.publish refuses to publish over.
+  function notSaved() {
+    return store.saveState.status !== 'saved' || store.saveState.pending > 0;
+  }
+
   /**
    * Builds the publish intent. The document is deliberately absent: the server
    * publishes the snapshot the cursor points at.
@@ -500,6 +568,11 @@
 
     // Create or update is chosen from the list read when the dialog opened.
     await sourcesLoaded;
+
+    // Closed while it waited: nothing is sent.
+    if (closed) {
+      return;
+    }
 
     const { intent, error: problem, field } = buildIntent();
 
@@ -548,7 +621,14 @@
     if (!published) {
       // A refusal about a config names its field, for example a name that
       // exists after all; the list is read again, so the form now says so.
-      fail(store.error || 'Publish failed.', store.errorField);
+      // Changes the server does not hold (a conflict, a save that failed)
+      // are settled in the editor, which the drafts page says how to reach.
+      const reason = store.error || 'Publish failed.';
+
+      fail(
+        props.landing && notSaved() ? `${reason} ${OPEN_TO_RESOLVE}` : reason,
+        store.errorField,
+      );
 
       return;
     }

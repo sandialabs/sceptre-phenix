@@ -1,14 +1,17 @@
 // The Builder's commands: one registry of everything it can do by name or
 // by key, in the editor and on the drafts landing. The key dispatcher below,
 // the command palette, the shortcut sheet, the toolbar's tooltips and
-// aria-keyshortcuts, the canvas's Keyboard help and the outline's hint all
-// read it, so none of them can promise a key another does not handle.
+// aria-keyshortcuts, and the canvas's and the outline's hints all read it,
+// so none of them can promise a key another does not handle.
 //
 // A command is
 //   id        stable, 'area.action'; customized keys are stored under it
 //   title     its name in the palette and the shortcut sheet; one that ends
-//             in '…' opens a dialog
+//             in '…' asks for more in a dialog before it acts
 //   group     its heading in the palette and the sheet (GROUPS is the order)
+//   aliases   lower-case single words that stand for its name ('export' for
+//             Download): the palette and the sheet's filter match them as
+//             words of the title, without highlighting them
 //   keywords  more words the palette matches, without highlighting them
 //   keys      default key specs (keymap.js), a list or {mac: [], other: []}
 //   scope     where its keys work (SCOPES), one or a list
@@ -30,21 +33,20 @@
 //   prefix    the palette query that searches what the command goes to
 //   label(ctx)  the title as things are now ('Hide minimap')
 //   detail(ctx) a second line for the palette
-//   phrase    what its keys do, for the Keyboard help ('copies')
 //
 // A choice is {id, title, detail?, keywords?, icon?, disabled?, value?}:
 // `disabled` is the reason it cannot be chosen, and `value` what run needs.
 //
 // The context (createCommandContext) is {store, view}: the Builder store and
-// the adapter BuilderV2.vue implements (VIEW_API). A run may add `source`
+// the adapter Builder.vue implements (VIEW_API). A run may add `source`
 // ('key' from the dispatcher, 'palette' from the palette) and `additive`
 // (Shift+Enter on a Go to node choice); a key press also adds `event`,
 // `focus` (focusScope) and `item` (the focused node, connection or row).
 
 import { nextTick, toRaw } from 'vue';
 
-import { count, listOf } from './announce.js';
-import { DEVICE_TEMPLATES, PALETTE, kindMeta, nodeIconKey } from './catalog.js';
+import { count } from './announce.js';
+import { PALETTE, kindMeta, nodeIconKey } from './catalog.js';
 import { GROUPING_STRATEGIES } from './grouping.js';
 import { HELP_URL } from './help.js';
 import { LAYOUT_ALGORITHMS, layoutAlgorithm } from './layouts/index.js';
@@ -72,6 +74,7 @@ import {
 import { connectionList } from './outline.js';
 import { MINIMAP_DEFAULT_WIDTH, minimapSize } from './panes.js';
 import { pressSelection } from './selection.js';
+import { templatesFull } from './templates.js';
 import { addInView, paletteNode } from '@/components/builder/paletteDnd.js';
 
 export const GROUPS = [
@@ -97,12 +100,13 @@ export const SCOPES = {
   outline: ['outline'],
 };
 
-// What the view adapter provides, for reference: BuilderV2.vue implements
+// What the view adapter provides, for reference: Builder.vue implements
 // it, and tests stub it.
 export const VIEW_API = [
   'editing', // boolean: the editor is open (false: the drafts landing)
   'dialog', // string: the open dialog, '' for none
-  // string: the landing's shown tab: mine, shared, published or others
+  // string: the landing's shown tab: mine, shared, published, templates or
+  // others
   'draftsTab',
   'showMinimap', // boolean
   // {width, min, max}: the minimap's width and the widths it may take, in
@@ -116,16 +120,32 @@ export const VIEW_API = [
   // boolean: after Fit, fitView goes back to the view from before it
   'fitRestores',
   'focusMode', // boolean: focus mode is on (see focusMode.js)
-  'openDialog', // (name) publish, export, import, scenario, share
+  // (name, options) publish, download, upload, scenario, share; download
+  // takes {start}, the format to download at once: json, yaml, topology,
+  // png, svg or gexf
+  // Also group-pattern, the Auto-group by name pattern dialog.
+  // Also template, the template editor: {mode: 'diagram-new'} for a new
+  // template of the diagram, {mode: 'diagram-edit', id} for one it has,
+  // {mode: 'library-new'} for a new one of the user's library and {mode:
+  // 'library-edit', id} for one of it. And collection, a collection of the
+  // library: {id} to edit one, {templateIds} for a new one that holds them.
+  'openDialog',
   'openPalette', // ({query, command}) the command palette: dialog 'commands'
   'openShortcuts', // () the shortcut sheet: dialog 'shortcuts'
   'openSettings', // () the Builder settings: dialog 'settings'
   'openHistory', // () loads the history, then opens its dialog
-  'openLanding', // (name) the landing's import (Upload) or generate (Import)
+  'openLanding', // (name) the landing's import or upload dialog
   'startBlank', // () a new blank draft
   'openDraft', // (item) a listed draft or published diagram
+  // () a new draft of the open diagram whose included nodes are its own
+  'combineIncluded',
+  // () the experiment the open diagram was published with, in this tab,
+  // once leaving the draft is settled
+  'openExperiment',
   'closeEditor', // () back to the drafts
-  'showDraftsTab', // (id) mine, shared, published or others
+  // () back to the drafts, as closeEditor, then their Node Templates tab
+  'openTemplateLibrary',
+  'showDraftsTab', // (id) mine, shared, published, templates or others
   'toggleMinimap', // ()
   'resizeMinimap', // (width) in pixels, and says the new size
   'togglePane', // (side) hides or shows a side column: start or end
@@ -175,6 +195,11 @@ function creatable({ store }) {
   return store.canCreateDrafts === false
     ? 'Your role cannot create drafts.'
     : true;
+}
+
+// How many of the diagram's devices come from included topologies.
+function includedCount(store) {
+  return store.summary?.included || 0;
 }
 
 function publishable(ctx) {
@@ -283,7 +308,7 @@ function canvasItem(kind, id) {
 
 // The part of the view an element is in, for a place to put focus when the
 // element is gone: 'canvas' (the canvas, its nodes and connections, not its
-// zoom buttons or Keyboard help), 'outline', 'inspector', or '' elsewhere.
+// zoom buttons), 'outline', 'inspector', or '' elsewhere.
 function regionOf(element) {
   if (element?.closest?.(CANVAS)) {
     return element.matches(CANVAS) || element.matches(CANVAS_ITEM)
@@ -813,7 +838,7 @@ function draftChoices(store) {
 
   return [
     ...from(store.drafts?.mine, 'My Drafts'),
-    ...from(store.drafts?.shared, 'Shared with me'),
+    ...from(store.drafts?.shared, 'Shared Drafts'),
     ...from(store.documents, 'Published Diagrams'),
     ...from(store.drafts?.others, "Other users' drafts"),
   ];
@@ -892,20 +917,33 @@ function layoutChoice({ id, label, summary }) {
   };
 }
 
+// The default keys of the Auto-group commands, by strategy: the first rule
+// of the menu has some, and the user may give the others theirs.
+const AUTO_GROUP_KEYS = { network: ['Alt+Shift+G'] };
+
 // Auto-group with one strategy (the toolbar's Auto-group menu has the same
-// choices).
-function autoGroupChoice({ id, label, summary }) {
+// choices). One that asks for its pattern first opens the dialog that takes
+// it, and its title ends in an ellipsis.
+function autoGroupChoice({ id, label, summary, asks }) {
   return {
     id: `structure.autoGroup.${id}`,
-    title: `Auto-group ${label.toLowerCase()}`,
+    title: `Auto-group ${label.toLowerCase()}${asks ? '…' : ''}`,
     group: 'Structure',
-    keywords: ['auto group', 'cluster', 'organize'],
+    keywords: [
+      'auto group',
+      'cluster',
+      'organize',
+      ...(asks ? ['regex', 'regexp', 'regular expression'] : []),
+    ],
+    ...(AUTO_GROUP_KEYS[id] && { keys: AUTO_GROUP_KEYS[id], scope: 'editor' }),
     when: editable,
     detail: ({ store }) =>
       store.selection.nodes.length
         ? `${summary} · Selected nodes only`
         : summary,
-    run: ({ store }) => store.autoGroup(id),
+    run: asks
+      ? ({ view }) => view.openDialog('group-pattern')
+      : ({ store }) => store.autoGroup(id),
   };
 }
 
@@ -922,6 +960,25 @@ function landingTab(id, title, empty = () => '') {
       empty(ctx) ||
       (ctx.view.draftsTab === id ? 'This tab is already shown.' : true),
     run: ({ view }) => view.showDraftsTab(id),
+  };
+}
+
+// The word the Download commands also answer to in the palette.
+const DOWNLOAD_ALIASES = ['export'];
+
+// Downloads the diagram in one format: the Download dialog opens and starts
+// that download at once, so its result, its errors and what keeps a topology
+// from being published show where the dialog's own buttons show them. It
+// works in a read-only draft, as Download… does.
+function downloadAs(format, name, detail, keywords) {
+  return {
+    id: `draft.download.${format}`,
+    title: `Download ${name}`,
+    group: 'Draft',
+    aliases: DOWNLOAD_ALIASES,
+    keywords: ['save', 'file', ...keywords],
+    detail: () => detail,
+    run: ({ view }) => view.openDialog('download', { start: format }),
   };
 }
 
@@ -948,7 +1005,6 @@ export const COMMANDS = [
     page: true,
     views: BOTH,
     palette: false,
-    phrase: 'opens the command palette',
     run: ({ view }) => view.openPalette({}),
   },
   {
@@ -960,11 +1016,10 @@ export const COMMANDS = [
     scope: 'editor',
     page: true,
     views: BOTH,
-    phrase: 'lists every shortcut',
     run: ({ view }) => view.openShortcuts(),
   },
   {
-    // The header's Settings. No keys by default: the user may give it some.
+    // The header's Settings.
     id: 'settings.open',
     title: 'Settings…',
     group: 'General',
@@ -972,18 +1027,22 @@ export const COMMANDS = [
       'preferences',
       'options',
       'layout algorithm',
+      'default layout',
       'theme',
       'minimap',
       'zoom',
       'motion',
       'single-key',
     ],
+    keys: ['Alt+Shift+S'],
+    scope: 'editor',
+    page: true,
     views: BOTH,
     run: ({ view }) => view.openSettings(),
   },
   {
     id: 'help.open',
-    title: 'Builder v2 help',
+    title: 'Builder help',
     group: 'General',
     keywords: ['documentation', 'docs', 'manual'],
     views: BOTH,
@@ -998,7 +1057,6 @@ export const COMMANDS = [
     group: 'Edit',
     keys: ['Mod+Z'],
     scope: 'editor',
-    phrase: 'undoes',
     when: (ctx) =>
       editable(ctx) === true
         ? ctx.store.canUndo || 'Nothing to undo.'
@@ -1013,7 +1071,6 @@ export const COMMANDS = [
     group: 'Edit',
     keys: { mac: ['Mod+Shift+Z'], other: ['Mod+Shift+Z', 'Mod+Y'] },
     scope: 'editor',
-    phrase: 'redoes',
     when: (ctx) =>
       editable(ctx) === true
         ? ctx.store.canRedo || 'Nothing to redo.'
@@ -1026,7 +1083,6 @@ export const COMMANDS = [
     group: 'Edit',
     keys: ['Mod+C'],
     scope: 'editor',
-    phrase: 'copies',
     when: ({ store }) => hasSelection(store) || 'Nothing is selected to copy.',
     // Selected text is the browser's to copy.
     skipKey: () => Boolean(String(globalThis.window?.getSelection?.() || '')),
@@ -1038,7 +1094,6 @@ export const COMMANDS = [
     group: 'Edit',
     keys: ['Mod+V'],
     scope: 'editor',
-    phrase: 'pastes',
     when: (ctx) =>
       editable(ctx) === true
         ? Boolean(ctx.store.clipboard) || 'Clipboard is empty.'
@@ -1052,7 +1107,6 @@ export const COMMANDS = [
     keywords: ['clone', 'copy'],
     keys: ['Mod+D'],
     scope: 'editor',
-    phrase: 'duplicates',
     when: (ctx) =>
       editable(ctx) === true
         ? hasSelection(ctx.store) || 'Nothing is selected to duplicate.'
@@ -1086,7 +1140,6 @@ export const COMMANDS = [
     keys: ['F2'],
     scope: ['canvas', 'outline'],
     fixed: true,
-    phrase: 'renames the focused item in the Inspector',
     label: (ctx) => {
       const target = renameTarget(ctx);
 
@@ -1126,7 +1179,6 @@ export const COMMANDS = [
     keywords: ['everything'],
     keys: ['Mod+A'],
     scope: 'editor',
-    phrase: 'selects everything',
     when: ({ store }) =>
       store.doc.nodes.length > 0 ||
       (store.doc.edges || []).length > 0 ||
@@ -1142,7 +1194,6 @@ export const COMMANDS = [
     scope: 'canvas',
     local: true,
     fixed: true,
-    phrase: 'clears the selection',
     when: ({ store }) => hasSelection(store) || 'Nothing is selected.',
     run: ({ store }) => {
       store.clearSelection();
@@ -1242,7 +1293,6 @@ export const COMMANDS = [
     keywords: ['container', 'wrap'],
     keys: ['Mod+G'],
     scope: 'editor',
-    phrase: 'groups the selection',
     when: (ctx) =>
       editable(ctx) === true
         ? ctx.store.selection.nodes.length > 0 ||
@@ -1263,7 +1313,6 @@ export const COMMANDS = [
     group: 'Structure',
     keys: ['Mod+Shift+G'],
     scope: 'editor',
-    phrase: 'ungroups',
     when: (ctx) =>
       editable(ctx) === true
         ? Boolean(selectedGroup(ctx.store)) || 'Select a group first.'
@@ -1281,6 +1330,8 @@ export const COMMANDS = [
     title: 'Auto layout',
     group: 'Structure',
     keywords: ['arrange', 'tidy', 'organize'],
+    keys: ['Alt+Shift+L'],
+    scope: 'editor',
     when: editable,
     detail: ({ store }) =>
       `Arrange the nodes with ${layoutAlgorithm(store.layoutToRun)?.label || 'the current layout'}`,
@@ -1403,7 +1454,9 @@ export const COMMANDS = [
     steps: ['Template'],
     when: editable,
     detail: () => 'Choose a template',
-    choices: () => [
+    // The plain Device, then every template of the palette, in its groups'
+    // order (see paletteTemplateGroups in templates.js).
+    choices: ({ store }) => [
       {
         id: 'device',
         title: 'Device',
@@ -1411,15 +1464,19 @@ export const COMMANDS = [
         icon: 'server',
         value: '',
       },
-      ...DEVICE_TEMPLATES.map((template) => ({
-        id: template.id,
-        title: template.label,
-        detail: `${template.description} · ${template.image || 'no image'}`,
-        icon: template.iconKey,
-        value: template.id,
-      })),
+      ...store.paletteTemplateGroups.flatMap((group) =>
+        group.entries.map((entry) => ({
+          id: entry.key,
+          title: entry.name,
+          detail: `${group.label} · ${entry.image || 'no image'}`,
+          icon: entry.iconKey,
+          keywords: [entry.description].filter(Boolean),
+          value: entry.key,
+        })),
+      ),
     ],
-    run: (ctx, choice) => addNode(ctx, paletteNode('device', choice?.value)),
+    run: (ctx, choice) =>
+      addNode(ctx, paletteNode(ctx.store, 'device', choice?.value)),
   },
   ...['switch', 'note', 'group'].map((kind) => {
     const item = PALETTE.find((entry) => entry.kind === kind);
@@ -1433,6 +1490,32 @@ export const COMMANDS = [
       run: (ctx) => addNode(ctx, { kind }),
     };
   }),
+  {
+    // The palette's "+" beside Device templates: the template editor, on
+    // the selected device when one device is selected, else on a plain one.
+    id: 'templates.new',
+    title: 'New device template',
+    group: 'Add',
+    keywords: ['template', 'reuse'],
+    when: (ctx) =>
+      editable(ctx) === true ? templatesFull(ctx.store.doc) || true : READ_ONLY,
+    detail: ({ store }) =>
+      store.selectedNode?.kind === 'device'
+        ? `Saved in this diagram, from ${nodeLabel(store.selectedNode)}`
+        : 'Saved in this diagram',
+    run: ({ view }) => view.openDialog('template', { mode: 'diagram-new' }),
+  },
+  {
+    // The palette's library button, beside "+": the drafts page's Node
+    // Templates tab, where the user's library is managed. Leaving the
+    // draft goes as Back to drafts does.
+    id: 'templates.library',
+    title: 'Open Node Templates library',
+    group: 'Go to',
+    keywords: ['template', 'library', 'collection'],
+    detail: () => 'On the drafts page',
+    run: ({ view }) => view.openTemplateLibrary(),
+  },
 
   // --- Go to
   {
@@ -1444,7 +1527,6 @@ export const COMMANDS = [
     scope: 'editor',
     prefix: '@',
     steps: ['Node'],
-    phrase: 'goes to a node by name or address',
     when: ({ store }) => store.doc.nodes.length > 0 || 'The diagram is empty.',
     choices: ({ store }) => nodeChoices(store.doc),
     run: (ctx, choice) => goToNode(ctx, choice.value),
@@ -1513,7 +1595,6 @@ export const COMMANDS = [
     keywords: ['magnify', 'larger'],
     keys: ['=', '+'],
     scope: 'canvas',
-    phrase: 'zooms in',
     when: ({ view }) =>
       view.canZoomIn !== false || 'The diagram is at its largest zoom.',
     run: ({ view }) => view.zoomIn(),
@@ -1525,7 +1606,6 @@ export const COMMANDS = [
     keywords: ['smaller'],
     keys: ['-'],
     scope: 'canvas',
-    phrase: 'zooms out',
     when: ({ view }) =>
       view.canZoomOut !== false || 'The diagram is at its smallest zoom.',
     run: ({ view }) => view.zoomOut(),
@@ -1539,8 +1619,6 @@ export const COMMANDS = [
     keywords: ['zoom', 'whole', 'all', 'fit', 'restore', 'previous', 'back'],
     keys: ['Shift+1'],
     scope: 'canvas',
-    phrase:
-      'fits the diagram to the view, and a second press restores the view from before',
     label: ({ view }) =>
       view.fitRestores ? 'Restore previous view' : 'Fit diagram to view',
     detail: ({ view }) =>
@@ -1594,7 +1672,6 @@ export const COMMANDS = [
     keys: ['Mod+Shift+F'],
     scope: 'fields',
     views: BOTH,
-    phrase: 'turns focus mode on or off',
     label: ({ view }) => (view.focusMode ? 'Exit focus mode' : 'Focus mode'),
     detail: ({ view }) =>
       view.focusMode
@@ -1615,7 +1692,6 @@ export const COMMANDS = [
     group: 'Draft',
     keys: ['Mod+S'],
     scope: 'fields',
-    phrase: 'saves now',
     when: editable,
     run: (ctx) => saveDraft(ctx),
   },
@@ -1627,22 +1703,65 @@ export const COMMANDS = [
     run: ({ view }) => view.openHistory(),
   },
   {
-    id: 'draft.export',
-    title: 'Export…',
+    id: 'draft.download',
+    title: 'Download…',
     group: 'Draft',
-    keywords: ['download', 'image', 'json', 'yaml', 'png', 'svg'],
-    detail: () => 'JSON, YAML, PNG or SVG',
-    run: ({ view }) => view.openDialog('export'),
+    aliases: DOWNLOAD_ALIASES,
+    keywords: [
+      'save',
+      'file',
+      'copy',
+      'image',
+      'json',
+      'yaml',
+      'png',
+      'svg',
+      'gexf',
+      'gephi',
+      'graph',
+      'topology',
+    ],
+    detail: () =>
+      'Builder JSON or YAML, Topology YAML, PNG, SVG or Gephi (GEXF)',
+    run: ({ view }) => view.openDialog('download'),
   },
+  downloadAs('json', 'Builder JSON', 'The whole Builder document', [
+    'document',
+  ]),
+  downloadAs('yaml', 'Builder YAML', 'The whole Builder document, as YAML', [
+    'document',
+  ]),
+  downloadAs(
+    'topology',
+    'Topology YAML',
+    'The phenix Topology config Publish would write',
+    ['config', 'phenix'],
+  ),
+  downloadAs('png', 'PNG', 'A picture of the whole diagram', [
+    'image',
+    'picture',
+  ]),
+  downloadAs('svg', 'SVG', 'A picture of the whole diagram, as SVG', [
+    'image',
+    'picture',
+    'vector',
+  ]),
+  downloadAs(
+    'gexf',
+    'Gephi (GEXF)',
+    'The network as a graph to analyze in Gephi',
+    ['graph', 'analyze'],
+  ),
   {
-    // The toolbar's Upload; the landing's is drafts.upload.
+    // The toolbar's Upload; the landing's is drafts.upload. It also
+    // converts a legacy Builder diagram, so "legacy" finds it.
     id: 'draft.upload',
     title: 'Upload…',
     group: 'Draft',
-    keywords: ['open', 'file', 'import'],
+    keywords: ['open', 'file', 'import', 'legacy'],
     detail: () => 'A Builder document from a file',
     when: creatable,
-    run: ({ view }) => view.openDialog('import'),
+    run: ({ view }) => view.openDialog('upload'),
   },
   {
     id: 'draft.scenario',
@@ -1662,14 +1781,52 @@ export const COMMANDS = [
     run: ({ view }) => view.openDialog('publish'),
   },
   {
+    // Offered only while the diagram shows nodes of included topologies.
+    // It makes a draft, so a role that cannot create one is told why not.
+    id: 'draft.combineIncluded',
+    title: 'Combine included nodes into a new draft',
+    group: 'Draft',
+    keywords: [
+      'include',
+      'includeTopologies',
+      'flatten',
+      'merge',
+      'read only',
+      'editable',
+      'unlock',
+    ],
+    detail: ({ store }) =>
+      `${count(includedCount(store), 'included node')} ${
+        includedCount(store) === 1 ? 'becomes' : 'become'
+      } editable in a copy of this diagram`,
+    offered: ({ store }) => includedCount(store) > 0,
+    when: creatable,
+    run: ({ view }) => view.combineIncluded(),
+  },
+  {
     id: 'draft.share',
     title: 'Share…',
     group: 'Draft',
+    aliases: ['send'],
     keywords: ['access', 'people', 'users', 'collaborate', 'permissions'],
     detail: () => 'Who can view or edit this draft',
     offered: ({ store }) => Boolean(store.canShare || store.sharedBy),
     when: shareable,
     run: ({ view }) => view.openDialog('share'),
+  },
+  {
+    // The toolbar's Exp: offered only while the diagram's publication has
+    // an experiment (the store's experimentName).
+    id: 'draft.experiment',
+    title: 'Open experiment',
+    group: 'Draft',
+    keywords: ['exp', 'run', 'published'],
+    detail: ({ store }) => store.experimentName,
+    offered: ({ store }) => Boolean(store.experimentName),
+    when: ({ store }) =>
+      Boolean(store.experimentName) ||
+      'This diagram was not published with an experiment.',
+    run: ({ view }) => view.openExperiment(),
   },
 
   // --- Drafts landing
@@ -1686,22 +1843,22 @@ export const COMMANDS = [
     id: 'drafts.import',
     title: 'Import…',
     group: 'Drafts',
-    keywords: ['topology', 'experiment', 'convert', 'generate'],
+    keywords: ['topology', 'experiment', 'convert', 'generate', 'legacy'],
     views: LANDING,
     detail: () => 'From a topology or experiment config on the server',
     when: creatable,
-    run: ({ view }) => view.openLanding('generate'),
+    run: ({ view }) => view.openLanding('import'),
   },
   {
     // The landing's Upload, listed with the other ways to start a draft.
     id: 'drafts.upload',
     title: 'Upload…',
     group: 'Drafts',
-    keywords: ['open', 'file', 'import', 'new'],
+    keywords: ['open', 'file', 'import', 'new', 'legacy'],
     views: LANDING,
     detail: () => 'A Builder document from a file, as a new draft',
     when: creatable,
-    run: ({ view }) => view.openLanding('import'),
+    run: ({ view }) => view.openLanding('upload'),
   },
   {
     id: 'drafts.open',
@@ -1716,8 +1873,12 @@ export const COMMANDS = [
     run: ({ view }, choice) => view.openDraft(choice.value),
   },
   landingTab('mine', 'My Drafts'),
-  landingTab('shared', 'Shared with me'),
+  landingTab('shared', 'Shared Drafts'),
   landingTab('published', 'Published Diagrams'),
+  {
+    ...landingTab('templates', 'Node Templates'),
+    keywords: ['tab', 'list', 'library', 'collection'],
+  },
   landingTab('others', "Other users' drafts", ({ store }) =>
     (store.drafts?.others || []).length ||
     (store.damagedDrafts?.others || []).length
@@ -2088,6 +2249,9 @@ export function isTextEntry(field) {
       (field.tagName === 'INPUT' && !NOT_TYPED.includes(field.type)))
   );
 }
+// A checkbox takes no typed text: Space is the one key it reads, and no
+// shortcut can be Space (see keyRefusal).
+const CHECKBOX = 'input[type="checkbox"]';
 const CANVAS = '.builder-canvas';
 const CANVAS_ITEM = '.vue-flow__node, .vue-flow__edge';
 const OUTLINE_ROW = '[data-testid="builder-outline"] .builder-outline__item';
@@ -2098,13 +2262,14 @@ const APP_DIALOG =
 
 /**
  * Where a key press is, for the scopes: 'dialog' (an open dialog keeps its
- * own keys), 'field', 'landing' (the drafts landing), 'canvas' (the canvas
- * itself, a node or a connection; not the zoom buttons or the Keyboard
- * help), 'outline' (an outline row), 'editor' (anywhere else in the editor,
- * and the page itself when the focused control was just removed), 'page'
- * (outside the Builder, on the rest of its page, such as the app header
- * link that brought the user here), or 'outside' (a text field or a dialog
- * of the app's, outside the Builder).
+ * own keys), 'field', 'landing' (the drafts landing, the checkboxes that
+ * select its cards too), 'canvas' (the canvas itself, a node or a
+ * connection; not the zoom buttons), 'outline' (an outline row), 'editor'
+ * (anywhere else in the editor, and the page itself
+ * when the focused control was just removed), 'page' (outside the Builder,
+ * on the rest of its page, such as the app header link that brought the
+ * user here), or 'outside' (a text field or a dialog of the app's, outside
+ * the Builder).
  *
  * @param {Element} target the event's target
  * @param {object} options
@@ -2131,7 +2296,10 @@ export function focusScope(target, { root, editing }) {
     return 'dialog';
   }
 
-  if (target.matches?.(TYPING)) {
+  // In the editor a checkbox is a field of the Inspector's form, whose
+  // edits wait for Apply, so the editing keys stay away from it as from the
+  // form's other fields. On the drafts landing it only selects a card.
+  if (target.matches?.(TYPING) && (editing || !target.matches(CHECKBOX))) {
     return 'field';
   }
 
@@ -2243,121 +2411,6 @@ export function dispatchKeydown(event, ctx, { root }) {
 
 // --- help text ---------------------------------------------------------------------
 
-function phraseFor(id, platform) {
-  const command = getCommand(id);
-  const keys = shortcutLabel(command, { platform, text: true });
-
-  return keys ? `${keys} ${command.phrase}` : '';
-}
-
-function sentence(parts) {
-  const list = listOf(parts.filter(Boolean));
-
-  return list ? `${list[0].toUpperCase()}${list.slice(1)}.` : '';
-}
-
-/**
- * The canvas's Keyboard help, one line per item, as the keys are now.
- *
- * @param {object} options
- * @param {boolean} options.readOnly
- * @param {'mac'|'other'} [options.platform]
- * @returns {string[]}
- */
-export function canvasHelp({ readOnly, platform = currentPlatform() }) {
-  const text = (id) => shortcutLabel(id, { platform, text: true });
-  const lines = [];
-
-  if (readOnly) {
-    lines.push(
-      'This draft is read-only: you can select items but not change them.',
-    );
-  }
-
-  const [down, up] = commandKeys('canvas.connections', { platform }).map(
-    (key) => keyText(key, platform),
-  );
-
-  lines.push(
-    'The diagram is one Tab stop. Arrow keys move to the nearest node that ' +
-      'way, and from the canvas itself to the node nearest the middle of ' +
-      'the view.',
-    `${down} and ${up}` +
-      (platform === 'mac' ? ' (Fn with Down Arrow and Up Arrow)' : '') +
-      ' move through the focused node’s connections.',
-    'With a screen reader, turn on its focus mode (forms mode in JAWS) for ' +
-      'these keys, or use the Outline.',
-    `${text('selection.press')} selects the focused item alone, or deselects ` +
-      'it when it is the only selected item. ' +
-      `${text('selection.toggle')} adds it to the selection or removes it.`,
-    `${text('selection.clear')} clears the selection.`,
-  );
-
-  if (!readOnly) {
-    lines.push(
-      'Shift with the arrow keys moves the selected nodes 10 pixels. For an ' +
-        'exact position, use Position in the Inspector.',
-      `${platform === 'mac' ? 'Option' : 'Alt'} and Shift with the arrow ` +
-        'keys resize the selected group 10 pixels: Right and Down grow it, ' +
-        'Left and Up shrink it.',
-      `${text('edit.delete')} deletes the focused item, or the whole ` +
-        'selection when the focused item is part of it.',
-      sentence([phraseFor('edit.rename', platform)]),
-    );
-  }
-
-  lines.push(
-    sentence([
-      phraseFor('view.zoomIn', platform),
-      phraseFor('view.zoomOut', platform),
-      phraseFor('view.fit', platform),
-    ]),
-    'These keys work on the connections, the nodes and the canvas itself, ' +
-      'not on the zoom buttons or this help.',
-  );
-
-  const everywhere = sentence(
-    (readOnly
-      ? ['selection.all', 'edit.copy', 'goto.node', 'shortcuts.open']
-      : [
-          'selection.all',
-          'edit.copy',
-          'edit.paste',
-          'edit.duplicate',
-          'edit.undo',
-          'edit.redo',
-          'structure.group',
-          'structure.ungroup',
-          'goto.node',
-          'shortcuts.open',
-        ]
-    ).map((id) => phraseFor(id, platform)),
-  );
-
-  if (everywhere) {
-    lines.push(`Anywhere in the editor but a text field: ${everywhere}`);
-  }
-
-  const fields = sentence(
-    (readOnly
-      ? ['palette.open', 'view.focusMode']
-      : ['palette.open', 'draft.save', 'view.focusMode']
-    ).map((id) => phraseFor(id, platform)),
-  );
-
-  if (fields) {
-    lines.push(`Anywhere in the editor, text fields too: ${fields}`);
-  }
-
-  if (!readOnly) {
-    lines.push(
-      'To add nodes or connect them without a pointer, use Add nodes and the Outline.',
-    );
-  }
-
-  return lines.filter(Boolean);
-}
-
 /**
  * What the keys do on a focused node or connection, and a summary for the
  * canvas itself: their accessible descriptions.
@@ -2380,9 +2433,17 @@ export function canvasHints({ readOnly, platform = currentPlatform() }) {
   const next = first('canvas.connections');
   const node = `Arrow keys move between nodes, ${next} through this node’s connections. ${select}`;
   const edge = `Arrow keys move to the nodes, ${next} to the next connection. ${select}`;
+  // The advice for screen readers is said here, where the canvas's own keys
+  // are: in browse mode the arrow keys move the virtual cursor, not the
+  // focus (see BuilderCanvas.vue).
+  const sheet = shortcutLabel('shortcuts.open', { platform, text: true });
   const canvas =
     `Arrow keys move to the nodes, and ${first('selection.press')} ` +
-    'selects the focused one. The Keyboard help below the canvas lists every key.';
+    'selects the focused one. With a screen reader, turn on its focus mode ' +
+    '(forms mode in JAWS) for these keys, or use the Outline. ' +
+    (sheet
+      ? `${sheet} lists every shortcut.`
+      : 'Shortcuts in the header lists every shortcut.');
   const remove = first('edit.delete');
 
   return readOnly

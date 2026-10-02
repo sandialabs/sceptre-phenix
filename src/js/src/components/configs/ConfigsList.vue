@@ -44,11 +44,27 @@
           <textarea
             class="textarea x-config-text has-fixed-size"
             rows="30"
+            aria-label="Config, as YAML"
             v-model="viewer.obj"
             readonly />
         </div>
       </section>
       <footer class="modal-card-foot x-modal-dark buttons is-right">
+        <!-- A topology opens in the Builder: its diagram when it has one,
+             else the Import dialog, which makes one. The button has the
+             colors of the list's Builder tag, whose text meets the 4.5:1
+             contrast that white on the info color does not. -->
+        <button
+          v-if="viewer.builder"
+          class="button is-info is-light"
+          data-testid="viewer-builder"
+          @click="openInBuilder(viewer.config)">
+          {{
+            viewer.builder === 'open'
+              ? 'Open in Builder'
+              : 'Import into Builder'
+          }}
+        </button>
         <button
           v-if="roleAllowed('configs', 'update', configFullName(viewer.config))"
           class="button is-success"
@@ -244,7 +260,26 @@
             </button>
           </b-tooltip>
           &nbsp;
-          <b-tag type="is-info is-light" v-if="builderTag(props.row)">{{
+          <!-- The tag is a link into the Builder for a role that may follow
+               it. Its name starts with the text it shows, then says what
+               following it does. -->
+          <b-tooltip
+            v-if="tagControl(props.row)"
+            :label="
+              tagControl(props.row) === 'open'
+                ? 'open in Builder'
+                : 'import into Builder'
+            "
+            type="is-dark">
+            <router-link
+              class="tag is-info is-light config-builder"
+              :to="builderLink(props.row)"
+              :aria-label="tagControlName(props.row)"
+              :data-config-builder="configFullName(props.row)">
+              {{ builderTag(props.row) }}
+            </router-link>
+          </b-tooltip>
+          <b-tag type="is-info is-light" v-else-if="builderTag(props.row)">{{
             builderTag(props.row)
           }}</b-tag>
         </template>
@@ -325,7 +360,11 @@
   import FileSaver from 'file-saver';
   import { roleAllowed } from '@/utils/rbac.js';
   import { useErrorNotification } from '@/utils/errorNotif';
-  import { builderTagLabel } from '@/builder/configs.js';
+  import {
+    builderAction,
+    builderLink,
+    builderTagLabel,
+  } from '@/builder/configs.js';
 
   export default {
     emits: ['edit', 'create'],
@@ -369,6 +408,9 @@
           config: { kind: null, metadata: { name: null } },
           title: null,
           obj: null,
+          // What the Builder does with the config shown (see
+          // builderControl), or '' for no button.
+          builder: '',
         },
       };
     },
@@ -455,10 +497,51 @@
       configFullName(cfg) {
         return `${cfg.kind}/${cfg.metadata.name}`;
       },
-      // distinguishes Builder v2 documents (builder-doc) from legacy
+      // distinguishes Builder documents (builder-doc) from legacy
       // builder diagrams (builder-xml)
       builderTag(cfg) {
         return builderTagLabel(cfg);
+      },
+      builderLink,
+      // What the Builder control of a topology does, for a role that may
+      // use it: 'open' its diagram, or 'import' it to make one, which
+      // creates a draft. '' for no control. The server decides again.
+      builderControl(cfg) {
+        const action = builderAction(cfg);
+
+        if (
+          !action ||
+          !roleAllowed('configs', 'list') ||
+          !roleAllowed('configs', 'get', this.configFullName(cfg)) ||
+          (action === 'import' && !roleAllowed('configs', 'create'))
+        ) {
+          return '';
+        }
+
+        return action;
+      },
+      // The control of a topology's tag. A topology without a tag has
+      // none in its row: the viewer's button imports it.
+      tagControl(cfg) {
+        return builderTagLabel(cfg) ? this.builderControl(cfg) : '';
+      },
+      // The name of the tag's link: the tag's own text, then what the link
+      // does, as "builder: open Topology site in the Builder".
+      tagControlName(cfg) {
+        const name = cfg.metadata.name;
+        const does =
+          this.tagControl(cfg) === 'open'
+            ? `open Topology ${name} in the Builder`
+            : `import Topology ${name} into the Builder`;
+
+        return `${builderTagLabel(cfg)}: ${does}`;
+      },
+      // The viewer closes first, so the page is not left locked behind it.
+      openInBuilder(cfg) {
+        const link = builderLink(cfg);
+
+        this.viewer.isActive = false;
+        this.$router.push(link);
       },
       download(configList) {
         const configs = configList.map(this.configFullName);
@@ -602,6 +685,7 @@
         }),
           (this.viewer.title = null));
         this.viewer.obj = null;
+        this.viewer.builder = '';
       },
       viewConfig(cfg) {
         this.viewer.config = cfg;
@@ -615,6 +699,10 @@
           })
           .then((response) => {
             let obj = response.data;
+
+            // The Builder button follows the config as it is now, not the
+            // row, which may be older.
+            this.viewer.builder = this.builderControl(obj);
 
             // The viewer only shows the config, so it keeps no copy of the
             // legacy Builder diagram it leaves out: Edit and Download read
@@ -653,6 +741,18 @@
   .config-name:focus-visible {
     outline: 2px solid currentColor;
     outline-offset: 2px;
+  }
+
+  /* The Builder tag as a link: it shows its focus, and that it is one. The
+     ring is the color of the page's text: the tag's own dark blue would be
+     lost on the row behind it. */
+  .config-builder:focus-visible {
+    outline: 2px solid whitesmoke;
+    outline-offset: 2px;
+  }
+
+  .config-builder:hover {
+    text-decoration: underline;
   }
 
   .x-modal-dark :deep(textarea) {

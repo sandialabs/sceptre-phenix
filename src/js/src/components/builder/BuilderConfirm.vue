@@ -14,7 +14,7 @@
     :aria-describedby="`${id}-message`"
     data-testid="builder-confirm"
     @close="$emit('cancel')">
-    <p :id="`${id}-message`">{{ message }}</p>
+    <p :id="`${id}-message`" class="builder-confirm__message">{{ message }}</p>
 
     <div class="builder-dialog__actions">
       <button
@@ -58,3 +58,11 @@
     cancelButton.value?.focus();
   });
 </script>
+
+<style scoped>
+  /* The message can name drafts and topologies; a long, unbroken name wraps
+     anywhere rather than run off a narrow dialog. */
+  .builder-confirm__message {
+    overflow-wrap: anywhere;
+  }
+</style>

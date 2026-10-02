@@ -1,12 +1,29 @@
 {
   "$defs": {
+    "borderStyle": {
+      "description": "Border pattern of a group; empty selects the default, dashed.",
+      "enum": [
+        "",
+        "solid",
+        "dashed",
+        "dotted",
+        "double"
+      ],
+      "type": "string"
+    },
     "device": {
       "additionalProperties": false,
       "properties": {
+        "fillColor": {
+          "$ref": "#/$defs/hexColor"
+        },
         "hostname": {
           "minLength": 1,
           "pattern": "^\\S+$",
           "type": "string"
+        },
+        "icon": {
+          "$ref": "#/$defs/iconRef"
         },
         "iconKey": {
           "$ref": "#/$defs/iconKey"
@@ -22,6 +39,9 @@
             "$ref": "#/$defs/interfaceHandle"
           },
           "type": "array"
+        },
+        "outlineColor": {
+          "$ref": "#/$defs/hexColor"
         },
         "spec": {
           "description": "Complete phenix topology node spec.",
@@ -55,6 +75,14 @@
         },
         "label": {
           "type": "string"
+        },
+        "lineStyle": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/lineStyle"
+            }
+          ],
+          "description": "Drawn in place of the network's line style."
         },
         "networkId": {
           "$ref": "#/$defs/identifier"
@@ -122,16 +150,55 @@
     "group": {
       "additionalProperties": false,
       "properties": {
+        "borderStyle": {
+          "$ref": "#/$defs/borderStyle"
+        },
         "collapsed": {
           "type": "boolean"
         },
         "color": {
           "type": "string"
         },
+        "description": {
+          "type": "string"
+        },
+        "icon": {
+          "$ref": "#/$defs/iconRef"
+        },
+        "iconKey": {
+          "$ref": "#/$defs/iconKey"
+        },
         "title": {
           "type": "string"
         }
       },
+      "type": "object"
+    },
+    "hexColor": {
+      "description": "Opaque color as #rrggbb; empty for none.",
+      "pattern": "^(#[0-9a-fA-F]{6})?$",
+      "type": "string"
+    },
+    "icon": {
+      "additionalProperties": false,
+      "description": "Custom icon: a PNG of at most 96 by 96 pixels and 40960 bytes.",
+      "properties": {
+        "data": {
+          "contentEncoding": "base64",
+          "contentMediaType": "image/png",
+          "maxLength": 54616,
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 64,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "data"
+      ],
       "type": "object"
     },
     "iconKey": {
@@ -152,6 +219,11 @@
         "vlan",
         "windows"
       ],
+      "type": "string"
+    },
+    "iconRef": {
+      "description": "Custom icon of the document's icons; empty for none.",
+      "pattern": "^(sha256:[0-9a-f]{64})?$",
       "type": "string"
     },
     "identifier": {
@@ -184,6 +256,17 @@
       ],
       "type": "object"
     },
+    "lineStyle": {
+      "description": "Dash pattern of a connection line; empty selects the automatic pattern.",
+      "enum": [
+        "",
+        "solid",
+        "dashed",
+        "dotted",
+        "dash-dot"
+      ],
+      "type": "string"
+    },
     "network": {
       "additionalProperties": false,
       "description": "Canonical phenix network (VLAN).",
@@ -202,6 +285,9 @@
         },
         "id": {
           "$ref": "#/$defs/identifier"
+        },
+        "lineStyle": {
+          "$ref": "#/$defs/lineStyle"
         },
         "name": {
           "minLength": 1,
@@ -3140,6 +3226,15 @@
         "topology": {
           "type": "string"
         },
+        "unresolvedIncludes": {
+          "items": {
+            "description": "Included topology whose nodes are not in the document.",
+            "minLength": 1,
+            "pattern": "^\\S+$",
+            "type": "string"
+          },
+          "type": "array"
+        },
         "updatedAt": {
           "description": "metadata.updated of the source config at import time.",
           "type": "string"
@@ -3160,12 +3255,81 @@
       "additionalProperties": false,
       "description": "Visual hub bound to exactly one network.",
       "properties": {
+        "fillColor": {
+          "$ref": "#/$defs/hexColor"
+        },
         "networkId": {
           "$ref": "#/$defs/identifier"
+        },
+        "outlineColor": {
+          "$ref": "#/$defs/hexColor"
         }
       },
       "required": [
         "networkId"
+      ],
+      "type": "object"
+    },
+    "template": {
+      "additionalProperties": false,
+      "description": "Named set of prefilled fields for a device node.",
+      "properties": {
+        "description": {
+          "description": "Shown with the template. Never written into a node.",
+          "maxLength": 1024,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "type": "string"
+        },
+        "device": {
+          "$ref": "#/$defs/templateDevice"
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "device"
+      ],
+      "type": "object"
+    },
+    "templateDevice": {
+      "additionalProperties": false,
+      "description": "Fields a template fills in. At most 16384 bytes as JSON.",
+      "properties": {
+        "fillColor": {
+          "$ref": "#/$defs/hexColor"
+        },
+        "icon": {
+          "$ref": "#/$defs/iconRef"
+        },
+        "iconKey": {
+          "$ref": "#/$defs/iconKey"
+        },
+        "outlineColor": {
+          "$ref": "#/$defs/hexColor"
+        },
+        "spec": {
+          "description": "Complete phenix topology node spec.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/phenix.v1.minimega_node"
+            },
+            {
+              "$ref": "#/$defs/phenix.v1.external_node"
+            }
+          ]
+        }
+      },
+      "required": [
+        "spec"
       ],
       "type": "object"
     },
@@ -3224,6 +3388,17 @@
     "grid": {
       "$ref": "#/$defs/grid"
     },
+    "icons": {
+      "additionalProperties": {
+        "$ref": "#/$defs/icon"
+      },
+      "description": "Custom icons the nodes and templates use, by icon id: sha256: and the SHA-256 of the PNG bytes. Never published.",
+      "maxProperties": 32,
+      "propertyNames": {
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      },
+      "type": "object"
+    },
     "id": {
       "$ref": "#/$defs/identifier"
     },
@@ -3257,6 +3432,14 @@
     },
     "source": {
       "$ref": "#/$defs/source"
+    },
+    "templates": {
+      "description": "Device templates saved with this diagram. Never published to a config.",
+      "items": {
+        "$ref": "#/$defs/template"
+      },
+      "maxItems": 50,
+      "type": "array"
     },
     "updatedAt": {
       "description": "When this content was saved. The server sets it on every save, and a value sent is replaced. It is not source.updatedAt, which is a time of the source config. RFC 3339 in UTC, whole seconds: YYYY-MM-DDTHH:MM:SSZ.",

@@ -3,27 +3,39 @@
 
   Vue Flow's wrapper around this component takes focus (the canvas's roving
   Tab stop, see BuilderCanvas.vue) and carries its accessible name (see
-  adapters/vueflow.js), so nothing in here is focusable. The comment (spec.general.description) ends that name and is
-  shown to sighted users as a tooltip on hover and focus.
+  adapters/vueflow.js), so nothing in here is focusable. Under its name the
+  device shows its phenix node type as stored (VirtualMachine, Router, ...),
+  or External. The comment (spec.general.description) ends the accessible
+  name and is the device's last line. Hover and keyboard focus show the
+  device's info tooltip (see nodeTooltip.js), and the hidden text beside
+  the node says the same to assistive technology, as the wrapper's
+  description.
 
   A device from an included topology is read only: it says where it comes
-  from in place of its kind, has a dashed border, and offers no handle for a
+  from in place of its type, has a dashed border, and offers no handle for a
   new interface. Its accessible name says the same.
+
+  A device may have an outline color and a fill color of its own (see
+  nodeColors in colors.js). On a fill, every line of text and the icon are
+  black or white, whichever reads on it. A custom icon, when the device has
+  one, is drawn in place of the icon of its key, in its own colors.
 -->
 <template>
   <div
     class="builder-node builder-node--device"
-    :class="{
-      'is-selected': selected,
-      'builder-node--included': Boolean(data.includedFrom),
-    }"
+    :class="[
+      {
+        'is-selected': selected,
+        'builder-node--included': Boolean(data.includedFrom),
+      },
+      colorClasses,
+    ]"
+    :style="colorStyle"
     :data-node-id="id"
     :data-node-kind="'device'"
-    data-testid="builder-node"
-    @mouseenter="showTooltip"
-    @mouseleave="hideTooltip">
+    data-testid="builder-node">
     <div class="builder-node__header">
-      <builder-icon :name="data.iconKey" :size="16" />
+      <builder-icon :name="data.iconKey" :src="data.iconSrc" :size="16" />
       <span class="builder-node__label">{{ data.label }}</span>
     </div>
     <span
@@ -32,22 +44,17 @@
       data-testid="node-included-from">
       Included from {{ data.includedFrom }}
     </span>
-    <span v-else class="builder-node__kind">Device</span>
+    <span
+      v-else
+      class="builder-node__kind builder-node__kind--type"
+      data-testid="node-type">
+      {{ data.typeLabel }}
+    </span>
     <span class="builder-node__meta">
       {{ interfaceCount }}
       {{ interfaceCount === 1 ? 'interface' : 'interfaces' }}
     </span>
     <span v-if="comment" class="builder-node__comment">{{ comment }}</span>
-
-    <div
-      v-if="comment"
-      v-show="tooltipOpen"
-      class="builder-tooltip builder-tooltip--node"
-      data-testid="node-tooltip"
-      aria-hidden="true">
-      {{ comment }}
-    </div>
-
     <node-issue-mark v-if="data.issue" :node-id="id" :issue="data.issue" />
 
     <!-- Handles are pointer-only: the outline's Connect form is the keyboard
@@ -89,6 +96,11 @@
       :title="`Drag to connect ${data.label} on a new interface`"
       aria-hidden="true" />
   </div>
+
+  <!-- What the info tooltip shows, as the wrapper's description. It is
+       beside the node, not in it, so the node's own text stays what the
+       node shows. -->
+  <span :id="infoId" class="builder-node__info" hidden>{{ infoText }}</span>
 </template>
 
 <script setup>
@@ -97,9 +109,11 @@
 
   import BuilderIcon from '../BuilderIcon.vue';
   import NodeIssueMark from './NodeIssueMark.vue';
-  import { useNodeTooltip } from './nodeTooltip.js';
+  import { useNodeColors } from './nodeColors.js';
+  import { useNodeInfo } from './nodeTooltip.js';
 
   import { NEW_INTERFACE_HANDLE_ID } from '@/builder/adapters/vueflow.js';
+  import { deviceInfo } from '@/builder/nodeInfo.js';
 
   // Vue Flow passes its node state as attributes as well; none belong on
   // the node's element.
@@ -112,9 +126,10 @@
   });
 
   const comment = computed(() => props.data.comment || '');
-  const { tooltipOpen, showTooltip, hideTooltip } = useNodeTooltip(() =>
-    Boolean(comment.value),
+  const { colorClasses, colorStyle } = useNodeColors(
+    () => props.data.node.device,
   );
+  const { infoId, infoText } = useNodeInfo(() => deviceInfo(props.data.node));
   const interfaceCount = computed(() => props.data.handles.length);
 
   function handleStyle(index) {

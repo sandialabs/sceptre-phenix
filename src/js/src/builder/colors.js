@@ -10,8 +10,14 @@
 // cased in that theme's text color there, so it never fades into the canvas
 // (WCAG 1.4.11). Notes and groups show theirs as an accent bar, and
 // switches as a swatch, both decorative: their names say what they are.
+//
+// A device or a switch may also have a fill and an outline of its own, each
+// an opaque #rrggbb. Its text and icon on a fill are black or white,
+// whichever reads better on it (WCAG 1.4.3), and an outline that would not
+// keep 3:1 against a theme's canvas gets a ring in that theme's text color
+// there, as a low-contrast line gets a casing.
 
-import { DEFAULT_NETWORK_COLORS } from './model.js';
+import { DEFAULT_NETWORK_COLORS, HEX_COLOR } from './model.js';
 
 // What a connection is drawn over in each theme: the canvas (--bx-bg-alt)
 // and its grid lines (--bx-grid). A line keeps 3:1 against both.
@@ -200,4 +206,49 @@ export function needsCasing(color) {
     });
 
   return { light: low(CANVAS.light), dark: low(CANVAS.dark) };
+}
+
+/**
+ * The color of text and icons on an opaque fill: black or white, whichever
+ * contrasts more with it. The better of the two keeps at least 4.58:1 on any
+ * fill, so text on it meets WCAG 1.4.3 and an icon 1.4.11.
+ *
+ * @param {string} fill a hex or rgb() color
+ * @returns {string} '#000000' or '#ffffff'; '' when the fill is not an
+ *   opaque color this can read
+ */
+export function inkOn(fill) {
+  const onBlack = contrastRatio(fill, '#000000');
+  const onWhite = contrastRatio(fill, '#ffffff');
+
+  if (onBlack === null || onWhite === null) {
+    return '';
+  }
+
+  return onBlack >= onWhite ? '#000000' : '#ffffff';
+}
+
+/**
+ * The colors a device or a switch is drawn in, from its payload. A value
+ * that is not #rrggbb, which only an edited file can hold, is not drawn.
+ *
+ * @param {object} [payload] node.device or node.switch
+ * @returns {{fill: string, outline: string, ink: string,
+ *   low: {light: boolean, dark: boolean}|null}} fill and outline are ''
+ *   for none; ink is the text color on the fill, or ''; low says in which
+ *   themes the outline needs a ring to show (see needsCasing), or null
+ *   without an outline
+ */
+export function nodeColors(payload) {
+  const hex = (value) =>
+    typeof value === 'string' && HEX_COLOR.test(value) ? value : '';
+  const fill = hex(payload?.fillColor);
+  const outline = hex(payload?.outlineColor);
+
+  return {
+    fill,
+    outline,
+    ink: fill ? inkOn(fill) : '',
+    low: outline ? needsCasing(outline) : null,
+  };
 }

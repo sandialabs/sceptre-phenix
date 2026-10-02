@@ -12,13 +12,26 @@
 // server: an interface connection point with no interface of that name in
 // the node's spec, and a spec hostname that is not the device's. The server
 // publishes such a device with the device's hostname and without that
-// connection, which the editor would not show.
+// connection, which the editor would not show. One check is the server's
+// alone: that the PNG of a custom icon decodes (see icons.js).
 
 import { count } from './announce.js';
 import { isIconKey } from './catalog.js';
-import { contentDigestSync, isDigest } from './digest.js';
+import { canonicalJSON, contentDigestSync, isDigest } from './digest.js';
+import {
+  ICON_ID,
+  MAX_DOCUMENT_ICONS,
+  MAX_ICON_BYTES,
+  MAX_ICON_NAME_BYTES,
+  decodeIconData,
+  iconId,
+  iconPNGProblem,
+} from './icons.js';
 import { MAX_USER_BYTES } from './limits.js';
 import {
+  BORDER_STYLES,
+  HEX_COLOR,
+  LINE_STYLES,
   SCHEMA_REVISION,
   SCHEMA_URI,
   deviceHandles,
@@ -43,6 +56,16 @@ export const MAX_NAME_BYTES = 512;
 export const MAX_ANNOTATIONS = 100;
 export const MAX_ANNOTATION_BYTES = 256 * 1024;
 
+// Bounds on device templates (MaxTemplates, MaxTemplateNameBytes,
+// MaxTemplateDescriptionBytes and MaxTemplateDeviceBytes in template.go):
+// how many a document may carry, the UTF-8 bytes of a name and of a
+// description, and the bytes of a template's device as the server encodes
+// it as JSON.
+export const MAX_TEMPLATES = 50;
+export const MAX_TEMPLATE_NAME_BYTES = 128;
+export const MAX_TEMPLATE_DESCRIPTION_BYTES = 1024;
+export const MAX_TEMPLATE_DEVICE_BYTES = 16 * 1024;
+
 // The apiVersion of scenario content a reference carries: the latest stored
 // scenario version (ScenarioAPIVersion in document.go).
 export const SCENARIO_API_VERSION = 'phenix.sandia.gov/v2';
@@ -61,10 +84,21 @@ const PHENIX_HOSTNAME = 'phenix';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+// The white space strings.TrimSpace trims (unicode.IsSpace). String's own
+// trim differs by two characters: it keeps U+0085 and trims U+FEFF.
+const GO_SPACE =
+  '\\t\\n\\v\\f\\r \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000';
+const GO_SPACE_AROUND = new RegExp(`^[${GO_SPACE}]+|[${GO_SPACE}]+$`, 'g');
+
+// Text without the white space around it, as strings.TrimSpace gives it,
+// so that what is blank to the server is blank here.
+function trimSpace(text) {
+  return text.replace(GO_SPACE_AROUND, '');
+}
+
+// foldKey in types/builder/spec.go.
 function fold(value) {
-  return String(value ?? '')
-    .trim()
-    .toLowerCase();
+  return trimSpace(String(value ?? '')).toLowerCase();
 }
 
 function finite(value) {
@@ -75,12 +109,444 @@ function issue(issues, path, message, level = 'error', extra = {}) {
   issues.push({ path, message, level, ...extra });
 }
 
+// The longest value a message quotes, in UTF-8 bytes.
+const QUOTED_BYTES = 64;
+
+// What Go writes as it is between quotes: letters, marks, numbers,
+// punctuation, symbols and the space (strconv.IsPrint). Go and the browser
+// each know a version of Unicode, so a character new to one of them can
+// still be written differently.
+const PRINTABLE = /^[\p{L}\p{M}\p{N}\p{P}\p{S} ]$/u;
+
+// The characters Go's %q writes as a backslash and a letter.
+const GO_ESCAPES = new Map([
+  ['\x07', '\\a'],
+  ['\b', '\\b'],
+  ['\f', '\\f'],
+  ['\n', '\\n'],
+  ['\r', '\\r'],
+  ['\t', '\\t'],
+  ['\v', '\\v'],
+]);
+
+// Half of a surrogate pair without its other half. The server never sees
+// one: JSON gives it U+FFFD in its place.
+function isLoneSurrogate(ch) {
+  return ch.length === 1 && ch >= '\ud800' && ch <= '\udfff';
+}
+
+// Text between double quotes as Go's %q writes it (strconv.Quote), so that a
+// message which quotes a value reads the same here and from the server:
+// what does not print is written as an escape.
+function goQuoted(text) {
+  let out = '';
+
+  for (const ch of text) {
+    const code = ch.codePointAt(0);
+    const hex = (digits) => code.toString(16).padStart(digits, '0');
+
+    if (ch === '"' || ch === '\\') {
+      out += `\\${ch}`;
+    } else if (isLoneSurrogate(ch)) {
+      out += '\ufffd';
+    } else if (PRINTABLE.test(ch)) {
+      out += ch;
+    } else if (GO_ESCAPES.has(ch)) {
+      out += GO_ESCAPES.get(ch);
+    } else if (code < 0x20 || code === 0x7f) {
+      out += `\\x${hex(2)}`;
+    } else if (code < 0x10000) {
+      out += `\\u${hex(4)}`;
+    } else {
+      out += `\\U${hex(8)}`;
+    }
+  }
+
+  return `"${out}"`;
+}
+
+// Text cut to QUOTED_BYTES bytes of whole characters (truncate in
+// decode.go).
+function truncated(text) {
+  if (utf8Length(text) <= QUOTED_BYTES) {
+    return text;
+  }
+
+  let kept = '';
+  let bytes = 0;
+
+  for (const ch of text) {
+    bytes += utf8Length(ch);
+
+    if (bytes > QUOTED_BYTES) {
+      break;
+    }
+
+    kept += ch;
+  }
+
+  return `${kept}...`;
+}
+
+// A value as a message quotes it, cut when long.
+function quoted(value) {
+  return goQuoted(truncated(String(value)));
+}
+
+// Whether a field that is text when set is not set: absent, empty, or null,
+// which Go decodes as none.
+function unset(value) {
+  return value === undefined || value === null || value === '';
+}
+
+function isObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+// The icon key of a device, a group or a template's device (validateIconKey
+// in validate.go): none, or one of the registry.
+function validateIconKey(key, path, issues) {
+  if (!unset(key) && !isIconKey(key)) {
+    issue(issues, path, `unknown icon key "${key}"`);
+  }
+}
+
+// Why a color is no outline or fill color (colorProblem in validate.go), or
+// '': none, or #rrggbb.
+function colorProblem(color) {
+  return unset(color) || (typeof color === 'string' && HEX_COLOR.test(color))
+    ? ''
+    : `color ${quoted(color)} must be a hex color such as #2f6fbf`;
+}
+
+// The outline and fill colors of a device, a switch or a template's device.
+function validateColors(payload, path, issues) {
+  ['outlineColor', 'fillColor'].forEach((key) => {
+    const problem = colorProblem(payload?.[key]);
+
+    if (problem) {
+      issue(issues, `${path}.${key}`, problem);
+    }
+  });
+}
+
+// The line style of a network or a connection (validateLineStyle in
+// validate.go): none, or one of LINE_STYLES.
+function validateLineStyle(style, path, issues) {
+  if (!unset(style) && !LINE_STYLES.includes(style)) {
+    issue(
+      issues,
+      path,
+      `unknown line style ${quoted(style)} (expected one of ${LINE_STYLES.join(', ')})`,
+    );
+  }
+}
+
+// The custom icon a device, a group or a template names (validateIconRef in
+// validate.go): none, or one the document carries.
+function validateIconRef(doc, id, path, issues) {
+  if (unset(id)) {
+    return;
+  }
+
+  if (
+    typeof id !== 'string' ||
+    !isObject(doc.icons) ||
+    !Object.hasOwn(doc.icons, id)
+  ) {
+    issue(issues, path, `unknown custom icon ${quoted(id)}`);
+  }
+}
+
+// Icons already found to be what their keys say, by id: the data each was
+// checked with. Validation runs on every edit, and an icon's id is the
+// digest of its bytes, so one that was checked is not decoded and hashed
+// again.
+const checkedIcons = new Map();
+const MAX_CHECKED_ICONS = 256;
+
+/**
+ * Checks a set of custom icons, as a document or a template library carries
+ * them (ValidateIcons in customicons.go): at most MAX_DOCUMENT_ICONS, each
+ * key an icon id, each name at most MAX_ICON_NAME_BYTES bytes without
+ * control characters, each data strict base64 of a PNG the Builder accepts
+ * (see iconPNGProblem), whose id is the key. An icon nothing uses is valid:
+ * the editor drops it on its next edit.
+ *
+ * @param {object|null|undefined} icons by icon id, {name?, data}
+ * @param {string} [path] the path the issues are reported at
+ * @returns {{path: string, message: string, level: 'error'}[]} in the order
+ *   of the keys
+ */
+export function validateIcons(icons, path = 'icons') {
+  const issues = [];
+
+  // null is none, as the server decodes it.
+  if (icons === undefined || icons === null) {
+    return issues;
+  }
+
+  // The server refuses any other value when it decodes the document.
+  if (!isObject(icons)) {
+    issue(issues, path, 'custom icons must be an object of icons by icon id');
+
+    return issues;
+  }
+
+  const keys = Object.keys(icons).sort();
+
+  if (keys.length > MAX_DOCUMENT_ICONS) {
+    issue(
+      issues,
+      path,
+      `at most ${MAX_DOCUMENT_ICONS} custom icons are allowed, not ${keys.length}`,
+    );
+  }
+
+  keys.forEach((key) => {
+    const { name, data } = isObject(icons[key]) ? icons[key] : {};
+    const keyed = ICON_ID.test(key);
+
+    if (!keyed) {
+      issue(
+        issues,
+        path,
+        `icon key ${quoted(key)} must be sha256: and 64 hex digits`,
+      );
+    }
+
+    if (
+      !unset(name) &&
+      (typeof name !== 'string' ||
+        utf8Length(name) > MAX_ICON_NAME_BYTES ||
+        hasControlCharacters(name))
+    ) {
+      issue(
+        issues,
+        path,
+        `icon ${quoted(key)} name must be at most ${MAX_ICON_NAME_BYTES} bytes and contain no control characters`,
+      );
+    }
+
+    if (keyed && checkedIcons.get(key) === data) {
+      return;
+    }
+
+    const bytes = decodeIconData(data);
+
+    if (!bytes) {
+      issue(
+        issues,
+        path,
+        `icon ${quoted(key)} data must be base64 of at most ${MAX_ICON_BYTES} bytes`,
+      );
+
+      return;
+    }
+
+    const problem = iconPNGProblem(bytes);
+
+    if (problem) {
+      issue(
+        issues,
+        path,
+        `icon ${quoted(key)} is not an accepted PNG: ${problem}`,
+      );
+
+      return;
+    }
+
+    if (!keyed) {
+      return;
+    }
+
+    if (iconId(bytes) !== key) {
+      issue(issues, path, `icon ${quoted(key)} does not match its data`);
+
+      return;
+    }
+
+    if (checkedIcons.size >= MAX_CHECKED_ICONS) {
+      checkedIcons.clear();
+    }
+
+    checkedIcons.set(key, data);
+  });
+
+  return issues;
+}
+
+// The length of a template's device as the server encodes it: without the
+// icon and color fields that are not set, which it leaves out.
+function templateDeviceBytes(device) {
+  const encoded = Object.fromEntries(
+    Object.entries(device).filter(
+      ([key, value]) => key === 'spec' || !unset(value),
+    ),
+  );
+
+  return utf8Length(canonicalJSON(encoded));
+}
+
+/**
+ * What makes a template unusable (Template.Issues in template.go): a name
+ * that is blank, longer than MAX_TEMPLATE_NAME_BYTES or holds control
+ * characters; a description longer than MAX_TEMPLATE_DESCRIPTION_BYTES or
+ * holding control characters; a device without a spec, or whose spec has no
+ * general.hostname, a blank one or one with whitespace; an unknown icon key;
+ * a color that is not #rrggbb; and a device longer than
+ * MAX_TEMPLATE_DEVICE_BYTES as JSON. The spec is not checked against the
+ * phenix schema here, as a device's is not. Neither are the id, whose form
+ * depends on where the template is kept, and the custom icon, which names an
+ * icon kept beside the template: validateDocument checks both for a
+ * document's templates.
+ *
+ * @param {object} template {id, name, description?, device}
+ * @param {string} path the path of the template, which the issues' paths
+ *   start with: templates[0]
+ * @returns {{path: string, message: string, level: 'error'}[]}
+ */
+export function templateIssues(template, path) {
+  const issues = [];
+  const { name, description, device } = isObject(template) ? template : {};
+
+  if (typeof name !== 'string' || !trimSpace(name)) {
+    issue(issues, `${path}.name`, 'template name is required');
+  } else if (utf8Length(name) > MAX_TEMPLATE_NAME_BYTES) {
+    issue(
+      issues,
+      `${path}.name`,
+      `template name must be at most ${MAX_TEMPLATE_NAME_BYTES} bytes`,
+    );
+  } else if (hasControlCharacters(name)) {
+    issue(
+      issues,
+      `${path}.name`,
+      'template name must not contain control characters',
+    );
+  }
+
+  if (!unset(description)) {
+    if (
+      typeof description !== 'string' ||
+      utf8Length(description) > MAX_TEMPLATE_DESCRIPTION_BYTES
+    ) {
+      issue(
+        issues,
+        `${path}.description`,
+        `template description must be at most ${MAX_TEMPLATE_DESCRIPTION_BYTES} bytes`,
+      );
+    } else if (hasControlCharacters(description)) {
+      issue(
+        issues,
+        `${path}.description`,
+        'template description must not contain control characters',
+      );
+    }
+  }
+
+  if (!isObject(device) || !isObject(device.spec)) {
+    issue(issues, `${path}.device.spec`, 'template device spec is required');
+  } else {
+    const general = device.spec.general;
+    const hostname =
+      isObject(general) && typeof general.hostname === 'string'
+        ? general.hostname
+        : '';
+
+    if (!trimSpace(hostname)) {
+      issue(
+        issues,
+        `${path}.device.spec.general.hostname`,
+        'template hostname is required',
+      );
+    } else if (WHITESPACE.test(hostname)) {
+      issue(
+        issues,
+        `${path}.device.spec.general.hostname`,
+        `template hostname ${quoted(hostname)} must not contain whitespace`,
+      );
+    }
+  }
+
+  if (!isObject(device)) {
+    return issues;
+  }
+
+  validateIconKey(device.iconKey, `${path}.device.iconKey`, issues);
+  validateColors(device, `${path}.device`, issues);
+
+  const size = templateDeviceBytes(device);
+
+  if (size > MAX_TEMPLATE_DEVICE_BYTES) {
+    issue(
+      issues,
+      `${path}.device`,
+      `template device must take at most ${MAX_TEMPLATE_DEVICE_BYTES} bytes as JSON, not ${size}`,
+    );
+  }
+
+  return issues;
+}
+
+// The document's templates (validateTemplates in validate.go): how many,
+// the id of each, which is unique among them, the custom icon each names,
+// and what templateIssues checks.
+function validateTemplates(doc, issues) {
+  // null is none, as the server decodes it.
+  if (doc.templates === undefined || doc.templates === null) {
+    return;
+  }
+
+  // The server refuses any other value when it decodes the document.
+  if (!Array.isArray(doc.templates)) {
+    issue(issues, 'templates', 'templates must be a list of templates');
+
+    return;
+  }
+
+  if (doc.templates.length > MAX_TEMPLATES) {
+    issue(
+      issues,
+      'templates',
+      `at most ${MAX_TEMPLATES} templates are allowed, not ${doc.templates.length}`,
+    );
+  }
+
+  const seenIds = new Map();
+
+  doc.templates.forEach((template, index) => {
+    const path = `templates[${index}]`;
+    const id = template?.id;
+
+    if (!trimSpace(String(id || ''))) {
+      issue(issues, `${path}.id`, 'template ID is required');
+    } else if (seenIds.has(fold(id))) {
+      issue(
+        issues,
+        `${path}.id`,
+        `duplicate template ID ${goQuoted(String(id))} (also templates[${seenIds.get(fold(id))}])`,
+      );
+    } else {
+      seenIds.set(fold(id), index);
+    }
+
+    validateUUID(issues, `${path}.id`, 'template', id);
+    issues.push(...templateIssues(template, path));
+    validateIconRef(doc, template?.device?.icon, `${path}.device.icon`, issues);
+  });
+}
+
 // Every identifier is a UUID: crypto.randomUUID mints the editor's, and the
 // server derives name based ones (validateID in validate.go). A missing one
 // is reported where it is required.
 function validateUUID(issues, path, kind, id) {
-  if (String(id || '').trim() && !UUID_PATTERN.test(String(id))) {
-    issue(issues, path, `${kind} ID "${id}" is not a valid UUID`);
+  if (trimSpace(String(id || '')) && !UUID_PATTERN.test(String(id))) {
+    issue(
+      issues,
+      path,
+      `${kind} ID ${goQuoted(String(id))} is not a valid UUID`,
+    );
   }
 }
 
@@ -169,7 +635,7 @@ function validateHeader(doc, issues) {
     );
   }
 
-  if (!String(doc.id || '').trim()) {
+  if (!trimSpace(String(doc.id || ''))) {
     issue(issues, 'id', 'document ID is required');
   }
 
@@ -251,7 +717,7 @@ function validateNetworks(doc, issues, networksById) {
   (doc.networks || []).forEach((network, index) => {
     const path = `networks[${index}]`;
 
-    if (!String(network.id || '').trim()) {
+    if (!trimSpace(String(network.id || ''))) {
       issue(issues, `${path}.id`, 'network ID is required');
     } else if (seenIds.has(fold(network.id))) {
       issue(
@@ -266,7 +732,7 @@ function validateNetworks(doc, issues, networksById) {
 
     validateUUID(issues, `${path}.id`, 'network', network.id);
 
-    if (!String(network.name || '').trim()) {
+    if (!trimSpace(String(network.name || ''))) {
       issue(issues, `${path}.name`, 'network name is required');
     } else if (WHITESPACE.test(network.name)) {
       issue(
@@ -285,6 +751,8 @@ function validateNetworks(doc, issues, networksById) {
     } else {
       seenNames.set(network.name, index);
     }
+
+    validateLineStyle(network.lineStyle, `${path}.lineStyle`, issues);
 
     if (network.alias === undefined || network.alias === null) {
       return;
@@ -348,14 +816,16 @@ function validateNodePayload(node, path, issues) {
 
 function validateDeviceHandles(node, path, issues, handleOwner) {
   const seenNames = new Map();
+  // A spec is free-form: interfaces that are no list, or an entry that is
+  // no object, name nothing a handle could match.
   const specNames = new Set(
-    (node.device?.spec?.network?.interfaces || []).map((iface) => iface.name),
+    arrayOf(node.device?.spec?.network?.interfaces).map((iface) => iface?.name),
   );
 
   deviceHandles(node).forEach((handle, index) => {
     const handlePath = `${path}.device.interfaces[${index}]`;
 
-    if (!String(handle.id || '').trim()) {
+    if (!trimSpace(String(handle.id || ''))) {
       issue(issues, `${handlePath}.id`, 'interface handle ID is required');
     } else if (handleOwner.has(handle.id)) {
       issue(
@@ -369,7 +839,7 @@ function validateDeviceHandles(node, path, issues, handleOwner) {
 
     validateUUID(issues, `${handlePath}.id`, 'interface handle', handle.id);
 
-    if (!String(handle.name || '').trim()) {
+    if (!trimSpace(String(handle.name || ''))) {
       issue(issues, `${handlePath}.name`, 'interface name is required');
 
       return;
@@ -403,7 +873,7 @@ function validateIncludedFrom(doc, name, path, issues) {
     return;
   }
 
-  if (typeof name !== 'string' || !name.trim() || WHITESPACE.test(name)) {
+  if (typeof name !== 'string' || !trimSpace(name) || WHITESPACE.test(name)) {
     issue(
       issues,
       `${path}.device.includedFrom`,
@@ -425,7 +895,7 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
   (doc.nodes || []).forEach((node, index) => {
     const path = `nodes[${index}]`;
 
-    if (!String(node.id || '').trim()) {
+    if (!trimSpace(String(node.id || ''))) {
       issue(issues, `${path}.id`, 'node ID is required');
     } else if (seenIds.has(fold(node.id))) {
       issue(
@@ -472,7 +942,7 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
     if (node.kind === 'device' && node.device) {
       const hostname = node.device.hostname;
 
-      if (!String(hostname || '').trim()) {
+      if (!trimSpace(String(hostname || ''))) {
         issue(issues, `${path}.device.hostname`, 'hostname is required');
       } else if (WHITESPACE.test(hostname)) {
         issue(
@@ -500,14 +970,9 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
         );
       }
 
-      if (node.device.iconKey && !isIconKey(node.device.iconKey)) {
-        issue(
-          issues,
-          `${path}.device.iconKey`,
-          `unknown icon key "${node.device.iconKey}"`,
-        );
-      }
-
+      validateIconKey(node.device.iconKey, `${path}.device.iconKey`, issues);
+      validateIconRef(doc, node.device.icon, `${path}.device.icon`, issues);
+      validateColors(node.device, `${path}.device`, issues);
       validateIncludedFrom(doc, node.device.includedFrom, path, issues);
       validateDeviceHandles(node, path, issues, handleOwner);
     }
@@ -526,6 +991,23 @@ function validateNodes(doc, issues, nodesById, networksById, handleOwner) {
           `unknown network "${node.switch.networkId}"`,
         );
       }
+
+      validateColors(node.switch, `${path}.switch`, issues);
+    }
+
+    if (node.kind === 'group' && node.group) {
+      const style = node.group.borderStyle;
+
+      if (!unset(style) && !BORDER_STYLES.includes(style)) {
+        issue(
+          issues,
+          `${path}.group.borderStyle`,
+          `unknown border style ${quoted(style)} (expected one of ${BORDER_STYLES.join(', ')})`,
+        );
+      }
+
+      validateIconKey(node.group.iconKey, `${path}.group.iconKey`, issues);
+      validateIconRef(doc, node.group.icon, `${path}.group.icon`, issues);
     }
   });
 }
@@ -585,7 +1067,7 @@ function validateEdges(doc, issues, nodesById, networksById) {
   (doc.edges || []).forEach((edge, index) => {
     const path = `edges[${index}]`;
 
-    if (!String(edge.id || '').trim()) {
+    if (!trimSpace(String(edge.id || ''))) {
       issue(issues, `${path}.id`, 'edge ID is required');
     } else if (seenIds.has(fold(edge.id))) {
       issue(
@@ -599,6 +1081,7 @@ function validateEdges(doc, issues, nodesById, networksById) {
 
     validateUUID(issues, `${path}.id`, 'edge', edge.id);
     validateRoute(edge.route, `${path}.route`, issues);
+    validateLineStyle(edge.lineStyle, `${path}.lineStyle`, issues);
 
     if (!nodesById.has(edge.sourceNodeId)) {
       issue(
@@ -697,7 +1180,7 @@ function validateScenario(doc, issues) {
   }
 
   if (ref.kind === 'stored') {
-    if (!String(ref.name || '').trim()) {
+    if (!trimSpace(String(ref.name || ''))) {
       issue(
         issues,
         'scenario.name',
@@ -722,7 +1205,7 @@ function validateScenario(doc, issues) {
     return;
   }
 
-  if (!String(ref.apiVersion || '').trim()) {
+  if (!trimSpace(String(ref.apiVersion || ''))) {
     issue(
       issues,
       'scenario.apiVersion',
@@ -740,11 +1223,11 @@ function hasScenarioContent(ref) {
 }
 
 // Every reference carries a well-formed digest, including a stored reference
-// without content: GET /builder-v2/sources lists stored scenarios by apiVersion
+// without content: GET /builder/sources lists stored scenarios by apiVersion
 // and digest, never by content. The digest must match content only when the
 // reference carries some. Returns whether the digest can be trusted.
 function validateScenarioDigest(ref, issues) {
-  if (!String(ref.digest || '').trim()) {
+  if (!trimSpace(String(ref.digest || ''))) {
     issue(
       issues,
       'scenario.digest',
@@ -808,30 +1291,16 @@ function validateSource(doc, issues) {
     );
   }
 
-  const includes = doc.source.includeTopologies;
-
-  // The server refuses any other value when it decodes the document.
-  if (includes != null && !Array.isArray(includes)) {
-    issue(
-      issues,
-      'source.includeTopologies',
-      'included topologies must be a list of topology names',
-    );
-  }
-
-  (Array.isArray(includes) ? includes : []).forEach((name, index) => {
-    const path = `source.includeTopologies[${index}]`;
-
-    if (typeof name !== 'string' || !name.trim()) {
-      issue(issues, path, 'included topology name is required');
-    } else if (WHITESPACE.test(name)) {
-      issue(
-        issues,
-        path,
-        `included topology name "${name}" must not contain whitespace`,
-      );
-    }
-  });
+  validateIncludes(
+    doc.source.includeTopologies,
+    'source.includeTopologies',
+    issues,
+  );
+  validateIncludes(
+    doc.source.unresolvedIncludes,
+    'source.unresolvedIncludes',
+    issues,
+  );
 
   // null is no digest, as the server decodes it.
   const digest = doc.source.digest;
@@ -847,10 +1316,33 @@ function validateSource(doc, issues) {
   validateAnnotations(doc.source.annotations, issues);
 }
 
+// The names of included topologies the source lists at path
+// (validateIncludes in validate.go): none blank, none with whitespace.
+function validateIncludes(includes, path, issues) {
+  // The server refuses any other value when it decodes the document.
+  if (includes != null && !Array.isArray(includes)) {
+    issue(issues, path, 'included topologies must be a list of topology names');
+  }
+
+  (Array.isArray(includes) ? includes : []).forEach((name, index) => {
+    const at = `${path}[${index}]`;
+
+    if (typeof name !== 'string' || !trimSpace(name)) {
+      issue(issues, at, 'included topology name is required');
+    } else if (WHITESPACE.test(name)) {
+      issue(
+        issues,
+        at,
+        `included topology name "${name}" must not contain whitespace`,
+      );
+    }
+  });
+}
+
 // What makes an annotation key unusable (annotationKeyProblem in
 // validate.go), or ''.
 function annotationKeyProblem(key) {
-  if (!key.trim()) {
+  if (!trimSpace(key)) {
     return 'must not be blank';
   }
 
@@ -910,13 +1402,7 @@ function validateAnnotations(annotations, issues) {
       const problem = annotationKeyProblem(key);
 
       if (problem) {
-        const shown = key.length > 64 ? `${key.slice(0, 64)}...` : key;
-
-        issue(
-          issues,
-          path,
-          `annotation key ${JSON.stringify(shown)} ${problem}`,
-        );
+        issue(issues, path, `annotation key ${quoted(key)} ${problem}`);
       }
     });
 }
@@ -936,7 +1422,7 @@ function specContext(doc, disks) {
 }
 
 function trimmed(value) {
-  return typeof value === 'string' ? value.trim() : '';
+  return typeof value === 'string' ? trimSpace(value) : '';
 }
 
 function arrayOf(value) {
@@ -1148,7 +1634,7 @@ export function deviceFieldWarnings(
 function hasVLAN(iface) {
   const vlan = iface?.vlan;
 
-  return vlan != null && (typeof vlan !== 'string' || vlan.trim() !== '');
+  return vlan != null && (typeof vlan !== 'string' || trimSpace(vlan) !== '');
 }
 
 // How a message names each spec interface of a device: by its name, or by
@@ -1163,7 +1649,7 @@ function interfaceLabels(interfaces) {
   names.forEach((name) => uses.set(name, (uses.get(name) || 0) + 1));
 
   return names.map((name, index) => {
-    if (!name.trim()) {
+    if (!trimSpace(name)) {
       return `#${index + 1}`;
     }
 
@@ -1215,7 +1701,7 @@ function interfaceWarnings(node, connected, networks) {
       return;
     }
 
-    const unnamed = !name.trim();
+    const unnamed = !trimSpace(name);
     const shared = !unnamed && names.indexOf(name) !== names.lastIndexOf(name);
     const subject = `interface ${labels[index]} of "${node.device.hostname}"`;
     const warn = (message, extra = {}) =>
@@ -1250,7 +1736,7 @@ function interfaceWarnings(node, connected, networks) {
       return;
     }
 
-    const vlan = String(iface.vlan).trim();
+    const vlan = trimSpace(String(iface.vlan));
     const network = networks.exact.get(vlan);
     const cased = networks.folded.get(fold(vlan));
 
@@ -1655,7 +2141,7 @@ function locate(doc, entry) {
   const match = /^(nodes|edges|networks)\[(\d+)\]/.exec(entry.path);
   const id = match ? doc[match[1]]?.[Number(match[2])]?.id : '';
 
-  return typeof id === 'string' && id.trim()
+  return typeof id === 'string' && trimSpace(id)
     ? { ...entry, [ID_KEYS[match[1]]]: id }
     : entry;
 }
@@ -1688,6 +2174,8 @@ export function validateDocument(doc, { disks = null } = {}) {
   validateEdges(doc, issues, nodesById, networksById);
   validateScenario(doc, issues);
   validateSource(doc, issues);
+  validateTemplates(doc, issues);
+  issues.push(...validateIcons(doc.icons));
   collectWarnings(doc, issues, specContext(doc, disks));
 
   return issues

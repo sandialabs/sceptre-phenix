@@ -617,7 +617,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		c.Spec["experimentName"] = vars["name"]
 	}
 
-	// Renaming a topology removes the published Builder v2 documents of its
+	// Renaming a topology removes the published Builder documents of its
 	// old name, as deleting it does, so it waits for a publication under way.
 	if c.Metadata.Name != vars["name"] {
 		defer lockBuilderPublishing(name)()
@@ -711,7 +711,7 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	// Deleting a topology removes its published Builder v2 documents, so it
+	// Deleting a topology removes its published Builder documents, so it
 	// waits for a publication under way.
 	defer lockBuilderPublishing(name)()
 

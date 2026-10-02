@@ -1,0 +1,452 @@
+{
+  "$schema": "https://phenix.sandia.gov/schemas/builder/v1",
+  "revision": 1,
+  "id": "2219acb8-5f06-5d62-93a2-c278f9e414d4",
+  "name": "devices",
+  "nodes": [
+    {
+      "id": "204c261c-d336-51c0-afd0-5233b7797988",
+      "kind": "device",
+      "label": "boxed-1",
+      "position": {
+        "x": 720,
+        "y": 432
+      },
+      "device": {
+        "hostname": "boxed-1",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "boxed-1",
+            "vm_type": "container"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "a8c3872d-cc67-530e-adfb-046c0a2f7473",
+      "kind": "device",
+      "label": "cloud-1",
+      "position": {
+        "x": 1360,
+        "y": 432
+      },
+      "device": {
+        "hostname": "cloud-1",
+        "iconKey": "windows",
+        "spec": {
+          "general": {
+            "hostname": "cloud-1"
+          },
+          "hardware": {
+            "os_type": "windows"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "cfa7bd46-ca60-59c9-a7b7-d6f59de91795",
+      "kind": "device",
+      "label": "desktop-1",
+      "position": {
+        "x": 720,
+        "y": 112
+      },
+      "device": {
+        "hostname": "desktop-1",
+        "iconKey": "desktop",
+        "spec": {
+          "general": {
+            "hostname": "desktop-1"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "9ff2b4e8-6da2-5f5c-98a5-b8508a997e16",
+      "kind": "device",
+      "label": "dup",
+      "position": {
+        "x": 1040,
+        "y": 752
+      },
+      "device": {
+        "hostname": "dup",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "dup"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "9c8437a1-6623-5e1d-9954-4025bedb1132",
+      "kind": "device",
+      "label": "edge-1",
+      "position": {
+        "x": 80,
+        "y": 752
+      },
+      "device": {
+        "hostname": "edge-1",
+        "iconKey": "router",
+        "spec": {
+          "general": {
+            "hostname": "edge-1"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "1dbcc61d-6097-5ed9-9f82-31c5d162036f",
+      "kind": "device",
+      "label": "firewall-1",
+      "position": {
+        "x": 400,
+        "y": 112
+      },
+      "device": {
+        "hostname": "firewall-1",
+        "iconKey": "firewall",
+        "spec": {
+          "general": {
+            "hostname": "firewall-1"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "3640cc3f-79e2-54e6-a952-11e3cc8e30fb",
+      "kind": "device",
+      "label": "from-label",
+      "position": {
+        "x": 720,
+        "y": 752
+      },
+      "device": {
+        "hostname": "from-label",
+        "iconKey": "desktop",
+        "spec": {
+          "general": {
+            "hostname": "from-label"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "903bac3e-255d-55b9-9cf9-c957a0f146a1",
+      "kind": "device",
+      "label": "hil-1",
+      "position": {
+        "x": 400,
+        "y": 432
+      },
+      "device": {
+        "hostname": "hil-1",
+        "iconKey": "external",
+        "spec": {
+          "external": true,
+          "general": {
+            "hostname": "hil-1"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "type": "HIL"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "4b3812ca-701d-5deb-95ee-32dd1456624c",
+      "kind": "device",
+      "label": "imported-1",
+      "position": {
+        "x": 80,
+        "y": 432
+      },
+      "device": {
+        "hostname": "imported-1",
+        "iconKey": "firewall",
+        "spec": {
+          "annotations": {
+            "owner": "ops"
+          },
+          "general": {
+            "hostname": "imported-1"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "fw.qc2"
+              }
+            ],
+            "os_type": "linux"
+          },
+          "labels": {
+            "zone": "dmz"
+          },
+          "type": "Firewall"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "1a919469-a44f-5ea5-8980-e8262031b78d",
+      "kind": "device",
+      "label": "mobile-1",
+      "position": {
+        "x": 1360,
+        "y": 112
+      },
+      "device": {
+        "hostname": "mobile-1",
+        "iconKey": "linux",
+        "spec": {
+          "general": {
+            "hostname": "mobile-1"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "60b18844-5801-53c5-a6f1-7ef3cdd53553",
+      "kind": "device",
+      "label": "remote-1",
+      "position": {
+        "x": 1040,
+        "y": 432
+      },
+      "device": {
+        "hostname": "remote-1",
+        "iconKey": "router",
+        "spec": {
+          "general": {
+            "hostname": "remote-1"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "1b88710e-6b05-530f-ba07-62948f28239e",
+      "kind": "device",
+      "label": "router-1",
+      "position": {
+        "x": 80,
+        "y": 112
+      },
+      "device": {
+        "hostname": "router-1",
+        "iconKey": "router",
+        "spec": {
+          "general": {
+            "hostname": "router-1"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "d882347e-df20-5306-8d29-04124595d45b",
+      "kind": "device",
+      "label": "server-1",
+      "position": {
+        "x": 1040,
+        "y": 112
+      },
+      "device": {
+        "hostname": "server-1",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "server-1"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "ac85ee78-3291-5640-9b9f-ea1c874315a2",
+      "kind": "device",
+      "label": "tagged-1",
+      "position": {
+        "x": 400,
+        "y": 1072
+      },
+      "device": {
+        "hostname": "tagged-1",
+        "iconKey": "server",
+        "spec": {
+          "annotations": {
+            "owner": "net",
+            "tier": 1
+          },
+          "general": {
+            "hostname": "tagged-1"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    },
+    {
+      "id": "5985a171-5eb8-5941-ab33-61465fa45dbc",
+      "kind": "device",
+      "label": "web-server-1",
+      "position": {
+        "x": 400,
+        "y": 752
+      },
+      "device": {
+        "hostname": "web-server-1",
+        "iconKey": "server",
+        "spec": {
+          "general": {
+            "hostname": "web-server-1"
+          },
+          "hardware": {
+            "drives": [
+              {
+                "image": "ubuntu.qc2"
+              }
+            ],
+            "memory": "2048",
+            "os_type": "linux",
+            "vcpus": "1"
+          },
+          "type": "VirtualMachine"
+        },
+        "interfaces": []
+      }
+    }
+  ],
+  "networks": [],
+  "edges": [],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "grid": {
+    "enabled": true,
+    "size": 16,
+    "snap": true
+  },
+  "source": {
+    "kind": "manual",
+    "warnings": [
+      "topology node at index 14 duplicates the hostname of the node at index 13 (\"DUP\") and was skipped",
+      "topology node at index 15 has no hostname and was skipped",
+      "Renamed node \"web server 1\" to \"web-server-1\": a hostname cannot hold spaces.",
+      "Renamed node \"from label\" to \"from-label\": a hostname cannot hold spaces."
+    ]
+  }
+}

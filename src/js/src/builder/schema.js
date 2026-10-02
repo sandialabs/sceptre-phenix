@@ -1,7 +1,7 @@
 // Builder document schema access.
 //
 // The inspector is entirely schema driven: whatever the server returns from
-// GET /api/v1/schemas/builder-v2/v1 wins. The bundle checked in beside this module
+// GET /api/v1/schemas/builder/v1 wins. The bundle checked in beside this module
 // is generated from the same Go source that serves that endpoint and is used
 // only as a fallback; when the server copy cannot be fetched the editor keeps
 // working but the failure is reported to the user rather than swallowed.
@@ -10,7 +10,7 @@ import bundledSchema from './schema/builder-v1.schema.json';
 
 import { RETIRED_ICON_KEYS } from './catalog.js';
 import { itemNoun, startCase } from './form-validator.js';
-import { SCHEMA_URI } from './model.js';
+import { BORDER_STYLES, LINE_STYLES, SCHEMA_URI } from './model.js';
 
 export const BUILDER_SCHEMA_ID = SCHEMA_URI;
 const PHENIX_DEF_PREFIX = 'phenix.v1.';
@@ -290,19 +290,24 @@ function mergeParts(parts) {
 // compiles, grow with each edit.
 const kindSchemas = new WeakMap();
 
-// What an Inspector schema depends on besides its bundle: a device's is
-// its spec's variant, and a retired icon key its node still uses (see
-// offeredIconKeys).
+// What an Inspector schema depends on besides its bundle: the variant of a
+// device's spec, the retired icon key a device or a group still uses (see
+// offeredIconKeys), and whether the device is a template's (see
+// DEVICE_HELP).
 function schemaKey(kind, context) {
-  if (kind !== 'device') {
-    return kind;
-  }
-
   const icon = RETIRED_ICON_KEYS.includes(context.iconKey)
     ? context.iconKey
     : '';
 
-  return `device ${specDefName(context.spec)} ${icon}`;
+  if (kind === 'group') {
+    return `group ${icon}`;
+  }
+
+  if (kind !== 'device') {
+    return kind;
+  }
+
+  return `device ${specDefName(context.spec)} ${icon}${context.template ? ' template' : ''}`;
 }
 
 /**
@@ -317,7 +322,9 @@ function schemaKey(kind, context) {
  *
  * @param {object} bundle schema bundle
  * @param {'device'|'switch'|'note'|'group'|'edge'|'network'|'document'} kind
- * @param {object} [context] element being edited (used to pick a spec variant)
+ * @param {object} [context] element being edited (used to pick a spec
+ *   variant); template: the device is a template's, edited in the template
+ *   editor, whose fields say what they are to a template
  * @returns {object} JSON Schema
  */
 export function schemaForKind(bundle, kind, context = {}) {
@@ -342,7 +349,10 @@ function buildSchema(bundle, kind, context) {
 
   if (kind === 'device' && schema.properties?.spec) {
     schema.properties.spec = optionalVLANs(
-      readableSpec(withNodeMaps(schema.properties.spec)),
+      readableSpec(
+        withNodeMaps(schema.properties.spec),
+        deviceHelp(context).specHostname,
+      ),
     );
   }
 
@@ -357,6 +367,11 @@ function buildSchema(bundle, kind, context) {
 // MAP_KEYS_KEYWORD lists keys to suggest. Validation ignores both.
 export const MAP_KEYWORD = 'x-builder-map';
 export const MAP_KEYS_KEYWORD = 'x-builder-keys';
+
+// The word a list of choices uses for the choice that stands for no value,
+// in place of "Default" and "Not set" (see InspectorEnumControl): a line
+// style left to the canvas is "Auto". Validation ignores it.
+export const UNSET_KEYWORD = 'x-builder-unset';
 
 // Node fields phenix reads from a topology that its schema leaves out. A
 // served schema that has them wins. null is how phenix stores an unset
@@ -740,9 +755,10 @@ function readable(schema, key, trail = []) {
  * sets, is read only.
  *
  * @param {object} spec self-contained spec schema
+ * @param {string} hostnameHelp what the spec's hostname says of itself
  * @returns {object}
  */
-function readableSpec(spec) {
+function readableSpec(spec, hostnameHelp) {
   const next = readable(spec);
   const general = next.properties?.general;
   const hostname = general?.properties?.hostname;
@@ -760,14 +776,96 @@ function readableSpec(spec) {
           ...omit(hostname, ['pattern', 'minLength', 'maxLength', 'format']),
           readOnly: true,
           title: 'Node hostname',
-          description:
-            'Set from the device Hostname above when changes are applied.',
+          description: hostnameHelp,
         },
       },
     };
   }
 
   return next;
+}
+
+// A field that takes one of a list of values, each named by a title, and
+// no value: the values the served schema lists for it, less its empty one
+// (which a document may hold for none), or the editor's own list.
+function choiceField(def, values, titles) {
+  const offered = Array.isArray(def?.enum)
+    ? def.enum.filter((value) => value !== '')
+    : values;
+
+  return {
+    type: 'string',
+    oneOf: offered.map((value) => ({
+      const: value,
+      title: titles[value] || startCase(String(value)),
+    })),
+  };
+}
+
+const LINE_STYLE_TITLES = {
+  solid: 'Solid',
+  dashed: 'Dashed',
+  dotted: 'Dotted',
+  'dash-dot': 'Dash-dot',
+};
+const BORDER_STYLE_TITLES = {
+  solid: 'Solid',
+  dashed: 'Dashed',
+  dotted: 'Dotted',
+  double: 'Double',
+};
+
+// The outline or fill color of a device or a switch: the definition
+// itself, not the reference the bundle holds at the property, so the
+// field's own schema has the pattern its control and its error are chosen
+// by.
+function hexColorField(defs) {
+  return defs.hexColor || { type: 'string' };
+}
+
+// The custom icon of a device or a group: the definition itself, as for a
+// color, so the field's own schema says an icon id is what it takes.
+function iconRefField(defs) {
+  return defs.iconRef || { type: 'string' };
+}
+
+// What the Custom icon field says of itself, on a device and on a group.
+const CUSTOM_ICON_HELP =
+  'An image of your own, drawn in place of the icon. The diagram keeps a copy, so it shows wherever the diagram is opened.';
+
+// What the fields of a device's form say of themselves. A device on the
+// canvas takes a new icon or color at once, and its hostname with Apply. A
+// template's device is edited in the template editor, where nothing is
+// applied before Save: its hostname is the name the devices made from it
+// start from, and its icon also marks it in Add nodes.
+const DEVICE_HELP = {
+  canvas: {
+    hostname: 'Unique host name; Apply also sets it as the node hostname.',
+    iconKey:
+      'Canvas icon. A custom icon, when set, is drawn in its place. Presentation only, so a new one applies at once, without Apply.',
+    icon: `${CUSTOM_ICON_HELP} Applies at once, without Apply.`,
+    outlineColor:
+      'Border color of the node on the canvas. Applies at once, without Apply.',
+    fillColor:
+      'Background color of the node on the canvas. Text and icon turn black or white to stay readable. Applies at once, without Apply.',
+    specHostname:
+      'Set from the device Hostname above when changes are applied.',
+  },
+  template: {
+    hostname:
+      'Name new devices start from. A number is added when the name is taken.',
+    iconKey:
+      'Icon drawn on the canvas and in Add nodes. A custom icon, when set, is drawn in its place.',
+    icon: 'An image of your own, drawn in place of the icon. The template keeps a copy, so it shows wherever the template is used.',
+    outlineColor: 'Border color of the node on the canvas.',
+    fillColor:
+      'Background color of the node on the canvas. Text and icon turn black or white to stay readable.',
+    specHostname: 'Set from the Hostname above when the template is saved.',
+  },
+};
+
+function deviceHelp(context) {
+  return context.template ? DEVICE_HELP.template : DEVICE_HELP.canvas;
 }
 
 function kindSchema(bundle, kind, context = {}) {
@@ -781,7 +879,9 @@ function kindSchema(bundle, kind, context = {}) {
   };
 
   switch (kind) {
-    case 'device':
+    case 'device': {
+      const help = deviceHelp(context);
+
       return {
         ...base,
         title: 'Device',
@@ -790,14 +890,27 @@ function kindSchema(bundle, kind, context = {}) {
           hostname: {
             ...(defs.device?.properties?.hostname || { type: 'string' }),
             title: 'Hostname',
-            description:
-              'Unique host name; Apply also sets it as the node hostname.',
+            description: help.hostname,
           },
           iconKey: {
             ...offeredIconKeys(defs.iconKey, context.iconKey),
             title: 'Icon',
-            description:
-              'Canvas icon. Presentation only, so a new one applies at once, without Apply.',
+            description: help.iconKey,
+          },
+          icon: {
+            ...iconRefField(defs),
+            title: 'Custom icon',
+            description: help.icon,
+          },
+          outlineColor: {
+            ...hexColorField(defs),
+            title: 'Outline Color',
+            description: help.outlineColor,
+          },
+          fillColor: {
+            ...hexColorField(defs),
+            title: 'Fill Color',
+            description: help.fillColor,
           },
           spec: {
             ...(defs[specDefName(context.spec)] || {}),
@@ -805,6 +918,7 @@ function kindSchema(bundle, kind, context = {}) {
           },
         },
       };
+    }
     case 'switch':
     case 'network':
       return {
@@ -830,8 +944,27 @@ function kindSchema(bundle, kind, context = {}) {
           },
           color: {
             ...(defs.network?.properties?.color || { type: 'string' }),
-            title: 'Color',
-            description: 'Edge color. Never the only cue for network identity.',
+            title: 'Edge Color',
+            description:
+              "Color of this network's connection lines. Never the only cue for network identity.",
+          },
+          lineStyle: {
+            ...choiceField(defs.lineStyle, LINE_STYLES, LINE_STYLE_TITLES),
+            title: 'Line style',
+            description:
+              "Dash pattern of this network's connection lines. Auto picks one by the network's place in the diagram, so networks differ without color.",
+            [UNSET_KEYWORD]: 'Auto',
+          },
+          outlineColor: {
+            ...hexColorField(defs),
+            title: 'Outline Color',
+            description: 'Border color of this switch on the canvas.',
+          },
+          fillColor: {
+            ...hexColorField(defs),
+            title: 'Fill Color',
+            description:
+              'Background color of this switch on the canvas. Text and icon turn black or white to stay readable.',
           },
         },
       };
@@ -860,9 +993,34 @@ function kindSchema(bundle, kind, context = {}) {
             ...(defs.group?.properties?.title || { type: 'string' }),
             title: 'Title',
           },
+          description: {
+            ...(defs.group?.properties?.description || { type: 'string' }),
+            title: 'Description',
+            description: 'Shown under the title on the canvas.',
+          },
           color: {
             ...(defs.group?.properties?.color || { type: 'string' }),
             title: 'Color',
+          },
+          borderStyle: {
+            ...choiceField(
+              defs.borderStyle,
+              BORDER_STYLES,
+              BORDER_STYLE_TITLES,
+            ),
+            title: 'Border pattern',
+            description: "Line pattern of the group's border.",
+          },
+          iconKey: {
+            ...offeredIconKeys(defs.iconKey, context.iconKey),
+            title: 'Icon',
+            description:
+              "Icon beside the group's title. A custom icon, when set, is drawn in its place.",
+          },
+          icon: {
+            ...iconRefField(defs),
+            title: 'Custom icon',
+            description: CUSTOM_ICON_HELP,
           },
           // Not `collapsed`: the canvas does not draw a collapsed group yet.
           // A document that has it keeps it (applyFormData in forms.js).
@@ -880,8 +1038,14 @@ function kindSchema(bundle, kind, context = {}) {
           color: {
             ...(defs.edge?.properties?.color || { type: 'string' }),
             title: 'Color',
+            description: "Line color, in place of the network's.",
+          },
+          lineStyle: {
+            ...choiceField(defs.lineStyle, LINE_STYLES, LINE_STYLE_TITLES),
+            title: 'Line style',
             description:
-              "Line color, in place of the network's. The line keeps its network's pattern and label.",
+              "Dash pattern of this line, in place of its network's. Its label and the switch it joins still name the network.",
+            [UNSET_KEYWORD]: 'Auto',
           },
         },
       };

@@ -1,5 +1,5 @@
 <!--
-  Signing in again without leaving Builder v2 (see builder/signin.js).
+  Signing in again without leaving Builder (see builder/signin.js).
 
   When the session ends while the Builder is open (a request refused, or
   the token expiring), a modal dialog asks for the password again, for the

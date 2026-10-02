@@ -1,5 +1,5 @@
 {
-  "description": "Documents validate.go and the front end's validate.js must agree on. Each case changes document.json: every set entry puts value at path (object keys and array indexes). A case with an error is refused by both, with an issue at that path; one without is accepted by both. Read by TestValidationCorpus and validate.test.js.",
+  "description": "Documents validate.go and the front end's validate.js must agree on. Each case changes document.json: every set entry puts value at path (object keys and array indexes), or, in place of a value, the text its join parts make, where a part is text, or text and how many times to repeat it. A case with an error is refused by both, with an issue at that path, which says the case's message when it has one; one without is accepted by both. A case with issues is refused with those issues and no others, in any order. Read by TestValidationCorpus and validate.test.js.",
   "document": "document.json",
   "cases": [
     {
@@ -984,6 +984,5276 @@
         }
       ],
       "error": "updatedAt"
+    },
+    {
+      "name": "custom icon that a device, a group and a template use",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "name": "plc",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "icon"
+          ],
+          "value": "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581"
+        },
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "icon"
+          ],
+          "value": "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581"
+        },
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "icon": "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "custom icon nothing uses, which the editor drops on its next edit",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "name": "plc",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "custom icon without a name",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "custom icon with an empty name and one with a null name, which Go decodes as none",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "name": "",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            },
+            "sha256:391590d092f57b13968ea0174fda8726918550f84594de498c72482f1f2e9623": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAC0lEQVR42mNgQAcAABIAAeRVjecAAAAASUVORK5CYII=",
+              "name": null
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "custom icon name of 64 bytes in 32 characters",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "name": "éééééééééééééééééééééééééééééééé",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "custom icon name of 66 bytes in 33 characters",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "name": "ééééééééééééééééééééééééééééééééé",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" name must be at most 64 bytes and contain no control characters"
+    },
+    {
+      "name": "custom icon name of 65 bytes",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "name": "",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        },
+        {
+          "path": [
+            "icons",
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581",
+            "name"
+          ],
+          "join": [
+            [
+              "n",
+              65
+            ]
+          ]
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" name must be at most 64 bytes and contain no control characters"
+    },
+    {
+      "name": "custom icon name with a tab",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "name": "plc\ticon",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" name must be at most 64 bytes and contain no control characters"
+    },
+    {
+      "name": "no custom icons and no templates",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {}
+        },
+        {
+          "path": [
+            "templates"
+          ],
+          "value": []
+        }
+      ]
+    },
+    {
+      "name": "null custom icons and templates, which Go decodes as none",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": null
+        },
+        {
+          "path": [
+            "templates"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "custom icons that are a list",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": [
+            {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          ]
+        }
+      ],
+      "error": "icons"
+    },
+    {
+      "name": "custom icon with a palette and its transparency",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:9d8f5d0afc8662902278f05f14a3d30c74218baa46def14f4136030ea1be9812": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAMAAAAoyzS7AAAAA1BMVEUvb78t0OVyAAAAAXRSTlOArV5bRgAAAApJREFUeNpjYAAAAAIAAeUn3vwAAAAASUVORK5CYII="
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "custom icon of 96 by 96 pixels",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:5dc46a5dab22b4363624274b0f8e0425313ed2781559ec3917e820d0d03c782c": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAAn0lEQVR42u3RMQ0AAAjAMBwhDYlIAxkkpMcMrJHVo7vCBAAABACAAAAQAAACAEAAAAgAAAEAIAAABACAAAAQAAACAEAAAAgAAAEAIAAABACAAAAQAAACAEAAAAgAAAEAIAAABACAAAAQAAACAEAAAAgAAAEAAMAEAAAEAIAAABAAAAIAQAAACAAAAQAgAAAEAIAAABAAAAIAQAAACMCHFmXt9O2RRVF5AAAAAElFTkSuQmCC"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "custom icon whose pixels are in two chunks",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:04723b7883492a8a768b7857d90c4c6168309d9fbd25f28016a490dc5d3706fa": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAABklEQVR42mNkYPikFNsMAAAAB0lEQVRfDwAChwGA102HQAAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "custom icon whose pixels are stored without compression",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:445e8834cddfa49a6ed4b8d16751193420f9ee6dd17f42fae427ad7f515cd660": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAFUlEQVR4AQAAAP//AQUA+v8AL2+//wSLAl1/1t9RAAAAAElFTkSuQmCC"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "custom icon in grayscale with a transparent shade",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:e11399d64cf13bef9cb73e1d8d77fe1f05d3659ccaa83566474b426dda377195": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAAAnRSTlMAgJsrThgAAAASSURBVHgBAAAA//8BAgD9/wCAAIIAgWUKXGUAAAAASUVORK5CYII="
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "custom icon in color with a transparent color",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:f8aac26c6c17a15b22ec145f7887220435038f9e9ddd7d227cc0be03734414f5": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAABnRSTlMAAQACAAPJS6v1AAAAFElEQVR4AQAAAP//AQQA+/8AAQIDAA4AB0KPMB4AAAAASUVORK5CYII="
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "32 custom icons",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:f924c21b69002c242477a9712f89ccd0a762d5ce2618b9c92b2825bf084a7458": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYGD/DwABEgEHw9OltAAAAABJRU5ErkJggg=="
+            },
+            "sha256:b0870c7852940ae309cdbce34ba1bfbfc63c650e397fd0489b1f98ae6e8a4fc2": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZGD/DwABFgEICYlB9QAAAABJRU5ErkJggg=="
+            },
+            "sha256:68ea613d754a9ab43771bec097ce9b88542a456ef195c1421b96c5a0be8bc270": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYmD/DwABGgEJBI7xjQAAAABJRU5ErkJggg=="
+            },
+            "sha256:096977fa32cbad547ba1fcfed89e0190f378e79af3c10878fc33a57b0c3463ee": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZmD/DwABHgEKx2JZ5wAAAABJRU5ErkJggg=="
+            },
+            "sha256:d67db7619d9cc0edd7d4326be41e4c64228966a54fdae355c67c63cb0dde9af7": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYWD/DwABIgEL+XUYTAAAAABJRU5ErkJggg=="
+            },
+            "sha256:eb8ae2a83e8e8355e10e5577b7ae890ff4c49aa1ee740832872e0c7d52a6f651": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZWD/DwABJgEMPfR0PwAAAABJRU5ErkJggg=="
+            },
+            "sha256:4a7b3cd50132835bbb8dba739e1bec59997b57d67f44b0b57ce63192d6ab3c69": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgY2D/DwABKgENMPPERwAAAABJRU5ErkJggg=="
+            },
+            "sha256:e4fe7bb60e1330d239df56c3b2af739bf38351d7c5d26e0c907f93181f3492d5": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZ2D/DwABLgEO8x9sLQAAAABJRU5ErkJggg=="
+            },
+            "sha256:0f53ed2842f0d311506dfaf6d642bd6efbd4373bbae7871c7a878027fc3638f4": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgYGD/DwABMgEPE0BiZwAAAABJRU5ErkJggg=="
+            },
+            "sha256:3e72395940a7b2de466cfef90861bb9bbeebc09be5d0cb47609939f157355579": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZGD/DwABNgEQxK2WQgAAAABJRU5ErkJggg=="
+            },
+            "sha256:43d01e3d93ae854076629374146a82c165967958d0ce823bcab132ac2c54dd80": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgYmD/DwABOgERyaomOgAAAABJRU5ErkJggg=="
+            },
+            "sha256:cf4b21553c756e420054d4ef78226952222bc05165cbf449de8a5d46f2e8251a": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZmD/DwABPgESCkaOUAAAAABJRU5ErkJggg=="
+            },
+            "sha256:a9ae2a948b63ceceeb8d751bd3e9aa5dc859de9bb5a4d408a388f6e814446e2d": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgYWD/DwABQgETRMtCOwAAAABJRU5ErkJggg=="
+            },
+            "sha256:86265be38ba27998fe391070238115b56d56689b3b95d23de8b283e56394ad60": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZWD/DwABRgEUgEouSAAAAABJRU5ErkJggg=="
+            },
+            "sha256:60d9e0d384803ff5c8349df5ad84a5d9b4680fbb8f960fbe81ca1de175b0a8fe": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgY2D/DwABSgEVjU2eMAAAAABJRU5ErkJggg=="
+            },
+            "sha256:feb0c776b4fecab52442f2157bb6d44c0c390c0780e972f3b0161c9cf26492e8": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZ2D/DwABTgEWTqE2WgAAAABJRU5ErkJggg=="
+            },
+            "sha256:0ab2628caa8234ce8b2bcb79092de340fcf0a239ad54521d91214a43920ffe64": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQYGD/DwABUgEXWLe9iAAAAABJRU5ErkJggg=="
+            },
+            "sha256:71ed3a2c24bbdcd8e81fff4d0ad1081d5e99a3fd07e4eccdc1478b37385fd363": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZGD/DwABVgEYku1ZyQAAAABJRU5ErkJggg=="
+            },
+            "sha256:464ee2407087cb4f4fab759cf6180bf2ead09fd5cefa6a4b7b3cb63f4bb5d133": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQYmD/DwABWgEZn+rpsQAAAABJRU5ErkJggg=="
+            },
+            "sha256:3d49776bf5937e705f05aed767cee91787b9983559cd741e46fab45de5d79b2a": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZmD/DwABXgEaXAZB2wAAAABJRU5ErkJggg=="
+            },
+            "sha256:5fef1e291e04e6516986bf11b55ccb8f94d922d72b89e253a8af471200051319": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQYWD/DwABYgEbYhEAcAAAAABJRU5ErkJggg=="
+            },
+            "sha256:e6e519d1d18de5ab42544d7f16b2dad93271525826f9c602aa938149272e6b64": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZWD/DwABZgEcppBsAwAAAABJRU5ErkJggg=="
+            },
+            "sha256:e76dbc98a4ff27f26b56d3f9a6718e0bf18806e4daecf5b7ec2bdaaae3ee446c": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQY2D/DwABagEdq5fcewAAAABJRU5ErkJggg=="
+            },
+            "sha256:783aa4c88fc0d2f9d82980901844295faa2b8d73465a082af896576af73a27c7": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZ2D/DwABbgEeaHt0EQAAAABJRU5ErkJggg=="
+            },
+            "sha256:f333e1b11a8db75fe6794116d87538be0003b4d971ee73aaf104138a9a398df7": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQYGD/DwABcgEfiCR6WwAAAABJRU5ErkJggg=="
+            },
+            "sha256:0f10a7bb3a0ad65f19bf26d741c02a72d52be4babb682a091986c86933665cc7": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZGD/DwABdgEgZKeutgAAAABJRU5ErkJggg=="
+            },
+            "sha256:faa1f8aace2974ffcaa351bc37e74538bef5468b8b0c59ec6afc0a6af5d2039d": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQYmD/DwABegEhaaAezgAAAABJRU5ErkJggg=="
+            },
+            "sha256:c42f1d8f6bbec9e527684a175931471d3c44c824be0229b530985b6503816ebf": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZmD/DwABfgEiqky2pAAAAABJRU5ErkJggg=="
+            },
+            "sha256:2b65aaa29c159db121673d353c2b538c92b0e11630cda84523fddcef921e200a": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQYWD/DwABggEjBfRhTwAAAABJRU5ErkJggg=="
+            },
+            "sha256:5ab577eb37b0e59545060bc47d2ef44c89565901ec137ca0557dc460b86c8f8b": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZWD/DwABhgEkwXUNPAAAAABJRU5ErkJggg=="
+            },
+            "sha256:1f983239c1f66304264bcf605cc79b0713882a77ba95cccbfdaff461878638c5": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQY2D/DwABigElzHK9RAAAAABJRU5ErkJggg=="
+            },
+            "sha256:2384376591337d54314f848ef0df0da6c85ec7ef8e5ba330f018dcda6f730de5": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZ2D/DwABjgEmD54VLgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "33 custom icons",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:f924c21b69002c242477a9712f89ccd0a762d5ce2618b9c92b2825bf084a7458": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYGD/DwABEgEHw9OltAAAAABJRU5ErkJggg=="
+            },
+            "sha256:b0870c7852940ae309cdbce34ba1bfbfc63c650e397fd0489b1f98ae6e8a4fc2": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZGD/DwABFgEICYlB9QAAAABJRU5ErkJggg=="
+            },
+            "sha256:68ea613d754a9ab43771bec097ce9b88542a456ef195c1421b96c5a0be8bc270": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYmD/DwABGgEJBI7xjQAAAABJRU5ErkJggg=="
+            },
+            "sha256:096977fa32cbad547ba1fcfed89e0190f378e79af3c10878fc33a57b0c3463ee": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZmD/DwABHgEKx2JZ5wAAAABJRU5ErkJggg=="
+            },
+            "sha256:d67db7619d9cc0edd7d4326be41e4c64228966a54fdae355c67c63cb0dde9af7": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYWD/DwABIgEL+XUYTAAAAABJRU5ErkJggg=="
+            },
+            "sha256:eb8ae2a83e8e8355e10e5577b7ae890ff4c49aa1ee740832872e0c7d52a6f651": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZWD/DwABJgEMPfR0PwAAAABJRU5ErkJggg=="
+            },
+            "sha256:4a7b3cd50132835bbb8dba739e1bec59997b57d67f44b0b57ce63192d6ab3c69": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgY2D/DwABKgENMPPERwAAAABJRU5ErkJggg=="
+            },
+            "sha256:e4fe7bb60e1330d239df56c3b2af739bf38351d7c5d26e0c907f93181f3492d5": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgZ2D/DwABLgEO8x9sLQAAAABJRU5ErkJggg=="
+            },
+            "sha256:0f53ed2842f0d311506dfaf6d642bd6efbd4373bbae7871c7a878027fc3638f4": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgYGD/DwABMgEPE0BiZwAAAABJRU5ErkJggg=="
+            },
+            "sha256:3e72395940a7b2de466cfef90861bb9bbeebc09be5d0cb47609939f157355579": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZGD/DwABNgEQxK2WQgAAAABJRU5ErkJggg=="
+            },
+            "sha256:43d01e3d93ae854076629374146a82c165967958d0ce823bcab132ac2c54dd80": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgYmD/DwABOgERyaomOgAAAABJRU5ErkJggg=="
+            },
+            "sha256:cf4b21553c756e420054d4ef78226952222bc05165cbf449de8a5d46f2e8251a": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZmD/DwABPgESCkaOUAAAAABJRU5ErkJggg=="
+            },
+            "sha256:a9ae2a948b63ceceeb8d751bd3e9aa5dc859de9bb5a4d408a388f6e814446e2d": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgYWD/DwABQgETRMtCOwAAAABJRU5ErkJggg=="
+            },
+            "sha256:86265be38ba27998fe391070238115b56d56689b3b95d23de8b283e56394ad60": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZWD/DwABRgEUgEouSAAAAABJRU5ErkJggg=="
+            },
+            "sha256:60d9e0d384803ff5c8349df5ad84a5d9b4680fbb8f960fbe81ca1de175b0a8fe": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgY2D/DwABSgEVjU2eMAAAAABJRU5ErkJggg=="
+            },
+            "sha256:feb0c776b4fecab52442f2157bb6d44c0c390c0780e972f3b0161c9cf26492e8": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgZ2D/DwABTgEWTqE2WgAAAABJRU5ErkJggg=="
+            },
+            "sha256:0ab2628caa8234ce8b2bcb79092de340fcf0a239ad54521d91214a43920ffe64": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQYGD/DwABUgEXWLe9iAAAAABJRU5ErkJggg=="
+            },
+            "sha256:71ed3a2c24bbdcd8e81fff4d0ad1081d5e99a3fd07e4eccdc1478b37385fd363": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZGD/DwABVgEYku1ZyQAAAABJRU5ErkJggg=="
+            },
+            "sha256:464ee2407087cb4f4fab759cf6180bf2ead09fd5cefa6a4b7b3cb63f4bb5d133": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQYmD/DwABWgEZn+rpsQAAAABJRU5ErkJggg=="
+            },
+            "sha256:3d49776bf5937e705f05aed767cee91787b9983559cd741e46fab45de5d79b2a": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZmD/DwABXgEaXAZB2wAAAABJRU5ErkJggg=="
+            },
+            "sha256:5fef1e291e04e6516986bf11b55ccb8f94d922d72b89e253a8af471200051319": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQYWD/DwABYgEbYhEAcAAAAABJRU5ErkJggg=="
+            },
+            "sha256:e6e519d1d18de5ab42544d7f16b2dad93271525826f9c602aa938149272e6b64": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZWD/DwABZgEcppBsAwAAAABJRU5ErkJggg=="
+            },
+            "sha256:e76dbc98a4ff27f26b56d3f9a6718e0bf18806e4daecf5b7ec2bdaaae3ee446c": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQY2D/DwABagEdq5fcewAAAABJRU5ErkJggg=="
+            },
+            "sha256:783aa4c88fc0d2f9d82980901844295faa2b8d73465a082af896576af73a27c7": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mMQZ2D/DwABbgEeaHt0EQAAAABJRU5ErkJggg=="
+            },
+            "sha256:f333e1b11a8db75fe6794116d87538be0003b4d971ee73aaf104138a9a398df7": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQYGD/DwABcgEfiCR6WwAAAABJRU5ErkJggg=="
+            },
+            "sha256:0f10a7bb3a0ad65f19bf26d741c02a72d52be4babb682a091986c86933665cc7": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZGD/DwABdgEgZKeutgAAAABJRU5ErkJggg=="
+            },
+            "sha256:faa1f8aace2974ffcaa351bc37e74538bef5468b8b0c59ec6afc0a6af5d2039d": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQYmD/DwABegEhaaAezgAAAABJRU5ErkJggg=="
+            },
+            "sha256:c42f1d8f6bbec9e527684a175931471d3c44c824be0229b530985b6503816ebf": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZmD/DwABfgEiqky2pAAAAABJRU5ErkJggg=="
+            },
+            "sha256:2b65aaa29c159db121673d353c2b538c92b0e11630cda84523fddcef921e200a": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQYWD/DwABggEjBfRhTwAAAABJRU5ErkJggg=="
+            },
+            "sha256:5ab577eb37b0e59545060bc47d2ef44c89565901ec137ca0557dc460b86c8f8b": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZWD/DwABhgEkwXUNPAAAAABJRU5ErkJggg=="
+            },
+            "sha256:1f983239c1f66304264bcf605cc79b0713882a77ba95cccbfdaff461878638c5": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQY2D/DwABigElzHK9RAAAAABJRU5ErkJggg=="
+            },
+            "sha256:2384376591337d54314f848ef0df0da6c85ec7ef8e5ba330f018dcda6f730de5": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mOQZ2D/DwABjgEmD54VLgAAAABJRU5ErkJggg=="
+            },
+            "sha256:9be78e4f2daa8bb21d86d6db8d1ed518a46985af80c41904e0184e92c5b5ab64": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNQYGD/DwABkgEncXscxAAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "at most 32 custom icons are allowed, not 33"
+    },
+    {
+      "name": "custom icon of 40960 bytes",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:6620402302a9ebd8e78490436e065649504fa7d02922d0432905f04debb0c5a2": {
+              "data": ""
+            }
+          }
+        },
+        {
+          "path": [
+            "icons",
+            "sha256:6620402302a9ebd8e78490436e065649504fa7d02922d0432905f04debb0c5a2",
+            "data"
+          ],
+          "join": [
+            "iVBORw0KGgoAAAANSUhEUgAAAFEAAAA/EAYAAADI4fhfAACfx0lEQVR4AQAAAP//AbefSGAA",
+            [
+              "A",
+              54512
+            ],
+            "AACftwABD9WYOgAAAABJRU5ErkJggg=="
+          ]
+        }
+      ]
+    },
+    {
+      "name": "custom icon of 40961 bytes",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:bb9cdbd7987ab7802c3a7c48749b1552caa7261b6c6830f982968acff4c6018b": {
+              "data": ""
+            }
+          }
+        },
+        {
+          "path": [
+            "icons",
+            "sha256:bb9cdbd7987ab7802c3a7c48749b1552caa7261b6c6830f982968acff4c6018b",
+            "data"
+          ],
+          "join": [
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAn69JREFU",
+            [
+              "A",
+              54505
+            ],
+            "O1EX5cAAAAASUVORK5CYII="
+          ]
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:bb9cdbd7987ab7802c3a7c48749b1552caa7261b6c6830f982968acff...\" data must be base64 of at most 40960 bytes"
+    },
+    {
+      "name": "custom icon data of 54620 characters",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "data": ""
+            }
+          }
+        },
+        {
+          "path": [
+            "icons",
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581",
+            "data"
+          ],
+          "join": [
+            [
+              "AAAA",
+              13655
+            ]
+          ]
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" data must be base64 of at most 40960 bytes"
+    },
+    {
+      "name": "custom icon key that is not an icon id",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "plc": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon key \"plc\" must be sha256: and 64 hex digits"
+    },
+    {
+      "name": "custom icon key in upper case",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "SHA256:497790947D4666760CE38F3C00E852C71FDB66CAE849BAE8E9EDE352719E1581": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon key \"SHA256:497790947D4666760CE38F3C00E852C71FDB66CAE849BAE8E9EDE3527...\" must be sha256: and 64 hex digits"
+    },
+    {
+      "name": "custom icon key with upper case hex digits",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947D4666760CE38F3C00E852C71FDB66CAE849BAE8E9EDE352719E1581": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon key \"sha256:497790947D4666760CE38F3C00E852C71FDB66CAE849BAE8E9EDE3527...\" must be sha256: and 64 hex digits"
+    },
+    {
+      "name": "custom icon key that is the id of other bytes",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:000000000000000000000000000000000000000000000000000000000...\" does not match its data"
+    },
+    {
+      "name": "custom icon without data",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "name": "plc"
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" data must be base64 of at most 40960 bytes"
+    },
+    {
+      "name": "custom icon with empty data",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "data": ""
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" data must be base64 of at most 40960 bytes"
+    },
+    {
+      "name": "custom icon data that is not base64",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "data": "<svg onload=alert(1)>"
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" data must be base64 of at most 40960 bytes"
+    },
+    {
+      "name": "custom icon data that is a data URL",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "data": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" data must be base64 of at most 40960 bytes"
+    },
+    {
+      "name": "custom icon data in URL-safe base64",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "data": "iVBORw0KGgo_AAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" data must be base64 of at most 40960 bytes"
+    },
+    {
+      "name": "custom icon data without padding",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg"
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" data must be base64 of at most 40960 bytes"
+    },
+    {
+      "name": "custom icon data with a line break",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAf\nFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" data must be base64 of at most 40960 bytes"
+    },
+    {
+      "name": "custom icon data with a space before it",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "data": " iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" data must be base64 of at most 40960 bytes"
+    },
+    {
+      "name": "custom icon data with bits set in its padding",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggh=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\" data must be base64 of at most 40960 bytes"
+    },
+    {
+      "name": "custom icon that is an SVG",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:bc703a1f77f431bf69731b2813bf037ba73c3200850c2a21d77c8e3a13327aa9": {
+              "data": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIG9ubG9hZD0iYWxlcnQoMSkiLz4="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:bc703a1f77f431bf69731b2813bf037ba73c3200850c2a21d77c8e3a1...\" is not an accepted PNG: the image is not a PNG"
+    },
+    {
+      "name": "custom icon that is a GIF",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:1f19970f056cd116a5fe3c02422c1ee1ac827136df470b5c89af492620512aa4": {
+              "data": "R0lGODlhAQABAAAAADs="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:1f19970f056cd116a5fe3c02422c1ee1ac827136df470b5c89af49262...\" is not an accepted PNG: the image is not a PNG"
+    },
+    {
+      "name": "custom icon that is a JPEG",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:d20f6ffd523b78a86cd2f916fa34af5d1918d75f7b142237c752ad6b254213ab": {
+              "data": "/9j/4AAQSkZJRgABAQAAAQABAAD/2Q=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:d20f6ffd523b78a86cd2f916fa34af5d1918d75f7b142237c752ad6b2...\" is not an accepted PNG: the image is not a PNG"
+    },
+    {
+      "name": "custom icon that is only a PNG signature",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:4c4b6a3be1314ab86138bef4314dde022e600960d8689a2c8f8631802d20dab6": {
+              "data": "iVBORw0KGgo="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:4c4b6a3be1314ab86138bef4314dde022e600960d8689a2c8f8631802...\" is not an accepted PNG: the PNG is cut short"
+    },
+    {
+      "name": "custom icon 97 pixels wide",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:95be9a5e45443a1ffc441d6f8d4a149e3c3e54fac9410fe2742d1ec9af29190f": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAGEAAAABCAYAAADO8sD5AAAADUlEQVR42mNgGAUDDgABhQABcAXTrwAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:95be9a5e45443a1ffc441d6f8d4a149e3c3e54fac9410fe2742d1ec9a...\" is not an accepted PNG: icon is 97 x 1 pixels; the limit is 96 x 96"
+    },
+    {
+      "name": "custom icon 97 pixels high",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:833c1618c9784e063913fe70d131a6ec0145090837d6b16bbbff3c24b44de3a8": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAABhCAYAAAAX4cvTAAAADklEQVR42mNgGAXDHgAAAeUAARcNlJ4AAAAASUVORK5CYII="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:833c1618c9784e063913fe70d131a6ec0145090837d6b16bbbff3c24b...\" is not an accepted PNG: icon is 1 x 97 pixels; the limit is 96 x 96"
+    },
+    {
+      "name": "custom icon no pixels wide",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:34c492d7c1c39f31605f3036f95a475af89acdb1157b361ade92b71a63f875cc": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAAAAAABCAYAAADw16+3AAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:34c492d7c1c39f31605f3036f95a475af89acdb1157b361ade92b71a6...\" is not an accepted PNG: icon is 0 x 1 pixels; the limit is 96 x 96"
+    },
+    {
+      "name": "custom icon whose header claims 50000 by 50000 pixels",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:2d9ff1560a5e47ac9477a249c3b4a83e622e5d16c7183299f3b1bf325e9a549f": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAw1AAAMNQCAYAAABLrz3KAAAAAElFTkSuQmCC"
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:2d9ff1560a5e47ac9477a249c3b4a83e622e5d16c7183299f3b1bf325...\" is not an accepted PNG: icon is 50000 x 50000 pixels; the limit is 96 x 96"
+    },
+    {
+      "name": "custom icon with a text chunk",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:70be8a0a33aed17c4e407b95079ba80eea7f58e54e0cf00511bfdd72fc020128": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAIXRFWHRDb21tZW50ADxzY3JpcHQ+YWxlcnQoMSk8L3NjcmlwdD4DACiAAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:70be8a0a33aed17c4e407b95079ba80eea7f58e54e0cf00511bfdd72f...\" is not an accepted PNG: the PNG holds a \"tEXt\" chunk; only IHDR, PLTE, tRNS, IDAT and IEND are allowed"
+    },
+    {
+      "name": "custom icon with an animation chunk",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:ceed321541bd6dcfc4eb9d6f04880814b64440e425bc93e2dd30ccea8ced27e0": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACGFjVEwAAAABAAAAALQt6aAAAAANSURBVHjaY2Rg+F8PAAKHAYDrR7qSAAAAAElFTkSuQmCC"
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:ceed321541bd6dcfc4eb9d6f04880814b64440e425bc93e2dd30ccea8...\" is not an accepted PNG: the PNG holds a \"acTL\" chunk; only IHDR, PLTE, tRNS, IDAT and IEND are allowed"
+    },
+    {
+      "name": "custom icon with a chunk type in lower case",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:fae1c21a816bb61c1080bbc5d1543c5102022d1986086b62c5f158a38c1666b3": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAGlkYXQDOuuqAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:fae1c21a816bb61c1080bbc5d1543c5102022d1986086b62c5f158a38...\" is not an accepted PNG: the PNG holds a \"idat\" chunk; only IHDR, PLTE, tRNS, IDAT and IEND are allowed"
+    },
+    {
+      "name": "custom icon with alpha and a palette",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:a613861ba70fc37a0c8e58e047234d184205ad6a231ae00c1461a1f2601c9b49": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAG1BMVEU8c2NyaXB0PmFsZXJ0KDEpPC9zY3JpcHQ+ISEx00j4AAAAFUlEQVR4AQAAAP//AQUA+v8AL2+//wSLAl1/1t9RAAAAAElFTkSuQmCC"
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:a613861ba70fc37a0c8e58e047234d184205ad6a231ae00c1461a1f26...\" is not an accepted PNG: the PNG holds a \"PLTE\" chunk, which its color type does not use"
+    },
+    {
+      "name": "custom icon in color with a palette",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:290ab77252ac60904b25aa9d342319b8cd8fa97e89d36200245164d283a2e16e": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAAA1BMVEVhYmNtH6UKAAAAFElEQVR4AQAAAP//AQQA+/8AAQIDAA4AB0KPMB4AAAAASUVORK5CYII="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:290ab77252ac60904b25aa9d342319b8cd8fa97e89d36200245164d28...\" is not an accepted PNG: the PNG holds a \"PLTE\" chunk, which its color type does not use"
+    },
+    {
+      "name": "custom icon in grayscale with a palette",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:eda344e90f559e53505173be39c2f9823ef197e7e305183413e393cbd1d3a252": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAAA1BMVEVhYmNtH6UKAAAAEklEQVR4AQAAAP//AQIA/f8AgACCAIFlClxlAAAAAElFTkSuQmCC"
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:eda344e90f559e53505173be39c2f9823ef197e7e305183413e393cbd...\" is not an accepted PNG: the PNG holds a \"PLTE\" chunk, which its color type does not use"
+    },
+    {
+      "name": "custom icon with alpha and a transparent color",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:8856b04c655f735113581c9b886776ce60f7e258f2873d21f5144646a91f3377": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAABnRSTlNhYmNkZWaU6p/dAAAAFUlEQVR4AQAAAP//AQUA+v8AL2+//wSLAl1/1t9RAAAAAElFTkSuQmCC"
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:8856b04c655f735113581c9b886776ce60f7e258f2873d21f5144646a...\" is not an accepted PNG: the PNG holds a \"tRNS\" chunk, which its color type does not use"
+    },
+    {
+      "name": "custom icon in grayscale with alpha and a transparent shade",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:99cdc9a57fae21bb18e51e9ff1a11818d5b7851ba95b2c0a661693487b74adbd": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAAnRSTlNhYqnJl6oAAAATSURBVHgBAAAA//8BAwD8/wCA/wICAYDLyAU3AAAAAElFTkSuQmCC"
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:99cdc9a57fae21bb18e51e9ff1a11818d5b7851ba95b2c0a661693487...\" is not an accepted PNG: the PNG holds a \"tRNS\" chunk, which its color type does not use"
+    },
+    {
+      "name": "custom icon with bytes after its end",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:e6ef8c8d74ac326dd1f5e5f725e459d32a9386989acfd438de28689bbcbe67e9": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggjxodG1sPg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:e6ef8c8d74ac326dd1f5e5f725e459d32a9386989acfd438de28689bb...\" is not an accepted PNG: the PNG has data after its end"
+    },
+    {
+      "name": "custom icon with a chunk after its end",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:87d231442124ad4ce501da0c899919518184dae5952762edda409aaf3ac28a5f": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJgggAAAABJREFUNa8GHg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:87d231442124ad4ce501da0c899919518184dae5952762edda409aaf3...\" is not an accepted PNG: the PNG has data after its end"
+    },
+    {
+      "name": "custom icon without an end",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:4d7b9acd0997f2281756ab0a874d02d0a7d7986c3a251d6cc28d2d0b5f7d6b10": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:4d7b9acd0997f2281756ab0a874d02d0a7d7986c3a251d6cc28d2d0b5...\" is not an accepted PNG: the PNG is cut short"
+    },
+    {
+      "name": "custom icon cut short in a chunk",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:717709387aa5472b06c5491a79b70da99ba6c7e33e171d4fb5bdef7628849808": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwE="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:717709387aa5472b06c5491a79b70da99ba6c7e33e171d4fb5bdef762...\" is not an accepted PNG: the PNG is cut short"
+    },
+    {
+      "name": "custom icon whose end holds data",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:529be6db14f0ad394aa0813e7c1de2e6f8529511562879876dae32812c5cdc5d": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAAFJRU5EANEaT+E="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:529be6db14f0ad394aa0813e7c1de2e6f8529511562879876dae32812...\" is not an accepted PNG: the PNG does not end as a PNG does"
+    },
+    {
+      "name": "custom icon whose pixels come before its header",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:1132cb64dbe7ca4d9e869aa85de330f2c231d759e9246c174310676530b02e46": {
+              "data": "iVBORw0KGgoAAAANSURBVHjaY2Rg+F8PAAKHAYDrR7qSAAAADUlIRFIAAAABAAAAAQgGAAAAHxXEiQAAAABJRU5ErkJggg=="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:1132cb64dbe7ca4d9e869aa85de330f2c231d759e9246c17431067653...\" is not an accepted PNG: the PNG does not start with its header"
+    },
+    {
+      "name": "custom icon with a header of 12 bytes",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:55e757b15b149cc0e226d64a1601e318b4d7ed9b8e2c53bde3b98aa580efbaf2": {
+              "data": "iVBORw0KGgoAAAAMSUhEUgAAAAEAAAABCAYAAMAtl/UAAAANSURBVHjaY2Rg+F8PAAKHAYDrR7qSAAAAAElFTkSuQmCC"
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:55e757b15b149cc0e226d64a1601e318b4d7ed9b8e2c53bde3b98aa58...\" is not an accepted PNG: the PNG does not start with its header"
+    },
+    {
+      "name": "custom icon with two headers",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:3469e296c58ad7150b99adc41399bf4de313de464f6e5634ce08b2422c24c8b3": {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlIRFIAAAABAAAAAQgGAAAAHxXEiQAAAA1JREFUeNpjZGD4Xw8AAocBgOtHupIAAAAASUVORK5CYII="
+            }
+          }
+        }
+      ],
+      "error": "icons",
+      "message": "icon \"sha256:3469e296c58ad7150b99adc41399bf4de313de464f6e5634ce08b2422...\" is not an accepted PNG: the PNG has a second header"
+    },
+    {
+      "name": "device custom icon the document does not carry",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "icon"
+          ],
+          "value": "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581"
+        }
+      ],
+      "error": "nodes[1].device.icon",
+      "message": "unknown custom icon \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\""
+    },
+    {
+      "name": "device custom icon that is a built-in icon key",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "name": "plc",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "icon"
+          ],
+          "value": "server"
+        }
+      ],
+      "error": "nodes[1].device.icon",
+      "message": "unknown custom icon \"server\""
+    },
+    {
+      "name": "group custom icon the document does not carry",
+      "set": [
+        {
+          "path": [
+            "icons"
+          ],
+          "value": {
+            "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581": {
+              "name": "plc",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+            }
+          }
+        },
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "icon"
+          ],
+          "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "error": "nodes[0].group.icon",
+      "message": "unknown custom icon \"sha256:000000000000000000000000000000000000000000000000000000000...\""
+    },
+    {
+      "name": "template custom icon the document does not carry",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "icon": "sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].device.icon",
+      "message": "unknown custom icon \"sha256:497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede3527...\""
+    },
+    {
+      "name": "empty and null custom icons of a device and a group, which are none",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "icon"
+          ],
+          "value": ""
+        },
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "icon"
+          ],
+          "value": null
+        },
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "icon"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "outline and fill colors of a device and a switch",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "outlineColor"
+          ],
+          "value": "#2f6fbf"
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "fillColor"
+          ],
+          "value": "#EEF4FB"
+        },
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "outlineColor"
+          ],
+          "value": "#1F7A5A"
+        },
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "fillColor"
+          ],
+          "value": "#e8f5f0"
+        }
+      ]
+    },
+    {
+      "name": "empty and null colors, which are none",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "outlineColor"
+          ],
+          "value": ""
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "fillColor"
+          ],
+          "value": null
+        },
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "outlineColor"
+          ],
+          "value": null
+        },
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "fillColor"
+          ],
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "device fill color that is a name",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "fillColor"
+          ],
+          "value": "red"
+        }
+      ],
+      "error": "nodes[1].device.fillColor",
+      "message": "color \"red\" must be a hex color such as #2f6fbf"
+    },
+    {
+      "name": "device outline color of three digits",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "outlineColor"
+          ],
+          "value": "#abc"
+        }
+      ],
+      "error": "nodes[1].device.outlineColor",
+      "message": "color \"#abc\" must be a hex color such as #2f6fbf"
+    },
+    {
+      "name": "device outline color without the number sign",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "outlineColor"
+          ],
+          "value": "2f6fbf"
+        }
+      ],
+      "error": "nodes[2].device.outlineColor",
+      "message": "color \"2f6fbf\" must be a hex color such as #2f6fbf"
+    },
+    {
+      "name": "switch fill color with alpha",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "fillColor"
+          ],
+          "value": "#2f6fbf80"
+        }
+      ],
+      "error": "nodes[3].switch.fillColor",
+      "message": "color \"#2f6fbf80\" must be a hex color such as #2f6fbf"
+    },
+    {
+      "name": "switch outline color with CSS after it",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "outlineColor"
+          ],
+          "value": "#2f6fbf;background:url(//example.com)"
+        }
+      ],
+      "error": "nodes[3].switch.outlineColor",
+      "message": "color \"#2f6fbf;background:url(//example.com)\" must be a hex color such as #2f6fbf"
+    },
+    {
+      "name": "switch outline color with a line break after it",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "outlineColor"
+          ],
+          "value": "#2f6fbf\n"
+        }
+      ],
+      "error": "nodes[3].switch.outlineColor",
+      "message": "color \"#2f6fbf\\n\" must be a hex color such as #2f6fbf"
+    },
+    {
+      "name": "colors of a note, a group, a network and a connection, which are not checked",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            4,
+            "note",
+            "color"
+          ],
+          "value": "papayawhip"
+        },
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "color"
+          ],
+          "value": "#abc"
+        },
+        {
+          "path": [
+            "networks",
+            0,
+            "color"
+          ],
+          "value": "rgb(1, 2, 3)"
+        },
+        {
+          "path": [
+            "edges",
+            0,
+            "color"
+          ],
+          "value": "red"
+        }
+      ]
+    },
+    {
+      "name": "group description, border style and icon key",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "description"
+          ],
+          "value": "first rack\nsecond line"
+        },
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "borderStyle"
+          ],
+          "value": "dotted"
+        },
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "iconKey"
+          ],
+          "value": "container"
+        }
+      ]
+    },
+    {
+      "name": "empty and null group fields, which are none",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "description"
+          ],
+          "value": null
+        },
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "borderStyle"
+          ],
+          "value": ""
+        },
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "iconKey"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "group border style solid",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "borderStyle"
+          ],
+          "value": "solid"
+        }
+      ]
+    },
+    {
+      "name": "group border style dashed",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "borderStyle"
+          ],
+          "value": "dashed"
+        }
+      ]
+    },
+    {
+      "name": "group border style dotted",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "borderStyle"
+          ],
+          "value": "dotted"
+        }
+      ]
+    },
+    {
+      "name": "group border style double",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "borderStyle"
+          ],
+          "value": "double"
+        }
+      ]
+    },
+    {
+      "name": "unknown group border style",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "borderStyle"
+          ],
+          "value": "wavy"
+        }
+      ],
+      "error": "nodes[0].group.borderStyle",
+      "message": "unknown border style \"wavy\" (expected one of solid, dashed, dotted, double)"
+    },
+    {
+      "name": "group border style that is a line style",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "borderStyle"
+          ],
+          "value": "dash-dot"
+        }
+      ],
+      "error": "nodes[0].group.borderStyle",
+      "message": "unknown border style \"dash-dot\" (expected one of solid, dashed, dotted, double)"
+    },
+    {
+      "name": "unknown group icon key",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "iconKey"
+          ],
+          "value": "rack"
+        }
+      ],
+      "error": "nodes[0].group.iconKey"
+    },
+    {
+      "name": "group icon key that is a URL",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            0,
+            "group",
+            "iconKey"
+          ],
+          "value": "https://example.com/icon.svg"
+        }
+      ],
+      "error": "nodes[0].group.iconKey"
+    },
+    {
+      "name": "line style solid of a network and of a connection",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "lineStyle"
+          ],
+          "value": "solid"
+        },
+        {
+          "path": [
+            "edges",
+            1,
+            "lineStyle"
+          ],
+          "value": "solid"
+        }
+      ]
+    },
+    {
+      "name": "line style dashed of a network and of a connection",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "lineStyle"
+          ],
+          "value": "dashed"
+        },
+        {
+          "path": [
+            "edges",
+            1,
+            "lineStyle"
+          ],
+          "value": "dashed"
+        }
+      ]
+    },
+    {
+      "name": "line style dotted of a network and of a connection",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "lineStyle"
+          ],
+          "value": "dotted"
+        },
+        {
+          "path": [
+            "edges",
+            1,
+            "lineStyle"
+          ],
+          "value": "dotted"
+        }
+      ]
+    },
+    {
+      "name": "line style dash-dot of a network and of a connection",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "lineStyle"
+          ],
+          "value": "dash-dot"
+        },
+        {
+          "path": [
+            "edges",
+            1,
+            "lineStyle"
+          ],
+          "value": "dash-dot"
+        }
+      ]
+    },
+    {
+      "name": "empty and null line styles, which are none",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "lineStyle"
+          ],
+          "value": ""
+        },
+        {
+          "path": [
+            "edges",
+            0,
+            "lineStyle"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "unknown network line style",
+      "set": [
+        {
+          "path": [
+            "networks",
+            1,
+            "lineStyle"
+          ],
+          "value": "wavy"
+        }
+      ],
+      "error": "networks[1].lineStyle",
+      "message": "unknown line style \"wavy\" (expected one of solid, dashed, dotted, dash-dot)"
+    },
+    {
+      "name": "network line style that is a border style",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "lineStyle"
+          ],
+          "value": "double"
+        }
+      ],
+      "error": "networks[0].lineStyle",
+      "message": "unknown line style \"double\" (expected one of solid, dashed, dotted, dash-dot)"
+    },
+    {
+      "name": "connection line style in upper case",
+      "set": [
+        {
+          "path": [
+            "edges",
+            0,
+            "lineStyle"
+          ],
+          "value": "DASHED"
+        }
+      ],
+      "error": "edges[0].lineStyle",
+      "message": "unknown line style \"DASHED\" (expected one of solid, dashed, dotted, dash-dot)"
+    },
+    {
+      "name": "connection line style that is a dash array",
+      "set": [
+        {
+          "path": [
+            "edges",
+            1,
+            "lineStyle"
+          ],
+          "value": "4 2"
+        }
+      ],
+      "error": "edges[1].lineStyle",
+      "message": "unknown line style \"4 2\" (expected one of solid, dashed, dotted, dash-dot)"
+    },
+    {
+      "name": "included topologies that were not resolved",
+      "set": [
+        {
+          "path": [
+            "source",
+            "includeTopologies"
+          ],
+          "value": [
+            "shared",
+            "plant"
+          ]
+        },
+        {
+          "path": [
+            "source",
+            "unresolvedIncludes"
+          ],
+          "value": [
+            "plant"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "no unresolved includes",
+      "set": [
+        {
+          "path": [
+            "source",
+            "unresolvedIncludes"
+          ],
+          "value": []
+        }
+      ]
+    },
+    {
+      "name": "null unresolved includes, which Go decodes as none",
+      "set": [
+        {
+          "path": [
+            "source",
+            "unresolvedIncludes"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "name": "unresolved include with whitespace",
+      "set": [
+        {
+          "path": [
+            "source",
+            "unresolvedIncludes"
+          ],
+          "value": [
+            "plant",
+            "shared services"
+          ]
+        }
+      ],
+      "error": "source.unresolvedIncludes[1]",
+      "message": "included topology name \"shared services\" must not contain whitespace"
+    },
+    {
+      "name": "blank unresolved include",
+      "set": [
+        {
+          "path": [
+            "source",
+            "unresolvedIncludes"
+          ],
+          "value": [
+            ""
+          ]
+        }
+      ],
+      "error": "source.unresolvedIncludes[0]",
+      "message": "included topology name is required"
+    },
+    {
+      "name": "unresolved includes that are not a list",
+      "set": [
+        {
+          "path": [
+            "source",
+            "unresolvedIncludes"
+          ],
+          "value": "plant"
+        }
+      ],
+      "error": "source.unresolvedIncludes"
+    },
+    {
+      "name": "template with every field but a custom icon",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "template with only a name and a spec that is only a hostname",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "plc"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "template with empty and null fields, which are none",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": null,
+              "device": {
+                "iconKey": "",
+                "icon": null,
+                "outlineColor": null,
+                "fillColor": "",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "template with the id of a node and the hostname of a device",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "4113dfc0-f4be-57f9-8115-6cecd1f1aea3",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "router",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "id": "7c1a2b3c-4d5e-4f60-8a7b-9c0d1e2f3a4b",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "templates of the same name",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "id": "7c1a2b3c-4d5e-4f60-8a7b-9c0d1e2f3a4b",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "50 templates",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "8a612b21-568a-512b-97aa-63d466d1702c",
+              "name": "t0",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t0"
+                  }
+                }
+              }
+            },
+            {
+              "id": "1ac0758e-7068-5325-b8e6-06a0e4ddcc7f",
+              "name": "t1",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "1ba7f2c0-48ba-560b-b023-bd4868ae569d",
+              "name": "t2",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t2"
+                  }
+                }
+              }
+            },
+            {
+              "id": "3dec14e3-8a99-5650-9e6c-28f23b47144e",
+              "name": "t3",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t3"
+                  }
+                }
+              }
+            },
+            {
+              "id": "2941f0f2-fd30-5cac-a657-10dc5f80d210",
+              "name": "t4",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t4"
+                  }
+                }
+              }
+            },
+            {
+              "id": "f4dfb5a1-eb3f-5b4f-9cdc-446671271df8",
+              "name": "t5",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t5"
+                  }
+                }
+              }
+            },
+            {
+              "id": "ad555be6-e05c-57e1-858f-092acf8fc0f0",
+              "name": "t6",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t6"
+                  }
+                }
+              }
+            },
+            {
+              "id": "dbe0f7da-1404-5e03-80aa-0ffd72d9f362",
+              "name": "t7",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t7"
+                  }
+                }
+              }
+            },
+            {
+              "id": "aa37f03d-bc04-50ff-b798-75e6b0129a3a",
+              "name": "t8",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t8"
+                  }
+                }
+              }
+            },
+            {
+              "id": "c10d9480-29d7-5abd-aa37-dd29c26f0e7a",
+              "name": "t9",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t9"
+                  }
+                }
+              }
+            },
+            {
+              "id": "9c3d36d8-9743-5f3f-8c40-fd259b4f34ac",
+              "name": "t10",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t10"
+                  }
+                }
+              }
+            },
+            {
+              "id": "de50fed5-6bb9-567c-a272-d92efcf8180c",
+              "name": "t11",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t11"
+                  }
+                }
+              }
+            },
+            {
+              "id": "504e360e-4bca-5560-9224-d4a9963b8205",
+              "name": "t12",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t12"
+                  }
+                }
+              }
+            },
+            {
+              "id": "d2ad3b0c-9235-5214-83c3-d1dbead490fd",
+              "name": "t13",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t13"
+                  }
+                }
+              }
+            },
+            {
+              "id": "9352f4e3-0235-5917-8a6b-2f803d729ba6",
+              "name": "t14",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t14"
+                  }
+                }
+              }
+            },
+            {
+              "id": "fa10de52-690d-5ae1-b7bf-5fdb7e360435",
+              "name": "t15",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t15"
+                  }
+                }
+              }
+            },
+            {
+              "id": "e35f4f9b-7a36-5e00-a27e-3133f9677469",
+              "name": "t16",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t16"
+                  }
+                }
+              }
+            },
+            {
+              "id": "98ac0137-bd17-53fd-ac16-bf43fb582b20",
+              "name": "t17",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t17"
+                  }
+                }
+              }
+            },
+            {
+              "id": "6a9d5cc9-6d32-5256-8ae4-633311a9915c",
+              "name": "t18",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t18"
+                  }
+                }
+              }
+            },
+            {
+              "id": "2f83f68b-2dc9-5552-85f8-6b62466c210d",
+              "name": "t19",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t19"
+                  }
+                }
+              }
+            },
+            {
+              "id": "b9b4158a-298c-5223-afab-949495bf43dc",
+              "name": "t20",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t20"
+                  }
+                }
+              }
+            },
+            {
+              "id": "2d6b77f8-ef5c-5903-a24c-669ccd972401",
+              "name": "t21",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t21"
+                  }
+                }
+              }
+            },
+            {
+              "id": "841f11ad-c159-5f68-b56a-530a68cb781a",
+              "name": "t22",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t22"
+                  }
+                }
+              }
+            },
+            {
+              "id": "2c3e1afb-b347-544d-b9e0-8efda3e7bc34",
+              "name": "t23",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t23"
+                  }
+                }
+              }
+            },
+            {
+              "id": "858a24bb-f674-5be1-b0ee-ea7bfcfe5514",
+              "name": "t24",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t24"
+                  }
+                }
+              }
+            },
+            {
+              "id": "b8ec909e-19b7-5eba-8095-2a88250df498",
+              "name": "t25",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t25"
+                  }
+                }
+              }
+            },
+            {
+              "id": "6e033078-0c17-53a1-9531-3f70d9e5edff",
+              "name": "t26",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t26"
+                  }
+                }
+              }
+            },
+            {
+              "id": "ab5ac5d1-453e-5154-b87b-0db6dc099e52",
+              "name": "t27",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t27"
+                  }
+                }
+              }
+            },
+            {
+              "id": "d9b5dd2e-1646-578e-99ae-89bfec5d4d7c",
+              "name": "t28",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t28"
+                  }
+                }
+              }
+            },
+            {
+              "id": "af384271-c52a-55d0-bc4d-db77ef727f17",
+              "name": "t29",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t29"
+                  }
+                }
+              }
+            },
+            {
+              "id": "fb18a8bb-555d-591c-ac73-595a787dab6d",
+              "name": "t30",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t30"
+                  }
+                }
+              }
+            },
+            {
+              "id": "04cc3143-f061-5160-97a9-1481f25751cd",
+              "name": "t31",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t31"
+                  }
+                }
+              }
+            },
+            {
+              "id": "76d76843-168d-576e-9b18-5979bd0a5887",
+              "name": "t32",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t32"
+                  }
+                }
+              }
+            },
+            {
+              "id": "eb79c14e-b392-552d-8ae5-fdacb3cdde23",
+              "name": "t33",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t33"
+                  }
+                }
+              }
+            },
+            {
+              "id": "943df5dc-50b9-51a2-9f61-0472121524fb",
+              "name": "t34",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t34"
+                  }
+                }
+              }
+            },
+            {
+              "id": "a2fdb803-e015-55f7-bea3-4b666de13cff",
+              "name": "t35",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t35"
+                  }
+                }
+              }
+            },
+            {
+              "id": "d599d87b-8472-509c-bebe-f6fa37a98c94",
+              "name": "t36",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t36"
+                  }
+                }
+              }
+            },
+            {
+              "id": "5950d2a7-857e-5cd5-bad3-9d2187b1a6ed",
+              "name": "t37",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t37"
+                  }
+                }
+              }
+            },
+            {
+              "id": "b000b268-429c-5b38-9dd3-98b4836d1d24",
+              "name": "t38",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t38"
+                  }
+                }
+              }
+            },
+            {
+              "id": "86e90a31-d2e8-582c-a9d0-4b7b44381b31",
+              "name": "t39",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t39"
+                  }
+                }
+              }
+            },
+            {
+              "id": "3a2b621f-abd3-5c23-8383-d29afe17132f",
+              "name": "t40",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t40"
+                  }
+                }
+              }
+            },
+            {
+              "id": "1c72706d-e30b-56af-ac70-704029f9d2ae",
+              "name": "t41",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t41"
+                  }
+                }
+              }
+            },
+            {
+              "id": "a51b6ae7-2346-5513-b8a4-84eba4006a54",
+              "name": "t42",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t42"
+                  }
+                }
+              }
+            },
+            {
+              "id": "73044363-66ac-5e47-8a19-274c38e19c55",
+              "name": "t43",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t43"
+                  }
+                }
+              }
+            },
+            {
+              "id": "e1647135-2e19-5df3-b5d8-cf832705b650",
+              "name": "t44",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t44"
+                  }
+                }
+              }
+            },
+            {
+              "id": "42f6afa0-4cd2-525c-9045-56099d0b3e30",
+              "name": "t45",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t45"
+                  }
+                }
+              }
+            },
+            {
+              "id": "09993ae6-fd7e-504a-a2b9-865b7abe0c64",
+              "name": "t46",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t46"
+                  }
+                }
+              }
+            },
+            {
+              "id": "34be83b8-9671-5f4b-aa21-51dcee2c305e",
+              "name": "t47",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t47"
+                  }
+                }
+              }
+            },
+            {
+              "id": "cdfc99f9-d810-54b4-8f41-0cd111ebe408",
+              "name": "t48",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t48"
+                  }
+                }
+              }
+            },
+            {
+              "id": "aaddf690-881e-5d1f-87ae-6bfa8b27c47c",
+              "name": "t49",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t49"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "51 templates",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "8a612b21-568a-512b-97aa-63d466d1702c",
+              "name": "t0",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t0"
+                  }
+                }
+              }
+            },
+            {
+              "id": "1ac0758e-7068-5325-b8e6-06a0e4ddcc7f",
+              "name": "t1",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "1ba7f2c0-48ba-560b-b023-bd4868ae569d",
+              "name": "t2",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t2"
+                  }
+                }
+              }
+            },
+            {
+              "id": "3dec14e3-8a99-5650-9e6c-28f23b47144e",
+              "name": "t3",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t3"
+                  }
+                }
+              }
+            },
+            {
+              "id": "2941f0f2-fd30-5cac-a657-10dc5f80d210",
+              "name": "t4",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t4"
+                  }
+                }
+              }
+            },
+            {
+              "id": "f4dfb5a1-eb3f-5b4f-9cdc-446671271df8",
+              "name": "t5",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t5"
+                  }
+                }
+              }
+            },
+            {
+              "id": "ad555be6-e05c-57e1-858f-092acf8fc0f0",
+              "name": "t6",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t6"
+                  }
+                }
+              }
+            },
+            {
+              "id": "dbe0f7da-1404-5e03-80aa-0ffd72d9f362",
+              "name": "t7",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t7"
+                  }
+                }
+              }
+            },
+            {
+              "id": "aa37f03d-bc04-50ff-b798-75e6b0129a3a",
+              "name": "t8",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t8"
+                  }
+                }
+              }
+            },
+            {
+              "id": "c10d9480-29d7-5abd-aa37-dd29c26f0e7a",
+              "name": "t9",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t9"
+                  }
+                }
+              }
+            },
+            {
+              "id": "9c3d36d8-9743-5f3f-8c40-fd259b4f34ac",
+              "name": "t10",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t10"
+                  }
+                }
+              }
+            },
+            {
+              "id": "de50fed5-6bb9-567c-a272-d92efcf8180c",
+              "name": "t11",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t11"
+                  }
+                }
+              }
+            },
+            {
+              "id": "504e360e-4bca-5560-9224-d4a9963b8205",
+              "name": "t12",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t12"
+                  }
+                }
+              }
+            },
+            {
+              "id": "d2ad3b0c-9235-5214-83c3-d1dbead490fd",
+              "name": "t13",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t13"
+                  }
+                }
+              }
+            },
+            {
+              "id": "9352f4e3-0235-5917-8a6b-2f803d729ba6",
+              "name": "t14",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t14"
+                  }
+                }
+              }
+            },
+            {
+              "id": "fa10de52-690d-5ae1-b7bf-5fdb7e360435",
+              "name": "t15",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t15"
+                  }
+                }
+              }
+            },
+            {
+              "id": "e35f4f9b-7a36-5e00-a27e-3133f9677469",
+              "name": "t16",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t16"
+                  }
+                }
+              }
+            },
+            {
+              "id": "98ac0137-bd17-53fd-ac16-bf43fb582b20",
+              "name": "t17",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t17"
+                  }
+                }
+              }
+            },
+            {
+              "id": "6a9d5cc9-6d32-5256-8ae4-633311a9915c",
+              "name": "t18",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t18"
+                  }
+                }
+              }
+            },
+            {
+              "id": "2f83f68b-2dc9-5552-85f8-6b62466c210d",
+              "name": "t19",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t19"
+                  }
+                }
+              }
+            },
+            {
+              "id": "b9b4158a-298c-5223-afab-949495bf43dc",
+              "name": "t20",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t20"
+                  }
+                }
+              }
+            },
+            {
+              "id": "2d6b77f8-ef5c-5903-a24c-669ccd972401",
+              "name": "t21",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t21"
+                  }
+                }
+              }
+            },
+            {
+              "id": "841f11ad-c159-5f68-b56a-530a68cb781a",
+              "name": "t22",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t22"
+                  }
+                }
+              }
+            },
+            {
+              "id": "2c3e1afb-b347-544d-b9e0-8efda3e7bc34",
+              "name": "t23",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t23"
+                  }
+                }
+              }
+            },
+            {
+              "id": "858a24bb-f674-5be1-b0ee-ea7bfcfe5514",
+              "name": "t24",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t24"
+                  }
+                }
+              }
+            },
+            {
+              "id": "b8ec909e-19b7-5eba-8095-2a88250df498",
+              "name": "t25",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t25"
+                  }
+                }
+              }
+            },
+            {
+              "id": "6e033078-0c17-53a1-9531-3f70d9e5edff",
+              "name": "t26",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t26"
+                  }
+                }
+              }
+            },
+            {
+              "id": "ab5ac5d1-453e-5154-b87b-0db6dc099e52",
+              "name": "t27",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t27"
+                  }
+                }
+              }
+            },
+            {
+              "id": "d9b5dd2e-1646-578e-99ae-89bfec5d4d7c",
+              "name": "t28",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t28"
+                  }
+                }
+              }
+            },
+            {
+              "id": "af384271-c52a-55d0-bc4d-db77ef727f17",
+              "name": "t29",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t29"
+                  }
+                }
+              }
+            },
+            {
+              "id": "fb18a8bb-555d-591c-ac73-595a787dab6d",
+              "name": "t30",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t30"
+                  }
+                }
+              }
+            },
+            {
+              "id": "04cc3143-f061-5160-97a9-1481f25751cd",
+              "name": "t31",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t31"
+                  }
+                }
+              }
+            },
+            {
+              "id": "76d76843-168d-576e-9b18-5979bd0a5887",
+              "name": "t32",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t32"
+                  }
+                }
+              }
+            },
+            {
+              "id": "eb79c14e-b392-552d-8ae5-fdacb3cdde23",
+              "name": "t33",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t33"
+                  }
+                }
+              }
+            },
+            {
+              "id": "943df5dc-50b9-51a2-9f61-0472121524fb",
+              "name": "t34",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t34"
+                  }
+                }
+              }
+            },
+            {
+              "id": "a2fdb803-e015-55f7-bea3-4b666de13cff",
+              "name": "t35",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t35"
+                  }
+                }
+              }
+            },
+            {
+              "id": "d599d87b-8472-509c-bebe-f6fa37a98c94",
+              "name": "t36",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t36"
+                  }
+                }
+              }
+            },
+            {
+              "id": "5950d2a7-857e-5cd5-bad3-9d2187b1a6ed",
+              "name": "t37",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t37"
+                  }
+                }
+              }
+            },
+            {
+              "id": "b000b268-429c-5b38-9dd3-98b4836d1d24",
+              "name": "t38",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t38"
+                  }
+                }
+              }
+            },
+            {
+              "id": "86e90a31-d2e8-582c-a9d0-4b7b44381b31",
+              "name": "t39",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t39"
+                  }
+                }
+              }
+            },
+            {
+              "id": "3a2b621f-abd3-5c23-8383-d29afe17132f",
+              "name": "t40",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t40"
+                  }
+                }
+              }
+            },
+            {
+              "id": "1c72706d-e30b-56af-ac70-704029f9d2ae",
+              "name": "t41",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t41"
+                  }
+                }
+              }
+            },
+            {
+              "id": "a51b6ae7-2346-5513-b8a4-84eba4006a54",
+              "name": "t42",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t42"
+                  }
+                }
+              }
+            },
+            {
+              "id": "73044363-66ac-5e47-8a19-274c38e19c55",
+              "name": "t43",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t43"
+                  }
+                }
+              }
+            },
+            {
+              "id": "e1647135-2e19-5df3-b5d8-cf832705b650",
+              "name": "t44",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t44"
+                  }
+                }
+              }
+            },
+            {
+              "id": "42f6afa0-4cd2-525c-9045-56099d0b3e30",
+              "name": "t45",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t45"
+                  }
+                }
+              }
+            },
+            {
+              "id": "09993ae6-fd7e-504a-a2b9-865b7abe0c64",
+              "name": "t46",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t46"
+                  }
+                }
+              }
+            },
+            {
+              "id": "34be83b8-9671-5f4b-aa21-51dcee2c305e",
+              "name": "t47",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t47"
+                  }
+                }
+              }
+            },
+            {
+              "id": "cdfc99f9-d810-54b4-8f41-0cd111ebe408",
+              "name": "t48",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t48"
+                  }
+                }
+              }
+            },
+            {
+              "id": "aaddf690-881e-5d1f-87ae-6bfa8b27c47c",
+              "name": "t49",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t49"
+                  }
+                }
+              }
+            },
+            {
+              "id": "f4b1e954-a5c0-5ea3-bd7a-93c37244cdce",
+              "name": "t50",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "t50"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates",
+      "message": "at most 50 templates are allowed, not 51"
+    },
+    {
+      "name": "templates that are an object",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": {
+            "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11": {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "error": "templates"
+    },
+    {
+      "name": "template ID that is not a UUID",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "server",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].id",
+      "message": "template ID \"server\" is not a valid UUID"
+    },
+    {
+      "name": "template without an ID",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].id",
+      "message": "template ID is required"
+    },
+    {
+      "name": "templates with the same ID in another case",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "id": "0D5F8F4E-6A57-4B53-9D0A-5C0F4E3B2A11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[1].id",
+      "message": "duplicate template ID \"0D5F8F4E-6A57-4B53-9D0A-5C0F4E3B2A11\" (also templates[0])"
+    },
+    {
+      "name": "template without a name",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].name",
+      "message": "template name is required"
+    },
+    {
+      "name": "blank template name",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "   ",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].name",
+      "message": "template name is required"
+    },
+    {
+      "name": "template name of 128 bytes in 64 characters",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "template name of 129 bytes",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "path": [
+            "templates",
+            0,
+            "name"
+          ],
+          "join": [
+            [
+              "é",
+              64
+            ],
+            "x"
+          ]
+        }
+      ],
+      "error": "templates[0].name",
+      "message": "template name must be at most 128 bytes"
+    },
+    {
+      "name": "template name with a tab",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC\tmodel",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].name",
+      "message": "template name must not contain control characters"
+    },
+    {
+      "name": "template description of 1024 bytes",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "path": [
+            "templates",
+            0,
+            "description"
+          ],
+          "join": [
+            [
+              "d",
+              1024
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "template description of 1025 bytes",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "path": [
+            "templates",
+            0,
+            "description"
+          ],
+          "join": [
+            [
+              "d",
+              1025
+            ]
+          ]
+        }
+      ],
+      "error": "templates[0].description",
+      "message": "template description must be at most 1024 bytes"
+    },
+    {
+      "name": "template description of two lines",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "one\ntwo",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].description",
+      "message": "template description must not contain control characters"
+    },
+    {
+      "name": "template without a device",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC"
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].device.spec",
+      "message": "template device spec is required"
+    },
+    {
+      "name": "template with a null device",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "device": null
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].device.spec",
+      "message": "template device spec is required"
+    },
+    {
+      "name": "template device without a spec",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server"
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].device.spec",
+      "message": "template device spec is required"
+    },
+    {
+      "name": "template device with a null spec",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "spec": null
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].device.spec",
+      "message": "template device spec is required"
+    },
+    {
+      "name": "template spec without a hostname",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "spec": {
+                  "type": "VirtualMachine"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].device.spec.general.hostname",
+      "message": "template hostname is required"
+    },
+    {
+      "name": "template spec with a blank hostname",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": " "
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].device.spec.general.hostname",
+      "message": "template hostname is required"
+    },
+    {
+      "name": "template spec with a hostname that is a number",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": 7
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].device.spec.general.hostname",
+      "message": "template hostname is required"
+    },
+    {
+      "name": "template spec whose general is not an object",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "spec": {
+                  "general": "plc"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].device.spec.general.hostname",
+      "message": "template hostname is required"
+    },
+    {
+      "name": "template spec with a hostname of two words",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "plc one"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].device.spec.general.hostname",
+      "message": "template hostname \"plc one\" must not contain whitespace"
+    },
+    {
+      "name": "template with an unknown icon key",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "toaster",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].device.iconKey"
+    },
+    {
+      "name": "template outline color that is a name",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "outlineColor": "red",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].device.outlineColor",
+      "message": "color \"red\" must be a hex color such as #2f6fbf"
+    },
+    {
+      "name": "template fill color of three digits",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "iconKey": "server",
+                "outlineColor": "#2f6fbf",
+                "fillColor": "#EEF4FB",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "id": "7c1a2b3c-4d5e-4f60-8a7b-9c0d1e2f3a4b",
+              "name": "PLC",
+              "description": "Programmable logic controller",
+              "device": {
+                "fillColor": "#abc",
+                "spec": {
+                  "type": "VirtualMachine",
+                  "general": {
+                    "hostname": "plc",
+                    "vm_type": "kvm"
+                  },
+                  "hardware": {
+                    "os_type": "linux",
+                    "vcpus": 2,
+                    "drives": [
+                      {
+                        "image": "plc.qc2"
+                      }
+                    ]
+                  },
+                  "network": {
+                    "interfaces": [
+                      {
+                        "name": "eth0",
+                        "type": "ethernet",
+                        "proto": "dhcp",
+                        "vlan": "EXP"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[1].device.fillColor",
+      "message": "color \"#abc\" must be a hex color such as #2f6fbf"
+    },
+    {
+      "name": "template device of 16384 bytes as JSON",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "Big",
+              "device": {
+                "iconKey": "server",
+                "spec": {
+                  "general": {
+                    "description": "",
+                    "hostname": "big"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "path": [
+            "templates",
+            0,
+            "device",
+            "spec",
+            "general",
+            "description"
+          ],
+          "join": [
+            [
+              "<é&>",
+              100
+            ],
+            [
+              "x",
+              14309
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "template device of 16385 bytes as JSON",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "Big",
+              "device": {
+                "iconKey": "server",
+                "spec": {
+                  "general": {
+                    "description": "",
+                    "hostname": "big"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "path": [
+            "templates",
+            0,
+            "device",
+            "spec",
+            "general",
+            "description"
+          ],
+          "join": [
+            [
+              "<é&>",
+              100
+            ],
+            [
+              "x",
+              14310
+            ]
+          ]
+        }
+      ],
+      "error": "templates[0].device",
+      "message": "template device must take at most 16384 bytes as JSON, not 16385"
+    },
+    {
+      "name": "template name that is only U+0085, which is white space",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "\u0085",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "plc"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].name",
+      "message": "template name is required"
+    },
+    {
+      "name": "template name that is only U+FEFF, which is not white space",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "\ufeff",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "plc"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "template spec with a hostname that is only U+0085",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "\u0085"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].device.spec.general.hostname",
+      "message": "template hostname is required"
+    },
+    {
+      "name": "template spec with a hostname that is only U+FEFF",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "\ufeff"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "template ID that is only U+0085",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "\u0085",
+              "name": "PLC",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "plc"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].id",
+      "message": "template ID is required",
+      "issues": [
+        {
+          "path": "templates[0].id",
+          "message": "template ID is required"
+        }
+      ]
+    },
+    {
+      "name": "network name that is only U+0085",
+      "set": [
+        {
+          "path": [
+            "networks",
+            1,
+            "name"
+          ],
+          "value": "\u0085"
+        }
+      ],
+      "error": "networks[1].name",
+      "message": "network name is required"
+    },
+    {
+      "name": "network name that is only U+FEFF",
+      "set": [
+        {
+          "path": [
+            "networks",
+            1,
+            "name"
+          ],
+          "value": "\ufeff"
+        }
+      ]
+    },
+    {
+      "name": "annotation key that is only U+0085",
+      "set": [
+        {
+          "path": [
+            "source",
+            "annotations"
+          ],
+          "value": {
+            "\u0085": "blank"
+          }
+        }
+      ],
+      "error": "source.annotations",
+      "message": "annotation key \"\\u0085\" must not be blank"
+    },
+    {
+      "name": "two templates without an ID",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "",
+              "name": "PLC",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "plc"
+                  }
+                }
+              }
+            },
+            {
+              "id": " ",
+              "name": "RTU",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "plc"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[1].id",
+      "message": "template ID is required",
+      "issues": [
+        {
+          "path": "templates[0].id",
+          "message": "template ID is required"
+        },
+        {
+          "path": "templates[1].id",
+          "message": "template ID is required"
+        }
+      ]
+    },
+    {
+      "name": "two connections without an ID",
+      "set": [
+        {
+          "path": [
+            "edges",
+            0,
+            "id"
+          ],
+          "value": ""
+        },
+        {
+          "path": [
+            "edges",
+            1,
+            "id"
+          ],
+          "value": ""
+        }
+      ],
+      "error": "edges[1].id",
+      "message": "edge ID is required",
+      "issues": [
+        {
+          "path": "edges[0].id",
+          "message": "edge ID is required"
+        },
+        {
+          "path": "edges[1].id",
+          "message": "edge ID is required"
+        }
+      ]
+    },
+    {
+      "name": "two networks without an ID, one of them in use",
+      "set": [
+        {
+          "path": [
+            "networks",
+            0,
+            "id"
+          ],
+          "value": ""
+        },
+        {
+          "path": [
+            "networks",
+            1,
+            "id"
+          ],
+          "value": ""
+        }
+      ],
+      "error": "networks[1].id",
+      "message": "network ID is required",
+      "issues": [
+        {
+          "path": "edges[0].networkId",
+          "message": "unknown network \"a8af611d-c68f-54e0-94a5-9176cea64e44\""
+        },
+        {
+          "path": "edges[1].networkId",
+          "message": "unknown network \"a8af611d-c68f-54e0-94a5-9176cea64e44\""
+        },
+        {
+          "path": "networks[0].id",
+          "message": "network ID is required"
+        },
+        {
+          "path": "networks[1].id",
+          "message": "network ID is required"
+        },
+        {
+          "path": "nodes[3].switch.networkId",
+          "message": "unknown network \"a8af611d-c68f-54e0-94a5-9176cea64e44\""
+        }
+      ]
+    },
+    {
+      "name": "two nodes without an ID, both in use",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            0,
+            "id"
+          ],
+          "value": ""
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "id"
+          ],
+          "value": ""
+        }
+      ],
+      "error": "nodes[1].id",
+      "message": "node ID is required",
+      "issues": [
+        {
+          "path": "edges[0].sourceNodeId",
+          "message": "unknown node \"4113dfc0-f4be-57f9-8115-6cecd1f1aea3\""
+        },
+        {
+          "path": "nodes[0].id",
+          "message": "node ID is required"
+        },
+        {
+          "path": "nodes[1].id",
+          "message": "node ID is required"
+        },
+        {
+          "path": "nodes[1].parentId",
+          "message": "unknown parent node \"c60601dd-6d6b-56c7-97e5-149caf5ed993\""
+        },
+        {
+          "path": "nodes[2].parentId",
+          "message": "unknown parent node \"c60601dd-6d6b-56c7-97e5-149caf5ed993\""
+        }
+      ]
+    },
+    {
+      "name": "two interface handles of one device that are only a space, one of them connected",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "interfaces",
+            0,
+            "id"
+          ],
+          "value": " "
+        },
+        {
+          "path": [
+            "nodes",
+            1,
+            "device",
+            "interfaces",
+            1,
+            "id"
+          ],
+          "value": " "
+        }
+      ],
+      "error": "nodes[1].device.interfaces[1].id",
+      "message": "interface handle ID is required",
+      "issues": [
+        {
+          "path": "edges[0]",
+          "message": "unknown interface handle \"7f010dcd-e23d-514c-9206-3609df999026\" on device node \"4113dfc0-f4be-57f9-8115-6cecd1f1aea3\""
+        },
+        {
+          "path": "nodes[1].device.interfaces[0].id",
+          "message": "interface handle ID is required"
+        },
+        {
+          "path": "nodes[1].device.interfaces[1].id",
+          "message": "interface handle ID is required"
+        }
+      ]
+    },
+    {
+      "name": "template ID with a quote, a backslash and a control character",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "a\"b\\c\u0001",
+              "name": "PLC",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "plc"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].id",
+      "message": "template ID \"a\\\"b\\\\c\\x01\" is not a valid UUID"
+    },
+    {
+      "name": "templates with the same ID that has a quote in it",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "a\"b",
+              "name": "PLC",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "plc"
+                  }
+                }
+              }
+            },
+            {
+              "id": "A\"B",
+              "name": "RTU",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "plc"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[1].id",
+      "message": "duplicate template ID \"A\\\"B\" (also templates[0])"
+    },
+    {
+      "name": "switch fill color with a control character and a quote",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "fillColor"
+          ],
+          "value": "a\u0001\"b"
+        }
+      ],
+      "error": "nodes[3].switch.fillColor",
+      "message": "color \"a\\x01\\\"b\" must be a hex color such as #2f6fbf"
+    },
+    {
+      "name": "switch fill color of characters that do not print",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "fillColor"
+          ],
+          "value": "\u0007\u007f\u0085\u00a0\u2028\udb40\udc01é😀"
+        }
+      ],
+      "error": "nodes[3].switch.fillColor",
+      "message": "color \"\\a\\x7f\\u0085\\u00a0\\u2028\\U000e0001é😀\" must be a hex color such as #2f6fbf"
+    },
+    {
+      "name": "annotation key with a bell",
+      "set": [
+        {
+          "path": [
+            "source",
+            "annotations"
+          ],
+          "value": {
+            "a\u0007b": "bell"
+          }
+        }
+      ],
+      "error": "source.annotations",
+      "message": "annotation key \"a\\ab\" must not contain control characters"
+    },
+    {
+      "name": "switch fill color of 64 bytes in 32 characters, which is whole",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "fillColor"
+          ],
+          "join": [
+            [
+              "é",
+              32
+            ]
+          ]
+        }
+      ],
+      "error": "nodes[3].switch.fillColor",
+      "message": "color \"éééééééééééééééééééééééééééééééé\" must be a hex color such as #2f6fbf"
+    },
+    {
+      "name": "switch fill color of 81 bytes, cut after 63 bytes",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "fillColor"
+          ],
+          "join": [
+            "a",
+            [
+              "é",
+              40
+            ]
+          ]
+        }
+      ],
+      "error": "nodes[3].switch.fillColor",
+      "message": "color \"aééééééééééééééééééééééééééééééé...\" must be a hex color such as #2f6fbf"
+    },
+    {
+      "name": "switch fill color of 66 bytes in 22 characters, cut after 63 bytes",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "fillColor"
+          ],
+          "join": [
+            [
+              "€",
+              22
+            ]
+          ]
+        }
+      ],
+      "error": "nodes[3].switch.fillColor",
+      "message": "color \"€€€€€€€€€€€€€€€€€€€€€...\" must be a hex color such as #2f6fbf"
+    },
+    {
+      "name": "switch fill color of 68 bytes in 17 characters, cut after 64 bytes",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            3,
+            "switch",
+            "fillColor"
+          ],
+          "join": [
+            [
+              "😀",
+              17
+            ]
+          ]
+        }
+      ],
+      "error": "nodes[3].switch.fillColor",
+      "message": "color \"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀...\" must be a hex color such as #2f6fbf"
+    },
+    {
+      "name": "template spec with a hostname of two words that is 83 bytes",
+      "set": [
+        {
+          "path": [
+            "templates"
+          ],
+          "value": [
+            {
+              "id": "0d5f8f4e-6a57-4b53-9d0a-5c0f4e3b2a11",
+              "name": "PLC",
+              "device": {
+                "spec": {
+                  "general": {
+                    "hostname": "aéééééééééééééééééééééééééééééééééééééééé x"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "error": "templates[0].device.spec.general.hostname",
+      "message": "template hostname \"aééééééééééééééééééééééééééééééé...\" must not contain whitespace"
     }
   ]
 }

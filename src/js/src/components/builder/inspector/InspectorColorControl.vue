@@ -1,7 +1,8 @@
 <!--
-  The color of a network, note, group or connection: a text field, which
-  takes any CSS color, and before it a swatch button that opens a color
-  picker.
+  A color: a network's, note's, group's or connection's, or the outline or
+  fill of a device or a switch. A text field, which takes any CSS color (an
+  outline or a fill only #rrggbb, which the field's error says), and before
+  it a swatch button that opens a color picker.
 
   The picker is a non-modal dialog under the field. Its suggested colors are
   a toolbar of swatch buttons, one Tab stop that the arrow keys move
@@ -15,9 +16,14 @@
   The suggested colors are those addNetwork picks, which the canvas draws
   for a network with the theme's own network colors, so a network given one
   keeps its contrast in both themes (see colors.js). The chip in the swatch
-  button and the swatches show a color as the canvas draws it (see
-  useInspectorDrawnColor). The swatches keep their colors in forced colors
+  button and the swatches show a color as the canvas draws it for the field
+  (see useInspectorDrawnColor): a network's in its theme token, an outline
+  or a fill as chosen. The swatches keep their colors in forced colors
   mode, where they are what is being chosen.
+
+  The button and the picker are named after the field ("Choose fill Color",
+  "Fill Color picker"), so the pickers of a form with several colors are
+  told apart.
 
   The picker is scrolled into view as it opens, so at phone width it does
   not open below the window.
@@ -183,7 +189,7 @@
   );
 
   function drawColor(value) {
-    return unref(drawnBy)(value);
+    return unref(drawnBy)(value, control.value.path);
   }
 
   const drawn = computed(() => drawColor(current.value));

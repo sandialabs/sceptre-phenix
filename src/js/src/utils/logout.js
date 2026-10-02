@@ -1,4 +1,4 @@
-// Logging out while Builder v2 holds changes the server does not have.
+// Logging out while Builder holds changes the server does not have.
 //
 // Logout deletes what the Builder keeps in this browser (see
 // builder/session.js), including edits still queued for the server: made
@@ -60,7 +60,7 @@ export function countdownTitle(title, secondsLeft) {
  * What the warning says.
  *
  * @param {object} warning reason, changes (not sent), unapplied (what the
- *   Inspector cannot apply, as a sentence, or ''), drafts (those Export can
+ *   Inspector cannot apply, as a sentence, or ''), drafts (those Download can
  *   save), canStay, canSignIn (sign in again without leaving the page),
  *   secondsLeft (null without a countdown)
  * @returns {{title: string, message: string, confirm: string, stay: string,
@@ -82,7 +82,7 @@ export function logoutWarningText({
     expired: canSignIn ? '' : 'To sign in again, you must log out.',
   }[reason];
   const unsent = changes
-    ? `${changes} change${one ? '' : 's'} to Builder v2 drafts ${one ? 'has' : 'have'} not reached the server.`
+    ? `${changes} change${one ? '' : 's'} to Builder drafts ${one ? 'has' : 'have'} not reached the server.`
     : '';
   const resume =
     canSignIn && changes ? `Sign in again to save ${one ? 'it' : 'them'}.` : '';
@@ -92,10 +92,10 @@ export function logoutWarningText({
       : changes
         ? 'Logging out deletes them from this browser.'
         : 'Logging out loses them.';
-  // Export saves the drafts the server lacks, not the Inspector's edits.
+  // Download saves the drafts the server lacks, not the Inspector's edits.
   const keep =
     drafts.length > 0
-      ? 'Use Export to keep a copy.'
+      ? 'Use Download to keep a copy.'
       : unapplied && canStay
         ? 'Stay signed in to fix them.'
         : unapplied && canSignIn

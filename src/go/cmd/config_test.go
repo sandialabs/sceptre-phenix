@@ -79,7 +79,7 @@ func TestConfigGetYAMLKeepsStrings(t *testing.T) {
 
 // TestConfigDeleteRemovesBuilderDocuments deletes a topology with `phenix
 // config delete` and asserts its published Builder documents go with it: the
-// CLI runs the Topology config hook Builder v2 registers.
+// CLI runs the Topology config hook Builder registers.
 func TestConfigDeleteRemovesBuilderDocuments(t *testing.T) {
 	db := store.NewBoltDB()
 	if err := db.Init(store.Endpoint("bolt://" + filepath.Join(t.TempDir(), "phenix.bdb"))); err != nil {

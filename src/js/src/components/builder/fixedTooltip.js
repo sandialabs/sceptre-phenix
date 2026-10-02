@@ -1,12 +1,14 @@
 // Tooltip for a control that shows a hint on hover and keyboard focus: the
 // editor header's buttons and diagram name, the diagram's counts, the
-// Palette's entries and help button, the canvas zoom controls, the toolbar's
-// buttons, the side columns' toggles, the Inspector's field labels, and the
-// History dialog's Restore and Delete buttons (WCAG 1.4.13). It stays while
-// the pointer moves onto it, until the pointer leaves both, the control loses
+// Palette's entries and help button, the canvas zoom controls, the canvas's
+// devices and switches, the toolbar's buttons, the side columns' toggles,
+// the Inspector's field labels, and the History dialog's Restore and Delete
+// buttons (WCAG 1.4.13). It stays while the pointer moves onto it, across
+// the gap between them, until the pointer leaves both, the control loses
 // focus, or Escape dismisses it. The pointer on it does not bring up the
 // tooltip of a control beneath it, and neither does a control scrolled under
-// a pointer that stays still (see whenPointed).
+// a pointer that stays still (see whenPointed). A canvas node keeps its
+// tooltip for as long as it has keyboard focus (see keep).
 //
 // The tooltip is fixed to the viewport so a scrolling side panel cannot clip
 // it; on scroll and resize it follows its control, and hides once the
@@ -17,7 +19,8 @@
 // The component renders it as
 //   <builder-fixed-tooltip :tooltip="tooltip" testid="..." />
 // with `tooltip` what useFixedTooltip returned, and binds each control's
-// tipEvents(text) with v-on.
+// tipEvents(text) with v-on. A tooltip whose content is more than a text
+// has a component of its own (see BuilderNodeTooltip.vue).
 
 import { nextTick, onBeforeUnmount, ref } from 'vue';
 
@@ -51,6 +54,67 @@ export function aboveRow(control, row, bounds, { width, height }) {
       bounds.right - width,
     ),
     top: top >= bounds.top ? top : row.bottom + TIP_GAP,
+  };
+}
+
+/**
+ * Where a tooltip goes above its control: its bottom edge `gap` above the
+ * control's top edge, their left edges in line. Without room above (the
+ * tooltip's top edge would be higher than `least`), it goes `gap` below the
+ * control instead.
+ *
+ * @param {{ left: number, top: number, bottom: number }} control
+ * @param {number} height the tooltip's
+ * @param {number} gap
+ * @param {number} least the highest the tooltip's top edge may be
+ * @returns {{ left: number, top: number }}
+ */
+export function aboveControl(control, height, gap, least) {
+  const top = control.top - height - gap;
+
+  return {
+    left: control.left,
+    top: top >= least ? top : control.bottom + gap,
+  };
+}
+
+/**
+ * The gap between two boxes that lie apart, one above or beside the other:
+ * the box a pointer crosses on its way straight from one to the other.
+ *
+ * @param {DOMRect} a
+ * @param {DOMRect} b
+ * @returns {{ left: number, right: number, top: number, bottom: number }|null}
+ *   null when they touch or overlap, or lie apart on both axes
+ */
+export function gapBetween(a, b) {
+  const across = {
+    left: Math.max(a.left, b.left),
+    right: Math.min(a.right, b.right),
+  };
+  const along = {
+    top: Math.max(a.top, b.top),
+    bottom: Math.min(a.bottom, b.bottom),
+  };
+  const beside = across.left > across.right;
+  const above = along.top > along.bottom;
+
+  if (beside === above) {
+    return null;
+  }
+
+  return above
+    ? { ...across, top: along.bottom, bottom: along.top }
+    : { ...along, left: across.right, right: across.left };
+}
+
+// The part of `rect` inside `bounds`.
+function clipTo(rect, bounds) {
+  return {
+    left: Math.max(rect.left, bounds.left),
+    right: Math.min(rect.right, bounds.right),
+    top: Math.max(rect.top, bounds.top),
+    bottom: Math.min(rect.bottom, bounds.bottom),
   };
 }
 
@@ -145,11 +209,12 @@ export function whenPointed(event, show) {
 
 /**
  * @param {object} [options]
- * @param {'end'|'start'|'below'} [options.side] the side of the control the
- *   tooltip prefers: 'end' (right) for the left-hand panels, 'start' (left)
- *   for the Inspector on the right, so it lies over the canvas in either
- *   case; 'below' for a row of controls such as the toolbar, so it covers
- *   none of the row
+ * @param {'end'|'start'|'below'|'above'} [options.side] the side of the
+ *   control the tooltip prefers: 'end' (right) for the left-hand panels,
+ *   'start' (left) for the Inspector on the right, so it lies over the
+ *   canvas in either case; 'below' for a row of controls such as the
+ *   toolbar, so it covers none of the row; 'above' for a node on the
+ *   canvas, or below it without room above (see aboveControl)
  * @param {(control: HTMLElement) => HTMLElement|null} [options.beside] the
  *   element the tooltip is placed beside, on the side nearer the control,
  *   for a control with others next to it, such as a table row's buttons:
@@ -160,30 +225,130 @@ export function whenPointed(event, show) {
  *   once there is no room on `side` of what `beside` names (a narrow
  *   window): it covers none of the row, stays inside the control's dialog,
  *   and the pointer reaches it by moving straight up
+ * @param {number} [options.delay] how long, in milliseconds, the pointer
+ *   rests on a control before its tooltip shows, for controls the pointer
+ *   crosses on its way elsewhere; focus shows it at once
+ * @param {boolean} [options.stopEscape] Escape pressed on the control whose
+ *   tooltip shows, or inside it, only hides the tooltip: the key goes no
+ *   further, so it does not also do what Escape does there
+ * @param {number|(() => number)} [options.gap] the room, in pixels, between
+ *   a control and a tooltip above or below it (side 'above')
  */
 export function useFixedTooltip({
   side = 'end',
   beside = null,
   above = null,
+  delay = 0,
+  stopEscape = false,
+  gap = TIP_GAP,
 } = {}) {
   const tip = ref(null);
   const tipEl = ref(null);
 
   let anchor = null;
   let hideTimer = null;
+  let showTimer = null;
 
   trackPointer();
 
+  /**
+   * Shows a control's tooltip for an event (see whenPointed).
+   *
+   * @param {Event} event its currentTarget is the control
+   * @param {string|object|(() => string|object)} text the tooltip's
+   *   content: a text, or what the component that renders the tooltip
+   *   draws, or what gives either as the tooltip opens
+   */
   function showTip(event, text) {
     const control = event.currentTarget;
 
     whenPointed(event, () => {
-      cancelHide();
-      anchor = control;
-      tip.value = { text, top: -9999, left: -9999 };
-      listen(true);
-      nextTick(placeTip);
+      if (delay > 0 && event.type === 'mouseenter') {
+        showLater(control, text);
+      } else {
+        open(control, text);
+      }
     });
+  }
+
+  function open(control, text) {
+    cancelShow();
+    showFor(control, text);
+  }
+
+  // Shows the tooltip for a control. One waiting to show for another
+  // control goes on waiting.
+  function showFor(control, text) {
+    cancelHide();
+    anchor = control;
+    tip.value = {
+      text: typeof text === 'function' ? text() : text,
+      top: -9999,
+      left: -9999,
+    };
+    listen(true);
+    nextTick(placeTip);
+  }
+
+  // Once the pointer has rested on the control for the delay. A press
+  // meanwhile is done with the hint, as it is once the tooltip shows.
+  function showLater(control, text) {
+    cancelShow();
+    window.addEventListener('pointerdown', cancelShow, true);
+    showTimer = setTimeout(() => {
+      cancelShow();
+
+      if (control.isConnected && control.matches(':hover')) {
+        open(control, text);
+      }
+    }, delay);
+  }
+
+  function cancelShow() {
+    if (showTimer !== null) {
+      clearTimeout(showTimer);
+      showTimer = null;
+      window.removeEventListener('pointerdown', cancelShow, true);
+    }
+  }
+
+  // The control that keeps its tooltip while it has keyboard focus, and
+  // what the tooltip shows for it (see keep).
+  let kept = null;
+
+  /**
+   * Makes a control's tooltip last as long as its keyboard focus does (WCAG
+   * 1.4.13): once the pointer has left another control whose tooltip took
+   * its place, and that tooltip, this control's shows again. Call it when
+   * the control takes keyboard focus, and release when it loses it.
+   * Dismissing the tooltip, with Escape or a press, ends it too.
+   *
+   * @param {HTMLElement} control
+   * @param {string|object|(() => string|object)} text as showTip takes it
+   */
+  function keep(control, text) {
+    kept = { control, text };
+  }
+
+  /**
+   * Ends what keep began for this control.
+   *
+   * @param {HTMLElement} control
+   */
+  function release(control) {
+    if (kept?.control === control) {
+      kept = null;
+    }
+  }
+
+  /**
+   * Whether the tooltip is showing for this control.
+   *
+   * @param {HTMLElement} control
+   * @returns {boolean}
+   */
+  function shownOn(control) {
+    return tip.value !== null && anchor === control;
   }
 
   // Beside the control, on its preferred side, or beside what `beside`
@@ -201,7 +366,8 @@ export function useFixedTooltip({
     }
 
     const rect = anchor.getBoundingClientRect();
-    if (!inView(rect)) {
+    const canvas = canvasBounds();
+    if (!inView(rect, canvas)) {
       hideTip();
       return;
     }
@@ -236,6 +402,15 @@ export function useFixedTooltip({
         width,
         height,
       }));
+    } else if (side === 'above') {
+      // Above the part of the control that shows, and inside the canvas
+      // that clips it when there is room.
+      ({ left, top } = aboveControl(
+        canvas ? clipTo(rect, canvas) : rect,
+        height,
+        typeof gap === 'function' ? gap() : gap,
+        Math.max(TIP_MARGIN, canvas?.top ?? 0),
+      ));
     } else if (side === 'below') {
       left = rect.left;
       top = rect.bottom + TIP_GAP;
@@ -279,20 +454,36 @@ export function useFixedTooltip({
     };
   }
 
-  // The control is at least partly visible in the window and in the side
-  // panel it scrolls with, if any.
-  function inView(rect) {
+  // The box of the canvas the control is drawn on, if any: the canvas
+  // hides what is panned out of it.
+  function canvasBounds() {
+    return anchor.closest('.builder-canvas')?.getBoundingClientRect() || null;
+  }
+
+  // The control is at least partly visible in the window, in the side
+  // panel it scrolls with, if any, and on the canvas that clips it, if any.
+  function inView(rect, canvas) {
     const panel = anchor.closest('.builder-layout__side');
     const bounds = panel?.getBoundingClientRect();
     const top = Math.max(0, bounds?.top ?? 0);
     const bottom = Math.min(window.innerHeight, bounds?.bottom ?? Infinity);
 
-    return rect.bottom > top && rect.top < bottom;
+    return (
+      rect.bottom > top &&
+      rect.top < bottom &&
+      (!canvas ||
+        (rect.right > canvas.left &&
+          rect.left < canvas.right &&
+          rect.bottom > canvas.top &&
+          rect.top < canvas.bottom))
+    );
   }
 
+  // Puts the tooltip showing, if any, back beside its control, once the
+  // page has drawn where the control now is.
   let frame = null;
   function followAnchor() {
-    if (frame === null) {
+    if (frame === null && tip.value) {
       frame = requestAnimationFrame(() => {
         frame = null;
         placeTip();
@@ -307,16 +498,19 @@ export function useFixedTooltip({
 
   // The tooltip lets clicks through, so it cannot use its own hover events.
   // Leaving the control instead waits briefly and keeps the tooltip while
-  // the pointer rests over it.
+  // the pointer rests over it, or is on its way to it across the gap
+  // between the two, however slowly.
   let pointer = null;
 
   function scheduleHide() {
     cancelHide();
     hideTimer = setTimeout(() => {
-      if (pointerOver(tipEl.value) || pointerOver(anchor)) {
+      if (pointerOver(tipEl.value) || pointerOver(anchor) || pointerInGap()) {
         scheduleHide();
+      } else if (kept && kept.control !== anchor && kept.control.isConnected) {
+        showFor(kept.control, kept.text);
       } else {
-        hideTip();
+        close();
       }
     }, HIDE_DELAY_MS);
   }
@@ -329,11 +523,34 @@ export function useFixedTooltip({
     return within(element.getBoundingClientRect(), pointer.x, pointer.y);
   }
 
+  function pointerInGap() {
+    if (!pointer || !tipEl.value?.isConnected || !anchor?.isConnected) {
+      return false;
+    }
+
+    const between = gapBetween(
+      anchor.getBoundingClientRect(),
+      tipEl.value.getBoundingClientRect(),
+    );
+
+    return Boolean(between) && within(between, pointer.x, pointer.y);
+  }
+
   function onPointerMove(event) {
     pointer = { x: event.clientX, y: event.clientY };
   }
 
+  // Dismisses the tooltip: the one showing, one waiting to show, and one a
+  // control with keyboard focus would get back (see keep).
   function hideTip() {
+    cancelShow();
+    kept = null;
+    close();
+  }
+
+  // Hides the tooltip showing. One waiting to show for another control, as
+  // the pointer went straight from this one to it, still shows.
+  function close() {
     cancelHide();
     if (frame !== null) {
       cancelAnimationFrame(frame);
@@ -345,9 +562,15 @@ export function useFixedTooltip({
   }
 
   function onKeydown(event) {
-    if (event.key === 'Escape') {
-      hideTip();
+    if (event.key !== 'Escape') {
+      return;
     }
+
+    if (stopEscape && anchor?.contains(event.target)) {
+      event.stopPropagation();
+    }
+
+    hideTip();
   }
 
   function listen(on) {
@@ -402,5 +625,16 @@ export function useFixedTooltip({
 
   onBeforeUnmount(hideTip);
 
-  return { tip, setTipEl, showTip, scheduleHide, hideTip, tipEvents };
+  return {
+    tip,
+    setTipEl,
+    showTip,
+    scheduleHide,
+    hideTip,
+    tipEvents,
+    shownOn,
+    keep,
+    release,
+    follow: followAnchor,
+  };
 }

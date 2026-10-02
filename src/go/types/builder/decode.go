@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"unicode/utf8"
 
 	"phenix/util"
 )
@@ -60,9 +61,10 @@ func DecodeReader(reader io.Reader) (*Document, error) {
 	return &doc, nil
 }
 
-// normalizeDocument canonicalizes free-form content (device specs and scenario
-// content) so decoded documents compare equal to generated ones. JSON decodes
-// every number as a float; integral values are restored to int.
+// normalizeDocument canonicalizes free-form content (the specs of devices and
+// templates, and scenario content) so decoded documents compare equal to
+// generated ones. JSON decodes every number as a float; integral values are
+// restored to int.
 func normalizeDocument(doc *Document) error {
 	for i := range doc.Nodes {
 		device := doc.Nodes[i].Device
@@ -76,6 +78,12 @@ func normalizeDocument(doc *Document) error {
 		}
 
 		device.Spec = spec
+	}
+
+	for i := range doc.Templates {
+		if err := doc.Templates[i].normalize(); err != nil {
+			return fmt.Errorf("%s[%d].device.spec: %w", keyTemplates, i, err)
+		}
 	}
 
 	if doc.Scenario != nil && doc.Scenario.Content != nil {
@@ -114,7 +122,8 @@ func Encode(doc *Document) ([]byte, error) {
 	return data, nil
 }
 
-// truncate shortens a value for inclusion in an error message.
+// truncate shortens a value for inclusion in an error message: to at most
+// 64 bytes of whole characters, so a cut never leaves part of one.
 func truncate(value string) string {
 	const limit = 64
 
@@ -122,5 +131,10 @@ func truncate(value string) string {
 		return value
 	}
 
-	return value[:limit] + "..."
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(value[cut]) {
+		cut--
+	}
+
+	return value[:cut] + "..."
 }

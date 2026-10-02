@@ -30,9 +30,9 @@ the root target does.
 ## Generation and Compatibility
 
 - Run `make generate` after protobuf, store-interface, or RBAC policy changes.
-- Before changing Builder v2 code (`api/builder/`, `types/builder/`,
-  `web/builder_v2*.go`) or the config schemas in `types/version/schemas/`,
-  read [`../../skills/phenix/references/builder-v2.md`](../../skills/phenix/references/builder-v2.md):
+- Before changing Builder code (`api/builder/`, `types/builder/`,
+  `web/builder*.go`) or the config schemas in `types/version/schemas/`,
+  read [`../../skills/phenix/references/builder.md`](../../skills/phenix/references/builder.md):
   those changes need `make generate` for a committed schema bundle CI checks.
 - Never manually edit `store/mock.go`, `web/proto/*.pb.go`, or
   `web/rbac/known_policy.go`; include regenerated outputs in the change.

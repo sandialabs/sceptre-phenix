@@ -1,4 +1,4 @@
-// Builder v2 publication: the Publish and Scenario dialogs, the configs a
+// Builder publication: the Publish and Scenario dialogs, the configs a
 // publish writes, and how failures are reported.
 
 const crypto = require('node:crypto');
@@ -94,7 +94,7 @@ async function expectPublish(page, status) {
   const pending = page.waitForResponse(
     (candidate) =>
       candidate.request().method() === 'POST' &&
-      /\/builder-v2\/drafts\/[^/]+\/[^/]+\/publish$/.test(
+      /\/builder\/drafts\/[^/]+\/[^/]+\/publish$/.test(
         new URL(candidate.url()).pathname,
       ),
   );
@@ -116,7 +116,7 @@ function watchPublishes(page) {
   page.on('request', (request) => {
     if (
       request.method() === 'POST' &&
-      /\/builder-v2\/drafts\/[^/]+\/[^/]+\/publish$/.test(
+      /\/builder\/drafts\/[^/]+\/[^/]+\/publish$/.test(
         new URL(request.url()).pathname,
       )
     ) {
@@ -132,13 +132,6 @@ function cannotUpdate(name) {
   return (
     `A topology named "${name}" already exists, and this diagram cannot update it: ` +
     'the diagram was not imported from it, opened from its published diagram or published to it. ' +
-    'Enter another name to create a new topology.'
-  );
-}
-
-function legacyRefusal(name) {
-  return (
-    `The topology "${name}" belongs to the legacy XML Builder and cannot be updated here. ` +
     'Enter another name to create a new topology.'
   );
 }
@@ -178,7 +171,7 @@ function manifestOf(config) {
 // Diagrams lists it. The annotation only names the document: the draft and
 // snapshot it was published from are on the record.
 async function publishedRecord(request, name) {
-  const listed = await request.get(`${API}/builder-v2/documents`);
+  const listed = await request.get(`${API}/builder/documents`);
   expect(listed.ok(), await listed.text()).toBeTruthy();
 
   return ((await listed.json()).documents || []).find(
@@ -194,7 +187,9 @@ function closeButton(page) {
   return page.getByRole('button', { name: 'Close', exact: true });
 }
 
-// A topology the legacy XML Builder owns; Builder v2 must not overwrite it.
+// A topology that still has a diagram of the legacy Builder. Only the draft
+// imported from it may update it (see builder-legacy.spec.js); any other
+// draft is refused as for a topology it has nothing to do with.
 function legacyTopology(name) {
   return {
     apiVersion: 'phenix.sandia.gov/v1',
@@ -316,11 +311,13 @@ test('topology-only publish refuses a legacy topology, writes the diagram and of
   await test.step('a legacy builder-xml topology is refused before sending and left untouched', async () => {
     const sent = watchPublishes(page);
     await fillPublish(page, { topology: legacy });
-    // No diagram may update it, so the form does not offer to.
+    // This diagram was not imported from it, so the form does not offer to
+    // update it.
     await expect
       .soft(topologyHint(page))
       .toHaveText(
-        'A topology with this name belongs to the legacy XML Builder and cannot be updated here. ' +
+        'A topology with this name already exists, and this diagram cannot update it: ' +
+          'the diagram was not imported from it, opened from its published diagram or published to it. ' +
           'Enter another name to create a new topology.',
       );
     await expect
@@ -331,7 +328,7 @@ test('topology-only publish refuses a legacy topology, writes the diagram and of
     const name = page.getByTestId('publish-name');
     await expect
       .soft(page.getByTestId('publish-error'))
-      .toHaveText(legacyRefusal(legacy));
+      .toHaveText(cannotUpdate(legacy));
     await expect.soft(name).toHaveAttribute('aria-invalid', 'true');
     await expect.soft(name).toBeFocused();
     expect.soft(sent, 'publish requests').toEqual([]);
@@ -348,9 +345,9 @@ test('topology-only publish refuses a legacy topology, writes the diagram and of
     expect.soft(untouched?.spec?.nodes || [], 'legacy nodes').toHaveLength(0);
   });
 
-  await test.step("the server's legacy refusal is reported the same way", async () => {
+  await test.step('a legacy topology stored meanwhile is refused by the server, and reported the same way', async () => {
     // Stored after the dialog read the list, so only the server can refuse
-    // it: this checks the client reads the server's own refusal text.
+    // it: the dialog asked for a new topology of that name.
     await fillPublish(page, { topology: lateLegacy });
     await expect
       .soft(topologyHint(page))
@@ -360,9 +357,7 @@ test('topology-only publish refuses a legacy topology, writes the diagram and of
     const error = page.getByTestId('publish-error');
     await expect
       .soft(error)
-      .toHaveText(
-        `Could not publish the diagram. ${legacyRefusal(lateLegacy)}`,
-      );
+      .toHaveText(`Could not publish the diagram. ${cannotUpdate(lateLegacy)}`);
     await expect
       .soft(page.getByTestId('publish-name'))
       .toHaveAttribute('aria-invalid', 'true');
@@ -372,14 +367,19 @@ test('topology-only publish refuses a legacy topology, writes the diagram and of
     await expect
       .soft(topologyHint(page))
       .toHaveText(
-        /^A topology with this name belongs to the legacy XML Builder/,
+        /^A topology with this name already exists, and this diagram cannot update it: /,
       );
     const sent = watchPublishes(page);
     await page.getByTestId('publish-submit').click();
-    await expect.soft(error).toHaveText(legacyRefusal(lateLegacy));
+    await expect.soft(error).toHaveText(cannotUpdate(lateLegacy));
     expect.soft(sent, 'publish requests').toEqual([]);
     // The form must still be showing for the next step to publish again.
     await expect(page.getByTestId('publish-result')).toHaveCount(0);
+
+    const untouched = await builder.config('Topology', lateLegacy);
+    expect
+      .soft(untouched?.metadata?.annotations, 'annotations')
+      .toEqual({ 'builder-xml': '<mxGraphModel />' });
   });
 
   await test.step('a new name publishes hostnames, VLANs and the builder-doc manifest', async () => {
@@ -516,7 +516,7 @@ test('topology-only publish refuses a legacy topology, writes the diagram and of
     const held = new Promise((resolve) => {
       release = resolve;
     });
-    const path = `${API}/builder-v2/documents/${manifest.id}`;
+    const path = `${API}/builder/documents/${manifest.id}`;
     await page.route(`**${path}`, async (route) => {
       if (route.request().method() === 'DELETE') {
         await held;
@@ -934,6 +934,8 @@ test('stored scenario can be attached and published with an experiment', async (
   await builder.seedConfig(scenarioConfig(scenario, 'builder-e2e-stored'));
 
   const draft = await openLab(builder, topology);
+  // Nothing was published from the draft yet: no experiment to open.
+  await expect(builder.toolbar('experiment')).toHaveCount(0);
 
   const dialog = await builder.openDialog('scenario');
   await dialog.getByTestId('scenario-kind-stored').check();
@@ -967,17 +969,25 @@ test('stored scenario can be attached and published with an experiment', async (
   const stored = await builder.config('Scenario', scenario);
   expect(stored.metadata.annotations.topology).toContain(topology);
 
+  await test.step('the toolbar then has Exp, named for the experiment the publish made', async () => {
+    await closeButton(page).click();
+    await expect(builder.dialog).toHaveCount(0);
+    await expect(builder.toolbar('experiment')).toHaveAccessibleName(
+      `Exp: open experiment ${experiment}`,
+    );
+  });
+
   await test.step('a draft generated from the experiment publishes back to it', async () => {
     // The experiment embeds its own merged copy of the scenario, so the
     // generated draft references the stored scenario by the digest the
     // sources list reports, which is what publishing with "use" checks.
-    const generated = await builder.request.post(`${API}/builder-v2/generate`, {
+    const generated = await builder.request.post(`${API}/builder/generate`, {
       data: { source: `experiment/${experiment}` },
     });
     expect(generated.ok(), await generated.text()).toBeTruthy();
     const { document } = await generated.json();
     const sources = await (
-      await builder.request.get(`${API}/builder-v2/sources`)
+      await builder.request.get(`${API}/builder/sources`)
     ).json();
     const listed = sources.scenarios.find((entry) => entry.name === scenario);
     expect(document.scenario).toEqual({
@@ -1184,7 +1194,7 @@ test('a draft can publish an update after further edits', async ({
     await closeButton(page).click();
   });
 
-  await test.step('Inspector changes not applied are published, and ones it cannot apply block Publish and Export', async () => {
+  await test.step('Inspector changes not applied are published, and ones it cannot apply block Publish and Download', async () => {
     await builder.selectInOutline('server');
     const memory = builder.inspector
       .locator('legend.group-label', { hasText: /^Hardware$/ })
@@ -1193,7 +1203,7 @@ test('a draft can publish an update after further edits', async ({
     await memory.fill('lots');
     await memory.blur();
 
-    // Publish and Export say what blocks them, rather than leave the
+    // Publish and Download say what blocks them, rather than leave the
     // changes out.
     const dialog = await openPublish(builder);
     const blocked =
@@ -1205,13 +1215,29 @@ test('a draft can publish an update after further edits', async ({
     await expect.soft(page.getByTestId('publish-submit')).toBeDisabled();
     await page.keyboard.press('Escape');
     await expect(builder.dialog).toHaveCount(0);
-    await builder.openDialog('export');
+    await builder.openDialog('download');
     await expect
-      .soft(page.getByTestId('export-unapplied'))
-      .toHaveText(/ cannot be exported until Memory is fixed\. /);
-    await expect.soft(page.getByTestId('export-json')).toBeDisabled();
-    await expect.soft(page.getByTestId('export-topology-yaml')).toBeDisabled();
-    await expect.soft(page.getByTestId('export-gexf')).toBeDisabled();
+      .soft(page.getByTestId('download-unapplied'))
+      .toHaveText(/ cannot be downloaded until Memory is fixed\. /);
+    await expect.soft(page.getByTestId('download-json')).toBeDisabled();
+    await expect
+      .soft(page.getByTestId('download-topology-yaml'))
+      .toBeDisabled();
+    await expect.soft(page.getByTestId('download-gexf')).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(builder.dialog).toHaveCount(0);
+    // A format's command in the palette opens the dialog on the same
+    // block, and downloads nothing.
+    await page.keyboard.press('ControlOrMeta+k');
+    await page
+      .getByRole('combobox', { name: 'Search commands' })
+      .fill('download builder json');
+    await page.keyboard.press('Enter');
+    await expect
+      .soft(page.getByTestId('download-unapplied'))
+      .toHaveText(/ cannot be downloaded until Memory is fixed\. /);
+    await expect.soft(builder.dialog.getByRole('status')).toHaveText('');
+    await expect.soft(page.getByTestId('download-json')).toBeDisabled();
     await page.keyboard.press('Escape');
     await expect(builder.dialog).toHaveCount(0);
 
@@ -1562,10 +1588,10 @@ test('an interface with no VLAN or a used address is refused at publish, and its
     );
     await builder.dialog.getByRole('button', { name: 'Cancel' }).click();
 
-    // Topology YAML still exports, and says why Publish refuses it, as
+    // Topology YAML still downloads, and says why Publish refuses it, as
     // Publish's refusal says it.
-    await builder.openDialog('export');
-    await builder.dialog.getByTestId('export-topology-yaml').click();
+    await builder.openDialog('download');
+    await builder.dialog.getByTestId('download-topology-yaml').click();
     await expect(builder.dialog.getByRole('status')).toContainText(
       `This topology cannot be published yet: ${usedBy}.`,
     );
@@ -1648,7 +1674,7 @@ test('a partial publication lists the failed stage and lets the user go back', a
 
   // The server's partial-failure response (writePublishPartial), served
   // without touching the server so the test writes no configs.
-  await page.route('**/builder-v2/drafts/*/*/publish', (route) =>
+  await page.route('**/builder/drafts/*/*/publish', (route) =>
     route.fulfill({
       status: 500,
       contentType: 'application/json',

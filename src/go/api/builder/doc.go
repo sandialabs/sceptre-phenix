@@ -1,6 +1,6 @@
 // Package builder implements persistence for the phenix topology builder.
 //
-// Two kinds of data are persisted, both through the generic
+// Four kinds of data are persisted, all through the generic
 // [phenix/store.RecordStore] primitives. No broker events are created by this
 // package, and it stores a phenix config in one place only (see below):
 //
@@ -13,6 +13,21 @@
 //     the document's digest and ID, in the topology's "builder-doc" annotation.
 //     The Topology config hook of this package checks that reference in every
 //     topology about to be stored.
+//   - Icon libraries: the custom icons a user uploaded, one immutable record
+//     per icon in a namespace of its own, named by the SHA-256 of its PNG
+//     bytes (see [Service.AddIcon]). A library belongs to one user and is
+//     never shared: an icon reaches another user only inside a document,
+//     which carries its own copy. [Service.CleanupOrphanedChunks] and
+//     [Service.CleanupOrphanedDocuments] never list or delete in that
+//     namespace.
+//   - Template libraries: the device templates a user keeps, with their
+//     collections and the custom icons they use, as one record per user in a
+//     namespace of its own (see [TemplateLibrary]). A user who never changed
+//     the library has no record and is given the built-in templates; the
+//     first change stores them with the record, so one that was deleted
+//     stays deleted. Every change is one compare-and-swap of that record
+//     (see [Service.UpdateLibrary]). The cleanups never list or delete in
+//     that namespace either.
 //
 // The web layer publishes a draft itself: it stores the document here and
 // writes the configs, with its own locks, stages and broadcasts.

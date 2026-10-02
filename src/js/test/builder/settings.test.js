@@ -3,6 +3,7 @@ import { watch } from 'vue';
 
 import { LAYOUT_ALGORITHMS } from '@/builder/layouts/index.js';
 import {
+  OPEN_ZOOM_PERCENT,
   SETTINGS_STORAGE_KEY,
   SETTING_DEFAULTS,
   builderSettings,
@@ -43,6 +44,7 @@ describe('Builder settings', () => {
       layoutAlgorithm: 'elk',
       showMinimap: true,
       openZoom: 'actual',
+      openZoomPercent: 100,
       reduceMotion: false,
     });
     expect(LAYOUT_ALGORITHMS.map((algorithm) => algorithm.id)).toEqual([
@@ -99,6 +101,73 @@ describe('Builder settings', () => {
     expect(storage.entries.has(SETTINGS_STORAGE_KEY)).toBe(false);
   });
 
+  test('a custom zoom is a percentage from 20 to 200, in steps of 5', () => {
+    const storage = memoryStorage();
+
+    expect(OPEN_ZOOM_PERCENT).toEqual({ min: 20, max: 200, step: 5 });
+    expect(isSettingValue('openZoom', 'custom')).toBe(true);
+
+    for (const percent of [20, 100, 75, 200]) {
+      expect(isSettingValue('openZoomPercent', percent), percent).toBe(true);
+    }
+
+    for (const percent of [15, 33, 205, 0, -50, 72.5, NaN, '50', null]) {
+      expect(setSetting('openZoomPercent', percent, storage), percent).toBe(
+        false,
+      );
+    }
+    expect(storage.entries.size).toBe(0);
+
+    expect(setSetting('openZoom', 'custom', storage)).toBe(true);
+    expect(setSetting('openZoomPercent', 75, storage)).toBe(true);
+    expect(stored(storage)).toEqual({
+      openZoom: 'custom',
+      openZoomPercent: 75,
+    });
+
+    // A new page reads both back.
+    resetSettings(null);
+    expect(loadSettings(storage)).toMatchObject({
+      openZoom: 'custom',
+      openZoomPercent: 75,
+    });
+
+    // Reset to defaults clears both.
+    resetSettings(storage);
+    expect(builderSettings.openZoom).toBe('actual');
+    expect(builderSettings.openZoomPercent).toBe(100);
+    expect(storage.entries.has(SETTINGS_STORAGE_KEY)).toBe(false);
+  });
+
+  test('what an earlier Builder stored for the zoom still reads', () => {
+    // Before the custom zoom there was no percentage: 100% and Fit stay
+    // what they were, and the percentage takes its default.
+    for (const openZoom of ['actual', 'fit']) {
+      const storage = memoryStorage({
+        [SETTINGS_STORAGE_KEY]: JSON.stringify({ openZoom }),
+      });
+
+      expect({ ...loadSettings(storage) }, openZoom).toEqual({
+        ...SETTING_DEFAULTS,
+        openZoom,
+      });
+    }
+
+    // A percentage this Builder does not take is dropped by itself: Custom
+    // then opens at the default percentage.
+    const odd = memoryStorage({
+      [SETTINGS_STORAGE_KEY]: JSON.stringify({
+        openZoom: 'custom',
+        openZoomPercent: 33,
+      }),
+    });
+
+    expect({ ...loadSettings(odd) }).toEqual({
+      ...SETTING_DEFAULTS,
+      openZoom: 'custom',
+    });
+  });
+
   test('store only the values they offer: no names, content or other keys', () => {
     const storage = memoryStorage();
 
@@ -107,6 +176,8 @@ describe('Builder settings', () => {
       ['layoutAlgorithm', undefined],
       ['showMinimap', 'false'],
       ['openZoom', 1.5],
+      ['openZoom', 75],
+      ['openZoomPercent', 'custom'],
       ['reduceMotion', null],
       ['draftName', 'Secret lab'],
       ['token', 'abc'],

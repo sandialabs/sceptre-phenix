@@ -1,6 +1,9 @@
 package builder_test
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"reflect"
 	"strings"
 	"testing"
@@ -200,6 +203,106 @@ func TestLayoutAndRouteRoundTripUnpublished(t *testing.T) {
 		if strings.Contains(string(encoded), key) {
 			t.Fatalf("a document without %s encodes one: %s", key, encoded)
 		}
+	}
+}
+
+// TestDecoratedDocumentRoundTrip covers what decorates a document (see
+// decorationKeys): a document that uses every such field is valid, and
+// survives encoding and decoding byte for byte.
+func TestDecoratedDocumentRoundTrip(t *testing.T) {
+	doc := decoratedDocument(t)
+
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("a document with every field is refused: %v", err)
+	}
+
+	data, err := builder.Encode(doc)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+
+	for _, key := range append([]string{`"description": "first rack\nsecond line"`}, decorationKeys...) {
+		if !strings.Contains(string(data), key) {
+			t.Fatalf("the encoding has no %s: %s", key, data)
+		}
+	}
+
+	decoded, err := builder.Parse(data)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if !reflect.DeepEqual(doc, decoded) {
+		t.Fatalf("JSON round trip changed the document:\nbefore: %s\nafter: %s",
+			asJSON(t, doc), asJSON(t, decoded))
+	}
+
+	again, err := builder.Encode(decoded)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+
+	if !bytes.Equal(again, data) {
+		t.Fatalf("the document encodes differently after a round trip:\nbefore: %s\nafter: %s", data, again)
+	}
+}
+
+// TestFixtureEncodingsArePinned pins the canonical encoding of the document
+// fixtures, which use none of those fields. A stored document is named by
+// the digest of this encoding, so a field of the document model must be left
+// out when it is not set: one written empty would change the bytes, and the
+// digest, of every document there is. A digest here changes only with its
+// fixture file.
+func TestFixtureEncodingsArePinned(t *testing.T) {
+	for name, want := range map[string]struct {
+		size   int
+		digest string
+	}{
+		"document.json":        {4830, "sha256:b8cc4c1b4e28fab353ff961c23a7912b3db0b953ff650d6b44fb1d090de17984"},
+		"strict-document.json": {3717, "sha256:41798cd1a4a3b31e05d4f352fed560f45dbbf008ded062acb4598b584bf19b79"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			data, err := builder.Encode(loadDocumentFixture(t, name))
+			if err != nil {
+				t.Fatalf("Encode: %v", err)
+			}
+
+			sum := sha256.Sum256(data)
+
+			if got := "sha256:" + hex.EncodeToString(sum[:]); len(data) != want.size || got != want.digest {
+				t.Fatalf("the encoding is %d bytes with digest %s, want %d bytes with %s:\n%s",
+					len(data), got, want.size, want.digest, data)
+			}
+
+			for _, key := range decorationKeys {
+				if strings.Contains(string(data), key) {
+					t.Fatalf("a document without %s encodes one: %s", key, data)
+				}
+			}
+		})
+	}
+
+	// Set and then emptied, each field is left out again.
+	doc := decoratedDocument(t)
+	plain := loadDocumentFixture(t, "document.json")
+
+	doc.Icons = map[string]builder.Icon{}
+	doc.Templates = []builder.Template{}
+	doc.Source = plain.Source
+	doc.Networks[0].LineStyle = ""
+	doc.Edges[0].LineStyle = ""
+
+	for i := range doc.Nodes {
+		doc.Nodes[i] = plain.Nodes[i]
+	}
+
+	want, err := builder.Encode(plain)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+
+	if got, err := builder.Encode(doc); err != nil || !bytes.Equal(got, want) {
+		t.Fatalf("empty fields are written (%v):\n%s", err, got)
 	}
 }
 

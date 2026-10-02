@@ -1,4 +1,4 @@
-// Wording and pacing of Builder v2 announcements.
+// Wording and pacing of Builder announcements.
 //
 // The editor speaks through one polite live region. These helpers keep what it
 // says specific (item names, counts with the right plural) and keep one
@@ -17,13 +17,43 @@ export function count(n, noun, plural = `${noun}s`) {
 }
 
 /**
- * What an Import from a topology or experiment says once its draft exists.
+ * What an Import from a topology or experiment says once its draft exists,
+ * and what the conversion of a diagram of the legacy Builder says.
  *
  * @param {string[]} [warnings] the warnings the import gave
+ * @param {object} [options] mode: 'import', or 'copy' for a topology
+ *   imported as a copy, or 'combine' for one imported with its included
+ *   topologies combined, which name the topology read (source) and the new
+ *   one (name); legacy: the diagram was converted from a legacy Builder
+ *   diagram, which an import that is neither says
  * @returns {string} "Imported diagram.", or "The diagram was imported with 2
- *   warnings."
+ *   warnings."; for a legacy diagram "Converted the legacy diagram.", or
+ *   "The legacy diagram was converted with 2 warnings."; for a copy
+ *   "Imported a copy of topology site as site-copy.", and for a combined
+ *   import "Combined topology site and its included topologies as
+ *   site-combined.", each ending ", with 2 warnings." when there are some
  */
-export function describeImport(warnings = []) {
+export function describeImport(
+  warnings = [],
+  { mode = 'import', legacy = false, source = '', name = '' } = {},
+) {
+  if (mode === 'copy' || mode === 'combine') {
+    const made =
+      mode === 'copy'
+        ? `Imported a copy of topology ${source} as ${name}`
+        : `Combined topology ${source} and its included topologies as ${name}`;
+
+    return warnings.length
+      ? `${made}, with ${count(warnings.length, 'warning')}.`
+      : `${made}.`;
+  }
+
+  if (legacy) {
+    return warnings.length
+      ? `The legacy diagram was converted with ${count(warnings.length, 'warning')}.`
+      : 'Converted the legacy diagram.';
+  }
+
   return warnings.length
     ? `The diagram was imported with ${count(warnings.length, 'warning')}.`
     : 'Imported diagram.';
@@ -39,6 +69,47 @@ export function listOf(items) {
   }
 
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+/**
+ * Names several things in a sentence, as a confirmation or a card does: up
+ * to three by name, and of more the first two and how many others.
+ *
+ * @param {string[]} names
+ * @returns {string} "a and b", "a, b and c", "a, b and 3 others", or ''
+ */
+export function describeNames(names) {
+  const list = (names || []).filter(Boolean);
+
+  if (list.length <= 3) {
+    return listOf(list);
+  }
+
+  return `${list[0]}, ${list[1]} and ${count(list.length - 2, 'other')}`;
+}
+
+/**
+ * What combining the included nodes of the open draft says once the new
+ * draft exists.
+ *
+ * @param {number} included how many included nodes became the new draft's own
+ * @param {string} name the new draft's name
+ * @param {string} from the name of the draft that was open
+ * @param {string[]} [kept] the included topologies the new draft still
+ *   includes, because their nodes were never in the diagram
+ * @returns {string} "Combined 3 included nodes into new draft
+ *   site-combined. Draft site is unchanged.", and, with kept includes, " It
+ *   still includes site-b, whose nodes are not in the diagram."
+ */
+export function describeCombined(included, name, from, kept = []) {
+  const still = kept.length
+    ? ` It still includes ${listOf(kept)}, whose nodes are not in the diagram.`
+    : '';
+
+  return (
+    `Combined ${count(included, 'included node')} into new draft ${name}. ` +
+    `Draft ${from} is unchanged.${still}`
+  );
 }
 
 /**

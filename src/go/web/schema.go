@@ -143,8 +143,7 @@ func GetSchema(w http.ResponseWriter, r *http.Request) error {
 		webErr := weberror.NewWebError(err, "unable to get version %s of schema for %s", ver, kind)
 
 		// A kind or version with no schema is a missing resource, not a server
-		// failure. This also answers /schemas/builder-v2/v1 when the builder-v2
-		// feature is off, which leaves only this route to match it.
+		// failure.
 		if errors.Is(err, version.ErrInvalidKind) || errors.Is(err, fs.ErrNotExist) {
 			return webErr.SetStatus(http.StatusNotFound)
 		}

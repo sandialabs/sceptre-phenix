@@ -4,7 +4,7 @@ import {
   COMMANDS,
   GROUPS,
   ariaShortcuts,
-  canvasHelp,
+  canvasHints,
   commandKeys,
   isCustomizable,
   withShortcut,
@@ -99,7 +99,16 @@ describe('the sheet', () => {
       ).map((command) => command.title),
     );
     expect(titles(groups)).toContain('Delete selection');
-    expect(titles(groups)).not.toContain('Auto layout');
+    // Settings, the layout and the first Auto-group rule have keys.
+    expect(titles(groups)).toEqual(
+      expect.arrayContaining([
+        'Settings…',
+        'Auto-group by network',
+        'Auto layout',
+      ]),
+    );
+    expect(titles(groups)).not.toContain('Auto-group by name');
+    expect(titles(groups)).not.toContain('Reset view');
   });
 
   test('lists every command whose keys can change when customizing', () => {
@@ -133,6 +142,7 @@ describe('the sheet', () => {
     expect(titles(shortcutGroups({ query: 'G' }))).toEqual([
       'Group selection',
       'Ungroup',
+      'Auto-group by network',
     ]);
     expect(titles(shortcutGroups({ query: '?' }))).toEqual([
       'Keyboard shortcuts',
@@ -150,16 +160,31 @@ describe('the sheet', () => {
       'Focus mode',
     ]);
     expect(shortcutGroups({ query: 'no such thing' })).toEqual([]);
+    // A command's aliases find it too: the words it also goes by.
+    expect(
+      titles(shortcutGroups({ query: 'export', customize: true })),
+    ).toEqual([
+      'Download…',
+      'Download Builder JSON',
+      'Download Builder YAML',
+      'Download Topology YAML',
+      'Download PNG',
+      'Download SVG',
+      'Download Gephi (GEXF)',
+    ]);
+    expect(titles(shortcutGroups({ query: 'send', customize: true }))).toEqual([
+      'Share…',
+    ]);
     // The command being recorded stays, whatever the filter.
     expect(
       titles(
         shortcutGroups({
           query: 'duplicate',
           customize: true,
-          keep: 'structure.layout',
+          keep: 'view.reset',
         }),
       ),
-    ).toEqual(['Duplicate', 'Auto layout']);
+    ).toEqual(['Duplicate', 'Reset view']);
   });
 
   test('marks the one-character keys the switch has turned off', () => {
@@ -182,10 +207,10 @@ describe('the sheet', () => {
   });
 
   test('names commands without the dialog ellipsis', () => {
-    expect(commandName('draft.export')).toBe('Export');
-    expect(shortcutRow('draft.export')).toMatchObject({
-      title: 'Export…',
-      name: 'Export',
+    expect(commandName('draft.download')).toBe('Download');
+    expect(shortcutRow('draft.download')).toMatchObject({
+      title: 'Download…',
+      name: 'Download',
     });
   });
 });
@@ -197,7 +222,7 @@ describe('the recorder', () => {
     );
 
     expect(spec).toBe('Mod+Shift+L');
-    expect(judgeShortcut('structure.layout', spec)).toMatchObject({
+    expect(judgeShortcut('view.reset', spec)).toMatchObject({
       status: 'free',
       label: '⇧⌘L',
       spoken: 'Shift+Command+L',
@@ -206,33 +231,33 @@ describe('the recorder', () => {
   });
 
   test('refuses reserved keys, letters alone and Ctrl+Alt, with the reason', () => {
-    expect(judgeShortcut('structure.layout', 'Mod+T')).toMatchObject({
+    expect(judgeShortcut('view.reset', 'Mod+T')).toMatchObject({
       status: 'refused',
       reason:
         'Browsers keep ⌘T to open a new tab and never pass it to the page.',
     });
-    expect(judgeShortcut('structure.layout', 'Mod+0').reason).toMatch(
+    expect(judgeShortcut('view.reset', 'Mod+0').reason).toMatch(
       /^Browsers use ⌘0 to zoom/,
     );
-    expect(judgeShortcut('structure.layout', 'Q').reason).toMatch(
+    expect(judgeShortcut('view.reset', 'Q').reason).toMatch(
       /^Letters without ⌘ are for typing/,
     );
-    expect(judgeShortcut('structure.layout', 'Enter').status).toBe('refused');
+    expect(judgeShortcut('view.reset', 'Enter').status).toBe('refused');
 
     setPlatform('other');
-    expect(judgeShortcut('structure.layout', 'Ctrl+Alt+L').reason).toMatch(
+    expect(judgeShortcut('view.reset', 'Ctrl+Alt+L').reason).toMatch(
       /Ctrl\+Alt types characters/,
     );
-    expect(judgeShortcut('structure.layout', 'Ctrl+T').reason).toMatch(
+    expect(judgeShortcut('view.reset', 'Ctrl+T').reason).toMatch(
       /^Browsers keep Ctrl\+T/,
     );
-    expect(judgeShortcut('structure.layout', 'Meta+Shift+L').reason).toBe(
+    expect(judgeShortcut('view.reset', 'Meta+Shift+L').reason).toBe(
       'Shift+Meta+L is not used: Windows and Linux keep most shortcuts with the Windows key for themselves.',
     );
   });
 
   test('names the commands a key would clash with, where both work', () => {
-    const verdict = judgeShortcut('draft.export', 'Mod+D');
+    const verdict = judgeShortcut('draft.download', 'Mod+D');
 
     expect(verdict.status).toBe('conflict');
     expect(verdict.conflicts.map((command) => command.id)).toEqual([
@@ -262,7 +287,7 @@ describe('the recorder', () => {
     expect(judgeShortcut('palette.open', 'Mod+/').status).toBe('free');
     expect(judgeShortcut('palette.open', 'Ctrl+/').status).toBe('free');
     // Commands that stay out of text fields may have one.
-    expect(judgeShortcut('structure.layout', '/').status).toBe('free');
+    expect(judgeShortcut('view.reset', '/').status).toBe('free');
 
     setPlatform('other');
     expect(judgeShortcut('palette.open', '.').reason).toBe(
@@ -301,7 +326,7 @@ describe('the recorder', () => {
     // fields may have it.
     expect(judgeShortcut('palette.open', 'Mod+Alt+E').status).toBe('free');
     expect(judgeShortcut('palette.open', 'Ctrl+Alt+E').status).toBe('free');
-    expect(judgeShortcut('structure.layout', 'Alt+E').status).toBe('free');
+    expect(judgeShortcut('view.reset', 'Alt+E').status).toBe('free');
 
     // Alt types nothing on Windows and Linux; AltGr, their Ctrl+Alt, does,
     // and is refused for every command.
@@ -314,16 +339,10 @@ describe('the recorder', () => {
   });
 
   test('refuses the keys the controls use, with any modifiers', () => {
-    expect(judgeShortcut('structure.layout', 'Mod+Backspace').status).toBe(
-      'refused',
-    );
-    expect(judgeShortcut('structure.layout', 'Alt+ArrowUp').status).toBe(
-      'refused',
-    );
+    expect(judgeShortcut('view.reset', 'Mod+Backspace').status).toBe('refused');
+    expect(judgeShortcut('view.reset', 'Alt+ArrowUp').status).toBe('refused');
     setPlatform('other');
-    expect(judgeShortcut('structure.layout', 'Mod+Enter').status).toBe(
-      'refused',
-    );
+    expect(judgeShortcut('view.reset', 'Mod+Enter').status).toBe('refused');
   });
 
   test('knows a key the command has already', () => {
@@ -343,10 +362,10 @@ describe('the recorder', () => {
   test('keeps a single key, and says it waits for the switch', () => {
     setSingleKeyShortcuts(false, null);
 
-    const verdict = judgeShortcut('structure.layout', '1');
+    const verdict = judgeShortcut('view.reset', '1');
 
     expect(verdict).toMatchObject({ status: 'free', inactive: true });
-    expect(recorderMessage(verdict, 'Auto layout').spoken).toBe(
+    expect(recorderMessage(verdict, 'Reset view').spoken).toBe(
       '1 is free. Press Enter to keep it, or Escape to cancel. ' +
         'Single-key shortcuts are off, so it works only once they are on.',
     );
@@ -354,8 +373,8 @@ describe('the recorder', () => {
 
   test('says what it found, with the key as caps and as words', () => {
     const refused = recorderMessage(
-      judgeShortcut('structure.layout', 'Mod+T'),
-      'Auto layout',
+      judgeShortcut('view.reset', 'Mod+T'),
+      'Reset view',
     );
 
     expect(refused.tone).toBe('error');
@@ -371,18 +390,15 @@ describe('the recorder', () => {
 
     // A reason that does not name the key follows it.
     expect(
-      recorderMessage(judgeShortcut('structure.layout', 'Q'), 'Auto layout')
-        .spoken,
+      recorderMessage(judgeShortcut('view.reset', 'Q'), 'Reset view').spoken,
     ).toMatch(/^Q: Letters without ⌘/);
     // The key is named once, as a word of its own: L is not the L of
     // "Letters", and '.' not the stop that ends the sentence.
     expect(
-      recorderMessage(judgeShortcut('structure.layout', 'L'), 'Auto layout')
-        .parts[0],
+      recorderMessage(judgeShortcut('view.reset', 'L'), 'Reset view').parts[0],
     ).toEqual({ key: true });
     expect(
-      recorderMessage(judgeShortcut('structure.layout', 'L'), 'Auto layout')
-        .spoken,
+      recorderMessage(judgeShortcut('view.reset', 'L'), 'Reset view').spoken,
     ).toMatch(/^L: Letters without ⌘/);
     const dot = recorderMessage(
       judgeShortcut('palette.open', '.'),
@@ -394,12 +410,12 @@ describe('the recorder', () => {
     );
 
     const conflict = recorderMessage(
-      judgeShortcut('draft.export', 'Mod+D'),
-      'Export',
+      judgeShortcut('draft.download', 'Mod+D'),
+      'Download',
     );
     expect(conflict.tone).toBe('warning');
     expect(conflict.spoken).toBe(
-      'Command+D already runs Duplicate. Choose Use for Export to move it, or press another shortcut.',
+      'Command+D already runs Duplicate. Choose Use for Download to move it, or press another shortcut.',
     );
 
     setPlatform('other');
@@ -419,32 +435,32 @@ describe('the recorder', () => {
 describe('keeping a key', () => {
   test('makes it the command’s only key, stored per browser', () => {
     const storage = memoryStorage();
-    const result = assignShortcut('structure.layout', 'Mod+Shift+L', {
+    const result = assignShortcut('view.reset', 'Mod+Shift+L', {
       storage,
     });
 
     expect(result).toMatchObject({ ok: true, taken: [] });
-    expect(commandKeys('structure.layout')).toEqual(['Mod+Shift+L']);
+    expect(commandKeys('view.reset')).toEqual(['Mod+Shift+L']);
     expect(saved(storage)).toEqual({
-      keys: { 'structure.layout': ['Mod+Shift+L'] },
+      keys: { 'view.reset': ['Mod+Shift+L'] },
       singleKeys: true,
     });
 
     // Everything written from the registry follows at once.
-    expect(withShortcut('Auto layout', 'structure.layout')).toBe(
-      'Auto layout (⇧⌘L)',
-    );
-    expect(ariaShortcuts('structure.layout')).toBe('Shift+Meta+L');
+    expect(withShortcut('Reset view', 'view.reset')).toBe('Reset view (⇧⌘L)');
+    expect(ariaShortcuts('view.reset')).toBe('Shift+Meta+L');
   });
 
   test('takes a key from another command only when told to', () => {
     const storage = memoryStorage();
 
-    expect(assignShortcut('draft.export', 'Mod+D', { storage }).ok).toBe(false);
+    expect(assignShortcut('draft.download', 'Mod+D', { storage }).ok).toBe(
+      false,
+    );
     expect(commandKeys('edit.duplicate')).toEqual(['Mod+D']);
     expect(saved(storage)).toBe(null);
 
-    const result = assignShortcut('draft.export', 'Mod+D', {
+    const result = assignShortcut('draft.download', 'Mod+D', {
       take: true,
       storage,
     });
@@ -453,18 +469,18 @@ describe('keeping a key', () => {
     expect(result.taken).toEqual([
       { id: 'edit.duplicate', name: 'Duplicate', keys: [] },
     ]);
-    expect(commandKeys('draft.export')).toEqual(['Mod+D']);
+    expect(commandKeys('draft.download')).toEqual(['Mod+D']);
     expect(commandKeys('edit.duplicate')).toEqual([]);
     expect(saved(storage).keys).toEqual({
       'edit.duplicate': [],
-      'draft.export': ['Mod+D'],
+      'draft.download': ['Mod+D'],
     });
   });
 
   test('leaves the other keys of the command it takes one from', () => {
     setPlatform('other');
 
-    const result = assignShortcut('structure.layout', 'Mod+Y', {
+    const result = assignShortcut('view.reset', 'Mod+Y', {
       take: true,
       storage: null,
     });
@@ -477,7 +493,7 @@ describe('keeping a key', () => {
   });
 
   test('never keeps a refused key, nor one for a fixed command', () => {
-    expect(assignShortcut('structure.layout', 'Mod+T', { take: true }).ok).toBe(
+    expect(assignShortcut('view.reset', 'Mod+T', { take: true }).ok).toBe(
       false,
     );
     expect(assignShortcut('edit.rename', 'Mod+Shift+F', {}).ok).toBe(false);
@@ -503,16 +519,19 @@ describe('keeping a key', () => {
       defaults: [expect.objectContaining({ label: '⌘D' })],
     });
 
-    setShortcut('structure.layout', ['Mod+Shift+L'], null);
-    removeShortcut('structure.layout', { storage: null });
-    expect(shortcutOverride('structure.layout')).toBeUndefined();
+    setShortcut('view.reset', ['Mod+Shift+L'], null);
+    removeShortcut('view.reset', { storage: null });
+    expect(shortcutOverride('view.reset')).toBeUndefined();
   });
 
-  test('turning single keys off updates the Keyboard help', () => {
-    expect(canvasHelp({ readOnly: false }).join(' ')).toContain('? lists');
+  test('turning single keys off updates the canvas’s hint', () => {
+    expect(canvasHints({ readOnly: false }).canvas).toContain('? lists');
 
     setSingleKeyShortcuts(false, null);
-    expect(canvasHelp({ readOnly: false }).join(' ')).not.toContain('? lists');
+    expect(canvasHints({ readOnly: false }).canvas).not.toContain('? lists');
+    expect(canvasHints({ readOnly: false }).canvas).toContain(
+      'Shortcuts in the header lists every shortcut.',
+    );
     expect(ariaShortcuts('view.zoomIn')).toBeUndefined();
   });
 });

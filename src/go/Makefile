@@ -50,7 +50,7 @@ help:
 	@echo "  generate-mocks     - Generate mocks"
 	@echo "  generate-protobuf  - Generate protobufs"
 	@echo "  go-generate        - Run go generate"
-	@echo "  generate-builder-schema - Write the web UI's Builder v2 schema bundle"
+	@echo "  generate-builder-schema - Write the web UI's Builder schema bundle"
 	@echo ""
 	@echo "Installation targets:"
 	@echo "  install            - Install Go module dependencies"
@@ -66,7 +66,7 @@ all: test
 
 generate: generate-mocks generate-protobuf go-generate generate-builder-schema
 
-# The web UI's copy of the Builder v2 document schema, which embeds the v1
+# The web UI's copy of the Builder document schema, which embeds the v1
 # and v2 config schemas, is committed. CI regenerates it and fails when the
 # result differs from what is committed.
 generate-builder-schema:
@@ -84,7 +84,7 @@ clean:
 	$(RM) web/public/docs/index.html
 	$(RM) web/public/favicon*.ico
 	$(RM) web/public/index.html
-	$(RM) web/public/builder-v2-assets.json
+	$(RM) web/public/builder-assets.json
 	$(RM) -r web/public/assets
 	$(RM) web/rbac/known_policy.go
 	go clean -testcache

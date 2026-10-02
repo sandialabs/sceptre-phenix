@@ -874,7 +874,7 @@ describe('failure states', () => {
       pending: 1,
     });
     expect(describeState(state)).toBe(
-      'Could not save: your session has ended. Use Export to keep a copy of the diagram, then sign in again.',
+      'Could not save: your session has ended. Use Download to keep a copy of the diagram, then sign in again.',
     );
     // The same credentials are refused every time: no timer retry.
     expect(timers).toHaveLength(0);
@@ -983,7 +983,7 @@ describe('failure states', () => {
     expect(delays[0]).toBe(RETRY_DELAYS[0]);
   });
 
-  // The server's answer once etcd is out of space (builderV2WebError).
+  // The server's answer once etcd is out of space (builderWebError).
   test('a server out of space says so and keeps retrying', async () => {
     const reason =
       'etcd is out of space: phenix cannot save changes until an administrator frees space (compact and defragment etcd, then clear its NOSPACE alarm)';

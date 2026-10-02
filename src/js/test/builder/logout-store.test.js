@@ -1,4 +1,4 @@
-// Every way the app logs out goes through the warning when Builder v2
+// Every way the app logs out goes through the warning when Builder
 // holds changes the server does not have: the header's Logout (the app
 // store), the idle timeout, and a token the server refuses. On the
 // Builder's page, the user can sign in again there instead.
@@ -287,7 +287,7 @@ test('a token the server calls invalid logs out as an expired one does', async (
   expect(request).toHaveBeenCalledWith('expired');
 });
 
-// Builder v2 asks for the password again in place when the session ends
+// Builder asks for the password again in place when the session ends
 // (see builder/signin.js): nothing logs out, and nothing is cleared.
 describe('signing in again on the Builder page', () => {
   let unhost = () => {};
@@ -330,7 +330,7 @@ describe('signing in again on the Builder page', () => {
   });
 
   test('the router neither logs out nor leaves the page while it is open', () => {
-    const builder = { name: 'builder-v2' };
+    const builder = { name: 'builder' };
     const configs = { name: 'configs' };
 
     // Without the Builder, an expired token logs out as before.

@@ -2,8 +2,10 @@ package builder
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"maps"
 	"os"
 	"path/filepath"
@@ -572,26 +574,220 @@ func TestPublishTopologyChecksIncludes(t *testing.T) { //nolint:paralleltest // 
 	}
 }
 
-// TestPublishTopologyRefusesLegacyTopology never replaces a topology that
-// holds a diagram of the legacy XML Builder.
-func TestPublishTopologyRefusesLegacyTopology(t *testing.T) { //nolint:paralleltest // replaces the phenix store
+// legacyTestDiagram is a diagram of the legacy Builder that draws the node
+// alpha, with the settings of a node phenix accepts.
+func legacyTestDiagram(t *testing.T) string {
+	t.Helper()
+
+	settings := maps.Clone(testDevice("alpha", testInterface("eth0", "EXP", "10.0.0.1")).Device.Spec)
+	settings["device"] = "server"
+	settings["schema"] = "kvm"
+
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatalf("encoding the settings: %v", err)
+	}
+
+	return `<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>` +
+		`<object label="alpha" schemaVars="` + html.EscapeString(string(encoded)) + `" id="2">` +
+		`<mxCell style="image;html=1;image=/server_grey_vm.png" vertex="1" parent="1">` +
+		`<mxGeometry x="200" y="100" width="80" height="80" as="geometry"/></mxCell></object>` +
+		`</root></mxGraphModel>`
+}
+
+// TestPublishTopologyReplacesLegacyDiagram updates a topology the legacy
+// Builder drew as it updates any topology no Builder document was published
+// to: only when asked, and only from a document made from the topology as it
+// is now. The update removes the legacy diagram, says so, and keeps every
+// other annotation.
+func TestPublishTopologyReplacesLegacyDiagram(t *testing.T) { //nolint:paralleltest // replaces the phenix store
 	p := newPublishTest(t)
 
-	doc := publishableDocument("legacy", "alpha")
-	before := p.plainTopology("legacy", doc, store.Annotations{config.BuilderXMLAnnotation: "<mxGraphModel/>"})
+	before := p.plainTopology("legacy", publishableDocument("legacy", "alpha"), store.Annotations{
+		builder.LegacyXMLAnnotation: legacyTestDiagram(t), "owner": "range-team",
+	})
 
-	// Even a document generated from the topology as it is.
-	generated := generatedDocument(t, before, "beta")
+	// The document the Builder converts the topology into, then edited.
+	converted, _, err := builder.FromLegacyTopology(*before)
+	if err != nil {
+		t.Fatalf("FromLegacyTopology returned error: %v", err)
+	}
 
-	for _, update := range []bool{false, true} {
-		refusal := p.refused(generated, PublishTopologyRequest{Name: "legacy", Update: update}, PublishRefusedLegacy)
-		if !strings.Contains(refusal.Message, "legacy XML Builder") {
-			t.Errorf("update %t: message = %q, want it to name the legacy Builder", update, refusal.Message)
+	if alpha := converted.FindDevice("alpha"); alpha == nil || alpha.Position != (builder.Position{X: 400, Y: 240}) {
+		t.Fatalf("alpha = %+v, want it where the legacy diagram has it", alpha)
+	}
+
+	converted.Nodes = append(converted.Nodes, testDevice("beta", testInterface("eth0", "EXP", "10.0.9.2")))
+
+	untouched := func(step string) {
+		t.Helper()
+
+		if after := p.stored("legacy"); !reflect.DeepEqual(after, before) || len(p.documents()) != 0 {
+			t.Fatalf("%s: the legacy topology changed, or a document was stored: %+v", step, after)
 		}
 	}
 
-	if after := p.stored("legacy"); !reflect.DeepEqual(after, before) || len(p.documents()) != 0 {
-		t.Errorf("the legacy topology changed, or a document was stored: %+v", after)
+	// Never without the flag.
+	refusal := p.refused(converted, PublishTopologyRequest{Name: "legacy"}, PublishRefusedExists)
+	if refusal.Message != "topology legacy already exists" {
+		t.Errorf("refusal = %s, want it to say the topology exists", fmtErr(refusal))
+	}
+
+	untouched("without --update")
+
+	// Never from a document that was not made from the topology: one drawn
+	// by hand, one generated from another topology, or one uploaded as a
+	// bare diagram.
+	other := generatedDocument(t, p.plainTopology("other", publishableDocument("other", "alpha"), nil), "beta")
+
+	diagram, err := builder.DecodeLegacy([]byte(legacyTestDiagram(t)))
+	if err != nil {
+		t.Fatalf("DecodeLegacy returned error: %v", err)
+	}
+
+	bare, _, err := builder.FromLegacy(diagram, "legacy")
+	if err != nil {
+		t.Fatalf("FromLegacy returned error: %v", err)
+	}
+
+	for name, doc := range map[string]*builder.Document{
+		"a hand-drawn document":                publishableDocument("legacy", "alpha", "beta"),
+		"a document of another topology":       other,
+		"a diagram that came with no topology": bare,
+	} {
+		refusal := p.refused(doc, PublishTopologyRequest{Name: "legacy", Update: true}, PublishRefusedChanged)
+		if !strings.Contains(refusal.Message, "was not made from the topology as it is now") {
+			t.Errorf("%s: refusal = %s, want it to say what the document was not made from", name, fmtErr(refusal))
+		}
+
+		untouched(name)
+	}
+
+	// A dry run says what the update would do, and writes nothing.
+	planned := p.mustPublish(converted, PublishTopologyRequest{Name: "legacy", Update: true, DryRun: true}, TopologyUpdated)
+
+	const replaced = "The legacy Builder diagram of topology legacy was replaced by this diagram."
+	if !slices.Contains(planned.Warnings, replaced) {
+		t.Errorf("dry run warnings = %q, want %q", planned.Warnings, replaced)
+	}
+
+	untouched("a dry run")
+
+	// The update: the legacy diagram goes, the document reference comes, and
+	// the other annotation stays.
+	publication := p.mustPublish(converted, PublishTopologyRequest{Name: "legacy", Update: true}, TopologyUpdated)
+
+	count := 0
+
+	for _, warning := range publication.Warnings {
+		if warning == replaced {
+			count++
+		}
+	}
+
+	if count != 1 {
+		t.Errorf("warnings = %q, want %q once", publication.Warnings, replaced)
+	}
+
+	after := p.stored("legacy")
+	if _, legacy := after.Metadata.Annotations[builder.LegacyXMLAnnotation]; legacy {
+		t.Error("the published topology still carries the legacy diagram")
+	}
+
+	if got := p.reference("legacy"); got != publication.Reference || after.Metadata.Annotations["owner"] != "range-team" {
+		t.Errorf("annotations = %v, want the document reference %+v and the owner", after.Metadata.Annotations, publication.Reference)
+	}
+
+	if got := hostnames(t, after); !slices.Equal(got, []string{"alpha", "beta"}) {
+		t.Errorf("nodes = %v, want alpha and beta", got)
+	}
+
+	// It is a Builder topology from then on: publishing the same document
+	// again changes nothing and warns of no legacy diagram.
+	again := p.mustPublish(converted, PublishTopologyRequest{Name: "legacy", Update: true}, TopologyUnchanged)
+	if slices.Contains(again.Warnings, replaced) {
+		t.Errorf("warnings of an unchanged topology = %q, want none of a legacy diagram", again.Warnings)
+	}
+}
+
+// TestPublishTopologyKeepsChangedLegacyTopology refuses to replace a
+// topology the legacy Builder drew with a document made from it before
+// someone changed it: its nodes, or its legacy diagram, which the update
+// would remove unseen.
+func TestPublishTopologyKeepsChangedLegacyTopology(t *testing.T) { //nolint:paralleltest // replaces the phenix store
+	for name, change := range map[string]func(stored *store.Config){
+		"its nodes": func(stored *store.Config) {
+			stored.Spec["nodes"] = append(stored.Spec["nodes"].([]any), testDevice("manual").Device.Spec)
+		},
+		"its legacy diagram": func(stored *store.Config) {
+			stored.Metadata.Annotations[builder.LegacyXMLAnnotation] = strings.Replace(
+				legacyTestDiagram(t), `x="200"`, `x="640"`, 1)
+		},
+		"its legacy diagram, removed": func(stored *store.Config) {
+			delete(stored.Metadata.Annotations, builder.LegacyXMLAnnotation)
+		},
+	} {
+		t.Run(name, func(t *testing.T) { //nolint:paralleltest // replaces the phenix store
+			p := newPublishTest(t)
+
+			stored := p.plainTopology("legacy", publishableDocument("legacy", "alpha"), store.Annotations{
+				builder.LegacyXMLAnnotation: legacyTestDiagram(t),
+			})
+
+			converted, _, err := builder.FromLegacyTopology(*stored)
+			if err != nil {
+				t.Fatalf("FromLegacyTopology returned error: %v", err)
+			}
+
+			change(stored)
+
+			if err := store.Update(stored); err != nil {
+				t.Fatalf("editing the topology returned error: %v", err)
+			}
+
+			edited := p.stored("legacy")
+
+			p.refused(converted, PublishTopologyRequest{Name: "legacy", Update: true}, PublishRefusedChanged)
+
+			if after := p.stored("legacy"); !reflect.DeepEqual(after, edited) || len(p.documents()) != 0 {
+				t.Errorf("the changed legacy topology was written, or a document was stored: %+v", after)
+			}
+		})
+	}
+}
+
+// TestPublishTopologyRemovesUnreadableLegacyDiagram updates a topology whose
+// legacy diagram cannot be read, from the document made from it: nothing of
+// the diagram is in the document, so the warning says it was removed, not
+// replaced.
+func TestPublishTopologyRemovesUnreadableLegacyDiagram(t *testing.T) { //nolint:paralleltest // replaces the phenix store
+	p := newPublishTest(t)
+
+	stored := p.plainTopology("legacy", publishableDocument("legacy", "alpha"), store.Annotations{
+		builder.LegacyXMLAnnotation: "PG14R3JhcGhNb2RlbC8+", "owner": "range-team",
+	})
+
+	converted, warnings, err := builder.FromLegacyTopology(*stored)
+	if err != nil {
+		t.Fatalf("FromLegacyTopology returned error: %v", err)
+	}
+
+	if len(warnings) == 0 || !strings.HasPrefix(warnings[0], "The legacy diagram of topology legacy could not be read (") {
+		t.Fatalf("warnings = %q, want the diagram reported as not read", warnings)
+	}
+
+	publication := p.mustPublish(converted, PublishTopologyRequest{Name: "legacy", Update: true}, TopologyUpdated)
+
+	const removed = "The legacy Builder diagram of topology legacy could not be read and was removed."
+	if !slices.Contains(publication.Warnings, removed) ||
+		slices.ContainsFunc(publication.Warnings, func(warning string) bool { return strings.Contains(warning, "replaced") }) {
+		t.Errorf("warnings = %q, want %q and nothing of a replaced diagram", publication.Warnings, removed)
+	}
+
+	annotations := p.stored("legacy").Metadata.Annotations
+	if _, legacy := annotations[builder.LegacyXMLAnnotation]; legacy || annotations["owner"] != "range-team" ||
+		annotations[DocumentAnnotation] == "" {
+		t.Errorf("annotations = %v, want the diagram gone, the owner kept and the document reference", annotations)
 	}
 }
 
@@ -940,7 +1136,7 @@ func TestPublishTopologyWarnsOfWhatIsNotPublished(t *testing.T) { //nolint:paral
 		return publication
 	}
 
-	examples := filepath.Join("..", "..", "..", "..", "docs", "content", "builder-v2", "examples")
+	examples := filepath.Join("..", "..", "..", "..", "docs", "content", "builder", "examples")
 
 	// The docs example with a scenario, and an included topology that is not
 	// stored here.

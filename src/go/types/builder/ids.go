@@ -42,6 +42,12 @@ func NoteNodeID(key string) string {
 	return deterministicID("note", key)
 }
 
+// LegacyNodeID returns the deterministic node ID of a switch or a group made
+// from a cell of a legacy Builder diagram, keyed by the cell's id there.
+func LegacyNodeID(kind NodeKind, cellID string) string {
+	return deterministicID("legacy", string(kind), cellID)
+}
+
 // InterfaceHandleID returns the deterministic handle ID for an interface of a
 // device. The index is included so unnamed interfaces still receive stable,
 // unique handles.

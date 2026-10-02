@@ -9,7 +9,12 @@
 // A [Document] carries three kinds of information:
 //
 //   - Canvas presentation: node positions/sizes, parent groups, free notes,
-//     viewport, and grid settings.
+//     viewport, and grid settings; the colors of nodes, the line style of
+//     networks and edges, and the description, border and icon of groups;
+//     custom icons ([Icon]), which the document carries as PNG data named
+//     by its SHA-256 ([IconID]), so that it needs nothing else to show
+//     them; and device templates ([Template]) saved with the diagram. None
+//     of it is ever written to a config.
 //   - phenix semantics: the complete node spec of every device, canonical
 //     networks (VLANs) with optional integer aliases, and the edges that bind
 //     device interfaces to networks.
@@ -32,7 +37,7 @@
 // 5 UUIDs inside [NamespaceUUID], while the front end mints new identifiers
 // as random (version 4) UUIDs.
 //
-// [FromConfig] also records [SourceDigest] and the source config's
+// [FromConfig] also records [ImportDigest] and the source config's
 // metadata.updated on the document's [Source], so a publish path can detect a
 // working copy built from a stale source config.
 //
@@ -52,6 +57,28 @@
 // both. [CheckIncludes] resolves includes the same way for a publish, and
 // reports included topologies that cannot be read, hostnames the including
 // topology defines too, and hostnames phenix refuses in an experiment.
+//
+// A document generated from a topology lists the included topologies whose
+// devices it does not hold on [Source.UnresolvedIncludes]. With
+// [WithCombinedIncludes], [FromConfig] makes the included devices the
+// document's own instead ([Document.CombineIncludes]) and keeps only those
+// unresolved includes, so the published topology holds every node it could
+// read. [Document.Detach] unlinks a document from the config it was
+// generated from and renames it, for an import that makes a copy or
+// combines: its source is then manual, and publishing it never updates
+// that config.
+//
+// The Builder before this one kept each diagram as mxGraph XML in the
+// "builder-xml" annotation of its topology ([LegacyXMLAnnotation]).
+// [DecodeLegacy] reads such a diagram, which is untrusted input: plain XML
+// only, within fixed bounds, with no DOCTYPE and no entity. [FromLegacyTopology]
+// then generates the document of a topology that carries one ([HasLegacyDiagram]):
+// the document [FromConfig] generates, with the diagram's positions, switches,
+// VLAN IDs, groups and notes laid over it, the topology's spec being the
+// truth for every node. [FromLegacy] converts a diagram that comes without a
+// topology, from the node settings the diagram itself holds; its document's
+// source is manual. Both are as deterministic as [FromConfig], and both
+// report what a diagram held that a document has no place for.
 //
 // Two levels of validation are available:
 //
@@ -79,8 +106,16 @@
 // enforced here; they belong to the API/transport layer. This package enforces
 // structural and semantic correctness only, and the bounds on the document
 // name, which the draft service records as a title, on the users the header
-// names, which are bounded like the owner of a draft, and on the source config
-// annotations a document carries only to show them.
+// names, which are bounded like the owner of a draft, on the source config
+// annotations a document carries only to show them, and on the custom icons
+// and the templates the editor adds ([MaxDocumentIcons], [MaxIconBytes],
+// [MaxIconPixels], [MaxTemplates], [MaxTemplateDeviceBytes]), which it
+// checks by the same rules before it saves.
+//
+// A custom icon is untrusted image data that other users' browsers draw. The
+// only form accepted is a small PNG holding nothing but its pixels
+// ([ValidateIconPNG]); [NormalizeIconPNG] makes one from any PNG by decoding
+// and encoding it again. Nothing here reads SVG or any other format.
 //
 // The header's author, createdAt, updatedBy and updatedAt are ordinary
 // content: this package checks their form ([MaxUserBytes], [TimeLayout]) and

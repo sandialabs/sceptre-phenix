@@ -149,14 +149,61 @@ export function useEntryChanged(control) {
   return (key) => Boolean(unref(changed)?.(control.value.path, key));
 }
 
-// Provided by BuilderInspector: how the canvas draws a Color field's color,
-// for the field's chip and swatches: a network's (see drawnNetworkColor),
-// or another element's (see drawnColor). Renderers rendered anywhere else
-// draw it as chosen.
+// Provided by BuilderInspector: how the canvas draws a color field's color,
+// given the color and the field's data path, for the field's chip and
+// swatches: a network's (see drawnNetworkColor), or any other (see
+// drawnColor). Renderers rendered anywhere else draw it as chosen.
 export const INSPECTOR_DRAWN_COLOR = Symbol('inspector-drawn-color');
 
 export function useInspectorDrawnColor() {
   return inject(INSPECTOR_DRAWN_COLOR, () => ref(drawnColor), true);
+}
+
+// Provided by BuilderInspector: the custom icons the form's icon field
+// (InspectorIconControl) and its dialog work with, so a form that edits
+// something else than the open diagram can supply its own:
+//
+//   entry(id)                 the icon to show for a field's value, as
+//                             {name?, data}, or undefined when it is unknown
+//   shelve(id, {name, data})  makes an icon known before a field is given
+//                             its id, so the edit that applies the field
+//                             can copy it into the document
+//   diagram()                 the icons the diagram carries, as
+//                             [{id, name, data}]
+//   full(id)                  whether the diagram cannot take this icon: it
+//                             holds as many as a document may, and not it
+//
+// Renderers rendered anywhere else know no icon.
+export const INSPECTOR_ICONS = Symbol('inspector-icons');
+
+const NO_ICONS = Object.freeze({
+  entry: () => undefined,
+  shelve: () => {},
+  diagram: () => [],
+  full: () => false,
+});
+
+export function useInspectorIcons() {
+  return inject(INSPECTOR_ICONS, NO_ICONS);
+}
+
+// Provided by BuilderInspector: the user's icon library on the server, for
+// the Custom icons dialog (see iconLibrary.js): list(), upload({name,
+// data}), remove(id) and failure(error), which says why one of them failed.
+// A dialog opened anywhere else has no library to reach.
+export const INSPECTOR_ICON_LIBRARY = Symbol('inspector-icon-library');
+
+const NO_LIBRARY_TEXT = 'The icon library is not available here.';
+const noLibrary = () => Promise.reject(new Error(NO_LIBRARY_TEXT));
+const NO_LIBRARY = Object.freeze({
+  list: noLibrary,
+  upload: noLibrary,
+  remove: noLibrary,
+  failure: () => NO_LIBRARY_TEXT,
+});
+
+export function useInspectorIconLibrary() {
+  return inject(INSPECTOR_ICON_LIBRARY, NO_LIBRARY);
 }
 
 /**

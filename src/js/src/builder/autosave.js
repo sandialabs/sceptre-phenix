@@ -80,11 +80,11 @@ function blockedMessage(kind, reason) {
     case 'invalid':
       return `Could not save your last change. ${why} Fix the diagram and it saves again.`;
     case 'missing':
-      return `Could not save. ${why} Use Export to keep a copy of the diagram.`;
+      return `Could not save. ${why} Use Download to keep a copy of the diagram.`;
     case 'pruned':
       return 'Could not save your last undo or redo: the server no longer keeps that step. Your next edit saves the diagram as it is shown.';
     default:
-      return `Could not save. ${why} Remove part of the diagram, or use Export to keep a copy.`;
+      return `Could not save. ${why} Remove part of the diagram, or use Download to keep a copy.`;
   }
 }
 
@@ -1031,7 +1031,7 @@ export function createAutosave(options = {}) {
           signInNeeded: true,
           message: signInHere()
             ? 'Not saved: your session has ended. Sign in again to save your changes.'
-            : 'Could not save: your session has ended. Use Export to keep a copy of the diagram, then sign in again.',
+            : 'Could not save: your session has ended. Use Download to keep a copy of the diagram, then sign in again.',
         });
       }
 

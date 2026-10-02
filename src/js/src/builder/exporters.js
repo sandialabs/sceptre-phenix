@@ -1,4 +1,4 @@
-// Export helpers: JSON, YAML, the Topology config and images.
+// The files Download saves: JSON, YAML, the Topology config and images.
 //
 // The geometry math is pure and unit tested; the DOM/rasterization side takes
 // injected dependencies (html-to-image, file-saver, getComputedStyle) so tests
@@ -29,7 +29,7 @@ export function toYAMLString(doc) {
 }
 
 /**
- * Filesystem-safe export file name.
+ * Filesystem-safe name of a downloaded file.
  *
  * @param {object} doc
  * @param {string} extension without the dot
@@ -46,8 +46,8 @@ export function exportFileName(doc, extension) {
 }
 
 /**
- * Bounding box covering every node in the document, padded, so image exports
- * always include the whole diagram rather than the visible viewport.
+ * Bounding box covering every node in the document, padded, so an image
+ * always includes the whole diagram rather than the visible viewport.
  *
  * @param {object} doc
  * @param {number} [padding]
@@ -106,12 +106,13 @@ export function computeExportViewport(bounds, options = {}) {
 /**
  * Editing affordances that an image of the diagram leaves out: connection
  * handles (a device's "+" new-interface handle is one too), a
- * connection's pointer hit area and keyboard focus band, and the marks and
- * text of what the diagram checks found.
+ * connection's pointer hit area and keyboard focus band, the marks and
+ * text of what the diagram checks found, and the hidden text of a node's
+ * info tooltip.
  */
 const EXPORT_EXCLUDED_SELECTOR =
   '.vue-flow__handle, .builder-edge__hit, .builder-edge__focus, ' +
-  '.builder-node__issue, .builder-node__issue-text';
+  '.builder-node__issue, .builder-node__issue-text, .builder-node__info';
 
 /**
  * Classes that mark a selected node, connection or connection label: the
@@ -121,8 +122,8 @@ const EXPORT_EXCLUDED_SELECTOR =
 const SELECTION_CLASSES = ['is-selected', 'selected'];
 
 /**
- * SVG presentation properties copied inline before an image export, so a
- * shape keeps the paint builder.css gives it by class.
+ * SVG presentation properties copied inline before an image is rendered, so
+ * a shape keeps the paint builder.css gives it by class.
  */
 const SVG_PAINT_PROPERTIES = [
   'display',
@@ -140,7 +141,7 @@ const SVG_PAINT_PROPERTIES = [
 ];
 
 /**
- * Inline style of the element that holds the export copy: it covers the
+ * Inline style of the element that holds an image's copy: it covers the
  * canvas's pane, as the pane does, but is transparent and lets the pointer
  * through.
  */
@@ -221,7 +222,7 @@ export function exportCopy(element) {
  *
  * html-to-image copies an <svg> whole (cloneNode(true)) and inlines computed
  * styles on the <svg> itself only, so a connection line, whose stroke and
- * width come from builder.css classes, was exported with no stroke at all.
+ * width come from builder.css classes, was drawn with no stroke at all.
  *
  * @param {Element} element
  * @param {(el: Element) => CSSStyleDeclaration} computedStyle
@@ -240,7 +241,7 @@ export function inlineSvgPaint(element, computedStyle) {
  * Renders the canvas's diagram to an image and saves it.
  *
  * `element` is the Vue Flow pane that carries the live pan and zoom. What is
- * rendered is a copy of it (see exportCopy) whose transform is the export's
+ * rendered is a copy of it (see exportCopy) whose transform is the image's
  * own, so the image is the same however the canvas is panned or zoomed.
  *
  * @param {object} params element, doc, format ('png'|'svg'), toPng, toSvg,
@@ -261,7 +262,7 @@ export async function exportImage(params) {
   } = params;
 
   if (!element) {
-    throw new Error('No canvas element to export.');
+    throw new Error('No canvas element to download.');
   }
 
   const viewport = computeExportViewport(documentBounds(doc));
@@ -329,7 +330,7 @@ export async function saveTopologyYAML(params) {
 }
 
 /**
- * What the Export dialog says once Topology YAML is saved: the file, what
+ * What the Download dialog says once Topology YAML is saved: the file, what
  * the projection left out or changed, and why publishing the topology would
  * be refused, which the file does not show.
  *

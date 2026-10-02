@@ -25,20 +25,20 @@ configuration resources, experiments, VMs, images, VLANs, settings, apps,
 SCORCH, minimega integration, or cyber-range workflows, read
 [`skills/phenix/SKILL.md`](skills/phenix/SKILL.md). For `phenix image`, `Image`
 configs, build scripts, overlays, or vmdb2 work, also read
-[`skills/phenix-image/SKILL.md`](skills/phenix-image/SKILL.md). For Builder v2,
-the `builder-v2` web topology editor (its routes, drafts, sharing, publishing,
-the `phenix builder` command, or its code in `src/go/api/builder/`,
-`src/go/types/builder/`, `src/go/cmd/builder.go`,
-`src/go/web/builder_v2*.go`, `src/js/src/builder/`,
-`src/js/src/components/builder/`, or `src/js/src/views/BuilderV2.vue`), also
-read [`skills/phenix/references/builder-v2.md`](skills/phenix/references/builder-v2.md).
+[`skills/phenix-image/SKILL.md`](skills/phenix-image/SKILL.md).
+For the Builder, the web topology editor (its routes, drafts, sharing,
+publishing, the `phenix builder` command, or its code in
+`src/go/api/builder/`, `src/go/types/builder/`, `src/go/cmd/builder.go`,
+`src/go/web/builder*.go`, `src/js/src/builder/`,
+`src/js/src/components/builder/`, or `src/js/src/views/Builder.vue`), also
+read [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md).
 Use code as final authority when guidance differs, and update the skills when
 behavior changes.
 
 `SKILL.md` stays broad and always loaded; deep, area-specific material lives in
 `skills/phenix/references/` and is read only when that area is in scope — for
 example [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md)
-for the graphical topology Builder. Put new detail in the matching reference
+for the Builder. Put new detail in the matching reference
 file rather than growing `SKILL.md`, and leave a one-line pointer to it from
 `SKILL.md`.
 
@@ -53,31 +53,13 @@ file rather than growing `SKILL.md`, and leave a one-line pointer to it from
   shared helpers. `router.js`, `store.js`, and `main.js` wire the app.
 - The Vite server proxies `/api/v1`, `/version`, and `/features` to
   `localhost:3000`. Root builds copy `src/js/dist/`, including the build's
-  `builder-v2-assets.json` and the `.br` and `.gz` copies beside Builder v2's
+  `builder-assets.json` and the `.br` and `.gz` copies beside Builder's
   files, into `src/go/web/public/`.
-- `src/go/web/public/grapheditor/` is the Topology Builder, and is unrelated to
-  the Vue app above. `js/`, `utils/`, `stencils/`, `open.html` and `index.html`
-  are the phēnix-modified draw.io GraphEditor and are the files a Builder change
-  normally touches. `src/` is the vendored mxGraph library.
-- **mxGraph is no longer maintained.** JGraph archived the project in 2020, and
-  4.2.2 — the version vendored here — is its final release, so there are no
-  upstream fixes to wait for or upgrade to. Its successor, maxGraph, is a
-  TypeScript rewrite with a different API and ships no GraphEditor, so adopting
-  it would mean rewriting the editor rather than bumping a dependency.
-- Because of that, **phēnix patches the vendored library under `src/` when its
-  own needs require it**, rather than waiting for a fix that will never come.
-  One such change exists today: `src/js/io/mxObjectCodec.js` drops an image's
-  directory when encoding a diagram. Keep these edits minimal, and mark each
-  with a `phenix:` comment saying what upstream did and why it changed.
-- Prefer changing the phēnix-owned editor in `js/` when either would work; the
-  vendored tree is the harder place to review. `js/Editor.js` and
-  `js/EditorUi.js` already carry phēnix changes of this kind — for example the
-  `hideCloseImage` argument on `Dialog`, which lets a dialog keep
-  click-outside-to-close without drawing the corner close image.
-- `src/go/web/public/` is excluded from every formatting and lint hook in
-  `prek.toml`, so `make check` will not catch anything under it. It is embedded
-  by `//go:embed all:public` in `src/go/web/assets.go`, so a Builder change only
-  appears after the Go binary is rebuilt.
+- `src/go/web/public/` holds what `//go:embed all:public` in
+  `src/go/web/assets.go` embeds: the copied UI build and the bundled noVNC
+  and xterm.js. It is excluded from every formatting and lint hook in
+  `prek.toml`, so `make check` will not catch anything under it, and a
+  change there only appears after the Go binary is rebuilt.
 
 ## Essential Runtime Contracts
 
@@ -136,8 +118,7 @@ When changing a capability, inspect every applicable surface:
 | Protobuf | `.proto`, generated files, consumers, and tests |
 | RBAC role or policy | Policy generation, migrations, authorization surfaces, and migration tests |
 | minimega command | minimega API/source behavior and focused tests |
-| Topology Builder behavior | `src/go/web/builder.go`, Builder routes in `src/go/web/server.go`, the editor under `src/go/web/public/grapheditor/js/`, the embedded schemas in `.../grapheditor/utils/schemas/`, and [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md) |
-| Builder v2 behavior | `src/go/api/builder/`, `src/go/types/builder/` (then `make generate` for the committed schema bundle), `src/go/web/builder_v2*.go`, `src/go/cmd/builder.go` (`phenix builder publish`), `src/js/src/builder/`, `src/js/src/components/builder/`, `src/js/src/views/BuilderV2.vue`, the `builder-*` e2e specs, and [`skills/phenix/references/builder-v2.md`](skills/phenix/references/builder-v2.md) |
+| Builder behavior | `src/go/api/builder/`, `src/go/types/builder/` (then `make generate` for the committed schema bundle), `src/go/web/builder*.go`, `src/go/cmd/builder.go` (`phenix builder publish`), `src/js/src/builder/`, `src/js/src/components/builder/`, `src/js/src/views/Builder.vue`, the `builder-*` e2e specs, and [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md) |
 
 Preserve v1/v2 config upgrades, persisted BoltDB/etcd data, RBAC migrations, and
 public API compatibility unless a breaking change is deliberate and documented.
@@ -167,8 +148,7 @@ and pass it explicitly, for example
 | Config interfaces and fields | `src/go/types/interfaces/`, `src/go/types/version/` |
 | YAML config schemas | `src/go/types/version/schemas/{v0,v1,v2}.yaml` |
 | CLI and REST implementation | `src/go/cmd/`, `src/go/web/server.go` |
-| Topology Builder | [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md), `src/go/web/builder.go`, `src/go/web/public/grapheditor/` |
-| Builder v2 | [`skills/phenix/references/builder-v2.md`](skills/phenix/references/builder-v2.md), `src/go/api/builder/`, `src/go/web/builder_v2*.go`, `src/js/src/builder/` |
+| Builder | [`skills/phenix/references/builder.md`](skills/phenix/references/builder.md), `src/go/api/builder/`, `src/go/web/builder*.go`, `src/js/src/builder/` |
 | Narrative docs source | [`docs/`](docs/) |
 | Internet-hosted narrative docs | [phenix.sceptre.dev](https://phenix.sceptre.dev/latest/) |
 | minimega commands and behavior | [API docs](https://sandia-minimega.github.io/minimega/reference/minimega/), [source](https://github.com/sandia-minimega/minimega) |

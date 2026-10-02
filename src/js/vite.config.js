@@ -4,7 +4,7 @@ import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import vueDevTools from 'vite-plugin-vue-devtools';
 
-import builderV2Assets from './plugins/builder-v2-assets.js';
+import builderAssets from './plugins/builder-assets.js';
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -22,11 +22,11 @@ export default defineConfig(({ mode }) => {
     plugins: [
       vue(),
       vueDevTools(),
-      // Compresses the files only Builder v2 loads, for the server
-      // (src/go/web/builder_v2_assets.go), and lists them.
-      builderV2Assets({
+      // Compresses the files only Builder loads, for the server
+      // (src/go/web/builder_assets.go), and lists them.
+      builderAssets({
         view: fileURLToPath(
-          new URL('./src/views/BuilderV2.vue', import.meta.url),
+          new URL('./src/views/Builder.vue', import.meta.url),
         ),
       }),
     ],

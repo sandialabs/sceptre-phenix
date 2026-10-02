@@ -1,4 +1,4 @@
-// Builder v2 import, export, generate and drafts-landing flows.
+// Builder import, upload, download and drafts-landing flows.
 //
 // Every draft the page creates is removed by the `tracker` fixture. Drafts,
 // topologies and experiments this spec creates through the API are registered
@@ -45,7 +45,7 @@ function watchDraftCreates(page) {
   page.on('request', (request) => {
     if (
       request.method() === 'POST' &&
-      new URL(request.url()).pathname.endsWith(`${API}/builder-v2/drafts`)
+      new URL(request.url()).pathname.endsWith(`${API}/builder/drafts`)
     ) {
       creates.push(request.url());
     }
@@ -85,6 +85,14 @@ function topologyNode(hostname, interfaces, extra = {}) {
   };
 }
 
+// Vue Flow's wrapper around the diagram's one switch: the focusable element,
+// which the switch's info (its connected devices) describes.
+async function switchWrapper(page, builder) {
+  const id = await builder.nodes('switch').getAttribute('data-node-id');
+
+  return page.locator(`.vue-flow__node[data-id="${id}"]`);
+}
+
 function topologyConfig(name, nodes) {
   return {
     apiVersion: API_VERSION,
@@ -106,10 +114,12 @@ function sharedVlanNodes() {
 }
 
 // Publishes a one-device (pub-host), one-switch diagram as topology `name`,
-// generated from an uploaded config the way Generate builds it. Returns the
-// topology name, the source draft and the published document's id.
+// generated from a config file the way Import builds it. Returns the
+// topology name, the source draft and the published document's id. The
+// draft is deleted once it has published, so the diagram opens in a new
+// draft, as it does for a user who did not publish it.
 async function publishDiagram(request, tracker, name) {
-  const generated = await request.post(`${API}/builder-v2/generate`, {
+  const generated = await request.post(`${API}/builder/generate`, {
     data: {
       content: JSON.stringify(
         topologyConfig(name, [topologyNode('pub-host', [['eth0', 'EXP']])]),
@@ -121,6 +131,7 @@ async function publishDiagram(request, tracker, name) {
 
   const published = await publishTopology(request, tracker, name, document, {
     sourceToken: `uploaded/Topology/${name}`,
+    keepDraft: false,
   });
 
   return { name, ...published };
@@ -272,7 +283,7 @@ async function diagramOnCanvas(page) {
   });
 }
 
-// Soft-checks an image export, as the browser draws it, against `diagram`
+// Soft-checks a downloaded image, as the browser draws it, against `diagram`
 // (from diagramOnCanvas): the line is there in its colour, still meets its
 // nodes with the handles left out, and runs left of the switch; and the
 // device has its plain fill, not the selected one. `kind` is 'PNG' or
@@ -332,7 +343,7 @@ async function expectDiagramInImage(
   }
 }
 
-// Soft-checks the markup of an SVG export against `diagram` (from
+// Soft-checks the markup of a downloaded SVG against `diagram` (from
 // diagramOnCanvas): the file has no stylesheet, so the line carries its
 // stroke and width inline. The editing affordances (hit area, focus band,
 // connection handles) and the selection, by class or as a pressed toggle
@@ -394,7 +405,7 @@ async function download(page, trigger) {
   };
 }
 
-function exportFileName(title, extension) {
+function downloadFileName(title, extension) {
   const base = title
     .trim()
     .toLowerCase()
@@ -404,10 +415,11 @@ function exportFileName(title, extension) {
   return `${base || 'topology'}.${extension}`;
 }
 
-// The landing's Import button opens the Generate dialog, and its Upload
-// button the Import dialog.
-async function openGenerate(page) {
-  await page.getByTestId('drafts-generate').click();
+// The landing's Import button opens the Import dialog, and its Upload
+// button the Upload dialog. Each is found by its title, so a test id that
+// opened the other one fails here.
+async function openImport(page) {
+  await page.getByTestId('drafts-import').click();
   const dialog = page.getByRole('dialog', {
     name: 'Import topology or experiment',
   });
@@ -416,39 +428,39 @@ async function openGenerate(page) {
   return dialog;
 }
 
-async function openImport(page) {
-  await page.getByTestId('drafts-import').click();
+async function openUpload(page) {
+  await page.getByTestId('drafts-upload').click();
   const dialog = page.getByRole('dialog', { name: 'Upload diagram' });
   await expect(dialog).toBeVisible();
 
   return dialog;
 }
 
-// Uploads `content` through Generate > Uploaded config, submits it and
-// returns the dialog and the POST /builder-v2/generate response.
-async function generateFromUpload(page, content, fileName = 'topology.yaml') {
-  const dialog = await openGenerate(page);
-  await dialog.getByLabel('Uploaded config').check();
-  await dialog.getByTestId('generate-file').setInputFiles({
+// Sends `content` through Import > Config file, submits it and returns the
+// dialog and the POST /builder/generate response.
+async function importFromFile(page, content, fileName = 'topology.yaml') {
+  const dialog = await openImport(page);
+  await dialog.getByLabel('Config file', { exact: true }).check();
+  await dialog.getByTestId('import-file').setInputFiles({
     name: fileName,
     mimeType: fileName.endsWith('.json')
       ? 'application/json'
       : 'application/yaml',
     buffer: Buffer.from(content),
   });
-  await expect(dialog.getByTestId('generate-submit')).toBeEnabled();
+  await expect(dialog.getByTestId('import-submit')).toBeEnabled();
 
-  const generated = waitForApi(page, 'POST', '/builder-v2/generate');
-  await dialog.getByTestId('generate-submit').click();
+  const generated = waitForApi(page, 'POST', '/builder/generate');
+  await dialog.getByTestId('import-submit').click();
 
   return { dialog, response: await generated };
 }
 
-// Generate stops on its warnings, and creates the draft only when the user
+// Import stops on its warnings, and creates the draft only when the user
 // continues past them. Continues when there are warnings; otherwise the
 // dialog has closed by itself.
 async function continuePastWarnings(dialog) {
-  const next = dialog.getByTestId('generate-continue');
+  const next = dialog.getByTestId('import-continue');
   await expect
     .poll(async () => (await next.isVisible()) || !(await dialog.isVisible()))
     .toBe(true);
@@ -468,17 +480,17 @@ function errorBanner(page) {
   return page.getByTestId('builder-error').getByRole('alert');
 }
 
-// --- export and import -------------------------------------------------------
+// --- download and upload -----------------------------------------------------
 
-test.describe('export and import', () => {
+test.describe('download and upload', () => {
   test(
-    'exports JSON, YAML, Topology YAML, GEXF, PNG and SVG, and re-imports the Builder files as new drafts',
+    'downloads JSON, YAML, Topology YAML, GEXF, PNG and SVG, and uploads the Builder files as new drafts',
     {
       tag: '@cross-browser',
     },
     async ({ page, request, builder, issues }, testInfo) => {
       await builder.open();
-      const title = uniqueName(testInfo, 'export');
+      const title = uniqueName(testInfo, 'download');
       const original = await buildConnectedDiagram(builder, title);
       const summary = await builder.summary.textContent();
       const saved = await builder.serverDocument(original);
@@ -499,7 +511,7 @@ test.describe('export and import', () => {
       expect.soft(dark.stroke, 'the dark line colour').not.toBe(light.stroke);
 
       // An image shows the diagram, not the editor's view of it: while the
-      // images export, the canvas is zoomed in, which pans it too, and has
+      // images are made, the canvas is zoomed in, which pans it too, and has
       // everything selected.
       await flowNode(builder, 'device').focus();
       await page.keyboard.press('ControlOrMeta+a');
@@ -513,53 +525,115 @@ test.describe('export and import', () => {
         page.locator('.vue-flow__transformationpane'),
       ).not.toHaveAttribute('style', /translate\(0px, 0px\) scale\(1\)/);
 
-      const dialog = await builder.openDialog('export');
+      const dialog = await builder.openDialog('download');
       const status = dialog.getByRole('status');
-      const exportError = dialog.getByTestId('export-error');
-      // The status region is there, empty, before the first export, so
+      const downloadError = dialog.getByTestId('download-error');
+      // The status region is there, empty, before the first download, so
       // screen readers announce the first message too.
       await expect.soft(status).toHaveText('');
+
+      await test.step('the formats are in two rows, and Gephi links to its project', async () => {
+        const boxes = {};
+        for (const format of [
+          'json',
+          'yaml',
+          'topology-yaml',
+          'png',
+          'svg',
+          'gexf',
+        ]) {
+          boxes[format] = await dialog
+            .getByTestId(`download-${format}`)
+            .boundingBox();
+        }
+        // The documents and the config, then the pictures and the graph:
+        // each row's buttons share a top, in order, and the second row
+        // starts under the first.
+        for (const row of [
+          ['json', 'yaml', 'topology-yaml'],
+          ['png', 'svg', 'gexf'],
+        ]) {
+          expect
+            .soft(
+              row.map((format) =>
+                Math.round(boxes[format].y - boxes[row[0]].y),
+              ),
+              `tops of ${row}`,
+            )
+            .toEqual([0, 0, 0]);
+          expect
+            .soft(
+              row.map((format) => boxes[format].x),
+              `${row} left to right`,
+            )
+            .toEqual(
+              row.map((format) => boxes[format].x).sort((a, b) => a - b),
+            );
+        }
+        expect
+          .soft(boxes.png.y, 'PNG is under Builder JSON')
+          .toBeGreaterThanOrEqual(boxes.json.y + boxes.json.height);
+        expect.soft(boxes.png.x, 'the rows start together').toBe(boxes.json.x);
+
+        const link = dialog.getByTestId('download-gephi-link');
+        await expect
+          .soft(link)
+          .toHaveAccessibleName('Gephi (opens in a new tab)');
+        await expect.soft(link).toHaveAttribute('href', 'https://gephi.org/');
+        await expect.soft(link).toHaveAttribute('target', '_blank');
+        await expect.soft(link).toHaveAttribute('rel', /\bnoopener\b/);
+        await expect.soft(link).toHaveAttribute('rel', /\bnoreferrer\b/);
+        await expect.soft(link).toHaveCSS('text-decoration-line', 'underline');
+        // A Tab stop after the format buttons, before Close.
+        await dialog.getByTestId('download-gexf').focus();
+        await page.keyboard.press('Tab');
+        await expect.soft(link).toBeFocused();
+        await page.keyboard.press('Tab');
+        await expect
+          .soft(dialog.getByRole('button', { name: 'Close', exact: true }))
+          .toBeFocused();
+      });
 
       // The file name, the status line and the absence of an error, after
       // each download.
       async function expectSaved(file, extension) {
-        const fileName = exportFileName(title, extension);
+        const fileName = downloadFileName(title, extension);
         expect.soft(file.name, `${extension} file name`).toBe(fileName);
         await expect.soft(status).toHaveText(`Saved ${fileName}.`);
         await expect
-          .soft(exportError, `${extension} export error`)
+          .soft(downloadError, `${extension} download error`)
           .toHaveCount(0);
       }
 
       const json =
-        await test.step('JSON export is the saved document', async () => {
+        await test.step('the JSON download is the saved document', async () => {
           const file = await download(page, () =>
-            dialog.getByTestId('export-json').click(),
+            dialog.getByTestId('download-json').click(),
           );
           await expectSaved(file, 'json');
 
-          const exported = JSON.parse(file.buffer.toString('utf8'));
-          expect.soft(exported.$schema).toBe(SCHEMA_URI);
-          expect.soft(exported.revision).toBe(1);
-          expect.soft(exported.name).toBe(title);
+          const downloaded = JSON.parse(file.buffer.toString('utf8'));
+          expect.soft(downloaded.$schema).toBe(SCHEMA_URI);
+          expect.soft(downloaded.revision).toBe(1);
+          expect.soft(downloaded.name).toBe(title);
           expect
-            .soft(exported.nodes.map((node) => node.kind).sort())
+            .soft(downloaded.nodes.map((node) => node.kind).sort())
             .toEqual(['device', 'switch']);
           expect
-            .soft(exported.networks.map((network) => network.name))
+            .soft(downloaded.networks.map((network) => network.name))
             .toEqual(['EXP']);
-          expect.soft(exported.edges).toHaveLength(1);
-          expect.soft(exported.id).toBe(saved.id);
-          expect.soft(exported.nodes).toEqual(saved.nodes);
-          expect.soft(exported.edges).toEqual(saved.edges);
+          expect.soft(downloaded.edges).toHaveLength(1);
+          expect.soft(downloaded.id).toBe(saved.id);
+          expect.soft(downloaded.nodes).toEqual(saved.nodes);
+          expect.soft(downloaded.edges).toEqual(saved.edges);
 
-          return { file, exported };
+          return { file, downloaded };
         });
 
       const yaml =
-        await test.step('YAML export has the document keys', async () => {
+        await test.step('the YAML download has the document keys', async () => {
           const file = await download(page, () =>
-            dialog.getByTestId('export-yaml').click(),
+            dialog.getByTestId('download-yaml').click(),
           );
           await expectSaved(file, 'yaml');
 
@@ -580,13 +654,13 @@ test.describe('export and import', () => {
           return file;
         });
 
-      await test.step('Topology YAML export is the topology Publish would write', async () => {
+      await test.step('the Topology YAML download is the topology Publish would write', async () => {
         const file = await download(page, () =>
-          dialog.getByTestId('export-topology-yaml').click(),
+          dialog.getByTestId('download-topology-yaml').click(),
         );
         await expectSaved(file, 'topology.yaml');
         await expect
-          .soft(dialog.getByTestId('export-topology-yaml'))
+          .soft(dialog.getByTestId('download-topology-yaml'))
           .not.toHaveAttribute('aria-busy', 'true');
 
         const text = file.buffer.toString('utf8');
@@ -596,7 +670,7 @@ test.describe('export and import', () => {
 
         // The server's importer parses it as a phenix Topology, and finds
         // the diagram's device, connected to its network.
-        const imported = await request.post(`${API}/builder-v2/generate`, {
+        const imported = await request.post(`${API}/builder/generate`, {
           data: { content: text },
         });
         expect(imported.ok(), await imported.text()).toBeTruthy();
@@ -611,9 +685,9 @@ test.describe('export and import', () => {
           .toEqual(['EXP']);
       });
 
-      await test.step('GEXF export is the network as a graph for Gephi', async () => {
-        const fileName = exportFileName(title, 'gexf');
-        const button = dialog.getByTestId('export-gexf');
+      await test.step('the GEXF download is the network as a graph for Gephi', async () => {
+        const fileName = downloadFileName(title, 'gexf');
+        const button = dialog.getByTestId('download-gexf');
         await expect.soft(button).toHaveAccessibleName('Gephi (GEXF)');
         await expect
           .soft(button)
@@ -625,7 +699,7 @@ test.describe('export and import', () => {
           .toHaveText(
             `Saved ${fileName}: 1 device, 1 network and 1 connection.`,
           );
-        await expect.soft(exportError).toHaveCount(0);
+        await expect.soft(downloadError).toHaveCount(0);
 
         // The browser's XML parser reads it: one node for each of the
         // diagram's nodes, each placed, and its connection.
@@ -672,14 +746,14 @@ test.describe('export and import', () => {
         },
       };
 
-      await test.step('PNG export covers the whole diagram', async () => {
+      await test.step('the PNG download covers the whole diagram', async () => {
         // By keyboard: the button is busy while the image renders, and must
         // keep focus throughout rather than drop it outside the dialog.
-        const button = dialog.getByTestId('export-png');
+        const button = dialog.getByTestId('download-png');
         const png = await download(page, () => button.press('Enter'));
         await expectSaved(png, 'png');
         await expect.soft(button).toBeFocused();
-        // The export draws a copy of the canvas and removes it after; the
+        // The image is drawn from a copy of the canvas, removed after; the
         // canvas keeps its selection.
         await expect
           .soft(page.locator('.vue-flow__transformationpane'))
@@ -703,9 +777,9 @@ test.describe('export and import', () => {
         await expectDiagramInImage(page, 'PNG', png.buffer, light, imageArea);
       });
 
-      await test.step('SVG export draws every node label and the connection', async () => {
+      await test.step('the SVG download draws every node label and the connection', async () => {
         const svg = await download(page, () =>
-          dialog.getByTestId('export-svg').click(),
+          dialog.getByTestId('download-svg').click(),
         );
         await expectSaved(svg, 'svg');
         const markup = svg.buffer.toString('utf8');
@@ -721,15 +795,15 @@ test.describe('export and import', () => {
         await expectDiagramInImage(page, 'SVG', svg.buffer, light, imageArea);
       });
 
-      await test.step('PNG and SVG exports draw the diagram in the dark theme', async () => {
+      await test.step('PNG and SVG downloads draw the diagram in the dark theme', async () => {
         await useColorScheme(page, 'dark');
         const png = await download(page, () =>
-          dialog.getByTestId('export-png').click(),
+          dialog.getByTestId('download-png').click(),
         );
         await expectSaved(png, 'png');
         await expectDiagramInImage(page, 'PNG', png.buffer, dark, imageArea);
         const svg = await download(page, () =>
-          dialog.getByTestId('export-svg').click(),
+          dialog.getByTestId('download-svg').click(),
         );
         await expectSaved(svg, 'svg');
         expectDiagramInSvg(svg.buffer.toString('utf8'), dark);
@@ -744,40 +818,40 @@ test.describe('export and import', () => {
         await test.step('the JSON file uploads from the editor toolbar as a new draft', async () => {
           // Named as on the drafts page: Import there converts a config.
           await expect
-            .soft(builder.toolbar('import'))
+            .soft(builder.toolbar('upload'))
             .toHaveAccessibleName('Upload');
-          const importDialog = await builder.openDialog('import');
+          const uploadDialog = await builder.openDialog('upload');
           await expect
-            .soft(importDialog)
+            .soft(uploadDialog)
             .toHaveAccessibleName('Upload diagram');
           await expect
-            .soft(importDialog.getByTestId('import-submit'))
+            .soft(uploadDialog.getByTestId('upload-submit'))
             .toHaveText('Upload');
-          await importDialog.getByTestId('import-file').setInputFiles({
+          await uploadDialog.getByTestId('upload-file').setInputFiles({
             name: json.file.name,
             mimeType: 'application/json',
             buffer: json.file.buffer,
           });
-          const created = waitForApi(page, 'POST', '/builder-v2/drafts');
-          await importDialog.getByTestId('import-submit').click();
-          const imported = await (await created).json();
+          const created = waitForApi(page, 'POST', '/builder/drafts');
+          await uploadDialog.getByTestId('upload-submit').click();
+          const uploaded = await (await created).json();
 
           await expect(builder.dialog).toBeHidden();
-          expect.soft(imported.id, 'a new draft').not.toBe(original.id);
+          expect.soft(uploaded.id, 'a new draft').not.toBe(original.id);
           await expect.soft(builder.summary).toHaveText(summary);
           await expect.soft(page.getByTestId('builder-name')).toHaveText(title);
           await builder.waitSaved();
 
-          const copy = await builder.serverDocument(imported);
-          expect.soft(copy.nodes).toEqual(json.exported.nodes);
+          const copy = await builder.serverDocument(uploaded);
+          expect.soft(copy.nodes).toEqual(json.downloaded.nodes);
           // The server drops empty optional fields, so compare the stored copies.
           expect.soft(copy.networks).toEqual(saved.networks);
-          expect.soft(copy.edges).toEqual(json.exported.edges);
+          expect.soft(copy.edges).toEqual(json.downloaded.edges);
           expect
             .soft(await builder.serverDocument(original), 'the original draft')
             .toEqual(saved);
 
-          return imported;
+          return uploaded;
         });
 
       await builder.backToDrafts();
@@ -789,26 +863,26 @@ test.describe('export and import', () => {
         .toBeVisible();
 
       await test.step('the YAML file uploads from the drafts landing as a new draft', async () => {
-        const importDialog = await openImport(page);
+        const uploadDialog = await openUpload(page);
         await expect
-          .soft(importDialog.getByLabel('File', { exact: true }))
+          .soft(uploadDialog.getByLabel('File', { exact: true }))
           .toBeChecked();
-        await importDialog.getByTestId('import-file').setInputFiles({
+        await uploadDialog.getByTestId('upload-file').setInputFiles({
           name: yaml.name,
           mimeType: 'text/yaml',
           buffer: yaml.buffer,
         });
-        const created = waitForApi(page, 'POST', '/builder-v2/drafts');
-        await importDialog.getByTestId('import-submit').click();
-        const imported = await (await created).json();
+        const created = waitForApi(page, 'POST', '/builder/drafts');
+        await uploadDialog.getByTestId('upload-submit').click();
+        const uploaded = await (await created).json();
 
-        expect.soft(imported.id, 'a new draft').not.toBe(original.id);
+        expect.soft(uploaded.id, 'a new draft').not.toBe(original.id);
         await expect(builder.canvas).toBeVisible();
         await expect.soft(builder.summary).toHaveText(summary);
         await expect.soft(page.getByTestId('builder-name')).toHaveText(title);
         await builder.waitSaved();
         expect
-          .soft((await builder.serverDocument(imported)).nodes)
+          .soft((await builder.serverDocument(uploaded)).nodes)
           .toEqual(saved.nodes);
       });
       expectNoFatal(issues);
@@ -823,15 +897,15 @@ test.describe('export and import', () => {
     await builder.open();
     const creates = watchDraftCreates(page);
 
-    let dialog = await openImport(page);
-    const error = dialog.getByTestId('import-error');
+    let dialog = await openUpload(page);
+    const error = dialog.getByTestId('upload-error');
 
     // Each refusal names the problem, marks the field and moves focus to it.
     await test.step('no file, then an oversized file', async () => {
-      const file = dialog.getByTestId('import-file');
+      const file = dialog.getByTestId('upload-file');
       const tooLarge = 'The uploaded file is larger than the 5 MiB limit.';
 
-      await dialog.getByTestId('import-submit').click();
+      await dialog.getByTestId('upload-submit').click();
       await expect.soft(error).toHaveText('Choose a file to upload.');
       await expect.soft(file).toBeFocused();
       await expect.soft(file).toHaveAttribute('aria-invalid', 'true');
@@ -850,7 +924,7 @@ test.describe('export and import', () => {
 
       // Submitting the oversized file keeps the size error. The submit
       // handler runs in the click task; a later task sees its DOM update.
-      await dialog.getByTestId('import-submit').click();
+      await dialog.getByTestId('upload-submit').click();
       await page.evaluate(() => null);
       expect.soft(await error.textContent()).toBe(tooLarge);
       await expect.soft(file).toHaveAttribute('aria-invalid', 'true');
@@ -910,9 +984,9 @@ test.describe('export and import', () => {
     await dialog.getByLabel('Paste text', { exact: true }).check();
     for (const [what, text, message] of refusals) {
       await test.step(`pasted ${what}`, async () => {
-        const field = dialog.getByTestId('import-text');
+        const field = dialog.getByTestId('upload-text');
         await field.fill(text);
-        await dialog.getByTestId('import-submit').click();
+        await dialog.getByTestId('upload-submit').click();
         await expect.soft(error, what).toHaveText(message);
         await expect.soft(field, what).toHaveAttribute('aria-invalid', 'true');
         await expect.soft(field, what).toBeFocused();
@@ -926,7 +1000,7 @@ test.describe('export and import', () => {
     await dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(dialog).toBeHidden();
     await expect
-      .soft(page.getByRole('heading', { name: 'Builder v2' }))
+      .soft(page.getByRole('heading', { name: 'Builder', exact: true }))
       .toBeVisible();
     expect.soft(creates, 'draft creates after Cancel').toEqual([]);
 
@@ -934,12 +1008,12 @@ test.describe('export and import', () => {
       const title = uniqueName(testInfo, 'paste-ok');
       const document = blankDocument(title);
 
-      dialog = await openImport(page);
+      dialog = await openUpload(page);
       await dialog.getByLabel('Paste text', { exact: true }).check();
-      await dialog.getByTestId('import-text').fill(JSON.stringify(document));
+      await dialog.getByTestId('upload-text').fill(JSON.stringify(document));
 
-      const created = waitForApi(page, 'POST', '/builder-v2/drafts');
-      await dialog.getByTestId('import-submit').click();
+      const created = waitForApi(page, 'POST', '/builder/drafts');
+      await dialog.getByTestId('upload-submit').click();
       const draft = await (await created).json();
 
       await expect(dialog).toBeHidden();
@@ -974,16 +1048,16 @@ test.describe('export and import', () => {
     };
 
     await builder.open();
-    const dialog = await openImport(page);
-    await dialog.getByTestId('import-file').setInputFiles({
+    const dialog = await openUpload(page);
+    await dialog.getByTestId('upload-file').setInputFiles({
       name: fileName,
       mimeType: 'application/json',
       buffer: Buffer.from(
         JSON.stringify({ ...blankDocument(title), ...claimed }),
       ),
     });
-    const answered = waitForApi(page, 'POST', '/builder-v2/drafts');
-    await dialog.getByTestId('import-submit').click();
+    const answered = waitForApi(page, 'POST', '/builder/drafts');
+    await dialog.getByTestId('upload-submit').click();
     const response = await answered;
     const draft = await response.json();
     await expect(builder.canvas).toBeVisible();
@@ -1038,33 +1112,32 @@ test.describe('export and import', () => {
     issues,
   }, testInfo) => {
     const name = uniqueName(testInfo, 'published');
-    const deepLink = `/builder-v2?topology=${encodeURIComponent(name)}`;
+    const deepLink = `/builder?topology=${encodeURIComponent(name)}`;
     const creates = watchDraftCreates(page);
 
-    await test.step('a deep link to an unpublished topology shows an error', async () => {
+    await test.step('a deep link to a topology that does not exist shows an error', async () => {
       await visit(page, deepLink);
       await expect(
-        page.getByRole('heading', { name: 'Builder v2' }),
+        page.getByRole('heading', { name: 'Builder', exact: true }),
       ).toBeVisible({ timeout: 20000 });
       await expect
         .soft(errorBanner(page))
-        .toHaveText(
-          `No published Builder v2 document exists for topology ${name}. Use Import to make a diagram from it.`,
-        );
+        .toHaveText(`Topology ${name} does not exist, or you may not read it.`);
       await expect.soft(builder.canvas).toHaveCount(0);
+      await expect.soft(page.getByRole('dialog')).toHaveCount(0);
       await expect.soft(page.getByTestId('drafts-blank')).toBeEnabled();
       expect.soft(creates, 'draft creates').toEqual([]);
     });
 
-    // Each path opens a document that has not been opened before: a second
-    // copy of an opened document is a separate defect (see the ?topology=
-    // link test in builder-persistence.spec.js), so its fix may not create
-    // a new draft.
+    // Each path opens a diagram whose publishing draft is gone and which
+    // has not been opened before, so each makes a new draft. Opening one
+    // again reopens its draft (see the ?topology= link test in
+    // builder-persistence.spec.js).
     const linked = await publishDiagram(request, tracker, name);
-    const imported = await publishDiagram(
+    const chosen = await publishDiagram(
       request,
       tracker,
-      uniqueName(testInfo, 'published-import'),
+      uniqueName(testInfo, 'published-upload'),
     );
 
     async function expectOpened(draft, published) {
@@ -1084,7 +1157,7 @@ test.describe('export and import', () => {
     }
 
     await test.step('the deep link opens the published diagram', async () => {
-      const created = waitForApi(page, 'POST', '/builder-v2/drafts');
+      const created = waitForApi(page, 'POST', '/builder/drafts');
       await visit(page, deepLink);
       await expectOpened(await (await created).json(), linked);
     });
@@ -1092,35 +1165,35 @@ test.describe('export and import', () => {
     await builder.backToDrafts();
 
     await test.step('Upload > Published diagram requires a selection, then opens it', async () => {
-      const dialog = await openImport(page);
+      const dialog = await openUpload(page);
       await dialog.getByLabel('Published diagram', { exact: true }).check();
-      const choice = dialog.getByTestId('import-published');
+      const choice = dialog.getByTestId('upload-published');
       await expect.soft(choice).toHaveValue('');
       // A published diagram is on the server already: it is opened.
       await expect
-        .soft(dialog.getByTestId('import-submit'))
+        .soft(dialog.getByTestId('upload-submit'))
         .toHaveAccessibleName('Open');
       const opened = creates.length;
-      await dialog.getByTestId('import-submit').click();
+      await dialog.getByTestId('upload-submit').click();
       await expect
-        .soft(dialog.getByTestId('import-error'))
+        .soft(dialog.getByTestId('upload-error'))
         .toHaveText('Select a published diagram.');
       await expect(dialog).toBeVisible();
       expect.soft(creates, 'draft creates').toHaveLength(opened);
 
-      await choice.selectOption({ label: imported.name });
-      const created = waitForApi(page, 'POST', '/builder-v2/drafts');
-      await dialog.getByTestId('import-submit').click();
-      await expectOpened(await (await created).json(), imported);
+      await choice.selectOption({ label: chosen.name });
+      const created = waitForApi(page, 'POST', '/builder/drafts');
+      await dialog.getByTestId('upload-submit').click();
+      await expectOpened(await (await created).json(), chosen);
     });
     expectNoFatal(issues);
   });
 });
 
-// --- generate ----------------------------------------------------------------
+// --- import ------------------------------------------------------------------
 
-test.describe('generate', () => {
-  test('generates a draft from a stored topology; a kind with no configs shows an empty state', async ({
+test.describe('import', () => {
+  test('imports a draft from a stored topology; a kind with no configs shows an empty state', async ({
     page,
     request,
     builder,
@@ -1155,22 +1228,22 @@ test.describe('generate', () => {
     // Other specs may leave experiments on a shared server; answer the
     // sources request with the real catalog minus its experiments so the
     // empty state is deterministic.
-    await page.route(`**${API}/builder-v2/sources`, async (route) => {
+    await page.route(`**${API}/builder/sources`, async (route) => {
       const response = await route.fetch();
       const body = await response.json();
       await route.fulfill({ response, json: { ...body, experiments: [] } });
     });
     await builder.open();
-    // Stored after the landing page read the list: Generate reads it again
+    // Stored after the landing page read the list: Import reads it again
     // when it opens.
     const gone = uniqueName(testInfo, 'gen-gone');
     await seedConfig(request, tracker, topologyConfig(gone, []));
 
-    const dialog = await openGenerate(page);
-    const kind = dialog.getByTestId('generate-kind');
-    const choices = dialog.getByTestId('generate-name');
-    const empty = dialog.getByTestId('generate-empty');
-    const submit = dialog.getByTestId('generate-submit');
+    const dialog = await openImport(page);
+    const kind = dialog.getByTestId('import-kind');
+    const choices = dialog.getByTestId('import-name');
+    const empty = dialog.getByTestId('import-empty');
+    const submit = dialog.getByTestId('import-submit');
     await expect.soft(dialog.getByLabel('Stored config')).toBeChecked();
     await expect.soft(kind).toHaveValue('topology');
     await expect.soft(empty).toHaveCount(0);
@@ -1187,7 +1260,7 @@ test.describe('generate', () => {
 
       await submit.click();
       await expect
-        .soft(dialog.getByTestId('generate-error'))
+        .soft(dialog.getByTestId('import-error'))
         .toHaveText(
           `Could not import the diagram. The topology "${gone}" no longer exists. Choose another one.`,
         );
@@ -1213,7 +1286,7 @@ test.describe('generate', () => {
           'This phenix instance has no experiment configs to import.',
         );
       // Only the placeholder remains (its wording is covered by the grammar
-      // test), and nothing can be generated.
+      // test), and nothing can be imported.
       await expect.soft(choices.locator('option')).toHaveCount(1);
       await expect.soft(choices).toHaveValue('');
       await expect.soft(submit).toBeDisabled();
@@ -1222,21 +1295,58 @@ test.describe('generate', () => {
     await kind.selectOption('topology');
     await expect.soft(empty).toHaveCount(0);
     await expect(choices.locator('option', { hasText: name })).toHaveCount(1);
-    await choices.selectOption(name);
 
-    const generated = waitForApi(page, 'POST', '/builder-v2/generate');
-    const created = waitForApi(page, 'POST', '/builder-v2/drafts');
+    await test.step('the options show only for a topology they apply to', async () => {
+      const includes = dialog.getByTestId('import-includes');
+      const copy = dialog.getByTestId('import-copy');
+
+      // Nothing is chosen yet.
+      await expect.soft(includes).toHaveCount(0);
+      await expect.soft(copy).toHaveCount(0);
+
+      // A topology that includes none can only be copied.
+      await choices.selectOption(nested);
+      await expect.soft(copy).toBeVisible();
+      await expect.soft(copy).not.toBeChecked();
+      await expect.soft(includes).toHaveCount(0);
+
+      // One that includes some is imported with them read only, unless the
+      // user chooses otherwise. Focus stays on the control that was used.
+      await choices.selectOption(name);
+      await expect.soft(choices).toBeFocused();
+      await expect
+        .soft(dialog.getByRole('group', { name: 'Included topologies' }))
+        .toBeVisible();
+      await expect
+        .soft(includes)
+        .toContainText(`${name} includes 1 other topology.`);
+      await expect
+        .soft(dialog.getByLabel('Keep included nodes read only'))
+        .toBeChecked();
+      await expect
+        .soft(dialog.getByLabel('Combine into one new topology'))
+        .not.toBeChecked();
+      await expect.soft(copy).not.toBeChecked();
+      await expect.soft(dialog.getByTestId('import-new-name')).toHaveCount(0);
+    });
+
+    const generated = waitForApi(page, 'POST', '/builder/generate');
+    const created = waitForApi(page, 'POST', '/builder/drafts');
     await submit.click();
+    // The choice that was shown is sent as it stood.
+    expect
+      .soft((await generated).request().postDataJSON())
+      .toEqual({ source: `topology/${name}`, includes: 'keep' });
     const result = await (await generated).json();
 
     // The nested include is followed, and the warning says what was added.
     const added =
       `Added 3 nodes from included topologies ${child} (2 nodes) and ` +
       `${nested} (1 node). They are shown read only`;
-    expect.soft(result.warnings, 'generation warnings').toHaveLength(1);
+    expect.soft(result.warnings, 'import warnings').toHaveLength(1);
     expect.soft(result.warnings[0]).toContain(added);
     await expect
-      .soft(dialog.getByTestId('generate-warnings'))
+      .soft(dialog.getByTestId('import-warnings'))
       .toContainText(added);
     await continuePastWarnings(dialog);
     const draft = await (await created).json();
@@ -1282,6 +1392,8 @@ test.describe('generate', () => {
     expect
       .soft(doc.source)
       .toMatchObject({ kind: 'topology', name, includeTopologies: [child] });
+    // Every include was read, so none is recorded as left out.
+    expect.soft(doc.source).not.toHaveProperty('unresolvedIncludes');
     expect
       .soft(doc.networks.map((network) => network.name).sort())
       .toEqual(['EXP', 'MGMT', 'SERVICES']);
@@ -1335,7 +1447,7 @@ test.describe('generate', () => {
     expectNoFatal(issues);
   });
 
-  test('generates a draft from a stored experiment with VLAN aliases and included topologies', async ({
+  test('imports a draft from a stored experiment with VLAN aliases and included topologies', async ({
     page,
     request,
     builder,
@@ -1383,20 +1495,24 @@ test.describe('generate', () => {
     await setExperimentAliases(request, experiment, { EXP: 101, MGMT: 102 });
     await builder.open();
 
-    const dialog = await openGenerate(page);
-    await dialog.getByTestId('generate-kind').selectOption('experiment');
+    const dialog = await openImport(page);
+    await dialog.getByTestId('import-kind').selectOption('experiment');
     await expect
-      .soft(dialog.getByTestId('generate-name').locator('option').first())
+      .soft(dialog.getByTestId('import-name').locator('option').first())
       .toHaveText('Choose an experiment');
-    await dialog.getByTestId('generate-name').selectOption(experiment);
+    await dialog.getByTestId('import-name').selectOption(experiment);
+    // An experiment holds its nodes merged already: it has no options.
+    for (const id of ['import-includes', 'import-copy', 'import-new-name']) {
+      await expect.soft(dialog.getByTestId(id), id).toHaveCount(0);
+    }
 
-    const created = waitForApi(page, 'POST', '/builder-v2/drafts');
-    await dialog.getByTestId('generate-submit').click();
+    const created = waitForApi(page, 'POST', '/builder/drafts');
+    await dialog.getByTestId('import-submit').click();
     // The nodes phenix merged in from the included topologies are marked,
     // not added again. Experiment fields the diagram does not carry come
     // back as a warning too.
     await expect
-      .soft(dialog.getByTestId('generate-warnings'))
+      .soft(dialog.getByTestId('import-warnings'))
       .toContainText(
         `Marked 2 experiment nodes as coming from included topologies ${child} (1 node) and ${nested} (1 node).`,
       );
@@ -1461,24 +1577,24 @@ test.describe('generate', () => {
         'deep-host': nested,
       });
 
-    await test.step("the GEXF export lists the stored scenario's apps on their hosts", async () => {
-      const dialog = await builder.openDialog('export');
+    await test.step("the GEXF download lists the stored scenario's apps on their hosts", async () => {
+      const dialog = await builder.openDialog('download');
       const status = dialog.getByRole('status');
-      const fileName = exportFileName(experiment, 'gexf');
+      const fileName = downloadFileName(experiment, 'gexf');
       const saved = `Saved ${fileName}: 4 devices, 2 networks and 5 connections.`;
       const isRead = (url) =>
         url.pathname.endsWith(`${API}/configs/Scenario/${scenario}`);
-      // The reference carries no content: each export reads the scenario.
+      // The reference carries no content: each download reads the scenario.
       const reads = [];
       const onResponse = (response) => {
         if (isRead(new URL(response.url()))) {
           reads.push(response.status());
         }
       };
-      // Each device's app values, by hostname, in the file an export saves.
-      async function exportApps() {
+      // Each device's app values, by hostname, in the file a download saves.
+      async function downloadApps() {
         const file = await download(page, () =>
-          dialog.getByTestId('export-gexf').click(),
+          dialog.getByTestId('download-gexf').click(),
         );
         expect.soft(file.name).toBe(fileName);
 
@@ -1518,7 +1634,7 @@ test.describe('generate', () => {
           body: JSON.stringify({ message: 'forbidden' }),
         }),
       );
-      expect.soft(await exportApps()).toEqual({
+      expect.soft(await downloadApps()).toEqual({
         'host-a': {},
         'host-b': {},
         'inc-host': {},
@@ -1536,7 +1652,7 @@ test.describe('generate', () => {
         apps_text: 'e2e-traffic',
         app_count: '1',
       };
-      expect.soft(await exportApps()).toEqual({
+      expect.soft(await downloadApps()).toEqual({
         'host-a': traffic,
         'host-b': traffic,
         'inc-host': { app_count: '0' },
@@ -1634,7 +1750,7 @@ test.describe('generate', () => {
   });
 
   test(
-    'Generate refuses an uploaded config it cannot convert and converts an uploaded YAML topology',
+    'Import refuses a config file it cannot convert and converts a YAML topology file',
     {
       tag: '@cross-browser',
     },
@@ -1642,7 +1758,7 @@ test.describe('generate', () => {
       await builder.open();
       const creates = watchDraftCreates(page);
 
-      await test.step('an uploaded Scenario is refused', async () => {
+      await test.step('a Scenario file is refused', async () => {
         const scenario = [
           `apiVersion: phenix.sandia.gov/v2`,
           'kind: Scenario',
@@ -1653,23 +1769,23 @@ test.describe('generate', () => {
           '',
         ].join('\n');
 
-        const { dialog, response } = await generateFromUpload(page, scenario);
-        expect.soft(response.status(), 'generate status').toBe(422);
+        const { dialog, response } = await importFromFile(page, scenario);
+        expect.soft(response.status(), 'import status').toBe(422);
         await expect
-          .soft(dialog.getByTestId('generate-error'))
+          .soft(dialog.getByTestId('import-error'))
           .toHaveText(
             'Could not import the diagram. ' +
               'Scenario configs cannot be opened in the builder.',
           );
         await expect(dialog).toBeVisible();
-        // The refusal is about the uploaded file, so it is reported there.
-        const file = dialog.getByTestId('generate-file');
+        // The refusal is about the chosen file, so it is reported there.
+        const file = dialog.getByTestId('import-file');
         await expect.soft(file).toHaveAttribute('aria-invalid', 'true');
         await expect.soft(file).toBeFocused();
         await expect
           .soft(file)
           .toHaveAccessibleDescription(/cannot be opened in the builder\.$/);
-        await expect.soft(dialog.getByTestId('generate-submit')).toBeEnabled();
+        await expect.soft(dialog.getByTestId('import-submit')).toBeEnabled();
         expect.soft(creates, 'draft creates').toEqual([]);
 
         await dialog.getByRole('button', { name: 'Cancel' }).click();
@@ -1713,8 +1829,8 @@ test.describe('generate', () => {
         '',
       ].join('\n');
 
-      const created = waitForApi(page, 'POST', '/builder-v2/drafts');
-      const { response } = await generateFromUpload(page, content);
+      const created = waitForApi(page, 'POST', '/builder/drafts');
+      const { response } = await importFromFile(page, content);
       expect(response.ok(), await response.text()).toBeTruthy();
       const draft = await (await created).json();
 
@@ -1781,7 +1897,7 @@ test.describe('generate', () => {
     },
   );
 
-  test('Import names the uploaded config it read in Details; a stored config names no file', async ({
+  test('Import names the config file it read in Details; a stored config names no file', async ({
     page,
     request,
     builder,
@@ -1795,9 +1911,9 @@ test.describe('generate', () => {
     await builder.open();
     const row = builder.inspector.getByTestId('inspector-source-file');
 
-    await test.step('an uploaded config', async () => {
-      const created = waitForApi(page, 'POST', '/builder-v2/drafts');
-      const { dialog } = await generateFromUpload(
+    await test.step('a config file', async () => {
+      const created = waitForApi(page, 'POST', '/builder/drafts');
+      const { dialog } = await importFromFile(
         page,
         JSON.stringify(config),
         fileName,
@@ -1818,12 +1934,12 @@ test.describe('generate', () => {
     await builder.backToDrafts();
 
     await test.step('a stored config', async () => {
-      const dialog = await openGenerate(page);
-      const choices = dialog.getByTestId('generate-name');
+      const dialog = await openImport(page);
+      const choices = dialog.getByTestId('import-name');
       await expect(choices.locator('option', { hasText: name })).toHaveCount(1);
       await choices.selectOption(name);
-      const created = waitForApi(page, 'POST', '/builder-v2/drafts');
-      await dialog.getByTestId('generate-submit').click();
+      const created = waitForApi(page, 'POST', '/builder/drafts');
+      await dialog.getByTestId('import-submit').click();
       await continuePastWarnings(dialog);
       const response = await created;
       const draft = await response.json();
@@ -1843,7 +1959,7 @@ test.describe('generate', () => {
     expectNoFatal(issues);
   });
 
-  test('shows generation warnings before opening the draft', async ({
+  test('shows import warnings before opening the draft', async ({
     page,
     builder,
     issues,
@@ -1862,18 +1978,14 @@ test.describe('generate', () => {
     // Cancel, left of Continue, closes the dialog as Escape does: no draft,
     // no word of an import, and focus back on Import.
     await test.step('Cancel leaves the warnings without creating a draft', async () => {
-      const { dialog } = await generateFromUpload(
-        page,
-        content,
-        'topology.json',
-      );
-      await expect(dialog.getByTestId('generate-warnings')).toBeVisible();
+      const { dialog } = await importFromFile(page, content, 'topology.json');
+      await expect(dialog.getByTestId('import-warnings')).toBeVisible();
       await expect
         .soft(dialog.locator('.builder-dialog__actions button'))
         .toHaveText(['Cancel', 'Continue to editor']);
-      await dialog.getByTestId('generate-cancel').click();
+      await dialog.getByTestId('import-cancel').click();
       await expect(dialog).toBeHidden();
-      await expect.soft(page.getByTestId('drafts-generate')).toBeFocused();
+      await expect.soft(page.getByTestId('drafts-import')).toBeFocused();
       await expect.soft(builder.landingHeading).toBeVisible();
       expect.soft(creates, 'draft creates after Cancel').toEqual([]);
       // Messages held while the dialog was open show once it closes, so
@@ -1881,8 +1993,8 @@ test.describe('generate', () => {
       await expect.soft(builder).not.toHaveAnnounced(/imported/i);
     });
 
-    const created = waitForApi(page, 'POST', '/builder-v2/drafts');
-    const { dialog, response } = await generateFromUpload(
+    const created = waitForApi(page, 'POST', '/builder/drafts');
+    const { dialog, response } = await importFromFile(
       page,
       content,
       'topology.json',
@@ -1894,7 +2006,7 @@ test.describe('generate', () => {
 
     // The dialog stays open on the warnings, with focus on the way on, whose
     // description is the warnings themselves. No draft exists yet.
-    const shown = dialog.getByTestId('generate-warnings');
+    const shown = dialog.getByTestId('import-warnings');
     const next = dialog.getByRole('button', { name: 'Continue to editor' });
     await expect(shown).toContainText('duplicates the hostname');
     await expect.soft(next).toBeFocused();
@@ -1936,13 +2048,532 @@ test.describe('generate', () => {
     expectNoFatal(issues);
   });
 
+  test('Import combines the included topologies into one new topology, which publishing creates', async ({
+    page,
+    request,
+    builder,
+    tracker,
+    issues,
+  }, testInfo) => {
+    const root = uniqueName(testInfo, 'comb');
+    const child = uniqueName(testInfo, 'comb-inc');
+    const combined = `${root}-combined`;
+    await seedConfig(
+      request,
+      tracker,
+      topologyConfig(child, [topologyNode('inc-host', [['eth0', 'EXP']])]),
+    );
+    const rootConfig = topologyConfig(root, [
+      topologyNode('host-a', [['eth0', 'EXP']]),
+    ]);
+    rootConfig.spec.includeTopologies = [child];
+    await seedConfig(request, tracker, rootConfig);
+    const before = await builder.config('Topology', root);
+    tracker.config('Topology', combined);
+
+    await builder.open();
+    const generates = [];
+    page.on('request', (sent) => {
+      if (
+        sent.method() === 'POST' &&
+        new URL(sent.url()).pathname.endsWith(`${API}/builder/generate`)
+      ) {
+        generates.push(sent.postDataJSON());
+      }
+    });
+    const dialog = await openImport(page);
+    await dialog.getByTestId('import-name').selectOption(root);
+    const keep = dialog.getByLabel('Keep included nodes read only');
+    const combine = dialog.getByLabel('Combine into one new topology');
+    const newName = dialog.getByLabel('New topology name');
+    const error = dialog.getByTestId('import-error');
+    const submit = dialog.getByTestId('import-submit');
+
+    await test.step('the arrow keys choose Combine, which asks for a name and proposes one', async () => {
+      await expect.soft(keep).toBeChecked();
+      await expect
+        .soft(keep)
+        .toHaveAccessibleDescription(
+          `${root} includes 1 other topology. Their nodes are shown but cannot be changed here. Publishing keeps the includes.`,
+        );
+      await keep.focus();
+      await page.keyboard.press('ArrowDown');
+      await expect(combine).toBeChecked();
+      // Focus stays in the group: what appears comes after it.
+      await expect.soft(combine).toBeFocused();
+      await expect
+        .soft(combine)
+        .toHaveAccessibleDescription(
+          `${root} includes 1 other topology. Their nodes are copied into the diagram and can be changed. Publishing creates a new topology.`,
+        );
+      // Combine makes a new topology already, so the copy box goes.
+      await expect.soft(dialog.getByTestId('import-copy')).toHaveCount(0);
+      await expect(newName).toHaveValue(combined);
+      await expect
+        .soft(newName)
+        .toHaveAccessibleDescription(
+          'Names can use only letters, numbers, underscores (_), at signs (@), periods (.) and hyphens (-), with no spaces.',
+        );
+      // Tab reaches the name next, then the buttons.
+      await page.keyboard.press('Tab');
+      await expect.soft(newName).toBeFocused();
+    });
+
+    await test.step('a name that cannot be used is refused on its field, before the server is asked', async () => {
+      for (const [typed, message] of [
+        [root, `A topology named ${root} already exists. Enter another name.`],
+        [
+          'two words',
+          'The topology name "two words" is not allowed. Names can use only letters, numbers, underscores (_), at signs (@), periods (.) and hyphens (-), with no spaces. For example: two-words',
+        ],
+        ['', 'Enter a name for the topology.'],
+      ]) {
+        await newName.fill(typed);
+        await newName.press('Enter');
+        await expect.soft(error).toHaveText(message);
+        await expect.soft(newName).toHaveAttribute('aria-invalid', 'true');
+        await expect.soft(newName).toBeFocused();
+        await expect
+          .soft(newName)
+          .toHaveAccessibleDescription(new RegExp(' Enter .*name|not allowed'));
+      }
+      expect.soft(generates, 'imports asked of the server').toEqual([]);
+
+      // Typing takes the error back.
+      await newName.fill(combined);
+      await expect.soft(error).toHaveCount(0);
+      await expect.soft(newName).not.toHaveAttribute('aria-invalid', 'true');
+    });
+
+    const created = waitForApi(page, 'POST', '/builder/drafts');
+    await submit.click();
+    const copied = `Copied 1 node from included topology ${child} (1 node). They are ordinary nodes of this diagram now`;
+    await expect(dialog.getByTestId('import-warnings')).toContainText(copied);
+    expect(generates).toEqual([
+      { source: `topology/${root}`, includes: 'combine', name: combined },
+    ]);
+    await continuePastWarnings(dialog);
+    const draft = await (await created).json();
+    await expect(dialog).toBeHidden();
+    await expect(builder.canvas).toBeVisible();
+    await expect
+      .soft(builder)
+      .toHaveAnnounced(
+        `Combined topology ${root} and its included topologies as ${combined}, with 1 warning. Draft created.`,
+      );
+
+    await test.step('the draft is linked to no config, and every node is its own', async () => {
+      await expect.soft(page.getByTestId('builder-name')).toHaveText(combined);
+      await builder.expectSummary(
+        '2 devices, 1 switch, 1 network, 2 connections',
+      );
+      await builder.waitSaved();
+      const stored = await builder.serverDraft(draft);
+      expect.soft(stored.sourceToken || '').toBe('');
+      const doc = await builder.serverDocument(draft);
+      expect.soft(doc.name).toBe(combined);
+      expect.soft(doc.source.kind).toBe('manual');
+      for (const key of [
+        'name',
+        'digest',
+        'includeTopologies',
+        'unresolvedIncludes',
+      ]) {
+        expect.soft(doc.source, key).not.toHaveProperty(key);
+      }
+      expect
+        .soft(doc.nodes.filter((node) => node.device?.includedFrom))
+        .toEqual([]);
+
+      // The node that was included is edited like any other.
+      const row = builder.outlineItem('inc-host');
+      await expect.soft(row).not.toContainText('included');
+      await expect
+        .soft(builder.node('inc-host', 'device'))
+        .not.toContainText('Included from');
+      // Where that stood, it shows its node type, and the switch counts it
+      // among the devices it connects.
+      await expect
+        .soft(builder.node('inc-host', 'device').getByTestId('node-type'))
+        .toHaveText('VirtualMachine');
+      await expect
+        .soft(await switchWrapper(page, builder))
+        .toHaveAccessibleDescription(
+          /^2 connected devices: host-a 10\.0\.\d+\.\d+\/24, inc-host 10\.0\.\d+\.\d+\/24\./,
+        );
+      await builder.selectInOutline('inc-host');
+      await expect
+        .soft(builder.inspector.getByTestId('inspector-included-note'))
+        .toHaveCount(0);
+      const hostname = builder.inspector.getByRole('textbox', {
+        name: 'Hostname',
+        exact: true,
+      });
+      await expect(hostname).toBeEditable();
+      await hostname.fill('inc-two');
+      await builder.apply();
+      await builder.persisted(
+        draft,
+        (document) =>
+          document.nodes
+            .filter((node) => node.kind === 'device')
+            .map((node) => node.device.hostname)
+            .sort(),
+        ['host-a', 'inc-two'],
+      );
+      await builder.waitSaved();
+    });
+
+    await test.step('Publish creates the new topology, and cannot update the one it came from', async () => {
+      const publish = await builder.openDialog('publish');
+      const name = publish.getByTestId('publish-name');
+      const hint = publish.locator('#publish-topology-action-hint');
+      const go = publish.getByTestId('publish-submit');
+      await expect(name).toHaveValue(combined);
+      await expect.soft(hint).toHaveText('A new topology will be created.');
+      await expect.soft(go).toHaveText('Create topology');
+      // Every node is the diagram's own, so all of them are published.
+      await expect
+        .soft(publish)
+        .toContainText(
+          '2 devices, 1 switch, 1 network and 2 connections are ready to publish.',
+        );
+      await expect.soft(publish).not.toContainText('by reference');
+
+      await name.fill(root);
+      await expect
+        .soft(hint)
+        .toHaveText(
+          /^A topology with this name already exists, and this diagram cannot update it: /,
+        );
+      await name.fill(combined);
+      await expect(hint).toHaveText('A new topology will be created.');
+
+      const published = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname.endsWith('/publish'),
+      );
+      await go.click();
+      const response = await published;
+      expect(response.status(), await response.text()).toBe(200);
+      await expect
+        .soft(publish.getByTestId('publish-summary'))
+        .toHaveText('Published. Every stage succeeded.');
+
+      const topology = await builder.config('Topology', combined);
+      expect
+        .soft(topology.spec.nodes.map((node) => node.general.hostname).sort())
+        .toEqual(['host-a', 'inc-two']);
+      expect.soft(topology.spec.includeTopologies || []).toEqual([]);
+      // The topology it was combined from is as it was.
+      expect.soft(await builder.config('Topology', root)).toEqual(before);
+    });
+
+    expectNoFatal(issues);
+  });
+
+  test('Import as a copy leaves the topology alone, and an open draft combines its included nodes into a new draft', async ({
+    page,
+    request,
+    builder,
+    tracker,
+    issues,
+  }, testInfo) => {
+    const root = uniqueName(testInfo, 'copy');
+    const child = uniqueName(testInfo, 'copy-inc');
+    // Never stored: its nodes cannot be read, so every diagram keeps it as
+    // an include.
+    const missing = uniqueName(testInfo, 'copy-gone');
+    const copyName = `${root}-copy`;
+    const combinedName = `${copyName}-combined`;
+    await seedConfig(
+      request,
+      tracker,
+      topologyConfig(child, [topologyNode('inc-host', [['eth0', 'EXP']])]),
+    );
+    const rootConfig = topologyConfig(root, [
+      topologyNode('host-a', [['eth0', 'EXP']]),
+    ]);
+    rootConfig.spec.includeTopologies = [child, missing];
+    await seedConfig(request, tracker, rootConfig);
+    const before = await builder.config('Topology', root);
+    tracker.config('Topology', copyName);
+
+    await builder.open();
+    const dialog = await openImport(page);
+    await dialog.getByTestId('import-name').selectOption(root);
+    const copy = dialog.getByLabel('Create a new topology as a copy');
+    const combine = dialog.getByLabel('Combine into one new topology');
+    const newName = dialog.getByLabel('New topology name');
+
+    await test.step('Space checks the copy box, which asks for a name that follows the choice', async () => {
+      await expect
+        .soft(dialog.getByTestId('import-includes'))
+        .toContainText(`${root} includes 2 other topologies.`);
+      await expect.soft(newName).toHaveCount(0);
+      await copy.focus();
+      await page.keyboard.press('Space');
+      await expect(copy).toBeChecked();
+      await expect.soft(copy).toBeFocused();
+      await expect
+        .soft(copy)
+        .toHaveAccessibleDescription(
+          `The draft is not linked to ${root}. Publishing creates a new topology and leaves ${root} as it is.`,
+        );
+      await expect(newName).toHaveValue(copyName);
+
+      await combine.check();
+      await expect.soft(copy).toHaveCount(0);
+      await expect.soft(newName).toHaveValue(`${root}-combined`);
+      await dialog.getByLabel('Keep included nodes read only').check();
+      await expect.soft(copy).toBeChecked();
+      await expect(newName).toHaveValue(copyName);
+    });
+
+    const generated = waitForApi(page, 'POST', '/builder/generate');
+    const created = waitForApi(page, 'POST', '/builder/drafts');
+    await dialog.getByTestId('import-submit').click();
+    expect((await generated).request().postDataJSON()).toEqual({
+      source: `topology/${root}`,
+      includes: 'keep',
+      copy: true,
+      name: copyName,
+    });
+    const { warnings } = await (await generated).json();
+    await expect(dialog.getByTestId('import-warnings')).toContainText(
+      `Added 1 node from included topology ${child} (1 node). They are shown read only`,
+    );
+    await continuePastWarnings(dialog);
+    const draft = await (await created).json();
+    await expect(builder.canvas).toBeVisible();
+    await expect
+      .soft(builder)
+      .toHaveAnnounced(
+        `Imported a copy of topology ${root} as ${copyName}, with ${warnings.length} warnings. Draft created.`,
+      );
+
+    await test.step('the copy keeps its included nodes read only, and names no config', async () => {
+      await expect.soft(page.getByTestId('builder-name')).toHaveText(copyName);
+      await builder.waitSaved();
+      expect
+        .soft((await builder.serverDraft(draft)).sourceToken || '')
+        .toBe('');
+      const doc = await builder.serverDocument(draft);
+      expect.soft(doc.name).toBe(copyName);
+      expect.soft(doc.source).toMatchObject({
+        kind: 'manual',
+        includeTopologies: [child, missing],
+        unresolvedIncludes: [missing],
+      });
+      expect.soft(doc.source).not.toHaveProperty('name');
+
+      await expect
+        .soft(builder.outlineItem('inc-host'))
+        .toContainText('included');
+      // On the canvas it says where it comes from in place of its type, and
+      // the switch lists it with the diagram's own device.
+      const included = builder.node('inc-host', 'device');
+      await expect.soft(included).toContainText(`Included from ${child}`);
+      await expect.soft(included.getByTestId('node-type')).toHaveCount(0);
+      await expect
+        .soft(builder.node('host-a', 'device').getByTestId('node-type'))
+        .toHaveText('VirtualMachine');
+      await expect
+        .soft(await switchWrapper(page, builder))
+        .toHaveAccessibleDescription(
+          /^2 connected devices: host-a .*, inc-host /,
+        );
+      await builder.selectInOutline('inc-host');
+      await expect
+        .soft(builder.inspector.getByTestId('inspector-included-note'))
+        .toHaveText(
+          `Defined by included topology ${child}, so it is read only here. Change it in ${child} and import again, or combine the included nodes into a new draft to edit them here. It can still be moved.`,
+        );
+    });
+
+    await test.step('Publish creates the copy and refuses the name of the original', async () => {
+      const publish = await builder.openDialog('publish');
+      const name = publish.getByTestId('publish-name');
+      const hint = publish.locator('#publish-topology-action-hint');
+      await expect(name).toHaveValue(copyName);
+      await expect.soft(hint).toHaveText('A new topology will be created.');
+
+      await name.fill(root);
+      await expect
+        .soft(hint)
+        .toHaveText(
+          /^A topology with this name already exists, and this diagram cannot update it: /,
+        );
+      await name.fill(copyName);
+      await expect(publish.getByTestId('publish-submit')).toHaveText(
+        'Create topology',
+      );
+
+      const published = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname.endsWith('/publish'),
+      );
+      await publish.getByTestId('publish-submit').click();
+      const response = await published;
+      expect(response.status(), await response.text()).toBe(200);
+
+      const topology = await builder.config('Topology', copyName);
+      expect
+        .soft(topology.spec.nodes.map((node) => node.general.hostname))
+        .toEqual(['host-a']);
+      expect.soft(topology.spec.includeTopologies).toEqual([child, missing]);
+      // Neither its content nor its time of change moved.
+      expect.soft(await builder.config('Topology', root)).toEqual(before);
+      await publish.getByRole('button', { name: 'Close dialog' }).click();
+      await expect(publish).toBeHidden();
+    });
+
+    const stillIncludes = `It still includes ${missing}, whose nodes are not in the diagram.`;
+    const combinedSaid = `Combined 1 included node into new draft ${combinedName}. Draft ${copyName} is unchanged. ${stillIncludes}`;
+
+    const first =
+      await test.step("the Inspector's button makes a new draft whose nodes are all its own", async () => {
+        await builder.selectInOutline('inc-host');
+        const button = builder.inspector.getByTestId('inspector-combine');
+        await expect(button).toHaveText('Combine into a new draft');
+        await expect
+          .soft(button)
+          .toHaveAccessibleDescription(/^Defined by included topology /);
+
+        const made = waitForApi(page, 'POST', '/builder/drafts');
+        await button.focus();
+        await page.keyboard.press('Enter');
+        const body = await (await made).json();
+        expect.soft(body.id).not.toBe(draft.id);
+        await expect(page.getByTestId('builder-name')).toHaveText(combinedName);
+        await expect.soft(builder).toHaveAnnounced(combinedSaid);
+        // The button went with the note: focus is on the editor's heading.
+        await expect
+          .soft(page.getByRole('heading', { level: 1 }))
+          .toBeFocused();
+        await builder.waitSaved();
+
+        const doc = await builder.serverDocument(body);
+        expect.soft(doc.source).toEqual({
+          kind: 'manual',
+          importedAt: expect.any(String),
+          includeTopologies: [missing],
+        });
+        expect
+          .soft(doc.nodes.filter((node) => node.device?.includedFrom))
+          .toEqual([]);
+        expect
+          .soft((await builder.serverDraft(body)).sourceToken || '')
+          .toBe('');
+        await expect
+          .soft(builder.outlineItem('inc-host'))
+          .not.toContainText('included');
+        await expect
+          .soft(builder.node('inc-host', 'device').getByTestId('node-type'))
+          .toHaveText('VirtualMachine');
+        await builder.selectInOutline('inc-host');
+        await expect
+          .soft(builder.inspector.getByTestId('inspector-included-note'))
+          .toHaveCount(0);
+        await expect
+          .soft(builder.inspector.getByTestId('inspector-combine'))
+          .toHaveCount(0);
+
+        // Publishing writes both nodes, and still names the include whose
+        // nodes were never in the diagram.
+        const publish = await builder.openDialog('publish');
+        await expect(publish.getByTestId('publish-name')).toHaveValue(
+          combinedName,
+        );
+        await expect
+          .soft(publish)
+          .toContainText(
+            `2 devices, 1 switch, 1 network and 2 connections are ready to publish. The published topology also includes ${missing} by reference.`,
+          );
+        await publish.getByRole('button', { name: 'Close dialog' }).click();
+        await expect(publish).toBeHidden();
+
+        return body;
+      });
+
+    await test.step('the draft it was made from still has its read-only nodes', async () => {
+      const doc = await builder.serverDocument(draft);
+      expect
+        .soft(
+          doc.nodes
+            .filter((node) => node.device?.includedFrom)
+            .map((node) => [node.device.hostname, node.device.includedFrom]),
+        )
+        .toEqual([['inc-host', child]]);
+      expect.soft(doc.source.includeTopologies).toEqual([child, missing]);
+    });
+
+    await test.step('the command palette offers it only while there are included nodes', async () => {
+      const field = page.getByRole('combobox', { name: 'Search commands' });
+      const offered = page.getByTestId('commands-dialog').getByRole('option', {
+        name: /Combine included nodes into a new draft/,
+      });
+
+      // The combined draft has none.
+      await page.getByTestId('editor-commands').click();
+      await field.fill('combine included');
+      await expect(field).toHaveValue('combine included');
+      await expect.soft(offered).toHaveCount(0);
+      await page.keyboard.press('Escape');
+
+      await builder.backToDrafts();
+      await page.getByTestId(`draft-open-${draft.id}`).click();
+      await expect(page.getByTestId('builder-name')).toHaveText(copyName);
+      await builder.waitSaved();
+
+      await page.getByTestId('editor-commands').click();
+      await field.fill('unlock');
+      await expect(offered).toHaveCount(1);
+      await expect
+        .soft(offered)
+        .toContainText(
+          '1 included node becomes editable in a copy of this diagram',
+        );
+      const made = waitForApi(page, 'POST', '/builder/drafts');
+      await page.keyboard.press('Enter');
+      const second = await (await made).json();
+      expect.soft([draft.id, first.id]).not.toContain(second.id);
+      // The first combined draft has the name, so this one takes the next:
+      // two drafts of one name would propose the same topology at Publish.
+      await expect(page.getByTestId('builder-name')).toHaveText(
+        `${combinedName}-2`,
+      );
+      await builder.waitSaved();
+      expect
+        .soft((await builder.serverDraft(second)).title)
+        .toBe(`${combinedName}-2`);
+      expect
+        .soft(
+          (await builder.serverDocument(second)).nodes.filter(
+            (node) => node.device?.includedFrom,
+          ),
+        )
+        .toEqual([]);
+      // Focus is in the editor, not on the page.
+      expect
+        .soft(
+          await page.evaluate(() => document.activeElement !== document.body),
+        )
+        .toBe(true);
+    });
+
+    expectNoFatal(issues);
+  });
+
   test(
-    'uploaded configs are converted verbatim, without environment expansion',
+    'config files are converted verbatim, without environment expansion',
     {
       tag: '@known-defect',
     },
     async ({ page, builder }, testInfo) => {
-      // Uploads are limited to users who may create configs, who can reach
+      // Config files are limited to users who may create configs, who can reach
       // the same substitution through POST /configs; removing it is left to
       // the maintainers (see sandialabs/sceptre-phenix#436).
       knownDefect(
@@ -1964,12 +2595,8 @@ test.describe('generate', () => {
         doc.nodes.find((node) => node.kind === 'device').device.spec.general
           .description;
 
-      const created = waitForApi(page, 'POST', '/builder-v2/drafts');
-      const { response } = await generateFromUpload(
-        page,
-        content,
-        'topology.json',
-      );
+      const created = waitForApi(page, 'POST', '/builder/drafts');
+      const { response } = await importFromFile(page, content, 'topology.json');
       const draft = await (await created).json();
       // The generated document first, so the expected failure is immediate.
       expect(descriptionOf((await response.json()).document)).toBe(placeholder);
@@ -1992,12 +2619,11 @@ test.describe('drafts landing', () => {
     async ({ page, builder }) => {
       await builder.open();
 
-      const tabs = ['mine', 'shared', 'published'].map((id) =>
-        page.getByTestId(`drafts-tab-${id}`),
-      );
-      const panels = ['mine', 'shared', 'published'].map((id) =>
-        page.locator(`#panel-${id}`),
-      );
+      // The four tabs every user has. A fifth, of other users' drafts, shows
+      // only while there are some, which a server without sign-in never has.
+      const ids = ['mine', 'shared', 'published', 'templates'];
+      const tabs = ids.map((id) => page.getByTestId(`drafts-tab-${id}`));
+      const panels = ids.map((id) => page.locator(`#panel-${id}`));
 
       async function expectActive(index) {
         for (const [i, tab] of tabs.entries()) {
@@ -2025,11 +2651,13 @@ test.describe('drafts landing', () => {
       await page.keyboard.press('ArrowRight');
       await expectActive(2);
       await page.keyboard.press('ArrowRight');
+      await expectActive(3);
+      await page.keyboard.press('ArrowRight');
       await expectActive(0);
       await page.keyboard.press('ArrowLeft');
-      await expectActive(2);
+      await expectActive(3);
       await page.keyboard.press('ArrowLeft');
-      await expectActive(1);
+      await expectActive(2);
 
       await tabs[0].click();
       await expectActive(0);
@@ -2044,7 +2672,7 @@ test.describe('drafts landing', () => {
     builder,
     issues,
   }, testInfo) => {
-    const initial = waitForApi(page, 'GET', '/builder-v2/drafts');
+    const initial = waitForApi(page, 'GET', '/builder/drafts');
     await builder.open();
     await initial;
     await expect(page.getByTestId('drafts-refresh')).toHaveCount(0);
@@ -2066,14 +2694,14 @@ test.describe('drafts landing', () => {
     page.on('request', (sent) => {
       if (
         sent.method() === 'GET' &&
-        new URL(sent.url()).pathname.endsWith(`${API}/builder-v2/drafts`)
+        new URL(sent.url()).pathname.endsWith(`${API}/builder/drafts`)
       ) {
         listings.push(sent);
       }
     });
 
     await test.step('a failed listing is reported until one works', async () => {
-      const LIST = '**/api/v1/builder-v2/drafts';
+      const LIST = '**/api/v1/builder/drafts';
       await page.route(LIST, (route) =>
         route.request().method() === 'GET'
           ? route.fulfill({
@@ -2100,7 +2728,7 @@ test.describe('drafts landing', () => {
 
     await test.step('showing the page again lists the draft', async () => {
       listings.length = 0;
-      const listed = waitForApi(page, 'GET', '/builder-v2/drafts');
+      const listed = waitForApi(page, 'GET', '/builder/drafts');
       await showPageAgain(page);
       await listed;
 
@@ -2188,7 +2816,7 @@ test.describe('drafts landing', () => {
       await confirm.getByRole('button', { name: 'Delete draft' }).click();
 
       await expect.soft(draftCard(page, draft.id)).toHaveCount(0);
-      // Refused for the old ETag, the draft is read again and deleted.
+      // Refused for the old ETag, the draft is deleted with its current one.
       expect.soft(deletes, 'DELETE statuses').toEqual([412, 204]);
       await expect
         .soft(builder)
@@ -2201,7 +2829,7 @@ test.describe('drafts landing', () => {
       const unreadable = await builder.seedDraft(
         blankDocument(`${title} unreadable`),
       );
-      const LIST = '**/api/v1/builder-v2/drafts';
+      const LIST = '**/api/v1/builder/drafts';
       // The server lists it as it lists a draft whose record it can no
       // longer read: apart, with what it can read and the ETag.
       await page.route(LIST, async (route) => {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -38,6 +39,31 @@ const (
 
 // minRoutePoints is the fewest points an edge route may hold: its two ends.
 const minRoutePoints = 2
+
+// hexColorPattern matches the one form an outline or fill color takes:
+// "#rrggbb", in either case.
+const hexColorPattern = `#[0-9a-fA-F]{6}`
+
+var (
+	hexColor = regexp.MustCompile(`^` + hexColorPattern + `$`)
+
+	// lineStyles are the dash patterns a network or an edge may name, and
+	// borderStyles the border patterns a group may. In each, none (the empty
+	// string) leaves the pattern to the editor.
+	lineStyles   = []string{"solid", "dashed", "dotted", "dash-dot"} //nolint:gochecknoglobals // immutable list
+	borderStyles = []string{"solid", "dashed", "dotted", "double"}   //nolint:gochecknoglobals // immutable list
+)
+
+// LineStyles returns the dash patterns [Network.LineStyle] and
+// [Edge.LineStyle] may name.
+func LineStyles() []string {
+	return slices.Clone(lineStyles)
+}
+
+// BorderStyles returns the border patterns [Group.BorderStyle] may name.
+func BorderStyles() []string {
+	return slices.Clone(borderStyles)
+}
 
 // Issue is a single validation failure, located by a JSON-ish path within the
 // document.
@@ -86,7 +112,10 @@ type validator struct {
 // Validate performs structural and semantic validation of the document.
 //
 // Size limits (counts, lengths, payload sizes) are intentionally not checked
-// here; they belong to the API layer. Validate rejects:
+// here; they belong to the API layer. The exceptions are bounds the editor
+// checks too, by the same rules, before it saves: those on the header's
+// names, the source annotations, the templates and the custom icons.
+// Validate rejects:
 //
 //   - wrong schema URI or revision,
 //   - a document name longer than [MaxNameBytes] or containing control
@@ -108,10 +137,21 @@ type validator struct {
 //   - inconsistent scenario references (missing name, content, apiVersion, or
 //     a missing, malformed, or mismatched digest), and scenario content that
 //     fails the existing phenix scenario schema,
-//   - icon keys outside the bounded icon key registry (see [IsIconKey]),
+//   - icon keys outside the bounded icon key registry (see [IsIconKey]), on
+//     a device or a group,
+//   - an outline or fill color of a device or a switch that is not
+//     "#rrggbb",
+//   - a group border style outside [BorderStyles], and a network or edge
+//     line style outside [LineStyles],
+//   - custom icons [ValidateIcons] refuses, and a device, group or template
+//     naming a custom icon the document does not carry,
+//   - more than [MaxTemplates] templates, a template whose id is not a UUID
+//     or is used twice (case-insensitive), and one [Template.Issues]
+//     refuses,
 //   - devices marked [Device.IncludedFrom] with a malformed topology name, or
 //     in a document whose source includes no topologies,
-//   - a malformed [Source.Digest],
+//   - a malformed [Source.Digest], and a blank or whitespace-holding entry
+//     of [Source.IncludeTopologies] or [Source.UnresolvedIncludes],
 //   - source annotations beyond [MaxAnnotations] or [MaxAnnotationBytes], or
 //     with a blank key, a key longer than [MaxNameBytes] or one containing
 //     control characters,
@@ -135,6 +175,9 @@ func (d *Document) Validate() error {
 	val.validateEdges()
 	val.validateScenario()
 	val.validateSource()
+	val.validateTemplates()
+
+	val.issues = append(val.issues, ValidateIcons(d.Icons, keyIcons)...)
 
 	if len(val.issues) == 0 {
 		return nil
@@ -243,13 +286,13 @@ func (v *validator) validateNetworks() {
 		network := &v.doc.Networks[i]
 		path := fmt.Sprintf("networks[%d]", i)
 
-		v.validateID(path+".id", "network", network.ID)
-
-		if prev, ok := seenIDs[foldKey(network.ID)]; ok {
-			v.addf(path+".id", "duplicate network ID %q (also networks[%d])", network.ID, prev)
-		} else {
-			seenIDs[foldKey(network.ID)] = i
-			v.networksByID[network.ID] = network
+		if v.validateID(path+".id", "network", network.ID) {
+			if prev, ok := seenIDs[foldKey(network.ID)]; ok {
+				v.addf(path+".id", "duplicate network ID %q (also networks[%d])", network.ID, prev)
+			} else {
+				seenIDs[foldKey(network.ID)] = i
+				v.networksByID[network.ID] = network
+			}
 		}
 
 		switch {
@@ -270,6 +313,8 @@ func (v *validator) validateNetworks() {
 				seenNames[network.Name] = i
 			}
 		}
+
+		v.validateLineStyle(network.LineStyle, path+".lineStyle")
 
 		if network.Alias == nil {
 			continue
@@ -299,13 +344,13 @@ func (v *validator) validateNodes() {
 		node := &v.doc.Nodes[i]
 		path := fmt.Sprintf("nodes[%d]", i)
 
-		v.validateID(path+".id", "node", node.ID)
-
-		if prev, ok := seenIDs[foldKey(node.ID)]; ok {
-			v.addf(path+".id", "duplicate node ID %q (also nodes[%d])", node.ID, prev)
-		} else {
-			seenIDs[foldKey(node.ID)] = i
-			v.nodesByID[node.ID] = node
+		if v.validateID(path+".id", "node", node.ID) {
+			if prev, ok := seenIDs[foldKey(node.ID)]; ok {
+				v.addf(path+".id", "duplicate node ID %q (also nodes[%d])", node.ID, prev)
+			} else {
+				seenIDs[foldKey(node.ID)] = i
+				v.nodesByID[node.ID] = node
+			}
 		}
 
 		if !finite(node.Position.X) || !finite(node.Position.Y) {
@@ -348,6 +393,9 @@ func (v *validator) validateNodes() {
 
 			v.validateDeviceHandles(node, path)
 			v.validateIconKey(node.Device.IconKey, path+".device.iconKey")
+			v.validateIconRef(node.Device.Icon, path+".device.icon")
+			v.validateColor(node.Device.OutlineColor, path+".device.outlineColor")
+			v.validateColor(node.Device.FillColor, path+".device.fillColor")
 			v.validateIncludedFrom(node.Device.IncludedFrom, path+".device.includedFrom")
 		case NodeKindSwitch:
 			if node.Switch == nil {
@@ -363,8 +411,26 @@ func (v *validator) validateNodes() {
 					node.Switch.NetworkID,
 				)
 			}
-		case NodeKindNote, NodeKindGroup:
-			// Notes and groups carry no phenix semantics.
+
+			v.validateColor(node.Switch.OutlineColor, path+".switch.outlineColor")
+			v.validateColor(node.Switch.FillColor, path+".switch.fillColor")
+		case NodeKindGroup:
+			if node.Group == nil {
+				break
+			}
+
+			if style := node.Group.BorderStyle; style != "" && !slices.Contains(borderStyles, style) {
+				v.addf(
+					path+".group.borderStyle",
+					"unknown border style %q (expected one of %s)",
+					truncate(style), strings.Join(borderStyles, ", "),
+				)
+			}
+
+			v.validateIconKey(node.Group.IconKey, path+".group.iconKey")
+			v.validateIconRef(node.Group.Icon, path+".group.icon")
+		case NodeKindNote:
+			// Notes carry no phenix semantics and nothing to check.
 		}
 	}
 }
@@ -403,21 +469,87 @@ func (v *validator) validateNodePayload(node *Node, path string) {
 // validateIconKey enforces the bounded icon key registry shared with the
 // generated JSON Schema. An empty key means "use the default icon".
 func (v *validator) validateIconKey(key, path string) {
-	if key == "" || IsIconKey(key) {
+	if problem := iconKeyProblem(key); problem != "" {
+		v.addf(path, "%s", problem)
+	}
+}
+
+// iconKeyProblem says why key is no icon key a node may have, or returns
+// "".
+func iconKeyProblem(key string) string {
+	switch {
+	case key == "" || IsIconKey(key):
+		return ""
+	case iconKeyLooksExternal(key):
+		return fmt.Sprintf("icon key %q must be one of the built-in keys, not a URL or path", key)
+	default:
+		return fmt.Sprintf("unknown icon key %q (expected one of %s)", key, strings.Join(iconKeys, ", "))
+	}
+}
+
+// validateIconRef checks the custom icon a device, a group or a template
+// names: none, or one the document carries (see [Document.Icons]).
+func (v *validator) validateIconRef(id, path string) {
+	if id == "" {
 		return
 	}
 
-	if iconKeyLooksExternal(key) {
-		v.addf(
-			path,
-			"icon key %q must be one of the built-in keys, not a URL or path",
-			key,
-		)
+	if _, ok := v.doc.Icons[id]; !ok {
+		v.addf(path, "unknown custom icon %q", truncate(id))
+	}
+}
 
+// validateColor checks an outline or fill color: none, or "#rrggbb".
+func (v *validator) validateColor(color, path string) {
+	if problem := colorProblem(color); problem != "" {
+		v.addf(path, "%s", problem)
+	}
+}
+
+// colorProblem says why color is no outline or fill color, or returns "".
+func colorProblem(color string) string {
+	if color == "" || hexColor.MatchString(color) {
+		return ""
+	}
+
+	return fmt.Sprintf("color %q must be a hex color such as #2f6fbf", truncate(color))
+}
+
+// validateLineStyle checks the line style of a network or an edge: none,
+// or one of [LineStyles].
+func (v *validator) validateLineStyle(style, path string) {
+	if style == "" || slices.Contains(lineStyles, style) {
 		return
 	}
 
-	v.addf(path, "unknown icon key %q (expected one of %s)", key, strings.Join(iconKeys, ", "))
+	v.addf(path, "unknown line style %q (expected one of %s)", truncate(style), strings.Join(lineStyles, ", "))
+}
+
+// validateTemplates checks the document's templates: how many, the id of
+// each, which is unique among them, the custom icon each names, and what
+// [Template.Issues] checks.
+func (v *validator) validateTemplates() {
+	if len(v.doc.Templates) > MaxTemplates {
+		v.addf(keyTemplates, "at most %d templates are allowed, not %d", MaxTemplates, len(v.doc.Templates))
+	}
+
+	seenIDs := map[string]int{}
+
+	for i := range v.doc.Templates {
+		template := &v.doc.Templates[i]
+		path := fmt.Sprintf("%s[%d]", keyTemplates, i)
+
+		if v.validateID(path+".id", "template", template.ID) {
+			if prev, ok := seenIDs[foldKey(template.ID)]; ok {
+				v.addf(path+".id", "duplicate template ID %q (also %s[%d])", template.ID, keyTemplates, prev)
+			} else {
+				seenIDs[foldKey(template.ID)] = i
+			}
+		}
+
+		v.issues = append(v.issues, template.Issues(path)...)
+		v.validateIconRef(template.Device.Icon, path+".device.icon")
+	}
 }
 
 // validateIncludedFrom checks the topology an included device names. Included
@@ -445,16 +577,16 @@ func (v *validator) validateDeviceHandles(node *Node, path string) {
 		handle := &node.Device.Interfaces[j]
 		handlePath := fmt.Sprintf("%s.device.interfaces[%d]", path, j)
 
-		v.validateID(handlePath+".id", "interface handle", handle.ID)
-
-		if owner, ok := v.handleOwner[foldKey(handle.ID)]; ok {
-			v.addf(
-				handlePath+".id",
-				"duplicate interface handle ID %q (also used by node %q)",
-				handle.ID, owner.ID,
-			)
-		} else if handle.ID != "" {
-			v.handleOwner[foldKey(handle.ID)] = node
+		if v.validateID(handlePath+".id", "interface handle", handle.ID) {
+			if owner, ok := v.handleOwner[foldKey(handle.ID)]; ok {
+				v.addf(
+					handlePath+".id",
+					"duplicate interface handle ID %q (also used by node %q)",
+					handle.ID, owner.ID,
+				)
+			} else {
+				v.handleOwner[foldKey(handle.ID)] = node
+			}
 		}
 
 		if strings.TrimSpace(handle.Name) == "" {
@@ -530,23 +662,55 @@ func (v *validator) parentCycle(start *Node) bool {
 	return false
 }
 
+// handleIndex holds the interface handles of device nodes by ID. A device is
+// indexed the first time a handle of it is looked for, so a device with many
+// interfaces is not searched once for every edge that names it.
+type handleIndex map[*Node]map[string]*InterfaceHandle
+
+// find returns the handle [Device.InterfaceHandle] returns for the device of
+// the node: the first with that ID, or nil.
+func (h handleIndex) find(device *Node, id string) *InterfaceHandle {
+	if device.Device == nil {
+		return nil
+	}
+
+	byID, indexed := h[device]
+	if !indexed {
+		byID = make(map[string]*InterfaceHandle, len(device.Device.Interfaces))
+
+		for i := range device.Device.Interfaces {
+			handle := &device.Device.Interfaces[i]
+
+			if _, seen := byID[handle.ID]; !seen {
+				byID[handle.ID] = handle
+			}
+		}
+
+		h[device] = byID
+	}
+
+	return byID[id]
+}
+
 func (v *validator) validateEdges() {
 	seenIDs := map[string]int{}
 	connected := map[string]int{}
+	handles := handleIndex{}
 
 	for i := range v.doc.Edges {
 		edge := &v.doc.Edges[i]
 		path := fmt.Sprintf("edges[%d]", i)
 
-		v.validateID(path+".id", "edge", edge.ID)
-
-		if prev, ok := seenIDs[foldKey(edge.ID)]; ok {
-			v.addf(path+".id", "duplicate edge ID %q (also edges[%d])", edge.ID, prev)
-		} else {
-			seenIDs[foldKey(edge.ID)] = i
+		if v.validateID(path+".id", "edge", edge.ID) {
+			if prev, ok := seenIDs[foldKey(edge.ID)]; ok {
+				v.addf(path+".id", "duplicate edge ID %q (also edges[%d])", edge.ID, prev)
+			} else {
+				seenIDs[foldKey(edge.ID)] = i
+			}
 		}
 
 		v.validateRoute(path+".route", edge.Route)
+		v.validateLineStyle(edge.LineStyle, path+".lineStyle")
 
 		source, sourceOK := v.nodesByID[edge.SourceNodeID]
 		if !sourceOK {
@@ -575,7 +739,7 @@ func (v *validator) validateEdges() {
 			continue
 		}
 
-		handle := device.Device.InterfaceHandle(deviceHandle)
+		handle := handles.find(device, deviceHandle)
 		if handle == nil {
 			v.addf(
 				path,
@@ -765,26 +929,33 @@ func (v *validator) validateSource() {
 		v.addf("source.kind", "unknown source kind %q", v.doc.Source.Kind)
 	}
 
-	for i, name := range v.doc.Source.IncludeTopologies {
-		path := fmt.Sprintf("source.includeTopologies[%d]", i)
-
-		switch {
-		case strings.TrimSpace(name) == "":
-			v.addf(path, "included topology name is required")
-		case strings.ContainsAny(name, " \t\n"):
-			v.addf(
-				path,
-				"included topology name %q must not contain whitespace",
-				name,
-			)
-		}
-	}
+	v.validateIncludes("source.includeTopologies", v.doc.Source.IncludeTopologies)
+	v.validateIncludes("source.unresolvedIncludes", v.doc.Source.UnresolvedIncludes)
 
 	if digest := v.doc.Source.Digest; digest != "" && !IsDigest(digest) {
 		v.addf("source.digest", "malformed source digest %q (expected sha256:<64 hex>)", digest)
 	}
 
 	v.validateAnnotations(v.doc.Source.Annotations)
+}
+
+// validateIncludes checks the names of included topologies the source
+// lists at path: none blank, none with whitespace.
+func (v *validator) validateIncludes(path string, names []string) {
+	for i, name := range names {
+		at := fmt.Sprintf("%s[%d]", path, i)
+
+		switch {
+		case strings.TrimSpace(name) == "":
+			v.addf(at, "included topology name is required")
+		case strings.ContainsAny(name, " \t\n"):
+			v.addf(
+				at,
+				"included topology name %q must not contain whitespace",
+				name,
+			)
+		}
+	}
 }
 
 // validateAnnotations bounds the source annotations, the way generation
@@ -835,17 +1006,21 @@ func annotationKeyProblem(key string) string {
 
 // validateID enforces the identifier contract: every entity identifier is an
 // RFC 4122 UUID. Generated identifiers are name based UUIDs; identifiers minted
-// by the front end are random (version 4) UUIDs.
-func (v *validator) validateID(path, kindName, id string) {
+// by the front end are random (version 4) UUIDs. It reports whether there is
+// an identifier at all: a blank one is reported as missing here, and is then
+// neither a duplicate of another blank one nor a name to look an entity up by.
+func (v *validator) validateID(path, kindName, id string) bool {
 	if strings.TrimSpace(id) == "" {
 		v.addf(path, "%s ID is required", kindName)
 
-		return
+		return false
 	}
 
 	if !IsUUID(id) {
 		v.addf(path, "%s ID %q is not a valid UUID", kindName, id)
 	}
+
+	return true
 }
 
 // edgeEndpoints normalizes an edge's endpoints into (device, device handle,

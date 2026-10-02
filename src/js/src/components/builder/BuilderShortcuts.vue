@@ -9,6 +9,12 @@
   single-key switch (WCAG 2.1.4) is in both. The Settings dialog opens the
   customization directly (customize), and Done then closes the sheet.
 
+  The sheet is wider than the other dialogs and sets its groups in columns
+  the browser balances: a group follows the one before it down a column and
+  on into the next, so a short group leaves no gap beside a long one. The
+  reading and focus order is the DOM order, down each column in turn. The
+  customization is one column at the dialogs' usual width.
+
   The Builder's live region waits while a modal dialog is open, so the sheet
   speaks through status regions of its own: the recorder's message, and a
   hidden one for everything else.
@@ -18,6 +24,7 @@
     :title="customizing ? 'Change keyboard shortcuts' : 'Keyboard shortcuts'"
     title-id="shortcuts-dialog-title"
     class="builder-shortcuts"
+    :class="{ 'builder-shortcuts--edit': customizing }"
     @close="$emit('close')">
     <p ref="introEl" class="builder-hint builder-shortcuts__intro">
       {{
@@ -621,19 +628,36 @@
     margin: 0.2rem 0 0;
   }
 
+  /* The sheet is wider than the other dialogs; the customization keeps
+     their width. */
+  .builder-shortcuts {
+    width: min(68rem, calc(100vw - 2rem));
+  }
+
+  .builder-shortcuts--edit {
+    width: min(46rem, 92vw);
+  }
+
+  /* Groups flow down one column and on into the next, so a short group is
+     followed at once by the next one. The browser balances the columns. */
   .builder-shortcuts__groups {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
-    align-items: start;
-    gap: 0 1.5rem;
+    column-width: 19rem;
+    column-gap: 1.5rem;
   }
 
   .builder-shortcuts__groups--edit {
-    grid-template-columns: minmax(0, 1fr);
+    columns: auto;
+  }
+
+  /* The space above a group is its own, not its heading's margin, so every
+     column starts at the same height. */
+  .builder-shortcuts__group {
+    break-inside: avoid;
+    padding-top: 0.75rem;
   }
 
   .builder-shortcuts__group h3 {
-    margin: 0.75rem 0 0.2rem;
+    margin: 0 0 0.2rem;
     font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.06em;

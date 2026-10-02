@@ -1,0 +1,54 @@
+# Topology Designer: creates Builder drafts and publishes topologies,
+# scenarios and experiments. Sees only their own drafts and those shared with
+# them (no builder-drafts policy). Every policy names its resources: "*/*"
+# matches config names such as Topology/riverside-water, which "*" does not.
+apiVersion: phenix.sandia.gov/v1
+kind: Role
+metadata:
+  name: topology-designer
+spec:
+  roleName: Topology Designer
+  policies:
+  - resources:
+    - configs
+    resourceNames:
+    - "*"
+    - "*/*"
+    verbs:
+    - list
+    - get
+    - create
+    - update
+    - delete
+  - resources:
+    - topologies
+    - scenarios
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+    - get
+  - resources:
+    - experiments
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+    - get
+    - create
+    - update
+  - resources:
+    - disks
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+  # The Inspector's form fields come from GET /schemas/builder/v1, which needs
+  # schemas get on the resource name builder. Without it the Inspector falls
+  # back to the fields built into the UI and says so.
+  - resources:
+    - schemas
+    resourceNames:
+    - "*"
+    verbs:
+    - get

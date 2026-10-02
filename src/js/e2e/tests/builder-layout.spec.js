@@ -1,4 +1,4 @@
-// Builder v2 page layout: the editor fills the viewport under the header
+// Builder page layout: the editor fills the viewport under the header
 // without page scrolling, keeps a usable canvas in short windows, with
 // enlarged text and however its side columns are resized, text stays inside
 // its boxes, and palette entries show their descriptions as tooltips.
@@ -149,9 +149,15 @@ async function editorLayout(page) {
       ]
         .filter((label) => getComputedStyle(label).position !== 'absolute')
         .map((label) => label.closest('[data-testid]').dataset.testid),
-      keycaps: [...document.querySelectorAll('.builder-header kbd')].some(
-        (kbd) => kbd.checkVisibility(),
-      ),
+      keycaps: [
+        ...document.querySelectorAll('[data-testid="editor-commands"] kbd'),
+      ].some((kbd) => kbd.checkVisibility()),
+      // The key on the Shortcuts button, which shows at every width.
+      shortcutsKey: [
+        ...document.querySelectorAll('[data-testid="editor-shortcuts"] kbd'),
+      ]
+        .filter((kbd) => kbd.checkVisibility())
+        .map((kbd) => kbd.textContent),
       // The right edge of the last header link.
       navRight: Math.max(
         ...[...document.querySelectorAll('.navbar .navbar-item')]
@@ -247,7 +253,7 @@ test(
     // On every page, header links that do not fit wrap rather than push the
     // last ones off the page (1024 wide: 1280 at 125% zoom).
     await resize(page, { width: 1024, height: 720 });
-    await expect.soft(page.getByTestId('nav-builder-v2')).toBeVisible();
+    await expect.soft(page.getByTestId('nav-builder')).toBeVisible();
     expect
       .soft(
         await page.evaluate(() => document.documentElement.scrollWidth),
@@ -256,9 +262,9 @@ test(
       .toBeLessThanOrEqual(1024);
     await resize(page, initial);
     // A focused header link is as legible as a hovered one.
-    await page.getByTestId('nav-builder-v2').focus();
+    await page.getByTestId('nav-builder').focus();
     const [{ ratio: focusedLink }] = await contrast(
-      page.getByTestId('nav-builder-v2'),
+      page.getByTestId('nav-builder'),
     );
     expect
       .soft(focusedLink, 'focused header link text')
@@ -446,6 +452,9 @@ test(
         expect
           .soft(layout.keycaps, at('Commands keys'))
           .toBe(viewport.width === 2560);
+        // Shortcuts keeps its key beside its icon, with or without its
+        // label.
+        expect.soft(layout.shortcutsKey, at('Shortcuts key')).toEqual(['?']);
 
         // The save state is in the toolbar, just after Draft History on its
         // row, whole, and pushes no button off screen.
@@ -679,6 +688,10 @@ test(
           Math.round(element.getBoundingClientRect().width),
         );
       const wide = await canvasWidth();
+      // The width of the first column, which it has again when it is shown.
+      const shown = await page
+        .getByTestId('splitter-start')
+        .getAttribute('aria-valuenow');
 
       // Directly under each Widen toggle, at least 24px square, and named
       // for what a press does to the column it controls.
@@ -778,7 +791,16 @@ test(
       await expect.soft(columns.start).toBeVisible();
       await expect.soft(hide.start).toHaveAttribute('aria-expanded', 'true');
       const splitter = page.getByTestId('splitter-start');
-      const width = Number(await splitter.getAttribute('aria-valuenow'));
+      // The splitter reports the column's width as soon as the column
+      // shows: not its narrowest width until the layout is next measured,
+      // which an arrow key pressed meanwhile would resize it from.
+      expect
+        .soft(
+          await splitter.getAttribute('aria-valuenow'),
+          'the width the splitter reports once its column shows',
+        )
+        .toBe(shown);
+      const width = Number(shown);
       await splitter.focus();
       await page.keyboard.press('ArrowRight');
       await expect
@@ -796,6 +818,32 @@ test(
       await expect
         .soft(splitter)
         .toHaveAttribute('aria-valuenow', String(width));
+
+      // That holds before the browser draws another frame. Once the layout
+      // has been measured with the column hidden, the column is shown and
+      // its splitter read in one task, which leaves the browser no frame in
+      // between.
+      await hide.start.click();
+      await expect.soft(columns.start).toBeHidden();
+      const reported = await page.evaluate(async () => {
+        const find = (id) => document.querySelector(`[data-testid="${id}"]`);
+
+        await new Promise((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+        });
+        find('pane-hide-start').click();
+
+        // The editor draws the column in a microtask of this task.
+        for (let turn = 0; turn < 100 && !find('splitter-start'); turn += 1) {
+          await Promise.resolve();
+        }
+
+        return find('splitter-start')?.getAttribute('aria-valuenow');
+      });
+      expect
+        .soft(reported, 'the width the splitter reports in the same task')
+        .toBe(shown);
+      await expect.soft(columns.start).toBeVisible();
       expect.soft(await canvasWidth(), 'canvas width again').toBe(wide);
     });
 
@@ -935,7 +983,8 @@ test(
         start: page.getByTestId('splitter-start'),
         end: page.getByTestId('splitter-end'),
       };
-      const help = page.getByTestId('canvas-help');
+      // A section of the Inspector that opens: a device's More settings.
+      const section = builder.inspector.getByTestId('inspector-section');
       const side = page.locator('#builder-pane-start');
       const minimapHandle = page.getByRole('separator', {
         name: 'Resize minimap',
@@ -984,17 +1033,27 @@ test(
         .toHaveText('Reset column widths, zoom, minimap and scrolling');
       await resize(page, { width: 1440, height: 640 });
 
+      await builder.selectInOutline('node');
+      await section.locator('summary').click();
+      await expect.soft(section).toHaveAttribute('open');
       await page.getByTestId('pane-toggle-start').click();
       await splitters.end.focus();
       await page.keyboard.press('ArrowLeft');
       await page.getByTestId('pane-hide-end').click();
       await builder.canvas.focus();
       await page.keyboard.press('=');
+      // Between the widened column and the Inspector the canvas was at its
+      // narrowest, where the minimap cannot grow. It can once the canvas has
+      // the Inspector's room, which Vue Flow measures a frame later.
+      await expect
+        .poll(async () =>
+          Number(await minimapHandle.getAttribute('aria-valuemax')),
+        )
+        .toBeGreaterThanOrEqual(216);
       await minimapHandle.focus();
       await page.keyboard.press('ArrowUp');
       await expect.soft(minimapHandle).toHaveAttribute('aria-valuenow', '216');
       await builder.toolbar('minimap').click();
-      await help.locator('summary').click();
       const scrolled = await side.evaluate((element) => {
         element.scrollTop = 120;
         return element.scrollTop;
@@ -1033,7 +1092,10 @@ test(
           'stored minimap size',
         )
         .toBeNull();
-      await expect.soft(help).not.toHaveAttribute('open');
+      await expect.soft(section).toHaveCount(1);
+      await expect.soft(section).not.toHaveAttribute('open');
+      // Nothing is under the canvas: the keys are in the shortcut sheet.
+      await expect.soft(page.getByTestId('canvas-help')).toHaveCount(0);
       expect.soft(await side.evaluate((element) => element.scrollTop)).toBe(0);
       await expect.poll(transform, { message: 'zoom and pan' }).toBe(opened);
     });

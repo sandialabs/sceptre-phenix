@@ -1,6 +1,6 @@
-// Logging out while Builder v2 holds changes the server does not have:
+// Logging out while Builder holds changes the server does not have:
 // when to warn and for how long, what the warning says, and how the changes
-// queued in this browser are found, sent and exported, with the Builder
+// queued in this browser are found, sent and downloaded, with the Builder
 // open or not.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -479,7 +479,7 @@ describe('the warning', () => {
     ).toEqual({
       title: 'Log out with unsaved changes?',
       message:
-        '1 change to Builder v2 drafts has not reached the server. Logging out deletes it from this browser. Use Export to keep a copy.',
+        '1 change to Builder drafts has not reached the server. Logging out deletes it from this browser. Use Download to keep a copy.',
       confirm: 'Log out anyway',
       stay: 'Stay signed in',
       signIn: 'Sign in again',
@@ -497,14 +497,14 @@ describe('the warning', () => {
     ).toMatchObject({
       title: 'You will be logged out',
       message:
-        'You have been inactive for a while. 3 changes to Builder v2 drafts have not reached the server. Logging out deletes them from this browser. Use Export to keep a copy.',
+        'You have been inactive for a while. 3 changes to Builder drafts have not reached the server. Logging out deletes them from this browser. Use Download to keep a copy.',
       confirm: 'Log out now',
     });
 
     const unapplied =
       'Your changes to Device web01 in the Inspector cannot be saved until Memory is fixed.';
 
-    // Export would not hold the Inspector's edits: staying is the way to
+    // Download would not hold the Inspector's edits: staying is the way to
     // keep them, when there is one.
     expect(
       logoutWarningText({
@@ -544,7 +544,7 @@ describe('the warning', () => {
     ).toMatchObject({
       title: 'Your session has expired',
       message:
-        'To sign in again, you must log out. 1 change to Builder v2 drafts has not reached the server. Logging out deletes it from this browser. Use Export to keep a copy.',
+        'To sign in again, you must log out. 1 change to Builder drafts has not reached the server. Logging out deletes it from this browser. Use Download to keep a copy.',
       confirm: 'Log out anyway',
     });
 
@@ -558,10 +558,10 @@ describe('the warning', () => {
         secondsLeft: null,
       }).message,
     ).toBe(
-      `1 change to Builder v2 drafts has not reached the server. ${unapplied} Logging out deletes them from this browser. Use Export to keep a copy.`,
+      `1 change to Builder drafts has not reached the server. ${unapplied} Logging out deletes them from this browser. Use Download to keep a copy.`,
     );
 
-    // Changes this browser cannot rebuild a diagram from: no Export.
+    // Changes this browser cannot rebuild a diagram from: no Download.
     expect(
       logoutWarningText({
         reason: 'manual',
@@ -572,7 +572,7 @@ describe('the warning', () => {
         secondsLeft: null,
       }).message,
     ).toBe(
-      '1 change to Builder v2 drafts has not reached the server. Logging out deletes it from this browser.',
+      '1 change to Builder drafts has not reached the server. Logging out deletes it from this browser.',
     );
 
     // On the Builder's page, signing in again keeps them, and fixes the
@@ -588,7 +588,7 @@ describe('the warning', () => {
         secondsLeft: 60,
       }).message,
     ).toBe(
-      '2 changes to Builder v2 drafts have not reached the server. Sign in again to save them. Logging out deletes them from this browser. Use Export to keep a copy.',
+      '2 changes to Builder drafts have not reached the server. Sign in again to save them. Logging out deletes them from this browser. Use Download to keep a copy.',
     );
     expect(
       logoutWarningText({
@@ -607,7 +607,7 @@ describe('the warning', () => {
   });
 
   test('the countdown goes before the page title while it runs', () => {
-    const title = 'Lab - Builder v2 - phēnix';
+    const title = 'Lab - Builder - phēnix';
     const counting = countdownTitle(title, 42);
 
     expect(counting).toBe(`Logging out in 42 seconds – ${title}`);
@@ -673,10 +673,14 @@ describe('the warning', () => {
     // The regions that speak later are there, empty, from the start.
     expect(tag(html, 'role="status"')).not.toBeNull();
     expect(tag(html, 'aria-live="assertive"')).toContain('aria-atomic="true"');
-    expect(buttons(html)).toEqual(['Export', 'Stay signed in', 'Log out now']);
+    expect(buttons(html)).toEqual([
+      'Download',
+      'Stay signed in',
+      'Log out now',
+    ]);
   });
 
-  test('offers one Export per draft, named when there are several, and none without a draft to save', async () => {
+  test('offers one Download per draft, named when there are several, and none without a draft to save', async () => {
     let html = await render({
       ...idle,
       drafts: [
@@ -686,8 +690,8 @@ describe('the warning', () => {
     });
 
     expect(buttons(html)).toEqual([
-      'Export lab.json',
-      'Export lab-2.json',
+      'Download lab.json',
+      'Download lab-2.json',
       'Stay signed in',
       'Log out now',
     ]);
@@ -700,7 +704,7 @@ describe('the warning', () => {
     });
     expect(buttons(html)).toEqual(['Stay signed in', 'Log out now']);
     expect(html).toContain('Stay signed in to fix them.');
-    expect(html).not.toContain('Export');
+    expect(html).not.toContain('Download');
   });
 
   test('says the near-end notice, and offers no Stay once the session has expired', async () => {
@@ -728,7 +732,7 @@ describe('the warning', () => {
       canSignIn: true,
     });
 
-    expect(buttons(html)).toEqual(['Export', 'Sign in again', 'Log out now']);
+    expect(buttons(html)).toEqual(['Download', 'Sign in again', 'Log out now']);
     expect(tag(html, 'data-testid="logout-warning-signin"')).toContain(
       'type="button"',
     );
@@ -910,7 +914,7 @@ describe("the Builder's changes this browser holds", () => {
 
   // A page left before IndexedDB stored its last change kept a copy of it
   // in localStorage: logout clears it too, so it counts.
-  test('counts the changes a page kept as it was left, and Export can save them', async () => {
+  test('counts the changes a page kept as it was left, and Download can save them', async () => {
     const items = new Map();
     const storage = {
       get length() {
@@ -1187,7 +1191,7 @@ describe("the Builder's changes this browser holds", () => {
   });
 
   // Back to drafts leaves the draft's queue sending in the background: it
-  // sends its own changes, which count once, and Export has them.
+  // sends its own changes, which count once, and Download has them.
   test('a draft closed while its changes are sent is sent by its own queue, and counts once', async () => {
     const closed = record(
       'alice',
@@ -1242,7 +1246,7 @@ describe("the Builder's changes this browser holds", () => {
     );
   });
 
-  test('Export has the diagram each queue leaves, and the open one as it is shown', async () => {
+  test('Download has the diagram each queue leaves, and the open one as it is shown', async () => {
     const d2 = record(
       'alice',
       'alice',
@@ -1328,7 +1332,7 @@ describe("the Builder's changes this browser holds", () => {
     ).resolves.toBeNull();
   });
 
-  test('is saved as Export saves JSON', () => {
+  test('is saved as Download saves JSON', () => {
     expect(diagramFile({ name: '  Core Lab: v2! ' })).toEqual({
       name: 'core-lab-v2.json',
       text: '{\n  "name": "  Core Lab: v2! "\n}\n',

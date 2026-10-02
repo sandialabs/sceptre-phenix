@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -87,6 +88,11 @@ func TestFromTopologyConfigPreservesIncludedTopologies(t *testing.T) {
 	doc, warnings := documentFromConfig(t, config)
 	if !reflect.DeepEqual(doc.Source.IncludeTopologies, []string{"shared-services", "monitoring"}) {
 		t.Fatalf("included topologies = %v", doc.Source.IncludeTopologies)
+	}
+
+	// Without a loader none of them is resolved.
+	if !reflect.DeepEqual(doc.Source.UnresolvedIncludes, []string{"shared-services", "monitoring"}) {
+		t.Fatalf("unresolved includes = %v, want both", doc.Source.UnresolvedIncludes)
 	}
 
 	if len(warnings) != 1 {
@@ -763,6 +769,10 @@ func TestFromTopologyConfigAddsIncludedTopologies(t *testing.T) {
 		t.Fatalf("included topologies = %v", doc.Source.IncludeTopologies)
 	}
 
+	if doc.Source.UnresolvedIncludes != nil {
+		t.Fatalf("unresolved includes = %v, want none: every include was read", doc.Source.UnresolvedIncludes)
+	}
+
 	for hostname, want := range map[string]string{
 		"router": "", "host-a": "", "dns": "shared-services", "ntp": "shared-services", "collector": "monitoring",
 	} {
@@ -840,6 +850,12 @@ func TestFromTopologyConfigReportsIncludeProblems(t *testing.T) {
 		if !containsSubstring(warnings, want) {
 			t.Fatalf("expected a warning containing %q, got %q", want, warnings)
 		}
+	}
+
+	// A cycle is not an include whose nodes are missing: only the topology
+	// that could not be read is.
+	if !reflect.DeepEqual(doc.Source.UnresolvedIncludes, []string{"missing"}) {
+		t.Fatalf("unresolved includes = %v, want only missing", doc.Source.UnresolvedIncludes)
 	}
 
 	if router := nodeByHostname(t, doc, "router"); router.Device.IncludedFrom != "" {
@@ -1089,6 +1105,10 @@ func TestFromTopologyConfigIncludedTwice(t *testing.T) {
 	if got := nodeByHostname(t, doc, "shared-node").Device.IncludedFrom; got != "shared" {
 		t.Fatalf("shared-node is included from %q, want shared", got)
 	}
+
+	if doc.Source.UnresolvedIncludes != nil {
+		t.Fatalf("unresolved includes = %v, want none", doc.Source.UnresolvedIncludes)
+	}
 }
 
 // TestCheckIncludes reports what would stop phenix from merging a
@@ -1167,6 +1187,12 @@ func TestFromConfigWithoutLoaderKeepsIncludesUnresolved(t *testing.T) {
 			t.Fatalf("%s was marked without a loader", node.Device.Hostname)
 		}
 	}
+
+	// An experiment holds every node, so it never lists an include as
+	// unresolved.
+	if doc.Source.UnresolvedIncludes != nil {
+		t.Fatalf("unresolved includes = %v, want none for an experiment", doc.Source.UnresolvedIncludes)
+	}
 }
 
 // documentFromConfigWith imports a fixture config with options, failing the
@@ -1196,4 +1222,315 @@ func specString(spec map[string]any, path ...string) string {
 	text, _ := value.(string)
 
 	return text
+}
+
+// The two warnings a combined import adds, as the Import dialog shows them.
+const (
+	combinedSummary = "Copied 3 nodes from included topologies corp-services (2 nodes) and lab-dns (1 node). " +
+		"They are ordinary nodes of this diagram now: changes here do not reach those topologies, " +
+		"and later changes there do not reach this diagram."
+	combinedKept = "Included topologies site-b and /srv/extra.yml were not combined and stay in " +
+		"includeTopologies: publishing keeps the references."
+)
+
+// combineFixture is a topology "site" with one node that includes
+// corp-services, which includes lab-dns in turn, then site-b, which cannot
+// be read, and a file, which the loader does not read either.
+func combineFixture() (store.Config, builder.TopologyLoader) {
+	root := includeFixture("site", []string{"corp-services", "site-b", "/srv/extra.yml"},
+		map[string]string{"gateway": "EXP"})
+	services := includeFixture("corp-services", []string{"lab-dns"},
+		map[string]string{"mail": "EXP", "web": "SERVICES"})
+	dns := includeFixture("lab-dns", nil, map[string]string{"dns": "MGMT"})
+
+	return root, storeLoader(services, dns)
+}
+
+// TestFromTopologyConfigCombinesIncludes copies the nodes of the included
+// topologies that can be read into the document as its own, and keeps only
+// the other includes, so the published topology holds every node it could
+// read and still includes the rest.
+func TestFromTopologyConfigCombinesIncludes(t *testing.T) {
+	root, load := combineFixture()
+
+	doc, warnings, err := builder.FromConfig(root, builder.WithTopologyLoader(load), builder.WithCombinedIncludes())
+	if err != nil {
+		t.Fatalf("FromConfig: %v", err)
+	}
+
+	hostnames := make([]string, 0, len(doc.DeviceNodes()))
+
+	for _, node := range doc.DeviceNodes() {
+		if node.Device.IncludedFrom != "" {
+			t.Errorf("%s is still marked as included from %q", node.Device.Hostname, node.Device.IncludedFrom)
+		}
+
+		hostnames = append(hostnames, node.Device.Hostname)
+	}
+
+	// The nodes keep the order of a plain import: the topology's own, then
+	// each included topology's.
+	if want := []string{"gateway", "mail", "web", "dns"}; !reflect.DeepEqual(hostnames, want) {
+		t.Fatalf("devices = %v, want %v", hostnames, want)
+	}
+
+	if want := []string{"site-b", "/srv/extra.yml"}; !reflect.DeepEqual(doc.Source.IncludeTopologies, want) {
+		t.Errorf("included topologies = %v, want %v", doc.Source.IncludeTopologies, want)
+	}
+
+	if doc.Source.UnresolvedIncludes != nil {
+		t.Errorf("unresolved includes = %v, want none: they are the document's includes now",
+			doc.Source.UnresolvedIncludes)
+	}
+
+	// The problems are reported as a plain import reports them; the summary
+	// says the nodes were copied, and one more warning names what was not.
+	want := []string{
+		`included topology "site-b" could not be read and its nodes are not shown: ` + store.ErrNotExist.Error(),
+		`included topology "/srv/extra.yml" could not be read and its nodes are not shown: ` + store.ErrNotExist.Error(),
+		combinedSummary,
+		combinedKept,
+	}
+	if !reflect.DeepEqual(warnings, want) || !reflect.DeepEqual(doc.Source.Warnings, want) {
+		t.Errorf("warnings = %q (on the source %q), want %q", warnings, doc.Source.Warnings, want)
+	}
+
+	if got := connectedSwitch(doc, nodeByHostname(t, doc, "dns"), "eth0"); got != "MGMT" {
+		t.Errorf("dns eth0 is connected to %q, want MGMT", got)
+	}
+
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("combined document is invalid: %v", err)
+	}
+
+	topology, err := doc.ToTopology()
+	if err != nil {
+		t.Fatalf("ToTopology: %v", err)
+	}
+
+	if nodes, _ := topology.Spec["nodes"].([]any); len(nodes) != 4 {
+		t.Errorf("published %d nodes, want all 4: %s", len(nodes), asJSON(t, topology.Spec))
+	}
+
+	if want := []string{"site-b", "/srv/extra.yml"}; !reflect.DeepEqual(topology.Spec["includeTopologies"], want) {
+		t.Errorf("published includes = %v, want %v", topology.Spec["includeTopologies"], want)
+	}
+}
+
+// TestFromTopologyConfigCombinesEveryInclude asserts a combined document
+// whose includes were all read includes nothing, and says so of one
+// topology in the singular.
+func TestFromTopologyConfigCombinesEveryInclude(t *testing.T) {
+	root := includeFixture("site", []string{"lab-dns"}, map[string]string{"gateway": "EXP"})
+	dns := includeFixture("lab-dns", nil, map[string]string{"dns": "MGMT"})
+
+	doc, warnings, err := builder.FromConfig(root,
+		builder.WithTopologyLoader(storeLoader(dns)), builder.WithCombinedIncludes())
+	if err != nil {
+		t.Fatalf("FromConfig: %v", err)
+	}
+
+	want := []string{
+		"Copied 1 node from included topology lab-dns (1 node). They are ordinary nodes of this diagram now: " +
+			"changes here do not reach that topology, and later changes there do not reach this diagram.",
+	}
+	if !reflect.DeepEqual(warnings, want) {
+		t.Errorf("warnings = %q, want %q", warnings, want)
+	}
+
+	if doc.Source.IncludeTopologies != nil || doc.Source.UnresolvedIncludes != nil {
+		t.Errorf("includes = %v, unresolved = %v, want neither",
+			doc.Source.IncludeTopologies, doc.Source.UnresolvedIncludes)
+	}
+
+	topology, err := doc.ToTopology()
+	if err != nil {
+		t.Fatalf("ToTopology: %v", err)
+	}
+
+	if _, included := topology.Spec["includeTopologies"]; included {
+		t.Errorf("published topology still includes %v", topology.Spec["includeTopologies"])
+	}
+
+	// One include that cannot be read is named in the singular.
+	root = includeFixture("site", []string{"site-b"}, map[string]string{"gateway": "EXP"})
+
+	doc, warnings = documentFromConfigWith(t, root,
+		builder.WithTopologyLoader(storeLoader()), builder.WithCombinedIncludes())
+
+	kept := "Included topology site-b was not combined and stays in includeTopologies: publishing keeps the reference."
+	if len(warnings) != 2 || warnings[1] != kept {
+		t.Errorf("warnings = %q, want the unreadable include and %q", warnings, kept)
+	}
+
+	if !reflect.DeepEqual(doc.Source.IncludeTopologies, []string{"site-b"}) {
+		t.Errorf("included topologies = %v, want site-b kept", doc.Source.IncludeTopologies)
+	}
+}
+
+// TestFromTopologyConfigCombineWithoutLoader asserts that combining copies
+// nothing it cannot read: without a loader every include is kept.
+func TestFromTopologyConfigCombineWithoutLoader(t *testing.T) {
+	root, _ := combineFixture()
+
+	doc, warnings := documentFromConfigWith(t, root, builder.WithCombinedIncludes())
+
+	if got := len(doc.DeviceNodes()); got != 1 {
+		t.Errorf("devices = %d, want only the topology's own", got)
+	}
+
+	// Each include once, in the order the topology lists them.
+	want := []string{"corp-services", "site-b", "/srv/extra.yml"}
+	if !reflect.DeepEqual(doc.Source.IncludeTopologies, want) || doc.Source.UnresolvedIncludes != nil {
+		t.Errorf("includes = %v, unresolved = %v, want %v and none",
+			doc.Source.IncludeTopologies, doc.Source.UnresolvedIncludes, want)
+	}
+
+	if !containsSubstring(warnings, "Included topologies corp-services, site-b and /srv/extra.yml were not combined") {
+		t.Errorf("warnings = %q, want one naming the includes that were kept", warnings)
+	}
+}
+
+// TestFromTopologyConfigRecordsUnresolvedIncludes asserts a plain import
+// lists the included topologies whose nodes it does not hold, at any depth,
+// in the order it met them and each once, and leaves the topology's own
+// includes as they are.
+func TestFromTopologyConfigRecordsUnresolvedIncludes(t *testing.T) {
+	root := includeFixture("site", []string{"corp-services", "site-b", "nested-gone", "site"},
+		map[string]string{"gateway": "EXP"})
+	services := includeFixture("corp-services", []string{"lab-dns", "nested-gone", "site-b"},
+		map[string]string{"mail": "EXP"})
+	dns := includeFixture("lab-dns", []string{"deep-gone", "corp-services"}, map[string]string{"dns": "MGMT"})
+
+	doc, warnings := documentFromConfigWith(t, root, builder.WithTopologyLoader(storeLoader(services, dns)))
+
+	if want := []string{"deep-gone", "nested-gone", "site-b"}; !reflect.DeepEqual(doc.Source.UnresolvedIncludes, want) {
+		t.Errorf("unresolved includes = %v, want %v", doc.Source.UnresolvedIncludes, want)
+	}
+
+	want := []string{"corp-services", "site-b", "nested-gone", "site"}
+	if !reflect.DeepEqual(doc.Source.IncludeTopologies, want) {
+		t.Errorf("included topologies = %v, want %v", doc.Source.IncludeTopologies, want)
+	}
+
+	// A plain import says nothing new: the marks and the summary are as
+	// they were.
+	if !containsSubstring(warnings, "Added 2 nodes from included topologies corp-services (1 node) and lab-dns (1 node).") ||
+		containsSubstring(warnings, "combined") || containsSubstring(warnings, "Copied") {
+		t.Errorf("warnings = %q, want the summary of a plain import", warnings)
+	}
+
+	if got := nodeByHostname(t, doc, "dns").Device.IncludedFrom; got != "lab-dns" {
+		t.Errorf("dns is included from %q, want lab-dns", got)
+	}
+
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("generated document is invalid: %v", err)
+	}
+}
+
+// TestFromTopologyConfigListsIncludesPastTheLimit asserts the list of
+// unresolved includes is complete when resolution stops at its limit: the
+// includes it never read are listed too, and a combined document keeps
+// every one of them.
+func TestFromTopologyConfigListsIncludesPastTheLimit(t *testing.T) {
+	const (
+		limit = 100
+		extra = 20
+	)
+
+	var (
+		names   = make([]string, 0, limit+extra)
+		configs = make([]store.Config, 0, limit+extra)
+	)
+
+	for i := range limit + extra {
+		name := "part-" + strconv.Itoa(1000+i)
+		names = append(names, name)
+		configs = append(configs, includeFixture(name, nil, map[string]string{"node-" + strconv.Itoa(1000+i): "EXP"}))
+	}
+
+	root := includeFixture("site", names, map[string]string{"gateway": "EXP"})
+	load := storeLoader(configs...)
+
+	kept, _ := documentFromConfigWith(t, root, builder.WithTopologyLoader(load))
+	if !reflect.DeepEqual(kept.Source.UnresolvedIncludes, names[limit:]) {
+		t.Fatalf("unresolved includes = %v, want the %d past the limit", kept.Source.UnresolvedIncludes, extra)
+	}
+
+	combined, warnings := documentFromConfigWith(t, root, builder.WithTopologyLoader(load), builder.WithCombinedIncludes())
+	if !reflect.DeepEqual(combined.Source.IncludeTopologies, names[limit:]) {
+		t.Fatalf("included topologies = %v, want the %d past the limit", combined.Source.IncludeTopologies, extra)
+	}
+
+	if got := len(combined.DeviceNodes()); got != limit+1 {
+		t.Errorf("devices = %d, want the topology's own and the %d that were read", got, limit)
+	}
+
+	// A long list is cut: eight names, then how many more.
+	want := "Included topologies " + strings.Join(names[limit:limit+7], ", ") + ", " + names[limit+7] +
+		" and 12 more were not combined and stay in includeTopologies: publishing keeps the references."
+	if !slices.Contains(warnings, want) {
+		t.Errorf("warnings = %q, want %q", warnings[len(warnings)-1], want)
+	}
+}
+
+// TestFromExperimentConfigRefusesCombine asserts an experiment, which already
+// holds the nodes phenix merged into it, is not combined.
+func TestFromExperimentConfigRefusesCombine(t *testing.T) {
+	_, _, err := builder.FromConfig(loadConfig(t, "experiment.json"), builder.WithCombinedIncludes())
+	if !errors.Is(err, builder.ErrCombineExperiment) {
+		t.Fatalf("FromConfig error = %v, want ErrCombineExperiment", err)
+	}
+}
+
+func TestIncludeCount(t *testing.T) {
+	topology := includeFixture("site", nil, map[string]string{"gateway": "EXP"})
+
+	if got := builder.IncludeCount(topology); got != 0 {
+		t.Errorf("a topology without includes: count = %d, want 0", got)
+	}
+
+	// Only the entries an import would use count; each entry counts, also
+	// one that repeats another.
+	topology.Spec["includeTopologies"] = []any{"corp-services", "", "has space", 7, "lab-dns", "corp-services"}
+
+	if got := builder.IncludeCount(topology); got != 3 {
+		t.Errorf("count = %d, want 3", got)
+	}
+
+	lower := topology
+	lower.Kind = "topology"
+
+	if got := builder.IncludeCount(lower); got != 3 {
+		t.Errorf("kind in lower case: count = %d, want 3", got)
+	}
+
+	// An older apiVersion is upgraded first, as an import upgrades it, and
+	// the count is of the includes that import records.
+	older := includeFixture("older", []string{"corp-services", "lab-dns"}, nil)
+	older.Version = "phenix.sandia.gov/v0"
+
+	imported, _ := documentFromConfig(t, older)
+	if want := []string{"corp-services", "lab-dns"}; !reflect.DeepEqual(imported.Source.IncludeTopologies, want) {
+		t.Errorf("a v0 topology imports with includes %v, want %v", imported.Source.IncludeTopologies, want)
+	}
+
+	if got := builder.IncludeCount(older); got != 2 {
+		t.Errorf("a v0 topology: count = %d, want 2", got)
+	}
+
+	experiment := loadConfig(t, "experiment.json")
+	if spec, ok := experiment.Spec["topology"].(map[string]any); ok {
+		spec["includeTopologies"] = []any{"corp-services"}
+	}
+
+	scenario := topology
+	scenario.Kind = "Scenario"
+
+	for _, config := range []store.Config{experiment, scenario} {
+		if got := builder.IncludeCount(config); got != 0 {
+			t.Errorf("%s: count = %d, want 0", config.Kind, got)
+		}
+	}
 }

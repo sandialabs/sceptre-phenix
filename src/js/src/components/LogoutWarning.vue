@@ -1,5 +1,5 @@
 <!--
-  The warning before a logout that would delete Builder v2 changes the
+  The warning before a logout that would delete Builder changes the
   server does not have (see utils/logout.js).
 
   An alert dialog (APG Alert and Message Dialogs pattern) on a native
@@ -7,7 +7,7 @@
   message is the dialog's description, and focus starts on the choice that
   keeps the changes. An automatic logout counts down a minute on screen
   and in the tab's title: the countdown is read with the description when
-  the dialog opens, and once more near the end, not every second. Export
+  the dialog opens, and once more near the end, not every second. Download
   saves one draft per click, as a browser may block a second download
   from one click. On the Builder's page, a session that expired can sign
   in again there, which stops the countdown and opens the Builder's
@@ -53,9 +53,9 @@
         v-for="draft in warning.drafts"
         :key="draft.key"
         type="button"
-        data-testid="logout-warning-export"
-        @click="exportDraft(draft)">
-        {{ warning.drafts.length > 1 ? `Export ${draft.name}` : 'Export' }}
+        data-testid="logout-warning-download"
+        @click="downloadDraft(draft)">
+        {{ warning.drafts.length > 1 ? `Download ${draft.name}` : 'Download' }}
       </button>
       <button
         v-if="warning.canStay"
@@ -173,7 +173,7 @@
     return name;
   }
 
-  async function exportDraft({ key, name }) {
+  async function downloadDraft({ key, name }) {
     status.value = '';
 
     const file = await draftExport({ username: phenix.username, key, name });
@@ -193,7 +193,7 @@
     return (
       stayButton.value ||
       signInButton.value ||
-      panel.value?.querySelector('[data-testid="logout-warning-export"]') ||
+      panel.value?.querySelector('[data-testid="logout-warning-download"]') ||
       confirmButton.value
     );
   }
@@ -357,7 +357,7 @@
     gap: 0.5rem;
   }
 
-  /* An Export button names its draft's file, which can be long. */
+  /* A Download button names its draft's file, which can be long. */
   .logout-warning button {
     max-width: 100%;
     overflow-wrap: anywhere;

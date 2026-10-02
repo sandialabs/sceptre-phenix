@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, test } from 'vitest';
 
 import {
@@ -11,6 +13,7 @@ import {
   createDocument,
   DEFAULT_GRID_SIZE,
   deviceHandles,
+  deviceTypeLabel,
   documentSummary,
   edgeEndpoints,
   findEdge,
@@ -18,6 +21,8 @@ import {
   fitGroups,
   groupMinimumSize,
   groupNodes,
+  LOOK_KEYS,
+  lookOf,
   moveNodes,
   networkOfSwitch,
   nextInterfaceName,
@@ -26,6 +31,7 @@ import {
   removeElements,
   removeInterface,
   removeNetworks,
+  renameInterface,
   sameButStamp,
   savedStamp,
   scenarioApps,
@@ -49,9 +55,12 @@ import {
   withStamp,
 } from '@/builder/model.js';
 import { copySelection, pasteClipboard } from '@/builder/clipboard.js';
-import { DEVICE_TEMPLATES } from '@/builder/catalog.js';
+import { BUILTIN_TEMPLATES } from '@/builder/catalog.js';
+import { nodeOptionsFromTemplate } from '@/builder/templates.js';
+import { validateDocument } from '@/builder/validate.js';
 
 import { sampleDocument } from './fixtures.js';
+import { ICON_DATA, ICON_KEY } from './png.js';
 
 describe('document shape', () => {
   test('matches the server wire contract', () => {
@@ -115,27 +124,114 @@ describe('nodes', () => {
 
   // phenix's vrouter app configures only nodes of type Router or Firewall
   // (app/vrouter.go), and those through a router OS type, so the templates
-  // named after them must say both.
+  // named after them must say both: the Router runs minirouter and the
+  // Firewall VyOS, each on the image named after it.
   test.each([
-    ['server', 'VirtualMachine', 'linux'],
-    ['workstation', 'VirtualMachine', 'windows'],
-    ['router', 'Router', 'minirouter'],
-    ['firewall', 'Firewall', 'minirouter'],
-    ['external', 'HIL', undefined],
-  ])('the %s template adds a device of type %s on %s', (id, type, osType) => {
-    const template = DEVICE_TEMPLATES.find((entry) => entry.id === id);
+    ['server', 'VirtualMachine', 'linux', 'ubuntu.qc2'],
+    ['workstation', 'VirtualMachine', 'windows', 'windows10.qc2'],
+    ['router', 'Router', 'minirouter', 'minirouter.qc2'],
+    ['firewall', 'Firewall', 'vyos', 'vyos.qc2'],
+    ['external', 'HIL', undefined, undefined],
+  ])(
+    'the %s template adds a device of type %s on %s from %s',
+    (id, type, osType, image) => {
+      const template = BUILTIN_TEMPLATES.find((entry) => entry.id === id);
+      const doc = createDocument();
+      const { node } = addNode(doc, nodeOptionsFromTemplate(template, doc));
+
+      expect(node.device.hostname).toBe(id);
+
+      expect(node.device.spec.type).toBe(type);
+      expect(node.device.spec.hardware?.os_type).toBe(osType);
+      expect(node.device.spec.hardware?.drives?.[0]?.image).toBe(image);
+    },
+  );
+
+  // A template's description says what the template is, in the palette. It
+  // is not the node's description.
+  test('a template writes no description into its device', () => {
+    for (const template of BUILTIN_TEMPLATES) {
+      const doc = createDocument();
+      const { node } = addNode(doc, nodeOptionsFromTemplate(template, doc));
+
+      expect(template.description, template.id).toBeTruthy();
+      expect(node.device.spec.general.description, template.id).toBe('');
+      expect(nodeComment(node), template.id).toBe('');
+    }
+
+    // Not from an option of that name either.
     const { node } = addNode(createDocument(), {
       kind: 'device',
-      template,
-      hostname: id,
+      description: 'A description',
     });
 
-    expect(node.device.spec.type).toBe(type);
-    expect(node.device.spec.hardware?.os_type).toBe(osType);
+    expect(node.device.spec.general.description).toBe('');
+  });
+
+  // A device is made from a template through its spec and look alone: a
+  // `template` option, which addNode once read, is nothing to it.
+  test('addNode reads no template option', () => {
+    const [, , router] = BUILTIN_TEMPLATES;
+    const { node } = addNode(createDocument(), {
+      kind: 'device',
+      template: router,
+    });
+
+    expect(node.device.hostname).toBe('node');
+    expect(node.device.spec.type).toBe('VirtualMachine');
+    expect(node.device.iconKey).toBe('linux');
+  });
+
+  // The server's built-in templates (BuiltinTemplates in types/builder,
+  // checked against the same file) are these: same ids, names, tooltips,
+  // icons and specs. And a palette entry adds a device with that icon and
+  // that spec.
+  test('the built-in templates are those of the server, and each makes its device', () => {
+    const { templates } = JSON.parse(
+      readFileSync(
+        new URL(
+          '../../../go/types/builder/testdata/builtin-templates.json',
+          import.meta.url,
+        ),
+      ),
+    );
+
+    expect(BUILTIN_TEMPLATES).toEqual(templates);
+    expect(
+      BUILTIN_TEMPLATES.map((template) => {
+        const doc = createDocument();
+        const { node } = addNode(doc, nodeOptionsFromTemplate(template, doc));
+
+        return {
+          id: template.id,
+          name: template.name,
+          description: template.description,
+          device: { iconKey: node.device.iconKey, spec: node.device.spec },
+        };
+      }),
+    ).toEqual(templates);
+  });
+
+  // They are shared by every diagram, so nothing may change one.
+  test('a built-in template cannot be changed', () => {
+    const [server] = BUILTIN_TEMPLATES;
+
+    expect(Object.isFrozen(BUILTIN_TEMPLATES)).toBe(true);
+    expect(Object.isFrozen(server.device.spec.hardware.drives[0])).toBe(true);
+    expect(() => {
+      server.device.spec.general.hostname = 'changed';
+    }).toThrow(TypeError);
+
+    // A device made from one is a copy, free to change.
+    const doc = createDocument();
+    const { node } = addNode(doc, nodeOptionsFromTemplate(server, doc));
+
+    node.device.spec.general.description = 'mine';
+    expect(server.device.spec.general.description).toBe('');
   });
 
   test('the type table above covers every template', () => {
-    expect(DEVICE_TEMPLATES.map((template) => template.id)).toEqual([
+    expect(BUILTIN_TEMPLATES.map((template) => template.id)).toEqual([
       'server',
       'workstation',
       'router',
@@ -148,6 +244,48 @@ describe('nodes', () => {
     const { node } = addNode(createDocument(), { kind: 'device' });
 
     expect(node.device.spec.type).toBe('VirtualMachine');
+  });
+
+  // What a device shows on the canvas in place of the word "Device".
+  test('a device is labelled with its node type as stored, or External', () => {
+    const device = (spec) => ({ kind: 'device', device: { spec } });
+    const types = Object.fromEntries(
+      BUILTIN_TEMPLATES.map((template) => [
+        template.id,
+        deviceTypeLabel(
+          addNode(
+            createDocument(),
+            nodeOptionsFromTemplate(template, createDocument()),
+          ).node,
+        ),
+      ]),
+    );
+
+    expect(types).toEqual({
+      server: 'VirtualMachine',
+      workstation: 'VirtualMachine',
+      router: 'Router',
+      firewall: 'Firewall',
+      external: 'External',
+    });
+    expect(deviceTypeLabel(device({ type: 'SCEPTRE' }))).toBe('SCEPTRE');
+    expect(deviceTypeLabel(device({ type: ' Router ' }))).toBe('Router');
+    // An external device says so whatever its type, or without one.
+    expect(deviceTypeLabel(device({ external: true }))).toBe('External');
+    expect(deviceTypeLabel(device({ external: true, type: 'Router' }))).toBe(
+      'External',
+    );
+    // Only true is external: a spec from an experiment holds null.
+    expect(deviceTypeLabel(device({ external: null, type: 'Router' }))).toBe(
+      'Router',
+    );
+    for (const spec of [{}, { type: '' }, { type: '  ' }, { type: 7 }]) {
+      expect(deviceTypeLabel(device(spec)), JSON.stringify(spec)).toBe(
+        'Device',
+      );
+    }
+    expect(deviceTypeLabel({ kind: 'device' })).toBe('Device');
+    expect(deviceTypeLabel(undefined)).toBe('Device');
   });
 
   test('a switch without a network creates one', () => {
@@ -354,6 +492,66 @@ describe('interfaces', () => {
     expect(handle.index).toBe(1);
     expect(deviceHandles(node)).toHaveLength(2);
     expect(specInterfaceFor(node, handle.id).name).toBe('eth1');
+  });
+
+  // A spec is free-form: one whose interfaces are no list has none.
+  test('a device whose spec interfaces are no list is edited like one without interfaces', () => {
+    const { doc, bravo } = sampleDocument();
+    const odd = updateNode(doc, bravo.id, {
+      device: {
+        interfaces: [],
+        spec: { ...bravo.device.spec, network: { interfaces: 'x' } },
+      },
+    });
+    const renamed = updateNode(odd, bravo.id, {
+      device: { hostname: 'charlie' },
+    });
+    const node = renamed.nodes.find((entry) => entry.id === bravo.id);
+
+    expect(node.device.hostname).toBe('charlie');
+    expect(deviceHandles(node)).toEqual([]);
+    expect(node.device.spec.network.interfaces).toBe('x');
+  });
+
+  // An import keeps an entry of the list that is no object as it found it.
+  test('entries of the spec interfaces that are no objects are passed over', () => {
+    const { doc, alpha } = sampleDocument();
+    const [handle] = alpha.device.interfaces;
+    const entry = alpha.device.spec.network.interfaces[0];
+    const odd = {
+      ...doc,
+      nodes: doc.nodes.map((node) =>
+        node.id === alpha.id
+          ? {
+              ...node,
+              device: {
+                ...node.device,
+                spec: {
+                  ...node.device.spec,
+                  network: { interfaces: [null, 'x', entry] },
+                },
+              },
+            }
+          : node,
+      ),
+    };
+    const node = (document) =>
+      document.nodes.find((candidate) => candidate.id === alpha.id);
+
+    expect(specInterfaceFor(node(odd), handle.id)).toEqual(entry);
+
+    const renamed = renameInterface(odd, alpha.id, handle.id, 'mgmt0');
+
+    expect(node(renamed).device.spec.network.interfaces).toEqual([
+      null,
+      'x',
+      { ...entry, name: 'mgmt0' },
+    ]);
+
+    const removed = removeInterface(odd, alpha.id, handle.id);
+
+    expect(node(removed).device.spec.network.interfaces).toEqual([null, 'x']);
+    expect(deviceHandles(node(removed))).toEqual([]);
   });
 
   test('a new interface is one past the highest ethN, or eth0', () => {
@@ -1628,5 +1826,469 @@ describe('the stamp of a stored document', () => {
     expect(sameButStamp(doc, { ...stamped, name: 'Other' })).toBe(false);
     expect(sameButStamp(doc, { ...stamped, layout: 'elk' })).toBe(false);
     expect(sameButStamp(doc, null)).toBe(false);
+  });
+});
+
+// The presentation fields of nodes, networks and connections: none is set
+// unless asked for, and one emptied again leaves no key behind, so a
+// document that uses none keeps its bytes.
+describe('colors, line styles and group fields', () => {
+  const errorsOf = (doc) =>
+    validateDocument(doc).filter((issue) => issue.level !== 'warning');
+
+  test('a new node, network or connection has none of them', () => {
+    const { doc, alpha, sw, network, edge } = sampleDocument();
+    const group = addNode(doc, { kind: 'group', title: 'Core' }).node;
+
+    expect(Object.keys(findNode(doc, alpha.id).device)).toEqual([
+      'hostname',
+      'iconKey',
+      'spec',
+      'interfaces',
+    ]);
+    expect(findNode(doc, sw.id).switch).toEqual({ networkId: network.id });
+    expect(group.group).toEqual({ title: 'Core', color: '', collapsed: false });
+    expect(Object.keys(network)).not.toContain('lineStyle');
+    expect(Object.keys(edge)).not.toContain('lineStyle');
+  });
+
+  test("a new device takes its look from addNode's look option", () => {
+    const { doc } = sampleDocument();
+    const look = {
+      iconKey: 'router',
+      icon: '',
+      outlineColor: '#2f6fbf',
+      fillColor: '#1f7a5a',
+    };
+    const added = addNode(doc, { kind: 'device', hostname: 'edge', look });
+
+    expect(lookOf(added.node.device)).toEqual(look);
+    expect(LOOK_KEYS).toEqual(['iconKey', 'icon', 'outlineColor', 'fillColor']);
+    expect(errorsOf(added.doc)).toEqual([]);
+
+    // An icon key that is none of the registry's is picked from the spec,
+    // as the iconKey option's is, and wins over that option.
+    expect(
+      addNode(doc, {
+        kind: 'device',
+        iconKey: 'firewall',
+        look: { iconKey: 'router' },
+      }).node.device.iconKey,
+    ).toBe('router');
+    expect(
+      addNode(doc, { kind: 'device', look: { iconKey: 'https://x/y.png' } })
+        .node.device.iconKey,
+    ).toBe('linux');
+    // An empty color is not written, nor is no custom icon.
+    expect(
+      Object.keys(
+        addNode(doc, {
+          kind: 'device',
+          look: { icon: '', outlineColor: '', fillColor: undefined },
+        }).node.device,
+      ),
+    ).toEqual(['hostname', 'iconKey', 'spec', 'interfaces']);
+  });
+
+  // The document comes to carry the icon when the edit is committed (see
+  // settleIcons): the writers only name it.
+  test('a custom icon is named by a device and by a group, and emptied away', () => {
+    const { doc, alpha } = sampleDocument();
+    const device = (document) => findNode(document, alpha.id).device;
+    const added = addNode(doc, {
+      kind: 'device',
+      hostname: 'plc',
+      look: { iconKey: 'router', icon: ICON_KEY },
+    });
+
+    expect(added.node.device).toMatchObject({
+      iconKey: 'router',
+      icon: ICON_KEY,
+    });
+    expect('icons' in added.doc).toBe(false);
+
+    const named = updateNode(doc, alpha.id, { device: { icon: ICON_KEY } });
+
+    expect(device(named).icon).toBe(ICON_KEY);
+    // A rename, a new icon key or a color keeps it.
+    for (const patch of [
+      { hostname: 'a2' },
+      { iconKey: 'router' },
+      { fillColor: '#1f7a5a' },
+    ]) {
+      expect(device(updateNode(named, alpha.id, { device: patch })).icon).toBe(
+        ICON_KEY,
+      );
+    }
+    expect(
+      device(updateNode(named, alpha.id, { device: { icon: '' } })),
+    ).toEqual(device(doc));
+
+    const group = addNode(doc, {
+      kind: 'group',
+      title: 'Zone',
+      icon: ICON_KEY,
+    });
+
+    expect(group.node.group).toEqual({
+      title: 'Zone',
+      color: '',
+      collapsed: false,
+      icon: ICON_KEY,
+    });
+    expect(
+      findNode(
+        updateNode(group.doc, group.node.id, { group: { title: 'Cell' } }),
+        group.node.id,
+      ).group.icon,
+    ).toBe(ICON_KEY);
+    expect(
+      findNode(
+        updateNode(group.doc, group.node.id, { group: { icon: '' } }),
+        group.node.id,
+      ).group,
+    ).toEqual({ title: 'Zone', color: '', collapsed: false });
+
+    // A document that carries the icon passes the checks; one that names
+    // it without carrying it does not.
+    const icons = { [ICON_KEY]: { name: 'plc', data: ICON_DATA } };
+
+    expect(errorsOf({ ...named, icons })).toEqual([]);
+    expect(errorsOf({ ...group.doc, icons })).toEqual([]);
+    expect(errorsOf(named).map((issue) => issue.path)).toEqual([
+      `nodes[${named.nodes.indexOf(findNode(named, alpha.id))}].device.icon`,
+    ]);
+  });
+
+  test("a device's colors are set, kept by other edits, and emptied away", () => {
+    const { doc, alpha } = sampleDocument();
+    const colored = updateNode(doc, alpha.id, {
+      device: { outlineColor: '#2f6fbf', fillColor: '#1f7a5a' },
+    });
+    const device = (document) => findNode(document, alpha.id).device;
+
+    expect(device(colored)).toMatchObject({
+      outlineColor: '#2f6fbf',
+      fillColor: '#1f7a5a',
+    });
+    expect(errorsOf(colored)).toEqual([]);
+    // A rename, or a new icon, keeps them.
+    expect(
+      device(updateNode(colored, alpha.id, { device: { hostname: 'a2' } })),
+    ).toMatchObject({ outlineColor: '#2f6fbf', fillColor: '#1f7a5a' });
+    expect(
+      device(updateNode(colored, alpha.id, { device: { iconKey: 'router' } })),
+    ).toMatchObject({ iconKey: 'router', fillColor: '#1f7a5a' });
+
+    const cleared = device(
+      updateNode(colored, alpha.id, {
+        device: { outlineColor: '', fillColor: '' },
+      }),
+    );
+
+    expect('outlineColor' in cleared).toBe(false);
+    expect('fillColor' in cleared).toBe(false);
+    expect(cleared).toEqual(device(doc));
+    // The writers store what they are given; the diagram checks refuse a
+    // color that is not #rrggbb.
+    expect(
+      errorsOf(updateNode(doc, alpha.id, { device: { fillColor: 'red' } })).map(
+        (issue) => issue.message,
+      ),
+    ).toEqual(['color "red" must be a hex color such as #2f6fbf']);
+  });
+
+  // updateNode once replaced a switch's payload with its network id alone,
+  // which would have dropped its colors on every edit.
+  test("a switch's colors are set, kept by other edits, and emptied away", () => {
+    const { doc, sw, network } = sampleDocument();
+    const colored = updateNode(doc, sw.id, {
+      switch: { outlineColor: '#a3273f', fillColor: '#6b6f18' },
+    });
+    const payload = (document) => findNode(document, sw.id).switch;
+
+    expect(payload(colored)).toEqual({
+      networkId: network.id,
+      outlineColor: '#a3273f',
+      fillColor: '#6b6f18',
+    });
+    expect(errorsOf(colored)).toEqual([]);
+    // A move keeps the payload, and so does a patch of one color.
+    expect(
+      payload(updateNode(colored, sw.id, { position: { x: 1, y: 2 } })),
+    ).toEqual(payload(colored));
+    expect(
+      payload(updateNode(colored, sw.id, { switch: { fillColor: '' } })),
+    ).toEqual({ networkId: network.id, outlineColor: '#a3273f' });
+
+    // Bound to another network, it keeps its colors.
+    const other = addNetwork(colored, { name: 'MGMT' });
+    const moved = updateNode(other.doc, sw.id, {
+      switch: { networkId: other.network.id },
+    });
+
+    expect(payload(moved)).toEqual({
+      networkId: other.network.id,
+      outlineColor: '#a3273f',
+      fillColor: '#6b6f18',
+    });
+    expect(findNode(moved, sw.id).label).toBe('MGMT');
+    // A new switch is given its colors, or none.
+    expect(
+      addNode(doc, {
+        kind: 'switch',
+        networkId: network.id,
+        outlineColor: '#111111',
+        fillColor: '#eeeeee',
+      }).node.switch,
+    ).toEqual({
+      networkId: network.id,
+      outlineColor: '#111111',
+      fillColor: '#eeeeee',
+    });
+  });
+
+  test("a network's line style is set by addNetwork and updateNetwork, and '' removes it", () => {
+    const { doc, network } = sampleDocument();
+    const styled = updateNetwork(doc, network.id, { lineStyle: 'dotted' });
+    const found = (document) =>
+      document.networks.find((entry) => entry.id === network.id);
+
+    expect(found(styled).lineStyle).toBe('dotted');
+    expect(errorsOf(styled)).toEqual([]);
+    // Another edit keeps it.
+    expect(
+      found(updateNetwork(styled, network.id, { description: 'core' }))
+        .lineStyle,
+    ).toBe('dotted');
+    expect(
+      'lineStyle' in
+        found(updateNetwork(styled, network.id, { lineStyle: '' })),
+    ).toBe(false);
+    expect(
+      addNetwork(doc, { name: 'MGMT', lineStyle: 'dash-dot' }).network
+        .lineStyle,
+    ).toBe('dash-dot');
+    expect('lineStyle' in addNetwork(doc, { name: 'MGMT' }).network).toBe(
+      false,
+    );
+  });
+
+  test("a connection's line style is set by connect and updateEdge, and '' removes it", () => {
+    const { doc, edge, bravo, sw } = sampleDocument();
+    const styled = updateEdge(doc, edge.id, { lineStyle: 'dashed' });
+
+    expect(findEdge(styled, edge.id).lineStyle).toBe('dashed');
+    expect(errorsOf(styled)).toEqual([]);
+    // A new label keeps it.
+    expect(
+      findEdge(updateEdge(styled, edge.id, { label: 'uplink' }), edge.id)
+        .lineStyle,
+    ).toBe('dashed');
+    expect(
+      'lineStyle' in
+        findEdge(updateEdge(styled, edge.id, { lineStyle: '' }), edge.id),
+    ).toBe(false);
+
+    const connected = connect(doc, {
+      sourceNodeId: bravo.id,
+      targetNodeId: sw.id,
+      lineStyle: 'dotted',
+    });
+
+    expect(connected.edge.lineStyle).toBe('dotted');
+    expect(errorsOf(connected.doc)).toEqual([]);
+  });
+
+  test("a group's description, border pattern and icon are set, and emptied away", () => {
+    const { doc } = sampleDocument();
+    const plain = addNode(doc, { kind: 'group', title: 'Core' });
+    const described = updateNode(plain.doc, plain.node.id, {
+      group: {
+        description: 'DMZ hosts',
+        borderStyle: 'double',
+        iconKey: 'firewall',
+      },
+    });
+    const payload = (document) => findNode(document, plain.node.id).group;
+
+    expect(payload(described)).toEqual({
+      title: 'Core',
+      color: '',
+      collapsed: false,
+      description: 'DMZ hosts',
+      borderStyle: 'double',
+      iconKey: 'firewall',
+    });
+    expect(errorsOf(described)).toEqual([]);
+    // Its description is its comment, which its accessible name ends with.
+    expect(nodeComment(findNode(described, plain.node.id))).toBe('DMZ hosts');
+    expect(nodeComment(plain.node)).toBe('');
+    // A new title keeps them.
+    expect(
+      payload(
+        updateNode(described, plain.node.id, { group: { title: 'Edge' } }),
+      ),
+    ).toMatchObject({ title: 'Edge', description: 'DMZ hosts' });
+    expect(
+      payload(
+        updateNode(described, plain.node.id, {
+          group: { description: '', borderStyle: '', iconKey: '' },
+        }),
+      ),
+    ).toEqual(plain.node.group);
+
+    // A new group is given them, or none; grouping nodes gives none.
+    expect(
+      addNode(doc, {
+        kind: 'group',
+        title: 'Zone',
+        description: 'Level 2',
+        borderStyle: 'solid',
+        iconKey: 'vlan',
+      }).node.group,
+    ).toEqual({
+      title: 'Zone',
+      color: '',
+      collapsed: false,
+      description: 'Level 2',
+      borderStyle: 'solid',
+      iconKey: 'vlan',
+    });
+    expect(
+      groupNodes(doc, [doc.nodes[0].id], { title: 'Made' }).group.group,
+    ).toEqual({ title: 'Made', color: '', collapsed: false });
+  });
+
+  // A paste into an empty document carries every one of them: the copy is
+  // self contained.
+  test('a copy carries colors, line styles and group fields into another document', () => {
+    const { doc, alpha, sw, network, edge } = sampleDocument();
+    const grouped = groupNodes(doc, [alpha.id, sw.id], { title: 'Core' });
+    let source = updateNode(grouped.doc, grouped.group.id, {
+      group: { description: 'DMZ', borderStyle: 'dotted', iconKey: 'vlan' },
+    });
+
+    source = updateNode(source, alpha.id, {
+      device: { outlineColor: '#2f6fbf', fillColor: '#1f7a5a' },
+    });
+    source = updateNode(source, sw.id, {
+      switch: { outlineColor: '#a3273f', fillColor: '#6b6f18' },
+    });
+    source = updateNetwork(source, network.id, { lineStyle: 'dash-dot' });
+    source = updateEdge(source, edge.id, { lineStyle: 'dotted' });
+
+    const pasted = pasteClipboard(
+      createDocument({ name: 'Other' }),
+      copySelection(source, { nodes: [grouped.group.id] }),
+    ).doc;
+    const byKind = (kind) => pasted.nodes.find((node) => node.kind === kind);
+
+    expect(byKind('device').device).toMatchObject({
+      iconKey: 'linux',
+      outlineColor: '#2f6fbf',
+      fillColor: '#1f7a5a',
+    });
+    expect(byKind('switch').switch).toEqual({
+      networkId: pasted.networks[0].id,
+      outlineColor: '#a3273f',
+      fillColor: '#6b6f18',
+    });
+    expect(byKind('group').group).toMatchObject({
+      title: 'Core',
+      description: 'DMZ',
+      borderStyle: 'dotted',
+      iconKey: 'vlan',
+    });
+    expect(pasted.networks[0]).toMatchObject({
+      name: 'EXP',
+      lineStyle: 'dash-dot',
+    });
+    expect(pasted.edges).toHaveLength(1);
+    expect(pasted.edges[0].lineStyle).toBe('dotted');
+    expect(errorsOf(pasted)).toEqual([]);
+
+    // A copy of nodes that have none of them has none either.
+    const plain = pasteClipboard(
+      createDocument({ name: 'Other' }),
+      copySelection(grouped.doc, { nodes: [grouped.group.id] }),
+    ).doc;
+
+    expect(
+      Object.keys(plain.nodes.find((node) => node.kind === 'device').device),
+    ).toEqual(['hostname', 'iconKey', 'spec', 'interfaces']);
+    expect(plain.nodes.find((node) => node.kind === 'switch').switch).toEqual({
+      networkId: plain.networks[0].id,
+    });
+    expect(
+      Object.keys(plain.nodes.find((node) => node.kind === 'group').group),
+    ).toEqual(['title', 'color', 'collapsed']);
+    expect('lineStyle' in plain.networks[0]).toBe(false);
+    expect('lineStyle' in plain.edges[0]).toBe(false);
+  });
+
+  // The copy carries the icons its nodes use, and the paste puts them into
+  // the document: it is valid on its own, before any commit.
+  test('a copy carries the custom icons its nodes use, and no others', () => {
+    const { doc, alpha, bravo } = sampleDocument();
+    const other =
+      'sha256:0000000000000000000000000000000000000000000000000000000000000000';
+    const group = addNode(doc, {
+      kind: 'group',
+      title: 'Zone',
+      icon: ICON_KEY,
+    });
+    const source = {
+      ...updateNode(
+        updateNode(group.doc, alpha.id, { device: { icon: ICON_KEY } }),
+        bravo.id,
+        { device: { icon: other } },
+      ),
+      icons: {
+        [ICON_KEY]: { name: 'plc', data: ICON_DATA },
+        [other]: { data: 'AAAA' },
+      },
+    };
+    const copied = copySelection(source, {
+      nodes: [alpha.id, group.node.id],
+    });
+
+    expect(copied.icons).toEqual({
+      [ICON_KEY]: { name: 'plc', data: ICON_DATA },
+    });
+    // The copy is its own: a later change of the document is not in it.
+    expect(copied.icons[ICON_KEY]).not.toBe(source.icons[ICON_KEY]);
+    expect(copySelection(doc, { nodes: [alpha.id] }).icons).toEqual({});
+
+    const pasted = pasteClipboard(createDocument({ name: 'Other' }), copied);
+
+    expect(pasted.dropped).toBe(0);
+    expect(pasted.doc.icons).toEqual({
+      [ICON_KEY]: { name: 'plc', data: ICON_DATA },
+    });
+    expect(
+      pasted.doc.nodes.map((node) => (node.device || node.group).icon),
+    ).toEqual([ICON_KEY, ICON_KEY]);
+    expect(errorsOf(pasted.doc)).toEqual([]);
+
+    // A payload without the icon (one made before the icon was there, or
+    // by hand) pastes the node with its built-in icon, and says so.
+    const bare = pasteClipboard(createDocument({ name: 'Other' }), {
+      ...copied,
+      icons: undefined,
+    });
+
+    expect(bare.dropped).toBe(1);
+    expect('icons' in bare.doc).toBe(false);
+    expect(
+      bare.doc.nodes.map((node) => (node.device || node.group).icon),
+    ).toEqual([undefined, undefined]);
+    expect(errorsOf(bare.doc)).toEqual([]);
+    // Nothing to paste leaves nothing out.
+    expect(pasteClipboard(doc, { nodes: [] })).toEqual({
+      doc,
+      nodeIds: [],
+      dropped: 0,
+    });
   });
 });

@@ -33,9 +33,16 @@ const (
 // next one several times) cannot turn into an unbounded number of reads.
 const maxIncludeResolutions = 100
 
+// maxListedIncludes is the most included topologies a warning names.
+const maxListedIncludes = 8
+
 // ErrUnsupportedKind is returned by [FromConfig] for configs that are neither a
 // Topology nor an Experiment.
 var ErrUnsupportedKind = errors.New("unsupported config kind for builder document")
+
+// ErrCombineExperiment is returned by [FromConfig] for an Experiment config
+// with [WithCombinedIncludes].
+var ErrCombineExperiment = errors.New("only a topology's included topologies can be combined")
 
 // TopologyLoader reads the stored Topology config an includeTopologies entry
 // names. It returns an error when there is no such topology or the caller may
@@ -55,6 +62,20 @@ type GenerateOption func(*generator)
 func WithTopologyLoader(load TopologyLoader) GenerateOption {
 	return func(g *generator) {
 		g.load = load
+	}
+}
+
+// WithCombinedIncludes makes [FromConfig] copy the devices of a topology's
+// included topologies into the document as its own (no [Device.IncludedFrom])
+// and keep only the unresolved includes in [Source.IncludeTopologies] (see
+// [Document.CombineIncludes]). The document then publishes as one topology
+// that holds every node. Included topologies are only read through a loader
+// (see [WithTopologyLoader]): without one, nothing is copied and every
+// include is kept. An Experiment config is refused with
+// [ErrCombineExperiment], since its topology already holds the merged nodes.
+func WithCombinedIncludes() GenerateOption {
+	return func(g *generator) {
+		g.combine = true
 	}
 }
 
@@ -81,7 +102,13 @@ func WithTopologyLoader(load TopologyLoader) GenerateOption {
 //     sources are under the experiment's base directory, are dropped,
 //   - included topologies are resolved when a loader is given (see
 //     [WithTopologyLoader]); their devices are marked [Device.IncludedFrom]
-//     and connected to the VLAN switches like any other device.
+//     and connected to the VLAN switches like any other device,
+//   - the included topologies of a Topology config whose devices are not in
+//     the document, because they were not resolved or could not be read, are
+//     listed on [Source.UnresolvedIncludes],
+//   - with [WithCombinedIncludes], the devices of a topology's included
+//     topologies become the document's own, and only the unresolved
+//     includes stay on [Source.IncludeTopologies].
 //
 // Identifiers and initial positions are derived from hostnames, interface
 // names, and VLAN names, so repeated imports produce identical documents.
@@ -111,6 +138,10 @@ func FromConfig(config store.Config, options ...GenerateOption) (*Document, []st
 
 	for _, option := range options {
 		option(gen)
+	}
+
+	if gen.combine && kind == kindExperiment {
+		return nil, nil, ErrCombineExperiment
 	}
 
 	switch kind {
@@ -148,7 +179,7 @@ func FromConfig(config store.Config, options ...GenerateOption) (*Document, []st
 
 	gen.importAnnotations(config.Metadata.Annotations)
 
-	digest, err := SourceDigest(config)
+	digest, err := ImportDigest(config)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -157,6 +188,10 @@ func FromConfig(config store.Config, options ...GenerateOption) (*Document, []st
 	gen.doc.Source.UpdatedAt = config.Metadata.Updated
 
 	gen.finish()
+
+	if gen.combine {
+		gen.doc.CombineIncludes()
+	}
 
 	if err := gen.doc.Validate(); err != nil {
 		return nil, nil, fmt.Errorf("imported document failed validation: %w", err)
@@ -189,6 +224,9 @@ type generator struct {
 
 	// load resolves included topologies; nil leaves them unresolved.
 	load TopologyLoader
+	// combine makes the devices of included topologies the document's own
+	// once it is generated (see [WithCombinedIncludes]).
+	combine bool
 	// hostnames maps the case-folded hostname of every device added so far to
 	// the included topology defining it, or "" for the source's own devices.
 	hostnames map[string]string
@@ -392,12 +430,7 @@ func (g *generator) importTopology(spec map[string]any, name string) {
 // recordIncludes keeps the topology's includeTopologies on the document's
 // source, so publishing writes them back, and returns them.
 func (g *generator) recordIncludes(spec map[string]any) []string {
-	names, ok := spec["includeTopologies"].([]any)
-	if !ok {
-		return nil
-	}
-
-	for i, value := range names {
+	for i, value := range includeEntries(spec) {
 		name, ok := value.(string)
 		if !ok || !validIncludeName(name) {
 			g.warnf("included topology at index %d has an invalid name and was skipped", i)
@@ -415,23 +448,31 @@ func validIncludeName(name string) bool {
 	return strings.TrimSpace(name) != "" && !strings.ContainsAny(name, " \t\n")
 }
 
-// importIncludes adds the devices of a topology's included topologies.
+// importIncludes adds the devices of a topology's included topologies, and
+// records the included topologies whose devices it could not add.
 func (g *generator) importIncludes(includes []string, root string) {
 	if len(includes) == 0 {
 		return
 	}
 
 	if g.load == nil {
+		g.doc.Source.UnresolvedIncludes = unresolvedIncludes(includes, root, nil)
+
 		g.warnf(
 			"topology includes %d other topologies that were not resolved; their nodes are not shown, "+
 				"but the references are kept when published",
 			len(includes),
 		)
 
+		if g.combine {
+			g.warnNotCombined()
+		}
+
 		return
 	}
 
 	resolved := g.resolveAll(includes, root)
+	g.doc.Source.UnresolvedIncludes = unresolvedIncludes(includes, root, resolved)
 
 	for _, problem := range g.unreadable {
 		if errors.Is(problem.Err, ErrTooManyIncludes) {
@@ -450,7 +491,78 @@ func (g *generator) importIncludes(includes []string, root string) {
 		g.importNodes(topology.spec, topology.name, nil)
 	}
 
+	if g.combine {
+		g.warnCombined(resolved)
+		g.warnNotCombined()
+
+		return
+	}
+
 	g.warnIncluded("Added %s from", "node", resolved)
+}
+
+// unresolvedIncludes lists the included topologies whose devices are not in
+// the document: every valid include name that the topology named root (whose
+// own includes are given) or a resolved included topology lists, and that is
+// neither root nor a resolved topology, in the order first met and without
+// repeats. It reads only the specs already resolved, so the list is complete
+// even when resolution stopped at maxIncludeResolutions.
+func unresolvedIncludes(includes []string, root string, resolved []includedTopology) []string {
+	specs := make(map[string]map[string]any, len(resolved))
+	for _, topology := range resolved {
+		specs[topology.name] = topology.spec
+	}
+
+	var (
+		unresolved []string
+		seen       = map[string]bool{root: true}
+		walk       func(names []string)
+	)
+
+	walk = func(names []string) {
+		for _, name := range names {
+			if seen[name] {
+				continue
+			}
+
+			seen[name] = true
+
+			spec, ok := specs[name]
+			if !ok {
+				unresolved = append(unresolved, name)
+
+				continue
+			}
+
+			walk(includeNames(spec))
+		}
+	}
+
+	walk(includes)
+
+	return unresolved
+}
+
+// IncludeCount returns the number of valid includeTopologies entries of a
+// Topology config, and 0 for any other kind or an unreadable spec.
+func IncludeCount(config store.Config) int {
+	kind, err := canonicalKind(config.Kind)
+	if err != nil || kind != kindTopology {
+		return 0
+	}
+
+	// A spec in the stored representation is read as it is: this runs for
+	// every topology a listing shows.
+	if config.APIVersion() == version.StoredVersion[kindTopology] {
+		return len(includeNames(config.Spec))
+	}
+
+	spec, err := specForConfig(config, kindTopology)
+	if err != nil {
+		return 0
+	}
+
+	return len(includeNames(spec))
 }
 
 // experimentIncludes maps the case-folded hostname of every node defined by
@@ -641,20 +753,28 @@ func specHostnames(spec map[string]any) []string {
 	return hostnames
 }
 
-// includeNames lists the valid includeTopologies entries of a spec, stored
-// ([]any) or projected ([]string, see [Document.ToTopology]).
-func includeNames(spec map[string]any) []string {
-	var values []any
-
+// includeEntries returns the includeTopologies entries of a spec: as stored
+// ([]any), or as text ([]string), which is how a spec upgraded from an older
+// apiVersion and a projected one (see [Document.ToTopology]) hold them.
+func includeEntries(spec map[string]any) []any {
 	switch typed := spec["includeTopologies"].(type) {
 	case []any:
-		values = typed
+		return typed
 	case []string:
-		for _, name := range typed {
-			values = append(values, name)
+		values := make([]any, len(typed))
+		for i, name := range typed {
+			values[i] = name
 		}
-	}
 
+		return values
+	default:
+		return nil
+	}
+}
+
+// includeNames lists the valid includeTopologies entries of a spec.
+func includeNames(spec map[string]any) []string {
+	values := includeEntries(spec)
 	names := make([]string, 0, len(values))
 
 	for _, value := range values {
@@ -818,6 +938,63 @@ func (g *generator) warnIncluded(lead, noun string, resolved []includedTopology)
 		return
 	}
 
+	total, parts := g.includedCounts(resolved)
+
+	g.warnf(
+		"%s included %s %s. They are shown read only: edit them in their own topology. "+
+			"Publishing keeps includeTopologies instead of copying them.",
+		fmt.Sprintf(lead, countOf(total, noun)), pluralOf(len(parts), "topology", "topologies"), listOf(parts),
+	)
+}
+
+// warnCombined summarizes the devices copied from the resolved included
+// topologies, which [Document.CombineIncludes] then makes the document's own.
+func (g *generator) warnCombined(resolved []includedTopology) {
+	if len(resolved) == 0 {
+		return
+	}
+
+	total, parts := g.includedCounts(resolved)
+
+	g.warnf(
+		"Copied %s from included %s %s. They are ordinary nodes of this diagram now: "+
+			"changes here do not reach %s, and later changes there do not reach this diagram.",
+		countOf(total, "node"), pluralOf(len(parts), "topology", "topologies"), listOf(parts),
+		pluralOf(len(parts), "that topology", "those topologies"),
+	)
+}
+
+// warnNotCombined names the included topologies a combined document still
+// includes, because their devices could not be copied into it.
+func (g *generator) warnNotCombined() {
+	names := g.doc.Source.UnresolvedIncludes
+	if len(names) == 0 {
+		return
+	}
+
+	listed := names
+	if len(names) > maxListedIncludes {
+		listed = append(slices.Clip(names[:maxListedIncludes]), fmt.Sprintf("%d more", len(names)-maxListedIncludes))
+	}
+
+	if len(names) == 1 {
+		g.warnf(
+			"Included topology %s was not combined and stays in includeTopologies: publishing keeps the reference.",
+			names[0],
+		)
+
+		return
+	}
+
+	g.warnf(
+		"Included topologies %s were not combined and stay in includeTopologies: publishing keeps the references.",
+		listOf(listed),
+	)
+}
+
+// includedCounts returns how many devices are marked as included in all, and
+// each of the resolved topologies with its count, as "name (2 nodes)".
+func (g *generator) includedCounts(resolved []includedTopology) (int, []string) {
 	var (
 		total int
 		parts []string
@@ -835,11 +1012,7 @@ func (g *generator) warnIncluded(lead, noun string, resolved []includedTopology)
 		parts = append(parts, fmt.Sprintf("%s (%s)", topology.name, countOf(count, "node")))
 	}
 
-	g.warnf(
-		"%s included %s %s. They are shown read only: edit them in their own topology. "+
-			"Publishing keeps includeTopologies instead of copying them.",
-		fmt.Sprintf(lead, countOf(total, noun)), pluralOf(len(parts), "topology", "topologies"), listOf(parts),
-	)
+	return total, parts
 }
 
 func countOf(n int, noun string) string {
@@ -927,7 +1100,7 @@ func (g *generator) addDevice(hostname string, spec map[string]any, includedFrom
 		g.included[includedFrom]++
 	}
 
-	device := &Device{
+	device := &Device{ //nolint:exhaustruct // a custom icon and colors are the editor's to set
 		Hostname:     hostname,
 		IconKey:      iconKeyForSpec(spec),
 		Spec:         spec,
@@ -1282,15 +1455,8 @@ func (g *generator) warnUnrepresentedExperimentFields(spec map[string]any) {
 func (g *generator) finish() {
 	networks := slices.Collect(maps.Values(g.networks))
 
-	// Networks differing only by case sort by their exact names, so the order
-	// never depends on map iteration.
 	sort.SliceStable(networks, func(i, j int) bool {
-		a, b := foldKey(networks[i].Name), foldKey(networks[j].Name)
-		if a != b {
-			return a < b
-		}
-
-		return networks[i].Name < networks[j].Name
+		return networkBefore(networks[i].Name, networks[j].Name)
 	})
 
 	g.doc.Networks = make([]Network, 0, len(networks))
@@ -1309,7 +1475,7 @@ func (g *generator) finish() {
 			Kind:     NodeKindSwitch,
 			Label:    network.Name,
 			Position: Position{X: 0, Y: 0},
-			Switch:   &Switch{NetworkID: network.ID},
+			Switch:   &Switch{NetworkID: network.ID}, //nolint:exhaustruct // colors are the editor's to set
 		})
 	}
 
@@ -1343,6 +1509,18 @@ func (g *generator) finish() {
 	if g.doc.Source != nil {
 		g.doc.Source.Warnings = g.warnings
 	}
+}
+
+// networkBefore orders the networks of a document by name, without case.
+// Networks differing only by case sort by their exact names, so the order
+// never depends on map iteration.
+func networkBefore(first, second string) bool {
+	a, b := foldKey(first), foldKey(second)
+	if a != b {
+		return a < b
+	}
+
+	return first < second
 }
 
 func layout(nodes []Node, originY float64) {
@@ -1397,7 +1575,7 @@ func iconKeyForSpec(spec map[string]any) string {
 	nodeType, _ := spec["type"].(string)
 
 	switch key := foldKey(nodeType); key {
-	case iconRouter, "firewall", "printer", "switch", iconContainer, IconServer, "desktop":
+	case iconRouter, iconFirewall, "printer", "switch", iconContainer, IconServer, iconDesktop:
 		return key
 	case "virtualmachine", "":
 		return iconKeyForOS(spec)
@@ -1452,7 +1630,7 @@ func toInt(value any) (int, bool) {
 }
 
 // SourceDigest returns the deterministic "sha256:<hex>" digest identifying a
-// source config, for use as [Source.Digest].
+// source config by its identity and spec.
 //
 // The digest input is the canonical JSON encoding of exactly these fields:
 //
@@ -1466,10 +1644,32 @@ func toInt(value any) (int, bool) {
 // unchanged config yields an unchanged digest. Object keys are sorted by
 // encoding/json, so the digest does not depend on map iteration order.
 func SourceDigest(config store.Config) (string, error) {
-	return ContentDigest(map[string]any{
+	return ContentDigest(sourceDigestInput(config))
+}
+
+func sourceDigestInput(config store.Config) map[string]any {
+	return map[string]any{
 		keyAPIVersion: config.Version,
 		keyKind:       config.Kind,
 		keyName:       config.Metadata.Name,
 		keySpec:       config.Spec,
-	})
+	}
+}
+
+// ImportDigest returns the digest [FromConfig] records as [Source.Digest],
+// which publishing compares with the stored config to detect a stale working
+// copy. It is [SourceDigest], except for a Topology that carries a diagram of
+// the legacy Builder (see [HasLegacyDiagram]): the digest input then has one
+// more field, "builder-xml", which holds the diagram. Publishing to such a
+// topology removes the diagram, so one changed, added or removed after the
+// import makes the working copy stale, as a changed spec does.
+func ImportDigest(config store.Config) (string, error) {
+	if !HasLegacyDiagram(config) {
+		return SourceDigest(config)
+	}
+
+	input := sourceDigestInput(config)
+	input[LegacyXMLAnnotation] = config.Metadata.Annotations[LegacyXMLAnnotation]
+
+	return ContentDigest(input)
 }

@@ -49,9 +49,9 @@ func newBuilderPublishCmd() *cobra.Command {
   it as it is now. Publishing the same document again changes nothing.
   Scenarios and experiments are not created.
 
-  The topology names its document in a builder-doc annotation. While the
-  Builder is turned off in the web UI, the Configs page does not open such a
-  topology for editing as text; "phenix config edit" still does.`
+  The topology names its document in a builder-doc annotation. The Configs
+  page opens such a topology in the Builder, not as text; "phenix config
+  edit" edits it as text.`
 
 	example := `  phenix builder publish pump-station.json
   phenix builder publish pump-station.yaml --name pump-station

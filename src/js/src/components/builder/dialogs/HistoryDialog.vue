@@ -27,7 +27,7 @@
 
   A snapshot of edits the Builder applied for the user (the Inspector's
   unapplied edits, saved before the diagram was left, published or
-  exported; see leave.js) is marked Automatic, and a line under the table
+  downloaded; see leave.js) is marked Automatic, and a line under the table
   says what that means. On a narrow screen the table scrolls sideways in
   its own box, which then takes focus, with the actions kept in view.
 -->
@@ -182,7 +182,7 @@
           class="builder-hint"
           data-testid="history-automatic-hint">
           Automatic: changes you had not applied in the Inspector, saved for you
-          before you left, published or exported the diagram.
+          before you left, published or downloaded the diagram.
         </p>
       </div>
 

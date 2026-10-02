@@ -148,6 +148,38 @@ func TestDecodeRejects(t *testing.T) {
 			data:    strings.Replace(string(valid), `"revision": 1`, `"revision": "one"`, 1),
 			wantMsg: "decoding builder document",
 		},
+		{
+			name: "unknown field of a custom icon",
+			data: strings.Replace(string(valid), `"viewport":`,
+				`"icons": {"`+iconFixtureID+`": {"data": "`+iconFixtureData+`", "type": "image/svg+xml"}}, "viewport":`, 1),
+			wantMsg: `unknown field "type"`,
+		},
+		{
+			name: "unknown field of a template",
+			data: strings.Replace(string(valid), `"viewport":`,
+				`"templates": [{"id": "`+idTemplate+`", "name": "x", "hint": "y", "device": {"spec": {}}}], "viewport":`, 1),
+			wantMsg: `unknown field "hint"`,
+		},
+		{
+			// A template fills in a device, and has none of its own
+			// fields.
+			name: "a hostname of a template device",
+			data: strings.Replace(string(valid), `"viewport":`,
+				`"templates": [{"id": "`+idTemplate+`", "name": "x", "device": {"hostname": "y", "spec": {}}}], "viewport":`, 1),
+			wantMsg: `unknown field "hostname"`,
+		},
+		{
+			name:    "custom icons that are a list",
+			data:    strings.Replace(string(valid), `"viewport":`, `"icons": [], "viewport":`, 1),
+			wantMsg: "decoding builder document",
+		},
+		{
+			name: "unknown field of a switch",
+			data: strings.Replace(string(valid),
+				`"switch": { "networkId": "`+idNetExp+`" }`,
+				`"switch": { "networkId": "`+idNetExp+`", "color": "#fff" }`, 1),
+			wantMsg: `unknown field "color"`,
+		},
 	}
 
 	for _, test := range tests {

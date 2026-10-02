@@ -2,7 +2,7 @@
 // shared with open it to edit or to view, and access changes while it is
 // open. Opt-in: the tests need a server with authentication on, e.g.:
 //
-//   phenix ui --features builder-v2 --jwt-signing-key e2e-sharing \
+//   phenix ui --jwt-signing-key e2e-sharing \
 //     --users 'e2e-admin:Testpass1!:Global Admin'
 //   E2E_SHARING=1 npx playwright test builder-sharing
 //
@@ -17,6 +17,8 @@
 const fs = require('fs');
 
 const {
+  ADMIN_PASS,
+  ADMIN_USER,
   API,
   DOCUMENT_TIME,
   SAVED,
@@ -26,6 +28,8 @@ const {
   expect,
   expectAccessible,
   expectDetail,
+  labDocument,
+  recordAnnouncements,
   signIn,
   test,
   visit,
@@ -39,7 +43,7 @@ test.skip(
 
 // Makes a draft of `owner`'s through the API and shares it with `shares`.
 async function seedDraft(owner, name, shares = []) {
-  const created = await owner.api.post(`${API}/builder-v2/drafts`, {
+  const created = await owner.api.post(`${API}/builder/drafts`, {
     data: { title: name, document: blankDocument(name) },
   });
   expect(created.ok(), await created.text()).toBeTruthy();
@@ -59,13 +63,13 @@ async function seedDraft(owner, name, shares = []) {
 }
 
 async function landing({ page }) {
-  await visit(page, '/builder-v2');
+  await visit(page, '/builder');
   await expect(
-    page.getByRole('heading', { name: 'Builder v2', exact: true }),
+    page.getByRole('heading', { name: 'Builder', exact: true }),
   ).toBeVisible({ timeout: 20000 });
 }
 
-// Opens a draft listed under Shared with me.
+// Opens a draft listed under Shared Drafts.
 async function openShared(user, draft) {
   const { page } = user;
 
@@ -117,7 +121,7 @@ async function rename(page, name) {
 }
 
 function editorHeading(page) {
-  return page.getByRole('heading', { level: 1, name: /Builder v2$/ });
+  return page.getByRole('heading', { level: 1, name: /Builder$/ });
 }
 
 // The editor header in a window `width` wide: how wide the name's box is,
@@ -241,13 +245,13 @@ test(
       ).toContainText(`Shared with ${editor.username} and ${viewer.username}`);
     });
 
-    await test.step('the editor finds it under Shared with me and changes it', async () => {
+    await test.step('the editor finds it under Shared Drafts and changes it', async () => {
       const { page: theirs } = editor;
       await landing(editor);
       await theirs.getByTestId('drafts-tab-mine').press('ArrowRight');
       await expect(theirs.getByTestId('drafts-tab-shared')).toBeFocused();
       await expect(theirs.getByTestId('drafts-tab-shared')).toHaveText(
-        /Shared with me/,
+        /^Shared Drafts \(\d+\)$/,
       );
       await expect(
         theirs.getByTestId(`draft-access-${draft.id}`),
@@ -255,7 +259,13 @@ test(
       await expect(theirs.getByTestId(`draft-delete-${draft.id}`)).toHaveCount(
         0,
       );
-      await expectAccessible(theirs, { soft: true, label: 'Shared with me' });
+      // Someone who may edit it may publish it, from its card too.
+      await expect(
+        theirs.getByTestId(`draft-publish-${draft.id}`),
+      ).toHaveAccessibleName(
+        new RegExp(`^Publish ${name} by ${owner.username}, updated `),
+      );
+      await expectAccessible(theirs, { soft: true, label: 'Shared Drafts' });
 
       await theirs.getByTestId(`draft-open-${draft.id}`).press('Enter');
       await expect(theirs.getByTestId('builder-canvas')).toBeVisible({
@@ -268,7 +278,7 @@ test(
         `Shared by ${owner.username} · Can edit`,
       );
       await expect(editorHeading(theirs)).toHaveText(
-        `${name} – ${owner.username}'s draft – Builder v2`,
+        `${name} – ${owner.username}'s draft – Builder`,
       );
       await expect(theirs.getByTestId('toolbar-share')).toHaveAttribute(
         'aria-disabled',
@@ -311,6 +321,34 @@ test(
         .filter({ has: page.getByTestId(`draft-open-${draft.id}`) });
       await expect(card.getByRole('heading')).toHaveText(`${name} changed`);
       await expect(card).toContainText(`by ${editor.username}`);
+
+      // Its four buttons, Share among them, are one size.
+      const buttons = await card
+        .locator('.builder-card__actions > button')
+        .evaluateAll((all) =>
+          all.map((button) => {
+            const { width, height } = button.getBoundingClientRect();
+
+            return {
+              action: button.dataset.testid.split('-')[1],
+              width,
+              height,
+            };
+          }),
+        );
+      expect(buttons.map((button) => button.action)).toEqual([
+        'open',
+        'share',
+        'delete',
+        'publish',
+      ]);
+      for (const side of ['width', 'height']) {
+        const sizes = buttons.map((button) => button[side]);
+
+        expect
+          .soft(Math.max(...sizes) - Math.min(...sizes), side)
+          .toBeLessThan(0.5);
+      }
     });
 
     await test.step('the viewer opens it view only', async () => {
@@ -320,7 +358,7 @@ test(
       await expect(
         theirs.getByTestId(`draft-access-${draft.id}`),
       ).toContainText('Can view');
-      for (const action of ['share', 'delete']) {
+      for (const action of ['share', 'delete', 'publish']) {
         await expect(
           theirs.getByTestId(`draft-${action}-${draft.id}`),
         ).toHaveCount(0);
@@ -328,7 +366,7 @@ test(
 
       await theirs.getByTestId(`draft-open-${draft.id}`).click();
       await expect(theirs.getByTestId('builder-readonly')).toHaveText(
-        `${owner.username} shared this draft with you to view. Use Export to keep a copy.`,
+        `${owner.username} shared this draft with you to view. Use Download to keep a copy.`,
       );
       await expect(theirs).toHaveAnnounced(
         `Opened ${owner.username}'s draft ${name} changed, view only.`,
@@ -366,7 +404,7 @@ test(
       await expect(theirs.locator('#toolbar-tip-share')).toContainText(
         `Only ${owner.username} can change who has access`,
       );
-      await expect(theirs.getByTestId('toolbar-export')).not.toHaveAttribute(
+      await expect(theirs.getByTestId('toolbar-download')).not.toHaveAttribute(
         'aria-disabled',
         'true',
       );
@@ -443,7 +481,7 @@ test(
       expect((await stranger.api.get(`${path}/shares`)).status()).toBe(404);
       expect((await stranger.api.get(candidates)).status()).toBe(404);
       const listed = await (
-        await stranger.api.get(`${API}/builder-v2/drafts`)
+        await stranger.api.get(`${API}/builder/drafts`)
       ).json();
       expect(
         [...(listed.drafts || []), ...(listed.shared || [])].map(
@@ -494,6 +532,19 @@ test('access that changes while the draft is open', async ({
 
   await test.step('the owner makes the editor a viewer from the toolbar, and keeps saving', async () => {
     const share = page.getByTestId('toolbar-share');
+    // The palette finds Share by "send" too.
+    await page.getByTestId('builder-canvas').focus();
+    await page.keyboard.press('ControlOrMeta+k');
+    await page.getByRole('combobox', { name: 'Search commands' }).fill('send');
+    await expect(
+      page
+        .getByTestId('commands-dialog')
+        .getByRole('option', { selected: true }),
+    ).toContainText('Share…');
+    await page.keyboard.press('Enter');
+    await shareDialog(page);
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('share-dialog')).toHaveCount(0);
     await share.click();
     const dialog = await shareDialog(page);
     await dialog
@@ -535,9 +586,7 @@ test('access that changes while the draft is open', async ({
     await expect(theirs.getByTestId('builder-name')).toHaveText(
       'Kept by the editor (local copy)',
     );
-    const listed = await (
-      await editor.api.get(`${API}/builder-v2/drafts`)
-    ).json();
+    const listed = await (await editor.api.get(`${API}/builder/drafts`)).json();
     expect((listed.drafts || []).map((entry) => entry.title)).toContain(
       'Kept by the editor (local copy)',
     );
@@ -571,7 +620,7 @@ test('access that changes while the draft is open', async ({
     await expect(theirs.getByTestId('drafts-tab-shared')).toBeFocused();
 
     const link = encodeURIComponent(`${owner.username}/${draft.id}`);
-    await visit(viewer.page, `/builder-v2?draft=${link}`);
+    await visit(viewer.page, `/builder?draft=${link}`);
     await expect(viewer.page.getByTestId('builder-error')).toContainText(
       'This draft does not exist, or it is not shared with you.',
     );
@@ -612,7 +661,7 @@ test('access that changes while the draft is open', async ({
 
     // The landing shows the lists it has at once and reads them again; the
     // delete needs the draft as it is now.
-    const relisted = waitForApi(page, 'GET', '/builder-v2/drafts');
+    const relisted = waitForApi(page, 'GET', '/builder/drafts');
     await page.getByTestId('editor-back').click();
     await relisted;
     await page.getByTestId(`draft-delete-${draft.id}`).click();
@@ -626,12 +675,554 @@ test('access that changes while the draft is open', async ({
     );
     await expect(theirs.getByTestId('editor-shared-by')).toHaveCount(0);
     await expect(theirs.getByTestId('toolbar-share')).toHaveCount(0);
-    const listed = await (
-      await editor.api.get(`${API}/builder-v2/drafts`)
-    ).json();
+    const listed = await (await editor.api.get(`${API}/builder/drafts`)).json();
     expect((listed.shared || []).map((entry) => entry.id)).not.toContain(
       draft.id,
     );
+  });
+});
+
+// A link from the Configs page names a topology. The draft that published
+// its diagram opens for its owner and for those it is shared with for
+// editing; anyone else edits the diagram in a draft of their own.
+test('a published topology opens in the draft that published it only for those who may edit that draft', async ({
+  sharingUsers,
+}) => {
+  test.setTimeout(120000);
+  const { owner, editor, viewer } = sharingUsers;
+  const topology = `e2e-shared-${Date.now().toString(36)}`;
+  const link = `/builder?topology=${encodeURIComponent(topology)}`;
+  const draft = await seedDraft(owner, topology, [
+    { user: editor.username, access: 'edit' },
+    { user: viewer.username, access: 'view' },
+  ]);
+  // Sharing gave the draft a new ETag.
+  const current = await owner.api.get(draftPath(draft));
+  const published = await owner.api.post(`${draftPath(draft)}/publish`, {
+    headers: { 'If-Match': current.headers().etag },
+    data: { mode: 'topology', topology: { name: topology, action: 'create' } },
+  });
+
+  try {
+    expect(published.ok(), await published.text()).toBeTruthy();
+
+    // The drafts a user's page makes from now on.
+    const createsOf = ({ page }) => {
+      const creates = [];
+      page.on('request', (request) => {
+        if (
+          request.method() === 'POST' &&
+          new URL(request.url()).pathname === `${API}/builder/drafts`
+        ) {
+          creates.push(request.url());
+        }
+      });
+
+      return creates;
+    };
+    const opened = async ({ page }) => {
+      await visit(page, link);
+      await expect(page.getByTestId('builder-canvas')).toBeVisible({
+        timeout: 20000,
+      });
+      await expect(page.getByTestId('builder-name')).toHaveText(topology);
+    };
+    const names = (who, id) => (url) =>
+      url.searchParams.get('draft') === `${who}/${id}`;
+
+    await test.step('someone it is shared with for editing opens that draft', async () => {
+      const creates = createsOf(editor);
+      await opened(editor);
+      await expect(editor.page).toHaveURL(names(owner.username, draft.id));
+      await expect(editor.page).toHaveAnnounced(
+        `Opened ${owner.username}'s draft ${topology}. You can edit it; others may be editing too.`,
+      );
+      await expect(editor.page.getByTestId('editor-shared-by')).toContainText(
+        owner.username,
+      );
+      // Nothing calls it a draft of their own, and none is made.
+      await expect(editor.page).not.toHaveAnnounced(/in your draft|new draft/);
+      expect(creates, 'draft creates').toEqual([]);
+    });
+
+    await test.step('someone who may only view that draft gets a draft of their own', async () => {
+      const creates = createsOf(viewer);
+      const made = waitForApi(viewer.page, 'POST', '/builder/drafts');
+      await opened(viewer);
+      const own = await (await made).json();
+      expect(own.owner).toBe(viewer.username);
+      expect(own.id).not.toBe(draft.id);
+      expect(own.sourceToken).toMatch(/^builder-doc\//);
+      await expect(viewer.page).toHaveURL(names(viewer.username, own.id));
+      await expect(viewer.page).toHaveAnnounced(
+        `Opened topology ${topology} in the Builder as a new draft.`,
+      );
+      await expect(viewer.page.getByTestId('builder-save-state')).toContainText(
+        SAVED,
+      );
+
+      // The link opens that draft again, and makes no other.
+      await opened(viewer);
+      await expect(viewer.page).toHaveURL(names(viewer.username, own.id));
+      await expect(viewer.page).toHaveAnnounced(
+        `Opened topology ${topology} in the Builder, in your draft of it.`,
+      );
+      expect(creates, 'draft creates').toHaveLength(1);
+    });
+
+    await test.step('its owner opens it too', async () => {
+      const creates = createsOf(owner);
+      await opened(owner);
+      await expect(owner.page).toHaveURL(names(owner.username, draft.id));
+      await expect(owner.page).toHaveAnnounced(
+        `Opened topology ${topology} in the Builder, in the draft that published it.`,
+      );
+      expect(creates, 'draft creates').toEqual([]);
+    });
+  } finally {
+    await owner.api
+      .delete(`${API}/configs/Topology/${topology}`)
+      .catch(() => {});
+  }
+});
+
+// A user of the sharing role may read no experiment and no other user's
+// draft; the administrator may do both.
+test("a card offers what its user may do: Exp, Delete on another user's draft, and Publish", async ({
+  sharingUsers,
+  browser,
+  playwright,
+}, testInfo) => {
+  test.setTimeout(120000);
+  const { owner, editor, viewer } = sharingUsers;
+  const { baseURL, viewport } = testInfo.project.use;
+  const nonce = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
+  const topology = `e2e-exp-topo-${nonce}`;
+  const experiment = `e2e-exp-${nonce}`;
+  const theirs = await seedDraft(owner, `Other's draft ${nonce}`);
+
+  const guest = await playwright.request.newContext({ baseURL });
+  const session = await signIn(guest, ADMIN_USER, ADMIN_PASS);
+  const admin = await playwright.request.newContext({
+    baseURL,
+    extraHTTPHeaders: { 'X-Phenix-Auth-Token': `bearer ${session.token}` },
+  });
+  const context = await browser.newContext({ baseURL, viewport });
+  await context.addInitScript(recordAnnouncements);
+  await context.addInitScript((signedIn) => {
+    sessionStorage.setItem('phenix.user', signedIn.user.username);
+    sessionStorage.setItem('phenix.token', signedIn.token);
+    sessionStorage.setItem('phenix.role', JSON.stringify(signedIn.user.role));
+    sessionStorage.setItem('phenix.auth', 'true');
+  }, session);
+  const page = await context.newPage();
+  let made = null;
+
+  // The published diagram of the topology, as `api`'s user is told of it.
+  const rowOf = async (api) => {
+    const listed = await api.get(`${API}/builder/documents`);
+    expect(listed.ok(), await listed.text()).toBeTruthy();
+
+    return ((await listed.json()).documents || []).find(
+      (entry) => entry.target === topology,
+    );
+  };
+
+  try {
+    // The administrator publishes a diagram with an experiment.
+    const created = await admin.post(`${API}/builder/drafts`, {
+      data: { title: topology, document: labDocument(topology) },
+    });
+    expect(created.ok(), await created.text()).toBeTruthy();
+    made = await created.json();
+    const published = await admin.post(`${draftPath(made)}/publish`, {
+      headers: { 'If-Match': created.headers().etag },
+      data: {
+        mode: 'topology-experiment',
+        topology: { name: topology, action: 'create' },
+        experiment: { name: experiment, action: 'create' },
+      },
+    });
+    expect(published.status(), await published.text()).toBe(200);
+    const row = await rowOf(admin);
+    expect(row.experiment).toBe(experiment);
+
+    await test.step('a user who may not get the experiment is not told its name, and has no Exp', async () => {
+      const seen = await rowOf(viewer.api);
+      expect(seen.id).toBe(row.id);
+      expect(seen).not.toHaveProperty('experiment');
+
+      await landing(viewer);
+      await viewer.page.getByTestId('drafts-tab-published').click();
+      await expect(
+        viewer.page.getByTestId(`draft-open-${row.id}`),
+      ).toBeVisible();
+      await expect(
+        viewer.page.getByTestId(`published-experiment-${row.id}`),
+      ).toHaveCount(0);
+      // Nor are other users' drafts listed for them.
+      await expect(viewer.page.getByTestId('drafts-tab-others')).toHaveCount(0);
+    });
+
+    await test.step('the administrator has Exp, which opens the experiment', async () => {
+      await landing({ page });
+      await page.getByTestId('drafts-tab-published').click();
+      const exp = page.getByTestId(`published-experiment-${row.id}`);
+      await expect(exp).toHaveAccessibleName(
+        `Exp: open experiment ${experiment}`,
+      );
+      await exp.click();
+      await expect(page).toHaveURL(new RegExp(`/experiment/${experiment}$`));
+    });
+
+    await test.step("the administrator selects other users' drafts and deletes them at once, told whose they are", async () => {
+      const first = await seedDraft(owner, `Left behind ${nonce} a`);
+      const second = await seedDraft(editor, `Left behind ${nonce} b`);
+      const mine = await seedDraft(viewer, `Kept ${nonce}`);
+
+      await landing({ page });
+      await page.getByTestId('drafts-tab-others').click();
+      await expect(page.getByTestId('bulk-bar-others')).toHaveAccessibleName(
+        "Bulk actions: Other users' drafts",
+      );
+      // Another user's drafts are deleted from here, never shared.
+      await expect(page.getByTestId('bulk-share-others')).toHaveCount(0);
+      await expect(
+        page.getByTestId(`card-select-${first.id}`),
+      ).toHaveAccessibleName(
+        new RegExp(
+          `^Select Left behind ${nonce} a by ${owner.username}, updated .+$`,
+        ),
+      );
+      await page.getByTestId(`card-select-${first.id}`).check();
+      await page.getByTestId(`card-select-${second.id}`).check();
+      await expect(page.getByTestId('bulk-count-others')).toHaveText(
+        /^2 of \d+ selected$/,
+      );
+
+      await page.getByTestId('bulk-delete-others').click();
+      const confirm = page.getByRole('alertdialog', {
+        name: 'Delete 2 drafts?',
+      });
+      await expect(confirm).toBeVisible();
+      const message = await confirm.locator('p').textContent();
+      expect(message).toContain(`Left behind ${nonce} a`);
+      expect(message).toContain(`Left behind ${nonce} b`);
+      // Each owner is named, once.
+      expect(message).toMatch(
+        new RegExp(
+          `\\. They belong to (${owner.username} and ${editor.username}|${editor.username} and ${owner.username})\\. ` +
+            'The drafts and their whole histories are removed from the server\\. This cannot be undone\\.$',
+        ),
+      );
+      await expect(confirm.getByTestId('confirm-cancel')).toBeFocused();
+      await confirm.getByTestId('confirm-accept').click();
+
+      await expect(page.getByTestId(`draft-open-${first.id}`)).toHaveCount(0);
+      await expect(page.getByTestId(`draft-open-${second.id}`)).toHaveCount(0);
+      await expect(page).toHaveAnnounced('Deleted 2 drafts.');
+      expect((await owner.api.get(draftPath(first))).status()).toBe(404);
+      expect((await editor.api.get(draftPath(second))).status()).toBe(404);
+      // What was not selected is left.
+      await expect(page.getByTestId(`draft-open-${mine.id}`)).toBeVisible();
+      expect((await viewer.api.get(draftPath(mine))).status()).toBe(200);
+    });
+
+    await test.step("the administrator deletes another user's draft from its card, after being asked", async () => {
+      const listed = await (await admin.get(`${API}/builder/drafts`)).json();
+      expect(
+        (listed.shared || []).find((entry) => entry.id === theirs.id),
+      ).toMatchObject({ owner: owner.username, via: 'role', canDelete: true });
+
+      await landing({ page });
+      await page.getByTestId('drafts-tab-others').click();
+      const remove = page.getByTestId(`draft-delete-${theirs.id}`);
+      await expect(remove).toHaveAccessibleName(
+        new RegExp(`^Delete Other's draft ${nonce} by ${owner.username}, `),
+      );
+      await remove.click();
+      const confirm = page.getByRole('alertdialog', {
+        name: new RegExp(`^Delete draft Other's draft ${nonce} by `),
+      });
+      await expect(confirm).toBeVisible();
+      await confirm.getByTestId('confirm-accept').click();
+      await expect(page.getByTestId(`draft-open-${theirs.id}`)).toHaveCount(0);
+      expect((await owner.api.get(draftPath(theirs))).status()).toBe(404);
+    });
+
+    await test.step('Publish on a card finds that the draft may now only be viewed, and publishes nothing', async () => {
+      const name = `Lent ${nonce}`;
+      const lent = await seedDraft(owner, name, [
+        { user: editor.username, access: 'edit' },
+      ]);
+      const mine = editor.page;
+      await landing(editor);
+      await mine.getByTestId('drafts-tab-shared').click();
+      const publish = mine.getByTestId(`draft-publish-${lent.id}`);
+      await expect(publish).toBeVisible();
+
+      // The owner lets them only view it, after their list was read.
+      const path = `${draftPath(lent)}/shares`;
+      const read = await (await owner.api.get(path)).json();
+      const saved = await owner.api.put(path, {
+        headers: { 'If-Match': read.sharesEtag },
+        data: { shares: [{ user: editor.username, access: 'view' }] },
+      });
+      expect(saved.ok(), await saved.text()).toBeTruthy();
+
+      await publish.focus();
+      await mine.keyboard.press('Enter');
+      await expect(mine.getByTestId('builder-error')).toContainText(
+        `You can view ${name} but not change it, so you cannot publish it.`,
+      );
+      await expect(mine.getByRole('dialog')).toHaveCount(0);
+      // The drafts stay, read again: the card has no Publish any more, and
+      // focus, which was on it, is on the card's Open (WCAG 2.4.3).
+      await expect(mine.getByTestId('builder-canvas')).toHaveCount(0);
+      await expect(mine.getByTestId(`draft-open-${lent.id}`)).toBeVisible();
+      await expect(publish).toHaveCount(0);
+      await expect(mine.getByTestId(`draft-open-${lent.id}`)).toBeFocused();
+      await expect(mine.getByTestId(`draft-access-${lent.id}`)).toContainText(
+        'Can view',
+      );
+    });
+  } finally {
+    await admin
+      .delete(`${API}/configs/Experiment/${experiment}`)
+      .catch(() => {});
+    await admin.delete(`${API}/configs/Topology/${topology}`).catch(() => {});
+    if (made) {
+      const current = await admin.get(draftPath(made)).catch(() => null);
+      await admin
+        .delete(draftPath(made), {
+          headers: { 'If-Match': current?.headers().etag || '' },
+        })
+        .catch(() => {});
+    }
+    await context.close().catch(() => {});
+    await admin.dispose();
+    await guest.dispose();
+  }
+});
+
+test('several drafts are shared at once: the people are added to each, no one is removed, and what failed is listed', async ({
+  sharingUsers,
+}) => {
+  test.setTimeout(120000);
+  const { owner, editor, viewer } = sharingUsers;
+  const { page } = owner;
+  const plain = await seedDraft(owner, 'Bulk plain');
+  // Shared already: the viewer stays as they are, and the editor, who may
+  // only view it, gets the access chosen for the batch.
+  const lent = await seedDraft(owner, 'Bulk lent', [
+    { user: viewer.username, access: 'view' },
+    { user: editor.username, access: 'view' },
+  ]);
+  const refused = await seedDraft(owner, 'Bulk refused');
+  const sharesOf = async (draft) =>
+    (
+      await (await owner.api.get(`${draftPath(draft)}/shares`)).json()
+    ).shares.map(({ user, access }) => ({ user, access }));
+  const select = (draft) => page.getByTestId(`card-select-${draft.id}`);
+
+  await landing(owner);
+  const count = page.getByTestId('bulk-count-mine');
+  const share = page.getByTestId('bulk-share-mine');
+  const dialog = page.getByTestId('bulk-share-dialog');
+  const field = dialog.getByTestId('bulk-share-user');
+  const error = dialog.getByTestId('bulk-share-user-error');
+
+  await test.step('Share selected opens one dialog for the selected drafts', async () => {
+    await expect(share).toHaveText('Share selected');
+    await expect(share).toHaveAttribute('aria-disabled', 'true');
+    await expect(share).toHaveAccessibleDescription('0 of 3 selected');
+    for (const draft of [plain, lent, refused]) {
+      await select(draft).check();
+    }
+    await expect(count).toHaveText('3 of 3 selected');
+    await expect(share).not.toHaveAttribute('aria-disabled', 'true');
+
+    await share.press('Enter');
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAccessibleName('Share 3 drafts');
+    await expect(dialog).toHaveAccessibleDescription(
+      /^The people you add get access to every selected draft, with the access you choose\. .+ No one is removed\. They find the drafts under Shared Drafts\.$/,
+    );
+    await expect(field).toBeFocused();
+    await expect(dialog.getByTestId('bulk-share-users-note')).toHaveText('');
+    await expect(dialog.getByTestId('bulk-share-empty')).toHaveText(
+      'No one yet.',
+    );
+    const submit = dialog.getByTestId('bulk-share-submit');
+    await expect(submit).toHaveText('Share 3 drafts');
+    await expect(submit).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  await test.step('people are named as in the Share dialog, and a name that cannot be added is refused where it was typed', async () => {
+    await field.fill(owner.username);
+    await field.press('Enter');
+    await expect(error).toHaveText('You own these drafts.');
+    await expect(field).toBeFocused();
+    await expect(field).toHaveAttribute('aria-invalid', 'true');
+
+    // The list offers the users the drafts may be shared with; typing
+    // filters it, and Enter takes the one in view.
+    await field.fill(editor.username);
+    const options = dialog.getByRole('listbox', { name: 'Users' });
+    await expect(options.getByRole('option')).toHaveCount(1);
+    await field.press('ArrowDown');
+    await field.press('Enter');
+    await expect(options).toBeHidden();
+    await expect(field).toHaveValue(new RegExp(`\\(${editor.username}\\)$`));
+    await expect(error).toHaveText('');
+    await field.press('Enter');
+    await expect(
+      dialog.getByTestId(`bulk-share-row-${editor.username}`),
+    ).toBeVisible();
+    await expect(field).toHaveValue('');
+    await expect(field).toBeFocused();
+
+    await field.fill(editor.username);
+    await field.press('Enter');
+    await expect(error).toHaveText(
+      `${editor.username} is already in the list.`,
+    );
+
+    // Someone added by mistake is removed again, and focus moves on.
+    await field.fill(viewer.username);
+    await field.press('Enter');
+    const row = dialog.getByTestId(`bulk-share-row-${viewer.username}`);
+    await expect(row).toBeVisible();
+    await row
+      .getByRole('button', { name: `Remove ${viewer.username}` })
+      .click();
+    await expect(row).toHaveCount(0);
+    await expect(field).toBeFocused();
+
+    // One access for everyone added.
+    await dialog.getByTestId('bulk-share-access').selectOption('edit');
+    await expectAccessible(page, {
+      include: '[data-testid="bulk-share-dialog"]',
+      label: 'bulk Share dialog',
+    });
+  });
+
+  await test.step('a draft that could not be shared is listed with why, and stays selected', async () => {
+    // The server refuses the person for one of the drafts.
+    const REFUSED = `**${draftPath(refused)}/shares`;
+    await page.route(REFUSED, (route) =>
+      route.request().method() === 'PUT'
+        ? route.fulfill({
+            status: 422,
+            json: {
+              message: 'Some people could not be added.',
+              errors: [{ user: editor.username, reason: 'unknown-user' }],
+            },
+          })
+        : route.fallback(),
+    );
+
+    await dialog.getByTestId('bulk-share-submit').click();
+    const summary = dialog.getByTestId('bulk-summary');
+    await expect(summary).toBeVisible();
+    await expect(summary).toBeFocused();
+    await expect(summary).toHaveAccessibleName(
+      '1 of 3 drafts could not be shared. The other 2 were shared.',
+    );
+    await expect(summary.getByRole('listitem')).toHaveText([
+      new RegExp(
+        `^Bulk refused, updated .+: No user named ${editor.username}\\. People must have signed in to phēnix at least once\\.$`,
+      ),
+    ]);
+    // Nothing more to do here but close: the form is gone.
+    await expect(summary.getByTestId('bulk-summary-dismiss')).toHaveCount(0);
+    await expect(field).toHaveCount(0);
+    await expect(dialog.getByTestId('bulk-share-submit')).toHaveCount(0);
+    await expectAccessible(page, {
+      include: '[data-testid="bulk-share-dialog"]',
+      label: 'bulk Share dialog with a summary',
+    });
+
+    // The other two were shared: the editor was added, or raised to the
+    // access chosen, and the viewer was left as they were.
+    expect(await sharesOf(plain)).toEqual([
+      { user: editor.username, access: 'edit' },
+    ]);
+    // The server lists them by name.
+    expect(await sharesOf(lent)).toEqual([
+      { user: editor.username, access: 'edit' },
+      { user: viewer.username, access: 'view' },
+    ]);
+    expect(await sharesOf(refused)).toEqual([]);
+
+    await dialog.getByTestId('bulk-share-close').click();
+    await expect(dialog).toHaveCount(0);
+    await page.unroute(REFUSED);
+    await expect(share).toBeFocused();
+    // The cards say who they are shared with now; only the draft that was
+    // not shared is still selected.
+    await expect(page.getByTestId(`draft-shared-with-${plain.id}`)).toHaveText(
+      `Shared with ${editor.username}`,
+    );
+    await expect(select(refused)).toBeChecked();
+    await expect(select(plain)).not.toBeChecked();
+    await expect(select(lent)).not.toBeChecked();
+    await expect(count).toHaveText('1 of 3 selected');
+  });
+
+  await test.step('tried again, the draft is shared, the dialog closes and the page says so', async () => {
+    await share.click();
+    await expect(dialog).toHaveAccessibleName('Share 1 draft');
+    await field.fill(editor.username);
+    await field.press('Enter');
+    const submit = dialog.getByTestId('bulk-share-submit');
+    await expect(submit).toHaveText('Share 1 draft');
+    await submit.click();
+
+    await expect(dialog).toHaveCount(0);
+    await expect(page).toHaveAnnounced(
+      `Shared 1 draft with ${editor.username} (can view).`,
+    );
+    await expect(share).toBeFocused();
+    await expect(count).toHaveText('0 of 3 selected');
+    expect(await sharesOf(refused)).toEqual([
+      { user: editor.username, access: 'view' },
+    ]);
+
+    // The editor finds all three under Shared Drafts, with their access.
+    const listed = await (await editor.api.get(`${API}/builder/drafts`)).json();
+    const access = Object.fromEntries(
+      (listed.shared || []).map((entry) => [entry.id, entry.access]),
+    );
+    expect(access).toMatchObject({
+      [plain.id]: 'edit',
+      [lent.id]: 'edit',
+      [refused.id]: 'view',
+    });
+  });
+
+  await test.step('a draft the list was read before is deleted with the others, although sharing changed it', async () => {
+    // Sharing gave each draft a new ETag, which its card took.
+    for (const draft of [plain, lent, refused]) {
+      await select(draft).check();
+    }
+    await page.getByTestId('bulk-delete-mine').click();
+    const confirm = page.getByRole('alertdialog', { name: 'Delete 3 drafts?' });
+    await expect(confirm.locator('p')).toContainText(
+      '3 of them are shared: the people with access lose it too.',
+    );
+    const statuses = [];
+    page.on('response', (response) => {
+      if (response.request().method() === 'DELETE') {
+        statuses.push(response.status());
+      }
+    });
+    await confirm.getByTestId('confirm-accept').click();
+    await expect(page).toHaveAnnounced('Deleted 3 drafts.');
+    expect(statuses).toEqual([204, 204, 204]);
+    // The row went with the last card: focus moves to the tab.
+    await expect(page.getByTestId('bulk-bar-mine')).toHaveCount(0);
+    await expect(page.getByTestId('drafts-tab-mine')).toBeFocused();
   });
 });
 
@@ -649,7 +1240,7 @@ test('mistakes and changes from elsewhere in the Share dialog', async ({
   // The users the server offers, less those of other tests, and someone
   // whose account is gone by the time the list is saved.
   const nobody = `nobody-${Date.now()}`;
-  const candidates = '**/api/v1/builder-v2/drafts/*/*/shares/candidates';
+  const candidates = '**/api/v1/builder/drafts/*/*/shares/candidates';
   let failUsers = false;
   await page.route(candidates, async (route) => {
     if (failUsers) {
@@ -767,7 +1358,7 @@ test('mistakes and changes from elsewhere in the Share dialog', async ({
   });
 
   await test.step('adding waits until the list has loaded', async () => {
-    const shares = `**/builder-v2/drafts/*/${draft.id}/shares`;
+    const shares = `**/builder/drafts/*/${draft.id}/shares`;
     await page.route(shares, async (route) => {
       if (route.request().method() === 'GET') {
         await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -792,7 +1383,7 @@ test('mistakes and changes from elsewhere in the Share dialog', async ({
   });
 
   await test.step('a save refused because the session ended signs in again, and says so in the dialog', async () => {
-    const shares = `**/builder-v2/drafts/*/${draft.id}/shares`;
+    const shares = `**/builder/drafts/*/${draft.id}/shares`;
     await page.route(shares, (route) =>
       route.request().method() === 'PUT'
         ? route.fulfill({ status: 401, json: { message: 'unauthorized' } })
@@ -994,7 +1585,7 @@ test(
       );
       await expect(saveState).toContainText(SAVED);
       await expect(page.getByTestId('builder-signin-notice')).toBeHidden();
-      await expect(page).toHaveURL(/\/builder-v2/);
+      await expect(page).toHaveURL(/\/builder/);
       expect(await tabId()).toBe(tab);
 
       // The server has the change, read with the page's new session.
@@ -1011,9 +1602,7 @@ test(
       expect(saved).toContain('switch');
     });
 
-    await page.route('**/api/v1/builder-v2/drafts/**', (route) =>
-      route.abort(),
-    );
+    await page.route('**/api/v1/builder/drafts/**', (route) => route.abort());
     await page.getByTestId('palette-device').click();
     await expect(page.getByTestId('builder-save-state')).toContainText(
       'Offline: 1 change kept on this device',
@@ -1029,7 +1618,7 @@ test(
       await expect
         .soft(warning)
         .toHaveAccessibleDescription(
-          '1 change to Builder v2 drafts has not reached the server. Logging out deletes it from this browser. Use Export to keep a copy.',
+          '1 change to Builder drafts has not reached the server. Logging out deletes it from this browser. Use Download to keep a copy.',
         );
       await expect
         .soft(warning.getByRole('button', { name: 'Stay signed in' }))
@@ -1040,12 +1629,12 @@ test(
 
       const [file] = await Promise.all([
         page.waitForEvent('download'),
-        warning.getByRole('button', { name: 'Export' }).click(),
+        warning.getByRole('button', { name: 'Download' }).click(),
       ]);
       expect.soft(file.suggestedFilename()).toBe('logout-lab.json');
-      const exported = JSON.parse(fs.readFileSync(await file.path(), 'utf8'));
+      const downloaded = JSON.parse(fs.readFileSync(await file.path(), 'utf8'));
       expect
-        .soft(exported.nodes.filter((node) => node.kind === 'device'))
+        .soft(downloaded.nodes.filter((node) => node.kind === 'device'))
         .toHaveLength(1);
 
       await warning.getByRole('button', { name: 'Stay signed in' }).click();
@@ -1065,7 +1654,7 @@ test(
       await expect
         .soft(idle)
         .toHaveAccessibleDescription(
-          'You have been inactive for a while. 1 change to Builder v2 drafts has not reached the server. Logging out deletes it from this browser. Use Export to keep a copy. Logging out in 60 seconds.',
+          'You have been inactive for a while. 1 change to Builder drafts has not reached the server. Logging out deletes it from this browser. Use Download to keep a copy. Logging out in 60 seconds.',
         );
       await expect
         .soft(idle.getByRole('button', { name: 'Stay signed in' }))
@@ -1096,9 +1685,7 @@ test(
       await expect(page).toHaveURL(/\/signin$/);
       await expect.poll(records).toEqual([]);
       // The server has forgotten the session.
-      expect((await owner.api.get(`${API}/builder-v2/drafts`)).status()).toBe(
-        401,
-      );
+      expect((await owner.api.get(`${API}/builder/drafts`)).status()).toBe(401);
     });
 
     // The session the fixture cleans up with is gone.

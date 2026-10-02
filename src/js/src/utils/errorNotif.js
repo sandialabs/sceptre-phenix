@@ -16,7 +16,7 @@ export async function useErrorNotification(error) {
     }
   } else if (error.response.data) {
     // if the error is for an invalid token, log the user out (after a
-    // warning, when Builder v2 holds changes the server does not have)
+    // warning, when Builder holds changes the server does not have)
     if (
       error.response.status === 401 &&
       String(error.response.data).toLowerCase().includes('invalid')

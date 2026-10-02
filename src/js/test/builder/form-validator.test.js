@@ -96,6 +96,43 @@ describe('plain-language errors', () => {
     );
   });
 
+  // An outline or a fill is #rrggbb only: the text color on a fill is
+  // worked out from it. A network's color still takes any CSS color.
+  test('say that an outline or a fill color must be a hex color', () => {
+    const colored = (colors) => errorsFor(network, { name: 'EXP', ...colors });
+
+    expect(
+      fieldErrors(
+        colored({ outlineColor: 'red', fillColor: '#abc' }),
+        network,
+      ).map((error) => error.message),
+    ).toEqual([
+      'Outline Color must be a hex color, such as #2f6fbf',
+      'Fill Color must be a hex color, such as #2f6fbf',
+    ]);
+    expect(
+      fieldErrors(
+        errorsFor(device, { ...deviceData(), fillColor: 'rgb(1, 2, 3)' }),
+        device,
+      ).map((error) => error.message),
+    ).toEqual(['Fill Color must be a hex color, such as #2f6fbf']);
+
+    for (const value of ['#2f6fbf', '#2F6FBF', '']) {
+      expect(
+        colored({ outlineColor: value, fillColor: value, color: 'red' }),
+        value,
+      ).toEqual([]);
+    }
+
+    // A line style is one of the listed patterns.
+    expect(colored({ lineStyle: 'dotted' })).toEqual([]);
+    expect(
+      fieldErrors(colored({ lineStyle: 'wavy' }), network).map(
+        (error) => error.message,
+      ),
+    ).toEqual(['Line style must be one of the listed options']);
+  });
+
   // The Inspector bounds the MTU (see SPEC_BOUNDS in schema.js).
   test('say what range a number must be in', () => {
     const iface = { name: 'eth0', type: 'ethernet', proto: 'dhcp', vlan: 'A' };

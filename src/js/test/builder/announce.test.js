@@ -3,7 +3,9 @@ import { describe, expect, test } from 'vitest';
 import {
   count,
   createAnnouncer,
+  describeCombined,
   describeImport,
+  describeNames,
   describeRemoval,
   listOf,
 } from '@/builder/announce.js';
@@ -36,6 +38,22 @@ describe('wording', () => {
     expect(listOf(['a', 'b', 'c'])).toBe('a, b and c');
   });
 
+  test('up to three things are named, and of more the first two and how many others', () => {
+    expect(describeNames([])).toBe('');
+    expect(describeNames(undefined)).toBe('');
+    expect(describeNames(['Lab'])).toBe('Lab');
+    expect(describeNames(['Lab', 'Core'])).toBe('Lab and Core');
+    expect(describeNames(['Lab', 'Core', 'Edge'])).toBe('Lab, Core and Edge');
+    expect(describeNames(['Lab', 'Core', 'Edge', 'Site'])).toBe(
+      'Lab, Core and 2 others',
+    );
+    expect(describeNames(['a', 'b', 'c', 'd', 'e', 'f', 'g'])).toBe(
+      'a, b and 5 others',
+    );
+    // What has no name is left out.
+    expect(describeNames(['Lab', '', undefined, 'Core'])).toBe('Lab and Core');
+  });
+
   test('an import says how many warnings it gave', () => {
     expect(describeImport()).toBe('Imported diagram.');
     expect(describeImport([])).toBe('Imported diagram.');
@@ -44,6 +62,81 @@ describe('wording', () => {
     );
     expect(describeImport(['a', 'b'])).toBe(
       'The diagram was imported with 2 warnings.',
+    );
+    expect(describeImport(['a'], {})).toBe(
+      'The diagram was imported with 1 warning.',
+    );
+    expect(describeImport([], { legacy: false })).toBe('Imported diagram.');
+  });
+
+  test('the conversion of a legacy diagram says so, with its warnings', () => {
+    expect(describeImport([], { legacy: true })).toBe(
+      'Converted the legacy diagram.',
+    );
+    expect(describeImport(undefined, { legacy: true })).toBe(
+      'Converted the legacy diagram.',
+    );
+    expect(describeImport(['a'], { legacy: true })).toBe(
+      'The legacy diagram was converted with 1 warning.',
+    );
+    expect(describeImport(['a', 'b', 'c'], { legacy: true })).toBe(
+      'The legacy diagram was converted with 3 warnings.',
+    );
+  });
+
+  test('a copy and a combined import name the topology read and the new one', () => {
+    const names = { source: 'site', name: 'site-copy' };
+
+    expect(describeImport([], { mode: 'copy', ...names })).toBe(
+      'Imported a copy of topology site as site-copy.',
+    );
+    expect(describeImport(['a', 'b'], { mode: 'copy', ...names })).toBe(
+      'Imported a copy of topology site as site-copy, with 2 warnings.',
+    );
+    expect(
+      describeImport([], {
+        mode: 'combine',
+        source: 'site',
+        name: 'site-combined',
+      }),
+    ).toBe(
+      'Combined topology site and its included topologies as site-combined.',
+    );
+    expect(
+      describeImport(['a'], {
+        mode: 'combine',
+        source: 'site',
+        name: 'site-combined',
+      }),
+    ).toBe(
+      'Combined topology site and its included topologies as site-combined, with 1 warning.',
+    );
+    // A legacy topology imported as a copy is announced as the copy it is.
+    expect(describeImport([], { mode: 'copy', legacy: true, ...names })).toBe(
+      'Imported a copy of topology site as site-copy.',
+    );
+    // A plain import says nothing of names, whatever it is given.
+    expect(describeImport([], { mode: 'import', ...names })).toBe(
+      'Imported diagram.',
+    );
+    expect(describeImport([], { mode: 'import', legacy: true })).toBe(
+      'Converted the legacy diagram.',
+    );
+  });
+
+  test('combining in an open draft names both drafts and what is still included', () => {
+    expect(describeCombined(3, 'water-combined', 'water')).toBe(
+      'Combined 3 included nodes into new draft water-combined. Draft water is unchanged.',
+    );
+    expect(describeCombined(1, 'water-combined', 'water', [])).toBe(
+      'Combined 1 included node into new draft water-combined. Draft water is unchanged.',
+    );
+    expect(describeCombined(2, 'w-combined', 'w', ['site-b'])).toBe(
+      'Combined 2 included nodes into new draft w-combined. Draft w is unchanged. ' +
+        'It still includes site-b, whose nodes are not in the diagram.',
+    );
+    expect(describeCombined(2, 'w-combined', 'w', ['a', 'b', 'c'])).toMatch(
+      / It still includes a, b and c, whose nodes are not in the diagram\.$/,
     );
   });
 

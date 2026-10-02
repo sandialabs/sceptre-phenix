@@ -1,4 +1,4 @@
-// Builder v2 API client.
+// Builder API client.
 //
 // Path builders are exported separately from the client so routes can be unit
 // tested without HTTP, and so the same paths can be reused by the autosave
@@ -17,12 +17,17 @@ import { MAX_DOCUMENT_BYTES } from './limits.js';
 import { sessionEnded } from './signin.js';
 import { hasControlCharacters, utf8Length } from './text.js';
 
-export const DRAFTS_PATH = 'builder-v2/drafts';
-export const SOURCES_PATH = 'builder-v2/sources';
-export const GENERATE_PATH = 'builder-v2/generate';
-export const EXPORT_TOPOLOGY_PATH = 'builder-v2/export/topology';
-export const DOCUMENTS_PATH = 'builder-v2/documents';
-export const SCHEMA_PATH = 'schemas/builder-v2/v1';
+export const DRAFTS_PATH = 'builder/drafts';
+export const SOURCES_PATH = 'builder/sources';
+export const GENERATE_PATH = 'builder/generate';
+export const LEGACY_PATH = 'builder/legacy';
+export const EXPORT_TOPOLOGY_PATH = 'builder/export/topology';
+export const DOCUMENTS_PATH = 'builder/documents';
+// The caller's own icon library (web/builder_icons.go).
+export const ICONS_PATH = 'builder/icons';
+// The template library the caller can use (web/builder_templates.go).
+export const TEMPLATES_PATH = 'builder/templates';
+export const SCHEMA_PATH = 'schemas/builder/v1';
 // Disk images, the same listing the Disks page reads (web/disk.go GetDisks).
 export const DISKS_PATH = 'disks';
 
@@ -35,6 +40,16 @@ export const DISKS_PATH = 'disks';
  */
 export function configPath(kind, name) {
   return `configs/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`;
+}
+
+/**
+ * An experiment, as its own page reads it (web/handlers.go GetExperiment).
+ *
+ * @param {string} name experiment name
+ * @returns {string}
+ */
+export function experimentPath(name) {
+  return `experiments/${encodeURIComponent(name)}`;
 }
 
 /**
@@ -102,11 +117,63 @@ export function documentPath(id) {
 }
 
 /**
+ * @param {string} id icon id, "sha256:" and 64 hex digits
+ * @returns {string} the icon of that id in the caller's library, which the
+ *   server names by the digits alone
+ */
+export function iconPath(id) {
+  return `${ICONS_PATH}/${encodeURIComponent(String(id).replace(/^sha256:/, ''))}`;
+}
+
+/**
+ * @param {string} owner the user whose template library it is
+ * @returns {string} where templates are added to that library
+ */
+export function templateItemsPath(owner) {
+  return `${TEMPLATES_PATH}/${encodeURIComponent(owner)}/items`;
+}
+
+/**
+ * @param {string} owner
+ * @param {string} id template id
+ * @returns {string} one template of that library
+ */
+export function templateItemPath(owner, id) {
+  return `${templateItemsPath(owner)}/${encodeURIComponent(id)}`;
+}
+
+/**
+ * @param {string} owner
+ * @returns {string} where collections are added to that library
+ */
+export function templateCollectionsPath(owner) {
+  return `${TEMPLATES_PATH}/${encodeURIComponent(owner)}/collections`;
+}
+
+/**
+ * @param {string} owner
+ * @param {string} id collection id
+ * @returns {string} one collection of that library
+ */
+export function templateCollectionPath(owner, id) {
+  return `${templateCollectionsPath(owner)}/${encodeURIComponent(id)}`;
+}
+
+/**
+ * @param {string} owner
+ * @returns {string} where templates and collections of that library are
+ *   deleted
+ */
+export function templateDeletePath(owner) {
+  return `${TEMPLATES_PATH}/${encodeURIComponent(owner)}/delete`;
+}
+
+/**
  * @param {string} topology topology name
  * @returns {string} the Builder document the topology references
  */
 export function topologyDocumentPath(topology) {
-  return `builder-v2/topologies/${encodeURIComponent(topology)}/document`;
+  return `builder/topologies/${encodeURIComponent(topology)}/document`;
 }
 
 // A topology whose Builder document is read from the file it names has no
@@ -202,8 +269,35 @@ export function readETag(response) {
   return value || null;
 }
 
+/**
+ * The draft's current ETag, from the header of the refusal (412) of a
+ * request sent with an older one, for a delete to be sent again with. The
+ * refusal's body does not carry it, and a damaged draft cannot be read for
+ * it. A tag a compressing proxy rewrote (see readETag) is not the draft's,
+ * so none is given, and the caller reads the draft instead.
+ *
+ * @param {object} error axios-like error
+ * @returns {string|null}
+ */
+export function preconditionETag(error) {
+  const response = error?.response;
+
+  if (response?.status !== 412) {
+    return null;
+  }
+
+  const headers = response.headers;
+  const value =
+    typeof headers?.get === 'function'
+      ? headers.get('etag')
+      : headers?.etag || headers?.ETag;
+  const tag = typeof value === 'string' ? value.trim() : '';
+
+  return /^"[^"]+"$/.test(tag) && !tag.endsWith('-gzip"') ? tag : null;
+}
+
 // The largest request body the server reads: a document (MAX_DOCUMENT_BYTES)
-// and 1 MiB for the rest of the request (builderV2MaxRequestBytes in web).
+// and 1 MiB for the rest of the request (builderMaxRequestBytes in web).
 export const MAX_REQUEST_BYTES = MAX_DOCUMENT_BYTES + 1024 * 1024;
 
 function mebibytes(bytes) {
@@ -242,12 +336,15 @@ function exceeds(text, limit) {
 
 /**
  * Refuses an upload the server would refuse for its size: a document or
- * uploaded config over MAX_DOCUMENT_BYTES, or a body over MAX_REQUEST_BYTES.
+ * the text of a file over MAX_DOCUMENT_BYTES, or a body over
+ * MAX_REQUEST_BYTES.
  *
  * @param {object} payload request body
+ * @param {string} [content] what the payload's `content` is, as a sentence
+ *   subject
  * @throws {TooLargeError}
  */
-function checkUploadSize(payload) {
+function checkUploadSize(payload, content = 'The config file') {
   const body = JSON.stringify(payload);
 
   // The document and the content are part of the body.
@@ -260,7 +357,7 @@ function checkUploadSize(payload) {
 
   if (typeof part === 'string' && exceeds(part, MAX_DOCUMENT_BYTES)) {
     throw new TooLargeError(
-      diagram ? 'This diagram' : 'The uploaded config',
+      diagram ? 'This diagram' : content,
       utf8Length(part),
       MAX_DOCUMENT_BYTES,
     );
@@ -323,8 +420,12 @@ export function classifyError(error) {
   return 'error';
 }
 
+// An id in a server message. A draft is named by its owner and its id
+// ("draft alice/<id> not found"): the owner goes with the id, as "alice/"
+// alone would read as a name cut short. An id inside a longer path keeps
+// what is before it.
 const UUID_PATTERN =
-  /\s*\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+  /(?:(?:^|\s+)[^\s/]+\/|\s*)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
 // Leading "prefix: " segments of a server cause chain that carry no reason:
 // package and wrapper prefixes, and document paths such as nodes[1].device.
@@ -462,6 +563,54 @@ export function errorMessage(kind, error) {
     default:
       return detail || 'The server rejected the request.';
   }
+}
+
+/**
+ * Why a request to the template library failed. The server's refusals of a
+ * library change are written to be shown ("a library holds at most 200
+ * templates"), so its reason is used, as a sentence. A session that ended
+ * and a server that cannot be reached say what they say everywhere else;
+ * the words errorMessage has for the rest are about a draft.
+ *
+ * @param {object} error axios-like error
+ * @returns {string}
+ */
+export function libraryErrorMessage(error) {
+  const kind = classifyError(error);
+
+  if (['unauthenticated', 'offline'].includes(kind)) {
+    return errorMessage(kind, error);
+  }
+
+  return (
+    serverReason(error) ||
+    (kind === 'forbidden'
+      ? 'Your role does not allow it.'
+      : 'The server rejected the request.')
+  );
+}
+
+/**
+ * Why the experiment a diagram was published with could not be opened. The
+ * server answers a name it does not have with an error of its own, so any
+ * failure but a refusal of the user or of the session, or a server that
+ * cannot be reached, is taken to mean the experiment is gone.
+ *
+ * @param {string} name the experiment's name
+ * @param {object} error axios-like error
+ * @returns {string}
+ */
+export function experimentError(name, error) {
+  const kind = classifyError(error);
+  const reasons = {
+    forbidden: 'Your role does not allow it.',
+    offline: errorMessage('offline'),
+    unauthenticated: errorMessage('unauthenticated'),
+  };
+
+  return `Could not open experiment ${name}. ${
+    reasons[kind] || 'It may have been deleted or renamed.'
+  }`;
 }
 
 function ifMatch(etag) {
@@ -669,7 +818,8 @@ export function createBuilderApi(http = axiosInstance) {
      * Lists the drafts the user may see: their own (mine), those shared
      * with them (shared), and other users' drafts their role lets them see
      * (others). Those the server can no longer read are listed apart,
-     * marked damaged: they can only be deleted.
+     * marked damaged: they can only be deleted. A draft the user may delete
+     * says so (`canDelete`).
      */
     async listDrafts() {
       const response = await http.get(DRAFTS_PATH);
@@ -895,18 +1045,36 @@ export function createBuilderApi(http = axiosInstance) {
 
     /**
      * Asks the server to build a builder document from a stored config, or
-     * from an uploaded one given as JSON or YAML text.
+     * from an uploaded one given as JSON or YAML text. A topology may be
+     * imported with its included topologies combined into it, or as a copy;
+     * the document is then linked to no config and has a new name. Each of
+     * the three choices is sent only when it is made.
      *
-     * @param {{kind: string, name: string}|{content: string}} request
+     * @param {{kind?: string, name?: string, content?: string,
+     *   includes?: 'keep'|'combine', copy?: boolean, newName?: string}} request
+     *   kind and name of a stored config, or content; newName: the new
+     *   topology's name, with copy or includes 'combine'
      * @returns {Promise<{document: object, warnings: string[], source: object|null}>}
-     *   source as GET /builder-v2/sources describes it (`stored` false for an
-     *   upload).
+     *   source as GET /builder/sources describes it (`stored` false for an
+     *   upload): the config that was read, never the copy.
      */
     async generate(request) {
       const payload =
         typeof request?.content === 'string'
           ? { content: request.content }
           : { source: `${request.kind}/${request.name}` };
+
+      if (request?.includes) {
+        payload.includes = request.includes;
+      }
+
+      if (request?.copy) {
+        payload.copy = true;
+      }
+
+      if (request?.newName) {
+        payload.name = request.newName;
+      }
 
       checkUploadSize(payload);
 
@@ -916,6 +1084,33 @@ export function createBuilderApi(http = axiosInstance) {
       return {
         document: data.document || data,
         warnings: data.warnings || [],
+        source: data.source || null,
+      };
+    },
+
+    /**
+     * Asks the server to convert a diagram of the legacy Builder into a
+     * builder document. Nothing is stored.
+     *
+     * @param {{content: string, name?: string}} request content: the text
+     *   of the file, which is the diagram's XML or a Topology config (JSON
+     *   or YAML) that holds one in its builder-xml annotation; name: the
+     *   document's name for a diagram that comes without a topology
+     * @returns {Promise<{document: object, warnings: string[], source: object|null}>}
+     *   source as generate() gives it for a Topology config, and null for a
+     *   diagram alone.
+     */
+    async convertLegacy({ content, name = '' } = {}) {
+      const payload = name ? { content, name } : { content };
+
+      checkUploadSize(payload, 'The legacy diagram');
+
+      const response = await http.post(LEGACY_PATH, payload);
+      const data = response.data || {};
+
+      return {
+        document: data.document,
+        warnings: Array.isArray(data.warnings) ? data.warnings : [],
         source: data.source || null,
       };
     },
@@ -976,11 +1171,27 @@ export function createBuilderApi(http = axiosInstance) {
     },
 
     /**
+     * Reads whether an experiment is running, which its page asks for
+     * itself when it is not told. A failure says the experiment cannot be
+     * opened: it is gone, or the user may not get it.
+     *
+     * @param {string} name
+     * @returns {Promise<{running: boolean}>}
+     */
+    async experimentState(name) {
+      const response = await http.get(experimentPath(name));
+
+      return { running: Boolean(response.data?.running) };
+    },
+
+    /**
      * Lists the published diagrams the user may see: each topology's
      * current published document (source "store"), and each topology whose
      * diagram is read from the Builder file it names (source "file"), which
      * has a path and a handle for an id (see fileHandle), and no digest,
-     * time or user: the listing reads no file.
+     * time or user: the listing reads no file. A published document's row
+     * names the experiment its publication made (`experiment`), while one
+     * still exists and the user may get it.
      */
     async listDocuments() {
       const response = await http.get(DOCUMENTS_PATH);
@@ -1032,6 +1243,205 @@ export function createBuilderApi(http = axiosInstance) {
       const response = await http.get(SCHEMA_PATH);
 
       return response.data;
+    },
+
+    /**
+     * Lists the icons of the user's own icon library, each with its PNG in
+     * base64, and the library's limits. No one reads another user's.
+     *
+     * @returns {Promise<{icons: object[], maxIcons: number,
+     *   maxBytes: number, usedBytes: number}>} each icon {id, name, width,
+     *   height, bytes, created, data}
+     */
+    async listIcons() {
+      const data = (await http.get(ICONS_PATH)).data || {};
+      const number = (value) => (Number.isFinite(value) ? value : 0);
+
+      return {
+        icons: (Array.isArray(data.icons) ? data.icons : []).filter(
+          (icon) =>
+            typeof icon?.id === 'string' && typeof icon.data === 'string',
+        ),
+        maxIcons: number(data.maxIcons),
+        maxBytes: number(data.maxBytes),
+        usedBytes: number(data.usedBytes),
+      };
+    },
+
+    /**
+     * Adds a PNG to the user's icon library. The server checks the image
+     * and may encode it again, so the icon is the one it answers with: its
+     * id and data, not what was sent. Bytes the library already holds are
+     * answered with the icon it has, under the name that one was given.
+     *
+     * @param {{name?: string, data: string}} upload the PNG in base64
+     * @returns {Promise<{icon: object, created: boolean}>} created: false
+     *   when the library already held it
+     */
+    async uploadIcon({ name, data }) {
+      const response = await http.post(ICONS_PATH, {
+        ...(name ? { name } : {}),
+        data,
+      });
+
+      return { icon: response.data, created: response.status === 201 };
+    },
+
+    /**
+     * Deletes an icon from the user's icon library. Diagrams that use it
+     * keep their own copy.
+     *
+     * @param {string} id icon id
+     */
+    async deleteIcon(id) {
+      await http.delete(iconPath(id));
+
+      return true;
+    },
+
+    /**
+     * Reads the template library the user can use: their own templates and
+     * collections, with what they may do and the library's limits. A user
+     * who never changed theirs has the built-in templates.
+     *
+     * @returns {Promise<object>} owner, templates and collections (lists),
+     *   icons (the custom icons the templates name, by icon id: {name?,
+     *   data}), canShare, canPublish, damaged (the stored library cannot be
+     *   read, and lists nothing) and limits
+     */
+    async listTemplates() {
+      const data = (await http.get(TEMPLATES_PATH)).data || {};
+      const list = (value) =>
+        (Array.isArray(value) ? value : []).filter(
+          (item) => typeof item?.id === 'string' && item.id !== '',
+        );
+      const object = (value) =>
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? value
+          : {};
+
+      return {
+        owner: typeof data.owner === 'string' ? data.owner : '',
+        templates: list(data.templates),
+        collections: list(data.collections),
+        icons: object(data.icons),
+        canShare: data.canShare === true,
+        canPublish: data.canPublish === true,
+        damaged: data.damaged === true,
+        limits: object(data.limits),
+      };
+    },
+
+    /**
+     * Adds templates to a library, and, with `collection`, a new collection
+     * that holds exactly them, in the same change. The server names each
+     * template: one sent with an id is refused.
+     *
+     * @param {string} owner the library's owner, who the caller must be
+     * @param {object} request templates: [{name, description?, device}];
+     *   collection: {name, description?}, optional; icons: the custom icons
+     *   the templates name, by icon id ({name?, data}), optional
+     * @returns {Promise<{created: {id: string, etag: string}[],
+     *   collection: {id: string, etag: string}|null}>}
+     */
+    async createTemplates(owner, { templates, collection, icons } = {}) {
+      const response = await http.post(templateItemsPath(owner), {
+        templates,
+        ...(collection ? { collection } : {}),
+        ...(icons && Object.keys(icons).length ? { icons } : {}),
+      });
+      const data = response.data || {};
+
+      return {
+        created: Array.isArray(data.created) ? data.created : [],
+        collection: data.collection || null,
+      };
+    },
+
+    /**
+     * Replaces the name, the description and the device of a template of a
+     * library. The server refuses the change (412) when the template is no
+     * longer at `etag`.
+     *
+     * @param {string} owner
+     * @param {string} id template id
+     * @param {object} content name, description?, device, and icons: the
+     *   custom icon the device names ({name?, data} by icon id), optional
+     * @param {string} etag the template's tag, as listed
+     * @returns {Promise<object>} the template as it is now, with its new
+     *   etag
+     */
+    async updateTemplate(owner, id, { icons, ...content }, etag) {
+      const response = await http.put(
+        templateItemPath(owner, id),
+        {
+          ...content,
+          ...(icons && Object.keys(icons).length ? { icons } : {}),
+        },
+        ifMatch(etag),
+      );
+
+      return response.data;
+    },
+
+    /**
+     * Adds a collection to a library: a named group of its templates.
+     *
+     * @param {string} owner
+     * @param {{name: string, description?: string, templateIds?: string[]}}
+     *   content
+     * @returns {Promise<object>} the collection, with its id and etag
+     */
+    async createTemplateCollection(owner, content) {
+      const response = await http.post(templateCollectionsPath(owner), content);
+
+      return response.data;
+    },
+
+    /**
+     * Replaces the name, the description and the templates of a collection.
+     * The server refuses the change (412) when the collection is no longer
+     * at `etag`.
+     *
+     * @param {string} owner
+     * @param {string} id collection id
+     * @param {{name: string, description?: string, templateIds?: string[]}}
+     *   content the whole collection
+     * @param {string} etag the collection's tag, as listed
+     * @returns {Promise<object>} the collection as it is now
+     */
+    async updateTemplateCollection(owner, id, content, etag) {
+      const response = await http.put(
+        templateCollectionPath(owner, id),
+        content,
+        ifMatch(etag),
+      );
+
+      return response.data;
+    },
+
+    /**
+     * Deletes templates and collections of a library. Ids the library does
+     * not hold are ignored, so a repeat does no harm. A deleted template
+     * leaves the collections that held it; a deleted collection leaves its
+     * templates.
+     *
+     * @param {string} owner
+     * @param {{templates?: string[], collections?: string[]}} selection
+     * @returns {Promise<{templates: number, collections: number}>} how many
+     *   of each were deleted
+     */
+    async deleteTemplates(owner, { templates = [], collections = [] } = {}) {
+      const response = await http.post(templateDeletePath(owner), {
+        ...(templates.length ? { templates } : {}),
+        ...(collections.length ? { collections } : {}),
+      });
+      const deleted = response.data?.deleted || {};
+
+      return {
+        templates: Number(deleted.templates) || 0,
+        collections: Number(deleted.collections) || 0,
+      };
     },
 
     /**

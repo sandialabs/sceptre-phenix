@@ -52,3 +52,8 @@ func (d *Document) nodesOfKind(kind NodeKind) []*Node {
 func IconKeys() []string {
 	return slices.Clone(iconKeys)
 }
+
+// Cells returns how many cells the diagram holds.
+func (d *LegacyDiagram) Cells() int {
+	return len(d.cells)
+}

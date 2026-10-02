@@ -107,6 +107,13 @@ type Document struct {
 	// editor does not know, means the positions were not made by a layout. It
 	// is presentation only and never written to a config.
 	Layout string `json:"layout,omitempty"`
+	// Templates are the device templates saved with this diagram, which the
+	// editor offers beside its own. They are presentation only and never
+	// written to a config.
+	Templates []Template `json:"templates,omitempty"`
+	// Icons holds the custom icons the document's nodes and templates use, by
+	// icon id (see [IconID]). Presentation only, never written to a config.
+	Icons map[string]Icon `json:"icons,omitempty"`
 }
 
 // Node is a single item on the canvas. Exactly one of the kind-specific payload
@@ -135,6 +142,14 @@ type Device struct {
 	// icon key registry (see [IsIconKey]). It is never written to a topology
 	// spec.
 	IconKey string `json:"iconKey,omitempty"`
+	// Icon names a custom icon of [Document.Icons], drawn in place of
+	// IconKey. Like the colors below, it is presentation only and never
+	// written to a topology spec.
+	Icon string `json:"icon,omitempty"`
+	// OutlineColor and FillColor color the node's border and background, as
+	// "#rrggbb". Empty leaves the editor's own.
+	OutlineColor string `json:"outlineColor,omitempty"`
+	FillColor    string `json:"fillColor,omitempty"`
 	// Spec is the complete phenix node spec, using the stored (snake_case)
 	// representation. Unknown keys are preserved verbatim so documents survive
 	// schema growth without data loss.
@@ -164,6 +179,11 @@ type InterfaceHandle struct {
 // exactly one network.
 type Switch struct {
 	NetworkID string `json:"networkId"`
+	// OutlineColor and FillColor color the node's border and background, as
+	// "#rrggbb". They are not the network's color, which its edges are drawn
+	// in (see [Network.Color]).
+	OutlineColor string `json:"outlineColor,omitempty"`
+	FillColor    string `json:"fillColor,omitempty"`
 }
 
 // Note is the payload of a [NodeKindNote] node.
@@ -174,8 +194,17 @@ type Note struct {
 
 // Group is the payload of a [NodeKindGroup] node.
 type Group struct {
-	Title     string `json:"title,omitempty"`
-	Color     string `json:"color,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	Color       string `json:"color,omitempty"`
+	// BorderStyle is the pattern of the group's border, one of
+	// [BorderStyles]. Empty leaves the editor's own.
+	BorderStyle string `json:"borderStyle,omitempty"`
+	// IconKey is drawn beside the title, from the icon key registry (see
+	// [IsIconKey]), and Icon, a custom icon of [Document.Icons], in its
+	// place.
+	IconKey   string `json:"iconKey,omitempty"`
+	Icon      string `json:"icon,omitempty"`
 	Collapsed bool   `json:"collapsed,omitempty"`
 }
 
@@ -188,6 +217,10 @@ type Network struct {
 	Alias       *int   `json:"alias,omitempty"`
 	Description string `json:"description,omitempty"`
 	Color       string `json:"color,omitempty"`
+	// LineStyle is the dash pattern the network's edges are drawn in, one of
+	// [LineStyles]. Empty leaves the pattern to the editor. Presentation
+	// only.
+	LineStyle string `json:"lineStyle,omitempty"`
 }
 
 // Edge attaches a device interface handle to a switch hub, and therefore to the
@@ -204,6 +237,9 @@ type Edge struct {
 	// Color is drawn in place of the network's color. Like Label, it is
 	// presentation only and never written to a topology spec.
 	Color string `json:"color,omitempty"`
+	// LineStyle is drawn in place of the network's line style, as Color is in
+	// place of its color.
+	LineStyle string `json:"lineStyle,omitempty"`
 	// Route is the path an automatic layout drew for the edge, in absolute
 	// canvas coordinates from the source handle to the target handle. The
 	// editor drops it once either end moves. Presentation only.
@@ -266,8 +302,9 @@ type Source struct {
 	Topology   string `json:"topology,omitempty"`
 	ImportedAt string `json:"importedAt,omitempty"`
 	// Digest is the "sha256:<hex>" digest of the source config identity and
-	// spec, as returned by [SourceDigest]. Publishing compares it against the
-	// current stored config to detect a stale working copy.
+	// spec, and of the legacy Builder diagram of a topology that has one, as
+	// returned by [ImportDigest]. Publishing compares it against the current
+	// stored config to detect a stale working copy.
 	Digest string `json:"digest,omitempty"`
 	// UpdatedAt is the metadata.updated timestamp of the source config at
 	// import time. It is informational; [Source.Digest] is authoritative.
@@ -276,6 +313,10 @@ type Source struct {
 	// publishing writes the references back instead of flattening the included
 	// devices (see [Device.IncludedFrom]) into the topology.
 	IncludeTopologies []string `json:"includeTopologies,omitempty"`
+	// UnresolvedIncludes lists the included topologies, at any depth, whose
+	// nodes are not in the document: they could not be read when it was
+	// generated. Combining keeps exactly these in IncludeTopologies.
+	UnresolvedIncludes []string `json:"unresolvedIncludes,omitempty"`
 	// Annotations are the source config's metadata.annotations at import time,
 	// such as an experiment's topology and scenario, without the Builders' own
 	// (see [IsBuilderAnnotation]). They are informational: [Source.Digest]

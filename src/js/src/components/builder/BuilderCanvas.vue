@@ -18,10 +18,10 @@
   Accepted deviation, as in BuilderOutlineList.vue: the nodes are not each
   a Tab stop, and the canvas has no composite role. In screen reader
   browse mode (NVDA, JAWS) the arrow keys and Page Down move the virtual
-  cursor, not the focus, so Tab leaves the canvas. The Keyboard help says
-  to turn on the screen reader's focus mode for these keys, or to use the
-  Outline, which lists every node and connection. Activating a node in browse mode (Enter) selects and
-  focuses it.
+  cursor, not the focus, so Tab leaves the canvas. The canvas's description
+  says to turn on the screen reader's focus mode for these keys, or to use
+  the Outline, which lists every node and connection. Activating a node in
+  browse mode (Enter) selects and focuses it.
 
   A node or connection pressed into the selection (a click, Enter or Space)
   shows the Inspector again when it is hidden (see BuilderPanes.vue); a
@@ -77,8 +77,8 @@
 
     <p :id="NODE_HINT_ID" hidden>{{ hints.node }}</p>
     <p :id="EDGE_HINT_ID" hidden>{{ hints.edge }}</p>
-    <!-- Always rendered, so the canvas has a description while the Keyboard
-         help below is closed. -->
+    <!-- The canvas's description: its keys, the advice for screen readers,
+         and where every shortcut is listed. -->
     <p id="builder-canvas-help-summary" hidden>{{ hints.canvas }}</p>
     <p :id="MINIMAP_HINT_ID" hidden>
       Up and Left arrows make the minimap larger, Down and Right smaller, Home
@@ -91,7 +91,7 @@
       class="builder-canvas__flow"
       :node-types="nodeTypes"
       :edge-types="edgeTypes"
-      :default-viewport="START_VIEWPORT"
+      :default-viewport="openViewport"
       :min-zoom="minZoom"
       :max-zoom="MAX_ZOOM"
       :snap-to-grid="snapToGrid"
@@ -110,6 +110,7 @@
       @connect="onConnect"
       @connect-start="onConnectStart"
       @connect-end="onConnectEnd"
+      @node-drag-start="hideNodeTip"
       @node-drag-stop="onNodeDragStop"
       @nodes-change="onNodesChange"
       @edges-change="onEdgesChange"
@@ -190,31 +191,7 @@
     </VueFlow>
 
     <builder-fixed-tooltip :tooltip="tooltip" testid="zoom-tooltip" />
-
-    <!-- A bar below the diagram, in normal flow, so opening it never covers
-         a node, a connection or the notice (WCAG 2.4.11). -->
-    <details class="builder-canvas__help" data-testid="canvas-help">
-      <!-- nokey: Vue Flow's pan key handler would otherwise take Space, which
-           opens and closes it. -->
-      <summary class="nokey">Keyboard help</summary>
-      <!-- Written from the command registry, so it names the keys of this
-           platform, as the user set them. -->
-      <ul id="builder-canvas-help">
-        <li v-for="line in helpLines" :key="line">{{ line }}</li>
-      </ul>
-      <!-- The shortcut sheet, where the shortcuts can be changed; ? opens it
-           too, unless single-key shortcuts are off. -->
-      <p class="builder-canvas__help-more">
-        <button
-          type="button"
-          class="builder-button"
-          aria-haspopup="dialog"
-          data-testid="canvas-help-shortcuts"
-          @click="openShortcuts">
-          Show all keyboard shortcuts
-        </button>
-      </p>
-    </details>
+    <builder-node-tooltip :tooltip="nodeTip" />
   </section>
 </template>
 
@@ -252,15 +229,11 @@
   import NetworkEdge from './edges/NetworkEdge.vue';
   import BuilderFixedTooltip from './BuilderFixedTooltip.vue';
   import BuilderIcon from './BuilderIcon.vue';
+  import BuilderNodeTooltip from './BuilderNodeTooltip.vue';
   import { useFixedTooltip } from './fixedTooltip.js';
+  import { NODE_TIP } from './nodes/nodeTooltip.js';
 
-  import {
-    canvasHelp,
-    canvasHints,
-    focusLost,
-    runCommand,
-    shortcutLabel,
-  } from '@/builder/commands.js';
+  import { canvasHints, focusLost, shortcutLabel } from '@/builder/commands.js';
   import { nodeIssueSummaries } from '@/builder/issues.js';
   import {
     boundsOf,
@@ -322,8 +295,18 @@
   // minZoom).
   const MIN_ZOOM = 0.2;
   const MAX_ZOOM = 2;
-  // The zoom and pan the canvas opens with.
+  // The zoom and pan the canvas opens with, unless the settings ask for a
+  // fit: 100% from the diagram's origin, or the settings' own percentage.
   const START_VIEWPORT = { x: 0, y: 0, zoom: 1 };
+
+  function startViewport() {
+    return builderSettings.openZoom === 'custom'
+      ? { x: 0, y: 0, zoom: builderSettings.openZoomPercent / 100 }
+      : START_VIEWPORT;
+  }
+
+  // What this canvas opened with. Reset view reads the settings again.
+  const openViewport = startViewport();
 
   const store = useBuilderStore();
   const root = ref(null);
@@ -360,19 +343,9 @@
   // canvas itself; a read-only draft can only be selected. Both follow the
   // platform and the user's keys (see commands.js).
   const hints = computed(() => canvasHints({ readOnly: store.readOnly }));
-  const helpLines = computed(() => canvasHelp({ readOnly: store.readOnly }));
 
-  // The view's command context (BuilderV2.vue), for the Keyboard help's
-  // button to the shortcut sheet.
-  const commands = inject('builderCommands', null);
   // The side columns (BuilderPanes.vue), for showing the Inspector.
   const panes = inject('builderPanes', null);
-
-  function openShortcuts() {
-    if (commands) {
-      runCommand('shortcuts.open', commands);
-    }
-  }
 
   // --- the minimap's size ----------------------------------------------------
 
@@ -615,6 +588,28 @@
     });
   }
 
+  // The info tooltip of the devices and switches (see nodes/nodeTooltip.js
+  // and BuilderNodeTooltip.vue): one for the whole canvas, above its node,
+  // clear of the node's focus ring and corner marks at any zoom. It waits
+  // for the pointer to rest on a node, as the pointer crosses nodes on its
+  // way elsewhere; keyboard focus shows it at once. Escape pressed on its
+  // node only closes it, and leaves the selection as it is.
+  const NODE_TIP_DELAY_MS = 400;
+  const NODE_TIP_GAP = 10;
+  const nodeTip = useFixedTooltip({
+    side: 'above',
+    delay: NODE_TIP_DELAY_MS,
+    stopEscape: true,
+    gap: () => Math.max(4, NODE_TIP_GAP * viewport.value.zoom),
+  });
+
+  provide(NODE_TIP, nodeTip);
+
+  // A drag, of a node or of a new connection, is done with the tooltip.
+  function hideNodeTip() {
+    nodeTip.hideTip();
+  }
+
   const MINIMAP_HANDLE_EVENTS = {
     ...tipEvents(() => 'Resize minimap'),
     keydown: onMinimapKeydown,
@@ -710,6 +705,8 @@
     ([nodes, edges], [nodesBefore, edgesBefore]) => {
       syncNodes(nodes, nodesBefore);
       syncEdges(edges, edgesBefore);
+      // A node moved or removed takes its tooltip with it.
+      nodeTip.follow();
     },
     { immediate: true },
   );
@@ -846,6 +843,7 @@
   }
 
   function onConnectStart(params) {
+    hideNodeTip();
     store.dismissNotice();
     dragStart = params?.nodeId
       ? { nodeId: params.nodeId, handleId: params.handleId || null }
@@ -1127,7 +1125,11 @@
       : { x: event.clientX, y: event.clientY };
 
     store.addNode({
-      ...paletteNode(kind, event.dataTransfer.getData(PALETTE_TEMPLATE_MIME)),
+      ...paletteNode(
+        store,
+        kind,
+        event.dataTransfer.getData(PALETTE_TEMPLATE_MIME),
+      ),
       position: { x: Math.round(position.x), y: Math.round(position.y) },
     });
   }
@@ -1338,8 +1340,8 @@
     const arrow = ARROWS[event.key];
 
     // The keys act only on a node, a connection or the canvas itself. On the
-    // canvas's own controls (the zoom buttons, the Keyboard help and the
-    // notice's Dismiss button) they keep their usual meaning and never edit
+    // canvas's own controls (the zoom buttons and the notice's Dismiss
+    // button) they keep their usual meaning and never edit
     // the diagram. The shortcuts with Ctrl or ⌘ (select all, copy, paste,
     // undo...), the zoom keys and F2 are the view's key dispatcher's, from
     // the command registry (commands.js).
@@ -1684,9 +1686,9 @@
   }
 
   /**
-   * Element rasterized by PNG/SVG export: Vue Flow's transformation pane
+   * Element rasterized for a PNG or SVG image: Vue Flow's transformation pane
    * holds the whole graph, including parts scrolled out of view, and carries
-   * the live pan and zoom, which the export replaces with its own. The
+   * the live pan and zoom, which the image replaces with its own. The
    * viewport around it would clip the image to its own box.
    *
    * @returns {HTMLElement|null}
@@ -1701,8 +1703,9 @@
     );
   }
 
-  // A diagram opens at 100%, or fitted to the canvas as Fit does, if the
-  // settings say so. The fit waits for Vue Flow to measure the nodes, which
+  // A diagram opens at 100% or at the settings' own percentage (see
+  // startViewport), or fitted to the canvas as Fit does, if the settings
+  // say so. The fit waits for Vue Flow to measure the nodes, which
   // it shows only then, so the diagram is never seen at 100% first. The
   // view makes a canvas for each diagram it opens, so this runs for each.
   let fitWhenMeasured =
@@ -1742,8 +1745,11 @@
   );
   const FIT_TIP_EVENTS = zoomTip(() => fitName.value, 'view.fit');
 
+  // A pan or a zoom moves the nodes: a node's tooltip follows it, and goes
+  // when the node leaves the view.
   watch(viewport, (view) => {
     beforeFit.value = keptFit(beforeFit.value, view);
+    nodeTip.follow();
   });
 
   // A press from the keyboard leaves the tooltip up, so it takes the
@@ -1805,7 +1811,7 @@
       );
       fitDiagram({ duration });
     } else {
-      setViewport(START_VIEWPORT, { duration });
+      setViewport(startViewport(), { duration });
     }
   }
 

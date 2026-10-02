@@ -1,9 +1,9 @@
 /*
- * Builder v2 styles.
+ * Builder styles.
  *
- * Scoped to .builder-root so Builder v2 can carry its own theme without
+ * Scoped to .builder-root so Builder can carry its own theme without
  * changing the rest of phenix. Colors come from custom properties keyed off
- * [data-builder-theme], which BuilderV2.vue sets from the persisted
+ * [data-builder-theme], which Builder.vue sets from the persisted
  * phenix.builder.theme preference (defaulting to the OS preference).
  */
 
@@ -273,7 +273,7 @@
   background: var(--bx-bg-alt);
 }
 
-/* The diagram fills what the Keyboard help bar below it leaves. */
+/* The diagram fills the canvas. */
 .builder-canvas .builder-canvas__flow {
   flex: 1 1 0;
   min-height: 0;
@@ -526,6 +526,17 @@
   color: var(--bx-text-muted);
 }
 
+/* A device's phenix node type, as stored (VirtualMachine, not
+   VIRTUALMACHINE), cut off inside the node like its other text. */
+.builder-node__kind--type {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 .builder-node__meta {
   font-size: 0.75rem;
   color: var(--bx-text-muted);
@@ -567,12 +578,73 @@
   cursor: default;
 }
 
+/* A group's border in the pattern chosen for it; dashed without one. A
+   double line needs the width to show as two. */
+.builder-node--group[data-border='solid'] {
+  border-style: solid;
+}
+
+.builder-node--group[data-border='dotted'] {
+  border-style: dotted;
+}
+
+.builder-node--group[data-border='double'] {
+  border-style: double;
+  border-width: 4px;
+}
+
 .builder-node__comment {
   font-size: 0.75rem;
   color: var(--bx-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The outline and the fill a device or a switch was given (see
+   nodes/nodeColors.js). A selected node keeps its accent border, whose rule
+   is more specific, its inset ring and its check mark, over its fill.
+   Forced colors replace the fill, the text color and the outline with the
+   system's, so they need no rule there. */
+.builder-node--outlined {
+  border-color: var(--bx-node-outline);
+}
+
+.builder-node--filled,
+.builder-node--filled.is-selected {
+  background: var(--bx-node-fill);
+  color: var(--bx-node-ink);
+}
+
+/* On a fill every line of text takes the one ink color, black or white,
+   whichever keeps 4.5:1 on it (see inkOn in colors.js): the theme's muted
+   text color would not on every fill. The lines stay smaller, not dimmer. */
+.builder-node--filled
+  :is(
+    .builder-node__kind,
+    .builder-node__meta,
+    .builder-node__comment,
+    .builder-node__origin
+  ) {
+  color: inherit;
+}
+
+/* The network swatch of a filled switch is framed in the ink color, so it
+   shows on any fill. */
+.builder-node--filled .builder-node__swatch {
+  border-color: currentColor;
+}
+
+/* An outline that would fade into the canvas in the theme shown keeps a
+   thin ring in the text color around it, as a line of such a color keeps a
+   casing (WCAG 1.4.11). */
+.builder-root:not([data-builder-theme='dark'])
+  .builder-node--outlined.is-low-light:not(.is-selected),
+.builder-root[data-builder-theme='dark']
+  .builder-node--outlined.is-low-dark:not(.is-selected) {
+  box-shadow:
+    0 0 0 1px var(--bx-text),
+    var(--bx-shadow);
 }
 
 .builder-tooltip {
@@ -591,16 +663,32 @@
   white-space: normal;
 }
 
-/* A node's comment tooltip sits inside the node. This strip spans the gap
-   down to the node, so the pointer can move onto the tooltip without leaving
-   the node and closing it (WCAG 1.4.13). */
-.builder-tooltip--node::after {
-  content: '';
-  position: absolute;
-  top: 100%;
-  right: 0;
-  left: 0;
-  height: 8px;
+/* The info tooltip of a device or a switch (BuilderNodeTooltip.vue): rows
+   of a label and its value, whose lines each start a line of their own. */
+.builder-tooltip--info {
+  max-width: 22rem;
+  overflow-wrap: anywhere;
+}
+
+.builder-info {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.15rem 0.6rem;
+  margin: 0;
+}
+
+.builder-info__label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.builder-info__value {
+  min-width: 0;
+  margin: 0;
+}
+
+.builder-info__line {
+  display: block;
 }
 
 .builder-canvas .vue-flow__handle.builder-handle {
@@ -663,49 +751,6 @@
 
 .builder-canvas__notice-close:hover {
   background: var(--bx-bg-alt);
-}
-
-/* The canvas's keyboard help: a bar below the diagram, in normal flow, so
-   it never covers a node, a connection or the notice (WCAG 2.4.11). Open, it
-   takes at most half the canvas and scrolls under its summary. */
-.builder-canvas__help {
-  flex: none;
-  max-height: 50%;
-  overflow-y: auto;
-  border-top: 1px solid var(--bx-border);
-  border-radius: 0 0 var(--bx-radius) var(--bx-radius);
-  background: var(--bx-surface);
-  font-size: 0.8rem;
-}
-
-.builder-canvas__help summary {
-  position: sticky;
-  top: 0;
-  padding: 0.25rem 0.5rem;
-  background: var(--bx-surface);
-  cursor: pointer;
-}
-
-/* The bar clips its overflow, so the focus ring is drawn inside. */
-.builder-canvas__help summary:focus-visible {
-  outline-offset: -3px;
-}
-
-.builder-canvas__help ul {
-  margin: 0;
-  padding: 0 0.75rem 0.5rem 1.75rem;
-  columns: 20rem auto;
-  column-gap: 2rem;
-  list-style: disc;
-}
-
-.builder-canvas__help li {
-  break-inside: avoid;
-}
-
-.builder-canvas__help-more {
-  margin: 0;
-  padding: 0 0.75rem 0.5rem;
 }
 
 /* As specific as the size above, so Vue Flow's round default, loaded after
@@ -882,8 +927,9 @@
   }
 
   /* The swatch keeps its color; its frame is the system's text color, so
-     it shows on the system's background. */
-  .builder-node__swatch {
+     it shows on the system's background, which a filled switch has too. */
+  .builder-node__swatch,
+  .builder-node--filled .builder-node__swatch {
     border-color: CanvasText;
   }
 
@@ -947,6 +993,12 @@
   .builder-root .builder-tab[aria-selected='true'] {
     border-color: CanvasText;
     border-top-color: Highlight;
+  }
+
+  /* The inner frame of a selected card is a box shadow, which forced
+     colors drop: its border says it alone. */
+  .builder-root .builder-card.is-selected {
+    border-color: Highlight;
   }
 
   /* The Inspector's suggestion in view, in the system's highlight; the bar
@@ -1875,6 +1927,41 @@ div.builder-outline__item {
   align-self: flex-start;
 }
 
+/* The Inspector in the template editor (variant 'template', see
+   BuilderInspector.vue and dialogs/TemplateDialog.vue): the same form with
+   room around it. The dialog's body scrolls, not the Inspector, whatever
+   the editor's own layout does to the one beside the canvas. */
+.builder-inspector.builder-inspector--template {
+  max-height: none;
+  padding: 0;
+  overflow: visible;
+}
+
+/* The fields of the form, and of each of its groups, flow in columns as
+   wide as a field needs, as many as fit: one, no wider than the form, in a
+   narrow window (WCAG 1.4.10). */
+.builder-inspector--template .vertical-layout,
+.builder-inspector--template fieldset.group {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(17rem, 100%), 1fr));
+  column-gap: 1rem;
+  align-items: start;
+}
+
+.builder-inspector--template .vertical-layout-item,
+.builder-inspector--template .group-item {
+  min-width: 0;
+}
+
+/* Anything that is not one field takes the whole row: a group, a list, a
+   map of keys and values, a choice of kinds with its fields, a section. */
+.builder-inspector--template
+  :is(.vertical-layout-item, .group-item):not(
+    :has(> .control, > .inspector-icon-control)
+  ) {
+  grid-column: 1 / -1;
+}
+
 /* Palette ----------------------------------------------------------------- */
 
 .builder-palette {
@@ -1941,8 +2028,9 @@ div.builder-outline__item {
    window at the default text size), the buttons whose labels are marked
    --wide (the theme, Shortcuts, Settings and Help) show their icons alone,
    and Commands its name without its keys. Narrower still (below a 1265px
-   window), every button does. The labels stay, visually hidden, as their
-   names, and the tooltips name them. Each header is a builder-header
+   window), every button does. Shortcuts keeps its key beside its icon
+   throughout: it is outside the label. The labels stay, visually hidden, as
+   their names, and the tooltips name them. Each header is a builder-header
    container, so the two views take the steps at the same width. The
    editor's header can take them sooner, to keep its counts centered (see
    the data-labels rules below). */
@@ -2033,8 +2121,11 @@ div.builder-outline__item {
 
 /* Drafts landing ---------------------------------------------------------- */
 
+/* A tab's name and count stay on one line, so in a narrow window the tabs
+   wrap onto a second row rather than run off the page. */
 .builder-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
   border-bottom: 1px solid var(--bx-border);
   margin-bottom: 0.75rem;
@@ -2052,6 +2143,14 @@ div.builder-outline__item {
   border-radius: var(--bx-radius) var(--bx-radius) 0 0;
   background: none;
   cursor: pointer;
+  white-space: nowrap;
+}
+
+/* How many the tab lists, after its name: the same font and baseline as
+   the name; only the color differs. */
+.builder-tab__count {
+  font: inherit;
+  color: var(--bx-text-muted);
 }
 
 .builder-tab[aria-selected='true'] {
@@ -2075,6 +2174,58 @@ div.builder-outline__item {
 .builder-card__meta {
   font-size: 0.8rem;
   color: var(--bx-text-muted);
+}
+
+/* A card's first row: its name, after whatever stands before it. */
+.builder-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+/* The checkbox that selects a card, before its name: a target of at least
+   24px (WCAG 2.5.8) around a box the size of the Inspector's. */
+.builder-card__select {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  min-height: 1.5rem;
+  cursor: pointer;
+}
+
+.builder-card__select input {
+  appearance: auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0;
+  accent-color: var(--bx-accent);
+}
+
+/* A selected card is framed. The checked box is what says so; the frame
+   only makes the selected cards easy to find. */
+.builder-card.is-selected {
+  border-color: var(--bx-accent);
+  box-shadow:
+    inset 0 0 0 1px var(--bx-accent),
+    var(--bx-shadow);
+}
+
+/* A card's buttons, two to a row and all one size, on every card of a
+   list: the cards of a list are equally wide. A button the user may not
+   use is left out, and the rest close up. */
+.builder-card__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.builder-card__actions > .builder-button {
+  justify-content: center;
+  width: 100%;
+  min-height: 2rem;
 }
 
 /* A native <dialog> opened with showModal(): it sits in the top layer, so no

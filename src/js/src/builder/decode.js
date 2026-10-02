@@ -15,6 +15,14 @@ import { validateDocument } from './validate.js';
 // Re-exported for the dialogs that read files.
 export { MAX_DOCUMENT_BYTES };
 
+// What a file is called where it is chosen: Upload and the Scenario dialog
+// take an upload, and Import reads a config file.
+const FILE_NAMES = {
+  file: 'uploaded file',
+  scenario: 'uploaded scenario',
+  config: 'config file',
+};
+
 /**
  * Why a file over MAX_DOCUMENT_BYTES is refused.
  *
@@ -22,7 +30,7 @@ export { MAX_DOCUMENT_BYTES };
  * @returns {string}
  */
 export function tooLargeText(noun) {
-  return `The uploaded ${noun} is larger than the ${MAX_DOCUMENT_BYTES / 1024 / 1024} MiB limit.`;
+  return `The ${FILE_NAMES[noun]} is larger than the ${MAX_DOCUMENT_BYTES / 1024 / 1024} MiB limit.`;
 }
 
 export class DocumentError extends Error {
@@ -55,9 +63,13 @@ export const DOCUMENT_KEYS = new Set([
   'scenario',
   'source',
   'layout',
+  'templates',
+  'icons',
 ]);
 
-const NODE_KEYS = new Set([
+// The keys of each object of a document: the properties of its definition
+// in the schema bundle, which a test compares them with.
+export const NODE_KEYS = new Set([
   'id',
   'kind',
   'label',
@@ -70,19 +82,37 @@ const NODE_KEYS = new Set([
   'group',
 ]);
 
-const DEVICE_KEYS = new Set([
+export const DEVICE_KEYS = new Set([
   'hostname',
   'iconKey',
+  'icon',
+  'outlineColor',
+  'fillColor',
   'spec',
   'interfaces',
   'includedFrom',
 ]);
-const HANDLE_KEYS = new Set(['id', 'name', 'index']);
-const SWITCH_KEYS = new Set(['networkId']);
-const NOTE_KEYS = new Set(['text', 'color']);
-const GROUP_KEYS = new Set(['title', 'color', 'collapsed']);
-const NETWORK_KEYS = new Set(['id', 'name', 'alias', 'description', 'color']);
-const EDGE_KEYS = new Set([
+export const HANDLE_KEYS = new Set(['id', 'name', 'index']);
+export const SWITCH_KEYS = new Set(['networkId', 'outlineColor', 'fillColor']);
+export const NOTE_KEYS = new Set(['text', 'color']);
+export const GROUP_KEYS = new Set([
+  'title',
+  'description',
+  'color',
+  'borderStyle',
+  'iconKey',
+  'icon',
+  'collapsed',
+]);
+export const NETWORK_KEYS = new Set([
+  'id',
+  'name',
+  'alias',
+  'description',
+  'color',
+  'lineStyle',
+]);
+export const EDGE_KEYS = new Set([
   'id',
   'sourceNodeId',
   'sourceHandleId',
@@ -91,19 +121,20 @@ const EDGE_KEYS = new Set([
   'networkId',
   'label',
   'color',
+  'lineStyle',
   'route',
 ]);
 const POINT_KEYS = new Set(['x', 'y']);
-const VIEWPORT_KEYS = new Set(['x', 'y', 'zoom']);
-const GRID_KEYS = new Set(['enabled', 'size', 'snap']);
-const SCENARIO_KEYS = new Set([
+export const VIEWPORT_KEYS = new Set(['x', 'y', 'zoom']);
+export const GRID_KEYS = new Set(['enabled', 'size', 'snap']);
+export const SCENARIO_KEYS = new Set([
   'kind',
   'name',
   'content',
   'apiVersion',
   'digest',
 ]);
-const SOURCE_KEYS = new Set([
+export const SOURCE_KEYS = new Set([
   'kind',
   'name',
   'apiVersion',
@@ -112,9 +143,23 @@ const SOURCE_KEYS = new Set([
   'digest',
   'updatedAt',
   'includeTopologies',
+  'unresolvedIncludes',
   'annotations',
   'warnings',
 ]);
+export const TEMPLATE_KEYS = new Set(['id', 'name', 'description', 'device']);
+
+// What a device has of its own, which a template does not fill in: its
+// name, its connection points, and where it was included from.
+const OWN_DEVICE_KEYS = ['hostname', 'interfaces', 'includedFrom'];
+
+// A template fills in a device, so its device has every other key a device
+// has: a key added to devices reaches templates without a second edit
+// (TemplateDevice in template.go follows Device the same way).
+export const TEMPLATE_DEVICE_KEYS = new Set(
+  [...DEVICE_KEYS].filter((key) => !OWN_DEVICE_KEYS.includes(key)),
+);
+export const ICON_ENTRY_KEYS = new Set(['name', 'data']);
 
 function rejectUnknown(value, allowed, path) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -250,13 +295,43 @@ export function decodeDocument(value) {
     rejectUnknown(value.source, SOURCE_KEYS, 'source');
   }
 
+  if (value.templates !== undefined && value.templates !== null) {
+    if (!Array.isArray(value.templates)) {
+      throw new DocumentError('document: "templates" must be an array');
+    }
+
+    value.templates.forEach((template, index) => {
+      rejectUnknown(template, TEMPLATE_KEYS, `templates[${index}]`);
+
+      // A template without a device is refused by validation, as the
+      // server refuses it.
+      if (template.device !== undefined && template.device !== null) {
+        rejectUnknown(
+          template.device,
+          TEMPLATE_DEVICE_KEYS,
+          `templates[${index}].device`,
+        );
+      }
+    });
+  }
+
+  if (value.icons !== undefined && value.icons !== null) {
+    if (typeof value.icons !== 'object' || Array.isArray(value.icons)) {
+      throw new DocumentError('document: "icons" must be an object');
+    }
+
+    Object.values(value.icons).forEach((entry) => {
+      rejectUnknown(entry, ICON_ENTRY_KEYS, 'icons');
+    });
+  }
+
   const doc = JSON.parse(JSON.stringify(value));
 
   doc.viewport = doc.viewport || { x: 0, y: 0, zoom: 1 };
   doc.grid = doc.grid || { enabled: true, size: 16, snap: true };
 
   // Null is none, as Go decodes it.
-  ['layout', ...STAMP_KEYS].forEach((key) => {
+  ['layout', 'templates', 'icons', ...STAMP_KEYS].forEach((key) => {
     if (doc[key] === null) {
       delete doc[key];
     }
@@ -326,9 +401,9 @@ function refuseAliases(event, state) {
 }
 
 /**
- * Parses import text (JSON or YAML) into a validated builder document. Anything
- * that is not a builder document of this schema is rejected with a message that
- * names the reason, never silently coerced.
+ * Parses uploaded text (JSON or YAML) into a validated builder document.
+ * Anything that is not a builder document of this schema is rejected with a
+ * message that names the reason, never silently coerced.
  *
  * @param {string} text
  * @param {{as?: string, expectedKind?: string, maxBytes?: number}} [options]

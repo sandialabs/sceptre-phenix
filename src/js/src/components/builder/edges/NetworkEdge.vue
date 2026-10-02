@@ -148,9 +148,9 @@
   });
 
   // Vue Flow ends a line at the outer edge of its handle. Handles sit centred
-  // on the node border and image exports leave them out, so the line runs on
-  // to the handle's centre: on screen the extra length is under the handle,
-  // and an exported line still meets its node.
+  // on the node border and downloaded images leave them out, so the line runs
+  // on to the handle's centre: on screen the extra length is under the
+  // handle, and a line in a downloaded image still meets its node.
   function atHandleCentre(x, y, position, node, handleId) {
     // A node with no handles of one type has null, not [], for it.
     const bounds = node?.handleBounds || {};

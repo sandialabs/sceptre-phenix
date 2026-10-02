@@ -25,13 +25,16 @@ import {
   connect,
   createDocument,
   groupNodes,
+  updateEdge,
+  updateNetwork,
+  updateNode,
   withStamp,
 } from '@/builder/model.js';
 
 import { sampleDocument } from './fixtures.js';
 
 // Vitest runs without a DOM, so these stand in for the canvas's elements:
-// enough of Element for the export helpers, matching the selectors they use
+// enough of Element for the image helpers, matching the selectors they use
 // (class lists, `[id]`, `[name="value"]` and `svg *`).
 const fakeDocument = { createElement: (tag) => fakeElement(tag) };
 
@@ -191,6 +194,9 @@ function fakeCanvas() {
               ),
               fakeElement('span', 'builder-node__issue'),
               fakeElement('span', 'builder-node__issue-text'),
+              fakeElement('span', 'builder-node__info', {
+                id: 'builder-node-info-1',
+              }),
             ],
           }),
         ],
@@ -202,23 +208,23 @@ function fakeCanvas() {
   return { pane, parent };
 }
 
-describe('document export', () => {
-  test('JSON exports re-import unchanged', () => {
+describe('document download', () => {
+  test('a JSON download reads back unchanged', () => {
     const { doc } = sampleDocument();
     const text = toJSONString(doc);
 
     expect(parseDocument(JSON.parse(text))).toEqual(doc);
   });
 
-  test('YAML exports re-import unchanged', () => {
+  test('a YAML download reads back unchanged', () => {
     const { doc } = sampleDocument();
 
     expect(parseDocument(YAML.load(toYAMLString(doc)))).toEqual(doc);
   });
 
   // Who made the diagram and who saved it last are part of the document,
-  // so an export holds them where the server's own encoding has them.
-  test('exports hold who made and last saved the diagram, after the description', () => {
+  // so a download holds them where the server's own encoding has them.
+  test('downloads hold who made and last saved the diagram, after the description', () => {
     const stamp = {
       author: 'alice',
       createdAt: '2026-10-01T15:04:05Z',
@@ -256,7 +262,7 @@ describe('document export', () => {
     expect(yaml.indexOf('description:')).toBeLessThan(yaml.indexOf('author:'));
     expect(yaml.indexOf('updatedAt:')).toBeLessThan(yaml.indexOf('nodes:'));
 
-    // A diagram stored before the server kept them exports without them.
+    // A diagram stored before the server kept them downloads without them.
     expect(toJSONString(sampleDocument().doc)).not.toContain('"author"');
   });
 
@@ -268,7 +274,7 @@ describe('document export', () => {
   });
 });
 
-describe('image export geometry', () => {
+describe('image geometry', () => {
   test('bounds cover every node, not the visible viewport', () => {
     const { doc } = sampleDocument();
     const bounds = documentBounds(doc);
@@ -279,7 +285,7 @@ describe('image export geometry', () => {
     expect(bounds.height).toBeGreaterThan(0);
   });
 
-  test('an empty document still exports a usable canvas', () => {
+  test('an empty document still gives a usable canvas', () => {
     expect(documentBounds({ nodes: [] })).toEqual({
       x: 0,
       y: 0,
@@ -312,8 +318,8 @@ describe('image export geometry', () => {
   });
 });
 
-describe('image export content', () => {
-  test('the export copy has no editing affordances, selection or IDs, and the canvas keeps them', () => {
+describe('image content', () => {
+  test('the image copy has no editing affordances, selection or IDs, and the canvas keeps them', () => {
     const { pane, parent } = fakeCanvas();
     const { copy, holder } = exportCopy(pane);
 
@@ -344,6 +350,8 @@ describe('image export content', () => {
       'builder-edge__focus',
       'builder-node__issue',
       'builder-node__issue-text',
+      // The hidden text of a node's info tooltip.
+      'builder-node__info',
       'is-selected',
       'selected',
     ]) {
@@ -365,7 +373,7 @@ describe('image export content', () => {
   });
 
   // html-to-image copies an <svg> without its class styles, so a connection
-  // line exported with no stroke at all until its paint was inlined.
+  // line drawn with no stroke at all until its paint was inlined.
   test('a connection line carries its computed paint inline', () => {
     const { pane } = fakeCanvas();
     const { copy } = exportCopy(pane);
@@ -380,7 +388,7 @@ describe('image export content', () => {
     expect(find(copy, 'builder-node').inline).toEqual({});
   });
 
-  test('image export renders the copy with its own transform in place of the pan and zoom, then removes it', async () => {
+  test('an image renders the copy with its own transform in place of the pan and zoom, then removes it', async () => {
     const { doc } = sampleDocument();
     const { pane, parent } = fakeCanvas();
     let rendered;
@@ -450,7 +458,7 @@ describe('image export content', () => {
 });
 
 describe('savers', () => {
-  test('image export renders the whole diagram through the injected renderer', async () => {
+  test('an image renders the whole diagram through the injected renderer', async () => {
     const { doc } = sampleDocument();
     const toPng = vi.fn(async () => 'data:image/png;base64,x');
     const saveAs = vi.fn();
@@ -476,13 +484,13 @@ describe('savers', () => {
     expect(saveAs).toHaveBeenCalledWith(url, 'sample.png');
   });
 
-  test('image export refuses without a canvas element', async () => {
+  test('an image is refused without a canvas element', async () => {
     await expect(exportImage({ doc: {}, toPng: vi.fn() })).rejects.toThrow(
-      /No canvas element/,
+      'No canvas element to download.',
     );
   });
 
-  test('text export builds a blob with a charset', () => {
+  test('saved text builds a blob with a charset', () => {
     const saveAs = vi.fn();
 
     class FakeBlob {
@@ -841,7 +849,7 @@ function gexfDocument() {
   return { doc, web: web.node };
 }
 
-describe('GEXF export', () => {
+describe('GEXF', () => {
   const modified = '2026-03-04T12:00:00Z';
 
   test('writes a GEXF 1.3 graph of the devices and networks', () => {
@@ -865,7 +873,7 @@ describe('GEXF export', () => {
     const meta = childOf(root, 'meta');
 
     expect(meta.attributes.lastmodifieddate).toBe('2026-03-04');
-    expect(childOf(meta, 'creator').text).toBe('phēnix Builder v2');
+    expect(childOf(meta, 'creator').text).toBe('phēnix Builder');
     expect(childOf(meta, 'description').text).toBe(doc.description);
     expect(graph.attributes).toEqual({
       mode: 'static',
@@ -1053,7 +1061,7 @@ describe('GEXF export', () => {
     // Networks run no apps.
     expect(appValues(uploaded.byLabel.EXP)).toEqual({});
 
-    // A stored scenario's content is read for the export: without it, the
+    // A stored scenario's content is read for the file: without it, the
     // file says nothing of apps rather than that there are none.
     doc.scenario = {
       kind: 'stored',
@@ -1132,6 +1140,80 @@ describe('GEXF export', () => {
       'viz:color': { r: '18', g: '52', b: '86', a: '0.502' },
       'viz:shape': { value: 'dashed' },
     });
+  });
+
+  // A device's own color is its fill, else its outline, else that of what
+  // phenix runs it as. A switch keeps its network's color: its own outline
+  // and fill are the node's on the canvas, not the network's.
+  test("colors a device by its fill, then its outline, and a network's node by the network", () => {
+    const { doc, web } = gexfDocument();
+    const rtr = doc.nodes.find((node) => node.label === 'rtr');
+    const exp = doc.nodes.find((node) => node.kind === 'switch');
+    let colored = updateNode(doc, web.id, {
+      device: { outlineColor: '#102030', fillColor: '#ffd400' },
+    });
+
+    colored = updateNode(colored, rtr.id, {
+      device: { outlineColor: '#a3273f' },
+    });
+    colored = updateNode(colored, exp.id, {
+      switch: { outlineColor: '#111111', fillColor: '#eeeeee' },
+    });
+
+    const { nodes } = graphOf(toGEXF(colored, { modified }).text);
+    const color = (label) =>
+      vizOf(
+        nodes.children.find(({ attributes }) => attributes.label === label),
+      )['viz:color'];
+
+    expect(color('web')).toEqual({ r: '255', g: '212', b: '0', a: '1' });
+    expect(color('rtr')).toEqual({ r: '163', g: '39', b: '63', a: '1' });
+    expect(color('EXP')).toEqual({ r: '47', g: '111', b: '191', a: '1' });
+    // A fill that is no #rrggbb, which only an edited file can hold, is
+    // not written: the device keeps the color of its kind.
+    const edited = structuredClone(colored);
+
+    edited.nodes.find((node) => node.id === web.id).device.fillColor = 'red';
+    delete edited.nodes.find((node) => node.id === web.id).device.outlineColor;
+    expect(
+      vizOf(
+        graphOf(toGEXF(edited, { modified }).text).nodes.children.find(
+          ({ attributes }) => attributes.label === 'web',
+        ),
+      )['viz:color'],
+    ).toEqual({ r: '107', g: '124', b: '147', a: '1' });
+    // No new column: the colors are presentation, not data.
+    expect(toGEXF(colored, { modified }).text).not.toMatch(/outline|fill/i);
+  });
+
+  // An edge's shape is the pattern its line is drawn in: its own line
+  // style, else its network's, else the pattern of the network's place.
+  test("shapes an edge by its line style, then its network's", () => {
+    const { doc } = gexfDocument();
+    const shapes = (document) =>
+      graphOf(toGEXF(document, { modified }).text).edges.children.map(
+        (edge) => vizOf(edge)['viz:shape'].value,
+      );
+    const exp = doc.networks.find((network) => network.name === 'EXP');
+    const mgmt = doc.networks.find((network) => network.name === 'MGMT');
+
+    // web to EXP twice, web to MGMT, rtr to EXP: by the networks' places.
+    expect(shapes(doc)).toEqual(['solid', 'solid', 'dashed', 'solid']);
+
+    const styled = updateNetwork(
+      updateNetwork(doc, exp.id, { lineStyle: 'dotted' }),
+      mgmt.id,
+      { lineStyle: 'solid' },
+    );
+
+    expect(shapes(styled)).toEqual(['dotted', 'dotted', 'solid', 'dotted']);
+    // One connection's own style; dash-dot is GEXF's dashed.
+    expect(
+      shapes(updateEdge(styled, styled.edges[1].id, { lineStyle: 'dash-dot' })),
+    ).toEqual(['dotted', 'dashed', 'solid', 'dotted']);
+    expect(
+      shapes(updateEdge(styled, styled.edges[0].id, { lineStyle: 'solid' })),
+    ).toEqual(['solid', 'dotted', 'solid', 'dotted']);
   });
 
   test('writes an rgb() color with decimals, its channels rounded', () => {
@@ -1220,7 +1302,7 @@ describe('GEXF export', () => {
     expect(dated(lastModified({ doc }))).toBe('2020-01-01');
   });
 
-  test('exports a 500-device diagram quickly', () => {
+  test('writes a 500-device diagram quickly', () => {
     let doc = createDocument({ name: 'Large' });
     let sw = null;
 

@@ -24,7 +24,7 @@ export function tokenExpired(token) {
   return Date.now() >= (tokenExpiry(token) ?? Infinity);
 }
 
-// Logging out warns first while Builder v2 holds changes the server does
+// Logging out warns first while Builder holds changes the server does
 // not have (see utils/logout.js). On the Builder's page, the warning of a
 // session that expired offers to sign in again there (see
 // builder/signin.js).
@@ -75,61 +75,14 @@ export const usePhenixStore = defineStore('phenix', {
       sessionStorage.getItem('phenix.auth') === 'true',
     next: null,
     features: [],
-    featuresLoaded: false,
-    featuresPromise: null,
-    featuresError: null,
-    // The warning shown before a logout would delete Builder v2 changes
+    // The warning shown before a logout would delete Builder changes
     // the server does not have, and whether a logout is under way.
     logoutWarning: null,
     loggingOut: false,
   }),
   actions: {
-    // Single-flight fetch of /features so feature-gated routes can await a
-    // deterministic answer instead of racing App.vue's initial request.
-    ensureFeatures(fetchImpl) {
-      if (this.featuresLoaded) {
-        return Promise.resolve(this.features);
-      }
-
-      if (!this.featuresPromise) {
-        const doFetch =
-          fetchImpl ||
-          (() =>
-            fetch(router.resolve({ name: 'features' }).href).then((resp) => {
-              if (!resp.ok) {
-                throw new Error(
-                  `feature request failed with status ${resp.status}`,
-                );
-              }
-
-              return resp.json();
-            }));
-
-        this.featuresPromise = Promise.resolve()
-          .then(doFetch)
-          .then((data) => {
-            if (!Array.isArray(data?.features)) {
-              throw new Error('feature response does not contain a list');
-            }
-
-            this.features = data.features;
-            this.featuresLoaded = true;
-            this.featuresError = null;
-            return this.features;
-          })
-          .catch((error) => {
-            this.featuresError =
-              error instanceof Error ? error.message : String(error);
-            this.featuresPromise = null;
-            throw error;
-          });
-      }
-
-      return this.featuresPromise;
-    },
-
     login(loginResponse, remember, navigate = true) {
-      // Builder v2 data another user left on this device, by closing the
+      // Builder data another user left on this device, by closing the
       // browser without logging out, goes before this user's session
       // starts; its preferences stay, as at logout.
       startBuilderSession(loginResponse.user.username);
@@ -169,7 +122,7 @@ export const usePhenixStore = defineStore('phenix', {
     /**
      * Takes the new token of the user signing in again without leaving the
      * page (see builder/signin.js), kept where their sign-in kept the last
-     * one. Nothing else changes: the user is the same, so Builder v2's
+     * one. Nothing else changes: the user is the same, so Builder's
      * data in this browser stays, and so does the page.
      *
      * @param {object} loginResponse as the sign-in page's
@@ -200,7 +153,7 @@ export const usePhenixStore = defineStore('phenix', {
 
     /**
      * Logs out: the header's Logout, the idle timeout, and an expired or
-     * refused token. When Builder v2 holds changes the server does not
+     * refused token. When Builder holds changes the server does not
      * have, a warning comes first (see utils/logout.js).
      *
      * @param {'manual'|'idle'|'expired'} [reason]
@@ -237,7 +190,7 @@ export const usePhenixStore = defineStore('phenix', {
       sessionStorage.removeItem('phenix.role');
       sessionStorage.removeItem('phenix.auth');
 
-      // Builder v2's drafts, lists and recent commands on this device go
+      // Builder's drafts, lists and recent commands on this device go
       // too, before the sign-in page shows; its preferences stay (every
       // logout, including the idle timeout's and an expired token's, comes
       // through here, after requestLogout).

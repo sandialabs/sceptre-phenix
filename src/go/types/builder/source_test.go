@@ -131,8 +131,24 @@ func TestFromConfigKeepsAnnotationsButTheBuilders(t *testing.T) {
 		t.Fatalf("warnings = %q, want none about annotations", warnings)
 	}
 
-	// Annotations are not part of the source's identity.
-	if doc.Source.Digest != plain {
+	// Annotations are not part of the source's identity, but for the diagram
+	// of the legacy Builder, which publishing to the topology removes: the
+	// digest of an import tells one diagram from another, and from none.
+	withDiagram := doc.Source.Digest
+
+	if want, err := builder.ImportDigest(config); err != nil || withDiagram != want || withDiagram == plain {
+		t.Fatalf("source digest = %q, want %q (%v), which is not %q", withDiagram, want, err, plain)
+	}
+
+	config.Metadata.Annotations["builder-xml"] = "<mxGraphModel/>"
+
+	if doc, _ := documentFromConfig(t, config); doc.Source.Digest == withDiagram || doc.Source.Digest == plain {
+		t.Fatalf("source digest = %q, want one of its own for another diagram", doc.Source.Digest)
+	}
+
+	delete(config.Metadata.Annotations, "builder-xml")
+
+	if doc, _ := documentFromConfig(t, config); doc.Source.Digest != plain {
 		t.Fatalf("source digest = %q, want %q, the digest without annotations", doc.Source.Digest, plain)
 	}
 

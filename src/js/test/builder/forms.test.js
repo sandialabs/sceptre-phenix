@@ -14,6 +14,7 @@ import {
   inspectorName,
   inspectorTarget,
   issueText,
+  lookChangeLabel,
   mergeFormData,
   newListItem,
   PHENIX_DEFAULTS,
@@ -28,16 +29,21 @@ import {
 import { builderSchemaV1, schemaForKind } from '@/builder/schema.js';
 import {
   addInterface,
+  addNetwork,
   addNode,
   connect,
   connectionChanges,
   findNetwork,
   findNode,
+  lookOf,
+  updateEdge,
+  updateNetwork,
   updateNode,
 } from '@/builder/model.js';
 import { validateDocument } from '@/builder/validate.js';
 
 import { sampleDocument } from './fixtures.js';
+import { ICON_KEY } from './png.js';
 
 describe('generated UI schemas', () => {
   test('are produced from the JSON Schema, not hand written', () => {
@@ -149,11 +155,91 @@ describe('inspector working copy', () => {
     expect(target.title).toContain(network.name);
   });
 
-  test('an edge edits only its label and color, and is named by its ends', () => {
+  // The network's fields, then the two colors that are the switch node's
+  // own. Two switches of one network share the first and not the second.
+  test("a switch's working copy has its network's line style and its own colors", () => {
+    const { doc, sw, network } = sampleDocument();
+    const selection = { type: 'node', id: sw.id };
+
+    expect(inspectorTarget(doc, selection).data).toEqual({
+      name: 'EXP',
+      alias: 100,
+      description: '',
+      color: network.color,
+      lineStyle: '',
+      outlineColor: '',
+      fillColor: '',
+    });
+
+    const second = addNode(doc, { kind: 'switch', networkId: network.id });
+    const styled = updateNode(
+      updateNetwork(second.doc, network.id, { lineStyle: 'dotted' }),
+      sw.id,
+      { switch: { outlineColor: '#a3273f', fillColor: '#6b6f18' } },
+    );
+
+    expect(inspectorTarget(styled, selection).data).toMatchObject({
+      lineStyle: 'dotted',
+      outlineColor: '#a3273f',
+      fillColor: '#6b6f18',
+    });
+    expect(
+      inspectorTarget(styled, { type: 'node', id: second.node.id }).data,
+    ).toMatchObject({ lineStyle: 'dotted', outlineColor: '', fillColor: '' });
+  });
+
+  test("a device's working copy has its look: icon, custom icon, outline and fill", () => {
+    const { doc, alpha } = sampleDocument();
+    const selection = { type: 'node', id: alpha.id };
+
+    expect(Object.keys(inspectorTarget(doc, selection).data)).toEqual([
+      'hostname',
+      'iconKey',
+      'icon',
+      'outlineColor',
+      'fillColor',
+      'spec',
+    ]);
+    expect(inspectorTarget(doc, selection).data).toMatchObject({
+      icon: '',
+      outlineColor: '',
+      fillColor: '',
+    });
+
+    const colored = updateNode(doc, alpha.id, {
+      device: { icon: ICON_KEY, outlineColor: '#2f6fbf', fillColor: '#1f7a5a' },
+    });
+
+    expect(inspectorTarget(colored, selection).data).toMatchObject({
+      icon: ICON_KEY,
+      outlineColor: '#2f6fbf',
+      fillColor: '#1f7a5a',
+    });
+    // Apply writes the look back, and an emptied custom icon goes.
+    expect(
+      findNode(
+        applyFormData(colored, selection, {
+          ...inspectorTarget(colored, selection).data,
+          fillColor: '#111111',
+        }),
+        alpha.id,
+      ).device,
+    ).toMatchObject({ icon: ICON_KEY, fillColor: '#111111' });
+
+    const { icon, ...emptied } = inspectorTarget(colored, selection).data;
+
+    expect(icon).toBe(ICON_KEY);
+    expect(
+      'icon' in
+        findNode(applyFormData(colored, selection, emptied), alpha.id).device,
+    ).toBe(false);
+  });
+
+  test('an edge edits only its label, color and line style, and is named by its ends', () => {
     const { doc, edge } = sampleDocument();
     const target = inspectorTarget(doc, { type: 'edge', id: edge.id });
 
-    expect(Object.keys(target.data)).toEqual(['label', 'color']);
+    expect(Object.keys(target.data)).toEqual(['label', 'color', 'lineStyle']);
     expect(target.title).toBe('Connection from alpha (eth0) to EXP');
   });
 
@@ -215,6 +301,75 @@ describe('applying a working copy', () => {
     });
   });
 
+  // One document from one Apply, so one Undo step: the network's line
+  // style, and the outline and the fill of the switch node itself.
+  test("applying a switch sets its network's line style and its own colors", () => {
+    const { doc, sw, network } = sampleDocument();
+    const selection = { type: 'node', id: sw.id };
+    const base = inspectorTarget(doc, selection).data;
+    const styled = applyFormData(doc, selection, {
+      ...base,
+      lineStyle: 'dash-dot',
+      outlineColor: '#a3273f',
+      fillColor: '#6b6f18',
+    });
+
+    expect(findNetwork(styled, network.id).lineStyle).toBe('dash-dot');
+    expect(findNode(styled, sw.id).switch).toEqual({
+      networkId: network.id,
+      outlineColor: '#a3273f',
+      fillColor: '#6b6f18',
+    });
+    // The color is the network's, as before, not the switch's.
+    expect(findNetwork(styled, network.id).color).toBe(network.color);
+
+    // Emptied fields have no key in the form, and remove their values.
+    const { lineStyle, outlineColor, fillColor, ...emptied } = inspectorTarget(
+      styled,
+      selection,
+    ).data;
+    const cleared = applyFormData(styled, selection, emptied);
+
+    expect([lineStyle, outlineColor, fillColor]).toEqual([
+      'dash-dot',
+      '#a3273f',
+      '#6b6f18',
+    ]);
+    expect('lineStyle' in findNetwork(cleared, network.id)).toBe(false);
+    expect(findNode(cleared, sw.id).switch).toEqual({ networkId: network.id });
+  });
+
+  test('applying a device sets its outline and fill, and an emptied one goes', () => {
+    const { doc, alpha } = sampleDocument();
+    const selection = { type: 'node', id: alpha.id };
+    const base = inspectorTarget(doc, selection).data;
+    const colored = applyFormData(doc, selection, {
+      ...base,
+      outlineColor: '#2f6fbf',
+      fillColor: '#1f7a5a',
+    });
+
+    expect(findNode(colored, alpha.id).device).toMatchObject({
+      outlineColor: '#2f6fbf',
+      fillColor: '#1f7a5a',
+    });
+
+    const { fillColor, ...emptied } = inspectorTarget(colored, selection).data;
+    const cleared = applyFormData(colored, selection, emptied).nodes.find(
+      (node) => node.id === alpha.id,
+    ).device;
+
+    expect(fillColor).toBe('#1f7a5a');
+    expect(cleared.outlineColor).toBe('#2f6fbf');
+    expect('fillColor' in cleared).toBe(false);
+    // A device given no color keeps the keys it had, and no others.
+    expect(
+      Object.keys(
+        findNode(applyFormData(doc, selection, base), alpha.id).device,
+      ),
+    ).toEqual(Object.keys(alpha.device));
+  });
+
   test('applying note and group changes keeps the payload shape', () => {
     let { doc } = sampleDocument();
     const note = addNode(doc, { kind: 'note', text: 'a' });
@@ -242,13 +397,24 @@ describe('applying a working copy', () => {
 
     expect(
       Object.keys(schemaForKind(builderSchemaV1, 'group').properties),
-    ).toEqual(['title', 'color']);
+    ).toEqual([
+      'title',
+      'description',
+      'color',
+      'borderStyle',
+      'iconKey',
+      'icon',
+    ]);
     expect(
       JSON.stringify(uiSchemaForKind(builderSchemaV1, 'group')),
     ).not.toContain('collapsed');
     expect(inspectorTarget(doc, selection).data).toEqual({
       title: 'Core',
+      description: '',
       color: '',
+      borderStyle: '',
+      iconKey: '',
+      icon: '',
     });
 
     const next = applyFormData(doc, selection, { title: 'Edge', color: '' });
@@ -258,6 +424,48 @@ describe('applying a working copy', () => {
       color: '',
       collapsed: true,
     });
+  });
+
+  test("a group's description, border pattern, icon and custom icon apply, and emptied ones go", () => {
+    const { doc } = sampleDocument();
+    const group = addNode(doc, { kind: 'group', title: 'Core' });
+    const selection = { type: 'node', id: group.node.id };
+    const described = applyFormData(group.doc, selection, {
+      title: 'Core',
+      description: 'DMZ hosts',
+      color: '',
+      borderStyle: 'double',
+      iconKey: 'firewall',
+      icon: ICON_KEY,
+    });
+
+    expect(findNode(described, group.node.id).group).toEqual({
+      title: 'Core',
+      description: 'DMZ hosts',
+      color: '',
+      borderStyle: 'double',
+      iconKey: 'firewall',
+      icon: ICON_KEY,
+      collapsed: false,
+    });
+    expect(inspectorTarget(described, selection).data).toEqual({
+      title: 'Core',
+      description: 'DMZ hosts',
+      color: '',
+      borderStyle: 'double',
+      iconKey: 'firewall',
+      icon: ICON_KEY,
+    });
+    // The description is a long text field, as a network's is.
+    expect(
+      uiSchemaForKind(builderSchemaV1, 'group').elements.find((element) =>
+        element.scope.endsWith('/description'),
+      ).options.multi,
+    ).toBe(true);
+
+    const cleared = applyFormData(described, selection, { title: 'Core' });
+
+    expect(findNode(cleared, group.node.id).group).toEqual(group.node.group);
   });
 
   // A field emptied in the form loses its key; the element shows an unset
@@ -317,12 +525,239 @@ describe('applying a working copy', () => {
     expect(inspectorTarget(colored, selection).data).toEqual({
       label: 'uplink',
       color: '#1f7a5a',
+      lineStyle: '',
     });
 
     const emptied = applyFormData(colored, selection, {});
 
     expect('label' in emptied.edges[0]).toBe(false);
     expect('color' in emptied.edges[0]).toBe(false);
+  });
+
+  test("a connection's line style applies, and an emptied one goes", () => {
+    const { doc, edge } = sampleDocument();
+    const selection = { type: 'edge', id: edge.id };
+    const styled = applyFormData(doc, selection, { lineStyle: 'dotted' });
+
+    expect(styled.edges[0].lineStyle).toBe('dotted');
+    expect(inspectorTarget(styled, selection).data.lineStyle).toBe('dotted');
+    expect('lineStyle' in applyFormData(styled, selection, {}).edges[0]).toBe(
+      false,
+    );
+  });
+});
+
+// A line style, a border pattern and a group's icon each have a choice
+// that stands for none, which names what the canvas then draws.
+describe('what an unset presentation field comes to', () => {
+  test("a network's line style is the pattern of its place in the diagram", () => {
+    const { doc, sw, network } = sampleDocument();
+    const second = addNetwork(doc, { name: 'MGMT' });
+    const other = addNode(second.doc, {
+      kind: 'switch',
+      networkId: second.network.id,
+    });
+    const target = (document, id) =>
+      inspectorTarget(document, { type: 'node', id });
+    const note = "Auto: chosen by the network's place in the diagram";
+
+    expect(fieldDefault(target(other.doc, sw.id), 'lineStyle')).toEqual({
+      value: 'solid',
+      note,
+    });
+    expect(fieldDefault(target(other.doc, other.node.id), 'lineStyle')).toEqual(
+      { value: 'dashed', note },
+    );
+
+    // A style chosen for it does not change what Auto would give.
+    const styled = updateNetwork(other.doc, network.id, {
+      lineStyle: 'dotted',
+    });
+
+    expect(fieldDefault(target(styled, sw.id), 'lineStyle').value).toBe(
+      'solid',
+    );
+  });
+
+  test("a connection's line style is its network's, chosen or not", () => {
+    const { doc, edge, network } = sampleDocument();
+    const selection = { type: 'edge', id: edge.id };
+    const note = "Auto: its network's line style";
+
+    expect(fieldDefault(inspectorTarget(doc, selection), 'lineStyle')).toEqual({
+      value: 'solid',
+      note,
+    });
+
+    const styled = updateNetwork(doc, network.id, { lineStyle: 'dash-dot' });
+
+    expect(
+      fieldDefault(inspectorTarget(styled, selection), 'lineStyle'),
+    ).toEqual({ value: 'dash-dot', note });
+    // Its own style does not change what its network's is.
+    expect(
+      fieldDefault(
+        inspectorTarget(
+          updateEdge(styled, edge.id, { lineStyle: 'dotted' }),
+          selection,
+        ),
+        'lineStyle',
+      ).value,
+    ).toBe('dash-dot');
+  });
+
+  test("a group's border is dashed and its icon the group icon", () => {
+    const { doc } = sampleDocument();
+    const group = addNode(doc, { kind: 'group', title: 'Core' });
+    const target = inspectorTarget(group.doc, {
+      type: 'node',
+      id: group.node.id,
+    });
+
+    expect(fieldDefault(target, 'borderStyle')).toEqual({
+      value: 'dashed',
+      note: 'The default border',
+    });
+    expect(fieldDefault(target, 'iconKey')).toEqual({
+      value: 'container',
+      note: 'The group icon',
+    });
+    // Its other fields have none, nor has a device's icon.
+    expect(fieldDefault(target, 'title')).toBeUndefined();
+    expect(fieldDefault(target, 'color')).toBeUndefined();
+  });
+
+  // The working copy shows an unset one as '', which is none of the
+  // patterns: that is how the element came, and holds no edit back.
+  test('an unset line style or border pattern keeps no other edit from being applied', () => {
+    const { doc, sw, edge } = sampleDocument();
+    const group = addNode(doc, { kind: 'group', title: 'Core' });
+    const found = (kind, selection, edit) => {
+      const base = inspectorTarget(group.doc, selection).data;
+
+      return workingCopyErrors(
+        createFormValidator(),
+        schemaForKind(builderSchemaV1, kind),
+        { ...base, ...edit },
+        base,
+      ).fields.map((field) => field.message);
+    };
+    const selections = {
+      switch: { type: 'node', id: sw.id },
+      edge: { type: 'edge', id: edge.id },
+      group: { type: 'node', id: group.node.id },
+    };
+
+    expect(found('switch', selections.switch, { name: 'CORE' })).toEqual([]);
+    expect(found('edge', selections.edge, { label: 'uplink' })).toEqual([]);
+    expect(found('group', selections.group, { title: 'Edge' })).toEqual([]);
+    expect(found('switch', selections.switch, { lineStyle: 'dotted' })).toEqual(
+      [],
+    );
+    // A value that is none of them, set by the edit, does.
+    expect(found('edge', selections.edge, { lineStyle: 'wavy' })).toEqual([
+      'Line style must be one of the listed options',
+    ]);
+    expect(found('group', selections.group, { borderStyle: 'wavy' })).toEqual([
+      'Border pattern must be one of the listed options',
+    ]);
+  });
+
+  test("a device's icon and colors have no such value", () => {
+    const { doc, alpha } = sampleDocument();
+    const target = inspectorTarget(doc, { type: 'node', id: alpha.id });
+
+    for (const path of ['iconKey', 'icon', 'outlineColor', 'fillColor']) {
+      expect(fieldDefault(target, path), path).toBeUndefined();
+    }
+  });
+});
+
+// A change of a device's look is applied at once, as an edit named after
+// the field it changes: the name is announced, and is the Undo step's.
+describe('what a change of look says', () => {
+  const none = lookOf({});
+
+  test('names the icon, the outline color or the fill color', () => {
+    const title = 'Device web-01';
+
+    expect(lookChangeLabel(title, none, { ...none, iconKey: 'router' })).toBe(
+      'Changed the icon of Device web-01 to router',
+    );
+    expect(lookChangeLabel(title, { ...none, iconKey: 'router' }, none)).toBe(
+      'Changed the icon of Device web-01 to the default',
+    );
+    expect(
+      lookChangeLabel(title, none, { ...none, outlineColor: '#2f6fbf' }),
+    ).toBe('Changed the outline color of Device web-01 to #2f6fbf');
+    expect(
+      lookChangeLabel(title, { ...none, outlineColor: '#2f6fbf' }, none),
+    ).toBe('Removed the outline color of Device web-01');
+    expect(
+      lookChangeLabel(title, none, { ...none, fillColor: '#2f6fbf' }),
+    ).toBe('Changed the fill color of Device web-01 to #2f6fbf');
+    expect(
+      lookChangeLabel(title, { ...none, fillColor: '#2f6fbf' }, none),
+    ).toBe('Removed the fill color of Device web-01');
+  });
+
+  // A custom icon is said by its name, which the caller knows: its id is
+  // a digest, and says nothing.
+  test('names a custom icon by its name, never by its id', () => {
+    const title = 'Device web-01';
+    const names = (id) => (id === ICON_KEY ? 'plc' : undefined);
+    const custom = { ...none, icon: ICON_KEY };
+
+    expect(lookChangeLabel(title, none, custom, names)).toBe(
+      'Changed the custom icon of Device web-01 to plc',
+    );
+    expect(lookChangeLabel(title, none, custom, () => '')).toBe(
+      'Changed the custom icon of Device web-01 to an unnamed icon',
+    );
+    expect(lookChangeLabel(title, none, custom)).toBe(
+      'Changed the custom icon of Device web-01 to an unnamed icon',
+    );
+    expect(lookChangeLabel(title, custom, none, names)).toBe(
+      'Removed the custom icon of Device web-01',
+    );
+    // The icon of its key comes first when both change.
+    expect(
+      lookChangeLabel(title, none, { ...custom, iconKey: 'router' }, names),
+    ).toBe('Changed the icon of Device web-01 to router');
+    // And the custom icon before a color.
+    expect(
+      lookChangeLabel(title, none, { ...custom, fillColor: '#222222' }, names),
+    ).toBe('Changed the custom icon of Device web-01 to plc');
+  });
+
+  test('names the first field that differs, and nothing when none does', () => {
+    expect(
+      lookChangeLabel('Device a', none, {
+        iconKey: 'router',
+        outlineColor: '#111111',
+        fillColor: '#222222',
+      }),
+    ).toBe('Changed the icon of Device a to router');
+    expect(lookChangeLabel('Device a', none, { ...none })).toBe('');
+  });
+
+  test('the look of a payload is its four fields as text', () => {
+    expect(lookOf(undefined)).toEqual({
+      iconKey: '',
+      icon: '',
+      outlineColor: '',
+      fillColor: '',
+    });
+    expect(
+      lookOf({ hostname: 'a', iconKey: 'router', fillColor: '#222222' }),
+    ).toEqual({
+      iconKey: 'router',
+      icon: '',
+      outlineColor: '',
+      fillColor: '#222222',
+    });
+    expect(lookOf({ icon: ICON_KEY }).icon).toBe(ICON_KEY);
+    expect(lookOf({ outlineColor: null }).outlineColor).toBe('');
   });
 });
 

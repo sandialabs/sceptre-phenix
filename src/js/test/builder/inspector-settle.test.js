@@ -9,7 +9,11 @@ import { createPinia } from 'pinia';
 import { UPDATE_DATA } from '@jsonforms/core';
 
 import BuilderInspector from '@/components/builder/BuilderInspector.vue';
-import { INSPECTOR_LOCAL_PROBLEMS } from '@/components/builder/inspector/control.js';
+import {
+  INSPECTOR_ICON_LIBRARY,
+  INSPECTOR_ICONS,
+  INSPECTOR_LOCAL_PROBLEMS,
+} from '@/components/builder/inspector/control.js';
 
 import { inspectorTarget } from '@/builder/adapters/forms.js';
 import { savedAutomatically } from '@/builder/history.js';
@@ -17,6 +21,7 @@ import { addNode, findNode, updateNode } from '@/builder/model.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { experimentNodeSpec, sampleDocument } from './fixtures.js';
+import { ICON_DATA, ICON_KEY } from './png.js';
 
 vi.mock('@/utils/axios.js', () => ({ default: {} }));
 vi.mock('@/store.js', () => ({
@@ -26,8 +31,10 @@ vi.mock('@/store.js', () => ({
 // The Inspector open on a device of `doc`, rendered on the server: its
 // watchers run once, so the form stays open on that device whatever the
 // store does next, as it does while its edits are unapplied. `edit` changes
-// the form's data, as JSON Forms sends it once a field commits.
-async function openInspector(doc, node, edit) {
+// the form's data, as JSON Forms sends it once a field commits, and is
+// given what the Inspector provides its renderers; `prepare` sets the store
+// up first, once the form is open.
+async function openInspector(doc, node, edit, prepare = () => {}) {
   const pinia = createPinia();
   const app = createSSRApp({ render: () => h(BuilderInspector) });
   let instance = null;
@@ -47,13 +54,14 @@ async function openInspector(doc, node, edit) {
   store.select({ nodes: [node.id] });
 
   await renderToString(app);
+  prepare(store);
 
   const selection = { type: 'node', id: node.id };
   const data = JSON.parse(
     JSON.stringify(inspectorTarget(store.doc, selection).data),
   );
 
-  edit(data);
+  edit(data, instance.provides);
   instance.setupState.onChange({ data, errors: [] });
 
   return {
@@ -68,6 +76,9 @@ async function openInspector(doc, node, edit) {
     // As a renderer reports rows that are not in the working copy.
     report: (path, found) =>
       instance.provides[INSPECTOR_LOCAL_PROBLEMS](path, found),
+    // The custom icons the Custom icon field and its dialog work with.
+    icons: instance.provides[INSPECTOR_ICONS],
+    library: instance.provides[INSPECTOR_ICON_LIBRARY],
   };
 }
 
@@ -392,6 +403,386 @@ describe('saving unapplied edits before leaving or reading the diagram', () => {
 
     expect(saveUnapplied()).toBeNull();
     expect(description()).not.toBe('Edited');
+  });
+});
+
+// A device's look (its icon, custom icon, outline color and fill color) is
+// presentation only: a change of it in the form reaches the canvas at once,
+// as an edit of its own, and is no unapplied edit for Apply.
+describe("a device's look is applied without Apply", () => {
+  const PLC = { name: 'plc', data: ICON_DATA };
+
+  const lookOf = (store, node) => {
+    const { outlineColor, fillColor, iconKey } = findNode(
+      store.doc,
+      node.id,
+    ).device;
+
+    return { iconKey, outlineColor, fillColor };
+  };
+
+  test('a fill color chosen in the form is on the device at once, named in Undo', async () => {
+    const { doc, alpha } = sampleDocument();
+    const { store, settle, setup } = await openInspector(doc, alpha, (data) => {
+      data.fillColor = '#2f6fbf';
+    });
+    const version = store.historyVersion;
+
+    expect(lookOf(store, alpha).fillColor).toBe('#2f6fbf');
+    expect(store.history.undoLabel()).toBe(
+      'Changed the fill color of Device alpha to #2f6fbf',
+    );
+    // Nothing is left for Apply or a save to apply.
+    expect(setup.dirty).toBe(false);
+    expect(settle()).toBe('');
+    expect(store.historyVersion).toBe(version);
+
+    store.undo();
+
+    expect('fillColor' in findNode(store.doc, alpha.id).device).toBe(false);
+  });
+
+  test('an outline color, and a color removed, each say so', async () => {
+    const { doc, alpha } = sampleDocument();
+    const outlined = await openInspector(doc, alpha, (data) => {
+      data.outlineColor = '#A3273F';
+    });
+
+    expect(lookOf(outlined.store, alpha).outlineColor).toBe('#A3273F');
+    expect(outlined.store.history.undoLabel()).toBe(
+      'Changed the outline color of Device alpha to #A3273F',
+    );
+
+    const filled = updateNode(doc, alpha.id, {
+      device: { fillColor: '#2f6fbf' },
+    });
+    // An emptied field has no key in the form.
+    const emptied = await openInspector(filled, alpha, (data) => {
+      delete data.fillColor;
+    });
+
+    expect('fillColor' in findNode(emptied.store.doc, alpha.id).device).toBe(
+      false,
+    );
+    expect(emptied.store.history.undoLabel()).toBe(
+      'Removed the fill color of Device alpha',
+    );
+  });
+
+  test('an icon is still applied at once, under its own name', async () => {
+    const { doc, alpha } = sampleDocument();
+    const { store } = await openInspector(doc, alpha, (data) => {
+      data.iconKey = 'router';
+    });
+
+    expect(lookOf(store, alpha).iconKey).toBe('router');
+    expect(store.history.undoLabel()).toBe(
+      'Changed the icon of Device alpha to router',
+    );
+  });
+
+  // The dialog makes the icon known before the field takes its id (see
+  // InspectorIconControl), and the commit of the field copies it into the
+  // document.
+  test('a custom icon chosen in its dialog is on the device at once, and in the document', async () => {
+    const { doc, alpha } = sampleDocument();
+    const { store, settle, setup, icons } = await openInspector(
+      doc,
+      alpha,
+      (data, provides) => {
+        provides[INSPECTOR_ICONS].shelve(ICON_KEY, PLC);
+        data.icon = ICON_KEY;
+      },
+    );
+    const device = () => findNode(store.doc, alpha.id).device;
+
+    expect(device().icon).toBe(ICON_KEY);
+    expect(store.doc.icons).toEqual({ [ICON_KEY]: PLC });
+    // Said, and undone, by the icon's name, not by its id.
+    expect(store.history.undoLabel()).toBe(
+      'Changed the custom icon of Device alpha to plc',
+    );
+    expect(store.announcement).toBe(
+      'Changed the custom icon of Device alpha to plc',
+    );
+    // Nothing is left for Apply or a save to apply.
+    expect(setup.dirty).toBe(false);
+    expect(settle()).toBe('');
+
+    // The field and the dialog see the diagram's icons.
+    expect(icons.entry(ICON_KEY)).toEqual(PLC);
+    expect(icons.diagram()).toEqual([{ id: ICON_KEY, ...PLC }]);
+    expect(icons.full(ICON_KEY)).toBe(false);
+
+    store.undo();
+
+    expect('icon' in device()).toBe(false);
+    expect('icons' in store.doc).toBe(false);
+    expect(icons.diagram()).toEqual([]);
+    // Chosen once, the icon stays known for the session.
+    expect(icons.entry(ICON_KEY)).toEqual(PLC);
+  });
+
+  test('a custom icon removed says so, and leaves the document', async () => {
+    const { doc, alpha } = sampleDocument();
+    const using = {
+      ...updateNode(doc, alpha.id, { device: { icon: ICON_KEY } }),
+      icons: { [ICON_KEY]: { data: ICON_DATA } },
+    };
+    // An emptied field has no key in the form.
+    const { store } = await openInspector(using, alpha, (data) => {
+      delete data.icon;
+    });
+
+    expect('icon' in findNode(store.doc, alpha.id).device).toBe(false);
+    expect('icons' in store.doc).toBe(false);
+    expect(store.history.undoLabel()).toBe(
+      'Removed the custom icon of Device alpha',
+    );
+
+    // One without a name is said to be so.
+    const renamed = await openInspector(doc, alpha, (data, provides) => {
+      provides[INSPECTOR_ICONS].shelve(ICON_KEY, { name: '', data: ICON_DATA });
+      data.icon = ICON_KEY;
+    });
+
+    expect(renamed.store.history.undoLabel()).toBe(
+      'Changed the custom icon of Device alpha to an unnamed icon',
+    );
+    expect(renamed.store.doc.icons).toEqual({
+      [ICON_KEY]: { data: ICON_DATA },
+    });
+  });
+
+  // An icon the dialog never made known is not in the document, so the
+  // device cannot name it: the edit is made without it, and says so.
+  test('an icon that is not known is left out of the edit', async () => {
+    const { doc, alpha } = sampleDocument();
+    const { store } = await openInspector(doc, alpha, (data) => {
+      data.icon = ICON_KEY;
+    });
+
+    expect('icon' in findNode(store.doc, alpha.id).device).toBe(false);
+    expect('icons' in store.doc).toBe(false);
+    expect(store.announcement).toBe(
+      '1 custom icon was left out: a diagram holds at most 32.',
+    );
+  });
+
+  test('a diagram with 32 icons is full for an icon it does not carry', async () => {
+    const { doc, alpha } = sampleDocument();
+    const carried = Object.fromEntries(
+      Array.from({ length: 32 }, (_, index) => [
+        `sha256:${String(index).padStart(64, '0')}`,
+        { data: ICON_DATA },
+      ]),
+    );
+    const { icons, library } = await openInspector(
+      doc,
+      alpha,
+      () => {},
+      (store) => {
+        store.doc = { ...store.doc, icons: carried };
+      },
+    );
+
+    expect(icons.diagram()).toHaveLength(32);
+    expect(icons.full(ICON_KEY)).toBe(true);
+    expect(icons.full(Object.keys(carried)[0])).toBe(false);
+    // Nothing of an object's own makes an id look carried.
+    expect(icons.full('constructor')).toBe(true);
+    expect(icons.entry('constructor')).toBeUndefined();
+    // The dialog's library is the user's own, on the server.
+    expect(Object.keys(library)).toEqual([
+      'list',
+      'upload',
+      'remove',
+      'failure',
+    ]);
+  });
+
+  // The field shows the error; the device keeps the color it has, and a
+  // valid change of another look field made with it still goes through.
+  test('a color that is no #rrggbb is not applied, and its field says why', async () => {
+    const { doc, alpha } = sampleDocument();
+    const filled = updateNode(doc, alpha.id, {
+      device: { fillColor: '#2f6fbf' },
+    });
+    const { store, errors, settle, setup } = await openInspector(
+      filled,
+      alpha,
+      (data) => {
+        data.fillColor = 'red';
+        data.iconKey = 'router';
+      },
+    );
+
+    expect(lookOf(store, alpha)).toEqual({
+      iconKey: 'router',
+      outlineColor: undefined,
+      fillColor: '#2f6fbf',
+    });
+    expect(store.history.undoLabel()).toBe(
+      'Changed the icon of Device alpha to router',
+    );
+    expect(errors().map((error) => error.message)).toEqual([
+      'Fill Color must be a hex color, such as #2f6fbf',
+    ]);
+    // The bad color stays in the form as an unapplied edit, which a save
+    // does not apply.
+    expect(setup.dirty).toBe(true);
+    expect(settle()).toBe('1 field needs attention');
+    expect(lookOf(store, alpha).fillColor).toBe('#2f6fbf');
+
+    for (const value of ['#abc', '#2f6fbf80', 'rgb(1, 2, 3)', '2f6fbf']) {
+      const opened = await openInspector(doc, alpha, (data) => {
+        data.outlineColor = value;
+      });
+
+      expect(
+        'outlineColor' in findNode(opened.store.doc, alpha.id).device,
+        value,
+      ).toBe(false);
+      expect(
+        opened.errors().map((error) => error.message),
+        value,
+      ).toEqual(['Outline Color must be a hex color, such as #2f6fbf']);
+    }
+  });
+
+  test('other edits made with it stay unapplied until Apply or a save', async () => {
+    const { doc, alpha } = sampleDocument();
+    const { store, settle, spec, setup } = await openInspector(
+      doc,
+      alpha,
+      (data) => {
+        data.fillColor = '#1f7a5a';
+        data.spec.general = { ...data.spec.general, description: 'Edited' };
+      },
+    );
+
+    expect(lookOf(store, alpha).fillColor).toBe('#1f7a5a');
+    expect(spec().general.description).not.toBe('Edited');
+    expect(setup.dirty).toBe(true);
+
+    expect(settle()).toBe('');
+    expect(spec().general.description).toBe('Edited');
+    expect(lookOf(store, alpha).fillColor).toBe('#1f7a5a');
+    expect(store.history.undoLabel()).toBe('Applied changes to Device alpha');
+  });
+
+  // The form keeps its data while it has unapplied edits, so it may show a
+  // color the device no longer has once the device is changed elsewhere.
+  // Only the look fields a change of the form sets are applied, so an edit
+  // of another field does not put that color back, and neither does Apply.
+  test('a color changed elsewhere is not put back by an edit of another field', async () => {
+    const { doc, alpha } = sampleDocument();
+    const { store, settle, spec, setup } = await openInspector(
+      doc,
+      alpha,
+      (data) => {
+        data.fillColor = '#2f6fbf';
+        data.spec.general = { ...data.spec.general, description: 'Edited' };
+      },
+    );
+    const device = () => findNode(store.doc, alpha.id).device;
+    const formData = () => JSON.parse(JSON.stringify(setup.draft));
+
+    expect(device().fillColor).toBe('#2f6fbf');
+    store.commit(
+      updateNode(store.doc, alpha.id, { device: { fillColor: '#ffd400' } }),
+      'Changed elsewhere',
+    );
+
+    const edited = formData();
+
+    expect(edited.fillColor).toBe('#2f6fbf');
+    edited.spec.general.description = 'Edited again';
+    setup.onChange({ data: edited, errors: [] });
+
+    expect(device().fillColor).toBe('#ffd400');
+    expect(store.history.undoLabel()).toBe('Changed elsewhere');
+    expect(settle()).toBe('');
+    expect(spec().general.description).toBe('Edited again');
+    expect(device().fillColor).toBe('#ffd400');
+
+    // A new icon chosen then is applied alone.
+    setup.onChange({
+      data: { ...formData(), iconKey: 'router' },
+      errors: [],
+    });
+
+    expect(device()).toMatchObject({ iconKey: 'router', fillColor: '#ffd400' });
+    expect(store.history.undoLabel()).toBe(
+      'Changed the icon of Device alpha to router',
+    );
+  });
+
+  // While a conflict is resolved, the store refuses every edit. The look
+  // then stays in the form as an unapplied edit, for Apply once it is
+  // resolved.
+  test('a look the store refuses stays unapplied', async () => {
+    const { doc, alpha } = sampleDocument();
+    const { store, settle, setup } = await openInspector(
+      doc,
+      alpha,
+      (data) => {
+        data.fillColor = '#2f6fbf';
+      },
+      (opened) => {
+        opened.resolvingConflict = true;
+      },
+    );
+    const device = () => findNode(store.doc, alpha.id).device;
+
+    expect('fillColor' in device()).toBe(false);
+    expect(setup.dirty).toBe(true);
+    expect(settle()).toBe('the conflict is being resolved');
+
+    store.resolvingConflict = false;
+
+    expect(settle()).toBe('');
+    expect(device().fillColor).toBe('#2f6fbf');
+  });
+
+  test('a read-only draft takes no look', async () => {
+    const { doc, alpha } = sampleDocument();
+    const { store } = await openInspector(
+      doc,
+      alpha,
+      (data) => {
+        data.fillColor = '#2f6fbf';
+      },
+      (opened) => {
+        opened.readOnly = true;
+      },
+    );
+
+    expect('fillColor' in findNode(store.doc, alpha.id).device).toBe(false);
+  });
+
+  // A switch's form is short, so its colors wait for Apply with the rest.
+  test("a switch's colors wait for Apply", async () => {
+    const { doc, sw } = sampleDocument();
+    const { store, settle } = await openInspector(doc, sw, (data) => {
+      data.fillColor = '#6b6f18';
+      data.outlineColor = '#a3273f';
+      data.lineStyle = 'dotted';
+    });
+
+    expect(findNode(store.doc, sw.id).switch).toEqual(sw.switch);
+    expect(settle()).toBe('');
+    expect(findNode(store.doc, sw.id).switch).toEqual({
+      ...sw.switch,
+      outlineColor: '#a3273f',
+      fillColor: '#6b6f18',
+    });
+    expect(store.doc.networks[0].lineStyle).toBe('dotted');
+    // One edit, so one Undo puts all three back.
+    expect(store.history.undoLabel()).toBe('Applied changes to Network EXP');
+    store.undo();
+    expect(findNode(store.doc, sw.id).switch).toEqual(sw.switch);
+    expect('lineStyle' in store.doc.networks[0]).toBe(false);
   });
 });
 

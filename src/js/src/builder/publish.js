@@ -91,11 +91,26 @@ export function actionFor(name, existing = []) {
 const UPLOADED_TOKEN = 'uploaded/';
 export const PUBLISHED_TOKEN = 'builder-doc/';
 export const FILE_TOKEN = 'builder-file/';
+// The token of a draft converted from a diagram of the legacy Builder that
+// came without a topology. It is an upload's: the draft names no stored
+// config, so it updates none.
+export const LEGACY_TOKEN = `${UPLOADED_TOKEN}legacy-xml`;
+
+// Whether the draft was imported from the stored topology `name` itself.
+function importedFromTopology(name, draft = {}) {
+  const { source } = draft;
+
+  return (
+    !String(draft.sourceToken || '').startsWith(UPLOADED_TOKEN) &&
+    source?.kind === 'topology' &&
+    source.name === name
+  );
+}
 
 /**
  * Whether this draft may update the existing config `name`, as the server
  * decides (topologyUpdateRefusal and preflightExperiment in
- * web/builder_v2_publish.go).
+ * web/builder_publish.go).
  *
  * A draft may update a topology that holds one of its own published
  * diagrams: one it published, whatever it was loaded from, the one it was
@@ -103,7 +118,8 @@ export const FILE_TOKEN = 'builder-file/';
  * again after further edits. It may also update a topology whose diagram is
  * read from the Builder file it names, when the draft was opened from that
  * file. Otherwise it may update the topology it was generated from, unless
- * that was an upload, or the one its source experiment was built from. The
+ * that was an upload, or the one its source experiment was built from (see
+ * updateBlocker for a topology that has a legacy Builder diagram). The
  * server also refuses a topology changed by anyone else since the draft
  * published it, and one whose Builder file, or whose own spec, is no longer
  * what the draft was opened from. The client cannot see either: the server
@@ -170,18 +186,22 @@ export function draftCanUpdate(kind, name, draft = {}) {
   }
 
   return (
-    !uploaded &&
-    ((source?.kind === 'topology' && source.name === name) ||
-      (source?.kind === 'experiment' && source.topology === name))
+    importedFromTopology(name, draft) ||
+    (!uploaded && source?.kind === 'experiment' && source.topology === name)
   );
 }
 
 /**
- * Why this draft may not update the existing config `name`: 'legacy' for a
- * topology the legacy XML Builder owns, which the server never lets Builder
- * v2 update, 'changed' for one the server refused because someone else has
- * changed it since this draft published it, 'source' when draftCanUpdate()
- * says no, or '' when it may.
+ * Why this draft may not update the existing config `name`: 'changed' for
+ * one the server refused because someone else has changed it since this
+ * draft published it, 'source' when draftCanUpdate() says no, or '' when it
+ * may.
+ *
+ * A topology that still has a diagram of the legacy Builder (a builder-xml
+ * annotation) is updated only by the draft imported from that topology
+ * itself: that import converted the diagram, which the update replaces. A
+ * draft imported from an experiment built from the topology never held it
+ * (topologyUpdateMatchesSource in web/builder_publish.go).
  *
  * @param {string} kind 'topology' or 'experiment'
  * @param {string} name existing config name
@@ -190,20 +210,68 @@ export function draftCanUpdate(kind, name, draft = {}) {
  * @param {object} draft as draftCanUpdate() takes it, and changedTargets:
  *   the "<kind>/<name>" of each config the server refused so (see
  *   publishRefusal)
- * @returns {''|'legacy'|'changed'|'source'}
+ * @returns {''|'changed'|'source'}
  */
 export function updateBlocker(kind, name, entries = [], draft = {}) {
-  const entry = (entries || []).find((item) => item?.name === name);
-
-  if (kind === 'topology' && entry?.builder === LEGACY_ANNOTATION) {
-    return 'legacy';
-  }
-
   if ((draft.changedTargets || []).includes(`${kind}/${name}`)) {
     return 'changed';
   }
 
+  if (
+    kind === 'topology' &&
+    hasLegacyDiagram(name, entries) &&
+    !importedFromTopology(name, draft)
+  ) {
+    return 'source';
+  }
+
   return draftCanUpdate(kind, name, draft) ? '' : 'source';
+}
+
+/**
+ * Whether the server's topology `name` still has a diagram of the legacy
+ * Builder, which an update replaces.
+ *
+ * @param {string} name topology name
+ * @param {Array} entries the server's topologies, as names or source
+ *   entries
+ * @returns {boolean}
+ */
+export function hasLegacyDiagram(name, entries = []) {
+  return (entries || []).some(
+    (entry) => entry?.name === name && entry.builder === LEGACY_ANNOTATION,
+  );
+}
+
+// The warning of an import that could not read the legacy Builder diagram
+// of its topology (FromLegacyTopology in types/builder/legacy.go), which the
+// document's source keeps: nothing of that diagram is in the document.
+const LEGACY_UNREAD = /^The legacy diagram of topology .+ could not be read \(/;
+
+/**
+ * What updating the server's topology `name` from this diagram does with
+ * the topology's legacy Builder diagram: '' when it has none, 'replaced'
+ * when the diagram was converted into this one, and 'removed' when the
+ * import could not read it, so that nothing of it is kept (see
+ * ReplaceLegacyDiagram in api/builder/publish.go).
+ *
+ * @param {string} name topology name
+ * @param {Array} entries the server's topologies, as names or source
+ *   entries
+ * @param {object} [source] the document's source
+ * @returns {''|'replaced'|'removed'}
+ */
+export function legacyDiagramUpdate(name, entries = [], source = null) {
+  if (!hasLegacyDiagram(name, entries)) {
+    return '';
+  }
+
+  const unread =
+    source?.kind === 'topology' &&
+    source.name === name &&
+    (source.warnings || []).some((warning) => LEGACY_UNREAD.test(warning));
+
+  return unread ? 'removed' : 'replaced';
 }
 
 function article(kind) {
@@ -213,10 +281,6 @@ function article(kind) {
 // Why an update is blocked (see updateBlocker), and what to do instead.
 function blockedReason(kind, blocker) {
   const instead = `Enter another name to create a new ${kind}.`;
-
-  if (blocker === 'legacy') {
-    return `belongs to the legacy XML Builder and cannot be updated here. ${instead}`;
-  }
 
   if (blocker === 'changed') {
     return (
@@ -239,16 +303,29 @@ function blockedReason(kind, blocker) {
  * @param {string} kind 'topology' or 'experiment'
  * @param {boolean} exists a config of that name exists
  * @param {string} [blocker] updateBlocker() for it
+ * @param {boolean|string} [legacy] the topology of that name has a diagram
+ *   of the legacy Builder (see hasLegacyDiagram), which the update
+ *   replaces, or removes when it is 'removed' (see legacyDiagramUpdate)
  * @returns {string}
  */
-export function targetHint(kind, exists, blocker = '') {
+export function targetHint(kind, exists, blocker = '', legacy = false) {
   if (!exists) {
     return `A new ${kind} will be created.`;
   }
 
-  return blocker
-    ? `${article(kind)} ${kind} with this name ${blockedReason(kind, blocker)}`
-    : `${article(kind)} ${kind} with this name exists and will be updated.`;
+  if (blocker) {
+    return `${article(kind)} ${kind} with this name ${blockedReason(kind, blocker)}`;
+  }
+
+  const updated = `${article(kind)} ${kind} with this name exists and will be updated.`;
+
+  if (!legacy || kind !== 'topology') {
+    return updated;
+  }
+
+  return legacy === 'removed'
+    ? `${updated} Its legacy Builder diagram could not be read and is removed.`
+    : `${updated} Its legacy Builder diagram is replaced by this diagram.`;
 }
 
 /**
@@ -273,6 +350,35 @@ export function publishLabel(topology, experiment) {
   return second === first.toLowerCase()
     ? `${first} topology and experiment`
     : `${first} topology and ${second} experiment`;
+}
+
+// How many included topologies a sentence names before it counts the rest,
+// as the server's import warning does (maxListedIncludes in
+// types/builder/generate.go).
+const NAMED_INCLUDES = 8;
+
+/**
+ * What the Publish dialog's summary adds for a diagram that includes
+ * topologies and shows none of their nodes: one combined on import whose
+ * includes could not all be read, or one whose includes were never
+ * resolved. Publishing writes them to the topology's includeTopologies.
+ *
+ * @param {string[]} [includes] the diagram's source.includeTopologies
+ * @returns {string} " The published topology also includes site-b by
+ *   reference.", with its leading space, or '' when there are none
+ */
+export function keptIncludesText(includes = []) {
+  const names = (Array.isArray(includes) ? includes : []).filter(Boolean);
+
+  if (names.length === 0) {
+    return '';
+  }
+
+  const more = names.length - NAMED_INCLUDES;
+  const named =
+    more > 0 ? [...names.slice(0, NAMED_INCLUDES), `${more} more`] : names;
+
+  return ` The published topology also includes ${listOf(named)} by reference.`;
 }
 
 /**
@@ -481,10 +587,6 @@ const NOT_SOURCE =
 const CHANGED_SINCE =
   /^(topology|experiment) (\S+) changed after this draft published it\.?$/i;
 
-// The server's refusal of an update to a topology the legacy XML Builder owns.
-const LEGACY_TARGET =
-  /^topology (\S+) belongs to the legacy XML Builder and cannot be updated here\.?$/i;
-
 // A refusal that names its config ("running experiment lab cannot be
 // updated", "experiment lab is not valid").
 const NAMED_TARGET =
@@ -608,15 +710,6 @@ export function publishRefusal(reason, intent = {}, context = {}) {
       message: updateProblem(changedKind, changed[2], 'changed'),
       field: targetField(changedKind),
       changed: `${changedKind}/${changed[2]}`,
-    };
-  }
-
-  const legacy = LEGACY_TARGET.exec(text);
-
-  if (legacy && intent.topology?.name === legacy[1]) {
-    return {
-      message: updateProblem('topology', legacy[1], 'legacy'),
-      field: 'topologyName',
     };
   }
 

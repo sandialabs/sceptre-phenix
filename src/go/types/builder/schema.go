@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -111,6 +112,8 @@ func Schema() (map[string]any, error) {
 				"Automatic layout that last laid this document out, which the editor names in its layout menu. " +
 					"Empty, or an id the editor does not know, means the positions were not made by a layout. Never published.",
 			),
+			keyTemplates: templatesDef(),
+			keyIcons:     iconsDef(),
 		},
 	)
 
@@ -297,6 +300,27 @@ const (
 	keyCreatedAt   = "createdAt"
 	keyUpdatedBy   = "updatedBy"
 	keyUpdatedAt   = "updatedAt"
+	keyTemplates   = "templates"
+	keyIcons       = "icons"
+
+	keyIconKey      = "iconKey"
+	keyIcon         = "icon"
+	keyOutlineColor = "outlineColor"
+	keyFillColor    = "fillColor"
+	keyLineStyle    = "lineStyle"
+	keyBorderStyle  = "borderStyle"
+
+	// The definitions the presentation fields refer to.
+	defHexColor = "hexColor"
+	defIconRef  = "iconRef"
+
+	// digestPattern matches a digest (see [IsDigest]), which is also the
+	// form of an icon id (see [IconID]).
+	digestPattern = `sha256:[0-9a-f]{64}`
+
+	// base64Pattern matches standard base64 with padding and no line
+	// breaks, as an icon's data is written.
+	base64Pattern = `^[A-Za-z0-9+/]+={0,2}$`
 
 	// noControlPattern matches text without control characters, as
 	// [Document.Validate] requires of the document name and of the users the
@@ -404,7 +428,7 @@ func boolDef() map[string]any {
 // digestDef builds a schema for a "sha256:<hex>" content digest.
 func digestDef(description string) map[string]any {
 	def := stringDef(description)
-	def["pattern"] = `^sha256:[0-9a-f]{64}$`
+	def["pattern"] = `^` + digestPattern + `$`
 
 	return def
 }
@@ -451,8 +475,21 @@ func nodeKindKeys() []NodeKind {
 // builderDefs returns the builder specific definitions of the schema bundle.
 func builderDefs() map[string]any {
 	defs := map[string]any{
-		"identifier":      identifierDef(),
-		"iconKey":         enumDef("Builder local icon hint; empty selects the default icon.", iconKeyEnum()),
+		"identifier": identifierDef(),
+		keyIconKey:   enumDef("Builder local icon hint; empty selects the default icon.", iconKeyEnum()),
+		defHexColor:  hexColorDef(),
+		keyLineStyle: enumDef(
+			"Dash pattern of a connection line; empty selects the automatic pattern.",
+			styleEnum(lineStyles),
+		),
+		keyBorderStyle: enumDef(
+			"Border pattern of a group; empty selects the default, dashed.",
+			styleEnum(borderStyles),
+		),
+		defIconRef:        iconRefDef(),
+		keyIcon:           iconDef(),
+		"template":        templateDef(),
+		"templateDevice":  templateDeviceDef(),
 		keyPosition:       positionDef(),
 		keySize:           sizeDef(),
 		keyViewport:       viewportDef(),
@@ -527,18 +564,27 @@ func interfaceHandleDef() map[string]any {
 	)
 }
 
+// nodeSpecDef builds the schema of a complete phenix topology node spec, as
+// a device and a template hold one.
+func nodeSpecDef() map[string]any {
+	return map[string]any{
+		keyDescription: "Complete phenix topology node spec.",
+		"oneOf": []any{
+			ref(PhenixDefPrefix + "minimega_node"),
+			ref(PhenixDefPrefix + "external_node"),
+		},
+	}
+}
+
 func deviceDef() map[string]any {
 	return objectDef("", []string{"hostname", keySpec, "interfaces"}, map[string]any{
-		"hostname": nameDef(""),
-		"iconKey":  ref("iconKey"),
-		keySpec: map[string]any{
-			keyDescription: "Complete phenix topology node spec.",
-			"oneOf": []any{
-				ref(PhenixDefPrefix + "minimega_node"),
-				ref(PhenixDefPrefix + "external_node"),
-			},
-		},
-		"interfaces": arrayDef(ref("interfaceHandle")),
+		"hostname":      nameDef(""),
+		keyIconKey:      ref(keyIconKey),
+		keyIcon:         ref(defIconRef),
+		keyOutlineColor: ref(defHexColor),
+		keyFillColor:    ref(defHexColor),
+		keySpec:         nodeSpecDef(),
+		"interfaces":    arrayDef(ref("interfaceHandle")),
 		"includedFrom": nameDef(
 			"Topology that defines this device when it came from an included topology. " +
 				"Included devices are shown read only and are never published.",
@@ -550,7 +596,11 @@ func switchDef() map[string]any {
 	return objectDef(
 		"Visual hub bound to exactly one network.",
 		[]string{keyNetworkID},
-		map[string]any{keyNetworkID: ref("identifier")},
+		map[string]any{
+			keyNetworkID:    ref("identifier"),
+			keyOutlineColor: ref(defHexColor),
+			keyFillColor:    ref(defHexColor),
+		},
 	)
 }
 
@@ -563,10 +613,128 @@ func noteDef() map[string]any {
 
 func groupDef() map[string]any {
 	return objectDef("", nil, map[string]any{
-		"title":     stringDef(""),
-		keyColor:    stringDef(""),
-		"collapsed": boolDef(),
+		"title":        stringDef(""),
+		keyDescription: stringDef(""),
+		keyColor:       stringDef(""),
+		keyBorderStyle: ref(keyBorderStyle),
+		keyIconKey:     ref(keyIconKey),
+		keyIcon:        ref(defIconRef),
+		"collapsed":    boolDef(),
 	})
+}
+
+// hexColorDef builds the schema of an outline or fill color. The empty
+// string is in the pattern, as it is in the iconKey enum, because the editor
+// may send it for none.
+func hexColorDef() map[string]any {
+	def := stringDef("Opaque color as #rrggbb; empty for none.")
+	def["pattern"] = `^(` + hexColorPattern + `)?$`
+
+	return def
+}
+
+// styleEnum returns the enum of a line or border style, including the empty
+// default.
+func styleEnum(styles []string) []any {
+	return append([]any{""}, anyStrings(styles)...)
+}
+
+// iconRefDef builds the schema of the custom icon a device, a group or a
+// template names. That the document carries it is checked by
+// [Document.Validate], not by this schema.
+func iconRefDef() map[string]any {
+	def := stringDef("Custom icon of the document's icons; empty for none.")
+	def["pattern"] = `^(` + digestPattern + `)?$`
+
+	return def
+}
+
+// iconDef builds the schema of a custom icon. maxLength counts the base64
+// text of the largest PNG an icon may be.
+func iconDef() map[string]any {
+	name := stringDef("")
+	name["maxLength"] = MaxIconNameBytes
+	name["pattern"] = noControlPattern
+
+	data := stringDef("")
+	data["maxLength"] = base64.StdEncoding.EncodedLen(MaxIconBytes)
+	data["pattern"] = base64Pattern
+	data["contentEncoding"] = "base64"
+	data["contentMediaType"] = "image/png"
+
+	return objectDef(
+		fmt.Sprintf(
+			"Custom icon: a PNG of at most %d by %d pixels and %d bytes.",
+			MaxIconPixels, MaxIconPixels, MaxIconBytes,
+		),
+		[]string{"data"},
+		map[string]any{keyName: name, "data": data},
+	)
+}
+
+// iconsDef builds the schema of the document's custom icons, bounded the way
+// [ValidateIcons] bounds them. That a key is the digest of its icon's bytes,
+// and that the bytes are an accepted PNG, JSON Schema cannot express.
+func iconsDef() map[string]any {
+	return map[string]any{
+		keyType: "object",
+		keyDescription: "Custom icons the nodes and templates use, by icon id: sha256: and the SHA-256 " +
+			"of the PNG bytes. Never published.",
+		"maxProperties":        MaxDocumentIcons,
+		"propertyNames":        map[string]any{"pattern": `^` + digestPattern + `$`},
+		"additionalProperties": ref(keyIcon),
+	}
+}
+
+// templatesDef builds the schema of the document's templates.
+func templatesDef() map[string]any {
+	def := arrayDef(ref("template"))
+	def[keyDescription] = "Device templates saved with this diagram. Never published to a config."
+	def["maxItems"] = MaxTemplates
+
+	return def
+}
+
+// templateDef builds the schema of a device template, bounded the way
+// [Template.Issues] bounds one. maxLength counts characters, as it does for
+// the document name.
+func templateDef() map[string]any {
+	name := stringDef("")
+	name["minLength"] = 1
+	name["maxLength"] = MaxTemplateNameBytes
+	name["pattern"] = noControlPattern
+
+	description := stringDef("Shown with the template. Never written into a node.")
+	description["maxLength"] = MaxTemplateDescriptionBytes
+	description["pattern"] = noControlPattern
+
+	return objectDef(
+		"Named set of prefilled fields for a device node.",
+		[]string{keyID, keyName, "device"},
+		map[string]any{
+			keyID:          ref("identifier"),
+			keyName:        name,
+			keyDescription: description,
+			"device":       ref("templateDevice"),
+		},
+	)
+}
+
+// templateDeviceDef builds the schema of what a template fills in: the
+// fields of a device, but its hostname, its interface handles and where it
+// was included from.
+func templateDeviceDef() map[string]any {
+	return objectDef(
+		fmt.Sprintf("Fields a template fills in. At most %d bytes as JSON.", MaxTemplateDeviceBytes),
+		[]string{keySpec},
+		map[string]any{
+			keyIconKey:      ref(keyIconKey),
+			keyIcon:         ref(defIconRef),
+			keyOutlineColor: ref(defHexColor),
+			keyFillColor:    ref(defHexColor),
+			keySpec:         nodeSpecDef(),
+		},
+	)
 }
 
 func nodeDef() map[string]any {
@@ -648,6 +816,7 @@ func networkDef() map[string]any {
 			},
 			keyDescription: stringDef(""),
 			keyColor:       stringDef(""),
+			keyLineStyle:   ref(keyLineStyle),
 		},
 	)
 }
@@ -666,6 +835,7 @@ func edgeDef() map[string]any {
 			keyNetworkID:     ref("identifier"),
 			"label":          stringDef(""),
 			keyColor:         stringDef("Drawn in place of the network's color."),
+			keyLineStyle:     refDef(keyLineStyle, "Drawn in place of the network's line style."),
 			"route":          routeDef(),
 		},
 	)
@@ -738,6 +908,9 @@ func sourceDef() map[string]any {
 			keyUpdatedAt:  stringDef("metadata.updated of the source config at import time."),
 			"includeTopologies": arrayDef(
 				nameDef("Topology included by the generated source topology."),
+			),
+			"unresolvedIncludes": arrayDef(
+				nameDef("Included topology whose nodes are not in the document."),
 			),
 			"annotations": annotationsDef(),
 			"warnings":    arrayDef(stringDef("")),

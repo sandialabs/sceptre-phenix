@@ -42,7 +42,7 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
 |---|---|
 | Configs | `GET/POST /configs`, `GET/PUT/DELETE /configs/{kind}/{name}`, `POST /configs/download` |
 | Schemas | `GET /schemas/{version}`, `GET /schemas/{kind}/{version}` (404 for an unknown kind or version) |
-| Experiments | `GET/POST /experiments`, `GET /experiments/{name}`, `PATCH /experiments/{name}`, `DELETE /experiments/{name}`, `POST /experiments/{name}/start`, `POST /experiments/{name}/stop`, `GET /experiments/{name}/apps`, `POST/PUT /experiments/builder` |
+| Experiments | `GET/POST /experiments`, `GET /experiments/{name}`, `PATCH /experiments/{name}`, `DELETE /experiments/{name}`, `POST /experiments/{name}/start`, `POST /experiments/{name}/stop`, `GET /experiments/{name}/apps` |
 | Experiment detail | `GET /experiments/{name}/topology`, `GET /experiments/{name}/topology/search`, `POST/DELETE /experiments/{name}/trigger`, `GET/POST /experiments/{name}/schedule`, `GET /experiments/{name}/soh` (state of health), `GET /experiments/{name}/captures`, `GET /experiments/{name}/files`, `GET /experiments/{name}/files/{filename}` |
 | Netflow | `GET/POST/DELETE /experiments/{exp}/netflow`, `GET /experiments/{exp}/netflow/ws` |
 | Subnet captures | `POST /experiments/{exp}/captureSubnet`, `POST /experiments/{exp}/stopCaptureSubnet` |
@@ -54,8 +54,7 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
 | Realtime | `GET /ws` (websocket broker for UI events/logs), `GET /logs`, `POST /console`, `GET /console/{pid}/ws`, `POST /console/{pid}/size` |
 | SCORCH | `GET /experiments/{name}/scorch/pipelines`, `GET /experiments/{name}/scorch/pipelines/{run}/{loop}`, `POST/DELETE /experiments/{name}/scorch/pipelines/{run}`, `GET /experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}[/ws]`, `/experiments/{name}/scorch/terminals*` |
 | Settings | `GET/POST /settings`, `GET /settings/password`, `GET /settings/timeout` |
-| Builder | `GET/POST /builder/topologies`, `GET/PUT /builder/topologies/{name}`; the builder UI itself is served from the server root as `GET /builder` and `POST /builder/save` (outside `/api/v1`). Payloads and workflow are in [`builder.md`](builder.md) |
-| Builder v2 (only with the `builder-v2` feature enabled) | `/builder-v2/drafts…`, `/builder-v2/sources`, `/builder-v2/generate`, `/builder-v2/export/topology`, `/builder-v2/documents`, `/builder-v2/topologies/{topology}/document`, `/schemas/builder-v2/v1`; full list in [`builder-v2.md`](builder-v2.md#routes) |
+| Builder | `/builder/drafts…`, `/builder/sources`, `/builder/generate`, `/builder/export/topology`, `/builder/documents`, `/builder/topologies/{topology}/document`, `/schemas/builder/v1`; full list in [`builder.md`](builder.md#routes) |
 | Workflow | `POST /workflow/apply/{branch}`, `POST /workflow/configs/{branch}` |
 | Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode) |
 

@@ -29,6 +29,11 @@ vi.mock('@/builder/api.js', async (importOriginal) => {
 });
 
 import {
+  GROUP_PATTERN_STORAGE_KEY,
+  readGroupPattern,
+  rememberGroupPattern,
+} from '@/builder/grouping.js';
+import {
   keymapState,
   setShortcut,
   SHORTCUTS_STORAGE_KEY,
@@ -76,7 +81,7 @@ beforeEach(() => {
 });
 
 describe('logout', () => {
-  test("clears what Builder v2 kept here of the user's: keys, lists, recent commands, the open diagram and local drafts, but not the preferences", async () => {
+  test("clears what Builder kept here of the user's: keys, lists, recent commands, the open diagram and local drafts, but not the preferences", async () => {
     // The preferences are the modules' own keys, and the recent commands,
     // which name drafts and nodes, are not among them.
     expect([...BUILDER_PREFERENCE_KEYS].sort()).toEqual(
@@ -89,6 +94,8 @@ describe('logout', () => {
       ].sort(),
     );
     expect(BUILDER_PREFERENCE_KEYS).not.toContain(RECENT_STORAGE_KEY);
+    // The Auto-group pattern used last is the user's own text.
+    expect(BUILDER_PREFERENCE_KEYS).not.toContain(GROUP_PATTERN_STORAGE_KEY);
 
     const local = memoryStorage({
       'phenix.builder.theme': 'dark',
@@ -131,6 +138,8 @@ describe('logout', () => {
     store.autosave = { dispose };
     setShortcut('palette.open', ['Mod+J'], local);
     rememberCommand('structure.connect', ['device-1', 'switch-1'], local);
+    rememberGroupPattern('^secret-lab-(\\d+)', local);
+    expect(readGroupPattern(local)).toBe('^secret-lab-(\\d+)');
     expect(keymapState.overrides).toHaveProperty('palette.open');
 
     await expect(
@@ -169,6 +178,7 @@ describe('logout', () => {
     expect(store.readOnly).toBe(false);
     expect(store.autosave).toBeNull();
     expect(readRecent()).toEqual([]);
+    expect(readGroupPattern(local)).toBe('');
     // The preferences still apply.
     expect(store.theme).toBe('dark');
     expect(store.resolvedTheme).toBe('dark');

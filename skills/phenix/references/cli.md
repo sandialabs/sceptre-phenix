@@ -41,11 +41,10 @@ VM's filesystem directly from the web UI (backed by the `/experiments/{exp}/vms/
 disabled by default and requires restarting `phenix ui` to take effect. The CLI
 equivalents (`phenix vm mount`/`unmount`) are always available.
 
-`phenix ui --features builder-v2` enables Builder v2, the web topology
-editor at `/builder-v2`, the same way. Its drafts, sharing and Publish have
-no CLI equivalent; the one CLI command for its documents is
-[`phenix builder publish`](#phenix-builder--publish-a-builder-document-as-a-topology),
-which works with the feature on or off. See [`builder-v2.md`](builder-v2.md).
+The Builder, the web topology editor at `/builder`, has no CLI equivalent
+for its drafts, sharing and Publish; the one CLI command for its documents is
+[`phenix builder publish`](#phenix-builder--publish-a-builder-document-as-a-topology).
+See [`builder.md`](builder.md).
 
 ## `phenix config` — manage stored configs (topology/scenario/experiment/image/user/role)
 
@@ -67,13 +66,13 @@ a tab) is written double quoted.
 
 Annotations are text, except `builder-doc` on a Topology, which every JSON
 and YAML form of a config shows as a map of `digest`, `id` and `path` (see
-[`builder-v2.md`](builder-v2.md#the-builder-doc-reference)). A Topology
+[`builder.md`](builder.md#the-builder-doc-reference)). A Topology
 whose `builder-doc` is not valid is refused on create and update, also with
 `--skip-validation`. `config edit` can change an annotation but not remove
 one (annotation maps merge).
 
 `config create` takes files and directories (walked recursively). A Builder
-document (the Builder v2 JSON or YAML export) is not a config: one found in
+document (a Builder JSON or YAML download) is not a config: one found in
 a directory is skipped with the log line `skipped Builder document; use
 phenix builder publish`, and one named on the command line is refused with
 `<file> is a Builder document, not a configuration: use "phenix builder
@@ -88,12 +87,12 @@ phenix builder publish </path/to/document> [-n|--name <topology>] [--update] [--
 
 `publish` is the only subcommand. It reads one Builder document file (Builder
 JSON or Builder YAML, decided by content; at most 5 MiB; no `${NAME}`
-expansion), checks it as Builder v2's Publish does, and stores the Topology
+expansion), checks it as Builder's Publish does, and stores the Topology
 config it describes, with the document stored as the topology's published
 diagram and named in its `builder-doc` annotation (`digest` and `id`). It
-writes to the store from the CLI process: it needs no running `phenix ui`
-and no `builder-v2` feature. Topology only: no scenario, no experiment, no
-VLAN aliases (each is a warning when the document has one).
+writes to the store from the CLI process: it needs no running `phenix ui`.
+Topology only: no scenario, no experiment, no VLAN aliases (each is a warning
+when the document has one).
 
 | Flag | Meaning |
 |---|---|
@@ -123,10 +122,10 @@ it would discard that change`; `<file> is not a valid Builder document:
 
 A running `phenix ui` on the same store sees the topology after a page
 reload; nothing serializes a CLI publish with a UI publish of the same
-topology. With the `builder-v2` feature off, the Configs page will not open
-the published topology as text (it has `builder-doc`); `phenix config edit`
-still does. Details and the full rules are in
-[`builder-v2.md`](builder-v2.md#cli-phenix-builder-publish).
+topology. The Configs page opens the published topology in the Builder, not
+as text (it has `builder-doc`); `phenix config edit` edits it as text.
+Details and the full rules are in
+[`builder.md`](builder.md#cli-phenix-builder-publish).
 
 ## `phenix experiment` — experiment lifecycle
 

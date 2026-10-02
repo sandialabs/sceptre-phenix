@@ -2,11 +2,11 @@
 //
 // Leaving (Back to drafts, another page, Upload replacing the diagram, a
 // reload or closing the tab) and reading the whole diagram (Publish,
-// Export) first save what the user typed in the Inspector and did not
+// Download) first save what the user typed in the Inspector and did not
 // apply: the view's saveUnapplied applies it as one edit named
 // SAVED_UNAPPLIED (see history.js), which the save queue then sends like
 // any other. Edits that fail their checks cannot be applied: leaving then
-// asks, naming their fields, and Publish and Export say what blocks them.
+// asks, naming their fields, and Publish and Download say what blocks them.
 // A reload or a closed tab cannot wait for the local store's write either:
 // what it may not hold yet is copied at once (see keepForUnload in
 // autosave.js).
@@ -25,7 +25,7 @@ export const LEAVE_SAVE_WAIT_MS = 2000;
 
 /**
  * What keeps the Inspector's unapplied edits from being saved, published or
- * exported.
+ * downloaded.
  *
  * @param {{title: string, fields: string[]}} unapplied the element the
  *   edits were made on, and the fields that need fixing
@@ -38,11 +38,11 @@ export function unappliedText({ title, fields }, done = 'saved') {
 }
 
 /**
- * What Publish or Export says while the Inspector holds edits it cannot
+ * What Publish or Download says while the Inspector holds edits it cannot
  * apply, in place of leaving them out.
  *
  * @param {{title: string, fields: string[]}} unapplied
- * @param {string} done 'published' or 'exported'
+ * @param {string} done 'published' or 'downloaded'
  * @returns {string}
  */
 export function unappliedBlock(unapplied, done) {

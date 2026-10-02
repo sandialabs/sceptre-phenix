@@ -62,6 +62,11 @@ const api = vi.hoisted(() => ({
     etag: '"4"',
   })),
   generate: vi.fn(async () => ({ document: null, warnings: ['a warning'] })),
+  convertLegacy: vi.fn(async () => ({
+    document: null,
+    warnings: [],
+    source: null,
+  })),
   listDocuments: vi.fn(async () => [{ id: 'p1', name: 'Published' }]),
   getDocument: vi.fn(async () => sampleDocument().doc),
   // The document a topology references: here, its Builder file's.
@@ -119,7 +124,7 @@ vi.mock('@/builder/idb.js', async (importOriginal) => {
 import { createMemoryStore } from '@/builder/idb.js';
 import { createDocument, findNode, STAMP_KEYS } from '@/builder/model.js';
 import { builderSchemaV1 } from '@/builder/schema.js';
-import { useBuilderStore } from '@/builder/store.js';
+import { draftForPublished, useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument } from './fixtures.js';
 
@@ -1617,7 +1622,7 @@ describe('server data', () => {
     expect(store.error).toBe('');
   });
 
-  test('Export reads a stored scenario again, and says why it cannot', async () => {
+  test('Download reads a stored scenario again, and says why it cannot', async () => {
     const before = { apps: [{ name: 'ntp' }] };
     const now = { apps: [{ name: 'scada', hosts: [{ hostname: 'plc' }] }] };
 
@@ -1687,7 +1692,7 @@ describe('server data', () => {
       digest: 'sha256:1',
       documents: [{ id: 'p1' }],
     });
-    // Export dates a GEXF file by it.
+    // Download dates a GEXF file by it.
     expect(store.draftRecord.updated).toBe('2026-03-04T05:06:07Z');
 
     // A publish keeps the draft record the server returns.
@@ -2019,8 +2024,8 @@ describe('server data', () => {
     expect(store.etag).toBeNull();
   });
 
-  // Generate is named Import in the UI. The user may still cancel on its
-  // warnings, so nothing says it imported anything: GenerateDialog has the
+  // store.generate serves Import. The user may still cancel on its
+  // warnings, so nothing says it imported anything: ImportDialog has the
   // import announced once the draft exists.
   test('an import announces nothing before its draft exists', async () => {
     const { doc } = sampleDocument();
@@ -2125,6 +2130,276 @@ describe('server data', () => {
       'Could not import the diagram. Config Topology/gone not found.',
     );
     expect(store.errorField).toBe('name');
+  });
+
+  test('a copy and a combined import say they are linked to no config', async () => {
+    const { doc } = sampleDocument();
+    const answer = {
+      document: { ...doc, name: 'core-copy', source: { kind: 'manual' } },
+      warnings: [],
+      source: { fullName: 'Topology/core', name: 'core', stored: true },
+    };
+    const stored = { kind: 'topology', name: 'core' };
+
+    for (const request of [
+      { ...stored, copy: true, newName: 'core-copy' },
+      { ...stored, includes: 'combine', newName: 'core-copy' },
+      { content: 'kind: Topology', includes: 'combine', newName: 'core-copy' },
+    ]) {
+      api.generate.mockResolvedValueOnce(structuredClone(answer));
+
+      const result = await store.generate(request);
+
+      expect(api.generate).toHaveBeenLastCalledWith(request);
+      expect(result.detached).toBe(true);
+      // The source is still the config that was read.
+      expect(result.source.fullName).toBe('Topology/core');
+      expect(result.document.name).toBe('core-copy');
+    }
+
+    // A plain import, and one that keeps its includes, is still linked.
+    for (const request of [stored, { ...stored, includes: 'keep' }]) {
+      api.generate.mockResolvedValueOnce(structuredClone(answer));
+
+      expect(await store.generate(request)).not.toHaveProperty('detached');
+    }
+  });
+
+  test('a new topology name the server refuses is reported on its field', async () => {
+    const refusal = (message) =>
+      Object.assign(new Error('refused'), {
+        response: { status: 422, data: { message, cause: '' } },
+      });
+    const request = { kind: 'topology', name: 'core', copy: true };
+
+    api.generate.mockRejectedValueOnce(
+      refusal(
+        'new topology name "core" is the name of the imported topology: enter another name',
+      ),
+    );
+    await expect(
+      store.generate({ ...request, newName: 'core' }),
+    ).resolves.toBeNull();
+    expect(store.error).toBe(
+      'Could not import the diagram. New topology name "core" is the name of the imported topology: enter another name.',
+    );
+    expect(store.errorField).toBe('newName');
+
+    api.generate.mockRejectedValueOnce(
+      refusal(
+        'new topology name "a b" is not allowed: use 1 to 512 letters, numbers, underscores, at signs, periods and hyphens',
+      ),
+    );
+    await store.generate({ ...request, newName: 'a b' });
+    expect(store.errorField).toBe('newName');
+
+    // Any other refusal of the same request is about its source.
+    api.generate.mockRejectedValueOnce(
+      refusal('only a topology can be combined or copied on import'),
+    );
+    await store.generate({ ...request, newName: 'core-copy' });
+    expect(store.errorField).toBe('name');
+  });
+
+  // store.convertLegacy serves Upload, which the editor's toolbar opens
+  // over the open draft. The user may still cancel on the warnings, so the
+  // conversion is only checked here: the dialog loads it once the user
+  // continues.
+  test('a legacy conversion returns the diagram and leaves the open draft as it is', async () => {
+    const { doc } = sampleDocument();
+
+    await withDraft();
+    store.announce('Before.');
+
+    const beforeDocument = store.doc;
+    const beforeAutosave = store.autosave;
+    const dispose = vi.spyOn(store.autosave, 'dispose');
+
+    api.convertLegacy.mockResolvedValueOnce({
+      document: doc,
+      warnings: ['The diagram has no nodes.'],
+      source: null,
+    });
+
+    const result = await store.convertLegacy({
+      content: '<mxGraphModel/>',
+      name: 'plant',
+    });
+
+    expect(api.convertLegacy).toHaveBeenCalledWith({
+      content: '<mxGraphModel/>',
+      name: 'plant',
+    });
+    // A diagram without a topology names no config: its draft takes the
+    // token of an upload, which updates none.
+    expect(result).toEqual({
+      document: doc,
+      warnings: ['The diagram has no nodes.'],
+      source: null,
+      sourceToken: 'uploaded/legacy-xml',
+    });
+    expect(dispose).not.toHaveBeenCalled();
+    expect(store.doc).toBe(beforeDocument);
+    expect(store.autosave).toBe(beforeAutosave);
+    expect(store.owner).toBe('alice');
+    expect(store.draftId).toBe('d1');
+    expect(store.etag).toBe('"1"');
+    expect(store.error).toBe('');
+    expect(store.announcement).toBe('Before.');
+  });
+
+  test('a legacy conversion of a Topology config gives its source and no token', async () => {
+    const { doc } = sampleDocument();
+    const source = {
+      kind: 'Topology',
+      name: 'plant',
+      fullName: 'Topology/plant',
+      stored: false,
+      builder: 'builder-xml',
+    };
+
+    api.convertLegacy.mockResolvedValueOnce({
+      document: doc,
+      warnings: [],
+      source,
+    });
+
+    const result = await store.convertLegacy({ content: 'kind: Topology' });
+
+    // The view then makes the token of a config file from the source.
+    expect(result).toEqual({ document: doc, warnings: [], source });
+    expect(result).not.toHaveProperty('sourceToken');
+    expect(api.convertLegacy).toHaveBeenCalledWith({
+      content: 'kind: Topology',
+      name: '',
+    });
+  });
+
+  test('a legacy file the server refuses is reported in its words, on the file', async () => {
+    const refusal = (status, message) =>
+      Object.assign(new Error('refused'), {
+        response: { status, data: { message, cause: '' } },
+      });
+    const convert = () => store.convertLegacy({ content: 'hello' });
+
+    api.convertLegacy.mockRejectedValueOnce(
+      refusal(
+        422,
+        'this is not a legacy Builder diagram: expected mxGraph XML, or a Topology config with the builder-xml annotation',
+      ),
+    );
+    await expect(convert()).resolves.toBeNull();
+    expect(store.error).toBe(
+      'Could not convert the legacy diagram. This is not a legacy Builder diagram: expected mxGraph XML, or a Topology config with the builder-xml annotation.',
+    );
+    expect(store.errorField).toBe('content');
+
+    // The topology's name is shown as the server wrote it, an id in it too.
+    const named = 'lab-123e4567-e89b-12d3-a456-426614174000';
+    api.convertLegacy.mockRejectedValueOnce(
+      refusal(
+        422,
+        `topology ${named} has no legacy Builder diagram (no builder-xml annotation); use Import to make a diagram from it`,
+      ),
+    );
+    await convert();
+    expect(store.error).toBe(
+      `Could not convert the legacy diagram. Topology ${named} has no legacy Builder diagram (no builder-xml annotation); use Import to make a diagram from it.`,
+    );
+    expect(store.errorField).toBe('content');
+
+    api.convertLegacy.mockRejectedValueOnce(
+      refusal(413, 'the legacy diagram is larger than 5242880 bytes'),
+    );
+    await convert();
+    expect(store.error).toBe(
+      'Could not convert the legacy diagram. The legacy diagram is larger than 5242880 bytes.',
+    );
+    expect(store.errorField).toBe('content');
+
+    api.convertLegacy.mockRejectedValueOnce(
+      refusal(400, 'content is required'),
+    );
+    await convert();
+    expect(store.error).toBe(
+      'Could not convert the legacy diagram. Content is required.',
+    );
+    expect(store.errorField).toBe('content');
+  });
+
+  test('a legacy conversion that fails for another reason is not about the file', async () => {
+    const convert = () => store.convertLegacy({ content: '<mxGraphModel/>' });
+
+    // A role without the permission, and an unreachable server.
+    api.convertLegacy.mockRejectedValueOnce(
+      Object.assign(new Error('forbidden'), {
+        response: {
+          status: 403,
+          data: {
+            message:
+              'converting a legacy builder diagram not allowed for alice',
+          },
+        },
+      }),
+    );
+    await expect(convert()).resolves.toBeNull();
+    expect(store.error).toBe(
+      'Could not convert the legacy diagram. Converting a legacy builder diagram not allowed for alice.',
+    );
+    expect(store.errorField).toBe('');
+
+    api.convertLegacy.mockRejectedValueOnce(new Error('offline'));
+    await convert();
+    expect(store.error).toBe(
+      'Could not convert the legacy diagram. The server could not be reached. Check the connection and try again.',
+    );
+    expect(store.errorField).toBe('');
+
+    // The server answered with a diagram the editor cannot open: the
+    // reason is the decoder's, and the open document stays.
+    const before = store.doc;
+    await convert();
+    expect(store.error).toBe(
+      'Could not convert the legacy diagram. The server sent a diagram the editor cannot open: A builder document must be a JSON object.',
+    );
+    expect(store.errorField).toBe('');
+    expect(store.doc).toBe(before);
+
+    // Whatever else the check of that diagram throws is no connection
+    // problem either: the server did answer.
+    const unreadable = new Proxy(
+      {},
+      {
+        get() {
+          throw new TypeError('x.map is not a function');
+        },
+      },
+    );
+
+    api.convertLegacy.mockResolvedValueOnce({
+      document: unreadable,
+      warnings: [],
+      source: null,
+    });
+    await expect(convert()).resolves.toBeNull();
+    expect(store.error).toBe(
+      'Could not convert the legacy diagram. The server sent a diagram the editor cannot open.',
+    );
+    expect(store.errorField).toBe('');
+    expect(store.doc).toBe(before);
+
+    api.generate.mockResolvedValueOnce({
+      document: unreadable,
+      warnings: [],
+      source: { fullName: 'Topology/core', stored: true },
+    });
+    await expect(
+      store.generate({ kind: 'topology', name: 'core' }),
+    ).resolves.toBeNull();
+    expect(store.error).toBe(
+      'Could not import the diagram. The server sent a diagram the editor cannot open.',
+    );
+    expect(store.doc).toBe(before);
   });
 
   test('deleting a draft passes its ETag', async () => {
@@ -2301,7 +2576,7 @@ describe('server data', () => {
   });
 });
 
-// A draft as GET /builder-v2/drafts/{owner}/{draft} answers, with how the
+// A draft as GET /builder/drafts/{owner}/{draft} answers, with how the
 // user reaches it.
 function readDraft(draft, { etag = '"1"', snapshots = 1 } = {}) {
   return {
@@ -3043,8 +3318,8 @@ describe('who made and last saved the diagram', () => {
     expect(store.draftRecord.sourceFile).toBe('');
   });
 
-  // Only an Upload and an Import of an uploaded config name a file (see
-  // importReady in BuilderV2.vue). Nothing else sends one.
+  // Only an Upload and an Import of a config file name a file (see
+  // importReady in Builder.vue). Nothing else sends one.
   test('a file name is sent only when one is given, and only one the server records', async () => {
     const sentWith = () => api.createDraft.mock.calls.at(-1)[0];
 
@@ -3074,6 +3349,275 @@ describe('who made and last saved the diagram', () => {
     await store.openPublishedDocument('file/plant');
     expect(sentWith().sourceToken).toBe(`builder-file/plant/${FILE_DIGEST}`);
     expect(sentWith().sourceFile).toBeUndefined();
+  });
+});
+
+// A published diagram is edited in the draft that published it, which is
+// found by the document its last publication stored: publishing again gives
+// the diagram a new id, which no source token names.
+describe('the draft a published diagram is edited in', () => {
+  const X1 = 'a'.repeat(64);
+  const X2 = 'b'.repeat(64);
+  const draft = (id, fields = {}) => ({ id, owner: 'alice', ...fields });
+  const publishedAs = (documentId) => ({ publication: { documentId } });
+  const sharedBy = (id, fields = {}) => ({
+    id,
+    owner: 'bob',
+    via: 'share',
+    access: 'edit',
+    ...fields,
+  });
+
+  test('my draft that published it comes first, then one shared for editing, then my draft made from it', () => {
+    const publisher = draft('mine', publishedAs(X2));
+    const shared = sharedBy('theirs', publishedAs(X2));
+    const opened = draft('copy', { sourceToken: `builder-doc/${X2}` });
+    const other = draft('other', publishedAs(X1));
+    const token = `builder-doc/${X2}`;
+
+    expect(
+      draftForPublished(
+        { mine: [other, opened, publisher], shared: [shared] },
+        { id: X2 },
+        token,
+      ),
+    ).toEqual({ draft: publisher, how: 'publisher' });
+    expect(
+      draftForPublished(
+        { mine: [other, opened], shared: [shared] },
+        { id: X2 },
+        token,
+      ),
+    ).toEqual({ draft: shared, how: 'shared' });
+    expect(
+      draftForPublished(
+        { mine: [other, opened], shared: [] },
+        { id: X2 },
+        token,
+      ),
+    ).toEqual({ draft: opened, how: 'opened' });
+    expect(
+      draftForPublished({ mine: [other], shared: [] }, { id: X2 }, token),
+    ).toBeNull();
+    expect(draftForPublished({}, { id: X2 }, token)).toBeNull();
+    expect(draftForPublished(undefined, undefined, '')).toBeNull();
+  });
+
+  test('among several, the draft the diagram names wins, then the one changed last', () => {
+    const older = draft('older', {
+      ...publishedAs(X2),
+      updated: '2026-09-02T00:00:00Z',
+    });
+    // The server's times drop trailing zeros: compared as times, not text.
+    const newer = draft('newer', {
+      ...publishedAs(X2),
+      updated: '2026-09-02T00:00:00.1Z',
+    });
+    const lists = { mine: [older, newer], shared: [] };
+
+    expect(draftForPublished(lists, { id: X2 }, '').draft).toBe(newer);
+    expect(
+      draftForPublished(lists, { id: X2, draftId: 'older' }, '').draft,
+    ).toBe(older);
+    // A draft the diagram names that is not listed changes nothing.
+    expect(
+      draftForPublished(lists, { id: X2, draftId: 'gone' }, '').draft,
+    ).toBe(newer);
+
+    const first = sharedBy('s1', {
+      ...publishedAs(X2),
+      updated: '2026-09-01T00:00:00Z',
+    });
+    const second = sharedBy('s2', {
+      ...publishedAs(X2),
+      updated: '2026-09-03T00:00:00Z',
+    });
+
+    expect(
+      draftForPublished({ mine: [], shared: [first, second] }, { id: X2 }, '')
+        .draft,
+    ).toBe(second);
+    expect(
+      draftForPublished(
+        { mine: [], shared: [first, second] },
+        { id: X2, draftId: 's1' },
+        '',
+      ).draft,
+    ).toBe(first);
+  });
+
+  test('a draft shared for viewing, or seen through a role, is not one', () => {
+    const viewOnly = sharedBy('view', { ...publishedAs(X2), access: 'view' });
+    const byRole = sharedBy('role', { ...publishedAs(X2), via: 'role' });
+
+    expect(
+      draftForPublished(
+        { mine: [], shared: [viewOnly, byRole] },
+        { id: X2 },
+        '',
+      ),
+    ).toBeNull();
+  });
+
+  test('without a token only a draft that published the diagram is found', () => {
+    const opened = draft('copy', { sourceToken: `builder-doc/${X2}` });
+
+    expect(
+      draftForPublished({ mine: [opened], shared: [] }, { id: X2 }, ''),
+    ).toBeNull();
+    // A draft with no token is never "made from" a diagram without one.
+    expect(
+      draftForPublished({ mine: [draft('blank')], shared: [] }, { id: '' }, ''),
+    ).toBeNull();
+  });
+
+  test("a topology's Builder file has no publishing draft", () => {
+    const token = `builder-file/plant/${FILE_DIGEST}`;
+    // No draft's publication stores a file, whatever its record says.
+    const publisher = draft('mine', publishedAs('file/plant'));
+    const opened = draft('copy', { sourceToken: token });
+
+    expect(
+      draftForPublished(
+        { mine: [publisher], shared: [] },
+        { id: 'file/plant' },
+        token,
+      ),
+    ).toBeNull();
+    expect(
+      draftForPublished(
+        { mine: [publisher, opened], shared: [] },
+        { id: 'file/plant' },
+        token,
+      ),
+    ).toEqual({ draft: opened, how: 'opened' });
+  });
+
+  // The defect: draft D opened topology T (token builder-doc/X1), was
+  // edited and published T again, which now holds X2. Opening T again made
+  // a second draft from X2, because only the token was compared.
+  test('a draft that published the diagram again is opened again, and no other draft is made', async () => {
+    const { doc } = sampleDocument();
+
+    store.documents = [{ id: X2, target: 'core', draftId: 'd5' }];
+    api.listDrafts.mockResolvedValueOnce({
+      mine: [
+        draft('d5', { sourceToken: `builder-doc/${X1}`, ...publishedAs(X2) }),
+      ],
+      shared: [],
+      published: [],
+    });
+    api.getDraft.mockResolvedValueOnce({
+      draft: { id: 'd5', owner: 'alice' },
+      document: doc,
+      history: [{ id: 's1' }],
+      cursor: 0,
+      etag: '"5"',
+    });
+
+    await expect(store.openPublishedDocument(X2)).resolves.toBeTruthy();
+
+    expect(api.getDraft).toHaveBeenLastCalledWith('alice', 'd5');
+    expect(api.createDraft).not.toHaveBeenCalled();
+    // The published document is not read: the draft is what opens.
+    expect(api.getDocument).not.toHaveBeenCalled();
+    expect(store.draftId).toBe('d5');
+    expect(store.announcement).toBe(
+      `Opened the draft that published diagram ${doc.name}.`,
+    );
+  });
+
+  test('the caller may say what opening each kind of draft is called', async () => {
+    const { doc } = sampleDocument();
+    const said = {
+      announcement: 'New.',
+      resumed: 'Mine, made from it.',
+      publisher: 'Mine, which published it.',
+    };
+    const loaded = (id) => ({
+      draft: { id, owner: 'alice' },
+      document: doc,
+      history: [{ id: 's1' }],
+      cursor: 0,
+      etag: '"5"',
+    });
+
+    api.listDrafts.mockResolvedValueOnce({
+      mine: [draft('d5', publishedAs(X2))],
+      shared: [],
+      published: [],
+    });
+    api.getDraft.mockResolvedValueOnce(loaded('d5'));
+    await store.openPublishedDocument(X2, said);
+    expect(store.announcement).toBe('Mine, which published it.');
+
+    api.listDrafts.mockResolvedValueOnce({
+      mine: [draft('d6', { sourceToken: `builder-doc/${X2}` })],
+      shared: [],
+      published: [],
+    });
+    api.getDraft.mockResolvedValueOnce(loaded('d6'));
+    await store.openPublishedDocument(X2, said);
+    expect(store.announcement).toBe('Mine, made from it.');
+
+    api.listDrafts.mockResolvedValueOnce({
+      mine: [],
+      shared: [],
+      published: [],
+    });
+    await store.openPublishedDocument(X2, said);
+    expect(store.announcement).toBe('New.');
+    expect(api.createDraft).toHaveBeenCalledTimes(1);
+    expect(api.createDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sourceToken: `builder-doc/${X2}` }),
+    );
+  });
+
+  test('the publishing draft someone shared for editing opens, and says whose it is', async () => {
+    const { doc } = sampleDocument();
+
+    api.listDrafts.mockResolvedValueOnce({
+      mine: [],
+      shared: [sharedBy('d8', publishedAs(X2))],
+      published: [],
+    });
+    api.getDraft.mockResolvedValueOnce({
+      draft: { id: 'd8', owner: 'bob', access: 'edit', via: 'share' },
+      document: doc,
+      history: [{ id: 's1' }],
+      cursor: 0,
+      etag: '"8"',
+    });
+
+    await expect(
+      store.openPublishedDocument(X2, { publisher: 'Mine.', resumed: 'Mine.' }),
+    ).resolves.toBeTruthy();
+
+    expect(api.getDraft).toHaveBeenLastCalledWith('bob', 'd8');
+    expect(api.createDraft).not.toHaveBeenCalled();
+    expect(store.owner).toBe('bob');
+    // Whose draft it is has been said already: nothing calls it mine.
+    expect(store.announcement).toBe(
+      `Opened bob's draft ${doc.name}. You can edit it; others may be editing too.`,
+    );
+  });
+
+  test('a publishing draft shared for viewing only is left alone: a draft of my own is made', async () => {
+    api.listDrafts.mockResolvedValueOnce({
+      mine: [],
+      shared: [
+        sharedBy('d8', { ...publishedAs(X2), access: 'view' }),
+        sharedBy('d9', { ...publishedAs(X2), via: 'role' }),
+      ],
+      published: [],
+    });
+
+    await expect(store.openPublishedDocument(X2)).resolves.toBeTruthy();
+
+    expect(api.getDraft).not.toHaveBeenCalled();
+    expect(api.createDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceToken: `builder-doc/${X2}` }),
+    );
   });
 });
 
@@ -3427,5 +3971,986 @@ describe('editing a published diagram sends it back as it was read', () => {
     api[read].mockResolvedValueOnce(answer(structuredClone(doc)));
     await store.openPublishedDocument(id);
     expect(api.createDraft.mock.calls[1][0].document).toEqual(doc);
+  });
+});
+
+describe('the experiment a draft was published with', () => {
+  const intent = {
+    mode: 'topology-experiment',
+    topology: { name: 'core', action: 'create' },
+    experiment: { name: 'core-exp', action: 'create' },
+  };
+
+  // A publish answer, with the draft record as the server sends it.
+  function published(draft, extra = {}) {
+    return {
+      result: {
+        status: 'succeeded',
+        ok: true,
+        partial: false,
+        stages: [],
+        draft,
+        ...extra,
+      },
+      etag: '"2"',
+    };
+  }
+
+  test('a draft read from the server names it, and one without it names none', async () => {
+    expect(store.experiment).toBe('');
+    expect(store.experimentName).toBe('');
+
+    api.getDraft.mockResolvedValueOnce(
+      readDraft({ access: 'owner', experiment: 'core-exp' }),
+    );
+    await store.loadDraft('alice', 'd1');
+
+    expect(store.experiment).toBe('core-exp');
+    expect(store.experimentName).toBe('core-exp');
+
+    // A save answers with the draft alone, and says nothing of it.
+    store.addNode({ kind: 'device', hostname: 'alpha' });
+    await store.saveNow();
+    expect(api.appendSnapshot).toHaveBeenCalledOnce();
+    expect(store.experiment).toBe('core-exp');
+
+    // The server leaves the field out once the experiment is gone.
+    api.getDraft.mockResolvedValueOnce(readDraft({ access: 'owner' }));
+    await store.loadDraft('alice', 'd1');
+
+    expect(store.experiment).toBe('');
+    expect(store.experimentName).toBe('');
+  });
+
+  test('a draft made from a published diagram names it, and a new diagram none', async () => {
+    api.createDraft.mockResolvedValueOnce({
+      draft: { id: 'd1', owner: 'alice', experiment: 'core-exp' },
+      document: null,
+      history: null,
+      cursor: 0,
+      etag: '"1"',
+    });
+    await store.createDraft({ sourceToken: 'builder-doc/p1' });
+
+    expect(store.experimentName).toBe('core-exp');
+
+    store.newDocument();
+    expect(store.experiment).toBe('');
+    expect(store.experimentName).toBe('');
+
+    // A create that names none leaves none.
+    await store.createDraft();
+    expect(store.experiment).toBe('');
+  });
+
+  test('a draft saved from local history after a conflict names the experiment its create does', async () => {
+    const conflict = () =>
+      Object.assign(new Error('conflict'), { response: { status: 412 } });
+    const created = (draft) => ({
+      draft,
+      document: null,
+      history: null,
+      cursor: 0,
+      etag: '"1"',
+    });
+
+    await withDraft();
+
+    // The new draft forks one that published with an experiment.
+    api.appendSnapshot.mockRejectedValueOnce(conflict());
+    store.addNode({ kind: 'device', hostname: 'alpha' });
+    await store.saveNow();
+    expect(store.hasConflict).toBe(true);
+    api.createDraft.mockResolvedValueOnce(
+      created({ id: 'd7', owner: 'alice', experiment: 'core-exp' }),
+    );
+    await store.resolveConflict('fork');
+
+    expect(store.draftId).toBe('d7');
+    expect(store.experimentName).toBe('core-exp');
+
+    // The experiment is gone by the time it is forked again.
+    api.appendSnapshot.mockRejectedValueOnce(conflict());
+    store.addNode({ kind: 'device', hostname: 'bravo' });
+    await store.saveNow();
+    expect(store.hasConflict).toBe(true);
+    api.createDraft.mockResolvedValueOnce(
+      created({ id: 'd8', owner: 'alice' }),
+    );
+    await store.resolveConflict('fork');
+
+    expect(store.draftId).toBe('d8');
+    expect(store.experimentName).toBe('');
+  });
+
+  test('a publish names the experiment its answer does, also when it failed in part', async () => {
+    await withDraft();
+    api.publish.mockResolvedValueOnce(
+      published({ id: 'd1', owner: 'alice', experiment: 'core-exp' }),
+    );
+    await store.publish(intent);
+
+    expect(store.experimentName).toBe('core-exp');
+
+    // The same draft publishes the topology alone: its experiment stays.
+    api.publish.mockResolvedValueOnce(
+      published(
+        { id: 'd1', owner: 'alice', experiment: 'core-exp' },
+        { status: 'partial', ok: false, partial: true },
+      ),
+    );
+    await store.publish(intent);
+
+    expect(store.error).toMatch(/^Publish finished with failures\./);
+    expect(store.experimentName).toBe('core-exp');
+
+    // An answer without a draft record says nothing of the experiment.
+    api.publish.mockResolvedValueOnce(published(null));
+    await store.publish(intent);
+
+    expect(store.experimentName).toBe('core-exp');
+
+    // The experiment was deleted meanwhile: the draft names none.
+    api.publish.mockResolvedValueOnce(published({ id: 'd1', owner: 'alice' }));
+    await store.publish(intent);
+
+    expect(store.experimentName).toBe('');
+  });
+
+  test('the answer of a publish says nothing of a draft opened meanwhile', async () => {
+    await withDraft();
+    let finish;
+    api.publish.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = () =>
+            resolve(
+              published({
+                id: 'd1',
+                owner: 'alice',
+                digest: 'sha256:9',
+                experiment: 'core-exp',
+              }),
+            );
+        }),
+    );
+
+    const publishing = store.publish(intent);
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+
+    // The draft is closed for another diagram before the server answers.
+    store.newDocument({ name: 'Another' });
+    finish();
+
+    const result = await publishing;
+
+    expect(api.publish).toHaveBeenCalledWith('alice', 'd1', intent, '"1"');
+    expect(result.ok).toBe(true);
+    expect(store.publishResult).toEqual(result);
+    expect(store.experiment).toBe('');
+    expect(store.etag).toBeNull();
+    expect(store.draftRecord).toMatchObject({ id: '', digest: '' });
+    expect(store.publishing).toBe(false);
+  });
+
+  test('a publish is under way from the save it starts with until its answer is taken', async () => {
+    await withDraft();
+
+    // Refused before anything is sent to the server.
+    store.readOnly = true;
+    await expect(store.publish(intent)).resolves.toBeNull();
+    expect(store.publishing).toBe(false);
+    store.readOnly = false;
+
+    // Refused for a change the server does not hold.
+    api.appendSnapshot.mockRejectedValueOnce(
+      Object.assign(new Error('conflict'), { response: { status: 412 } }),
+    );
+    store.addNode({ kind: 'device', hostname: 'alpha' });
+
+    const refused = store.publish(intent);
+
+    expect(store.publishing).toBe(true);
+    await expect(refused).resolves.toBeNull();
+    expect(api.publish).not.toHaveBeenCalled();
+    expect(store.publishing).toBe(false);
+  });
+
+  test('a published diagram shown read only names the experiment its listed row does', async () => {
+    api.listDocuments.mockResolvedValueOnce([
+      { id: 'published-1', target: 'core', experiment: 'core-exp' },
+      { id: 'published-2', target: 'edge' },
+    ]);
+    await store.fetchDocuments();
+
+    // Not while a draft is open: a row is not the draft's.
+    expect(store.experimentName).toBe('');
+
+    await store.viewPublishedDocument('published-1');
+    expect(store.published.id).toBe('published-1');
+    expect(store.experiment).toBe('');
+    expect(store.experimentName).toBe('core-exp');
+
+    await store.viewPublishedDocument('published-2');
+    expect(store.experimentName).toBe('');
+
+    // A diagram the lists no longer hold names none.
+    await store.viewPublishedDocument('published-3');
+    expect(store.experimentName).toBe('');
+  });
+});
+
+describe('a draft loaded for its card’s Publish', () => {
+  // Every message the live region was given.
+  function announcements() {
+    const said = [];
+
+    store.$onAction(({ name, args }) => {
+      if (name === 'announce') {
+        said.push(args[0]);
+      }
+    });
+
+    return said;
+  }
+
+  test('is loaded as an opened one is, and says nothing', async () => {
+    const said = announcements();
+
+    api.getDraft.mockResolvedValueOnce(
+      readDraft({ owner: 'bob', access: 'edit', via: 'share' }),
+    );
+
+    const loaded = await store.loadDraft('bob', 'd1', { quiet: true });
+
+    expect(loaded).toBe(store.doc);
+    expect(store.owner).toBe('bob');
+    expect(store.draftId).toBe('d1');
+    expect(store.etag).toBe('"1"');
+    expect(store.sharedBy).toBe('bob');
+    expect(store.readOnly).toBe(false);
+    expect(store.autosave).toBeTruthy();
+    expect(store.saveState).toMatchObject({ pending: 0 });
+    expect(said).toEqual([]);
+
+    // Opened in the editor, the same draft says both.
+    api.getDraft.mockResolvedValueOnce(
+      readDraft({ owner: 'bob', access: 'edit', via: 'share' }),
+    );
+    await store.loadDraft('bob', 'd1');
+
+    expect(said).toEqual([
+      'Draft loaded',
+      `Opened bob's draft ${sampleDocument().doc.name}. You can edit it; others may be editing too.`,
+    ]);
+  });
+
+  test('still says what it recovered from this device, and sends it', async () => {
+    const saved = api.appendSnapshot.getMockImplementation();
+    let offline = true;
+
+    api.getDraft.mockResolvedValue(readDraft({ access: 'owner' }));
+    api.appendSnapshot.mockImplementation((...args) =>
+      offline ? Promise.reject(new Error('offline')) : saved(...args),
+    );
+
+    try {
+      await store.loadDraft('alice', 'd1');
+
+      // An edit the server never received, left on this device.
+      store.addNode({ kind: 'device', hostname: 'kept' });
+      await store.saveNow();
+      expect(store.saveState).toMatchObject({ status: 'offline', pending: 1 });
+      store.newDocument();
+      offline = false;
+      api.appendSnapshot.mockClear();
+
+      const said = announcements();
+
+      await store.loadDraft('alice', 'd1', { quiet: true });
+
+      expect(said).toContain('Recovered 1 unsaved change from this device.');
+      expect(said).not.toContain('Draft loaded');
+      expect(store.summary.devices).toBe(3);
+      expect(api.appendSnapshot).toHaveBeenCalledOnce();
+      expect(store.saveState).toMatchObject({ status: 'saved', pending: 0 });
+    } finally {
+      api.getDraft.mockReset();
+      api.appendSnapshot.mockReset();
+    }
+  });
+
+  // Back to drafts while a draft is being saved: the view takes its queue,
+  // which goes on sending in the background (see sendInBackground in
+  // Builder.vue).
+  function closeForDrafts() {
+    const queue = store.autosave;
+
+    store.autosave = null;
+
+    return queue;
+  }
+
+  test('does not wait for the save of a draft closed while it was being saved', async () => {
+    const saved = api.appendSnapshot.getMockImplementation();
+    const intent = {
+      mode: 'topology',
+      topology: { name: 'core', action: 'create' },
+    };
+    let answer;
+    let closed;
+
+    api.getDraft
+      .mockResolvedValueOnce(readDraft({ access: 'owner' }))
+      .mockResolvedValueOnce(readDraft({ id: 'd2', access: 'owner' }));
+    // The server takes its time over the first draft's save.
+    api.appendSnapshot.mockImplementationOnce(
+      (...args) =>
+        new Promise((resolve) => {
+          answer = () => resolve(saved(...args));
+        }),
+    );
+
+    try {
+      await store.loadDraft('alice', 'd1');
+      store.addNode({ kind: 'note' });
+      await vi.waitFor(() => expect(answer).toBeTypeOf('function'));
+      closed = closeForDrafts();
+
+      await store.loadDraft('alice', 'd2', { quiet: true });
+
+      expect(store.queueWork).toBeNull();
+
+      const result = await Promise.race([
+        store.publish(intent),
+        new Promise((resolve) => setTimeout(() => resolve('waiting'), 250)),
+      ]);
+
+      expect(result).toMatchObject({ ok: true });
+      expect(api.publish).toHaveBeenCalledWith('alice', 'd2', intent, '"1"');
+      expect(store.publishing).toBe(false);
+    } finally {
+      answer?.();
+      await closed?.idle();
+      closed?.dispose();
+      api.getDraft.mockReset();
+      api.appendSnapshot.mockReset();
+    }
+  });
+
+  test('its first save is not the end of a problem the draft closed before it had', async () => {
+    const saved = api.appendSnapshot.getMockImplementation();
+    // The drafts whose saves do not reach the server.
+    const cut = new Set(['d1']);
+    let closed;
+
+    api.getDraft
+      .mockResolvedValueOnce(readDraft({ access: 'owner' }))
+      .mockResolvedValueOnce(readDraft({ id: 'd2', access: 'owner' }));
+    api.appendSnapshot.mockImplementation((owner, id, ...rest) =>
+      cut.has(id)
+        ? Promise.reject(new Error('offline'))
+        : saved(owner, id, ...rest),
+    );
+
+    try {
+      await store.loadDraft('alice', 'd1');
+      store.addNode({ kind: 'note' });
+      await store.saveNow();
+      expect(store.saveState).toMatchObject({ status: 'offline', pending: 1 });
+      expect(store.announcement).toMatch(/Offline: 1 change kept/);
+      closed = closeForDrafts();
+
+      const said = announcements();
+
+      await store.loadDraft('alice', 'd2', { quiet: true });
+      await store.saveNow();
+
+      // The other draft's change is still not saved: nothing says it is.
+      expect(store.saveState).toMatchObject({ status: 'saved', pending: 0 });
+      expect(closed.state).toMatchObject({ status: 'offline', pending: 1 });
+      expect(said).toEqual([]);
+
+      // A problem of this draft's own, and its end, are still said.
+      cut.add('d2');
+      store.addNode({ kind: 'note' });
+      await store.saveNow();
+      expect(said.at(-1)).toMatch(/Offline: 1 change kept/);
+      cut.delete('d2');
+      await store.retrySave();
+      expect(said.at(-1)).toBe('All changes saved.');
+    } finally {
+      closed?.dispose();
+      api.getDraft.mockReset();
+      api.appendSnapshot.mockReset();
+    }
+  });
+
+  test('a draft that cannot be read is reported as it is for Open', async () => {
+    api.getDraft.mockRejectedValueOnce(
+      Object.assign(new Error('gone'), {
+        response: {
+          status: 404,
+          data: { message: 'draft alice/d1 not found' },
+        },
+      }),
+    );
+
+    await expect(
+      store.loadDraft('alice', 'd1', { quiet: true }),
+    ).resolves.toBeNull();
+    expect(store.error).toMatch(/^Could not load the draft\./);
+    expect(store.autosave).toBeNull();
+  });
+});
+
+describe('bulk actions on listed drafts and published topologies', () => {
+  const failed = (status, message, extra = {}) =>
+    Object.assign(new Error(`status ${status}`), {
+      response: { status, data: message ? { message } : {}, ...extra },
+    });
+  // A refused precondition, with the draft's current ETag when the server
+  // sends one.
+  const changed = (etag) =>
+    failed(412, 'changed', etag ? { headers: { etag } } : {});
+  const draft = (id, extra = {}) => ({
+    id,
+    owner: 'alice',
+    title: `Draft ${id}`,
+    etag: '"1"',
+    ...extra,
+  });
+  const lists = (mine = []) => ({
+    mine,
+    shared: [],
+    others: [],
+    published: [],
+    damaged: [],
+  });
+
+  // Every message the live region was given.
+  function announcements() {
+    const said = [];
+
+    store.$onAction(({ name, args }) => {
+      if (name === 'announce') {
+        said.push(args[0]);
+      }
+    });
+
+    return said;
+  }
+
+  // Earlier tests leave their own answers on these: each test here starts
+  // from a server that does what it is asked.
+  beforeEach(() => {
+    api.deleteDraft.mockReset().mockResolvedValue(true);
+    api.getDraft.mockReset();
+    api.deleteDocument.mockReset().mockResolvedValue(true);
+    api.listDrafts.mockReset().mockResolvedValue(lists());
+    api.listDocuments.mockReset().mockResolvedValue([]);
+    api.getShares.mockReset();
+    api.updateShares.mockReset();
+  });
+
+  test('a draft whose ETag is old is deleted with the one the refusal carries', async () => {
+    api.deleteDraft.mockRejectedValueOnce(changed('"7"'));
+
+    expect(await store.deleteDraft('alice', 'd1', '"1"', 'Lab network')).toBe(
+      true,
+    );
+    // The draft is not read: a damaged one could not be.
+    expect(api.getDraft).not.toHaveBeenCalled();
+    expect(api.deleteDraft.mock.calls).toEqual([
+      ['alice', 'd1', '"1"'],
+      ['alice', 'd1', '"7"'],
+    ]);
+    expect(store.announcement).toBe('Deleted draft Lab network.');
+  });
+
+  test('deleting several drafts deletes each with its ETag, and reads the lists once', async () => {
+    const items = [draft('d1'), draft('d2', { etag: '"4"' }), draft('d3')];
+    const said = announcements();
+    const order = [];
+    const progress = [];
+
+    for (const item of items) {
+      await device.store.put({
+        key: `alice::alice::${item.id}`,
+        actor: 'alice',
+        owner: 'alice',
+        draftId: item.id,
+        entries: [],
+        queue: [],
+      });
+    }
+    api.deleteDraft.mockImplementation(async (_, id) => {
+      order.push(`delete ${id}`);
+
+      return true;
+    });
+    store.setError('An earlier failure.');
+
+    const outcome = await store.deleteDrafts(items, {
+      before: async (item) => {
+        order.push(`before ${item.id}`);
+      },
+      onProgress: (done, total) => progress.push([done, total]),
+    });
+
+    expect(outcome).toEqual({ done: items, failures: [] });
+    expect(api.deleteDraft.mock.calls).toEqual([
+      ['alice', 'd1', '"1"'],
+      ['alice', 'd2', '"4"'],
+      ['alice', 'd3', '"1"'],
+    ]);
+    // Each draft's background saves end before it is deleted.
+    expect(order.filter((step) => step.startsWith('before'))).toHaveLength(3);
+    for (const item of items) {
+      expect(order.indexOf(`before ${item.id}`)).toBeLessThan(
+        order.indexOf(`delete ${item.id}`),
+      );
+    }
+    expect(progress).toEqual([
+      [1, 3],
+      [2, 3],
+      [3, 3],
+    ]);
+    // What this device kept for them goes with them.
+    expect(await device.store.all()).toEqual([]);
+    expect(api.listDrafts).toHaveBeenCalledOnce();
+    // The caller says what the run came to, and the page alert is left
+    // alone.
+    expect(said).toEqual([]);
+    expect(store.error).toBe('An earlier failure.');
+  });
+
+  test('a draft that changed is deleted with its current ETag, once, and each failure says why', async () => {
+    const items = ['d1', 'd2', 'd3', 'd4', 'd5'].map((id) => draft(id));
+    const answers = {
+      // Deleted with the tag its refusal carries.
+      d1: [changed('"2"'), true],
+      // Changed again meanwhile.
+      d2: [changed('"2"'), changed('"3"')],
+      // No tag in the refusal: the draft is read for it.
+      d3: [changed(), true],
+      d4: [failed(403, 'deleting draft alice/d4 not allowed for alice')],
+      d5: [failed(500, 'storage down')],
+    };
+
+    api.deleteDraft.mockImplementation(async (_, id) => {
+      const answer = answers[id].shift();
+
+      if (answer instanceof Error) {
+        throw answer;
+      }
+
+      return answer;
+    });
+    api.getDraft.mockResolvedValue({ draft: { id: 'd3' }, etag: '"9"' });
+
+    const outcome = await store.deleteDrafts(items);
+
+    expect(outcome.done.map((item) => item.id)).toEqual(['d1', 'd3']);
+    expect(
+      outcome.failures.map(({ item, reason }) => [item.id, reason]),
+    ).toEqual([
+      ['d2', 'It changed on the server while it was being deleted. Try again.'],
+      ['d4', 'Deleting draft alice/d4 not allowed for alice.'],
+      ['d5', 'Storage down.'],
+    ]);
+    expect(api.deleteDraft.mock.calls.filter(([, id]) => id === 'd1')).toEqual([
+      ['alice', 'd1', '"1"'],
+      ['alice', 'd1', '"2"'],
+    ]);
+    // Once only: the third tag is never sent.
+    expect(
+      api.deleteDraft.mock.calls.filter(([, id]) => id === 'd2'),
+    ).toHaveLength(2);
+    expect(api.getDraft.mock.calls).toEqual([['alice', 'd3']]);
+    expect(api.deleteDraft).toHaveBeenCalledWith('alice', 'd3', '"9"');
+    expect(api.listDrafts).toHaveBeenCalledOnce();
+    expect(store.error).toBe('');
+  });
+
+  test('a draft of the user’s own that is gone already counts as deleted; another user’s may only be hidden', async () => {
+    // As the server names a draft it does not find.
+    const id = (n) => `e11aa62f-3289-4051-a661-bc2fa634290${n}`;
+    const gone = (owner, n) => failed(404, `draft ${owner}/${id(n)} not found`);
+    const items = [
+      draft(id(1)),
+      draft(id(2)),
+      draft(id(3)),
+      draft(id(4), { owner: 'bob' }),
+    ];
+    const said = announcements();
+
+    for (const item of items) {
+      await device.store.put({
+        key: `alice::${item.owner}::${item.id}`,
+        actor: 'alice',
+        owner: item.owner,
+        draftId: item.id,
+        entries: [],
+        queue: [],
+      });
+    }
+    api.deleteDraft.mockImplementation(async (owner, draftId) => {
+      if (draftId === id(1)) {
+        return true;
+      }
+
+      // The third changed, and was deleted before it could be read again.
+      throw draftId === id(3) ? changed() : gone(owner, draftId.at(-1));
+    });
+    api.getDraft.mockRejectedValue(gone('alice', 3));
+
+    const outcome = await store.deleteDrafts(items);
+
+    expect(outcome.done.map((item) => item.id)).toEqual([id(1), id(2), id(3)]);
+    // The server answers the same for a draft the user may no longer see.
+    expect(
+      outcome.failures.map(({ item, reason }) => [item.id, reason]),
+    ).toEqual([
+      [
+        id(4),
+        'It was deleted since the list was read, or you can no longer see it.',
+      ],
+    ]);
+    // What this device kept for the drafts that are gone goes with them.
+    expect((await device.store.all()).map((record) => record.owner)).toEqual([
+      'bob',
+    ]);
+    expect(api.listDrafts).toHaveBeenCalledOnce();
+    expect(said).toEqual([]);
+    expect(store.error).toBe('');
+  });
+
+  test('a session that ended, or a server out of reach, ends the run: the rest is not attempted', async () => {
+    const items = ['d1', 'd2', 'd3', 'd4', 'd5', 'd6'].map((id) => draft(id));
+
+    for (const [error, reason] of [
+      [failed(401), 'Your session has ended. Sign in again to continue.'],
+      [
+        new Error('Network Error'),
+        'The server could not be reached. Check the connection and try again.',
+      ],
+    ]) {
+      api.deleteDraft.mockReset().mockRejectedValue(error);
+
+      const outcome = await store.deleteDrafts(items);
+
+      expect(outcome.done).toEqual([]);
+      // The four that were under way fail as the first did; the others
+      // were never sent.
+      expect(outcome.failures.map((failure) => failure.reason)).toEqual([
+        reason,
+        reason,
+        reason,
+        reason,
+        'Not attempted.',
+        'Not attempted.',
+      ]);
+      expect(api.deleteDraft).toHaveBeenCalledTimes(4);
+    }
+  });
+
+  test('deleting several published topologies takes them one at a time, off the lists', async () => {
+    const items = ['lab', 'core', 'edge'].map((target, index) => ({
+      id: `p${index + 1}`,
+      kind: 'Topology',
+      target,
+    }));
+    const said = announcements();
+    const finish = [];
+    const progress = [];
+
+    store.documents = [
+      ...items,
+      { id: 'p9', kind: 'Topology', target: 'kept' },
+    ];
+    store.sources = {
+      ...store.sources,
+      topologies: [{ name: 'lab' }, 'core', { name: 'edge' }, { name: 'kept' }],
+    };
+    api.deleteDocument.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish.push(resolve);
+        }),
+    );
+    api.listDocuments.mockResolvedValue([
+      { id: 'p9', kind: 'Topology', target: 'kept' },
+    ]);
+
+    const run = store.deletePublishedMany(items, {
+      onProgress: (done, total) => progress.push([done, total]),
+    });
+
+    // One request at a time, its card saying so.
+    await vi.waitFor(() => expect(finish).toHaveLength(1));
+    expect(store.deletingDocuments).toEqual(['p1']);
+    finish[0](true);
+    await vi.waitFor(() => expect(finish).toHaveLength(2));
+    expect(store.deletingDocuments).toEqual(['p2']);
+    // The first card is gone already, and Publish no longer offers it.
+    expect(store.documents.map((entry) => entry.id)).toEqual([
+      'p2',
+      'p3',
+      'p9',
+    ]);
+    expect(store.sources.topologies).toEqual([
+      'core',
+      { name: 'edge' },
+      { name: 'kept' },
+    ]);
+    finish[1](true);
+    await vi.waitFor(() => expect(finish).toHaveLength(3));
+    finish[2](true);
+
+    expect(await run).toEqual({ done: items, failures: [] });
+    expect(api.deleteDocument.mock.calls).toEqual([['p1'], ['p2'], ['p3']]);
+    expect(progress).toEqual([
+      [1, 3],
+      [2, 3],
+      [3, 3],
+    ]);
+    expect(store.deletingDocuments).toEqual([]);
+    expect(store.sources.topologies).toEqual([{ name: 'kept' }]);
+    expect(api.listDocuments).toHaveBeenCalledOnce();
+    expect(store.documents.map((entry) => entry.id)).toEqual(['p9']);
+    expect(said).toEqual([]);
+  });
+
+  test('a topology that was not deleted keeps its card, and says why', async () => {
+    const items = ['lab', 'core', 'edge'].map((target, index) => ({
+      id: `p${index + 1}`,
+      kind: 'Topology',
+      target,
+    }));
+
+    store.documents = [...items];
+    api.deleteDocument
+      .mockRejectedValueOnce(failed(404, 'document p1 not found'))
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(
+        failed(403, 'deleting config Topology/edge not allowed for alice'),
+      );
+    api.listDocuments.mockResolvedValue([items[2]]);
+
+    const outcome = await store.deletePublishedMany(items);
+
+    expect(outcome.done).toEqual([items[1]]);
+    expect(
+      outcome.failures.map(({ item, reason }) => [item.id, reason]),
+    ).toEqual([
+      ['p1', 'It was deleted or published again since the list was read.'],
+      ['p3', 'Deleting config Topology/edge not allowed for alice.'],
+    ]);
+    expect(store.documents).toEqual([items[2]]);
+    expect(store.deletingDocuments).toEqual([]);
+    expect(store.error).toBe('');
+  });
+
+  describe('sharing several drafts', () => {
+    const list = (shares = [], sharesEtag = '"shares-1"') => ({
+      shares,
+      sharesEtag,
+      maxShares: 25,
+    });
+    // The server's answer to a saved list: the list, and the draft with it.
+    const saved = (id, shares) => ({
+      ...list(shares, '"shares-2"'),
+      draft: { id, owner: 'alice', canShare: true, shares, etag: '"2"' },
+      etag: '"2"',
+    });
+
+    test('adds the people to each draft, keeps who was there, and puts the drafts on the lists', async () => {
+      const items = [draft('d1'), draft('d2'), draft('d3')];
+      const said = announcements();
+      const progress = [];
+      const current = {
+        d1: [],
+        d2: [
+          { user: 'bob', access: 'view' },
+          { user: 'dave', access: 'edit' },
+        ],
+        // Shared with bob for editing already: nothing to save.
+        d3: [{ user: 'bob', access: 'edit' }],
+      };
+
+      store.drafts = lists(items);
+      api.getShares.mockImplementation(async (_, id) => list(current[id]));
+      api.updateShares.mockImplementation(async (_, id, shares) =>
+        saved(id, shares),
+      );
+
+      const outcome = await store.shareDrafts(items, ['bob'], 'edit', {
+        onProgress: (done, total) => progress.push([done, total]),
+      });
+
+      expect(outcome).toEqual({ done: items, failures: [] });
+      expect(api.updateShares.mock.calls).toEqual([
+        ['alice', 'd1', [{ user: 'bob', access: 'edit' }], '"shares-1"'],
+        [
+          'alice',
+          'd2',
+          [
+            { user: 'bob', access: 'edit' },
+            { user: 'dave', access: 'edit' },
+          ],
+          '"shares-1"',
+        ],
+      ]);
+      expect(progress.at(-1)).toEqual([3, 3]);
+      // The cards say who the drafts are shared with now, and hold the
+      // drafts' new ETags.
+      expect(store.drafts.mine[0]).toMatchObject({
+        id: 'd1',
+        etag: '"2"',
+        shares: [{ user: 'bob', access: 'edit' }],
+      });
+      expect(store.drafts.mine[1].shares).toHaveLength(2);
+      expect(store.drafts.mine[2]).toEqual(items[2]);
+      expect(said).toEqual([]);
+      expect(store.error).toBe('');
+    });
+
+    test('a draft that would be shared with too many people is not sent', async () => {
+      const full = Array.from({ length: 25 }, (_, index) => ({
+        user: `user${index}`,
+        access: 'view',
+      }));
+
+      api.getShares.mockImplementation(async (_, id) =>
+        list(id === 'd1' ? full : full.slice(0, 23)),
+      );
+      api.updateShares.mockImplementation(async (_, id, shares) =>
+        saved(id, shares),
+      );
+
+      const outcome = await store.shareDrafts(
+        [draft('d1'), draft('d2')],
+        ['bob', 'carol', 'user3'],
+        'view',
+      );
+
+      expect(outcome.done.map((item) => item.id)).toEqual(['d2']);
+      expect(
+        outcome.failures.map(({ item, reason }) => [item.id, reason]),
+      ).toEqual([
+        [
+          'd1',
+          'It would be shared with 27 people. A draft can be shared with at most 25 people.',
+        ],
+      ]);
+      // Someone listed already takes no new place: d2 comes to 25.
+      expect(api.updateShares).toHaveBeenCalledOnce();
+      expect(api.updateShares.mock.calls[0][2]).toHaveLength(25);
+    });
+
+    test('a list that changed meanwhile is read and merged again, once', async () => {
+      const reads = {
+        d1: [
+          list([], '"shares-1"'),
+          list([{ user: 'erin', access: 'view' }], '"shares-5"'),
+        ],
+        d2: [list([], '"shares-1"'), list([], '"shares-6"')],
+      };
+
+      api.getShares.mockImplementation(async (_, id) => reads[id].shift());
+      api.updateShares.mockImplementation(async (_, id, shares, tag) => {
+        if (tag === '"shares-1"' || id === 'd2') {
+          throw changed();
+        }
+
+        return saved(id, shares);
+      });
+
+      const outcome = await store.shareDrafts(
+        [draft('d1'), draft('d2')],
+        ['bob'],
+        'view',
+      );
+
+      expect(outcome.done.map((item) => item.id)).toEqual(['d1']);
+      // The person someone else added meanwhile is kept.
+      expect(api.updateShares).toHaveBeenCalledWith(
+        'alice',
+        'd1',
+        [
+          { user: 'erin', access: 'view' },
+          { user: 'bob', access: 'view' },
+        ],
+        '"shares-5"',
+      );
+      expect(outcome.failures).toEqual([
+        {
+          item: expect.objectContaining({ id: 'd2' }),
+          reason:
+            'Who it is shared with changed while it was being shared. Try again.',
+        },
+      ]);
+      expect(api.getShares).toHaveBeenCalledTimes(4);
+      expect(api.updateShares).toHaveBeenCalledTimes(4);
+    });
+
+    test('people the server refuses are named with why, a draft that is gone says so, and other failures are in the server’s words', async () => {
+      api.getShares.mockImplementation(async (_, id) => {
+        if (id === 'd3') {
+          throw failed(
+            404,
+            'draft alice/e11aa62f-3289-4051-a661-bc2fa6342903 not found',
+          );
+        }
+
+        return list(
+          id === 'd1' ? [{ user: 'gone', access: 'view', stale: true }] : [],
+        );
+      });
+      api.updateShares.mockImplementation(async (_, id) => {
+        throw id === 'd1'
+          ? failed(422, 'Some people could not be added.', {
+              data: {
+                errors: [
+                  { user: 'gone', reason: 'account-removed' },
+                  { user: 'nobody', reason: 'unknown-user' },
+                ],
+              },
+            })
+          : failed(403, 'sharing draft alice/d2 not allowed for alice');
+      });
+
+      const outcome = await store.shareDrafts(
+        [draft('d1'), draft('d2'), draft('d3')],
+        ['gone', 'nobody'],
+        'view',
+      );
+
+      expect(outcome.done).toEqual([]);
+      expect(outcome.failures.map((failure) => failure.reason)).toEqual([
+        "gone's account was removed. Remove them and save, then add them again if they have a new account. " +
+          'No user named nobody. People must have signed in to phēnix at least once.',
+        'Sharing draft alice/d2 not allowed for alice.',
+        'It was deleted since the list was read.',
+      ]);
+      // The stale share is left out, and its person sent as new.
+      expect(api.updateShares.mock.calls[0][2]).toEqual([
+        { user: 'gone', access: 'view' },
+        { user: 'nobody', access: 'view' },
+      ]);
+    });
+
+    test('a session that ended ends the run', async () => {
+      const items = ['d1', 'd2', 'd3', 'd4', 'd5'].map((id) => draft(id));
+
+      api.getShares.mockRejectedValue(failed(401));
+
+      const outcome = await store.shareDrafts(items, ['bob'], 'view');
+
+      expect(outcome.failures.at(-1).reason).toBe('Not attempted.');
+      expect(api.getShares).toHaveBeenCalledTimes(4);
+      expect(api.updateShares).not.toHaveBeenCalled();
+    });
   });
 });

@@ -9,7 +9,6 @@ import {
   VIEW_API,
   ariaShortcuts,
   availability,
-  canvasHelp,
   canvasHints,
   commandKeys,
   commandTitle,
@@ -44,7 +43,7 @@ import {
 
 import { nextPosition } from '@/components/builder/paletteDnd.js';
 
-import { sampleDocument } from './fixtures.js';
+import { sampleDocument, withTemplates } from './fixtures.js';
 
 const PLATFORMS = ['mac', 'other'];
 
@@ -94,7 +93,7 @@ function fakeStore(overrides = {}) {
     store.selection = { nodes: [], edges: [], ...selection };
   });
 
-  return store;
+  return withTemplates(store);
 }
 
 function fakeView(overrides = {}) {
@@ -133,6 +132,8 @@ const SELECTS = {
   dialog: (selector) => selector === 'dialog',
   appDialog: (selector) => selector.includes('[role="dialog"]'),
   field: (selector) => selector === TYPING,
+  checkbox: (selector) =>
+    selector === TYPING || selector === 'input[type="checkbox"]',
   canvas: (selector) => selector === '.builder-canvas',
   item: (selector) => selector.includes('.vue-flow__node'),
   row: (selector) => selector.includes('.builder-outline__item'),
@@ -167,6 +168,7 @@ function targets(doc = fakeDocument()) {
     body: doc.body,
     button: element(doc),
     field: element(doc, ['field']),
+    checkbox: element(doc, ['checkbox']),
     canvas: element(doc, ['canvas']),
     node: element(doc, ['item'], ['canvas'], {
       classes: ['vue-flow__node'],
@@ -252,6 +254,57 @@ describe('isTextEntry', () => {
 });
 
 describe('the registry', () => {
+  test('aliases are lower-case single words', () => {
+    const aliased = COMMANDS.filter((command) => command.aliases);
+
+    for (const command of aliased) {
+      expect(command.aliases.length, command.id).toBeGreaterThan(0);
+      for (const alias of command.aliases) {
+        expect(alias, command.id).toMatch(/^[a-z]+$/);
+      }
+    }
+    // The word Download had before, and another word for Share.
+    for (const command of COMMANDS) {
+      if (command.id.startsWith('draft.download')) {
+        expect(command.aliases, command.id).toEqual(['export']);
+      }
+    }
+    expect(getCommand('draft.share').aliases).toEqual(['send']);
+  });
+
+  // The Download dialog starts the format's download as it opens, so its
+  // result and its errors show where a press of its button shows them.
+  test('each download format is a command that starts it in the dialog', () => {
+    const formats = {
+      json: 'Download Builder JSON',
+      yaml: 'Download Builder YAML',
+      topology: 'Download Topology YAML',
+      png: 'Download PNG',
+      svg: 'Download SVG',
+      gexf: 'Download Gephi (GEXF)',
+    };
+
+    for (const [format, title] of Object.entries(formats)) {
+      // A read-only draft can be downloaded too.
+      const ctx = context({ store: { readOnly: true } });
+      const command = getCommand(`draft.download.${format}`);
+
+      expect(command, format).toMatchObject({ title, group: 'Draft' });
+      expect(command.keys, format).toBeUndefined();
+      expect(command.detail(ctx), format).toBeTruthy();
+      expect(runCommand(command, ctx), format).toBe(true);
+      expect(ctx.view.openDialog, format).toHaveBeenCalledExactlyOnceWith(
+        'download',
+        { start: format },
+      );
+    }
+
+    // Download… asks which format in the dialog, and starts none.
+    const ctx = context();
+    expect(runCommand('draft.download', ctx)).toBe(true);
+    expect(ctx.view.openDialog).toHaveBeenCalledExactlyOnceWith('download');
+  });
+
   test('ids are unique, and every command is titled and grouped', () => {
     const ids = COMMANDS.map((command) => command.id);
 
@@ -321,6 +374,32 @@ describe('the registry', () => {
     expect(keys('view.fit', 'mac')).toEqual(['Shift+1']);
     expect(keys('edit.redo', 'mac')).toEqual(['Mod+Shift+Z']);
     expect(keys('edit.redo', 'other')).toEqual(['Mod+Shift+Z', 'Mod+Y']);
+    // Settings, the layout and the first Auto-group rule: Alt (Option) and
+    // Shift with a letter, the same on both platforms, and nowhere in a
+    // text field, where Option types a character on a Mac.
+    for (const platform of PLATFORMS) {
+      expect(keys('settings.open', platform)).toEqual(['Alt+Shift+S']);
+      expect(keys('structure.layout', platform)).toEqual(['Alt+Shift+L']);
+      expect(keys('structure.autoGroup.network', platform)).toEqual([
+        'Alt+Shift+G',
+      ]);
+    }
+    expect(keys('structure.autoGroup.name', 'mac')).toEqual([]);
+    expect(keys('structure.autoGroup.pattern', 'mac')).toEqual([]);
+    expect(isCustomizable('structure.autoGroup.pattern')).toBe(true);
+    for (const id of [
+      'settings.open',
+      'structure.layout',
+      'structure.autoGroup.network',
+    ]) {
+      expect(worksInTextFields(id), id).toBe(false);
+      expect(isCustomizable(id), id).toBe(true);
+    }
+    // Settings opens from the drafts page and the app header too.
+    expect(getCommand('settings.open')).toMatchObject({
+      page: true,
+      views: ['editor', 'landing'],
+    });
     // Dropped: the palette has one key, and networks come from switches.
     expect(
       COMMANDS.some((command) =>
@@ -356,6 +435,17 @@ describe('the registry', () => {
       ]),
     );
     expect(editor).toContain('settings.open');
+    // Download…, then a command for each format, in the dialog's order.
+    expect(editor.filter((id) => id.startsWith('draft.download'))).toEqual([
+      'draft.download',
+      'draft.download.json',
+      'draft.download.yaml',
+      'draft.download.topology',
+      'draft.download.png',
+      'draft.download.svg',
+      'draft.download.gexf',
+    ]);
+    expect(landing.some((id) => id.startsWith('draft.download'))).toBe(false);
     expect(landing).not.toContain('edit.undo');
     // The landing's Upload is listed with the other ways to start a draft.
     expect(landing).not.toContain('draft.upload');
@@ -390,6 +480,7 @@ describe('availability', () => {
       'structure.restoreLayout',
       'structure.autoGroup.network',
       'structure.autoGroup.name',
+      'structure.autoGroup.pattern',
       'structure.connect',
       'structure.disconnect',
       'add.device',
@@ -406,7 +497,7 @@ describe('availability', () => {
       'edit.copy',
       'selection.all',
       'goto.node',
-      'draft.export',
+      'draft.download',
       'draft.history',
       'palette.open',
       'view.fit',
@@ -425,7 +516,7 @@ describe('availability', () => {
     expect(availability('draft.publish', editor)).toBe(
       'Your role cannot publish diagrams.',
     );
-    expect(availability('draft.export', editor)).toBe(true);
+    expect(availability('draft.download', editor)).toBe(true);
     for (const id of ['drafts.blank', 'drafts.import', 'drafts.upload']) {
       expect(availability(id, landing), id).toBe(
         'Your role cannot create drafts.',
@@ -465,7 +556,7 @@ describe('availability', () => {
       'This tab is already shown.',
     );
     expect(availability('drafts.tab.shared', landing)).toBe(true);
-    expect(getCommand('drafts.tab.shared').title).toBe('Show Shared with me');
+    expect(getCommand('drafts.tab.shared').title).toBe('Show Shared Drafts');
     // Other users' drafts is a tab only while it lists something.
     expect(availability('drafts.tab.others', landing)).toBe(
       "No other users' drafts are listed.",
@@ -479,6 +570,101 @@ describe('availability', () => {
         }),
       ),
     ).toBe(true);
+  });
+
+  test('Combine included nodes is offered only where there are some, and makes a draft', () => {
+    const listed = (ctx) =>
+      paletteCommands(ctx).find(
+        (command) => command.id === 'draft.combineIncluded',
+      );
+    const some = context({ store: { summary: { included: 3 } } });
+    const one = context({ store: { summary: { included: 1 } } });
+    const none = context({ store: { summary: { included: 0 } } });
+
+    expect(listed(some).title).toBe('Combine included nodes into a new draft');
+    expect(listed(some).group).toBe('Draft');
+    expect(listed(some).detail(some)).toBe(
+      '3 included nodes become editable in a copy of this diagram',
+    );
+    expect(listed(one).detail(one)).toBe(
+      '1 included node becomes editable in a copy of this diagram',
+    );
+    expect(listed(none)).toBeUndefined();
+    // Never on the drafts page, where no diagram is open.
+    expect(
+      listed(
+        context({
+          store: { summary: { included: 3 } },
+          view: { editing: false },
+        }),
+      ),
+    ).toBeUndefined();
+
+    expect(availability('draft.combineIncluded', some)).toBe(true);
+    expect(runCommand('draft.combineIncluded', some)).toBe(true);
+    expect(some.view.combineIncluded).toHaveBeenCalledOnce();
+    expect(getCommand('draft.combineIncluded').keys).toBeUndefined();
+
+    // It leaves the open draft as it is, so a view-only one can be combined.
+    const viewOnly = context({
+      store: { summary: { included: 3 }, readOnly: true },
+    });
+
+    expect(availability('draft.combineIncluded', viewOnly)).toBe(true);
+
+    // A role that cannot create drafts is told why not.
+    const viewer = context({
+      store: { summary: { included: 3 }, canCreateDrafts: false },
+    });
+
+    expect(listed(viewer)).toBeTruthy();
+    expect(availability('draft.combineIncluded', viewer)).toBe(
+      'Your role cannot create drafts.',
+    );
+    expect(runCommand('draft.combineIncluded', viewer)).toBe(false);
+    expect(viewer.view.combineIncluded).not.toHaveBeenCalled();
+  });
+
+  test('Open experiment is offered only while the diagram was published with one', () => {
+    const listed = (ctx) =>
+      paletteCommands(ctx).find((command) => command.id === 'draft.experiment');
+    const some = context({ store: { experimentName: 'lab-exp' } });
+    const none = context({ store: { experimentName: '' } });
+
+    expect(listed(some).title).toBe('Open experiment');
+    expect(listed(some).group).toBe('Draft');
+    expect(listed(some).detail(some)).toBe('lab-exp');
+    expect(listed(none)).toBeUndefined();
+    // Never on the drafts page: each published diagram's card has its own.
+    expect(
+      listed(
+        context({
+          store: { experimentName: 'lab-exp' },
+          view: { editing: false },
+        }),
+      ),
+    ).toBeUndefined();
+
+    expect(availability('draft.experiment', some)).toBe(true);
+    expect(runCommand('draft.experiment', some)).toBe(true);
+    expect(some.view.openExperiment).toHaveBeenCalledOnce();
+    expect(some.view.openExperiment).toHaveBeenCalledWith();
+    // It reads nothing and changes nothing, so a view-only draft has it.
+    expect(
+      availability(
+        'draft.experiment',
+        context({ store: { experimentName: 'lab-exp', readOnly: true } }),
+      ),
+    ).toBe(true);
+
+    // A key given to it says why it does nothing without an experiment.
+    expect(availability('draft.experiment', none)).toBe(
+      'This diagram was not published with an experiment.',
+    );
+    expect(runCommand('draft.experiment', none)).toBe(false);
+    expect(none.view.openExperiment).not.toHaveBeenCalled();
+    expect(getCommand('draft.experiment').keys).toBeUndefined();
+    expect(getCommand('draft.experiment').phrase).toBeUndefined();
   });
 
   test('Share is the owner’s; a draft shared with the user says whose', () => {
@@ -518,7 +704,7 @@ describe('availability', () => {
     );
     expect(command.choices(landing).map((choice) => choice.detail)).toEqual([
       'My Drafts · Owner: me',
-      'Shared with me · Owner: bob',
+      'Shared Drafts · Owner: bob',
       "Other users' drafts · Owner: carol",
     ]);
   });
@@ -624,10 +810,10 @@ describe('running', () => {
     );
     expect(runCommand('view.reset', viewer)).toBe(true);
     expect(viewer.view.resetView).toHaveBeenCalledOnce();
-    // The header's Settings too; it has no keys until the user gives it some.
+    // The header's Settings too, with a key of its own.
     expect(runCommand('settings.open', viewer)).toBe(true);
     expect(viewer.view.openSettings).toHaveBeenCalledOnce();
-    expect(commandKeys('settings.open')).toEqual([]);
+    expect(commandKeys('settings.open')).toEqual(['Alt+Shift+S']);
     // So is Focus mode, whose keys turn it off again.
     expect(runCommand('view.focusMode', viewer)).toBe(true);
     expect(viewer.view.toggleFocusMode).toHaveBeenCalledOnce();
@@ -735,6 +921,43 @@ describe('running', () => {
     expect(getCommand('structure.autoGroup.name').title).toBe(
       'Auto-group by name',
     );
+
+    // The rule that needs a pattern opens the dialog that takes it, and
+    // runs nothing by itself.
+    const pattern = getCommand('structure.autoGroup.pattern');
+
+    ctx.store.autoGroup.mockClear();
+    expect(pattern).toMatchObject({
+      title: 'Auto-group by name pattern…',
+      group: 'Structure',
+    });
+    expect(pattern.keywords).toEqual([
+      'auto group',
+      'cluster',
+      'organize',
+      'regex',
+      'regexp',
+      'regular expression',
+    ]);
+    expect(pattern).not.toHaveProperty('phrase');
+    expect(pattern.detail(ctx)).toBe(
+      'Nodes whose names match a regular expression',
+    );
+    expect(
+      pattern.detail(
+        context({ store: { selection: { nodes: ['a'], edges: [] } } }),
+      ),
+    ).toBe(
+      'Nodes whose names match a regular expression · Selected nodes only',
+    );
+    expect(runCommand('structure.autoGroup.pattern', ctx)).toBe(true);
+    expect(ctx.view.openDialog).toHaveBeenLastCalledWith('group-pattern');
+    expect(ctx.store.autoGroup).not.toHaveBeenCalled();
+    expect(getCommand('structure.autoGroup.name').keywords).toEqual([
+      'auto group',
+      'cluster',
+      'organize',
+    ]);
   });
 
   test('a command that asks for a choice opens the palette on it', () => {
@@ -788,7 +1011,7 @@ describe('running', () => {
 
     const router = getCommand('add.device')
       .choices(ctx)
-      .find((choice) => choice.id === 'router');
+      .find((choice) => choice.id === 'builtin:router');
     runCommand('add.device', ctx, router);
     expect(ctx.store.addNode).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -954,13 +1177,22 @@ describe('keys and hints', () => {
       'Control+Shift+Z Control+Y',
     );
     expect(ariaShortcuts('edit.undo', { platform: 'mac' })).toBe('Meta+Z');
-    expect(ariaShortcuts('structure.layout', { platform: 'mac' })).toBe(
-      undefined,
-    );
+    expect(ariaShortcuts('view.reset', { platform: 'mac' })).toBe(undefined);
     expect(
       withShortcut('Group selection', 'structure.group', { platform: 'mac' }),
     ).toBe('Group selection (⌘G)');
-    expect(withShortcut('Arrange', 'structure.layout')).toBe('Arrange');
+    expect(withShortcut('Reset', 'view.reset')).toBe('Reset');
+    // Option and Shift with a letter, as each platform writes it.
+    expect(shortcutLabel('settings.open', { platform: 'mac' })).toBe('⌥⇧S');
+    expect(shortcutLabel('settings.open', { platform: 'other' })).toBe(
+      'Alt+Shift+S',
+    );
+    expect(ariaShortcuts('settings.open', { platform: 'other' })).toBe(
+      'Alt+Shift+S',
+    );
+    expect(
+      withShortcut('Builder settings', 'settings.open', { platform: 'mac' }),
+    ).toBe('Builder settings (⌥⇧S)');
   });
 
   test('follow the user’s keys and the single-key switch', () => {
@@ -1011,26 +1243,7 @@ describe('keys and hints', () => {
     expect(clashes('Meta+D', 'other')).toEqual([]);
   });
 
-  test('the Keyboard help and the outline hint name this platform’s keys', () => {
-    const mac = canvasHelp({ readOnly: false, platform: 'mac' }).join('\n');
-    const other = canvasHelp({ readOnly: false, platform: 'other' }).join('\n');
-
-    expect(mac).toContain('⌘A selects everything');
-    expect(mac).toContain('⇧⌘Z redoes');
-    expect(mac).toContain('Delete or Forward Delete deletes the focused item');
-    expect(mac).toContain('= or + zooms in, − zooms out and ⇧1 fits');
-    expect(mac).not.toMatch(/Ctrl|On a Mac/);
-    expect(other).toContain('Ctrl+Shift+Z or Ctrl+Y redoes');
-    expect(other).toContain('Ctrl+K opens the command palette');
-    expect(other).toContain('Ctrl+Shift+F turns focus mode on or off');
-
-    const readOnly = canvasHelp({ readOnly: true, platform: 'other' }).join(
-      '\n',
-    );
-    expect(readOnly).toContain('This draft is read-only');
-    expect(readOnly).toContain('Ctrl+C copies');
-    expect(readOnly).not.toMatch(/pastes|Delete or/);
-
+  test('the hints name this platform’s keys', () => {
     expect(outlineHint({ readOnly: false, platform: 'mac' })).toContain(
       'F2 renames. Delete or Forward Delete removes the row',
     );
@@ -1050,46 +1263,49 @@ describe('keys and hints', () => {
 
   // The canvas is one Tab stop: the arrow keys move focus, Page Down and
   // Page Up go through a node's connections, and Shift with an arrow key
-  // moves the selected nodes.
-  test('the canvas help and hints give the keys that move focus and nodes', () => {
-    const help = (readOnly, platform) =>
-      canvasHelp({ readOnly, platform }).join('\n');
-
-    expect(help(false, 'other')).toContain('The diagram is one Tab stop.');
-    expect(help(false, 'other')).toContain(
-      'Page Down and Page Up move through the focused node’s connections.',
-    );
-    expect(help(false, 'mac')).toContain(
-      'Page Down and Page Up (Fn with Down Arrow and Up Arrow) move through',
-    );
-    expect(help(false, 'other')).toContain(
-      'Shift with the arrow keys moves the selected nodes 10 pixels.',
-    );
-    expect(help(false, 'other')).not.toMatch(/Tab moves|1 pixel/);
-    expect(help(true, 'mac')).toContain(
-      'With a screen reader, turn on its focus mode (forms mode in JAWS) for these keys, or use the Outline.',
-    );
-    expect(help(true, 'other')).toContain(
-      'Arrow keys move to the nearest node',
-    );
-    expect(help(true, 'other')).not.toContain('moves the selected nodes');
-
+  // moves the selected nodes. The canvas's description also carries the
+  // advice for screen readers, and says where every shortcut is listed.
+  test('the canvas hints give the keys that move focus and nodes', () => {
     const hints = canvasHints({ readOnly: false, platform: 'other' });
     expect(hints.edge).toMatch(
       /^Arrow keys move to the nodes, Page Down to the next connection\./,
     );
-    expect(hints.canvas).toMatch(/^Arrow keys move to the nodes, and Enter/);
+    expect(hints.canvas).toBe(
+      'Arrow keys move to the nodes, and Enter selects the focused one. ' +
+        'With a screen reader, turn on its focus mode (forms mode in JAWS) ' +
+        'for these keys, or use the Outline. ? lists every shortcut.',
+    );
+    expect(canvasHints({ readOnly: false, platform: 'mac' }).canvas).toBe(
+      'Arrow keys move to the nodes, and Return selects the focused one. ' +
+        'With a screen reader, turn on its focus mode (forms mode in JAWS) ' +
+        'for these keys, or use the Outline. ? lists every shortcut.',
+    );
+    expect(canvasHints({ readOnly: true, platform: 'other' }).canvas).toBe(
+      `Read-only draft. ${hints.canvas}`,
+    );
     expect(canvasHints({ readOnly: true, platform: 'other' }).node).not.toMatch(
       /arrow key move|removes/,
     );
   });
 
-  test('switched-off keys leave the help', () => {
+  test('the canvas hint follows the key of the shortcut sheet', () => {
+    setShortcut('shortcuts.open', ['Mod+/'], noStorage());
+    expect(canvasHints({ readOnly: false, platform: 'mac' }).canvas).toMatch(
+      /or use the Outline\. ⌘\/ lists every shortcut\.$/,
+    );
+
+    // Without a key, it names the button that opens the sheet.
+    loadShortcutSettings(noStorage());
     setSingleKeyShortcuts(false, noStorage());
 
-    const help = canvasHelp({ readOnly: false, platform: 'other' }).join('\n');
+    for (const readOnly of [false, true]) {
+      const { canvas } = canvasHints({ readOnly, platform: 'other' });
 
-    expect(help).not.toMatch(/zooms|lists every shortcut/);
+      expect(canvas).toMatch(
+        /or use the Outline\. Shortcuts in the header lists every shortcut\.$/,
+      );
+      expect(canvas).not.toContain('?');
+    }
   });
 });
 
@@ -1118,6 +1334,10 @@ describe('focus scopes', () => {
     expect(scope(t.body)).toBe('editor');
     expect(scope(t.button, false)).toBe('landing');
     expect(scope(t.field, false)).toBe('field');
+    // A checkbox of the drafts landing selects a card and takes no typed
+    // text; one in the editor is a field of the Inspector's form.
+    expect(scope(t.checkbox, false)).toBe('landing');
+    expect(scope(t.checkbox)).toBe('field');
   });
 
   test('an open dialog keeps every key', () => {
@@ -1474,6 +1694,89 @@ describe('the dispatcher', () => {
     ).toBe(null);
     expect(ctx.store.undo).not.toHaveBeenCalled();
   });
+
+  // Option with a letter types another character on a Mac ('Í' for ⌥⇧S),
+  // so these keys match the physical key, and a text field keeps them.
+  test.each(PLATFORMS)(
+    'Alt+Shift with S, L and G open Settings, lay out and auto-group (%s)',
+    (platform) => {
+      setPlatform(platform);
+
+      const t = targets();
+      const ctx = context();
+      const typed = platform === 'mac' ? { S: 'Í', L: 'Ò', G: '˝' } : {};
+      const run = (target, letter, on = ctx) => {
+        const event = keydown(target, typed[letter] || letter, `Key${letter}`, {
+          altKey: true,
+          shiftKey: true,
+        });
+
+        return [dispatch(event, on, t), event.defaultPrevented];
+      };
+
+      expect(run(t.button, 'S')).toEqual(['settings.open', true]);
+      expect(run(t.canvas, 'S')).toEqual(['settings.open', true]);
+      expect(run(t.row, 'L')).toEqual(['structure.layout', true]);
+      expect(run(t.node, 'G')).toEqual(['structure.autoGroup.network', true]);
+      expect(ctx.view.openSettings).toHaveBeenCalledTimes(2);
+      expect(ctx.store.layout).toHaveBeenCalledExactlyOnceWith();
+      expect(ctx.store.autoGroup).toHaveBeenCalledExactlyOnceWith('network');
+
+      // Not in a text field, nor in a dialog, on either platform.
+      for (const letter of ['S', 'L', 'G']) {
+        expect(run(t.field, letter), letter).toEqual([null, false]);
+        expect(run(t.inDialog, letter), letter).toEqual([null, false]);
+      }
+
+      // Without Shift, or with the command key too, they are other keys.
+      expect(
+        dispatch(keydown(t.button, 's', 'KeyS', { altKey: true }), ctx, t),
+      ).toBe(null);
+      expect(
+        dispatch(
+          keydown(t.button, 'S', 'KeyS', {
+            ...mod(platform),
+            altKey: true,
+            shiftKey: true,
+          }),
+          ctx,
+          t,
+        ),
+      ).toBe(null);
+
+      // Settings opens from the drafts page and from the app header too;
+      // the layout and Auto-group are the editor's alone.
+      const landing = context({ view: { editing: false } });
+      expect(run(t.button, 'S', landing)).toEqual(['settings.open', true]);
+      expect(run(t.outside, 'S', landing)).toEqual(['settings.open', true]);
+      expect(run(t.outsideField, 'S', landing)).toEqual([null, false]);
+      expect(run(t.button, 'L', landing)).toEqual([null, false]);
+      expect(run(t.button, 'G', landing)).toEqual([null, false]);
+      expect(run(t.outside, 'L')).toEqual([null, false]);
+      expect(landing.view.openSettings).toHaveBeenCalledTimes(2);
+      expect(landing.store.layout).not.toHaveBeenCalled();
+
+      // From a checkbox that selects a card of the drafts page as well: it
+      // is no text field. The Inspector's checkboxes keep the key.
+      expect(run(t.checkbox, 'S', landing)).toEqual(['settings.open', true]);
+      expect(landing.view.openSettings).toHaveBeenCalledTimes(3);
+      expect(run(t.checkbox, 'S')).toEqual([null, false]);
+      expect(run(t.checkbox, 'L')).toEqual([null, false]);
+
+      // A read-only draft: the key is taken, and the reason said.
+      const viewer = context({ store: { readOnly: true } });
+      expect(run(t.button, 'L', viewer)).toEqual(['structure.layout', true]);
+      expect(run(t.button, 'G', viewer)).toEqual([
+        'structure.autoGroup.network',
+        true,
+      ]);
+      expect(viewer.store.layout).not.toHaveBeenCalled();
+      expect(viewer.store.autoGroup).not.toHaveBeenCalled();
+      expect(viewer.store.announce).toHaveBeenCalledTimes(2);
+      expect(viewer.store.announce).toHaveBeenLastCalledWith(READ_ONLY);
+      expect(run(t.button, 'S', viewer)).toEqual(['settings.open', true]);
+    },
+  );
 
   test('follows the user’s keys and the single-key switch', () => {
     setPlatform('other');

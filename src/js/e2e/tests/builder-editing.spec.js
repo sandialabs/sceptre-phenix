@@ -1,7 +1,7 @@
-// Builder v2 canvas and editing commands: palette adds (click and drag),
+// Builder canvas and editing commands: palette adds (click and drag),
 // node and connection gestures, delete, clipboard, keyboard selection and
-// nudging, groups, the layout menu and Auto-group, and inspector edits of
-// notes and groups.
+// nudging, groups, the layout menu and Auto-group, the header's counts, and
+// inspector edits of notes and groups.
 //
 // Every test starts from its own blank draft; the `tracker` fixture deletes it
 // afterwards. Persisted state is read back through the drafts API so a test
@@ -14,6 +14,7 @@ const {
   test,
   devicesOf,
   expect,
+  expectAccessible,
   expectNoFatal,
   summaryText,
 } = require('./builder-support');
@@ -22,7 +23,7 @@ const {
 // spares each announcement the wait (see builder-support.js).
 test.use({ announceHold: 100 });
 
-const SNAPSHOTS = /\/api\/v1\/builder-v2\/drafts\/[^/]+\/[^/]+\/snapshots$/;
+const SNAPSHOTS = /\/api\/v1\/builder\/drafts\/[^/]+\/[^/]+\/snapshots$/;
 
 // Default snap grid of a new document: drops and drags land on it.
 const GRID = 16;
@@ -202,7 +203,7 @@ async function connectionDrawn(page) {
   return (await label.count()) === 1;
 }
 
-test.describe('Builder v2 canvas editing', () => {
+test.describe('Builder canvas editing', () => {
   test('adds every palette item and device template by click', async ({
     page,
     builder,
@@ -256,12 +257,13 @@ test.describe('Builder v2 canvas editing', () => {
       'Switch EXP-2, network EXP-2, 0 connections',
       'Device node, 0 connections',
       'Device node-2, 0 connections',
-      'Device server, 0 connections, comment: Generic Linux server',
-      'Device workstation, 0 connections, comment: Operator workstation',
-      'Device router, 0 connections, comment: Layer 3 router',
-      'Device router-2, 0 connections, comment: Layer 3 router',
-      'Device firewall, 0 connections, comment: Perimeter firewall',
-      'Device external, 0 connections, comment: Hardware in the loop device',
+      // A template gives its device no description, so no comment.
+      'Device server, 0 connections',
+      'Device workstation, 0 connections',
+      'Device router, 0 connections',
+      'Device router-2, 0 connections',
+      'Device firewall, 0 connections',
+      'Device external, 0 connections',
       'Note',
     ]) {
       await expect(outlineRow(builder, name)).toBeVisible();
@@ -300,7 +302,8 @@ test.describe('Builder v2 canvas editing', () => {
         image: 'windows10.qc2',
       },
       // phenix's vrouter app configures only these two types, and those
-      // through a router OS type.
+      // through a router OS type: minirouter for the Router, VyOS for the
+      // Firewall.
       router: {
         type: 'Router',
         iconKey: 'router',
@@ -310,8 +313,8 @@ test.describe('Builder v2 canvas editing', () => {
       firewall: {
         type: 'Firewall',
         iconKey: 'firewall',
-        os: 'minirouter',
-        image: 'minirouter.qc2',
+        os: 'vyos',
+        image: 'vyos.qc2',
       },
     };
     for (const [hostname, want] of Object.entries(expected)) {
@@ -623,12 +626,7 @@ test.describe('Builder v2 canvas editing', () => {
           .toHaveAttribute('title', 'eth0 on network EXP-2');
         await expect.soft(rows).toHaveText(['eth0 — network EXP-2']);
         await expect
-          .soft(
-            outlineRow(
-              builder,
-              'Device router, 1 connection, on EXP-2, comment: Layer 3 router',
-            ),
-          )
+          .soft(outlineRow(builder, 'Device router, 1 connection, on EXP-2'))
           .toBeVisible();
         await expect
           .soft(
@@ -923,8 +921,10 @@ test.describe('Builder v2 canvas editing', () => {
 
     await test.step("a network's color is its connections' and its switch's", async () => {
       await builder.selectInOutline('EXP');
+      // On a switch the network's color is Edge Color: the switch has an
+      // outline and a fill of its own beside it.
       await commitField(
-        builder.inspector.getByLabel('Color', { exact: true }),
+        builder.inspector.getByLabel('Edge Color', { exact: true }),
         '#ff00ff',
       );
       await builder.apply();
@@ -1743,15 +1743,15 @@ test.describe('Builder v2 canvas editing', () => {
     await page.keyboard.press('Shift+ArrowRight');
     await expect(builder).toHaveAnnounced('Moved 2 nodes right by 10');
 
-    // From the canvas itself, as after the skip link, Shift and the arrow
-    // keys move the selection and leave the view alone. With the Keyboard
-    // help open the canvas is taller than the diagram, and keeping the
-    // canvas "in view" once panned the diagram up on every press.
-    await page.getByTestId('canvas-help').locator('summary').click();
-    // Screen readers in browse mode keep the arrow keys: the help says so.
-    await expect(page.locator('#builder-canvas-help')).toContainText(
-      'With a screen reader, turn on its focus mode',
+    // Screen readers in browse mode keep the arrow keys: the canvas's
+    // description says so, and where every shortcut is listed.
+    await expect(page.getByTestId('canvas-help')).toHaveCount(0);
+    await expect(builder.canvas).toHaveAccessibleDescription(
+      /With a screen reader, turn on its focus mode \(forms mode in JAWS\) for these keys, or use the Outline\. \? lists every shortcut\.$/,
     );
+    // From the canvas itself, as after the skip link, Shift and the arrow
+    // keys move the selection and leave the view alone: keeping the canvas
+    // "in view" once panned the diagram up on every press.
     await builder.canvas.focus();
     const view = page.locator('.vue-flow__transformationpane');
     const viewBefore = await view.evaluate(
@@ -1855,7 +1855,13 @@ test.describe('Builder v2 canvas editing', () => {
         '.builder-button__swap > :not(.is-off)',
       );
       await expect(shown).toHaveText('Default');
-      await expect(layoutButton).toHaveAccessibleDescription('Choose a layout');
+      // The layout's keys run it without the menu: at Default, the layout
+      // the Settings choose.
+      await expect(layoutButton).toHaveAccessibleDescription(
+        `Choose a layout. ${
+          process.platform === 'darwin' ? '⌥⇧L' : 'Alt+Shift+L'
+        } runs ELK layered, the Settings default`,
+      );
       await expect(layoutButton).toHaveAttribute('aria-haspopup', 'menu');
       await expect(layoutButton).toHaveAttribute('aria-expanded', 'false');
       // At this width the toolbar only just fits, so a wider label would wrap
@@ -2068,9 +2074,7 @@ test.describe('Builder v2 canvas editing', () => {
       );
       await page.getByRole('button', { name: 'Settings', exact: true }).click();
       const settings = page.getByTestId('settings-dialog');
-      await settings
-        .getByLabel('Layout for drafts without one')
-        .selectOption('dagre');
+      await settings.getByLabel('Default layout').selectOption('dagre');
       await settings.getByRole('button', { name: 'Done' }).click();
       await expect(settings).toBeHidden();
       await expect(layoutButton).toHaveAccessibleName('Standard layout');
@@ -2098,7 +2102,7 @@ test.describe('Builder v2 canvas editing', () => {
       await page.keyboard.press('Escape');
       await expect(layoutButton).toBeFocused();
 
-      await test.step('Auto-group groups by network or by name, each in one undoable step', async () => {
+      await test.step('Auto-group groups by network, by name or by a name pattern, each in one undoable step', async () => {
         const autoGroup = builder.toolbar('auto-group');
         const groupMenu = page.getByRole('menu', { name: 'Auto-group' });
         const groups = (doc) =>
@@ -2114,7 +2118,8 @@ test.describe('Builder v2 canvas editing', () => {
         await autoGroup.click();
         await expect(groupMenu.getByRole('menuitem')).toHaveText([
           /^By network/,
-          /^By name/,
+          /^By name(?! pattern)/,
+          /^By name pattern…/,
         ]);
         await groupMenu.getByRole('menuitem', { name: 'By network' }).click();
         await expect(builder).toHaveAnnounced('Created 1 group by network');
@@ -2139,13 +2144,326 @@ test.describe('Builder v2 canvas editing', () => {
 
         // By name, from the keyboard: node and node-2 are one family, and
         // the switch stays out.
-        await autoGroup.press('ArrowUp');
+        await autoGroup.press('Enter');
+        await page.keyboard.press('ArrowDown');
         await expect(
-          groupMenu.getByRole('menuitem', { name: 'By name' }),
+          groupMenu.getByRole('menuitem', { name: 'By name', exact: true }),
         ).toBeFocused();
         await page.keyboard.press('Enter');
         await expect(builder).toHaveAnnounced('Created 1 group by name');
         await builder.persisted(draft, groups, [{ title: 'node', members: 2 }]);
+
+        await focusNode(page, deviceId);
+        await page.keyboard.press('ControlOrMeta+z');
+        await expect(builder).toHaveAnnounced('Undid Created 1 group by name.');
+        await builder.persisted(draft, groups, []);
+      });
+
+      await test.step('Auto-group by name pattern asks for a regular expression, runs it in a worker and says what keeps it from grouping', async () => {
+        const autoGroup = builder.toolbar('auto-group');
+        const groupMenu = page.getByRole('menu', { name: 'Auto-group' });
+        const dialog = page.getByRole('dialog', {
+          name: 'Auto-group by name pattern',
+        });
+        const field = dialog.getByRole('textbox', { name: 'Name pattern' });
+        const problem = dialog.getByTestId('group-pattern-error');
+        const submit = dialog.getByRole('button', { name: 'Group' });
+        const groups = (doc) =>
+          doc.nodes
+            .filter((node) => node.kind === 'group')
+            .map((group) => ({
+              title: group.group.title,
+              members: doc.nodes.filter((node) => node.parentId === group.id)
+                .length,
+            }));
+        const kept = () =>
+          page.evaluate(() =>
+            localStorage.getItem('phenix.builder.groupPattern'),
+          );
+
+        // The pattern's worker is a file of the build, which the server
+        // sends: one for each run, ended after it.
+        const patternWorkers = { started: 0, closed: 0 };
+        page.on('worker', (worker) => {
+          if (/groupingWorker/.test(worker.url())) {
+            patternWorkers.started += 1;
+            worker.on('close', () => {
+              patternWorkers.closed += 1;
+            });
+          }
+        });
+
+        // The last item of the menu, from the keyboard: it opens the
+        // dialog, with focus in its empty field.
+        await autoGroup.press('ArrowUp');
+        const last = groupMenu.getByRole('menuitem', {
+          name: 'By name pattern…',
+        });
+        await expect(last).toBeFocused();
+        await expect
+          .soft(last)
+          .toHaveAccessibleDescription(
+            'Nodes whose names match a regular expression',
+          );
+        await page.keyboard.press('Enter');
+        await expect(dialog).toBeVisible();
+        await expect(field).toBeFocused();
+        await expect.soft(field).toHaveValue('');
+        await expect.soft(field).toHaveAttribute('maxlength', '200');
+        await expect
+          .soft(dialog.getByTestId('group-pattern-intro'))
+          .toHaveText(
+            'Groups the ungrouped devices and switches whose names match.',
+          );
+        await expect
+          .soft(field)
+          .toHaveAccessibleDescription(
+            /^A regular expression, matched against each name, ignoring case\. .* For example, \^\[a-z\]\+ puts web-01 and web-02 in a group named web\.$/,
+          );
+        expect.soft(await kept()).toBeNull();
+
+        // Nothing typed, and something that is no regular expression: the
+        // message is under the field, which is invalid and keeps focus, and
+        // the dialog stays open. Neither is kept, and neither runs.
+        await page.keyboard.press('Enter');
+        await expect(problem).toHaveText('Enter a pattern.');
+        await expect.soft(field).toHaveAttribute('aria-invalid', 'true');
+        await field.fill('(');
+        await submit.click();
+        await expect(problem).toHaveText(
+          /^That is not a valid regular expression\. \S/,
+        );
+        await expect.soft(field).toHaveAttribute('aria-invalid', 'true');
+        await expect.soft(field).toBeFocused();
+        await expect
+          .soft(field)
+          .toHaveAccessibleDescription(
+            /That is not a valid regular expression\./,
+          );
+        await expect.soft(dialog).toBeVisible();
+        expect.soft(await kept()).toBeNull();
+        expect.soft(patternWorkers).toEqual({ started: 0, closed: 0 });
+        await expectAccessible(page, {
+          include: 'dialog[open]',
+          soft: true,
+          label: 'axe on Auto-group by name pattern, with a problem',
+        });
+
+        // A pattern that matches, but no two names alike: nothing changes.
+        await field.fill('^(node-2|EXP)$');
+        await field.press('Enter');
+        await expect(problem).toHaveText(
+          'Nothing to group: 2 names match, but no two with the same text.',
+        );
+        await expect.soft(field).toHaveAttribute('aria-invalid', 'true');
+        await expect
+          .poll(() => patternWorkers)
+          .toEqual({ started: 1, closed: 1 });
+        expect.soft(await kept()).toBe('^(node-2|EXP)$');
+
+        // The letters each name starts with: node and node-2 are "node",
+        // the switch is EXP. One group, one commit, focus back on the menu
+        // button.
+        await field.fill('^[a-z]+');
+        await field.press('Enter');
+        await expect(dialog).toBeHidden();
+        await expect(builder).toHaveAnnounced(
+          'Created 1 group by name pattern',
+        );
+        await expect.soft(autoGroup).toBeFocused();
+        await builder.persisted(draft, groups, [{ title: 'node', members: 2 }]);
+        await expect
+          .poll(() => patternWorkers)
+          .toEqual({ started: 2, closed: 2 });
+
+        // One undo takes the group away and puts the nodes back.
+        await focusNode(page, deviceId);
+        await page.keyboard.press('ControlOrMeta+z');
+        await expect(builder).toHaveAnnounced(
+          'Undid Created 1 group by name pattern.',
+        );
+        await builder.persisted(draft, groups, []);
+
+        // From the palette, with a device selected: the dialog says so,
+        // offers the pattern used last, selected, and groups nothing of one
+        // node.
+        await builder.selectInOutline('node');
+        await page.keyboard.press('ControlOrMeta+k');
+        const search = page.getByRole('combobox', { name: /Search commands/ });
+        await search.fill('name pattern');
+        const option = page.getByRole('option', {
+          name: /^Auto-group by name pattern…/,
+        });
+        await expect(option).toHaveCount(1);
+        await expect
+          .soft(option)
+          .toContainText(
+            'Nodes whose names match a regular expression · Selected nodes only',
+          );
+        await page.keyboard.press('Enter');
+        await expect(dialog).toBeVisible();
+        await expect(field).toBeFocused();
+        await expect.soft(field).toHaveValue('^[a-z]+');
+        expect
+          .soft(
+            await field.evaluate((input) =>
+              input.value.slice(input.selectionStart, input.selectionEnd),
+            ),
+            'the pattern is selected, so typing replaces it',
+          )
+          .toBe('^[a-z]+');
+        await expect
+          .soft(dialog.getByTestId('group-pattern-intro'))
+          .toHaveText(
+            'Groups the selected ungrouped devices and switches whose names match.',
+          );
+        await page.keyboard.press('Enter');
+        await expect(problem).toHaveText(
+          'Nothing to group: 1 name matches, but no two with the same text.',
+        );
+        await dialog.getByRole('button', { name: 'Cancel' }).click();
+        await expect(dialog).toBeHidden();
+        await builder.persisted(draft, groups, []);
+      });
+
+      await test.step('a pattern that takes too long is ended, and the page goes on answering', async () => {
+        const dialog = page.getByRole('dialog', {
+          name: 'Auto-group by name pattern',
+        });
+        const field = dialog.getByRole('textbox', { name: 'Name pattern' });
+        const submit = dialog.getByTestId('group-pattern-submit');
+
+        // A name of forty letters and one more character takes (a+)+$ an
+        // exponential time to give up on.
+        await builder.selectInOutline('EXP');
+        const name = builder.inspector.getByLabel('Name').first();
+        await name.fill(`${'a'.repeat(40)}!`);
+        await name.press('Enter');
+        await expect(builder.outline).toContainText(`${'a'.repeat(40)}!`);
+        await page.keyboard.press('Escape');
+
+        // Nothing selected: every ungrouped node is looked at.
+        await builder.canvas.focus();
+        await page.keyboard.press('Escape');
+        await builder.toolbar('auto-group').press('ArrowUp');
+        await page.keyboard.press('Enter');
+        await expect(field).toBeFocused();
+        await field.fill('(a+)+$');
+        const started = Date.now();
+        await submit.click();
+        await expect(submit).toHaveText('Grouping…');
+        await expect.soft(submit).toHaveAttribute('aria-busy', 'true');
+        await expect.soft(submit).toHaveAttribute('aria-disabled', 'true');
+        await expect.soft(submit).toBeFocused();
+        // The page is not frozen while the pattern runs.
+        expect(await page.evaluate(() => 1 + 1)).toBe(2);
+        await expect(dialog.getByTestId('group-pattern-error')).toHaveText(
+          'This pattern takes too long to match. Use a simpler one.',
+          { timeout: 4000 },
+        );
+        expect(Date.now() - started, 'ended after 2 seconds').toBeLessThan(
+          4000,
+        );
+        await expect.soft(submit).toHaveText('Group');
+        await expect.soft(submit).not.toHaveAttribute('aria-busy');
+        await expect.soft(field).toBeFocused();
+        await expect.soft(field).toHaveAttribute('aria-invalid', 'true');
+        await page.keyboard.press('Escape');
+        await expect(dialog).toBeHidden();
+        await expect.soft(builder.toolbar('auto-group')).toBeFocused();
+        await expect.soft(builder.summary).toContainText('0 groups');
+      });
+
+      await test.step('each count in the header selects every item of its kind', async () => {
+        const count = (kind) => page.getByTestId(`count-${kind}`);
+        const tip = page.getByTestId('counts-tooltip');
+        const rows = page.locator(
+          '[data-testid^="outline-item-"][aria-pressed="true"]',
+        );
+        const edges = page.locator('.vue-flow__edge.selected');
+        const view = () =>
+          page
+            .locator('.vue-flow__transformationpane')
+            .evaluate((element) => element.style.transform);
+
+        await builder.expectCounts(
+          { devices: 2, switches: 1, networks: 1, links: 2 },
+          { soft: true },
+        );
+        // A button named by its count, described by what it selects, with
+        // an icon a fifth larger than the 14 pixels it was.
+        await expect
+          .soft(page.getByRole('button', { name: '2 devices', exact: true }))
+          .toHaveAccessibleDescription('Select all 2 devices');
+        await expect
+          .soft(count('switches'))
+          .toHaveAccessibleDescription('Select the 1 switch');
+        await expect
+          .soft(count('networks'))
+          .toHaveAccessibleDescription('Select the switches of the 1 network');
+        await expect
+          .soft(count('links'))
+          .toHaveAccessibleDescription('Select all 2 connections');
+        for (const kind of ['devices', 'links', 'notes']) {
+          const icon = await count(kind).locator('svg').boundingBox();
+          expect
+            .soft([icon.width, icon.height], `${kind} icon`)
+            .toEqual([17, 17]);
+        }
+        const box = await count('notes').boundingBox();
+        expect
+          .soft(Math.min(box.width, box.height), 'target size')
+          .toBeGreaterThanOrEqual(24);
+
+        // A press replaces the selection, says so, keeps focus and does not
+        // move the view.
+        const before = await view();
+        await builder.selectInOutline('node');
+        await count('devices').hover();
+        await expect.soft(tip).toHaveText('Select all 2 devices');
+        await count('devices').click();
+        await expect(builder).toHaveAnnounced('Selected 2 devices.');
+        await expect.soft(rows).toHaveText([/node/, /node-2/]);
+        await expect.soft(count('devices')).toBeFocused();
+        expect.soft(await view(), 'the view does not move').toBe(before);
+
+        // Networks are not on the canvas: their switches are selected.
+        await count('networks').click();
+        await expect(builder).toHaveAnnounced(
+          'Selected 1 switch of 1 network.',
+        );
+        await expect.soft(rows).toHaveCount(1);
+        await expect.soft(rows).toHaveAccessibleName(/^Switch /);
+
+        // The arrow keys move between the counts, and Enter and Space press
+        // one: the connections, and no node.
+        await page.keyboard.press('ArrowRight');
+        await expect(count('links')).toBeFocused();
+        await page.keyboard.press('Enter');
+        await expect(builder).toHaveAnnounced('Selected 2 connections.');
+        await expect.soft(edges).toHaveCount(2);
+        await expect.soft(rows).toHaveCount(0);
+
+        // A count of none is unavailable, keeps focus, and says why it
+        // selects nothing; the selection stays.
+        await page.keyboard.press('ArrowRight');
+        await expect(count('groups')).toBeFocused();
+        await expect.soft(count('groups')).toHaveAccessibleName('0 groups');
+        await expect
+          .soft(count('groups'))
+          .toHaveAttribute('aria-disabled', 'true');
+        await expect.soft(count('groups')).toHaveAccessibleDescription('');
+        await expect.soft(tip).toHaveText('0 groups');
+        await page.keyboard.press('Space');
+        await expect(builder).toHaveAnnounced('There are no groups to select.');
+        await expect.soft(edges).toHaveCount(2);
+        await page.keyboard.press('End');
+        await expect(count('notes')).toBeFocused();
+        await page.keyboard.press('Home');
+        await expect(count('devices')).toBeFocused();
+        await expect
+          .soft(builder.summary.locator('[tabindex="0"]'))
+          .toHaveCount(1);
       });
 
       // Leaving the Builder ends ELK's worker.

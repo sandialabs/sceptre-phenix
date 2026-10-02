@@ -8,7 +8,7 @@
 //
 //   { $schema, revision, id, name?, description?, author?, createdAt?,
 //     updatedBy?, updatedAt?, nodes[], networks[], edges[], viewport, grid,
-//     scenario?, source?, layout? }
+//     scenario?, source?, layout?, templates?, icons? }
 //
 // Node payloads are discriminated by kind: device | switch | note | group.
 // `owner` is a property of the draft envelope and is never part of a document.
@@ -43,6 +43,58 @@ export const DEFAULT_NETWORK_COLORS = [
   '#6b6f18',
   '#8a4b8f',
 ];
+
+// The dash patterns a network or a connection may name, and the border
+// patterns a group may (LineStyles and BorderStyles in validate.go). Unset
+// leaves the pattern to the editor.
+export const LINE_STYLES = ['solid', 'dashed', 'dotted', 'dash-dot'];
+export const BORDER_STYLES = ['solid', 'dashed', 'dotted', 'double'];
+
+// The one form the outline or fill color of a node takes: #rrggbb, in
+// either case (hexColor in validate.go).
+export const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+// The colors a device or a switch node may have of its own on the canvas.
+export const NODE_COLOR_KEYS = ['outlineColor', 'fillColor'];
+
+// A device's presentation fields: its icon, the custom icon drawn in its
+// place (an icon id, see icons.js) and its colors on the canvas. The
+// Inspector applies a change of one at once, without Apply, and a new
+// device takes them from addNode's `look` option.
+export const LOOK_KEYS = ['iconKey', 'icon', ...NODE_COLOR_KEYS];
+
+// Those written only when set. A device always has an icon key.
+const OPTIONAL_LOOK_KEYS = LOOK_KEYS.filter((key) => key !== 'iconKey');
+
+/**
+ * The presentation fields of a device payload, or of the Inspector's
+ * working copy of one (see LOOK_KEYS), each as text: '' for one not set.
+ *
+ * @param {object} [payload]
+ * @returns {{iconKey: string, icon: string, outlineColor: string,
+ *   fillColor: string}}
+ */
+export function lookOf(payload) {
+  return Object.fromEntries(
+    LOOK_KEYS.map((key) => [key, String(payload?.[key] ?? '')]),
+  );
+}
+
+// The fields of a group that are written only when set.
+const GROUP_OPTIONAL_KEYS = ['description', 'borderStyle', 'iconKey', 'icon'];
+
+// Removes the keys of optional fields that hold no value, so a field set
+// and emptied again leaves the payload, and the document's bytes, as they
+// were.
+function dropEmpty(payload, keys) {
+  for (const key of keys) {
+    if ([undefined, null, ''].includes(payload[key])) {
+      delete payload[key];
+    }
+  }
+
+  return payload;
+}
 
 /**
  * Size of a node, falling back to the default for its kind.
@@ -161,7 +213,7 @@ export function specInterfaceFor(node, handleId) {
     return undefined;
   }
 
-  return specInterfaces(node).find((iface) => iface.name === handle.name);
+  return specInterfaces(node).find((iface) => iface?.name === handle.name);
 }
 
 // --- included devices ------------------------------------------------------
@@ -196,6 +248,46 @@ export function includedReason(node) {
   return from
     ? `${nodeLabel(node)} comes from included topology ${from}, so it is read only here. Change it in ${from}.`
     : '';
+}
+
+/**
+ * A new diagram in which the included devices of `doc` are its own, as
+ * CombineIncludes and Detach in types/builder/detach.go make one on Import:
+ * no device is marked included, and the diagram is linked to no config, so
+ * publishing it makes a new topology. It still includes the topologies
+ * whose devices were never in the diagram (source.unresolvedIncludes).
+ * What the import of `doc` warned about is left behind with its source;
+ * everything else is copied as it is.
+ *
+ * @param {object} doc
+ * @param {string} name the new diagram's name
+ * @returns {object} the new document; `doc` is left as it is
+ */
+export function combineIncluded(doc, name) {
+  const { importedAt, unresolvedIncludes } = doc.source || {};
+  const kept = (unresolvedIncludes || []).filter(Boolean);
+
+  return {
+    ...doc,
+    id: newId(),
+    name,
+    nodes: (doc.nodes || []).map((node) => {
+      if (!includedFrom(node)) {
+        return node;
+      }
+
+      const device = { ...node.device };
+
+      delete device.includedFrom;
+
+      return { ...node, device };
+    }),
+    source: {
+      kind: 'manual',
+      ...(importedAt ? { importedAt } : {}),
+      ...(kept.length ? { includeTopologies: [...kept] } : {}),
+    },
+  };
 }
 
 // The included device an edge attaches, if any.
@@ -303,7 +395,7 @@ export function networkColorInUse(doc, color) {
  * Adds a network (VLAN).
  *
  * @param {object} doc
- * @param {object} [init] name, alias, description, color
+ * @param {object} [init] name, alias, description, color, lineStyle
  * @returns {{doc: object, network: object}}
  */
 export function addNetwork(doc, init = {}) {
@@ -328,6 +420,10 @@ export function addNetwork(doc, init = {}) {
     network.alias = init.alias;
   }
 
+  if (init.lineStyle) {
+    network.lineStyle = init.lineStyle;
+  }
+
   return {
     doc: { ...doc, networks: [...(doc.networks || []), network] },
     network,
@@ -340,7 +436,8 @@ export function addNetwork(doc, init = {}) {
  *
  * @param {object} doc
  * @param {string} id
- * @param {object} patch name, alias, description, color
+ * @param {object} patch name, alias, description, color, and lineStyle, the
+ *   dash pattern of its connections, which '' removes
  * @returns {object} document
  */
 export function updateNetwork(doc, id, patch = {}) {
@@ -363,6 +460,13 @@ export function updateNetwork(doc, id, patch = {}) {
 
   if (patch.color !== undefined) {
     updated.color = patch.color;
+  }
+
+  // '' goes back to the pattern the canvas picks.
+  if (patch.lineStyle === '') {
+    delete updated.lineStyle;
+  } else if (patch.lineStyle !== undefined) {
+    updated.lineStyle = patch.lineStyle;
   }
 
   if (patch.alias !== undefined) {
@@ -450,28 +554,20 @@ export function removeNetworks(doc, ids) {
 
 // --- nodes -----------------------------------------------------------------
 
-function deviceSpec(init = {}) {
-  const hostname = init.hostname;
-
-  if (init.external) {
-    return {
-      external: true,
-      type: 'HIL',
-      general: { hostname, description: init.description || '' },
-      network: { interfaces: [] },
-    };
-  }
-
+// The spec of a new device that is given none: the palette's plain Device.
+// A device made from a template comes with the template's spec (see
+// nodeOptionsFromTemplate in templates.js).
+function deviceSpec(hostname) {
   return {
-    type: init.type || 'VirtualMachine',
+    type: 'VirtualMachine',
     general: {
       hostname,
-      description: init.description || '',
+      description: '',
       vm_type: 'kvm',
     },
     hardware: {
-      os_type: init.osType || 'linux',
-      drives: [{ image: init.image || 'ubuntu.qc2' }],
+      os_type: 'linux',
+      drives: [{ image: 'ubuntu.qc2' }],
     },
     network: { interfaces: [] },
   };
@@ -497,7 +593,12 @@ function uniqueHostname(doc, wanted) {
  *
  * @param {object} doc
  * @param {object} options kind, position, size, parentId, label, and kind
- *   specific fields (template/hostname/spec, networkId, text, title)
+ *   specific fields: a device's hostname, spec, look (its presentation
+ *   fields, see LOOK_KEYS) and interfaces; a switch's networkId, outlineColor
+ *   and fillColor; a note's text; a group's title, description, borderStyle,
+ *   iconKey and icon. A custom icon (a look's or a group's `icon`) is an
+ *   icon id: the document comes to carry the icon when it is committed (see
+ *   settleIcons in icons.js)
  * @returns {{doc: object, node: object, network?: object}}
  */
 export function addNode(doc, options = {}) {
@@ -529,24 +630,29 @@ export function addNode(doc, options = {}) {
     case 'device': {
       const hostname = uniqueHostname(
         doc,
-        options.hostname || options.label || options.template?.label || 'node',
+        options.hostname || options.label || 'node',
       );
       const spec = options.spec
         ? JSON.parse(JSON.stringify(options.spec))
-        : deviceSpec({ ...(options.template || {}), hostname });
+        : deviceSpec(hostname);
 
       setSpecHostname(spec, hostname);
+
+      const look = lookOf(options.look);
 
       node.label = node.label || hostname;
       node.device = {
         hostname,
-        iconKey: pickIconKey(
-          options.iconKey || options.template?.iconKey,
-          spec,
-        ),
+        iconKey: pickIconKey(look.iconKey || options.iconKey, spec),
         spec,
         interfaces: [],
       };
+
+      for (const key of OPTIONAL_LOOK_KEYS) {
+        if (look[key]) {
+          node.device[key] = look[key];
+        }
+      }
 
       const wanted = Array.isArray(options.interfaces)
         ? options.interfaces
@@ -569,6 +675,12 @@ export function addNode(doc, options = {}) {
         next = created.doc;
         network = created.network;
         node.switch = { networkId: network.id };
+      }
+
+      for (const key of NODE_COLOR_KEYS) {
+        if (options[key]) {
+          node.switch[key] = options[key];
+        }
       }
 
       // Named after its network (see nameSwitches), whatever label it came
@@ -599,6 +711,13 @@ export function addNode(doc, options = {}) {
         color: options.color || '',
         collapsed: false,
       };
+
+      for (const key of GROUP_OPTIONAL_KEYS) {
+        if (options[key]) {
+          node.group[key] = options[key];
+        }
+      }
+
       node.label = node.label || node.group.title;
       break;
     default:
@@ -701,12 +820,22 @@ export function updateNode(doc, id, patch = {}) {
         networks.get(handleId)?.id === networkByName(doc, vlan)?.id,
     );
 
-    updated.device = device;
+    // An emptied color is no color, and an emptied custom icon none.
+    updated.device = dropEmpty(device, OPTIONAL_LOOK_KEYS);
     updated.label = patch.label !== undefined ? patch.label : device.hostname;
   }
 
+  // A patch that names no network keeps the switch on its own, and one that
+  // names no color keeps its colors; an emptied color is no color.
   if (patch.switch && node.kind === 'switch') {
-    updated.switch = { networkId: patch.switch.networkId };
+    updated.switch = dropEmpty(
+      {
+        ...node.switch,
+        ...patch.switch,
+        networkId: patch.switch.networkId ?? node.switch?.networkId,
+      },
+      NODE_COLOR_KEYS,
+    );
   }
 
   // Named after its network (see nameSwitches), whatever the patch says.
@@ -720,7 +849,10 @@ export function updateNode(doc, id, patch = {}) {
   }
 
   if (patch.group && node.kind === 'group') {
-    updated.group = { ...node.group, ...patch.group };
+    updated.group = dropEmpty(
+      { ...node.group, ...patch.group },
+      GROUP_OPTIONAL_KEYS,
+    );
 
     if (patch.group.title !== undefined && patch.label === undefined) {
       updated.label = patch.group.title;
@@ -774,7 +906,9 @@ export function updateNode(doc, id, patch = {}) {
  */
 function reconcileDeviceHandles(device, sameNetwork = () => true) {
   const handles = device.interfaces || [];
-  const specInterfaces = (device.spec?.network?.interfaces || []).filter(
+  // A spec is free-form: interfaces that are no list hold none.
+  const listed = device.spec?.network?.interfaces;
+  const specInterfaces = (Array.isArray(listed) ? listed : []).filter(
     (iface) => typeof iface?.name === 'string' && iface.name !== '',
   );
   const specNames = specInterfaces.map((iface) => iface.name);
@@ -1788,7 +1922,7 @@ export function removeInterface(doc, nodeId, handleId) {
   if (Array.isArray(copy.device.spec?.network?.interfaces)) {
     copy.device.spec.network.interfaces =
       copy.device.spec.network.interfaces.filter(
-        (iface) => iface.name !== handle.name,
+        (iface) => iface?.name !== handle.name,
       );
   }
 
@@ -1834,7 +1968,7 @@ export function renameInterface(doc, nodeId, handleId, name) {
   if (Array.isArray(copy.device.spec?.network?.interfaces)) {
     copy.device.spec.network.interfaces =
       copy.device.spec.network.interfaces.map((iface) =>
-        iface.name === handle.name ? { ...iface, name: wanted } : iface,
+        iface?.name === handle.name ? { ...iface, name: wanted } : iface,
       );
   }
 
@@ -1945,7 +2079,7 @@ export function validateConnection(doc, connection = {}) {
  *
  * @param {object} doc
  * @param {object} connection sourceNodeId, sourceHandleId, targetNodeId,
- *   targetHandleId, label, color
+ *   targetHandleId, label, color, lineStyle
  * @returns {{doc: object, edge: object|null, error?: string}}
  */
 export function connect(doc, connection = {}) {
@@ -1991,6 +2125,10 @@ export function connect(doc, connection = {}) {
 
   if (connection.color) {
     edge.color = connection.color;
+  }
+
+  if (connection.lineStyle) {
+    edge.lineStyle = connection.lineStyle;
   }
 
   next = { ...next, edges: [...(next.edges || []), edge] };
@@ -2216,8 +2354,8 @@ function freeSpotBetween(doc, a, b, size) {
 /**
  * @param {object} doc
  * @param {string} id
- * @param {object} patch label, and color, the connection's own, drawn in
- *   place of its network's; '' removes either
+ * @param {object} patch label, and color and lineStyle, the connection's
+ *   own, drawn in place of its network's; '' removes any of them
  * @returns {object} document
  */
 export function updateEdge(doc, id, patch = {}) {
@@ -2230,7 +2368,7 @@ export function updateEdge(doc, id, patch = {}) {
 
       const updated = { ...edge };
 
-      for (const key of ['label', 'color']) {
+      for (const key of ['label', 'color', 'lineStyle']) {
         if (patch[key] === '') {
           delete updated[key];
         } else if (patch[key] !== undefined) {
@@ -2505,6 +2643,129 @@ export function connectionChanges(before, after, nodeId) {
   return [...added, ...changed];
 }
 
+// --- templates -------------------------------------------------------------
+
+// What a device node has that a template's device does not: its name is
+// the template's base hostname, in its spec, and its handles and the
+// topology it is included from belong to a diagram.
+const NOT_TEMPLATE_KEYS = ['hostname', 'interfaces', 'includedFrom'];
+
+/**
+ * The device of a template, from a device node's payload or from another
+ * template's device: every field of the payload a template keeps, the spec
+ * copied, and a presentation field that holds no value left out. A field
+ * added to devices is a template's too, with no change here.
+ *
+ * @param {object} payload a node's `device`, or a template's
+ * @returns {object} {iconKey?, icon?, outlineColor?, fillColor?, spec}
+ */
+export function templateDevice(payload) {
+  const device = {};
+
+  for (const [key, value] of Object.entries(payload || {})) {
+    if (NOT_TEMPLATE_KEYS.includes(key) || key === 'spec') {
+      continue;
+    }
+
+    if (![undefined, null, ''].includes(value)) {
+      device[key] = value;
+    }
+  }
+
+  device.spec = JSON.parse(JSON.stringify(payload?.spec ?? {}));
+
+  return device;
+}
+
+// A template as a document keeps it: its description only when it has one.
+function templateEntry(id, { name, description, device }) {
+  return {
+    id,
+    name,
+    ...(description ? { description } : {}),
+    device: templateDevice(device),
+  };
+}
+
+/**
+ * Saves a device template in the diagram. The copy gets an id of its own,
+ * whatever id the template came with: a built-in template's is a name, and
+ * a library's may be in the diagram already.
+ *
+ * @param {object} doc
+ * @param {{name: string, description?: string, device: object}} template
+ * @returns {{doc: object, template: object}} the template as the document
+ *   holds it
+ */
+export function addTemplate(doc, template) {
+  const added = templateEntry(newId(), template);
+
+  return {
+    doc: { ...doc, templates: [...(doc.templates || []), added] },
+    template: added,
+  };
+}
+
+/**
+ * Changes a template of the diagram: its name, its description (an emptied
+ * one is removed) and its device, each only when the patch has it.
+ *
+ * @param {object} doc
+ * @param {string} id
+ * @param {{name?: string, description?: string, device?: object}} patch
+ * @returns {object} document, the same one when it has no such template
+ */
+export function updateTemplate(doc, id, patch = {}) {
+  const templates = doc.templates || [];
+  const index = templates.findIndex((template) => template.id === id);
+
+  if (index < 0) {
+    return doc;
+  }
+
+  const current = templates[index];
+  const updated = templateEntry(id, {
+    name: patch.name ?? current.name,
+    description: patch.description ?? current.description,
+    device: patch.device ?? current.device,
+  });
+
+  return {
+    ...doc,
+    templates: templates.map((template, at) =>
+      at === index ? updated : template,
+    ),
+  };
+}
+
+/**
+ * Removes a template from the diagram. A diagram left with none has no
+ * `templates`, as one that never had any. Devices made from the template
+ * stay as they are: they keep no link to it.
+ *
+ * @param {object} doc
+ * @param {string} id
+ * @returns {object} document, the same one when it has no such template
+ */
+export function removeTemplate(doc, id) {
+  const templates = doc.templates || [];
+  const kept = templates.filter((template) => template.id !== id);
+
+  if (kept.length === templates.length) {
+    return doc;
+  }
+
+  const next = { ...doc };
+
+  if (kept.length > 0) {
+    next.templates = kept;
+  } else {
+    delete next.templates;
+  }
+
+  return next;
+}
+
 // --- viewport / grid -------------------------------------------------------
 
 /**
@@ -2552,7 +2813,7 @@ const BEFORE_STAMP = new Set([
  * time the server wrote into the stored copy of it (the `stamp` of a create
  * or save response). A value the stamp lacks is removed, as the stored
  * document has none. The four keys follow the description, as in the
- * server's encoding, so an export reads like the stored document. The same
+ * server's encoding, so a download reads like the stored document. The same
  * document is returned when it holds exactly the stamp already.
  *
  * @param {object} doc
@@ -2826,6 +3087,26 @@ export function nodeLabel(node) {
 }
 
 /**
+ * What a device node shows as its type: the phenix node type as stored
+ * (VirtualMachine, Router, Firewall, ...), "External" for an external
+ * device whatever its type, and "Device" when the spec names no type.
+ *
+ * @param {object} node
+ * @returns {string}
+ */
+export function deviceTypeLabel(node) {
+  const spec = node?.device?.spec;
+
+  if (spec?.external === true) {
+    return 'External';
+  }
+
+  const type = typeof spec?.type === 'string' ? spec.type.trim() : '';
+
+  return type || 'Device';
+}
+
+/**
  * Label for one end of a connection: the node's label, and at a device the
  * interface the connection uses, as "web-01 (eth1)", so two connections
  * between the same nodes are told apart.
@@ -2843,8 +3124,9 @@ export function connectionEndLabel(node, handleId) {
 }
 
 /**
- * Comment shown on hover/focus. Device comments are the phenix node
- * description; notes use their text.
+ * A node's comment, which its accessible name ends with. A device's is the
+ * phenix node description, shown on the node and in its info tooltip; a
+ * note's is its text; a group's is its description, shown under its title.
  *
  * @param {object} node
  * @returns {string}
@@ -2856,6 +3138,10 @@ export function nodeComment(node) {
 
   if (node?.kind === 'note') {
     return node.note?.text || '';
+  }
+
+  if (node?.kind === 'group') {
+    return node.group?.description || '';
   }
 
   return '';

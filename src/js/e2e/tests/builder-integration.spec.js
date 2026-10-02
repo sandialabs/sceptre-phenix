@@ -1,7 +1,5 @@
-// Builder integration tests: the legacy /builder page, the header links, the
-// Configs page hand-off to both builders, and the API contracts added with
-// Builder v2. They need a server started with --features builder-v2; the
-// flag-off behavior lives in builder-feature-off.spec.js.
+// Builder integration tests: the header link, the Configs page hand-off, and
+// the API contracts of the Builder.
 
 const crypto = require('node:crypto');
 
@@ -20,27 +18,8 @@ const {
   visit,
   waitForApi,
 } = require('./builder-support');
-const { fatalOf } = require('./helpers');
 
 const NO_ROUTE = 'no API route matches this request';
-const LEGACY_PALETTES = [
-  'VM Networking',
-  'VM Hosts',
-  'External Networking',
-  'External Hosts',
-];
-
-// Script errors the legacy Save to phēnix dialog has always thrown (they
-// predate Builder v2). Chrome and Firefox word them differently. Fixing the
-// legacy Builder is out of this suite's scope, so the legacy tests ignore
-// them.
-const LEGACY_COPY_SCRIPT = /onclick/;
-const LEGACY_NO_SCENARIOS = /reading 'length'|data\.configs is null/;
-
-test.skip(
-  process.env.E2E_BUILDER_V2 === 'off',
-  'needs a server started with --features builder-v2',
-);
 
 function topology(name, annotations) {
   return {
@@ -98,6 +77,11 @@ function configRow(page, name) {
   return page.locator('tr', { hasText: name });
 }
 
+// The Builder tag of a topology's row, where it is a link into the Builder.
+function builderTag(page, name) {
+  return page.locator(`[data-config-builder="Topology/${name}"]`);
+}
+
 // The row's icon-only edit button, found by its tooltip label rather than by
 // its position among the row actions.
 function editButton(row) {
@@ -138,227 +122,27 @@ function recordedToasts(page) {
   return page.evaluate(() => window.__e2eToasts);
 }
 
-async function openLegacy(page) {
-  await page.goto('/builder');
-  await expect(page.locator('#editor .geDiagramContainer')).toBeVisible({
-    timeout: 20000,
-  });
-}
-
-async function legacyFileMenu(page, item) {
-  await page.locator('.geMenubar a.geItem', { hasText: 'File' }).click();
-  await page.locator('tr.mxPopupMenuItem', { hasText: item }).click();
-}
-
-// Opens File > Save to phēnix and waits for its scenario list to load.
-async function openLegacySave(page) {
-  const scenarios = waitForApi(page, 'GET', '/configs', '?kind=scenario');
-  await legacyFileMenu(page, 'Save to phēnix');
-  expect((await scenarios).ok()).toBeTruthy();
-  await expect(page.locator('#topo-name')).toBeVisible();
-}
-
-// The page errors a legacy test saw, minus the known legacy script errors.
-function legacyFatal(issues) {
-  return fatalOf(issues).filter(
-    (issue) =>
-      !LEGACY_COPY_SCRIPT.test(issue.text) &&
-      !LEGACY_NO_SCENARIOS.test(issue.text),
-  );
-}
-
-function expectNoLegacyFatal(issues) {
-  const fatal = legacyFatal(issues);
-  expect(fatal, JSON.stringify(fatal, null, 2)).toEqual([]);
-}
-
-function legacySuccess(page, name) {
-  return page.locator('.ui-dialog').filter({
-    hasText: new RegExp(
-      `The ${name} topology was (added|saved) to phēnix store`,
-    ),
-  });
-}
-
-test.describe('legacy Builder', () => {
-  // The legacy editor parses and re-serializes its XML with the browser's DOM
-  // APIs, so this also runs in Firefox.
-  test(
-    'renders the editor, and Import from phēnix lists only legacy diagrams and reopens one',
-    {
-      tag: '@cross-browser',
-    },
-    async ({ page, request, tracker, issues }, testInfo) => {
-      await test.step('the editor renders with the phēnix palettes', async () => {
-        await openLegacy(page);
-        await expect
-          .soft(page.locator('.geSidebarContainer .geTitle'))
-          .toContainText(LEGACY_PALETTES);
-        await expect
-          .soft(page.locator('.geMenubar a.geItem'))
-          .toContainText(['File', 'Edit', 'View']);
-
-        // Rendering the editor raises no script error at all; the known legacy
-        // errors come from the Save to phēnix dialog.
-        const fatal = fatalOf(issues);
-        expect.soft(fatal, JSON.stringify(fatal, null, 2)).toEqual([]);
-      });
-
-      // The Import list is fetched when its menu item is chosen, so configs
-      // seeded after the page has loaded are listed.
-      const legacy = uniqueName(testInfo, 'legacy');
-      const plain = uniqueName(testInfo, 'plain');
-      const v2 = uniqueName(testInfo, 'v2');
-      const label = `cell-${crypto.randomUUID().slice(0, 8)}`;
-      const seeded = legacyXml(label);
-      await seedConfig(
-        request,
-        tracker,
-        topology(legacy, { 'builder-xml': seeded }),
-      );
-      await seedConfig(request, tracker, topology(plain));
-      await publishTopology(request, tracker, v2);
-
-      await test.step('Import from phēnix lists only legacy diagrams', async () => {
-        const listed = waitForApi(page, 'GET', '/builder/topologies');
-        await legacyFileMenu(page, 'Import from phēnix');
-        expect.soft((await listed).ok()).toBeTruthy();
-
-        const select = page.locator('#topology-name');
-        await expect(select.locator(`option[value="${legacy}"]`)).toHaveCount(
-          1,
-        );
-        await expect
-          .soft(select.locator(`option[value="${plain}"]`))
-          .toHaveCount(0);
-        await expect
-          .soft(select.locator(`option[value="${v2}"]`))
-          .toHaveCount(0);
-      });
-
-      await test.step('a reopened legacy diagram saves back to its topology', async () => {
-        await page.locator('#topology-name').selectOption(legacy);
-        const loaded = waitForApi(page, 'GET', `/builder/topologies/${legacy}`);
-        await page.getByRole('button', { name: 'Open', exact: true }).click();
-        expect.soft((await loaded).ok()).toBeTruthy();
-        await expect
-          .soft(
-            page
-              .locator('.geDiagramContainer')
-              .getByText(label, { exact: true }),
-          )
-          .toBeVisible();
-
-        // The imported name becomes the save target, so saving updates it.
-        await openLegacySave(page);
-        await expect(page.locator('#topo-name')).toHaveValue(legacy);
-        const updated = waitForApi(
-          page,
-          'PUT',
-          `/builder/topologies/${legacy}`,
-        );
-        await page.getByRole('button', { name: 'Add Topology' }).click();
-        expect((await updated).ok()).toBeTruthy();
-        await expect.soft(legacySuccess(page, legacy)).toBeVisible();
-
-        const stored = await (
-          await request.get(`${API}/configs/Topology/${legacy}`)
-        ).json();
-        // The editor re-serializes the diagram (the cell becomes an <object>
-        // with a label attribute), so this proves the save wrote the editor's
-        // model rather than leaving the seeded XML in place.
-        const saved = stored.metadata?.annotations?.['builder-xml'];
-        expect.soft(saved).not.toBe(seeded);
-        expect.soft(saved).toContain(`label="${label}"`);
-      });
-
-      expectNoLegacyFatal(issues);
-    },
-  );
-
-  test('Save to phēnix offers stored scenarios and adds a legacy topology', async ({
-    page,
-    request,
-    tracker,
-    issues,
-  }, testInfo) => {
-    const scenario = uniqueName(testInfo, 'scenario');
-    const name = uniqueName(testInfo, 'saved');
-    await seedConfig(request, tracker, {
-      apiVersion: 'phenix.sandia.gov/v2',
-      kind: 'Scenario',
-      metadata: { name: scenario },
-      spec: { apps: [] },
-    });
-
-    await openLegacy(page);
-    await openLegacySave(page);
-    const topoName = page.locator('#topo-name');
-    const scenarios = page.locator('#scenario-name');
-    await expect(topoName).toHaveValue('FIXME');
-    await expect(scenarios.locator(`option[value="${scenario}"]`)).toHaveCount(
-      1,
-    );
-
-    await scenarios.selectOption(scenario);
-    await expect(
-      page.getByRole('button', { name: 'Create Experiment' }),
-    ).toBeVisible();
-    await scenarios.selectOption('');
-    const add = page.getByRole('button', { name: 'Add Topology' });
-    await expect(add).toBeVisible();
-
-    await topoName.fill(name);
-    await expect(page.locator('#jsonString')).toHaveValue(
-      new RegExp(`name: ${name}`),
-    );
-    tracker.config('Topology', name);
-    const created = waitForApi(page, 'POST', '/builder/topologies');
-    await add.click();
-    expect((await created).status()).toBe(201);
-    await expect(legacySuccess(page, name)).toBeVisible();
-
-    const stored = await (
-      await request.get(`${API}/configs/Topology/${name}`)
-    ).json();
-    expect(stored.metadata.annotations['builder-xml']).toContain(
-      '<mxGraphModel',
-    );
-
-    expectNoLegacyFatal(issues);
-  });
-});
-
 test.describe('header', () => {
-  test('links to both the legacy Builder and Builder v2', async ({
-    page,
-    issues,
-    tracker,
-  }) => {
+  test('links to the Builder', async ({ page, issues, tracker }) => {
     await visit(page, '/experiments');
 
-    const legacy = page.getByRole('link', { name: 'Builder', exact: true });
-    await expect(legacy).toBeVisible({ timeout: 20000 });
-    await expect(legacy).toHaveAttribute('href', /\/builder\?token=/);
-    await expect(legacy).toHaveAttribute('target', '_blank');
-    const v2 = page.getByTestId('nav-builder-v2');
-    await expect(v2).toBeVisible();
-    // The tab keeps its "beta" tag, which is part of its name.
-    await expect(v2).toHaveAccessibleName('Builder v2 beta');
-    await expect.soft(v2.locator('.tag')).toHaveText('beta');
+    // One link is named Builder, with no tag in its name.
+    const nav = page.getByRole('link', { name: 'Builder', exact: true });
+    await expect(nav).toBeVisible({ timeout: 20000 });
+    await expect(nav).toHaveCount(1);
+    await expect(nav).toHaveAttribute('data-testid', 'nav-builder');
+    await expect(nav).toHaveAccessibleName('Builder');
+    await expect(nav.locator('.tag')).toHaveCount(0);
+    // It opens the editor in this window, and no header link carries a
+    // session token.
+    await expect.soft(nav).not.toHaveAttribute('target');
+    await expect.soft(nav).toHaveAttribute('href', /\/builder$/);
+    await expect.soft(page.locator('.navbar a[href*="token="]')).toHaveCount(0);
 
-    const popup = page.context().waitForEvent('page');
-    await legacy.click();
-    const tab = await popup;
-    await expect(tab.locator('#editor .geDiagramContainer')).toBeVisible({
-      timeout: 20000,
-    });
-    await tab.close();
-
-    await v2.click();
-    await expect(page).toHaveURL(/\/builder-v2$/);
+    await nav.click();
+    await expect(page).toHaveURL(/\/builder$/);
     await expect(
-      page.getByRole('heading', { name: 'Builder v2' }),
+      page.getByRole('heading', { name: 'Builder', exact: true }),
     ).toBeVisible();
 
     await test.step('over plain HTTP from another host the editor works', async () => {
@@ -367,14 +151,14 @@ test.describe('header', () => {
       // through a made-up host that Playwright routes to it. A page of its
       // own keeps that host's failing websocket out of `issues`.
       const base = new URL(page.url()).origin;
-      const origin = 'http://builder-v2.test';
+      const origin = 'http://builder.test';
       const other = await page.context().newPage();
       const errors = [];
       other.on('pageerror', (error) => errors.push(String(error)));
       tracker.watch(other);
       // The made-up host has no websocket server; an open mock keeps the
       // app's "connection closed" toast from covering the page.
-      await other.routeWebSocket(/^wss?:\/\/builder-v2\.test\//, () => {});
+      await other.routeWebSocket(/^wss?:\/\/builder\.test\//, () => {});
       await other.route(`${origin}/**`, async (route) => {
         const request = route.request();
         const response = await route.fetch({
@@ -388,9 +172,9 @@ test.describe('header', () => {
         await route.fulfill({ response });
       });
 
-      await other.goto(`${origin}/builder-v2`);
+      await other.goto(`${origin}/builder`);
       await expect(
-        other.getByRole('heading', { name: 'Builder v2', exact: true }),
+        other.getByRole('heading', { name: 'Builder', exact: true }),
       ).toBeVisible({ timeout: 20000 });
       expect
         .soft(
@@ -403,7 +187,7 @@ test.describe('header', () => {
         .toEqual([false, 'undefined', 'undefined']);
 
       // The new draft, and the device added to it, get new ids.
-      const created = waitForApi(other, 'POST', '/builder-v2/drafts');
+      const created = waitForApi(other, 'POST', '/builder/drafts');
       await other.getByTestId('drafts-blank').click();
       expect((await created).ok()).toBe(true);
       await expect(other.getByTestId('builder-canvas')).toBeVisible();
@@ -436,7 +220,10 @@ test.describe('Configs page', () => {
   }, testInfo) => {
     const plain = uniqueName(testInfo, 'plain');
     const legacy = uniqueName(testInfo, 'legacy');
-    const v2 = uniqueName(testInfo, 'v2');
+    const built = uniqueName(testInfo, 'built');
+    // Published by a draft that is gone since, as a diagram someone else
+    // published is to this user.
+    const orphan = uniqueName(testInfo, 'orphan');
     const xml = legacyXml('legacy-cell');
     await seedConfig(request, tracker, topology(plain));
     await seedConfig(
@@ -444,19 +231,68 @@ test.describe('Configs page', () => {
       tracker,
       topology(legacy, { 'builder-xml': xml }),
     );
-    await publishTopology(request, tracker, v2, deviceDocument(v2, 'host-a'));
+    const publisher = await publishTopology(
+      request,
+      tracker,
+      built,
+      deviceDocument(built, 'host-a'),
+    );
+    await publishTopology(
+      request,
+      tracker,
+      orphan,
+      deviceDocument(orphan, 'host-o'),
+      { keepDraft: false },
+    );
 
     await openConfigs(page);
     await expect(configRow(page, plain)).toBeVisible();
 
-    await test.step('each Builder topology is tagged with its builder', async () => {
+    await test.step('each Builder topology is tagged with its builder, and the tag is a link into it', async () => {
       await expect.soft(configRow(page, plain).locator('.tag')).toHaveCount(0);
       await expect
-        .soft(configRow(page, legacy).locator('.tag'))
-        .toHaveText('builder legacy');
+        .soft(configRow(page, plain).getByRole('link'))
+        .toHaveCount(0);
+
+      // The name starts with the text the tag shows.
+      const converts = builderTag(page, legacy);
       await expect
-        .soft(configRow(page, v2).locator('.tag'))
-        .toHaveText('builder v2');
+        .soft(converts)
+        .toHaveAccessibleName(
+          `builder legacy: import Topology ${legacy} into the Builder`,
+        );
+      await expect.soft(converts).toHaveText('builder legacy');
+      await expect
+        .soft(converts)
+        .toHaveAttribute('href', new RegExp(`/builder\\?topology=${legacy}$`));
+      await expect
+        .soft(
+          configRow(page, legacy)
+            .locator('.b-tooltip')
+            .filter({ hasText: 'import into Builder' }),
+        )
+        .toHaveCount(1);
+
+      const opens = builderTag(page, built);
+      await expect
+        .soft(opens)
+        .toHaveAccessibleName(`builder: open Topology ${built} in the Builder`);
+      await expect.soft(opens).toHaveText('builder');
+      await expect.soft(opens).toHaveClass(/\btag\b/);
+      await expect
+        .soft(opens)
+        .toHaveAttribute('href', new RegExp(`/builder\\?topology=${built}$`));
+      await expect
+        .soft(
+          configRow(page, built)
+            .locator('.b-tooltip')
+            .filter({ hasText: 'open in Builder' }),
+        )
+        .toHaveCount(1);
+      // A pointer target of at least 24 by 24 CSS pixels (WCAG 2.5.8).
+      const box = await opens.boundingBox();
+      expect.soft(box.height, 'tag height').toBeGreaterThanOrEqual(24);
+      expect.soft(box.width, 'tag width').toBeGreaterThanOrEqual(24);
     });
 
     await test.step('a legacy Builder topology opens in the read-only viewer', async () => {
@@ -471,40 +307,106 @@ test.describe('Configs page', () => {
       expect.soft(text).toContain(`name: ${legacy}`);
       expect.soft(text).toContain('builder-xml: <SNIPPED>');
       await expect.soft(page.locator('.notification.is-danger')).toHaveCount(0);
+      // Its diagram is converted by an import, which the first button
+      // starts.
+      await expect
+        .soft(viewer.locator('footer button').first())
+        .toHaveText('Import into Builder');
+      await expect
+        .soft(viewer.locator('footer button').nth(1))
+        .toHaveText('Edit Config');
 
       await viewer.getByRole('button', { name: 'Exit' }).click();
       await expect(viewer).toBeHidden();
       await expect.soft(view).toBeFocused();
     });
 
-    await test.step('a legacy Builder topology is blocked from raw editing', async () => {
-      await editConfig(page, legacy);
-      // An alert dialog named by its title and described by its message.
-      const dialog = page.getByRole('alertdialog', {
-        name: 'Built by Builder',
-      });
-      await expect(dialog).toBeVisible();
+    await test.step('a Builder topology opens in the read-only viewer', async () => {
+      const view = page.getByRole('button', { name: `View Topology ${built}` });
+      const fetched = waitForApi(page, 'GET', `/configs/Topology/${built}`);
+      // The name is a button, so the keyboard reaches the viewer too.
+      await view.focus();
+      await page.keyboard.press('Enter');
+      await fetched;
+      const viewer = page.getByRole('dialog', { name: `Topology/${built}` });
+      await expect(viewer).toBeVisible();
+      const text = viewer.getByRole('textbox');
+      // The reference is shown as the nested map it is.
       await expect
-        .soft(dialog)
-        .toHaveAccessibleDescription(
-          'This configuration can only be edited in Builder',
+        .soft(text)
+        .toHaveValue(
+          /\n( +)builder-doc:\n( +)digest: sha256:[0-9a-f]{64}\n\2id: [0-9a-f]{64}\n/,
         );
-      await expect.soft(page).toHaveURL(/\/configs\/$/);
+      await expect.soft(text).toHaveValue(/hostname: host-a/);
+      await expect.soft(text).not.toBeEditable();
+      // The Builder button comes first, left of Edit Config.
       await expect
-        .soft(page.getByRole('button', { name: 'Save' }))
-        .toBeDisabled();
-      await dialog.getByRole('button', { name: 'OK' }).click();
-      await expect(dialog).toBeHidden();
-      await expect(configRow(page, legacy)).toBeVisible();
-      // Focus goes back to the edit button, which is named.
+        .soft(viewer.locator('footer button'))
+        .toHaveText(['Open in Builder', 'Edit Config', '', 'Exit']);
       await expect
-        .soft(page.getByRole('button', { name: `Edit Topology ${legacy}` }))
+        .soft(viewer.getByTestId('viewer-builder'))
+        .toHaveText('Open in Builder');
+
+      await viewer.getByRole('button', { name: 'Exit' }).click();
+      await expect(viewer).toBeHidden();
+      await expect.soft(view).toBeFocused();
+    });
+
+    await test.step('a legacy Builder topology opens in the YAML editor, which leaves its diagram out and saves it back', async () => {
+      await editConfig(page, legacy);
+      await expect
+        .soft(
+          page.getByRole('heading', {
+            level: 1,
+            name: `Edit Topology/${legacy}`,
+          }),
+        )
         .toBeFocused();
+      const content = page.locator('.ace_content');
+      await expect.soft(content).toContainText(`name: ${legacy}`);
+      // The diagram is long XML on one line: the text shows a placeholder.
+      await expect.soft(content).toContainText('builder-xml: <SNIPPED>');
+      await expect.soft(content).not.toContainText('mxGraphModel');
+      await expect.soft(page).toHaveURL(/\/configs\/$/);
+      await expect.soft(page.locator('.dialog.modal.is-active')).toHaveCount(0);
+      const save = page.getByRole('button', { name: 'Save', exact: true });
+      await expect(save).toBeEnabled();
+
+      // An edit beside the placeholder is saved, and the diagram with it,
+      // as it was.
+      await page.locator('.ace_editor').evaluate((element) => {
+        const { editor } = element.env;
+        editor.setValue(
+          editor
+            .getValue()
+            .replace(/^( *)builder-xml: <SNIPPED>$/m, '$&\n$1owner: e2e'),
+          -1,
+        );
+      });
+      await expect.soft(content).toContainText('owner: e2e');
+      const saved = waitForApi(page, 'PUT', `/configs/Topology/${legacy}`);
+      await save.click();
+      await page
+        .locator('.dialog.modal.is-active')
+        .getByRole('button', { name: 'Save' })
+        .click();
+      const response = await saved;
+      expect(response.ok(), await response.text()).toBeTruthy();
+      expect
+        .soft(response.request().postDataJSON().metadata.annotations)
+        .toEqual({ 'builder-xml': xml, owner: 'e2e' });
+      await expect(configRow(page, legacy)).toBeVisible();
 
       const stored = await (
         await request.get(`${API}/configs/Topology/${legacy}`)
       ).json();
-      expect.soft(stored.metadata?.annotations?.['builder-xml']).toBe(xml);
+      expect
+        .soft(stored.metadata?.annotations)
+        .toEqual({ 'builder-xml': xml, owner: 'e2e' });
+      // It is still a legacy Builder topology.
+      await expect
+        .soft(configRow(page, legacy).locator('.tag'))
+        .toHaveText('builder legacy');
     });
 
     await test.step('an ordinary topology opens in the YAML editor', async () => {
@@ -544,34 +446,184 @@ test.describe('Configs page', () => {
         .locator('.dialog.modal.is-active')
         .getByRole('button', { name: 'Continue' })
         .click();
-      await expect(configRow(page, v2)).toBeVisible();
+      await expect(configRow(page, built)).toBeVisible();
     });
 
-    await test.step('a Builder v2 topology opens in Builder v2 as a new draft', async () => {
-      const created = waitForApi(page, 'POST', '/builder-v2/drafts');
-      await editConfig(page, v2);
+    const creates = [];
+    page.on('request', (sent) => {
+      if (
+        sent.method() === 'POST' &&
+        new URL(sent.url()).pathname === `${API}/builder/drafts`
+      ) {
+        creates.push(sent.url());
+      }
+    });
+
+    await test.step("the viewer's button opens the Import dialog on a plain topology, and makes nothing until Import", async () => {
+      const fetched = waitForApi(page, 'GET', `/configs/Topology/${plain}`);
+      await page
+        .getByRole('button', { name: `View Topology ${plain}` })
+        .click();
+      await fetched;
+      const viewer = page.getByRole('dialog', { name: `Topology/${plain}` });
+      const button = viewer.getByTestId('viewer-builder');
+      await expect(button).toHaveText('Import into Builder');
+      // It is the footer's first Tab stop, and Enter presses it.
+      await expect
+        .soft(viewer.locator('footer button').first())
+        .toHaveText('Import into Builder');
+      await button.focus();
+      await page.keyboard.press('Enter');
+
+      const dialog = page.getByRole('dialog', {
+        name: 'Import topology or experiment',
+      });
+      await expect(dialog).toBeVisible({ timeout: 20000 });
+      const intro = `Topology ${plain} has no Builder diagram to open. Import it to make one.`;
+      await expect.soft(dialog.getByTestId('import-intro')).toHaveText(intro);
+      await expect.soft(dialog).toHaveAccessibleDescription(intro);
+      await expect.soft(dialog.getByLabel('Stored config')).toBeChecked();
+      await expect
+        .soft(dialog.getByTestId('import-kind'))
+        .toHaveValue('topology');
+      await expect(dialog.getByTestId('import-name')).toHaveValue(plain);
+      // It has no includes: a copy is the only choice.
+      await expect.soft(dialog.getByTestId('import-includes')).toHaveCount(0);
+      await expect.soft(dialog.getByTestId('import-copy')).not.toBeChecked();
+      await expect.soft(dialog.getByTestId('import-submit')).toBeEnabled();
+      // The address no longer names the topology, so a reload does not ask
+      // again.
+      await expect.soft(page).toHaveURL(/\/builder$/);
+      await expectAccessible(page, {
+        soft: true,
+        label: 'axe on the Import dialog opened from Configs',
+      });
+
+      // Choosing another source takes the sentence about this one away.
+      await dialog.getByTestId('import-name').selectOption(built);
+      await expect.soft(dialog.getByTestId('import-intro')).toHaveCount(0);
+      await expect.soft(dialog).toHaveAccessibleDescription('');
+      await dialog.getByTestId('import-name').selectOption(plain);
+      await expect.soft(dialog.getByTestId('import-intro')).toHaveText(intro);
+
+      // Cancel makes nothing, and focus goes to the landing's Import.
+      await dialog.getByRole('button', { name: 'Cancel' }).click();
+      await expect(dialog).toBeHidden();
+      await expect.soft(page.getByTestId('drafts-import')).toBeFocused();
+      await expect.soft(builder.landingHeading).toBeVisible();
+      expect.soft(creates, 'draft creates').toEqual([]);
+    });
+
+    await test.step('the tag of a legacy Builder topology opens the Import dialog, which converts it', async () => {
+      await openConfigs(page);
+      await builderTag(page, legacy).click();
+      const dialog = page.getByRole('dialog', {
+        name: 'Import topology or experiment',
+      });
+      await expect(dialog).toBeVisible({ timeout: 20000 });
+      await expect
+        .soft(dialog.getByTestId('import-intro'))
+        .toHaveText(
+          `Topology ${legacy} has a legacy Builder diagram. Import it to convert the diagram.`,
+        );
+      await expect(dialog.getByTestId('import-name')).toHaveValue(legacy);
+      await expect
+        .soft(dialog.getByTestId('import-legacy-hint'))
+        .toContainText('Publishing the draft to this topology replaces');
+      // A copy leaves the topology, and its legacy diagram, as they are.
+      await dialog.getByTestId('import-copy').check();
+      await expect
+        .soft(dialog.getByTestId('import-legacy-hint'))
+        .toHaveText(
+          'This topology has a legacy Builder diagram. Its layout is converted.',
+        );
+      await dialog.getByTestId('import-copy').uncheck();
+      expect.soft(creates, 'draft creates').toEqual([]);
+
+      const created = waitForApi(page, 'POST', '/builder/drafts');
+      await dialog.getByTestId('import-submit').click();
+      const next = dialog.getByTestId('import-continue');
+      await expect
+        .poll(
+          async () => (await next.isVisible()) || !(await dialog.isVisible()),
+        )
+        .toBe(true);
+      if (await next.isVisible()) {
+        await next.click();
+      }
       const draft = await (await created).json();
+      await expect(builder.canvas).toBeVisible({ timeout: 20000 });
+      await expect.soft(builder).toHaveAnnounced(/legacy diagram/);
+      await builder.waitSaved();
+      expect
+        .soft((await builder.serverDraft(draft)).sourceToken)
+        .toBe(`Topology/${legacy}`);
+    });
+
+    await test.step('the tag of a Builder topology opens the draft that published it', async () => {
+      const before = creates.length;
+      await openConfigs(page);
+      await builderTag(page, built).focus();
+      await page.keyboard.press('Enter');
       await expect(builder.canvas).toBeVisible({ timeout: 20000 });
       // The ?topology= link Configs followed now names the draft.
       await expect
         .soft(page)
         .toHaveURL(
           (url) =>
-            url.pathname.endsWith('/builder-v2') &&
+            url.pathname.endsWith('/builder') &&
+            url.searchParams.get('draft') ===
+              `${publisher.draft.owner}/${publisher.draft.id}`,
+        );
+      await expect.soft(page.getByTestId('builder-name')).toHaveText(built);
+      await expect.soft(builder.node('host-a', 'device')).toBeVisible();
+      await expect
+        .soft(builder)
+        .toHaveAnnounced(
+          `Opened topology ${built} in the Builder, in the draft that published it.`,
+        );
+      await builder.waitSaved();
+      expect.soft(creates.slice(before), 'draft creates').toEqual([]);
+    });
+
+    await test.step("the viewer's button opens a Builder topology no draft of mine published as a new draft", async () => {
+      await openConfigs(page);
+      const fetched = waitForApi(page, 'GET', `/configs/Topology/${orphan}`);
+      await page
+        .getByRole('button', { name: `View Topology ${orphan}` })
+        .click();
+      await fetched;
+      const created = waitForApi(page, 'POST', '/builder/drafts');
+      await page
+        .getByRole('dialog', { name: `Topology/${orphan}` })
+        .getByRole('button', { name: 'Open in Builder' })
+        .click();
+      const draft = await (await created).json();
+      await expect(builder.canvas).toBeVisible({ timeout: 20000 });
+      await expect
+        .soft(page)
+        .toHaveURL(
+          (url) =>
+            url.pathname.endsWith('/builder') &&
             url.searchParams.get('draft') === `${draft.owner}/${draft.id}`,
         );
-      await expect.soft(page.getByTestId('builder-name')).toHaveText(v2);
+      await expect.soft(page.getByTestId('builder-name')).toHaveText(orphan);
       await expect.soft(builder.summary).toContainText('1 device');
-      await expect.soft(builder.node('host-a', 'device')).toBeVisible();
+      await expect.soft(builder.node('host-o', 'device')).toBeVisible();
+      await expect
+        .soft(builder)
+        .toHaveAnnounced(
+          `Opened topology ${orphan} in the Builder as a new draft.`,
+        );
       await builder.waitSaved();
 
       const stored = await builder.serverDraft(draft);
       expect.soft(stored.sourceToken).toMatch(/^builder-doc\//);
       const document = await builder.serverDocument(draft);
-      expect.soft(document.name).toBe(v2);
+      expect.soft(document.name).toBe(orphan);
       expect
         .soft(document.nodes.map((node) => node.device?.hostname))
-        .toEqual(['host-a']);
+        .toEqual(['host-o']);
     });
 
     await test.step('Back to drafts refreshes the Published tab, which opens read only until edited', async () => {
@@ -583,26 +635,20 @@ test.describe('Configs page', () => {
         tracker,
         later,
         deviceDocument(later, 'host-b'),
+        { keepDraft: false },
       );
 
       await builder.backToDrafts();
       await page.getByTestId('drafts-tab-published').click();
       const published = page.getByTestId('drafts-list-published');
-      await expect.soft(published.locator('li', { hasText: v2 })).toBeVisible();
+      await expect
+        .soft(published.locator('li', { hasText: built }))
+        .toBeVisible();
       const card = published.locator('li', { hasText: later });
       await expect(card).toBeVisible();
 
       // Opening it makes no draft: the diagram is only looked at.
-      const creates = [];
-      const onRequest = (request) => {
-        if (
-          request.method() === 'POST' &&
-          new URL(request.url()).pathname === `${API}/builder-v2/drafts`
-        ) {
-          creates.push(request.url());
-        }
-      };
-      page.on('request', onRequest);
+      const before = creates.length;
       await card.getByRole('button', { name: `Open ${later}` }).click();
       await expect(builder.canvas).toBeVisible();
       await expect.soft(page.getByTestId('builder-name')).toHaveText(later);
@@ -637,12 +683,13 @@ test.describe('Configs page', () => {
         soft: true,
         label: 'axe on a published diagram',
       });
-      expect.soft(creates, 'draft creates while viewing').toEqual([]);
-      page.off('request', onRequest);
+      expect
+        .soft(creates.slice(before), 'draft creates while viewing')
+        .toEqual([]);
 
       // Edit makes the draft; its button goes, and focus moves on to the
       // editor's heading rather than to <body>.
-      const created = waitForApi(page, 'POST', '/builder-v2/drafts');
+      const created = waitForApi(page, 'POST', '/builder/drafts');
       await panel.getByRole('button', { name: 'Edit as a draft' }).click();
       const draft = await (await created).json();
       await expect(panel).toHaveCount(0);
@@ -654,7 +701,16 @@ test.describe('Configs page', () => {
         .toMatch(/^builder-doc\//);
     });
 
-    await test.step('a role that may not create drafts only views the diagram', async () => {
+    await test.step('a role that may not create drafts gets no import controls, and only views a diagram it has no draft of', async () => {
+      // No draft of this user published it, or was made from it.
+      const viewed = uniqueName(testInfo, 'viewed');
+      await publishTopology(
+        request,
+        tracker,
+        viewed,
+        deviceDocument(viewed, 'host-v'),
+        { keepDraft: false },
+      );
       // The UI takes the role from the session, as a sign-in leaves it. This
       // one may edit configs but not create drafts; the server, with
       // authentication off, would allow anything, so no request may try.
@@ -676,25 +732,37 @@ test.describe('Configs page', () => {
           }),
         );
       });
-      const creates = [];
-      page.on('request', (request) => {
-        if (
-          request.method() === 'POST' &&
-          new URL(request.url()).pathname === `${API}/builder-v2/drafts`
-        ) {
-          creates.push(request.url());
-        }
-      });
+      const before = creates.length;
 
       await openConfigs(page);
-      await editConfig(page, v2);
+      // An import makes a draft: the legacy tag is plain text, and the
+      // viewer of a topology without a diagram has no Builder button.
+      await expect(configRow(page, plain)).toBeVisible();
+      await expect.soft(configRow(page, plain).locator('.tag')).toHaveCount(0);
+      const fetched = waitForApi(page, 'GET', `/configs/Topology/${plain}`);
+      await page
+        .getByRole('button', { name: `View Topology ${plain}` })
+        .click();
+      await fetched;
+      const viewer = page.getByRole('dialog', { name: `Topology/${plain}` });
+      await expect(viewer).toBeVisible();
+      await expect.soft(viewer.getByTestId('viewer-builder')).toHaveCount(0);
+      await expect
+        .soft(viewer.locator('footer button').first())
+        .toHaveText('Edit Config');
+      await viewer.getByRole('button', { name: 'Exit' }).click();
+      await expect(viewer).toBeHidden();
+      // A diagram can still be opened, to look at it.
+      await expect.soft(builderTag(page, viewed)).toBeVisible();
+
+      await editConfig(page, viewed);
       await expect(builder.canvas).toBeVisible({ timeout: 20000 });
       const panel = page.getByTestId('builder-published');
       await expect(panel).toContainText(
         'Your role cannot create drafts, so it cannot be edited.',
       );
       await expect.soft(panel.getByRole('button')).toHaveCount(0);
-      for (const action of ['publish', 'import']) {
+      for (const action of ['publish', 'upload']) {
         await expect
           .soft(builder.toolbar(action), action)
           .toHaveAttribute('aria-disabled', 'true');
@@ -702,13 +770,23 @@ test.describe('Configs page', () => {
 
       await builder.backToDrafts();
       await expect.soft(page.getByTestId('drafts-view-only')).toBeVisible();
-      for (const id of ['drafts-blank', 'drafts-generate', 'drafts-import']) {
+      for (const id of ['drafts-blank', 'drafts-import', 'drafts-upload']) {
         await expect.soft(page.getByTestId(id), id).toHaveCount(0);
       }
       await expect
         .soft(page.getByRole('button', { name: /^Delete / }))
         .toHaveCount(0);
-      expect.soft(creates, 'draft creates').toEqual([]);
+
+      // A link to a topology without a diagram says why nothing opens.
+      await visit(page, `/builder?topology=${encodeURIComponent(plain)}`);
+      await expect(builder.landingHeading).toBeVisible({ timeout: 20000 });
+      await expect
+        .soft(page.getByTestId('builder-error').getByRole('alert'))
+        .toHaveText(
+          `Topology ${plain} has no Builder diagram, and your role cannot create drafts to import it. Select its name in Configs to view it.`,
+        );
+      await expect.soft(page.getByRole('dialog')).toHaveCount(0);
+      expect.soft(creates.slice(before), 'draft creates').toEqual([]);
     });
 
     expectNoFatal(issues);
@@ -721,41 +799,48 @@ test.describe('Configs page', () => {
     builder,
   }, testInfo) => {
     const legacy = uniqueName(testInfo, 'legacy-toast');
-    const v2 = uniqueName(testInfo, 'v2-toast');
+    const built = uniqueName(testInfo, 'built-toast');
     await seedConfig(
       request,
       tracker,
       topology(legacy, { 'builder-xml': legacyXml('legacy-cell') }),
     );
-    await publishTopology(request, tracker, v2);
+    await publishTopology(request, tracker, built);
 
     await openConfigs(page);
     await expect(configRow(page, legacy)).toBeVisible();
     await recordToasts(page);
 
-    await test.step('after the legacy Builder notice', async () => {
+    await test.step('after leaving the text editor of a legacy Builder topology', async () => {
       await editConfig(page, legacy);
+      await expect(page.locator('.ace_content')).toContainText(
+        'builder-xml: <SNIPPED>',
+      );
       const reloaded = waitForApi(page, 'GET', '/configs');
+      await page.getByRole('button', { name: 'Exit', exact: true }).click();
       await page
         .locator('.dialog.modal.is-active')
-        .getByRole('button', { name: 'OK' })
+        .getByRole('button', { name: 'Continue' })
         .click();
       await reloaded;
-      await expect(configRow(page, v2)).toBeVisible();
+      await expect(configRow(page, built)).toBeVisible();
 
       const empty = (await recordedToasts(page)).filter((toast) => !toast.text);
       expect.soft(empty, JSON.stringify(empty)).toEqual([]);
     });
 
-    await test.step('on the Builder v2 redirect', async () => {
+    await test.step('on the Builder redirect', async () => {
       const seen = (await recordedToasts(page)).length;
-      await editConfig(page, v2);
+      await editConfig(page, built);
       await expect(builder.canvas).toBeVisible({ timeout: 20000 });
       await builder.waitSaved();
-      // One message says where the user is now and that a draft was made.
+      // One message says where the user is now, and in which draft: the
+      // one that published the topology, which is this user's.
       await expect
         .soft(builder)
-        .toHaveAnnounced(`Opened topology ${v2} in Builder v2 as a new draft.`);
+        .toHaveAnnounced(
+          `Opened topology ${built} in the Builder, in the draft that published it.`,
+        );
 
       const empty = (await recordedToasts(page))
         .slice(seen)
@@ -774,6 +859,9 @@ test.describe('API', () => {
         '/e2e-no-such-route',
         '/builder/e2e-no-such-route',
         '/experiments/e2e/no/such/route',
+        // routes of the removed legacy Builder
+        '/builder/topologies',
+        '/builder/topologies/e2e-none',
       ];
 
       for (const path of paths) {
@@ -790,6 +878,11 @@ test.describe('API', () => {
         }
       }
 
+      // The removed legacy route for experiments matches
+      // /experiments/{name}, which takes no POST.
+      const legacy = await request.post(`${API}/experiments/builder`);
+      expect.soft(legacy.status(), 'POST /experiments/builder').toBe(405);
+
       // Paths outside the API still fall back to the single-page app.
       const page = await request.get('/e2e-no-such-page');
       expect.soft(page.status()).toBe(200);
@@ -797,7 +890,7 @@ test.describe('API', () => {
     });
 
     await test.step('Builder document schema', async () => {
-      const response = await request.get(`${API}/schemas/builder-v2/v1`);
+      const response = await request.get(`${API}/schemas/builder/v1`);
       expect.soft(response.status()).toBe(200);
       expect
         .soft(response.headers()['content-type'])

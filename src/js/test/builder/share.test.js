@@ -28,6 +28,7 @@ import {
   shareLink,
   sharesOf,
   validateAdd,
+  validateBulkAdd,
   validUsername,
 } from '@/builder/share.js';
 
@@ -197,6 +198,52 @@ describe('adding a person', () => {
     expect(validateAdd('zed', full, 'alice', null, 30).error).toBe('');
   });
 
+  test('a person added to several drafts at once is checked against the list of people', () => {
+    const people = ['bob', 'carol'];
+    const known = ['bob', 'carol', 'dave'];
+
+    expect(validateBulkAdd('  ', people, 'alice', known).error).toBe(
+      'Enter a username.',
+    );
+    expect(validateBulkAdd(null, people, 'alice', known).error).toBe(
+      'Enter a username.',
+    );
+    expect(validateBulkAdd('alice', people, 'alice', known).error).toBe(
+      'You own these drafts.',
+    );
+    expect(validateBulkAdd(' bob ', people, 'alice', known)).toEqual({
+      user: 'bob',
+      error: 'bob is already in the list.',
+    });
+    expect(validateBulkAdd('a/b', people, 'alice', known).error).toBe(
+      'a/b is not a valid username.',
+    );
+    expect(validateBulkAdd('zed', people, 'alice', known).error).toBe(
+      'No user named zed.',
+    );
+    // Until the users are known, the server checks the name.
+    expect(validateBulkAdd('zed', people, 'alice', null)).toEqual({
+      user: 'zed',
+      error: '',
+    });
+    expect(validateBulkAdd(' dave ', people, 'alice', known)).toEqual({
+      user: 'dave',
+      error: '',
+    });
+    expect(validateBulkAdd('dave', undefined, 'alice', known).error).toBe('');
+
+    // The list holds as many people as a draft can be shared with.
+    const full = Array.from({ length: 25 }, (_, index) => `user${index}`);
+
+    expect(validateBulkAdd('zed', full, 'alice', null).error).toBe(
+      'A draft can be shared with at most 25 people.',
+    );
+    expect(validateBulkAdd('zed', full.slice(1), 'alice', null).error).toBe('');
+    expect(
+      validateBulkAdd('zed', ['bob', 'carol'], 'alice', null, 2).error,
+    ).toBe('A draft can be shared with at most 2 people.');
+  });
+
   test('usernames the server refuses are refused here', () => {
     expect(validUsername('bob')).toBe(true);
     expect(validUsername('')).toBe(false);
@@ -340,18 +387,18 @@ describe('words', () => {
     ]);
   });
 
-  test('the link opens the draft in Builder v2', () => {
+  test('the link opens the draft in Builder', () => {
     const router = {
       resolve: vi.fn(({ query }) => ({
-        href: `/builder-v2?draft=${encodeURIComponent(query.draft)}`,
+        href: `/builder?draft=${encodeURIComponent(query.draft)}`,
       })),
     };
 
     expect(shareLink(router, 'alice', 'd1', 'https://phenix.example')).toBe(
-      'https://phenix.example/builder-v2?draft=alice%2Fd1',
+      'https://phenix.example/builder?draft=alice%2Fd1',
     );
     expect(router.resolve).toHaveBeenCalledWith({
-      name: 'builder-v2',
+      name: 'builder',
       query: { draft: 'alice/d1' },
     });
   });

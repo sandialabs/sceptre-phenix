@@ -5,10 +5,11 @@
   shortcut, if it has one, from the command registry (commands.js), so the
   keys are this platform's and follow the user's changes. The groups, left
   to right: undo and redo, the clipboard, grouping (Group, Ungroup and the
-  Auto-group menu), the layout menu and scenario, the ways out (Export,
-  Upload, Publish, Share), then Minimap and Draft History, followed by the
-  save state. Commands and the theme are in the editor header
-  (BuilderV2.vue).
+  Auto-group menu), the layout menu and scenario, the ways out (Download,
+  Upload, Publish, Share, and Exp, which opens the experiment the diagram
+  was published with, while there is one), then Minimap and Draft History,
+  followed by the save state. Commands and the theme are in the editor
+  header (Builder.vue).
   The layout menu is named after the layout the draft keeps, the last one
   that laid it out, or Default for a draft that has none; it lays the
   diagram out with the one chosen, which the draft keeps, and after a layout
@@ -146,7 +147,7 @@
         "
         v-on="tipFor('autoGroup')"
         @toggle="onMenuToggle('autoGroup', $event)"
-        @select="store.autoGroup($event.id)">
+        @select="chooseAutoGroup">
         <span
           v-if="store.autoGrouping"
           class="builder-toolbar__spinner"
@@ -211,29 +212,29 @@
       <button
         type="button"
         class="builder-button"
-        data-testid="toolbar-export"
-        :aria-keyshortcuts="tips.export.aria"
+        data-testid="toolbar-download"
+        :aria-keyshortcuts="tips.download.aria"
         :aria-describedby="
-          tips.export.description ? 'toolbar-tip-export' : undefined
+          tips.download.description ? 'toolbar-tip-download' : undefined
         "
-        v-on="tipFor('export')"
+        v-on="tipFor('download')"
         aria-haspopup="dialog"
-        @click="$emit('export')">
+        @click="$emit('download')">
         <builder-icon name="download" :size="14" />
-        Export
+        Download
       </button>
       <button
         type="button"
         class="builder-button"
-        data-testid="toolbar-import"
-        :aria-keyshortcuts="tips.import.aria"
+        data-testid="toolbar-upload"
+        :aria-keyshortcuts="tips.upload.aria"
         :aria-describedby="
-          tips.import.description ? 'toolbar-tip-import' : undefined
+          tips.upload.description ? 'toolbar-tip-upload' : undefined
         "
-        v-on="tipFor('import')"
+        v-on="tipFor('upload')"
         aria-haspopup="dialog"
-        :aria-disabled="off.import || undefined"
-        @click="run('import', () => $emit('import'))">
+        :aria-disabled="off.upload || undefined"
+        @click="run('upload', () => $emit('upload'))">
         <builder-icon name="upload" :size="14" />
         Upload
       </button>
@@ -267,6 +268,23 @@
         @click="run('share', () => $emit('share'))">
         <builder-icon name="share" :size="14" />
         Share
+      </button>
+      <!-- Only while the diagram's publication has an experiment. It leaves
+           the Builder, so it opens no dialog. -->
+      <button
+        v-if="store.experimentName"
+        type="button"
+        class="builder-button"
+        data-testid="toolbar-experiment"
+        :aria-label="`Exp: open experiment ${store.experimentName}`"
+        :aria-keyshortcuts="tips.experiment.aria"
+        :aria-describedby="
+          tips.experiment.description ? 'toolbar-tip-experiment' : undefined
+        "
+        v-on="tipFor('experiment')"
+        @click="$emit('experiment')">
+        <builder-icon name="experiment" :size="14" />
+        Exp
       </button>
     </div>
 
@@ -372,13 +390,15 @@
     minimap: { type: Boolean, default: true },
   });
 
-  defineEmits([
+  const emit = defineEmits([
     'publish',
     'share',
-    'export',
-    'import',
+    'download',
+    'upload',
     'scenario',
     'history',
+    'experiment',
+    'group-pattern',
     'toggle-minimap',
   ]);
 
@@ -412,7 +432,7 @@
     scenario: store.readOnly,
     // Upload makes a new draft; Publish writes configs (see the store's
     // canCreateDrafts and canPublish).
-    import: !store.canCreateDrafts,
+    upload: !store.canCreateDrafts,
     publish: store.readOnly || !store.canPublish,
     share: !store.canShare,
   }));
@@ -464,11 +484,22 @@
     }
   }
 
+  // A rule that asks for something first (the name pattern) ends in an
+  // ellipsis: choosing it opens a dialog, which the view shows.
   const autoGroupItems = GROUPING_STRATEGIES.map((strategy) => ({
     id: strategy.id,
-    label: strategy.label,
+    label: `${strategy.label}${strategy.asks ? '…' : ''}`,
     description: strategy.summary,
+    asks: Boolean(strategy.asks),
   }));
+
+  function chooseAutoGroup(item) {
+    if (item.asks) {
+      emit('group-pattern');
+    } else {
+      store.autoGroup(item.id);
+    }
+  }
 
   // The menu that is open, whose button shows no tooltip over it.
   const openMenu = ref('');
@@ -554,8 +585,8 @@
     group: { command: 'structure.group', name: 'Group selection' },
     ungroup: { command: 'structure.ungroup', name: 'Ungroup' },
     history: { command: 'draft.history', name: 'Draft History' },
-    export: { command: 'draft.export', name: 'Export' },
-    import: { command: 'draft.upload', name: 'Upload' },
+    download: { command: 'draft.download', name: 'Download' },
+    upload: { command: 'draft.upload', name: 'Upload' },
     scenario: { command: 'draft.scenario', name: 'Scenario' },
     publish: { command: 'draft.publish', name: 'Publish' },
     minimap: { command: 'view.minimap', name: 'Minimap' },
@@ -565,7 +596,7 @@
   // readers get in its place (the keys: the name is the button's own), and
   // aria-keyshortcuts. The menus' tooltips say what they do, keys or not;
   // the layout's keys run the layout again rather than open its menu, or at
-  // Default the one Settings chooses.
+  // Default the one Settings chooses, and Auto-group's run its first rule.
   const tips = computed(() => {
     const entries = Object.entries(TIPS).map(([key, entry]) => {
       const keys = shortcutLabel(entry.command);
@@ -588,9 +619,13 @@
       : `Choose a layout${
           layoutKeys ? `. ${layoutKeys} runs ${next}, the Settings default` : ''
         }`;
-    const autoGroupText = store.selection.nodes.length
-      ? 'Group the selected nodes automatically'
-      : 'Group the ungrouped nodes automatically';
+    // The Auto-group key runs the first rule of the menu, by network.
+    const autoGroupKeys = shortcutLabel('structure.autoGroup.network');
+    const autoGroupText = `${
+      store.selection.nodes.length
+        ? 'Group the selected nodes automatically'
+        : 'Group the ungrouped nodes automatically'
+    }${autoGroupKeys ? `. ${autoGroupKeys} groups by network` : ''}`;
     // Share says who has the draft, or who may change that.
     const shareText = store.canShare
       ? store.shares.length
@@ -606,6 +641,15 @@
         text: withShortcut(shareText, 'draft.share'),
         description: withShortcut(shareText, 'draft.share'),
         aria: ariaShortcuts('draft.share'),
+      },
+      // Exp's name says which experiment it opens, as its tooltip does.
+      experiment: {
+        text: withShortcut(
+          `Open experiment ${store.experimentName}`,
+          'draft.experiment',
+        ),
+        description: shortcutLabel('draft.experiment'),
+        aria: ariaShortcuts('draft.experiment'),
       },
     };
   });

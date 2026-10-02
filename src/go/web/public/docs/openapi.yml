@@ -22,19 +22,15 @@ tags:
     description: Available phenix user applications
   - name: Topologies
     description: Available phenix topologies
-  - name: Builder
-    description: Graphical topology Builder diagrams and the topologies built from them
   - name: Disks
     description: Available phenix disk images
   - name: Users
     description: User details and controls
-  - name: Builder v2
+  - name: Builder
     description: >
-      Builder v2 (beta) drafts, snapshots, generation and publication. These
-      routes exist only when the server is started with the builder-v2
-      feature (`phenix ui --features builder-v2`); without it, every one of
-      them answers 404. Each operation needs the `configs` permission its
-      description names, so Builder v2 access never exceeds config access.
+      Builder drafts, snapshots, generation and publication. Each operation
+      needs the `configs` permission its description names, so Builder access
+      never exceeds config access.
       An operation on a draft also needs access to that draft, from one of
       three sources: owning it; a share from its owner naming the caller,
       which gives view (list and get) or edit (also update: save, undo, redo
@@ -46,6 +42,11 @@ tags:
       draft gets 404, exactly as for a draft that does not exist, so draft
       existence is never disclosed; a caller who can see it but may not
       perform the operation gets 403.
+      An icon library and a template library belong to one user: their
+      operations act on the caller's own, and no role reaches another
+      user's.
+      Every response of a Builder operation carries
+      `X-Content-Type-Options: nosniff`.
 paths:
   "/configs":
     get:
@@ -158,7 +159,7 @@ paths:
       description: >
         Can also be used to rename a config by changing the name in the metadata
         portion of the config header and using the old name in the request path.
-        Renaming a Topology removes the Builder v2 documents published under
+        Renaming a Topology removes the Builder documents published under
         its old name, as deleting it does. The `builder-doc` annotation of the
         renamed config loses the `id` and `digest` Publish wrote; it keeps a
         `path`, with the `digest` beside it, and is removed when nothing is
@@ -1067,159 +1068,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Applications"
-  "/builder/topologies":
-    get:
-      tags:
-        - Builder
-      summary: Get topologies that carry a Builder diagram
-      description: ""
-      operationId: getBuilderTopologies
-      responses:
-        "200":
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Topologies"
-        "403":
-          description: listing topologies not allowed for this user
-    post:
-      tags:
-        - Builder
-      summary: Create a topology and its Builder diagram
-      description: >-
-        Creates the topology config and stores the diagram on it. Does not
-        create an experiment. Refused while an experiment built from a topology
-        of the same name is running.
-      operationId: postBuilderTopology
-      requestBody:
-        description: Builder topology and diagram
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BuilderTopology"
-      responses:
-        "201":
-          description: topology created
-          headers:
-            Location:
-              description: path the new diagram is readable at
-              schema:
-                type: string
-        "400":
-          description: name, topology, or builderXML missing, or the spec is invalid
-        "403":
-          description: creating this topology not allowed for this user
-        "409":
-          description: another Builder write holds this name
-  "/builder/topologies/{name}":
-    get:
-      tags:
-        - Builder
-      summary: Get one Builder diagram
-      description: ""
-      operationId: getBuilderTopology
-      parameters:
-        - name: name
-          in: path
-          description: topology name
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: successful operation
-          content:
-            application/xml:
-              schema:
-                type: string
-        "400":
-          description: the topology does not carry a Builder diagram
-        "403":
-          description: getting this topology not allowed for this user
-        "404":
-          description: topology not found
-        "500":
-          description: reading the topology from the store failed
-    put:
-      tags:
-        - Builder
-      summary: Update a topology and its Builder diagram
-      description: >-
-        Writes only the spec and the diagram, leaving the rest of the stored
-        config's metadata intact. Does not create or update an experiment.
-      operationId: putBuilderTopology
-      parameters:
-        - name: name
-          in: path
-          description: topology name, which takes precedence over the payload
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: topology updated
-        "400":
-          description: >-
-            topology or builderXML missing, the spec is invalid, the topology
-            does not exist, or an experiment built from it is running
-        "403":
-          description: updating this topology not allowed for this user
-        "409":
-          description: another Builder write holds this name
-      requestBody:
-        description: Builder topology and diagram
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BuilderTopology"
-  "/experiments/builder":
-    post:
-      tags:
-        - Builder
-      summary: Create a topology and a same-named experiment from Builder
-      description: ""
-      operationId: postExperimentFromBuilder
-      requestBody:
-        description: Builder topology, diagram, VLAN aliases, and scenario
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BuilderTopology"
-      responses:
-        "200":
-          description: successful operation
-        "400":
-          description: request invalid, or the topology or experiment failed validation
-        "403":
-          description: creating experiments not allowed for this user
-        "409":
-          description: experiment locked for creation
-    put:
-      tags:
-        - Builder
-      summary: Update a Builder topology and its same-named experiment
-      description: ""
-      operationId: putExperimentFromBuilder
-      requestBody:
-        description: Builder topology, diagram, VLAN aliases, and scenario
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BuilderTopology"
-      responses:
-        "200":
-          description: successful operation
-        "400":
-          description: request invalid, or the experiment is running
-        "403":
-          description: updating experiments not allowed for this user
-        "409":
-          description: experiment locked for update
   "/topologies":
     get:
       tags:
@@ -1480,16 +1328,14 @@ paths:
       responses:
         "204":
           description: successful operation
-  "/schemas/builder-v2/v1":
+  "/schemas/builder/v1":
     get:
       tags:
-        - Builder v2
+        - Builder
         - Schemas
-      summary: Get the JSON Schema of Builder v2 documents
+      summary: Get the JSON Schema of Builder documents
       description: >
-        Requires the `schemas` `get` permission for `builder-v2`. Without the
-        builder-v2 feature the request reaches `/schemas/{kind}/{version}`,
-        which also answers 404 because there is no config kind named builder-v2.
+        Requires the `schemas` `get` permission for `builder`.
       operationId: getBuilderSchema
       responses:
         "200":
@@ -1503,11 +1349,11 @@ paths:
           $ref: "#/components/responses/BuilderForbidden"
         "404":
           $ref: "#/components/responses/BuilderNotFound"
-  "/builder-v2/drafts":
+  "/builder/drafts":
     get:
       tags:
-        - Builder v2
-      summary: List Builder v2 drafts
+        - Builder
+      summary: List Builder drafts
       description: >
         Requires `configs` `list`. Returns the caller's own drafts, and
         separately the drafts of other users shared with the caller (`via`
@@ -1517,7 +1363,8 @@ paths:
         the caller's own, and those of other users the caller holds
         `builder-drafts` `list` for, never because of a share. They cannot be
         opened, only deleted. Drafts the caller may not see are never counted
-        or described.
+        or described. `canDelete` says of each draft whether the caller may
+        delete it. No row has `experiment`.
       operationId: getBuilderDrafts
       responses:
         "200":
@@ -1532,8 +1379,8 @@ paths:
           $ref: "#/components/responses/BuilderNotFound"
     post:
       tags:
-        - Builder v2
-      summary: Create a Builder v2 draft
+        - Builder
+      summary: Create a Builder draft
       description: >
         Requires `configs` `create`. The draft is owned by the caller and holds
         the document as its first snapshot. Nothing is published. With
@@ -1542,7 +1389,7 @@ paths:
         `sourceToken` naming a published document, the caller must hold
         `configs` `get` for the config it was published to. With a
         `sourceToken` naming the Builder file of a topology, the file is read
-        as GET /builder-v2/topologies/{topology}/document reads it, with the
+        as GET /builder/topologies/{topology}/document reads it, with the
         same permission and the same answers when it cannot be used, and the
         draft is refused with 409 when the file no longer holds the document
         the token names, or the topology is no longer read from its file.
@@ -1555,7 +1402,10 @@ paths:
         the draft holds exactly what was opened, under the same digest. A
         value that is not valid in any of the four fields refuses the request
         (422). The response has no document; its `stamp` holds the four
-        values the stored document has.
+        values the stored document has. A draft opened from a published
+        document, or one that forks a draft, has `experiment` when that
+        publication made an experiment that still exists and the caller
+        holds `experiments` `get` for it.
       operationId: postBuilderDrafts
       requestBody:
         required: true
@@ -1601,19 +1451,22 @@ paths:
           $ref: "#/components/responses/BuilderUnprocessable"
         "507":
           $ref: "#/components/responses/InsufficientStorage"
-  "/builder-v2/drafts/{owner}/{draft}":
+  "/builder/drafts/{owner}/{draft}":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
       - $ref: "#/components/parameters/BuilderDraftID"
     get:
       tags:
-        - Builder v2
-      summary: Get a Builder v2 draft with its current document
+        - Builder
+      summary: Get a Builder draft with its current document
       description: >
         Requires `configs` `get`, and for another user's draft a share, or
-        `builder-drafts` `get`. `access`, `via`, `canShare` and `shares` say
-        what the caller may do with it; `readOnly` is also set when the
-        caller's role cannot update configs.
+        `builder-drafts` `get`. `access`, `via`, `canShare`, `canDelete` and
+        `shares` say what the caller may do with it; `readOnly` is also set
+        when the caller's role cannot update configs. `experiment` names an
+        experiment the draft published, or the published diagram it was
+        opened from did, while one still exists and the caller holds
+        `experiments` `get` for it.
       operationId: getBuilderDraft
       responses:
         "200":
@@ -1631,8 +1484,8 @@ paths:
           $ref: "#/components/responses/BuilderNotFound"
     delete:
       tags:
-        - Builder v2
-      summary: Delete a Builder v2 draft
+        - Builder
+      summary: Delete a Builder draft
       description: >
         Requires `configs` `delete`, and for another user's draft
         `builder-drafts` `delete`: a share never allows deleting a draft.
@@ -1669,14 +1522,14 @@ paths:
                 $ref: "#/components/schemas/WebError"
         "507":
           $ref: "#/components/responses/InsufficientStorage"
-  "/builder-v2/drafts/{owner}/{draft}/snapshots":
+  "/builder/drafts/{owner}/{draft}/snapshots":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
       - $ref: "#/components/parameters/BuilderDraftID"
     get:
       tags:
-        - Builder v2
-      summary: List the snapshots of a Builder v2 draft
+        - Builder
+      summary: List the snapshots of a Builder draft
       description: >
         Requires `configs` `get`, and for another user's draft a share, or
         `builder-drafts` `get`. Snapshots are listed oldest first; `cursor` is
@@ -1698,8 +1551,8 @@ paths:
           $ref: "#/components/responses/BuilderNotFound"
     post:
       tags:
-        - Builder v2
-      summary: Save a Builder v2 draft
+        - Builder
+      summary: Save a Builder draft
       description: >
         Requires `configs` `update`, and for another user's draft an edit
         share, or `builder-drafts` `update`. Appends the document as a new
@@ -1750,7 +1603,7 @@ paths:
           $ref: "#/components/responses/BuilderUnprocessable"
         "507":
           $ref: "#/components/responses/InsufficientStorage"
-  "/builder-v2/drafts/{owner}/{draft}/snapshots/{snapshot}":
+  "/builder/drafts/{owner}/{draft}/snapshots/{snapshot}":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
       - $ref: "#/components/parameters/BuilderDraftID"
@@ -1762,8 +1615,8 @@ paths:
           type: string
     get:
       tags:
-        - Builder v2
-      summary: Get one snapshot of a Builder v2 draft with its document
+        - Builder
+      summary: Get one snapshot of a Builder draft with its document
       description: >
         Requires `configs` `get`, and for another user's draft a share, or
         `builder-drafts` `get`.
@@ -1784,8 +1637,8 @@ paths:
           $ref: "#/components/responses/BuilderNotFound"
     delete:
       tags:
-        - Builder v2
-      summary: Delete one snapshot of a Builder v2 draft
+        - Builder
+      summary: Delete one snapshot of a Builder draft
       description: >
         Requires `configs` `update`, and for another user's draft an edit
         share, or `builder-drafts` `update`. Removes the snapshot from the
@@ -1826,14 +1679,14 @@ paths:
           $ref: "#/components/responses/BuilderPreconditionFailed"
         "507":
           $ref: "#/components/responses/InsufficientStorage"
-  "/builder-v2/drafts/{owner}/{draft}/cursor":
+  "/builder/drafts/{owner}/{draft}/cursor":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
       - $ref: "#/components/parameters/BuilderDraftID"
     patch:
       tags:
-        - Builder v2
-      summary: Move the cursor of a Builder v2 draft (undo and redo)
+        - Builder
+      summary: Move the cursor of a Builder draft (undo and redo)
       description: >
         Requires `configs` `update`, and for another user's draft an edit
         share, or `builder-drafts` `update`. No snapshot is discarded. PUT is
@@ -1875,8 +1728,8 @@ paths:
           $ref: "#/components/responses/InsufficientStorage"
     put:
       tags:
-        - Builder v2
-      summary: Move the cursor of a Builder v2 draft (undo and redo)
+        - Builder
+      summary: Move the cursor of a Builder draft (undo and redo)
       description: The same operation as PATCH.
       operationId: putBuilderDraftCursor
       parameters:
@@ -1913,17 +1766,17 @@ paths:
           $ref: "#/components/responses/BuilderUnprocessable"
         "507":
           $ref: "#/components/responses/InsufficientStorage"
-  "/builder-v2/drafts/{owner}/{draft}/publish":
+  "/builder/drafts/{owner}/{draft}/publish":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
       - $ref: "#/components/parameters/BuilderDraftID"
     post:
       tags:
-        - Builder v2
-      summary: Publish a Builder v2 draft to phenix configs
+        - Builder
+      summary: Publish a Builder draft to phenix configs
       description: >
-        The only Builder v2 operation that creates or updates configs
-        (DELETE /builder-v2/documents/{document} deletes a published topology).
+        The only Builder operation that creates or updates configs
+        (DELETE /builder/documents/{document} deletes a published topology).
         It publishes the draft's current snapshot; the request carries intent
         only. Requires `configs` `update` (and for another user's draft an
         edit share, or `builder-drafts` `update`), and the caller's own
@@ -1937,7 +1790,15 @@ paths:
         skipped. A draft updates an existing topology or experiment only when
         it was imported from it, or when it published it (or was opened from
         the published diagram that did) and nothing else changed it since;
-        any other update is refused with 409. A topology read from the Builder
+        any other update is refused with 409. A topology that has a legacy
+        Builder diagram (`builder-xml`) is updated by the draft imported from
+        that topology only, not by one imported from an experiment built from
+        it, and only while that diagram is the one the import read: a
+        diagram changed, added or removed since is refused with 409, as a
+        changed spec is. The update removes `builder-xml`, writes
+        `builder-doc`, and adds a warning to the result, which says that the
+        diagram was replaced or, for one the import could not read, that it
+        was removed. A topology read from the Builder
         file its `builder-doc` annotation names is updated by a draft opened
         from that file, while the file still holds what the draft was opened
         from and the topology is still what the file publishes, and such a
@@ -2026,14 +1887,14 @@ paths:
                 oneOf:
                   - $ref: "#/components/schemas/WebError"
                   - $ref: "#/components/schemas/BuilderPublishResult"
-  "/builder-v2/drafts/{owner}/{draft}/shares":
+  "/builder/drafts/{owner}/{draft}/shares":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
       - $ref: "#/components/parameters/BuilderDraftID"
     get:
       tags:
-        - Builder v2
-      summary: List who a Builder v2 draft is shared with
+        - Builder
+      summary: List who a Builder draft is shared with
       description: >
         Requires `configs` `get`, and owning the draft: only the owner learns
         who else has access (403 for anyone else who can see it). Each entry
@@ -2058,8 +1919,8 @@ paths:
           $ref: "#/components/responses/BuilderNotFound"
     put:
       tags:
-        - Builder v2
-      summary: Replace who a Builder v2 draft is shared with
+        - Builder
+      summary: Replace who a Builder draft is shared with
       description: >
         Requires `configs` `update`, owning the draft, and a user account of
         the caller's own (so not when authentication is off). The request
@@ -2142,14 +2003,14 @@ paths:
                 $ref: "#/components/schemas/WebError"
         "507":
           $ref: "#/components/responses/InsufficientStorage"
-  "/builder-v2/drafts/{owner}/{draft}/shares/candidates":
+  "/builder/drafts/{owner}/{draft}/shares/candidates":
     parameters:
       - $ref: "#/components/parameters/BuilderDraftOwner"
       - $ref: "#/components/parameters/BuilderDraftID"
     get:
       tags:
-        - Builder v2
-      summary: List who a Builder v2 draft can be shared with
+        - Builder
+      summary: List who a Builder draft can be shared with
       description: >
         The same callers as PUT of the share list may ask (403 for anyone
         else who can see the draft). Lists, sorted by username, every account
@@ -2170,17 +2031,19 @@ paths:
           $ref: "#/components/responses/BuilderForbidden"
         "404":
           $ref: "#/components/responses/BuilderNotFound"
-  "/builder-v2/sources":
+  "/builder/sources":
     get:
       tags:
-        - Builder v2
-      summary: List the configs Builder v2 can use as sources
+        - Builder
+      summary: List the configs Builder can use as sources
       description: >
         Requires `configs` `list`. Topologies and experiments can be imported
-        with POST /builder-v2/generate; scenarios and images are offered for
+        with POST /builder/generate; scenarios and images are offered for
         selection only. Each config is filtered by `configs` `list` for its
         name and, for topologies, experiments and scenarios, by the `list`
-        permission of that resource.
+        permission of that resource. A topology also reports how many
+        topologies it includes (`includeCount`), to a caller who holds
+        `configs` `get` for its name.
       operationId: getBuilderSources
       responses:
         "200":
@@ -2193,11 +2056,11 @@ paths:
           $ref: "#/components/responses/BuilderForbidden"
         "404":
           $ref: "#/components/responses/BuilderNotFound"
-  "/builder-v2/generate":
+  "/builder/generate":
     post:
       tags:
-        - Builder v2
-      summary: Import a Builder v2 document from a Topology or Experiment config
+        - Builder
+      summary: Import a Builder document from a Topology or Experiment config
       description: >
         Converts a stored config (`source`) or an uploaded one (`content`)
         into a document and returns it; nothing is written. Requires `configs`
@@ -2206,7 +2069,29 @@ paths:
         content needs `configs` `create`, because it is parsed as POST
         /configs parses a config, including the substitution of `${NAME}` from
         the server's environment (sandialabs/sceptre-phenix#436 describes
-        this).
+        this). A Topology that has the `builder-xml` annotation and no
+        `builder-doc` is converted from its legacy Builder diagram, as POST
+        /builder/legacy converts one: its `source` then has `builder`
+        `builder-xml`. The topologies a Topology includes
+        (`includeTopologies`) are read from the config store with the caller's
+        permissions, never from a file. With `includes` `keep`, the default,
+        their nodes are in the document marked `includedFrom` and read only,
+        and the includes that could not be read are listed in the document's
+        `source.unresolvedIncludes`. With `includes` `combine`, their nodes
+        are the document's own, and only the includes that could not be read
+        stay in its `source.includeTopologies`. `copy` asks for the same
+        document as a plain import, not linked to the topology. A combined
+        document and a copy name no config: `source.kind` is `manual`, the
+        document's name is the new topology's name, and a draft made from it
+        publishes a new topology and never updates the one it was imported
+        from. The new name is `name`, or else the source's name with
+        `-combined` or `-copy` added; the server does not look for a name no
+        topology has. The response's `source` is still the config that was
+        read. Answered with 400 when `includes` has another value, or when
+        `name` is given without `copy` or `includes` `combine`. Answered with
+        422 when `copy` or `includes` `combine` is asked of an Experiment,
+        when the new name is not a config name of 1 to 512 bytes, and when it
+        is the name of the stored topology being imported.
       operationId: postBuilderGenerate
       requestBody:
         required: true
@@ -2231,11 +2116,59 @@ paths:
           $ref: "#/components/responses/BuilderTooLarge"
         "422":
           $ref: "#/components/responses/BuilderUnprocessable"
-  "/builder-v2/export/topology":
+  "/builder/legacy":
     post:
       tags:
-        - Builder v2
-      summary: Export a Builder v2 document as the Topology config Publish writes
+        - Builder
+      summary: Convert a legacy Builder diagram into a Builder document
+      description: >
+        Converts a diagram of the legacy Builder (the editor phenix had
+        before the Builder) and returns the document; nothing is written, and
+        nothing is read from the store but the topologies a topology
+        includes. `content` is the text of a file: the diagram's mxGraph XML,
+        whose root element is `mxGraphModel` or `root`, or a Topology config,
+        as YAML or JSON, that has the `builder-xml` annotation. No encoded or
+        compressed form of the XML is read. For a diagram alone, the node
+        settings the diagram holds are the nodes, its `$NAME` placeholders
+        are replaced from its own variables and the legacy defaults, and the
+        document's source is `manual`, so a draft made from it publishes a
+        new topology. For a Topology, its spec is the truth for every node
+        and the diagram only places them, matched by hostname; the response
+        has its `source`, with `stored` false. Requires `configs` `get` and
+        `configs` `create`: a Topology config is parsed as POST /configs
+        parses one, including the substitution of `${NAME}` from the
+        server's environment. `content` holds at most 5242880 bytes, its XML
+        nests at most 32 elements deep and holds at most 10000 cells, and a
+        DOCTYPE or any other declaration is refused. A refusal repeats
+        nothing of the content but the name and kind of a config, or the
+        name of the XML's root element.
+      operationId: postBuilderLegacy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderLegacyRequest"
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderGenerateResult"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "413":
+          $ref: "#/components/responses/BuilderTooLarge"
+        "422":
+          $ref: "#/components/responses/BuilderUnprocessable"
+  "/builder/export/topology":
+    post:
+      tags:
+        - Builder
+      summary: Export a Builder document as the Topology config Publish writes
       description: >
         Projects the document onto the phenix Topology config a publish of it
         would write, and returns it as YAML; nothing is read or written.
@@ -2278,11 +2211,11 @@ paths:
           $ref: "#/components/responses/BuilderTooLarge"
         "422":
           $ref: "#/components/responses/BuilderUnprocessable"
-  "/builder-v2/documents":
+  "/builder/documents":
     get:
       tags:
-        - Builder v2
-      summary: List published Builder v2 documents
+        - Builder
+      summary: List published Builder documents
       description: >
         Requires `configs` `list`. Lists the documents that configs currently
         reference in their `builder-doc` annotation, filtered by `configs`
@@ -2290,7 +2223,10 @@ paths:
         annotation names a Builder file (`path`), and no stored document that
         is current, is listed with `source` `file` and the path only: the
         listing reads no file, so such a row is listed whether or not the
-        file can be used.
+        file can be used. A row with `source` `store` has `experiment` when
+        the publication behind the document made an experiment that still
+        exists, is built from the row's topology, and the caller holds
+        `experiments` `get` for it.
       operationId: getBuilderDocuments
       responses:
         "200":
@@ -2303,11 +2239,11 @@ paths:
           $ref: "#/components/responses/BuilderForbidden"
         "404":
           $ref: "#/components/responses/BuilderNotFound"
-  "/builder-v2/documents/{document}":
+  "/builder/documents/{document}":
     get:
       tags:
-        - Builder v2
-      summary: Get a published Builder v2 document
+        - Builder
+      summary: Get a published Builder document
       description: >
         Requires `configs` `get` for the config the document was published
         to. A document the caller may not read, or that no config references
@@ -2333,8 +2269,8 @@ paths:
           $ref: "#/components/responses/BuilderNotFound"
     delete:
       tags:
-        - Builder v2
-      summary: Delete a published Builder v2 topology
+        - Builder
+      summary: Delete a published Builder topology
       description: >
         Deletes the Topology config the document is current for, as
         `DELETE /configs/Topology/{name}` does, then every published document
@@ -2367,11 +2303,11 @@ paths:
           $ref: "#/components/responses/BuilderNotFound"
         "422":
           $ref: "#/components/responses/BuilderUnprocessable"
-  "/builder-v2/topologies/{topology}/document":
+  "/builder/topologies/{topology}/document":
     get:
       tags:
-        - Builder v2
-      summary: Get the Builder v2 document a topology references
+        - Builder
+      summary: Get the Builder document a topology references
       description: >
         Returns the document the topology's `builder-doc` annotation names,
         wherever it is kept. The stored published document wins: the one the
@@ -2381,7 +2317,7 @@ paths:
         directory (`--base-dir.phenix`) and outside the directory VM file
         systems are mounted in, be a regular file of at most 5 MiB reached
         through no symbolic link that leaves the base directory or has an
-        absolute target, and hold a valid Builder v2 document as JSON or
+        absolute target, and hold a valid Builder document as JSON or
         YAML. A `digest` beside `path` pins the file: a file whose document
         has another digest is refused. Requires `configs` `get` for the
         topology, which says nothing of the file: a caller who may create
@@ -2414,9 +2350,8 @@ paths:
         "404":
           description: >
             The topology does not exist, the caller may not get it, or it
-            references no Builder v2 document; or the Builder file it names
-            does not exist on this phenix server; or the server runs without
-            the builder-v2 feature.
+            references no Builder document; or the Builder file it names
+            does not exist on this phenix server.
           content:
             application/json:
               schema:
@@ -2431,12 +2366,414 @@ paths:
           description: >
             The Builder file is outside the directory phenix reads Builder
             files from, cannot be read, is not a regular file, is not a valid
-            Builder v2 document, or does not match the digest the topology
+            Builder document, or does not match the digest the topology
             records for it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/WebError"
+  "/builder/icons":
+    get:
+      tags:
+        - Builder
+      summary: List the icons of your Builder icon library
+      description: >
+        Requires `configs` `list`. Returns only the caller's own icons, each
+        with its PNG as base64, sorted by name, and the library's limits. An
+        icon library belongs to one user: no operation reaches the library of
+        another user, whatever the caller's role. The image is only ever sent
+        as base64 inside JSON, never as an image. Every response of the icon
+        operations also carries
+        `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`.
+      operationId: listBuilderIcons
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderIconList"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+    post:
+      tags:
+        - Builder
+      summary: Add an icon to your Builder icon library
+      description: >
+        Requires `configs` `create`. Takes a PNG of at most 96 by 96 pixels
+        and 65536 bytes, as base64. Only the bytes say what the image is: no
+        file name, extension or declared type is read, and anything that is
+        not a PNG (SVG, JPEG, GIF, WebP) is refused. A PNG that holds only
+        the chunks `IHDR`, `PLTE`, `tRNS`, `IDAT` and `IEND`, a `PLTE` or
+        `tRNS` only where its color type uses one, nothing after its pixels,
+        and is at most 40960 bytes is stored as it is. Any other is encoded
+        again, which keeps its pixels and drops everything else (text,
+        metadata, color profiles, further frames, an unused palette, data
+        after the pixels), so use the `id` and `data` the response returns.
+        Sending bytes the library already holds answers 200 with the stored
+        icon, under the name it has. A library holds at most 64 icons and
+        1 MiB of PNG bytes.
+      operationId: createBuilderIcon
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderIconUpload"
+      responses:
+        "200":
+          description: the library already held this icon
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderIcon"
+        "201":
+          description: icon added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderIcon"
+        "400":
+          description: >
+            The request is malformed: its body is not a single JSON value of
+            the expected shape (unknown fields are rejected), or `data` is
+            missing or not base64.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "413":
+          description: >
+            The request body is larger than 131072 bytes, or the image is
+            larger than 65536 bytes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "422":
+          description: >
+            The image is not a PNG, is more than 96 pixels wide or high, or
+            its name is over 64 bytes or holds control characters; or the
+            library is full.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "507":
+          $ref: "#/components/responses/InsufficientStorage"
+  "/builder/icons/{icon}":
+    delete:
+      tags:
+        - Builder
+      summary: Delete an icon from your Builder icon library
+      description: >
+        Requires `configs` `delete`. Diagrams that use the icon keep their
+        own copy. An icon the caller's library does not hold, and a path
+        that is not 64 lowercase hex digits, are answered with the same 404.
+      operationId: deleteBuilderIcon
+      parameters:
+        - name: icon
+          in: path
+          description: the 64 hex digits of the icon ID, without `sha256:`
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{64}$"
+      responses:
+        "204":
+          description: icon deleted
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          description: The caller's library holds no such icon.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+  "/builder/templates":
+    get:
+      tags:
+        - Builder
+      summary: List the device templates you can use
+      description: >
+        Requires `configs` `list`. Returns the caller's own template library:
+        its templates and collections in the order they were added, the
+        custom icons those templates name, and the library's limits. A user
+        who never changed the library has the five built-in templates
+        (`server`, `workstation`, `router`, `firewall`, `external`), at
+        version 1 and without times; the first change stores them, and a
+        built-in template that is deleted is never added again. `source` is
+        `own` on every item, and `canShare` and `canPublish` are false:
+        templates of other users are not listed. A library record this
+        server cannot read is reported with `damaged` true and none of its
+        items; every change of it is then refused with 409.
+      operationId: getBuilderTemplates
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderTemplateLibrary"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+  "/builder/templates/{owner}/items":
+    parameters:
+      - $ref: "#/components/parameters/BuilderTemplateOwner"
+    post:
+      tags:
+        - Builder
+      summary: Add device templates to your template library
+      description: >
+        Requires `configs` `create`, and being `{owner}`. Adds 1 to 200
+        templates in one write, each under a new ID. With `collection`, a new
+        collection holding exactly those templates is made in the same write.
+        A template that names a custom icon (`device.icon`) needs that icon
+        in the library already or in `icons`; an entry of `icons` nothing
+        names is dropped. The first change of a library also stores the
+        built-in templates it started with.
+      operationId: createBuilderTemplates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderTemplateCreate"
+      responses:
+        "201":
+          description: templates added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderTemplateCreateResult"
+        "400":
+          description: >
+            The request is malformed: its body is not a single JSON value of
+            the expected shape (unknown fields are rejected), or it names no
+            template.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderTemplateNotFound"
+        "409":
+          $ref: "#/components/responses/BuilderTemplateDamaged"
+        "413":
+          $ref: "#/components/responses/BuilderTemplateTooLarge"
+        "422":
+          $ref: "#/components/responses/BuilderTemplateUnprocessable"
+        "503":
+          $ref: "#/components/responses/BuilderTemplateBusy"
+        "507":
+          $ref: "#/components/responses/InsufficientStorage"
+  "/builder/templates/{owner}/items/{template}":
+    parameters:
+      - $ref: "#/components/parameters/BuilderTemplateOwner"
+      - $ref: "#/components/parameters/BuilderTemplateID"
+    put:
+      tags:
+        - Builder
+      summary: Replace a device template of your template library
+      description: >
+        Requires `configs` `update`, and being `{owner}`. Replaces the name,
+        the description and the device of one template, which keeps its ID.
+        The custom icon rule of POST /builder/templates/{owner}/items holds;
+        an icon no template names any more leaves the library. Content equal
+        to what is stored changes nothing and keeps the entity tag. Devices
+        already made from the template are not changed.
+      operationId: putBuilderTemplate
+      parameters:
+        - $ref: "#/components/parameters/BuilderTemplateIfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderTemplateContent"
+      responses:
+        "200":
+          description: the template now stored
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderTemplateETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderTemplate"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderTemplateNotFound"
+        "409":
+          $ref: "#/components/responses/BuilderTemplateDamaged"
+        "412":
+          $ref: "#/components/responses/BuilderTemplatePreconditionFailed"
+        "413":
+          $ref: "#/components/responses/BuilderTemplateTooLarge"
+        "422":
+          $ref: "#/components/responses/BuilderTemplateUnprocessable"
+        "503":
+          $ref: "#/components/responses/BuilderTemplateBusy"
+        "507":
+          $ref: "#/components/responses/InsufficientStorage"
+  "/builder/templates/{owner}/collections":
+    parameters:
+      - $ref: "#/components/parameters/BuilderTemplateOwner"
+    post:
+      tags:
+        - Builder
+      summary: Add a collection to your template library
+      description: >
+        Requires `configs` `create`, and being `{owner}`. A collection is a
+        named group of templates of the same library; a template may be in
+        several. Every ID in `templateIds` must name a template of the
+        library, once.
+      operationId: createBuilderTemplateCollection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderTemplateCollectionContent"
+      responses:
+        "201":
+          description: collection added
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderTemplateETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderTemplateCollection"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderTemplateNotFound"
+        "409":
+          $ref: "#/components/responses/BuilderTemplateDamaged"
+        "413":
+          $ref: "#/components/responses/BuilderTemplateTooLarge"
+        "422":
+          $ref: "#/components/responses/BuilderTemplateUnprocessable"
+        "503":
+          $ref: "#/components/responses/BuilderTemplateBusy"
+        "507":
+          $ref: "#/components/responses/InsufficientStorage"
+  "/builder/templates/{owner}/collections/{collection}":
+    parameters:
+      - $ref: "#/components/parameters/BuilderTemplateOwner"
+      - $ref: "#/components/parameters/BuilderTemplateCollectionID"
+    put:
+      tags:
+        - Builder
+      summary: Replace a collection of your template library
+      description: >
+        Requires `configs` `update`, and being `{owner}`. Replaces the name,
+        the description and the templates of one collection, which keeps its
+        ID. Adding a template to a collection, and removing one from it, is
+        this request with the changed list. Content equal to what is stored
+        changes nothing and keeps the entity tag.
+      operationId: putBuilderTemplateCollection
+      parameters:
+        - $ref: "#/components/parameters/BuilderTemplateIfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderTemplateCollectionContent"
+      responses:
+        "200":
+          description: the collection now stored
+          headers:
+            ETag:
+              $ref: "#/components/headers/BuilderTemplateETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderTemplateCollection"
+        "400":
+          $ref: "#/components/responses/BuilderBadRequest"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderTemplateNotFound"
+        "409":
+          $ref: "#/components/responses/BuilderTemplateDamaged"
+        "412":
+          $ref: "#/components/responses/BuilderTemplatePreconditionFailed"
+        "413":
+          $ref: "#/components/responses/BuilderTemplateTooLarge"
+        "422":
+          $ref: "#/components/responses/BuilderTemplateUnprocessable"
+        "503":
+          $ref: "#/components/responses/BuilderTemplateBusy"
+        "507":
+          $ref: "#/components/responses/InsufficientStorage"
+  "/builder/templates/{owner}/delete":
+    parameters:
+      - $ref: "#/components/parameters/BuilderTemplateOwner"
+    post:
+      tags:
+        - Builder
+      summary: Delete templates and collections of your template library
+      description: >
+        Requires `configs` `delete`, and being `{owner}`. Deletes the named
+        templates and collections in one write. An ID the library does not
+        hold is ignored, so repeating the request is harmless. A deleted
+        template leaves every collection that held it, and its custom icon
+        leaves the library with the last template that names it; a deleted
+        collection leaves its templates. A built-in template is deleted like
+        any other and does not come back. Diagrams are not changed: a device
+        made from a template keeps no link to it.
+      operationId: deleteBuilderTemplates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderTemplateSelection"
+      responses:
+        "200":
+          description: how many templates and collections were deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderTemplateDeleteResult"
+        "400":
+          description: >
+            The request is malformed: its body is not a single JSON value of
+            the expected shape (unknown fields are rejected), or it names
+            neither a template nor a collection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "403":
+          $ref: "#/components/responses/BuilderForbidden"
+        "404":
+          $ref: "#/components/responses/BuilderTemplateNotFound"
+        "409":
+          $ref: "#/components/responses/BuilderTemplateDamaged"
+        "413":
+          description: The request body is larger than 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebError"
+        "503":
+          $ref: "#/components/responses/BuilderTemplateBusy"
+        "507":
+          $ref: "#/components/responses/InsufficientStorage"
 externalDocs:
   description: Find out more about Swagger
   url: http://swagger.io
@@ -2466,7 +2803,7 @@ components:
             annotations:
               description: >
                 Text values by key. `builder-doc` is the one annotation that
-                is a map: the Builder v2 document a topology references.
+                is a map: the Builder document a topology references.
               type: object
               properties:
                 builder-doc:
@@ -2485,7 +2822,7 @@ components:
         - spec
     BuilderDocumentReference:
       description: >
-        The Builder v2 document a topology references, in its `builder-doc`
+        The Builder document a topology references, in its `builder-doc`
         annotation. It holds at least one sub-key. Publish writes `digest`
         and `id`, and keeps a `path` the topology already has. A config whose
         reference is not valid is refused. When a topology is created or
@@ -2505,13 +2842,13 @@ components:
           type: string
         id:
           description: >
-            ID of a stored published document (see `/builder-v2/documents`).
+            ID of a stored published document (see `/builder/documents`).
             It names a document only when that document was published to
             this topology.
           type: string
         path:
           description: >
-            absolute, clean path of a Builder v2 document file on the phenix
+            absolute, clean path of a Builder document file on the phenix
             server, at most 1024 bytes, ending in `.json`, `.yaml` or `.yml`.
           type: string
     Experiments:
@@ -2688,34 +3025,6 @@ components:
           type: array
           items:
             type: string
-    BuilderTopology:
-      type: object
-      required:
-        - topology
-        - builderXML
-      properties:
-        name:
-          type: string
-          description: topology name; ignored by PUT /builder/topologies/{name}
-        topology:
-          type: object
-          description: generated topology spec
-          properties:
-            nodes:
-              type: array
-              items:
-                type: object
-        builderXML:
-          type: string
-          description: mxGraph document for the diagram
-        vlans:
-          type: object
-          description: VLAN alias to ID, used by the experiment endpoints only
-          additionalProperties:
-            type: integer
-        scenario:
-          type: string
-          description: scenario name, used by the experiment endpoints only
     Topologies:
       type: object
       properties:
@@ -2789,13 +3098,17 @@ components:
             type: string
     BuilderDocument:
       description: >
-        A Builder v2 document. GET /schemas/builder-v2/v1 serves its complete
+        A Builder document. GET /schemas/builder/v1 serves its complete
         JSON Schema. The server sets `author`, `createdAt`, `updatedBy` and
         `updatedAt` when it stores a draft snapshot (see POST
-        /builder-v2/drafts and POST
-        /builder-v2/drafts/{owner}/{draft}/snapshots). Each is optional: a
+        /builder/drafts and POST
+        /builder/drafts/{owner}/{draft}/snapshots). Each is optional: a
         document that was never saved as a draft, such as a Builder file
-        written by hand, may have none.
+        written by hand, may have none. `templates` (the device templates
+        saved with the diagram) and `icons` (the custom icons its nodes and
+        templates use: base64 PNG data by icon id, `sha256:` and the SHA-256
+        of the PNG bytes) travel with the document and are never written to
+        a config.
       type: object
       additionalProperties: true
       properties:
@@ -2868,13 +3181,15 @@ components:
         sourceToken:
           description: >
             the config the draft was imported from, as `<kind>/<name>`; an
-            uploaded config, as `uploaded/<kind>/<name>`, which names no stored
+            uploaded config, as `uploaded/<kind>/<name>`, or an uploaded
+            legacy Builder diagram that came without a Topology, as
+            `uploaded/legacy-xml`, either of which names no stored
             config, so it does not let the draft update a stored Topology or
             Experiment; the published document it was opened from, as
             `builder-doc/<document id>`, which the caller must be able to read
             (404 otherwise); or the Builder file of a topology it was opened
             from, as `builder-file/<topology name>/<digest>`, with the
-            `digest` GET /builder-v2/topologies/{topology}/document returned,
+            `digest` GET /builder/topologies/{topology}/document returned,
             which the caller must be able to read and which the file must
             still have (409 otherwise)
           type: string
@@ -3058,6 +3373,23 @@ components:
                 enum:
                   - view
                   - edit
+        canDelete:
+          description: >
+            whether the caller may delete the draft: `configs` `delete`, and
+            the draft is its own or it holds `builder-drafts` `delete` for it.
+            Left out when false. Reported by the listing, GET of one draft,
+            and the `draft` of a PUT of its shares.
+          type: boolean
+        experiment:
+          description: >
+            name of an experiment this draft, or the published diagram it was
+            opened from, published, when it still exists and the caller holds
+            `experiments` `get` for it. It is worked out for each response,
+            so it follows an experiment that was renamed and is left out
+            once it is deleted. Reported by GET of one draft, POST
+            /builder/drafts and the `draft` of a publish answer; never by
+            the listing.
+          type: string
     BuilderDrafts:
       type: object
       properties:
@@ -3277,6 +3609,12 @@ components:
         updated:
           type: string
         digest:
+          description: >
+            for a Topology or an Experiment, the digest a document imported
+            from it records as its `source.digest`: of the config's
+            apiVersion, kind, name and spec, and of the `builder-xml` diagram
+            of a Topology that has one. For a Scenario, the digest of its
+            spec
           type: string
         stored:
           description: false for a config generated from uploaded content
@@ -3284,11 +3622,20 @@ components:
         builder:
           description: >
             the builder annotation the config carries, if any: `builder-doc`
-            (Builder v2) or `builder-xml` (legacy Builder)
+            (Builder) or, on a Topology without it, `builder-xml` (legacy
+            Builder diagram)
           type: string
         generatable:
-          description: whether POST /builder-v2/generate accepts this config
+          description: whether POST /builder/generate accepts this config
           type: boolean
+        includeCount:
+          description: >
+            the number of topologies a Topology includes
+            (`includeTopologies`). Left out when it includes none, for every
+            other kind, for a caller without `configs` `get` for the config,
+            and in the `source` of a generated document.
+          type: integer
+          minimum: 1
     BuilderSources:
       type: object
       properties:
@@ -3319,6 +3666,32 @@ components:
         content:
           description: a Topology or Experiment config as JSON or YAML text
           type: string
+        includes:
+          description: >
+            what becomes of the nodes of the topologies a Topology includes:
+            `keep` (the default, also when left out or empty) shows them
+            read only, and `combine` copies them into the document and makes
+            it a new topology. `combine` is not allowed for an Experiment.
+          type: string
+          enum:
+            - keep
+            - combine
+        copy:
+          description: >
+            make the document a copy that is not linked to the Topology it
+            is generated from; `includes` `combine` implies it. Not allowed
+            for an Experiment.
+          type: boolean
+          default: false
+        name:
+          description: >
+            the name of the new topology, and of the document. Only allowed
+            with `copy` or `includes` `combine`. When empty, the source's
+            name with `-combined` (for `combine`) or `-copy` added. It must
+            not be the name of the stored Topology being imported.
+          type: string
+          maxLength: 512
+          pattern: "^[A-Za-z0-9_@.-]*$"
     BuilderGenerateResult:
       type: object
       properties:
@@ -3330,7 +3703,30 @@ components:
           items:
             type: string
         source:
-          $ref: "#/components/schemas/BuilderSource"
+          description: >
+            the config the document was made from. Left out by POST
+            /builder/legacy for a diagram that came without a Topology.
+          allOf:
+            - $ref: "#/components/schemas/BuilderSource"
+    BuilderLegacyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - content
+      properties:
+        content:
+          description: >
+            the text of a legacy Builder diagram file: mxGraph XML, or a
+            Topology config as YAML or JSON that has the `builder-xml`
+            annotation; at most 5242880 bytes
+          type: string
+        name:
+          description: >
+            the name of the document of a diagram that comes without a
+            Topology (`legacy-diagram` when left out or blank); at most 512
+            bytes, without control characters. Ignored for a Topology, whose
+            own name is used.
+          type: string
     BuilderTopologyExportRequest:
       type: object
       additionalProperties: false
@@ -3374,7 +3770,7 @@ components:
             type: string
     BuilderPublishedDocument:
       description: >
-        The Builder v2 document a config references: a stored published
+        The Builder document a config references: a stored published
         document (`source` `store`), which Publish or the
         `phenix builder publish` command stored, or the Builder file a
         topology's `builder-doc` annotation names (`source` `file`). A file
@@ -3434,10 +3830,16 @@ components:
           type: string
         topologyDiffers:
           description: >
-            files only, in GET /builder-v2/topologies/{topology}/document;
+            files only, in GET /builder/topologies/{topology}/document;
             true when the stored topology is not what the document publishes,
             so a draft opened from the file cannot update the topology
           type: boolean
+        experiment:
+          description: >
+            name of an experiment the publication behind this document made,
+            when it still exists and the caller holds `experiments` `get` for
+            it. Only on rows of GET /builder/documents with `source` `store`.
+          type: string
         document:
           $ref: "#/components/schemas/BuilderDocument"
       required:
@@ -3561,6 +3963,446 @@ components:
                   - too-many
                   - unknown-user
                   - account-removed
+    BuilderIconUpload:
+      type: object
+      required:
+        - data
+      properties:
+        name:
+          description: >
+            a name for people, at most 64 bytes, without control characters;
+            it is trimmed, and identifies nothing
+          type: string
+        data:
+          description: >
+            a PNG of at most 96 by 96 pixels and 65536 bytes, in standard
+            base64 with padding and without line breaks
+          type: string
+    BuilderIcon:
+      type: object
+      properties:
+        id:
+          description: >
+            `sha256:` and the SHA-256 of the stored PNG, as 64 lowercase hex
+            digits. It is the key of the icon in a Builder document's
+            `icons`, and the same image has the same ID in every library.
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
+        name:
+          description: the name the icon was given, empty when it has none
+          type: string
+        width:
+          description: width in pixels, 1 to 96
+          type: integer
+        height:
+          description: height in pixels, 1 to 96
+          type: integer
+        bytes:
+          description: length of the stored PNG, at most 40960
+          type: integer
+        created:
+          description: when the icon was added
+          type: string
+          format: date-time
+        data:
+          description: >
+            the stored PNG in standard base64 with padding, which may differ
+            from what was sent
+          type: string
+    BuilderIconList:
+      type: object
+      properties:
+        icons:
+          description: the caller's icons, sorted by name without regard to case, then by ID
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderIcon"
+        maxIcons:
+          description: the most icons a library holds
+          type: integer
+        maxBytes:
+          description: the most PNG bytes the icons of a library have together
+          type: integer
+        usedBytes:
+          description: the PNG bytes of the listed icons together
+          type: integer
+    BuilderTemplateDevice:
+      description: >
+        What a template fills in: every field of a device node but its
+        hostname, its interface handles and where it was included from. A
+        device made from the template is named after
+        `spec.general.hostname`, made unique in the diagram.
+      type: object
+      required:
+        - spec
+      properties:
+        iconKey:
+          description: one of the Builder's icon keys
+          type: string
+        icon:
+          description: >
+            the ID of a custom icon, a key of the `icons` the library or the
+            request carries
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
+        outlineColor:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        fillColor:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        spec:
+          description: >
+            a complete phenix node spec, as a device node holds it; at most
+            16384 bytes as JSON together with the other fields. Its
+            `general.hostname` is required and holds no white space. It is
+            not checked against the phenix node schema.
+          type: object
+          additionalProperties: true
+    BuilderTemplateIcons:
+      description: >
+        Custom icons by icon ID (`sha256:` and the SHA-256 of the PNG bytes),
+        in the shape of a Builder document's `icons`. A library holds at most
+        32, and only the ones its templates name.
+      type: object
+      additionalProperties:
+        type: object
+        required:
+          - data
+        properties:
+          name:
+            description: a name for people, at most 64 bytes
+            type: string
+          data:
+            description: >
+              a PNG of at most 96 by 96 pixels and 40960 bytes that holds
+              only its image, in standard base64 with padding
+            type: string
+    BuilderTemplateShare:
+      description: one user a template or a collection is shared with
+      type: object
+      properties:
+        user:
+          type: string
+        grantedAt:
+          type: string
+          format: date-time
+        stale:
+          description: >
+            the account the item was shared with was deleted, or replaced by
+            a new one under the same name, so this share grants nothing
+          type: boolean
+    BuilderTemplate:
+      type: object
+      properties:
+        id:
+          description: >
+            unique in the owner's library only: the built-in templates keep
+            their short names in every library, any other is a UUID
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        owner:
+          description: the user whose library holds the template
+          type: string
+        source:
+          description: >
+            `own` for a template of the caller's library, `shared` for one
+            another user shared with the caller, `server` for one published
+            to every user
+          type: string
+          enum:
+            - own
+            - shared
+            - server
+        name:
+          type: string
+        description:
+          description: >
+            the template's own text, shown where templates are listed; never
+            written into a node
+          type: string
+        device:
+          $ref: "#/components/schemas/BuilderTemplateDevice"
+        version:
+          description: >
+            starts at 1 and grows by one with every change of the name, the
+            description or the device
+          type: integer
+        etag:
+          description: the entity tag of the content, `"<version>"`, for If-Match
+          type: string
+        created:
+          description: left out for a built-in template that was never changed
+          type: string
+          format: date-time
+        updated:
+          description: >
+            when the content last changed; left out for a built-in template
+            that was never changed
+          type: string
+          format: date-time
+        serverWide:
+          description: the template itself is published to every user
+          type: boolean
+        publishedAt:
+          description: left out unless `serverWide`
+          type: string
+          format: date-time
+        publishedBy:
+          description: left out unless `serverWide`
+          type: string
+        collections:
+          description: >
+            the IDs of the collections of the same owner that hold the
+            template
+          type: array
+          items:
+            type: string
+        shares:
+          description: who the template is shared with, sorted by user; sent to its owner only
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderTemplateShare"
+    BuilderTemplateCollection:
+      type: object
+      properties:
+        id:
+          description: unique among the collections of the owner's library
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        owner:
+          description: the user whose library holds the collection
+          type: string
+        source:
+          type: string
+          enum:
+            - own
+            - shared
+            - server
+        name:
+          type: string
+        description:
+          type: string
+        templateIds:
+          description: the templates of the collection, in the order given
+          type: array
+          items:
+            type: string
+        version:
+          description: >
+            starts at 1 and grows by one with every change of the name, the
+            description or the templates, also when a template of the
+            collection is deleted
+          type: integer
+        etag:
+          description: the entity tag of the content, `"<version>"`, for If-Match
+          type: string
+        created:
+          type: string
+          format: date-time
+        updated:
+          description: when the content last changed
+          type: string
+          format: date-time
+        serverWide:
+          description: the collection is published to every user
+          type: boolean
+        publishedAt:
+          description: left out unless `serverWide`
+          type: string
+          format: date-time
+        publishedBy:
+          description: left out unless `serverWide`
+          type: string
+        shares:
+          description: who the collection is shared with, sorted by user; sent to its owner only
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderTemplateShare"
+    BuilderTemplateLibrary:
+      type: object
+      properties:
+        owner:
+          description: the caller, whose library the write routes change
+          type: string
+        templates:
+          description: the caller's own templates, in the order they were added
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderTemplate"
+        collections:
+          description: >
+            the caller's own collections, in the order they were added. Every
+            ID in a collection's `templateIds` is in `templates`.
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderTemplateCollection"
+        icons:
+          description: >
+            the custom icons of every listed template; left out when none
+            names one
+          allOf:
+            - $ref: "#/components/schemas/BuilderTemplateIcons"
+        canShare:
+          description: the caller may share its templates and collections
+          type: boolean
+        canPublish:
+          description: the caller may publish its templates and collections to every user
+          type: boolean
+        damaged:
+          description: >
+            the caller's library record cannot be read by this server, so
+            none of its items are listed
+          type: boolean
+        limits:
+          type: object
+          properties:
+            templates:
+              description: the most templates a library holds
+              type: integer
+            collections:
+              description: the most collections a library holds
+              type: integer
+            shares:
+              description: the most users one template or collection is shared with
+              type: integer
+            nameBytes:
+              description: the most bytes a template or collection name has
+              type: integer
+            descriptionBytes:
+              description: the most bytes a description has
+              type: integer
+            deviceBytes:
+              description: the most bytes a template's `device` takes as JSON
+              type: integer
+            icons:
+              description: the most custom icons the templates of a library name together
+              type: integer
+    BuilderTemplateContent:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - device
+      properties:
+        name:
+          description: 1 to 128 bytes, not blank, without control characters
+          type: string
+        description:
+          description: at most 1024 bytes, without control characters
+          type: string
+        device:
+          $ref: "#/components/schemas/BuilderTemplateDevice"
+        icons:
+          description: >
+            the custom icon `device.icon` names, when the library may not
+            hold it yet
+          allOf:
+            - $ref: "#/components/schemas/BuilderTemplateIcons"
+    BuilderTemplateCreate:
+      type: object
+      additionalProperties: false
+      required:
+        - templates
+      properties:
+        templates:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - name
+              - device
+            properties:
+              name:
+                description: 1 to 128 bytes, not blank, without control characters
+                type: string
+              description:
+                description: at most 1024 bytes, without control characters
+                type: string
+              device:
+                $ref: "#/components/schemas/BuilderTemplateDevice"
+        collection:
+          description: a new collection to hold exactly the new templates
+          type: object
+          additionalProperties: false
+          required:
+            - name
+          properties:
+            name:
+              type: string
+            description:
+              type: string
+        icons:
+          description: >
+            the custom icons the templates name that the library may not
+            hold yet
+          allOf:
+            - $ref: "#/components/schemas/BuilderTemplateIcons"
+    BuilderTemplateCreateResult:
+      type: object
+      properties:
+        created:
+          description: the new templates, in the order of the request
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              etag:
+                type: string
+        collection:
+          description: the new collection, when the request asked for one
+          type: object
+          properties:
+            id:
+              type: string
+            etag:
+              type: string
+    BuilderTemplateCollectionContent:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          description: 1 to 128 bytes, not blank, without control characters
+          type: string
+        description:
+          description: at most 1024 bytes, without control characters
+          type: string
+        templateIds:
+          description: templates of this library, each named once
+          type: array
+          maxItems: 200
+          items:
+            type: string
+    BuilderTemplateSelection:
+      description: at least one ID in all
+      type: object
+      additionalProperties: false
+      properties:
+        templates:
+          type: array
+          items:
+            type: string
+        collections:
+          type: array
+          items:
+            type: string
+    BuilderTemplateDeleteResult:
+      type: object
+      properties:
+        deleted:
+          type: object
+          properties:
+            templates:
+              type: integer
+            collections:
+              type: integer
   parameters:
     BuilderDraftOwner:
       name: owner
@@ -3588,6 +4430,42 @@ components:
       required: true
       schema:
         type: string
+    BuilderTemplateOwner:
+      name: owner
+      in: path
+      description: >
+        the user whose template library is changed, which must be the caller
+        (`owner` of GET /builder/templates)
+      required: true
+      schema:
+        type: string
+    BuilderTemplateID:
+      name: template
+      in: path
+      description: template ID
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    BuilderTemplateCollectionID:
+      name: collection
+      in: path
+      description: collection ID
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    BuilderTemplateIfMatch:
+      name: If-Match
+      in: header
+      description: >
+        The `etag` of the template or collection the change is based on:
+        exactly one strong, quoted entity tag, such as `"3"`. A missing
+        header, a wildcard or a weak tag is rejected with 400; a tag that
+        does not name the current content is rejected with 412.
+      required: true
+      schema:
+        type: string
   headers:
     BuilderETag:
       description: the draft's revision as a quoted entity tag, for the next If-Match
@@ -3597,6 +4475,12 @@ components:
       description: >
         the entity tag of the list of who a draft is shared with,
         `"shares-N"`, for the next If-Match of PUT
+      schema:
+        type: string
+    BuilderTemplateETag:
+      description: >
+        the entity tag of the template's or collection's content,
+        `"<version>"`, for the next If-Match
       schema:
         type: string
     BuilderWarning:
@@ -3629,8 +4513,7 @@ components:
       description: >
         The resource does not exist; or it is another user's draft the caller
         may not see (not shared with the caller, and no `builder-drafts`
-        permission), answered exactly as if it did not exist; or the server
-        runs without the builder-v2 feature, so the route does not exist.
+        permission), answered exactly as if it did not exist.
       content:
         application/json:
           schema:
@@ -3660,6 +4543,69 @@ components:
       description: >
         The request is well formed but cannot be applied, for example a
         document that fails validation or a config that cannot be converted.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WebError"
+    BuilderTemplateNotFound:
+      description: >
+        `{owner}` is not the caller: a library is changed by its owner only,
+        whatever the caller's role. Or the library holds no template or
+        collection with the ID in the path.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WebError"
+    BuilderTemplateDamaged:
+      description: >
+        The library record cannot be read by this version of phenix, so it
+        cannot be changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WebError"
+    BuilderTemplatePreconditionFailed:
+      description: >
+        The If-Match header does not name the current content of the
+        template or collection. The response carries the current entity tag.
+      headers:
+        ETag:
+          $ref: "#/components/headers/BuilderTemplateETag"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WebError"
+    BuilderTemplateTooLarge:
+      description: >
+        The request body is larger than the route allows (6 MiB to add
+        templates, 1 MiB to replace one, 64 KiB otherwise); or the library
+        would hold more than 200 templates, 50 collections, 200 templates in
+        one collection or 32 custom icons, or take more than 512 KiB.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WebError"
+    BuilderTemplateUnprocessable:
+      description: >
+        The request is well formed but cannot be applied; `message` says
+        why. A template that is not valid is named by its place in the
+        request and the field, such as `templates[0].name: template name is
+        required`, and one whose custom icon nothing carries as `template 0
+        names custom icon "<icon id>", which the request does not carry`. A
+        collection is refused for its name, its description, or a template
+        the library does not hold or that is named twice.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WebError"
+    BuilderTemplateBusy:
+      description: >
+        The library kept changing while the request was handled. Try again.
+      headers:
+        Retry-After:
+          description: seconds to wait before trying again
+          schema:
+            type: integer
       content:
         application/json:
           schema:

@@ -82,7 +82,7 @@ export class TimeoutTool {
       1000 * 60 * timeLeft,
     );
   }
-  // Logs out, or first warns for a minute when Builder v2 holds changes
+  // Logs out, or first warns for a minute when Builder holds changes
   // the server does not have (see utils/logout.js). Activity meanwhile does
   // not restart the timer; Stay signed in in the warning does.
   logoutUser() {

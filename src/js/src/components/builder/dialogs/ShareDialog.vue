@@ -9,11 +9,10 @@
   removed starts marked for removal.
 
   People are added from the users the owner may share the draft with (see
-  loadShareCandidates in store.js), less those listed already. The field is
-  an editable combobox with list autocomplete (WAI-ARIA APG): typing
-  filters the list, and its button opens it whole. Until the users are read,
-  or when they cannot be, a username can still be typed; the server checks
-  it on save.
+  loadShareCandidates in store.js), less those listed already, through the
+  user field (BuilderUserCombobox.vue). Until the users are read, or when
+  they cannot be, a username can still be typed; the server checks it on
+  save.
 
   The page behind the dialog is inert, so its status and alert regions are
   its own. A save that meets a list changed elsewhere (412) reads the list
@@ -30,7 +29,7 @@
     data-testid="share-dialog"
     @close="requestClose">
     <p id="share-intro" class="builder-hint">
-      People you add find this draft under Shared with me and can see all of it,
+      People you add find this draft under Shared Drafts and can see all of it,
       including its history. Their role must also allow viewing or changing
       configs. Can edit lets them change, undo and publish under their own
       permissions, and replace older history. Only you can delete this draft or
@@ -44,70 +43,17 @@
       @submit.prevent="add">
       <div class="builder-field builder-share__user">
         <label for="share-user">User</label>
-        <div class="builder-share__combobox">
-          <input
-            id="share-user"
-            ref="userField"
-            v-model="addName"
-            type="text"
-            role="combobox"
-            autocomplete="off"
-            autocapitalize="none"
-            spellcheck="false"
-            aria-autocomplete="list"
-            :aria-expanded="String(listShown)"
-            aria-controls="share-user-options"
-            :aria-activedescendant="
-              listShown && active >= 0
-                ? `share-user-option-${active}`
-                : undefined
-            "
-            :disabled="phase === 'saving'"
-            :aria-invalid="fieldError.field === 'user' ? 'true' : undefined"
-            :aria-describedby="userDescription"
-            data-testid="share-user"
-            @input="onInput"
-            @keydown="onUserKeydown"
-            @click="openList"
-            @blur="closeList" />
-          <!-- Out of the tab order, as in the APG example: the keys open
-               the list from the field. -->
-          <button
-            type="button"
-            tabindex="-1"
-            class="builder-share__toggle"
-            aria-label="Users"
-            :aria-expanded="String(listShown)"
-            aria-controls="share-user-options"
-            :disabled="phase === 'saving'"
-            data-testid="share-user-toggle"
-            @mousedown.prevent
-            @click="toggleList">
-            <builder-icon name="chevron-down" :size="14" />
-          </button>
-          <ul
-            v-show="listShown"
-            id="share-user-options"
-            ref="listEl"
-            class="builder-share__options"
-            role="listbox"
-            aria-label="Users"
-            data-testid="share-user-options">
-            <li
-              v-for="(option, index) in options"
-              :id="`share-user-option-${index}`"
-              :key="option.username"
-              class="builder-share__option"
-              role="option"
-              :aria-selected="index === active ? 'true' : 'false'"
-              :data-testid="`share-user-option-${option.username}`"
-              @mousedown.prevent
-              @pointermove="active = index"
-              @click="choose(index)">
-              {{ userLabel(option) }}
-            </li>
-          </ul>
-        </div>
+        <builder-user-combobox
+          id="share-user"
+          ref="userField"
+          v-model="addName"
+          :users="users"
+          :exclude="listed"
+          :disabled="phase === 'saving'"
+          :invalid="fieldError.field === 'user'"
+          :describedby="userDescription"
+          @update:model-value="fieldError.clear()"
+          @submit="add" />
         <p
           id="share-users-note"
           class="builder-share__users-note"
@@ -372,34 +318,21 @@
 </template>
 
 <script setup>
-  import {
-    computed,
-    nextTick,
-    onBeforeUnmount,
-    onMounted,
-    reactive,
-    ref,
-    watch,
-  } from 'vue';
+  import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
   import BuilderDialog from '../BuilderDialog.vue';
   import BuilderIcon from '../BuilderIcon.vue';
+  import BuilderUserCombobox from '../BuilderUserCombobox.vue';
   import { useMessage } from './message.js';
 
-  import { COUNT_DELAY_MS, count } from '@/builder/announce.js';
+  import { count } from '@/builder/announce.js';
   import { errorMessage, serverReason, shareErrors } from '@/builder/api.js';
-  import {
-    comboboxKey,
-    findUser,
-    userLabel,
-    userOptions,
-  } from '@/builder/combobox.js';
+  import { findUser, userOptions } from '@/builder/combobox.js';
   import { detectPlatform } from '@/builder/keymap.js';
   import {
     ACCESS_LABELS,
     addedMessage,
     changeCount,
-    matchesMessage,
     mergeShares,
     reasonMessage,
     rowChange,
@@ -459,8 +392,9 @@
   const confirmingDiscard = ref(false);
   const linkShown = ref(false);
 
+  // The user field: it takes focus, and closes its list (see
+  // BuilderUserCombobox.vue).
   const userField = ref(null);
-  const listEl = ref(null);
   const alertEl = ref(null);
   const summaryEl = ref(null);
   const cancelButton = ref(null);
@@ -554,12 +488,6 @@
   const users = ref(null);
   const usersPhase = ref('loading');
   const usersError = useMessage();
-  const listOpen = ref(false);
-  const active = ref(-1);
-  // The user last chosen from the list, until the field is typed in: the
-  // field then shows their label, which names them.
-  const chosen = ref(null);
-  let matchTimer = null;
 
   // Anyone listed already, the owner and the user are left out. Someone
   // marked removed is listed again: adding them keeps them.
@@ -570,17 +498,6 @@
       .filter((row) => !row.removed || row.stale)
       .map((row) => row.user),
   ]);
-  // What the list filters on: nothing while the field shows the user
-  // chosen, so the whole list opens again.
-  const query = computed(() =>
-    chosen.value && addName.value === userLabel(chosen.value)
-      ? ''
-      : addName.value,
-  );
-  const options = computed(() =>
-    userOptions(users.value, query.value, { exclude: listed.value }),
-  );
-  const listShown = computed(() => listOpen.value && options.value.length > 0);
   // Everyone the draft may be shared with has access already.
   const noneLeft = computed(
     () =>
@@ -636,99 +553,6 @@
     loadUsers();
   }
 
-  // A count still to come would describe a list no longer shown.
-  function closeList() {
-    listOpen.value = false;
-    active.value = -1;
-    clearTimeout(matchTimer);
-  }
-
-  function openList() {
-    listOpen.value = true;
-  }
-
-  function toggleList() {
-    if (listShown.value) {
-      closeList();
-    } else {
-      openList();
-    }
-
-    userField.value?.focus();
-  }
-
-  function choose(index) {
-    const option = options.value[index];
-
-    if (option) {
-      chosen.value = option;
-      addName.value = userLabel(option);
-      fieldError.clear();
-    }
-
-    closeList();
-  }
-
-  function onInput() {
-    fieldError.clear();
-    chosen.value = null;
-    active.value = -1;
-    listOpen.value = true;
-
-    clearTimeout(matchTimer);
-
-    if (users.value && addName.value.trim()) {
-      matchTimer = setTimeout(() => {
-        status.set(matchesMessage(options.value.length));
-      }, COUNT_DELAY_MS);
-    }
-  }
-
-  async function onUserKeydown(event) {
-    const key = comboboxKey(event, {
-      expanded: listShown.value,
-      active: active.value,
-      count: options.value.length,
-    });
-
-    if (!key) {
-      return;
-    }
-
-    if (key.prevent) {
-      event.preventDefault();
-    }
-
-    switch (key.action) {
-      case 'open':
-        listOpen.value = true;
-        break;
-      case 'move':
-        listOpen.value = true;
-        active.value = key.index;
-        await nextTick();
-        listEl.value
-          ?.querySelector(`#share-user-option-${key.index}`)
-          ?.scrollIntoView?.({ block: 'nearest' });
-        break;
-      case 'choose':
-        choose(key.index);
-        break;
-      case 'close':
-        // Escape closes the list, not the dialog.
-        if (key.prevent) {
-          event.stopPropagation();
-        }
-        closeList();
-        break;
-      case 'add':
-        add();
-        break;
-      default:
-        break;
-    }
-  }
-
   // --- adding ----------------------------------------------------------
 
   async function add() {
@@ -740,7 +564,7 @@
           ? 'Wait until the list has loaded.'
           : 'Press Retry to load the list first.';
 
-      closeList();
+      userField.value?.closeList();
       fieldError.set(why, 'wait');
 
       return;
@@ -750,7 +574,7 @@
       return;
     }
 
-    closeList();
+    userField.value?.closeList();
 
     if (noneLeft.value) {
       status.set(NONE_LEFT);
@@ -770,11 +594,11 @@
     if (check.error) {
       // Someone listed already: their access is what to change, so it takes
       // focus, described by the message.
-      const listed = check.row && !check.row.stale && !check.row.removed;
+      const wanted = check.row && !check.row.stale && !check.row.removed;
 
-      fieldError.set(check.error, listed ? `row:${check.user}` : 'user');
+      fieldError.set(check.error, wanted ? `row:${check.user}` : 'user');
       await nextTick();
-      (listed
+      (wanted
         ? document.getElementById(`${check.row.key}-access`)
         : userField.value
       )?.focus();
@@ -801,7 +625,6 @@
     delete rowErrors[check.user];
     fieldError.clear();
     addName.value = '';
-    chosen.value = null;
     status.set(addedMessage(check.user, addAccess.value));
     // Each person starts at the least access; edit is chosen every time.
     addAccess.value = 'view';
@@ -822,7 +645,7 @@
   async function keepFocusInDialog() {
     await nextTick();
 
-    const panel = userField.value?.closest('dialog');
+    const panel = alertEl.value?.closest('dialog');
 
     if (panel && !panel.contains(document.activeElement)) {
       (userField.value || cancelButton.value)?.focus();
@@ -1077,10 +900,6 @@
     userField.value?.focus();
     await Promise.all([load(), loadUsers()]);
   });
-
-  onBeforeUnmount(() => {
-    clearTimeout(matchTimer);
-  });
 </script>
 
 <style scoped>
@@ -1104,46 +923,6 @@
     min-height: 2rem;
   }
 
-  .builder-share__combobox {
-    position: relative;
-  }
-
-  /* Room for the button that opens the list, inside the field's end. */
-  .builder-share .builder-share__combobox input[role='combobox'] {
-    padding-inline-end: 2.25rem;
-  }
-
-  .builder-share__toggle {
-    position: absolute;
-    top: 50%;
-    right: 2px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: 0;
-    border-radius: var(--bx-radius);
-    background: none;
-    color: var(--bx-text-muted);
-    cursor: pointer;
-    transform: translateY(-50%);
-  }
-
-  .builder-share__toggle:hover:not(:disabled) {
-    background: var(--bx-bg-alt);
-    color: var(--bx-text);
-  }
-
-  .builder-share__toggle:disabled {
-    cursor: not-allowed;
-  }
-
-  .builder-share__toggle[aria-expanded='true'] .builder-icon {
-    transform: rotate(180deg);
-  }
-
   .builder-share__users-note {
     display: flex;
     flex-wrap: wrap;
@@ -1164,36 +943,6 @@
 
   .builder-share__users-note .builder-share__retry {
     margin-inline-start: 0;
-  }
-
-  .builder-share__options {
-    position: absolute;
-    z-index: 1;
-    top: calc(100% + 2px);
-    right: 0;
-    left: 0;
-    max-height: 12rem;
-    margin: 0;
-    padding: 0.2rem 0;
-    overflow-y: auto;
-    list-style: none;
-    border: 1px solid var(--bx-border-strong);
-    border-radius: var(--bx-radius);
-    background: var(--bx-surface);
-    box-shadow: var(--bx-shadow);
-  }
-
-  .builder-share__option {
-    min-height: 24px;
-    overflow-wrap: anywhere;
-    padding: 0.25rem 0.5rem;
-    border-left: 3px solid transparent;
-    cursor: pointer;
-  }
-
-  .builder-share__option[aria-selected='true'] {
-    border-left-color: var(--bx-accent);
-    background: var(--bx-selected-bg);
   }
 
   .builder-share__summary {
@@ -1288,8 +1037,7 @@
     background: var(--bx-surface);
   }
 
-  .builder-share__controls select[aria-invalid='true'],
-  .builder-share input[aria-invalid='true'] {
+  .builder-share__controls select[aria-invalid='true'] {
     border-color: var(--bx-danger);
     box-shadow: inset 0 0 0 1px var(--bx-danger);
   }
@@ -1376,38 +1124,15 @@
   }
 
   @media (pointer: coarse) {
-    .builder-share .builder-share__combobox input[role='combobox'] {
-      padding-inline-end: 3rem;
-    }
-
-    .builder-share__toggle {
-      width: 40px;
-      height: 40px;
-    }
-
     .builder-share .builder-button,
     .builder-share select,
     .builder-share input,
-    .builder-share__option,
     .builder-share__link {
       min-height: 44px;
     }
   }
 
-  /* Forced colors draw transparent borders, so only the active option keeps
-     a bar that shows. */
   @media (forced-colors: active) {
-    .builder-share__option {
-      border-left-color: Canvas;
-    }
-
-    .builder-share__option[aria-selected='true'] {
-      forced-color-adjust: none;
-      border-left-color: HighlightText;
-      background: Highlight;
-      color: HighlightText;
-    }
-
     .builder-share__link {
       color: LinkText;
     }

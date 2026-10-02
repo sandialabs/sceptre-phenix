@@ -17,7 +17,7 @@ import {
   nodeChoices,
 } from '@/builder/commands.js';
 
-import { sampleDocument } from './fixtures.js';
+import { sampleDocument, withTemplates } from './fixtures.js';
 
 function context({ store = {}, view = {} } = {}) {
   const { doc } = sampleDocument();
@@ -35,7 +35,7 @@ function context({ store = {}, view = {} } = {}) {
   }
 
   return createCommandContext({
-    store: {
+    store: withTemplates({
       doc,
       readOnly: false,
       selection: { nodes: [], edges: [] },
@@ -48,7 +48,7 @@ function context({ store = {}, view = {} } = {}) {
       drafts: { mine: [], shared: [] },
       documents: [],
       ...store,
-    },
+    }),
     view: fullView,
   });
 }
@@ -90,7 +90,7 @@ describe('with nothing typed', () => {
     });
     const results = paletteResults(ctx, {
       recent: [
-        { id: 'add.device', choices: ['router'] },
+        { id: 'add.device', choices: ['builtin:router'] },
         // Gone from the diagram, so gone from the list.
         { id: 'structure.connect', choices: ['no-such-node', 'x'] },
         { id: 'structure.layout', choices: [] },
@@ -133,8 +133,8 @@ describe('with nothing typed', () => {
         'Blank diagram',
         'Import…',
         'Upload…',
-        'Builder v2 help',
-        'Show Shared with me',
+        'Builder help',
+        'Show Shared Drafts',
       ]),
     );
     expect(all).not.toContain('Go to node');
@@ -155,13 +155,14 @@ describe('a command search', () => {
       'Group selection',
       'Auto-group by network',
       'Auto-group by name',
+      'Auto-group by name pattern…',
       'Ungroup',
     ]);
     expect(structure.items[0].ranges).toEqual([[0, 5]]);
     expect(structure.items[0].disabled).toBe(
       'Select at least one node to group.',
     );
-    expect(structure.items[3].disabled).toBe('Select a group first.');
+    expect(structure.items[4].disabled).toBe('Select a group first.');
     expect(titles(add)).toEqual(['Add group']);
   });
 
@@ -172,11 +173,159 @@ describe('a command search', () => {
       'Ungroup',
       'Auto-group by network',
       'Auto-group by name',
+      'Auto-group by name pattern…',
     ]);
+
+    // The pattern rule is found by what a pattern is, too.
+    for (const query of ['regex', 'regexp', 'regular expression']) {
+      expect(
+        titles(paletteResults(context(), { query }).groups[0]),
+        query,
+      ).toEqual(['Auto-group by name pattern…']);
+    }
 
     const [layout] = paletteResults(context(), { query: 'arrange' }).groups;
     expect(layout.items[0].title).toBe('Auto layout');
     expect(layout.items[0].ranges).toEqual([]);
+  });
+
+  // Each download format is a command, and all of them answer to the word
+  // Download had before.
+  test('finds the download commands by "export", and Share by "send"', () => {
+    const exported = paletteResults(context(), { query: 'export' });
+
+    expect(labels(exported)).toEqual(['Draft']);
+    expect(titles(exported.groups[0])).toEqual([
+      'Download…',
+      'Download Builder JSON',
+      'Download Builder YAML',
+      'Download Topology YAML',
+      'Download PNG',
+      'Download SVG',
+      'Download Gephi (GEXF)',
+    ]);
+    expect(exported.total).toBe(7);
+    // The alias is not in the title, so nothing is marked.
+    expect(exported.groups[0].items.every((item) => !item.ranges.length)).toBe(
+      true,
+    );
+    expect(exported.groups[0].items.map((item) => item.icon)).toEqual([
+      'download',
+      'download',
+      'download',
+      'download',
+      'image',
+      'image',
+      'download',
+    ]);
+    expect(exported.groups[0].items[6].detail).toBe(
+      'The network as a graph to analyze in Gephi',
+    );
+
+    // A format narrows it: the format's command first, Download… last.
+    for (const [query, first] of [
+      ['export gexf', 'Download Gephi (GEXF)'],
+      ['export png', 'Download PNG'],
+      ['gexf', 'Download Gephi (GEXF)'],
+      ['gephi', 'Download Gephi (GEXF)'],
+      ['download topology', 'Download Topology YAML'],
+    ]) {
+      const [draft] = paletteResults(context(), { query }).groups;
+
+      expect(titles(draft)[0], query).toBe(first);
+    }
+    expect(
+      titles(paletteResults(context(), { query: 'export gexf' }).groups[0]),
+    ).toEqual(['Download Gephi (GEXF)', 'Download…']);
+    // Words of the title, the alias and the keywords together.
+    expect(
+      titles(paletteResults(context(), { query: 'save png' }).groups[0]),
+    ).toEqual(['Download…', 'Download PNG']);
+    expect(
+      titles(paletteResults(context(), { query: 'export image' }).groups[0]),
+    ).toEqual(['Download…', 'Download PNG', 'Download SVG']);
+
+    // Share…, for its owner; it comes before a command matched by letters.
+    const owner = context({
+      store: { canShare: true },
+      view: { panes: { hidden: { start: true }, stacked: false } },
+    });
+    const sent = paletteResults(owner, { query: 'send' });
+
+    expect(sent.groups[0].items[0].title).toBe('Share…');
+    expect(sent.groups[0].items[0].ranges).toEqual([]);
+    expect(sent.groups.flatMap(titles)).toContain('Show Add nodes and Outline');
+
+    // The drafts page has no draft to download or share.
+    const landing = context({ view: { editing: false } });
+
+    for (const query of ['export', 'send']) {
+      expect(
+        paletteResults(landing, { query }).groups.flatMap((group) =>
+          group.items.filter((item) => item.kind === 'command'),
+        ),
+        query,
+      ).toEqual([]);
+    }
+  });
+
+  // Open experiment and Combine included nodes are offered only by a draft
+  // that has an experiment or included nodes. They join the searches for
+  // their own words and no other.
+  test('a draft with an experiment and included nodes lists as many downloads and group commands', () => {
+    const full = context({
+      store: {
+        experimentName: 'exp-1',
+        canShare: true,
+        summary: { included: 2 },
+      },
+    });
+    const found = (query) =>
+      paletteResults(full, { query }).groups.flatMap((group) =>
+        group.items
+          .filter((item) => item.kind === 'command')
+          .map((item) => item.title),
+      );
+
+    expect(found('export')).toHaveLength(7);
+    expect(paletteResults(full, { query: 'export' }).total).toBe(7);
+    expect(found('download')).toHaveLength(7);
+    expect(found('grp')).toHaveLength(6);
+    expect(found('send')).toEqual(['Share…']);
+
+    // "exp" starts Open experiment, and the alias of each download.
+    expect(found('exp').slice(0, 2)).toEqual(['Open experiment', 'Download…']);
+    expect(found('experiment')).toEqual(['Open experiment', 'Publish…']);
+    expect(found('combine')).toEqual([
+      'Combine included nodes into a new draft',
+    ]);
+    expect(found('unlock')).toEqual([
+      'Combine included nodes into a new draft',
+    ]);
+
+    // Without either, neither is listed.
+    const plain = paletteResults(context(), { query: 'exp' });
+
+    expect(plain.groups.flatMap(titles)).not.toContain('Open experiment');
+    expect(paletteResults(context(), { query: 'combine' }).total).toBe(0);
+  });
+
+  // Upload converts a legacy Builder diagram, and Import a stored topology
+  // that has one.
+  test('finds the conversion of a legacy Builder diagram by "legacy"', () => {
+    const [draft] = paletteResults(context(), { query: 'legacy' }).groups;
+
+    expect(titles(draft)).toEqual(['Upload…']);
+    expect(draft.items[0].command.id).toBe('draft.upload');
+    expect(draft.items[0].ranges).toEqual([]);
+
+    const landing = context({ view: { editing: false } });
+    const [drafts] = paletteResults(landing, { query: 'legacy' }).groups;
+
+    expect(drafts.items.map((item) => item.command.id)).toEqual([
+      'drafts.import',
+      'drafts.upload',
+    ]);
   });
 
   test('finds Disconnect by the words for removing a connection', () => {
@@ -212,15 +361,16 @@ describe('a command search', () => {
     const layout = first(paletteResults(ctx(true), { query: 'restore prev' }));
     expect(layout.title).toBe('Restore previous layout');
 
-    // "draft" is further into Show My Drafts than into Open draft, which has
-    // no draft to open.
+    // "draft" is further into Show My Drafts and Show Shared Drafts than
+    // into Open draft, which has no draft to open.
     const landing = context({ view: { editing: false } });
     const [drafts] = paletteResults(landing, { query: 'draft' }).groups;
-    expect(titles(drafts).slice(0, 2)).toEqual([
+    expect(titles(drafts).slice(0, 3)).toEqual([
       'Show My Drafts',
+      'Show Shared Drafts',
       'Open draft',
     ]);
-    expect(drafts.items[1].disabled).not.toBe('');
+    expect(drafts.items[2].disabled).not.toBe('');
   });
 
   test('adds up to three nodes whose names match', () => {
@@ -385,7 +535,7 @@ test('? lists the prefixes and the help', () => {
     '# Go to a network',
     '> Commands',
     'Keyboard shortcuts',
-    'Builder v2 help',
+    'Builder help',
   ]);
   expect(
     paletteResults(context({ view: { editing: false } }), { query: '?' })

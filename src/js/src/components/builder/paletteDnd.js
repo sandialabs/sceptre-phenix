@@ -2,34 +2,39 @@
 // Kept in its own module so both sides agree on the MIME types, and a
 // palette entry dropped on the canvas adds the node a click on it adds.
 
-import { deviceTemplate } from '@/builder/catalog.js';
 import { freeSpot, sizeOf } from '@/builder/model.js';
+import { nodeOptionsFromTemplate, templateIcons } from '@/builder/templates.js';
 
 export const PALETTE_MIME = 'application/x-phenix-builder-kind';
-// A device template's id, sent beside the kind 'device'.
+// A device template's key (see templateKey in templates.js), sent beside
+// the kind 'device'.
 export const PALETTE_TEMPLATE_MIME = 'application/x-phenix-builder-template';
 
 /**
  * The store.addNode options for a palette entry, less its position.
  *
+ * A template of the library can name a custom icon the diagram lacks: the
+ * library's copy of it is put on the store's icon shelf, from where the
+ * commit that adds the device copies it into the diagram (see shelveIcons
+ * in store.js).
+ *
+ * @param {object} store the Builder store, which knows the templates and
+ *   the diagram the node is for
  * @param {string} kind node kind
- * @param {string} [templateId] a device template's id; an unknown one adds
- *   a plain device
+ * @param {string} [key] a device template's key; one that names no
+ *   template adds a plain device
  * @returns {object}
  */
-export function paletteNode(kind, templateId) {
-  const template = templateId ? deviceTemplate(templateId) : undefined;
+export function paletteNode(store, kind, key) {
+  const template = key ? store.templateByKey(key) : undefined;
 
   if (!template) {
     return { kind };
   }
 
-  return {
-    kind: 'device',
-    template,
-    hostname: template.id,
-    iconKey: template.iconKey,
-  };
+  store.shelveIcons?.(templateIcons(template, store.templates?.icons));
+
+  return nodeOptionsFromTemplate(template, store.doc);
 }
 
 // The grid walk: one slot per node, a node's box and the room around it.

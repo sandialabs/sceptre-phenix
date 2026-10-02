@@ -68,7 +68,7 @@ func topologyDocumentsLeft(name string) bool {
 // topologyConfigHook keeps a Topology config and its published documents
 // together, whatever writes the config. Every phenix process registers it,
 // since the phenix binary links this package, and it reads the store the
-// process uses, so it runs with or without the builder-v2 feature.
+// process uses.
 //
 // Once a topology is deleted (DELETE /configs, `phenix config delete`, all
 // included) or renamed (an update that changes its name: PUT /configs, `phenix

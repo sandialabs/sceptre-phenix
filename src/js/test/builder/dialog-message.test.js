@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  LEGACY_SOURCE,
+  fileBaseName,
+  legacyDiagramHint,
   parseErrorText,
   readChosenFile,
   useFieldError,
@@ -73,6 +76,54 @@ describe('dialog messages', () => {
   });
 });
 
+describe('a legacy diagram', () => {
+  // The File and Paste text sources of Upload read Builder documents. XML
+  // is none, so they point at the source that converts it.
+  test('text that is XML is pointed at the legacy source', () => {
+    const hint =
+      'This looks like a legacy Builder diagram (XML). Choose "Legacy Builder diagram or Topology" to convert it.';
+
+    expect(LEGACY_SOURCE).toBe('Legacy Builder diagram or Topology');
+    expect(legacyDiagramHint('<mxGraphModel><root/></mxGraphModel>')).toBe(
+      hint,
+    );
+    expect(legacyDiagramHint('<?xml version="1.0"?>\n<mxGraphModel/>')).toBe(
+      hint,
+    );
+    // White space and a byte order mark before it do not hide it.
+    expect(legacyDiagramHint(' \n\t<root/>')).toBe(hint);
+    expect(legacyDiagramHint('\uFEFF<root/>')).toBe(hint);
+  });
+
+  test('any other text keeps the message of the document parser', () => {
+    for (const text of [
+      '',
+      '   ',
+      '{"nodes": []}',
+      'nodes: [unclosed',
+      'name: a < b',
+      'kind: Topology\nmetadata:\n  annotations:\n    builder-xml: <mxGraphModel/>\n',
+      undefined,
+      null,
+    ]) {
+      expect(legacyDiagramHint(text), String(text)).toBe('');
+    }
+  });
+
+  test('the diagram is named after its file, without the last extension', () => {
+    expect(fileBaseName('plant.xml')).toBe('plant');
+    expect(fileBaseName('plant.topology.yaml')).toBe('plant.topology');
+    expect(fileBaseName('plant')).toBe('plant');
+    expect(fileBaseName('plant.')).toBe('plant');
+    expect(fileBaseName('Plant floor 2.XML')).toBe('Plant floor 2');
+    // Nothing is left of a name that is only an extension: the server then
+    // names the diagram.
+    expect(fileBaseName('.xml')).toBe('');
+    expect(fileBaseName('')).toBe('');
+    expect(fileBaseName(undefined)).toBe('');
+  });
+});
+
 describe('a chosen file', () => {
   // A file field's change event, choosing a file that holds `text` (and is
   // `size` bytes), named after its text: its text is read once `finish` is
@@ -107,6 +158,13 @@ describe('a chosen file', () => {
 
     expect(await readChosenFile(large.event, 'scenario')).toEqual({
       error: 'The uploaded scenario is larger than the 5 MiB limit.',
+    });
+    // Import names its file as its source does: a config file.
+    expect(await readChosenFile(large.event, 'config')).toEqual({
+      error: 'The config file is larger than the 5 MiB limit.',
+    });
+    expect(await readChosenFile(large.event, 'file')).toEqual({
+      error: 'The uploaded file is larger than the 5 MiB limit.',
     });
     expect(await readChosenFile(choose(field).event, 'file')).toBeNull();
   });

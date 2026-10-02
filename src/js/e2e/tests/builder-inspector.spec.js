@@ -1,4 +1,4 @@
-// Browser tests for the Builder v2 Inspector: the JSON Forms panel that edits
+// Browser tests for the Builder Inspector: the JSON Forms panel that edits
 // the selected element through a working copy with Apply and Cancel.
 //
 // JSON Forms derives input ids from the schema scope and de-duplicates them
@@ -36,7 +36,7 @@ test.use({ announceHold: 100 });
 const PERSIST = { timeout: 20000 };
 
 // The route a draft's saves are sent to.
-const SNAPSHOTS = '**/api/v1/builder-v2/drafts/*/*/snapshots';
+const SNAPSHOTS = '**/api/v1/builder/drafts/*/*/snapshots';
 
 function subject(builder) {
   return builder.inspector.locator('.builder-inspector__subject');
@@ -130,7 +130,7 @@ function nodeOf(doc, kind) {
   return doc.nodes.find((node) => node.kind === kind);
 }
 
-// A node spec as phenix stores it in an experiment, which Generate brings
+// A node spec as phenix stores it in an experiment, which Import brings
 // into a draft as it is: every unset field is null or empty.
 function experimentSpec(hostname) {
   return {
@@ -256,7 +256,7 @@ async function isInViewport(element) {
   }
 }
 
-test.describe('Builder v2 inspector', () => {
+test.describe('Builder inspector', () => {
   // Each step checks one behavior. Checks that no later step acts on are
   // soft, so a failure in one step does not hide the steps after it.
   test(
@@ -672,22 +672,36 @@ test.describe('Builder v2 inspector', () => {
         await expect.soft(vcpus).toHaveValue('2');
       });
 
-      await test.step('the description is a tooltip on hover and keyboard focus', async () => {
+      await test.step('the node shows its type, and its description in its info tooltip on hover and keyboard focus', async () => {
         const node = builder.node('web01', 'device');
         const id = await node.getAttribute('data-node-id');
         // Vue Flow's wrapper is the node's focusable, named element.
         const wrapper = page.locator(`.vue-flow__node[data-id="${id}"]`);
-        const tooltip = node.getByTestId('node-tooltip');
-        await expect.soft(tooltip).toBeHidden();
-        // The tooltip only shows sighted users the end of the node's name.
+        // The canvas has one tooltip for all its nodes, outside them.
+        const tooltip = page.getByTestId('node-tooltip');
+        const description = tooltip.locator('dd').first();
+        await expect.soft(tooltip).toHaveCount(0);
+        // The type applied above, as stored.
+        await expect.soft(node.getByTestId('node-type')).toHaveText('Router');
+        // The description ends the node's name, and is its last line.
         await expect
           .soft(wrapper)
           .toHaveAccessibleName(/, comment: Front end web server$/);
+        await expect
+          .soft(node.locator('.builder-node__comment'))
+          .toHaveText('Front end web server');
 
         // The pointer can move from the node onto the tooltip, across the
-        // gap between them, and Escape closes it (WCAG 1.4.13).
+        // gap between them, and Escape closes it (WCAG 1.4.13). It moves
+        // onto the node from elsewhere: a node drawn under a still pointer
+        // shows nothing.
+        await page.getByRole('heading', { name: 'Outline' }).hover();
         await node.hover();
-        await expect.soft(tooltip).toHaveText('Front end web server');
+        await expect.soft(description).toHaveText('Front end web server');
+        await expect
+          .soft(tooltip.locator('dt'))
+          .toHaveText(['Description', 'Interfaces', 'OS type']);
+        await expect.soft(tooltip.locator('dd').last()).toHaveText('windows');
         const box = await tooltip.boundingBox();
         if (box) {
           await page.mouse.move(box.x + 10, box.y + box.height / 2, {
@@ -696,16 +710,21 @@ test.describe('Builder v2 inspector', () => {
           await expect.soft(tooltip).toBeVisible();
         }
         await page.keyboard.press('Escape');
-        await expect.soft(tooltip).toBeHidden();
+        await expect.soft(tooltip).toHaveCount(0);
 
         await page.getByRole('heading', { name: 'Outline' }).hover();
 
-        // Keyboard: the focused node shows it too.
+        // Keyboard: the node shows it when Tab brings focus back to the
+        // canvas, whose Tab stop is the node that had focus last.
         await wrapper.focus();
-        await expect.soft(tooltip).toHaveText('Front end web server');
         await page.keyboard.press('Shift+Tab');
         await expect.soft(wrapper).not.toBeFocused();
-        await expect.soft(tooltip).toBeHidden();
+        await page.keyboard.press('Tab');
+        await expect.soft(wrapper).toBeFocused();
+        await expect.soft(description).toHaveText('Front end web server');
+        await page.keyboard.press('Shift+Tab');
+        await expect.soft(wrapper).not.toBeFocused();
+        await expect.soft(tooltip).toHaveCount(0);
       });
 
       // web01's second drive is data.qc2, which the server does not have.
@@ -994,7 +1013,10 @@ test.describe('Builder v2 inspector', () => {
         await builder.node('node', 'device').click();
         await expect.soft(subject(builder)).toHaveText(/^\s*Device node\b/);
         await expect.soft(deviceHostname(builder)).toHaveValue('node');
-        await expect.soft(builder.inspector.getByLabel('Icon')).toBeVisible();
+        // By its whole label: Custom icon is a field of its own.
+        await expect
+          .soft(builder.inspector.getByLabel('Icon', { exact: true }))
+          .toBeVisible();
         await expect.soft(specGroup(builder, 'Node')).toBeVisible();
         await expect.soft(addInterface).toBeVisible();
 
@@ -1023,7 +1045,7 @@ test.describe('Builder v2 inspector', () => {
         // Linux, and a screen reader reads each option, so the steps come
         // far apart. The icon stepped to commits once chosen (here with
         // Enter), as one edit, which one Undo takes back.
-        const icon = builder.inspector.getByLabel('Icon');
+        const icon = builder.inspector.getByLabel('Icon', { exact: true });
         const node = builder.node('node', 'device');
         const stepped = node.locator(
           '.builder-icon--router, .builder-icon--firewall, .builder-icon--desktop',
@@ -1175,7 +1197,16 @@ test.describe('Builder v2 inspector', () => {
         await builder.selectInOutline('Group');
         await expect.soft(subject(builder)).toHaveText(/^\s*Group\b/);
         // No Collapsed: the canvas does not draw a collapsed group.
-        await expect.soft(fields).toHaveText([/^Title/, /^Color/]);
+        await expect
+          .soft(fields)
+          .toHaveText([
+            /^Title/,
+            /^Description/,
+            /^Color/,
+            /^Border pattern/,
+            /^Icon/,
+            /^Custom icon/,
+          ]);
         const title = builder.inspector.getByLabel('Title');
         await expect.soft(title).toHaveValue('Group');
 
@@ -1200,9 +1231,19 @@ test.describe('Builder v2 inspector', () => {
       await test.step('switch Name and VLAN alias apply to its network', async () => {
         await builder.selectInOutline('EXP');
         await expect.soft(subject(builder)).toHaveText(/^\s*Network EXP\b/);
+        // The network's fields, its color named by what it colors, then
+        // the outline and the fill of the switch node itself.
         await expect
           .soft(fields)
-          .toHaveText([/^Name/, /^VLAN alias/, /^Description/, /^Color/]);
+          .toHaveText([
+            /^Name/,
+            /^VLAN alias/,
+            /^Description/,
+            /^Edge Color/,
+            /^Line style/,
+            /^Outline Color/,
+            /^Fill Color/,
+          ]);
         await expect
           .soft(builder.inspector.getByLabel(/^Name/))
           .toHaveValue('EXP');
@@ -1258,9 +1299,15 @@ test.describe('Builder v2 inspector', () => {
       // connections, its switch's swatch and the picker's chip alike.
       await test.step('a suggested network color is drawn in its theme token', async () => {
         await builder.selectInOutline('MGMT');
-        const picker = builder.inspector.getByTestId('inspector-color-picker');
-        const popup = builder.inspector.getByTestId('inspector-color-popup');
+        // A switch has three color pickers: this one is Edge Color's.
+        const edgeColor = builder.inspector.locator('[data-path="color"]');
+        const picker = edgeColor.getByTestId('inspector-color-picker');
+        const popup = edgeColor.getByTestId('inspector-color-popup');
         const chip = picker.locator('.inspector-color__chip');
+        await expect
+          .soft(builder.inspector.getByTestId('inspector-color-picker'))
+          .toHaveCount(3);
+        await expect.soft(picker).toHaveAccessibleName('Choose edge Color');
         const swatch = builder
           .node('MGMT', 'switch')
           .locator('.builder-node__swatch');
@@ -1330,7 +1377,9 @@ test.describe('Builder v2 inspector', () => {
         const box = await label.boundingBox();
         await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
         await expect.soft(subject(builder)).toHaveText(/^\s*Connection\b/);
-        await expect.soft(fields).toHaveText([/^Label/, /^Color/]);
+        await expect
+          .soft(fields)
+          .toHaveText([/^Label/, /^Color/, /^Line style/]);
 
         // An unlabelled connection is drawn with its network's name, which
         // its Label shows, as the default; it used to be empty.

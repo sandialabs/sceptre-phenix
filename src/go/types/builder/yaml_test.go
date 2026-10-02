@@ -19,11 +19,11 @@ import (
 // builderDocsExamples are the Builder documents the docs ship.
 var builderDocsExamples = []string{"pump-station.builder.json", "riverside-water.builder.json"} //nolint:gochecknoglobals // test fixture
 
-// readDocsExample returns a file of docs/content/builder-v2/examples.
+// readDocsExample returns a file of docs/content/builder/examples.
 func readDocsExample(t *testing.T, name string) []byte {
 	t.Helper()
 
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "docs", "content", "builder-v2", "examples", name))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "docs", "content", "builder", "examples", name))
 	if err != nil {
 		t.Fatalf("reading the docs example: %v", err)
 	}
@@ -105,6 +105,38 @@ func TestJSONFromYAMLKeepsTheDocument(t *testing.T) {
 				t.Fatal("the document read from JSON as YAML is not the document of the JSON file")
 			}
 		})
+	}
+}
+
+// TestJSONFromYAMLKeepsPresentationFields writes a document that uses
+// every presentation field as YAML and reads it back: colors, which start
+// with the comment character, icon ids, which hold a colon, and base64 data
+// come back as they were, so the document and its digest do.
+func TestJSONFromYAMLKeepsPresentationFields(t *testing.T) {
+	t.Parallel()
+
+	source, err := builder.Encode(decoratedDocument(t))
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+
+	var generic any
+	if err := json.Unmarshal(source, &generic); err != nil {
+		t.Fatalf("decoding the document: %v", err)
+	}
+
+	text, err := yaml.Marshal(generic)
+	if err != nil {
+		t.Fatalf("encoding the document as YAML: %v", err)
+	}
+
+	converted, err := builder.JSONFromYAML(text)
+	if err != nil {
+		t.Fatalf("JSONFromYAML returned error: %v", err)
+	}
+
+	if got := canonicalDocument(t, converted); !bytes.Equal(got, source) {
+		t.Fatalf("the document read from YAML is not the document written:\nwant: %s\ngot:  %s", source, got)
 	}
 }
 

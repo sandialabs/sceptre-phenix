@@ -85,6 +85,49 @@ func TestValidateIconKeys(t *testing.T) {
 	}
 }
 
+// A group's icon key is drawn from the same registry as a device's.
+func TestValidateGroupIconKeys(t *testing.T) {
+	tests := []struct {
+		name    string
+		key     string
+		wantMsg string
+	}{
+		{name: "empty is the default", key: ""},
+		{name: "registry key", key: "container"},
+		{name: "a retired key documents still carry", key: "printer"},
+		{name: "unknown key", key: "rack", wantMsg: `unknown icon key "rack"`},
+		{name: "remote url", key: "https://example.com/icon.svg", wantMsg: "not a URL or path"},
+		{name: "data uri", key: "data:image/png;base64,AAAA", wantMsg: "not a URL or path"},
+		{name: "a custom icon id", key: iconFixtureID, wantMsg: "not a URL or path"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "document.json")
+			doc.NodeByID(idGrpRack).Group.IconKey = test.key
+
+			err := doc.Validate()
+
+			if test.wantMsg == "" {
+				if err != nil {
+					t.Fatalf("icon key %q was rejected: %v", test.key, err)
+				}
+
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("icon key %q was accepted", test.key)
+			}
+
+			if want := "nodes[0].group.iconKey: "; !strings.Contains(err.Error(), want) ||
+				!strings.Contains(err.Error(), test.wantMsg) {
+				t.Fatalf("error %q is not at %q with %q", err.Error(), want, test.wantMsg)
+			}
+		})
+	}
+}
+
 func TestGeneratedIconKeysAreRegistryMembers(t *testing.T) {
 	doc, _, err := builder.FromConfig(loadConfig(t, "topology.json"))
 	if err != nil {

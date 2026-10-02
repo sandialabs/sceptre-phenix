@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { createFormValidator } from '@/builder/form-validator.js';
+import { BORDER_STYLES, LINE_STYLES } from '@/builder/model.js';
 import {
   builderSchemaV1,
   BUILDER_SCHEMA_ID,
@@ -16,6 +17,7 @@ import {
   specDefName,
   specSchema,
   SUGGESTIONS_KEYWORD,
+  UNSET_KEYWORD,
 } from '@/builder/schema.js';
 
 describe('bundled builder schema', () => {
@@ -244,6 +246,177 @@ describe('inspector schemas', () => {
     expect(schema.properties.alias.title).toBe('VLAN alias');
   });
 
+  // The network's color is labelled by what it colors, now that the switch
+  // has an outline and a fill of its own.
+  test("a switch's fields are its network's, then its own outline and fill", () => {
+    const { properties } = schemaForKind(builderSchemaV1, 'switch');
+
+    expect(Object.keys(properties)).toEqual([
+      'name',
+      'alias',
+      'description',
+      'color',
+      'lineStyle',
+      'outlineColor',
+      'fillColor',
+    ]);
+    expect(
+      ['color', 'lineStyle', 'outlineColor', 'fillColor'].map(
+        (key) => properties[key].title,
+      ),
+    ).toEqual(['Edge Color', 'Line style', 'Outline Color', 'Fill Color']);
+    // The network's color takes any CSS color; the node's own only #rrggbb.
+    expect(properties.color.pattern).toBeUndefined();
+    expect(properties.outlineColor.pattern).toBe('^(#[0-9a-fA-F]{6})?$');
+    expect(properties.fillColor.pattern).toBe('^(#[0-9a-fA-F]{6})?$');
+  });
+
+  test("a device's icon is followed by its custom icon and its outline and fill colors", () => {
+    const { properties } = schemaForKind(builderSchemaV1, 'device');
+
+    expect(Object.keys(properties)).toEqual([
+      'hostname',
+      'iconKey',
+      'icon',
+      'outlineColor',
+      'fillColor',
+      'spec',
+    ]);
+    expect(properties.outlineColor).toMatchObject({
+      type: 'string',
+      title: 'Outline Color',
+      pattern: '^(#[0-9a-fA-F]{6})?$',
+    });
+    expect(properties.fillColor).toMatchObject({
+      type: 'string',
+      title: 'Fill Color',
+      pattern: '^(#[0-9a-fA-F]{6})?$',
+    });
+    // Each says that it applies without Apply, as the icon does.
+    for (const key of ['iconKey', 'icon', 'outlineColor', 'fillColor']) {
+      expect(properties[key].description, key).toMatch(/without Apply\.$/);
+    }
+  });
+
+  // The field's own schema says an icon id is what it takes: the
+  // definition itself, not the reference the bundle holds at the property.
+  test('a device and a group have a Custom icon, which takes an icon id', () => {
+    const device = schemaForKind(builderSchemaV1, 'device').properties;
+    const group = schemaForKind(builderSchemaV1, 'group').properties;
+
+    expect(Object.keys(group)).toEqual([
+      'title',
+      'description',
+      'color',
+      'borderStyle',
+      'iconKey',
+      'icon',
+    ]);
+
+    for (const { icon } of [device, group]) {
+      expect(icon).toMatchObject({
+        type: 'string',
+        title: 'Custom icon',
+        pattern: builderSchemaV1.$defs.iconRef.pattern,
+      });
+      expect(icon.$ref).toBeUndefined();
+    }
+
+    expect(device.icon.description).toBe(
+      'An image of your own, drawn in place of the icon. The diagram keeps a copy, so it shows wherever the diagram is opened. Applies at once, without Apply.',
+    );
+    // A group's waits for Apply with the rest of its form.
+    expect(group.icon.description).toBe(
+      'An image of your own, drawn in place of the icon. The diagram keeps a copy, so it shows wherever the diagram is opened.',
+    );
+    expect(device.iconKey.description).toBe(
+      'Canvas icon. A custom icon, when set, is drawn in its place. Presentation only, so a new one applies at once, without Apply.',
+    );
+    expect(group.iconKey.description).toBe(
+      "Icon beside the group's title. A custom icon, when set, is drawn in its place.",
+    );
+    // A switch and a note have none.
+    expect(schemaForKind(builderSchemaV1, 'switch').properties.icon).toBe(
+      undefined,
+    );
+    expect(schemaForKind(builderSchemaV1, 'note').properties.icon).toBe(
+      undefined,
+    );
+    // A served schema without the definition still gives a text field.
+    expect(
+      schemaForKind({ $defs: { device: {} } }, 'device').properties.icon,
+    ).toMatchObject({ type: 'string', title: 'Custom icon' });
+  });
+
+  // The choice that stands for no style is "Auto", not "Not set".
+  test('a line style is one of four named patterns, or Auto', () => {
+    for (const kind of ['switch', 'edge']) {
+      const field = schemaForKind(builderSchemaV1, kind).properties.lineStyle;
+
+      expect(field.title, kind).toBe('Line style');
+      expect(field.oneOf, kind).toEqual([
+        { const: 'solid', title: 'Solid' },
+        { const: 'dashed', title: 'Dashed' },
+        { const: 'dotted', title: 'Dotted' },
+        { const: 'dash-dot', title: 'Dash-dot' },
+      ]);
+      expect(field[UNSET_KEYWORD], kind).toBe('Auto');
+      expect(field.enum, kind).toBeUndefined();
+    }
+
+    // The patterns are those the document schema allows, and the editor's
+    // own list when a served schema names none.
+    expect(
+      schemaForKind(
+        { $defs: { network: {} } },
+        'switch',
+      ).properties.lineStyle.oneOf.map((choice) => choice.const),
+    ).toEqual(LINE_STYLES);
+    expect(
+      builderSchemaV1.$defs.lineStyle.enum.filter((value) => value !== ''),
+    ).toEqual(LINE_STYLES);
+  });
+
+  test("a group's border pattern is one of four named patterns", () => {
+    const { borderStyle, description, iconKey } = schemaForKind(
+      builderSchemaV1,
+      'group',
+    ).properties;
+
+    expect(borderStyle.title).toBe('Border pattern');
+    expect(borderStyle.oneOf).toEqual([
+      { const: 'solid', title: 'Solid' },
+      { const: 'dashed', title: 'Dashed' },
+      { const: 'dotted', title: 'Dotted' },
+      { const: 'double', title: 'Double' },
+    ]);
+    expect(borderStyle[UNSET_KEYWORD]).toBeUndefined();
+    expect(
+      builderSchemaV1.$defs.borderStyle.enum.filter((value) => value !== ''),
+    ).toEqual(BORDER_STYLES);
+    expect(description).toMatchObject({ type: 'string', title: 'Description' });
+    expect(iconKey.title).toBe('Icon');
+  });
+
+  // A retired icon key is offered only to the group that still has it, as
+  // for a device.
+  test("a group's icon leaves out retired keys its group does not use", () => {
+    const offered = (context) =>
+      schemaForKind(builderSchemaV1, 'group', context).properties.iconKey.enum;
+
+    expect(offered()).toContain('container');
+    expect(offered()).toContain('');
+    expect(offered()).not.toContain('printer');
+    expect(offered({ iconKey: 'printer' })).toContain('printer');
+    // The same object for the same variant, so it is compiled once.
+    expect(schemaForKind(builderSchemaV1, 'group', { iconKey: 'router' })).toBe(
+      schemaForKind(builderSchemaV1, 'group'),
+    );
+    expect(
+      schemaForKind(builderSchemaV1, 'group', { iconKey: 'printer' }),
+    ).not.toBe(schemaForKind(builderSchemaV1, 'group'));
+  });
+
   test('notes, groups, edges and the document each have a schema', () => {
     ['note', 'group', 'edge', 'document'].forEach((kind) => {
       const schema = schemaForKind(builderSchemaV1, kind);
@@ -252,10 +425,11 @@ describe('inspector schemas', () => {
       expect(Object.keys(schema.properties).length).toBeGreaterThan(0);
     });
 
-    // A connection has a color of its own, as networks, notes and groups do.
+    // A connection has a color and a line style of its own, drawn in place
+    // of its network's.
     expect(
       Object.keys(schemaForKind(builderSchemaV1, 'edge').properties),
-    ).toEqual(['label', 'color']);
+    ).toEqual(['label', 'color', 'lineStyle']);
   });
 
   test('identifiers and geometry are never editable fields', () => {
