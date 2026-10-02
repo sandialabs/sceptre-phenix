@@ -505,8 +505,9 @@ once the config is gone, the answer is still 204, with a `Warning: 199`
 header; such documents are never listed again, and the startup cleanup removes
 them once they are more than an hour old. Drafts and experiments made from the
 topology are not changed. On
-the drafts page, each Published Diagrams card of a topology has Delete, for a
-role with `configs` `delete`. It asks first ("Delete topology <name>?"), is
+the drafts page, each Published Diagrams card of a published topology has
+Delete, for a role with `configs` `delete`; a File card has none. It asks
+first ("Delete topology <name>?"), is
 aria-disabled and says Deleting… while it runs, then removes the card,
 announces `Deleted topology <name>.` and moves focus as for a deleted draft
 card. A refused delete keeps the card and shows the error; a 404 reads the list
@@ -523,9 +524,8 @@ YAML encoding of a config shows it nested (REST, `phenix config get`/`edit`,
 the Configs page). In memory (`store.Annotations` is still
 `map[string]string`) and in BoltDB/etcd it is one compact JSON string; the
 codec is on `store.Annotations` (`store.StructuredAnnotation`,
-`Config.StoredJSON`). A string value of another shape, such as the 10-field
-reference earlier builds of this branch wrote, is refused (`POST`/`PUT
-/configs` answer 400); there is no migration.
+`Config.StoredJSON`). A string that is not a JSON object of these sub-keys
+is refused (`POST`/`PUT /configs` answer 400).
 
 ```yaml
 metadata:
@@ -606,8 +606,10 @@ Rules (all checked at read time, by `phenix ui`):
 
 - below `--base-dir.phenix` (default `/phenix`) and not below the VM mount
   directory (`common.MountDir()`, default `<base>/mounts`), also after
-  resolving symbolic links; opened through `os.OpenRoot`, so a link that
-  leaves the root is refused;
+  resolving symbolic links; opened through `os.OpenRoot`, so only a link
+  with a relative target that stays below the root is followed: one that
+  leaves the root is refused, and so is every link with an absolute target,
+  also one that points below the root (`cannot be read`);
 - a regular file (opened `O_NONBLOCK`; a FIFO or directory is refused), at
   most 5 MiB;
 - one valid Builder document, JSON or YAML decided by content, not by the
@@ -618,13 +620,20 @@ Rules (all checked at read time, by `phenix ui`):
   `JSON_SCHEMA` does. No `${NAME}` expansion in the file;
 - a `digest` beside `path` must equal the file document's digest.
 
-Authorization is `configs` `get` on the topology. A forbidden or missing
-topology, no or an invalid annotation, and a reference that names nothing
-all answer the same 404 (`builder document of topology <name> not found`).
+Authorization is `configs` `get` on the topology in the URL, and nothing
+else. The name scope of a role therefore does not protect a Builder file:
+anyone with `configs` `create` or `update` on any one topology name, plus
+`get` on it, can point that topology's `path` at any Builder file below the
+base directory and read it. Stored documents have no such gap (their ID is
+bound to the target). A forbidden or missing topology, no or an invalid
+annotation, and a reference that names nothing all answer the same 404
+(`builder document of topology <name> not found`).
 File errors are a closed set (`bapi.DocumentFileError`), each a fixed
 sentence naming the path and never anything the file holds; the cause is
 not wrapped, and the log line is `builder document file not usable` with
-`topology`, `path`, `reason`:
+`topology`, `path`, `reason`. A path that goes on through a regular file
+(`ENOTDIR`) is missing, as a path nothing has is, so the answers do not say
+which other names below the base directory are files:
 
 | Status | `message` |
 |---|---|
@@ -657,8 +666,13 @@ the token's, or the draft's snapshot digest equals the file's, and (2) the
 topology's spec still equals the file document's projection. Otherwise 409:
 `topology <name> or its Builder file changed after this draft was opened
 from the file`, or `topology <name> is not what its Builder file publishes,
-so this draft cannot update it`. The client cannot tell beforehand, so the
-dialog offers Update and shows the refusal. A publish writes `digest` and
+so this draft cannot update it`. The token decides before the import rule
+does: a file document that was imported from the topology (`source`) gives
+its draft no other way to update it. The source freshness check still
+applies to such a document, under any target name (`builder source
+Topology/<name> changed after this draft was imported`). The client cannot
+tell beforehand, so the dialog offers Update and shows the refusal. A
+publish writes `digest` and
 `id`, keeps `path`, never writes the file, and adds to `warnings`:
 `Topology <name> names the Builder file <path>, which Publish does not
 change. Export the diagram and replace the file to keep it in step.` From
@@ -688,13 +702,18 @@ the editor never sets them:
   body's when present, else the caller and now; `updatedBy` and `updatedAt`
   are always the caller and now. The draft record keeps the two as
   `documentAuthor` and `documentCreatedAt`. So an Upload keeps the file's
-  author, and anyone with `configs` `create` can name any author;
-  `updatedBy` cannot be forged.
+  author, and anyone with `configs` `create` can name any author. A body
+  cannot set `updatedBy` or `updatedAt`, except through the unchanged copy
+  below.
 - Unchanged copy: with `sourceToken` `builder-doc/<id>` or
   `builder-file/<topology>/<digest>` and no `forkOf`, a body whose canonical
   JSON is the opened document is stored unstamped, so the draft's `digest`
   equals the document's and an unchanged publish answers topology
   `skipped`. A client must send the document exactly as `GET` returned it.
+  For a `builder-file/` token all four fields are then whatever the file
+  says, also in what the draft publishes before its first save, as in a
+  document `phenix builder publish` stores: they are only as trustworthy as
+  whoever can write the file.
 - `POST .../snapshots` (`AppendSnapshot`): `author` and `createdAt` come from
   the draft record (left out when it has none); `updatedBy` and `updatedAt`
   are the caller and now, equal to the snapshot's `createdBy` and its
@@ -710,7 +729,9 @@ Create and save responses have no document, so they carry `stamp:
 {author?, createdAt?, updatedBy?, updatedAt?}` (empty fields left out, `{}`
 for an unchanged copy of a document that names nobody); the editor copies
 it into its document (`withStamp` in `model.js`). No other response has
-`stamp`.
+`stamp`. Copying it replaces `store.doc`, so the Inspector's watch on the
+document skips a change of the stamp alone (`sameButStamp`): a reset there
+drops text being typed in a field (`builder-inspector.spec.js` checks it).
 
 `sourceFile` on `POST /builder-v2/drafts` records the name of the uploaded
 file a draft came from (the UI sends it for Upload of a file and Import of

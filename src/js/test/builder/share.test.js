@@ -8,6 +8,7 @@ import {
   userLabel,
   userOptions,
 } from '@/builder/combobox.js';
+import { MAX_USER_BYTES } from '@/builder/limits.js';
 import {
   accessLabel,
   addedMessage,
@@ -206,6 +207,11 @@ describe('adding a person', () => {
     expect(validUsername('ana.pérez@example.com')).toBe(true);
     expect(validUsername('x'.repeat(257))).toBe(false);
     expect(validUsername('é'.repeat(129))).toBe(false);
+  });
+
+  test('a username is as long as the user a document may name, and no longer', () => {
+    expect(validUsername('x'.repeat(MAX_USER_BYTES))).toBe(true);
+    expect(validUsername('x'.repeat(MAX_USER_BYTES + 1))).toBe(false);
   });
 });
 

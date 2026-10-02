@@ -21,7 +21,9 @@ const {
   expect,
   blankDocument,
   expectAccessible,
+  expectDetail,
   expectNoFatal,
+  nextSecond,
   uniqueName,
 } = require('./builder-support');
 
@@ -32,6 +34,9 @@ test.use({ announceHold: 100 });
 // Expect a persisted server state within this time. Autosave uploads each
 // commit asynchronously after Apply.
 const PERSIST = { timeout: 20000 };
+
+// The route a draft's saves are sent to.
+const SNAPSHOTS = '**/api/v1/builder-v2/drafts/*/*/snapshots';
 
 function subject(builder) {
   return builder.inspector.locator('.builder-inspector__subject');
@@ -2310,6 +2315,64 @@ test.describe('Builder v2 inspector', () => {
           timer: '1h30m',
         });
     });
+
+    expectNoFatal(issues);
+  });
+
+  // A save's answer writes who saved the diagram, and when, into the
+  // document. The Inspector must not take that for a change of what it
+  // shows: it would set its form from the document again, and drop text
+  // being typed in a field, which the form has not taken yet.
+  test('text being typed in a field is kept when a save is answered', async ({
+    page,
+    builder,
+    issues,
+  }, testInfo) => {
+    await builder.open();
+    await builder.createBlank();
+    // The server writes times in whole seconds. A save answered in the
+    // second the draft was made in writes the time the document has
+    // already, which changes nothing: the save below is answered later.
+    const made = Date.now();
+    const edited = page.getByTestId('inspector-edited').locator('time');
+    const before = await edited.getAttribute('datetime');
+
+    // The save waits here until the test lets it go.
+    let release = () => {};
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
+    let waiting = 0;
+    await page.route(SNAPSHOTS, async (route) => {
+      if (route.request().method() === 'POST') {
+        waiting += 1;
+        await held;
+      }
+
+      return route.fallback();
+    });
+
+    const saved = builder.nextSnapshot();
+    await builder.rename(uniqueName(testInfo, 'typing'));
+
+    // Typed and not left: the field commits its text when it loses focus.
+    const description = builder.inspector.getByLabel('Description');
+    await description.click();
+    await description.pressSequentially('typed while saving');
+    await expect.poll(() => waiting).toBeGreaterThan(0);
+
+    await nextSecond(made);
+    release();
+
+    const { stamp } = await (await saved).json();
+    await builder.waitSaved();
+
+    // The answer reached the document, with a later time than it had.
+    expect(stamp.updatedAt, 'time of the save').not.toBe(before);
+    await expectDetail(page, 'edited', stamp.updatedBy, stamp.updatedAt, {
+      soft: false,
+    });
+    await expect(description).toHaveValue('typed while saving');
 
     expectNoFatal(issues);
   });

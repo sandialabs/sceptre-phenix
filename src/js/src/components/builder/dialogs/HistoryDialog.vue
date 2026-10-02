@@ -22,6 +22,9 @@
   place, the next older snapshot. A user who may only view the draft gets
   neither action.
 
+  A diagram shown read only has no draft. The dialog then says only that,
+  of a published diagram or of one read from a Builder file.
+
   A snapshot of edits the Builder applied for the user (the Inspector's
   unapplied edits, saved before the diagram was left, published or
   exported; see leave.js) is marked Automatic, and a line under the table
@@ -36,7 +39,12 @@
     aria-describedby="history-status"
     @close="$emit('close')">
     <p v-if="store.published" id="history-status">
-      A published diagram has no draft history. Edit it as a draft to keep one.
+      {{
+        store.published.source === 'file'
+          ? 'A diagram read from a Builder file'
+          : 'A published diagram'
+      }}
+      has no draft history. Edit it as a draft to keep one.
     </p>
     <template v-else>
       <div
@@ -271,8 +279,8 @@
   const CURRENT_RESTORE_NOTE = 'This is the current version';
 
   // Read before the first render, so the dialog opens loading rather than
-  // showing the list it had last time. A published diagram shown read only
-  // has no draft, so no history.
+  // showing the list it had last time. A published diagram shown read only,
+  // or one read from a Builder file, has no draft, so no history.
   if (!store.published) {
     store.fetchHistory();
   }

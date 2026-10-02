@@ -1,5 +1,6 @@
 // The letter case of the words the Builder writes into its sentences and
-// names, and the length of a text as the server's limits count it.
+// names, and what the server's limits check of a text: its length, and the
+// control characters in it.
 
 /**
  * @param {string} text
@@ -31,4 +32,15 @@ export function lowerFirst(text) {
  */
 export function utf8Length(text) {
   return new TextEncoder().encode(text).length;
+}
+
+/**
+ * @param {string} text
+ * @returns {boolean} whether the text holds a control character, as the
+ *   server finds one: a character below U+0020, or U+007F
+ */
+export function hasControlCharacters(text) {
+  return [...text].some(
+    (ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f,
+  );
 }

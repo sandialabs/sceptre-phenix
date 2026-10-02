@@ -15,7 +15,7 @@ import axiosInstance from '@/utils/axios.js';
 import { count } from './announce.js';
 import { MAX_DOCUMENT_BYTES } from './limits.js';
 import { sessionEnded } from './signin.js';
-import { utf8Length } from './text.js';
+import { hasControlCharacters, utf8Length } from './text.js';
 
 export const DRAFTS_PATH = 'builder-v2/drafts';
 export const SOURCES_PATH = 'builder-v2/sources';
@@ -162,9 +162,7 @@ export function sourceFileName(name) {
     text === '.' ||
     text === '..' ||
     /[/\\]/.test(text) ||
-    [...text].some(
-      (ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f,
-    ) ||
+    hasControlCharacters(text) ||
     utf8Length(text) > MAX_SOURCE_FILE_BYTES;
 
   return refused ? '' : text;

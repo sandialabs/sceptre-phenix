@@ -1223,9 +1223,10 @@ func (b *builderV2API) preflightTopology(
 // draft publishes again after further edits, whatever it was loaded from.
 // For a topology read from the Builder file it names, that is a draft opened
 // from the file as it is now, while the topology is still what the file
-// publishes. Otherwise it updates only the topology it was loaded from: the
-// one it was imported from, or the one its source experiment was built from,
-// whose freshness checkSourceFreshness checks.
+// publishes, and a draft opened from that file updates the topology in no
+// other way. Otherwise a draft updates only the topology it was loaded from:
+// the one it was imported from, or the one its source experiment was built
+// from, whose freshness checkSourceFreshness checks.
 func (b *builderV2API) topologyUpdateRefusal(
 	ctx context.Context,
 	meta *bapi.DraftMetadata,
@@ -1249,14 +1250,18 @@ func (b *builderV2API) topologyUpdateRefusal(
 	case held.owned:
 		return weberror.NewWebError(nil, "topology %s changed after this draft published it", name).
 			SetStatus(http.StatusConflict)
-	case topologyUpdateMatchesSource(meta, document, name):
-		return nil
 	}
 
+	// Before the import rule: a document read from the file may itself have
+	// been imported from this topology, which says nothing of the file.
 	if opened, _, ok := openedBuilderFile(meta.SourceToken); ok && opened == name {
 		return weberror.NewWebError(
 			nil, "topology %s or its Builder file changed after this draft was opened from the file", name,
 		).SetStatus(http.StatusConflict)
+	}
+
+	if topologyUpdateMatchesSource(meta, document, name) {
+		return nil
 	}
 
 	return weberror.NewWebError(nil, "topology %s is not the source this draft was loaded from", name).

@@ -341,7 +341,10 @@ A draft keeps at most 50 snapshots and 50 MiB of them. Past either limit,
 Builder v2 drops the oldest snapshots. A user who can only view the draft
 sees its history without the Restore and Delete buttons. A published diagram
 has no history: its **Draft History** says "A published diagram has no draft
-history. Edit it as a draft to keep one."
+history. Edit it as a draft to keep one." For a
+[diagram read from a file](#diagrams-read-from-a-file) it says "A diagram
+read from a Builder file has no draft history. Edit it as a draft to keep
+one."
 
 ## Sharing a draft
 

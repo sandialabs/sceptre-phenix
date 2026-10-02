@@ -808,6 +808,25 @@ describe('the History dialog', () => {
     expect(html).not.toContain('history-automatic');
   });
 
+  test('says why a diagram shown read only has none: a published one, or one read from a Builder file', async () => {
+    const sentences = {
+      store:
+        'A published diagram has no draft history. Edit it as a draft to keep one.',
+      file: 'A diagram read from a Builder file has no draft history. Edit it as a draft to keep one.',
+    };
+
+    for (const [source, sentence] of Object.entries(sentences)) {
+      const html = await renderDialog(HistoryDialog, {}, (store) => {
+        store.published = { id: 'p1', name: 'site', target: 'site', source };
+      });
+      const status = /<p id="history-status"[^>]*>([\s\S]*?)<\/p>/.exec(html);
+
+      expect(html).toContain('aria-describedby="history-status"');
+      expect(status[1].replace(/\s+/g, ' ').trim()).toBe(sentence);
+      expect(html).not.toContain('history-table');
+    }
+  });
+
   test('only a summary that starts with the name is marked', () => {
     expect(savedAutomatically(`${SAVED_UNAPPLIED} to Device alpha`)).toBe(true);
     expect(savedAutomatically('Updated Saved unapplied changes')).toBe(false);

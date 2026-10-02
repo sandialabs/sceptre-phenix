@@ -439,6 +439,45 @@ func TestPublishTopologyNamesEveryBlocker(t *testing.T) { //nolint:paralleltest 
 		t.Errorf("problems = %q, want the interface without a vlan key", refusal.Problems)
 	}
 
+	// Such a blocker does not hide the others: an address interfaces share
+	// is named beside the interface with no vlan key, and beside a hostname
+	// of one character, which the schema refuses too.
+	for name, test := range map[string]struct {
+		nodes []builder.Node
+		want  []string
+	}{
+		"no vlan key": {
+			nodes: []builder.Node{
+				testDevice("aa", map[string]any{"name": "eth0", "address": "10.0.0.1"}),
+				testDevice("bb", testInterface("eth0", "EXP", "10.0.0.1")),
+			},
+			want: []string{`interface "eth0" of device "aa" has no VLAN`, `IP address 10.0.0.1 is used by`},
+		},
+		"a hostname of one character": {
+			nodes: []builder.Node{
+				testDevice("a", testInterface("eth0", "EXP", "10.0.0.1")),
+				testDevice("bb", testInterface("eth0", "EXP", "10.0.0.1")),
+			},
+			want: []string{`IP address 10.0.0.1 is used by`, `hostname 'a'`},
+		},
+	} {
+		several := builder.NewDocument("several")
+		several.Nodes = append(several.Nodes, test.nodes...)
+
+		refusal = p.refused(several, PublishTopologyRequest{}, PublishRefusedBlocked)
+		if len(refusal.Problems) != len(test.want) {
+			t.Errorf("%s: problems = %q, want %d of them", name, refusal.Problems, len(test.want))
+
+			continue
+		}
+
+		for i, want := range test.want {
+			if !strings.Contains(refusal.Problems[i], want) {
+				t.Errorf("%s: problem %d = %q, want it to name %q", name, i, refusal.Problems[i], want)
+			}
+		}
+	}
+
 	// And a spec the schema refuses for a reason of its own.
 	invalid := builder.NewDocument("invalid")
 	invalid.Nodes = append(invalid.Nodes, testDevice("host", testInterface("eth0", "EXP", "10.0.0.1")))

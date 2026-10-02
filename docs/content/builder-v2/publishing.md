@@ -457,6 +457,11 @@ topology name instead:
 - "Could not publish the diagram. Topology pump-station is not what its
   Builder file publishes, so this draft cannot update it."
 
+A diagram in a file can itself have been imported from a config, as the
+example file `pump-station.builder.json` was from `pump-station`. Its draft
+is then also held to the rule for an imported draft, under any topology name
+(see [When the source config changed](#when-the-source-config-changed)).
+
 The hint under **Topology name** cannot tell these cases apart. It says "A
 topology with this name exists and will be updated." for every draft made
 from the file, and the server refuses when you select **Update topology**.

@@ -375,6 +375,11 @@ func yamlInt(text string) (float64, bool) {
 		octal       = 8
 		decimal     = 10
 		hexadecimal = 16
+
+		// maxDigits is the most digits, after any leading zeros, an integer
+		// a float64 holds can have: one of more digits is at least 2^1024
+		// in every base, which no finite float64 is.
+		maxDigits = 1024
 	)
 
 	digits := strings.TrimPrefix(text, "+")
@@ -398,6 +403,13 @@ func yamlInt(text string) (float64, bool) {
 	}
 
 	if digits == "" || strings.ContainsFunc(digits, func(r rune) bool { return !yamlDigit(r, base) }) {
+		return 0, false
+	}
+
+	// Told by their number, not by parsing them: that takes time that grows
+	// with the square of the number of digits, and a scalar may be as long
+	// as a file.
+	if len(strings.TrimLeft(digits, "0")) > maxDigits {
 		return 0, false
 	}
 
